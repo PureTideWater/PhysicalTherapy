@@ -1,0 +1,14 @@
+# verify-ss01 progress
+- started; cloning
+- clone at $S/verify-ss01, head efb2070 = origin tip. NOTE head is TWO merges: 9777ddc (f897a28 + 83d71fd #78) then efb2070 (9777ddc + bce57f16 #82, current build-platform tip)
+- M1 replay: only conflict apps/web/scripts/synthetic-personas.ts (comment header); committed = union of both sides. committed vs git auto-merge differs only in that hunk + domain-model provenance line
+- M2 replay: no conflicts; committed vs auto differs only in domain-model provenance line
+- TODO: regenerate watched-paths, functions, synth, domain model; tables.test counts; marker; approvers; model id; ScrollTable/#74
+- personas: comment union re-wrapped, all persona code lines of both sides present (only rewrapped comment lines differ) OK
+- tables.test.ts identical to all 4 parents OK; no marker in tree; approvers.json untouched; approval line blank; no model id in diffs (trailer only, mandated)
+- pnpm install --frozen-lockfile exit 0
+- watched.ts --write: no change; synth --all: 0 written/662+16 unchanged/0 removed; fresh tp_vss01_1 migrate 46 ok; db:domain-model --check exit 0 (doc + 381 fn names)
+- vitest web tables/forms/console/billing 11 files 140 passed; synth vitest 13 files 185 passed; tables.test passes (counts unchanged)
+- pnpm typecheck 22 projects pass; watched.test 6 passed; verify-content pass; clone tree clean after all generators
+- nit: upload-form.tsx keepAddress raw controlled checkbox (SS-01 side 89998f41e, pre-existing, not this merge)
+- tp_vss01_1 dropped. DONE

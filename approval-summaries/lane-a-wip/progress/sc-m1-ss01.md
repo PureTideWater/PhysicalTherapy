@@ -16,3 +16,7 @@
 - r2 (efb20704): typecheck/lint(1,719)/lint:copy/lint:logs(1106)/verify-content/dm check/fixtures/actions:check/toolchain:check(0 err,1 warn) pass; unit 418 files 7125 passed 4 skipped. db shards running.
 - r2 db: shard1 1 FAIL tools/release/load.db.test.ts (relallvisible 0 vs 7, VACUUM FREEZE) 3291 passed 1 skipped; shard2 2697; shard3 2590; shard4 982 pass. Investigating shard1 failure (file untouched by SS-01 and #82; passed round 1).
 - r2 db shard1 rerun on fresh DB: 34 files 3292 passed 1 skipped; load.db.test.ts alone 3/3 pass (13 tests each). Flake recorded as open item. Next: build+e2e r2
+- r2 build pass (stamp efb20704); r2 e2e run 1 was killed by SIGTERM (session interrupted) at test 67/68 with no failures; rerunning e2e r2.
+- pattern verification: SS-01 tables (suspension History, console mail Undelivered messages) both in ScrollTable; phone e2e covers History (billing.spec atPhoneWidth tables:['History']) and /console/mail (mail-cutoff atPhoneWidth). StackedRows: no caller in base (ADR 0078 sec 5: working lists, 34th PR); SS-01 tables are read-only record lists -> open item, not changed. Forms: suspend/change-reason/reinstate/resume all ActionForm; billing.spec asserts refused suspend keeps reason+note (FRM-01). No gap fixed.
+- r2 e2e rerun: 68 passed (11.0m), 2 workers, port 4971, E2E_PREBUILT=1 stamp efb20704. synth --all 0 written (662+16 unchanged). Next: push efb20704.
+- pushed efb20704; dbs dropped. DONE r2.

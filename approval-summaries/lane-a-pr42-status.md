@@ -147,8 +147,40 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
   golden 376, oracle 687, verify-content, domain-model --check b23fed0e…2518, test:db shard 1. Resumed the same run with a
   RESUMED note (db shards 2-4, build, e2e, capacity S1,S4 (4 watched hits), push). Progress copied to
   `approval-summaries/lane-a-wip/progress/pr42h-merge.md`.
+- 2026-11-01T21:20Z (acting Lane A): the #82 round finished (wf_a2590f4b-2bb, resumed twice: the 5-hour stop, then an agent that
+  returned early and took its background suite with it; each time continued from its progress file). Pushed **6c28d6a2**
+  (merge of bce57f16 #82; six files auto-merged, rule 6 kept both; generators wrote nothing). Local on 6c28d6a2, all green:
+  typecheck 22; lint 1,710; actions:check; toolchain:check (0 errors, 1 warning: 2 lockfile versions, each >= 3 days); tools
+  tests 517 (+ actionlint); unit 7,078 passed 1 skip; golden 376; oracle 687; verify-content; check:fixtures; lint:copy;
+  lint:logs; engine-freeze; affected: no shard; test:db 9,499 passed 1 skip (restore-drill, pg_dump 16 vs 18); build + stamp;
+  e2e 33+32, 0 flaky; capacity S1,S4 binding (fresh out; exit 1 only for the same environment-only reasons as c65f9cf2; S4
+  middle run worst 30.0 s); domain-model --check b23fed0e…2518 at line 7334. WIP `co-001/wip-pr42-integrate-3` = 6c28d6a2.
+- CI on 6c28d6a2: 26 jobs, 23 success, notify skipped, `domain model` red only for the approval line (prints b23fed0e…2518),
+  `all green` red only because of it; mutation, screening-capacity gate and approval-of-record green (approval-of-record
+  re-runs on each description edit, all green). `images` green. CI's capacity: pass (time advisory), S4 middle run 55.1 s on
+  the runner, over the 44-s O9 question: stays with the founder (action 7).
+- Description sent with update_pull_request and read back byte for byte: 64,998 characters, SHA-256 44b81511…; the summary whole
+  at the top (base bce57f16), every template section, "Legal text: signed off by the founder 2026-11-01, as written" pointing
+  to record section 1, actions 1-7 whole and item 8 done. Function-file hazards read: none (every SECURITY DEFINER sets
+  search_path; no PUBLIC grant). Review record updated (4d6f971c, then 2d9adffb): no "awaiting the founder's sign-off" left;
+  the 113 quoted legal strings byte-identical. The `images` comment posted once:
+  https://github.com/PureTideWater/PhysicalTherapy/pull/42#issuecomment-6563811925. An adversarial check of the body found 3
+  (a missed "awaiting" in record line 118; the CI run count; the base moved during the send), all fixed.
+- Fresh-clone verification on 6c28d6a2: **pass** (first-parent history since be63bdc2 is only ed032539, 10db232c, c65f9cf2,
+  6c28d6a2; every base-only file equals the base blob; the screening, legal-surfaces and data-retention diffs empty; no quoted
+  legal sentence changed; --check b23fed0e…2518 at 7334; CI as above). Its adversarial check: the verdict stands.
+- 2026-11-01T21:18Z: **suggested approval line posted** on 6c28d6a2, line 7334, as one pull-request review comment (gh api
+  pulls/42/comments; no review tool): https://github.com/PureTideWater/PhysicalTherapy/pull/42#discussion_r4437376734
+  ("Approved by: Tyler Williams  Date: 2026-11-01  Document SHA-256: `b23fed0e…2518`"). Decision: posted on 6c28d6a2 although
+  #83 (43565235) merged into the base at 20:40Z (no migration, no domain-model change, merges cleanly): the base keeps moving
+  (#86, #75, #84, #85 queued), and item step 7 takes a migration-free base merge after the founder's commit, the line staying
+  valid while the document's hash is unchanged.
 
 ## Next
-Next: when wf_a2590f4b-2bb returns a pass: post the suggested approval line (acting-lane-a brief section 6) on the new head,
-report its link to the orchestrator, and wait for the founder's commit. If the base moves again before then, record it and
-take it only after the founder's commit (item step 7), when its delta has no migration and the hash stays the same.
+Waiting on: **the founder's commit of the suggestion**
+https://github.com/PureTideWater/PhysicalTherapy/pull/42#discussion_r4437376734 (as on #39, 54ec8909). Push nothing to the
+branch until then. After it: pull --ff-only in /home/user/pr6b4; merge the base (43565235 or later) with a merge commit only if
+its delta has no migration and `--check` still reads b23fed0e…2518 (else the line is void: regenerate, post a new suggestion);
+the checks that delta needs; push once; CI green incl. `domain model` and `all green`; mark ready; wait for approval-of-record's
+re-run; merge_pull_request (method merge, expectedHeadSha); unsubscribe; read the push runs; remove /home/user/pr6b4; record;
+tell the orchestrator. Check-ins by send_later while waiting.

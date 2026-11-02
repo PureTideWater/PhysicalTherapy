@@ -1,0 +1,13 @@
+# SGN security review progress
+- clone: scratchpad/sec-clone at e4e05a0d
+- read: pending.ts, step-limits.ts, routes/sign-in.ts, sign-in.ts flow, seal.ts, notice.tsx, page.tsx, ADR 0081, design 2.6/9
+- F1 (candidate blocking): Start again is a GET link; live pending step (enrol TOTP secret / register_key grant) survives; shared computer takeover window. routes/sign-in.ts:246, step-timer.tsx:176
+- F2 (candidate): settle 'no_account' (disabled after auth) leaves both cookies -> kept email outlives an ended attempt. routes/sign-in.ts:199-201
+- sound: purpose separation (AAD), startedAt sealed, invalid_password/regOptions keep meta, no test time knob
+- cookie flags: next.ts:25 HttpOnly Secure Lax Path=/ (sound); readKeptEmail safeParse, never throws (sound)
+- #42 overlap: test-matrix.md, matrix.ts, registry.ts, watched-paths.txt only (sound)
+- no test-time knob, no new logs (sound); rate limits unchanged by restart (sound)
+- next: run pending/step-limits/sign-in-routes.db/sign-in.db tests under lock (install running)
+- tests run under lock: pending+step-limits 9/9 pass; sign-in-routes.db+sign-in.db 26/26 pass (5433); lint:logs clean
+- F3 nit: settle invalid_password with no `from` writes {} meta (fresh clock) routes/sign-in.ts:178
+- DONE: returning findings F1 blocking, F2 should-fix, F3 nit

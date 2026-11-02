@@ -10,7 +10,32 @@ safer), recorded here and in the PR description.
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01 20:00 UTC): merged with #82 and renumbered on the WIP ref; reviews done; skeptics resuming
+## Current state (2026-11-01 20:55 UTC): reviews verified; fix round running (wf_401c564d-6b7)
+- **Fix round** `wf_401c564d-6b7` (script `workflow-scripts/lane-b-ci-images-digest-fix-round-wf_401c564d-6b7.js`),
+  started ~20:53 UTC: merge the latest base (43565235, #83) first; D1–D10 below, one commit each, red/green logged, the
+  WIP ref pushed as it goes; a verifier per disposition plus a whole-diff adversary (repair loop up to 2); then the
+  integrator: base re-merge if moved, trial merges against #42's live head and every live co-001 head touching a cited
+  file, the full local suite once, the design's "Fix round" section and `lane-b-ci-images-digest-fix-round.md`, the
+  §6.3 read (body untouched; ruler hash must still be 5bb5e558…), ONE push to co-001/ci-images-digest (R3).
+- **Dispositions (the recommended option; security the safer; reasons in the script and the fix-round summary):**
+  - D1 (CI S1 3/3, security S2 3/3, critic C2-F2): T6 cites producers structurally (step id, job output, matrix key,
+    needs, path#symbol), no typed line numbers; workflow `run:` producers fingerprinted (8-hex SHA-256 of the parsed
+    scalar: a changed producer fails until its bound is re-read); tool-code producers are NOT fingerprinted (other
+    lanes' code; it would turn their base merges red) but name the unit test that proves their bound.
+  - D2 (security S1 3/3): any `${{` in any mapping key refused, by a whole-tree walk; T4 fixtures per evaluated place.
+  - D3 (CI N4, security N1): a byte sum per environment string (name, `=`, NUL, literals, a numeric bound per
+    expression; env.X resolved through scope), refused over 131,072; ci.md's E2BIG wording.
+  - D4 (critic C2-F1): the over-limit findings rows pin their exact use sites.
+  - D5 (CI N1): T5 without the fixed count of 7.
+  - D6 (security N2): the one `$GITHUB_ENV` write closed by name, place and exact line.
+  - D7 (security S3 3/3 real; design P2): `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}` on
+    the seven builds (pull-request runs no longer upload a record holding the event, public for 90 days; push and
+    release keep it); fallback a 7-day retention if build-push-action v7.4.0 does not honour it.
+  - D8 (CI N2) UTF-16 wording; D9 (CI N3) reconciliation-001's C labels; D10 (critic C1-F3) the rule's scope stated.
+  - Refuted: CI N5 (folded into D7), security N3 (`name:`/`run-name:` reach no process; by design).
+- **Heads (20:50 UTC):** base 43565235 (#83 merged 20:40; no shared file); #42 at 6c28d6a2 (its bce57f16 merge);
+  b2a41a00 merges cleanly with both. The orchestrator's rule of 20:36 UTC: merge when verified and green; #86 waits on
+  nothing (#82 merged; #91 and P2-trivy come after it and resolve against it).
 - **WIP head `b2a41a00`** on `co-001/wip-ci-images-digest` (the PR branch is still 83167b8f): 60a92a70 merge of bce57f16
   (three conflicts, both sides kept, #82 first), 5143563f T6's citations remapped to #82's lines (27 ranges in 47 rows;
   #82 adds no value T3 does not admit), b2a41a00 N29 to N32 (ADR :31 :45 :981 with the "commit messages call it N29"
@@ -105,9 +130,13 @@ Open questions: none.
   MERGE_MESSAGE, `merge_commit_message` PR_TITLE, which copies no description; changing it stays the founder's).
 - Co-founder: none. Lane: none (#82 merged).
 
-### For ci-findings-transport (after #86 merges)
-- design §12 P3; the T6 row `over: 'ci-findings-transport'` (`workflows.test.ts:3239` at 83167b8f); the "over 98,292
-  bytes" bound.
+### For ci-findings-transport (after #86 merges; by anchor text, not line)
+- #86's notice is **ADR 0066 Part 3 N32**. N29 is now #82's Part 5 revert-path notice: do not cite it. Correct the
+  transport design's ADR 0071 amendment ("ADR 0066, Part 3, N29" becomes N32) and its other N29 mentions.
+- The sentence to rewrite is in N32's "What holds it" bullet, starting "One listed value is over the limit"; re-locate it
+  by text at #86's merge commit (the fix round edits nearby text).
+- The T6 rows: the two findings rows (FINDINGS_B64 with `over: 'ci-findings-transport'`, and, after D4, their `sites`
+  lists), and the "over 98,292 bytes" bound; design §12 P3. Sent to the orchestrator again at the merge with final facts.
 <!-- RESUME-BLOCK -->
 
 ## History: the 2026-10-28 06:41 UTC block (superseded above; kept for the hand-over patch's `diff` block)

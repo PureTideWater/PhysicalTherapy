@@ -22,6 +22,14 @@ by 2026-11-04 12:00 UTC, C merges without waiting (resolve ADR 0066 keeping both
 (2c) A, B and C may merge while #42 waits on the founder; only the schema chain is serial. The same "don't jump a ready PR"
 rule applies to A and B.
 
+ORCHESTRATOR RULING (2026-11-01 20:36 UTC), new standing merge rule: a verified, green PR merges as soon as it is ready
+(rule 6: base merged in first, CI green on that head, ready, approval-of-record re-run, merge with expectedHeadSha). The
+section-6 order applies only between PRs that conflict; the one merged second resolves. Known pairs include #86/#91 (ADR
+0066). Never jump a PR already green and waiting with a conflicting file. For this item: A merges when ready (the design's
+trial merges show no conflict with #42, #75, #83, #84, #85 or #86; re-checked by merge-tree before the merge); B merges when
+ready (18:00 ruling 2c: not waiting for #42; whichever merges second regenerates the lockfile); C waits for #86 (deadline
+guard 2026-11-04 12:00 UTC).
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
@@ -156,6 +164,34 @@ rule applies to A and B.
   A's reviews resumed (wf_48c765bd-7af, same args). B-completion workflow wf_1dedd31c-ddb launched (B(4) after 19:59Z,
   final-head checks, checker, push, draft PR B); script archived. The 20:02Z check-in deleted (superseded).
 
+- 2026-11-01T20:37:00Z: B(4) built (a487f133: @aws-sdk ^3.1160.0, every one of the nine at least 73.1 h old at 19:59:12Z;
+  3.1161.0 too new until 2026-11-02T18:52Z; stripe ^23.1.0 at 72.0 h); lockfile +249/-261, `@smithy/core` 3.38.0 deprecated
+  (3.38.1 comes with the merge-time regeneration). B's checker: 3 nits, no B/S. A's reviews in round 2 (the critic's gaps).
+  #91 CI green on 651f8b80 incl. the four required checks, mergeable clean. 20:36Z merge rule recorded above.
+
+- 2026-11-01T20:50:00Z: **PR B opened: draft #94** (`co-001/deps-aws-cdk-minor-patch`, head 484e9f06; 15 commits; base merged
+  to 43565235 (#83 merged); description 34,058 characters, template sections, read back identical after restoring the footer
+  the connector replaced; subscribed). New since the checker: `cdk-diff.ts` also sets CDK_DISABLE_VERSION_CHECK (red-first
+  407ec5a3 -> 31396ceb; outside design §8.1's list, named in the description), the test ignores commented-out variables
+  (bf3a5083), ADR 0012 amendment re-wrapped (93fa7dbb). Local on 484e9f06: typecheck, infra 609 pass, lockfile regeneration
+  no change, watched no change, synth 0 written, toolchain (0 errors, 1 warning pnpm 10.34.9; 35 added versions), licenses
+  185, verify-content; lint and lint:logs on 93fa7dbb; CDK synth byte-identical; Stryker selection: 6 shards (packets x3,
+  pricing x3). New conflicts: **B and C in `docs/runbooks/dependency-upgrades.md`** (both edit the AWS paragraph; the second
+  merged keeps both); #42 (now 6c28d6a2, still open) conflicts with B in the web and worker manifests and the lockfile; B and
+  A in `packages/model-gateway/package.json` (known). Merge-time regeneration windows: @aws-sdk 3.1161.0 from
+  2026-11-02T18:52:27Z, CDK CLI 2.1147.0 from 18:57:11Z, @smithy/core 3.38.1 from 23:11:40Z.
+- 2026-11-01T20:52:00Z: reviews of B (#94) and C (#91) launched together: wf_91a35eba-252 (a wrapper that runs the reviews
+  script once per PR; heavy commands share the lock). A's reviews (wf_48c765bd-7af) in round 2.
+
+- 2026-11-01T21:25:00Z: **A's reviews done** (wf_48c765bd-7af, 3 rounds, 16 agents): 26 raw findings, 18 distinct (0 B, 5 S,
+  13 N), none refuted; records `approval-summaries/lane-b-dependabot-batch-A-review-{ci-infra,security-supply}.md` committed.
+  S: MOD-18 depends on the runner's ANTHROPIC_CUSTOM_HEADERS; no automatic check of the SDK's environment reads at minors;
+  the ADR 0048 amendment silent on an API-version change under ADR 0070's gate; D2's "fails closed at startup" false for the
+  web (first model request); the description's merge order stale against the 20:36Z rule. #94's CI green on 484e9f06 (all
+  four required checks; the six packets/pricing Stryker shards). **A's fix round launched**: wf_416e36ca-397 (fixer, adversarial
+  checker, the full local suite once, one push with the description rewritten and read back; record
+  `approval-summaries/lane-b-dependabot-batch-A-fix-round.md`); script archived (args select the PR).
+
 ## Waiting on someone
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
@@ -173,4 +209,4 @@ rule applies to A and B.
 None yet.
 
 ## Next step
-Next: A's reviews -> A's fix round; B's draft (wf_1dedd31c-ddb) -> B's reviews; C's reviews when a heavy slot frees (reviews script with C's args). C merges after #86 (deadline guard 2026-11-04 12:00Z).
+Next: A's fix round when its reviews return; B's and C's fix rounds when wf_91a35eba-252 returns; then fresh-clone verifications; A and B merge when ready (20:36Z rule), C after #86.

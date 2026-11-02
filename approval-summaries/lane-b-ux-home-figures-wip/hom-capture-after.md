@@ -1,0 +1,13 @@
+# hom-capture-after progress
+- step 0: started; read capture-before-result.json (35 shots, TOUR_ONLY copied)
+- step 1: setup.sh TOUR_REF=87691be4 rc=0, ready at 87691be4 (/home/user/screens at head)
+- step 2: build.sh (TOUR_MINUTES=45, under lock) started in background
+- step 3: build ok, server ready 20:58:30; run.sh started
+- step 3b: first run.sh rc=1 (TOUR_DIR not exported; my error, nothing ran); rerun with export
+- step 4: run.sh rc=0: populate 11 passed; capture 7 passed 21:01:19-21:02:43; RECORDS 46, none missing; 38 shots, 3 skipped (p.home.unmapped-plan-mapped.* : the mapping step p.plan.* is outside TOUR_ONLY, so the plan is never mapped; tour spec added 6bb04d38 after the before run, not in the before set)
+- step 5: touch stop; build.log 'server stopped at 21:02:51'; fuser 3297/tcp empty (rc 1)
+- step 6: DROP DATABASE tp_e2e_screens; rm /tmp/tp-e2e-tp_e2e_screens-*
+- step 7: tile.py with the before prefixes
+- step 7 result: 38 shots tiled into 125 tiles; index hom-screens-after/tiles/index.json
+- step 8: pixel compare vs before: error-forbidden.* and roi.default.390 identical; all home states shorter (quarter row gone); case/roi-statement taller; packet/cases/reconciliation text changes. Viewed tiles: home default/tiles/empty/error 1280, default 390 + dark, case, cases, packet, reconciliation, roi-statement, roi. Matches design §5 + F4/F6/F9.
+- no spec change needed; nothing committed or pushed. DONE.

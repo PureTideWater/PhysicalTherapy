@@ -1,0 +1,23 @@
+# verify83 progress (fresh-clone verification of PR #83 @ 71536c60)
+- [x] 1 clone at verify83/clone, HEAD=71536c60, origin branch head=71536c60 (ls-remote), base origin/claude/build-platform=bce57f16 IS ancestor. 15 commits in PR.
+- [x] 2 CI: all 22 check runs completed. CI ran on merge cc008f2c = bce57f16 + 71536c60 (current base). Runs: ci 41336818049, mutation 41336818093, screening-capacity 41336818078, approval-of-record 41336818042 + 41346796780 (20:25) all success attempt 1.
+  - unit: 406 files, 6919 passed | 1 skipped (6920)
+  - db: 1/4 33 files 3191; 2/4 32 files 2615; 3/4 32 files 2552; 4/4 32 files 926 -> 129 files 9284 tests all pass
+  - e2e: shard1 32 passed + brand-baselines 4 passed; shard2 32 passed (incl. screening.spec 147, 692 & screening-phone 135). No flake, no retries.
+  - all green success (static lint unit db domain-model build e2e images success)
+  - mutation success: no money path changed, stryker skipped
+  - gate success; WARN advisory: S4 time 50.0-51.2 s > 48 s allowance; worst > 44 s "the consumer's size goes to the founder before merge"
+  - aor success: APPROVAL_REVIEW_REQUIRED unset; PR needs no review of record
+- [ ] 3 diff review
+- [ ] 4 local install/typecheck/unit
+- [~] 3 diff review: 27 files == p4-diff-names. #42 live (c65f9cf2, 219 files) == pr42-files.txt; overlap only test-matrix.md, synth matrix.ts, registry.ts (TBL section only), watched-paths.txt (+table-parts.tsx, +stacked-rows.tsx). No packages/db|pricing|ledger|money, no migration, no lockfile/package.json, no .github. PR-own commits since f4a97668 (c0a8fe0b d0152f43 e901e477 857ca333 f5e0ceba 9289504d 520a88f6 71536c60) all end with the 2 attribution lines (old session 019Vg.. for first five, new 01Fcou.. last three); no "# Conflicts". No model name/id in added lines or commit messages (beyond the mandated Co-Authored-By). CI unit: fixtures.test.ts (matrix word-for-word) passed. PR body saved verify83/pr83-body.md.
+- [~] 4 local: running in bg (local-checks.sh -> local-checks.out); install exit 0 20:29:40
+- [x] 4 local: install --frozen-lockfile ok (12s); typecheck passed 22 projects; vitest unit components+lib/copy+app/tables.test.ts: 38 files, 423 tests passed. Tree clean.
+- spot-checks so far OK: result-view order (Heading, ReleaseWithdrawn, ConvertLink, Summary...), unit case 71536c60; ADR 0078 amendment P4-FX-correctness-1 & words-scope-1 fixed; counted/Counted grouping + tests; groupedCount gone; RC-04 card words; coverage Reason dropped when null; spec bar width + SCREENING_GROUPS_PER_PAGE + stream lock.
+- next: generators (watched.ts --write, synth --all) in clone, git diff
+- [x] generators in clone: watched.ts --write (541 lines) and pnpm synth --all (265 cases 0 written 657 unchanged; 8 EMR formats 16 unchanged) -> git diff clean. fixtures.test.ts + watched.test.ts + display.test.tsx: 3 files 30 tests pass.
+- [x] all findings spot-checked: RC-01/UXR-02 anomalies.tsx:209 + test :634; RC-02/UXR-06 ADR:126 + TBL-06; RC-03 spec:311-318; RC-04 result-summary.tsx:281; RC-05 spec:7,171; RC-06 test :179-196 (51/2/1/1/50) + :456; UXR-01 result-view.tsx:27 convert-form.tsx:29; UXR-03 coverage.tsx:86,111; UXR-04 stacked-rows.tsx:95; UXR-05 words.ts:13 display.tsx:24 (groupedCount gone); UXR-07/08 in description; FX-corr-1/words-scope-1 ADR:122,130-131; FX-words-scope-2 result-view.tsx:26-27 + test :809.
+- [x] capacity gate advisory warning pre-existing: base push bce57f16 52.3 s, #42 54.2, #85 52.9, others 52-53 s; this PR 51.2 s.
+- [x] trial merges (merge-tree): #42 c65f9cf2 clean, #84 e3299ea2 clean, #85 90ec40ab clean; #86 83167b8f and #75 871faff9 conflict with the base itself (not this PR's files).
+- PR #83 still draft:true, mergeable_state clean.
+- DONE: verdict pass

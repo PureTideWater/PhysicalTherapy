@@ -1,0 +1,3 @@
+# verify ux-r3-ux-r3-02 (PR #93 @ 87691be4)
+Checked: display.tsx:76-89 (both notes), headline.tsx:63-69 (home tile uses PAYER_APPROVED_HOME_NOTE), ledger-patient-share.spec.ts:89-95, design lane-b-ux-home-figures.md:198 (home wording specified verbatim) and F6:370 (Reconciliation wording, patient-share clause).
+Verdict: real, nit. Doc comment at display.tsx:85 says "in the same terms" but only the proof-level clause is shared; the wording divergence itself is the design's (line 198), not a contradiction: both describe the same figure truthfully, the home figure excludes patient share (spec asserts the number). Fix: correct the doc comment; unifying wording optional.
