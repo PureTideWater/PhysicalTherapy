@@ -22,13 +22,14 @@ const cdkJson = readJson<{ context?: Record<string, unknown>; notices?: unknown 
 // fresh worktree took 4.6 s. So a slow process fails as its own timeout, with its output, not as the test's.
 const SPAWN_TIMEOUT_MS = 60_000;
 
-// The commands of a script, split at the shell's separators.
-const commands = (script: string): string[] => script.split(/&&|\|\||;|\||&/).map((command) => command.trim());
-// A command that names the cdk CLI as a word, however it is started (directly, by a package runner, by a path, through
-// env or cross-env, in a subshell). It fails closed: a command that names it must carry the settings itself, so a way
-// of starting the CLI this test does not know of still needs them. `cdk:diff`, `cdk-diff.ts`, `cdk.json` and `cdk.out`
-// do not name it.
-const namesCdk = (command: string): boolean => /(?<![\w-])cdk(?![\w:.-])/.test(command);
+// The commands of a script, split at the shell's separators, a newline among them.
+const commands = (script: string): string[] => script.split(/&&|\|\||;|\||&|\n/).map((command) => command.trim());
+// A command that names the CDK CLI as a word, by its bin `cdk` or its package `aws-cdk`, however it is started
+// (directly, by a package runner such as `npx aws-cdk` or `pnpm dlx aws-cdk@<version>`, by a path, through env or
+// cross-env, in a subshell). It fails closed: a command that names it must carry the settings itself, so a way of
+// starting the CLI this test does not know of still needs them. `cdk:diff`, `cdk-diff.ts`, `cdk.json`, `cdk.out`, the
+// library `aws-cdk-lib` and the `@aws-cdk/` packages do not name it.
+const namesCdk = (command: string): boolean => /(?<![\w@-])(?:aws-)?cdk(?![\w:.-])/.test(command);
 // The VAR=value prefix of a command, as the variables it sets.
 const prefixVariables = (command: string): Record<string, string> => {
   const prefix = /^\s*((?:[A-Z_][A-Z0-9_]*=\S*\s+)*)/.exec(command)?.[1] ?? '';
@@ -204,10 +205,24 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
       'node_modules/.bin/cdk deploy',
       './node_modules/.bin/cdk deploy',
       '(cdk ls)',
+      'npx aws-cdk deploy tp-staging',
+      'pnpm dlx aws-cdk@2.1146.1 deploy tp-staging',
+      'node node_modules/aws-cdk/lib/index.js deploy',
     ]) {
       expect(namesCdk(command), command).toBe(true);
     }
-    for (const command of ['tsx scripts/cdk-diff.ts', 'pnpm cdk:diff', 'pnpm exec tsx scripts/cdk-diff.ts', 'vitest run --root .. --project unit infra/', 'tsc --noEmit', 'cat cdk.json', 'rm -rf cdk.out', 'pnpm --filter aws-cdk-lib ls']) {
+    for (const command of [
+      'tsx scripts/cdk-diff.ts',
+      'pnpm cdk:diff',
+      'pnpm exec tsx scripts/cdk-diff.ts',
+      'vitest run --root .. --project unit infra/',
+      'tsc --noEmit',
+      'cat cdk.json',
+      'rm -rf cdk.out',
+      'pnpm --filter aws-cdk-lib ls',
+      'pnpm add aws-cdk-lib@2.275.0',
+      'pnpm why @aws-cdk/cloud-assembly-schema',
+    ]) {
       expect(namesCdk(command), command).toBe(false);
     }
   });
@@ -216,6 +231,9 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
     const on = 'CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true';
     expect(commandsWithoutSettings(`${on} cdk synth --quiet --no-notices`)).toEqual([]);
     expect(commandsWithoutSettings(`${on} cdk synth --quiet --no-notices && cdk ls`)).toEqual(['cdk ls']);
+    expect(commandsWithoutSettings(`${on} cdk synth --quiet --no-notices\ncdk deploy`)).toEqual(['cdk deploy']);
+    expect(commandsWithoutSettings(`${on} npx aws-cdk deploy`)).toEqual([`${on} npx aws-cdk deploy`]);
+    expect(commandsWithoutSettings(`${on} pnpm dlx aws-cdk@2.1146.1 deploy --no-notices`)).toEqual([]);
     expect(commandsWithoutSettings(`${on} tsc --noEmit && cdk deploy --no-notices`)).toEqual(['cdk deploy --no-notices']);
     expect(commandsWithoutSettings(`tsc --noEmit && (${on} cdk ls --no-notices)`)).toEqual([`(${on} cdk ls --no-notices)`]);
     expect(commandsWithoutSettings(`env ${on} cdk deploy --no-notices`)).toEqual([`env ${on} cdk deploy --no-notices`]);
