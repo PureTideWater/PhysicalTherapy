@@ -471,6 +471,72 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     // As of now, the PLB L6 names Z's chain, which has no claim in R2, so all of it is Z's chain's.
     expect((await attributionNow(practice)).attribution).toEqual({ draws: [{ adjustmentId: l6, chain: second.id, cents: 540n, shared: false, claimIds: [z.id] }], unattributed: [] });
   });
+
+  it('takes back from a line no more than its interest as a whole, when two chains hold interest there and a specialist lowered one (D5, D8)', async () => {
+    // LED-02's line, approved by the correction C (chain A), also matched to K, a SYNTHETIC claim of another chain (B)
+    // in the same remittance: a copy of C under its own control number, linked to nothing.
+    const h = await held();
+    const k = randomUUID();
+    const kNumber = `SYNCCNLINE${k.slice(0, 8).toUpperCase()}`;
+    const { rows: columns } = await w.owner.query<{ attname: string }>(
+      "SELECT attname FROM pg_attribute WHERE attrelid = 'claim'::regclass AND attnum > 0 AND NOT attisdropped AND attgenerated = '' AND attidentity = '' ORDER BY attnum",
+    );
+    const computed: Readonly<Record<string, string>> = {
+      id: '$2::uuid',
+      claim_no: '(SELECT max(x.claim_no) + 1 FROM claim x WHERE x.remittance_id = t.remittance_id)',
+      payer_claim_control_number_hash: '$3',
+      superseded_by_claim_id: 'NULL',
+      reversal_of_claim_id: 'NULL',
+      interest_cents: 'NULL',
+    };
+    const names = columns.map((column) => column.attname);
+    await w.superuser(`INSERT INTO claim (${names.join(', ')}) SELECT ${names.map((name) => computed[name] ?? `t.${name}`).join(', ')} FROM claim t WHERE t.id = $1`, [
+      h.correction.id,
+      k,
+      h.practice.cipher.lookupHash('claim.payer_claim_control_number', kNumber),
+    ]);
+    await asJob(h, "INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id, outcome) VALUES ($1, 'claim', $2, $3, $4, 'no_change')", [
+      h.practice.practiceId,
+      k,
+      h.correction.remittanceId,
+      h.serviceLineId,
+    ]);
+    // Paid 3.00 for each chain, then 3.00 of A's taken back: A holds 0, B 3.00, the line 3.00. Each of these PLB L6s names
+    // nothing, in a check whose claims report no AMT I, so the reconcile attributes none of them.
+    const paidA = await plbL6(h, h.correction.remittanceId, -300);
+    await jobEntry(h, paidA, await jobMatch(h, h.correction.id, paidA), 300);
+    const paidB = await plbL6(h, h.correction.remittanceId, -300);
+    await jobEntry(h, paidB, await jobMatch(h, k, paidB), 300);
+    const backA = await plbL6(h, h.correction.remittanceId, 300);
+    await jobEntry(h, backA, await jobMatch(h, h.correction.id, backA), -300);
+    // A contract specialist lowers A's paid entry to nothing: A now holds less than zero (counted as zero), B 3.00, and
+    // the line, as a whole, nothing.
+    const [paid] = await w.rows<{ id: string }>(h.practice, "SELECT id FROM ledger_entry WHERE stage = 'interest' AND evidence_id = $1", [paidA]);
+    await w.manual(h.practice, (context) => adjustEntry(context, { practiceId: h.practice.practiceId, entryId: paid?.id ?? '', amountCents: cents(-300n), reason: 'SYNTHETIC' }), w.specialist);
+    const lineInterest = () =>
+      w.sum(
+        h.practice,
+        "SELECT coalesce(sum(e.amount_cents), 0)::text AS total FROM ledger_entry e WHERE e.service_line_id = $1 AND (e.stage = 'interest' OR e.evidence_id IN (SELECT i.id FROM ledger_entry i WHERE i.stage = 'interest'))",
+        [h.serviceLineId],
+      );
+    expect(await lineInterest()).toBe(0n);
+    // A later PLB L6 takes back 3.00 of B's interest, naming K. What B holds is no longer on the line, so nothing is taken,
+    // and the practice's reconcile completes rather than meeting the line's floor in Postgres on every run.
+    const { rows: later } = await asOwner(w.owner, [h.practice.practiceId], () =>
+      w.owner.query<{ id: string }>(
+        `INSERT INTO provider_adjustment (practice_id, remittance_id, position, provider_id, reason_code, reference, amount_cents, fiscal_period_date, category)
+         VALUES ($1, $2, (SELECT coalesce(max(position), 0) + 1 FROM provider_adjustment WHERE remittance_id = $2), 'SYNTHETIC', 'L6', $3, 300, '2026-12-31', 'interest') RETURNING id`,
+        [h.practice.practiceId, h.correction.remittanceId, kNumber],
+      ),
+    );
+    const takesB = (later[0] as { id: string }).id;
+    expect((await attributionNow(h.practice)).draws.get(takesB)).toEqual([{ adjustmentId: takesB, chain: k, cents: -300n, shared: false, claimIds: [k] }]);
+    await w.reconcile(h.practice);
+    expect(await w.rows(h.practice, "SELECT id FROM ledger_entry WHERE stage = 'interest' AND evidence_id = $1", [takesB])).toEqual([]);
+    expect(await lineInterest()).toBe(0n);
+    await w.reconcile(h.practice);
+    expect(await lineInterest()).toBe(0n);
+  });
 });
 
 describe('the interest a line’s chains report in AMT I, as the screen shows it (LED-23, LED-24; docs/adr/0084)', () => {

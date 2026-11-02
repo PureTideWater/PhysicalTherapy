@@ -29,7 +29,7 @@ import {
   interestWrites,
   takeInOrder,
 } from '@tp/ledger';
-import { type Cents, ZERO_CENTS, cents, negateCents, parseCents } from '@tp/money';
+import { type Cents, ZERO_CENTS, cents, minCents, negateCents, parseCents } from '@tp/money';
 
 import { type AdjustmentRow, type InterestReading, adjustmentMoment, interestAttribution } from './interest-chains';
 import { EMPTY_LINE_LEDGER, type LineLedger, type Scope, type StoredEntry, type StoredMatch, approvedRemaining, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers } from './ledger';
@@ -957,7 +957,7 @@ async function interestState(scope: Scope, practiceId: string, matches: readonly
  * interest match carrying the PLB L6 and the claim, and its entry. The paid lines are those with a standing claim match
  * to a claim the draw is for (the latest such match, an approving one first), weighted by approvals remaining; the lines
  * a take-back may reach are those holding the chain's interest (@tp/ledger interestHeld), each through its latest
- * standing interest match of the chain.
+ * standing interest match of the chain, holding no more than the line's interest as a whole.
  */
 async function recordInterest(
   scope: Scope,
@@ -981,10 +981,12 @@ async function recordInterest(
     .filter((entry) => entry.stage === 'interest' && entry.evidenceId === adjustment.id && entry.serviceLineId !== null)
     .map((entry) => ({ chain: entry.matchId === null ? null : (chainOfMatch.get(entry.matchId) ?? null), serviceLineId: entry.serviceLineId as string, cents: entry.amountCents }));
   // A correction's own match is never read: interestHeld counts it under the entry it corrects.
-  const held = interestHeld(
-    interest.entries.map((entry) => ({ ...entry, matchId: entry.matchId ?? '' })),
-    chainOfMatch,
-  );
+  const matched = interest.entries.map((entry) => ({ ...entry, matchId: entry.matchId ?? '' }));
+  const held = interestHeld(matched, chainOfMatch);
+  // Each line's interest as a whole, every chain's (and a match's that names none) together, net of corrections and
+  // take-backs: Postgres's line floor (ledger_entry_within_interest). A chain can hold more on a line than the line holds
+  // when a specialist lowered another chain's entry there, so a take-back is cut to both and never meets the floor (D8).
+  const lineHeld = new Map(interestHeld(matched, new Map(interest.matches.map((match) => [match.id, '']))).map((holding) => [holding.serviceLineId, holding.heldCents]));
   const caseLineOf = new Map(lines.map((line) => [line.serviceLineId, line]));
   const chainLines = new Map<string, ChainInterestLines>();
   for (const draw of draws) {
@@ -999,7 +1001,7 @@ async function recordInterest(
       .filter((holding) => holding.chain === draw.chain && caseLineOf.has(holding.serviceLineId))
       .flatMap((holding) => {
         const match = interest.matches.filter((item) => item.standing && item.serviceLineId === holding.serviceLineId && chainOfMatch.get(item.id) === draw.chain).at(-1);
-        return match === undefined ? [] : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: holding.heldCents }];
+        return match === undefined ? [] : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: minCents(holding.heldCents, lineHeld.get(holding.serviceLineId) ?? ZERO_CENTS) }];
       });
     chainLines.set(draw.chain, { paid, takenBack });
   }
