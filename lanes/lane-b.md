@@ -1312,3 +1312,37 @@ HANDOFF.md; LANES.md rule 10).
   base by #83 and #92, both migration-free).
 - **Other:** O9's capacity sizing (S4 45.6 s against 44 s) is a founder item blocking launch, not merges (issue #41);
   recorded in #94. 1b's CAS-42.1 reports 481 s against its 180 s budget (investigating; CAS-42.2 passes).
+
+### 2026-11-02 06:20 UTC (Lane B's orchestrator): #93 and #90 merged; the founder approved #42
+- **#42:** THE FOUNDER COMMITTED THE APPROVAL LINE as 9426a8d1 (2026-11-02 02:36 UTC: "Approved by: Tyler Williams
+  Date: 2026-11-01  Document SHA-256: `b23fed0e…2518`"). #42's session is merging the base and going to merge; then the
+  schema chain opens SS-01's PR.
+- **Merged:** #93 (UX PR 9, home figures) as 877e662f, 02:44 UTC, from d1e4c4c4, all green; #90 (PR A, the SDK major) as
+  88708069, 04:00 UTC; Dependabot #87 closed with a comment. 88708069 changes `packages/model-gateway` (sdk ^1.3.0, the
+  client options, ADR 0048, MOD-17 and MOD-18); #75 told; #94 takes A's merge (a `package.json` conflict). Merges this
+  round: #82, #83, #92, #93, #90.
+- **Stopped at clean points:** #92's session (push runs on 4eaf7124 green after one ci re-run; an archive candidate) and
+  #93's (no follow-on; #46's Verified seal deferred to after the reset; proposals after #42: `help.ts` stage five and
+  the reconciliation-001 line).
+- **The schema chain at clean points:** SS-01 bb13be1b (unit 7,160, test:db 9,567+1, e2e 69; domain model `3922b6a6…f019`
+  at line 7414, provisional); 1b 048bc843 (test:db 9,608, e2e 69, Stryker; domain model `e024cf9f…efc4df` at line 7459,
+  provisional). CAS-42.1 481 s -> 95.8 s (the candidate-query fix). 1b needs NO 8-CPU runner (the 4-CPU runner gave its
+  real-size verdicts): the founder ask is withdrawn once the `--small` smoke confirms. The interest fix finishing
+  (wf_3c4cf5ac-af0).
+- **SUITE-CAP-3:** paused after design (67159eaf; WIP 956b32ef). Probed: 6,000 lines 1,486 -> 378 s; 10,000 lines
+  3,412 -> 1,058 s; the writes identical; ADR 0087 needed. Its `ledger_line_net` rewrite (10,000 lines 1,058 -> 263 s;
+  DDL in the design's §14.1) needs a founder ledger-freeze exception: Handed to Lane A, 2026-11-02 06:20 UTC (a). All five
+  design-stage sessions are paused.
+- **In flight:** #84 resumed 06:18 UTC with the Stryker split (17 shards; WIP `-5` = 15d8ed1c; the base 88708069's
+  `test-support/browser.ts` conflict merged inside the fix round); #94 and #91 in fix rounds; #85 waits for #75 (now also
+  a `display.test.tsx` overlap with #93, resolved in its one base merge).
+- **Push run red on 88708069** (ci 41386010790, `unit`): `action-form.browser.test.tsx` FRM-01 :366 timed out at 30 s;
+  7,012 others passed; mutation and capacity green; the tree equals cf124313 (passed on the PR). Likely a flake; the
+  Dependabot session is root-causing it (wf_63290a32-038).
+- **Open: three flaky tests** (Handed to Lane A, 2026-11-02 06:20 UTC (b)): `tools/release/load.db.test.ts`;
+  `apps/worker/src/report/csv-arena.test.ts:151` (5 s timeout; proposal: an explicit timeout for CAS-41.3's test);
+  `apps/web/src/components/action-form.browser.test.tsx` FRM-01 :366 (30 s timeout).
+- **The third 5-hour stop:** ~03:10-05:50 UTC; the sessions resumed after it.
+- **The co-founder's question on reusing open-source code** (answered 03:05 UTC): a bounded prior-art check in the design
+  stage for official data sources, permissively licensed maintained libraries and test oracles; never copying code
+  without a compatible licence. Awaiting the co-founder's yes to add it to the session brief.
