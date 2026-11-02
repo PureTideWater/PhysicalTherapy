@@ -330,6 +330,11 @@ lockfile entry against the release age and the trust policy on every install (`t
   reads the evaluation's scans through a real `TextractClient` answering from their recordings
   (`packages/model-gateway/eval/sets.ts`), so a move that changes the pages as read fails `set_changed`
   (docs/runbooks/model-evaluation.md, section 5).
+- **Stripe.** `packages/billing` passes no `apiVersion` (`stripe.ts`, ADR 0050), so a `stripe` release that moves the
+  API version it pins (its CHANGELOG says so) moves every request's `Stripe-Version`. Webhook payloads follow the
+  webhook endpoint's own API version, set in Stripe (docs/runbooks/billing.md), and billing parses them with its own
+  schema (`packages/billing/src/events.ts`): read the new version's change notes against `events.ts`, and record the
+  endpoint's version in the pull request (a person's check).
 
 ## Actions
 
