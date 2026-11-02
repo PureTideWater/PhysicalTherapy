@@ -11,7 +11,7 @@ Reserved (allocated 2026-11-01 14:50 UTC, LANES.md rule 4): ADR 0089 only if the
 with `packages/synth` cases the same if needed (the existing MOD module, 9). A routing fix amends CI-12, which needs no new ID.
 Any other number (a new CI row, a synth module, a fixture release) goes in a "COUNTER REQUEST: <what>" line at the top of this
 file. No migration.
-Follow-on: the next weekly triage if this session is still running (actions 2026-11-03 04:37 UTC, images 2026-11-04 04:43 UTC,
+Follow-on: none (the co-founder's pacing call, 2026-11-02 02:10 UTC; was: the next weekly triage if this session is still running (actions 2026-11-03 04:37 UTC, images 2026-11-04 04:43 UTC,
 npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of the #88/#89 PR.
 
 ORCHESTRATOR RULINGS (2026-11-01 18:00 UTC, session_01FcouKNNHsdecRMzfTs7XwW), answering the claim request and order ask:
@@ -34,6 +34,12 @@ ORCHESTRATOR RULING (2026-11-02 01:02 UTC) on O9 for #94: the consumer's size (S
 standing founder item that blocks the screening's launch, not a merge; the numbers (37.1 s on 43565235, 52.3 s on bce57f16,
 55.1 s on #42, same consumer code) show runner noise, not a #94 regression. #94's description records it that way with a link
 to issue #41, and #94 merges on green when ready. The orchestrator carries it in the founder list.
+
+PACING (the co-founder's call, relayed 2026-11-02 02:10 UTC): the account's 7-day limit is at its warning level (resets Fri
+2026-11-06 19:00 UTC). This item is one to FINISH: to its merges with no stage skipped, but nothing spent that does not change
+the outcome: one full suite per head, no review loops past dry, no follow-on item (no next weekly triage) after the merges;
+stop at a clean point and report. For B: no wait for the merge-time version windows; the lockfile is regenerated only when a
+base merge needs it (rule 6). WIP refs kept pushed.
 
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
