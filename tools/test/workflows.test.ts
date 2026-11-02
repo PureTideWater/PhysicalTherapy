@@ -3542,6 +3542,16 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         total(bytes, where);
       };
       if (job.container !== undefined) container(job.container, `job ${id} container`);
+      // A value a job passes a called workflow as a secret: that workflow's own sum bounds secrets.<name> at a secret's
+      // 48 KB, so the value is held to it where it is made (three secrets joined in one are refused here). `inherit`
+      // passes each secret as it is.
+      if (job.secrets !== 'inherit') strings(typeof job.secrets === 'string' ? job.secrets : {}, `job ${id} secrets`, { job: id, scopes: [] });
+      for (const [name, value] of Object.entries(record(job.secrets))) {
+        const reading: Reading = { job: id, scopes: [], unbounded: [], over: false };
+        const bytes = scalar(value, reading);
+        if (reading.unbounded.length > 0) problems.push(`${file} job ${id} secrets.${name}: no bound for ${reading.unbounded.join('; ')}`);
+        else if (bytes > VARIABLE_BYTES) problems.push(`${file} job ${id} secrets.${name}: up to ${String(bytes)} bytes, over the ${String(VARIABLE_BYTES)} a called workflow bounds secrets.${name} at`);
+      }
       if (typeof job.services === 'string') strings(job.services, `job ${id} services`, { job: id, scopes: [] });
       for (const [service, definition] of Object.entries(record(job.services))) container(definition, `job ${id} services.${service}`);
       (isList(job.steps) ? job.steps : []).forEach((step, index) => {
@@ -3670,6 +3680,14 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(sum(step('env: { E: x }', '    strategy: { matrix: { node: [22, 24] } }\n    container: "node:${{ matrix.node }}"\n    services: { db: "postgres:${{ matrix.node }}" }\n'))).toEqual([]);
     expect(sum(step('env: { E: x }', `    container: "node:${vars3}"\n`))).toEqual([argumentOver('job images container image', 'node:'.length + 3 * 49_152 + 1)]);
     expect(sum(step('env: { E: x }', `    services: { db: "postgres:${vars3}" }\n`))).toEqual([argumentOver('job images services.db image', 'postgres:'.length + 3 * 49_152 + 1)]);
+    // A value a job passes a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's own sum
+    // gives secrets.<name>: one secret passes, three joined are refused.
+    const call = (secrets: string) => sum(`jobs:\n  images:\n    uses: ./.github/workflows/called.yml\n    secrets: ${secrets}\n`);
+    expect(call('{ TOKEN: "${{ secrets.A }}" }')).toEqual([]);
+    expect(call('inherit')).toEqual([]);
+    expect(call('{ TOKEN: "${{ secrets.A }}${{ secrets.B }}${{ secrets.C }}" }')).toEqual([`fixture.yml job images secrets.TOKEN: up to ${String(3 * 49_152)} bytes, over the 49152 a called workflow bounds secrets.TOKEN at`]);
+    expect(call('{ TOKEN: "${{ inputs.note }}" }')).toEqual(['fixture.yml job images secrets.TOKEN: no bound for inputs.note']);
+    expect(call('"${{ fromJSON(vars.A) }}"')).toEqual([fromExpression('job images secrets')]);
     // The one value marked over is the table's to hold, by its sites, and only alone in its string: one expression
     // reading it, in any spelling the runner reads alike. Anything beside it, bounded or not, is refused.
     const marked = [{ ...huge, over: 'ci-findings-transport' as const }];
