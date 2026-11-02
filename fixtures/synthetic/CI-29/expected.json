@@ -1,0 +1,24 @@
+{
+  "case": "CI-29",
+  "module": "CI",
+  "title": "Every shard on the pinned runtime",
+  "assertion": "Each shard's canary verdict names its Node, Unicode, ICU, pnpm and commit, and the gate fails a shard whose runtime differs from the pinned Node or `packageManager`'s pnpm, or whose commit is not the one tested; the changes job fails, before it decides, on any other runtime; the tooling runs Stryker by path, and no mutation step or closure file, a file a shard loads by path included, runs a root or package script",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/stryker/runtime.test.ts",
+    "tools/stryker/gate.test.ts",
+    "tools/stryker/canary/verdict.test.ts",
+    "tools/stryker/stryker.test.ts",
+    "tools/stryker/shards.test.ts",
+    "tools/test/workflows.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
