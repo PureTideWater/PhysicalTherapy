@@ -8,14 +8,23 @@ name: mutation
 # not 5 of 5 as expected (tools/stryker/gate.ts).
 #
 # What runs: every package on a push to the build branch, weekly and on request; on a pull request, every shard of each
-# package whose closure the change touches (tools/stryker/affected.ts: its code and tests and what they import,
-# upstream workspace packages included, its data files, and the third-party packages and test tooling the lockfile
-# resolves for it), and nothing when it touches none, so a pull request that changes no money path passes in about a
-# minute. A workflow of its own, beside ci.yml's `all green`, so that gate stays fast on money pull requests; its own
-# concurrency group, so the two never cancel each other. Synthetic data only, no credentials, read-only token.
+# package whose closure the change touches (tools/stryker/affected.ts: its code and tests and what they import, upstream
+# workspace packages included, its data files, and the third-party packages and test tooling the lockfile resolves for
+# it), and nothing when it touches none, so a pull request that changes no money path passes in about a minute. The root
+# and workspace manifests, the workspace file and this workflow are read field by field (docs/adr/0066, Part 7): a field
+# no shard reads (a script no step runs, a dependency or catalog entry no closure or the tooling imports, the
+# release-age and trust settings) affects nothing, nor does a comment; a field a closure reads affects that package; and
+# every other field, and anything that cannot be read, affects all four. A change to this workflow that moves only step
+# actions from one full SHA to another runs money-ledger alone, whose canary and the gate prove the new pins on the
+# runner, except a move of the artifact actions, which only a run of several shards exercises, so it runs every shard. A
+# workflow of its own, beside ci.yml's `all green`, so that gate stays fast on money pull requests; its own concurrency
+# group, so the two never cancel each other. Synthetic data only, no credentials, read-only token.
 #
-# Every job runs the one exact Node tools/stryker/unicode.json names: the recorded equivalents that rest on the engine's
-# Unicode data were checked over every code point on it, and the gate fails them on a shard that ran on other data.
+# The runner proof (docs/adr/0066, Part 7): every job runs the one exact Node tools/stryker/unicode.json names, whose
+# Unicode and ICU data the recorded equivalents that rest on it were checked over, and the pnpm the root manifest's
+# packageManager names; the changes job checks its own before it decides, and the gate fails a shard whose canary
+# verdict names another Node, Unicode, ICU or pnpm, or another commit than the one tested (GITHUB_SHA). Stryker runs by
+# path (tools/stryker/stryker.ts), never through a root script or a bin by name.
 on:
   push:
     branches: [claude/build-platform]
@@ -56,6 +65,10 @@ jobs:
           node-version: 24.22.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Before anything is decided: this job's Node, Unicode, ICU and pnpm must be the pinned ones, so a `node` bin a
+      # dependency links, or another pnpm, fails the check whatever the change affects (tools/stryker/runtime.ts).
+      - name: The runtime is the pinned one
+        run: pnpm -s exec tsx tools/stryker/runtime.ts
       - name: What the change affects
         id: affected
         env:
@@ -89,7 +102,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: The canary
         run: |
-          pnpm stryker run tools/stryker/canary/stryker.config.mjs
+          pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs
           pnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"
       - name: The shard
         run: pnpm -s exec tsx tools/stryker/shards.ts "$TP_MUTATION_SHARD"
