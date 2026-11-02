@@ -44,6 +44,10 @@ advisory-lock monitor reads `pg_locks` every 200 ms on its own superuser connect
   `pg_restore_relation_stats` / `pg_restore_attribute_stats` (the generated calls are kept as `$OUT/<db>.stats.sql`),
   then the 7b pass. A seeded database's ledger is empty, so the trigger functions' cached plans are made for an empty
   ledger; a running deployment's ledger is not. The control separates that from real growth.
+- `fillx.sh <seed> <state> [rows]`: the shared-ledger control. A fresh step-7b copy (`<..>_<state>_7bf`) whose
+  ledger_entry already holds ROWS (default 100,000) SYNTHETIC rows of a tenant that is no practice (written as superuser
+  with session_replication_role = replica, then ANALYZE), as a running multi-tenant deployment's ledger would; RLS keeps
+  them out of the pass. Separates the trigger plans cached on an empty ledger from real growth.
 - `runq.sh <queue file>`: a detached queue (setsid nohup) of probe/prep/statsx steps, each under the heavy lock,
   skipping a step whose result json exists; resumable after a restart.
 - `matrix.sh "<probe step>" ...`: steps one after another, each under `flock /tmp/laneb-heavy.lock`.
