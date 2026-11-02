@@ -4275,8 +4275,18 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // environment string, so a second use of any of them, under any name, is refused by refProblems above.
     expect(BOUNDED_VALUES.filter((row) => row.bytes > MAX_ARG_STRLEN && row.sites === undefined).map(key)).toEqual([]);
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
-    // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too (the row's words).
+    // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too, read as 1,000,000 or
+    // 1,048,576 bytes. Both findings rows give these figures, computed here from MAX_FILE_BYTES, and check's row says
+    // over and never under, so a changed bound or a row turned back to "under GitHub's 1 MB" fails here.
     expect(2 * FINDINGS_BYTES).toBe(1_866_672);
+    expect(2 * FINDINGS_BYTES).toBeGreaterThan(1_048_576);
+    const figure = (bytes: number) => bytes.toLocaleString('en-US');
+    const boundOf = (wanted: string) => BOUNDED_VALUES.find((row) => key(row) === wanted)?.bound ?? '';
+    const check = boundOf('content-calendar.yml check steps.calendar.outputs.findings');
+    for (const words of [`${figure(MAX_FILE_BYTES)} bytes`, `${figure(FINDINGS_BYTES)} characters`, `${figure(2 * FINDINGS_BYTES)} bytes`, 'UTF-16']) expect(check, words).toContain(words);
+    expect(check).toMatch(/\bover\b[^,;]*\b1 MB\b/);
+    expect(check).not.toMatch(/\bunder\b/);
+    expect(boundOf('content-calendar.yml notify needs.check.outputs.findings')).toContain(`${figure(FINDINGS_BYTES)} characters: over 131,072 bytes`);
   });
 
   it('holds a row with sites to exactly those places, so a second use of the value over the limit, under any name or key, turns the table red', () => {
