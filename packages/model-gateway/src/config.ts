@@ -17,7 +17,10 @@ import { ALL_SERVED, type ServedSet } from './purposes';
  * - bedrock: BEDROCK_REGION (or AWS_REGION); BEDROCK_ENDPOINT optionally names the VPC endpoint's
  *   https URL (with private DNS on the endpoint, the regional name already resolves to it). Credentials
  *   come from the task role.
- * - anthropic: ANTHROPIC_API_KEY, from the environment's secret.
+ * - anthropic: ANTHROPIC_API_KEY, from the environment's secret, and nothing else from the environment:
+ *   anthropicClient fixes the host, the SDK's logging and its tracing whatever other ANTHROPIC_* variables
+ *   say, and ANTHROPIC_CUSTOM_HEADERS, which no client option overrides, is refused (docs/adr/0048,
+ *   amendment of 2026-11-01).
  * - local: MODEL_LOCAL_FIXTURES_DIR optionally names a directory of fixed outputs.
  *
  * With NODE_ENV=production the local provider is refused (except for the e2e suite's production build,
@@ -113,6 +116,9 @@ export function readGatewayConfig(env: Env = process.env, options: ServingOption
   }
   const serving = production ? productionServingConfig(provider as ProviderKind, options) : EVERY_KEY;
   if (provider === 'anthropic') {
+    if (value(env, 'ANTHROPIC_CUSTOM_HEADERS') !== undefined) {
+      throw new GatewayConfigError('ANTHROPIC_CUSTOM_HEADERS is refused: the Anthropic path sends only the headers the gateway sets; unset it (docs/adr/0048)');
+    }
     return { production, provider, apiKey: required(env, 'ANTHROPIC_API_KEY', 'when MODEL_PROVIDER is anthropic'), ...serving };
   }
   const endpoint = value(env, 'BEDROCK_ENDPOINT');

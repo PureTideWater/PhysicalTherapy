@@ -1,6 +1,8 @@
 # 0048. Call models only through the gateway, on Bedrock by default; pin models per prompt version, log references only, and hold budgets and the kill switch in feature flags
 
-- **Status:** accepted for the build; the model path is provisional until counsel's read of both agreements (PRD 20)
+- **Status:** accepted for the build; the model path is provisional until counsel's read of both agreements (PRD 20);
+  amended 2026-11-01: SDK 1.x on the Anthropic path, its tracing, propagation, logging and host fixed on the client and
+  `ANTHROPIC_CUSTOM_HEADERS` refused ("Amendment (`co-001/deps-anthropic-sdk-1`, 2026-11-01)", below)
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (AI gateway: the four functions, Provider and data path, PHI minimization, Untrusted input,
@@ -8,7 +10,7 @@
   (model-call cost per practice against budget), 20 (Model path: Bedrock or Anthropic's HIPAA-ready API); CLAUDE.md
   rules 1 and 4 and "Never: call a model outside packages/model-gateway; give a model tools when it reads a
   document"; data dictionary `model_call`, `eval_example`, `feature_flag`; test matrix MOD-01, MOD-02, MOD-04, MOD-05,
-  MOD-06; ADRs 0013, 0019, 0041, 0047
+  MOD-06, MOD-17, MOD-18; ADRs 0013, 0019, 0041, 0047
 
 ## Context
 
@@ -35,8 +37,9 @@ dynamically, as if it lived in each app and package: it fails everywhere but ins
   https URL, credentials from the task role, and the SDK's own retries off (`maxAttempts: 1`) so the gateway's one
   retry is the only one.
 - `AnthropicProvider` (`MODEL_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` from the environment's secret): Messages only,
-  with structured outputs; the SDK's retries off and its timeout at the gateway's. It uses nothing PRD 14 lists as
-  ineligible (no Batch API, Files API, code execution, Skills or MCP connector).
+  with structured outputs; the SDK's retries off and its timeout at the gateway's, its OpenTelemetry tracing and logging
+  off and its host fixed. It uses nothing PRD 14 lists as ineligible (no Batch API, Files API, code execution, Skills or
+  MCP connector).
 - `LocalDeterministicProvider` (the default everywhere else): not a model. It answers only a request whose key (the
   SHA-256 of the prompt version and the user message the gateway frames) has a fixed output registered in code or in
   a directory of `tp-local-model-output/1` files, refuses everything else (`no_fixed_output`), and costs nothing.
@@ -152,6 +155,9 @@ crosses it logs a warning (`MODEL_BUDGET_REACHED`) (MOD-05).
   input produced which output without holding either.
 - **Provider-side retries.** They would retry under no key of ours and stack with the gateway's; both SDKs' retries
   are off.
+- **The SDK's own tracing.** It would send trace context to the provider and, by one environment variable, prompts and
+  outputs to whatever records spans; it is off on the client, as are the SDK's logging and its host's environment
+  variable (amendment of 2026-11-01).
 - **Budgets in an environment variable, or a separate settings table.** A flag reaches one practice, one
   organization or everyone, is set by an audited function, and is read in the same transaction as the call's log.
 - **A mocked model for tests.** The local provider answers only registered requests by exact key, so a test proves
@@ -175,3 +181,68 @@ crosses it logs a warning (`MODEL_BUDGET_REACHED`) (MOD-05).
 - Counsel has read both agreements (PRD 20, milestone 10): record the chosen path here and set `MODEL_PROVIDER`.
 - The provider's price list changes, or the measured cost per practice approaches the default budget.
 - A prompt changes: a new version directory, a changelog entry, and the evaluation gate.
+
+## Amendment (`co-001/deps-anthropic-sdk-1`, 2026-11-01): SDK 1.x on the Anthropic path, nothing taken from the environment
+
+Dependabot's #87 moved `@anthropic-ai/sdk` from 0.131.0 to the 1.x line; the build took 1.3.0 in its own pull request.
+Nothing in the gateway's design changes; five things about the Anthropic path are recorded.
+
+- **The SDK's OpenTelemetry tracing is off.** Since 0.134.0 the SDK starts a span for each request through any tracer
+  provider registered in the process, and sends `traceparent`, `tracestate` and `baggage` to the provider; environment
+  variables alone (`ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE=content`) put prompts and outputs into those spans.
+  `anthropicClient` builds the client with tracing and propagation off, which no environment variable overrides: the
+  gateway logs references only (above), PRD 14 keeps model calls out of any model-observability service, trace ids would
+  reach the provider, and the traces PRD's observability row asks for would otherwise switch the SDK's on silently.
+  Propagation is set off as well, so the SDK sends no trace context, even for a span it did not start; an HTTP or fetch
+  instrumentation of the application's own would (Revisit when). MOD-17 and MOD-18 hold it, with a default client as the
+  control.
+- **Nothing else is taken from the environment.** The SDK also reads `ANTHROPIC_LOG` (at `debug` it logs each request's
+  body, the prompt, and each response's body, the output, to the console and so to the log group), `ANTHROPIC_BASE_URL`
+  (the host the key and prompts go to) and `ANTHROPIC_CUSTOM_HEADERS` (headers added to every request, `Authorization`
+  included, so it can replace the key and send the prompts under another account). Client options fix the host
+  (`https://api.anthropic.com`), logging off and tracing off; `webhookKey: null` leaves the webhook key unread; and
+  configuration refuses `ANTHROPIC_CUSTOM_HEADERS` on the Anthropic path, since no client option overrides it. These
+  reads were already in 0.x; the amendment closes them with the major. With logging off the SDK still writes its own
+  deprecation warnings straight to `console.warn`, for a request that names a model on its deprecated list or sends
+  `thinking.type: 'enabled'` (which the gateway never sends) to a listed model: the model id and, for a deprecated one,
+  its end-of-life date, never request content. No prompt pins a listed model at 1.3.0. The SDK still sends its own
+  headers: `X-Stainless-OS`, `-Arch`, `-Runtime` and `-Runtime-Version`, read from the process rather than from its
+  environment variables, and `-Package-Version`, `-Lang`, `-Retry-Count`, `-Timeout` and its `User-Agent`. They carry no
+  practice material and go over TLS only to the provider that receives the prompts, and the Bedrock path's AWS user
+  agent carries the same and more (the operating system and its release, the Node version, the execution environment),
+  so they are kept: stripping them would gain no privacy over Bedrock and would lose the provider's diagnostics. MOD-18
+  pins the set, so a header a later SDK adds fails it and is decided then.
+- **API version.** The Anthropic path now sends `anthropic-version: 2026-10-21`; the Bedrock path still sends
+  `bedrock-2023-05-31` in its body. Nothing the gateway sends or reads differs between them (the migration guide's
+  Messages changes touch no field the gateway uses). The first real-model record on the Anthropic path will be made on
+  SDK 1.x and this version. HIPAA readiness is per organization and feature: the provider's feature eligibility table
+  names no API version or credential header, and the Messages API, structured outputs and effort, all the gateway sends,
+  stay listed as eligible (read 2026-11-01), structured outputs on the table's condition that no PHI is in a JSON schema
+  definition, which the provider caches for up to 24 hours: the gateway meets it, since each request's schema is its
+  prompt version's committed schema (`prompt.schema`), never practice material. From the first real-model entry of a
+  provider on, a change of the API version that path sends is a model change under ADR 0070, though no baseline key or
+  set hash sees it. On the Anthropic path that is an SDK version that sends another `anthropic-version` (a major, as
+  1.0.0 was), which fails MOD-18's pin; on Bedrock it is `BEDROCK_ANTHROPIC_VERSION`. The pull request that makes it
+  does not merge until a person has run every entry of that provider (each purpose and variant) under the new version,
+  each recorded against the held entry on the same set with every regression rule in force (`eval --record`, without
+  `--new-set`, since the set, prompt and model are the held entry's; docs/runbooks/model-evaluation.md) and committed in
+  that pull request. Each contract entry is then `permitted: 'pending'` until its permitted run is recorded, so that
+  feature is entered by hand meanwhile. While a provider has no real entry (as at this amendment: `eval/baseline.json`
+  holds `local` entries only), CI's gate suffices.
+- **Credential.** The key goes as `Authorization: Bearer`, not `X-Api-Key`, and is the client's only credential: a
+  credential passed in code means the SDK reads none from the environment or disk.
+- **Licence.** The SDK is Apache-2.0 from 1.0.0 (was MIT); the licence allowlist already allows it.
+
+Alternatives: leaving the SDK's tracing and logging to environment variables (one forgotten variable undoes it; a
+client option cannot be overridden from outside); recording `ANTHROPIC_CUSTOM_HEADERS` instead of refusing it (it
+would send headers no one sees, the credential among them).
+
+Revisit when: the product registers a tracer provider or HTTP/fetch instrumentation (keep the SDK's spans and
+propagation off, or record why not); the SDK reads a new environment variable, touches the environment once more in any
+of its files, or names a new package of any kind, or a package it brings in touches the environment (MOD-17 pins all
+four from what is installed: the names the SDK's code reads, the number of other touches in each of its files, the
+packages its manifest names by kind (dependencies, optional, peer and bundled), and that no package installed for them,
+their own dependencies included, reads or touches the environment, so any version taken, of the SDK or of a package it
+brings in, that changes one fails until the new read is closed by a client option, refused in readGatewayConfig, or
+recorded as unreachable from the gateway); its default-on telemetry or default headers change, a new platform header
+among them (read at each version taken; MOD-18 pins the header set); the SDK's next major or API version.
