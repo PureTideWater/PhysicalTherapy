@@ -66,9 +66,19 @@ Once a week, after Thursday's npm batch:
    Open each `failure` and read its log; fix the cause in a pull request (run 40223237798 of 2026-10-25 is the
    example: every npm update failed with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, because a locked version was under
    three days old). A successful run whose log says "release-age block detected" dropped a version without a pull
-   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. Any
-   `belongs to more specific group` line in the npm run's log means the routing broke: fix `.github/dependabot.yml`
-   (CI-12).
+   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. The routing
+   broke, and `.github/dependabot.yml` needs a fix (CI-12), when the npm run's log has any
+   `belongs to more specific group` line, or a `groups where no dependencies match` warning or a
+   `does not match any allowed dependencies` line naming a group whose packages are still in the manifests (when a
+   group matches nothing, its packages went to another group or arrive ungrouped, and no "belongs to" line says so).
+   Read the log, green runs included:
+
+   ```sh
+   run=<the npm run's id>
+   job=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/runs/$run/jobs" --jq '.jobs[0].id')
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
+     | grep -E 'belongs to more specific group|no dependencies match|does not match any allowed'
+   ```
 2. **Each open Dependabot pull request.** Read its checks, then its changes:
    - all green: read the release notes of every major or minor in it for a change in behaviour our code relies on,
      then take it as a pull request of the build's own: merge the build branch in, add what the notes call for, and
