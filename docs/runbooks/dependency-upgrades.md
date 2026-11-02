@@ -160,7 +160,9 @@ Once a week, after Thursday's npm batch:
    majors the file ignores anyway. `@dependabot show <dependency> ignore conditions` on any Dependabot pull request
    lists one dependency's, and `@dependabot unignore <dependency>` removes one; both are comments, so writes.
 
-Each triage is recorded in the item's design (`designs/` on build-ops), steps 1-6 in order.
+Record each weekly triage, steps 1-6 in order, with the runs and pull requests read and what was done, in the
+build's lane log on `claude/build-ops` (`lanes/lane-b.md` while Lane B runs the triage), or in the item's design when
+the triage belongs to an item.
 
 For the first four weekly batches after the switch, read the bot queue time as `docs/runbooks/ci.md` says.
 
