@@ -304,6 +304,19 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   does B(6): #42's three ranges (web client-sesv2, client-sts; worker client-sqs) to ^3.1160.0, the manifest and lockfile
   conflicts resolved by the generator, the synth comparison redone with #42's stacks.
 
+- 2026-11-02T10:10:00Z: **B's fix round done locally** (wf_66dd34d8-a6a): head f463f486 (all 25 findings; the check's 3 S
+  and 5 N fixed); the full local suite once at f463f486, green (unit, golden, oracle, test:db 4 shards, build, stamp,
+  cdk:diff, e2e, the six packets/pricing Stryker shards and the gate, synth, watched, actions, toolchain, licenses,
+  actionlint, infra 612; synth comparison vs 88708069: only the CDKMetadata version string) apart from the no-Docker capacity
+  form (the same 10 checks fail on the base). Push stopped on BASE MOVED (#42, #95). WIP ref -b = f463f486. **#97**
+  (Dependabot minor-and-patch, 17 updates incl. all of B's) is green and conflicts with B in the lockfile, but a Dependabot
+  PR never merges as it stands (LANES rule 7), so B is not held behind it; its five other updates (postcss,
+  @stripe/react-stripe-js, @stripe/stripe-js, @opentelemetry/api, typescript-eslint) are left to the next weekly triage.
+  **B's merge prep launched**: wf_4e12aa8e-264 (base merge with B(6): #42's three @aws-sdk ranges to ^3.1160.0, the lockfile
+  regenerated; targeted re-check (typecheck, lint, the whole unit project, infra, golden, synth comparison vs the new base,
+  toolchain, licenses); description changes; fix-round record; push; CI (db, e2e, Stryker, capacity) read by the verifier).
+  C's merge prep: CI green on 07b5382b; verification running.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
