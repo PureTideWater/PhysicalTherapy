@@ -1,0 +1,7 @@
+# hom-fix-money progress (DONE)
+- E2+R1: statements.ts: ledgerTotalsOver (pure, exported; practiceLedgerTotals and recoveredPeriods both call it); firstOn from standing entries only (no reversal/adjustment, none reversed since). recovered-periods.test.ts: compares to ledgerTotalsOver; oracle firstRecovered uses the standing rule; fully reversed expects firstOn null; new wrong-match-reversed case expects '2026-08-01', 1200. vitest 4/4 pass.
+- E1: home-figures.db.test.ts: inside counted() (rolled back) write off one case line and a person's reopen of another to validated (reason 'enc:v1:SYNTHETIC', the line_status_reason_encrypted shape); asserts caseLines - atActionable = 2 and calls = atActionable. 5/5 pass. Check-first mutant of ACTIONABLE_NOW_LINE: fails "expected 16 to be 14"; file restored.
+- R3: queries.ts OutOfFigure.stale (+ movedOn wording), actionable-now.ts header + ActionableNowColumns.stale name all five causes, point to PRICING_CHECK_RESULTS.
+- R2: comment above the actionable assertion in reconciliation-routes.db.test.ts; LED-06 test unchanged and passes (recoveredSince still 2026-06-09 under the standing rule): 12/12 in that file.
+- Commands: db tests (home-figures + reconciliation-routes) 17 tests, first run 1 fail (reason constraint), fixed, rerun home-figures 5/5; eslint 0; tsc worker 0, web 0; lint:copy 0; lint:logs 0.
+- ADR notes: progress/hom-fix-adr-notes.md
