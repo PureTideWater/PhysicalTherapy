@@ -1024,10 +1024,12 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       outputs a row names are exactly those its value reads (a `steps.<id>` value its own job's step `<id>`, a
       `needs.<j>.outputs.<n>` value job `<j>` and its output `<n>`, `toJSON` each job and output it is given), so a
       row that cites another job's producer, or leaves its own out, fails. A row whose producer is a workflow's `run:`
-      step holds the fingerprint of what the script runs with as parsed, its `run`, `env`, `shell` and
-      `working-directory`, so a changed script or input fails until a person re-reads the bound and updates it; a row
-      whose bound is tool code's names instead the unit test that holds it, by its title, and the test must be one
-      that always runs (no skip, todo or condition), since other lanes change that code for their own reasons.
+      step holds the fingerprint of what the script runs with as parsed: its `run`, its `env` over its job's and the
+      workflow's, its `shell` and `working-directory` or the `defaults.run` its job or the workflow gives, and its
+      job's container, so a changed script or input, its own or inherited, fails until a person re-reads the bound and
+      updates it; a row whose bound is tool code's names instead the unit test that holds it, by its title, and the
+      test must be one that always runs (no skip, todo or condition), since other lanes change that code for their own
+      reasons.
     - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
       github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
@@ -1048,11 +1050,11 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       publish-content's release numbers, read in one script.
     - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
       is one entry of a closed map, its variable's only write: its file, job, step and exact line (so its value's form
-      too), with its step's fingerprint (a changed script or input fails until a person re-reads the bound) and its
-      bound, which the behavioural test named beside it holds by running the step and reading the whole file it
-      writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is refused in any env. A script
-      that reaches the file without naming it (a name built at run time, another interpreter) is not closed by reading
-      text.
+      too), with its step's fingerprint (a changed script or input, its own or inherited, fails until a person
+      re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
+      reading the whole file it writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is
+      refused in any env. A script that reaches the file without naming it (a name built at run time, another
+      interpreter) is not closed by reading text.
 
 ### Consequences
 

@@ -3097,7 +3097,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       job: 'unit',
       step: "The engine freeze's base",
       line: 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"',
-      fingerprint: 'b3e2ef69',
+      fingerprint: '9be9805d',
       bound: "a commit SHA (the pull request's merge base, github.event.before or HEAD's parent), written only once git rev-parse --verify names it a commit, the step exiting 1 otherwise",
       test: 'gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV',
     },
@@ -3561,8 +3561,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       const lines = named.flatMap((step) => (step.run ?? '').split('\n'));
       expect(lines.filter((line) => line.trim() === write.line), name).toHaveLength(1);
       expect(
-        named.map((step) => fingerprint(step)),
-        `${name}: the step that writes it has changed (its script, env, shell or working-directory): re-read the bound against it, then write the new fingerprint in the map`,
+        named.map((step) => fingerprint(step, workflow(write.file).jobs[write.job], workflow(write.file))),
+        `${name}: the step that writes it has changed (its script, or its env, shell, working-directory or container, its own or inherited): re-read the bound against it, then write the new fingerprint in the map`,
       ).toEqual([write.fingerprint]);
       expect(titles.has(write.test), `${name}: no test named "${write.test}" that always runs`).toBe(true);
     }
@@ -3791,9 +3791,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * Where a row's value comes from, each named by what it is, never by a line, so an edit elsewhere in a file moves
    * none and a renamed, moved or removed producer turns the table red:
    * - a step of a job, by its id: a `run:` step with the fingerprint of what its script runs with as parsed, its run,
-   *   env, shell and working-directory (the first 8 hexadecimal digits of their SHA-256), so a changed script or input
-   *   fails until a person re-reads the bound and writes the new one; a `uses:` step with its action (its pin is the
-   *   pin rules', CI-11);
+   *   its env over its job's and the workflow's, its shell and working-directory or the defaults it takes, and its
+   *   job's container (fingerprint, below), so a changed script or input, its own or inherited, fails until a person
+   *   re-reads the bound and writes the new one; a `uses:` step with its action (its pin is the pin rules', CI-11);
    * - an output a job declares, a key of a job's matrix, and a job the reading job needs (the steps, needed jobs and
    *   outputs a row names being exactly those its value reads, producersOf);
    * - tool code by the name it declares (path#symbol, read with TypeScript's parser), never fingerprinted: other lanes
@@ -3868,7 +3868,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   /** An image's name in a release matrix, the longest being web-production. */
   const IMAGE_NAME_BYTES = 'web-production'.length;
   const RUNNER_IMAGE = "the runner image step writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS";
-  const runnerImage = (job: string): Ref[] => [script(job, 'runner-image', 'bb8bd5e3')];
+  /** The runner image step's row: the same script everywhere, fingerprinted with what its job and workflow give it. */
+  const runnerImage = (job: string, run: string): Ref[] => [script(job, 'runner-image', run)];
   const cacheKey = (parts: string) => `actions/cache/restore echoes the key it was given, made of ${parts}`;
   const RUNNER_HASH = 'runner.os and a hashFiles digest';
   const APT_KEY = "the runner image's key and a hashFiles digest";
@@ -3913,11 +3914,11 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       refs: ALL_GREEN_NEEDS.map(needs),
       bound: 'the eight jobs it needs, each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)',
     },
-    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db', 'e2fd2a82'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db', 'e2fd2a82'), bound: RUNNER_IMAGE },
     { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('db', 'vitest-cache', 'actions/cache/restore')], bound: cacheKey('runner.os, strategy.job-total, matrix.shard and github.sha') },
-    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e', 'e2fd2a82'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e', 'e2fd2a82'), bound: RUNNER_IMAGE },
     {
       file: 'ci.yml',
       job: 'images',
@@ -3934,12 +3935,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       refs: [action('images', 'worker', 'docker/build-push-action')],
       bound: "buildx's config digest of the worker build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
     },
-    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bytes: 'origin/'.length + PATH_BYTES, refs: [script('static', 'range', '1fe2d7a2')], bound: 'the commits step writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
+    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bytes: 'origin/'.length + PATH_BYTES, refs: [script('static', 'range', '93428fc5')], bound: 'the commits step writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
     { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('static', 'tsc-cache', 'actions/cache/restore')], bound: cacheKey(`${RUNNER_HASH} and github.sha`) },
     { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
     { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'browsers', 'actions/cache/restore')], bound: cacheKey(RUNNER_HASH) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit', '1b44a36b'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit', '1b44a36b'), bound: RUNNER_IMAGE },
     {
       file: 'content-calendar.yml',
       job: 'check',
@@ -3959,8 +3960,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       bound: 'FINDINGS_B64, the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
       over: 'ci-findings-transport',
     },
-    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
-    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip', '1b44a36b'), bound: RUNNER_IMAGE },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip', '1b44a36b'), bound: RUNNER_IMAGE },
     { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', bytes: BOOLEAN_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
     { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', bytes: PACKAGES_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
     { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', bytes: SHARDS_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
@@ -3993,32 +3994,32 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       bound: 'base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts), written by tools/release-capacity/run.ts',
     },
     { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', bytes: 256, refs: [needs('capacity'), output('capacity', 'advisories'), ...ADVISORIES], bound: 'ADVISORIES_B64: base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts)' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'e6378687')], bound: 'one of two Dockerfile paths' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'e6378687')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', 'e6378687')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', '604272e1')], bound: 'one of two Dockerfile paths' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', '604272e1')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', '604272e1')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
     { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'worker']), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
     { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'worker']), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'e3cbe28b')], bound: 'one of two Dockerfile paths' },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'e3cbe28b')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', 'e3cbe28b')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'c5ff17fd')], bound: 'one of two Dockerfile paths' },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'c5ff17fd')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', 'c5ff17fd')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
     { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'web-staging', 'web-production', 'worker']), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
     { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'web-staging', 'web-production', 'worker']), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
     { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bytes: PATH_BYTES, refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
@@ -4032,8 +4033,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       refs: [...MEASURE_OUTPUTS, ...TIME_WARNINGS],
       bound: 'one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts), joined (jobResult)',
     },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity', 'bb8bd5e3'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity', 'bb8bd5e3'), bound: RUNNER_IMAGE },
     { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('capacity', 'scale-release', 'actions/cache/restore')], bound: cacheKey('one hashFiles digest') },
     { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', bytes: BOOLEAN_BYTES, refs: [script('changes', 'watched', 'ba482ece')], bound: 'true or false' },
     { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', bytes: 512, refs: [needs('capacity'), output('capacity', 'sizing'), ...SIZING], bound: "SIZING: one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts)" },
@@ -4106,14 +4107,20 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     isList(value) ? `[${value.map(canonical).join(',')}]` : isRecord(value) ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}` : JSON.stringify(value ?? null);
   /**
    * The fingerprint a row holds for a `run:` step: the first 8 hexadecimal digits of the SHA-256 of what its script runs
-   * with, as parsed: its run, env, shell and working-directory (an env's keys in any order), so a changed script or a
-   * changed input to it, such as an env that names another variable, fails until a person re-reads the bound.
+   * with, as parsed: its run; its env over its job's over the workflow's (each mapping's keys in any order); its shell
+   * and working-directory, or the defaults.run its job or else the workflow gives; and its job's container, where it
+   * runs in one. So a changed script, or a changed input to it at any level, such as an env that names another
+   * variable or a default shell, fails until a person re-reads the bound. A step that inherits nothing hashes its own
+   * run, env, shell and working-directory alone.
    */
-  const fingerprint = (step: { readonly run?: unknown; readonly env?: unknown; readonly shell?: unknown; readonly 'working-directory'?: unknown }): string =>
-    createHash('sha256')
-      .update(canonical({ run: step.run, env: step.env, shell: step.shell, 'working-directory': step['working-directory'] }))
-      .digest('hex')
-      .slice(0, 8);
+  const fingerprint = (step: { readonly run?: unknown; readonly env?: unknown; readonly shell?: unknown; readonly 'working-directory'?: unknown }, job?: unknown, root?: unknown): string => {
+    const mapping = (value: unknown): Readonly<Record<string, unknown>> => (isRecord(value) ? value : {});
+    const [inJob, inRoot] = [mapping(job), mapping(root)];
+    const env = inJob.env === undefined && inRoot.env === undefined ? step.env : { ...mapping(inRoot.env), ...mapping(inJob.env), ...mapping(step.env) };
+    const given = (key: 'shell' | 'working-directory'): unknown => step[key] ?? mapping(mapping(inJob.defaults).run)[key] ?? mapping(mapping(inRoot.defaults).run)[key];
+    const inputs = { run: step.run, env, shell: given('shell'), 'working-directory': given('working-directory'), ...(inJob.container === undefined ? {} : { container: inJob.container }) };
+    return createHash('sha256').update(canonical(inputs)).digest('hex').slice(0, 8);
+  };
 
   /** A step's line in its workflow's text, for a message alone: no row holds a line. */
   function stepLine(text: string, job: string, id: string): number | undefined {
@@ -4208,7 +4215,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     for (const row of rows) {
       const say = (problem: string) => problems.push(`${row.file} ${row.job} ${row.value}: ${problem}`);
       const workflowText = once(texts, row.file, () => text(row.file));
-      const jobs = once(parsed, row.file, () => parse(workflowText) as Workflow).jobs;
+      const root = once(parsed, row.file, () => parse(workflowText) as Workflow);
+      const jobs = root.jobs;
       const reader = jobs[row.job];
       if (row.refs.length === 0) say('names no producer');
       const read = found.filter((entry) => entry.file === row.file && entry.job === row.job && entry.value === row.value);
@@ -4226,9 +4234,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
             // Its line, for a message alone, found only when one is written.
             const where = (): string => `step ${ref.step} of job ${ref.job} (${row.file}:${String(stepLine(workflowText, ref.job, ref.step) ?? '?')})`;
             if ('run' in ref) {
-              const now = step.run === undefined ? undefined : fingerprint(step);
+              const now = step.run === undefined ? undefined : fingerprint(step, jobs[ref.job], root);
               if (now === undefined) say(`${where()} runs no script to fingerprint`);
-              else if (now !== ref.run) say(`${where()} has a changed script, env, shell or working-directory, fingerprint ${now}, not ${ref.run}: re-check the bound against it, then write ${now} in this row`);
+              else if (now !== ref.run) say(`${where()} has a changed script, env, shell, working-directory or container, its own or inherited, fingerprint ${now}, not ${ref.run}: re-check the bound against it, then write ${now} in this row`);
             } else if (actionOf(step) !== ref.uses) {
               say(`${where()} uses ${actionOf(step) ?? 'no action'}, not ${ref.uses}`);
             }
@@ -4417,6 +4425,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // reads the same.
     expect(problems(workflowText.replace('      - name: Record the identity', '      # A comment above the producer.\n      - name: Record the identity'))).toEqual([]);
     expect(problems(workflowText.replace('        env: { IMAGE: "${{ matrix.image }}" }\n        run: echo "digest', '        env:\n          IMAGE: ${{ matrix.image }}\n        run: echo "digest'))).toEqual([]);
+    // Another job's env or defaults are no input of the producer's.
+    expect(problems(workflowText.replace('    needs: build\n', '    needs: build\n    env: { BASE: x }\n    defaults: { run: { shell: sh } }\n'))).toEqual([]);
     const [produced, handed] = rows;
     if (produced === undefined || handed === undefined) throw new Error('two rows');
     // A uses: producer is its action: another action, or a script in its place, turns its row red.
@@ -4427,13 +4437,19 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // A name the script does not write: its own lines spell it or it fails, so the last case fails with or without the
     // row's tool (both below).
     const scriptOnly = [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'symbol') }, handed];
-    const CHANGED = /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) has a changed script, env, shell or working-directory, fingerprint [0-9a-f]{8}, not [0-9a-f]{8}: re-check the bound against it, then write [0-9a-f]{8} in this row$/;
+    const CHANGED = /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) has a changed script, env, shell, working-directory or container, its own or inherited, fingerprint [0-9a-f]{8}, not [0-9a-f]{8}: re-check the bound against it, then write [0-9a-f]{8} in this row$/;
     const RED: readonly (readonly [string, string, RegExp])[] = [
       ['a renamed step id', workflowText.replace('id: identity', 'id: identities'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: job build has no step identity$/],
       ['a changed script', workflowText.replace('$(node tools/fixture.ts)', '$(git log -1 --format=%B)'), CHANGED],
       ['a changed env', workflowText.replace('env: { IMAGE: "${{ matrix.image }}" }', 'env: { IMAGE: "${{ matrix.image }}", BASE: "${{ github.sha }}" }'), CHANGED],
       ['a shell', workflowText.replace('        id: identity\n', '        id: identity\n        shell: python {0}\n'), CHANGED],
       ['a working directory', workflowText.replace('        id: identity\n', '        id: identity\n        working-directory: apps/web\n'), CHANGED],
+      // What the step inherits is its input too: its job's or the workflow's env, a default shell or directory, a container.
+      ['a job env', workflowText.replace('  use:\n', '    env: { BASE: "${{ github.sha }}" }\n  use:\n'), CHANGED],
+      ['a workflow env', `${workflowText}env: { BASE: "\${{ github.sha }}" }\n`, CHANGED],
+      ['a job default shell', workflowText.replace('  use:\n', '    defaults: { run: { shell: sh } }\n  use:\n'), CHANGED],
+      ['a workflow default working directory', `${workflowText}defaults: { run: { working-directory: apps/web } }\n`, CHANGED],
+      ['a job container', workflowText.replace('  use:\n', '    container: node:24\n  use:\n'), CHANGED],
       ['a removed job output', workflowText.replace('    outputs:\n      digest_web: ${{ steps.identity.outputs.digest_web }}\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job build declares no output digest_web$/],
       ['a need removed', workflowText.replace('    needs: build\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job use does not need a job build$/],
       ['the producer after its reader', workflowText.replace(/( {6}- name: Record the identity\n(?: {8}.*\n){3})( {6}- name: Read it\n(?: {8}.*\n){2})/, '$2$1'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:13\) does not come before the step that reads it$/],
