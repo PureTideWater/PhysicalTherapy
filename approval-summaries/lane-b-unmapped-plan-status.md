@@ -39,7 +39,9 @@ Open questions: none (the co-founder's standing ruling of 2026-10-26 ~00:20 UTC:
 
 | 2026-11-01 21:58 | CI green on 8517ee3a; reviews running | Every check green on 8517ee3a: all green, e2e 1/2 and 2/2, db 1-4/4, unit, lint, static, build, domain model, images, capacity, screening-capacity gate, mutation (6 Stryker shards), approval-of-record. Reviews workflow wf_4b65ed61-326 running (description, after shots, payment-engine, security and UX/brand reviews in fresh clones, each finding verified, loop until dry, completeness critic). Check-in 02:48 UTC (trig_01GFyy7rGLHCR3gdvMhEeT5U). |
 
-**State: draft PR #95 at 8517ee3a, CI green; reviews running (wf_4b65ed61-326).**
+| 2026-11-02 01:05 | Reviews stopped by the 5-hour limit; resumed | The limit (reset 00:10 UTC) hit wf_4b65ed61-326 at ~22:15 UTC. Done before it: the PR description (27,505 characters, set with update_pull_request and proved byte for byte, SHA-256 47cd4fcc…); the after shots (39, no failures); the security review's round 1 (3 findings: F1 should-fix, a mapping in a suspended practice queues monitoring and says "being priced"; F2 should-fix, "mapped" ignores the mapping's dates so a mapping starting after a month marks it complete and a run prices nothing; F3 nit, price_waiting has no Postgres-side permission check), not yet verified. Stopped: the payment-engine and UX reviews, the verifiers, the critic. The worker restarted; setup re-run (PostgreSQL up); resumed with resumeFromRunId at ~01:05 UTC. The base moved to 43565235 (PR `behind`): merged in at the fix round. |
+
+**State: draft PR #95 at 8517ee3a, CI green; reviews resumed (wf_4b65ed61-326).**
 - **Design:** `designs/lane-b-unmapped-plan.md` (revision 2, ca0f6438; read at ed85bcf3), review `designs/lane-b-unmapped-plan/review.md`, script `workflow-scripts/lane-b-unmapped-plan-design-wf_98ca48d8-64c.js`.
 - **Reserved, used by this PR:** ADR 0075; MAP-06 to MAP-09, PRC-29 to PRC-31. MAP-10 kept for the notice follow-up. No new synth module (MAP = 2) and no new fixture release (900001). No migration.
 - **Branch:** `co-001/unmapped-plan` at 83d71fd6 on origin; worktree `/home/user/unmapped-plan`. No PR yet.
