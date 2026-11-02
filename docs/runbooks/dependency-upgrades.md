@@ -44,6 +44,14 @@ only `default-days`.
 
 ## The weekly triage
 
+A merge that changes `.github/dependabot.yml` on the default branch starts Dependabot at once, under the new file: #27's
+merge (2026-10-20T22:24:07Z) started the npm, actions and docker version runs at 22:24:13Z (39507843042, 39507843420,
+39507843520) and a recreate of the open `minor-and-patch` pull request at 22:24:15Z (39507847707). A recreated group
+pull request whose dependencies or target versions changed is closed and replaced under a new number, and one with
+nothing left to update is closed with none (dependabot-core 85379652, `group_update_refreshing.rb`). On the day of such
+a merge, read those runs as step 1 does, with `since` the merge's date, and record which bot pull requests were closed,
+replaced or opened.
+
 Once a week, after Thursday's npm batch:
 
 1. **Dependabot's own runs.** A run that opens no pull request is visible only as an Actions run with
