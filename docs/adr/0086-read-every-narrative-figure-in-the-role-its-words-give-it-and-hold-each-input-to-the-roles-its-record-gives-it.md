@@ -7,7 +7,8 @@
   (the tp-packet/2 facts); reverses none of their rulings.
 - **Date:** 2026-10-28; one cue's role per figure, quoted figures in their own role and the gateway's proof against
   the base, 2026-11-01 (the review of 2026-11-01's fix round); a stored version read again at each step and on each
-  screen, and the editor's words, 2026-11-01 (the same fix round, its second part)
+  screen, and the editor's words, 2026-11-01 (the same fix round, its second part); the reader and its words split
+  into layers and families, each mutated in a shard of its own, 2026-11-02 (its third part)
 - **Deciders:** the build (Lane B), on product observation (b) of the test-flakes item; the founder, on the pull
   request's review
 - **PRD sections:** 12 (The packet: "any figure that is not in the input fails verification"), 14
@@ -162,10 +163,15 @@ verifier's, and it is at least as strict as the gateway's own reading was before
 (`narrative-roles.base.fixture.ts`), over 246 generated swaps and every misstated example of the review, and requires
 each one it caught to fail the gateway (PE-2).
 
-**The reader's words are their own module and built on each read** (`roles-words.ts` `vocabulary()`), not when the
+**The reader's words are their own module and built on each read** (`roles-words/` `vocabulary()`), not when the
 module loads, so each word is a mutant only the tests that read it run (a value built at load is a static mutant
-every test reruns: 1,570 of the reader's first 1,988). The reading and its words are mutated in two shards of their own
-(`packets-roles`, `packets-words`): in one they took 33 minutes on 4 shared CPUs, over the job's 30.
+every test reruns: 1,570 of the reader's first 1,988). The reading and its words are mutated in shards of their own,
+each within the mutation job's 30 minutes (the fix round of 2026-11-01, its third part, PE-5): the reading in three, by
+layer (`roles-reader/`: the walk over the tokens with `roles.ts` itself, `packets-roles`; the cues, `packets-roles-cues`;
+the numbers' words, `packets-roles-numbers`), and the words in five, by family, each its own file built on each call
+(`roles-words/`: the labels and nouns, the amounts' cues, the day counts', pages' and percentages' cues, the dates'
+cues, and the prose words, `packets-words-labels`, `-amounts`, `-days`, `-dates` and `-prose`). In two shards the
+reading (1,917 mutants after the fix round's first part) ran past 40 minutes and the words (1,507) past the job's 30.
 
 ## Alternatives considered
 

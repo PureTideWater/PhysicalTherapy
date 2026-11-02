@@ -415,7 +415,7 @@ checks above.
 
 ### What runs
 
-- **On a push to `claude/build-platform`, weekly, and on request:** every package, all six shards.
+- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard.
 - **On a pull request:** every shard of each package whose closure the change touches, and nothing else. The
   `changes` job prints which packages it chose and why (the first changed paths that reach each one) to its log and
   summary (`tools/stryker/affected.ts`). A package's closure is:
@@ -439,10 +439,19 @@ checks above.
 | Shard | Mutates | Time (Stryker's, 4 CPUs shared with other work, 2026-10-25) |
 | --- | --- | --- |
 | `money-ledger` | money, then the ledger | 3 min 37 s (money 32 s, the ledger 3 min 5 s) |
-| `packets-scan` | packets' `scan.ts` | 6 min 13 s |
-| `packets-roles` | packets' `roles.ts`, the role reader (docs/adr/0086) | 6 min 47 s (2026-10-28) |
-| `packets-words` | packets' `roles-words.ts`, the reader's words | 22 min 42 s (2026-10-28) |
-| `packets-rest` | the rest of packets' set | 5 min 43 s |
+| `packets-scan` | packets' `scan.ts` | {T:packets-scan} |
+| `packets-roles` | the role reader (docs/adr/0086): `roles.ts` and its walk over the tokens (`roles-reader/walk.ts`, `kinds.ts`) | {T:packets-roles} |
+| `packets-roles-cues` | the reader's cues (`roles-reader/cues.ts`) | {T:packets-roles-cues} |
+| `packets-roles-numbers` | the reader's numbers (`roles-reader/numbers.ts`) | {T:packets-roles-numbers} |
+| `packets-words-labels` | the reader's words (`roles-words/`): the labels and nouns (`labels.ts`) | {T:packets-words-labels} |
+| `packets-words-amounts` | the amounts' cues (`roles-words/amounts.ts`) | {T:packets-words-amounts} |
+| `packets-words-days` | the day counts', pages' and percentages' cues (`roles-words/days.ts`) | {T:packets-words-days} |
+| `packets-words-dates` | the dates' cues (`roles-words/dates.ts`) | {T:packets-words-dates} |
+| `packets-words-prose` | the prose words (`roles-words/prose.ts`, `index.ts`) | {T:packets-words-prose} |
+| `packets-verifier` | the verifier's check (`verifier/`) and the text it reads (`readable.ts`) | {T:packets-verifier} |
+| `packets-facts` | the facts a narrative is held to (`facts.ts`), the payer's names (`payer.ts`) and the placeholders | {T:packets-facts} |
+| `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | {T:packets-rest} |
+| `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | {T:packets-explain} |
 | `pricing-engine` | pricing's `engine.ts` | 8 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 3 min 47 s |
 | `pricing-rest` | the rest of pricing | 5 min 24 s |

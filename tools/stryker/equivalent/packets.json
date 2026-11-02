@@ -73,8 +73,8 @@
     "replacement": "{}",
     "reason": "An array is an object, so it falls to the object branch, where Object.entries gives its items under the keys '0', '1', ...: no such key ends in _cents or is percent or percentage, so each item is read by the same recursive call the array branch makes, with the same scopes.",
     "proposedBy": "fix round of 2026-11-01 (Lane B, packet-day-counts, part 1)",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "fix round of 2026-11-01 (Lane B, packet-day-counts, part 3)",
+    "reviewedOn": "2026-11-02"
   },
   {
     "file": "packages/packets/src/interest.ts",

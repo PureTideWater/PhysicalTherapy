@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FIGURE_ROLES, SCOPES, functionWords, quotedHolds, quotedText, quotedTokens, readFigures } from './roles';
+import { FIGURE_ROLES, type FigureReading, SCOPES, functionWords, quotedHolds, quotedText, quotedTokens, readFigures } from './roles';
 
 /**
  * The role reader alone (./roles.ts; docs/adr/0086): each label, noun, cue and word it reads a figure's role from, the
@@ -118,6 +118,20 @@ describe('a label before a number', () => {
     expect(roles('Lines 1 to 3 were short.', '3')).toBe('row');
     expect(roles('In 2026 and 2027 the payer paid.', '2027')).toBe('any');
     expect(kind('In 2026 and 2027 the payer paid.', '2027')).toBe('year');
+    // Across a comma alone, after a plural label only.
+    for (const [label, role] of [
+      ['pages', 'citation_page window_page'],
+      ['pp.', 'citation_page window_page'],
+      ['releases', 'release'],
+      ['levels', 'level'],
+      ['lines', 'row'],
+      ['rows', 'row'],
+      ['claims', 'claim_row'],
+      ['patients', 'patient_row'],
+    ] as const) {
+      expect(roles(`See ${label} 1, 2 here.`, '2'), label).toBe(role);
+    }
+    expect(roles('See release 1, 2 here.', '2')).toBe('none');
     // Any other word between ends the list, and a figure right after another is no list.
     expect(roles('See pages 1 then 2 here.', '2')).toBe('none');
     expect(roles('See thirty (30) here.', '30')).toBe('none');
@@ -333,6 +347,11 @@ describe('words after a number', () => {
     // A plural noun counts; a number that is no ordinal counts.
     expect(roles('The second lines.', 'second')).toBe('lines');
     expect(roles('The 2 line.', '2')).toBe('lines');
+    // An ordinal after a determiner before any other word is prose.
+    for (const determiner of ['the', 'a', 'an', 'this', 'that', 'its', 'their', 'our', 'his', 'her', 'each', 'every']) {
+      expect(reading(`It was ${determiner} fifth dispute.`, 'fifth'), determiner).toMatchObject({ roles: 'none', prose: true });
+    }
+    expect(reading('It was one fifth dispute.', 'fifth')).toMatchObject({ roles: 'none', prose: false });
   });
 
   it('read units as each line’s when "each", "every", "per" or "a" names a line, visit, row or service up to two words on', () => {
@@ -480,6 +499,16 @@ describe('years', () => {
     expect(roles('The lines were billed in 2026.', '2026')).toBe('service_date');
     expect(roles('The window ends in 2036.', '2036')).toBe('deadline');
     expect(roles('In 2026 the payer did.', '2026')).toBe('any');
+    // The clauses before it naming two dates: the year is held in both, a list after it too.
+    for (const [text, written] of [
+      ['The contract took effect and the lines were billed, in 2026.', '2026'],
+      ['The lines were billed and the payer paid: in 2026 and 2027.', '2027'],
+    ] as const) {
+      expect(reading(text, written).kind, text).toBe('year');
+      expect(reading(text, written).every, text).toBe(true);
+    }
+    expect(reading('The lines were billed in 2026.', '2026').every).toBe(false);
+    expect(reading('In 2026 the payer did.', '2026').every).toBe(false);
   });
 });
 
@@ -587,6 +616,10 @@ describe('amounts, percentages and dates', () => {
       ['original medicare', 'expected'],
       ['fee schedule', 'expected'],
       ['lesser', 'expected'],
+      ['expected payment', 'expected'],
+      ['expected reimbursement', 'expected'],
+      ['expected allowed', 'expected'],
+      ['expected allowable', 'expected'],
       ['allowed', 'allowed'],
       ['allows', 'allowed'],
       ['allowable', 'allowed'],
@@ -613,11 +646,20 @@ describe('amounts, percentages and dates', () => {
       ['owing', 'variance'],
       ['delta', 'variance'],
       ['variance', 'variance'],
+      ['balance', 'variance'],
+      ['request payment', 'variance'],
+      ['requests payment', 'variance'],
+      ['requested payment', 'variance'],
       ['interest', 'interest'],
       ['patient share', 'patient_share'],
       ['patient’s share', 'patient_share'],
       ['patient owes', 'patient_share'],
       ['patient owed', 'patient_share'],
+      ['patient paid', 'patient_share'],
+      ['patient pays', 'patient_share'],
+      ['patients owe', 'patient_share'],
+      ['patients paid', 'patient_share'],
+      ['patients pay', 'patient_share'],
       ['patient responsibility', 'patient_share'],
       ['coinsurance', 'patient_share'],
       ['copay', 'patient_share'],
@@ -629,6 +671,9 @@ describe('amounts, percentages and dates', () => {
     }
     expect(roles('So $9.00 in interest.', '$9.00')).toBe('interest');
     expect(roles('So $9.00 of interest.', '$9.00')).toBe('interest');
+    // A noun of two words is a noun, never the verb it starts with: the payer's act's object.
+    expect(roles('The payer paid the expected reimbursement $9.00.', '$9.00')).toBe('paid');
+    expect(roles('The payer paid the expected allowable $9.00.', '$9.00')).toBe('paid');
     // Past "for", the nearest cue after it, up to the next figure, an edge or a conjunction.
     expect(roles('So $9.00 for interest.', '$9.00')).toBe('interest');
     expect(roles('So $9.00 and interest.', '$9.00')).toBe('any');
@@ -640,6 +685,72 @@ describe('amounts, percentages and dates', () => {
     expect(roles('Allowed per line: $9.00.', '$9.00')).toBe('allowed');
     expect(roles('It allowed; $9.00.', '$9.00')).toBe('any');
     expect(roles('It allowed. $9.00.', '$9.00')).toBe('any');
+  });
+
+  it('read a noun after the payer’s act as the act’s object, and after any other verb as itself', () => {
+    // Each of the payer's acts: the noun after it is what the act moved, so the act names the amount.
+    for (const [act, role] of [
+      ['allowed', 'allowed'],
+      ['allows', 'allowed'],
+      ['paid', 'paid'],
+      ['remitted', 'paid'],
+      ['reimbursed', 'paid'],
+      ['received', 'paid'],
+      ['shows', 'allowed paid'],
+      ['showed', 'allowed paid'],
+      ['show', 'allowed paid'],
+      ['underpaid', 'variance'],
+    ] as const) {
+      expect(roles(`The payer ${act} the shortfall $9.00.`, '$9.00'), act).toBe(role);
+    }
+    expect(roles('The payer underpaying the contract $9.00.', '$9.00')).toBe('variance');
+    // A conjunction between the act and the noun: the noun is its own cue again.
+    for (const conjunction of ['and', 'but', 'or', 'while', 'whereas', 'yet']) {
+      expect(roles(`The payer paid ${conjunction} the shortfall $9.00.`, '$9.00'), conjunction).toBe('variance');
+    }
+    // Every other verb after the payer's act: the noun after it is its own cue again.
+    for (const verb of [
+      'expects',
+      'expect',
+      'requires',
+      'required',
+      'require',
+      'comes to',
+      'come to',
+      'came to',
+      'would have paid',
+      'should have paid',
+      'would have been paid',
+      'should have been paid',
+      'would pay',
+      'should pay',
+      'should have allowed',
+      'would have allowed',
+      'would have',
+      'should allow',
+      'short',
+      'owes',
+      'owed',
+      'owe',
+      'owing',
+      'due',
+      'request payment',
+      'requests payment',
+      'requested payment',
+      'patient owes',
+      'patient owed',
+      'patient paid',
+      'patient pays',
+      'patients owe',
+      'patients paid',
+      'patients pay',
+    ]) {
+      expect(roles(`The payer paid ${verb} the shortfall $9.00.`, '$9.00'), verb).toBe('variance');
+    }
+    // A participle right after a noun is the noun's; a copula takes its subject's cue.
+    expect(roles('The interest owing $9.00.', '$9.00')).toBe('interest');
+    expect(roles('The interest due $9.00.', '$9.00')).toBe('interest');
+    expect(roles('The shortfall come to $9.00.', '$9.00')).toBe('variance');
   });
 
   it('read one cue’s role for an amount: the nearest, never every cue of its clause (PE-1, CORR-1, CORR-6, CRIT-2)', () => {
@@ -680,15 +791,20 @@ describe('amounts, percentages and dates', () => {
 
   it('read what an amount or a count of units is stated per (CORR-7)', () => {
     const scope = (text: string, written: string) => reading(text, written).scope;
-    for (const each of ['per line', 'a line', 'each line', 'per visit', 'apiece', 'on each of the 3 lines']) {
+    for (const each of ['per line', 'a line', 'each line', 'every line', 'per visit', 'per row', 'per service', 'apiece', 'on each of the 3 lines']) {
       expect(scope(`It allowed $9.00 ${each}.`, '$9.00'), each).toBe('line');
     }
     for (const unit of ['per unit', 'a unit', 'each unit']) {
       expect(scope(`It allowed $9.00 ${unit}.`, '$9.00'), unit).toBe('unit');
     }
-    for (const total of ['in all', 'in total', 'all told', 'total', 'altogether', 'combined', 'overall', 'across the lines', 'for these 3 lines']) {
+    for (const total of ['in all', 'in total', 'all told', 'total', 'totals', 'totaling', 'totalling', 'totaled', 'totalled', 'altogether', 'combined', 'overall', 'aggregate', 'across the lines', 'for these 3 lines', 'over these lines']) {
       expect(scope(`It allowed $9.00 ${total}.`, '$9.00'), total).toBe('total');
     }
+    for (const lines of ['line', 'lines', 'visit', 'visits', 'row', 'rows', 'service', 'services']) {
+      expect(scope(`It allowed $9.00 on each of the 3 ${lines}.`, '$9.00'), lines).toBe('line');
+    }
+    expect(scope('It allowed $9.00 on each of the 3 claims.', '$9.00')).toBe(null);
+    expect(scope('It allowed $9.00 across the board.', '$9.00')).toBe('total');
     expect(scope('Each line was expected at $9.00.', '$9.00')).toBe('line');
     expect(scope('In total the remittances allowed $9.00.', '$9.00')).toBe('total');
     expect(scope('The 3 lines were allowed $9.00.', '$9.00')).toBe('total');
@@ -696,6 +812,11 @@ describe('amounts, percentages and dates', () => {
     expect(scope('The lines were billed at $9.00 each.', '$9.00')).toBe(null);
     expect(scope('The payer allowed $9.00.', '$9.00')).toBe(null);
     expect(scope('The 3 lines billed 2 units.', '2')).toBe('total');
+    // The rows in the plural, after "for" or anywhere before it in its sentence.
+    for (const rows of ['lines', 'claims', 'services', 'visits', 'rows', 'encounters', 'procedures']) {
+      expect(scope(`It allowed $9.00 for these ${rows}.`, '$9.00'), rows).toBe('total');
+      expect(scope(`These ${rows} were allowed $9.00.`, '$9.00'), rows).toBe('total');
+    }
   });
 
   it('read a percentage’s roles from the cues before it and the words after it, past a year', () => {
@@ -724,6 +845,8 @@ describe('amounts, percentages and dates', () => {
     // Both named: held in both (PE-4).
     expect(reading('Interest runs at 9% of the Medicare fee schedule.', '9%')).toMatchObject({ roles: ['contract_percent', 'interest_rate'], every: true });
     expect(reading('The contract pays interest at 9%.', '9%')).toMatchObject({ roles: ['contract_percent', 'interest_rate'], every: true });
+    // A percentage with no cue of its own after one of its family: that one's roles (step 6).
+    expect(roles('At 110% of Medicare and 120% too.', '120%')).toBe('contract_percent');
   });
 
   it('read a date’s, a month’s and a day of a month’s roles from the cues before them and the noun after', () => {
@@ -788,8 +911,14 @@ describe('amounts, percentages and dates', () => {
     expect(roles('The payment due 2026-03-05 here.', '2026-03-05')).toBe('due_date');
     expect(roles('The payment dispute window ends on 2026-03-05.', '2026-03-05')).toBe('deadline');
     expect(roles('The services were paid on 2026-03-05.', '2026-03-05')).toBe('paid_date');
-    // What a payment was for is no date of its own.
+    // What a payment was for is no date of its own: a service's cue after each act of payment.
     expect(roles('The payer paid for these services on 2026-03-05.', '2026-03-05')).toBe('paid_date');
+    for (const act of ['paid', 'pays', 'pay', 'remitted', 'processed', 'adjudicated', 'allowed', 'underpaid', 'denied']) {
+      expect(roles(`The payer ${act} for these services on 2026-03-05.`, '2026-03-05'), act).toBe('paid_date');
+    }
+    for (const service of ['service', 'services', 'serviced', 'rendered', 'treated', 'treatment', 'visit', 'visits', 'billed']) {
+      expect(roles(`The payer paid for the ${service} on 2026-03-05.`, '2026-03-05'), service).toBe('paid_date');
+    }
     expect(roles('The payer paid the billed lines on 2026-03-05.', '2026-03-05')).toBe('paid_date');
     // The clauses before it: several roles, every one.
     expect(reading('The payer paid the lines, with a deadline, on 2026-03-05.', '2026-03-05')).toMatchObject({ roles: ['paid_date', 'deadline'], every: true });
@@ -887,6 +1016,20 @@ describe('a text’s tokens', () => {
       expect(quotedTokens(`${abbreviation}. 4`), abbreviation).toEqual([`w:${abbreviation}`, 'n:4']);
     }
   });
+
+  it('read a dash between two numbers in digits as a range’s "–", spaced or not, and no dash between other figures or beside other words', () => {
+    expect(quotedTokens('lines 1–3')).toEqual(['w:lines', 'n:1', 'w:–', 'n:3']);
+    expect(quotedTokens('lines 1 – 3')).toEqual(['w:lines', 'n:1', 'w:–', 'n:3']);
+    expect(quotedTokens('lines 1 —3')).toEqual(['w:lines', 'n:1', 'w:–', 'n:3']);
+    expect(quotedTokens('codes 97110 - 97112')).toEqual(['w:codes', 'n:97110', 'w:–', 'n:97112']);
+    // Codes not all digits, and amounts, are no numbers of a range.
+    expect(quotedTokens('codes G0283 – G0284')).toEqual(['w:codes', 'n:G0283', 'n:G0284']);
+    expect(quotedTokens('codes 0283T – 0284T')).toEqual(['w:codes', 'n:0283T', 'n:0284T']);
+    expect(quotedTokens('$1.00 – $2.00')).toEqual(['a:100', 'a:200']);
+    // A word beside the dash, on either side: no range.
+    expect(quotedTokens('lines 1 a- 3')).toEqual(['w:lines', 'n:1', 'w:a', 'n:3']);
+    expect(quotedTokens('lines 1 -a 3')).toEqual(['w:lines', 'n:1', 'w:a', 'n:3']);
+  });
 });
 
 describe('a quoted figure repeated in a role', () => {
@@ -907,6 +1050,31 @@ describe('a quoted figure repeated in a role', () => {
     // A quoted figure its words give no role is held in none.
     expect(holds('The payer allowed $50.00 per unit.', '97110: $50.00 per unit.')).toBe(false);
     expect(holds('The payer paid 24 days late.', 'Disputes are raised within 3650 days; see sections 4, 24, 90', 0)).toBe(false);
+  });
+
+  it('holds it in every one of its roles when it is held in all of them, else in any one, and never where either side names no list of roles', () => {
+    // A figure alone in both its sentence and the quote's clause, so the words around it never decide.
+    const alone = (figureRoles: FigureReading['roles'], every: boolean, own: FigureReading['roles'] | undefined) =>
+      quotedHolds(['7'], { token: 0, roles: figureRoles, every }, { tokens: ['7'], roles: new Map(own === undefined ? [] : [[0, { roles: own, every: false }]]) }, true, functionWords());
+    expect(alone(['level'], false, ['level'])).toBe(true);
+    expect(alone(['level'], true, ['level'])).toBe(true);
+    expect(alone(['level', 'release'], false, ['level'])).toBe(true);
+    expect(alone(['level', 'release'], true, ['level'])).toBe(false);
+    expect(alone(['level', 'release'], true, ['release', 'level'])).toBe(true);
+    expect(alone(['release'], false, ['level'])).toBe(false);
+    // The quote's place read in no role, in any role or not at all, and a figure the narrative gives no list of roles.
+    expect(alone(['level'], false, 'none')).toBe(false);
+    expect(alone(['level'], false, 'any')).toBe(false);
+    expect(alone(['level'], false, undefined)).toBe(false);
+    expect(alone('none', false, ['level'])).toBe(false);
+    expect(alone('any', true, ['level'])).toBe(false);
+    // Four of its tokens before it, but the one after it differs where neither clause ends: no repetition.
+    const before = ['w:raised', 'w:within', 'w:the', 'w:window', '7'];
+    const own = new Map<number, Pick<FigureReading, 'roles' | 'every'>>([[4, { roles: ['window_days'], every: false }]]);
+    const figure = { token: 4, roles: ['window_days'], every: false } as const;
+    expect(quotedHolds([...before, 'w:pages'], figure, { tokens: [...before, 'w:days'], roles: own }, true, functionWords())).toBe(false);
+    expect(quotedHolds([...before, 'w:days'], figure, { tokens: [...before, 'w:days'], roles: own }, true, functionWords())).toBe(true);
+    expect(quotedHolds(before, figure, { tokens: before, roles: own }, true, functionWords())).toBe(true);
   });
 });
 

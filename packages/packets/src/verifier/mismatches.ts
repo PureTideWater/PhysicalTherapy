@@ -127,8 +127,9 @@ function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonl
         const whole = reading.part.of === null ? largestHeld(facts, reading.kind, roles) : decimal(reading.part.of);
         return whole !== null && decimal(reading.value).lessThanOrEqualTo(whole);
       }
-      // Business or working days are only the days to pay of a rule that counts business days.
-      const holds = (role: FigureRole) => held.has(role) && (!reading.business || (role === 'days_to_pay' && facts.businessDays));
+      // Business or working days are only the days to pay (the reader gives them that role alone, ../roles.ts) of a
+      // rule that counts business days.
+      const holds = (role: FigureRole) => held.has(role) && (!reading.business || facts.businessDays);
       const inRole = reading.every ? roles.every(holds) : roles.some(holds);
       return inRole || quoted(true);
     }

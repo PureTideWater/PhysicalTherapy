@@ -679,3 +679,15 @@ describe('a figure stated in its own role, or as a quoted text holds it (CAS-44)
     }
   });
 });
+
+describe('a partitive’s part', () => {
+  it('is held to the number after it, else to the largest count its roles hold, and fails when they hold none', () => {
+    // 4 of 5: the part is at most the 5 stated after it (which itself is no claim count), never the 3 claims held.
+    expect(flagged('We note 4 of the 5 claims were short [1].', verify('We note 4 of the 5 claims were short [1].'))).toEqual(['5']);
+    expect(verify('We note 2 of them here [1].').passed).toBe(true);
+    // No count held in the pronoun's roles: the part fails.
+    const none = { ...narrativeFacts(content), roles: new Map() };
+    expect(flagged('We note 2 of them here [1].', verifyNarrative('We note 2 of them here [1].', none, []))).toEqual(['2']);
+  });
+});
+
