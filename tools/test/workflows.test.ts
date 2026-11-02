@@ -3642,6 +3642,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(sum(keyed(', include: [ { other: x }, { note: short } ]'), tiny)).toEqual([]);
     // And beside a key's list, as matrixValues reads one: an include entry's value counts there too.
     expect(sum(step('env: { M: "${{ matrix.note }}${{ vars.A }}" }', `    strategy: { matrix: { note: [a], include: [ { note: "${'y'.repeat(90_000)}" } ] } }\n`))).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
+    // Each part of an expression at its own bound: fromJSON's value and an access on it, the right of && or ||, and
+    // bytes counted as UTF-8, not as UTF-16 units, outside an expression and in its string literals.
+    expect(sum(step('env: { S: "${{ fromJSON(vars.A) }}${{ vars.B }}${{ vars.C }}" }')), 'fromJSON(x)').toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ fromJSON(vars.A).x }}${{ vars.B }}${{ vars.C }}" }')), 'fromJSON(x).y').toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ true && vars.A }}${{ vars.B }}${{ vars.C }}" }')), 'the right of &&').toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step(`env: { VALUE: "${'é'.repeat(65_533)}" }`)), 'a literal in UTF-8').toEqual([over('env.VALUE', 'VALUE', 6 + 2 * 65_533 + 1)]);
+    expect(sum(step(`env: { S: "\${{ '${'é'.repeat(65_535)}' }}" }`)), 'a string literal in UTF-8').toEqual([over('env.S', 'S', 2 + 2 * 65_535 + 1)]);
     // The token is held as a secret is, 48 KB.
     expect(sum(step('env: { NOTES: "${{ github.token }}${{ secrets.A }}${{ vars.B }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
     // A mapping given as one expression, wherever GitHub accepts one, names its own strings: refused, where a container
