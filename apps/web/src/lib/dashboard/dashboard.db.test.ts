@@ -1,17 +1,18 @@
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import type { Practice } from '@tp/worker/testing';
 import { TriageWorld } from '@tp/worker/testing/triage';
+import { ACTIONABLE_NOW_LINES } from '@tp/worker/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ACTIONABLE_NOW_LINES } from '../triage/queries';
 import { dashboard } from './queries';
 
 /**
  * The home page's Actionable figure and the count beside it (PR #95 review UX-1; PRD 12, the headline), against a scratch
  * database: CAS-08's SYNTHETIC lines (three 97110 x 2, each 30.00 short under a fixed schedule) open one case; a later
  * first run of the same month, as a month priced around a plan with no mapping gets once that plan is mapped, takes the
- * case's lines out of the pricing in effect. The cents and the count share one predicate, so both fall together, and
- * the lines left out are counted beside them. Synthetic data only.
+ * case's lines out of the pricing in effect. The cents and the count share one predicate (@tp/worker/triage's
+ * ACTIONABLE_NOW_OF; docs/adr/0082), so both fall together, and the lines left out are counted by cause in the
+ * headline's outOfFigure (stale: pricing no longer current), which the tile names. Synthetic data only.
  */
 
 let w: TriageWorld;
@@ -54,16 +55,14 @@ describe('the home page’s Actionable figure (UX-1)', () => {
     expect(triaged).toMatchObject({ outcome: 'triaged', summary: { casesOpened: 1 } });
 
     const before = await home(practice);
-    expect(before.headline.actionable).toEqual({ lines: 3, cents: '9000' });
+    expect(before.headline.actionable).toEqual({ lines: 3, cents: '9000', outOfFigure: { movedOn: 0, stale: 0 } });
     expect(before.headline.actionable.lines).toBe(await casesLines(practice));
-    expect(before.actionableNotCurrent).toEqual({ lines: 0 });
 
     // A later first run of March goes in effect: the case's priced lines are no longer current (PRICING_NOT_IN_EFFECT).
     const later = await w.pricing.createRun(practice, MARCH.from, MARCH.to);
     await w.pricing.execute(practice, later);
     const after = await home(practice);
-    expect(after.headline.actionable).toEqual({ lines: 0, cents: '0' });
+    expect(after.headline.actionable).toEqual({ lines: 0, cents: '0', outOfFigure: { movedOn: 0, stale: 3 } });
     expect(after.headline.actionable.lines).toBe(await casesLines(practice));
-    expect(after.actionableNotCurrent).toEqual({ lines: 3 });
   });
 });

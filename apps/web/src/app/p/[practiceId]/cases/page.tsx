@@ -7,10 +7,10 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { SelectField } from '../../../../components/field';
 import { MoneyField } from '../../../../components/money-field';
-import { Money, Pager } from '../../../../components/remittances/display';
+import { Counted, Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
-import { CASE_STATE_TEXT, CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
+import { CASE_STATE_TEXT, CaseStateBadge, Deadline, casesLinesCell, stageLabel } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
 import { dollarsForInput } from '../../../../lib/money-input';
 import { casesPage } from '../../../../lib/routes/triage';
@@ -32,10 +32,11 @@ const WAITING_TEXT = {
 /**
  * The Cases screen (PRD 7, Cases: "list by stage, payer, owner, deadline, actionable total"; "create
  * from a pattern; assign; set materiality"; "deadline colors"; PRD 5, J8; PRD 12): one case per payer
- * pattern, its total the sum of its lines not written off and its deadline the earliest open window
- * among them, filtered in the URL by state, payer, owner and deadline. The roles that work cases triage
- * a run, open a case on a waiting pattern that reaches the case materiality, and set the practice's
- * materiality thresholds; the case's own page assigns it, keeps its notes and opens its packet.
+ * pattern, its actionable figure its lines still actionable on their pricing in effect (docs/adr/0082),
+ * counted beside its lines not written off, and its deadline the earliest open window among them,
+ * filtered in the URL by state, payer, owner and deadline. The roles that work cases triage a run, open
+ * a case on a waiting pattern that reaches the case materiality, and set the practice's materiality
+ * thresholds; the case's own page assigns it, keeps its notes and opens its packet.
  */
 export default async function CasesPage(props: Props) {
   const page = await loadPage(casesPage, props);
@@ -50,8 +51,12 @@ export default async function CasesPage(props: Props) {
       <div className="flex flex-col gap-1">
         <h1 className="text-[2rem] font-bold leading-display tracking-display">Cases</h1>
         <p className="text-base text-muted-foreground">
-          {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} {openCases === 1 ? 'case' : 'cases'} still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. A case’s total is the sum of its lines not written off;
-          a line past its window is struck through and out of it. Payer approved and recovered (posted or deposited) amounts come from the recovery ledger, on each case’s page.
+          {stageLabel('actionable')}:{' '}
+          <span data-figure="cases-actionable">
+            <Money value={actionableCents} />
+          </span>{' '}
+          across <Counted value={openCases} one="case" /> still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. Each case counts its lines still actionable, on their pricing
+          in effect; a written-off line is out of it, struck through on the case’s page. Payer approved and recovered (posted or deposited) amounts come from the recovery ledger, on each case’s page.
         </p>
       </div>
       {notice === 'materiality' ? (
@@ -234,7 +239,7 @@ export default async function CasesPage(props: Props) {
                   <th className="px-2 py-1 font-medium">Payer and plan</th>
                   <th className="px-2 py-1 font-medium">Pattern</th>
                   <th className="px-2 py-1 font-medium">State</th>
-                  <th className="px-2 py-1 font-medium">Lines</th>
+                  <th className="px-2 py-1 font-medium">{stageLabel('actionable')} lines</th>
                   <th className="px-2 py-1 font-medium">{stageLabel('actionable')} total</th>
                   <th className="px-2 py-1 font-medium">Deadline</th>
                   <th className="px-2 py-1 font-medium">Pursuit cost</th>
@@ -254,7 +259,7 @@ export default async function CasesPage(props: Props) {
                       <CaseStateBadge state={item.state} />
                     </td>
                     <td className="px-2 py-1 font-mono tabular-nums whitespace-nowrap">
-                      {item.openLines} of {item.lines}
+                      {casesLinesCell(item)}
                     </td>
                     <td className="px-2 py-1">
                       <Money value={item.actionableNowCents} />

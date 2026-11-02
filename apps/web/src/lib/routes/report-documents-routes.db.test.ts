@@ -311,7 +311,15 @@ describe('the Reports screen and its export history (PRD 7: "export history ... 
 describe('the practice dashboard (PRD 7; PRD 12, the headline)', () => {
   it('shows actionable, payer approved and recovered as three numbers, the case near nothing, and the queues', async () => {
     const home = ok(await call(practiceHome, viewer, P()));
-    expect(home.dashboard.headline).toEqual({ actionable: { lines: 3, cents: '9000' }, payerApprovedCents: '0', recoveredCents: '0', proofLevel: 'posted', flagged: { lines: 0 }, validated: { lines: 0, cents: '0' } });
+    expect(home.dashboard.headline).toEqual({
+      actionable: { lines: 3, cents: '9000', outOfFigure: { movedOn: 0, stale: 0 } },
+      payerApprovedCents: '0',
+      recoveredCents: '0',
+      recoveredSince: null,
+      proofLevel: 'posted',
+      flagged: { lines: 0 },
+      validated: { lines: 0, cents: '0' },
+    });
     expect(home.dashboard.casesByState).toEqual([{ state: 'open', cases: 1, actionableCents: '9000' }]);
     // The window is ten years: no deadline within 14 days.
     expect(home.dashboard.deadlines).toEqual({ cases: 0, actionableCents: '0', earliest: null });
