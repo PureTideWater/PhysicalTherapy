@@ -235,6 +235,8 @@ describe('dependabot.yml (CI-12)', () => {
     expect(dependabotMembers({ majors: { patterns: ['@aws-sdk/*'], 'update-types': ['major'] }, rest: { 'update-types': ['minor', 'patch'] } }, '@aws-sdk/client-s3')).toEqual(['majors', 'rest']);
     // Only the groups that apply to version updates take part: a security-updates group neither takes nor contests one.
     expect(dependabotMembers({ a: { patterns: ['x'] }, s: { 'applies-to': 'security-updates', patterns: ['x'] } }, 'x')).toEqual(['a']);
+    // Its exact name would outscore the wildcard 'x-*' (1000 to 90), yet the wildcard group keeps the dependency.
+    expect(dependabotMembers({ a: { patterns: ['x-*'] }, s: { 'applies-to': 'security-updates', patterns: ['x-a'] } }, 'x-a')).toEqual(['a']);
     // An exact name scores 1000, so a group holding one never gives it up, and two such groups both keep it.
     expect(dependabotMembers({ first: { patterns: ['x'] }, second: { patterns: ['x'] } }, 'x')).toEqual(['first', 'second']);
   });
