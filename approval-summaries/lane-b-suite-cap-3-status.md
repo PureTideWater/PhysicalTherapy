@@ -26,6 +26,13 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
   stopped, and the machine restarted. Setup re-run (OK); the run resumed from wf_4bc31523-700 with a RESUMED note in the
   profile prompt (the map replays from cache). Check-in moved to 2026-11-02 01:08 UTC (trig_018BPysB9zh2e2rDx18q614x).
   Early figures (2,000 lines, realistic spread): step 7b shape a 262.5 s, b 224.2 s, c 208.4 s; postings only ~65 s in each state.
+- 2026-11-02 01:05 UTC: the 5-hour limit stopped the resumed run again (reset 00:10 UTC) with the profile still running, and the
+  machine restarted again. Profile progress, probe scripts and result figures pushed as WIP to
+  `approval-summaries/lane-b-suite-cap-3-wip/` (synthetic only; IDs, counts, times). Profile so far: 6,000 lines step 7b
+  1,653.3 s (a), 1,486.4 s (c); 10,000 lines (c) 3,412.1 s; postings only 6,000 (a) 264.7 s; with realistic planner statistics
+  (statsx) 2,000 (c) 143.8 s, 6,000 (c) 1,035.3 s: the empty-table cached trigger plans are one term, the worker's per-line
+  reads (claimLines, byControl, byPatient, settle, single-row stage inserts) the rest. Setup re-run; resuming from
+  wf_4bc31523-700 with the profile told to wrap up.
 
 ## Corrections of the 2026-10-28 record (stale facts; the 2026-10-28 session and its scratchpad are lost)
 1. Session and orchestrator: now this session, under Lane B's orchestrator, from 2026-11-01 (was session_019i9ifDUYaz9Hta77Vukkzo
@@ -61,6 +68,7 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-02 01:05 UTC: stopped again by the 5-hour limit; WIP pushed; resumed.
 - 2026-11-01 19:58 UTC: design workflow stopped by the 5-hour limit after the map; resumed.
 - 2026-11-01 17:03 UTC: design workflow wf_4bc31523-700 launched.
 - 2026-11-01 17:00 UTC: new session; setup OK; branch re-cut at 83d71fd6 and pushed; status file corrected.
