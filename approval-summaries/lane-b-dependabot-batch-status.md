@@ -49,6 +49,10 @@ gets an explicit timeout sized from its measured runtime, or the reason why not.
 item's row. Pipeline: draft PR, two reviews (CI/test infrastructure; a skeptic of the race analysis), one fix round,
 verification, merge when green. Order: after B and C if it slows them, otherwise as soon as ready.
 
+ORCHESTRATOR RULING UPDATE (2026-11-02 08:52 UTC): C (#91) no longer waits for #86 (their overlap is separate ADR 0066
+subsections; #86 resolves it at its final base merge, keeping both); the 2026-11-04 12:00 UTC guard is moot. Under the 20:36
+first-ready rule, C, B (#94) and D each merge as soon as verified and green. Recorded in #91's description before its merge.
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
