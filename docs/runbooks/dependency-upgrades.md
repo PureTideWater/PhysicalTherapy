@@ -44,6 +44,10 @@ only `default-days`.
 
 ## The weekly triage
 
+A pull request that changes `.github/dependabot.yml` merges only with its `.github/dependabot.yml` check green as well
+as CI-12: GitHub's own "Dependabot config file validation", which is not a required check. CI-12 proves what the file
+means, not that GitHub accepts it, and GitHub stops using a file it rejects, with only a banner to say so.
+
 A merge that changes `.github/dependabot.yml` on the default branch starts Dependabot at once, under the new file: #27's
 merge (2026-10-20T22:24:07Z) started the npm, actions and docker version runs at 22:24:13Z (39507843042, 39507843420,
 39507843520) and a recreate of the open `minor-and-patch` pull request at 22:24:15Z (39507847707). A recreated group
