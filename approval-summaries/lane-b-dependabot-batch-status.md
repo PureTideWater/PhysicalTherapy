@@ -192,7 +192,25 @@ guard 2026-11-04 12:00 UTC).
   checker, the full local suite once, one push with the description rewritten and read back; record
   `approval-summaries/lane-b-dependabot-batch-A-fix-round.md`); script archived (args select the PR).
 
+- 2026-11-01T22:30Z (recorded 2026-11-02T01:02Z): the account's 5-hour window stopped both workflows again (reset 00:10Z),
+  despite the orchestrator's 19:20Z note that the hourly limits no longer apply. **A's fix round** (wf_416e36ca-397): fixer
+  done (merge f5664b5b of 43565235; 11 commits applying all 18 distinct findings; 5 description-only, with design corrections
+  and 7 status-file proposals in the scratchpad's `fix-A/description-changes.md`); checker done (1 S: MOD-17's SDK inventory
+  pinned files not sites; 9 N); the suite agent had committed 950e8ca8 (check-A S1) when stopped; suite and push not done.
+  A's unpushed commits saved at WIP ref `co-001/wip-dependabot-batch-a` (950e8ca8). **B/C reviews** (wf_91a35eba-252): round 1
+  and its skeptics done for both (12 agents); round 2, the critics and the records not done. Early B finding (confirmed S):
+  #94's CI screening-capacity gate raised the O9 sizing question (S4 middle run 45.6 s > 44 s; variance: base 43565235 37.1 s,
+  bce57f16 52.3 s, #42 55.1 s), which the runbook takes to the founder before merge.
+- 2026-11-02T01:02Z: setup re-run (PostgreSQL down). B/C reviews resumed (same run id, cached agents replay); A's fix round
+  resumes once PostgreSQL is up.
+
 ## Waiting on someone
+- **The founder, through the orchestrator (asked 2026-11-02T01:04Z): the consumer's size (O9, issue #41) for PR B #94.** CI's
+  capacity gate on 484e9f06 measured S4's middle run at 45.6 s (> 44 s; pass, time advisory). The consumer's source is
+  unchanged; only its AWS clients and @smithy/core move; the same code measured 37.1 s on base 43565235 and 52.3 s on bce57f16
+  (#42's head 55.1 s). docs/runbooks/screening-capacity.md:101-103 takes it to the founder before merge. Recommended: no
+  change to the consumer from #94; the founder settles O9 on the faithful measurement (issue #41). #94 does not merge until
+  the orchestrator relays a ruling or says the existing #41 question covers it.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does

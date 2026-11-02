@@ -48,6 +48,17 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **2026-11-02 01:05 UTC (acting Lane A): both workflows resumed** after the 5-hour limit (~22:00-00:10) and a worker
+  restart stopped them; setup re-run (PostgreSQL back; no marker). State at the stop:
+  - wf_a12c973a-c12: SS-01 local **bb13be1b** (#42 6c28d6a2 and base 43565235 merged; WIP ref `co-001/wip-ss01-chain`):
+    typecheck, lint 1,725, lint:copy, lint:logs, verify-content, fixtures, unit 7,160 + 4 skipped, test:db shards 1-2
+    green; shards 3-4, build, e2e, push still to run.
+  - wf_5566bd1c-8eb interest merge: local **c18a847e** (1b ce408d2f merged; WIP ref `co-001/wip-interest-chain`); test:db
+    shard 1 found 15 failures from the merge (1b's streamed.db.test.ts order phrase now `ORDER BY m.seq`; ledger-world.ts's
+    one-record interest match that 20261110090000 now skips): fixed uncommitted, shards to re-run.
+  - wf_5566bd1c-8eb 1b gate (uncommitted in /home/user/sc1b): CAS-42.1 triage alone 61.5 s, live peak 160 MiB, 1 lock;
+    **CAS-42.1 report alone 481.3 s against a 180 s budget (FAIL; a second report 89 s: suspected stale statistics right
+    after triage, under investigation)**; CAS-42.2 together PASS (live 220 MiB < 420, 1 lock). Route scout not yet run.
 - **21:15 UTC (acting Lane A): wf_5566bd1c-8eb's stages 1 and 2 done.** SS-01 **efb20704** pushed (bce57f16 merged;
   round 2: build, e2e 68 passed, synth 0 written; verifier: ok, one pre-existing nit). 1b **ce408d2f** pushed (SS-01
   merged; test:db 9,600 + 1 skipped; dm 81d0ac76…, line 7458; verifier's open items: CAS-42.1/.2 not yet in-repo (being

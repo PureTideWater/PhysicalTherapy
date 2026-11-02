@@ -12,8 +12,16 @@ ADR expected (ADR 0071 amended; ADR 0066's Part 3 sentence at `:982-983` on #86 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01T17:47:59Z): design done; waiting on #86's merge
-- **Stage: design done (folded); waiting on #86.** Workflow wf_963d4fd3-855 (33 agents: author, adversarial reviewer
+## Current state (2026-11-02T01:01:53Z): build starting on WIP ref co-001/wip-ci-findings-transport
+- **Stage (2026-11-02T01:01:53Z): build starting.** The session's worker restarted (~22:30-01:00 UTC; PostgreSQL down, setup re-run with
+  `co-001/wip-ci-findings-transport:/home/user/ci-findings-transport`). #86's fix round (wf_401c564d-6b7) has not pushed R3
+  to `co-001/ci-images-digest` (still 83167b8f), but its D1-D10 commits are on `co-001/wip-ci-images-digest` d257fe6d. The
+  WIP ref `co-001/wip-ci-findings-transport` is cut at d257fe6d and pushed (choice, recorded: that head already holds D1
+  structural T6 citations, D3 the byte sum per env string and D4 the findings rows' exact sites, which the orchestrator
+  named as the reason to wait for R3; whatever R3 adds beyond it is merged in, not rebuilt). Next: the build workflow
+  (re-read the design at d257fe6d, builder red first, whole-diff adversary), then merge #86's R3 / merge commit in, push
+  `co-001/ci-findings-transport`, draft PR.
+- **Earlier stage: design done (folded).** Workflow wf_963d4fd3-855 (33 agents: author, adversarial reviewer
   for CI/test infrastructure with the security lens on notify, two skeptics per finding, fold, completeness critic,
   second fold), archived as `workflow-scripts/lane-b-ci-findings-transport-design-wf_963d4fd3-855.js`.
   - Design `designs/lane-b-ci/ci-findings-transport.md` (SHA-256 `074b5432…`), review
@@ -57,3 +65,4 @@ Open questions: none.
 - 2026-11-01T16:59:14Z: session session_01FcouKQ3BjYKaME5uBLn8Lz started; setup OK (GitHub login PureTideWater); the design workflow starts.
 - 2026-11-01T17:47:59Z: design done (wf_963d4fd3-855; design 074b5432…, review 896aca92…); artifact transport chosen; waiting on #86.
 - 2026-11-01T20:37:07Z: the orchestrator ruled: build early on a WIP ref from #86's fix-round head once #86 pushes R3; PR after #86 merges.
+- 2026-11-02T01:01:53Z: resumed after the worker restart; WIP ref co-001/wip-ci-findings-transport cut at #86's WIP d257fe6d and pushed; build starting.
