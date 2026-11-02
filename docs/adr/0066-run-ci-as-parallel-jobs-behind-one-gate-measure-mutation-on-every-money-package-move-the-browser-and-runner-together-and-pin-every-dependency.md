@@ -1001,8 +1001,10 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       full provenance of a released image (its images build with `provenance: false`). build-push-action v7.4.0 reads
       the variable in its post step with actions-toolkit's `parseBool`. A build's env holds these two variables and no
       other, and no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job (its env or its container's) or
-      workflow (`DOCKER_BUILD_SUMMARY: false` would skip the record on every run). Decided for the safer option under
-      the same ruling.
+      workflow (`DOCKER_BUILD_SUMMARY: false` would skip the record on every run). A workflow that holds a build runs
+      only on `push`, `pull_request`, `schedule` or `workflow_dispatch`: on another event whose payload carries a pull
+      request (`pull_request_target`, a review or a comment on one, `workflow_run`) the expression is true and the
+      record, with the description and title, would be uploaded. Decided for the safer option under the same ruling.
     - **A proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder, needs
       #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
       `image=…@sha256:…`), so it stays with the founder.

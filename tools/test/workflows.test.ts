@@ -4691,6 +4691,12 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       return scopes.flatMap(([where, env]) => Object.keys(isRecord(env) ? env : {}).filter((name) => /^(?:DOCKER_BUILD_|BUILDX_)/i.test(name)).map((name) => `${where}.${name}`));
     });
     expect(shared).toEqual([]);
+    // The record stays home only on an event named pull_request; another whose payload carries a pull request
+    // (pull_request_target, a review or a comment on one, workflow_run) would upload its description and title. So a
+    // workflow that holds a build runs on a closed list of events: a push's, a pull request's, a schedule's, a dispatch's.
+    const BUILD_EVENTS: ReadonlySet<string> = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
+    const events = (on: unknown): string[] => (typeof on === 'string' ? [on] : isList(on) ? on.map(String) : isRecord(on) ? Object.keys(on) : []);
+    expect([...new Set(builds.map(({ file }) => file))].flatMap((file) => events(workflow(file).on).filter((event) => !BUILD_EVENTS.has(event)).map((event) => `${file}: holds a build and runs on ${event}`))).toEqual([]);
     expect(builds.length).toBeGreaterThan(0);
     const usesLines = (file: string): number[] => {
       const counter = new LineCounter();
