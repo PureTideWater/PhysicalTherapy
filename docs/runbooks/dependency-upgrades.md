@@ -107,7 +107,10 @@ Once a week, after Thursday's npm batch:
    - a group that moves a money closure's packages runs mutation in full; read its survivors like any other;
    - check that each group's pull request holds only its group's members; a replacement taken as the build's own pull
      request closes the bot's with a comment naming it and its merge commit, once it merges (never
-     `@dependabot ignore`).
+     `@dependabot ignore`). Closing a grouped pull request ignores nothing. Closing an individual (ungrouped) one makes
+     Dependabot skip that exact version for good ("OK, I won't notify you again about this release", #16 and #17): the
+     version stays in each job's `existing-pull-requests`, and `@dependabot show` does not list it. Close an
+     individual one only when the replacement took that version or a newer one, and say which in the comment.
 3. **Open Dependabot alerts.** An alert can stand with no pull request behind it, so read the alerts, not only the
    pull requests:
 
@@ -139,7 +142,9 @@ Once a week, after Thursday's npm batch:
    to the founder.
 6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
    them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
-   `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist.
+   `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist. A closed
+   individual pull request also holds its version back, outside both lists (step 2): today #16 (typescript 7.0.2) and
+   #17 (`@types/node` 26.6.5), both majors the file ignores anyway.
 
 Each triage is recorded in the item's design (`designs/` on build-ops), steps 1-6 in order.
 
