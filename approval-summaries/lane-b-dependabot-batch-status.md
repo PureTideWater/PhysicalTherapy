@@ -331,6 +331,16 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   with the unit suite and 30-run loops; one push). B's merge prep (wf_4e12aa8e-264) will meet C's runbook change: B is the
   second merged of the B/C pair, so it keeps both in the AWS paragraph.
 
+- 2026-11-02T11:00:00Z: **C's merge read on the real Dependabot** (record `C-postmerge-dependabot.md`; challenge HOLDS): the four
+  runs #91's dependabot.yml change started at 10:22Z (npm 41428297500, actions, docker, docker_compose) all succeeded with no
+  routing-failure, skip-group, release-age or error line; npm assigned each of 65 direct dependencies to exactly one group
+  (all ten @aws-sdk/* to aws-sdk, next and @next/eslint-plugin-next to next, minor-and-patch only the 45 no other group names);
+  the updater image's dependabot-core 8786cc38 has the same group-assignment code as 85379652 (CI-12's model). Dependabot
+  closed #98 and opened **#99** (aws-sdk, 10 updates to 3.1160.0), **#100** (aws-cdk: aws-cdk-lib 2.275.0, aws-cdk 2.1146.1)
+  and **#101** (minor-and-patch, 6 updates). B (#94) carries #99's and #100's changes: when B merges, #99 and #100 are closed
+  with a comment (unless Dependabot closes them first), #88 and #89 get a comment; #101 is the next weekly triage's. Push runs
+  of 21fa10df all green (ci, mutation, screening-capacity): the build branch is green again.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
@@ -399,4 +409,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next: read #90's push runs; B's and C's fix rounds (wf_66dd34d8-a6a) -> their merge prep (merge-prep script with B/C args) -> B merges when ready (it must take A's merge: conflict in packages/model-gateway/package.json, keep both ranges, regenerate the lockfile), C after #86 (deadline guard 2026-11-04 12:00Z); close #88 and #89 when B merges; after C merges, read the Dependabot runs its dependabot.yml change starts.
+Next: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).
