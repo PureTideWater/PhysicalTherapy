@@ -387,6 +387,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   },
   {
+    id: 'MOD-17',
+    title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; the configuration with extra headers asked for on the Anthropic path; the installed SDK's own code; and the failures a request through that client meets",
+    assertion:
+      "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; no webhook key, whatever `ANTHROPIC_WEBHOOK_SIGNING_KEY` says; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others; the environment variables the installed SDK reads, the number of other places each of its files touches the environment and the packages its manifest names, of every kind, are the reviewed lists, each closed, and no package it brings in, its dependencies' own included, reads or touches the environment; through that client, a 429 reaches the gateway as `throttled`, a 529, a 500, a 503 that is not JSON and a refused connection as `unavailable`, a connect timeout, the SDK's own timeout and the gateway's abort as `timeout`, and a 400 or 401 as `rejected`, each after one request",
+  },
+  {
+    id: 'MOD-18',
+    title: "A request through that client while the process has a tracer provider and a trace-context propagator registered and the environment asks for debug logging and another host",
+    assertion:
+      "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console (but the SDK's own deprecation warning, for a model on its lists, which carries the model id and never request content); the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log, and lets `ANTHROPIC_CUSTOM_HEADERS` replace its key (the control)",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:
@@ -561,5 +573,29 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'The invited paths are numbered, and the timed steps pass axe',
     assertion:
       "An invited customer's headings read \"Step 1 of 2: Choose a password\" and \"Step 2 of 2: Set up two-step verification\", the number shown over the step's name, and an invited staff member's run from \"Step 1 of 3\" to \"Step 3 of 3: Register a hardware key\", counted by the server from the provider's answer and the account; an everyday sign-in, and a restart with one step left, show no number; the code and enrolment steps pass axe (WCAG 2.1 A and AA) with the warning shown, at 1280 and 390 px, and when closed, as do key registration with its warning and the sign-in page with the email kept",
+  },
+  {
+    id: 'HOM-01',
+    title: 'One actionable figure everywhere',
+    assertion:
+      "On one synthetic case before and after its re-run is accepted (its lines priced again), on a case whose rule release is withdrawn, and on a case with a line moved on to payer approved, the home's headline dollars and lines, its cases by state and deadlines, the Cases header and each row's figure and count, the case page's figure and counted lines, an ROI statement generated on demand and the digest's nearing-deadline figure agree, each read through the one predicate; every line not written off is in the figure, moved past actionable or on pricing no longer current, and is counted under that one cause; the case's stored total is untouched and shown nowhere as actionable; the statement recomputes from its entries and the database accepts it; the home reads its cases in one statement that runs the pricing check at one plan node, once per case line at actionable and for no line written off or moved off actionable; the recovered figures to date and for the quarter, from one ledger read, equal ledgerTotalsOver (practiceLedgerTotals's own totals) for all time and for the quarter, on random ledgers whose reversals cross the quarter's boundary, and to date is dated from the first counted entry that stands, none when every recovery was reversed",
+  },
+  {
+    id: 'HOM-02',
+    title: "The home's figures in words",
+    assertion:
+      "The tile counts its lines with counted() and names each cause of the lines out of the figure (0, 1 and 2 of each) only when there are any, as the case page and the packet builder do through outOfFigureWords(); the Recovered tile reads to date since its first counted entry that stands, or none yet, and this quarter from quarter(), each date and quarter key kept on one line; quarter() writes a quarter key and refuses any other; the Payer approved notes say the figure is to date and never the patient’s share and, with the ledger totals' help and the statement's empty line, follow the proof level; the case page's Net expected value shows an amount only on a case still being worked with a line in the figure and a pursuit estimate, and otherwise says why (resolved or closed, not estimated, no line in the figure, every line written off); no read text of the home, Reconciliation, the case page or the statement says a stage number (stage five, stage-five or stage 5), except the home's help (components/help.ts, a #42 file; follow-up after #42); pnpm lint:copy passes",
+  },
+  {
+    id: 'HOM-03',
+    title: 'The empty home names the upload gate',
+    assertion:
+      "The home's gate equals the Uploads page's: a practice BAA and an organization-wide BAA open it, a BAA signed in the future and none close it, a suspension pauses it; open shows the upload sentence with Go to Uploads, closed the BAA sentence with See the agreement chain for a role that may open Settings and no link for a viewer, paused the suspension sentence with no link",
+  },
+  {
+    id: 'HOM-04',
+    title: 'The home and the statement agree in the browser',
+    assertion:
+      "In the LED-06 journey after the recoupment, the home's actionable tile reads $0.00 and \"what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current\", and the Cases header, the case page and an ROI statement generated then (Actionable in cases still being worked) read $0.00; the Recovered tile's to-date figure reads since 2026-06-09 with this quarter's line; the Payer approved note reads deposited or not, never the patient’s share; the home's read text, its help apart, the case page and Reconciliation's recovered figure carry no stage number, and the home's help still says stage-five until #42's follow-up; the statement's empty approval line names deposited",
   },
 ];

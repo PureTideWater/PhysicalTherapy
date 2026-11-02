@@ -6,9 +6,10 @@ import { messagesResponse } from './messages';
 /**
  * Anthropic's API under its standard business associate agreement with HIPAA readiness enabled: the
  * alternative path behind the same interface (PRD 14, Provider and data path; docs/adr/0048). Only the
- * Messages API with structured outputs is used, both eligible there; the Batch API, Files API, code
- * execution, Skills and the MCP connector are never called. The client is built with no retries of
- * its own (the gateway makes the one retry) and is mocked in tests.
+ * Messages API with structured outputs and effort is used, each listed as eligible there (the provider's
+ * feature eligibility table, read 2026-11-01); the Batch API, Files API, code execution, Skills and the
+ * MCP connector are never called. The client is built with no retries of its own (the gateway makes the
+ * one retry) and is mocked in tests.
  */
 
 /** The part of the SDK's client the provider calls. */
@@ -41,9 +42,22 @@ export function anthropicFailure(error: unknown, signal: AbortSignal): ProviderF
   return new ProviderFailure('rejected');
 }
 
-/** The SDK's client, as configuration builds it: the key from the environment's secret, no SDK retries. */
+/**
+ * The SDK's client, as configuration builds it: the key from the environment's secret, no SDK retries, and nothing else
+ * taken from the environment: the API's own host, the SDK's logging off, no webhook key, and its OpenTelemetry tracing
+ * and trace-context propagation off, whatever ANTHROPIC_BASE_URL, ANTHROPIC_LOG or ANTHROPIC_OPEN_TELEMETRY* say
+ * (docs/adr/0048). ANTHROPIC_CUSTOM_HEADERS, which no option overrides, is refused by readGatewayConfig.
+ */
 export function anthropicClient(apiKey: string, timeoutMs: number): AnthropicMessages {
-  return new Anthropic({ apiKey, maxRetries: 0, timeout: timeoutMs });
+  return new Anthropic({
+    apiKey,
+    baseURL: 'https://api.anthropic.com',
+    maxRetries: 0,
+    timeout: timeoutMs,
+    logLevel: 'off',
+    webhookKey: null,
+    openTelemetry: { traces: false, propagation: false },
+  });
 }
 
 export class AnthropicProvider implements ModelProvider {
