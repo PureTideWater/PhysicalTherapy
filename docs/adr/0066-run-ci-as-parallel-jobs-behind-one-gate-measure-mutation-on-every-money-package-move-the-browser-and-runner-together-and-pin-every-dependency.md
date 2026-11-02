@@ -1013,8 +1013,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
     reads (a nested `parallel:` list of steps, say), so no expression goes unread. That list holds values GitHub or
     the workflow bounds, and every step output and value one job hands another, each listed with its bound. It reads
     this repository's workflows: a pinned action's own `action.yml` (its inputs' defaults, a composite's steps) and
-    code are not read. The defect this notice fixes came from action code, buildx copying the event into its metadata,
-    which no expression rule can read, so every step output is bounded where a workflow reads it, by the rule and its
+    code are not read by it (`pnpm actions:check` reads a pin's `action.yml` for the pin rules, never for values). The
+    defect this notice fixes came from action code, buildx copying the event into its metadata, which no expression
+    rule can read, so every step output is bounded where a workflow hands it to a process, by the value rule and its
     list.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
       by its job and id (a `uses:` step with its action, whose pin is the pin rules'), a job's output (which must

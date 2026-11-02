@@ -2844,9 +2844,9 @@ describe('concurrency groups', () => {
  * or value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32). A workflow's, a job's or a step's
  * key the rule does not read is refused, no key holds an expression, and each environment string a workflow sets is
  * summed from its name, its literal bytes and each value's bound in bytes. These read this repository's workflows: a
- * pinned action's own action.yml and code are not read, and the defect itself came from action code (buildx copying the
- * event into its metadata), which no expression rule can read, so every step output is bounded where a workflow reads
- * it.
+ * pinned action's own action.yml and code are not read by them (actions:check reads a pin's action.yml for the pin
+ * rules, never for values), and the defect itself came from action code (buildx copying the event into its metadata),
+ * which no expression rule can read, so every step output is bounded where a workflow hands it to a process.
  */
 describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
   type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
