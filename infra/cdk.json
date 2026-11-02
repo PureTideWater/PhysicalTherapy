@@ -4,6 +4,5 @@
   "watch": {
     "include": ["bin/**", "lib/**"]
   },
-  "context": {},
-  "notices": false
+  "context": {}
 }

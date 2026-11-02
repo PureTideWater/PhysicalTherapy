@@ -3,9 +3,10 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-// The CDK CLI posts usage telemetry and fetches notices on every command by default, and on a terminal it also
-// asks the npm registry for its latest version once a day (docs/adr/0012, amendment of 2026-11-01). All three are
-// turned off by CLI settings, never by app context: cdk.json's context stays empty.
+// The CDK CLI posts usage telemetry on every command, fetches notices (cached an hour) and, on a terminal, checks npm
+// for its latest version once a day (docs/adr/0012, amendment of 2026-11-01). The repository's scripts turn all three
+// off, by environment variable and --no-notices. cdk.json sets none of them, so a person's own cdk deploy still shows
+// notices matched to our CLI, aws-cdk-lib constructs, Node and bootstrap stack. cdk.json's context stays empty.
 
 const infraDir = path.resolve(import.meta.dirname, '..');
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(path.join(infraDir, file), 'utf8')) as T;
@@ -25,7 +26,7 @@ const withoutComments = (source: string): string => source.replace(/\/\*[\s\S]*?
 const envObject = (source: string): string => /\benv:\s*\{([^}]*)\}/.exec(withoutComments(source))?.[1] ?? '';
 const cdkDiffEnv = envObject(readFileSync(path.join(infraDir, 'scripts/cdk-diff.ts'), 'utf8'));
 
-describe('the CDK CLI sends no telemetry, fetches no notices and skips its version check', () => {
+describe("the repository's cdk runs send no telemetry, fetch no notices and skip the version check", () => {
   it('synthesizes with telemetry and the version check off and without notices', () => {
     const synth = manifest.scripts.synth ?? '';
     expect(synth).toMatch(/^CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true cdk synth\b/);
@@ -47,8 +48,8 @@ describe('the CDK CLI sends no telemetry, fetches no notices and skips its versi
     expect(cdkDiffEnv).toMatch(/\bCDK_DISABLE_VERSION_CHECK:\s*'true'/);
   });
 
-  it('turns notices off in cdk.json for any cdk command run from infra/', () => {
-    expect(cdkJson.notices).toBe(false);
+  it("leaves notices to the CLI default for a person's own cdk commands: cdk.json sets no notices key", () => {
+    expect(cdkJson).not.toHaveProperty('notices');
   });
 
   it('does it without app context: cdk.json context stays empty', () => {
