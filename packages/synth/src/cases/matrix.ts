@@ -512,7 +512,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SGN-01',
     title: "A sign-in step's time limit, stated and enforced",
     assertion:
-      "The new-password, enrolment and code steps say \"This step stays open for 3 minutes.\" before their work, and key registration says 15 minutes, from one constant that infra's sign-in session and access token pin: the shorter of the provider's limit and the pending cookie's; the dev provider's challenge reads the same constant; the server closes a step at that limit, counted from before the provider issued its challenge, whatever the cookie's own life, and the rewrite after a refused new password extends nothing; a page or a press after the limit starts again without asking the provider and counts no failure; a step sealed before the deploy shows no countdown and is left to the provider",
+      "The new-password, enrolment and code steps say \"This step stays open for 3 minutes.\" before their work, and key registration says 15 minutes (a page rendered later in the step says the time left instead, \"This step closes within 2 minutes.\", rounded up), from one constant that infra's sign-in session and access token pin: the shorter of the provider's limit and the pending cookie's; the dev provider's challenge reads the same constant; the server closes a step at that limit, counted from before the provider issued its challenge, whatever the cookie's own life, and the rewrite after a refused new password extends nothing; a page or a press after the limit starts again without asking the provider and counts no failure; a step sealed before the deploy shows no countdown and is left to the provider",
   },
   {
     id: 'SGN-02',
@@ -524,7 +524,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SGN-03',
     title: 'Starting again keeps the email',
     assertion:
-      'Start again, a press after the limit and a step page loaded after it land on the sign-in page with the email filled and the password empty, from a sealed, HttpOnly, SameSite=Lax cookie written only after the password was proven, never for the hardware-key step, and lasting 15 minutes past the step; the notice takes the focus once and says to use the temporary password after a new-password step, or the chosen one once it was saved; the email is in no URL and is filled only on those two reasons; an unknown address and a wrong password write the same cookies; the kept email ends when a session opens, an account locks, a key is required or registered, or a first step opens no step, and outlives an expiry',
+      "Start again, a press after the limit and a step page loaded after it land on the sign-in page with the email filled and the password empty, from a sealed, HttpOnly, SameSite=Lax cookie written only after the password was proven, never for the hardware-key step, and lasting 15 minutes past the step; Start again ends the step it leaves before the sign-in page renders, so Back and the step's address open it no more and key registration's grant is given back; the notice, a note and never also a live region, takes the focus once and says to use the temporary password after a new-password step, or the chosen one once it was saved; the email is in no URL and is filled only on those two reasons; an unknown address and a wrong password write the same cookies; the kept email ends when a session opens, an account locks or is found disabled, a key is required or registered, or a first step opens no step, and outlives an expiry and Start again",
   },
   {
     id: 'SGN-04',

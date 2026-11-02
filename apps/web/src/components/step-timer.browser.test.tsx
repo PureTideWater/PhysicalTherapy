@@ -19,7 +19,6 @@ interface PageKeys {
   readonly person: string | null;
   readonly closesIn?: number;
   readonly closesAt?: number;
-  readonly restartHref?: string;
 }
 
 type Step = { readonly refuse: RefusalState } | { readonly hold: RefusalState };
@@ -38,6 +37,8 @@ const START = Date.parse('2026-11-01T12:00:00Z');
 const CLOSES_AT = 1_800_000_000_000;
 const REGION = '[data-slot="step-timer"]';
 const VISIBLE_PHRASE = '[data-slot="step-limit"] > span:not(.invisible)';
+/** The step's own form's button, apart from Start again's. */
+const SUBMIT = 'form:has(#field-code) button[type="submit"]';
 
 const WARNING =
   'This step closes within a minuteIf you need more time, start again: your email is kept, and you type your password again.Start again';
@@ -97,7 +98,7 @@ function focused(page: Page): Promise<string> {
 
 /** The boxes of what sits above the region: the sentence, the field and the button. */
 function boxes(page: Page) {
-  return Promise.all(['[data-slot="step-limit"]', '#field-code', 'form button[type="submit"]'].map((selector) => page.locator(selector).boundingBox()));
+  return Promise.all(['[data-slot="step-limit"]', '#field-code', SUBMIT].map((selector) => page.locator(selector).boundingBox()));
 }
 
 /** Whether the sentence's visible phrase lies inside the viewport. */
@@ -144,15 +145,11 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await page.clock.runFor('00:04');
     await reached(page, 'warning');
     expect(await said(page)).toEqual(['', WARNING]);
-    const link = page.locator(`${REGION} a`);
-    expect(await link.getAttribute('href')).toBe('/sign-in?reason=restarted');
-    // Start again goes where the page says, never to a path of the timer's own, and names no address.
-    await rerender(page, { restartHref: '/sign-in/hardware-key?reason=restarted' });
-    await page.locator(`${REGION} a[href="/sign-in/hardware-key?reason=restarted"]`).waitFor({ state: 'attached', timeout: 5_000 });
-    expect(await link.getAttribute('href')).not.toContain('@');
-    await rerender(page, { restartHref: '/sign-in?reason=restarted' });
-    await page.locator(`${REGION} a[href="/sign-in?reason=restarted"]`).waitFor({ state: 'attached', timeout: 5_000 });
-    expect(await said(page)).toEqual(['', WARNING]);
+    // Start again is a POST (the page's action ends the step), never a link a prefetch or another site could follow.
+    expect(await page.locator(`${REGION} a`).count()).toBe(0);
+    const restart = page.locator(`${REGION} form button[type="submit"]`);
+    expect(await restart.textContent()).toBe('Start again');
+    expect(await page.locator(`${REGION} form`).evaluate((form) => form.outerHTML)).not.toContain('@');
     expect(await page.locator(VISIBLE_PHRASE).textContent()).toBe('This step closes within a minute.');
     await page.clock.runFor('00:56');
     expect(await said(page)).toEqual(['', WARNING]);
@@ -164,6 +161,19 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     expect(await page.locator(REGION).getAttribute('role')).toBe('status');
     expect(await page.locator(REGION).getAttribute('aria-atomic')).toBe('true');
     expect(await page.locator(`${REGION} [role="alert"], ${REGION} [data-slot="alert"]`).count()).toBe(0);
+    // Pressed twice in one frame, Start again runs the page's action once, says Working… beside it, outside the region,
+    // and holds the second press with aria-disabled on the same button (review UXC-03).
+    await restart.evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+    await page.waitForFunction(() => (window as unknown as { harnessRestarts?: number }).harnessRestarts === 1);
+    await page.locator('[data-slot="restart-pending"] [data-slot="pending-status"]', { hasText: 'Working…' }).waitFor({ state: 'attached' });
+    expect(await restart.getAttribute('aria-disabled')).toBe('true');
+    await restart.click({ force: true });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => (window as unknown as { harnessRestarts?: number }).harnessRestarts)).toBe(1);
+    expect(await said(page)).toEqual(['', WARNING, CLOSED]);
     await page.close();
   });
 
@@ -188,15 +198,15 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     const page = await openStep();
     await page.clock.runFor('02:02');
     await reached(page, 'warning');
-    await page.locator('form button[type="submit"]').focus();
+    await page.locator(SUBMIT).focus();
     await page.keyboard.press('Tab');
-    const link = (await page.locator(`${REGION} a`).elementHandle()) as ElementHandle<HTMLAnchorElement>;
-    expect(await page.evaluate((held) => document.activeElement === held, link)).toBe(true);
+    const button = (await page.locator(`${REGION} form button`).elementHandle()) as ElementHandle<HTMLButtonElement>;
+    expect(await page.evaluate((held) => document.activeElement === held, button)).toBe(true);
     await page.clock.runFor('01:00');
     await reached(page, 'closed');
-    // The same node, not a new link in its place: React kept it and changed only the words before it.
-    expect(await page.evaluate((held) => document.activeElement === held && held.isConnected, link)).toBe(true);
-    expect(await link.getAttribute('href')).toBe('/sign-in?reason=restarted');
+    // The same node, not a new button in its place: React kept it and changed only the words before it.
+    expect(await page.evaluate((held) => document.activeElement === held && held.isConnected, button)).toBe(true);
+    expect(await button.textContent()).toBe('Start again');
     await page.close();
   });
 
@@ -274,8 +284,29 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await forward.close();
   });
 
+  it('SGN-01, SGN-02: a page rendered after its step began states the time left, then flips nothing and says nothing until the warning', async () => {
+    const page = await openStep();
+    // A reload a minute and a half in: the server's 90 s left, a new mount for this deadline.
+    await rerender(page, { closesAt: CLOSES_AT + 50_000, closesIn: 90_000 });
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === 'This step closes within 2 minutes.', VISIBLE_PHRASE);
+    await page.clock.runFor('00:28');
+    expect(await page.locator(VISIBLE_PHRASE).textContent()).toBe('This step closes within 2 minutes.');
+    expect(await page.locator(REGION).getAttribute('data-phase')).toBe('open');
+    expect(await said(page)).toEqual(['']);
+    await page.clock.runFor('00:04');
+    await reached(page, 'warning');
+    expect(await said(page)).toEqual(['', WARNING]);
+    await page.close();
+  });
+
   it('SGN-02: a render in place with the same deadline keeps the count and changes nothing; a new deadline starts a new count', async () => {
     const page = await openStep();
+    // The same step, rendered again in place a minute in (a refused new password's cookie rewrite): the sentence keeps
+    // the step's first words and the region says nothing (review UXC-01).
+    await rerender(page, { closesAt: CLOSES_AT, closesIn: 120_000 });
+    await page.waitForTimeout(100);
+    expect(await page.locator(VISIBLE_PHRASE).textContent()).toBe('This step stays open for 3 minutes.');
+    expect(await said(page)).toEqual(['']);
     // The same step, rendered again with a staler page's 60 s more: the warning still comes at two minutes.
     await rerender(page, { closesAt: CLOSES_AT, closesIn: 240_000 });
     expect(await said(page)).toEqual(['']);
@@ -300,7 +331,7 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await reached(page, 'warning');
     await page.locator('#field-code').fill('000000');
     await script(page, { refuse: { error: 'That code did not match. Try again.' } });
-    await page.locator('form button[type="submit"]').click();
+    await page.locator(SUBMIT).click();
     await shownCount(page, 1);
     expect(await focused(page)).toBe('refusal-summary');
     expect(await said(page)).toEqual(['', WARNING]);
@@ -310,7 +341,7 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     const before = await openStep();
     await before.locator('#field-code').fill('12');
     await script(before, { refuse: { error: 'Fix the fields listed here, then try again.', invalid: true, issues: [{ field: 'code', message: 'six digits' }] } });
-    await before.locator('form button[type="submit"]').click();
+    await before.locator(SUBMIT).click();
     await shownCount(before, 1);
     expect(await focused(before)).toBe('field-code');
     await before.clock.runFor('02:02');
@@ -322,11 +353,11 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     const held = await openStep();
     await held.locator('#field-code').fill('123456');
     await script(held, { hold: { error: 'That sign-in step closed.' } });
-    await held.locator('form button[type="submit"]').click();
-    await held.locator('[data-slot="pending-status"]', { hasText: 'Working…' }).waitFor({ state: 'attached' });
+    await held.locator(SUBMIT).click();
+    await held.locator('form:has(#field-code) [data-slot="pending-status"]', { hasText: 'Working…' }).waitFor({ state: 'attached' });
     await held.clock.runFor('03:02');
     await reached(held, 'closed');
-    expect(await held.locator('[data-slot="pending-status"]').textContent()).toBe('Working…');
+    expect(await held.locator('form:has(#field-code) [data-slot="pending-status"]').textContent()).toBe('Working…');
     expect(await held.locator(REGION).textContent()).toBe(CLOSED);
     await held.evaluate(() => {
       (window as unknown as { harness: Control }).harness.release?.();

@@ -6,7 +6,7 @@ import { Field } from '../../../components/field';
 import { StepTimer } from '../../../components/step-timer';
 import { loadPublicPage } from '../../../lib/http/next';
 import { mfaPage } from '../../../lib/routes/sign-in';
-import { mfaStep } from '../actions';
+import { mfaStep, restartStep } from '../actions';
 import { StepHeading } from '../step-heading';
 
 export const metadata: Metadata = { title: 'Verification code' };
@@ -22,7 +22,7 @@ export default async function MfaPage() {
           <CardDescription>Enter the six-digit code your authenticator app shows for this account.</CardDescription>
         </CardHeader>
         <CardContent>
-          <StepTimer limitSeconds={time.limitSeconds} warningSeconds={time.warningSeconds} closesIn={time.closesIn} closesAt={time.closesAt} restartHref="/sign-in?reason=restarted">
+          <StepTimer limitSeconds={time.limitSeconds} warningSeconds={time.warningSeconds} closesIn={time.closesIn} closesAt={time.closesAt} restart={restartStep}>
             <ActionForm action={mfaStep} submit="Sign in">
               <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={12} hint="Six digits. Spaces are fine." required />
             </ActionForm>

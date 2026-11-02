@@ -13,6 +13,7 @@ import { DEVICE_COOKIE, KEPT_EMAIL_COOKIE, SESSION_COOKIE, SIGN_IN_COOKIE } from
 import { SoftAuthenticator } from '../auth/test-support/soft-authenticator';
 import { totpCode } from '../auth/totp';
 import { routeHandler } from '../http/handler';
+import { RATE_LIMITS, takeRateLimit } from '../http/rate-limit';
 import type { TotpSetup } from '../auth/provider';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -29,6 +30,7 @@ import {
   newPasswordPage,
   registerHardwareKey,
   registerKeyPage,
+  restartSignIn,
   signInPage,
   signInWithPassword,
   verifyHardwareKey,
@@ -333,6 +335,19 @@ class ExpiringSetup extends DevAuthProvider {
 }
 
 const RESTARTED = { status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } };
+/** Start again's answer: the sign-in page, which fills in the kept email. */
+const STARTED_AGAIN = { status: 'ok', data: { redirect: '/sign-in?reason=restarted' } };
+
+/** The grants the provider was given back, in order. */
+const released: string[] = [];
+
+/** The dev provider, recording each grant given back (its own release takes none, as it holds none). */
+class RecordingRelease extends DevAuthProvider {
+  override release(...grant: string[]): Promise<void> {
+    released.push(...grant);
+    return super.release();
+  }
+}
 
 describe('the sign-in steps’ limits, the kept email and the setup steps’ numbers (docs/adr/0081)', () => {
   it('SGN-01: closes a step at its limit, counted from the challenge, before asking the provider and counting no failure', async () => {
@@ -514,6 +529,118 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     expect(await step(answerMfa, expired, { code: totpCode(SECRET, clock) })).toEqual(RESTARTED);
     expect(expired.get(SIGN_IN_COOKIE)).toBeUndefined();
     expect(await page(signInPage, expired, { reason: 'step_expired' })).toMatchObject({ data: { email: other.email } });
+  });
+
+  it('SGN-03: ends the attempt, the kept email with it, when the account is found disabled after the password (review SEC-02)', async () => {
+    const user = await person();
+    const browser = new Browser();
+    await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
+    expect(browser.get(KEPT_EMAIL_COOKIE)).toBeDefined();
+    await owner.query('UPDATE "user" SET status = \'disabled\' WHERE id = $1', [user.id]);
+    expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
+    expect([browser.get(SIGN_IN_COOKIE), browser.get(KEPT_EMAIL_COOKIE)]).toEqual([undefined, undefined]);
+    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null } });
+  });
+
+  it('SGN-03: Start again ends the step it leaves, before the sign-in page, and keeps the email (review SEC-01)', async () => {
+    // The code step: neither its page nor a valid code opens it again.
+    const user = await person();
+    const coded = new Browser();
+    await step(signInWithPassword, coded, { email: user.email, password: PASSWORD });
+    coded.forget();
+    expect(await step(restartSignIn, coded, {})).toEqual(STARTED_AGAIN);
+    expect(coded.deleted).toEqual([SIGN_IN_COOKIE]);
+    expect(coded.written).toEqual([]);
+    expect(await step(mfaPage, coded)).toEqual(RESTARTED);
+    expect(await step(answerMfa, coded, { code: nextCode() })).toEqual(RESTARTED);
+    expect(await page(signInPage, coded, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null } });
+    expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
+
+    // An invited person's new password, then enrolment: the setup key's page and its code are closed too.
+    const invited = await person({ temporary: true, totp: false });
+    const choosing = new Browser();
+    await step(signInWithPassword, choosing, { email: invited.email, password: PASSWORD });
+    expect(await step(restartSignIn, choosing, {})).toEqual(STARTED_AGAIN);
+    expect(await step(newPasswordPage, choosing)).toEqual(RESTARTED);
+    expect(await step(chooseNewPassword, choosing, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2026' })).toEqual(RESTARTED);
+    expect(await page(signInPage, choosing, { reason: 'restarted' })).toMatchObject({ data: { email: invited.email, use: 'temporary' } });
+    const enrolling = new Browser();
+    await step(signInWithPassword, enrolling, { email: invited.email, password: PASSWORD });
+    await step(chooseNewPassword, enrolling, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2026' });
+    const setup = await step(enrollPage, enrolling);
+    expect(setup).toMatchObject({ status: 'ok', data: { secret: expect.any(String) } });
+    const secret = (setup as { readonly data: { readonly secret: string } }).data.secret;
+    expect(await step(restartSignIn, enrolling, {})).toEqual(STARTED_AGAIN);
+    expect(await step(enrollPage, enrolling)).toEqual(RESTARTED);
+    expect(await step(enrollTotp, enrolling, { code: nextCode(secret) })).toEqual(RESTARTED);
+    expect(await page(signInPage, enrolling, { reason: 'restarted' })).toMatchObject({ data: { email: invited.email, use: 'chosen' } });
+
+    // Key registration: its page and both ceremonies are closed, and the provider's grant is given back.
+    const staff = await person({ internal: true });
+    const registering = new Browser();
+    await step(signInWithPassword, registering, { email: staff.email, password: PASSWORD });
+    await step(answerMfa, registering, { code: nextCode() });
+    expect(await step(registerKeyPage, registering)).toMatchObject({ status: 'ok', data: { email: staff.email } });
+    // A key's answer made before Start again, to the step's own challenge, and sent after it.
+    const options = await json(hardwareKeyRegistrationOptions, registering, {});
+    const answer = JSON.stringify(new SoftAuthenticator(ORIGIN).create(options.body.options as never));
+    released.length = 0;
+    expect(await step(restartSignIn, registering, {}, servicesWith(RecordingRelease))).toEqual(STARTED_AGAIN);
+    expect(released).toHaveLength(1);
+    expect(await step(registerKeyPage, registering)).toEqual(RESTARTED);
+    expect(await json(hardwareKeyRegistrationOptions, registering, {})).toEqual({ status: 200, body: { redirect: '/sign-in?reason=step_expired' } });
+    expect(await json(registerHardwareKey, registering, { response: answer })).toEqual({ status: 200, body: { redirect: '/sign-in?reason=step_expired' } });
+    expect((await store.byEmail(staff.email))?.credentials).toEqual([]);
+    expect(await page(signInPage, registering, { reason: 'restarted' })).toMatchObject({ data: { email: staff.email } });
+
+    // With no step to end, it ends nothing, gives nothing back and still goes to the start.
+    const none = new Browser();
+    released.length = 0;
+    expect(await step(restartSignIn, none, {}, servicesWith(RecordingRelease))).toEqual(STARTED_AGAIN);
+    expect(released).toEqual([]);
+    expect(none.written).toEqual([]);
+  });
+
+  it('SGN-03: a Start again its rate limit refuses still ends the step in the browser, and keeps the email (review SEC-01-R1)', async () => {
+    // The step's count spent, as codes and key ceremonies spend it (each counts against the pending step it names).
+    const spend = async (browser: Browser) => {
+      for (let hit = 0; hit < (RATE_LIMITS.mfa.account?.hits ?? 0); hit += 1) {
+        await takeRateLimit(app, sealer, 'mfa', { account: browser.get(SIGN_IN_COOKIE) });
+      }
+    };
+    const refused = { status: 'rate_limited', retryAfterSeconds: expect.any(Number) };
+
+    const user = await person();
+    const coded = new Browser();
+    await step(signInWithPassword, coded, { email: user.email, password: PASSWORD });
+    await spend(coded);
+    coded.forget();
+    expect(await step(restartSignIn, coded, {})).toEqual(refused);
+    expect([coded.deleted, coded.written]).toEqual([[SIGN_IN_COOKIE], []]);
+    expect(await step(mfaPage, coded)).toEqual(RESTARTED);
+    expect(await page(signInPage, coded, { reason: 'restarted' })).toMatchObject({ data: { email: user.email } });
+
+    const invited = await person({ temporary: true, totp: false });
+    const enrolling = new Browser();
+    await step(signInWithPassword, enrolling, { email: invited.email, password: PASSWORD });
+    await step(chooseNewPassword, enrolling, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2026' });
+    expect(await step(enrollPage, enrolling)).toMatchObject({ status: 'ok', data: { secret: expect.any(String) } });
+    await spend(enrolling);
+    expect(await step(restartSignIn, enrolling, {})).toEqual(refused);
+    expect(await step(enrollPage, enrolling)).toEqual(RESTARTED);
+    expect(await page(signInPage, enrolling, { reason: 'restarted' })).toMatchObject({ data: { email: invited.email, use: 'chosen' } });
+
+    // Key registration: the browser holds nothing; the grant, not given back while refused, lapses at the step's limit.
+    const staff = await person({ internal: true });
+    const registering = new Browser();
+    await step(signInWithPassword, registering, { email: staff.email, password: PASSWORD });
+    await step(answerMfa, registering, { code: nextCode() });
+    await spend(registering);
+    released.length = 0;
+    expect(await step(restartSignIn, registering, {}, servicesWith(RecordingRelease))).toEqual(refused);
+    expect(released).toEqual([]);
+    expect(await step(registerKeyPage, registering)).toEqual(RESTARTED);
+    expect(await page(signInPage, registering, { reason: 'restarted' })).toMatchObject({ data: { email: staff.email } });
   });
 
   it('SGN-04: numbers an invited person’s setup steps from the server, two for a customer and three for a staff member', async () => {

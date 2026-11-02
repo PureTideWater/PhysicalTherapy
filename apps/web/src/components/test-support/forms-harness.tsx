@@ -14,7 +14,7 @@ import { ExportRequestForm } from '../packets/export-status';
 import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
 import { ScreeningSplitForm } from '../screening/split-form';
-import { ArrivalFocus } from '../arrival-focus';
+import { ArrivalNotice } from '../arrival-focus';
 import { StepTimer } from '../step-timer';
 
 /**
@@ -33,8 +33,6 @@ interface PageKeys {
   /** A sign-in step's time as its page renders it (docs/adr/0081): the milliseconds left, and the server's deadline, a key. */
   readonly closesIn?: number;
   readonly closesAt?: number;
-  /** Where the step's Start again goes, when the test gives the timer a path of its own. */
-  readonly restartHref?: string;
 }
 
 /** The test's handle on the page. */
@@ -135,6 +133,12 @@ const DOCUMENTS = [
   { value: 'letter', label: [{ text: 'SYNTHETIC payer letter, uploaded 2026-10-27 21:36 UTC, SHA-256 ' }, { text: '0123456789ab…', mono: true }] },
   { value: 'short', label: [{ text: 'Letter' }] },
 ];
+
+/** Start again's form action, as a step's page passes it (docs/adr/0081): counts its presses, where the app's ends the step. */
+function restartStep(): void {
+  const page = window as unknown as { harnessRestarts?: number };
+  page.harnessRestarts = (page.harnessRestarts ?? 0) + 1;
+}
 
 /** Each form, rendered from the page's keys (a refresh renders it again with the keys the server gives then). */
 const forms: Record<string, (page: PageKeys) => ReactNode> = {
@@ -279,8 +283,8 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
   hardwareKey: () => <HardwareKeySignIn />,
   /**
    * The code step as its page renders it (docs/adr/0081): the step's timer around an ActionForm, three minutes from
-   * closing unless the page's keys give its time, so a render in place gives a staler closesIn or a new step's closesAt
-   * (or another Start again path).
+   * closing unless the page's keys give its time, so a render in place gives a staler closesIn or a new step's closesAt.
+   * Start again's action is restartStep's stand-in.
    */
   stepTimer: (page) => (
     <StepTimer
@@ -288,7 +292,7 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       warningSeconds={60}
       closesIn={page.closesIn ?? 180_000}
       closesAt={page.closesAt ?? 1_800_000_000_000}
-      restartHref={page.restartHref ?? '/sign-in?reason=restarted'}
+      restart={restartStep}
     >
       <HarnessForm submit="Sign in">
         <Keys page={page} />
@@ -297,14 +301,12 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
     </StepTimer>
   ),
   /**
-   * The sign-in page's notice after a step closed (ArrivalFocus), above a field: mounted again for each closesAt the
+   * The sign-in page's notice after a step closed (ArrivalNotice), above a field: mounted again for each closesAt the
    * page's keys give, as a new arrival.
    */
   arrival: (page) => (
     <>
-      <ArrivalFocus key={page.closesAt ?? 0}>
-        <p>SYNTHETIC notice: that sign-in step closed.</p>
-      </ArrivalFocus>
+      <ArrivalNotice key={page.closesAt ?? 0} reason="step_expired" title="Sign-in step closed" text="SYNTHETIC notice: that sign-in step closed." />
       <Field label="Email" name="email" />
     </>
   ),

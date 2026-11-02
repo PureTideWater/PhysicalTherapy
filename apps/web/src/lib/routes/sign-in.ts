@@ -197,8 +197,11 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
         case 'invitation_expired':
           return { error: MESSAGES.invitation_expired, final: true };
         case 'no_account':
+          // The account was disabled or removed after the password: the attempt has ended, and the kept email with it.
+          clearSignIn(cookies);
+          return { error: MESSAGES.no_account };
         case 'key_not_registered':
-          return { error: MESSAGES[result.reason] };
+          return { error: MESSAGES.key_not_registered };
       }
   }
 }
@@ -245,6 +248,9 @@ function stepPage(pending: SealedPending, now: Date): { readonly time: StepTime;
 
 const RESTART: StepResult = { redirect: '/sign-in?reason=step_expired' };
 
+/** Where Start again lands: the sign-in page, which fills in the kept email. */
+export const RESTARTED = { redirect: '/sign-in?reason=restarted' } as const satisfies StepResult;
+
 /** A step after the password names its account by the pending step the browser carries (rate limits per account). */
 const pendingAccount = (_input: unknown, request: RouteRequest): string | undefined => request.cookies.get(SIGN_IN_COOKIE);
 
@@ -281,6 +287,46 @@ export const signInWithPassword = publicRoute({
       return result;
     }),
 });
+
+/**
+ * Start again (docs/adr/0081, D6): ends the step the person is leaving before the sign-in page renders, so its setup
+ * key, its code challenge or its key-registration grant (given back to the provider) opens nothing for whoever presses
+ * Back next. The kept email stays: filling it in is what Start again is for. A POST from the step's own form,
+ * origin-checked as every sign-in step is, and counted like the steps after the password (by the pending step it
+ * names, never an account). It records no audit event, as a step that closes at its limit records none. When that rate
+ * limit refuses it (a person who spent the step's count on codes or key ceremonies), the step's cookie still goes, so
+ * Back opens nothing; only giving a grant back to the provider waits, and the grant lapses at the step's limit.
+ */
+const restartRoute = publicRoute({
+  id: 'sign_in.restart',
+  kind: 'action',
+  path: '/sign-in/restart',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
+  phi: false,
+  params: noParams,
+  input: noParams,
+  handle: async (context) => {
+    const { cookies } = context.request;
+    const pending = readPending(cookies, context.services.sealer, context.services.now());
+    clearPending(cookies);
+    if (pending !== undefined) {
+      await context.services.signIn.abandon(pending);
+    }
+    return RESTARTED;
+  },
+});
+
+export const restartSignIn: typeof restartRoute = {
+  ...restartRoute,
+  invoke: async (request, services) => {
+    const outcome = await restartRoute.invoke(request, services);
+    if (outcome.status === 'rate_limited') {
+      clearPending(request.cookies);
+    }
+    return outcome;
+  },
+};
 
 export const newPasswordPage = publicRoute({
   id: 'sign_in.new_password_page',
@@ -497,6 +543,7 @@ export const registerHardwareKey = publicRoute({
 export const SIGN_IN_ROUTES = [
   signInPage,
   signInWithPassword,
+  restartSignIn,
   newPasswordPage,
   chooseNewPassword,
   enrollPage,

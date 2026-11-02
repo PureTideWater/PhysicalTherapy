@@ -264,4 +264,15 @@ export class SignInFlow {
     await this.deps.provider.release(pending.grant);
     return { kind: 'key_registered' };
   }
+
+  /**
+   * The person left the step (Start again, docs/adr/0081): key registration's grant is given back, as every other way
+   * out of that step gives it back. The other steps hold only a challenge, which the provider ends at its own limit and
+   * which nothing can answer once the cookie that seals it is gone.
+   */
+  async abandon(pending: Pending): Promise<void> {
+    if (pending.step === 'register_key') {
+      await this.deps.provider.release(pending.grant);
+    }
+  }
 }

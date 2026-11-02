@@ -1,6 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from '@tp/ui';
 
-import { ArrivalFocus } from '../../components/arrival-focus';
+import { ArrivalNotice } from '../../components/arrival-focus';
 import type { PasswordToUse, SignInReason } from '../../lib/routes/sign-in';
 
 /** Why the user is signing in again, in words (the URL carries only the code). */
@@ -56,7 +56,8 @@ function wordsOf(reason: SignInReason, kept: { readonly use: PasswordToUse | nul
 /**
  * Why the person is on a sign-in page. `kept` is given only when the page filled in the email kept from a step (never
  * the address itself, which only the Email field holds); `surface` is the page: the password's, or the hardware key's.
- * After a step closed or was started again the notice takes the focus once, so it is read on arrival (docs/adr/0081).
+ * After a step closed or was started again the notice is a note that takes the focus once, so it is read on arrival,
+ * once (docs/adr/0081); every other reason is a polite status, which takes no focus.
  */
 export function SignInNotice({
   reason,
@@ -70,13 +71,16 @@ export function SignInNotice({
   if (reason === null) {
     return null;
   }
-  const notice = (
+  const { title } = REASONS[reason];
+  const text = wordsOf(reason, kept, surface);
+  return isRestart(reason) ? (
+    <ArrivalNotice reason={reason} title={title} text={text} />
+  ) : (
     <Alert role="status" data-reason={reason}>
-      <AlertTitle>{REASONS[reason].title}</AlertTitle>
-      <AlertDescription>{wordsOf(reason, kept, surface)}</AlertDescription>
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>{text}</AlertDescription>
     </Alert>
   );
-  return isRestart(reason) ? <ArrivalFocus>{notice}</ArrivalFocus> : notice;
 }
 
 /** PRD 7: internal roles see the hardware-key requirement on the sign-in screen. */

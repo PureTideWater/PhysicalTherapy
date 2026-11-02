@@ -11,9 +11,12 @@ import { StepTimer, type StepTimerProps, limitPhrases, spokenWords, stepPhase, t
 
 const MINUTE = 60_000;
 
+/** Start again's action: never called by a server render. */
+const restart = (): void => undefined;
+
 function server(props: Partial<StepTimerProps> = {}): string {
   return renderToStaticMarkup(
-    <StepTimer limitSeconds={180} warningSeconds={60} closesIn={180_000} closesAt={1_800_000_000_000} restartHref="/sign-in?reason=restarted" {...props}>
+    <StepTimer limitSeconds={180} warningSeconds={60} closesIn={180_000} closesAt={1_800_000_000_000} restart={restart} {...props}>
       <form data-work="">SYNTHETIC form</form>
     </StepTimer>,
   );
@@ -57,6 +60,7 @@ describe('the server render', () => {
     expect(region(markup)).toBe('<div role="status" aria-atomic="true" data-slot="step-timer"></div>');
     expect(markup.indexOf('data-slot="step-timer"')).toBeGreaterThan(markup.indexOf('</form>'));
     expect(markup).not.toContain('<a ');
+    expect(markup).not.toContain('Start again');
     expect(markup).not.toContain('data-phase');
     for (const box of ['border', 'px-4', 'py-3', 'mt-4']) {
       expect(region(markup)).not.toContain(box);
@@ -79,15 +83,44 @@ describe('the server render', () => {
   });
 
   it('SGN-01: says the limit from its seconds, one minute in the singular, and the same without a countdown', () => {
-    expect(server({ limitSeconds: 900, warningSeconds: 120 })).toContain('This step stays open for 15 minutes.');
-    expect(server({ limitSeconds: 60 })).toContain('This step stays open for 1 minute.');
+    expect(server({ limitSeconds: 900, warningSeconds: 120, closesIn: 900_000 })).toContain('This step stays open for 15 minutes.');
+    expect(server({ limitSeconds: 60, warningSeconds: 30, closesIn: 60_000 })).toContain('This step stays open for 1 minute.');
     const unstamped = renderToStaticMarkup(
-      <StepTimer limitSeconds={180} warningSeconds={60} restartHref="/sign-in?reason=restarted">
+      <StepTimer limitSeconds={180} warningSeconds={60} restart={restart}>
         <form>SYNTHETIC form</form>
       </StepTimer>,
     );
     expect(unstamped).toContain('This step stays open for 3 minutes.');
     expect(region(unstamped)).toBe('<div role="status" aria-atomic="true" data-slot="step-timer"></div>');
+  });
+});
+
+describe('a page rendered after its step began (a reload, a return)', () => {
+  /** The phrase shown in the sentence's cell, as the server renders it. */
+  function shown(markup: string): string {
+    return /<span class="col-start-1 row-start-1">([^<]*)<\/span>/.exec(markup)?.[1] ?? '';
+  }
+
+  it('SGN-01: states the limit on a fresh step, a few seconds after the challenge included', () => {
+    expect(shown(server({ closesIn: 180_000 }))).toBe('This step stays open for 3 minutes.');
+    expect(shown(server({ closesIn: 175_000 }))).toBe('This step stays open for 3 minutes.');
+    expect(shown(server({ limitSeconds: 900, warningSeconds: 120, closesIn: 896_000 }))).toBe('This step stays open for 15 minutes.');
+  });
+
+  it('SGN-01, SGN-02: states the time the server counted as left, rounded up after "within", so it stays true unchanged', () => {
+    expect(shown(server({ closesIn: 174_999 }))).toBe('This step closes within 3 minutes.');
+    expect(shown(server({ closesIn: 120_000 }))).toBe('This step closes within 2 minutes.');
+    expect(shown(server({ closesIn: 90_000 }))).toBe('This step closes within 2 minutes.');
+    expect(shown(server({ closesIn: 60_001 }))).toBe('This step closes within 2 minutes.');
+    expect(shown(server({ limitSeconds: 900, warningSeconds: 120, closesIn: 630_000 }))).toBe('This step closes within 11 minutes.');
+    expect(limitPhrases(180, 60, 90_000).open).toBe('This step closes within 2 minutes.');
+  });
+
+  it('SGN-02: within the warning shows the warning’s phrase, and says nothing: the status is empty until the count', () => {
+    const markup = server({ closesIn: 45_000 });
+    expect(shown(markup)).toBe('This step closes within a minute.');
+    expect(region(markup)).toBe('<div role="status" aria-atomic="true" data-slot="step-timer"></div>');
+    expect(markup).not.toContain('Start again');
   });
 });
 

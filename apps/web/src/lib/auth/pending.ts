@@ -12,7 +12,7 @@ import { KEPT_EMAIL_EXTRA_SECONDS, type StepName, pendingSeconds, stepSeconds } 
  * it; the step itself closes earlier, at the limit step-limits.ts names (docs/adr/0081). Once the
  * provider has accepted the password, a second sealed cookie keeps the email for fifteen minutes past
  * the step, so starting again fills it in; it holds nothing else and ends wherever the attempt does,
- * except at a step's expiry, which is what it is for. The session cookie lasts the 12-hour absolute
+ * except at a step's expiry and at Start again, which are what it is for. The session cookie lasts the 12-hour absolute
  * limit; the device cookie lasts 400 days. The adapters set HttpOnly, Secure, SameSite=Lax and path /
  * on every cookie.
  */

@@ -9,16 +9,16 @@ import { addVirtualKey, enterPassword, withDatabase } from './helpers';
 /**
  * Each sign-in step's time limit (docs/adr/0081; test matrix SGN-01 to SGN-04): the code step states its limit, warns
  * once, closes and starts again with the email kept; one step closes in real time, by the server's own clock, with no
- * fake clock anywhere; an invited viewer's two steps are numbered, Start again during the warning keeps the email, and
- * a closed enrolment says which password now works; and an invited support engineer's three steps end with key
- * registration's 15 minutes. Each test is its own synthetic persona's (a step counts toward the ten-failure lock and
- * the mfa bucket, and specs run in parallel). The browser's clock is Playwright's where a test moves it: TOTP codes
- * are computed here from Node's real clock and checked by the server's, which nothing moves, and a step the server
- * should find closed is closed by deleting `tp_sign_in`, as the browser itself does at the cookie's Max-Age. Synthetic
- * data only.
+ * fake clock anywhere; an invited viewer's two steps are numbered, Start again during the warning keeps the email and
+ * ends the step it left (Back and the step's address open it no more), and starting again from enrolment says which
+ * password now works; and an invited support engineer's three steps end with key registration's 15 minutes, whose
+ * closed notice says starting again also asks for a code, as it does. Each test is its own synthetic persona's (a step
+ * counts toward the ten-failure lock and the mfa bucket, and specs run in parallel). The browser's clock is
+ * Playwright's where a test moves it: TOTP codes are computed here from Node's real clock and checked by the server's,
+ * which nothing moves, and a step the server should find closed is closed by deleting `tp_sign_in`, as the browser
+ * itself does at the cookie's Max-Age. Synthetic data only.
  */
 
-const RESTART_HREF = '/sign-in?reason=restarted';
 const KEEPS = 'If you need more time, start again: your email is kept, and you type your password again.';
 const CLOSED = 'Start again: your email is kept, and you type your password again.';
 
@@ -103,6 +103,24 @@ async function pressCode(page: Page, code: string, submit: 'Sign in' | 'Verify a
   await page.getByRole('button', { name: submit }).click();
 }
 
+/** Start again in the step's status: a button that posts (the step ends before the sign-in page renders), never a link. */
+async function expectStartAgain(region: Locator): Promise<Locator> {
+  const button = region.getByRole('button', { name: 'Start again', exact: true });
+  await expect(button).toBeVisible();
+  await expect(region.getByRole('link')).toHaveCount(0);
+  return button;
+}
+
+/** After Start again during the warning, the step it left stays closed: Back and the step's own address both start again. */
+async function expectStepEnded(page: Page, path: string, email: string, words: readonly string[]): Promise<void> {
+  expect(await cookieNames(page)).not.toContain('tp_sign_in');
+  expect(await cookieNames(page)).toContain('tp_sign_in_email');
+  await page.goBack();
+  await expectKept(page, 'step_expired', email, words);
+  await page.goto(path);
+  await expectKept(page, 'step_expired', email, words);
+}
+
 /** Back on the sign-in page after a step: the email kept, the password empty, the notice focused. */
 async function expectKept(page: Page, reason: 'step_expired' | 'restarted', email: string, words: readonly string[]): Promise<void> {
   await expect(page).toHaveURL(new RegExp(`/sign-in\\?reason=${reason}$`));
@@ -173,7 +191,7 @@ test('the code step states its limit, warns once, closes, and starts again with 
     await expect(region).toHaveAttribute('data-phase', 'warning');
     await expect(region).toContainText('This step closes within a minute');
     await expect(region).toContainText(KEEPS);
-    await expect(region.getByRole('link', { name: 'Start again', exact: true })).toHaveAttribute('href', RESTART_HREF);
+    await expectStartAgain(region);
     await expect(region.locator('[role="alert"], [aria-live="assertive"], [data-slot="alert"]')).toHaveCount(0);
     await expect(code).toBeFocused();
     await expect(code).toHaveValue('123');
@@ -188,7 +206,7 @@ test('the code step states its limit, warns once, closes, and starts again with 
     await expect(region).toHaveAttribute('data-phase', 'closed');
     await expect(region).toContainText('This step has closed');
     await expect(region).toContainText(CLOSED);
-    await expect(region.getByRole('link', { name: 'Start again', exact: true })).toHaveAttribute('href', RESTART_HREF);
+    await expectStartAgain(region);
     await expect(phraseOf(page)).toHaveText('This step has closed.');
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
     await expect(page).toHaveURL(/\/sign-in\/mfa$/);
@@ -299,7 +317,7 @@ test('a real expiry: the server closes the code step at 3 minutes by its own clo
   noAddress(email);
 });
 
-test('an invited viewer’s steps are numbered, Start again during the warning keeps the email, and a closed enrolment says its key is new and which password works (SGN-02, SGN-03, SGN-04)', async ({ page }) => {
+test('an invited viewer’s steps are numbered, Start again during the warning keeps the email and ends the step, and enrolment says its key is new and, on starting again, which password works (SGN-02, SGN-03, SGN-04)', async ({ page }) => {
   const key = 'time-invited';
   const email = personaEmail(key);
   const noAddress = watchRequests(page);
@@ -315,12 +333,26 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expectOpen(page);
   });
 
-  await test.step('Start again during the warning lands on the sign-in page with the email filled, told to use the temporary password', async () => {
+  await test.step('during the warning the sentence stays in view beside the second password field, and after a refusal too', async () => {
     await page.clock.fastForward('02:00');
     await expect(region).toHaveAttribute('data-phase', 'warning');
+    const confirm = page.getByLabel('New password again', { exact: true });
+    await expectCueInView(page, confirm, 'New password, warning shown');
+    // Two passwords that differ: the refusal's summary now sits between the sentence and the fields.
+    await page.getByLabel('New password', { exact: true }).fill(CHOSEN);
+    await confirm.fill(`${CHOSEN}x`);
+    await page.getByRole('button', { name: 'Save password' }).click();
+    await expect(page.getByText('the two passwords do not match', { exact: false }).first()).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-in\/new-password$/);
+    await expectCueInView(page, confirm, 'New password, mismatch, warning shown');
+  });
+
+  await test.step('Start again during the warning lands on the sign-in page with the email filled, told to use the temporary password, and the step it left is closed', async () => {
     await expect(region).toContainText(KEEPS);
-    await region.getByRole('link', { name: 'Start again', exact: true }).click();
-    await expectKept(page, 'restarted', email, ['Start again', 'Your email is filled in: type your password to start again.', 'Use the temporary password from your invitation.']);
+    await (await expectStartAgain(region)).click();
+    const temporary = 'Use the temporary password from your invitation.';
+    await expectKept(page, 'restarted', email, ['Start again', 'Your email is filled in: type your password to start again.', temporary]);
+    await expectStepEnded(page, '/sign-in/new-password', email, ['Sign-in step closed', 'That sign-in step closed. Your email is filled in: type your password to start again.', temporary]);
   });
 
   await test.step('the temporary password, typed beside the kept email, opens a fresh step', async () => {
@@ -340,6 +372,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expectOpen(page);
   });
 
+  const kept = 'That sign-in step closed. Your email is filled in: type your password to start again.';
+  const chosen = 'Use the password you chose: the temporary one no longer works.';
   await test.step('enrolment’s warning says starting again gives a new setup key', async () => {
     await page.clock.fastForward('02:00');
     await expect(region).toHaveAttribute('data-phase', 'warning');
@@ -350,6 +384,27 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expectCueInView(page, codeOf(page), 'Enrolment, warning shown');
   });
 
+  await test.step('Start again during enrolment’s warning ends it: Back and its address show no setup key, and its code opens nothing', async () => {
+    await (await expectStartAgain(region)).click();
+    await expectKept(page, 'restarted', email, ['Start again', 'Your email is filled in: type your password to start again.', chosen]);
+    await expectStepEnded(page, '/sign-in/enroll', email, ['Sign-in step closed', kept, chosen]);
+    await expect(page.locator('[data-slot="totp-secret"]')).toHaveCount(0);
+  });
+
+  await test.step('the chosen password opens enrolment again, with one step left, unnumbered, and a new setup key', async () => {
+    await page.getByLabel('Password', { exact: true }).fill(CHOSEN);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page).toHaveURL(/\/sign-in\/enroll$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Set up two-step verification', exact: true })).toBeVisible();
+    await expect(page.locator('[data-slot="step-marker"]')).toHaveCount(0);
+    const again = await setupKeyOf(page);
+    expect(again).not.toBe(first);
+    first = again;
+    await expectOpen(page);
+    await page.clock.fastForward('02:00');
+    await expect(region).toHaveAttribute('data-phase', 'warning');
+  });
+
   await test.step('closed, enrolment says the setup key no longer works', async () => {
     await page.clock.fastForward('01:00');
     await expect(region).toHaveAttribute('data-phase', 'closed');
@@ -357,10 +412,11 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expectAccessible(page, 'Enrolment, closed');
   });
 
-  await test.step('reloaded once the step is gone, the sign-in page keeps the email and says to use the chosen password', async () => {
+  await test.step('reloaded once the step is gone, the sign-in page keeps the email, and names no password: none changed in this attempt', async () => {
     await page.context().clearCookies({ name: 'tp_sign_in' });
     await page.reload();
-    await expectKept(page, 'step_expired', email, ['Sign-in step closed', 'That sign-in step closed. Your email is filled in: type your password to start again.', 'Use the password you chose: the temporary one no longer works.']);
+    await expectKept(page, 'step_expired', email, ['Sign-in step closed', kept]);
+    await expect(page.locator('[data-slot="arrival-focus"]')).not.toContainText(/temporary|you chose/);
   });
 
   await test.step('the chosen password leads to enrolment with one step left, unnumbered, and a new setup key whose code signs in', async () => {
@@ -378,7 +434,7 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
   noAddress(email);
 });
 
-test('an invited support engineer’s three steps are numbered, and key registration stays open for 15 minutes with its warning at two (SGN-01, SGN-02, SGN-04)', async ({ page }) => {
+test('an invited support engineer’s three steps are numbered, and key registration stays open for 15 minutes, warns at two, and once closed starts again through a code (SGN-01, SGN-02, SGN-03, SGN-04)', async ({ page }) => {
   const key = 'time-staff';
   const email = personaEmail(key);
   const noAddress = watchRequests(page);
@@ -387,12 +443,14 @@ test('an invited support engineer’s three steps are numbered, and key registra
   await enterPassword(page, key);
   await expect(page).toHaveURL(/\/sign-in\/new-password$/);
 
+  let secret = '';
   await test.step('choosing a password is step 1 of 3, and enrolment step 2 of 3', async () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Step 1 of 3: Choose a password', exact: true })).toBeVisible();
     await choosePassword(page);
     await expect(page).toHaveURL(/\/sign-in\/enroll$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Step 2 of 3: Set up two-step verification', exact: true })).toBeVisible();
-    await pressCode(page, totpCode(await setupKeyOf(page), new Date()), 'Verify and continue');
+    secret = await setupKeyOf(page);
+    await pressCode(page, totpCode(secret, new Date()), 'Verify and continue');
   });
 
   const region = regionOf(page);
@@ -407,9 +465,28 @@ test('an invited support engineer’s three steps are numbered, and key registra
     await page.clock.fastForward('13:00');
     await expect(region).toHaveAttribute('data-phase', 'warning');
     await expect(region).toContainText('This step closes within 2 minutes');
-    await expect(region).toContainText(KEEPS);
+    await expect(region).toContainText(`${KEEPS} Starting again also asks for a code from your authenticator app.`);
+    await expectStartAgain(region);
     await expect(phraseOf(page)).toHaveText('This step closes within 2 minutes.');
     await expectAccessible(page, 'Key registration, warning shown');
+  });
+
+  await test.step('closed, key registration says starting again also asks for a code, and Start again keeps the email', async () => {
+    await page.clock.fastForward('02:00');
+    await expect(region).toHaveAttribute('data-phase', 'closed');
+    await expect(region).toContainText(`${CLOSED} Starting again also asks for a code from your authenticator app.`);
+    await (await expectStartAgain(region)).click();
+    await expectKept(page, 'restarted', email, ['Start again', 'Your email is filled in: type your password to start again.']);
+  });
+
+  await test.step('the chosen password and a code open key registration again', async () => {
+    await page.getByLabel('Password', { exact: true }).fill(CHOSEN);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page).toHaveURL(/\/sign-in\/mfa$/);
+    // The next window's code: enrolment's own, a moment ago, is not taken twice.
+    await pressCode(page, totpCode(secret, new Date(Date.now() + 30_000)), 'Sign in');
+    await expect(page).toHaveURL(/\/sign-in\/register-key$/);
+    await expectOpen(page);
   });
 
   await test.step('the key registers, and signing in with it is not a numbered step', async () => {

@@ -57,8 +57,13 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   seal's 5 minutes, for at most one deploy window.
 - **D3. Each step states its limit before the work**, as a sentence rendered by the server: "This step stays open for 3
   minutes." (15 on key registration), its minutes from the constant through `counted()`. On enrolment it sits above
-  the setup key. No ticking count: a per-second count is auto-updating content beside the work (2.2.2), and adds
-  pressure while a person copies a 32-character key.
+  the setup key. A page rendered later in the step (a reload, a return, a phone that discarded the tab), more than five
+  seconds below the limit by the server's count for that request, states the time left instead: "This step closes
+  within 2 minutes.", the minutes rounded up after "within", so the sentence stays true for as long as it is on screen;
+  rounded down it would turn false while it stood. Within the warning the first render already shows the warning's
+  phrase. The server and the browser render it alike from the same numbers, and the status stays empty until the
+  browser's first count. No ticking count: a per-second count is auto-updating content beside the work (2.2.2), and
+  adds pressure while a person copies a 32-character key.
 - **D4. One polite warning** at `warningSeconds` left, in a `role="status"`, `aria-atomic` region (`StepTimer`,
   `data-slot="step-timer"`) present and empty from the first render, below the form and outside it, with no box and no
   margin until it speaks. It is said once, never while the page is hidden (a person who comes back after zero hears only
@@ -73,15 +78,27 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
 - **D5. At zero** the same region says once that the step has closed, with Start again; nothing redirects, the form
   stays usable (its button is never `disabled`), and the next press or a reload lands on
   `/sign-in?reason=step_expired`. The setup key is not hidden: the closed words say it no longer works.
-- **D6. Start again keeps the email.** Start again is a link, styled as an outline button, to
-  `/sign-in?reason=restarted`, a new reason; it is one element in the warning and at zero, so a person who tabbed to it
-  keeps the focus. The email is kept in `tp_sign_in_email`: sealed under its own purpose (`sign-in-email`), HttpOnly,
+- **D6. Start again ends the step and keeps the email.** Start again is a button, styled as an outline button, in a
+  form whose action (`restartStep`, the public route `sign_in.restart`) ends the step the person is leaving before the
+  sign-in page renders: it deletes `tp_sign_in`, gives key registration's grant back to the provider, keeps
+  `tp_sign_in_email`, and goes to `/sign-in?reason=restarted`, a new reason. So the setup key, the code's challenge and
+  the key-registration grant open nothing for whoever presses Back or opens the step's address next, at a shared
+  computer. It is a POST from the step's own form: origin-checked as every sign-in step is, counted in the `mfa`
+  bucket by the pending step it names (never an account), with no audit event, as a step that closes at its limit has
+  none; a refusal (its rate limit, which codes and key ceremonies spend too) still deletes `tp_sign_in` and goes to the
+  sign-in page, so Back opens nothing; only the grant waits, to lapse at the step's limit. The form and its button are
+  one element in the warning and at zero, so a person who tabbed to it keeps the focus; once pressed it says
+  "Working…" beside the status, never in it, and a second press sends nothing. The
+  email is kept in `tp_sign_in_email`: sealed under its own purpose (`sign-in-email`), HttpOnly,
   Secure, SameSite=Lax, Path=/; written only after the provider accepted the password (never for the hardware-key step,
   whose options are issued for any address), until 15 minutes past the step's limit, counted from its start; read only
-  by the sign-in page on `step_expired` and `restarted`; ended by a session, a lock, a key required or registered, and
-  any first step that opens none, and kept through an expiry, which is what it is for. It also says which password works
+  by the sign-in page on `step_expired` and `restarted`; ended by a session, a lock, a key required or registered, an
+  account found disabled or removed after a proven step, and any first step that opens none, and kept through an
+  expiry and Start again, which is what it is for. It also says which password works
   (`use`: the temporary one, or the one chosen in this attempt, written before the setup key is asked for, so an expiry
-  on that call still says "chosen"), and the notice on arrival takes the focus once, when nothing holds it. This is the
+  on that call still says "chosen"), and the notice on arrival takes the focus once, when nothing holds it: the notice
+  itself (`ArrivalNotice`), a `role="note"`, never also a live region, so a client navigation that inserts it filled
+  and then focuses it reads it once; the other reasons stay a polite status that takes no focus. This is the
   one value the server renders back into a form, an exception to ADR 0077 D1, and the one value kept between pages
   outside the server, an exception to 0077's "typed text is never kept in browser storage"; it is the person's own
   sign-in address, never patient information, and is never in a URL, a log, an error or a job payload. The notice says
@@ -125,8 +142,18 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
 - **Disabling the form, or redirecting, at zero.** A disabled form locks out a live step if the browser's count runs
   early; a redirect is a change of context the person did not ask for (3.2.5), cutting a screen reader off.
 - **A same-page refusal at zero.** Two presses where one does, and the closed words said twice, once assertively.
-- **Start again as a POST that clears the step.** A mutation, a request key and an audit event to do what the next
-  first step already does.
+- **Start again as a link to `/sign-in?reason=restarted`** (this decision's first form). It changes nothing, so the step
+  the person chose to leave stays usable to its limit: at a shared computer, Back reopens the setup key, the code's
+  challenge or key registration's grant, with which a passer-by could register their own key on a staff account. The
+  next first step does clear it, but only if someone submits one.
+- **A GET that ends the step** (a route handler at a link). A GET that changes state: Next prefetches a link in view,
+  which would end a live step during its warning, and another site's top-level link (SameSite=Lax sends the cookie)
+  could end someone's step.
+- **A route handler for the POST.** The sign-in steps are server actions run through their routes (`runSignInStep`),
+  which the registry test holds, and a server action works the same from the browser's form; a handler would add a
+  path and a redirect of its own for one button.
+- **A request key and an audit event on Start again.** It ends only the browser's own step, names no account, and
+  changes no record: a step that closes at its limit writes none either.
 - **A test knob for time.** A time override of a security limit in the production artifact; the server is tested on
   the injected clock it already has, the browser on Playwright's clock, and one end-to-end test waits the real 3
   minutes.
@@ -148,22 +175,25 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   attempt before it, so the moment anyone else uses the form, the first person's kept address and live step are gone,
   and an unknown address and a wrong password write the same two deletions.
 - At a shared computer, the next person who opens `/sign-in?reason=step_expired` or `?reason=restarted` within 18
-  minutes of an abandoned step (30 after key registration) sees the first person's address filled in; never a
-  password, a code or a session. Accepted: an address is a semi-public identifier, and the step pages already show it
+  minutes of an abandoned step or a Start again (30 after key registration) sees the first person's address filled in;
+  never a password, a code, a step or a session. Accepted: an address is a semi-public identifier, and the step pages already show it
   for the pending cookie's life.
-- A rolling deploy may answer a Start again link served by the new release from the old one, which does not know
-  `restarted` (a 404) and does not clear the kept email at a session; both are bounded by one deploy window and the
+- A rolling deploy may answer a Start again served by the new release from the old one, which knows neither its action
+  nor `restarted`, and does not clear the kept email at a session; each is bounded by one deploy window and the
   cookie's own life.
+- Start again ends the step server-side before the sign-in page renders; a step a person simply walks away from still
+  stays usable until its limit, as before this decision.
 - The SGN rows of the test matrix hold the behaviour, each file the rows it asserts: `step-limits.test.ts` (SGN-01,
   SGN-02), `dev-provider.test.ts` (SGN-01), `pending.test.ts` (SGN-01, SGN-03), the routes' database tests on an
-  injected clock (SGN-01, SGN-03, SGN-04), the sign-in flow's database test (SGN-04), the timer's unit tests (SGN-01,
+  injected clock (SGN-01, SGN-03, SGN-04; Start again ending each step and giving the grant back), the sign-in flow's database test (SGN-04), the timer's unit tests (SGN-01,
   SGN-02) and browser-harness tests (SGN-02, and SGN-03 for the arrival focus), the notice's and heading's unit test
   (SGN-03, SGN-04), and `apps/web/e2e/sign-in-time.spec.ts` (SGN-01 to SGN-04), with four personas of its own, one of
   whose steps closes in real time.
 
 ## Not covered
 
-- **Without JavaScript** the limit is stated and the email kept, but no warning comes.
+- **Without JavaScript** the limit is stated and the email kept, but no warning comes, and so no Start again: the next
+  press after the limit starts again.
 - **The hardware-key sign-in step** (one ceremony of seconds) is enforced, not stated.
 - **A lock reached during the warning** leaves the timer counting, outside its form; its words stay true (the step does
   close), and Start again leads to "Account locked" on the first step.
@@ -176,7 +206,8 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   The start is taken before the first call, which is right either way.
 - Cognito's own expiry: the dev provider is its twin, read from the same constant.
 - Screen readers by hand (NVDA and JAWS with Chrome, VoiceOver with Safari on macOS and iOS): the announcements follow
-  the ARIA the tests assert, and are listed for the manual checks of combined audit #103.
+  the ARIA the tests assert, and are listed for the manual checks of combined audit #103, with one more: the arrival
+  notice heard once, after Start again and after a closed step's press.
 - iOS Safari's timers in a background tab: the visibility rule covers the return. Whether a real iOS or Android
   keyboard leaves the sentence's cue in view is checked by hand there; the tests assert it at 390 by 500 px.
 

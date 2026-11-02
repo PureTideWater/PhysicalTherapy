@@ -5,6 +5,7 @@ import { HardwareKeyRegistration } from '../../../components/hardware-key';
 import { StepTimer } from '../../../components/step-timer';
 import { loadPublicPage } from '../../../lib/http/next';
 import { registerKeyPage } from '../../../lib/routes/sign-in';
+import { restartStep } from '../actions';
 import { StepHeading } from '../step-heading';
 
 export const metadata: Metadata = { title: 'Register a hardware key' };
@@ -23,7 +24,14 @@ export default async function RegisterKeyPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <StepTimer limitSeconds={time.limitSeconds} warningSeconds={time.warningSeconds} closesIn={time.closesIn} closesAt={time.closesAt} restartHref="/sign-in?reason=restarted">
+          <StepTimer
+            limitSeconds={time.limitSeconds}
+            warningSeconds={time.warningSeconds}
+            closesIn={time.closesIn}
+            closesAt={time.closesAt}
+            restart={restartStep}
+            notes={{ warning: 'Starting again also asks for a code from your authenticator app.', closed: 'Starting again also asks for a code from your authenticator app.' }}
+          >
             <HardwareKeyRegistration />
           </StepTimer>
         </CardContent>

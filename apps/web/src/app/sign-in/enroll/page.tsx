@@ -6,7 +6,7 @@ import { Field } from '../../../components/field';
 import { StepTimer } from '../../../components/step-timer';
 import { loadPublicPage } from '../../../lib/http/next';
 import { enrollPage } from '../../../lib/routes/sign-in';
-import { enrollStep } from '../actions';
+import { enrollStep, restartStep } from '../actions';
 import { StepHeading } from '../step-heading';
 
 export const metadata: Metadata = { title: 'Set up two-step verification' };
@@ -29,7 +29,7 @@ export default async function EnrollPage() {
             warningSeconds={time.warningSeconds}
             closesIn={time.closesIn}
             closesAt={time.closesAt}
-            restartHref="/sign-in?reason=restarted"
+            restart={restartStep}
             notes={{
               warning: 'Starting again gives you a new setup key: replace this one in your authenticator app.',
               closed: 'This setup key no longer works: starting again gives you a new one.',

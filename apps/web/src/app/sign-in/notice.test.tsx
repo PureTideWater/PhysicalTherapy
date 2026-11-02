@@ -8,8 +8,8 @@ import { StepHeading } from './step-heading';
 /**
  * Why a person is back on a sign-in page after a step closed or was started again (docs/adr/0081; test matrix SGN-03,
  * SGN-04): on the password page the words say the email is filled in and which password starts again, and on the
- * hardware-key page they speak of the key alone; either notice is wrapped to take the focus on arrival, and no other
- * reason is. The address itself is never in the notice: the page passes only which password to use. The focus needs a
+ * hardware-key page they speak of the key alone; either notice is a note that takes the focus on arrival, and no other
+ * reason's is. The address itself is never in the notice: the page passes only which password to use. The focus needs a
  * browser (the e2e takes it); the server render is read here. Synthetic values only.
  */
 
@@ -57,17 +57,22 @@ describe('the sign-in notice after a step', () => {
     expect(notice({ reason: 'key_registered', surface: 'key' })).toBe(notice({ reason: 'key_registered' }));
   });
 
-  it('SGN-03: takes the focus on arrival for the two restart reasons only, on either page, and stays a polite status', () => {
+  it('SGN-03: takes the focus on arrival for the two restart reasons only, on either page, as a note said once, never also a live region', () => {
     for (const reason of SIGN_IN_REASONS) {
       for (const surface of ['password', 'key'] as const) {
         const markup = notice({ reason, surface });
-        const wrapped = /^<div[^>]*data-slot="arrival-focus"[^>]*>/.exec(markup);
+        const focusable = /^<div[^>]*data-slot="arrival-focus"[^>]*>/.exec(markup);
         if ((RESTARTS as readonly string[]).includes(reason)) {
-          expect(wrapped?.[0], `${reason} on ${surface}`).toContain('tabindex="-1"');
+          // The notice itself is what takes the focus: one element, a note, with nothing around it.
+          expect(focusable?.[0], `${reason} on ${surface}`).toContain('tabindex="-1"');
+          expect(focusable?.[0], `${reason} on ${surface}`).toContain('role="note"');
+          expect(markup.match(/role="/g), `${reason} on ${surface}`).toHaveLength(1);
+          expect(markup, `${reason} on ${surface}`).not.toMatch(/role="status"|aria-live/);
         } else {
-          expect(wrapped, `${reason} on ${surface}`).toBeNull();
+          expect(focusable, `${reason} on ${surface}`).toBeNull();
+          expect(markup).toMatch(/^<div[^>]*role="status"/);
+          expect(markup).not.toContain('tabindex');
         }
-        expect(markup).toContain('role="status"');
         expect(markup).not.toContain('role="alert"');
       }
     }

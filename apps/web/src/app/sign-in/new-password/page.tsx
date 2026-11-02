@@ -7,7 +7,7 @@ import { StepTimer } from '../../../components/step-timer';
 import { PASSWORD_MIN_LENGTH } from '../../../lib/auth/password';
 import { loadPublicPage } from '../../../lib/http/next';
 import { newPasswordPage } from '../../../lib/routes/sign-in';
-import { newPasswordStep } from '../actions';
+import { newPasswordStep, restartStep } from '../actions';
 import { StepHeading } from '../step-heading';
 
 export const metadata: Metadata = { title: 'Choose a password' };
@@ -23,7 +23,7 @@ export default async function NewPasswordPage() {
           <CardDescription>Your invitation to PaidWhole came with a temporary password. Choose your own.</CardDescription>
         </CardHeader>
         <CardContent>
-          <StepTimer limitSeconds={time.limitSeconds} warningSeconds={time.warningSeconds} closesIn={time.closesIn} closesAt={time.closesAt} restartHref="/sign-in?reason=restarted">
+          <StepTimer limitSeconds={time.limitSeconds} warningSeconds={time.warningSeconds} closesIn={time.closesIn} closesAt={time.closesAt} restart={restartStep}>
             <ActionForm action={newPasswordStep} submit="Save password">
               <PasswordField
                 label="New password"
