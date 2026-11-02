@@ -48,6 +48,21 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **~09:20 UTC (acting Lane A): interest at its clean point: 74a6b290 pushed** (wf_3c4cf5ac-af0; results
+  `approval-summaries/lane-a-schema-chain-wf_3c4cf5ac-af0-result.json`). 379fed9f merged 1b 048bc843; builder W's slice
+  4 d37a0ee3 (reconciliation and ROI words per section 7, word for word in the result; routes db test 17/17 and
+  ledger-interest.spec 2/2, both failing first); the integrator's seam read found and fixed one defect (74a6b290: a
+  take-back is now capped at the line's whole interest as well as the chain's, so two chains on one line after a
+  specialist's correction can no longer trip ledger_interest_line_floor and roll back a reconcile (D8); failing-first
+  test). **One full local suite:** unit 7,275 + 4 skipped; golden 376; oracle 712; test:db shards 2-4 green, shard 1
+  3,334 passed + 1 failed: **CAS-42.1 (1b's test)**; build, stamp, e2e 71; Stryker affected shards (interest.ts 100%,
+  308/308) + gate; verify-content; synth; engine-freeze clean; scope 75 files in section 11. **Domain model SHA-256
+  47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef, line 7469** (provisional). Open: ADR 0084 D5
+  sentence on the line-whole cap (at interest's PR); its UX review at its PR.
+- **CAS-42.1 fails at 1b's own head 048bc843 too** (report 730-750 s vs 180 s, nearly all FETCH report_lines; 95.8 s in
+  1b's integrator run): the report's plan depends on whether autovacuum's ANALYZE lands after triage. **Running:
+  wf_3118d5d7-edb** (script archived) on /home/user/sc1b: a plan-independent fix (query shape first), proven by 3 runs
+  plus one with autovacuum off, narrow checks, push; a skeptic re-runs it. 1b's full suite runs once in its PR fix round.
 - **07:40 UTC (acting Lane A): #42 MERGED as 22789493 (orchestrator, 07:36 UTC). SS-01's PR stage started.**
   **Running: wf_78cd4c88-7b1** (script `workflow-scripts/lane-a-ss01-pr-stage-wf_78cd4c88-7b1.js`): base 22789493 merged
   into SS-01 (regenerated; SS-01's recreated objects re-read on #42's merged body; delta checks; push); the draft PR into
