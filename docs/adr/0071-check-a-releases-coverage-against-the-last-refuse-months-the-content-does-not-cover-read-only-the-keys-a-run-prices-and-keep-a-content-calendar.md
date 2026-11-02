@@ -294,8 +294,9 @@ The check job handed the findings on as a job output, and the notify job read th
 Linux refuses an environment string over 131,072 bytes, so any findings file over 98,292 bytes stopped the notify
 job before its shell started, and nothing was filed (latent: no run had reached it; ADR 0066, Part 3, N32). The
 check now uploads `findings.json` as the run's own artifact `findings`, kept one day and replaced on a re-run, and
-the notify job downloads it with `gh run download`, in three tries, refusing a file over its bound. For that it
-holds `actions: read` beside `issues: write`. On this public repository, that reads only what any signed-in user
+the notify job downloads it with `gh run download`, in three tries each stopped after 60 seconds, so a stalled
+download fails like any other, refusing a file over its bound. For that it holds `actions: read` beside
+`issues: write`. On this public repository, that reads only what any signed-in user
 can read; once the repository is private it reads private run logs and artifacts, which Revisit when names. The
 notify job still checks nothing out, runs no action and runs no repository code: `actions/download-artifact` would
 have needed no permission, but would have run third-party code beside the write token. A download that fails

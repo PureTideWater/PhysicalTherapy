@@ -88,17 +88,21 @@ jobs:
           MAX_FILE_BYTES: "2000000"
           # Seconds between the three tries to download the findings.
           DOWNLOAD_PAUSE: "10"
+          # Seconds a try may take before it is stopped (killed 10 seconds later), so a stalled download ends in "check
+          # failing" within the job's five minutes: three tries of 70 and two pauses of 10 take at most 230 seconds.
+          DOWNLOAD_LIMIT: "60"
         run: |
           set -euo pipefail
           # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
-          # apart, gh's error each time in the log; at most MAX_FILE_BYTES, as the check bounds it, or no findings list.
+          # apart, each stopped after DOWNLOAD_LIMIT seconds, gh's error each time in the log; at most MAX_FILE_BYTES, as
+          # the check bounds it, or no findings list.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
             for try in 1 2 3; do
               rm -rf "$RUNNER_TEMP/findings"
-              if gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
+              if timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
                 downloaded=true
                 break
               fi
@@ -142,6 +146,9 @@ jobs:
           MAX_FILE_BYTES: "2000000"
           # Seconds between the three tries to download the findings.
           DOWNLOAD_PAUSE: "10"
+          # Seconds a try may take before it is stopped (killed 10 seconds later), so a stalled download ends in "check
+          # failing" within the job's five minutes: three tries of 70 and two pauses of 10 take at most 230 seconds.
+          DOWNLOAD_LIMIT: "60"
           # The most titles the "findings not filed" issue lists, so its body stays under GitHub's 65,536 characters.
           MAX_LISTED: "200"
         run: |
@@ -163,13 +170,14 @@ jobs:
           }
           # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
-          # apart, gh's error each time in the log; at most MAX_FILE_BYTES, as the check bounds it, or no findings list.
+          # apart, each stopped after DOWNLOAD_LIMIT seconds, gh's error each time in the log; at most MAX_FILE_BYTES, as
+          # the check bounds it, or no findings list.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
             for try in 1 2 3; do
               rm -rf "$RUNNER_TEMP/findings"
-              if gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
+              if timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
                 downloaded=true
                 break
               fi

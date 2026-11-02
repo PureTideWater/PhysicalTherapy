@@ -1244,7 +1244,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
         'if [ "$1 $2" = "run download" ]; then',
-        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0)',
+        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0)',
+        '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; exec sleep 30; fi',
         '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "HTTP 502: Bad Gateway" >&2; exit 1; fi',
         '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
         '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/findings.json"; exit 0',
@@ -1290,14 +1291,16 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   /**
    * Runs a notify job's step as the runner starts it (a file, bash --noprofile --norc -e -o pipefail), with notifyEnv's
    * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, no pause between download tries, `findings`, when not null,
-   * staged as the run's findings artifact, and the fake's download failing its first `failures` tries.
+   * staged as the run's findings artifact, and the fake's download failing its first `failures` tries and then stalling
+   * its next `stalls` tries (a sleep past any DOWNLOAD_LIMIT a case gives).
    */
-  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0) {
+  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0) {
     const step = notifyStep(name, job);
     if (step === undefined) throw new Error(`${name}: no job ${job}`);
     const gh = fakeGh(open);
     if (findings !== null) writeFileSync(path.join(gh.dir, 'fake/findings.json'), findings);
     if (failures > 0) writeFileSync(path.join(gh.dir, 'fake/fail'), String(failures));
+    if (stalls > 0) writeFileSync(path.join(gh.dir, 'fake/stall'), String(stalls));
     const env = {
       ...notifyEnv(name, step, values, findings),
       RUNNER_TEMP: mkdtempSync(path.join(scratch, 'runner-temp-')),
@@ -1380,7 +1383,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([])).log.filter((line) => line.startsWith('issue '))).toEqual([]);
   });
 
-  it('content-calendar: notify downloads the findings in three tries, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport)', () => {
+  it('content-calendar: notify downloads the findings in three tries, each stopped after DOWNLOAD_LIMIT seconds, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport)', () => {
     const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
     const issues = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('issue '));
     const tries = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ')).length;
@@ -1394,6 +1397,12 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     // Three failed tries: "check failing".
     const down = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 3);
     expect([down.status, issues(down), tries(down)], down.output).toEqual([0, [failing], 3]);
+    // Each try is stopped after DOWNLOAD_LIMIT seconds (1 here, 60 in the workflow): a stalled try is retried, and three
+    // end in "check failing" rather than at the job's timeout with no issue.
+    const slow = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 1);
+    expect([slow.status, issues(slow), tries(slow)], slow.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    const stalled = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 3);
+    expect([stalled.status, issues(stalled), tries(stalled)], stalled.output).toEqual([0, [failing], 3]);
   });
 
   it('content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)', () => {
@@ -1432,6 +1441,11 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(ghCommands(step?.run ?? '').filter((command) => !/^gh (?:api --paginate "repos\/\$GH_REPO\/issues\?|label |issue )/.test(command))).toEqual([DOWNLOAD]);
     expect(step?.env?.MAX_FILE_BYTES).toBe(String(MAX_FILE_BYTES));
     expect(step?.env?.DOWNLOAD_PAUSE).toBe('10');
+    expect(step?.env?.DOWNLOAD_LIMIT).toBe('60');
+    // Every try is stopped and killed 10 seconds later, so three tries and two pauses end inside the job's timeout.
+    expect(step?.run).toContain(`if timeout -k 10 "$DOWNLOAD_LIMIT" ${DOWNLOAD}; then`);
+    expect(3 * (Number(step?.env?.DOWNLOAD_LIMIT) + 10) + 2 * Number(step?.env?.DOWNLOAD_PAUSE)).toBeLessThan(5 * 60);
+    expect(read('content-calendar.yml').jobs.notify?.['timeout-minutes']).toBe(5);
     expect(step?.env?.MAX_LISTED).toBe('200');
     expect(step?.env).not.toHaveProperty('FINDINGS_B64');
   });
@@ -1447,7 +1461,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(runs(handoff).filter((run) => run.includes('${{'))).toEqual([]);
     expect(JSON.stringify(handoff?.steps ?? [])).not.toContain('secrets.');
     const step = handoff?.steps[0];
-    const keys = ['GH_TOKEN', 'GH_REPO', 'CHECK_RESULT', 'MAX_FILE_BYTES', 'DOWNLOAD_PAUSE'];
+    const keys = ['GH_TOKEN', 'GH_REPO', 'CHECK_RESULT', 'MAX_FILE_BYTES', 'DOWNLOAD_PAUSE', 'DOWNLOAD_LIMIT'];
     expect(Object.keys(step?.env ?? {})).toEqual(keys);
     const notify = notifyStep('content-calendar.yml');
     for (const key of keys) expect(step?.env?.[key], key).toBe(notify?.env?.[key]);
