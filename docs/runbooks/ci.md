@@ -434,38 +434,38 @@ user that cannot run the binary.
   test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
   value's bound in bytes, and holds each to 131,072 bytes but `FINDINGS_B64`, recorded over the limit and held alone
   in its string at its one place; an env, a `with:`, a container or a service given as one expression is refused,
-  since no sum can read its strings). `workflows.test.ts` reads every expression in an env, an input, a script, a
-  job's outputs, a matrix or a key as the runner does, and admits only bounded values, none in any key (GitHub
-  evaluates one as an env name, an input's name, a service id or a matrix key), and refuses a workflow's, a job's or a
-  step's key it does not read (a new GitHub key joins its list once the rule reads it). It reads this repository's
-  workflows; a pinned action's own `action.yml` and code are not read by it (`pnpm actions:check` reads a pin's
-  `action.yml` for the pin rules, never for values): the defect N32 fixes came from action code (buildx copying the
-  event into its metadata), which no expression rule can read, so every step output is bounded where a workflow hands
-  it to a process, by the value rule and its list. Never use a build's whole metadata, an event object, a description
-  or title, or `toJSON` of anything but `needs` or one job's `outputs` (of one value it quotes and escapes, up to six
-  bytes a byte; a `toJSON` row holds that of every output it reads, with their names and indents). A new step output
-  or value one job hands another joins its list with its bound and its producers by name, exactly those its value
-  reads (a step by job and id, a `uses:` step with its action, a job output that is one step's or needed job's output
-  alone, a matrix key, a needed job, tool code as `path#symbol` with the unit test its owners keep for its bound,
-  named by its title: the test checks that title is one plain `it()` or `test()` that always runs as written, not what
-  it asserts), never by line; a row whose bound passes 131,072 bytes also names every place it is read (`sites`, each
-  as the rule writes a place, its job, step and key), and any other read fails the value table's test. A row whose
-  producer is a `run:` step holds the fingerprint of its script and what it runs with, its own `env`, `shell` and
-  `working-directory` or those its job and the workflow give it, and its job's container: when the test prints a new
-  one, re-read the bound against the change, then write the new fingerprint in the row. A new `$GITHUB_ENV` write
-  joins its closed map: its file, job, step and exact line, its step's fingerprint, its bound, and the test that runs
-  the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let a script set a
-  variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` or `$GITHUB_PATH` (a shell, a default
-  shell, an input or an env naming it is refused), nor anything the runner's `_runner_file_commands`. A `$GITHUB_PATH`
-  write has no map: every script line naming it is refused. Every `docker/build-push-action` step sets
-  `BUILDX_METADATA_PROVENANCE: disabled` and `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`,
-  and no other variable (no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job (its env or its container's)
-  or workflow): its build record (a `.dockerbuild` artifact whose provenance holds the whole event, a description and
-  title or commit messages and e-mails) can be downloaded by any signed-in account for 90 days in this public
-  repository, so a pull request's run uploads none, while every other run (a push's, a scheduled or a dispatched
-  one's, the release's) keeps the default (docs/adr/0066, Part 3, N32); so a workflow with a build runs only on
-  `push`, `pull_request`, `schedule` or `workflow_dispatch`, never on another event whose payload carries a pull
-  request.
+  since no sum can read its strings). `workflows.test.ts` reads every expression of a workflow in an env, an input, a
+  script, a job's outputs, a matrix or a key as the runner does, and admits only bounded values, none in any key
+  (GitHub evaluates one as an env name, an input's name, a service id or a matrix key), and refuses a workflow's, a
+  job's or a step's key it does not read (a new GitHub key joins its list once the rule reads it). It reads this
+  repository's workflows; a pinned action's own `action.yml` and code are not read by it (`pnpm actions:check` reads a
+  pin's `action.yml` for the pin rules, never to bound a value): the defect N32 fixes came from action code (buildx
+  copying the event into its metadata), which no expression rule can read, so every step output is bounded where a
+  workflow hands it to a process, by the value rule and its list. Never use a build's whole metadata, an event object,
+  a description or title, or `toJSON` of anything but `needs` or one job's `outputs` (of one value it quotes and
+  escapes, up to six bytes a byte; a `toJSON` row holds that of every output it reads, with their names and indents).
+  A new step output or value one job hands another joins its list with its bound and its producers by name, exactly
+  those its value reads (a step by job and id, a `uses:` step with its action, a job output that is one step's or
+  needed job's output alone, a matrix key, a needed job, tool code as `path#symbol` with the unit test its owners keep
+  for its bound, named by its title: the test checks that title is one plain `it()` or `test()` that always runs as
+  written, not what it asserts), never by line; a row whose bound passes 131,072 bytes also names every place it is
+  read (`sites`, each as the rule writes a place, its job, step and key), and any other read fails the value table's
+  test. A row whose producer is a `run:` step holds the fingerprint of its script and what it runs with, its own
+  `env`, `shell` and `working-directory` or those its job and the workflow give it, and its job's container: when the
+  test prints a new one, re-read the bound against the change, then write the new fingerprint in the row. A new
+  `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its step's fingerprint, its bound, and
+  the test that runs the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let
+  a script set a variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` or `$GITHUB_PATH` (a
+  shell, a default shell, an input or an env naming it is refused), nor anything the runner's `_runner_file_commands`.
+  A `$GITHUB_PATH` write has no map: every script line naming it is refused. Every `docker/build-push-action` step
+  sets `BUILDX_METADATA_PROVENANCE: disabled` and
+  `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`, and no other variable (no `DOCKER_BUILD_`
+  or `BUILDX_` variable is set for a whole job (its env or its container's) or workflow): its build record (a
+  `.dockerbuild` artifact whose provenance holds the whole event, a description and title or commit messages and
+  e-mails) can be downloaded by any signed-in account for 90 days in this public repository, so a pull request's run
+  uploads none, while every other run (a push's, a scheduled or a dispatched one's, the release's) keeps the default
+  (docs/adr/0066, Part 3, N32); so a workflow with a build runs only on `push`, `pull_request`, `schedule` or
+  `workflow_dispatch`, never on another event whose payload carries a pull request.
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes
