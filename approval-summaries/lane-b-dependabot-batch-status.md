@@ -238,6 +238,19 @@ base merge needs it (rule 6). WIP refs kept pushed.
   corrected, CI, fresh-clone verification; repeats while the base moves, at most 3 rounds); then the session marks #90
   ready, waits for approval-of-record's re-run and merges with expectedHeadSha.
 
+- 2026-11-02T03:55:00Z: **B's and C's reviews done** (wf_91a35eba-252, 3 rounds each, 35 agents, none refuted; records
+  `B-review-{ci-infra,security-supply}.md` and `C-review-{ci-infra,security-supply}.md` committed). **B #94:** 25 findings, 0 B,
+  7 S, 18 N: O9 not recorded; no test that the installed CDK CLI still honours the three settings; cdk.json's top-level
+  `notices: false` hides CDK's security notices from a person's deploy (the scripts already pass --no-notices: drop it, the
+  safer option); test:golden stubs Textract, so it cannot evidence the client-textract/@smithy/core codec moves; the
+  merge-time @smithy/core 3.38.1 step does nothing or moves unreviewed tooling (dropped under the pacing call; 3.38.1 with the
+  next triage). **C #91:** 36 findings (22 distinct: 0 B, 4 S, 18 N), the change itself holds (63 direct dependencies, each in
+  one group under dependabot-core 85379652); the S are description and merge mechanics: merge order vs the rulings, C's own
+  merge starts Dependabot within seconds (a post-merge read of those runs), the resolved B x C runbook paragraph written down,
+  O9. **Fix rounds for B and C launched together**: wf_66dd34d8-a6a (the fix-round script once per PR). A's merge prep
+  (wf_7806c9c6-310) in round 2 (description only: the O9 note's claim about watched paths corrected; base unchanged 877e662f;
+  CI green on cf124313).
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
