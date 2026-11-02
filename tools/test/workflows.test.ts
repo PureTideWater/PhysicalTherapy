@@ -3852,8 +3852,19 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    */
   const PACKAGES_BYTES = 256;
   const SHARDS_BYTES = 1_024;
-  /** toJSON indents what it writes: each job it is given (its result and empty outputs) or output takes under 128 bytes. */
-  const toJsonBytes = (entries: number) => 128 * entries + '{\n}'.length;
+  /**
+   * The most toJSON writes of one job's outputs, given each output's bound, as the runner writes JSON: two-space
+   * indents, each value quoted and escaped (a quote or a backslash two bytes, a control character six, \u and four
+   * digits), so six bytes for each of its value's, its name, and ten more for the indent, the quotes, ': ', ',' and
+   * the newline; and the braces.
+   */
+  const toJsonBytes = (outputs: Readonly<Record<string, number>>): number => Object.entries(outputs).reduce((sum, [name, bytes]) => sum + name.length + 6 * bytes + 10, '{\n}'.length);
+  /**
+   * The same of needs: each job it is given, its id and 64 bytes of its own lines (its result, a word, among them),
+   * and its outputs one level deeper, four more bytes of indent each.
+   */
+  const needsJsonBytes = (jobs: Readonly<Record<string, Readonly<Record<string, number>>>>): number =>
+    Object.entries(jobs).reduce((sum, [job, outputs]) => sum + job.length + 64 + toJsonBytes(outputs) - '{\n}'.length + 4 * Object.keys(outputs).length, '{\n}'.length);
   /** An image's name in a release matrix, the longest being web-production. */
   const IMAGE_NAME_BYTES = 'web-production'.length;
   const RUNNER_IMAGE = "the runner image step writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS";
@@ -3869,6 +3880,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   const AFFECTED_STEP = script('changes', 'affected', '4d1e744c');
   const RELEASE_BUILD = (digests: string) => `the build job's outputs, ${digests} digests of 64 hexadecimal digits (sha256: before the config and top-level ones), by the identity step`;
   const releaseBuild = (images: readonly string[]): Ref[] => [needs('build'), ...images.flatMap((image) => ['sha256', 'config', 'target'].map((kind) => output('build', `${kind}_${image}`)))];
+  /** What toJSON writes of the build job's outputs: each image's archive SHA-256 and its config and top-level digests. */
+  const releaseJson = (images: readonly string[]): number => toJsonBytes(Object.fromEntries(images.flatMap((image) => [[`sha256_${image}`, 64], [`config_${image}`, DIGEST_BYTES], [`target_${image}`, DIGEST_BYTES]])));
+  /** The jobs ci.yml's gate needs, none of which declares outputs (asserted below). */
+  const ALL_GREEN_NEEDS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images'];
   const ADVISORIES = [
     symbol('tools/release-capacity/checks.ts#verdict'),
     symbol('tools/release-capacity/checks.ts#advisoriesOutput'),
@@ -3894,8 +3909,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       file: 'ci.yml',
       job: 'all-green',
       value: 'tojson(needs)',
-      bytes: toJsonBytes(8),
-      refs: ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images'].map(needs),
+      bytes: needsJsonBytes(Object.fromEntries(ALL_GREEN_NEEDS.map((job) => [job, {}]))),
+      refs: ALL_GREEN_NEEDS.map(needs),
       bound: 'the eight jobs it needs, each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)',
     },
     { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db'), bound: RUNNER_IMAGE },
@@ -3987,8 +4002,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'e6378687')], bound: 'one of two Dockerfile paths' },
     { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'e6378687')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
     { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', 'e6378687')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
-    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(6), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
-    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(6), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'worker']), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'worker']), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
@@ -4004,8 +4019,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'e3cbe28b')], bound: 'one of two Dockerfile paths' },
     { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'e3cbe28b')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
     { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', 'e3cbe28b')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
-    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(12), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
-    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(12), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'web-staging', 'web-production', 'worker']), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'web-staging', 'web-production', 'worker']), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
     { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bytes: PATH_BYTES, refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
     { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('capacity', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
     { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', bytes: 512, refs: [...MEASURE_OUTPUTS, ...SIZING], bound: "one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts), written by run.ts" },
@@ -4281,13 +4296,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       // Tool code is never fingerprinted, so the row names the test that holds its bound.
       if (row.refs.some((ref) => ref.kind === 'symbol') && !row.refs.some((ref) => ref.kind === 'test')) say('names tool code but no test that proves its bound');
       // toJSON reads every job it is given and every output of each (the row names them all, and no other, above),
-      // and holds them all: its bound is at least the sum of theirs.
+      // and holds what it writes of them: each output quoted and escaped, up to six bytes for each of its bound's,
+      // with its name and indent (toJsonBytes), and for needs each job's own lines.
       const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
       if (whole !== null) {
-        const given = whole[1] === undefined ? needsOf(reader) : [whole[1]];
-        const bounds = given.flatMap((job) => outputsOf(jobs[job]).map((name) => rows.find((entry) => entry.file === row.file && entry.job === job && entry.value === handedValue(jobOutput(jobs[job], name)))?.bytes ?? 0));
-        const total = bounds.reduce((sum, bytes) => sum + bytes, 0);
-        if (total > row.bytes) say(`toJSON reads outputs bounded at ${String(total)} bytes together, over this row's ${String(row.bytes)}`);
+        const bounds = (job: string): Record<string, number> => Object.fromEntries(outputsOf(jobs[job]).map((name) => [name, rows.find((entry) => entry.file === row.file && entry.job === job && entry.value === handedValue(jobOutput(jobs[job], name)))?.bytes ?? 0]));
+        const most = whole[1] === undefined ? needsJsonBytes(Object.fromEntries(needsOf(reader).map((job) => [job, bounds(job)]))) : toJsonBytes(bounds(whole[1]));
+        if (most > row.bytes) say(`toJSON writes up to ${String(most)} bytes of what it reads, each output quoted and escaped, over this row's ${String(row.bytes)}`);
       }
     }
     return problems;
@@ -4479,14 +4494,27 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText, undefined, [produced, { ...handed, refs: produced.refs.filter((ref) => ref.kind === 'symbol' || ref.kind === 'test') }])).toEqual([tie(handed, 'names no needed job build'), tie(handed, 'names no output digest_web of job build')]);
     // toJSON of a job's outputs names every output, and no other, and holds them all.
     const whole = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ BUILD: "${{ toJSON(needs.build.outputs) }}" }');
-    const json = (refs: readonly Ref[], bytes = 256) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes }]);
+    // It holds what toJSON writes, each output quoted and escaped: digest_web's 71 bytes up to 426, with its name,
+    // indent and the braces 449 bytes, not the 94 it writes unescaped.
+    const escapedJson = toJsonBytes({ digest_web: 71 });
+    expect(escapedJson).toBe(449);
+    const json = (refs: readonly Ref[], bytes = escapedJson) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes }]);
     expect(json([needs('build'), output('build', 'digest_web')])).toEqual([]);
     expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): names no output digest_web of job build']);
     expect(json([output('build', 'digest_web')])).toEqual(['fixture.yml use tojson(needs.build.outputs): names no needed job build']);
+    const writes = (bytes: number) => `fixture.yml use tojson(needs.build.outputs): toJSON writes up to 449 bytes of what it reads, each output quoted and escaped, over this row's ${String(bytes)}`;
+    expect(json([needs('build'), output('build', 'digest_web')], 448)).toEqual([writes(448)]);
+    expect(json([needs('build'), output('build', 'digest_web')], '{\n  "digest_web": "",\n}'.length + 71)).toEqual([writes(94)]);
     expect(json([needs('build'), output('build', 'digest_web')], 70)).toEqual([
       "fixture.yml use tojson(needs.build.outputs): job build's output digest_web reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row's 70",
-      "fixture.yml use tojson(needs.build.outputs): toJSON reads outputs bounded at 71 bytes together, over this row's 70",
+      writes(70),
     ]);
+    // toJSON(needs) the same, each job with its id and its own lines: 522 bytes for build and its one output.
+    const allNeeds = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ ALL: "${{ toJSON(needs) }}" }');
+    const needsRow = (bytes: number) => problems(allNeeds, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs)', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest', bytes }]);
+    expect(needsJsonBytes({ build: { digest_web: 71 } })).toBe(522);
+    expect(needsRow(522)).toEqual([]);
+    expect(needsRow(521)).toEqual(["fixture.yml use tojson(needs): toJSON writes up to 522 bytes of what it reads, each output quoted and escaped, over this row's 521"]);
   });
 
   it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, and nothing else writes or reads buildx’s metadata provenance', () => {
