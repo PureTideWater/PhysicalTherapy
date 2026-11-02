@@ -3332,7 +3332,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         at.unbounded.push(`env.${name}, which a script writes to $GITHUB_ENV`);
         return Infinity;
       }
-      // Each place it is set, read as GitHub reads it there: a step's env sees the job's and the workflow's, a job's the workflow's.
+      // The most of any env in scope that sets it (a step's own, its job's, the workflow's), so never less than what GitHub
+      // reads there: a step's env reads its job's (the job's over the workflow's), and GitHub's schema gives a job's or
+      // the workflow's env no env context at all, so an env.X there is a parse error, which this still bounds.
       const set = at.scopes.flatMap((scope, index) =>
         Object.entries(scope)
           .filter(([key]) => key.toLowerCase() === name)
@@ -3493,6 +3495,15 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // A comparison's operand counts too (the parser does not read precedence), and a choice input is its longest option.
     expect(sum(step('env: { S: "${{ vars.A || vars.B == vars.C }}${{ vars.D }}${{ vars.E }}" }'))).toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
     expect(sum(step('env: { S: "${{ inputs.runner }}" }'))).toEqual([]);
+    // Each level's own strings are summed: the workflow's env, a job's, its container's and each service's.
+    const three = '"${{ vars.A }}${{ vars.B }}${{ vars.C }}"';
+    const notes = (where: string) => `fixture.yml ${where}.NOTES: NOTES=… is up to ${String(6 + 3 * 49_152 + 1)} bytes with its NUL, over 131072`;
+    expect(sum(`env: { NOTES: ${three} }\n${step('env: { E: x }')}`)).toEqual([notes('env')]);
+    expect(sum(step('env: { E: x }', `    env: { NOTES: ${three} }\n`))).toEqual([notes('job images env')]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, env: { NOTES: ${three} } }\n`))).toEqual([notes('job images container.env')]);
+    expect(sum(step('env: { E: x }', `    services:\n      db: { image: x, env: { NOTES: ${three} } }\n`))).toEqual([notes('job images services.db.env')]);
+    // The token is held as a secret is, 48 KB.
+    expect(sum(step('env: { NOTES: "${{ github.token }}${{ secrets.A }}${{ vars.B }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
     // A mapping given as one expression, wherever GitHub accepts one, names its own strings: refused, where a container
     // or a service named by an image alone sets none.
     const mapping = '"${{ fromJSON(steps.web.outputs.size) }}"';
