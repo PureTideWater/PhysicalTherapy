@@ -334,22 +334,33 @@ export async function runCount(scope: Scope, practiceId: string): Promise<number
   return rows[0]?.n ?? 0;
 }
 
-/** Names for a run's opaque IDs: its payers, plans and the contract versions it priced under. */
+/** Names for a run's opaque IDs: its payers, its plans (those it priced and those it held with no mapping) and the contract versions it priced under. */
 export interface RunNames {
   readonly payers: Readonly<Record<string, string>>;
   readonly plans: Readonly<Record<string, string>>;
+  /**
+   * The payer's name of each plan the run held with no mapping (coverage /2), by plan ID: the run page names such a plan
+   * in words before its key (PR #95 review UX-9). Kept apart from `payers`, which names the patterns' payers.
+   */
+  readonly planPayers: Readonly<Record<string, string>>;
   readonly versions: Readonly<Record<string, { readonly contractId: string; readonly title: string; readonly versionNo: number; readonly effectiveFrom: string; readonly effectiveTo: string | null }>>;
 }
 
 export async function runNames(scope: Scope, practiceId: string, coverage: RunCoverage | null): Promise<RunNames> {
   if (coverage === null) {
-    return { payers: {}, plans: {}, versions: {} };
+    return { payers: {}, plans: {}, planPayers: {}, versions: {} };
   }
   const payerIds = [...new Set(coverage.patterns.map((pattern) => pattern.payer_id))];
-  const planIds = [...new Set(coverage.patterns.map((pattern) => pattern.plan_id))];
+  // The patterns' plans (priced lines only) and the plans that had no mapping when the run priced (coverage /2), which
+  // the run page names by key (combined audit #32; MAP-06, PRC-30).
+  const planIds = [...new Set([...coverage.patterns.map((pattern) => pattern.plan_id), ...coverage.unmapped_plans.map((plan) => plan.plan_id)])];
   const versionIds = [...new Set(coverage.versions.map((version) => version.contract_version_id))];
   const payers = await scope.client.query<{ id: string; name: string }>('SELECT id, name_raw AS name FROM payer WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, payerIds]);
   const plans = await scope.client.query<{ id: string; key: string }>('SELECT id, plan_key AS key FROM plan WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, planIds]);
+  const planPayers = await scope.client.query<{ id: string; name: string }>(
+    'SELECT p.id, y.name_raw AS name FROM plan p JOIN payer y ON y.id = p.payer_id AND y.practice_id = p.practice_id WHERE p.practice_id = $1 AND p.id = ANY ($2::uuid[])',
+    [practiceId, coverage.unmapped_plans.map((plan) => plan.plan_id)],
+  );
   const versions = await scope.client.query<{ id: string; contract_id: string; title: string; version_no: number; effective_from: string; effective_to: string | null }>(
     `SELECT v.id, v.contract_id, c.title, v.version_no, v.effective_from::text AS effective_from, v.effective_to::text AS effective_to
        FROM contract_version v JOIN contract c ON c.id = v.contract_id WHERE v.practice_id = $1 AND v.id = ANY ($2::uuid[])`,
@@ -358,6 +369,7 @@ export async function runNames(scope: Scope, practiceId: string, coverage: RunCo
   return {
     payers: Object.fromEntries(payers.rows.map((row) => [row.id, row.name])),
     plans: Object.fromEntries(plans.rows.map((row) => [row.id, row.key])),
+    planPayers: Object.fromEntries(planPayers.rows.map((row) => [row.id, row.name])),
     versions: Object.fromEntries(
       versions.rows.map((row) => [row.id, { contractId: row.contract_id, title: row.title, versionNo: row.version_no, effectiveFrom: row.effective_from, effectiveTo: row.effective_to }]),
     ),

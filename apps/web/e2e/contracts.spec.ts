@@ -262,7 +262,10 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     await page.getByLabel('Contract version (for a contract mapping)').selectOption({ label: 'SYNTHETIC PAYER C AGREEMENT, version 1 (2026-01-01 through 2026-12-31)' });
     await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
     await page.getByRole('button', { name: 'Save the mapping' }).click();
-    await expect(page.locator('[data-notice="mapped"]')).toBeVisible();
+    // Whether this mapping completes March here, and so queues its monitoring (combined audit #32, D2b), depends on what
+    // other specs have loaded into, and set on, the shared practice by now (pricing.spec sets its billing ZIP): either
+    // notice is right. mapping.spec asserts D2b's notices exactly, in a practice of its own.
+    await expect(page.locator('[data-notice="mapped"], [data-notice="mapped_pricing"]')).toBeVisible();
     const resolution = page.getByRole('table', { name: 'Agreement resolution' }).getByRole('row').filter({ hasText: 'Priced from the contract’s rate record' });
     await expect(resolution).toContainText('SYNTHETIC PAYER C AGREEMENT, version 1');
     await expect(resolution).toContainText('Signed off');

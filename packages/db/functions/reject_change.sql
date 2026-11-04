@@ -7,6 +7,8 @@
 -- Trigger function of: audit_event.audit_event_append_only
 -- Trigger function of: audit_event.audit_event_no_truncate
 -- Trigger function of: compliance_record.compliance_record_append_only
+-- Trigger function of: mail_recipient_key.mail_recipient_key_fixed
+-- Trigger function of: mail_recipient_key.mail_recipient_key_no_truncate
 -- Trigger function of: marketing_campaign.marketing_campaign_fixed
 -- Trigger function of: marketing_campaign.marketing_campaign_no_truncate
 -- Trigger function of: place_of_service_split.place_of_service_split_append_only
@@ -24,6 +26,7 @@
 -- Trigger function of: screening_queue_tally.screening_queue_tally_fixed
 -- Trigger function of: screening_queue_tally.screening_queue_tally_no_truncate
 -- Trigger function of: screening_result.screening_result_no_truncate
+-- Trigger function of: screening_run.screening_run_client_subject_fixed
 -- Trigger function of: screening_run.screening_run_no_truncate
 -- Trigger function of: screening_upload.screening_upload_fixed
 -- Trigger function of: screening_upload.screening_upload_no_truncate

@@ -1,0 +1,27 @@
+{
+  "case": "MAP-07",
+  "module": "MAP",
+  "title": "A period none of whose plans has a mapping, and the mapping that completes it",
+  "assertion": "No run is created: the monitor leaves the month waiting, logged as `UNMAPPED_PLAN` with the count of months, and a person's run is refused as pricing nothing. A mapping queues monitoring only when, with a release in force, it leaves a month no run covers with every plan of its lines mapped and no wait on the billing ZIP or on Medicare content holding it; that job names every such month, by its first day only, and prices those months alone as first runs in effect with no hand re-run, never a month still waiting on another plan's mapping (with month 1 holding plans A and B and month 2 holding A and C, mapping A, then B, then C gives each month one first run and no re-run). A mapping that leaves the month mixed, or held on the billing ZIP, queues nothing and says only \"Mapped\", and the page says how many months wait and offers \"Price them now\", which queues monitoring of every uncovered month and is refused while the practice is suspended. Two people mapping a month's last two plans at the same moment queue monitoring exactly once. A month whose last run waited on Medicare content is planned again once a mapping completes it",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/worker/src/price/price.db.test.ts",
+    "apps/worker/src/monitor/job.test.ts",
+    "apps/worker/src/monitor/monitor.db.test.ts",
+    "apps/worker/src/jobs/registry.test.ts",
+    "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
+    "apps/web/src/lib/routes/mapping-routes.db.test.ts",
+    "apps/web/src/lib/routes/pricing-routes.db.test.ts",
+    "apps/web/src/lib/routes/audit-e2e.db.test.ts",
+    "apps/web/e2e/mapping.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of its own: MAP-01's and MAP-06's files, loaded with no plan mapped.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

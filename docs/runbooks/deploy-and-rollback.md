@@ -7,11 +7,23 @@ accounts and the health endpoint.
 ## Before the first deploy of an environment
 
 Outside the stack, once: the two DNS names (`AppDomainName`, `StaticDomainName`) and their ACM certificates (the static
-one in us-east-1), a verified SES identity for the sender's domain, CDK bootstrap in the account and region. Then:
+one in us-east-1) and CDK bootstrap in the account and region. The stack owns its SES identities (MailFromAddress's
+domain and `screening.<that domain>`) and verifies them in two phases (docs/adr/0065, D2; docs/runbooks/deliverability.md,
+section 2). If SES in the region already holds an identity for either domain, one verified by hand under this runbook's
+earlier text, delete it first, or the deploy fails creating the stack's ("already exists"):
+
+```
+aws sesv2 get-email-identity --email-identity <domain>        # and screening.<domain>
+aws sesv2 delete-email-identity --email-identity <domain>
+```
+
+No environment sends mail before its first release (`ImageTag` stays `none`), so nothing is lost; remove the old
+identity's DKIM records at the registrar when you set the stack's. (An import into the stack is not an option: the
+identity names its configuration set, which the same deploy creates.) Then deploy phase 1:
 
 ```
 cdk deploy tp-<env> --parameters AppDomainName=… CertificateArn=… StaticDomainName=… StaticCertificateArn=… \
-  MailFromAddress=… SupportEmail=… SecurityEmail=…
+  MailFromAddress=… SupportEmail=… SecurityEmail=… MailIdentitiesVerified=false
 ```
 
 `SecurityEmail` is the address `/.well-known/security.txt` and the disclosure page (`/security`) give for vulnerability
@@ -27,6 +39,31 @@ first release). Production's screening stays closed (no launch report is named; 
 `ScreeningConsumer` stays `held` (its default; the founder's Q1 (b) of 2026-10-21). Point the two DNS names at the
 `LoadBalancerDnsName` and `StaticAssetsDistributionDomain` outputs. Write the Stripe keys (docs/runbooks/billing.md) and set up support mail
 (docs/runbooks/support-mail.md).
+
+**Mail, the two phases (docs/runbooks/deliverability.md, section 2).** Phase 1 (`MailIdentitiesVerified=false`, the
+default) creates the three configuration sets, the two identities, the event queue and its rules; Cognito keeps its own
+default sender and the platform sends no probe. Set the DNS records the stack outputs (for each identity, the three
+DKIM CNAMEs, the MAIL FROM MX and SPF and the DMARC record: `MailDkimRecord1` to `3`, `MailMailFromMxRecord`,
+`MailMailFromSpfRecord`, `MailDmarcRecord`, and the same with `ScreeningMail…`) at the registrar, wait until both
+identities read verified, then deploy again with `MailIdentitiesVerified=true` (phase 2): Cognito sends from
+MailFromAddress through the transactional set, and the platform's probes prove the event path. Later deploys keep the
+value (cdk reuses a parameter's previous value unless one is passed). Until both identities verify, SES refuses the
+platform's own mail from an unverified sender with `MessageRejected`, a permanent error: each support-access or dunning
+notice's recipient is marked failed at once and is never sent again, and the notice is reported undelivered
+(`notice_undelivered` on the grant or the invoice, `NOTICE_UNDELIVERED`, and for a grant the administrators'
+notification); a digest's job is retried only twice, within about two minutes, by pg-boss, and then fails. So no
+release runs tasks (`ImageTag` stays `none`) until both identities read verified and phase 2 is deployed. In staging,
+run the deliverability runbook's staging checks once after phase 2 (open item O11) and record them in the release's
+pull request. Each account needs SES production access before any customer mail (the runbook's use
+case text).
+
+**The address-validation account (docs/adr/0065; deliverability runbook, section 2, step 1).** SES's validation of a
+screening address names the address in its request, so it runs in an AWS account of the environment's own that holds
+nothing else. Before the first release, a person creates that account, bootstraps CDK in it and deploys
+`tp-<env>-address-validation` there with `ApplicationRoleArn=<this stack's ApplicationRoleArn output>`; then deploy this
+stack with `MailValidationRoleArn=<that stack's AddressValidationRoleArn output>`. CloudFormation refuses a deploy whose
+`ImageTag` names a release while `MailValidationRoleArn` is `none` (rule `ReleaseNeedsAddressValidationRole`), and a
+released web refuses to start without it.
 
 Once the environment's `StaticAssetsOrigin` output exists, set the repository variable the release builds its web image
 with (Settings, Secrets and variables, Actions, Variables): `STAGING_STATIC_ASSET_ORIGIN` or
@@ -139,11 +176,50 @@ static host (its assets load from the application host), and says so in the buil
    recorded); a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled run;
    the uptime canaries go green within ten minutes. In production, `/screening` shows the open form only when the deploy
    carried the tag's passing report (the `ScreeningLaunch` output is `<tag>:<SHA-256>`, not `closed`) and counsel's review
-   of the screening's wording is recorded; otherwise it says the screening is not open yet. Where the screening consumer
+   of the screening's wording is recorded, the mail stream is sending and its probes are back (`/console/mail` reads
+   "Ready to open" yes; in phase 1 it never does); otherwise it says the screening is not open yet, or, while the stream
+   is paused, that new screenings are paused. Where the screening consumer
    runs (staging always; production once a deploy carries a launch report or `ScreeningConsumer=running`), its log
    group (`ScreeningLogGroup`) shows its heartbeat and the sweep's `screening queue` line every minute, and its heartbeat alarm is OK. On an environment's first deploy, and whenever `SecurityEmail` changes, send a
    test message to it and have the security official confirm it arrived. In staging, run `pnpm test:e2e` against the
    release before tagging it for production.
+
+## Before the screening opens in production (open items O5, O11 and O14)
+
+Each is recorded in the pull request of the release that opens it:
+
+- a place-of-service split approved by a contract specialist before the first customer run;
+- the launch deploy names the tag's report (step 4) and passes `ScreeningConsumer=running`, and every later deploy
+  keeps passing it;
+- both mail phases done, with the DNS records set and both identities verified (`MailIdentitiesVerified=true`), and
+  `/console/mail` reading "Ready to open" yes;
+- SES production access granted for the account and region;
+- staging's deliverability checks recorded (open item O11: Cognito sending through the stack's identity, the screening
+  set neither checking nor adding to the account's suppression list, the account's reputation metrics publishing, the
+  database logging no bind value, and SES's address validation recorded as a read in the address-validation account
+  alone);
+- production's address-validation account set up and `MailValidationRoleArn` set (the release cannot run without it);
+- counsel's review of the screening's wording recorded (docs/product/legal-surfaces.md: until then a production server
+  keeps the screening closed);
+- the founder's own steps (open item O14): the DNS records set at the registrar, both domains registered with Google
+  Postmaster Tools and Microsoft SNDS, and the required checks in the main branch's ruleset
+  (docs/runbooks/github-governance.md).
+
+## The mail streams (ADR 0065; PR 6b-4)
+
+**How a deploy moves notices without loss.** The migration replaces the support-access notice's functions with the
+outbox's (`operator_record_support_notice()` and the address readers are dropped). While a deploy rolls, the previous
+platform task's support-access notices and dunning fail at the dropped functions and roll back, so they wait for the
+new task: none is lost or sent twice. The previous web keeps submitting screenings (`submit_screening()`'s new
+parameter is last, with a default).
+
+**Rollback across PR 6b-4** (to an earlier image, below) keeps the stack, the streams and the migration. The previous
+platform image cannot send support-access notices or dunning (it calls the dropped functions): each waits, recorded,
+until an image of PR 6b-4 or later runs again, so roll forward with a fix rather than staying back. Its web reads the
+console's support list without the notices' delivery, and does not check a screening's address; the database still
+refuses an address on the refusal list, and every upload while the stream is paused. To leave phase 2 instead (Cognito back to its default sender, the probes
+stopped), deploy with `MailIdentitiesVerified=false`; in staging and production the screening then closes within 48
+hours, since its probes no longer come back.
 
 ## The screening consumer (ADR 0062; PR 6b-3)
 

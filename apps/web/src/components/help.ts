@@ -38,5 +38,6 @@ export const HELP: Readonly<Record<ShellSection, string>> = {
   status_admin: 'The public status page’s components and incidents, and the maintenance switch.',
   compliance: 'The SOC 2 Type I evidence checklist: each control’s evidence, the policies, and what people must record.',
   console_models: 'The model features’ switches: the kill switch, each practice’s daily budget and the letter reader, and today’s model spend against each budget.',
+  console_mail: 'The mail streams: whether each is sending, the counts behind the screening’s cut-off, the daily probes, and the last week’s undelivered messages. Only the screening stream pauses, and it is resumed here with a reason.',
   screening_split: 'The place-of-service split: which places price at the facility rate and which at the non-facility rate, for every place a practice has not set and for the free screening. A contract specialist approves it; each approval is kept, the latest is in force, and each pricing run keeps the one it was created under.',
 };

@@ -1,6 +1,9 @@
 # 0055. Keep model calls off the request's connection, give billing and e-signature their own logins, bound bodies, open tickets from mail, and keep Cognito
 
-- **Status:** accepted; several parts are proven only by tests until the first staging deploy (see Consequences)
+- **Status:** accepted; several parts are proven only by tests until the first staging deploy (see Consequences);
+  amended by PR 6b-4 (below: Cognito's mail through the stack's identity and the transactional configuration set from
+  the mail's phase 2;
+  [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md))
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 5 (J18), 6 (Admin console; Billing; Agreements), 7 (Internal console; every screen's states), 13
@@ -167,3 +170,26 @@ interface would not change.
 
 The first staging deploy, the choice of an e-signature vendor, the first billing firm's security review, or model
 calls moving into jobs.
+
+## Amendment (PR 6b-4, 2026-10-23): Cognito's mail goes through the transactional stream
+
+Audit #76 (docs/adr/0065, D2): Cognito stays the identity provider, and its mail (invitations with their temporary
+passwords, verification and recovery codes) becomes one of the three SES streams. Until now the user pool sent as
+`DEVELOPER` through an identity verified by hand, with no configuration set, so nothing recorded whether an invitation
+arrived.
+
+- **Phase 1** (`MailIdentitiesVerified=false`, the default): the user pool has no `EmailConfiguration`, so Cognito uses
+  its own sender (no-reply@verificationemail.com, at most 50 messages a day), which needs no verified identity. A first
+  deploy cannot fail on an identity the same deploy creates.
+- **Phase 2** (`true`, once the stack's identity for MailFromAddress's domain reads verified): `EmailSendingAccount` is
+  `DEVELOPER`, `From` is MailFromAddress, `SourceArn` the stack's identity and `ConfigurationSet` the transactional set
+  (`tp-<env>-transactional`), so every Cognito message's events reach the platform. Cognito adds no message tag; the
+  platform takes a transactional message with no kind as Cognito's and finds its user by the recipient, and a message
+  to an invited user that bounces, is suppressed, rejected or reported flags the invitation (the users page shows "Not
+  delivered" while the report is about the email last sent; `INVITATION_UNDELIVERED` pages the operator).
+- The property is written to the resource under the condition `MailIdentitiesReady` (`Fn::If`, with `AWS::NoValue` in
+  phase 1), since both the address and the identity are deploy-time values (`infra/test/identity.test.ts` asserts both
+  phases).
+- **Open (O11):** whether Cognito needs a sending-authorization policy on an identity in its own account when a
+  configuration set is named; staging's phase 2 shows it (docs/runbooks/deliverability.md, section 2), and a policy, if
+  needed, is a change to `infra/lib/constructs/mail-streams.ts`.

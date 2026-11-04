@@ -87,6 +87,18 @@ describe('CDK app', () => {
         'StaticAssetsDistributionDomain',
         'AppOrigin',
         'StaticAssetsOrigin',
+        // The mail streams (docs/adr/0065): the senders, sets, queues and every DNS record of phase 1.
+        'MailIdentityDomain',
+        'ScreeningMailIdentityDomain',
+        'ScreeningMailFromAddress',
+        'MailEventsQueueUrl',
+        'MailEventsDeadLetterQueueUrl',
+        'MailConfigurationSetTransactional',
+        'MailConfigurationSetNotices',
+        'MailConfigurationSetScreening',
+        ...['Mail', 'ScreeningMail'].flatMap((prefix) =>
+          ['DkimRecord1', 'DkimRecord2', 'DkimRecord3', 'MailFromMxRecord', 'MailFromSpfRecord', 'DmarcRecord'].map((name) => `${prefix}${name}`),
+        ),
       ]),
     );
     expect(outputs.includes('PullRequestDiffRoleArn')).toBe(environment === 'staging');

@@ -764,9 +764,11 @@ describe('D7: submit_screening() is migration 20261105090000’s but for the rec
       expect(before.split(old).length, old).toBe(2);
     }
     expect(after).toBe(before.replace(signature[0], signature[1]).replace(run[0], run[1]));
-    // The database holds exactly that body.
+    // The database holds exactly that body but for the run's client subject, which migration 20261107090000 adds on top of
+    // it (Q10 (a); screening.db.test.ts diffs that migration's body against this one's).
     const live = (await admin.query<{ body: string }>("SELECT prosrc AS body FROM pg_proc WHERE proname = 'submit_screening'")).rows;
     expect(live).toHaveLength(1);
-    expect(after.slice(after.indexOf('AS $$') + 'AS $$'.length, after.lastIndexOf('$$'))).toBe(live[0]?.body);
+    expect(live[0]?.body.split(', client_subject').length).toBe(3);
+    expect(after.slice(after.indexOf('AS $$') + 'AS $$'.length, after.lastIndexOf('$$'))).toBe(live[0]?.body.replaceAll(', client_subject', ''));
   });
 });

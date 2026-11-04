@@ -1,4 +1,4 @@
-import { RemovalPolicy, Stack, aws_ec2 as ec2, type aws_kms as kms, aws_logs as logs, custom_resources as cr } from 'aws-cdk-lib';
+import { RemovalPolicy, Stack, aws_ec2 as ec2, aws_iam as iam, type aws_kms as kms, aws_logs as logs, custom_resources as cr } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 import { logGroupName } from '../log-groups';
@@ -19,7 +19,9 @@ export const S3_PREFIX_LIST_ID_PATH = 'PrefixLists.0.PrefixListId';
  * The RDS API is for the monthly restore drill (it restores a snapshot to a scratch instance and
  * deletes it, PRD 16 Backups and restore), and the SES API for the support-access notices (PRD 5,
  * J15); both are platform jobs on the operator role. Textract reads scanned contracts for intake
- * (PRD 15, Documents).
+ * (PRD 15, Documents). SQS carries the mail events to the platform's mail_events job (docs/adr/0065, D4; the
+ * founder's Q1 (e) of 2026-10-21): an event names its recipient's address, so it never crosses the internet path, and
+ * the endpoint's policy admits only this account's principals reading this account's queues (SQS_ENDPOINT_ACTIONS).
  */
 export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEndpointAwsService])[] = [
   ['Kms', ec2.InterfaceVpcEndpointAwsService.KMS],
@@ -31,7 +33,11 @@ export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEn
   ['RdsApi', ec2.InterfaceVpcEndpointAwsService.RDS],
   ['SesApi', ec2.InterfaceVpcEndpointAwsService.EMAIL],
   ['Textract', ec2.InterfaceVpcEndpointAwsService.TEXTRACT],
+  ['Sqs', ec2.InterfaceVpcEndpointAwsService.SQS],
 ];
+
+/** What the SQS endpoint admits: the mail_events job's calls on the event queue (OperatorRole's MAIL_EVENTS_QUEUE_ACTIONS). */
+export const SQS_ENDPOINT_ACTIONS = ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility', 'sqs:GetQueueAttributes'] as const;
 
 /**
  * The VPC (PRD 16, network): two availability zones; private subnets for the database and the
@@ -93,14 +99,26 @@ export class Network extends Construct {
       allowAllOutbound: false,
     });
     this.endpointSecurityGroup.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(443), 'HTTPS from the VPC');
+    const stack = Stack.of(this);
     for (const [endpointId, service] of INTERFACE_ENDPOINTS) {
-      this.vpc.addInterfaceEndpoint(endpointId, {
+      const endpoint = this.vpc.addInterfaceEndpoint(endpointId, {
         service,
         subnets: this.appSubnets,
         privateDnsEnabled: true,
         securityGroups: [this.endpointSecurityGroup],
         open: false,
       });
+      if (service === ec2.InterfaceVpcEndpointAwsService.SQS) {
+        endpoint.addToPolicy(
+          new iam.PolicyStatement({
+            sid: 'ThisAccountsQueuesOnly',
+            principals: [new iam.AnyPrincipal()],
+            actions: [...SQS_ENDPOINT_ACTIONS],
+            resources: [`arn:${stack.partition}:sqs:${stack.region}:${stack.account}:*`],
+            conditions: { StringEquals: { 'aws:PrincipalAccount': stack.account } },
+          }),
+        );
+      }
     }
 
     this.webSecurityGroup = appTierSecurityGroup(this, 'WebSecurityGroup', this.vpc, 'Web tasks (milestone 11)');
@@ -116,7 +134,7 @@ export class Network extends Construct {
       retention: logs.RetentionDays.ONE_YEAR,
       removalPolicy: RemovalPolicy.RETAIN,
     });
-    const s3PrefixListName = `com.amazonaws.${Stack.of(this).region}.s3`;
+    const s3PrefixListName = `com.amazonaws.${stack.region}.s3`;
     const describe: cr.AwsSdkCall = {
       service: 'EC2',
       action: 'DescribeManagedPrefixLists',
