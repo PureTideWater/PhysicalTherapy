@@ -103,6 +103,21 @@ const STEP_PAGES: Readonly<Record<Pending['step'], string>> = {
   mfa: '/sign-in/mfa',
   key: '/sign-in/hardware-key',
   register_key: '/sign-in/register-key',
+  reset: '/sign-in/forgot-password',
+};
+
+/**
+ * Whether a new step keeps the email for a restart (docs/adr/0081, D6), named for every step so a step added later must
+ * choose: never the hardware-key step or the reset step, which any typed address reaches. A reset's address is kept
+ * only once the mailed code proves it.
+ */
+const KEEPS_EMAIL: Readonly<Record<Pending['step'], boolean>> = {
+  new_password: true,
+  mfa_setup: true,
+  mfa: true,
+  key: false,
+  register_key: true,
+  reset: false,
 };
 
 function contextOf(context: PublicContext<unknown, unknown>): SignInContext {
@@ -136,6 +151,7 @@ function setupOf(step: Pending['step'], from: SealedPending | undefined, keyRequ
       return next;
     case 'mfa':
     case 'key':
+    case 'reset':
       return undefined;
   }
 }
@@ -165,7 +181,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
       const passwordSaved = from?.step === 'new_password' || from?.passwordSaved === true;
       const setup = setupOf(pending.step, from, result.keyRequired === true);
       const meta: StepMeta = { startedAt: options.at, ...(setup === undefined ? {} : { setup }), ...(passwordSaved ? { passwordSaved: true } : {}) };
-      if (pending.step !== 'key') {
+      if (KEEPS_EMAIL[pending.step]) {
         const use: PasswordToUse | undefined = pending.step === 'new_password' ? 'temporary' : passwordSaved ? 'chosen' : undefined;
         writeKeptEmail(cookies, sealer, { email: pending.email, ...(use === undefined ? {} : { use }) }, pending.step, options.at, now);
       }
@@ -191,9 +207,10 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
     case 'refused':
       switch (result.reason) {
         case 'expired':
-          // The kept email outlives an expiry: that is what it is for. A key step goes back to the key surface (UXS-01).
+          // The kept email outlives an expiry: that is what it is for. A key step goes back to the key surface (UXS-01),
+          // and a reset step to the forgot page.
           clearPending(cookies);
-          return from?.step === 'key' ? KEY_RESTART : RESTART;
+          return from?.step === 'key' ? KEY_RESTART : from?.step === 'reset' ? RESET_RESTART : RESTART;
         case 'hardware_key_required':
           clearSignIn(cookies);
           return { redirect: '/sign-in/hardware-key?reason=hardware_key_required' };
@@ -257,6 +274,9 @@ function stepPage(pending: SealedPending, now: Date): { readonly time: StepTime;
 const RESTART: StepResult = { redirect: '/sign-in?reason=step_expired' };
 /** Where a closed hardware-key step goes: the key surface, which says the step closed, never the password page (UXS-01). */
 const KEY_RESTART: StepResult = { redirect: '/sign-in/hardware-key?reason=step_expired' };
+
+/** Where a closed reset step goes: the forgot page's first phase, which says the step closed (docs/adr/0081, A1). */
+const RESET_RESTART: StepResult = { redirect: '/sign-in/forgot-password?reason=step_expired' };
 
 /** Where Start again lands: the sign-in page, which fills in the kept email. */
 export const RESTARTED = { redirect: '/sign-in?reason=restarted' } as const satisfies StepResult;

@@ -35,6 +35,7 @@ const PROVIDER_SECONDS: Readonly<Record<StepName, number>> = {
   mfa: PROVIDER_CHALLENGE_SECONDS,
   key: PROVIDER_CHALLENGE_SECONDS,
   register_key: PROVIDER_GRANT_SECONDS,
+  reset: PASSWORD_RESET_CODE_SECONDS,
 };
 const COOKIE_SECONDS: Readonly<Record<StepName, number>> = {
   new_password: PENDING_COOKIE_SECONDS,
@@ -42,6 +43,7 @@ const COOKIE_SECONDS: Readonly<Record<StepName, number>> = {
   mfa: PENDING_COOKIE_SECONDS,
   key: PENDING_COOKIE_SECONDS,
   register_key: REGISTRATION_COOKIE_SECONDS,
+  reset: RESET_COOKIE_SECONDS,
 };
 
 /** The pending cookie's life for a step. */

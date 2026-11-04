@@ -348,7 +348,7 @@ function failing(match: RegExp, times: number): ScopePool<ScopeClient> {
         },
       });
     },
-  } as unknown as ScopePool<ScopeClient>;
+  };
 }
 
 /** The last code mailed to an address. */
@@ -410,6 +410,7 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
       expect(logged(lines, 'password reset request timed'), name).toEqual([expect.objectContaining({ level: 'info', request_id: request.requestId, elapsed_ms: expect.any(Number) })]);
       expect(lines.join('\n'), name).not.toContain(email);
     }
+    const calls = [...asked.mock.calls];
     asked.mockRestore();
     // Every path answers at the floor: the provider's work is padded, and a skipped send is padded the more.
     for (const [name, pace] of Object.entries(paces)) {
@@ -418,8 +419,9 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(paces.active?.slept).toEqual([RESET_REQUEST_FLOOR_MS - 600]);
     expect(paces.unknown?.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
     expect(paces.notEnrolled?.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
-    expect(asked.mock.calls.map(([email]) => email)).toEqual([active.email, locked.email]);
-    expect(asked.mock.calls.every(([, requestId]) => typeof requestId === 'string' && requestId.startsWith('test-'))).toBe(true);
+    expect(calls.map(([email]) => email)).toEqual([active.email, locked.email]);
+    // The flow passes the request ID (the dev twin's own signature does not name it, so the call is read as sent).
+    expect(calls.map((call) => (call as unknown[])[1])).toEqual([expect.stringMatching(/^test-/), expect.stringMatching(/^test-/)]);
     expect(mailed.slice(sent).map((entry) => entry.email)).toEqual([active.email, locked.email]);
     for (const account of [active, locked, invited, notEnrolled, disabled]) {
       expect(await events(account.id)).toEqual(['password_reset_requested:unverified_request']);

@@ -162,6 +162,8 @@ export interface ServiceParts {
   readonly sealer: Sealer;
   readonly logger?: Logger;
   readonly now?: () => Date;
+  /** Tests give the reset request's floor a clock and a wait of their own; otherwise the real clock and a timer. */
+  readonly pace?: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> };
   /** Tests that upload give their own; otherwise a local receiver in a fresh temporary directory. */
   readonly uploads?: UploadTargets;
   /** Tests that queue give their own; otherwise queueing fails, so nothing is ever dropped silently. */
@@ -211,7 +213,7 @@ export function createServices(parts: ServiceParts): Services {
     keys: parts.keys,
     sealer: parts.sealer,
     logger,
-    signIn: new SignInFlow({ pool: parts.pool, provider: parts.provider, logger }),
+    signIn: new SignInFlow({ pool: parts.pool, provider: parts.provider, logger, ...(parts.pace === undefined ? {} : { now: parts.pace.now, sleep: parts.pace.sleep }) }),
     now: parts.now ?? (() => new Date()),
     uploads: parts.uploads ?? new LocalUploadTargets(parts.origin, documents, parts.sealer),
     queue: parts.queue ?? NO_QUEUE,
