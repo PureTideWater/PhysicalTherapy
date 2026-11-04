@@ -3710,6 +3710,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(sum(step('env: { E: x }', '    container: node:24\n    services: { db: postgres:18 }\n'))).toEqual([]);
     // A container or a service named by a string with an expression in it is its image, an argument held to the limit.
     expect(sum(step('env: { E: x }', '    strategy: { matrix: { node: [22, 24] } }\n    container: "node:${{ matrix.node }}"\n    services: { db: "postgres:${{ matrix.node }}" }\n'))).toEqual([]);
+    // One that starts with an expression and goes on is an image too, not a mapping.
+    expect(sum(step('env: { E: x }', '    strategy: { matrix: { node: [22, 24] } }\n    container: "${{ matrix.node }}-slim"\n    services: { db: "${{ matrix.node }}-postgres" }\n'))).toEqual([]);
     expect(sum(step('env: { E: x }', `    container: "node:${vars3}"\n`))).toEqual([argumentOver('job images container image', 'node:'.length + 3 * 49_152 + 1)]);
     expect(sum(step('env: { E: x }', `    services: { db: "postgres:${vars3}" }\n`))).toEqual([argumentOver('job images services.db image', 'postgres:'.length + 3 * 49_152 + 1)]);
     // A value a job passes a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's own sum
