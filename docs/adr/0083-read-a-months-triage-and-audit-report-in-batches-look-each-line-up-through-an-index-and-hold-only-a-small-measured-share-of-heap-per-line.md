@@ -16,6 +16,9 @@
   ledger freeze exceptions in designs/ledger-interest-once.md section 10.1 and designs/suite-cap-1-triage-locks.md
   section 4.5, as written." Recorded also in reconciliation-001, "Ledger semantics". SUITE-CAP-1b stays inside that
   text: section 4.5 changes the lock line of the two `ledger_entry` triggers and nothing else.
+- **SUITE-CAP-1b's content-pipeline freeze exception (the release loader's freeze):** granted by the founder, Tyler
+  Williams, relayed by Lane A's orchestrator, on 2026-11-04 at about 09:55 UTC; quoted below ("The release loader's
+  freeze, 2026-11-04") and recorded also in reconciliation-001, "Content pipeline".
 - **PRD sections:** 6 (Reports and exports), 8 (`line_status` and the status machine), 12 (triage and cases), 15 (the
   worker), 18 (testing and release); test matrix CAS-40, CAS-41 and CAS-42; ADRs
   [0038](0038-triage-runs-into-anomalies-and-cases-keep-five-stages-and-release-an-audit-report-only-once-a-reviewer-signs.md)
@@ -397,6 +400,63 @@ went on. Four readings of the numbers:
   logs V8's limit, as D19 says.
 - **The sampled `heapUsed` and the resident memory are printed for the record only.** They count garbage V8 has yet to
   collect, and resident memory leaves out the Chromium processes.
+
+#### The release loader's freeze, 2026-11-04
+
+*Added 2026-11-04.* The database suite's first shard, run on the shared local cluster in SS-01's integration (on which
+SUITE-CAP-1b is built), failed once in `tools/release/load.db.test.ts`, "leaves the release analyzed and frozen once
+loaded", and passed on a re-run: `rule_record`'s `relallvisible` and `relallfrozen` were 0 of its 7 pages after the
+loader's one `VACUUM (FREEZE, ANALYZE) rule_record` ("expected +0 to be 7"). PostgreSQL freezes a record, and marks its
+page all-visible, only once the record's inserting transaction precedes its database's visibility horizon, which any
+snapshot of that database holds back. An autovacuum worker's `ANALYZE` of a catalog in the scratch database held one
+whose xmin had not passed the load's transaction, taken before the load committed or after it while an older transaction
+ran in another database of the cluster (a snapshot's xmin is the oldest transaction running anywhere), so the loader's
+one pass froze nothing and returned. A transaction in another database alone holds nothing back. Hint bits, prepared
+transactions and replication slots played no part (each ruled out on PostgreSQL 18.4's source and on the cluster). On a
+private cluster beside a held transaction in another database, the unchanged test failed once in 20 runs and the fixed
+one passed 20 of 20 (the investigation, on `22177731`, whose four files are this branch's).
+
+**The fix: the loader keeps its promise** (ADR 0062, "The release read": the first screenings after a load read a
+release analyzed and frozen). After the commit `loadRelease` (`analyzeAndFreeze` in `packages/rules/src/loader.ts`) runs
+`VACUUM (FREEZE, ANALYZE) rule_record` and reads `pg_class`, which the pass has just written from the visibility map;
+while `relallfrozen` is short of `relpages` it pauses (50 ms doubling to 2 s, and from the second pass at least four
+times the last pass's time) and runs `VACUUM (FREEZE) rule_record` again, which skips the pages already frozen (the
+first pass's statistics already count every committed record), for up to `FREEZE_WAIT_MS`, 180 seconds
+(`LoadOptions.freezeWaitMs`). The result gains `frozen`, false only when the wait runs out; the release is published at
+its commit either way. Loading a release already loaded writes nothing and runs the same freeze, always by a VACUUM (a
+load stopped between its commit and its VACUUM leaves `pg_class` at the counts from before it). `pnpm release:load`
+warns on stderr when the release is not yet frozen; `pnpm release:rollback` loads the previous release with
+`freezeWaitMs: 0`, the one pass, so a withdrawal never waits behind an older transaction. With nothing holding the
+horizon back a load costs what it did, plus one read of `pg_class`; loading a release already loaded, which returned at
+once, now runs one `VACUUM (FREEZE, ANALYZE)` over pages already frozen. A test-side fix was not taken: a test that
+vacuums again itself asserts its own VACUUM, one that asserts only when nothing holds the horizon is loosened,
+autovacuum cannot be kept out of a database, turning it off on CI's Postgres changes every shard's environment and
+leaves the loader's promise broken in production, and `COPY FREEZE` would need rule-table DDL.
+
+The file's five new tests hold the horizon themselves, so each is deterministic: an older snapshot of the same database
+(the load waits, then freezes); a snapshot of the same database taken after the commit beside an older transaction in
+another database (the load waits for the snapshot, not for that transaction); the wait running out (`frozen: false`,
+published, and loading again finishes the freeze); a load stopped between its commit and its VACUUM (loading again
+analyzes and freezes); and a rollback beside an older transaction (the withdrawal does not wait). The two result checks
+expect `frozen: true`. On this branch, with the old `loader.ts` and `rollback.ts`, 7 of the file's 18 tests failed; with
+the new loader and the old rollback, the rollback's test timed out at 30 s; with the fix, all 18 passed in each of ten
+runs in a row alone on the shared local cluster (31 to 79 s a run) and in a run beside a transaction held open, with its
+ID, in another database of the cluster. The 108 database test files the change touches on this branch (the 90 that
+import the loader by Vitest's module graph, and the investigation's list of 72) passed together, 8,264 tests in 1,840 s,
+the large ones among them.
+
+The loader is part of the content pipeline, which reconciliation-001's checks freeze, so the change waited for the
+founder's ruling: **granted by the founder, Tyler Williams, on 2026-11-04 at about 09:55 UTC, relayed by Lane A's
+orchestrator, and recorded in `approval-summaries/founder-asks-2026-10-27.md` under "Granted 2026-11-04 (~09:55 UTC):
+the release loader's freeze"**, word for word: "Granted: an exception to reconciliation-001's content-pipeline check for
+the release loader's freeze, as written: after a load commits, loadRelease runs VACUUM (FREEZE, ANALYZE) rule_record
+and, while pg_class shows rule_record not all-frozen, pauses and runs VACUUM (FREEZE) rule_record again, for up to 180
+seconds; its result gains frozen, false only when the wait runs out; loading an already-loaded release writes nothing
+and runs the same freeze; release:load warns on stderr when not yet frozen; release:rollback does not wait. Everything
+else in the pipeline stays frozen. It also covers PR 6b-3's original VACUUM." Recorded also in reconciliation-001,
+"Content pipeline", with the four files it covers (`packages/rules/src/loader.ts`, `tools/release/index.ts`,
+`tools/release/rollback.ts` and `tools/release/load.db.test.ts`). No schema file, no `content/releases` file and no rule
+table's DDL changes, and the domain model is unchanged.
 
 ## Alternatives considered
 

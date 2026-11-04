@@ -6,11 +6,12 @@ import { OWNER_ROLE, appDevLoginUrl, migrate, readDatabaseUrl } from '@tp/db';
 import { withScratchDatabase } from '@tp/db/testing';
 import { MANIFEST_FILE, buildManifest, recordSha256, serializeManifest, serializeRecords, sha256 } from '@tp/rules';
 import { fileSha256, listContentFiles, readRelease } from '@tp/rules/content';
-import { ReleaseLoadError, loadRelease } from '@tp/rules/loader';
+import { ReleaseLoadError, type SqlClient, loadRelease } from '@tp/rules/loader';
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
+import { rollbackRelease } from './rollback';
 import { SYNTHETIC_RELEASE_DIR, SYNTHETIC_RELEASE_NUMBER } from './synthetic';
 
 const adminUrl = readDatabaseUrl();
@@ -77,6 +78,35 @@ async function releaseCount(client: pg.Client): Promise<number> {
   return (await client.query('SELECT 1 FROM rule_release')).rowCount ?? 0;
 }
 
+interface RulePages {
+  readonly relpages: number;
+  readonly relallvisible: number;
+  readonly relallfrozen: number;
+}
+
+/** rule_record's pages, and how many the visibility map holds all-visible and all-frozen, as the last VACUUM or ANALYZE counted them. */
+async function rulePages(client: pg.Client): Promise<RulePages | undefined> {
+  return (await client.query<RulePages>("SELECT relpages, relallvisible, relallfrozen FROM pg_class WHERE oid = 'rule_record'::regclass")).rows[0];
+}
+
+/** Every page of rule_record all-visible and all-frozen. */
+async function expectEveryPageFrozen(client: pg.Client): Promise<void> {
+  const pages = await rulePages(client);
+  expect(pages?.relpages).toBeGreaterThan(0);
+  expect(pages).toEqual({ relpages: pages?.relpages, relallvisible: pages?.relpages, relallfrozen: pages?.relpages });
+}
+
+/** How many VACUUMs of rule_record have ended (each reports to the cumulative statistics as it ends). */
+async function ruleRecordVacuums(client: pg.Client): Promise<number> {
+  return (await client.query<{ n: number }>("SELECT vacuum_count::integer AS n FROM pg_stat_user_tables WHERE relid = 'rule_record'::regclass")).rows[0]?.n ?? 0;
+}
+
+/** Holds a snapshot of `client`'s database open until its transaction ends: VACUUM may freeze nothing it must not see. */
+async function holdSnapshot(client: pg.Client): Promise<void> {
+  await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+  await client.query('SELECT 1');
+}
+
 beforeEach(() => {
   scratch = mkdtempSync(path.join(tmpdir(), 'release-load-'));
 });
@@ -92,7 +122,13 @@ describe('loading the synthetic release', () => {
       const owner = await connect(url, OWNER_ROLE);
       try {
         const result = await loadRelease(owner, fixture, FIXTURE);
-        expect(result).toEqual({ status: 'loaded', releaseNo: SYNTHETIC_RELEASE_NUMBER, manifestSha256: sha256(readFileSync(path.join(fixture, MANIFEST_FILE))), records: fixtureRecords.length });
+        expect(result).toEqual({
+          status: 'loaded',
+          releaseNo: SYNTHETIC_RELEASE_NUMBER,
+          manifestSha256: sha256(readFileSync(path.join(fixture, MANIFEST_FILE))),
+          records: fixtureRecords.length,
+          frozen: true,
+        });
 
         const releases = await owner.query<{ release_no: number; manifest_sha256: string; published: boolean; notes: string }>(
           'SELECT release_no, manifest_sha256, published_at IS NOT NULL AS published, notes FROM rule_release',
@@ -131,7 +167,9 @@ describe('loading the synthetic release', () => {
   it('leaves the release analyzed and frozen once loaded, so the first screening after a load reads it by its indexes', async () => {
     // CI's capacity run on 9eb4474 read a release just loaded, before any ANALYZE: with no statistics each keyed read
     // hash-joined all 2.2 million records of the release, setting every page's hint bits as it went, and S1-1 recorded
-    // no batch for five minutes. The loader now analyzes rule_record and freezes the records it wrote, which never change.
+    // no batch for five minutes. The loader now analyzes rule_record and freezes the records it wrote, which never change,
+    // and returns only once the visibility map holds them frozen: autovacuum's ANALYZE in this scratch database, beside a
+    // long transaction in another database of the cluster, used to leave every page unfrozen here (the tests below).
     await withLoadedRelease(async (url) => {
       const admin = await connect(url);
       try {
@@ -150,11 +188,149 @@ describe('loading the synthetic release', () => {
     });
   });
 
+  it('waits, once committed, for a transaction of its database that began before the load, then freezes the release', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      const older = await connect(url);
+      const owner = await connect(url, OWNER_ROLE);
+      const admin = await connect(url);
+      let load: Promise<unknown> = Promise.resolve();
+      try {
+        await holdSnapshot(older);
+        let returned = false;
+        load = loadRelease(owner, fixture, FIXTURE).finally(() => {
+          returned = true;
+        });
+        // Committed and published, and its first VACUUM has ended with nothing frozen: the older snapshot must not see
+        // the records as committed. The load waits.
+        while (!returned && (await ruleRecordVacuums(admin)) === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(await releaseCount(admin)).toBe(1);
+        expect(await rulePages(admin)).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
+        expect(returned).toBe(false);
+        await older.query('COMMIT');
+        expect(await load).toMatchObject({ status: 'loaded', frozen: true });
+        await expectEveryPageFrozen(admin);
+      } finally {
+        await older.end();
+        await load.catch(() => undefined);
+        await owner.end();
+        await admin.end();
+      }
+    });
+  });
+
+  it('waits for a snapshot of its database taken after the commit while an older transaction runs in another database, and not for that transaction alone', async () => {
+    await withScratchDatabase(adminUrl, async (otherUrl) => {
+      await withScratchDatabase(adminUrl, async (url) => {
+        await migrate({ databaseUrl: url });
+        const elsewhere = await connect(otherUrl);
+        const later = await connect(url);
+        const owner = await connect(url, OWNER_ROLE);
+        const admin = await connect(url);
+        try {
+          // A transaction older than the load, with a transaction ID, in another database of the same cluster.
+          await elsewhere.query('BEGIN');
+          await elsewhere.query('SELECT pg_current_xact_id()');
+          // The loader's client opens `later`'s snapshot once the load has committed, just before the first VACUUM, and
+          // ends it just before the second, keeping what the first left.
+          let vacuums = 0;
+          let afterFirst: RulePages | undefined;
+          const client: SqlClient = {
+            query: async (text, values) => {
+              if (text.startsWith('VACUUM')) {
+                vacuums += 1;
+                if (vacuums === 1) {
+                  await holdSnapshot(later);
+                } else if (vacuums === 2) {
+                  afterFirst = await rulePages(admin);
+                  await later.query('COMMIT');
+                }
+              }
+              return owner.query(text, values);
+            },
+          };
+          expect(await loadRelease(client, fixture, FIXTURE)).toMatchObject({ status: 'loaded', frozen: true });
+          // A snapshot's xmin is the oldest transaction running anywhere, so `later`'s, though taken after the commit,
+          // still held the release back.
+          expect(afterFirst).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
+          // The other database's transaction is still open: alone, it held nothing back.
+          expect((await elsewhere.query('SELECT pg_current_xact_id_if_assigned() IS NOT NULL AS open')).rows).toEqual([{ open: true }]);
+          await expectEveryPageFrozen(admin);
+        } finally {
+          await elsewhere.end();
+          await later.end();
+          await owner.end();
+          await admin.end();
+        }
+      });
+    });
+  });
+
+  it('reports the release unfrozen when its wait runs out, published all the same, and loading it again finishes the freeze', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      const older = await connect(url);
+      const owner = await connect(url, OWNER_ROLE);
+      const admin = await connect(url);
+      try {
+        await holdSnapshot(older);
+        expect(await loadRelease(owner, fixture, { ...FIXTURE, freezeWaitMs: 300 })).toMatchObject({ status: 'loaded', frozen: false });
+        expect(await rulePages(admin)).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
+        // Published, and read whole by any snapshot taken since: only the freeze waits.
+        expect((await admin.query('SELECT published_at IS NOT NULL AS published FROM rule_release')).rows).toEqual([{ published: true }]);
+        expect((await admin.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
+        await older.query('COMMIT');
+        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', frozen: true });
+        await expectEveryPageFrozen(admin);
+        expect((await admin.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
+      } finally {
+        await older.end();
+        await owner.end();
+        await admin.end();
+      }
+    });
+  });
+
+  it('analyzes and freezes, when loaded again, a release whose load stopped between its commit and its VACUUM', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      const owner = await connect(url, OWNER_ROLE);
+      const admin = await connect(url);
+      try {
+        // The loader's process ends the moment its transaction has committed: no VACUUM runs, and pg_class keeps the
+        // counts of before the load.
+        const stopped: SqlClient = {
+          query: async (text, values) => {
+            if (text.startsWith('VACUUM')) {
+              throw new Error('the loader stopped after its commit');
+            }
+            return owner.query(text, values);
+          },
+        };
+        await expect(loadRelease(stopped, fixture, FIXTURE)).rejects.toThrow('the loader stopped after its commit');
+        expect(await releaseCount(admin)).toBe(1);
+        expect(await ruleRecordVacuums(admin)).toBe(0);
+        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', frozen: true });
+        expect(await ruleRecordVacuums(admin)).toBeGreaterThan(0);
+        await expectEveryPageFrozen(admin);
+        const stats = await admin.query<{ n: number }>("SELECT count(*)::integer AS n FROM pg_stats WHERE schemaname = 'public' AND tablename = 'rule_record'");
+        expect(stats.rows[0]?.n).toBeGreaterThan(0);
+        const table = await admin.query<{ reltuples: number }>("SELECT reltuples FROM pg_class WHERE oid = 'rule_record'::regclass");
+        expect(table.rows[0]?.reltuples).toBe(fixtureRecords.length);
+      } finally {
+        await owner.end();
+        await admin.end();
+      }
+    });
+  });
+
   it('loads the same release again as a no-op', async () => {
     await withLoadedRelease(async (url) => {
       const owner = await connect(url, OWNER_ROLE);
       try {
-        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', releaseNo: SYNTHETIC_RELEASE_NUMBER });
+        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', releaseNo: SYNTHETIC_RELEASE_NUMBER, frozen: true });
         expect((await owner.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
       } finally {
         await owner.end();
@@ -189,6 +365,41 @@ describe('loading the synthetic release', () => {
         expect((await owner.query('SELECT 1 FROM rule_release')).rowCount).toBe(0);
       } finally {
         await owner.end();
+      }
+    });
+  });
+});
+
+describe('a rollback beside a transaction older than the release it loads', () => {
+  it('withdraws the release in force without waiting for the release it loads to be frozen, and a later load finishes the freeze', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      const owner = await connect(url, OWNER_ROLE);
+      const older = await connect(url);
+      const admin = await connect(url);
+      try {
+        await loadRelease(owner, fixture, FIXTURE);
+        // Release 1 is published in the repository only; the database's SYNTHETIC release is in force.
+        const published = path.join(scratch, 'content/releases/1');
+        realLookingRelease(published, 1, 'L2');
+        await holdSnapshot(older);
+        // The rollback loads release 1, whose records the older snapshot keeps from being frozen, and withdraws the
+        // release in force all the same; waiting for the freeze would hold the withdrawal until the older transaction ends.
+        expect(await rollbackRelease(owner, { root: scratch, release: SYNTHETIC_RELEASE_NUMBER, reason: 'SYNTHETIC: roll back the fixture' })).toEqual({
+          releaseNo: SYNTHETIC_RELEASE_NUMBER,
+          reinstatedReleaseNo: 1,
+          loaded: 1,
+        });
+        expect((await admin.query<{ n: number }>('SELECT current_rule_release() AS n')).rows[0]?.n).toBe(1);
+        const pages = await rulePages(admin);
+        expect(pages?.relallfrozen).toBeLessThan(pages?.relpages ?? 0);
+        await older.query('COMMIT');
+        expect(await loadRelease(owner, published, { release: 1 })).toMatchObject({ status: 'already_loaded', frozen: true });
+        await expectEveryPageFrozen(admin);
+      } finally {
+        await older.end();
+        await owner.end();
+        await admin.end();
       }
     });
   });

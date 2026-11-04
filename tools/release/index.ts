@@ -68,6 +68,12 @@ async function load(releaseNo: number, dirOption: string | undefined): Promise<v
     process.stdout.write(
       `release:load: release ${String(result.releaseNo)} ${result.status === 'loaded' ? 'loaded' : 'was already loaded'} (${String(result.records)} records, manifest ${result.manifestSha256}).\n`,
     );
+    if (!result.frozen) {
+      // Published all the same: only the freeze waits, on a transaction that began before the load (pg_stat_activity's backend_xmin).
+      process.stderr.write(
+        `release:load: release ${String(result.releaseNo)} is published, but rule_record is not yet frozen: a transaction older than the load still holds back the database's visibility horizon. Run the same release:load again once it ends; it writes nothing and finishes the freeze.\n`,
+      );
+    }
   } finally {
     await client.end();
   }
