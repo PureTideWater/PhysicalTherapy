@@ -4562,8 +4562,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
     // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too, read as 1,000,000 or
     // 1,048,576 bytes. Check's row gives these figures, computed here from MAX_FILE_BYTES, and says over, never under,
-    // not over, within, below or fits; notify's row gives the characters, over 131,072 bytes. So a changed bound or a
-    // row turned back to "under GitHub's 1 MB", or worded to say so another way, fails here.
+    // not over, isn't over, within, below or fits, in any case; notify's row gives the characters, over 131,072 bytes.
+    // So a changed bound or a row turned back to "under GitHub's 1 MB", or worded to say so another way, fails here.
     expect(2 * FINDINGS_BYTES).toBe(1_866_672);
     expect(2 * FINDINGS_BYTES).toBeGreaterThan(1_048_576);
     const figure = (bytes: number) => bytes.toLocaleString('en-US');
@@ -4571,8 +4571,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     const check = boundOf('content-calendar.yml check steps.calendar.outputs.findings');
     for (const words of [`${figure(MAX_FILE_BYTES)} bytes`, `${figure(FINDINGS_BYTES)} characters`, `${figure(2 * FINDINGS_BYTES)} bytes`, 'UTF-16']) expect(check, words).toContain(words);
     expect(check).toMatch(/\bover\b[^,;]*\b1 MB\b/);
-    expect(check).not.toMatch(/\bunder\b/);
-    expect(check).not.toMatch(/\b(?:not|never|no|nor)\s+(?:\w+\s+)?over\b|\b(?:within|below|fits?|inside|less than)\b/);
+    expect(check).not.toMatch(/\bunder\b/i);
+    expect(check).not.toMatch(/\b(?:not|never|no|nor)\s+(?:\w+\s+)?over\b|n['’]t\s+(?:\w+\s+)?over\b|\b(?:within|below|fits?|inside|less than)\b/i);
     expect(boundOf('content-calendar.yml notify needs.check.outputs.findings')).toContain(`${figure(FINDINGS_BYTES)} characters: over 131,072 bytes`);
   });
 
