@@ -100,12 +100,9 @@ export async function seedSyntheticTenancy(client: OwnerClient, people: readonly
         person.organization === 'internal',
         person.invited ? 'invited' : 'active',
       ]);
-      const membership = await client.query<{ id: string }>('INSERT INTO membership (organization_id, user_id, role) VALUES ($1, $2, $3) RETURNING id', [
-        organizations[person.organization],
-        id,
-        person.role,
-      ]);
-      memberships[person.key] = membership.rows[0]?.id ?? '';
+      const membership = randomUUID();
+      memberships[person.key] = membership;
+      await client.query('INSERT INTO membership (id, organization_id, user_id, role) VALUES ($1, $2, $3, $4)', [membership, organizations[person.organization], id, person.role]);
     }
     // The owner has no actor, so the membership trigger records no invitation: the seed records each one itself, live
     // for seven days, as the console's invitation is. Without one an invitee could not enrol a second factor.
