@@ -1,3 +1,5 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDkvaQzK4YgTGnKWC3) holds this item from 2026-11-04 02:39 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
 # Lane B: ci-images-digest (`images` refuses a long pull-request description): status
 
 PR #86, branch `co-001/ci-images-digest`. First handed to the CI session (session_01UzQ6wgZgtThBRBxXTFYhRB) by Lane A's
