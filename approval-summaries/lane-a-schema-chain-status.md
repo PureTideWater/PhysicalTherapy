@@ -211,6 +211,15 @@ its unpushed work is not waited for).
   completed, the Known gap line printed; **FAIL on two retries:** A price and C parse 4 completed on attempt 2 (concurrent
   phase; both attempt 1 on ab8c9c27); cause being read (worker log is in the artifact, unreachable here). Also noted:
   advisory locks at most 22 per backend during F's reconcile (bound 64; 1b's claim is one per backend: to explain).
+- **21:10 UTC. wf_7e937213-93c done.** Verification: CI on 3ac856d5 green but the domain model (blank line); the base moved
+  to 00fd2906 (#115), so a base merge is due; approval line 7459, hash e024cf9f…c4df unchanged. **CAS-42.6 after side
+  re-run locally on 3ac856d5: PASS** (22 jobs on attempt 1; working set 708.2 MiB; locks 22 = the reprocessing parse's
+  trace-bucket locks (64 buckets; 28 traces); live heap 281; A's actionable write ~4.5 s). **CAS-42.5 on 3ac856d5: FAIL on
+  the two attempt-2 jobs only** (cause unconfirmed; leading hypothesis: 6 concurrent jobs on a 4-connection pool with a
+  10 s connection timeout on a slow runner). **F's reconcile 615.7 s CI / 730.8 s local at 2,000 lines** (CAS-42.3 alone
+  55.2 s): one backend at 100% CPU on single-row INSERT INTO line_status. **Running: wf_caf81379-09e** (archived): both
+  root-caused (local profile; an instrumented WIP run if needed), the 1b parts fixed failing-first (SUITE-CAP-3's parts
+  recorded and handed to Lane B), base merged, one push, then verification and CAS-42.5 again.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
