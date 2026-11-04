@@ -198,6 +198,7 @@ interface Opened {
 /** One test file's database, services and worlds (routeWorldsForThisFile() opens it before the file's tests and closes it after). */
 export class RouteWorlds {
   private readonly keys = LocalKeyProvider.random();
+  private readonly delivered: { readonly email: string; readonly code: string }[] = [];
   private state: Opened | undefined;
 
   private get opened(): Opened {
@@ -214,6 +215,11 @@ export class RouteWorlds {
 
   get services(): Services {
     return this.opened.services;
+  }
+
+  /** The password-reset codes the development provider delivered, oldest first (synthetic accounts only). */
+  get resetCodes(): readonly { readonly email: string; readonly code: string }[] {
+    return this.delivered;
   }
 
   /** The tenant tables the catalog names (tenantTables()), which every snapshot covers in this order. */
@@ -260,6 +266,10 @@ export class RouteWorlds {
           sealer: sealer.derive('dev-provider'),
           webauthn: { rpId: 'localhost', rpName: 'Test', origin: 'http://localhost:3100' },
           deliverInvitation: () => Promise.resolve(),
+          deliverResetCode: (email, code) => {
+            this.delivered.push({ email, code });
+            return Promise.resolve();
+          },
           scryptCost: { n: 1024, r: 8, p: 1 },
         }),
         keys: this.keys,

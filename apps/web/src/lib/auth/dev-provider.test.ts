@@ -1,17 +1,26 @@
+import type * as crypto from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DevAuthProvider, temporaryPassword } from './dev-provider';
 import { type DevUserRecord, FileDevStore, MemoryDevStore } from './dev-store';
 import { hashPassword, passwordProblems } from './password';
 import type { AuthStep } from './provider';
 import { Sealer } from './seal';
-import { PROVIDER_CHALLENGE_SECONDS } from './step-limits';
+import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS } from './step-limits';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
 import { totpCode } from './totp';
+
+// The real comparison, watched: a plain `===` would pass every answer, so the reset code's test reads the call (N-1).
+const { timingSafeEqual } = vi.hoisted(() => ({ timingSafeEqual: vi.fn<(a: NodeJS.ArrayBufferView, b: NodeJS.ArrayBufferView) => boolean>() }));
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof crypto>();
+  timingSafeEqual.mockImplementation(actual.timingSafeEqual);
+  return { ...actual, timingSafeEqual };
+});
 
 const ORIGIN = 'http://localhost:3100';
 const CHEAP = { n: 1024, r: 8, p: 1 };
@@ -28,6 +37,7 @@ async function provider(records: DevUserRecord[] = []) {
     await store.put(record);
   }
   const invitations: { email: string; password: string }[] = [];
+  const resets: { email: string; code: string }[] = [];
   const dev = new DevAuthProvider({
     store,
     sealer: new Sealer(Buffer.alloc(32, 3)),
@@ -36,10 +46,14 @@ async function provider(records: DevUserRecord[] = []) {
       invitations.push({ email, password });
       return Promise.resolve();
     },
+    deliverResetCode: (email, code) => {
+      resets.push({ email, code });
+      return Promise.resolve();
+    },
     now: () => clock,
     scryptCost: CHEAP,
   });
-  return { dev, store, invitations };
+  return { dev, store, invitations, resets };
 }
 
 async function record(overrides: Partial<DevUserRecord> = {}): Promise<DevUserRecord> {
@@ -168,6 +182,141 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     await dev.resendInvitation('again@synthetic.test');
     await dev.resendInvitation('nobody@synthetic.test');
     expect(invitations).toHaveLength(2);
+  });
+});
+
+describe('DevAuthProvider: a forgotten password (SGN-06)', () => {
+  const NEW_PASSWORD = 'Chosen-Reset-Pass-2026';
+
+  function codeFor(resets: readonly { email: string; code: string }[]): string {
+    const last = resets.at(-1);
+    if (last === undefined) {
+      throw new Error('expected a delivered code');
+    }
+    return last.code;
+  }
+
+  it('delivers a six-digit code once for a known active record, and keeps only its hash', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await expect(dev.requestPasswordReset('PERSON@synthetic.test')).resolves.toBeUndefined();
+    expect(resets).toHaveLength(1);
+    expect(resets[0]?.email).toBe('PERSON@synthetic.test');
+    const code = codeFor(resets);
+    expect(code).toMatch(/^\d{6}$/);
+    const kept = await store.bySub('sub-1');
+    expect(kept?.reset).toMatchObject({ attempts: 0, expiresAt: clock.getTime() + PASSWORD_RESET_CODE_SECONDS * 1000 });
+    expect(kept?.reset?.codeHash).not.toBe(code);
+    expect(JSON.stringify(kept)).not.toContain(`"${code}"`);
+  });
+
+  it('sends no code and no error for an unknown address or an invited record', async () => {
+    const { dev, store, resets } = await provider([await record({ temporary: true, totpSecret: null })]);
+    await expect(dev.requestPasswordReset('nobody@synthetic.test')).resolves.toBeUndefined();
+    await expect(dev.requestPasswordReset('person@synthetic.test')).resolves.toBeUndefined();
+    expect(resets).toEqual([]);
+    expect((await store.bySub('sub-1'))?.reset).toBeUndefined();
+    expect(await dev.confirmPasswordReset('nobody@synthetic.test', '123456', NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', '123456', NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('sends a code to a record with a chosen password and no TOTP: the twin mirrors Cognito, and the flow’s gate stops it (SEC-B1)', async () => {
+    const { dev, resets } = await provider([await record({ totpSecret: null })]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    expect(resets).toHaveLength(1);
+  });
+
+  it('replaces the code on a new request, and takes each code once', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const first = codeFor(resets);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const second = codeFor(resets);
+    expect(resets).toHaveLength(2);
+    if (first !== second) {
+      expect(await dev.confirmPasswordReset('person@synthetic.test', first, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    }
+    expect(await dev.confirmPasswordReset('person@synthetic.test', second, NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', second, 'Another-Reset-Pass-2026')).toEqual({ kind: 'rejected' });
+  });
+
+  it('refuses an expired code at the code’s hour', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    advance(PASSWORD_RESET_CODE_SECONDS);
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    await dev.requestPasswordReset('person@synthetic.test');
+    advance(PASSWORD_RESET_CODE_SECONDS - 1);
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'reset' });
+  });
+
+  it('invalidates the code after five wrong tries', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const code = codeFor(resets);
+    const wrong = code === '000000' ? '000001' : '000000';
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+      expect((await store.bySub('sub-1'))?.reset?.attempts).toBe(attempt);
+    }
+    expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect((await store.bySub('sub-1'))?.reset).toBeUndefined();
+    expect(await dev.confirmPasswordReset('person@synthetic.test', code, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('compares the code’s hash in constant time, refusing a kept hash of another length without throwing (SEC-N4)', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    await store.update('sub-1', (current) => (current.reset === undefined ? current : { ...current, reset: { ...current.reset, codeHash: 'short' } }));
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('compares a code’s hash of the same length with timingSafeEqual, not ===, for a wrong code and the right one (N-1)', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const code = codeFor(resets);
+    const wrong = code === '000000' ? '000001' : '000000';
+    timingSafeEqual.mockClear();
+    expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', code, NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    // Both hashes reach the comparison, of one nonzero length.
+    expect(timingSafeEqual.mock.calls.map(([kept, offered]) => kept.byteLength > 0 && kept.byteLength === offered.byteLength)).toEqual([true, true]);
+    expect(timingSafeEqual.mock.results.map((result) => result.value as boolean)).toEqual([false, true]);
+  });
+
+  it('checks the password policy before the code, spending no try', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    expect(await dev.confirmPasswordReset('person@synthetic.test', '000000', 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
+    expect(await dev.confirmPasswordReset('nobody@synthetic.test', '000000', 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
+    expect((await store.bySub('sub-1'))?.reset?.attempts).toBe(0);
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'reset' });
+  });
+
+  it('sets the new password and keeps TOTP and keys, so the next sign-in still asks for the code', async () => {
+    const credential = { id: 'Y3JlZA', publicKey: 'cGs', counter: 3 };
+    const { dev, store, resets } = await provider([await record({ totpLastStep: 7, credentials: [credential] })]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    const kept = await store.bySub('sub-1');
+    expect(kept).toMatchObject({ temporary: false, totpSecret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', totpLastStep: 7, credentials: [credential] });
+    expect(kept?.reset).toBeUndefined();
+    expect(await dev.signIn('person@synthetic.test', PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
+    expect((await dev.signIn('person@synthetic.test', NEW_PASSWORD)).kind).toBe('mfa_required');
+  });
+
+  it('delivers nowhere by default, so a provider built without the hook still answers', async () => {
+    const store = new MemoryDevStore();
+    await store.put(await record());
+    const bare = new DevAuthProvider({
+      store,
+      sealer: new Sealer(Buffer.alloc(32, 3)),
+      webauthn: { rpId: 'localhost', rpName: 'Test', origin: ORIGIN },
+      deliverInvitation: () => Promise.resolve(),
+      now: () => clock,
+      scryptCost: CHEAP,
+    });
+    await expect(bare.requestPasswordReset('person@synthetic.test')).resolves.toBeUndefined();
+    expect((await store.bySub('sub-1'))?.reset?.attempts).toBe(0);
   });
 });
 

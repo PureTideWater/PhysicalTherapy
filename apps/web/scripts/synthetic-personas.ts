@@ -31,7 +31,7 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * the ten-failure lock and the specs run in parallel; and a billing manager and a viewer of the other group for the
  * journey of refused downloads, in a practice of its own; and, for the sign-in steps' time limits, a viewer whose code
  * step is warned and closed, a viewer whose step closes in real time, an invited viewer and an invited support engineer
- * who choose a password and enrol, each alone).
+ * who choose a password and enrol, each alone; and a viewer who resets a forgotten password, alone).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -163,6 +163,10 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'time-real', organization: 'group', role: 'viewer' },
   { key: 'time-invited', organization: 'group', role: 'viewer', invited: true },
   { key: 'time-staff', organization: 'internal', role: 'support', invited: true },
+  // The forgotten password (docs/adr/0081, the forgotten password; test matrix SGN-05 to SGN-07): a viewer who resets
+  // their password by emailed code, alone, because a request spends the sign_in bucket's count for the address and the
+  // reset changes the password (apart from lockout's, which locks).
+  { key: 'reset', organization: 'group', role: 'viewer' },
 ];
 
 /** The group the seed holds suspended by PaidWhole (BIL-06): no practice, one administrator, never reinstated. */

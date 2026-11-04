@@ -15,6 +15,13 @@ export const PROVIDER_GRANT_SECONDS = 15 * 60;
 /** The pending cookie's own life (docs/adr/0016): five minutes, fifteen for key registration. */
 const PENDING_COOKIE_SECONDS = 5 * 60;
 const REGISTRATION_COOKIE_SECONDS = 15 * 60;
+/**
+ * A mailed password-reset code's life: Cognito's hour (not set in infra, so nothing pins it; ADR 0081, "Not
+ * verified here"), which the dev twin mirrors. Never shown: the reset step states its cookie's 15 minutes.
+ */
+export const PASSWORD_RESET_CODE_SECONDS = 60 * 60;
+/** The reset step's cookie: 15 minutes, the safer bound at a shared computer (Send a new code opens it again). */
+export const RESET_COOKIE_SECONDS = 15 * 60;
 /** How long the kept email outlives its step (UX-012's figure). */
 export const KEPT_EMAIL_EXTRA_SECONDS = 15 * 60;
 
@@ -28,6 +35,7 @@ const PROVIDER_SECONDS: Readonly<Record<StepName, number>> = {
   mfa: PROVIDER_CHALLENGE_SECONDS,
   key: PROVIDER_CHALLENGE_SECONDS,
   register_key: PROVIDER_GRANT_SECONDS,
+  reset: PASSWORD_RESET_CODE_SECONDS,
 };
 const COOKIE_SECONDS: Readonly<Record<StepName, number>> = {
   new_password: PENDING_COOKIE_SECONDS,
@@ -35,6 +43,7 @@ const COOKIE_SECONDS: Readonly<Record<StepName, number>> = {
   mfa: PENDING_COOKIE_SECONDS,
   key: PENDING_COOKIE_SECONDS,
   register_key: REGISTRATION_COOKIE_SECONDS,
+  reset: RESET_COOKIE_SECONDS,
 };
 
 /** The pending cookie's life for a step. */

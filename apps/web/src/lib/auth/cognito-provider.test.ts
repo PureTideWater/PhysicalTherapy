@@ -1,3 +1,4 @@
+import { createLogger } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
 
 import { type CognitoClient, CognitoAuthProvider, type IdTokenVerifier, MfaNotProvenError } from './cognito-provider';
@@ -268,5 +269,82 @@ describe('CognitoAuthProvider: administration', () => {
     const { provider, sent } = make({ AdminUserGlobalSignOutCommand: {} });
     await provider.globalSignOut('sub-1');
     expect(sent).toEqual([{ command: 'AdminUserGlobalSignOutCommand', input: { UserPoolId: 'us-east-1_Synthetic', Username: 'sub-1' } }]);
+  });
+});
+
+describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
+  const EMAIL = 'person@synthetic.test';
+  const NEW_PASSWORD = 'Chosen-Reset-Pass-2026';
+
+  function resetting(script: Record<string, Answer | Answer[]>) {
+    const { client, sent } = cognito(script);
+    const lines: string[] = [];
+    const provider = new CognitoAuthProvider({
+      client,
+      userPoolId: 'us-east-1_Synthetic',
+      clientId: 'syntheticclient',
+      verifier,
+      logger: createLogger({ sink: (line) => lines.push(line), level: 'debug' }),
+    });
+    return { provider, sent, lines };
+  }
+
+  it('asks Cognito for a code with the client alone (no secret hash, no admin call), and never reads the masked destination', async () => {
+    const { provider, sent, lines } = resetting({
+      ForgotPasswordCommand: { CodeDeliveryDetails: { Destination: 'p***@s***', DeliveryMedium: 'EMAIL', AttributeName: 'email' } },
+    });
+    await expect(provider.requestPasswordReset(EMAIL, 'request-1')).resolves.toBeUndefined();
+    expect(sent).toEqual([{ command: 'ForgotPasswordCommand', input: { ClientId: 'syntheticclient', Username: EMAIL } }]);
+    expect(lines.join('\n')).not.toContain('p***');
+    expect(lines.join('\n')).not.toContain(EMAIL);
+  });
+
+  it('answers the same for every refusal only a real account (or a quota) can cause, logging its code and the request alone', async () => {
+    const swallowed = [
+      'UserNotFoundException',
+      'NotAuthorizedException',
+      'InvalidParameterException',
+      'LimitExceededException',
+      'CodeDeliveryFailureException',
+      'TooManyRequestsException',
+    ];
+    const { provider, lines } = resetting({ ForgotPasswordCommand: swallowed.map((name) => named(name, `${name} for ${EMAIL}`)) });
+    for (const name of swallowed) {
+      expect([name, await provider.requestPasswordReset(EMAIL, 'request-2')]).toEqual([name, undefined]);
+    }
+    const entries = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(entries.map((entry) => [entry.level, entry.msg, entry.error_code, entry.request_id])).toEqual(
+      swallowed.map((name) => ['warn', 'password reset request not delivered', name, 'request-2']),
+    );
+    expect(lines.join('\n')).not.toContain(EMAIL);
+  });
+
+  it('passes its own failures through, so a broken provider never says to check the email', async () => {
+    const { provider } = resetting({ ForgotPasswordCommand: [named('InternalErrorException'), named('ResourceNotFoundException'), new Error('socket hang up')] });
+    await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('InternalErrorException');
+    await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('ResourceNotFoundException');
+    await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('socket hang up');
+  });
+
+  it('sets the new password with the mailed code, with the client alone', async () => {
+    const { provider, sent } = resetting({ ConfirmForgotPasswordCommand: {} });
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    expect(sent).toEqual([{ command: 'ConfirmForgotPasswordCommand', input: { ClientId: 'syntheticclient', Username: EMAIL, ConfirmationCode: '123456', Password: NEW_PASSWORD } }]);
+  });
+
+  it('answers one refusal for every code problem and an unknown user', async () => {
+    const refused = ['CodeMismatchException', 'ExpiredCodeException', 'LimitExceededException', 'TooManyFailedAttemptsException', 'UserNotFoundException', 'NotAuthorizedException'];
+    const { provider } = resetting({ ConfirmForgotPasswordCommand: refused.map((name) => named(name)) });
+    for (const name of refused) {
+      expect([name, await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)]).toEqual([name, { kind: 'rejected' }]);
+    }
+  });
+
+  it('checks the policy before Cognito, maps the pool’s own refusal, and passes other failures through', async () => {
+    const { provider, sent } = resetting({ ConfirmForgotPasswordCommand: [named('InvalidPasswordException'), named('InternalErrorException')] });
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', 'weak')).toMatchObject({ kind: 'invalid_password' });
+    expect(sent).toEqual([]);
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'invalid_password', problems: [] });
+    await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toThrow('InternalErrorException');
   });
 });

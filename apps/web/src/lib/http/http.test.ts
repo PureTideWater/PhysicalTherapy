@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { ConfigError, defaultDevAuthDirectory, defaultDocumentsDirectory, developmentMasterKey, readWebConfig } from '../server/config';
-import { type Services, devOutbox } from '../server/services';
+import { type Services, devOutbox, devResetOutbox } from '../server/services';
 import { MAX_JSON_BODY_BYTES, PRIVATE_NO_STORE, ResponseCookies, boundedText, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
 import { platformRoute, practiceRoute, publicRoute, selfRoute } from './invoke';
 import { type Download, InputError, NotFoundError } from './route';
@@ -651,5 +651,21 @@ describe('the development outbox', () => {
     const [file = ''] = readdirSync(path.join(dir, 'outbox'));
     expect(file).toMatch(/^\d+-[0-9a-f-]{36}\.json$/);
     expect(JSON.parse(readFileSync(path.join(dir, 'outbox', file), 'utf8'))).toEqual({ email: 'invited@synthetic.test', temporaryPassword: 'Temporary-Pass-1!' });
+  });
+
+  it('writes a reset code to a sibling outbox, readable by the owner only, in the code email’s words, and leaves the invitations’ outbox alone', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'tp-outbox-'));
+    await devResetOutbox(dir)('reset@synthetic.test', '012345');
+    const [file = ''] = readdirSync(path.join(dir, 'reset-outbox'));
+    expect(file).toMatch(/^\d+-[0-9a-f-]{36}\.json$/);
+    const written = path.join(dir, 'reset-outbox', file);
+    expect(statSync(written).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(written, 'utf8'))).toEqual({
+      email: 'reset@synthetic.test',
+      code: '012345',
+      subject: 'Your PaidWhole code',
+      body: 'Your code to choose a new PaidWhole password is 012345. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+    });
+    expect(readdirSync(dir)).toEqual(['reset-outbox']);
   });
 });
