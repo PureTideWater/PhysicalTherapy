@@ -478,8 +478,11 @@ checks above.
   `**/package.yaml`, `**/package.json5`, `.pnp.cjs`, `.github/workflows/actions.lock`, `.github/actions/**`, and every
   `.gitattributes`, root or nested, which the checkout applies to every file, whatever attribute the edit changes)
   affect all four, and so does any changed path whose name holds a control character (C0, DEL or C1) or U+2028 or
-  U+2029, which the log prints JSON-quoted. So does every line of an error that holds one: git's stderr is captured,
-  never passed through, and a failure the command prints (git's or Node's, which name a path as it is) is quoted too.
+  U+2029, which the log prints JSON-quoted. Git's stderr is captured, never passed through to the log: what git
+  prints there on success, and the error the command fails with (its own, git's with that stderr, or Node's, which
+  name a path as it is), go through `printable` in `affected.ts`, so each of their lines that holds such a character,
+  or that starts with `::` or `##[` after leading whitespace (a workflow command), is printed JSON-quoted. Such an
+  error fails the job (exit 1) and decides no shard.
 
   The root `package.json`, `pnpm-workspace.yaml`, this workflow and every workspace `package.json` are read field by
   field, on both sides of the change (`tools/stryker/manifests.ts`; docs/adr/0066, Part 7):
@@ -512,8 +515,7 @@ checks above.
   `runtime: pnpm --version prints 10.34.8` (the pnpm on the step's `PATH`), then `checkout: commit <sha>`, then that
   this is the pinned one at the commit tested, or an error for each difference: both pnpm legs must be
   `packageManager`'s ("The runtime is not the pinned one"), and the commit must be `GITHUB_SHA` ("The checkout is not
-  the commit tested"). Every shard's canary verdict names its
-  runtime and the commit it checked out
+  the commit tested"). Every shard's canary verdict names its runtime and the commit it checked out
   (`canary: on Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8, at commit <sha>`), and each shard's own view
   prints them first. The gate fails a shard whose Node, Unicode, ICU or pnpm is not the pinned one
   (`tools/stryker/unicode.json`'s `checkedOn`, the root `packageManager`), or whose commit differs from another shard's
