@@ -1,3 +1,4 @@
+import { brandName } from '@paidwhole/brand/name';
 import { type Browser, type Locator, type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
@@ -24,6 +25,14 @@ import { addVirtualKey, enterPassword, refusal, withDatabase } from './helpers';
 
 const KEEPS = 'If you need more time, start again: your email is kept, and you type your password again.';
 const CLOSED = 'Start again: your email is kept, and you type your password again.';
+
+/**
+ * A sign-in page's title (the root layout's template). A step's restart, a server action's redirect, is a client-side
+ * navigation whose new title reaches the head after its body: axe waits for this one, not the step before's.
+ */
+function titled(name: string): string {
+  return `${name} | ${brandName}`;
+}
 
 /** The status below a step's form, which speaks at the warning and when the step has closed. */
 function regionOf(page: Page): Locator {
@@ -268,7 +277,7 @@ test('the code step states its limit, warns once, closes, and starts again with 
     await page.context().clearCookies({ name: 'tp_sign_in' });
     await pressCode(page, personaTotpCode(key), 'Sign in');
     await expectKept(page, 'step_expired', email, ['Sign-in step closed', 'That sign-in step closed. Your email is filled in: type your password to start again.']);
-    await expectAccessible(page, 'Sign in, email kept');
+    await expectAccessible(page, 'Sign in, email kept', { title: titled('Sign in') });
   });
 
   await test.step('the kept email is a sealed, HttpOnly, SameSite=Lax cookie that ends within 18 minutes', async () => {
@@ -623,8 +632,8 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     await page.getByRole('link', { name: 'Forgot your password?' }).click();
     await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Reset your password', exact: true })).toBeVisible();
-    await expectAccessible(page, 'Forgot password, request');
-    await atPhoneWidth(page, 'Forgot password, request');
+    await expectAccessible(page, 'Forgot password, request', { title: titled('Reset your password') });
+    await atPhoneWidth(page, 'Forgot password, request', { title: titled('Reset your password') });
     // The browser takes an address with no dot in its domain; the server's schema refuses it.
     const field = page.getByLabel('Email', { exact: true });
     await field.fill('reset-no-dot@synthetic');
@@ -652,8 +661,8 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     // The "No email?" list names the support address last, with no subject and no body (review UXB-S1, UX-066).
     await expect(page.locator('[data-slot="no-email"] li').last()).toContainText('Still nothing after a new code: write to');
     await expect(page.locator('[data-slot="no-email"] a')).toHaveAttribute('href', /^mailto:[^?&]+@[^?&]+$/);
-    await expectAccessible(page, 'Forgot password, code step');
-    await atPhoneWidth(page, 'Forgot password, code step');
+    await expectAccessible(page, 'Forgot password, code step', { title: titled('Reset your password') });
+    await atPhoneWidth(page, 'Forgot password, code step', { title: titled('Reset your password') });
     const before = page.viewportSize();
     await page.setViewportSize({ width: 390, height: 844 });
     try {
