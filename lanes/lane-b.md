@@ -1395,3 +1395,8 @@ HANDOFF.md; LANES.md rule 10).
 - Read `lanes/lane-b-handoff-to-lane-a-2026-11-03.md` (state as of 2026-11-02 09:25 UTC). Nothing on GitHub or claude/build-ops has moved since about 11:15 UTC on 2026-11-02. The refresh and stand-down that handoff promised before 14:00 UTC today did not happen, most likely because Lane B's 7-day cap stopped it.
 - Live heads: base 21fa10df (#91 merged after the handoff); SS-01 bb13be1b (no PR; its PR stage wf_78cd4c88-7b1 was mid-run, so anything it had not pushed exists only in its session's worktree); SUITE-CAP-1b 22177731 (the CAS-42.1 report-plan fix, pushed 11:02 UTC 2026-11-02); interest 74a6b290.
 - **Lane A takes back the schema chain, #42's follow-ups and the counters from these heads, as soon as the co-founder confirms.** Lane B's acting-Lane-A sessions (session_01FcouKMmYaqDNXbqJyagW8u and session_01FcouKQthXdmDnPmwhFepxW) must not resume the chain after Lane B's reset (2026-11-06 19:00 UTC): read this entry first and stand down.
+
+### 2026-11-04 02:30 UTC (Lane A's orchestrator): the schema chain taken back
+- The co-founder said go (Lane A's weekly usage 10%). session_019i9ifEG147aKfNHEAsoS7h runs SS-01's PR stage from bb13be1b, then carries 1b (22177731) and interest (74a6b290) forward until each one's turn.
+- Its pacing: CI is the full suite of record; locally the fast checks, the touched tests and the domain-model check; the full local suite once per branch on its final tree; the base merged once, right before a push.
+- Lane B's acting-Lane-A sessions stand down on their next wake.
