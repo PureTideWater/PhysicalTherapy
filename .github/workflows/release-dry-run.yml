@@ -121,10 +121,23 @@ jobs:
           if [ "$IMAGE" != "web" ] && [ "$IMAGE" != "worker" ] && [ -z "$origin" ]; then
             echo "::warning::$IMAGE is built with no static host: its repository variable is not set yet, so its assets load from the application host"
           fi
+          # One line, so the variable can write no other output (a dockerfile= or ref= line after its own) and no other
+          # build argument; its value is not printed.
+          case "$origin" in
+            *$'\n'* | *$'\r'*)
+              echo "::error title=$IMAGE::its static host's repository variable holds a line break"
+              exit 1
+              ;;
+          esac
           echo "origin=$origin" >> "$GITHUB_OUTPUT"
 
+      # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
+      # whole event in it, and in the log. Its build record, which holds the whole event too, is uploaded as an artifact
+      # any signed-in account can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD;
+      # docs/adr/0066, Part 3, N32).
       - name: Build the image without pushing it
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled, DOCKER_BUILD_RECORD_UPLOAD: "${{ github.event_name != 'pull_request' }}" }
         with:
           context: .
           file: ${{ steps.image.outputs.dockerfile }}
