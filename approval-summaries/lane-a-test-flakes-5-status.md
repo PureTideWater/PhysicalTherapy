@@ -39,8 +39,12 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   30871f72 merged (aaaaf5c2: same 7-file diff, typecheck, synth and watched clean, synth tests 192); pushed; CI running;
   the description's sweep count (179 + 3) and head are being corrected by an agent.
 
+- 2026-11-04T22:15:00Z: **#117 MERGED as c7bed0f7** (merge commit; expectedHeadSha aaaaf5c2; base 30871f72). CI green on
+  aaaaf5c2 (22 runs; db 2/4 green this time); description corrected (179 calls + 3); ready 22:08Z; approval-of-record
+  success 22:08:27Z. S1, S2, S3 and the schema chain told. Unsubscribed. Next: #116's base merge, then the pricing-run cut-off.
+
 ## Waiting on someone
 - None.
 
 ## Next step
-The workflow, then ready and merge, then tell S1, S2, S3 and the schema chain.
+Merged (c7bed0f7); others told.
