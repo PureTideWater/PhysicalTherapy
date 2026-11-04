@@ -1253,7 +1253,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
    * download` copies fake/findings.json into its -D directory, after stalling as many tries as fake/stall holds (each
    * writing a cut findings.json first, as a try killed while it extracts leaves one), failing as many as fake/fail holds
    * and failing as many as fake/partial holds after writing a cut findings.json (a zip checksum error), and answers as
-   * gh does when there is no artifact. As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
+   * gh does when there is no artifact. The artifact's file is named as fake/name holds (findings.json unless a case
+   * names another). As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
    * and never overwrites one. A `sleep` beside it logs each pause ("sleep <seconds>") and returns at once; the stall
    * waits with /bin/sleep, which it does not log.
    */
@@ -1272,13 +1273,13 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
         'if [ "$1 $2" = "run download" ]; then',
-        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0)',
+        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0); name=$(cat "$FAKE_DIR/fake/name" 2>/dev/null || echo findings.json)',
         '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec /bin/sleep 30; fi',
         '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "HTTP 502: Bad Gateway" >&2; exit 1; fi',
         '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
         '  if [ -e "$dest/findings.json" ]; then echo "error downloading findings: error extracting \\"findings.json\\": open $dest/findings.json: file exists" >&2; exit 1; fi',
         '  if [ "$partials" -gt 0 ]; then echo $((partials - 1)) > "$FAKE_DIR/fake/partial"; mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; echo "error downloading findings: zip: checksum error" >&2; exit 1; fi',
-        '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/findings.json"; exit 0',
+        '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/$name"; exit 0',
         'fi',
         'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
       ].join('\n'),
@@ -1324,9 +1325,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
    * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, the fake's sleep logging each pause, `findings`, when not null,
    * staged as the run's findings artifact, and the fake's download stalling its first `stalls` tries (a sleep past any
    * DOWNLOAD_LIMIT a case gives), then failing its next `failures` tries, then its next `partials` after writing a cut
-   * findings.json.
+   * findings.json, and the artifact's file named `artifactFile`.
    */
-  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0, partials = 0) {
+  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0, partials = 0, artifactFile = 'findings.json') {
     const step = notifyStep(name, job);
     if (step === undefined) throw new Error(`${name}: no job ${job}`);
     const gh = fakeGh(open);
@@ -1334,6 +1335,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     if (failures > 0) writeFileSync(path.join(gh.dir, 'fake/fail'), String(failures));
     if (stalls > 0) writeFileSync(path.join(gh.dir, 'fake/stall'), String(stalls));
     if (partials > 0) writeFileSync(path.join(gh.dir, 'fake/partial'), String(partials));
+    if (artifactFile !== 'findings.json') writeFileSync(path.join(gh.dir, 'fake/name'), artifactFile);
     const env = {
       ...notifyEnv(name, step, values, findings),
       RUNNER_TEMP: mkdtempSync(path.join(scratch, 'runner-temp-')),
@@ -1470,6 +1472,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect([partial.status, issues(partial), tries(partial)], partial.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
     expect(partial.output).not.toContain('file exists');
     expect(paced(partial)).toEqual([t, p, t]);
+    // An artifact that downloads but holds no findings.json: "check failing", not a red job with no issue.
+    const nameless = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 0, 'other.txt');
+    expect([nameless.status, issues(nameless), tries(nameless)], nameless.output).toEqual([0, [failing], 1]);
   });
 
   it('content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)', () => {
@@ -1574,6 +1579,10 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       expect(failed.log.filter((line) => !line.startsWith('run download ') && !line.startsWith('sleep ')), at).toEqual([]);
       expect(paced(failed), at).toEqual(findings === null ? ['run download', 'sleep 10', 'run download', 'sleep 10', 'run download'] : ['run download']);
     }
+    // An artifact that downloads but holds no findings.json exits 1 with the same message.
+    const nameless = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], list, 'handoff', 0, 0, 0, 'other.txt');
+    expect([nameless.status, paced(nameless)], nameless.output).toEqual([1, ['run download']]);
+    expect(nameless.stderr).toBe("content-calendar: the notify job could not read this run's findings (the check: success)\n");
   });
 
   /**
