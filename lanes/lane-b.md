@@ -1495,3 +1495,14 @@ HANDOFF.md; LANES.md rule 10).
 - **The remedy:** PR 1 is rebuilt on `co-001/cognito-confidential-client-pr1` without an ignore entry, with the test value rewritten. #112 is closed with a comment. The superseded branch `co-001/cognito-confidential-client` stays on origin unmerged (whether to delete it is the person's call); it must never be merged or reused. Workflow prompts now state that a gitleaks refusal means rewriting the flagged text, never .gitleaksignore.
 - **For the founder before release N reaches production:** F0, a staging check that Cognito's challenge names the user's sub (ADR 0088 "Not verified here").
 - **Lane A's queue:** a migration to relink an app row to a new Cognito subject. Until then, the stuck-invitee runbook uses the re-send remedy.
+
+### 2026-11-04 16:30 UTC: #84's fix round done; packet-figure-placeholders claimed
+- #84 (packet day counts) is at `co-001/wip-packet-day-counts-2` 3b276add and waits only for #85.
+  - Each figure now takes its own role, never the union of its clause's cues.
+  - verifierNow runs at request, approval, export and on screens.
+  - Its packets Stryker is split into 13 shards.
+- The re-review loop kept finding English ways to name part of the lines ("apiece", "save one"). Every one also passes the base, so #84 narrows the class and opens nothing; ADR 0086 records it as a known limit.
+- **Decided by Lane A's orchestrator (CLAUDE.md's first rule, code computes every number):** the narrative's figures become placeholders bound to fact ids, rendered by code at export, and free-text numbers in a model narrative are refused.
+  - New item `co-001/packet-figure-placeholders`; ADR 0089 if needed; CAS-52 to CAS-55.
+  - In S2 after #84: design first; built only if time allows before the handback. A migration, if one is needed, is Lane A's.
+- Next free: ADR 0091 (0090 is UX PR 8's), CAS-56.
