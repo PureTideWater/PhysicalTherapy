@@ -52,8 +52,14 @@ const expected = (lines: readonly ReportLine[]) => Buffer.from(auditCsv([...line
 /**
  * The bytes equal, byte for byte, compared as latin1 text: one code unit per byte, so the strings are equal exactly when the
  * bytes are. vitest's toEqual walks a Buffer element by element, over a second for a 470 KB CSV; this takes a millisecond.
+ * On a mismatch the UTF-8 text is compared first, so the failure shows the payer names readably; the latin1 check stays,
+ * since bytes that are not valid UTF-8 can decode alike.
  */
 function sameBytes(actual: Buffer, wanted: Buffer): void {
+  if (actual.equals(wanted)) {
+    return;
+  }
+  expect(actual.toString('utf8')).toBe(wanted.toString('utf8'));
   expect(actual.toString('latin1')).toBe(wanted.toString('latin1'));
 }
 
