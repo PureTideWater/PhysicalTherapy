@@ -88,6 +88,17 @@ function lockedMessage(supportEmail: string): string {
   return `This account was locked after ten failed attempts. Write to ${supportEmail} from this address to have it unlocked.`;
 }
 
+/**
+ * An enrolment refused outside a live invitation (docs/adr/0088, D3): the way out, by the administrator or the support
+ * address. Shown only after the provider accepted the password, so it tells an outsider nothing.
+ */
+function enrolmentNotOpenMessage(supportEmail: string): string {
+  return `This account can’t set up a second factor here. Ask your organization’s administrator, or write to ${supportEmail}.`;
+}
+
+/** The platform's own failure mid-attempt (sessions not ended, a refused client credential): the attempt ends. */
+const COULD_NOT_CONTINUE: StepResult = { error: 'Sign-in could not continue. Start again.', final: true };
+
 /** What a timed step's page is given for its timer: its limit, its warning, and when it closes (absent with no stamp). */
 export interface StepTime {
   readonly limitSeconds: number;
@@ -190,7 +201,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
         writeKeptEmail(cookies, sealer, { email: pending.email, ...(use === undefined ? {} : { use }) }, pending.step, options.at, now);
       }
       if (pending.step === 'mfa_setup' && pending.totp === undefined) {
-        const begun = await signIn.beginTotpSetup(pending);
+        const begun = await signIn.beginTotpSetup(pending, contextOf(context));
         if (begun.kind !== 'pending') {
           return settle(context, begun, options);
         }
@@ -231,6 +242,15 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           return { error: MESSAGES.no_account };
         case 'key_not_registered':
           return { error: MESSAGES.key_not_registered };
+        case 'enrolment_not_open':
+          // No press of this form can enrol the account: the attempt ends, and the kept email with it.
+          clearSignIn(cookies);
+          return { error: enrolmentNotOpenMessage(context.services.supportEmail), final: true };
+        case 'client_credential':
+          // The provider refused this application's own credential (docs/adr/0088, D2): the platform's failure, said in
+          // the generic words, and the attempt ends.
+          clearSignIn(cookies);
+          return COULD_NOT_CONTINUE;
       }
   }
 }
@@ -351,7 +371,7 @@ const restartRoute = publicRoute({
     const pending = readPending(cookies, context.services.sealer, context.services.now());
     clearPending(cookies);
     if (pending !== undefined) {
-      await context.services.signIn.abandon(pending);
+      await context.services.signIn.abandon(pending, contextOf(context));
     }
     const { to } = context.input;
     if (to !== undefined) {
@@ -484,7 +504,7 @@ export const hardwareKeyOptions = publicRoute({
     // Any typed address reaches this step, so it ends a kept email and never writes one.
     clearKeptEmail(context.request.cookies);
     const at = context.services.now().getTime();
-    const begun = await context.services.signIn.beginKey(context.input.email);
+    const begun = await context.services.signIn.beginKey(context.input.email, contextOf(context));
     if ('kind' in begun) {
       const settled = await settle(context, begun, { at });
       return 'error' in settled ? settled : { error: MESSAGES.credentials };
@@ -719,8 +739,9 @@ export const resetConfirm = resetRoute(
         case 'invalid_password':
           return { error: 'Choose a stronger password.', issues: [passwordIssue(result.problems)] };
         case 'sessions_not_ended':
+        case 'client_credential':
           clearSignIn(cookies);
-          return { error: 'Sign-in could not continue. Start again.', final: true };
+          return COULD_NOT_CONTINUE;
         case 'reset':
           clearSignIn(cookies);
           if (result.locked) {

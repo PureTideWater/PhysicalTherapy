@@ -6,7 +6,8 @@
   limit that binds, counted from its challenge, and a second sealed cookie keeps the email); adds to
   [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
   (its one exception: the sign-in email, rendered back after a step closes); reverses none of their rulings. UX PR 7
-  (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08
+  (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08, whose A4 and Not covered
+  [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends
 - **Date:** 2026-11-01
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking (UX-128's marker
@@ -248,8 +249,9 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
 - **A4. A wrong reset code is not a sign-in failure.** It counts toward no lock and writes no event: counting would mark
   real accounts by timing and let anyone lock an account. Sustained guessing shows instead as a run of
   `password_reset_requested` events for one user, and refused codes and the reset routes' rate-limit refusals log at
-  warn with the request ID only. An alarm or weekly-security-review query on those events per user per day is owed
-  (Lane A).
+  warn with the request ID only. ADR 0088 D7 alarms on them per user (`password reset requested`, 5 or more in an hour,
+  through a contributor rule keyed on the user ID) and runs the per-user query weekly
+  (`docs/runbooks/incident-response.md`, "Weekly sign-in review").
 - **A5. After a reset** every application session of the account ends (`revoke_user_sessions`, the user as actor,
   retried once), the provider signs the user out everywhere (a failure there is logged and does not fail the reset),
   the lock stays, and the second factor is asked at the next sign-in. The mailed code is the authorization; Postgres
@@ -272,25 +274,27 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   - the branded code email and a "password changed" email (Lane A, #42 files);
   - an invited person who lost the temporary password (their organization's administrator resends it);
   - a person who set a password but never enrolled a second factor cannot reset it, and Cognito's `RESEND` no longer
-    works for a `CONFIRMED` user, so their administrator removes and re-invites them; a console factor reset (UX PR 65)
-    must clear `mfa_enrolled`, or this gap reopens;
+    works for a `CONFIRMED` user, so their administrator sends the invitation again, which opens seven new days in
+    which they sign in with their own password and enrol (ADR 0088 D3); one who has forgotten that password goes to
+    the founder's break-glass session (`docs/runbooks/support-mail.md`, "Sign-in help tickets"), since deleting the
+    Cognito user and inviting again cannot complete for an existing account (ADR 0088, Not covered); a console factor
+    reset (UX PR 65) must issue its own re-enrolment right (ADR 0088 D3);
   - second-factor and key resets (UX PRs 65 and 8): until UX PR 65 lands, lost-authenticator tickets are held at the
     desk with no resolution, and lost-key tickets until UX PR 8 or a key-reset path exists
     (`docs/runbooks/support-mail.md`, "Sign-in help tickets");
   - a sign-in begun with both factors less than 3 minutes before a reset (Cognito's auth session) can still open an
     app session after the revoke; a reset time checked against `auth_time` would close it (a migration, Lane A);
-  - an alarm on `password reset request not delivered` by `error_code`, and the per-user query on
-    `password_reset_requested` (A4), are owed by Lane A;
-  - SEC-B1 holds on the app's path only. The pool's app client is public (`generateSecret: false`) and recovery is
-    `EMAIL_ONLY`, so a caller who knows the client ID (an identifier: the environment, stack outputs, any ID token's
-    `aud`) can call `ForgotPassword` and `ConfirmForgotPassword` directly. That goes past the gate, the `sign_in`
-    limit and the `password_reset_*` audit, and it revokes no app session. A Cognito `CONFIRMED` user with no factor
-    can then be taken over: the next sign-in is answered `MFA_SETUP`, and the app's own enrolment takes the
-    attacker's TOTP and, for staff, their key. A code obtained that way can also be redeemed on the app's own confirm
-    route, which does not re-check the gate (proposal P-2). The same client lets a caller run `InitiateAuth`
-    directly, past the app's ten-failure lock. This was so on base 24531dc2, before this amendment. Closing it is
-    Lane A's (proposal P-1: a confidential client with a `SecretHash`, and a `CustomMessage` trigger that refuses
-    `CustomMessage_ForgotPassword` for a user with no TOTP preference).
+  - SEC-B1 holds on the app's path only until ADR 0088's second release makes the client confidential (D1). The
+    pool's app client is public (`generateSecret: false`) and recovery is `EMAIL_ONLY`, so a caller who knows the
+    client ID (an identifier: the environment, stack outputs, any ID token's `aud`) can call `ForgotPassword` and
+    `ConfirmForgotPassword` directly. That goes past the gate, the `sign_in` limit and the `password_reset_*` audit,
+    and it revokes no app session. The same client lets a caller run `InitiateAuth` directly, past the app's
+    ten-failure lock. This was so on base 24531dc2, before this amendment. A Cognito `CONFIRMED` user with no factor
+    could then be taken over through the app's own enrolment, which took the attacker's TOTP and, for staff, their
+    key; ADR 0088 D3 closes that now: a factor is enrolled only inside a live invitation, on the account matched by
+    both the enrolling Cognito subject and the email, so a code obtained that way and redeemed on the app's own
+    confirm route (proposal P-2) no longer leads to an enrolment either. The `CustomMessage` trigger of proposal P-1
+    was not built (ADR 0088, Alternatives considered).
 - **Not verified here:** Cognito's attempt and request caps (the per-code cap on `ConfirmForgotPassword`, a
   `LimitExceededException` after some number of wrong codes, is what bounds guessing in production; the dev twin's
   five tries model it and are not evidence of it), its code's hour and replacement, its p99 for
@@ -308,9 +312,10 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
 - UX PR 65 lands (the mfa line's second sentence).
 - Lane A brands the code email or adds a security_event function.
 - The floor's log shows runs over it, or the `password reset request timed` p99 nears the floor: raise it.
-- Lane A closes P-1 (a confidential client or the `CustomMessage` gate): the Not covered bullet on the app's path goes.
+- ADR 0088's second release (the confidential client) reaches production: the Not covered bullet on the app's path
+  goes.
 - UX PR 65 lands: end live reset codes on a factor clear, or re-check the gate on confirm (P-2), with a refused account
   answered by the one code refusal at a wrong code's timing.
-- UX PR 65 adds a console factor reset (it must clear `mfa_enrolled`).
+- UX PR 65 adds a console factor reset (it must issue its own re-enrolment right, ADR 0088 D3).
 - Combined audit #103's manual checks report.
 - UX PR 14's Notice replaces the region's look.

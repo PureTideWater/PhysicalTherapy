@@ -665,6 +665,13 @@ export const setPracticeLocation = platformRoute({
   sample: { params: () => ({}), input: (refs) => ({ practiceId: refs.practiceId, zip: '00011' }) },
 });
 
+/**
+ * The answer for an address whose identity-provider account cannot be linked to an invitation: one already linked to
+ * another account here, or (with no account here) one that has signed in (docs/adr/0088 D4). The reconcile is an
+ * engineer's, run by the founder's break-glass session (docs/runbooks/support-mail.md, Sign-in help tickets).
+ */
+export const ANOTHER_IDENTITY = 'this email belongs to another identity; ask an engineer to reconcile it';
+
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
 }
@@ -709,10 +716,17 @@ export const inviteMember = platformRoute({
       throw new InputError([{ field: 'email', message: 'a member of a practice group or a firm cannot hold an internal role' }]);
     }
     // The provider's account: created with a temporary password it delivers (an invitation), or found.
-    const { sub } = await services.provider.ensureUser(input.email);
+    const ensured = await services.provider.ensureUser(input.email);
+    const { sub } = ensured;
     let userId = known?.id;
     if (known !== undefined && known.cognito_sub !== sub) {
-      throw new InputError([{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }]);
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
+    }
+    // SEC-22, docs/adr/0088 D4: with no account here, a provider account found (not made now) is linked only if it has
+    // never signed in; otherwise whoever holds its password, and any factor, would take the invitation.
+    const linksExisting = known === undefined && !ensured.created;
+    if (linksExisting && !ensured.neverSignedIn) {
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
     }
     if (userId === undefined) {
       userId = randomUUID();
@@ -729,6 +743,12 @@ export const inviteMember = platformRoute({
         throw new InputError([{ field: 'email', message: 'already a member of this organization' }]);
       }
       throw error;
+    }
+    // A new temporary password for this invitation; the provider voids the one it mailed before. An account that signed
+    // in since the check above is not sent one, and is refused as one that had: the transaction writes nothing (review
+    // security-N3).
+    if (linksExisting && !(await services.provider.resendInvitation(input.email))) {
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
     }
     return { objectId: membershipId, redirect: `/console/organizations/${input.organizationId}` };
   },

@@ -328,6 +328,21 @@ describe('contracts: upload, tag, abstract by hand, approve, sign off, map (J5, 
     expect(page.list.total).toBe(0);
     expect(page.upload.canUpload).toBe(false);
     expect(page.upload.kinds.map((kind) => kind.kind)).toEqual(['contract', 'exhibit', 'payer_letter']);
+    expect(page.upload.gate).toEqual({ open: true, title: null, reason: null });
+  });
+
+  it('says uploads are paused, with the database’s sentence whole, while the organization is suspended (ux85-1, n7; docs/adr/0080)', async () => {
+    await owner.query("UPDATE organization SET status = 'suspended' WHERE id = $1", [world.organizationId]);
+    try {
+      expect(ok(await call(contractsPage, manager, P())).upload.gate).toEqual({
+        open: false,
+        title: 'Uploads are paused',
+        reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable.',
+      });
+    } finally {
+      await owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [world.organizationId]);
+    }
+    expect(ok(await call(contractsPage, manager, P())).upload.gate.open).toBe(true);
   });
 
   it('lets the billing manager tag the document to a new contract with its payer, as a draft version (J5)', async () => {

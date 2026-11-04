@@ -168,9 +168,11 @@ test('a firm PaidWhole suspended: its principal reads why on the client practice
   await expectAccessible(page, 'Practice home, a firm held by PaidWhole');
 
   const paused =
-    "Uploads are paused: PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records.";
+    "PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records.";
   await page.goto(`/p/${practiceId}/uploads`);
-  await expect(page.getByText(paused)).toBeVisible();
+  // Titled for the state, the database's sentence whole beneath (docs/adr/0085).
+  await expect(page.getByText('Uploads are paused', { exact: true })).toBeVisible();
+  await expect(page.getByText(paused, { exact: true })).toBeVisible();
   await expectAccessible(page, 'Uploads, a firm held by PaidWhole');
 
   await page.goto(`/p/${practiceId}/pricing-runs`);

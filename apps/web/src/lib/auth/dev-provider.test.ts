@@ -110,7 +110,8 @@ describe('DevAuthProvider: password and TOTP', () => {
   it('enrolls TOTP before anything else when none is set, then needs a code every time', async () => {
     const { dev, store } = await provider([await record({ totpSecret: null })]);
     const step = await dev.signIn('person@synthetic.test', PASSWORD);
-    expect(step.kind).toBe('mfa_setup_required');
+    // SEC-22: the step names the record's subject, as Cognito's USERNAME does (docs/adr/0088, D3).
+    expect(step).toMatchObject({ kind: 'mfa_setup_required', subject: 'sub-1' });
     const setup = await dev.beginTotpSetup(challengeOf(step));
     if ('kind' in setup) {
       throw new Error('expected a setup');
@@ -130,7 +131,7 @@ describe('DevAuthProvider: password and TOTP', () => {
     expect(step.kind).toBe('new_password_required');
     expect(await dev.setNewPassword(challengeOf(step), 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
     const next = await dev.setNewPassword(challengeOf(step), 'Chosen-Pass-2026');
-    expect(next.kind).toBe('mfa_setup_required');
+    expect(next).toMatchObject({ kind: 'mfa_setup_required', subject: 'sub-1' });
     expect((await dev.signIn('person@synthetic.test', PASSWORD)).kind).toBe('rejected');
     expect((await dev.signIn('person@synthetic.test', 'Chosen-Pass-2026')).kind).toBe('mfa_setup_required');
   });
@@ -157,7 +158,8 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const { dev, invitations } = await provider();
     const first = await dev.ensureUser('new@synthetic.test');
     expect(first.created).toBe(true);
-    expect(await dev.ensureUser('NEW@synthetic.test')).toEqual({ sub: first.sub, created: false });
+    expect(first.neverSignedIn).toBe(true);
+    expect(await dev.ensureUser('NEW@synthetic.test')).toEqual({ sub: first.sub, created: false, neverSignedIn: true });
     expect(invitations).toHaveLength(1);
     const password = invitations[0]?.password ?? '';
     expect(passwordProblems(password)).toEqual([]);
@@ -171,7 +173,7 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const { dev, invitations } = await provider();
     await dev.ensureUser('again@synthetic.test');
     const first = invitations[0]?.password ?? '';
-    await dev.resendInvitation('again@synthetic.test');
+    expect(await dev.resendInvitation('again@synthetic.test')).toBe(true);
     expect(invitations).toHaveLength(2);
     const second = invitations[1]?.password ?? '';
     expect(second).not.toBe(first);
@@ -179,8 +181,10 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const step = await dev.signIn('again@synthetic.test', second);
     expect(step.kind).toBe('new_password_required');
     await dev.setNewPassword(challengeOf(step), 'Chosen-Synthetic-Pass-2026!');
-    await dev.resendInvitation('again@synthetic.test');
-    await dev.resendInvitation('nobody@synthetic.test');
+    // Once a password is chosen, the account has signed in: an invitation is never linked onto it (SEC-22).
+    expect(await dev.ensureUser('again@synthetic.test')).toMatchObject({ created: false, neverSignedIn: false });
+    expect(await dev.resendInvitation('again@synthetic.test')).toBe(false);
+    expect(await dev.resendInvitation('nobody@synthetic.test')).toBe(false);
     expect(invitations).toHaveLength(2);
   });
 });

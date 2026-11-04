@@ -303,6 +303,22 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/report/csv-arena.test.ts',
     'apps/worker/src/reconcile/patient-share.test.ts',
   ]),
+  // Lane B (co-001/ux-payer-response): a choice that records a fact starts unchosen, and the payer’s letter is uploaded with its response, apart from the contract documents.
+  'CAS-45': none(8, 'A case line on a synthetic practice the test creates, written off: no file.', [
+    'apps/web/src/lib/cases/write-off.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
+  ]),
+  'CAS-46': none(8, 'A response and a submission logged on a synthetic practice the test creates: no file.', ['apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-47': none(8, 'A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.', [
+    'apps/web/src/components/packets/response-letter.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-48': none(8, 'Documents the test inserts in each intake state, and a response recorded with one: no file.', [
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/response-letter.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
@@ -432,6 +448,36 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/mail-routes.db.test.ts',
     'infra/test/monitoring.test.ts',
     'apps/web/e2e/mail-notices.spec.ts',
+  ]),
+  // The confidential Cognito client and second-factor enrolment only inside a live invitation (docs/adr/0088). Its
+  // first pull request's tests are named here; the confidential client, the secret's custody in Secrets Manager and its
+  // rotation are its second pull request's (release N+1), which adds their infra tests, and the staging checks are
+  // the founder's (the design's F1 to F5).
+  'SEC-20': none(1, 'A hash-checking twin of the Cognito endpoint, a synthetic client ID and secret, and synthetic personas through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/secret-hash.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/credential-probe.test.ts',
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+  ]),
+  'SEC-21': none(1, 'The client modules are scanned from source, the wrapper is serialised with a synthetic secret, and the stacks are synthesized in memory; no file.', [
+    'apps/web/src/lib/auth/client-secret.test.ts',
+    'apps/web/src/lib/auth/client-bundle.test.ts',
+    'apps/web/src/lib/auth/secret-hash.test.ts',
+    'infra/test/pull-request-diff-role.test.ts',
+  ]),
+  'SEC-22': none(1, 'Synthetic invited, active, enrolled, locked and orphan personas answer the enrolment challenge through the local identity provider and the Cognito twin; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+  ]),
+  'SEC-23': none(1, 'The monitoring stack is synthesized in memory and its messages are read from the web source; synthetic personas ask for resets; no file.', [
+    'infra/test/monitoring.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
   ]),
   'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
     'apps/worker/src/screening/format.test.ts',

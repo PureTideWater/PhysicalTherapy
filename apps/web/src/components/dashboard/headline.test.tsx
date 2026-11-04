@@ -129,6 +129,9 @@ describe('the home before its first file', () => {
     expect(uploadGate({ baaOnFile: true }, { ...closed, source: 'grantee' })).toBe('stopped');
     expect(uploadGate({ baaOnFile: false }, null)).toBe('no_baa');
     expect(uploadGate({ baaOnFile: false }, paused)).toBe('no_baa');
+    // A cause the words do not know is neither a pause nor a closure (docs/adr/0085).
+    expect(uploadGate({ baaOnFile: true }, { ...paused, restarts: null })).toBe('unknown');
+    expect(uploadGate({ baaOnFile: false }, { ...paused, restarts: null })).toBe('no_baa');
   });
 
   it('open: the upload sentence and Go to Uploads', () => {
@@ -161,9 +164,18 @@ describe('the home before its first file', () => {
 
   it('stopped: a closure above promises no restart, and no link (UX-SS01-3; BIL-09)', () => {
     const html = renderToStaticMarkup(<FirstUpload practiceId="p1" gate="stopped" agreements />);
-    expect(text(html)).toContain('No new uploads start');
+    // Titled as Uploads titles a closure (docs/adr/0085): one gate, one word for each state.
+    expect(text(html)).toContain('Uploads are closed');
     expect(text(html)).toContain('The closure above stops them here.');
     expect(text(html)).not.toMatch(/until|again|reinstat|restart|paused|resolved|lifted/i);
+    expect(html).not.toContain('href=');
+  });
+
+  it('unknown: a hold the words do not know stops them, promising nothing and calling it no closure (docs/adr/0085)', () => {
+    const html = renderToStaticMarkup(<FirstUpload practiceId="p1" gate="unknown" agreements />);
+    expect(text(html)).toContain('Uploads are stopped');
+    expect(text(html)).toContain('The hold above stops them here.');
+    expect(text(html)).not.toMatch(/until|again|reinstat|restart|paused|resolved|lifted|clos/i);
     expect(html).not.toContain('href=');
   });
 });

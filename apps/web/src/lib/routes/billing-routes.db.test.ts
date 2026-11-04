@@ -31,7 +31,7 @@ import {
 } from './billing';
 import { practiceHome } from './practice';
 import { pricingRunsPage } from './pricing';
-import { requestUploads, uploadsPage } from './uploads';
+import { requestUploads, suspendedGate, uploadsPage } from './uploads';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -418,11 +418,16 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       body: 'An invoice of your organization has been unpaid for 30 days since its payment failed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start here until it is paid. Everything here stays readable.',
       nextStep: { link: 'Settings, Billing', href: `/settings/billing/${world.organizationId}`, text: ' shows why and what to do next.' },
     });
-    expect(ok(await call(uploadsPage, admin, P)).gate).toEqual({
+    // Every page that offers an upload says so under a title true to the state (ux85-1; docs/adr/0085): never "Uploads
+    // are not open yet" (the BAA's alone), with the database's sentence whole as the body (docs/adr/0080), which the
+    // title does not repeat.
+    const nonpayment = {
       open: false,
-      title: 'Uploads are not open yet',
-      reason: expect.stringMatching(/^Uploads are paused: an invoice of your organization has been unpaid for 30 days/) as string,
-    });
+      title: 'Uploads are paused',
+      reason: 'An invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable.',
+    };
+    // (Contracts and Reconciliation read the same uploadGate(); their own suites hold their panels to it.)
+    expect(ok(await call(uploadsPage, admin, P)).gate).toEqual(nonpayment);
     expect((await call(pricingRunsPage, admin, P)).status).toBe('ok');
     // The billing page dates the suspension from billing and names the invoice holding it (BIL-05).
     const billingPage = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));
@@ -515,6 +520,13 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable',
     });
     expect((await call(pricingRunsPage, world.adminUserId, P)).status).toBe('ok');
+    // Its upload panels say uploads are paused, the database's sentence whole beneath (ux85-1; docs/adr/0080, 0085).
+    const heldGate = {
+      open: false,
+      title: 'Uploads are paused',
+      reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable.',
+    };
+    expect(ok(await call(uploadsPage, world.adminUserId, P)).gate).toEqual(heldGate);
 
     // Its billing page never reads "In good standing": "Suspended by PaidWhole", the notice, the ticket's link and the
     // note that a plan or payment method does not reinstate it (BIL-05, BIL-06).
@@ -572,6 +584,21 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     const organizationId = world.organizationId;
     ok(await call(simulatedPaymentMethodAction, world.adminUserId, { organizationId }, GOOD_CARD));
     await owner.query("UPDATE organization SET status = 'closed' WHERE id = $1", [organizationId]);
+    // A closed organization's upload panel says uploads are closed, not paused (ux85-1).
+    expect(ok(await call(uploadsPage, world.adminUserId, { practiceId: world.practiceId })).gate).toEqual({
+      open: false,
+      title: 'Uploads are closed',
+      reason: "The practice's organization is closed, so no new work starts here; everything here stays readable.",
+    });
+    // A hold whose cause the upload words do not know (the database's function changed) is still shown whole as the
+    // body, as a sentence, under a title that neither repeats it nor calls it a pause or a closure (docs/adr/0085).
+    const unknown = { reason: 'the organization is SYNTHETIC: a reason not known here', source: 'owner', restarts: null } as const;
+    expect(suspendedGate(unknown)).toEqual({
+      open: false,
+      title: 'Uploads are stopped',
+      reason: 'The organization is SYNTHETIC: a reason not known here.',
+    });
+    expect(suspendedGate({ ...unknown, reason: 'the organization is SYNTHETIC.' }).reason).toBe('The organization is SYNTHETIC.');
     expect(await call(choosePlanAction, world.adminUserId, { organizationId }, { plan: 'monthly' })).toMatchObject({
       status: 'invalid',
       issues: [{ field: 'plan', message: 'a closed organization takes no new plan' }],
