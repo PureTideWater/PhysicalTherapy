@@ -48,6 +48,15 @@ export type AuthStep =
 
 export type NewPasswordStep = AuthStep | { readonly kind: 'invalid_password'; readonly problems: readonly string[] };
 
+/**
+ * A forgotten password's confirmation (docs/adr/0081, the forgotten password). Every code problem (wrong, expired,
+ * used, replaced, too many tries) and an unknown address are one 'rejected', so the answer never tells them apart.
+ */
+export type PasswordResetResult =
+  | { readonly kind: 'reset' }
+  | { readonly kind: 'rejected' }
+  | { readonly kind: 'invalid_password'; readonly problems: readonly string[] };
+
 export interface TotpSetup {
   /** The base32 secret the user's authenticator app is given. */
   readonly secret: string;
@@ -88,6 +97,14 @@ export interface AuthProvider {
    * a password already is not invited and is left as they are.
    */
   resendInvitation(email: string): Promise<void>;
+  /**
+   * Sends a reset code if the address names a user who can reset. Resolves the same for every address: a refusal
+   * only a real account could cause is swallowed (logged by its error code and `requestId` alone), and only the
+   * provider's own failures throw. The sign-in flow asks only for an active account with a second factor (SEC-B1).
+   */
+  requestPasswordReset(email: string, requestId?: string): Promise<void>;
+  /** Sets a new password with the mailed code, the password policy checked first. Every code problem is one 'rejected'. */
+  confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult>;
   /** Signs the user out of the provider everywhere (their membership ended, their sessions were revoked). */
   globalSignOut(sub: string): Promise<void>;
 }

@@ -1,9 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
+import type { ScopeClient, ScopePool } from '@tp/db/runtime';
 import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createOrganization, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
@@ -14,7 +15,7 @@ import { SoftAuthenticator } from '../auth/test-support/soft-authenticator';
 import { totpCode } from '../auth/totp';
 import { routeHandler } from '../http/handler';
 import { RATE_LIMITS, takeRateLimit } from '../http/rate-limit';
-import type { TotpSetup } from '../auth/provider';
+import type { AuthStep, TotpSetup } from '../auth/provider';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { homePage } from './index';
@@ -23,6 +24,7 @@ import {
   chooseNewPassword,
   enrollPage,
   enrollTotp,
+  forgotPasswordPage,
   hardwareKeyOptions,
   hardwareKeyPage,
   hardwareKeyRegistrationOptions,
@@ -30,6 +32,8 @@ import {
   newPasswordPage,
   registerHardwareKey,
   registerKeyPage,
+  resetConfirm,
+  resetRequest,
   restartSignIn,
   signInPage,
   signInWithPassword,
@@ -46,6 +50,12 @@ const ORIGIN = 'http://localhost:3100';
 const CHEAP = { n: 1024, r: 8, p: 1 };
 const PASSWORD = 'Synthetic-Pass-2026';
 const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+/** The services' default support address (synthetic), which the locked words name (UX-066). */
+const SUPPORT = 'support@synthetic.test';
+/** The refusal of a locked account, on the password step and the key step (UX-066). */
+const LOCKED = `This account was locked after ten failed attempts. Write to ${SUPPORT} from this address to have it unlocked.`;
+/** Where a closed hardware-key step goes: back to the key surface, never the password page (UXS-01). */
+const KEY_RESTART = { redirect: '/sign-in/hardware-key?reason=step_expired' };
 
 let database: MigratedDatabase;
 let owner: DatabaseClient;
@@ -54,6 +64,13 @@ let store: MemoryDevStore;
 let sealer: Sealer;
 let services: Services;
 let clock = new Date();
+/** The reset codes the provider mailed, oldest first (synthetic accounts only). */
+const mailed: { readonly email: string; readonly code: string }[] = [];
+/** Every structured log line the services wrote. */
+const logLines: string[] = [];
+/** The reset request's floor runs on its own clock, which only its sleeps move: each sleep, in order. */
+const slept: number[] = [];
+let paceAt = 0;
 
 beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
@@ -65,23 +82,35 @@ beforeAll(async () => {
   services = servicesWith(DevAuthProvider);
 });
 
-/** The services on this file's store, sealer and clock, with the dev provider or a subclass of it. */
-function servicesWith(Provider: typeof DevAuthProvider): Services {
+/** The services on this file's store, sealer and clock, with the dev provider or a subclass of it, on this pool. */
+function servicesWith(Provider: typeof DevAuthProvider, pool: ScopePool<ScopeClient> = app): Services {
   return createServices({
     origin: ORIGIN,
-    pool: app,
+    pool,
     provider: new Provider({
       store,
       sealer: sealer.derive('dev-provider'),
       webauthn: { rpId: 'localhost', rpName: 'Test', origin: ORIGIN },
       deliverInvitation: () => Promise.resolve(),
+      deliverResetCode: (email, code) => {
+        mailed.push({ email, code });
+        return Promise.resolve();
+      },
       now: () => clock,
       scryptCost: CHEAP,
     }),
     keys: LocalKeyProvider.random(),
     sealer,
-    logger: createLogger({ sink: () => undefined }),
+    logger: createLogger({ sink: (line) => logLines.push(line) }),
     now: () => clock,
+    pace: {
+      now: () => paceAt,
+      sleep: (ms) => {
+        slept.push(ms);
+        paceAt += ms;
+        return Promise.resolve();
+      },
+    },
   });
 }
 
@@ -90,6 +119,31 @@ afterAll(async () => {
   await owner.end();
   await database.drop();
 });
+
+/** The application's pool, except that queries matching `match` fail the first `times` times (a synthetic failure). */
+function failing(match: RegExp, times: number): ScopePool<ScopeClient> {
+  let left = times;
+  return {
+    connect: async () => {
+      const client = await app.connect();
+      return new Proxy(client, {
+        get(target, property) {
+          if (property === 'query') {
+            return (text: unknown, values?: unknown[]) => {
+              if (left > 0 && typeof text === 'string' && match.test(text)) {
+                left -= 1;
+                return Promise.reject(new Error('synthetic failure'));
+              }
+              return target.query(text as string, values);
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+    },
+  };
+}
 
 /** A browser's cookie jar that remembers what each response set, with each write's Max-Age and the names written since `forget`. */
 class Browser implements CookieJar {
@@ -150,13 +204,20 @@ async function json(route: Route, browser: Browser, body: unknown): Promise<{ st
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
 
-async function person(options: { readonly temporary?: boolean; readonly totp?: boolean; readonly internal?: boolean } = {}) {
+async function person(options: { readonly temporary?: boolean; readonly totp?: boolean; readonly internal?: boolean; readonly status?: 'invited' | 'active' | 'disabled' } = {}) {
   const id = randomUUID();
   const sub = randomUUID();
   const email = `${id}@synthetic.test`;
   await store.put({ sub, email, passwordHash: await hashPassword(PASSWORD, CHEAP), temporary: options.temporary ?? false, totpSecret: options.totp === false ? null : SECRET, totpLastStep: -1, credentials: [] });
   await asOwner(owner, [], () =>
-    owner.query("INSERT INTO \"user\" (id, cognito_sub, email, mfa_enrolled, hardware_key_required, status) VALUES ($1, $2, $3, $4, $5, 'active')", [id, sub, email, options.totp !== false, options.internal ?? false]),
+    owner.query('INSERT INTO "user" (id, cognito_sub, email, mfa_enrolled, hardware_key_required, status) VALUES ($1, $2, $3, $4, $5, $6)', [
+      id,
+      sub,
+      email,
+      options.totp !== false,
+      options.internal ?? false,
+      options.status ?? 'active',
+    ]),
   );
   if (options.internal === true) {
     await addMembership(owner, await createOrganization(owner, 'internal'), id, 'platform_admin');
@@ -176,7 +237,7 @@ describe('the password and TOTP steps', () => {
     const started = clock.getTime();
     expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { redirect: '/sign-in/mfa' } });
     expect(browser.get(SIGN_IN_COOKIE)).toMatch(/^v1\./);
-    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null } });
+    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null, supportEmail: SUPPORT } });
     expect(await step(answerMfa, browser, { code: 'abc' })).toMatchObject({ status: 'invalid' });
     // FRM-07: a wrong code, after the password proved the account, names the code (and still says it did not match).
     expect(await step(answerMfa, browser, { code: '000000' })).toEqual({
@@ -230,7 +291,7 @@ describe('the password and TOTP steps', () => {
     expect(await step(enrollTotp, new Browser(), { code: '123456' })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
   });
 
-  it('shows the lockout state after ten failures', async () => {
+  it('shows the lockout state after ten failures, naming the support address to write to (UX-066)', async () => {
     const user = await person();
     const browser = new Browser();
     for (let attempt = 0; attempt < 9; attempt += 1) {
@@ -242,9 +303,9 @@ describe('the password and TOTP steps', () => {
     }
     expect(await step(signInWithPassword, browser, { email: user.email, password: 'Wrong-Pass-2026!' })).toEqual({
       status: 'ok',
-      data: { error: expect.stringContaining('locked after ten failed attempts'), locked: true },
+      data: { error: LOCKED, locked: true },
     });
-    expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toMatchObject({ status: 'ok', data: { locked: true } });
+    expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: LOCKED, locked: true } });
   });
 
   it('sends a step that expired back to the start', async () => {
@@ -285,10 +346,11 @@ describe('the hardware-key route handlers', () => {
     expect(await json(verifyHardwareKey, signIn, { response: JSON.stringify(key.get(begun.body.options as never)) })).toEqual({ status: 200, body: { redirect: '/' } });
     expect(signIn.get(SESSION_COOKIE)).toBeDefined();
     expect(await step(registerKeyPage, new Browser())).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
-    expect(await json(verifyHardwareKey, new Browser(), { response: JSON.stringify(key.get(begun.body.options as never)) })).toEqual({ status: 200, body: { redirect: '/sign-in?reason=step_expired' } });
+    // UXS-01: a key step that is no longer there goes back to the key surface, not the password page.
+    expect(await json(verifyHardwareKey, new Browser(), { response: JSON.stringify(key.get(begun.body.options as never)) })).toEqual({ status: 200, body: KEY_RESTART });
   });
 
-  it('refuses a TOTP-only session for an internal user who has a key, and a locked account its options', async () => {
+  it('refuses a TOTP-only session for an internal user who has a key, and a locked account its options, naming the support address (UX-066)', async () => {
     const staff = await person({ internal: true });
     const key = new SoftAuthenticator(ORIGIN);
     const browser = new Browser();
@@ -300,8 +362,27 @@ describe('the hardware-key route handlers', () => {
     await step(signInWithPassword, again, { email: staff.email, password: PASSWORD });
     expect(await step(answerMfa, again, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/sign-in/hardware-key?reason=hardware_key_required' } });
     await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [staff.id]);
-    expect(await json(hardwareKeyOptions, new Browser(), { email: staff.email })).toEqual({ status: 200, body: { error: expect.stringContaining('locked'), locked: true } });
+    expect(await json(hardwareKeyOptions, new Browser(), { email: staff.email })).toEqual({ status: 200, body: { error: LOCKED, locked: true } });
     expect(await json(hardwareKeyOptions, new Browser(), { email: 'not an email' })).toMatchObject({ status: 400 });
+  });
+
+  it('UXS-01: sends a key step that closed, at its limit or at the provider, back to the key surface, keeping no email', async () => {
+    const staff = await person({ internal: true });
+    const answer = JSON.stringify({ id: 'synthetic-credential', rawId: 'synthetic-credential', type: 'public-key', response: {}, clientExtensionResults: {} });
+
+    const stale = new Browser();
+    expect(await step(hardwareKeyOptions, stale, { email: staff.email })).toMatchObject({ status: 'ok', data: { options: expect.any(Object) } });
+    clock = new Date(clock.getTime() + 3 * 60_000);
+    expect(await step(verifyHardwareKey, stale, { response: answer })).toEqual({ status: 'ok', data: KEY_RESTART });
+
+    const closed = new Browser();
+    const expiring = servicesWith(ExpiringKey);
+    expect(await step(hardwareKeyOptions, closed, { email: staff.email }, expiring)).toMatchObject({ status: 'ok', data: { options: expect.any(Object) } });
+    closed.forget();
+    expect(await step(verifyHardwareKey, closed, { response: answer }, expiring)).toEqual({ status: 'ok', data: KEY_RESTART });
+    expect(closed.deleted).toEqual([SIGN_IN_COOKIE]);
+    expect(closed.written).toEqual([]);
+    expect(closed.get(KEPT_EMAIL_COOKIE)).toBeUndefined();
   });
 
   it('answers a body that is not JSON as invalid', async () => {
@@ -334,6 +415,13 @@ class ExpiringSetup extends DevAuthProvider {
   }
 }
 
+/** The dev provider, except that a key's assertion arrives after the provider's challenge lapsed. */
+class ExpiringKey extends DevAuthProvider {
+  override completeKeySignIn(): Promise<AuthStep> {
+    return Promise.resolve({ kind: 'expired' });
+  }
+}
+
 const RESTARTED = { status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } };
 /** Start again's answer: the sign-in page, which fills in the kept email. */
 const STARTED_AGAIN = { status: 'ok', data: { redirect: '/sign-in?reason=restarted' } };
@@ -355,7 +443,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     const browser = new Browser();
     const started = clock.getTime();
     await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
-    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null } });
+    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null, supportEmail: SUPPORT } });
     clock = new Date(started + 170_000);
     expect(await step(mfaPage, browser)).toMatchObject({ status: 'ok', data: { time: { closesAt: started + 180_000, closesIn: 10_000 } } });
     clock = new Date(started + 180_000);
@@ -398,7 +486,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
     sealedBefore(browser, started + 300_000);
     browser.delete(KEPT_EMAIL_COOKIE);
-    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60 }, setup: null } });
+    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60 }, setup: null, supportEmail: SUPPORT } });
     clock = new Date(started + 200_000);
     browser.forget();
     expect(await step(answerMfa, browser, { code: totpCode(SECRET, clock) })).toEqual(RESTARTED);
@@ -409,27 +497,27 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
   it('SGN-03: keeps the email only once the password is proven, and fills it only after a step closed or a restart', async () => {
     const user = await person();
     const browser = new Browser();
-    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null } });
+    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null, supportEmail: SUPPORT } });
     await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
     expect(browser.maxAge.get(KEPT_EMAIL_COOKIE)).toBe(1080);
     const kept = browser.get(KEPT_EMAIL_COOKIE) ?? '';
     expect(kept).toMatch(/^v1\./);
     expect(kept).not.toContain(user.email);
     expect(kept).not.toContain(Buffer.from(user.email).toString('base64url'));
-    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: user.email, use: null } });
-    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null } });
-    expect(await page(signInPage, browser, {})).toEqual({ status: 'ok', data: { reason: null, email: null, use: null } });
-    expect(await page(signInPage, browser, { reason: 'signed_out' })).toEqual({ status: 'ok', data: { reason: 'signed_out', email: null, use: null } });
+    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: user.email, use: null, supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null, supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, {})).toEqual({ status: 'ok', data: { reason: null, email: null, use: null, supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, { reason: 'signed_out' })).toEqual({ status: 'ok', data: { reason: 'signed_out', email: null, use: null, supportEmail: SUPPORT } });
     // An email in the URL fills nothing: the parameters are stripped to the reason.
-    expect(await page(signInPage, new Browser(), { reason: 'restarted', email: 'someone@synthetic.test' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null } });
+    expect(await page(signInPage, new Browser(), { reason: 'restarted', email: 'someone@synthetic.test' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null, supportEmail: SUPPORT } });
     const tampered = new Browser();
     tampered.set(KEPT_EMAIL_COOKIE, `${kept.slice(0, -4)}${kept.endsWith('AAAA') ? 'BBBB' : 'AAAA'}`);
-    expect(await page(signInPage, tampered, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null } });
+    expect(await page(signInPage, tampered, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null, supportEmail: SUPPORT } });
     const copied = new Browser();
     copied.set(KEPT_EMAIL_COOKIE, browser.get(SIGN_IN_COOKIE) ?? '');
-    expect(await page(signInPage, copied, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null } });
+    expect(await page(signInPage, copied, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null, supportEmail: SUPPORT } });
     // The hardware-key page's data is unchanged: no kept email is ever read there.
-    expect(await page(hardwareKeyPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired' } });
+    expect(await page(hardwareKeyPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', supportEmail: SUPPORT } });
   });
 
   it('SGN-03: says which password a restart takes: the temporary one until a new one is saved, then the chosen one', async () => {
@@ -444,7 +532,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     expect(await step(signInWithPassword, restart, { email: invited.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
     expect(await step(signInWithPassword, restart, { email: invited.email, password: 'Chosen-Pass-2026' })).toEqual({ status: 'ok', data: { redirect: '/sign-in/enroll' } });
     expect(await step(enrollPage, restart)).toMatchObject({ status: 'ok', data: { setup: null } });
-    expect(await page(signInPage, restart, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: null } });
+    expect(await page(signInPage, restart, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: null, supportEmail: SUPPORT } });
   });
 
   it('SGN-03: says the chosen password when the setup key is asked for after the new password was saved and the step closed (review R-01)', async () => {
@@ -453,7 +541,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     await step(signInWithPassword, browser, { email: invited.email, password: PASSWORD });
     expect(await step(chooseNewPassword, browser, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2026' }, servicesWith(ExpiringSetup))).toEqual(RESTARTED);
     expect(browser.get(SIGN_IN_COOKIE)).toBeUndefined();
-    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: 'chosen' } });
+    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: 'chosen', supportEmail: SUPPORT } });
     expect(await step(signInWithPassword, browser, { email: invited.email, password: 'Chosen-Pass-2026' })).toEqual({ status: 'ok', data: { redirect: '/sign-in/enroll' } });
   });
 
@@ -539,7 +627,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     await owner.query('UPDATE "user" SET status = \'disabled\' WHERE id = $1', [user.id]);
     expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
     expect([browser.get(SIGN_IN_COOKIE), browser.get(KEPT_EMAIL_COOKIE)]).toEqual([undefined, undefined]);
-    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null } });
+    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null, supportEmail: SUPPORT } });
   });
 
   it('SGN-03: Start again ends the step it leaves, before the sign-in page, and keeps the email (review SEC-01)', async () => {
@@ -553,7 +641,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     expect(coded.written).toEqual([]);
     expect(await step(mfaPage, coded)).toEqual(RESTARTED);
     expect(await step(answerMfa, coded, { code: nextCode() })).toEqual(RESTARTED);
-    expect(await page(signInPage, coded, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null } });
+    expect(await page(signInPage, coded, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null, supportEmail: SUPPORT } });
     expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
 
     // An invited person's new password, then enrolment: the setup key's page and its code are closed too.
@@ -683,5 +771,291 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     expect(again.data.setup).toEqual({ at: 1, of: 2 });
     await step(enrollTotp, restart, { code: nextCode(again.data.secret) });
     expect(await step(registerKeyPage, restart)).toMatchObject({ data: { setup: { at: 2, of: 2 } } });
+  });
+});
+
+/** The last code mailed to an address. */
+function codeFor(email: string): string {
+  const code = mailed.filter((entry) => entry.email === email).at(-1)?.code;
+  if (code === undefined) {
+    throw new Error('expected a mailed code');
+  }
+  return code;
+}
+
+/** A code that is not the one mailed. */
+const wrongCode = (code: string): string => `${code.slice(0, 5)}${String((Number(code.slice(5)) + 1) % 10)}`;
+
+/** The structured log lines written since `from`, with this message. */
+function loggedSince(from: number, message: string): Record<string, unknown>[] {
+  return logLines
+    .slice(from)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((entry) => entry.msg === message);
+}
+
+const CHOSEN = 'Chosen-Pass-2026';
+const CODE_SENT = { status: 'ok', data: { redirect: '/sign-in/forgot-password?reason=code_sent' } };
+/** Where a closed reset step goes: the forgot page's first phase, which says so (4.5). */
+const RESET_CLOSED = { status: 'ok', data: { redirect: '/sign-in/forgot-password?reason=step_expired' } };
+/** Every code problem's one refusal, on the code field (4.4). */
+const CODE_REFUSED = { status: 'ok', data: { error: 'That did not match.', issues: [{ field: 'code', message: 'the code did not match, or it has expired: check it, or send a new code' }] } };
+const PHASE_ONE = { status: 'ok', data: { phase: 'request', reason: null } };
+
+/** Spends an address's `sign_in` count, as password attempts and reset requests spend it. */
+async function spendSignIn(email: string, leave = 0): Promise<void> {
+  for (let hit = 0; hit < (RATE_LIMITS.sign_in.account?.hits ?? 0) - leave; hit += 1) {
+    await takeRateLimit(app, sealer, 'sign_in', { account: email });
+  }
+}
+
+describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
+  it('SGN-05: answers a request alike for every address, with the same redirect, cookies and data, and mails a code only to an active account with a second factor', async () => {
+    const helper = await person();
+    const active = await person();
+    const locked = await person();
+    await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [locked.id]);
+    const invited = await person({ status: 'invited', temporary: true, totp: false });
+    const notEnrolled = await person({ status: 'invited', totp: false });
+    // Active with no second factor, as a console factor reset (UX PR 65) leaves an account: no code (review SEC-B1).
+    const activeNotEnrolled = await person({ totp: false });
+    const disabled = await person({ status: 'disabled' });
+    const addresses = {
+      active: active.email,
+      locked: locked.email,
+      invited: invited.email,
+      notEnrolled: notEnrolled.email,
+      activeNotEnrolled: activeNotEnrolled.email,
+      disabled: disabled.email,
+      unknown: `${randomUUID()}@synthetic.test`,
+    };
+    const asked = vi.spyOn(services.provider, 'requestPasswordReset');
+    const sent = mailed.length;
+    const seen: unknown[] = [];
+    for (const [name, email] of Object.entries(addresses)) {
+      // A browser holding a kept email from an earlier attempt: any typed address reaches this step, so it ends it.
+      const browser = new Browser();
+      await step(signInWithPassword, browser, { email: helper.email, password: PASSWORD });
+      expect(browser.get(KEPT_EMAIL_COOKIE)).toBeDefined();
+      browser.forget();
+      slept.length = 0;
+      const started = clock.getTime();
+      expect(await step(resetRequest, browser, { email }), name).toEqual(CODE_SENT);
+      expect(slept, name).toEqual([1500]);
+      expect([browser.written, browser.deleted], name).toEqual([[SIGN_IN_COOKIE], [KEPT_EMAIL_COOKIE]]);
+      expect(browser.maxAge.get(SIGN_IN_COOKIE), name).toBe(900);
+      expect(browser.get(SIGN_IN_COOKIE), name).not.toContain(email);
+      const shown = await page(forgotPasswordPage, browser, { reason: 'code_sent' });
+      expect(shown, name).toEqual({
+        status: 'ok',
+        data: { phase: 'confirm', reason: 'code_sent', email, startedAt: started, time: { limitSeconds: 900, warningSeconds: 120, closesAt: started + 900_000, closesIn: 900_000 }, supportEmail: SUPPORT },
+      });
+      seen.push(JSON.stringify(shown).replace(email, '<typed>'));
+      expect(await page(signInPage, browser, { reason: 'password_reset' }), name).toMatchObject({ data: { email: null } });
+    }
+    expect(new Set(seen).size).toBe(1);
+    expect(asked.mock.calls.map(([email]) => email)).toEqual([active.email, locked.email]);
+    asked.mockRestore();
+    expect(mailed.slice(sent).map((entry) => entry.email)).toEqual([active.email, locked.email]);
+  });
+
+  it('SGN-05: answers a request whose provider send or audit write fails as an unknown address, with one error log of IDs only (S-3)', async () => {
+    const user = await person();
+    /** One request: its answer, cookies, floor and page, the address masked, and the lines it logged. */
+    const ask = async (email: string, using: Services = services) => {
+      const browser = new Browser();
+      slept.length = 0;
+      const from = logLines.length;
+      const answer = await step(resetRequest, browser, { email }, using);
+      const shown = await page(forgotPasswordPage, browser, { reason: 'code_sent' });
+      const seen = JSON.stringify({ answer, slept: [...slept], written: browser.written, deleted: browser.deleted, shown }).replace(email, '<typed>');
+      return { seen, lines: logLines.slice(from), failed: loggedSince(from, 'password reset request failed') };
+    };
+    const nobody = await ask(`${randomUUID()}@synthetic.test`);
+    expect(JSON.parse(nobody.seen)).toMatchObject({ answer: CODE_SENT, slept: [1500] });
+    expect(nobody.failed).toEqual([]);
+
+    const broken = vi.spyOn(services.provider, 'requestPasswordReset').mockRejectedValueOnce(new Error('synthetic provider failure'));
+    const provider = await ask(user.email);
+    broken.mockRestore();
+    const audit = await ask(user.email, servicesWith(DevAuthProvider, failing(/INSERT INTO audit_event/, 1)));
+    for (const [name, failed] of Object.entries({ provider, audit })) {
+      expect(failed.seen, name).toBe(nobody.seen);
+      expect(failed.failed, name).toHaveLength(1);
+      expect(Object.keys(failed.failed[0] ?? {}).sort(), name).toEqual(['error_code', 'level', 'msg', 'request_id', 'time']);
+      expect(failed.failed[0], name).toMatchObject({ level: 'error', error_code: 'Error' });
+      expect(failed.lines.join('\n'), name).not.toMatch(new RegExp(`${user.email}|synthetic`));
+    }
+  });
+
+  it('SGN-05: counts a request in `sign_in` by the typed address, shared with password attempts; the refusal reads alike and logs the request ID only', async () => {
+    const user = await person();
+    const unknown = `${randomUUID()}@synthetic.test`;
+    // One hit left for each: a wrong password spends the user's, a reset request the unknown address's.
+    await spendSignIn(user.email, 1);
+    await spendSignIn(unknown, 1);
+    expect(await step(signInWithPassword, new Browser(), { email: user.email, password: 'Wrong-Pass-2026!' })).toMatchObject({ status: 'ok' });
+    expect(await step(resetRequest, new Browser(), { email: unknown })).toEqual(CODE_SENT);
+    const from = logLines.length;
+    const refused = { status: 'rate_limited', retryAfterSeconds: expect.any(Number) };
+    const known = new Browser();
+    const nobody = new Browser();
+    expect(await step(resetRequest, known, { email: user.email })).toEqual(refused);
+    expect(await step(resetRequest, nobody, { email: unknown })).toEqual(refused);
+    expect([known.written, known.deleted]).toEqual([[], []]);
+    expect([nobody.written, nobody.deleted]).toEqual([[], []]);
+    const limited = loggedSince(from, 'password reset rate limited');
+    expect(limited).toHaveLength(2);
+    for (const entry of limited) {
+      expect(Object.keys(entry).sort()).toEqual(['level', 'msg', 'request_id', 'time']);
+    }
+    expect(logLines.slice(from).join('\n')).not.toMatch(new RegExp(`${user.email}|${unknown}`));
+  });
+
+  it('SGN-06: refuses every code problem alike on the code field, checks the policy first, refuses a changed address without the provider, and keeps the step live', async () => {
+    const user = await person();
+    const browser = new Browser();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    const code = codeFor(user.email);
+    const from = logLines.length;
+    const confirm = (input: Record<string, unknown>, on: Browser = browser) => step(resetConfirm, on, { email: user.email, code, password: CHOSEN, confirm: CHOSEN, ...input });
+    expect(await confirm({ code: wrongCode(code) })).toEqual(CODE_REFUSED);
+    expect(await confirm({ code: 'abc' })).toEqual({ status: 'invalid', issues: [{ field: 'code', message: 'enter the six digits from the email' }] });
+    expect(await confirm({ password: 'weakpassword', confirm: 'weakpassword' })).toEqual({
+      status: 'ok',
+      data: { error: 'Choose a stronger password.', issues: [{ field: 'password', message: 'it still needs an uppercase letter, a digit and a symbol' }] },
+    });
+    expect(await confirm({ confirm: 'Chosen-Pass-2027' })).toEqual({ status: 'invalid', issues: [{ field: 'confirm', message: 'the two passwords do not match: type the same password in both fields' }] });
+    // A hidden email changed from the sealed one: the same refusal, and the provider is never asked.
+    const asked = vi.spyOn(services.provider, 'confirmPasswordReset');
+    expect(await confirm({ email: `${randomUUID()}@synthetic.test` })).toEqual(CODE_REFUSED);
+    expect(asked).not.toHaveBeenCalled();
+    asked.mockRestore();
+    // An unknown address's own step: the same refusal.
+    const nobody = new Browser();
+    const unknown = `${randomUUID()}@synthetic.test`;
+    await step(resetRequest, nobody, { email: unknown });
+    expect(await step(resetConfirm, nobody, { email: unknown, code, password: CHOSEN, confirm: CHOSEN })).toEqual(CODE_REFUSED);
+    // A replaced code: Send a new code mails another, and the first no longer works.
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    expect(codeFor(user.email)).not.toBe(code);
+    expect(await confirm({})).toEqual(CODE_REFUSED);
+    // Nothing above counted a failure, and the step is still live.
+    expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
+    expect(await step(forgotPasswordPage, browser)).toMatchObject({ status: 'ok', data: { phase: 'confirm', email: user.email } });
+    const refusedLogs = loggedSince(from, 'password reset code refused');
+    expect(refusedLogs.length).toBeGreaterThanOrEqual(3);
+    expect(logLines.slice(from).join('\n')).not.toContain(user.email);
+    expect(logLines.slice(from).join('\n')).not.toContain(code);
+    // Five wrong tries spend the code (the dev twin's cap): the right one is then refused too.
+    const fresh = codeFor(user.email);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(await confirm({ code: wrongCode(fresh) })).toEqual(CODE_REFUSED);
+    }
+    expect(await confirm({ code: fresh })).toEqual(CODE_REFUSED);
+    expect(browser.written).not.toContain(KEPT_EMAIL_COOKIE);
+  });
+
+  it('SGN-06: counts the confirm in `sign_in` by the sealed address: with that count spent, the right code is refused before the provider and the password is unchanged', async () => {
+    const user = await person();
+    const browser = new Browser();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    const code = codeFor(user.email);
+    const before = (await store.byEmail(user.email))?.passwordHash;
+    // Password attempts and reset requests spend this count; a fresh step's cookie does not reset it (4.3).
+    await spendSignIn(user.email);
+    const from = logLines.length;
+    const asked = vi.spyOn(services.provider, 'confirmPasswordReset');
+    expect(await step(resetConfirm, browser, { email: user.email, code, password: CHOSEN, confirm: CHOSEN })).toEqual({ status: 'rate_limited', retryAfterSeconds: expect.any(Number) });
+    expect(asked).not.toHaveBeenCalled();
+    asked.mockRestore();
+    expect((await store.byEmail(user.email))?.passwordHash).toBe(before);
+    expect(loggedSince(from, 'password reset rate limited')).toHaveLength(1);
+    expect(await step(forgotPasswordPage, browser)).toMatchObject({ status: 'ok', data: { phase: 'confirm', email: user.email } });
+  });
+
+  it('SGN-07: a reset ends every session, lands on the sign-in page with the email kept, and the next sign-in asks for the code; the old password is refused', async () => {
+    const user = await person();
+    const signedIn = new Browser();
+    await step(signInWithPassword, signedIn, { email: user.email, password: PASSWORD });
+    expect(await step(answerMfa, signedIn, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/' } });
+    const sessionsBefore = await owner.query('SELECT id, ended_at, end_reason FROM user_session WHERE user_id = $1 ORDER BY id', [user.id]);
+    const browser = new Browser();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    // A request changes no session (review SEC-N3).
+    expect((await owner.query('SELECT id, ended_at, end_reason FROM user_session WHERE user_id = $1 ORDER BY id', [user.id])).rows).toEqual(sessionsBefore.rows);
+    expect(await step(homePage, signedIn)).toMatchObject({ status: 'ok' });
+    browser.forget();
+    expect(await step(resetConfirm, browser, { email: user.email, code: codeFor(user.email), password: CHOSEN, confirm: CHOSEN })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=password_reset' } });
+    expect(browser.deleted).toContain(SIGN_IN_COOKIE);
+    expect(browser.written).toEqual([KEPT_EMAIL_COOKIE]);
+    expect(await step(homePage, signedIn)).not.toMatchObject({ status: 'ok' });
+    expect(await page(signInPage, browser, { reason: 'password_reset' })).toEqual({ status: 'ok', data: { reason: 'password_reset', email: user.email, use: 'chosen', supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, {})).toEqual({ status: 'ok', data: { reason: null, email: null, use: null, supportEmail: SUPPORT } });
+    expect(await step(signInWithPassword, new Browser(), { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
+    expect(await step(signInWithPassword, browser, { email: user.email, password: CHOSEN })).toEqual({ status: 'ok', data: { redirect: '/sign-in/mfa' } });
+  });
+
+  it('SGN-07: a locked account is reset and lands on password_reset_locked, keeping no email', async () => {
+    const user = await person();
+    await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [user.id]);
+    const browser = new Browser();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    expect(await step(resetConfirm, browser, { email: user.email, code: codeFor(user.email), password: CHOSEN, confirm: CHOSEN })).toEqual({
+      status: 'ok',
+      data: { redirect: '/sign-in?reason=password_reset_locked' },
+    });
+    expect([browser.get(SIGN_IN_COOKIE), browser.get(KEPT_EMAIL_COOKIE)]).toEqual([undefined, undefined]);
+    expect(browser.written).not.toContain(KEPT_EMAIL_COOKIE);
+    expect(await page(signInPage, browser, { reason: 'password_reset_locked' })).toEqual({ status: 'ok', data: { reason: 'password_reset_locked', email: null, use: null, supportEmail: SUPPORT } });
+    expect(await step(signInWithPassword, new Browser(), { email: user.email, password: CHOSEN })).toEqual({ status: 'ok', data: { error: LOCKED, locked: true } });
+  });
+
+  it('SGN-06: Send a new code refused by its rate limit keeps the step; Use a different email and Back to sign in end it; a closed step lands on the first phase', async () => {
+    const user = await person();
+    const browser = new Browser();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    // Each phase shows only its own reason (review UXR-12).
+    expect(await page(forgotPasswordPage, browser, { reason: 'step_expired' })).toMatchObject({ status: 'ok', data: { phase: 'confirm', reason: null } });
+    expect(await page(forgotPasswordPage, new Browser(), { reason: 'code_sent' })).toEqual(PHASE_ONE);
+    expect(await page(forgotPasswordPage, new Browser(), { reason: 'step_expired' })).toEqual({ status: 'ok', data: { phase: 'request', reason: 'step_expired' } });
+    expect(await page(forgotPasswordPage, new Browser(), {})).toEqual(PHASE_ONE);
+
+    await spendSignIn(user.email);
+    browser.forget();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual({ status: 'rate_limited', retryAfterSeconds: expect.any(Number) });
+    expect([browser.written, browser.deleted]).toEqual([[], []]);
+    expect(await step(forgotPasswordPage, browser)).toMatchObject({ status: 'ok', data: { phase: 'confirm', email: user.email } });
+
+    // Use a different email: the step ends, the first phase shows with nothing filled (review UXR-01).
+    expect(await step(restartSignIn, browser, { to: 'forgot_password' })).toEqual({ status: 'ok', data: { redirect: '/sign-in/forgot-password' } });
+    expect([browser.written, browser.deleted]).toEqual([[], [SIGN_IN_COOKIE]]);
+    expect(await step(forgotPasswordPage, browser)).toEqual(PHASE_ONE);
+
+    // Back to sign in: the step ends and the sign-in page fills nothing.
+    const other = await person();
+    const back = new Browser();
+    await step(resetRequest, back, { email: other.email });
+    back.forget();
+    expect(await step(restartSignIn, back, { to: 'sign_in' })).toEqual({ status: 'ok', data: { redirect: '/sign-in' } });
+    expect([back.written, back.deleted]).toEqual([[], [SIGN_IN_COOKIE]]);
+    expect(await step(forgotPasswordPage, back)).toEqual(PHASE_ONE);
+    expect(await page(signInPage, back, { reason: 'restarted' })).toMatchObject({ data: { email: null } });
+
+    // Start again on a reset step, with no destination named, goes to the forgot page (4.5).
+    const plain = new Browser();
+    await step(resetRequest, plain, { email: other.email });
+    expect(await step(restartSignIn, plain, {})).toEqual({ status: 'ok', data: { redirect: '/sign-in/forgot-password' } });
+
+    // A step at its limit: the page shows the first phase, and the confirm lands there with the reason.
+    const closing = new Browser();
+    const started = clock.getTime();
+    await step(resetRequest, closing, { email: other.email });
+    clock = new Date(started + 899_000);
+    expect(await step(forgotPasswordPage, closing)).toMatchObject({ status: 'ok', data: { phase: 'confirm', time: { closesIn: 1000 } } });
+    clock = new Date(started + 900_000);
+    expect(await step(forgotPasswordPage, closing)).toEqual(PHASE_ONE);
+    expect(await step(resetConfirm, closing, { email: other.email, code: codeFor(other.email), password: CHOSEN, confirm: CHOSEN })).toEqual(RESET_CLOSED);
+    expect(closing.written).not.toContain(KEPT_EMAIL_COOKIE);
   });
 });

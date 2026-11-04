@@ -1,4 +1,4 @@
-# Support mail: receiving the support address's mail, and a message that opened no ticket
+# Support mail: receiving the support address's mail, a message that opened no ticket, and sign-in help tickets
 
 Mail to the support address opens a ticket (PRD 19, Support; ADR 0055). Amazon SES receives it under the stack's receipt
 rule (`SupportMail` in `infra/lib/constructs/support-mail.ts`), scans it and writes it to the support inbox bucket under
@@ -38,6 +38,27 @@ The job logs `SUPPORT_MAIL_REFUSED` when a run read a message that opened no tic
 
 `SUPPORT_MAIL_WITHHELD` means a message looked like it held patient information. Its ticket says only that it came and
 asks the desk to have the requester write again through the form; do not open the message in the bucket to read it.
+
+## Sign-in help tickets
+
+The sign-in page, the code and key steps and the locked words tell a person who cannot sign in to write to the support
+address from the address they sign in with (docs/adr/0081, the forgotten password, A7), so these tickets open in that
+account's name. Work from the ticket ID and the user ID only, never the message's text, and answer through the ticket.
+
+- **Locked** (ten failed attempts). Check with the organization's administrator that the request is genuine, then press
+  Unlock beside the user on the organization's console page (`/console/organizations/<id>`), which writes its own audit
+  event. A password reset never lifts the lock: the person may already have reset their password and still be locked.
+- **Lost authenticator app.** No second-factor reset exists yet. Tell the person it is not yet possible from the console
+  and that we will write when it is; promise no date. Record the ticket ID, so that UX PR 65, which adds the console
+  reset, can work through those tickets.
+- **Lost hardware key, with no second key.** There is no administrator path (Cognito passkeys), and a new invitation is
+  refused for an invitation already accepted (`resend_invitation`, from Settings or the console), so do not describe or attempt it as a re-invitation. Escalate the ticket
+  ID to the founder.
+- **Mail from an address that is not the account's own.** Never act on it. The job already refuses it as
+  `unknown_sender` (above); ask the person to write from the address they sign in with.
+- **A password set, but no second factor ever enrolled, and the reset sends nothing.** A code goes only to an account
+  with an enrolled second factor, so this person cannot reset. Their organization's administrator removes and
+  re-invites them.
 
 ## Nothing arrives at all
 

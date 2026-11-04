@@ -676,7 +676,7 @@ export const inviteMember = platformRoute({
   phi: false,
   permission: 'organization.manage',
   params: z.object({}),
-  input: z.object({ organizationId: opaqueId, email: z.string().trim().toLowerCase().pipe(z.email('an email address')), role: z.enum(MEMBERSHIP_ROLES) }),
+  input: z.object({ organizationId: opaqueId, email: z.string().trim().toLowerCase().pipe(z.email('enter an email address')), role: z.enum(MEMBERSHIP_ROLES) }),
   audit: { action: 'membership_created', objectType: 'membership' },
   handle: async ({ scope, input, services, actor }): Promise<MutationResult> => {
     const organization = (await scope.client.query<{ kind: 'group' | 'firm' | 'internal' }>('SELECT kind FROM organization WHERE id = $1', [input.organizationId])).rows[0];
