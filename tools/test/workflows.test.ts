@@ -1483,6 +1483,10 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     // An artifact that downloads but holds no findings.json: "check failing", not a red job with no issue.
     const nameless = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 0, 'other.txt');
     expect([nameless.status, issues(nameless), tries(nameless)], nameless.output).toEqual([0, [failing], 1]);
+    // A file holding two JSON documents, the last a list: read whole, it is not one findings list, so "check failing"
+    // rather than a green job that files nothing.
+    const two = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], `${JSON.stringify([finding(1)])}\n[]`);
+    expect([two.status, issues(two), tries(two)], two.output).toEqual([0, [failing], 1]);
   });
 
   it('content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)', () => {
@@ -1516,7 +1520,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   };
   const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?';
   /** The read check, inside the download block: what notify files from and what handoff proves notify can read. */
-  const SHAPE_CHECK = `if jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then readable=true; fi`;
+  const SHAPE_CHECK = `if jq -e -s 'length == 1 and (.[0] | type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string"))' findings.json > /dev/null 2>&1; then readable=true; fi`;
   const BOUNDED_READ = 'head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json';
 
   it("content-calendar: notify makes one Actions call, the download of this run's findings artifact, and reads no findings from its env (ci-findings-transport)", () => {
@@ -1596,6 +1600,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       ['not a list', { CHECK_RESULT: 'success' }, JSON.stringify({ title: 'x' })],
       ['an entry with no body', { CHECK_RESULT: 'success' }, JSON.stringify([{ title: 'x' }])],
       ['an entry whose title is not a string', { CHECK_RESULT: 'success' }, JSON.stringify([{ title: 1, body: 'b' }])],
+      ['two lists in one file', { CHECK_RESULT: 'success' }, `${JSON.stringify([{ title: 1 }])} []`],
     ] as const) {
       const failed = runNotify('content-calendar.yml', values, [], findings, 'handoff');
       expect(failed.status, `${at} ${failed.output}`).toBe(1);
