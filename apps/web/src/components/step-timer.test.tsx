@@ -160,6 +160,28 @@ describe('the words', () => {
     expect(spokenWords('closed', 60, { warning: notes.warning }).words).toBe('Start again: your email is kept, and you type your password again.');
   });
 
+  it('SGN-06: a step’s own words (the reset’s) replace the default sentence, which would say an email is kept, and no note is added (review UXR-02)', () => {
+    const words = {
+      warning: 'If you need more time, send a new code below: it replaces the code already sent, and the step opens again for 15 minutes.',
+      closed: 'Send a new code below to continue, or use a different email.',
+    };
+    expect(spokenWords('warning', 120, undefined, words)).toEqual({ title: 'This step closes within 2 minutes', words: words.warning });
+    expect(spokenWords('closed', 120, undefined, words)).toEqual({ title: 'This step has closed', words: words.closed });
+    // Words set, a note is never said beside them.
+    expect(spokenWords('warning', 120, { warning: 'SYNTHETIC note.', closed: 'SYNTHETIC note.' }, words).words).toBe(words.warning);
+    for (const phase of ['warning', 'closed'] as const) {
+      expect(spokenWords(phase, 120, undefined, words).words).not.toMatch(/email is kept|password again/);
+    }
+  });
+
+  it('SGN-06: with no Start again of its own (restart null) renders the same sentence and the same empty status (review UXR-01)', () => {
+    const markup = server({ restart: null, limitSeconds: 900, warningSeconds: 120, closesIn: 900_000 });
+    expect(markup).toContain('This step stays open for 15 minutes.');
+    expect(region(markup)).toBe('<div role="status" aria-atomic="true" data-slot="step-timer"></div>');
+    expect(markup).not.toContain('restart-pending');
+    expect(markup).not.toContain('Start again');
+  });
+
   it('SGN-02: no word names an address, and none is an exclamation or a please', () => {
     const notes = { warning: 'SYNTHETIC note.', closed: 'SYNTHETIC note.' };
     const all = [...Object.values(limitPhrases(180, 60)), ...Object.values(spokenWords('warning', 60, notes)), ...Object.values(spokenWords('closed', 60, notes))];

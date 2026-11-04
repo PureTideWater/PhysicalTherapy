@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, type Request, expect, test } from '@playwright/test';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { assertNoPhi } from '@tp/observability';
 import { PACKET_REFERENCE_PATTERN, SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText } from '@tp/packets';
@@ -38,11 +38,15 @@ import { holdExports, startLocalWorker } from './worker';
  * Export button is disabled, saying where it is set (E1); the practice administrator sets it on Settings,
  * Correspondence (E2); the PDF downloads named by the packet's reference and prints the approval line with it and the
  * contact, and no login or SHA-256 (E3); the reviewer's page shows the internal record and the seven-item checklist (E4);
- * and on Cases the reference typed in lower case finds the packet (E5). The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01) follows: a SYNTHETIC
- * payer letter is uploaded on the Contracts screen; a partial acceptance with no amount is refused, keeping the response
- * chosen and naming the amount (FRM-01); recorded as a partial acceptance of 60.00, it
- * moves no money by itself; the next reconcile (queued as the daily schedule queues it) approves it in
- * the recovery ledger, and the dashboard shows it as payer approved, never as recovered. The adjusted
+ * and on Cases the reference typed in lower case finds the packet (E5). The submission's channel, the payer's answer
+ * and the payer's letter start unchosen (CAS-46). The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01)
+ * follows: with no letter on file the response form shows anyway; the answer chosen and a note typed, a SYNTHETIC
+ * payer letter is uploaded inside "Log a payer response", scanned while what was typed stays, and chosen by the form
+ * once stored (CAS-47); no request carries the file's name, and no upload request the form's request key; a partial
+ * acceptance with no amount is refused, keeping the response and the letter chosen and naming the amount (FRM-01);
+ * recorded as a partial acceptance of 60.00, the log links its letter's receipt, and the letter leaves the contract
+ * documents to tag (CAS-48); it moves no money by itself; the next reconcile (queued as the daily schedule queues it)
+ * approves it in the recovery ledger, and the dashboard shows it as payer approved, never as recovered. The adjusted
  * remittance, posting, deposit, recovered and recoupment steps of J10 are e2e/reconciliation.spec.ts. At a phone's
  * width (FRM-08), Cases and Coverage's letter form show a choice their select cuts short whole under it, and neither
  * they nor the refused response form scroll sideways. Synthetic data only.
@@ -421,12 +425,17 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(approver.locator('[data-attestation="attested"]')).toBeVisible();
     });
 
-    await test.step('the submission is logged, and the log carries the export’s SHA-256 (CAS-12)', async () => {
+    await test.step('the submission is logged with the channel the manager chose, and the log carries the export’s SHA-256 (CAS-12, CAS-46)', async () => {
       await approver.getByRole('link', { name: 'Log its submission' }).click();
       await expect(approver).toHaveURL(new RegExp(`${casePath}/submissions$`));
       await expect(approver.getByRole('heading', { level: 1 })).toBeVisible();
       await expect(approver.getByLabel('Export SHA-256')).toHaveAttribute('data-sha256', pdfSha256);
       await approver.getByLabel('Payer’s reference (a portal confirmation, a fax receipt)').fill('SYNTHETIC-PORTAL-REF-E2E');
+      // The channel is recorded for good, so it starts unchosen: no press logs a channel nobody chose.
+      const channel = approver.getByRole('region', { name: 'Log a submission' }).getByLabel('Channel', { exact: true });
+      await expect(channel).toHaveValue('');
+      await expect(channel.locator('option:checked')).toHaveText('Choose the channel');
+      await channel.selectOption('payer_portal');
       await approver.getByRole('button', { name: 'Log the submission' }).click();
       await expect(approver.locator('[data-notice="logged"]')).toBeVisible();
       const log = approver.getByRole('region', { name: 'Submission log' });
@@ -491,56 +500,206 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       }
     });
 
-    await test.step('a partial acceptance with no amount is refused and keeps its response (FRM-01); the payer’s letter is recorded as a partial acceptance; recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {
-      await withWorker(async () => {
-        await approver.goto(`/p/${practiceId}/contracts`);
-        await approver.getByLabel('Kind of document').selectOption('payer_letter');
-        const letter = Buffer.from(syntheticPdf([['SYNTHETIC PAYER LETTER - INVENTED TEXT', 'On reconsideration the payer accepts 60.00 of the amount disputed.']]));
-        await approver.getByLabel('Choose files to upload').setInputFiles([{ name: 'letter.pdf', mimeType: 'application/pdf', buffer: letter }]);
-        await expect(approver.getByRole('region', { name: 'This batch' }).getByRole('listitem').filter({ hasText: 'letter.pdf' })).toContainText('Stored', { timeout: 90_000 });
-      });
-      await approver.goto(`${casePath}/submissions`);
-      const form = approver.getByRole('region', { name: 'Log a payer response' });
-      const response = form.getByLabel('Response', { exact: true });
-      const amount = form.getByLabel('Additional amount the payer will pay (accepted or partial only, dollars)');
-      await response.selectOption('partial');
-      await form.getByRole('button', { name: 'Record the response' }).click();
-      // Refused, the form keeps the response chosen: a reset would put back the first kind, and a second press would
-      // record a payer response nobody chose (narrow-practice-1-07). The amount is named by its label, marked and focused.
-      const summary = form.locator('[data-slot="refusal-summary"]');
-      await expect(summary).toContainText('Not done');
-      await expect(summary).toContainText('Additional amount the payer will pay: what the payer accepted, in dollars and cents');
-      await expect(response).toHaveValue('partial');
-      await expect(amount).toHaveAttribute('aria-invalid', 'true');
-      await expect(amount).toBeFocused();
-      await expect(approver.locator('[data-notice="recorded"]')).toHaveCount(0);
-      // At a phone's width the refused column form stays inside the page: the Document select, whose choice holds a
-      // date and a SHA-256, shrinks to the form instead of widening it (FRM-08).
-      await atPhoneWidth(approver, 'Log a payer response, refused');
-      // At a phone's width the line under the Document select says its choice whole, and sets the SHA-256's prefix in
-      // the face this page sets every SHA-256 in (Plex Mono), not the line's own (FRM-08; the UX re-check's polish).
-      const wide = approver.viewportSize();
-      await approver.setViewportSize({ width: 390, height: 844 });
+    await test.step('the payer’s letter is uploaded inside “Log a payer response” and chosen once stored, while what was typed stays (CAS-46, CAS-47); a partial acceptance with no amount is refused and keeps its response and letter (FRM-01); recorded, the log links the letter’s receipt and the letter leaves the contract documents (CAS-48); recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {
+      // Everything the page sends while the letter is uploaded and the response recorded: no request carries the file's
+      // name, and no upload request carries the form's request key, which would turn the response's save into a replay.
+      const sent: { readonly url: string; readonly body: string }[] = [];
+      const collect = (request: Request) => {
+        sent.push({ url: request.url(), body: request.postData() ?? '' });
+      };
+      approver.on('request', collect);
+      const formKeys = new Set<string>();
+      const SENTINEL = 'SYNTHETIC-NAME-SENTINEL';
       try {
-        const chosen = form.locator('[data-slot="chosen-text"]');
-        const prefix = chosen.locator('span');
-        const choice = (await form.getByLabel('Document', { exact: true }).locator('option:checked').textContent()) ?? '';
-        expect(choice).toMatch(/, SHA-256 [0-9a-f]{12}…$/);
-        await expect(chosen).toHaveText(choice);
-        await expect(prefix).toHaveText(/^[0-9a-f]{12}…$/);
-        const face = (element: Locator) => element.evaluate((node) => getComputedStyle(node).fontFamily);
-        expect(await face(prefix)).toBe(await face(approver.locator('[data-sha256]').first()));
-        expect(await face(prefix)).not.toBe(await face(chosen));
-      } finally {
-        if (wide !== null) {
-          await approver.setViewportSize(wide);
+        await approver.goto(`${casePath}/submissions`);
+        const form = approver.getByRole('region', { name: 'Log a payer response' });
+        const letter = form.getByLabel('Payer’s letter', { exact: true });
+        const status = form.locator('#response-letter-status');
+        const response = form.getByLabel('Response', { exact: true });
+        const receivedOn = form.getByLabel('Received on', { exact: true });
+        const amount = form.getByLabel('Additional amount the payer will pay (accepted or partial only, dollars)');
+        const notes = form.getByLabel('Notes (kept encrypted)');
+        const formKey = async () => formKeys.add(await form.locator('input[name="requestKey"]').inputValue());
+        // No letter is on file, and the form shows anyway: the letter starts unchosen, with nothing else to choose, and its
+        // hint says to upload it here; the payer's answer starts unchosen too, its words saying what a response records.
+        await expect(letter).toHaveValue('');
+        await expect(letter.locator('option')).toHaveText(['Choose the payer’s letter']);
+        await expect(letter).toHaveAccessibleDescription(/^Upload the payer’s letter here; it is chosen once it is scanned clean\./);
+        // The card says the same: upload the letter here, never "choose one already on file" with none on file
+        // (U2-ux85-r2-1; response-card.tsx, whose closed texts the forms harness proves).
+        const card = approver.getByRole('region', { name: 'Log a payer response' }).locator('[data-response-card]');
+        await expect(card).toHaveAttribute('data-can-upload-here', 'true');
+        await expect(card).toHaveAttribute('data-letter-on-file', 'false');
+        await expect(card).toHaveText(
+          /^To the submission of \d{4}-\d{2}-\d{2}\. Start with the payer’s letter: upload it here, and fill in what it says while it is scanned\. A denial with a reason can reopen the case for the next dispute level, within its window\.$/,
+        );
+        await expect(status).toHaveText('');
+        await expect(response).toHaveValue('');
+        await expect(response.locator('option:checked')).toHaveText('Choose the payer’s answer');
+        await expect(response).toHaveAccessibleDescription(
+          /^Every response is recorded for good\. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”;.*“More information requested”, or a denial that reopens it, marks it “Awaiting response”\. If the case’s lines already decide its state, a response leaves it as it is: a line at “Payer approved” or later, a line moved back from it \(the case stays “Awaiting response”\), or every line written off\..*Nothing is recovered until it is posted or deposited\.$/,
+        );
+        // The date received starts empty too, never today's (S2-N2): the next level's window counts from it, so the person
+        // enters the letter's own date; its words say so.
+        await expect(receivedOn).toHaveValue('');
+        await expect(receivedOn).toHaveAttribute('required', '');
+        await expect(receivedOn).toHaveAccessibleDescription('The date the payer’s letter reached the practice. A denial that reopens the case counts the next dispute level’s window from it.');
+        // The letter's part sits under the uploader's level-3 heading, below the card's level 2, and the rest of the form
+        // under its own, which Response follows.
+        await expect(form.getByRole('heading', { level: 2 })).toHaveText(['Log a payer response']);
+        await expect(form.getByRole('heading', { level: 3 })).toHaveText(['Upload the payer’s letter', 'What the letter says']);
+        expect(
+          await response.evaluate((select) => {
+            const heading = [...document.querySelectorAll('h3')].find((element) => element.textContent === 'What the letter says');
+            return heading !== undefined && (heading.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+          }),
+        ).toBe(true);
+        // What the letter says is typed first; the letter, uploaded after, is scanned while it stays.
+        await response.selectOption('partial');
+        await notes.fill('SYNTHETIC: the payer accepts part');
+        // The letter's date: the submission's own, the earliest the field takes, so a date nobody would default to.
+        const received = (await receivedOn.getAttribute('min')) ?? '';
+        expect(received).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        await receivedOn.fill(received);
+        await formKey();
+        const pdf = Buffer.from(syntheticPdf([['SYNTHETIC PAYER LETTER - INVENTED TEXT', 'On reconsideration the payer accepts 60.00 of the amount disputed.']]));
+        await withWorker(async () => {
+          await form.getByLabel('Choose a file to upload').setInputFiles([{ name: `${SENTINEL}-letter.pdf`, mimeType: 'application/pdf', buffer: pdf }]);
+          await expect(form.getByRole('region', { name: 'This batch' }).getByRole('listitem').filter({ hasText: `${SENTINEL}-letter.pdf` })).toContainText('Stored', { timeout: 90_000 });
+          await expect(status).toHaveAttribute('data-letter-status', 'chosen', { timeout: 30_000 });
+        });
+        await expect(status).toHaveText('The letter you uploaded is chosen.');
+        await expect(response).toHaveValue('partial');
+        await expect(notes).toHaveValue('SYNTHETIC: the payer accepts part');
+        await expect(receivedOn).toHaveValue(received);
+        const letterId = await letter.inputValue();
+        expect(letterId).toMatch(/^[0-9a-f-]{36}$/);
+        // The letter the form uploaded is listed first among the letters this person uploaded that no response names yet,
+        // and its option starts with what tells it apart, so a phone's picker that cuts the line keeps it (U2-ux85-r2-2).
+        await expect(letter.locator(`optgroup[label="Letters you uploaded that no response names yet"] > option[value="${letterId}"]`)).toHaveText(
+          /^Uploaded here, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC: payer letter, SHA-256 [0-9a-f]{12}…$/,
+        );
+        await formKey();
+        await expectAccessible(approver, 'Submissions, the payer’s letter uploaded in the response form');
+        await form.getByRole('button', { name: 'Record the response' }).click();
+        // Refused, the form keeps the response and the letter chosen: a reset would put back the empty choices, which the
+        // browser refuses, so a second press never records a payer response nobody chose (narrow-practice-1-07). The
+        // amount is named by its label, marked and focused.
+        const summary = form.locator('[data-slot="refusal-summary"]');
+        await expect(summary).toContainText('Not done');
+        await expect(summary).toContainText('Additional amount the payer will pay: what the payer accepted, in dollars and cents');
+        await expect(response).toHaveValue('partial');
+        await expect(letter).toHaveValue(letterId);
+        await expect(amount).toHaveAttribute('aria-invalid', 'true');
+        await expect(amount).toBeFocused();
+        await expect(approver.locator('[data-notice="recorded"]')).toHaveCount(0);
+        await formKey();
+        // At a phone's width the refused column form stays inside the page: the Payer’s letter select, whose choice holds
+        // a date and a SHA-256, and the uploader's batch shrink to the form instead of widening it (FRM-08).
+        await atPhoneWidth(approver, 'Log a payer response, refused');
+        // At a phone's width the line under the Payer’s letter select says its choice whole, and sets the SHA-256's prefix
+        // in the face this page sets every SHA-256 in (Plex Mono), not the line's own (FRM-08; the UX re-check's polish).
+        const wide = approver.viewportSize();
+        await approver.setViewportSize({ width: 390, height: 844 });
+        try {
+          const chosen = form.locator('[data-slot="chosen-text"]');
+          const prefix = chosen.locator('span');
+          const choice = (await letter.locator('option:checked').textContent()) ?? '';
+          expect(choice).toMatch(/^Uploaded here, .+, SHA-256 [0-9a-f]{12}…$/);
+          await expect(chosen).toHaveText(choice);
+          await expect(prefix).toHaveText(/^[0-9a-f]{12}…$/);
+          const face = (element: Locator) => element.evaluate((node) => getComputedStyle(node).fontFamily);
+          expect(await face(prefix)).toBe(await face(approver.locator('[data-sha256]').first()));
+          expect(await face(prefix)).not.toBe(await face(chosen));
+        } finally {
+          if (wide !== null) {
+            await approver.setViewportSize(wide);
+          }
         }
+        // Until a response names it, the letter is a payer letter like any other, listed among the documents to tag (the
+        // residual docs/adr/0085 records, until Lane A's upload-time link): the control for the check after the record.
+        const contracts = await approverContext.newPage();
+        try {
+          await contracts.goto(`/p/${practiceId}/contracts`);
+          await expect(contracts.getByRole('region', { name: 'Documents to tag' }).locator(`[data-document="${letterId}"]`)).toHaveCount(1);
+        } finally {
+          await contracts.close();
+        }
+        await amount.fill('60.00');
+        await form.getByRole('button', { name: 'Record the response' }).click();
+        await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();
+        const recorded = approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]');
+        await expect(recorded).toContainText('$60.00 the payer will pay');
+        // Recorded on the date the person entered, never the day it was typed.
+        await expect(recorded).toContainText(`${received}: `);
+        // The log names the response's letter: a link whose words say it opens the letter's receipt, and its SHA-256.
+        const receipt = recorded.locator(`[data-response-letter="${letterId}"]`);
+        await expect(receipt).toHaveText(/^the receipt of the payer letter uploaded \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+        await expect(recorded).toContainText(/\(with its document: the receipt of the payer letter uploaded .+ UTC, SHA-256 [0-9a-f]{64}\)$/);
+        await receipt.click();
+        await expect(approver).toHaveURL(new RegExp(`/p/${practiceId}/uploads/${letterId}$`));
+        await expect(approver.getByRole('heading', { level: 1 })).toHaveText(`Receipt ${letterId.slice(0, 8)}`);
+        // A letter a response names is a case's evidence, not a contract's document: it leaves the documents to tag, and
+        // the Contracts panel names its payer letter kind for terms and says where a payer's answer goes (CAS-48).
+        await approver.goto(`/p/${practiceId}/contracts`);
+        await expect(approver.getByRole('region', { name: 'Documents to tag' })).toBeVisible();
+        await expect(approver.getByRole('region', { name: 'Documents to tag' }).locator(`[data-document="${letterId}"]`)).toHaveCount(0);
+        // The panel takes its name from its title, which names the payer's terms or policy letter it also takes, by the kind select's own name (ux85-5); its drop
+        // zone takes its name from its own heading, one level below, and says the size limit as a size (ux85-7).
+        const panel = approver.getByRole('region', { name: 'Upload a contract, exhibit or payer’s terms or policy letter' });
+        await expect(panel.getByRole('heading', { level: 2 })).toHaveText('Upload a contract, exhibit or payer’s terms or policy letter');
+        const dropZone = panel.getByRole('region', { name: 'Choose contracts, exhibits or payer’s terms or policy letters to upload' });
+        await expect(dropZone.getByRole('heading', { level: 3 })).toHaveText('Choose contracts, exhibits or payer’s terms or policy letters to upload');
+        await expect(dropZone.locator('p').first()).toHaveText(
+          /^PDFs \(a fee-schedule exhibit may also be a spreadsheet\), one at a time or a batch, up to 2\.0 GiB each\. Each file is scanned for malware before anything reads it\.$/,
+        );
+        const kind = panel.getByLabel('Kind of document');
+        await expect(kind.locator('option[value="payer_letter"]')).toHaveText('Payer’s terms or policy letter');
+        // At a phone's width the kind select, holding its longest choice, says it whole, never cut short (ux85-2): the
+        // width a select of the same classes takes for that text alone, its own arrow and padding counted, fits it.
+        await kind.selectOption('payer_letter');
+        await atPhoneWidth(approver, 'Contracts, the upload panel with the payer’s terms or policy letter chosen');
+        const desktop = approver.viewportSize();
+        await approver.setViewportSize({ width: 390, height: 844 });
+        try {
+          await expect
+            .poll(() =>
+              kind.evaluate((element) => {
+                const select = element as HTMLSelectElement;
+                const copy = document.createElement('select');
+                copy.className = select.className;
+                copy.style.cssText = 'position: absolute; visibility: hidden; width: auto; max-width: none';
+                copy.append(new Option(select.selectedOptions[0]?.text ?? ''));
+                select.after(copy);
+                const needed = copy.clientWidth;
+                copy.remove();
+                return { text: select.selectedOptions[0]?.text, fits: needed <= select.clientWidth, needed, room: select.clientWidth };
+              }),
+            )
+            .toMatchObject({ text: 'Payer’s terms or policy letter', fits: true });
+        } finally {
+          if (desktop !== null) {
+            await approver.setViewportSize(desktop);
+          }
+        }
+        // The panel starts with no kind and its placeholder cannot be chosen again (#75): the kind goes to Contract.
+        await kind.selectOption('contract');
+        await expect(panel).toContainText('A payer’s answer to a dispute goes with its response instead, on the case’s Submissions and responses page.');
+      } finally {
+        approver.off('request', collect);
       }
-      await amount.fill('60.00');
-      await form.getByRole('button', { name: 'Record the response' }).click();
-      await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();
-      await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('$60.00 the payer will pay');
-      await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('(with its document)');
+      for (const request of sent) {
+        expect(request.url, 'no request URL carries the file’s name').not.toContain(SENTINEL);
+        expect(request.body, `no request body carries the file’s name (${new URL(request.url).pathname})`).not.toContain(SENTINEL);
+      }
+      // The server action posted one of the form's keys; every upload request made its own.
+      const uploads = sent.filter((request) => /\/uploads\/(request|complete|retry)$/.test(new URL(request.url).pathname));
+      expect(uploads.length).toBeGreaterThan(0);
+      for (const request of uploads) {
+        const key: unknown = (JSON.parse(request.body) as { requestKey?: unknown }).requestKey;
+        expect(typeof key).toBe('string');
+        expect(formKeys.has(String(key)), 'an upload request carries the response form’s request key').toBe(false);
+      }
       // Recording the response writes no ledger entry (LED-01): nothing is approved until the reconcile.
       await approver.goto(`/p/${practiceId}/reconciliation`);
       await expect(approver.locator('[data-figure="approved"]')).toContainText('$0.00');

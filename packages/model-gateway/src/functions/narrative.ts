@@ -119,7 +119,7 @@ export function mentionsIdentifier(text: string, identifiers: { readonly names: 
   return holdsNameOrNumber(text, identifiers);
 }
 
-export const narrativeSpec: PurposeSpec<NarrativeInput, NarrativeOutput, NarrativeProposal> = {
+export const narrativeSpec = Object.freeze<PurposeSpec<NarrativeInput, NarrativeOutput, NarrativeProposal>>({
   purpose: 'draftPacketNarrative',
   prompt: PROMPTS.draftPacketNarrative,
   output: narrativeOutput,
@@ -138,4 +138,4 @@ export const narrativeSpec: PurposeSpec<NarrativeInput, NarrativeOutput, Narrati
     const markers = [...new Set([...narrative.matchAll(/\[(\d{1,4})\]/g)].map((match) => Number.parseInt(match[1] ?? '', 10)))].filter((marker) => marker >= 1).sort((a, b) => a - b);
     return { proposal: { narrative, report, roles }, passed: report.passed && roles.length === 0, citations: markers.map((marker) => ({ marker })) };
   },
-};
+});

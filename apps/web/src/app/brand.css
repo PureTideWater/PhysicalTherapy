@@ -27,6 +27,10 @@ h3 { font-size: 18px; font-weight: 600; }
 a { color: var(--pw-link); }
 a:hover { color: var(--pw-fg); }
 
+/* A POST that reads as a link (a sign-in step's Back to sign in, review UXB-N1): the link's look, from the same tokens */
+.pw-link-button { color: var(--pw-link); }
+.pw-link-button:hover { color: var(--pw-fg); }
+
 /* Every money figure and every table of figures */
 .pw-money,
 td.pw-money,

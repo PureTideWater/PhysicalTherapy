@@ -97,3 +97,20 @@ export const CONTENT: AuditReportContent = {
   pursuit: { estimated: true, cost_cents: '8250', net_expected_cents: '19750' },
   evidence_gaps: [{ kind: 'unpriced', reason: 'NO_AGREEMENT', lines: 33, charge_cents: '300000', detail: 'Mapped as out of network or no agreement', remedy: 'None; anomaly screening only' }],
 };
+
+/**
+ * The same report of a run priced around two plans with no mapping (combined audit #32, docs/adr/0075;
+ * PRC-30, MAP-06): their 14 lines are unpriced (NO_MAPPING) and the run records the plans.
+ * `CONTENT` stays a report stored before the run's unmapped plans were recorded.
+ */
+export const CONTENT_WITH_UNMAPPED_PLANS: AuditReportContent = {
+  ...CONTENT,
+  coverage: {
+    ...CONTENT.coverage,
+    reasons: [
+      { reason: 'NO_MAPPING', lines: 14, charge_cents: '123400', remedy: 'Map the plan' },
+      { reason: 'NO_AGREEMENT', lines: 19, charge_cents: '176600', remedy: 'None; anomaly screening only' },
+    ],
+    unmapped_plans: { plans: 2, lines: 14, charge_cents: '123400' },
+  },
+};

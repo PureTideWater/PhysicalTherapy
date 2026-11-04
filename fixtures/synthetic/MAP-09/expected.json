@@ -1,0 +1,17 @@
+{
+  "case": "MAP-09",
+  "module": "MAP",
+  "title": "Pricing months again from a page that is out of date, or without the right",
+  "assertion": "When a month became ready that the form did not send, or the form sent a month that is neither ready nor already being priced again, the request is refused as `months_changed` with nothing created, the refused field is named in the form's summary, and the page shows the months as they are now. A refusal of one month names it by its dates and creates nothing. A run of another practice, a plan of another practice, a release not in force, a practice that is suspended, and a person without `mapping.edit` are refused, with nothing created",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": ["apps/web/src/lib/routes/mapping-routes.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "No file of their own: MAP-06's file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

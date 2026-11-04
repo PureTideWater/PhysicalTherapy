@@ -38,12 +38,31 @@ export const MATCHED = 'while we keep the request, the record of counts of the s
 /** Every surface shown before a screening exists, or for a link that no longer opens: what is kept with an audit request, never whether there is one. */
 export const KEPT_IF_REQUESTED = `If an audit is requested from the screening, or was requested from an earlier screening with the same practice name and ZIP code, we keep ${KEPT_SUMMARY} with that request for 12 months from the screening.`;
 
+/**
+ * What outlives a screening's address when its email could not be delivered or was reported as spam (audit #76; the
+ * founder's Q11 (b) of 2026-10-21: a keyed hash kept 12 months, used only to refuse that address; docs/adr/0065). No
+ * surface calls it deleted. It says what the hash does, refuse a new screening to the address, and not "never send to
+ * it again": the hash lapses after 12 months, and a screening already accepted for the address is still sent (the review
+ * of 2026-10-23, Wording). Every surface that says the address is deleted says it, the result email too (the review of
+ * 2026-10-27). A legal surface counsel reviews with the others before the screening opens (open item O4).
+ */
+export const REFUSED_ADDRESS_KEPT =
+  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.';
+
+/**
+ * What outlives a screening's address in AWS (docs/adr/0065, residual 1; docs/policies/data-retention.md): SES's check that
+ * the address can receive email is a request recorded in the address-validation account's CloudTrail event history,
+ * which keeps it 90 days, with the address in it unless CloudTrail withholds it. Every surface that says the address is
+ * deleted says it (the review of 2026-10-27). A legal surface counsel reviews before the screening opens (O4).
+ */
+export const ADDRESS_CHECK_KEPT = 'The mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days.';
+
 /** The result email's sentences on what happens when its link closes, by what this screening's summary is kept with. */
 export function emailKept(keptWith: Exclude<KeptWith, 'own_request'>): string {
   const opens = 'The link below opens it for 30 days from your upload, or until a later screening for the same practice or from this address replaces it.';
   switch (keptWith) {
     case 'none':
-      return `${opens} Then we delete the result and the details you gave, unless an audit is requested from it: then we keep ${KEPT_SUMMARY} with the request for 12 months from the screening. We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
+      return `${opens} Then we delete the result and the details you gave, unless an audit is requested from it: then we keep ${KEPT_SUMMARY} with the request for 12 months from the screening. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
     case 'earlier_request':
       return `${opens} Then we delete the result’s rows and figures. An audit was requested for this practice from an earlier screening with the same practice name and ZIP code, so we now keep ${KEPT_SUMMARY} with that request, in place of the earlier screening’s, for 12 months from this screening. We keep a record of counts that names no one: ${KEPT_COUNTS}; ${MATCHED}.`;
     case 'consent':

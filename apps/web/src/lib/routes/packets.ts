@@ -3,6 +3,8 @@ import { WORDS_VERSION } from '@tp/packets/explain';
 import { type ExportAwaitingAttestation, NARRATIVE_MAX_LENGTH, type SubmissionUnattestedReason, packetVersionUnattestedReason } from '@tp/worker/packets';
 import { z } from 'zod';
 
+import { workPause } from '../billing/hold';
+import type { WorkPause } from '../billing/suspension-words';
 import { underPacketRules } from '../cases/refusals';
 import { requestApproval } from '../cases/workbench';
 import { keptId, returnPage } from '../http/download-refusal';
@@ -65,6 +67,12 @@ export interface BuilderPageData {
   readonly viewerId: string;
   readonly canApprove: boolean;
   readonly canExport: boolean;
+  /**
+   * What stops the person's exports here now (workPause with phi.export, the export route's own question), or null:
+   * the Export button is withheld with its sentence while it holds, and the gate's refusal for the practice's own hold
+   * keeps E1 (SS-01 review UX-SS01-1; docs/adr/0080). Readiness never includes the hold.
+   */
+  readonly exportHold: WorkPause | null;
   readonly canReadPhi: boolean;
   /** Whether the person may have a model draft the narrative now (packet.draft, the kill switch off: MOD-06), and the versions models drafted. */
   readonly canDraftWithModel: boolean;
@@ -122,6 +130,7 @@ export const packetPage = practiceRoute({
       viewerId: actor.userId,
       canApprove,
       canExport: rolesPermit(access.roles, 'phi.export'),
+      exportHold: await workPause(scope, practiceId, 'phi.export'),
       canReadPhi,
       canDraftWithModel: rolesPermit(access.roles, 'packet.draft') && (await modelFeatures(scope, services, practiceId)).draftPacketNarrative,
       drafts: await packetDrafts(scope, practiceId, params.caseId),

@@ -4,9 +4,12 @@ import { centsToString } from '@tp/money';
 import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
+import type { CallContext } from '../gateway';
 import { isSha256, sha256Hex } from '../hash';
 import { type QuoteSpan, type WrittenFigure, codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote, tokenSpans } from '../figures';
+import { type PatientRecordsCheck, issuedCheck } from '../patient-records';
 import { PROMPTS } from '../prompts';
+import { screenedBytes } from '../redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { framePages } from '../untrusted';
 
@@ -46,6 +49,43 @@ import { framePages } from '../untrusted';
 
 /** Pages a call reads at most; a longer document is proposed in parts. */
 export const MAX_PAGES = 100;
+
+/**
+ * UTF-8 bytes of the framed request a call sends at most, counted as it is sent and as the screen reads it, its NFKC
+ * form (redact.ts screenedBytes) (docs/adr/0070, Part 3; P11, phi-screen F5's skeptic, item 5). A longer document is
+ * refused in preparation (`too_long`), before the variant's serving check, the idempotency key, the budget, the screen
+ * and the call, so none of the practice's records is read for it and nothing is held or sent. Bytes, not a string's
+ * length, because the hold counts a token a byte of what is sent (gateway.ts mostCost), and a character outside ASCII
+ * is two to four; the NFKC form as well, because a compatibility character lengthens in it (U+FDFA, three bytes, is
+ * eighteen characters), so a cap on what is sent alone would let the screen read many times the cap. A character is at
+ * least a byte, so either form within the cap is at most that many characters. Sized from what a legitimate contract
+ * needs and what a call can use:
+ * - set v2's largest documents (80 pages) frame to 163,247 to 173,684 bytes (ASCII, so as many characters, and the same
+ *   in NFKC form), and 100 pages (MAX_PAGES) at its densest page to about 255,000: the cap is 5.7 and 3.9 times those;
+ * - at the runbook's estimate (100,000 input tokens for an 80-page document, about 1.7 bytes a token) the cap is about
+ *   575,000 tokens, inside the pinned models' context of a million tokens with the answer's 16,000; intake's own cap
+ *   (16 MiB of page text) is about ten million, which no pinned model reads;
+ * - the hold counts a token per byte, so at config/models.json's prices a request at the cap holds about 218 cents (the
+ *   larger model: 435) and fits the default daily budget (500) on a day with no spend, where 16 MiB holds about 3,373
+ *   (6,746);
+ * - the screen reads at most 1,000,000 characters, at most half of them tokens: about 0.05 s of prose and 0.12 s at the
+ *   worst case (0.4 s for kept identifiers of every length), where 16 MiB takes 0.6 s, 1.4 s and about 7 s of the web's
+ *   event loop. Counted as a string's length, a request of U+FDFA within the cap made the screen read 18 million
+ *   characters, taking 1.3 to 2.5 s and more than a 192 MiB heap.
+ */
+export const MAX_REQUEST_BYTES = 1_000_000;
+
+/** The refusal's sentence: the cap, and nothing of the document (not its length). */
+export const TOO_LONG_MESSAGE = `a call sends at most ${MAX_REQUEST_BYTES.toLocaleString('en-US')} bytes of a document; this one is longer and was not sent`;
+
+/**
+ * Whether the texts together are over the request's cap, as sent (UTF-8) or as the screen reads them (NFKC form): the
+ * bytes sent first, so a text already over the cap is never normalized, and a normalized copy is at most six characters
+ * a byte of a text within it.
+ */
+function overCap(texts: readonly string[]): boolean {
+  return texts.reduce((bytes, text) => bytes + Buffer.byteLength(text, 'utf8'), 0) > MAX_REQUEST_BYTES || texts.reduce((bytes, text) => bytes + screenedBytes(text), 0) > MAX_REQUEST_BYTES;
+}
 
 const page = z.number().int().min(1).max(999_999);
 const quote = z.string().min(1).max(2000);
@@ -87,7 +127,8 @@ export type ContractTermsOutput = z.output<typeof contractTermsOutput>;
 /** The stored document kinds a contract proposal reads: no other kind is ever sent (a payer letter is PHI). */
 export const CONTRACT_KINDS = ['contract', 'exhibit'] as const;
 
-export interface ContractPagesInput {
+/** The document a contract call reads: what the request is framed from, and what the verifier checks the answer against. */
+export interface ContractPages {
   readonly documentId: string;
   /** The stored document's SHA-256. */
   readonly documentSha256: string;
@@ -97,6 +138,15 @@ export interface ContractPagesInput {
   readonly pages: readonly string[];
   /** The specialist marked the contract ambiguous: the prompt's larger model reads it (PRD 14). */
   readonly ambiguous?: boolean;
+}
+
+export interface ContractPagesInput extends ContractPages {
+  /**
+   * The practice's records, asked before anything is sent whether the pages name one of its patients (combined
+   * audit item 120; ../patient-records.ts). Required, so no caller compiles without one, and the screen accepts only a
+   * check the gateway's factories issued for the call's own practice (a synthetic one only on an evaluation call).
+   */
+  readonly patientRecords: PatientRecordsCheck;
 }
 
 export const FIELD_PROBLEMS = ['page_missing', 'quote_not_on_page', 'not_in_quote', 'unreadable', 'not_in_row'] as const;
@@ -421,7 +471,7 @@ function evidenceField(candidate: ContractTermsCandidate): { readonly page: numb
   return candidate.amount ?? candidate.percentage ?? candidate.method;
 }
 
-function reviewCandidate(input: ContractPagesInput, candidate: ContractTermsCandidate, index: number): Omit<CandidateReview, 'conflictsWith'> {
+function reviewCandidate(input: ContractPages, candidate: ContractTermsCandidate, index: number): Omit<CandidateReview, 'conflictsWith'> {
   const reviewed = citedFields(candidate).map((entry) => reviewField(entry, input.pages));
   const notInRow = rowProblems(candidate, reviewed);
   const fields = reviewed.map((field): FieldReview => (notInRow.has(field.field) ? { ...field, verified: false, problems: [...field.problems, 'not_in_row'] } : field));
@@ -446,7 +496,7 @@ function reviewCandidate(input: ContractPagesInput, candidate: ContractTermsCand
   return { index, label: candidate.label, method: candidate.method.value, fields, defaults: [...new Set(defaults)], rateRecord, problems };
 }
 
-export function verifyContractTerms(input: ContractPagesInput, output: ContractTermsOutput): Verified<ContractTermsProposal> {
+export function verifyContractTerms(input: ContractPages, output: ContractTermsOutput): Verified<ContractTermsProposal> {
   const reviews = output.candidates.map((candidate, index) => reviewCandidate(input, candidate, index));
   const scopes = output.candidates.map(readScope);
   const candidates: CandidateReview[] = reviews.map((review, index) => ({
@@ -465,7 +515,58 @@ export function verifyContractTerms(input: ContractPagesInput, output: ContractT
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal> = {
+/**
+ * The refusal's sentence when a contract holds one of the practice's identifiers (docs/adr/0070, Part 3): no identifier,
+ * kind or count. The person reads the web's notice for the code (apps/web/src/lib/models/notices.ts), not this; both name
+ * the records one way.
+ */
+export const NAMES_PATIENT_MESSAGE = 'this document holds an identifier from the practice’s patient records and was not sent';
+/** The sentence for a check that could not run (the bound, or a load error): the call is refused, never sent unchecked. */
+export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked against the practice’s patient records and was not sent';
+
+/**
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway last of its refusals before
+ * the budget's hold and the call: after preparation (the kind, the text and the request's length), the variant's serving
+ * check, the idempotency key's lookup, the read of the day's budget and the caller's step before the screen; the hold
+ * can still refuse after it (gateway.ts, steps 8 and 9; the review's S1):
+ * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
+ * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation
+ *    call), else `screen_invalid`;
+ * 3. a run of the text the call sends that is one of the practice's member IDs, payer claim control numbers or
+ *    patient control numbers refuses the call as `names_patient`; a check that could not read the records
+ *    refuses it as `screen_unavailable` (the bound) or `screen_failed` (any load error). Every message is a fixed
+ *    sentence.
+ *
+ * The check reads the prepared request's own text (`prepared.user`), not the input's pages a second time, so what is
+ * screened is exactly what would leave, even for an input whose pages read differently each time they are asked for
+ * (a getter or a proxy), which would otherwise pass the screen clean and frame a page that names a patient. The
+ * frame adds no run the screen could take for an identifier: each page sits between lines of its own (a run never
+ * crosses a line break, ../redact.ts someIdentifierRun), the frame's words have no digit, which every kept identifier
+ * has (SCREEN_FLOORS), and its page numbers and count stand alone, below every floor (the `="` before each one joins
+ * two tokens only for a practice whose own identifiers hold it: ../redact.ts storedSeparators).
+ */
+export async function screenContractPages(input: ContractPagesInput, prepared: { readonly user: string }, context: CallContext): Promise<void> {
+  const check: unknown = input.patientRecords;
+  if (!issuedCheck(check) || check.practiceId !== context.practiceId) {
+    throw new InputRefusedError('screen_invalid', 'a contract is sent only with the practice records check the gateway issues');
+  }
+  const outcome = await check.namesPatient([prepared.user]);
+  switch (outcome) {
+    case 'clear':
+      return;
+    case 'names_patient':
+      throw new InputRefusedError('names_patient', NAMES_PATIENT_MESSAGE);
+    case 'screen_unavailable':
+    case 'screen_failed':
+      throw new InputRefusedError(outcome, SCREEN_UNAVAILABLE_MESSAGE);
+    // Defensive: an issued check answers only the four codes above. Anything else is refused as a failure, never
+    // sent (patient-records.test.ts reaches this branch through a check made to pass as issued).
+    default:
+      throw new InputRefusedError('screen_failed', SCREEN_UNAVAILABLE_MESSAGE);
+  }
+}
+
+export const contractTermsSpec = Object.freeze<PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal>>({
   purpose: 'proposeContractTerms',
   prompt: PROMPTS.proposeContractTerms,
   output: contractTermsOutput,
@@ -478,18 +579,30 @@ export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOut
     if (!(CONTRACT_KINDS as readonly string[]).includes(input.kind)) {
       throw new InputRefusedError('document_kind', 'only a contract or an exhibit is read for its terms');
     }
+    // The frame only adds to the pages, so pages already over the cap are refused before any is normalized for its text
+    // or framed: their length first (a character is at least a byte), then their bytes as sent and in NFKC form.
+    if (input.pages.reduce((length, text) => length + text.length, 0) > MAX_REQUEST_BYTES || overCap(input.pages)) {
+      throw new InputRefusedError('too_long', TOO_LONG_MESSAGE);
+    }
     if (input.pages.length === 0 || input.pages.every((text) => normalized(text) === '')) {
       throw new InputRefusedError('no_text', 'the document has no page text to read');
     }
     if (input.pages.length > MAX_PAGES) {
       throw new InputRefusedError('too_many_pages', `a call reads at most ${String(MAX_PAGES)} pages; propose the document in parts`);
     }
+    const user = `Read the ${input.kind} pages below and propose the rate terms they state, in the JSON the schema describes.\n\n${framePages(input.kind, input.pages)}`;
+    // The cap holds what would be sent, as it is sent and as the screen reads it: the framed text, whatever the pages
+    // read the second time they are asked for.
+    if (overCap([user])) {
+      throw new InputRefusedError('too_long', TOO_LONG_MESSAGE);
+    }
     return {
-      user: `Read the ${input.kind} pages below and propose the rate terms they state, in the JSON the schema describes.\n\n${framePages(input.kind, input.pages)}`,
+      user,
       inputHashes: [input.documentSha256, ...input.pages.map(pageTextHash)],
       variant: input.ambiguous === true ? 'ambiguous' : 'default',
       context: undefined,
     };
   },
+  screen: screenContractPages,
   verify: verifyContractTerms,
-};
+});

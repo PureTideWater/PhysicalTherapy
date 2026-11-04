@@ -7,12 +7,13 @@ import { StepTimer } from '../../../components/step-timer';
 import { loadPublicPage } from '../../../lib/http/next';
 import { mfaPage } from '../../../lib/routes/sign-in';
 import { mfaStep, restartStep } from '../actions';
+import { SupportLink } from '../notice';
 import { StepHeading } from '../step-heading';
 
 export const metadata: Metadata = { title: 'Verification code' };
 
 export default async function MfaPage() {
-  const { email, time } = await loadPublicPage(mfaPage, {});
+  const { email, time, supportEmail } = await loadPublicPage(mfaPage, {});
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
       <StepHeading setup={null}>Verification code</StepHeading>
@@ -29,6 +30,9 @@ export default async function MfaPage() {
           </StepTimer>
         </CardContent>
       </Card>
+      <p className="text-sm text-muted-foreground">
+        Lost your authenticator app? Write to <SupportLink supportEmail={supportEmail} /> from the address you sign in with.
+      </p>
     </main>
   );
 }

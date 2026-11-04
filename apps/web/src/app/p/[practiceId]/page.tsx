@@ -1,11 +1,14 @@
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { rolesPermit } from '@tp/db/runtime';
 import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Figure, PricedShare } from '../../../components/coverage/share';
 import { FirstUpload, HeadlineTiles, uploadGate } from '../../../components/dashboard/headline';
+import { HoldAlert, RunOutcomeBadge } from '../../../components/dashboard/hold-notice';
 import { roleNames, utc, utcDate } from '../../../components/format';
+import { MappedNotPricedAlert, UnmappedPlansAlert } from '../../../components/mapping/months';
 import { NotificationText } from '../../../components/monitoring/display';
 import { Money } from '../../../components/remittances/display';
 import { ScrollTable } from '../../../components/scroll-table';
@@ -121,14 +124,6 @@ function queueLinks(practiceId: string, queues: Queues, followUpsDue: number): r
   ];
 }
 
-const OUTCOME_NAMES: Readonly<Record<string, string>> = {
-  running: 'Running',
-  retrying: 'Failed; retrying',
-  succeeded: 'Succeeded',
-  failed: 'Failed three times',
-  refused: 'Refused: the organization is suspended',
-};
-
 /**
  * The practice dashboard (PRD 7, Practice dashboard; PRD 12, What a customer sees as the headline; a
  * PHI route: MFA, the 30-minute idle limit, private no-store, the practice record read through
@@ -137,15 +132,19 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
  * last file and the last run, and a banner with the job reference when a run failed on its last attempt;
  * test matrix JOB-02), coverage, cases by stage, deadlines in 14 days, overdue follow-ups, the queues to
  * jump to, the practice record and its agreements. Every number links to the screen and stage it came
- * from; before the first file, the empty state names the gate Uploads uses (the BAA on file, then the
- * organization not suspended; test matrix HOM-03) and the next step it leaves.
+ * from; before the first file, the empty state names the gate Uploads uses (the BAA on file, then no hold on
+ * this person's uploads, practice_run_refusal_for with file.upload; test matrix HOM-03, docs/adr/0080) and the
+ * next step it leaves.
+ * Above the queues, the plans with no mapping, whose lines no run prices, and the lines of mapped plans still
+ * NO_MAPPING in effect, as Coverage counts them, each linking to Payer and plan mapping ("Map them" for a person who
+ * may map plans; combined audit #32, docs/adr/0075; MAP-06, PRC-31).
  */
 export default async function PracticePage(props: { readonly params: Promise<{ practiceId: string }> }) {
   const page = await loadPage(practiceHome, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, suspension } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold, uploadsHold } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -154,15 +153,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
-      {suspension === null ? null : (
-        <Alert variant="destructive" data-notice="suspended" role="alert">
-          <AlertTitle>New runs have stopped</AlertTitle>
-          <AlertDescription>
-            {suspension[0]?.toUpperCase()}
-            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees the standing and what to do next in Settings, Billing.
-          </AlertDescription>
-        </Alert>
-      )}
+      {hold === null ? null : <HoldAlert hold={hold} />}
       {freshness.failedRun === null ? null : (
         <Alert variant="destructive" data-job={freshness.failedRun.jobId}>
           <AlertTitle>Last run failed</AlertTitle>
@@ -175,7 +166,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
       {freshness.lastFileAt === null ? (
         <FirstUpload
           practiceId={practice.id}
-          gate={uploadGate(dashboard.uploads, suspension !== null)}
+          gate={uploadGate(dashboard.uploads, uploadsHold)}
           // The agreement chain is the next step for the roles that work the practice; a viewer only reads it (UX-119).
           agreements={access.roles.some((role) => role !== 'viewer')}
         />
@@ -224,9 +215,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                   ) : (
                     <>
                       {JOB_NAMES[freshness.lastRun.jobType] ?? freshness.lastRun.jobType}, {utc(freshness.lastRun.finishedAt ?? freshness.lastRun.startedAt)}:{' '}
-                      <Badge variant={freshness.lastRun.outcome === 'failed' ? 'destructive' : freshness.lastRun.outcome === 'succeeded' ? 'default' : 'secondary'} data-outcome={freshness.lastRun.outcome}>
-                        {OUTCOME_NAMES[freshness.lastRun.outcome] ?? freshness.lastRun.outcome}
-                      </Badge>
+                      <RunOutcomeBadge outcome={freshness.lastRun.outcome} />
                     </>
                   )}
                 </dd>
@@ -321,6 +310,8 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
               </dl>
             </CardContent>
           </Card>
+          <UnmappedPlansAlert practiceId={practice.id} totals={dashboard.unmappedPlans} canMap={rolesPermit(access.roles, 'mapping.edit')} place="home" />
+          <MappedNotPricedAlert practiceId={practice.id} totals={dashboard.mappedNotPriced} canMap={rolesPermit(access.roles, 'mapping.edit')} />
           <Card role="region" aria-label="Queues">
             <CardHeader>
               <CardTitle>Queues</CardTitle>

@@ -27,8 +27,23 @@ import {
   UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS,
   UPLOAD_SENT_TO_WAIT_MESSAGE,
 } from '../lib/screening';
-import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../lib/security-events';
-import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
+import {
+  CLIENT_CREDENTIAL_REFUSED_MESSAGE,
+  CREDENTIAL_PROBE_REFUSED_MESSAGE,
+  ENROLMENT_REFUSED_MESSAGE,
+  PASSWORD_RESET_FAILED_MESSAGE,
+  PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES,
+  PASSWORD_RESET_NOT_DELIVERED_MESSAGE,
+  PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
+  PASSWORD_RESET_REQUESTED_MESSAGE,
+  RESET_AND_ENROLMENT_COUNTS,
+  RESET_REQUESTS_PER_USER,
+  SECURITY_ALARM_PERIOD_SECONDS,
+  SIGN_IN_BURST_MESSAGES,
+  SIGN_IN_BURST_METRIC,
+  resetRequestsRuleName,
+} from '../lib/security-events';
+import { type CfnResource, type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
 
 describe('the heartbeat contract with the worker', () => {
   it('matches the line apps/worker logs for each beat', () => {
@@ -57,6 +72,53 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
     for (const message of SIGN_IN_BURST_MESSAGES) {
       expect(web).toContain(`logger.warn('${message}'`);
     }
+  });
+});
+
+describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
+  const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
+
+  it('pins the six counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+    // Literals, so an edit to the constants cannot pass by changing both sides.
+    expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
+      {
+        metricName: 'PasswordResetNotDeliveredConfig',
+        message: 'password reset request not delivered',
+        errorCodes: ['UserNotFoundException', 'NotAuthorizedException', 'InvalidParameterException', 'CodeDeliveryFailureException'],
+        threshold: 1,
+        periodSeconds: 300,
+      },
+      { metricName: 'PasswordResetNotDeliveredThrottled', message: 'password reset request not delivered', errorCodes: ['LimitExceededException', 'TooManyRequestsException'], threshold: 3, periodSeconds: 3600 },
+      { metricName: 'PasswordResetRequestFailed', message: 'password reset request failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      { metricName: 'SecondFactorEnrolmentRefused', message: 'security event: second-factor enrolment refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      { metricName: 'ClientCredentialRefused', message: 'security event: client credential refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // The start-up probe's refusal (review infra-auth-IA-2): a deploy it rolls back reaches no user, so no other line is written.
+      { metricName: 'ClientCredentialProbeRefused', message: 'cognito probe refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+    ]);
+    expect(PASSWORD_RESET_REQUESTED_MESSAGE).toBe('password reset requested');
+    expect(RESET_REQUESTS_PER_USER).toEqual({ threshold: 5, periodSeconds: 3600 });
+    expect(SECURITY_ALARM_PERIOD_SECONDS).toBe(300);
+  });
+
+  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal and each account\'s request', () => {
+    const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
+    const flow = source('apps/web/src/lib/auth/sign-in.ts');
+    expect(provider).toContain(`this.logger.warn('${PASSWORD_RESET_NOT_DELIVERED_MESSAGE}', { error_code: code, request_id: requestId ?? null });`);
+    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_FAILED_MESSAGE}', { request_id: context.requestId, error_code: errorCode(error) });`);
+    expect(flow).toContain(`this.deps.logger.warn('${ENROLMENT_REFUSED_MESSAGE}', {`);
+    expect(flow).toContain(`this.deps.logger.error('${CLIENT_CREDENTIAL_REFUSED_MESSAGE}', {`);
+    expect(source('apps/web/src/lib/auth/credential-probe.ts')).toContain(`logger?.error('${CREDENTIAL_PROBE_REFUSED_MESSAGE}', { error_code: code });`);
+    // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
+    expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
+  });
+
+  it('splits every code the provider answers as not delivered into exactly the configuration codes and the throttle codes', () => {
+    const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
+    const listed = /const RESET_NOT_DELIVERED = new Set\(\[([^\]]*)\]\);/.exec(provider)?.[1] ?? '';
+    const codes = [...listed.matchAll(/'([A-Za-z]+)'/g)].map((match) => match[1]);
+    expect(codes).toHaveLength(6);
+    expect([...PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES, ...PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES].sort()).toEqual(codes.sort());
+    expect(PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES.filter((code) => (PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES as readonly string[]).includes(code))).toEqual([]);
   });
 });
 
@@ -148,8 +210,11 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   it('has the worker, platform and web metric filters and the stack\'s alarms, and no other', () => {
     // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
-    // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait.
-    expect(filters).toHaveLength(14);
+    // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
+    // the platform's five codes, an unsent probe, and the web's refused validation and validation cap. Reset and
+    // enrolment (R-11; docs/adr/0088, D7): the web's undelivered requests (configuration, throttle), failed requests,
+    // refused enrolments, refused client credentials and the start-up probe's refusal.
+    expect(filters).toHaveLength(28);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -166,6 +231,21 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.uptime.webAlarm,
       stack.uptime.apiAlarm,
       stack.uptime.certificateAlarm,
+      ...Object.values(stack.monitoring.mailCodeAlarms),
+      stack.monitoring.mailProbeUnsentAlarm,
+      stack.monitoring.mailValidationRefusedAlarm,
+      stack.monitoring.mailValidationCapAlarm,
+      ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
+      stack.monitoring.resetRequestsPerUserAlarm,
+      stack.mailStreams.accountBounceWarningAlarm,
+      stack.mailStreams.accountBounceHighAlarm,
+      stack.mailStreams.accountComplaintWarningAlarm,
+      stack.mailStreams.accountComplaintHighAlarm,
+      stack.mailStreams.screeningBounceAlarm,
+      stack.mailStreams.screeningComplaintAlarm,
+      stack.mailStreams.transactionalBounceAlarm,
+      stack.mailStreams.deadLetterAlarm,
+      stack.mailStreams.queueAgeAlarm,
     ].map((alarm) => logicalIdOf(stack, alarm));
     expect(resourcesOf(template, 'AWS::CloudWatch::Alarm').map(([id]) => id).sort()).toEqual(alarms.sort());
   });
@@ -341,6 +421,84 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       Threshold: 1,
       TreatMissingData: 'notBreaching',
       AlarmActions: [topic],
+    });
+  });
+
+  describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
+    const web = stack.monitoring.webLogGroup;
+
+    it('counts each of the six lines on the web log group alone, by message and, for undelivered requests, by code, and alarms at its threshold', () => {
+      for (const count of RESET_AND_ENROLMENT_COUNTS) {
+        const codes = count.errorCodes as readonly string[];
+        const pattern =
+          codes.length === 0
+            ? `{ $.msg = "${count.message}" }`
+            : `{ ($.msg = "${count.message}") && ((${codes.map((code) => `$.error_code = "${code}"`).join(') || (')})) }`;
+        expect(propertiesOf(filterFor(count.metricName, web)), count.metricName).toEqual({
+          LogGroupName: ref(logicalIdOf(stack, web)),
+          FilterPattern: pattern,
+          MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Web', MetricName: count.metricName, MetricValue: '1', Unit: 'Count' }],
+        });
+        const alarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms[count.metricName]));
+        expect(propertiesOf(alarm), count.metricName).toMatchObject({
+          Namespace: 'TherapyPlatform/Web',
+          MetricName: count.metricName,
+          Statistic: 'Sum',
+          Period: count.periodSeconds,
+          EvaluationPeriods: 1,
+          ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+          Threshold: count.threshold,
+          TreatMissingData: 'notBreaching',
+          AlarmActions: [topic],
+        });
+        expect(propertiesOf(alarm).Dimensions, count.metricName).toBeUndefined();
+      }
+      const counted = filters.filter(([, filter]) => RESET_AND_ENROLMENT_COUNTS.some((count) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${count.metricName}"`)));
+      expect(counted).toHaveLength(RESET_AND_ENROLMENT_COUNTS.length);
+    });
+
+    it('counts reset requests per user with one contributor rule keyed on the user ID, and no metric filter counts them', () => {
+      const rules = resourcesOf(template, 'AWS::CloudWatch::InsightRule');
+      expect(rules).toHaveLength(1);
+      const [id, rule] = rules[0] as [string, CfnResource & { readonly DependsOn?: readonly string[] }];
+      // The rule is itself the CloudFormation resource (an L1), so its logical ID is read from it, not a default child.
+      expect(id).toBe(stack.getLogicalId(stack.monitoring.resetRequestsPerUserRule));
+      const properties = propertiesOf(rule);
+      expect(properties.RuleName).toBe(resetRequestsRuleName(environment));
+      expect(properties.RuleState).toBe('ENABLED');
+      expect(JSON.parse(properties.RuleBody as string)).toEqual({
+        Schema: { Name: 'CloudWatchLogRule', Version: 1 },
+        LogGroupNames: [logGroupName(environment, 'web')],
+        LogFormat: 'JSON',
+        Contribution: { Keys: ['$.user_id'], Filters: [{ Match: '$.msg', In: [PASSWORD_RESET_REQUESTED_MESSAGE] }] },
+        AggregateOn: 'Count',
+      });
+      // The rule reads the web log group by name, so it is created after it.
+      expect(rule.DependsOn).toContain(logicalIdOf(stack, web));
+      // No metric per user: no filter counts the line (the rule alone does), and none has a dimension.
+      for (const [filterId, filter] of filters) {
+        expect(String(propertiesOf(filter).FilterPattern), filterId).not.toContain(PASSWORD_RESET_REQUESTED_MESSAGE);
+      }
+    });
+
+    it('alarms when one user\'s reset requests reach five in an hour, naming no user', () => {
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetRequestsPerUserAlarm)));
+      expect(alarm).toMatchObject({
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 5,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      const metrics = alarm.Metrics as Record<string, unknown>[];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0]).toMatchObject({
+        Expression: `INSIGHT_RULE_METRIC('${resetRequestsRuleName(environment)}', 'MaxContributorValue')`,
+        Period: 3600,
+        ReturnData: true,
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(alarm.MetricName).toBeUndefined();
     });
   });
 

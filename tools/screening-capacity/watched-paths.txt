@@ -60,12 +60,14 @@ apps/web/src/components/status.tsx
 apps/web/src/lib/agreements/documents.ts
 apps/web/src/lib/agreements/esign.ts
 apps/web/src/lib/auth/cognito-provider.ts
+apps/web/src/lib/auth/credential-probe.ts
 apps/web/src/lib/auth/dev-provider.ts
 apps/web/src/lib/auth/dev-store.ts
 apps/web/src/lib/auth/password.ts
 apps/web/src/lib/auth/pending.ts
 apps/web/src/lib/auth/provider.ts
 apps/web/src/lib/auth/seal.ts
+apps/web/src/lib/auth/secret-hash.ts
 apps/web/src/lib/auth/sessions.ts
 apps/web/src/lib/auth/sign-in.ts
 apps/web/src/lib/auth/step-limits.ts
@@ -96,6 +98,7 @@ apps/web/src/lib/routes/onboarding.ts
 apps/web/src/lib/routes/schemas.ts
 apps/web/src/lib/routes/sign-in.ts
 apps/web/src/lib/routes/support.ts
+apps/web/src/lib/screening/address.ts
 apps/web/src/lib/screening/content-span.ts
 apps/web/src/lib/screening/labels.ts
 apps/web/src/lib/screening/messages.ts
@@ -106,6 +109,9 @@ apps/web/src/lib/screening/retention.ts
 apps/web/src/lib/screening/routes.ts
 apps/web/src/lib/screening/sent.ts
 apps/web/src/lib/screening/template.ts
+apps/web/src/lib/screening/tlds.ts
+apps/web/src/lib/screening/validation-credentials.ts
+apps/web/src/lib/screening/validation.ts
 apps/web/src/lib/server/config.ts
 apps/web/src/lib/server/services.ts
 apps/web/src/lib/uploads/limits.ts
@@ -145,7 +151,9 @@ apps/worker/src/jobs/public.ts
 apps/worker/src/jobs/registry.ts
 apps/worker/src/jobs/runs.ts
 apps/worker/src/jobs/screening.ts
+apps/worker/src/mail/events.ts
 apps/worker/src/mail/mail.ts
+apps/worker/src/mail/streams.ts
 apps/worker/src/mail/template.ts
 apps/worker/src/main.ts
 apps/worker/src/monitor/chain.ts
@@ -177,6 +185,7 @@ apps/worker/src/parse/loader.ts
 apps/worker/src/parse/plan.ts
 apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
+apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
 apps/worker/src/platform/pg-dump-restorer.ts
 apps/worker/src/platform/rds-restorer.ts
@@ -227,6 +236,7 @@ apps/worker/src/report/remedies.ts
 apps/worker/src/screening/adapter.ts
 apps/worker/src/screening/consumer.ts
 apps/worker/src/screening/expiry.ts
+apps/worker/src/screening/failure-code.ts
 apps/worker/src/screening/format.ts
 apps/worker/src/screening/job.ts
 apps/worker/src/screening/message.ts
@@ -302,6 +312,7 @@ packages/db/src/crypto/key-provider.ts
 packages/db/src/crypto/kms-key-provider.ts
 packages/db/src/crypto/practice-keys.ts
 packages/db/src/index.ts
+packages/db/src/mail-address.ts
 packages/db/src/migrate.ts
 packages/db/src/retention.ts
 packages/db/src/roles.ts
@@ -381,6 +392,7 @@ packages/model-gateway/src/gateway.ts
 packages/model-gateway/src/hash.ts
 packages/model-gateway/src/index.ts
 packages/model-gateway/src/limiter.ts
+packages/model-gateway/src/patient-records.ts
 packages/model-gateway/src/permitted.ts
 packages/model-gateway/src/postgres-store.ts
 packages/model-gateway/src/prices.ts
@@ -512,6 +524,7 @@ packages/synth/src/guard/xlsx.ts
 packages/synth/src/identity.ts
 packages/synth/src/index.ts
 packages/synth/src/release/scale.ts
+packages/synth/src/screen/patient-twins.ts
 packages/synth/src/screening/uploads.ts
 packages/synth/src/twin/boundary.ts
 packages/synth/src/twin/roles.ts

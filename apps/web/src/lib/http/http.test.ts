@@ -1,12 +1,13 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { ClientSecret, clientSecretValue } from '../auth/secret-hash';
 import { ConfigError, defaultDevAuthDirectory, defaultDocumentsDirectory, developmentMasterKey, readWebConfig } from '../server/config';
-import { type Services, devOutbox } from '../server/services';
+import { type Services, devOutbox, devResetOutbox } from '../server/services';
 import { MAX_JSON_BODY_BYTES, PRIVATE_NO_STORE, ResponseCookies, boundedText, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
 import { platformRoute, practiceRoute, publicRoute, selfRoute } from './invoke';
 import { type Download, InputError, NotFoundError } from './route';
@@ -408,6 +409,53 @@ describe('the web configuration', () => {
     expect(() => readWebConfig({ ...base, IMAGE_TAG: 'latest:sha' })).toThrow(new ConfigError('invalid settings: IMAGE_TAG'));
   });
 
+  it('checks a screening\'s address with SES, as the address-validation account\'s role, and DNS under the day\'s cap on a deployed server, and with the stand-ins elsewhere (docs/adr/0065; Q1 (g); review S3)', () => {
+    expect(readWebConfig(base).mailValidation).toEqual({ kind: 'local', dailyCap: 50, delayMs: 0 });
+    expect(readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '2000', MAIL_VALIDATION_DAILY_CAP: '7' }).mailValidation).toEqual({ kind: 'local', dailyCap: 7, delayMs: 2000 });
+    expect(() => readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '9000' })).toThrow(new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000'));
+    expect(() => readWebConfig({ ...base, MAIL_VALIDATION: 'smtp' })).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION'));
+    expect(() => readWebConfig({ ...base, MAIL_VALIDATION_DAILY_CAP: '0' })).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION_DAILY_CAP'));
+    const deployed = {
+      ...base,
+      NODE_ENV: 'production',
+      TP_AUTH_PROVIDER: 'cognito',
+      COGNITO_USER_POOL_ID: 'us-east-1_Synthetic',
+      COGNITO_CLIENT_ID: 'syntheticclient',
+      TP_KEY_PROVIDER: 'kms',
+      KMS_KEY_ID: 'alias/tp',
+      AUTH_COOKIE_SECRET: key,
+      TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: 'help@synthetic.test',
+      SECURITY_EMAIL: 'security@synthetic.test',
+      TP_ENVIRONMENT: 'staging',
+      APP_ORIGIN: 'https://app.synthetic.test',
+      DOCUMENTS_BUCKET: 'tp-staging-documents',
+      DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+      BILLING_DATABASE_URL: base.DATABASE_URL,
+    };
+    expect(() => readWebConfig(deployed)).toThrow(new ConfigError('MAIL_VALIDATION is required in production'));
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses' })).toThrow(new ConfigError('MAIL_VALIDATION_DAILY_CAP is required in production'));
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'local', MAIL_VALIDATION_DAILY_CAP: '50' })).toThrow(
+      new ConfigError('MAIL_VALIDATION=local is refused in production (SES and DNS only, outside the e2e suite)'),
+    );
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_CHECK_DELAY_MS: '2000' })).toThrow(
+      new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)'),
+    );
+    // Never as the task's own role, whose account's trail would keep the address (docs/adr/0065).
+    const required = new ConfigError('MAIL_VALIDATION_ROLE_ARN is required in production (the address-validation account\'s role; docs/adr/0065)');
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50' })).toThrow(required);
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: 'none' })).toThrow(required);
+    for (const bad of ['', 'arn:aws:iam::444455556666:user/someone', 'arn:aws:sts::444455556666:assumed-role/x/y']) {
+      expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: bad }), bad).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION_ROLE_ARN'));
+    }
+    expect(readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' });
+    // A developer's SES check outside a deployment runs as the process's own credentials unless a role is named.
+    expect(readWebConfig({ ...base, MAIL_VALIDATION: 'ses' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: null });
+    expect(readWebConfig({ ...base, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' });
+    // The end-to-end suite's production build checks with the stand-ins.
+    expect(readWebConfig({ ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key, BILLING_DATABASE_URL: base.DATABASE_URL }).mailValidation.kind).toBe('local');
+  });
+
   it('requires every implementation choice explicitly in production', () => {
     const e2e = { ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e' };
     expect(() => readWebConfig({ ...base, NODE_ENV: 'production' })).toThrow(new ConfigError('TP_AUTH_PROVIDER is required in production'));
@@ -450,6 +498,9 @@ describe('the web configuration', () => {
       DOCUMENTS_BUCKET: 'tp-production-documents',
       DOCUMENTS_KMS_KEY_ID: 'alias/tp-production',
       QUEUE_DATABASE_URL: 'postgres://tp_queue:x@db.internal:5432/tp',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '1000',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
     });
     expect(config).toMatchObject({
       origin: 'https://app.synthetic.test',
@@ -464,9 +515,43 @@ describe('the web configuration', () => {
       environment: 'production',
       esign: { kind: 'none' },
       complianceExportDir: null,
+      mailValidation: { kind: 'ses', dailyCap: 1000, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' },
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
+  });
+
+  it('SEC-20: reads the Cognito client secret when set (optional in release N), and refuses it with the dev provider, as the stack’s placeholder, or malformed, never showing the value (docs/adr/0088, D1)', () => {
+    const WHOLE_SECRET = 'COGNITO_CLIENT_SECRET holds the whole stored secret, not its clientSecret key: the task definition must inject the key alone';
+    const cognito = { ...base, TP_AUTH_PROVIDER: 'cognito', COGNITO_USER_POOL_ID: 'us-east-1_Synthetic', COGNITO_CLIENT_ID: 'syntheticclient' };
+    const value = 'synthetic0client0secret0value0000000000000000000000';
+    const config = readWebConfig({ ...cognito, COGNITO_CLIENT_SECRET: value });
+    expect(config.auth.kind === 'cognito' && config.auth.clientSecret instanceof ClientSecret && clientSecretValue(config.auth.clientSecret)).toBe(value);
+    // Release N runs the public client: no secret, and no hash is sent.
+    expect(readWebConfig(cognito).auth).toEqual({ kind: 'cognito', userPoolId: 'us-east-1_Synthetic', clientId: 'syntheticclient', region: 'us-east-1', clientSecret: null });
+    const refusals: [Record<string, string>, string][] = [
+      [{ ...base, COGNITO_CLIENT_SECRET: value }, 'COGNITO_CLIENT_SECRET is refused with TP_AUTH_PROVIDER=dev (the dev provider takes no client secret)'],
+      [{ ...cognito, TP_AUTH_PROVIDER: 'dev', COGNITO_CLIENT_SECRET: value }, 'COGNITO_CLIENT_SECRET is refused with TP_AUTH_PROVIDER=dev (the dev provider takes no client secret)'],
+      // The literal the stack stores until the custodian seeds it (review infra-auth-IA-5): a task on it fails at start.
+      [{ ...cognito, COGNITO_CLIENT_SECRET: 'unset' }, 'COGNITO_CLIENT_SECRET is the stack’s placeholder, not a client secret: the secret was never seeded'],
+      // The whole secret injected instead of its clientSecret key (review security-N4): refused, naming only the setting.
+      [{ ...cognito, COGNITO_CLIENT_SECRET: '{"clientSecret":"unset","clientSecretId":"unset"}' }, WHOLE_SECRET],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: `{"clientSecret":"${value}"}` }, WHOLE_SECRET],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: ` {"clientSecretId":"synthetic-id-0000"} ` }, WHOLE_SECRET],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: 'short-secret' }, 'invalid settings: COGNITO_CLIENT_SECRET'],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: 'x'.repeat(129) }, 'invalid settings: COGNITO_CLIENT_SECRET'],
+    ];
+    for (const [env, message] of refusals) {
+      let thrown: unknown;
+      try {
+        readWebConfig(env);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, message).toEqual(new ConfigError(message));
+      const shown = thrown instanceof Error ? `${thrown.message} ${thrown.stack ?? ''}` : '';
+      expect(shown, message).not.toContain(env.COGNITO_CLIENT_SECRET === 'unset' ? '"unset"' : (env.COGNITO_CLIENT_SECRET ?? '<none>'));
+    }
   });
 
   it('lands uploads in a local directory in development, in the documents bucket in production, and queues on the database login by default', () => {
@@ -528,6 +613,9 @@ describe('the web configuration', () => {
       SECURITY_EMAIL: 'security@synthetic.test',
       APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'staging',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '1000',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
     };
     expect(readWebConfig(production)).toMatchObject({ supportEmail: 'help@synthetic.test', environment: 'staging', esign: { kind: 'none' }, complianceExportDir: null });
     expect(() => readWebConfig({ ...production, SUPPORT_EMAIL: undefined })).toThrow(new ConfigError('SUPPORT_EMAIL is required in production'));
@@ -559,6 +647,9 @@ describe('the web configuration', () => {
       SECURITY_EMAIL: 'security@synthetic.test',
       APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'production',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '1000',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
     };
     expect(readWebConfig(production)).toMatchObject({ securityEmail: 'security@synthetic.test', origin: 'https://app.synthetic.test' });
     expect(() => readWebConfig({ ...production, SECURITY_EMAIL: undefined })).toThrow(new ConfigError('SECURITY_EMAIL is required in production'));
@@ -594,5 +685,21 @@ describe('the development outbox', () => {
     const [file = ''] = readdirSync(path.join(dir, 'outbox'));
     expect(file).toMatch(/^\d+-[0-9a-f-]{36}\.json$/);
     expect(JSON.parse(readFileSync(path.join(dir, 'outbox', file), 'utf8'))).toEqual({ email: 'invited@synthetic.test', temporaryPassword: 'Temporary-Pass-1!' });
+  });
+
+  it('writes a reset code to a sibling outbox, readable by the owner only, in the code email’s words, and leaves the invitations’ outbox alone', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'tp-outbox-'));
+    await devResetOutbox(dir)('reset@synthetic.test', '012345');
+    const [file = ''] = readdirSync(path.join(dir, 'reset-outbox'));
+    expect(file).toMatch(/^\d+-[0-9a-f-]{36}\.json$/);
+    const written = path.join(dir, 'reset-outbox', file);
+    expect(statSync(written).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(written, 'utf8'))).toEqual({
+      email: 'reset@synthetic.test',
+      code: '012345',
+      subject: 'Your PaidWhole code',
+      body: 'Your code to choose a new PaidWhole password is 012345. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+    });
+    expect(readdirSync(dir)).toEqual(['reset-outbox']);
   });
 });

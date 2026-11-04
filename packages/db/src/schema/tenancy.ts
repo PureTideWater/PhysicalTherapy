@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, foreignKey, index, integer, jsonb, pgTable, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * Tenancy and access tables (Data dictionary, Tenancy and access), mirroring
@@ -11,6 +11,15 @@ import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, 
 
 export const ORGANIZATION_KINDS = ['group', 'firm', 'internal'] as const;
 export const ORGANIZATION_STATUSES = ['active', 'suspended', 'closed'] as const;
+/**
+ * Why PaidWhole suspends an organization, and why it reinstates one (migration 20261108090000; docs/adr/0080): the
+ * closed lists organization.status_reason and organization_status_change.reason hold. Nonpayment is not a reason:
+ * it is billing's computed hold (billing_standing), never a stored suspension.
+ */
+export const SUSPENSION_REASONS = ['customer_request', 'security_hold', 'agreement_ended'] as const;
+export type SuspensionReason = (typeof SUSPENSION_REASONS)[number];
+export const REINSTATEMENT_REASONS = ['resolved', 'in_error'] as const;
+export type ReinstatementReason = (typeof REINSTATEMENT_REASONS)[number];
 export const USER_STATUSES = ['invited', 'active', 'disabled'] as const;
 export const PRACTICE_STATUSES = ['active', 'deleted'] as const;
 export const MEMBERSHIP_ROLES = [
@@ -41,7 +50,35 @@ export const organization = pgTable('organization', {
   status: text('status', { enum: ORGANIZATION_STATUSES }).notNull().default('active'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+  /** The reason of PaidWhole's suspension in force; null while active or closed, or when none was recorded (migration 20261108090000). */
+  statusReason: text('status_reason', { enum: SUSPENSION_REASONS }),
+  /** When the current status began; null for a status unchanged since migration 20261108090000. */
+  statusSince: timestamp('status_since', { withTimezone: true }),
 });
+
+/**
+ * PaidWhole's suspensions, changes of reason and reinstatements of an organization, with the platform administrator's
+ * internal note (migration 20261108090000): append-only, written only by console_set_organization_status, read only by
+ * holders of organization.manage. Not a PHI table; the note is never logged, exported, mailed or shown to a customer.
+ */
+export const organizationStatusChange = pgTable(
+  'organization_status_change',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organization.id),
+    fromStatus: text('from_status', { enum: ['active', 'suspended'] }).notNull(),
+    toStatus: text('to_status', { enum: ['active', 'suspended'] }).notNull(),
+    reason: text('reason', { enum: [...SUSPENSION_REASONS, ...REINSTATEMENT_REASONS] }).notNull(),
+    note: text('note'),
+    changedBy: uuid('changed_by')
+      .notNull()
+      .references(() => user.id),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('organization_status_change_by_organization').on(table.organizationId, table.at.desc())],
+);
 
 export const user = pgTable(
   'user',
@@ -231,6 +268,77 @@ export const supportGrant = pgTable(
   (table) => [index('support_grant_by_practice').on(table.practiceId), index('support_grant_by_user').on(table.userId)],
 );
 
+/**
+ * A break-glass notice's outbox (audit #76, D10; migration 20261107090000): the notice, with how many administrators it
+ * went to, and one row per administrator, pending until sent, then its message's state as SES reports it, or failed.
+ * Not PHI; registered tenant tables for their practice_id. Written only through the operator's definer functions; the
+ * application role reads them under its scope.
+ */
+export const SUPPORT_GRANT_NOTICES = ['support_grant_opened', 'support_grant_closed'] as const;
+export type SupportGrantNoticeKind = (typeof SUPPORT_GRANT_NOTICES)[number];
+/** An outbox recipient's state (break-glass and dunning): pending, then a message state, or failed after its attempts. */
+export const NOTICE_RECIPIENT_STATES = ['pending', 'sent', 'delayed', 'delivered', 'complained', 'bounced', 'suppressed', 'rejected', 'failed'] as const;
+export type NoticeRecipientState = (typeof NOTICE_RECIPIENT_STATES)[number];
+/** The states an outbox counts as undelivered. */
+export const NOTICE_UNDELIVERED_STATES: readonly NoticeRecipientState[] = ['bounced', 'suppressed', 'rejected', 'failed'];
+/** Minutes before each retry of a send that threw; failed after NOTICE_ATTEMPTS, or at once for a permanent SES error. */
+export const NOTICE_RETRY_MINUTES = [1, 5, 15, 60] as const;
+export const NOTICE_ATTEMPTS = 5;
+
+export const supportGrantNotice = pgTable(
+  'support_grant_notice',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    supportGrantId: uuid('support_grant_id')
+      .notNull()
+      .references(() => supportGrant.id),
+    practiceId: uuid('practice_id')
+      .notNull()
+      .references(() => practice.id),
+    notice: text('notice', { enum: SUPPORT_GRANT_NOTICES }).notNull(),
+    /** How many administrators it went to; 0 when the practice had none. */
+    recipients: smallint('recipients').notNull(),
+    createdAt: createdAt(),
+    /** When its first undelivered recipient (or its want of any) was reported: once a notice. */
+    undeliveredReportedAt: timestamp('undelivered_reported_at', { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique('support_grant_notice_once').on(table.supportGrantId, table.notice),
+    unique('support_grant_notice_practice').on(table.id, table.practiceId),
+    index('support_grant_notice_by_practice').on(table.practiceId, table.supportGrantId),
+  ],
+);
+
+export const supportGrantNoticeRecipient = pgTable(
+  'support_grant_notice_recipient',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** With practice_id, a foreign key to its notice's (id, practice_id). */
+    noticeId: uuid('notice_id').notNull(),
+    practiceId: uuid('practice_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    sesMessageId: text('ses_message_id').unique(),
+    state: text('state', { enum: NOTICE_RECIPIENT_STATES }).notNull().default('pending'),
+    attempts: smallint('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    /** The SES error's name, never its message. */
+    failureCode: text('failure_code'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique('support_grant_notice_recipient_once').on(table.noticeId, table.userId),
+    foreignKey({ columns: [table.noticeId, table.practiceId], foreignColumns: [supportGrantNotice.id, supportGrantNotice.practiceId] }),
+    index('support_grant_notice_recipient_by_practice').on(table.practiceId, table.noticeId),
+    index('support_grant_notice_recipient_pending')
+      .on(table.nextAttemptAt)
+      .where(sql`state = 'pending'`),
+  ],
+);
+
 export const phiTableRegistry = pgTable('phi_table_registry', {
   id: uuid('id').primaryKey().defaultRandom(),
   tableName: text('table_name').notNull().unique(),
@@ -241,6 +349,7 @@ export const phiTableRegistry = pgTable('phi_table_registry', {
 });
 
 export type OrganizationRow = typeof organization.$inferSelect;
+export type OrganizationStatusChangeRow = typeof organizationStatusChange.$inferSelect;
 export type UserRow = typeof user.$inferSelect;
 export type PracticeRow = typeof practice.$inferSelect;
 export type PracticeSiteRow = typeof practiceSite.$inferSelect;
@@ -248,4 +357,6 @@ export type MembershipRow = typeof membership.$inferSelect;
 export type AgreementRow = typeof agreement.$inferSelect;
 export type GrantRow = typeof grant.$inferSelect;
 export type SupportGrantRow = typeof supportGrant.$inferSelect;
+export type SupportGrantNoticeRow = typeof supportGrantNotice.$inferSelect;
+export type SupportGrantNoticeRecipientRow = typeof supportGrantNoticeRecipient.$inferSelect;
 export type PhiTableRegistryRow = typeof phiTableRegistry.$inferSelect;

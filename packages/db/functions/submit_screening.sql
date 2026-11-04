@@ -1,11 +1,11 @@
 -- Written by `pnpm db:domain-model --out` from a freshly migrated database (docs/adr/0068).
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
--- submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8ea4e5450dbe8708
+-- submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text)
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2cfb8601ff15390c
 -- Trigger function of: (none)
 -- Called by policy: (none)
-CREATE OR REPLACE FUNCTION public.submit_screening(practice text, state_code text, zip5 text, plus_four text, email text, codes text[], modifier_sets text[], unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[], rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, rows_outside_content integer, claim_lines_outside_content bigint, allowed_cents_outside_content bigint, heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text, consent_sha256 text, terms_sha256 text, received timestamp with time zone, rate_account_subject text, request text)
+CREATE OR REPLACE FUNCTION public.submit_screening(practice text, state_code text, zip5 text, plus_four text, email text, codes text[], modifier_sets text[], unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[], rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, rows_outside_content integer, claim_lines_outside_content bigint, allowed_cents_outside_content bigint, heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text, consent_sha256 text, terms_sha256 text, received timestamp with time zone, rate_account_subject text, request text, client_subject text DEFAULT NULL::text)
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -109,9 +109,9 @@ BEGIN
     RETURNING id
   ), run AS (
     INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count, received_at, rate_subject,
-                               wait_reason, queue_priority)
+                               wait_reason, queue_priority, client_subject)
     SELECT upload.id, in_force, manifest, split, n, least(greatest(coalesce(received, now()), now() - interval '10 minutes'), now()), rate_account_subject,
-           tier.wait_reason, tier.queue_priority
+           tier.wait_reason, tier.queue_priority, client_subject
       FROM upload, screening_queue_tier(rate_account_subject, n) tier
     RETURNING id, wait_reason
   ), tallied AS (
@@ -166,6 +166,6 @@ BEGIN
   RETURN created;
 END;
 $function$;
-ALTER FUNCTION public.submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text) OWNER TO tp_owner;
-REVOKE ALL ON FUNCTION public.submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text) TO tp_app;
+ALTER FUNCTION public.submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text) OWNER TO tp_owner;
+REVOKE ALL ON FUNCTION public.submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text) TO tp_app;

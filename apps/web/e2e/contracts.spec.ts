@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Page, type Request, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { SYNTHETIC_PRACTICES, personaEmail } from '../scripts/synthetic-personas';
-import { atPhoneWidth } from './a11y';
+import { atPhoneWidth, selectShows } from './a11y';
 import { practiceId, refusal, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { startLocalWorker } from './worker';
 
@@ -71,7 +71,81 @@ test('a contract abstracted by hand, approved and signed off becomes the version
   await test.step('the billing manager uploads the agreement and tags it to its payer', async () => {
     const response = await page.goto(`/p/${other}/contracts`);
     expect(response?.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
-    await uploadContract(page, 'version-1.pdf');
+    // The panel offers several kinds, starts with none and says a kind cannot be changed once uploaded (docs/adr/0070,
+    // Part 3): a file dropped or chosen before the kind is kept in this browser, the kind select is marked, described
+    // and focused, and nothing is uploaded until the person chooses the kind and presses Upload, so a payer letter is
+    // never filed as a contract by default, nor by an arrow key on the select (the PR #75 review's UX-1).
+    const panel = page.getByRole('region', { name: 'Upload a contract, exhibit or payer’s terms or policy letter' });
+    const kind = panel.getByLabel('Kind of document');
+    await expect(kind).toHaveValue('');
+    await expect(kind).toHaveAccessibleDescription('A document’s kind cannot be changed once it is uploaded.');
+    // The select keeps its width while the words under it come and go, and shows its placeholder whole, at a phone's
+    // width too, where it is 16 px, refused or not (the merged #74 shots' M4-1 and M4-3; docs/adr/0077, D6).
+    const unrefused = await selectShows(kind);
+    expect(unrefused).toMatchObject({ text: 'Choose a kind', cut: false });
+    const wide = page.viewportSize();
+    const atPhone = async (check: () => Promise<void>) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      try {
+        await check();
+      } finally {
+        if (wide !== null) {
+          await page.setViewportSize(wide);
+        }
+      }
+    };
+    await atPhone(async () => {
+      await expect.poll(() => selectShows(kind)).toMatchObject({ text: 'Choose a kind', cut: false });
+    });
+    const requested: string[] = [];
+    const onRequest = (request: Request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/uploads/request')) {
+        requested.push(request.url());
+      }
+    };
+    page.on('request', onRequest);
+    const agreement = { name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(path.join(FIXTURES, 'CON-01', 'version-1.pdf')) };
+    const dropped = await page.evaluateHandle(() => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(['%PDF-1.4 SYNTHETIC'], 'dropped.pdf', { type: 'application/pdf' }));
+      return transfer;
+    });
+    await panel.getByRole('region', { name: 'Choose contracts, exhibits or payer’s terms or policy letters to upload' }).dispatchEvent('drop', { dataTransfer: dropped });
+    const waiting = panel.getByRole('group', { name: /^Waiting to upload/ });
+    await expect(waiting).toContainText('dropped.pdf');
+    await expect(kind).toBeFocused();
+    await expect(kind).toHaveAttribute('aria-invalid', 'true');
+    await expect(kind).toHaveAccessibleDescription(/^Choose the kind of document for this file, then upload it\. A document’s kind cannot be changed/);
+    expect(await selectShows(kind)).toEqual(unrefused);
+    await atPhone(async () => {
+      await expect.poll(() => selectShows(kind)).toMatchObject({ text: 'Choose a kind', cut: false });
+    });
+    await expect(kind).toBeFocused();
+    // A second choice joins the first and changes the words under the select, so they are announced again.
+    await panel.getByLabel('Choose files to upload').setInputFiles([agreement]);
+    await expect(waiting).toContainText('version-1.pdf');
+    await expect(panel.locator('#upload-kind-error')).toHaveText('Choose the kind of document for these 2 files, then upload them.');
+    // Clear: neither is uploaded (the SYNTHETIC dropped.pdf is not the agreement), and focus goes back to Choose files.
+    await waiting.getByRole('button', { name: 'Clear' }).click();
+    await expect(waiting).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Choose files', exact: true })).toBeFocused();
+    await expect(kind).not.toHaveAttribute('aria-invalid', 'true');
+    // The agreement chosen before its kind, then the kind: the choice starts nothing; Upload sends it as a contract.
+    await panel.getByLabel('Choose files to upload').setInputFiles([agreement]);
+    await kind.selectOption('contract');
+    await expect(panel.locator('#upload-kind-error')).toHaveCount(0);
+    await expect(waiting.getByRole('button', { name: 'Upload 1 file' })).toBeVisible();
+    expect(await selectShows(kind)).toEqual({ ...unrefused, text: 'Contract' });
+    expect(requested).toEqual([]);
+    await expect(panel.getByRole('region', { name: 'This batch' })).toHaveCount(0);
+    await uploadWithWorker(page, async () => {
+      await waiting.getByRole('button', { name: 'Upload 1 file' }).click();
+      const batch = panel.getByRole('region', { name: 'This batch' });
+      await expect(batch).toBeFocused();
+      await expect(batch.getByRole('listitem').filter({ hasText: 'version-1.pdf' })).toContainText('Stored', { timeout: 90_000 });
+    });
+    page.off('request', onRequest);
+    expect(requested).toHaveLength(1);
     const untagged = page.getByRole('list', { name: 'Untagged documents' }).getByRole('listitem');
     await expect(untagged).toHaveCount(1, { timeout: 30_000 });
     await untagged.getByLabel('Payer').selectOption({ label: 'SYNTHETIC PAYER C' });
@@ -188,7 +262,10 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     await page.getByLabel('Contract version (for a contract mapping)').selectOption({ label: 'SYNTHETIC PAYER C AGREEMENT, version 1 (2026-01-01 through 2026-12-31)' });
     await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
     await page.getByRole('button', { name: 'Save the mapping' }).click();
-    await expect(page.locator('[data-notice="mapped"]')).toBeVisible();
+    // Whether this mapping completes March here, and so queues its monitoring (combined audit #32, D2b), depends on what
+    // other specs have loaded into, and set on, the shared practice by now (pricing.spec sets its billing ZIP): either
+    // notice is right. mapping.spec asserts D2b's notices exactly, in a practice of its own.
+    await expect(page.locator('[data-notice="mapped"], [data-notice="mapped_pricing"]')).toBeVisible();
     const resolution = page.getByRole('table', { name: 'Agreement resolution' }).getByRole('row').filter({ hasText: 'Priced from the contract’s rate record' });
     await expect(resolution).toContainText('SYNTHETIC PAYER C AGREEMENT, version 1');
     await expect(resolution).toContainText('Signed off');

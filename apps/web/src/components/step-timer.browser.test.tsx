@@ -123,9 +123,13 @@ async function rerender(page: Page, next: Partial<PageKeys>): Promise<void> {
   }, next);
 }
 
-/** Waits until the page's forms have shown `count` responses (the harness counts each summary on body[data-shown]). */
+/**
+ * Waits until the page's forms have shown at least `count` responses (the harness counts each summary on body[data-shown]).
+ * At least, never exactly: the count can move past `count` between two of Playwright's polls, and an exact wait would then
+ * never end. A test that needs exactly `count` asserts it once the page has settled.
+ */
 async function shownCount(page: Page, count: number): Promise<void> {
-  await page.waitForSelector(`body[data-shown="${String(count)}"]`, { state: 'attached' });
+  await page.waitForFunction((n) => Number(document.body.dataset.shown ?? '0') >= n, count, { timeout: 10_000 });
 }
 
 describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the browser', { timeout: 30_000 }, () => {
@@ -335,6 +339,8 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await shownCount(page, 1);
     expect(await focused(page)).toBe('refusal-summary');
     expect(await said(page)).toEqual(['', WARNING]);
+    // Settled: one refusal, one summary shown.
+    expect(await page.locator('body').getAttribute('data-shown')).toBe('1');
     await page.close();
 
     // A refusal before the warning: the field it focused keeps the focus when the warning comes.
@@ -344,6 +350,7 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await before.locator(SUBMIT).click();
     await shownCount(before, 1);
     expect(await focused(before)).toBe('field-code');
+    expect(await before.locator('body').getAttribute('data-shown')).toBe('1');
     await before.clock.runFor('02:02');
     await reached(before, 'warning');
     expect(await focused(before)).toBe('field-code');
@@ -417,6 +424,26 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     });
     await rerender(page, { closesAt: 2 });
     await page.waitForFunction(() => document.activeElement?.getAttribute('data-slot') === 'arrival-focus');
+    await page.close();
+  });
+
+  it('SGN-06: a step with its own words and no Start again (the reset’s) says only those words, with no form and no pending row (review UXR-01, UXR-02)', async () => {
+    const page = await harness.open('resetTimer', { clock: START });
+    await reached(page, 'open');
+    await record(page);
+    await page.clock.runFor('02:02');
+    await reached(page, 'warning');
+    expect(await said(page)).toEqual(['', 'This step closes within a minuteSYNTHETIC warning words.']);
+    expect(await page.locator(`${REGION} form`).count()).toBe(0);
+    expect(await page.locator('[data-slot="restart-pending"]').count()).toBe(0);
+    await page.clock.runFor('01:00');
+    await reached(page, 'closed');
+    expect(await said(page)).toEqual(['', 'This step closes within a minuteSYNTHETIC warning words.', 'This step has closedSYNTHETIC closed words.']);
+    expect(await page.locator(`${REGION} form, ${REGION} button`).count()).toBe(0);
+    expect(await page.locator('[data-slot="restart-pending"]').count()).toBe(0);
+    // The status is the same polite atomic region.
+    expect(await page.locator(REGION).getAttribute('role')).toBe('status');
+    expect(await page.locator(REGION).getAttribute('aria-atomic')).toBe('true');
     await page.close();
   });
 });

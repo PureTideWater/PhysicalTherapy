@@ -1,0 +1,22 @@
+{
+  "case": "SGN-08",
+  "module": "SGN",
+  "title": "Every sign-in step has a way forward",
+  "assertion": "The sign-in page lists help as a list with a reset link that names itself, the code and key steps say where to write about a lost factor from the address one signs in with, the locked words name the support address in the refusal, the key page and the notice, and a closed hardware-key step returns to the key page; the reset page in both phases, the sign-in page, the code step and the key step pass axe (WCAG 2.1 A and AA) at 1280 and 390 px",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/app/sign-in/notice.test.tsx",
+    "apps/web/e2e/sign-in.spec.ts",
+    "apps/web/e2e/sign-in-time.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas reach the code and key steps through the local identity provider; the support address is the synthetic one; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

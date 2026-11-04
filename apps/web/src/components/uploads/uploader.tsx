@@ -2,12 +2,14 @@
 
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
 
+import { counted } from '../../lib/copy/words';
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, type ReportFrom, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
 import { DownloadLinks } from '../download-link';
-import { Hint } from '../field';
+import { Hint, controlMarks } from '../field';
+import { FieldError } from '../form-issues';
 import { FormatUnconfirmedBadge } from './format-flag';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
@@ -15,9 +17,24 @@ import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
  * The Uploads screen's drop zone and batch progress (PRD 5, J4; PRD 7, Uploads). The browser asks the
  * server for one upload URL per file, PUTs each file straight to it (S3, or the local receiver), and
  * reports each PUT complete; the server's receipts then take over. File names stay in this browser:
- * they are shown here while the batch uploads and never sent anywhere. Until every file of the batch is sent, leaving
- * the page (a reload, a typed address, closing the tab) asks first, since it would cut the uploads off; a receipt's
- * report downloads in place, so it never does (docs/adr/0079).
+ * they are shown here while the batch uploads and never sent anywhere. Until every file of the batch is sent, and
+ * while any file waits to upload, leaving the page (a reload, a typed address, closing the tab) asks first, since it
+ * would cut the uploads off or drop the files chosen; a receipt's report downloads in place, so it never does
+ * (docs/adr/0079; leaveAsks).
+ *
+ * Files dropped or chosen before the panel can file them (no kind chosen, or an ERA export with no system chosen) are
+ * kept here and wait, listed by name, with nothing sent: the select that waits is marked invalid, described by what to
+ * do and focused, and once the choice is made the files upload when the person presses Upload, never on the select's
+ * change, since an arrow key on a closed select changes it once a press and a kind, once recorded, never changes
+ * (docs/adr/0070, Part 3; the PR #75 review's UX-1, which closes the baseline's UX-049 for the ERA system too).
+ *
+ * It may sit inside a form (the payer's letter in "Log a payer response"; docs/adr/0085, D3): every button is
+ * type="button" and no control has a name, so the form never posts the file or anything of the uploader's; its
+ * requests make their own keys and carry the page's CSRF token, never the form's; `headingLevel` puts its headings one
+ * level below the form's card; and `onBatchChange` tells the form of its batch, so the form marks itself touched even
+ * for a dropped file and holds a press while the file uploads and is scanned. The form's remount for another person
+ * clears the batch with the fields. There too the leave guard asks while the letter is being sent or waits to upload
+ * (leaveAsks): a Retry re-arms it, and the form's press, held until the file is sent, never meets it.
  */
 
 interface UploadTarget {
@@ -56,22 +73,55 @@ export interface UploadKind {
   readonly formats?: readonly UploadFormat[];
 }
 
+/** What a batch holds, for the form the uploader sits in (onBatchChange). */
+export interface BatchReport {
+  /** The files the batch row shows. */
+  readonly size: number;
+  /** Whether any file is waiting, uploading or completing, or is sent with its receipt not settled. */
+  readonly inFlight: boolean;
+  /** The receipts of the batch's sent files that have settled. */
+  readonly settled: readonly Receipt[];
+}
+
+type BatchReportListener = (batch: BatchReport) => void;
+
 export interface UploaderProps {
   readonly practiceId: string;
   readonly canUpload: boolean;
   /** The session's CSRF token, sent with every request this form makes (docs/adr/0053). */
   readonly csrfToken: string;
   readonly roleNames: string;
-  readonly gate: { readonly open: boolean; readonly reason: string | null };
+  /** Whether uploads are open, and when not, a title true to the state and the reason (lib/routes/uploads.ts uploadGate(): the BAA, then a hold on the person's uploads, docs/adr/0080, 0085). */
+  readonly gate: { readonly open: boolean; readonly title: string | null; readonly reason: string | null };
+  /**
+   * The batch's limits. `contentTypes` is every type the drop zone takes: the 835's when `kinds` is absent, else every
+   * offered kind's together. A file's declared type is always checked against the chosen kind's own types.
+   */
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
   /** The kinds a person chooses between (contracts, exhibits, payer letters); 835s when absent. */
   readonly kinds?: readonly UploadKind[];
+  /**
+   * The kind the panel starts with, when one of several offered is the screen's own (the Uploads page's 835, whose
+   * heading names it; its other kind, an ERA export, needs a second, explicit choice of format). Absent, a panel that
+   * offers more than one kind starts with none (startingKind).
+   */
+  readonly initialKind?: string;
   readonly heading?: string;
   readonly description?: string;
   /** Who uploads, for the permission state. */
   readonly uploaders?: string;
   /** Whether the practice's receipts are listed below the drop zone. */
   readonly showReceipts?: boolean;
+  /** Told whenever the batch's size, whether it is in flight, or its settled receipts change. */
+  readonly onBatchChange?: BatchReportListener;
+  /**
+   * One file of the one kind offered, never several, a zip or another type: anything else is refused here with
+   * `refusal`, before any request. An empty or oversized file is refused in one file's words, never the batch's "File
+   * 1" or "split it or zip it", which this mode refuses; `tooLarge` names the next step for the caller's kind.
+   */
+  readonly single?: SingleFile;
+  /** The level of the drop zone's heading and the batch's title: 3 inside a form under a card's title (2 by default). */
+  readonly headingLevel?: 2 | 3;
   /** The page the receipts are listed on, as their report links name it (?from=), so a refused report comes back there. */
   readonly reportFrom?: ReportFrom;
   /**
@@ -81,11 +131,200 @@ export interface UploaderProps {
   readonly receiptsNotice?: ReactNode;
 }
 
+/** The kind a panel without `kinds` takes: an 835, with the limits' types. */
+const DEFAULT_835 = { kind: 'x12_835', label: '835 remittance' } as const;
+
+/**
+ * The kind select's first, disabled option, shown while no kind is chosen, under the label "Kind of document": short
+ * enough to show whole in the drop zone's column at a phone's width, where controls are 16 px (docs/adr/0077, D6).
+ */
+export const CHOOSE_KIND_PLACEHOLDER = 'Choose a kind';
+
+/**
+ * The kind's and the ERA export system's field: as wide as the drop zone's column, up to the 28rem of the app's
+ * one-column forms (`max-w-md`), whatever is written under it. The drop zone sizes its other children to their content,
+ * so a field that did too would take the width of its widest line, and its select would widen when the words under it
+ * came and narrow when they went. The words and the help wrap inside the field.
+ */
+const FIELD_BOX = 'flex w-full min-w-0 max-w-md flex-col gap-1';
+
+/** The field's select: the field's whole width, so the kind's and the system's line up and neither follows its words. */
+const FIELD_SELECT = 'h-9 w-full rounded-md border bg-background px-2 text-sm';
+
+/** The kind select's help, under it on every panel that offers kinds: a kind is the person's choice before the upload (UX-4). */
+export const KIND_HELP = 'A document’s kind cannot be changed once it is uploaded.';
+
+/** The ERA export's system select's help, under it. */
+const FORMAT_HELP = 'The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.';
+
+/** A file as the panel weighs it: what the browser says of it, and when it last changed (File's own fields). */
+interface ChosenFile {
+  readonly name: string;
+  readonly type: string;
+  readonly size: number;
+  readonly lastModified: number;
+}
+
+/** What a panel waits for before its files can upload: the kind, or an ERA export's system (its format). */
+export type Waiting = 'kind' | 'format';
+
+/**
+ * What the panel waits for: the kind while none is chosen (a panel of several kinds that names none: startingKind),
+ * else, for a kind read with a system's layout (an ERA export), the system while none is chosen, else nothing. Each is
+ * recorded with the document for good, and decides what reads it (a contract's terms may go to the model), so each is
+ * the person's choice before the upload, never a default.
+ */
+export function waitingFor(kind: UploadKind | null, format: UploadFormat | undefined): Waiting | null {
+  if (kind === null) {
+    return 'kind';
+  }
+  return kind.formats !== undefined && format === undefined ? 'format' : null;
+}
+
+/** What the select that waits says, under it: the choice to make for the files waiting, then the upload. */
+export function waitingText(waiting: Waiting, count: number): string {
+  const these = count === 1 ? 'this file' : `these ${counted(count, 'file')}`;
+  const them = count === 1 ? 'it' : 'them';
+  return waiting === 'kind' ? `Choose the kind of document for ${these}, then upload ${them}.` : `Choose which system’s ERA export ${these} ${count === 1 ? 'is' : 'are'}, then upload ${them}.`;
+}
+
+/** One file, dropped or chosen again: the same name, size and last change. */
+function fileKey(file: Pick<ChosenFile, 'name' | 'size' | 'lastModified'>): string {
+  return `${file.name}\u0000${String(file.size)}\u0000${String(file.lastModified)}`;
+}
+
+/** The files waiting, with those chosen now that are not already among them, in the order they came. */
+export function heldWith<T extends Pick<ChosenFile, 'name' | 'size' | 'lastModified'>>(held: readonly T[], chosen: readonly T[]): T[] {
+  const seen = new Set(held.map(fileKey));
+  const added = chosen.filter((file) => {
+    const key = fileKey(file);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  return [...held, ...added];
+}
+
+/** What a drop or a choice of files does: start the batch, keep the files waiting (focusing what they wait for), or refuse them. */
+export type ChosenStep<T> =
+  | { readonly step: 'start'; readonly files: readonly T[] }
+  | { readonly step: 'hold'; readonly held: readonly T[]; readonly focus: Waiting | 'upload' | null }
+  | { readonly step: 'refuse'; readonly problems: readonly string[] };
+
+/**
+ * What files dropped or chosen now do, beside those already waiting. A batch's own problems (batchProblems), or more
+ * files waiting than a batch takes, refuse the files chosen now and keep what waits. Otherwise, on a panel with
+ * nothing to wait for and nothing waiting, the batch starts at once, as it always has; else the files join those
+ * waiting, a file dropped again held once (heldWith), and focus goes to what they wait for, or to Upload. A batch
+ * never starts but by the person's Upload once a file waits.
+ */
+export function afterChoosing<T extends ChosenFile>(
+  held: readonly T[],
+  chosen: readonly T[],
+  kind: UploadKind | null,
+  format: UploadFormat | undefined,
+  limits: { readonly maxFiles: number; readonly maxBytes: number },
+  single?: SingleFile,
+): ChosenStep<T> {
+  if (chosen.length === 0) {
+    return { step: 'hold', held, focus: null };
+  }
+  const waiting = waitingFor(kind, format);
+  const merged = heldWith(held, chosen);
+  const found = batchProblems(chosen, kind, limits, single);
+  // More waiting than a batch takes: in single mode, a second file beside the one waiting is the one refusal.
+  const most = single === undefined ? limits.maxFiles : 1;
+  if (merged.length > most && chosen.length <= most) {
+    found.unshift(single === undefined ? tooMany(limits) : single.refusal);
+  }
+  if (found.length > 0) {
+    return { step: 'refuse', problems: found };
+  }
+  if (waiting === null && held.length === 0) {
+    return { step: 'start', files: chosen };
+  }
+  return { step: 'hold', held: merged, focus: waiting ?? 'upload' };
+}
+
+/** The refusal of more files than a batch takes, counted as the panel counts files (counted). */
+function tooMany(limits: { readonly maxFiles: number }): string {
+  return `At most ${counted(limits.maxFiles, 'file')} at once; zip the rest and upload the zip.`;
+}
+
+/**
+ * The kind a panel starts with: the one the page names, else the only one offered, else an 835 when none is offered.
+ * A panel that offers more than one kind and names none starts with none, so the person chooses: a payer letter or an
+ * EOB dropped onto the Contracts screen is never filed as a contract by default, which the contract terms reader would
+ * then send to the model (docs/adr/0070, Part 3; design 5.9). A named kind that is not offered starts with none too.
+ * A kind, once recorded on a document, never changes, so the choice is the person's before the upload, not after.
+ */
+export function startingKind(kinds: readonly UploadKind[] | undefined, initialKind: string | undefined, contentTypes: readonly string[]): UploadKind | null {
+  if (kinds === undefined) {
+    return { ...DEFAULT_835, contentTypes };
+  }
+  if (initialKind !== undefined) {
+    return kinds.find((candidate) => candidate.kind === initialKind) ?? null;
+  }
+  return kinds.length === 1 ? (kinds[0] ?? null) : null;
+}
+
+/** The uploader's single mode (UploaderProps.single): one file of the one kind offered, refused in the caller's words. */
+export interface SingleFile {
+  readonly refusal: string;
+  readonly tooLarge: (limit: string) => string;
+}
+
+/**
+ * What stops a batch before the server is asked for anything, each in the uploader's words: too many files; and, file
+ * by file by its place in the batch, an empty file, one too large, or a spreadsheet chosen as a CSV-only export
+ * (docs/adr/0059 and 0060). Names no file: names stay in this browser. A choice still to make (the kind, an ERA
+ * export's system) is no problem of the batch's: the files wait for it (waitingFor). In single mode (`single`), more
+ * than one file, a zip (whose entries would become documents of their own) or a type the kind does not take is refused
+ * with the caller's words, and an empty or oversized file in one file's words, never "File 1" or "split it or zip it".
+ */
+export function batchProblems(
+  chosen: readonly { readonly name: string; readonly type: string; readonly size: number }[],
+  kind: UploadKind | null,
+  limits: { readonly maxFiles: number; readonly maxBytes: number },
+  single?: SingleFile,
+): string[] {
+  const found: string[] = [];
+  if (single !== undefined) {
+    if (chosen.length > 1 || (kind !== null && chosen.some((file) => !kind.contentTypes.includes(declaredType(file, kind.contentTypes))))) {
+      found.push(single.refusal);
+    }
+  } else if (chosen.length > limits.maxFiles) {
+    found.push(tooMany(limits));
+  }
+  chosen.forEach((file, index) => {
+    // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
+    const spreadsheet = kind === null ? null : spreadsheetExportProblem(kind.kind, file, index + 1);
+    if (file.size === 0) {
+      found.push(single === undefined ? `File ${String(index + 1)} is empty.` : 'The file is empty.');
+    } else if (file.size > limits.maxBytes) {
+      found.push(single === undefined ? `File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.` : single.tooLarge(formatBytes(limits.maxBytes)));
+    } else if (spreadsheet !== null) {
+      found.push(spreadsheet);
+    }
+  });
+  return found;
+}
+
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
 const CONCURRENT_PUTS = 3;
+/**
+ * The upload's bar, in the brand's tokens (the primary ink on the muted track), never the browser's own green, which
+ * reads as a status colour (done, clean) while the file is still scanned.
+ */
+const PROGRESS_CLASSES =
+  'h-2 w-40 appearance-none overflow-hidden rounded-full bg-muted accent-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:bg-primary';
+/** CardTitle's classes, for the batch's title at level 3 (CardTitle renders an <h2> only). */
+const CARD_TITLE_CLASSES = 'text-lg font-bold leading-snug tracking-display';
 
 /** The type a file is declared as: what the browser says when it is one an 835 may be, else generic. */
-function declaredType(file: File, allowed: readonly string[]): string {
+function declaredType(file: { readonly name: string; readonly type: string }, allowed: readonly string[]): string {
   if (ZIP_TYPES.has(file.type) || file.name.toLowerCase().endsWith('.zip')) {
     return 'application/zip';
   }
@@ -120,8 +359,20 @@ export function stillSending(batch: readonly { readonly phase: Phase }[]): boole
 }
 
 /**
+ * Whether leaving the page asks first: while a file of the batch is still being sent (stillSending), or while any file
+ * waits to upload (`held`, the files dropped or chosen and kept here for a kind, a system or Upload). A file that waits
+ * is work a reload would lose as surely as one in flight: the person chose it, maybe chose its kind and system too, and
+ * nothing of it has reached the server, so no receipt would show it after the reload (docs/adr/0079, 4, which guards a
+ * page that holds what a reload would lose). Once nothing waits and each file is sent or failed, leaving asks nothing.
+ */
+export function leaveAsks(batch: readonly { readonly phase: Phase }[], held: number): boolean {
+  return held > 0 || stillSending(batch);
+}
+
+/**
  * While active, leaving the page asks first (the browser's own question, before it unloads): an upload in flight ends
- * with its page. A move inside the app keeps the page's script running, and the batch with it, so it never asks.
+ * with its page, and so do the files waiting to upload (leaveAsks). A move inside the app keeps the page's script
+ * running, and the batch with it, so it never asks.
  */
 function useLeaveGuard(active: boolean): void {
   useEffect(() => {
@@ -172,19 +423,153 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
   });
 }
 
+/**
+ * The kind select, its label, what it waits for and its help (UX-1, UX-4). While files wait for the kind, the select is
+ * marked invalid and described first by what to do, then by its help, as every refused field is (controlMarks, the
+ * shared FieldError and Hint; docs/adr/0077, D3 and D9): the words under it in an alert, re-inserted at each attempt
+ * (`attempt`) so a second drop of the same files is announced too. The select keeps its width while those words come
+ * and go (FIELD_BOX). The select's change only sets the kind: nothing uploads on it.
+ */
+export function KindField({
+  kinds,
+  kind,
+  startedUnchosen,
+  problem,
+  attempt,
+  onChange,
+  selectRef,
+}: {
+  readonly kinds: readonly UploadKind[];
+  readonly kind: UploadKind | null;
+  /** Whether the panel started with no kind: the select then leads with the disabled placeholder. */
+  readonly startedUnchosen: boolean;
+  /** What to do while files wait for the kind (waitingText), else null. */
+  readonly problem: string | null;
+  readonly attempt: number;
+  readonly onChange: (kind: UploadKind) => void;
+  readonly selectRef: RefObject<HTMLSelectElement | null>;
+}) {
+  return (
+    <div className={FIELD_BOX}>
+      <label htmlFor="upload-kind" className="text-sm font-medium">
+        Kind of document
+      </label>
+      <select
+        ref={selectRef}
+        id="upload-kind"
+        value={kind?.kind ?? ''}
+        required
+        {...controlMarks('upload-kind', { error: problem ?? undefined, hint: KIND_HELP })}
+        onChange={(event) => {
+          const chosen = kinds.find((candidate) => candidate.kind === event.target.value);
+          if (chosen !== undefined) {
+            onChange(chosen);
+          }
+        }}
+        className={FIELD_SELECT}
+      >
+        {startedUnchosen ? (
+          <option value="" disabled>
+            {CHOOSE_KIND_PLACEHOLDER}
+          </option>
+        ) : null}
+        {kinds.map((candidate) => (
+          <option key={candidate.kind} value={candidate.kind}>
+            {candidate.label}
+          </option>
+        ))}
+      </select>
+      {problem === null ? null : (
+        <div key={attempt} role="alert">
+          <FieldError id="upload-kind" error={problem} />
+        </div>
+      )}
+      <Hint id="upload-kind" hint={KIND_HELP} />
+    </div>
+  );
+}
+
+/**
+ * The files waiting, by name (names stay in this browser), and what to do with them: Upload, once nothing waits for a
+ * choice (`ready`), and Clear. Upload is the one way a waiting file is sent.
+ */
+export function HeldFiles({
+  files,
+  ready,
+  onUpload,
+  onClear,
+  uploadRef,
+}: {
+  readonly files: readonly Pick<ChosenFile, 'name' | 'size' | 'lastModified'>[];
+  readonly ready: boolean;
+  readonly onUpload: () => void;
+  readonly onClear: () => void;
+  readonly uploadRef: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <div role="group" aria-labelledby="upload-held-title" className="flex min-w-0 max-w-full flex-col gap-2">
+      <p id="upload-held-title" className="text-sm font-medium">
+        {`Waiting to upload: ${counted(files.length, 'file')}`}
+      </p>
+      <ul className="flex max-w-prose flex-col gap-1 break-all text-xs">
+        {files.map((file) => (
+          <li key={fileKey(file)}>{file.name}</li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        {ready ? (
+          <Button ref={uploadRef} type="button" onClick={onUpload}>
+            {`Upload ${counted(files.length, 'file')}`}
+          </Button>
+        ) : null}
+        <Button type="button" variant="outline" onClick={onClear}>
+          Clear
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Uploader(props: UploaderProps) {
-  const { practiceId, canUpload, gate, limits, kinds, csrfToken } = props;
+  const { practiceId, canUpload, gate, limits, kinds, csrfToken, onBatchChange, single } = props;
+  const Heading = props.headingLevel === 3 ? 'h3' : 'h2';
+  /** The drop zone's heading, which names its region: what it is for on that page, never "Drop zone". */
+  const headingId = useId();
   const router = useRouter();
-  const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
+  /** The kind chosen; none, on a panel of several kinds the page does not choose between, until the person chooses. */
+  const [kind, setKind] = useState<UploadKind | null>(() => startingKind(kinds, props.initialKind, limits.contentTypes));
+  /** Whether the panel started with no kind: its select then leads with the disabled placeholder. */
+  const [startedUnchosen] = useState(kind === null);
   /** The format chosen for a kind that has formats (an ERA export); none until the person chooses. */
   const [formatId, setFormatId] = useState('');
-  const format = kind.formats?.find((candidate) => candidate.id === formatId);
+  const format = kind?.formats?.find((candidate) => candidate.id === formatId);
   const [batch, setBatch] = useState<BatchFile[]>([]);
   const [problems, setProblems] = useState<string[]>([]);
+  /** Files dropped or chosen that wait for a choice or for Upload: kept in this browser, nothing sent. */
+  const [held, setHeld] = useState<readonly File[]>([]);
+  /** Each drop or choice that leaves files waiting, so the words under the select are announced every time. */
+  const [attempt, setAttempt] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, Receipt>>(new Map());
   const input = useRef<HTMLInputElement>(null);
+  const kindSelect = useRef<HTMLSelectElement>(null);
+  const formatSelect = useRef<HTMLSelectElement>(null);
+  const uploadButton = useRef<HTMLButtonElement>(null);
+  const chooseButton = useRef<HTMLButtonElement>(null);
+  const batchCard = useRef<HTMLDivElement>(null);
+  /** Where focus goes once the next render is drawn: never left on a control that went away (WCAG 2.4.3). */
+  const focusNext = useRef<Waiting | 'upload' | 'choose' | 'batch' | null>(null);
+
+  useEffect(() => {
+    const target = focusNext.current;
+    if (target === null) {
+      return;
+    }
+    focusNext.current = null;
+    const element = { kind: kindSelect, format: formatSelect, upload: uploadButton, choose: chooseButton, batch: batchCard }[target].current;
+    element?.focus();
+  });
 
   const update = useCallback((key: string, change: Partial<BatchFile>) => {
     setBatch((files) => files.map((item) => (item.key === key ? { ...item, ...change } : item)));
@@ -211,27 +596,9 @@ export function Uploader(props: UploaderProps) {
 
   const start = useCallback(
     async (chosen: readonly File[]) => {
-      const found: string[] = [];
-      if (chosen.length > limits.maxFiles) {
-        found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
-      }
-      // An ERA export is read with its system's layout, so the person says which system's export it is first.
-      if (kind.formats !== undefined && format === undefined && chosen.length > 0) {
-        found.push('Choose which system’s ERA export the files are, then choose the files again.');
-      }
-      chosen.forEach((file, index) => {
-        // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
-        const spreadsheet = spreadsheetExportProblem(kind.kind, file, index + 1);
-        if (file.size === 0) {
-          found.push(`File ${String(index + 1)} is empty.`);
-        } else if (file.size > limits.maxBytes) {
-          found.push(`File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.`);
-        } else if (spreadsheet !== null) {
-          found.push(spreadsheet);
-        }
-      });
+      const found = batchProblems(chosen, kind, limits, single);
       setProblems(found);
-      if (found.length > 0 || chosen.length === 0) {
+      if (found.length > 0 || chosen.length === 0 || waitingFor(kind, format) !== null || kind === null) {
         return;
       }
       const items: BatchFile[] = chosen.map((file) => ({ key: crypto.randomUUID(), file, phase: 'waiting', progress: 0 }));
@@ -244,6 +611,9 @@ export function Uploader(props: UploaderProps) {
       } catch (error) {
         setProblems([(error as Error).message]);
         setBatch([]);
+        // A refusal keeps the files: they wait again, for Upload or Clear.
+        setHeld((waitingNow) => heldWith(chosen, waitingNow));
+        focusNext.current = 'upload';
         return;
       }
       const queue = items.map((item, index) => ({ item, document: answer.documents[index] }));
@@ -256,7 +626,7 @@ export function Uploader(props: UploaderProps) {
       });
       await Promise.all(workers);
     },
-    [csrfToken, format, kind, limits, practiceId, send],
+    [csrfToken, format, kind, limits, practiceId, send, single],
   );
 
   const retry = useCallback(
@@ -293,6 +663,21 @@ export function Uploader(props: UploaderProps) {
       router.refresh();
     }
   }, [router, settledAll]);
+  // What the batch holds, for the form the uploader sits in: told when it changes, not on each poll of the receipts.
+  const inFlight = pending || stillSending(batch);
+  const settledReceipts = sentIds.flatMap((id) => {
+    const receipt = receipts.get(id);
+    return receipt !== undefined && receiptState(receipt).settled ? [receipt] : [];
+  });
+  const reported = useRef<{ readonly to: BatchReportListener; readonly words: string } | null>(null);
+  useEffect(() => {
+    const words = `${String(batch.length)}|${String(inFlight)}|${settledReceipts.map((receipt) => `${receipt.documentId}:${receipt.status}`).join(',')}`;
+    if (onBatchChange === undefined || (reported.current?.to === onBatchChange && reported.current.words === words)) {
+      return;
+    }
+    reported.current = { to: onBatchChange, words };
+    onBatchChange({ size: batch.length, inFlight, settled: settledReceipts });
+  }, [onBatchChange, batch.length, inFlight, settledReceipts]);
   useEffect(() => {
     if (!pending) {
       return undefined;
@@ -312,12 +697,51 @@ export function Uploader(props: UploaderProps) {
     };
   }, [pending, practiceId, receipts, watched]);
 
-  useLeaveGuard(stillSending(batch));
+  /** What the files waiting wait for, if anything (waitingFor). */
+  const waiting = waitingFor(kind, format);
+  /** What the ERA system select says while files wait for it (waitingText), else nothing. */
+  const formatProblem = held.length > 0 && waiting === 'format' ? waitingText('format', held.length) : undefined;
+
+  /** A drop or a choice of files: started, kept waiting, or refused (afterChoosing). */
+  const choose = (chosen: readonly File[]) => {
+    const next = afterChoosing(held, chosen, kind, format, limits, single);
+    if (next.step === 'start') {
+      void start(next.files);
+    } else if (next.step === 'refuse') {
+      setProblems([...next.problems]);
+    } else if (chosen.length > 0) {
+      setProblems([]);
+      setHeld(next.held);
+      setAttempt((count) => count + 1);
+      focusNext.current = next.focus;
+    }
+  };
+
+  /** Upload: the files waiting, under the kind (and system) now chosen; a problem keeps them waiting. */
+  const uploadHeld = () => {
+    const found = batchProblems(held, kind, limits, single);
+    if (found.length > 0 || waiting !== null) {
+      setProblems(found);
+      return;
+    }
+    const files = held;
+    setHeld([]);
+    focusNext.current = 'batch';
+    void start(files);
+  };
+
+  const clearHeld = () => {
+    setHeld([]);
+    setProblems([]);
+    focusNext.current = 'choose';
+  };
+
+  useLeaveGuard(leaveAsks(batch, held.length));
 
   const onDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     setDragging(false);
-    void start([...event.dataTransfer.files]);
+    choose([...event.dataTransfer.files]);
   };
 
   const sent = batch.filter((item) => item.phase === 'sent').length;
@@ -333,12 +757,12 @@ export function Uploader(props: UploaderProps) {
         <PermissionState role={props.roleNames} cannot="upload files" nextStep={props.uploaders ?? 'Billing managers, analysts and firm principals upload; you can read the receipts below.'} />
       ) : !gate.open ? (
         <Alert data-state="disabled" role="note">
-          <AlertTitle>Uploads are not open yet</AlertTitle>
+          <AlertTitle>{gate.title ?? 'Uploads are not open yet'}</AlertTitle>
           <AlertDescription>{gate.reason}</AlertDescription>
         </Alert>
       ) : (
         <section
-          aria-label="Drop zone"
+          aria-labelledby={headingId}
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);
@@ -347,49 +771,50 @@ export function Uploader(props: UploaderProps) {
             setDragging(false);
           }}
           onDrop={onDrop}
-          className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
+          className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-4 sm:p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
         >
-          <h2 className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</h2>
+          <Heading id={headingId} className="text-base font-semibold">{props.heading ?? 'Choose 835 files to upload'}</Heading>
           <p className="max-w-prose text-sm text-muted-foreground">
-            {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`} Each file is scanned for malware
-            before anything reads it.
+            {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`}{' '}
+            {single === undefined ? 'Each file is' : 'The file is'} scanned for malware before anything reads it.
           </p>
-          {kinds === undefined ? null : (
-            <div className="flex max-w-full flex-col gap-1">
-              <label htmlFor="upload-kind" className="text-sm font-medium">
-                Kind of document
-              </label>
-              <select
-                id="upload-kind"
-                value={kind.kind}
-                onChange={(event) => {
-                  setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
-                  setFormatId('');
-                }}
-                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
-              >
-                {kinds.map((candidate) => (
-                  <option key={candidate.kind} value={candidate.kind}>
-                    {candidate.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* One kind offered is the kind every file is sent as (startingKind): no choice to show beside the caller's own. */}
+          {kinds === undefined || kinds.length < 2 ? null : (
+            <KindField
+              kinds={kinds}
+              kind={kind}
+              startedUnchosen={startedUnchosen}
+              problem={held.length > 0 && waiting === 'kind' ? waitingText('kind', held.length) : null}
+              attempt={attempt}
+              onChange={(chosen) => {
+                setKind(chosen);
+                setFormatId('');
+                // What was said of the files waiting was said under the kind before; they are checked again on Upload.
+                if (held.length > 0) {
+                  setProblems([]);
+                }
+              }}
+              selectRef={kindSelect}
+            />
           )}
-          {kind.formats === undefined ? null : (
-            <div className="flex flex-col gap-1">
+          {kind?.formats === undefined ? null : (
+            <div className={FIELD_BOX}>
               <label htmlFor="upload-format" className="text-sm font-medium">
                 Which system’s export
               </label>
               <select
+                ref={formatSelect}
                 id="upload-format"
                 value={formatId}
                 required
-                aria-describedby="upload-format-hint"
+                {...controlMarks('upload-format', { error: formatProblem, hint: FORMAT_HELP })}
                 onChange={(event) => {
                   setFormatId(event.target.value);
+                  if (held.length > 0) {
+                    setProblems([]);
+                  }
                 }}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className={FIELD_SELECT}
               >
                 <option value="">Choose the system</option>
                 {kind.formats.map((candidate) => (
@@ -398,13 +823,14 @@ export function Uploader(props: UploaderProps) {
                   </option>
                 ))}
               </select>
-              <Hint
-                id="upload-format"
-                className="max-w-prose"
-                hint="The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only."
-              />
+              {formatProblem === undefined ? null : (
+                <div key={attempt} role="alert">
+                  <FieldError id="upload-format" error={formatProblem} />
+                </div>
+              )}
+              <Hint id="upload-format" hint={FORMAT_HELP} />
               {format?.unconfirmed === true ? (
-                <div className="flex max-w-prose flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
                   <FormatUnconfirmedBadge />
                   <span>
                     No description of this format has been received from its vendor yet, so PaidWhole reads it with a placeholder layout and flags its lines on the Coverage screen until the
@@ -418,21 +844,23 @@ export function Uploader(props: UploaderProps) {
             ref={input}
             id="upload-files"
             type="file"
-            multiple
+            multiple={single === undefined}
+            accept={single === undefined || kind === null ? undefined : kind.contentTypes.join(',')}
             className="sr-only"
-            aria-label="Choose files to upload"
+            aria-label={single === undefined ? 'Choose files to upload' : 'Choose a file to upload'}
             // Out of the tab order and hidden from assistive technology: "Choose files" is the one control and opens the
             // picker, so a keyboard meets one stop, not an invisible input and then the button (docs/adr/0077).
             tabIndex={-1}
             aria-hidden="true"
             onChange={(event) => {
-              void start([...(event.target.files ?? [])]);
+              choose([...(event.target.files ?? [])]);
               event.target.value = '';
             }}
           />
-          <Button type="button" onClick={() => input.current?.click()}>
-            Choose files
+          <Button ref={chooseButton} type="button" variant={held.length > 0 ? 'outline' : 'default'} onClick={() => input.current?.click()}>
+            {single === undefined ? 'Choose files' : 'Choose a file'}
           </Button>
+          {held.length === 0 ? null : <HeldFiles files={held} ready={waiting === null} onUpload={uploadHeld} onClear={clearHeld} uploadRef={uploadButton} />}
         </section>
       )}
       {problems.length === 0 ? null : (
@@ -448,9 +876,15 @@ export function Uploader(props: UploaderProps) {
         </Alert>
       )}
       {batch.length === 0 ? null : (
-        <Card role="region" aria-label="This batch">
+        <Card ref={batchCard} tabIndex={-1} role="region" aria-label="This batch">
           <CardHeader>
-            <CardTitle>This batch</CardTitle>
+            {props.headingLevel === 3 ? (
+              <h3 data-slot="card-title" className={CARD_TITLE_CLASSES}>
+                This batch
+              </h3>
+            ) : (
+              <CardTitle>This batch</CardTitle>
+            )}
             <CardDescription role="status" aria-live="polite">
               {sent} of {batch.length} sent{failed > 0 ? `, ${String(failed)} failed` : ''}; {settled} of {sentIds.length} taken in.
             </CardDescription>
@@ -470,7 +904,8 @@ export function Uploader(props: UploaderProps) {
                         <Badge variant="destructive">Not sent</Badge>
                         <span className="text-xs text-muted-foreground">{item.error}</span>
                         {item.documentId === undefined ? null : (
-                          <Button variant="outline" size="sm" onClick={() => void retry(item)}>
+                          // A button inside a form submits it unless it says otherwise.
+                          <Button type="button" variant="outline" size="sm" onClick={() => void retry(item)}>
                             Retry
                           </Button>
                         )}
@@ -478,7 +913,7 @@ export function Uploader(props: UploaderProps) {
                     ) : (
                       <>
                         <Badge variant="secondary">{item.phase === 'uploading' ? `Uploading ${String(Math.round(item.progress * 100))}%` : item.phase === 'waiting' ? 'Waiting' : 'Received'}</Badge>
-                        <progress className="h-2 w-40" max={1} value={item.progress} aria-label="Upload progress" />
+                        <progress className={PROGRESS_CLASSES} max={1} value={item.progress} aria-label="Upload progress" />
                       </>
                     )}
                   </li>
@@ -490,7 +925,7 @@ export function Uploader(props: UploaderProps) {
       )}
       {props.showReceipts === false ? null : (
         <div className="flex flex-col gap-2">
-          <h2 className="text-xl font-bold tracking-display">Receipts</h2>
+          <Heading className="text-xl font-bold tracking-display">Receipts</Heading>
           <DownloadLinks arrived={props.receiptsNotice}>
             <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" reportFrom={props.reportFrom} />
           </DownloadLinks>

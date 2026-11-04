@@ -5,11 +5,15 @@
  * The client's address is counted beside it (src/lib/http/rate-limit.ts, the screening bucket). Subjects are stored
  * only as the rate limiter's keyed hash, never in clear.
  *
- * A mailbox is counted once however its address is spelled: the address is read in NFKC and lower case, a domain's
- * trailing dots are dropped, googlemail.com is gmail.com, a "+tag" is dropped at a free-mail domain, and the dots of a
- * gmail.com address are dropped (Gmail delivers every one of those spellings to one inbox). The address stored and
- * mailed to is the one typed; only the count's key is canonical.
+ * A mailbox is counted once however its address is spelled, by the rule the screening's refusal list keys it by
+ * (canonicalMailbox(), @tp/db; mail_recipient_canonical() in SQL): ASCII white space and case, a domain's trailing
+ * dots, googlemail.com read as gmail.com and me.com and mac.com as icloud.com, a "+tag" dropped, and at gmail.com the
+ * local part's dots dropped (each provider delivers every one of those spellings to one inbox); an address with any
+ * character outside ASCII, which the form refuses, is counted as read. The address stored and mailed to is the one
+ * typed; only the count's key is canonical.
  */
+
+import { canonicalMailbox, canonicalMailboxParts } from '@tp/db/runtime';
 
 /**
  * Free-mail domains, where one domain is many unrelated people: the large webmail services and the mail of the
@@ -100,35 +104,18 @@ export function isFreeMailDomain(domain: string): boolean {
   return labels.some((_, index) => FREE_MAIL_DOMAINS.has(labels.slice(index).join('.')));
 }
 
-/** An address as its mailbox is counted: its domain's trailing dots dropped, and googlemail.com read as gmail.com. */
-function splitAddress(address: string): { readonly local: string; readonly domain: string } | null {
-  const at = address.lastIndexOf('@');
-  if (at <= 0) {
-    return null;
-  }
-  const domain = address.slice(at + 1).replace(/\.+$/, '');
-  return domain === '' ? null : { local: address.slice(0, at), domain: domain === 'googlemail.com' ? 'gmail.com' : domain };
-}
-
 /**
  * The account a screening counts against: 'domain:<domain>' for a business address, 'address:<mailbox>' for a
- * free-mail one (its "+tag" dropped, and at gmail.com its dots), 'address:<as read>' for one with no domain; null
- * when none was given (the client's address still counts). An address the form refuses (one that is not plain ASCII,
- * for instance) is counted too, before it is refused, and is never mailed.
+ * free-mail one (its canonical mailbox: its "+tag" dropped, and at gmail.com its dots), 'address:<as read>' for one with
+ * no domain; null when none was given (the client's address still counts). An address the form refuses (one that is not
+ * plain ASCII, for instance) is counted too, before it is refused, and is never mailed.
  */
 export function screeningRateAccount(email: string | null | undefined): string | null {
-  const read = (email ?? '').normalize('NFKC').trim().toLowerCase();
-  if (read === '') {
-    return null;
+  const given = email ?? '';
+  const parts = canonicalMailboxParts(given);
+  if (parts === null) {
+    const read = canonicalMailbox(given);
+    return read === '' ? null : `address:${read}`;
   }
-  const address = splitAddress(read);
-  if (address === null) {
-    return `address:${read}`;
-  }
-  if (!isFreeMailDomain(address.domain)) {
-    return `domain:${address.domain}`;
-  }
-  const untagged = address.local.split('+')[0] ?? '';
-  const mailbox = address.domain === 'gmail.com' ? untagged.replace(/\./g, '') : untagged;
-  return `address:${mailbox === '' ? address.local : mailbox}@${address.domain}`;
+  return isFreeMailDomain(parts.domain) ? `address:${parts.local}@${parts.domain}` : `domain:${parts.domain}`;
 }

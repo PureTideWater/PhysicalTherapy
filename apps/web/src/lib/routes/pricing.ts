@@ -1,4 +1,4 @@
-import { PricingRefusedError, locationStatusText } from '@tp/contracts';
+import { locationStatusText } from '@tp/contracts';
 import { rolesPermit } from '@tp/db/runtime';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import {
@@ -6,6 +6,7 @@ import {
   type DiffRun,
   PricingLocationWaiting,
   PricingRunInputError,
+  PricingRunNothingMapped,
   type RunDiff,
   RunComparisonError,
   RerunRefusedError,
@@ -20,7 +21,7 @@ import {
 } from '@tp/worker/pricing';
 import { z } from 'zod';
 
-import { type PricingReadiness, pricingReadiness } from '../contracts/mapping-queries';
+import { type UnmappedPlanTotals, unmappedPlanTotals } from '../contracts/mapping-queries';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import {
@@ -42,6 +43,7 @@ import {
   runSummary,
   runsInEffect,
 } from '../pricing/queries';
+import { type MappedNotPricedTotals, mappedNotPricedTotals } from '../pricing/mapped-plan';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -52,7 +54,9 @@ import { opaqueId, optionalText } from './schemas';
  * which the billing manager and the firm principal hold; docs/adr/0035): the creator names a period
  * by months and the release the screen showed as current; the run is recorded pinned to that release
  * (refused when it is no longer the current one: a rule-release mismatch) and the price job queued.
- * A run over a plan with no mapping is refused (MAP-01).
+ * A run over a period none of whose lines has a mapping in force on its date is refused, since it would price nothing;
+ * in any other run a plan with no mapping leaves its own lines unpriced (MAP-01, MAP-07; combined audit #32,
+ * docs/adr/0075). The screen counts those plans' lines and the lines of mapped plans still NO_MAPPING in the pricing in effect (PRC-31).
  *
  * Re-runs and comparisons (PRD 7: "compare two runs; re-run under a new release with a diff"; PRD 5, J6
  * and J17; PRD 9, step 4; docs/adr/0037): the run in effect for its period is priced again under the
@@ -90,7 +94,10 @@ export interface PricingRunsPageData {
   readonly list: RunPage;
   /** The rule release in force, which a run created now pins; null when none is published. */
   readonly release: CurrentRelease | null;
-  readonly readiness: PricingReadiness;
+  /** The plans with no mapping in force on their lines' dates, whose lines no run prices, with their lines and billed cents (MAP-06; R3N-1). */
+  readonly unmappedPlans: UnmappedPlanTotals;
+  /** The lines of mapped plans still NO_MAPPING in the pricing in effect, their billed cents and the runs holding them (PRC-31). */
+  readonly mappedNotPriced: MappedNotPricedTotals;
   readonly canCreate: boolean;
   readonly roles: readonly string[];
   /** The complete runs, for choosing two to compare. */
@@ -113,7 +120,8 @@ export const pricingRunsPage = practiceRoute({
       practiceId,
       list: await listRuns(scope, practiceId, params.page, request.requestId),
       release: header,
-      readiness: await pricingReadiness(scope, practiceId, request.requestId),
+      unmappedPlans: await unmappedPlanTotals(scope, practiceId),
+      mappedNotPriced: await mappedNotPricedTotals(scope.client, practiceId),
       canCreate: rolesPermit(access.roles, 'mapping.edit'),
       roles: access.roles,
       options: await completeRunOptions(scope, practiceId),
@@ -285,8 +293,8 @@ export const comparePricingRunsPage = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId, before: refs.pricingRunId, after: refs.rerunId }) },
 });
 
-/** A run of a practice with no pricing location (audit #33): no run is created until its billing ZIP is set. */
-const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run waits until it is set in Pricing settings.`;
+/** A run of a practice with no pricing location (audit #33): no run is created until its billing ZIP is set. Exported for the mapping screens' re-runs (combined audit #32). */
+export const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run waits until it is set in Pricing settings.`;
 
 /**
  * A refusal of the re-run services, as the field a form shows it against. Every RerunRefusedError reason maps to
@@ -395,6 +403,16 @@ export const acceptPricingRunAction = practiceRoute({
 
 const PERIOD_FIELDS = { period: 'fromMonth', periodFrom: 'fromMonth', periodTo: 'toMonth' } as const;
 
+/**
+ * A period none of whose lines has a mapping of its plan in force on its date (MAP-07; R3N-1): a run would price
+ * nothing. Shown under "First month of service" after "Error:" (ADR 0077), lower-case like the period's other messages;
+ * counts and dates only. Its second sentence says when a month is priced (PR #95 review F2): at once when a mapping
+ * completes it, or once any one plan is mapped, by the daily monitoring or a run from here, the other plans' lines then
+ * needing it priced again; never "once every plan is mapped" alone.
+ */
+export const NOTHING_MAPPED =
+  'none of the period’s plans has a mapping in force on its lines’ dates yet, so a run would price nothing: map them on Payer and plan mapping. A month is priced as soon as every plan it holds is mapped, or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again.';
+
 export const createPricingRunAction = practiceRoute({
   id: 'practice.pricing_runs.create',
   kind: 'action',
@@ -425,8 +443,8 @@ export const createPricingRunAction = practiceRoute({
       if (error instanceof PricingLocationWaiting) {
         throw new InputError([{ field: 'fromMonth', message: LOCATION_WAITING }]);
       }
-      if (error instanceof PricingRefusedError) {
-        throw new InputError([{ field: 'fromMonth', message: `${error.message}; map them on the Payer and plan mapping screen` }]);
+      if (error instanceof PricingRunNothingMapped) {
+        throw new InputError([{ field: 'fromMonth', message: NOTHING_MAPPED }]);
       }
       if (error instanceof PricingRunInputError) {
         throw new InputError([{ field: PERIOD_FIELDS[error.field], message: error.message }]);

@@ -4,13 +4,14 @@ import type { Metadata } from 'next';
 import { utc } from '../../../../../components/format';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import { supportAccessPage } from '../../../../../lib/routes/practice';
+import { noticeStatus, supportAccessPage } from '../../../../../lib/routes/practice';
 
 export const metadata: Metadata = { title: 'Support access' };
 
 /**
  * One support grant and every record read under it (PRD 5, J15): what the practice administrator's
- * notices at creation and at expiry link to. From the practice's access log; administrators only.
+ * notices at creation and at expiry link to, with each notice's delivery to the administrators (audit #76; docs/adr/0065,
+ * D10). From the practice's access log; administrators only.
  */
 export default async function SupportAccessPage(props: { readonly params: Promise<{ practiceId: string; supportGrantId: string }> }) {
   const page = await loadPage(supportAccessPage, props);
@@ -30,7 +31,13 @@ export default async function SupportAccessPage(props: { readonly params: Promis
           <CardDescription>Reason: {grant.reason}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Expiry notice sent: {utc(grant.notifiedAt)}</p>
+          {/* Each notice's delivery, as SES reported it for each administrator (docs/adr/0065, D10). */}
+          <dl className="grid gap-1 text-sm sm:grid-cols-[max-content_1fr] sm:gap-x-3" aria-label="Notices to the practice's administrators">
+            <dt className="text-muted-foreground">Opening notice</dt>
+            <dd data-notice="opening">{noticeStatus(grant.notices.opening, 'opening', grant.open, utc)}</dd>
+            <dt className="text-muted-foreground">Closing notice</dt>
+            <dd data-notice="closing">{noticeStatus(grant.notices.closing, 'closing', grant.open, utc)}</dd>
+          </dl>
         </CardContent>
       </Card>
       <Card>

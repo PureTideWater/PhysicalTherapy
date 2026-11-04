@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { Headline, ReportSections } from './display';
+import { ReadinessText } from './documents';
 
 /**
  * The audit report on screen after a recovery (the screen tour's N4): the headline's notes say what the
@@ -128,5 +129,63 @@ describe('the submissions sent without sign-off on the Reports screen (the found
     );
     // None: no sentence.
     expect(renderToStaticMarkup(<ReportSections content={CONTENT} practiceId="p" />)).not.toContain('data-unattested-submissions');
+  });
+});
+
+describe('the plans that had no mapping when the run was priced, on the audit report’s screen (combined audit #32; PRC-30, C-4)', () => {
+  const withUnmapped = (unmapped_plans: AuditReportContent['coverage']['unmapped_plans']) => ({ ...CONTENT, coverage: { ...CONTENT.coverage, unmapped_plans } });
+
+  it.each([
+    [{ plans: 2, lines: 14, charge_cents: '123400' }, '2 plans had no mapping when this run was priced; their lines are not priced (14 lines, $1,234.00 billed).'],
+    [{ plans: 1, lines: 1, charge_cents: '2500' }, '1 plan had no mapping when this run was priced; its lines are not priced (1 line, $25.00 billed).'],
+    [{ plans: 1, lines: 3, charge_cents: '-700' }, '1 plan had no mapping when this run was priced; its lines are not priced (3 lines, -$7.00 billed).'],
+  ])('says it after the coverage line, as the PDF prints it, for %j', (unmapped, sentence) => {
+    const markup = renderToStaticMarkup(<ReportSections content={withUnmapped(unmapped)} practiceId="p" />);
+    expect(markup).toContain('data-state="unmapped-plans"');
+    // The line count is the plans' lines, never the plan count (C-4's mutation: lines for plans).
+    expect(text(markup).replace(/\s+/g, ' ')).toContain(sentence);
+    // Figures in the mono face: the plan count, the line count and the amount.
+    expect(markup).toContain(`<span class="font-mono tabular-nums">${String(unmapped.plans)}</span>`);
+    expect(markup).toContain(`<span class="font-mono tabular-nums">${String(unmapped.lines)}</span>`);
+  });
+
+  it.each([
+    ['none had', { plans: 0, lines: 0, charge_cents: '0' }],
+    ['a report stored before the figure was recorded', undefined],
+  ])('says nothing when %s', (_when, unmapped) => {
+    const markup = renderToStaticMarkup(<ReportSections content={withUnmapped(unmapped)} practiceId="p" />);
+    expect(markup).not.toContain('data-state="unmapped-plans"');
+    expect(markup).not.toContain('had no mapping');
+    expect(text(markup)).toContain('1 of 1 lines priced');
+  });
+});
+
+describe('the coverage report’s sentence on plans with no mapping, on screen (combined audit #32; PRC-30, R3-9, C-4, UX-5)', () => {
+  const words = (node: ReturnType<typeof ReadinessText>) => text(renderToStaticMarkup(<>{node}</>)).replace(/\s+/g, ' ');
+
+  it.each([
+    [{ allowed: false, unmapped_plans: 2, unmapped_lines: 14, unmapped_charge_cents: '123400' }, '2 plans had no mapping; their lines were not priced (14 lines, $1,234.00 billed).'],
+    [{ allowed: false, unmapped_plans: 1, unmapped_lines: 1, unmapped_charge_cents: '2500' }, '1 plan had no mapping; its lines were not priced (1 line, $25.00 billed).'],
+    [{ allowed: false, unmapped_plans: 1, unmapped_lines: 2, unmapped_charge_cents: '-500' }, '1 plan had no mapping; its lines were not priced (2 lines, -$5.00 billed).'],
+    [{ allowed: true, unmapped_plans: 0, unmapped_lines: 0, unmapped_charge_cents: '0' }, 'Every plan with lines had a mapping.'],
+  ])('states the past for a new report, its figures fixed when it was made (UX-5): %j', (readiness, sentence) => {
+    const shown = words(ReadinessText({ readiness }));
+    expect(shown).toBe(sentence);
+    expect(shown).not.toMatch(/has no mapping|have no mapping|are not priced|has a mapping/);
+  });
+
+  it('puts a new report’s figures in the mono face and marks the state', () => {
+    const markup = renderToStaticMarkup(<>{ReadinessText({ readiness: { allowed: false, unmapped_plans: 2, unmapped_lines: 14, unmapped_charge_cents: '123400' } })}</>);
+    expect(markup).toContain('data-state="unmapped"');
+    expect(markup).toContain('<span class="font-mono tabular-nums">2</span>');
+    expect(markup).toContain('<span class="font-mono tabular-nums">14</span>');
+    expect(markup).toContain('<span class="font-mono tabular-nums">$1,234.00</span>');
+  });
+
+  it.each([
+    [{ allowed: true, unmapped_plans: 0 }, 'Every plan with lines had a mapping.'],
+    [{ allowed: false, unmapped_plans: 3 }, '3 plan(s) had no mapping at all: pricing them was refused.'],
+  ])('keeps the words a report stored before showed with (R3-9): %j', (readiness, sentence) => {
+    expect(words(ReadinessText({ readiness }))).toBe(sentence);
   });
 });
