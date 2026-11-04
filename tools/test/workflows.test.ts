@@ -990,7 +990,10 @@ describe('workflows', () => {
     expect(changes?.['runs-on']).toBe(RUNNER);
     expect(changes?.permissions).toBeUndefined();
     expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
-    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    // Every object fetched by the checkout, with the job's token: a blobless clone fetches each blob it reads later from
+    // its promisor remote with no credentials, which a private repository refuses (run 41765454724, "could not read
+    // Username"); the script's run on a clone without its remote is below.
+    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0 } });
     const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
     const script = watched?.run ?? '';
     expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
@@ -2396,6 +2399,87 @@ describe('every checkout (CI-11)', () => {
         }
       }
     }
+  });
+});
+
+describe('every read of this repository works when it is private (CI-11)', () => {
+  /** Every step of every workflow, with its job, named for a message. */
+  const everyStep = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, job, step }))));
+
+  it('makes no partial clone: a checkout that keeps no token fetches every object once, with the job’s token, so no later git command fetches a blob without credentials', () => {
+    // A blobless or treeless clone (`filter:`) fetches what a later git command reads from its promisor remote, without
+    // credentials once persist-credentials is false: a private repository refuses that ("could not read Username for
+    // 'https://github.com'", screening-capacity run 41765454724, job 126369187941).
+    const filtered = everyStep().filter(({ step }) => usesAction(step, 'actions/checkout') && step.with?.filter !== undefined && step.with?.['persist-credentials'] === false);
+    expect(filtered.map(({ where }) => where)).toEqual([]);
+    for (const { where, step } of everyStep().filter((entry) => usesAction(entry.step, 'actions/checkout'))) expect(step.with?.['sparse-checkout'], where).toBeUndefined();
+  });
+
+  it('reads this repository with the job’s token alone: no step fetches, clones or lists a remote, or reads raw.githubusercontent.com or the API by curl, and every step that runs gh sets GH_TOKEN', () => {
+    const scripts = everyStep().filter(({ step }) => step.run !== undefined);
+    expect(scripts.length).toBeGreaterThan(50);
+    const unauthenticated = /\bgit\s+(?:-c\s+\S+\s+)*(?:fetch|clone|ls-remote|pull|archive\s+--remote)\b|raw\.githubusercontent\.com|\b(?:curl|wget)\b[^\n]*(?:api\.github\.com|github\.com\/\$|\$\{\{\s*github\.repository)/;
+    expect(scripts.filter(({ step }) => unauthenticated.test(step.run ?? '')).map(({ where }) => where)).toEqual([]);
+    const gh = scripts.filter(({ step }) => /(?:^|[\s;&|(`$])gh\s+(?:api|issue|pr|release|run|repo|attestation|secret|variable|workflow|cache|label|search)\b/m.test(step.run ?? ''));
+    expect(gh.length).toBeGreaterThan(3);
+    for (const { where, job, step } of gh) expect(step.env?.GH_TOKEN ?? job.env?.GH_TOKEN, where).toBe('${{ github.token }}');
+  });
+
+  it('reads the changed paths of screening-capacity’s pull request from its checkout alone: the script passes on a full clone whose remote is gone, and a blobless clone fails it', () => {
+    const changes = workflow('screening-capacity.yml').jobs.changes;
+    const checkout = changes?.steps[0]?.with ?? {};
+    const script = changes?.steps.find((step) => step.id === 'watched')?.run ?? '';
+    expect(script).toContain('git diff --name-only');
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', ...args], { cwd, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' }).trim();
+    const root = mkdtempSync(path.join(scratch, 'changes-'));
+    const work = path.join(root, 'work');
+    mkdirSync(work);
+    git(work, 'init', '-q');
+    mkdirSync(path.join(work, 'tools/screening-capacity'), { recursive: true });
+    mkdirSync(path.join(work, 'apps/worker/src/screening'), { recursive: true });
+    mkdirSync(path.join(work, 'docs'), { recursive: true });
+    writeFileSync(path.join(work, 'tools/screening-capacity/watched-paths.txt'), '# watched\napps/worker/src/screening/*\n');
+    writeFileSync(path.join(work, 'apps/worker/src/screening/consumer.ts'), 'export const a = 1;\n');
+    // A file the pull request moves: rename detection reads both blobs, as a pull request that renames anything does.
+    writeFileSync(path.join(work, 'docs/old.md'), `${'a line of the document\n'.repeat(40)}`);
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'base');
+    const base = git(work, 'rev-parse', 'HEAD');
+    writeFileSync(path.join(work, 'apps/worker/src/screening/consumer.ts'), 'export const a = 2;\n');
+    // Moved and edited, so the base's blob is one the head's checkout does not bring; the list changes too, so its
+    // base copy is read from the base's own blob.
+    git(work, 'mv', 'docs/old.md', 'docs/new.md');
+    writeFileSync(path.join(work, 'docs/new.md'), `${'a line of the document\n'.repeat(39)}an edited line\n`);
+    writeFileSync(path.join(work, 'tools/screening-capacity/watched-paths.txt'), '# watched\napps/worker/src/screening/*\napps/web/src/screening/*\n');
+    git(work, 'commit', '-q', '-am', 'head');
+    const head = git(work, 'rev-parse', 'HEAD');
+    const origin = path.join(root, 'origin.git');
+    git(root, 'clone', '-q', '--bare', work, origin);
+    git(origin, 'config', 'uploadpack.allowFilter', 'true');
+    // A clone as the job's checkout makes it (actions/checkout's fetch with its filter, if any), then the remote gone,
+    // as a private repository's is to a git that holds no token.
+    const cloneAs = (name: string, options: Record<string, unknown>) => {
+      const target = path.join(root, name);
+      git(root, 'clone', '-q', '--no-checkout', ...(typeof options.filter === 'string' ? [`--filter=${options.filter}`] : []), `file://${origin}`, target);
+      git(target, 'checkout', '-q', head);
+      return target;
+    };
+    const run = (cwd: string) => {
+      const output = path.join(cwd, '..', `${path.basename(cwd)}.output`);
+      writeFileSync(output, '');
+      const result = runScript(script, { EVENT: 'pull_request', BASE: base, HEAD: head, GITHUB_OUTPUT: output, RUNNER_TEMP: mkdtempSync(path.join(root, 'temp-')), GIT_TERMINAL_PROMPT: '0', HOME: root }, cwd);
+      return { ...result, written: readFileSync(output, 'utf8') };
+    };
+    const ours = cloneAs('ours', checkout);
+    const blobless = cloneAs('blobless', { ...checkout, filter: 'blob:none' });
+    rmSync(origin, { recursive: true, force: true });
+    const read = run(ours);
+    expect(read.status, read.output).toBe(0);
+    expect(read.output).toContain('watched: apps/worker/src/screening/consumer.ts');
+    expect(read.written).toBe('measure=true\n');
+    const refused = run(blobless);
+    expect(refused.status, refused.output).not.toBe(0);
+    expect(refused.written).toBe('');
   });
 });
 
