@@ -24,8 +24,8 @@ name: mutation
 # Unicode and ICU data the recorded equivalents that rest on it were checked over, and the pnpm the root manifest's
 # packageManager names; the changes job and the gate job each check their own, and that they checked out the commit
 # tested, before they decide or judge, and the gate fails a shard whose canary verdict names another Node, Unicode, ICU
-# or pnpm, or another commit than the one tested (GITHUB_SHA). Stryker runs by
-# path (tools/stryker/stryker.ts), never through a root script or a bin by name.
+# or pnpm, or another commit than the one tested (GITHUB_SHA). Stryker runs by path (tools/stryker/stryker.ts), never
+# through a root script or a bin by name.
 on:
   push:
     branches: [claude/build-platform]
