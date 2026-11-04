@@ -1,4 +1,5 @@
-import { type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
+import { type PracticeScope, type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
+import { recordAuditEvent } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 import type { PgBoss } from 'pg-boss';
 
@@ -9,6 +10,7 @@ import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type Pla
 import { enqueue } from './jobs/enqueue';
 import {
   JOB_TYPES,
+  type JobPayload,
   type JobType,
   QUEUE_OPTIONS,
   SCREENING_JOB_HEARTBEAT_SECONDS,
@@ -126,6 +128,29 @@ function practiceJobs(options: WorkerOptions): PracticeJobs | undefined {
   return { handlers, pool };
 }
 
+/**
+ * The gate of a run-starting job, in the job's own scope (docs/adr/0050, 0080): whether the practice's hold refuses it.
+ * In a job's scope only the owner's hold applies, since the actor is never a person. A refused packet export is also
+ * recorded on its version as packet_export_refused with organization_suspended, in the same transaction, so its page
+ * reads refused (packet_export_refusal_codes(), migration 20261108090000).
+ */
+export async function refusedByHold<T extends JobType>(scope: PracticeScope<ScopeClient>, type: T, payload: JobPayload<T>, jobId: string): Promise<boolean> {
+  if ((await practiceRunRefusal(scope.client, payload.practice_id)) === null) {
+    return false;
+  }
+  if (type === 'packet_export' && 'packet_version_id' in payload) {
+    await recordAuditEvent(scope, {
+      action: 'packet_export_refused',
+      objectType: 'packet_version',
+      objectId: payload.packet_version_id,
+      practiceId: payload.practice_id,
+      purpose: 'organization_suspended',
+      requestId: jobId,
+    });
+  }
+  return true;
+}
+
 async function runJob<T extends JobType>(type: T, job: QueuedJob, options: WorkerOptions, practice: PracticeJobs): Promise<void> {
   const { logger, boss, runs } = options;
   const { handlers, pool } = practice;
@@ -143,9 +168,9 @@ async function runJob<T extends JobType>(type: T, job: QueuedJob, options: Worke
   const practiceId = payload.practice_id;
   const lastAttempt = (job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit;
   await runs?.started({ jobId: job.id, practiceId, type, singletonKey: singletonKey(type, payload), subject: jobSubject(type, payload), attempt: (job.retryCount ?? 0) + 1 });
-  // A suspended organization's practice starts no new work (PRD 5, J18; docs/adr/0050): the chain's own
-  // run-starting steps ask the database first and, refused, do nothing, are not retried and raise no alert.
-  if (startsRun(type) && (await withJobScope(pool, { jobId: job.id, practiceId }, (scope) => practiceRunRefusal(scope.client, practiceId))) !== null) {
+  // A held practice starts no new work (PRD 5, J18; docs/adr/0050, 0080): the chain's own run-starting steps ask the
+  // database first and, refused, do nothing, are not retried and raise no alert; a refused export is recorded refused.
+  if (startsRun(type) && (await withJobScope(pool, { jobId: job.id, practiceId }, (scope) => refusedByHold(scope, type, payload, job.id)))) {
     jobLogger.info('job refused: the organization may not start new runs', { error_code: SUSPENDED_ERROR_CODE });
     await recordEnd(runs, jobLogger, { jobId: job.id, practiceId, outcome: 'refused', errorCode: SUSPENDED_ERROR_CODE });
     return;

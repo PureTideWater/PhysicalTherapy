@@ -11,6 +11,15 @@ import { boolean, foreignKey, index, integer, jsonb, pgTable, smallint, text, ti
 
 export const ORGANIZATION_KINDS = ['group', 'firm', 'internal'] as const;
 export const ORGANIZATION_STATUSES = ['active', 'suspended', 'closed'] as const;
+/**
+ * Why PaidWhole suspends an organization, and why it reinstates one (migration 20261108090000; docs/adr/0080): the
+ * closed lists organization.status_reason and organization_status_change.reason hold. Nonpayment is not a reason:
+ * it is billing's computed hold (billing_standing), never a stored suspension.
+ */
+export const SUSPENSION_REASONS = ['customer_request', 'security_hold', 'agreement_ended'] as const;
+export type SuspensionReason = (typeof SUSPENSION_REASONS)[number];
+export const REINSTATEMENT_REASONS = ['resolved', 'in_error'] as const;
+export type ReinstatementReason = (typeof REINSTATEMENT_REASONS)[number];
 export const USER_STATUSES = ['invited', 'active', 'disabled'] as const;
 export const PRACTICE_STATUSES = ['active', 'deleted'] as const;
 export const MEMBERSHIP_ROLES = [
@@ -41,7 +50,35 @@ export const organization = pgTable('organization', {
   status: text('status', { enum: ORGANIZATION_STATUSES }).notNull().default('active'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+  /** The reason of PaidWhole's suspension in force; null while active or closed, or when none was recorded (migration 20261108090000). */
+  statusReason: text('status_reason', { enum: SUSPENSION_REASONS }),
+  /** When the current status began; null for a status unchanged since migration 20261108090000. */
+  statusSince: timestamp('status_since', { withTimezone: true }),
 });
+
+/**
+ * PaidWhole's suspensions, changes of reason and reinstatements of an organization, with the platform administrator's
+ * internal note (migration 20261108090000): append-only, written only by console_set_organization_status, read only by
+ * holders of organization.manage. Not a PHI table; the note is never logged, exported, mailed or shown to a customer.
+ */
+export const organizationStatusChange = pgTable(
+  'organization_status_change',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organization.id),
+    fromStatus: text('from_status', { enum: ['active', 'suspended'] }).notNull(),
+    toStatus: text('to_status', { enum: ['active', 'suspended'] }).notNull(),
+    reason: text('reason', { enum: [...SUSPENSION_REASONS, ...REINSTATEMENT_REASONS] }).notNull(),
+    note: text('note'),
+    changedBy: uuid('changed_by')
+      .notNull()
+      .references(() => user.id),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('organization_status_change_by_organization').on(table.organizationId, table.at.desc())],
+);
 
 export const user = pgTable(
   'user',
@@ -312,6 +349,7 @@ export const phiTableRegistry = pgTable('phi_table_registry', {
 });
 
 export type OrganizationRow = typeof organization.$inferSelect;
+export type OrganizationStatusChangeRow = typeof organizationStatusChange.$inferSelect;
 export type UserRow = typeof user.$inferSelect;
 export type PracticeRow = typeof practice.$inferSelect;
 export type PracticeSiteRow = typeof practiceSite.$inferSelect;
