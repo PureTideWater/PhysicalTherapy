@@ -765,11 +765,17 @@ download, so a re-run cannot pass, and no release could scan.
   - it checks the archive against the SHA-256 that `release.txt` pins before anything in it runs;
   - it extracts `trivy` alone and requires it to report the pinned version;
   - it installs it into the directory given, with no cache.
-- One step, "The pinned Trivy", word for word the same, installs it into `$RUNNER_TEMP/trivy-bin` and puts that
-  directory on `PATH`. It runs in ci.yml's `images` job, in release.yml's `build` and in the dry run's `build`.
+- One step, "The pinned Trivy", word for word the same, installs it into `$RUNNER_TEMP/trivy-bin`, puts that
+  directory on `PATH` and writes `TRIVY_CMD`, its absolute path, which trivy-action's entrypoint runs in place of
+  `trivy` from `PATH` (where each trivy-action step prepends its own directory). It runs in ci.yml's `images` job, in
+  release.yml's `build` and in the dry run's `build`.
+- The installer's curl takes https alone and follows a redirect only to https (`--proto '=https,file'
+  --proto-redir '=https'`, `file:` for the tests' mirror), as `tools/gitleaks/install.sh`'s now does.
 - Each trivy-action step keeps its pin and adds only `skip-setup-trivy: true`. Severity, `ignore-unfixed`,
   `exit-code`, format, `cache: false`, `cache-dir` under `runner.temp` and the database source are unchanged. The
-  database source is Trivy 0.70.0's default, `mirror.gcr.io/aquasec/trivy-db:2`.
+  database source is Trivy 0.70.0's default, `mirror.gcr.io/aquasec/trivy-db:2`. That database is trusted by its
+  registry tag and the transport, as it was before; pinning it, or reading `ghcr.io/aquasecurity/trivy-db:2` from
+  aquasecurity's own namespace, is a separate decision, not taken here.
 - So "the release restores no cache" holds for the binary as it did through setup-trivy's `cache: false`: every run
   installs its own copy.
 - release-dry-run.yml also runs on a change to `tools/trivy/**`.
@@ -788,21 +794,37 @@ The pin, read on 2026-11-04:
   `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v0.70.0`. The certificate
   names commit `8a3177aedf7ee0864920eb1852eef031cd3742b8`, run 24550601142, a GitHub-hosted runner and a push
   trigger, and was issued 2026-04-17.
-- That is seven months old, far past the three-day floor (Part 5). It is also after the March 2026 trivy-action tag
-  hijack that Part 5 names.
-- The bundle's chain was not verified where this was built: the agent proxy refuses Sigstore's TUF host, and the trust
-  roots embedded in sigstore-python 3.6 and 4.5 lack the bundle's timestamp authority.
+- That is about six and a half months old, far past the three-day floor (Part 5). It is also after the March 2026
+  trivy-action tag hijack that Part 5 names. The upstream tag `v0.70.0` names that commit (git ls-remote, 2026-11-04).
+- The bundle verifies offline against Sigstore's public-good trusted root as sigstore-python 4.5.1 ships it (no TUF
+  fetch; sigstore-python's own verifier refuses the bundle only for want of its RFC 3161 timestamp authority, which
+  the Rekor entry makes unnecessary): the leaf certificate chains to Fulcio; its ECDSA signature over
+  `trivy_0.70.0_checksums.txt` verifies; the bundle's digest is the file's SHA-256; the Rekor entry's body names that
+  hash, that signature and that certificate; Rekor's signed entry timestamp verifies with rekor.sigstore.dev's key; and
+  its integrated time, 2026-04-17T06:46:08Z, lies inside the certificate's ten minutes.
 - At run time the pinned SHA-256 decides, as it does for gitleaks. It is a stronger check than setup-trivy's: that
   installer fetched its checksum from the same release at run time.
-- `release.txt` is not read by Part 5's age rules, which read the lockfile, `uses:` lines and image digests.
-- A new Trivy is therefore a hand bump of every line of `release.txt`. Its review reads the release's age (at least
-  three days) and its checksums file. docs/runbooks/ci.md says so.
+- Part 5's age rule reads `release.txt` (`tools/check-action-pins/releases.ts`, `PINNED_RELEASES`, with
+  `tools/gitleaks/release.txt`): a version new against the base resolves its upstream tag `v<version>` (git ls-remote,
+  three tries, then it fails closed), a tag the upstream does not list is refused (the compromised v0.69.4's tag was
+  deleted upstream), and the tag's commit is aged as a new action pin is: on the default branch, a time GitHub
+  recorded, three days by the youngest time read, the same excludes (CI-21). Before this, the version came from
+  trivy-action's pin, which that rule aged; a file no machine read would have loosened it.
+- A new Trivy is a pull request that changes every line of `release.txt`, each SHA-256 copied from the release's
+  checksums file; `pnpm actions:check` holds its age. docs/runbooks/ci.md says so.
+- Follow-up, not in this change: a pin-time check of the checksums file's Sigstore bundle against a pinned trusted
+  root, requiring the identity `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v<version>`,
+  the issuer `https://token.actions.githubusercontent.com` and a GitHub-hosted runner, with the file's SHA-256 recorded
+  in `release.txt`; the same for gitleaks and for the actionlint pin in `tools/setup-container.sh`.
 
 Alternatives considered for Trivy:
 - **Re-run until get.trivy.dev answers.** The name looks removed rather than briefly down: the `trivy.dev` zone was
   edited on 2026-11-03, and other repositories moved to the release assets.
-- **Run `trivy` directly, without trivy-action.** It would rewrite five steps and their tests next to #86's hunks. It
-  gains nothing over `skip-setup-trivy`, since setup-trivy no longer runs either way.
+- **Run `trivy` directly, without trivy-action.** It would rewrite five steps and their tests next to #86's hunks.
+  setup-trivy no longer runs either way. It would also stop the runner downloading setup-trivy and its nested checkout
+  at "Set up job", which it does for every action a composite nests whatever each step's `if:` says, so an
+  unresolvable setup-trivy would still fail these jobs there; that was weighed against the conflict surface with #86
+  and left for a later change.
 - **A `version:` input.** It still installs through get.trivy.dev.
 - **Verify the checksums file with cosign on every run.** That is another pinned binary, plus Sigstore's TUF and
   transparency log on every scan. It would be a new network dependency of the kind that just failed, while the pinned
@@ -823,8 +845,14 @@ and `git show` fetched blobs from the promisor remote with no credentials. That 
 - `workflows.test.ts` holds three rules (CI-11):
   - no checkout that keeps no token makes a partial clone;
   - the `changes` script passes on a full clone whose remote is gone and fails on a blobless one;
-  - no step runs git fetch, clone, `ls-remote` or pull, or reads raw.githubusercontent.com, or curls the API, and every
-    `gh` step sets `GH_TOKEN`.
+  - no step runs git fetch, clone, `ls-remote`, pull, `submodule update` or `archive --remote` (with any global
+    options before the command), reads raw.githubusercontent.com, or curls the API, the server or this repository by
+    any of their names (`$GITHUB_API_URL`, `${{ github.api_url }}`, `$GITHUB_SERVER_URL`, `$GITHUB_REPOSITORY`,
+    owner/name), and every `gh` step sets `GH_TOKEN`; a mutation case per form;
+  - the same scan holds every shell script under `tools/` and `.github/`, and every TypeScript entry point a step
+    runs (directly or through a package.json script) with the `tools/` files it imports: git against a remote only in
+    `check-action-pins` (other owners' upstreams; no `uses:` names this repository), and GitHub's API or `gh` only
+    where the step is given the job's token.
 
 The audit of every workflow and the scripts they run found nothing else that read this repository unauthenticated:
 - Every other checkout is full (`fetch-depth: 0`) or reads only its own commit, and no step fetches after it.
@@ -833,7 +861,12 @@ The audit of every workflow and the scripts they run found nothing else that rea
 - approval-of-record reads the API with the job's token.
 - `check-action-pins` and `check-toolchain` read only upstream repositories and registries.
 - gitleaks, fixture-check, check-releases-immutable, engine-freeze and stryker's affected set read the local clone.
-- The launch check's `gh attestation verify` runs offline against the release's bundle.
+- The launch check's `gh attestation verify` reads only the release's bundle and Sigstore's trusted root, never this
+  repository.
+- Not a read, and the founder's: release.yml's `report` job runs actions/attest-build-provenance, and artifact
+  attestations for a private repository need GitHub Enterprise Cloud, so a release's report goes unattested and
+  production's screening stays closed until that is decided (open item O15, docs/runbooks/screening-capacity.md). Not
+  changed here.
 - Runner sizes, the 4-CPU harness minimum and the larger-runner and GitHub Team decision are the founder's, and are not
   changed here.
 

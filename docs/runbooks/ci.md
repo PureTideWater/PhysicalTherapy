@@ -150,9 +150,9 @@ differential test, which prices the base's engine and this commit's.
      the install failed: a download refused (re-run), or an archive whose SHA-256 is not the one
      `tools/trivy/release.txt` pins, which is never re-run past: read which archive was served. A new Trivy is a pull
      request that changes every line of `release.txt`, each SHA-256 copied from the release's
-     `trivy_<version>_checksums.txt` and the release at least three days old (docs/adr/0066, Part 2, amendment of
-     2026-11-04). setup-trivy's own install is never used: its installer downloads from get.trivy.dev, gone since
-     2026-11-03.
+     `trivy_<version>_checksums.txt`; `pnpm actions:check` refuses a version whose tag is under three days old or no
+     longer listed (docs/adr/0066, Part 2, amendment of 2026-11-04). setup-trivy's own install is never used: its
+     installer downloads from get.trivy.dev, gone since 2026-11-03.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -259,8 +259,9 @@ private week (docs/runbooks/github-governance.md, step 1).
 A private repository answers git only with a token. A checkout that keeps no token (`persist-credentials: false`, every
 workflow's but publish-content's) must therefore fetch everything its job's git commands read: no partial clone
 (`filter:`), whose blobs a later command fetches with no credentials (screening-capacity's `changes` job failed so on
-2026-11-04, run 41765454724), and no `git fetch`, clone or `ls-remote` of this repository in a step; every `gh` step sets
-`GH_TOKEN`. `tools/test/workflows.test.ts` holds all three (CI-11).
+2026-11-04, run 41765454724), and no `git fetch`, clone or `ls-remote` of this repository, nor a curl of its API or
+server, in a step or in a script a step runs; every `gh` step and every step whose script reads the API is given the
+job's token. `tools/test/workflows.test.ts` holds all of it (CI-11).
 
 ## Caches
 
