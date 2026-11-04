@@ -1930,7 +1930,10 @@ since no closure imports `playwright-core`.
   manifest added with it; a key holding U+2028 or U+2029; the root manifest, the workspace file and the workflow
   added or deleted; a step pin moved with its scalar re-quoted; a runner-proof shard that does not hold its packages
   whole; a byte-order mark, a `%YAML` directive, a warning and a merge key; and a specifier of 257 characters. Each was
-  shown killing its mutant (M01 to M16).
+  shown killing its mutant (M01 to M16). So do the completeness critic's seven (C-G2): a catalog `node` entry,
+  `tools/package.json`'s `@tp/stryker-canary` moved between `workspace:` forms, a dependency value that is not a
+  string, a workflow scalar rewritten to the same value (`5` as `0x5`), a key holding U+0085, a workspace manifest a
+  synthetic data entry lists (read whole), and a re-quoted `packages` entry.
 - A new file a shard loads by path fails `GLOBAL_LOADED`'s test until it is listed. A new tooling file that runs a
   process or names a manifest fails the guard until it is listed with what it reads.
 - A local shard run needs the pinned Node and `packageManager`'s pnpm, and every shard on one commit

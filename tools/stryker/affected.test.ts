@@ -788,6 +788,13 @@ describe('the field rule, the runner proof and what else affects every package, 
     expect(workflow(FLOW, moved.replace(`actions/setup-node@${other(PINS.node)}`, `"actions/setup-node@${other(PINS.node)}"`)).packages).toEqual(ALL);
   });
 
+  it('gives all four when a scalar of mutation.yml is rewritten to the same parsed value (timeout-minutes 5 as 0x5), which the comments-only rule must not take for layout', () => {
+    expect(WORKFLOW).toContain('timeout-minutes: 5\n');
+    const rewritten = WORKFLOW.replace('timeout-minutes: 5\n', 'timeout-minutes: 0x5\n');
+    expect(parse(rewritten)).toEqual(parse(WORKFLOW));
+    expect(workflow(WORKFLOW, rewritten).packages).toEqual(ALL);
+  });
+
   it('gives all four for a pin-only change when the runner-proof shard does not hold its packages whole', () => {
     const shards = readShards();
     const shared = proof[0];

@@ -525,6 +525,39 @@ describe('on this repository', () => {
     expect(bump(at(257))).toEqual(ALL);
   });
 
+  // The completeness critic of #96's reviews (C-G2): more fail-closed rules, each with a case that turns red when it is removed.
+
+  it('affects all four for a catalog entry named for a runtime (node), which no closure imports', () => {
+    expect(workspace(replaced('  zod: ^4.6.7\n', '  zod: ^4.6.7\n  node: ^24.22.2\n'))).toEqual(ALL);
+  });
+
+  it('affects all four for tools/package.json’s workspace: entry of a package the mutation tooling imports, moved between workspace: forms', () => {
+    const owners = ownersOf('tools/package.json');
+    expect(owners.length).toBeLessThan(ALL.length);
+    expect(TOOLS).toContain('"@tp/stryker-canary": "workspace:*"');
+    expect(tools((manifest) => void (manifest.devDependencies = { ...manifest.devDependencies, '@tp/stryker-canary': 'workspace:^' }))).toEqual(ALL);
+  });
+
+  it('affects all four for a dependency value that is not a string (a number, an object) in the root or packages/db', () => {
+    for (const value of [5, { version: '^1.0.0' }]) {
+      expect(root((manifest) => void ((manifest.devDependencies as Record<string, unknown>)['@next/eslint-plugin-next'] = value)), `root: ${JSON.stringify(value)}`).toEqual(ALL);
+      expect(db((manifest) => void ((manifest.dependencies as Record<string, unknown>).pg = value)), `packages/db: ${JSON.stringify(value)}`).toEqual(ALL);
+    }
+  });
+
+  it('affects all four for a script key holding a C1 control character (U+0085), and prints it escaped', () => {
+    const key = 'x\u0085y';
+    const result = judge(changed('apps/web/package.json', WEB, edit(WEB, (manifest) => void (manifest.scripts = { ...manifest.scripts, [key]: 'node x.js' }))));
+    expect(result.packages).toEqual(ALL);
+    const reasons = Object.values(result.reasons).flat();
+    expect(reasons.some((reason) => reason.includes('scripts."x\\u0085y"'))).toBe(true);
+    expect(reasons.filter((reason) => reason.includes('\u0085'))).toEqual([]);
+  });
+
+  it('affects all four for a packages entry re-quoted, though both readings of the list are the same', () => {
+    expect(workspace(replaced('  - infra\n', '  - "infra"\n'))).toEqual(ALL);
+  });
+
   it('affects none for comments alone (a YAML comment outside packages) or JSON whitespace', () => {
     expect(workspace(replaced('  zod: ^4.6.7\n', '  # the schema library\n  zod: ^4.6.7 # pinned by catalog\n'))).toEqual([]);
     expect(packages(changed('package.json', ROOT, `${JSON.stringify(JSON.parse(ROOT), null, 4)}\n\n`))).toEqual([]);
@@ -559,6 +592,17 @@ describe('on a synthetic world: the mirror rule’s closures and the files a sha
     // A manifest a closure file imports is read whole, so even a script of the ledger's own manifest affects the ledger.
     const ledger = text('packages/ledger/package.json');
     expect(packages(changed('packages/ledger/package.json', ledger, edit(ledger, (manifest) => void (manifest.scripts = { dev: 'tsx x.ts' }))))).toEqual(['ledger']);
+  });
+
+  it('affects the closure that lists a workspace manifest as data, whole: a script of it no install runs, with no field classified', () => {
+    const config: AffectedConfig = { ...SYNTHETIC, data: { ...SYNTHETIC.data, ledger: [{ glob: 'apps/site/package.json', why: 'synthetic: a data entry over a workspace manifest' }] } };
+    const site = text('apps/site/package.json');
+    const after = edit(site, (manifest) => void (manifest.scripts = { dev: 'tsx x.ts' }));
+    const result = affected({ files: ['apps/site/package.json'], texts: changed('apps/site/package.json', site, after) }, closuresOf(world, config), globalFiles(world.root, world.files, config));
+    expect(result.packages).toEqual(['ledger']);
+    expect(result.reasons.ledger).toEqual(['apps/site/package.json (data its run reads)']);
+    // Without the data entry, the same edit is a script no install runs.
+    expect(packages(changed('apps/site/package.json', site, after))).toEqual([]);
   });
 
   it('affects all four for the name or exports of a manifest whose name a by-path-loaded test imports, and for another manifest taking that name', () => {
