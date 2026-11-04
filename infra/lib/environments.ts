@@ -96,6 +96,13 @@ export interface EnvironmentSettings {
 
 const burstable = (size: ec2.InstanceSize) => ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, size);
 
+/*
+ * Every environment's database is db.t4g.medium (dev and staging since 2026-11-04, docs/adr/0083, "The practice pool"):
+ * the connection budget (infra/lib/connections.ts), every task's pools full during a deploy, holds 163 connections in dev
+ * and staging, which db.t4g.micro (51 for the application logins) and db.t4g.small (163) do not stay under, and 205 in
+ * production, against db.t4g.medium's 389. Production alone is Multi-AZ with deletion protection.
+ */
+
 /**
  * The web at half a vCPU and 1,024 MiB in every environment (the founder's ruling of 2026-10-22 on the sizing question,
  * O9: on a quarter vCPU, three 11-MB uploads at once reached the queue after 14.6 to 16.0 s, against 6.9 s on half a
@@ -121,7 +128,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     holdsPhi: false,
     vpcCidr: '10.10.0.0/16',
     database: {
-      instanceType: burstable(ec2.InstanceSize.MICRO),
+      instanceType: burstable(ec2.InstanceSize.MEDIUM),
       multiAz: false,
       deletionProtection: false,
       allocatedStorageGiB: 20,
@@ -137,7 +144,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     holdsPhi: false,
     vpcCidr: '10.20.0.0/16',
     database: {
-      instanceType: burstable(ec2.InstanceSize.SMALL),
+      instanceType: burstable(ec2.InstanceSize.MEDIUM),
       multiAz: false,
       deletionProtection: false,
       allocatedStorageGiB: 20,

@@ -18,6 +18,7 @@ import { ScreeningRole } from './constructs/screening-role';
 import { Storage } from './constructs/storage';
 import { SupportMail } from './constructs/support-mail';
 import { Uptime } from './constructs/uptime';
+import { type ConnectionBudget, checkedConnectionBudget } from './connections';
 import { DeployParameters } from './deploy-parameters';
 import { type EnvironmentName, type EnvironmentSettings, GITHUB_REPOSITORY, environmentSettings } from './environments';
 import { HEARTBEAT_INTERVAL_SECONDS } from './heartbeat';
@@ -52,6 +53,11 @@ export interface PlatformStackProps extends StackProps {
 export class PlatformStack extends Stack {
   readonly environmentName: EnvironmentName;
   readonly settings: EnvironmentSettings;
+  /**
+   * The database's connection budget (infra/lib/connections.ts): every task's pools full at once, under what the instance
+   * class gives the application logins, checked here so a stack over budget does not synthesize (docs/adr/0083).
+   */
+  readonly connectionBudget: ConnectionBudget;
   readonly key: EnvironmentKey;
   readonly network: Network;
   readonly storage: Storage;
@@ -75,6 +81,7 @@ export class PlatformStack extends Stack {
     super(scope, id, { terminationProtection: environmentSettings(props.environmentName).protectFromDeletion, ...props });
     this.environmentName = props.environmentName;
     this.settings = environmentSettings(props.environmentName);
+    this.connectionBudget = checkedConnectionBudget(this.settings);
     Tags.of(this).add('project', 'therapy-platform');
     Tags.of(this).add('environment', props.environmentName);
 
@@ -90,6 +97,7 @@ export class PlatformStack extends Stack {
       environmentName,
       key,
       operator: props.operator ?? {},
+      database: { instance: this.database.instance, maxConnections: this.connectionBudget.maxConnections, alarmThreshold: this.connectionBudget.alarmThreshold },
       ...(this.settings.compute.screening.starts === 'launch' ? { screeningRuns: parameters.screeningLaunched } : {}),
     });
     this.mailStreams = new MailStreams(this, 'MailStreams', {

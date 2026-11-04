@@ -9,11 +9,13 @@ import {
   aws_iam as iam,
   type aws_kms as kms,
   aws_logs as logs,
+  type aws_rds as rds,
   aws_sns as sns,
   aws_sns_subscriptions as subscriptions,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import { DATABASE_CONNECTIONS_ALARM_PERCENT } from '../connections';
 import type { EnvironmentName } from '../environments';
 import { HEAP_MIB } from '../heap';
 import {
@@ -95,6 +97,11 @@ export interface MonitoringProps {
    * a missing beat counts as missed, as the worker's does.
    */
   readonly screeningRuns?: CfnCondition;
+  /**
+   * The database and its connection budget's figures (infra/lib/connections.ts): its max_connections and the alarm's line,
+   * DATABASE_CONNECTIONS_ALARM_PERCENT of it.
+   */
+  readonly database: { readonly instance: rds.IDatabaseInstance; readonly maxConnections: number; readonly alarmThreshold: number };
 }
 
 /**
@@ -150,6 +157,10 @@ export interface MonitoringProps {
  * request, a refused second-factor enrolment and a refused client credential. Reset requests per user are counted by a
  * Contributor Insights rule keyed on the user ID, never by a metric with a user dimension, and alarm at five in an
  * hour; the alarm names no user.
+ *
+ * The database's connections (docs/adr/0083, "The practice pool"): RDS's DatabaseConnections at its largest in five
+ * minutes, alarmed at DATABASE_CONNECTIONS_ALARM_PERCENT (80%) of the instance's max_connections as the connection
+ * budget reads it, the figure the stack's synthesis checked every task's pools against.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -164,6 +175,8 @@ export class Monitoring extends Construct {
   readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
   /** A job's live heap above 75% of the worker's heap limit (D23). */
   readonly jobHeapAlarm: cloudwatch.Alarm;
+  /** The database's connections at 80% of its max_connections (docs/adr/0083). */
+  readonly databaseConnectionsAlarm: cloudwatch.Alarm;
   readonly failedSignInBurstAlarm: cloudwatch.Alarm;
   readonly modelBudgetAlarm: cloudwatch.Alarm;
   readonly screeningHeartbeatAlarm: cloudwatch.Alarm;
@@ -354,6 +367,16 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.jobHeapAlarm.addAlarmAction(notify);
+
+    this.databaseConnectionsAlarm = new cloudwatch.Alarm(this, 'DatabaseConnections', {
+      alarmDescription: `The ${props.environmentName} database held ${String(props.database.alarmThreshold)} or more connections, ${String(DATABASE_CONNECTIONS_ALARM_PERCENT)} percent of the ${String(props.database.maxConnections)} the connection budget reads for its class.`,
+      metric: props.database.instance.metricDatabaseConnections({ statistic: cloudwatch.Stats.MAXIMUM, period: Duration.seconds(JOB_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: props.database.alarmThreshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.databaseConnectionsAlarm.addAlarmAction(notify);
 
     const signInBursts = this.webLogGroup.addMetricFilter('FailedSignInBursts', {
       filterPattern: logs.FilterPattern.any(...SIGN_IN_BURST_MESSAGES.map((message) => logs.FilterPattern.stringValue('$.msg', '=', message))),

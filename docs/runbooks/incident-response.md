@@ -113,6 +113,32 @@ step 3 checks whether any did. It is not a security event: open no incident reco
    the bound goes back to the reader that outgrew it (ADR 0083: no job holds a month's lines beyond a small, measured
    per-line holder), never a larger heap alone.
 
+## An operational alarm, not a security event: the database's connections (ADR 0083)
+
+The alarm `DatabaseConnections` (on the operator topic) fires when the database held 316 or more connections at any
+moment of a five-minute period: 80% of the 394 `max_connections` the stack reads for db.t4g.medium, the class every
+environment runs (`infra/lib/connections.ts`). Each stack's synthesis checks that every task's pools, all of them full
+at once while a deploy runs old and new tasks side by side, plus a reserve of 10, stay under the 389 connections the
+application logins can open (394 less the 5 RDS keeps for superusers): 205 in production, 163 in dev and staging. So the alarm means connections the budget does not count: more tasks than the settings, a pool
+larger than its code says, connections that are never given back, or a client outside the tasks. The alarm alone does
+not mean anything failed. Past 389 the database refuses new connections: the request or job that wanted one fails, and a
+job's attempt logs `job attempt failed` with `error_code` `DB_53300` (too many connections). It is not a security event
+unless step 3 finds a client nobody can name: then open the record (section 1).
+
+1. In the RDS console, read the instance's `DatabaseConnections` over the last day. A rise during a deploy that falls
+   back once the old tasks stop is the deploy; a level that stays up, or keeps climbing between deploys, is not.
+2. In ECS, compare each service's running tasks with its desired count (production: web 2, worker 1, platform 1,
+   screening 1 once launched; dev and staging: one of each). More tasks than that, a deploy stuck with old and new tasks
+   both running, or a task someone started by hand, explains most of it. In the worker's, the platform's and the
+   screening consumer's log groups, look for `job attempt failed` with `DB_POOL_TIMEOUT` (a pool was full) or
+   `DB_53300` in the same minutes, and record the job IDs.
+3. If steps 1 and 2 do not explain the count, the connections come from outside the tasks: a person's session, a tool,
+   or a client that should not connect. Any client you cannot name is a security event: section 1.
+4. Open a ticket with the counts, the task counts and the times (IDs and numbers only, never a query's text), and fix
+   forward in code: a pool, a task count or the database's class changes in the repository, and the stack's synthesis
+   checks the budget again. Never raise `max_connections` in the console or by hand: the parameter group is code, and a
+   value the budget does not know leaves the alarm and the check measuring the wrong limit.
+
 ## Weekly sign-in review
 
 The reset and enrolment alarms (docs/adr/0088, D7; test matrix SEC-23) tell the operator within the hour; this review

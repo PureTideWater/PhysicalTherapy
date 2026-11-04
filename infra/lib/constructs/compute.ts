@@ -60,6 +60,20 @@ export const WORKER_STOP_TIMEOUT = Duration.seconds(60);
 /** How long ECS waits after SIGTERM for the screening consumer: Fargate's most (infra/lib/screening.ts). */
 export const SCREENING_STOP_TIMEOUT = Duration.seconds(SCREENING_STOP_TIMEOUT_SECONDS);
 
+/**
+ * Every service's rolling deploy (service()): ECS starts the new tasks, up to twice the desired count, before it stops the
+ * old ones, and never runs fewer than the desired count. So a service can run this percentage of its desired count at
+ * once, and the database's connection budget counts it (infra/lib/connections.ts).
+ */
+export const DEPLOY_MIN_HEALTHY_PERCENT = 100;
+export const DEPLOY_MAX_HEALTHY_PERCENT = 200;
+
+/**
+ * The web's e-signature vendor: none is chosen yet, and agreements are recorded in the console (docs/adr/0053), so the
+ * web opens no e-signature pool (apps/web/src/lib/server/config.ts); the connection budget counts that pool once one is.
+ */
+export const WEB_ESIGN_PROVIDER: string = 'none';
+
 /** The queue connection: pg-boss's login, every session as the role that owns its schema. */
 const QUEUE: ConnectionUrl = { variable: 'QUEUE_DATABASE_URL', role: QUEUE_ROLE };
 
@@ -244,7 +258,7 @@ export class Compute extends Construct {
         // security.txt's Contact and the disclosure page's address (audit item #20 (f)).
         SECURITY_EMAIL: parameters.securityEmail,
         // No e-signature vendor is chosen yet: agreements are recorded in the console (docs/adr/0053).
-        ESIGN_PROVIDER: 'none',
+        ESIGN_PROVIDER: WEB_ESIGN_PROVIDER,
         TP_ENVIRONMENT: environmentName,
         // Longer than the load balancer's idle timeout, so it never reuses a connection the server closed.
         KEEP_ALIVE_TIMEOUT: String(WEB_KEEP_ALIVE_MS),
@@ -480,8 +494,8 @@ export class Compute extends Construct {
       securityGroups: [securityGroup],
       platformVersion: ecs.FargatePlatformVersion.LATEST,
       circuitBreaker: { enable: true, rollback: true },
-      minHealthyPercent: 100,
-      maxHealthyPercent: 200,
+      minHealthyPercent: DEPLOY_MIN_HEALTHY_PERCENT,
+      maxHealthyPercent: DEPLOY_MAX_HEALTHY_PERCENT,
       enableExecuteCommand: false,
       propagateTags: ecs.PropagatedTagSource.SERVICE,
       ...(behindLoadBalancer ? { healthCheckGracePeriod: Duration.seconds(60) } : {}),

@@ -32,6 +32,7 @@ import { monitorHandler } from './monitor/job';
 import { packetExportHandler } from './packets/export';
 import { parseHandler } from './parse/job';
 import { mailSender, platformRuntime } from './platform/wiring';
+import { QUEUE_POOL_CONNECTIONS } from './pools';
 import { priceHandler } from './price/job';
 import { reconcileHandler } from './reconcile/job';
 import { roiStatementHandler } from './reconcile/print';
@@ -90,7 +91,7 @@ try {
 
 if (platformWorker !== undefined && platform !== null) {
   try {
-    const boss = new PgBoss({ connectionString: platformWorker.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
+    const boss = new PgBoss({ connectionString: platformWorker.queueDatabaseUrl, max: QUEUE_POOL_CONNECTIONS, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
     boss.on('error', () => {
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });
     });
@@ -107,7 +108,7 @@ if (screeningWorker !== undefined) {
   let consumer: ScreeningJobs | undefined;
   try {
     // LISTEN/NOTIFY: a send to a screening queue wakes a free thread's worker at once, not at its next poll.
-    const boss = new PgBoss({ connectionString: screeningWorker.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...SCREENING_BOSS_OPTIONS });
+    const boss = new PgBoss({ connectionString: screeningWorker.queueDatabaseUrl, max: QUEUE_POOL_CONNECTIONS, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...SCREENING_BOSS_OPTIONS });
     boss.on('error', () => {
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });
     });
@@ -126,7 +127,7 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
   let consumer: ScreeningJobs | undefined;
   try {
     // Where this worker prices screenings too (development, the tests), it listens as the consumer does.
-    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...(screening === null ? {} : SCREENING_BOSS_OPTIONS) });
+    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, max: QUEUE_POOL_CONNECTIONS, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...(screening === null ? {} : SCREENING_BOSS_OPTIONS) });
     boss.on('error', () => {
       // pg-boss errors are logged by code only; their text can carry SQL and connection details.
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });

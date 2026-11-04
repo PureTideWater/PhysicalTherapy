@@ -3,7 +3,8 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ENVIRONMENTS } from '../lib/environments';
+import { connectionBudget } from '../lib/connections';
+import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
 import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, PLATFORM_HEARTBEAT_METRIC, workerLogGroupName } from '../lib/heartbeat';
 import { HEAP_MIB } from '../lib/heap';
 import {
@@ -253,6 +254,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.jobFailedAlarm,
       stack.monitoring.pricingEngineErrorsAlarm,
       stack.monitoring.jobHeapAlarm,
+      stack.monitoring.databaseConnectionsAlarm,
       stack.monitoring.failedSignInBurstAlarm,
       stack.monitoring.modelBudgetAlarm,
       stack.edge.signInRateLimitAlarm,
@@ -592,6 +594,26 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
     expect(propertiesOf(heapAlarm).Dimensions).toBeUndefined();
     expect(propertiesOf(heapAlarm).OKActions).toBeUndefined();
+  });
+
+  it('tells the operator when the database holds 80% of its max_connections in five minutes, the figure synthesis checked every task against (docs/adr/0083)', () => {
+    const budget = connectionBudget(environmentSettings(environment));
+    const alarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.databaseConnectionsAlarm));
+    expect(budget.alarmThreshold).toBe(Math.ceil(budget.maxConnections * 0.8));
+    expect(propertiesOf(alarm)).toMatchObject({
+      AlarmDescription: `The ${environment} database held ${String(budget.alarmThreshold)} or more connections, 80 percent of the ${String(budget.maxConnections)} the connection budget reads for its class.`,
+      Namespace: 'AWS/RDS',
+      MetricName: 'DatabaseConnections',
+      Dimensions: [{ Name: 'DBInstanceIdentifier', Value: ref(logicalIdOf(stack, stack.database.instance)) }],
+      Statistic: 'Maximum',
+      Period: 300,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      Threshold: budget.alarmThreshold,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
+    expect(propertiesOf(alarm).OKActions).toBeUndefined();
   });
 
   it('counts each heartbeat line as the custom heartbeat metric', () => {

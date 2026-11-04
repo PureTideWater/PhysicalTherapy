@@ -503,7 +503,9 @@ As built (`tools/release-capacity/scenario.ts`, `run.ts`, `checks.ts`):
   cover on A once step 7b moved to F, and also catches a triage that makes fewer, more or other lines actionable than
   the month it was seeded with (the review of 2026-11-04).
 - Every summary, on a pass, a failure, a smoke run or a run that stopped early, prints the fixed line
-  (`KNOWN_GAP`), word for word: "Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F,
+  (`KNOWN_GAP`; since the orchestrator's addition of 2026-11-04, ~22:27 UTC, with the run's F reconcile time against its
+  900 s attempt between its two sentences, `knownGap`: "The reconcile pass at step 7b's 2,000 lines", below), word for
+  word: "Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F,
   a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage
   and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s
   15-minute attempt. Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step
@@ -601,24 +603,33 @@ files as the first grant, and no other.
 
 #### The practice pool, 2026-11-04
 
+*Added 2026-11-04.* **A defect older than SUITE-CAP-1b, fixed here.** The practice worker's pool of four connections
+(`main.ts`), its fifteen practice jobs at once and the ten-second connection timeout are all on the base:
+`git diff origin/claude/build-platform...3ac856d5 -- apps/worker packages/db/src/connect.ts` changes `heap.ts`, the job
+heap line and the triage and report query shapes, and no pool size, concurrency or timeout. It rides this pull request
+because it blocks SUITE-CAP-1b's acceptance run: CAS-42.5 needs every measured job on its first attempt, and the defect
+fails that whenever the runner is slow. Decided by Lane A's schema-chain session, 2026-11-04 (~22:30 UTC), and agreed
+by Lane A's orchestrator, who added the connection budget, the alarm and the Known gap margin below; neither is a founder
+ruling, and no line, budget or check moves.
+
 **Why A price and C parse 4 completed on attempt 2 (CAS-42.5 on 3ac856d5, run 41901463895).** The practice worker runs a
-job from each practice queue's loop and four parses at once (`workOptions`): fifteen jobs, each holding one of the
-application login's connections at a time, for its `job_run` writes, its gate and each of its transactions in turn.
-`main.ts` opened that pool with four connections and the ten-second connection timeout (`CONNECTION_TIMEOUT_MS`, ADR
-0055). A month's price job holds its one connection for its whole run, and an audit report for its triage, its reading
-and its print, so the concurrent phase's six jobs (A's price, B's report, C's four parses) left two of them waiting for
-a connection. That run's runner was slower across the board (its seed 62 s against 37 s on run 41848025627, its parses
-13.1 s against 5.0 to 5.6 s), the connections stayed held past ten seconds, and the two waiting attempts failed; pg-boss
-ran them again 30 to 60 seconds later and both completed. An instrumented run of the same tree (run 41913629020, on
-`co-001/wip-sc1b-retry-1`, the harness alone changed) caught it directly. Its large jobs together failed A's second
-report and C's parses 7 and 8 on their first attempts, each with pg-pool's `timeout exceeded when trying to connect`,
-raised in the handler's transaction (`transaction` in `packages/db/src/authz/scope.ts`, awaiting `pool.connect()`) while
-E's price, D's triage and C's parses 5 and 6 held the four connections, the two parses for 11 seconds. In its concurrent
-phase the four parses held all four connections for 7 seconds, and A's price and B's report waited 7 seconds for theirs,
-inside the timeout. Every local run, and the faster runners, waited less than ten seconds, so no attempt failed.
-Production runs the same worker (`WORKER_JOBS=practice`, one task at half a vCPU) with the same pool: a job that needs a
-connection while four longer jobs hold theirs fails its attempt after ten seconds, and three such attempts fail the job
-(a parse marks its document failed).
+job from each practice queue's loop and four parses at once (`workOptions`): fifteen jobs, each holding one of its
+login's connections at a time (the worker's own login, ADR 0061), for its `job_run` writes, its gate and each of its
+transactions in turn. `main.ts` opened that pool with four connections and the ten-second connection timeout
+(`CONNECTION_TIMEOUT_MS`, ADR 0055). A month's price job holds its one connection for its whole run, and an audit report
+for its triage, its reading and its print, so the concurrent phase's six jobs (A's price, B's report, C's four parses)
+left two of them waiting for a connection. That run's runner was slower across the board (its seed 62 s against 37 s on
+run 41848025627, its parses 13.1 s against 5.0 to 5.6 s), the connections stayed held past ten seconds, and the two
+waiting attempts failed; pg-boss ran them again 30 to 60 seconds later and both completed. An instrumented run of the
+same tree (run 41913629020, on `co-001/wip-sc1b-retry-1`, the harness alone changed) caught it directly. Its large jobs
+together failed A's second report and C's parses 7 and 8 on their first attempts, each with pg-pool's `timeout exceeded
+when trying to connect`, raised in the handler's transaction (`transaction` in `packages/db/src/authz/scope.ts`,
+awaiting `pool.connect()`) while E's price, D's triage and C's parses 5 and 6 held the four connections, the two parses
+for 11 seconds. In its concurrent phase the four parses held all four connections for 7 seconds, and A's price and B's
+report waited 7 seconds for theirs, inside the timeout. Every local run, and the faster runners, waited less than ten
+seconds, so no attempt failed. Production runs the same worker (`WORKER_JOBS=practice`, one task at half a vCPU) with
+the same pool: a job that needs a connection while four longer jobs hold theirs fails its attempt after ten seconds,
+and three such attempts fail the job (a parse marks its document failed; the job-failure alarm fires).
 
 **The fix: a connection for each job the worker runs at once, and a code for each failed attempt.** `practicePool`
 (`apps/worker/src/worker.ts`, opened by `main.ts` and by the end-to-end worker) holds `PRACTICE_JOB_SLOTS` connections,
@@ -627,14 +638,98 @@ holds. The ten-second timeout stays, for a database that cannot give a connectio
 `job attempt failed` with the job's ID and type and an `error_code` (`attemptErrorCode`: `DB_POOL_TIMEOUT`,
 `DB_CONNECT_TIMEOUT`, `DB_<SQLSTATE>`, a code the error carries, or its class), never the error's text. The weekly run
 prints those codes beside a job that completed on a later attempt, so the job log says why. The check itself is
-unchanged: a retry still fails the run. The database's share: the worker may hold fifteen application connections where
-it held four, eleven more in the worst case, when every pool of every task is full at once (about 101 connections in
-production with its two web tasks, against `db.t4g.medium`'s default `max_connections` of several hundred; 78 in
-development and staging with one, which leaves `db.t4g.micro`'s smaller default less room). Every pool connects on
-demand and closes a connection idle for thirty seconds. Tests, each failing first: fifteen jobs at once, one from each
-queue and four parses, each holding its transaction past a shortened timeout on the pool `main.ts` opens (on four
-connections 11 of the 15 attempts failed; now all complete); the pool's size against the loops `startWorker` starts (4,
-now 15); each failed attempt's line and code; and the summary's codes beside a retried job.
+unchanged: a retry still fails the run. Rejected: capping the worker at four jobs at once, which would serialize the job
+types (a ten-minute reconcile or a two-minute price would hold up parses and the monitoring chain); and waiting for a
+connection with no timeout, which would park jobs behind minutes-long holders inside pg-boss's fifteen-minute expiry and
+hang them on a database that cannot answer, instead of failing them. Tests, each failing first: fifteen jobs at once,
+one from each queue and four parses, each holding its transaction past a shortened timeout on the pool `main.ts` opens
+(on four connections 11 of the 15 attempts failed; now all complete); the pool's size against the loops `startWorker`
+starts (4, now 15); each failed attempt's line and code; and the summary's codes beside a retried job.
+
+**The database's connection budget, checked at synthesis.** The fix lets a worker task hold eleven more connections, so
+each stack now checks, as it synthesizes, that every task its environment can run at once, each of its pools full,
+plus a reserve, stays under what its database gives the application logins (`infra/lib/connections.ts`, run by
+`PlatformStack`; a stack over budget does not synthesize, so no deploy can start one). As built:
+- Each service counts at the most tasks ECS runs at once: its desired count, twice over while a deploy starts the new
+  tasks before it stops the old ones (`DEPLOY_MAX_HEALTHY_PERCENT`, 200, in `compute.ts`), and the migration task.
+- The pools are read from the apps where they are opened, never typed in infra: the web task's from
+  `apps/web/src/lib/server/pools.ts` (the application login's 10, billing's 4, the model gateway's 5, pg-boss's
+  producer's 2: 21; the e-signature pool's 2 count once a vendor is configured, `WEB_ESIGN_PROVIDER` is `none`), and
+  each worker task's from `apps/worker/src/pools.ts` (`workerTaskPools`): the practice jobs' 15 and pg-boss's 10, now
+  set explicitly at pg-boss's own default, 25 (14 before the fix); the platform jobs' operator 2 and pg-boss's 10, 12;
+  the screening consumer's sweep 2, three threads of 2 and pg-boss's 10, 18. The migration task holds one client at a
+  time. The reserve is 10: the seven Secrets Manager rotation functions should they run at once, and three for a
+  person's session.
+- `max_connections` is the parameter group's where it sets one; it sets none, so RDS for PostgreSQL's documented
+  default holds, `LEAST({DBInstanceClassMemory/9531392}, 5000)`, less the 5 connections kept for superusers
+  (`superuser_reserved_connections` 3 and `rds.rds_superuser_reserved_connections` 2, both RDS's defaults). RDS
+  publishes the formula, not `DBInstanceClassMemory` for each class, so the budget takes the class's memory less the
+  larger of 512 MiB and an eighth of it: 56 connections on db.t4g.micro, 168 on db.t4g.small, 394 on db.t4g.medium,
+  788 on db.t4g.large. A published measurement on RDS for PostgreSQL 17 (Classmethod, 2026-10-14, on the t3 classes of
+  the same memory) read 191 at 2 GiB, 402 at 4 GiB and 841 at 8 GiB, where the whole memory would give 225, 450 and 901;
+  the budget stays below each, so it never counts on a connection the instance may not have.
+- The worst case is 205 connections in production (web 4 × 21, worker 2 × 25, platform 2 × 12, screening 2 × 18,
+  migration 1, reserve 10; 183 before the fix) and 163 in dev and staging (one web task: 2 × 21; 141 before), against
+  389 on db.t4g.medium.
+
+Dev and staging did not fit their classes, so both move to db.t4g.medium, production's class (`environments.ts`; ADR
+0012's table notes it). Dev's db.t4g.micro gives the application logins 51 connections: it could not hold even one task
+of each service at rest (89), with or without the fix. Staging's db.t4g.small gives 163, exactly its worst case, which
+must stay under (it held 141 before the fix). The two ways the orchestrator named were to cap the environment's worker
+tasks or to move it one class up, whichever is cheaper and still safe. The worker already runs one task, so the only
+cap is a deploy that stops the old worker before it starts the new one (100% at most); it costs nothing, but it leaves
+the environment with no practice worker for up to the 60-second stop timeout and a task's start on every deploy, which
+can trip the two-minute heartbeat alarm each time, and staging would no longer deploy the worker as production does: not
+safe enough for an alarm the operator must trust. One class up is db.t4g.medium for staging, about $23 a month more
+(about $23.36 on demand for db.t4g.small, about $47 for db.t4g.medium, single-AZ), and it also gives staging
+production's memory and connections, which its own measurements (the screening's runner-to-Fargate factor) then run
+on. For dev one class up (db.t4g.small) still holds 163 against 163, so dev takes staging's class too; dev deploys
+nothing today (its database is local Docker Postgres, ADR 0012), so the class costs nothing until it is deployed, and
+then about $35 a month more than db.t4g.micro. PRD section 19's RDS line rises by staging's share once staging runs.
+
+**The alarm.** `DatabaseConnections` (`infra/lib/constructs/monitoring.ts`) tells the operator when RDS's
+`DatabaseConnections` reaches 80% of `max_connections` as the budget reads it at any moment of five minutes: 316 of 394
+in every environment, so it fires early rather than late. Its runbook section is in
+`docs/runbooks/incident-response.md` ("the database's connections"). Tests, each failing first: the budget test
+(`infra/test/connections.test.ts`) on the old classes, where dev's and staging's stacks are refused (5 of its 17 tests
+fail, and `monitoring.test.ts` cannot synthesize at all), and passes on db.t4g.medium; the alarm's own test in
+`monitoring.test.ts`; and a pin of the web's model pool to the gateway's calls in flight and one to spare
+(`apps/web/src/lib/server/pools.test.ts`).
+
+#### The reconcile pass at step 7b's 2,000 lines: a known limit, SUITE-CAP-3's, 2026-11-04
+
+*Added 2026-11-04.* F's reconcile in step 7b took 615.7 s on CI (run 41901463895) and 526.3 s (run 41913629020, the
+same tree and a harness probe), and 730.8 s locally (CAS-42.6), all on the first attempt: 58% to 81% of the job's 900 s
+attempt at 2,000 lines, where CAS-42.3's database test takes 55.2 s at the same size (its measured pass posts only; its
+approvals run in earlier setup passes). A profile on a private PostgreSQL 18.4 cluster, the harness stopped where step
+7b queues F's reconcile and each variant run as `run.ts` runs it on a fresh copy, found the time in two families of the
+base's statements, which neither this pull request's migration nor its code changes:
+- `candidatesFor`'s `byPatient` query (`apps/worker/src/reconcile/remittances.ts`): 4,000 calls, 403.5 s (100.9 ms a
+  call, 137,231,521 buffer hits), 72% to 75% of the pass. Its exclusion of claims already matched, a correlated
+  `NOT EXISTS` on `ledger_match`, is planned as a nested-loop anti-join whose inner side is a bitmap scan of
+  `ledger_match_by_remittance` on the practice alone, run again for each of about 560 candidate claims and reading every
+  match the pass has written so far: `ledger_match` was empty and never analyzed when the pass began, and every row it
+  holds is the pass's own uncommitted write, so no ANALYZE can correct the estimate. An index on
+  `ledger_match (practice_id, claim_id, service_line_id) WHERE kind = 'claim'` was never used (580.5 s; the same 137 M
+  hits); the exclusion written as an uncorrelated InitPlan took the pass to 223.7 s (`byPatient` 55.2 s, 40.4 M hits,
+  the same rows and writes).
+- The case refresh on each stage event: `syncLineStages` writes 4,000 single-row `INSERT INTO line_status`, and each
+  fires `line_status_refresh_cases`, whose `case_rules()` totals re-count all 2,000 lines of F's one case: 89.5 s to
+  114.9 s for the inserts, of it `case_rules`' SELECT 84.4 s to 108.1 s (120,287,999 buffer hits), a good, F-scoped plan
+  run once per event.
+- On the base's bodies (this pull request's trigger bodies, `claim_by_superseded` and `line_status_head` taken away) the
+  pass took 676.8 s with exactly the same buffer counts for both families: the cost is the base's. This pull request's
+  own statements cost 0.6 s of it (the head upsert 0.23 s, `line_status_rules()` 0.36 s), and `claim_by_superseded`
+  takes about 25 s off it (`claimLines` 28.6 s on the base, 3.1 s to 3.9 s here).
+
+It fits the attempt today, on the first attempt, with 284 to 374 s to spare on CI; a runner 1.46 times slower than the
+slower CI run would cross 900 s. It does not have the 2.5-times headroom section 8.4 keeps for its own budgets (that
+would need 360 s or less), and F is pinned at 2,000 lines in one case, so only the runner's speed can move it. The fix is
+SUITE-CAP-3's (Lane B), handed over with the profile: its designed D1 (one candidate search per pass, with the exclusion
+written so its cost cannot depend on `ledger_match`'s statistics) and D3 (`syncLineStages` as one multi-row insert, so a
+case is refreshed once per statement). Until then every summary's Known gap line prints the run's F reconcile time
+against its 900 s attempt, with its share and the seconds to spare, beside the full-size figure (Lane A's orchestrator,
+2026-11-04, ~22:27 UTC); whichever of this pull request and SUITE-CAP-3 lands second resets step 7b's expectation.
 
 ## Alternatives considered
 
@@ -676,6 +771,8 @@ now 15); each failed attempt's line and code; and the summary's codes beside a r
 - The reconcile pass's own time at size (CAS-42.3 runs 2,000 lines, not 20,000): `candidatesFor`'s two queries per
   open case line, `claimLines`' per-line correction chain and `syncLineStages`' statement per stage, which grow faster
   than the lines. SUITE-CAP-3 measures reconcile at real size.
+- Staging reads its database's `max_connections` (`SHOW max_connections` on db.t4g.medium): the connection budget's
+  estimate (394) gives way to the measured figure (`infra/lib/connections.ts`), and the alarm's line follows.
 - The weekly run's step 7b at full size: about 31% of A's 100,000 lines are now actionable, and the reconcile pass
   walks every open case line (2,084 lines took 333.2 s at 0.5 vCPU), so A's reconcile cannot finish in an attempt until
   SUITE-CAP-3. Decided by Lane A's orchestrator on 2026-11-04 ("The weekly run's memory line and step 7b", above):

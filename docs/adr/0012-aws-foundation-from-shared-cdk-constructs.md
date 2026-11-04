@@ -28,10 +28,13 @@ template differ from the deployed one, so behaviors that matter are explicit pro
 
 | Setting | dev | staging | production |
 | --- | --- | --- | --- |
-| Database instance | db.t4g.micro | db.t4g.small | db.t4g.medium, Multi-AZ, deletion protection |
+| Database instance | db.t4g.medium (db.t4g.micro until 2026-11-04) | db.t4g.medium (db.t4g.small until 2026-11-04) | db.t4g.medium, Multi-AZ, deletion protection |
 | Object Lock mode (packets, audit copies) | GOVERNANCE | GOVERNANCE | COMPLIANCE |
 | User pool deletion protection, stack termination protection | off | off | on |
 | Read-only pull-request diff role | no | yes | no |
+
+*Since 2026-11-04:* dev and staging run db.t4g.medium, production's class, so every task's database pools fit under
+the instance's connections, which each stack now checks as it synthesizes (ADR 0083, "The practice pool").
 
 **Network.** Subnet groups `edge` (public, no public addresses assigned, empty until the load balancer),
 `app` (web, worker, rotation functions, endpoints) and `data` (RDS), the last two isolated: no NAT gateway and no
