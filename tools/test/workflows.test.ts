@@ -5352,7 +5352,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(BOUNDED_VALUES.filter((row) => row.bytes > MAX_ARG_STRLEN && row.sites === undefined).map(key)).toEqual([]);
   });
 
-  it('holds a row with sites to exactly those places, so a second use of the value over the limit, under any name or key, turns the table red', () => {
+  it('holds a row with sites to exactly those places, so a second use of a value that could pass the limit, under any name or key, turns the table red', () => {
     const text = (more: string) =>
       `name: fixture\non: push\njobs:\n  check:\n    runs-on: ubuntu-26.04\n    outputs:\n      findings: \${{ steps.calendar.outputs.findings }}\n    steps:\n      - name: Read the calendar\n        id: calendar\n        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n  notify:\n    needs: check\n    runs-on: ubuntu-26.04\n    steps:\n      - name: Open an issue\n        env: { FINDINGS_B64: "\${{ needs.check.outputs.findings }}" }\n        run: echo\n${more}`;
     const rows: BoundedValue[] = [
@@ -5371,7 +5371,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(problems(text('      - name: Open an issue\n        env: { FINDINGS_B64: "${{ needs.check.outputs.findings }}" }\n        run: echo again\n'))).toEqual([
       'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Open an issue" env.FINDINGS_B64, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
     ]);
-    // A row with sites that is not the one over the limit is held the same way: a second read of check's findings.
+    // Every row with sites is held the same way, in its own job too: a second read of check's findings.
     const second = text('').replace('        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n', '        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n      - name: Copy them\n        env: { COPY: "${{ steps.calendar.outputs.findings }}" }\n        run: echo\n');
     expect(problems(second)).toEqual(['fixture.yml check steps.calendar.outputs.findings: read at job check outputs.findings, job check step "Copy them" env.COPY, not exactly at its sites, job check outputs.findings']);
   });
