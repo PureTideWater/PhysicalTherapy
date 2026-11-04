@@ -183,9 +183,9 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
     case 'refused':
       switch (result.reason) {
         case 'expired':
-          // The kept email outlives an expiry: that is what it is for.
+          // The kept email outlives an expiry: that is what it is for. A key step goes back to the key surface (UXS-01).
           clearPending(cookies);
-          return { redirect: '/sign-in?reason=step_expired' };
+          return from?.step === 'key' ? KEY_RESTART : RESTART;
         case 'hardware_key_required':
           clearSignIn(cookies);
           return { redirect: '/sign-in/hardware-key?reason=hardware_key_required' };
@@ -247,6 +247,8 @@ function stepPage(pending: SealedPending, now: Date): { readonly time: StepTime;
 }
 
 const RESTART: StepResult = { redirect: '/sign-in?reason=step_expired' };
+/** Where a closed hardware-key step goes: the key surface, which says the step closed, never the password page (UXS-01). */
+const KEY_RESTART: StepResult = { redirect: '/sign-in/hardware-key?reason=step_expired' };
 
 /** Where Start again lands: the sign-in page, which fills in the kept email. */
 export const RESTARTED = { redirect: '/sign-in?reason=restarted' } as const satisfies StepResult;
@@ -476,7 +478,7 @@ export const verifyHardwareKey = publicRoute({
   handle: async (context) => {
     const pending = pendingOf(context, 'key');
     return pending === undefined
-      ? RESTART
+      ? KEY_RESTART
       : advance(context, pending, () => context.services.signIn.completeKey(pending, context.input.response as unknown as AuthenticationResponseJSON, contextOf(context)));
   },
 });
