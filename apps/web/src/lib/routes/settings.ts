@@ -1005,7 +1005,15 @@ export const inviteUserAction = organizationRoute({
     if (inUse !== false) {
       throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
     }
-    const { sub } = await services.provider.ensureUser(input.email);
+    const ensured = await services.provider.ensureUser(input.email);
+    const { sub } = ensured;
+    // SEC-22, docs/adr/0088 D4: the address has no account anywhere, so a provider account found (not made now) is an
+    // orphan; it is linked only if it has never signed in, since whoever holds its password would take the invitation.
+    // The answer is the one for any address in use: an orphan is usually another organization's invitation that rolled
+    // back, so naming it here would tell this organization that another one knows the person (the console names it).
+    if (!ensured.created && !ensured.neverSignedIn) {
+      throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
+    }
     const userId = randomUUID();
     const membershipId = randomUUID();
     try {
@@ -1020,6 +1028,12 @@ export const inviteUserAction = organizationRoute({
         throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
       }
       throw error;
+    }
+    // A new temporary password for this invitation; the provider voids the one it mailed before. An account that signed
+    // in since the check above is not sent one, and is answered as any address in use: the transaction writes nothing
+    // (review security-N3).
+    if (!ensured.created && !(await services.provider.resendInvitation(input.email))) {
+      throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
     }
     return { objectId: membershipId, redirect: `/settings/organizations/${organizationId}/users?notice=invited` };
   },
