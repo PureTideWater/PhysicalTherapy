@@ -222,8 +222,8 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   code opens it again without typing, and "Use a different email" ends it at any time with the address not kept. Its
   warning and closed words are its own (`StepTimer`'s `words`), since nothing is kept before the code is proven. The
   code email states 15 minutes; the provider's hour is not shown.
-- **A2. Every address gets the same answer and the same timing class, and a code goes only to an account that already
-  has a second factor.** The provider is asked only for an active account with `mfa_enrolled`; every other address
+- **A2. Every address gets the same answer and the same timing class, and the app asks the provider for a code only
+  for an account that already has a second factor (on the app's path; see Not covered).** The provider is asked only for an active account with `mfa_enrolled`; every other address
   (unknown, invited, a password set but no factor enrolled, disabled) does the same lookup and skips the send. Its
   account-only refusals are swallowed, and the request is padded to `RESET_REQUEST_FLOOR_MS` (1,500 ms) in a `finally`,
   so a thrown path answers at the floor too. Any other failure of the send or of the request's audit write (an
@@ -276,11 +276,24 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   - a sign-in begun with both factors less than 3 minutes before a reset (Cognito's auth session) can still open an
     app session after the revoke; a reset time checked against `auth_time` would close it (a migration, Lane A);
   - an alarm on `password reset request not delivered` by `error_code`, and the per-user query on
-    `password_reset_requested` (A4), are owed by Lane A.
-- **Not verified here:** Cognito's attempt and request caps, its code's hour and replacement, its p99 for
+    `password_reset_requested` (A4), are owed by Lane A;
+  - SEC-B1 holds on the app's path only. The pool's app client is public (`generateSecret: false`) and recovery is
+    `EMAIL_ONLY`, so a caller who knows the client ID (an identifier: the environment, stack outputs, any ID token's
+    `aud`) can call `ForgotPassword` and `ConfirmForgotPassword` directly. That goes past the gate, the `sign_in`
+    limit and the `password_reset_*` audit, and it revokes no app session. A Cognito `CONFIRMED` user with no factor
+    can then be taken over: the next sign-in is answered `MFA_SETUP`, and the app's own enrolment takes the
+    attacker's TOTP and, for staff, their key. A code obtained that way can also be redeemed on the app's own confirm
+    route, which does not re-check the gate (proposal P-2). The same client lets a caller run `InitiateAuth`
+    directly, past the app's ten-failure lock. This was so on base 24531dc2, before this amendment. Closing it is
+    Lane A's (proposal P-1: a confidential client with a `SecretHash`, and a `CustomMessage` trigger that refuses
+    `CustomMessage_ForgotPassword` for a user with no TOTP preference).
+- **Not verified here:** Cognito's attempt and request caps (the per-code cap on `ConfirmForgotPassword`, a
+  `LimitExceededException` after some number of wrong codes, is what bounds guessing in production; the dev twin's
+  five tries model it and are not evidence of it), its code's hour and replacement, its p99 for
   `ForgotPassword` against the floor, and whether `ConfirmForgotPassword` revokes tokens (both are revoked regardless):
-  there is no user pool in this lane. The founder's pool smoke check includes one real `ForgotPassword` delivery and
-  reads the `password reset request timed` distribution. For combined audit #103's manual checks: the "Check your
+  there is no user pool in this lane. The founder's pool smoke check includes one real `ForgotPassword` delivery,
+  counts the wrong codes `ConfirmForgotPassword` takes before `LimitExceededException`, and reads the
+  `password reset request timed` distribution. For combined audit #103's manual checks: the "Check your
   email" notice heard once (and again after Send a new code), the "Password changed" notice heard once, the help list
   read as a list.
 
@@ -290,7 +303,10 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
 - Cognito offers a way to refresh a sign-in session: then Extend, and 2.2.1 in full.
 - UX PR 65 lands (the mfa line's second sentence).
 - Lane A brands the code email or adds a security_event function.
-- The floor's log shows runs over it.
+- The floor's log shows runs over it, or the `password reset request timed` p99 nears the floor: raise it.
+- Lane A closes P-1 (a confidential client or the `CustomMessage` gate): the Not covered bullet on the app's path goes.
+- UX PR 65 lands: end live reset codes on a factor clear, or re-check the gate on confirm (P-2), with a refused account
+  answered by the one code refusal at a wrong code's timing.
 - UX PR 65 adds a console factor reset (it must clear `mfa_enrolled`).
 - Combined audit #103's manual checks report.
 - UX PR 14's Notice replaces the region's look.
