@@ -26,7 +26,7 @@ its unpushed work is not waited for).
   mapping-routes.db.test.ts asserting the pre-SS-01 refusal sentence, now SS-01's R1); ADR 0080 count-free (776b6a15).
   Fast checks, touched db tests (7,097 passed), actions:check, toolchain:check green. Domain model 08c1ba47…6142, line
   7414 (provisional). Body 40,568 characters, read back equal. Subscribed. Reviews running.
-- **03:50 UTC. CI red, not SS-01's: the repository is now private** (`private: true`; repo updated 02:51:33 UTC). The
+- **03:31 UTC (corrected from 03:50). CI red, not SS-01's: the repository is now private** (`private: true`; repo updated 02:51:33 UTC). The
   base 4846f043 is red too (ci run 41763423759: images; screening-capacity 41763423983). (1) images: the Trivy install
   exits 6 (trivy-action v0.36.0 -> setup-trivy v0.2.6 -> install.sh @75c4dc0 fetches get.trivy.dev; the runner cannot
   resolve it). (2) screening-capacity: RUNNER_TOO_SMALL, 2 CPUs (a private repository's runner); on #104 its `changes`
