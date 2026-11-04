@@ -1506,3 +1506,15 @@ HANDOFF.md; LANES.md rule 10).
   - New item `co-001/packet-figure-placeholders`; ADR 0089 if needed; CAS-52 to CAS-55.
   - In S2 after #84: design first; built only if time allows before the handback. A migration, if one is needed, is Lane A's.
 - Next free: ADR 0091 (0090 is UX PR 8's), CAS-56.
+
+### 2026-11-04 17:45 UTC: cognito-confidential-client PR 1 merged as #113 (9b237a93)
+- On the base now:
+  - second-factor enrolment only inside a live invitation, matched by Cognito sub and email;
+  - no invitation onto a Cognito user that ever signed in;
+  - SecretHash support, inactive until a secret exists;
+  - the staging diff role denied the client-secret reads;
+  - the R-11 alarms;
+  - ADR 0088, proposed; SEC-20 to SEC-23.
+- PR 2 (the confidential client and the cutover) is cut after PR 1 is deployed to staging.
+- For the founder: F0 (a staging sign-in with a synthetic account, before release N reaches production); F1 to F5 and ruling 16 (the SCP), before PR 2.
+- #114 (test-flakes-4) is open, opened by the orchestrator for S2. S4 goes on to the dark sign-in frame's link contrast, then the code email and the "password changed" email.
