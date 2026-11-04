@@ -96,8 +96,8 @@ jobs:
           # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
           # apart, each stopped after DOWNLOAD_LIMIT seconds; at most MAX_FILE_BYTES, as the check bounds it, or no findings
-          # list. A failed try logs one fixed line with its exit status (124 when stopped): gh's own output and errors, which
-          # can name the artifact's signed download address, stay out of the run's log.
+          # list. A failed try logs one fixed line with its exit status (124 when stopped, 137 when killed 10 seconds later):
+          # gh's own output and errors, which can name the artifact's signed download address, stay out of the run's log.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
@@ -180,8 +180,8 @@ jobs:
           # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
           # apart, each stopped after DOWNLOAD_LIMIT seconds; at most MAX_FILE_BYTES, as the check bounds it, or no findings
-          # list. A failed try logs one fixed line with its exit status (124 when stopped): gh's own output and errors, which
-          # can name the artifact's signed download address, stay out of the run's log.
+          # list. A failed try logs one fixed line with its exit status (124 when stopped, 137 when killed 10 seconds later):
+          # gh's own output and errors, which can name the artifact's signed download address, stay out of the run's log.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then

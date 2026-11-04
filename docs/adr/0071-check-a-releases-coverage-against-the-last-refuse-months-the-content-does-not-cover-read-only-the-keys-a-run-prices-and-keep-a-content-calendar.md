@@ -296,7 +296,8 @@ job before its shell started, and nothing was filed (latent: no run had reached 
 check now uploads `findings.json` as the run's own artifact `findings`, kept one day and replaced on a re-run, and
 the notify job downloads it with `gh run download`, in three tries each stopped after 60 seconds, so a stalled
 download fails like any other, refusing a file over its bound. For that it holds `actions: read` beside
-`issues: write`. A failed try logs one fixed line with its exit status and nothing of gh's own output, because gh's
+`issues: write`. A failed try logs one fixed line with its exit status (124 when stopped, 137 when killed 10 seconds
+later) and nothing of gh's own output, because gh's
 error on a failed blob download prints the artifact's signed address, which reads the artifact without signing in
 for some minutes. On this public repository, `actions: read` reads only what any signed-in user
 can read; once the repository is private it reads private run logs and artifacts, which Revisit when names. The
