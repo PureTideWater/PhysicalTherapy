@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { screeningRunFailureCode } from './failure-code';
 import {
   SCREENING_MAIN_HEAP_FLAG,
   SCREENING_MAIN_HEAP_MB,
@@ -180,8 +181,7 @@ describe('ScreeningThreadPool', () => {
 });
 
 describe('a run that fails in its thread', () => {
-  it('is logged by a code, the error\'s own when it is shaped like one, never its text', async () => {
-    const { screeningRunFailureCode } = await import('./thread');
+  it('is logged by a code, the error\'s own when it is shaped like one, never its text', () => {
     expect(screeningRunFailureCode(Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' }))).toBe('SCREENING_RUN_FAILED_57014');
     expect(screeningRunFailureCode(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toBe('SCREENING_RUN_FAILED_ECONNRESET');
     expect(screeningRunFailureCode(Object.assign(new Error('x'), { code: 'jane@synthetic.test' }))).toBe('SCREENING_RUN_FAILED');

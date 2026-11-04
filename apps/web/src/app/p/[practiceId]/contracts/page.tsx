@@ -13,8 +13,8 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { METHOD_NAMES, VERSION_STATUS_NAMES, windowText } from '../../../../lib/contracts/display';
 import { loadPage } from '../../../../lib/http/next';
-import { contractsPage } from '../../../../lib/routes/contracts';
-import { KIND_NAMES } from '../../../../lib/uploads/receipt-labels';
+import { formatBytes } from '../../../../lib/uploads/receipt-labels';
+import { RESPONSE_LETTER_ELSEWHERE, contractsPage } from '../../../../lib/routes/contracts';
 import { answerQuestionFormAction, tagDocumentFormAction } from './actions';
 import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
@@ -30,7 +30,9 @@ const CALENDAR_KIND_NAMES = { anniversary: 'Anniversary', notice_deadline: 'Noti
  * its versions were to price, those priced, each line at its pricing in effect; lib/coverage/in-effect.ts);
  * the contract calendar; the upload of contracts, exhibits and payer letters through
  * the intake flow, and the tag that gives each uploaded document its payer (J5); and the contract
- * specialist's open questions, which the practice answers here.
+ * specialist's open questions, which the practice answers here. A payer letter here is a payer's terms
+ * or policy letter: a payer's answer to a dispute is uploaded with its response, and a letter a response
+ * names is not listed to tag (docs/adr/0085, D4).
  */
 export default async function ContractsPage(props: Props) {
   const page = await loadPage(contractsPage, props);
@@ -199,11 +201,12 @@ export default async function ContractsPage(props: Props) {
         )}
       </section>
 
-      <Card role="region" aria-labelledby="upload-contract-title">
+      <Card role="region" aria-labelledby="contract-upload-title">
         <CardHeader>
-          <CardTitle id="upload-contract-title">Upload a contract, exhibit or payer letter</CardTitle>
+          <CardTitle id="contract-upload-title">Upload a contract, exhibit or payer’s terms or policy letter</CardTitle>
           <CardDescription>
-            Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then enters the contract specialist’s queue.
+            Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then enters the contract specialist’s queue.{' '}
+            {RESPONSE_LETTER_ELSEWHERE}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -214,9 +217,10 @@ export default async function ContractsPage(props: Props) {
             roleNames={roleNames(roles)}
             gate={upload.gate}
             limits={{ ...upload.limits, contentTypes: [...new Set(upload.kinds.flatMap((kind) => kind.contentTypes))] }}
-            kinds={upload.kinds.map((kind) => ({ kind: kind.kind, label: KIND_NAMES[kind.kind].replace(/^./, (first) => first.toUpperCase()), contentTypes: kind.contentTypes }))}
-            heading="Drop contracts, exhibits or payer letters here"
-            description="PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to 2 GiB each."
+            kinds={upload.kinds}
+            heading="Choose contracts, exhibits or payer’s terms or policy letters to upload"
+            headingLevel={3}
+            description={`PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to ${formatBytes(upload.limits.maxBytes)} each.`}
             uploaders="Billing managers, analysts and firm principals upload contracts."
             showReceipts={false}
           />

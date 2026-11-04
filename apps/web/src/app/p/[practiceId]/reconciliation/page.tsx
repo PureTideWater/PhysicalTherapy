@@ -7,7 +7,7 @@ import { ActionForm } from '../../../../components/action-form';
 import { UtcTime } from '../../../../components/dates';
 import { CheckboxField, TextAreaField } from '../../../../components/field';
 import { roleNames, utc } from '../../../../components/format';
-import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
+import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, exportsEmptyNextStep, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
@@ -285,9 +285,9 @@ export default async function ReconciliationPage(props: Props) {
               </Link>
             </CardContent>
           </Card>
-          <Card role="region" aria-label="Upload exports">
+          <Card role="region" aria-labelledby="export-upload-title">
             <CardHeader>
-              <CardTitle>Upload posting and EFT exports</CardTitle>
+              <CardTitle id="export-upload-title">Upload posting and EFT exports</CardTitle>
               <CardDescription>
                 Each file goes through the same scanned intake as an 835; once it is stored, the reconcile reads it with the practice’s template and matches its rows to remittances, to the cent.
               </CardDescription>
@@ -301,7 +301,8 @@ export default async function ReconciliationPage(props: Props) {
                 gate={data.upload.gate}
                 limits={{ ...data.upload.limits, contentTypes: [...new Set(data.upload.kinds.flatMap((kind) => kind.contentTypes))] }}
                 kinds={data.upload.kinds.map((kind) => ({ kind: kind.kind, label: kind.kind === 'posting_export' ? 'Posting export' : 'EFT or bank export', contentTypes: kind.contentTypes }))}
-                heading="Drop posting or EFT exports here"
+                heading="Choose posting or EFT exports to upload"
+                headingLevel={3}
                 description="CSV exports from the practice-management system or the bank, one at a time or a batch."
                 uploaders="Billing managers, analysts and firm principals upload exports."
                 showReceipts={false}
@@ -311,7 +312,7 @@ export default async function ReconciliationPage(props: Props) {
           <section aria-label="Exports" className="flex flex-col gap-2">
             <h2 className="text-xl font-bold tracking-display">Exports</h2>
             {data.exports.total === 0 ? (
-              <EmptyState title="No export uploaded yet" nextStep="Upload the practice-management system’s payment-posting export and the bank’s EFT export above." />
+              <EmptyState title="No export uploaded yet" nextStep={exportsEmptyNextStep(data.upload)} />
             ) : (
               <ScrollTable label="Exports">
                 <table aria-label="Exports" className="w-full min-w-[36rem] text-sm">
