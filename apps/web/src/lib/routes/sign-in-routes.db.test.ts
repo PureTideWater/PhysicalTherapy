@@ -848,7 +848,7 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
       const shown = await page(forgotPasswordPage, browser, { reason: 'code_sent' });
       expect(shown, name).toEqual({
         status: 'ok',
-        data: { phase: 'confirm', reason: 'code_sent', email, startedAt: started, time: { limitSeconds: 900, warningSeconds: 120, closesAt: started + 900_000, closesIn: 900_000 } },
+        data: { phase: 'confirm', reason: 'code_sent', email, startedAt: started, time: { limitSeconds: 900, warningSeconds: 120, closesAt: started + 900_000, closesIn: 900_000 }, supportEmail: SUPPORT },
       });
       seen.push(JSON.stringify(shown).replace(email, '<typed>'));
       expect(await page(signInPage, browser, { reason: 'password_reset' }), name).toMatchObject({ data: { email: null } });

@@ -157,9 +157,10 @@ export function ForgotPasswordNotice({ phase, reason, startedAt }: { readonly ph
 
 /**
  * Below the code step's form: what to do when no email came, the same for every address (review UXR-06), so an address
- * with no account, or an invited one, reads as any other. The two bold items are the two buttons below the list.
+ * with no account, or an invited one, reads as any other. The two bold items are the two buttons below the list; the
+ * last names the support address, so a person a new code does not reach is never left only to resend (review UXB-S1).
  */
-export function NoEmailList() {
+export function NoEmailList({ supportEmail }: { readonly supportEmail: string }) {
   return (
     <div className="text-sm text-muted-foreground" data-slot="no-email">
       <div id="no-email-lead">No email?</div>
@@ -171,6 +172,9 @@ export function NoEmailList() {
         <li>Invited by your organization and not finished setting up: use the temporary password from your invitation, or ask your organization’s administrator to send a new invitation.</li>
         <li>
           Still nothing: <strong className="font-semibold text-foreground">Send a new code</strong>.
+        </li>
+        <li>
+          Still nothing after a new code: write to <SupportLink supportEmail={supportEmail} /> from the address you sign in with.
         </li>
       </ul>
     </div>

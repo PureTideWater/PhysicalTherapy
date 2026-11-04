@@ -179,16 +179,19 @@ describe('the forgot-password page’s notices and words (docs/adr/0081, A1, A2)
     expect(RESET_REQUEST_DESCRIPTION).not.toContain('@');
   });
 
-  it('SGN-05, SGN-06: phase 2’s "No email?" list is a list with no heading, its words fixed for every address, naming the two controls below it', () => {
-    const markup = renderToStaticMarkup(<NoEmailList />);
+  it('SGN-05, SGN-06: phase 2’s "No email?" list is a list with no heading, its words fixed for every address, naming the two controls below it and the support address (review UXB-S1)', () => {
+    const markup = renderToStaticMarkup(<NoEmailList supportEmail={SUPPORT} />);
     expect(markup).not.toMatch(/<h[1-6]/);
-    expect(markup.match(/<li/g)).toHaveLength(4);
+    expect(markup.match(/<li/g)).toHaveLength(5);
     expect(text(markup.replace(/<\/li>/g, ' '))).toBe(
-      'No email? Check your spam folder. Typed the wrong address: Use a different email. Invited by your organization and not finished setting up: use the temporary password from your invitation, or ask your organization’s administrator to send a new invitation. Still nothing: Send a new code.',
+      `No email? Check your spam folder. Typed the wrong address: Use a different email. Invited by your organization and not finished setting up: use the temporary password from your invitation, or ask your organization’s administrator to send a new invitation. Still nothing: Send a new code. Still nothing after a new code: write to ${SUPPORT} from the address you sign in with.`,
     );
-    // The two controls are named, not linked: they are the buttons below the list.
-    expect(markup).not.toContain('<a ');
-    expect(markup).not.toContain('@');
+    // The two controls are named, not linked: they are the buttons below the list. The one link is the support address,
+    // with no subject and no body (UX-066), and no address but the support one is in the list.
+    expect(markup.match(/<a /g)).toHaveLength(1);
+    expect(markup).toContain(`href="mailto:${SUPPORT}"`);
+    expect(markup).not.toMatch(/[?&](subject|body)=/);
+    expect(markup.replaceAll(SUPPORT, '')).not.toContain('@');
   });
 });
 

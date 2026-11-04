@@ -596,7 +596,7 @@ export type ForgotPasswordReason = (typeof FORGOT_PASSWORD_REASONS)[number];
 
 export type ForgotPasswordPage =
   | { readonly phase: 'request'; readonly reason: 'step_expired' | null }
-  | { readonly phase: 'confirm'; readonly reason: 'code_sent' | null; readonly email: string; readonly startedAt: number; readonly time: StepTime };
+  | { readonly phase: 'confirm'; readonly reason: 'code_sent' | null; readonly email: string; readonly startedAt: number; readonly time: StepTime; readonly supportEmail: string };
 
 /** Where a reset request lands, for every address alike: phase 2, which says to check the email. */
 const CODE_SENT: StepResult = { redirect: '/sign-in/forgot-password?reason=code_sent' };
@@ -650,6 +650,8 @@ export const forgotPasswordPage = publicRoute({
       email: pending.email,
       startedAt: pending.startedAt ?? now.getTime(),
       time: stepPage(pending, now).time,
+      // The support address, for the "No email?" list's last item (review UXB-S1).
+      supportEmail: context.services.supportEmail,
     });
   },
 });

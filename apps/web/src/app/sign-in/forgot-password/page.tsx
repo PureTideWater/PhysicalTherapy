@@ -57,7 +57,7 @@ export default async function ForgotPasswordPage(props: { readonly searchParams:
       </main>
     );
   }
-  const { email, time, startedAt, reason } = data;
+  const { email, time, startedAt, reason, supportEmail } = data;
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
       <StepHeading setup={null}>Choose a new password</StepHeading>
@@ -84,7 +84,7 @@ export default async function ForgotPasswordPage(props: { readonly searchParams:
               <PasswordField label="New password again" name="confirm" showName=" new password again" autoComplete="new-password" required />
             </ActionForm>
           </StepTimer>
-          <NoEmailList />
+          <NoEmailList supportEmail={supportEmail} />
           <div className="flex flex-col items-start gap-3">
             {/* Keyed by the step's start, so a successful Send a new code mounts it afresh and the notice above takes the focus (review UXR-05). */}
             <ActionForm key={startedAt} action={resetRequestStep} submit="Send a new code" variant="outline">
