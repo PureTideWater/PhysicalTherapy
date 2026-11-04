@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import os from 'node:os';
@@ -803,9 +803,37 @@ export function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...env, PATH: kept.join(path.delimiter) };
 }
 
+/**
+ * Text for the job's log, each line that holds a control character, or that starts a workflow command (`::` or
+ * `##[`, after leading whitespace), JSON-quoted (manifests.ts quoted), so no path a change names can start a command
+ * there (docs/adr/0066, Part 7, N52).
+ */
+export function printable(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => (hasControlCharacter(line) || /^\s*(?:::|##\[)/.test(line) ? quoted(line) : line))
+    .join('\n');
+}
+
+/**
+ * Runs git in `root` with gitEnvironment's PATH (or `env`), its stderr captured, never passed through to the job: a
+ * failure throws an error naming the command and holding git's stderr, both through printable, since git prints a
+ * path it cannot show as it is; what git prints to stderr on success is written through printable too.
+ */
+export function runGit(args: readonly string[], root: string, env: NodeJS.ProcessEnv = gitEnvironment(process.env), maxBuffer: number = 256 * 1024 * 1024): string {
+  const run = spawnSync('git', args, { cwd: root, env, encoding: 'utf8', maxBuffer, stdio: ['ignore', 'pipe', 'pipe'] });
+  const stderr = (run.stderr ?? '').trimEnd();
+  if (run.error !== undefined || run.status !== 0) {
+    const why = run.error !== undefined ? run.error.message : `exit ${String(run.status ?? run.signal ?? 'none')}`;
+    throw new Error(printable(`git ${args.map((arg) => (hasControlCharacter(arg) ? quoted(arg) : arg)).join(' ')} failed (${why})${stderr === '' ? '' : `:\n${stderr}`}`));
+  }
+  if (stderr !== '') process.stderr.write(`${printable(stderr)}\n`);
+  return run.stdout;
+}
+
 /** The repository's tracked files. */
 export function trackedFiles(root: string = repositoryRoot): string[] {
-  return execFileSync('git', ['ls-files', '-z'], { cwd: root, env: gitEnvironment(process.env), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  return runGit(['ls-files', '-z'], root, gitEnvironment(process.env), 64 * 1024 * 1024)
     .split('\0')
     .filter((file) => file !== '');
 }
@@ -823,7 +851,7 @@ export function treeAt<T>(revision: string, use: (root: string, files: readonly 
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-tree-'));
   try {
     const env = { ...gitEnvironment(process.env), GIT_INDEX_FILE: path.join(dir, 'index') };
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    const git = (...args: string[]) => runGit(args, root, env);
     git('read-tree', revision);
     const tree = path.join(dir, 'tree');
     git('checkout-index', '--all', '--force', `--prefix=${tree}/`);
@@ -843,7 +871,7 @@ export function treeAt<T>(revision: string, use: (root: string, files: readonly 
  * show a side that exists).
  */
 export function changeSince(base: string, root: string = repositoryRoot): Change {
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, env: gitEnvironment(process.env), encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  const git = (...args: string[]) => runGit(args, root);
   const listing = git('diff', '--name-status', '--no-renames', '-z', base, 'HEAD').split('\0');
   const status = new Map<string, string>();
   for (let at = 0; at + 1 < listing.length; at += 2) {
@@ -851,6 +879,7 @@ export function changeSince(base: string, root: string = repositoryRoot): Change
     if (file !== '') status.set(file, code);
   }
   const files = [...status.keys()];
+  // A side git cannot show is undefined, which fails closed; git's stderr, which names the path as it is, is dropped.
   const show = (revision: string, file: string) => {
     try {
       return git('show', `${revision}:${file}`);
@@ -871,7 +900,7 @@ export function changeSince(base: string, root: string = repositoryRoot): Change
  * the merge base. It throws, naming each, on what HEAD's closures cannot account for (closureProblems).
  */
 export function affectedSince(base: string, root: string = repositoryRoot, config: AffectedConfig = REPOSITORY_CONFIG): { readonly mergeBase: string; readonly result: Affected } {
-  const mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: root, env: gitEnvironment(process.env), encoding: 'utf8' }).trim();
+  const mergeBase = runGit(['merge-base', base, 'HEAD'], root).trim();
   const files = trackedFiles(root);
   const head = repositoryClosures(root, files, config);
   const headGlobal = globalFiles(root, files, config);
@@ -882,8 +911,11 @@ export function affectedSince(base: string, root: string = repositoryRoot, confi
   return { mergeBase, result: affected(changeSince(mergeBase, root), unionClosures(head, atBase.closures), unionGlobal(headGlobal, atBase.global), config.tooling) };
 }
 
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  const args = process.argv.slice(2);
+/**
+ * The changes job's command: `--event`, `--base`, `--github-output` and `--summary`, as mutation.yml passes them. It
+ * prints the verdict and writes the job's outputs and summary; what it cannot decide it throws.
+ */
+export function main(args: readonly string[], root: string = repositoryRoot, config: AffectedConfig = REPOSITORY_CONFIG): void {
   const option = (name: string) => {
     const at = args.indexOf(name);
     return at === -1 ? undefined : (args[at + 1] ?? '');
@@ -896,7 +928,7 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
   if (event === 'pull_request') {
     const base = option('--base');
     if (base === undefined || base === '') throw new Error('a pull request needs --base <sha>: its base branch commit');
-    const run = affectedSince(base);
+    const run = affectedSince(base, root, config);
     result = run.result;
     process.stdout.write(`diffed from ${run.mergeBase} (the merge base of ${base} and HEAD), each closure taken at HEAD and at the merge base\n`);
   } else {
@@ -915,3 +947,20 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
     appendFileSync(summary, ['## What the change affects (mutation)', '', ...lines.map((line) => `- ${line}`), ''].join('\n'));
   }
 }
+
+/** An error's message for the job's log, through printable: a path Node or git names in it is printed quoted. */
+export function errorText(error: unknown): string {
+  return printable(`tools/stryker/affected.ts: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+/** The command line: main, and what it throws (its own, git's or Node's) printed through errorText, exit code 1. */
+export function cli(args: readonly string[], root: string = repositoryRoot, config: AffectedConfig = REPOSITORY_CONFIG): void {
+  try {
+    main(args, root, config);
+  } catch (error) {
+    process.stderr.write(`${errorText(error)}\n`);
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) cli(process.argv.slice(2));

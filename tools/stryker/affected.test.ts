@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import os from 'node:os';
@@ -28,6 +28,7 @@ import {
   closureOf,
   closureProblems,
   closureProblemsMessage,
+  errorText,
   covers,
   dataLiterals,
   gitEnvironment,
@@ -36,7 +37,9 @@ import {
   lockedPackages,
   packageName,
   parseLockfile,
+  printable,
   repositoryClosures,
+  runGit,
   selectFiles,
   shardsFor,
   specifiers,
@@ -1091,4 +1094,66 @@ describe('every git the changes job runs', () => {
     expect(gitEnvironment(env)).toEqual({ PATH: ['/usr/local/bin', '/usr/bin', '/bin'].join(path.delimiter), HOME: '/home/x', GIT_DIR: '/repo/.git' });
     expect(env.PATH.startsWith('/repo/node_modules/.bin')).toBe(true);
   });
+
+  it('prints a line holding a control character, or starting a workflow command, JSON-quoted, and every other line as it is', () => {
+    expect(printable('fatal: bad object HEAD:packages/a\n::warning title=forged::x\n  ##[group]y\nz\r\nplain ::notice:: inside')).toBe(['fatal: bad object HEAD:packages/a', '"::warning title=forged::x"', '"  ##[group]y"', '"z\\r"', 'plain ::notice:: inside'].join('\n'));
+    expect(printable('a\u2028::error::b')).toBe('"a\\u2028::error::b"');
+    // An error Node raises opening a file names the path as it is; the command prints it quoted.
+    expect(errorText(new Error("ENOENT: no such file or directory, open '/r/a\n::warning::x.ts'"))).toBe(['tools/stryker/affected.ts: ENOENT: no such file or directory, open \'/r/a', '"::warning::x.ts\'"'].join('\n'));
+    expect(errorText('not an Error')).toBe('tools/stryker/affected.ts: not an Error');
+  });
+
+  it('captures git’s stderr: a failure throws it through printable, never passing it through', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-git-'));
+    try {
+      execFileSync('git', ['init', '-q', dir]);
+      let message = '';
+      try {
+        runGit(['rev-parse', '--verify', 'HEAD\n::warning title=forged::x'], dir);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message.startsWith('git rev-parse --verify "HEAD\\n::warning title=forged::x" failed (exit 128)')).toBe(true);
+      expect(message.split('\n').filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts no workflow command in the job’s log from a path git cannot show, run as the changes job runs it', () => {
+    const repo = syntheticWorld(new SyntheticRepository());
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', ...args], { cwd: repo.root, encoding: 'utf8' }).trim();
+    const out = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-out-'));
+    // The command line as a child process, so git's stderr, if it were passed through, would land in what is read.
+    const command = (args: string[]) =>
+      spawnSync(path.join(repositoryRoot, 'node_modules', '.bin', 'tsx'), ['--eval', `import(${JSON.stringify(path.join(repositoryRoot, 'tools/stryker/affected.ts'))}).then((m) => m.cli(JSON.parse(process.env.TP_ARGS), process.env.TP_ROOT, JSON.parse(process.env.TP_CONFIG)))`], {
+        cwd: repositoryRoot,
+        env: { ...process.env, TP_ARGS: JSON.stringify(args), TP_ROOT: repo.root, TP_CONFIG: JSON.stringify(synthetic) },
+        encoding: 'utf8',
+      });
+    const commandLines = (text: string) => text.split(/\r\n|[\n\r\u0085\u2028\u2029]/).filter((line) => /^\s*(?:::|##\[)/.test(line));
+    try {
+      git('init', '-q', '-b', 'main');
+      git('add', '-A');
+      git('commit', '-q', '-m', 'base');
+      // A gitlink (a submodule's commit, which git cannot show) at a package.json path holding a line break and a command.
+      git('update-index', '--add', '--cacheinfo', `160000,${'1'.repeat(40)},packages/a\n::warning title=forged::gitlink/package.json`);
+      git('commit', '-q', '-m', 'a gitlink at a forged path');
+      const verdict = command(['--event', 'pull_request', '--base', 'HEAD~', '--github-output', path.join(out, 'output')]);
+      expect(verdict.status).toBe(0);
+      expect(verdict.stdout).toContain('"packages/a\\n::warning title=forged::gitlink/package.json" (a path holding a control character, every package)');
+      expect(readFileSync(path.join(out, 'output'), 'utf8')).toBe(`any=true\npackages=${JSON.stringify(MUTATION_PACKAGES)}\nshards=${JSON.stringify(shardsFor([...MUTATION_PACKAGES]))}\n`);
+      expect(commandLines(verdict.stdout)).toEqual([]);
+      expect(commandLines(verdict.stderr)).toEqual([]);
+      // What the command cannot decide (here git cannot read the base it names) fails, git's words quoted.
+      const failure = command(['--event', 'pull_request', '--base', 'nowhere\n::error title=forged::x', '--github-output', path.join(out, 'output')]);
+      expect(failure.status).toBe(1);
+      expect(failure.stderr).toContain('tools/stryker/affected.ts: git merge-base "nowhere\\n::error title=forged::x" HEAD failed (exit');
+      expect(commandLines(failure.stdout)).toEqual([]);
+      expect(commandLines(failure.stderr)).toEqual([]);
+    } finally {
+      repo.remove();
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

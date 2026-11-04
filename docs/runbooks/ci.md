@@ -478,7 +478,8 @@ checks above.
   `**/package.yaml`, `**/package.json5`, `.pnp.cjs`, `.github/workflows/actions.lock`, `.github/actions/**`, and every
   `.gitattributes`, root or nested, which the checkout applies to every file, whatever attribute the edit changes)
   affect all four, and so does any changed path whose name holds a control character (C0, DEL or C1) or U+2028 or
-  U+2029, which the log prints JSON-quoted.
+  U+2029, which the log prints JSON-quoted. So does every line of an error that holds one: git's stderr is captured,
+  never passed through, and a failure the command prints (git's or Node's, which name a path as it is) is quoted too.
 
   The root `package.json`, `pnpm-workspace.yaml`, this workflow and every workspace `package.json` are read field by
   field, on both sides of the change (`tools/stryker/manifests.ts`; docs/adr/0066, Part 7):

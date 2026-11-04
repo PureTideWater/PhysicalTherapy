@@ -1790,7 +1790,9 @@ read and affecting no package: package.json scripts."db:domain-model" (no mutati
 - **Any changed path holding a control character** (C0, DEL, C1, U+2028 or U+2029), wherever it lies, affects every
   package before any glob is read, and every reason prints it JSON-quoted with those characters escaped, so no path a
   pull request names starts a workflow command in the changes job's log or summary (N52). A glob's trailing `**`
-  also holds a name with a line break.
+  also holds a name with a line break. Every `git` the job runs has its stderr captured, never passed through, and
+  what git or Node prints of a failure (git names a path it cannot show, and an error opening a file names that file,
+  as they are) reaches the log only through the same quoting, a line starting `::` or `##[` quoted too.
 - **Every `git` the changes job runs** takes a `PATH` with each `node_modules/.bin` entry and each relative entry
   removed, so no dependency's bin answers for git.
 
@@ -1923,7 +1925,10 @@ since no closure imports `playwright-core`.
   command in the log and summary, and one under `tools/stryker/**`, `patches/**` or a data glob such as
   `fixtures/golden/**` affected no package, since a trailing `**` compiled to a `.` that does not match a line break.
   Both predate this part; it had quoted manifest paths only. A closure problem's line and a lockfile entry a reason
-  names are JSON-quoted the same way when they hold one.
+  names are JSON-quoted the same way when they hold one. The first repair still passed git's stderr through: a gitlink
+  at `packages/a\n::warning ...` made `git show` print its path raw, and a second line started the command (the
+  verdict was right, all four). Every `git` now runs through `runGit`, its stderr captured, and the command line prints
+  what it throws, its own, git's or Node's, through `printable`; a test runs it as a child process on such a gitlink.
 - **N53** (the review of #96, N1). Stryker's core must be the root's direct link. At 50029e64 the check asked only that
   the resolved core lie under `<root>/node_modules`, and the tsx and stryker shims set `NODE_PATH` to
   `<root>/node_modules/.pnpm/node_modules`, which is inside it, so with the root's own `@stryker-mutator/core` removed a
