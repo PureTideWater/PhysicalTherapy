@@ -1457,3 +1457,15 @@ HANDOFF.md; LANES.md rule 10).
 ### 2026-11-04 09:55 UTC: the release loader's freeze exception granted
 - Recorded in `approval-summaries/founder-asks-2026-10-27.md`. The schema chain puts the loader fix (its failing-first patch: 4 files) into SUITE-CAP-1b. That fixes the flaky `tools/release/load.db.test.ts` at its root.
 - SS-01 (#104) awaits the founder's commit of its suggested approval line (https://github.com/PureTideWater/PhysicalTherapy/pull/104#discussion_r4465978371).
+
+### 2026-11-04 11:50 UTC: UX PR 7 (#108) merged as 45d7d0c1; SS-01's line committed by the founder
+- #108: design, then build red-first, then two reviews with skeptics, two fix rounds, the full suite once and two verifications. The CI capacity gate passed.
+- SS-01: the founder committed the approval line (d214ad6c, 11:30 UTC). The schema chain is taking the base forward, then CI, ready and merge.
+- **Security, Lane A, now in S4:** `co-001/cognito-confidential-client` (#108's P-1).
+  - The problem: Cognito's app client is public with EMAIL_ONLY recovery, so ForgotPassword, ConfirmForgotPassword and InitiateAuth can be called past the app's gate, rate limit, audit and lockout. A confirmed user with no factor can be taken over through MFA_SETUP.
+  - The fix: a confidential client with SecretHash.
+  - Also in it: P-3 (the per-code attempt cap) and R-11 (the reset alarms).
+  - Reserved: ADR 0088 if needed and SEC-20 to SEC-23. Next free: ADR 0089 (0090 is UX PR 8's), SEC-24.
+- Queued after it in S4:
+  - the dark sign-in frame's links at about 1.9:1 contrast (a WCAG failure, on the base already);
+  - the branded code email and a "password changed" email.
