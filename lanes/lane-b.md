@@ -1479,3 +1479,8 @@ HANDOFF.md; LANES.md rule 10).
   - ruling 14: admin-delete-user by break-glass only;
   - ruling 15: N+1 within 7 days of N in production, and before the first customer invitation.
 - For the founder before PR 2 merges: ruling 16 (an SCP or permission boundary denying DescribeUserPoolClient to read-only permission sets) and the credentialed steps F1 to F5 (design section 10).
+
+### 2026-11-04 13:10 UTC: SS-01 merged as #104 (e084da22)
+- The first schema PR of the chain. It rested on: the founder's line d214ad6c; `--check --require-approval` exit 0 (08c1ba47…6142); all required checks green, the domain model included; approval-of-record re-run after ready; fresh-clone verification passed.
+- Next in the chain: SUITE-CAP-1b's PR stage. Its open items: CAS-42.5's memory.peak (980 MiB against 921.6); the loader warning's wording; the founder's ruling on the INDEX_CLEANUP ON amendment.
+- Merged today in all: #94, #107, #105, #75, #106, #86, #108, #104.
