@@ -21,6 +21,13 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
 - 2026-11-04T06:40:00Z: design workflow wf_3774eb46-b96 launched (3 scouts, writer, security and UX design reviews, a skeptic
   per B/S finding, fold); script archived; check-in at about 11:50Z. #106 dormant until the orchestrator says the runner exists.
 
+- 2026-11-04T07:10:00Z: **design done** (wf_3774eb46-b96, 16 agents): `designs/lane-b-ux-sign-in-recovery.md` (809 lines), review
+  `-review.md`, scouts in `lane-b-ux-sign-in-recovery/`. Security and UX reviewers at design: 22 findings (2 B, 7 S, 13 N),
+  all confirmed and folded. SEC-B1: a reset code only for an active account that already enrolled a second factor.
+  UXR-01: "Use a different email" ends the step. No migration, no IAM or infra change. Lane A (proposals, not blocking):
+  an alarm on password_reset_requested per user per day and on undelivered requests (R-11); branded wording for
+  Cognito's code email; a "your password was changed" email; optionally the security_event migration. Next: the build.
+
 ## Waiting on someone
 - The founder: the 4-CPU runner and organization (#102) before the merge.
 
