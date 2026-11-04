@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { MUTATION_PACKAGES } from '../../stryker/base.mjs';
+import { repositoryRoot } from '../content-files';
 import { type Spawn, runStryker } from './stryker';
 
 /**
@@ -97,5 +99,16 @@ describe('Stryker by path', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  // The review of #96 (PE-N1): the root `stryker` script is inert for mutation, so no package's configuration sends a
+  // person through it; each names the command CI's shards run (tools/stryker/shards.ts).
+  it('has each package’s Stryker configuration, and the README, name the by-path command, never `pnpm stryker run`', () => {
+    for (const pkg of MUTATION_PACKAGES) {
+      const text = readFileSync(path.join(repositoryRoot, `stryker/${pkg}.config.mjs`), 'utf8');
+      expect(text, pkg).toContain(`\`pnpm -s exec tsx tools/stryker/stryker.ts run stryker/${pkg}.config.mjs\``);
+      expect(text, pkg).not.toMatch(/pnpm\s+stryker\b/);
+    }
+    expect(readFileSync(path.join(repositoryRoot, 'README.md'), 'utf8')).not.toMatch(/`pnpm\s+stryker\s+run\b/);
   });
 });
