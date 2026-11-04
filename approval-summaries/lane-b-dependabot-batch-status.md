@@ -458,6 +458,10 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   (2f17796a: diff unchanged, synth 0 written, 708 tests, typecheck, check:fixtures) and pushed; CI running. Orchestrator
   told: the speed rule needs a re-merge whenever the base moves after the last push.
 
+- 2026-11-04T08:08:00Z: **#106 MERGED as 881e2bbd** (merge commit; expectedHeadSha 2f17796a). CI on 2f17796a (base 72096e94):
+  21 runs, all four required checks success, the capacity job measured and passed on 4 CPUs. Unsubscribed. The
+  private-repository fetch fix and the CI-11 guard are on the base. This session's CI work is done; UX PR 7 is in its build.
+
 ## Waiting on someone
 - (Resolved 07:10Z: public again.) **The founder (2026-11-04): the repository was private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
