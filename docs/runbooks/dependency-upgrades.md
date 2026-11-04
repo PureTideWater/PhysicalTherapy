@@ -394,8 +394,27 @@ lockfile entry against the release age and the trust policy on every install (`t
   group, minor and patch only; minor-and-patch excludes their patterns, so none of them comes in its pull request.
   `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one. The CLI
   moves with the library: a library's cloud assembly names the oldest CLI that reads it (`minimumCliVersion`).
+  `infra/test/cli-settings.test.ts` asks the installed CDK CLI whether its telemetry is off (its
+  `cli-telemetry --status`, under the synth script's variables), runs it with and without `--no-notices` to see that
+  the flag stops the notices fetch, and fails when its `lib/index.js` no longer skips the version check on
+  `CDK_DISABLE_VERSION_CHECK`. When it fails on a CDK CLI bump, read `canCollectTelemetry`, the `--no-notices`
+  handling and `shouldDisplayVersionMessage`, and change the settings and the test together.
   `@aws-sdk/*` reaches pricing and packets through `packages/contracts` and `packages/db`'s manifests and the lockfile,
   so its pull request runs those packages' mutation.
+  No CI job runs the SDK over a real socket or inside the worker's esbuild bundle (the capacity job uses local
+  providers, e2e imports the sources, the images job only builds), so an `@aws-sdk/*`, `@smithy/*` or
+  credential-provider move is also compared, base against head, over real sockets to local stubs and in the worker's
+  bundle: Bedrock over HTTP/2, S3 multipart with 100-continue and checksum validation, KMS, SES, RDS, and ECS
+  container credentials.
+  A `@aws-sdk/client-textract` or `@smithy/core` move is a Textract-reader bump (docs/adr/0070): `pnpm test:golden`
+  reads the evaluation's scans through a real `TextractClient` answering from their recordings
+  (`packages/model-gateway/eval/sets.ts`), so a move that changes the pages as read fails `set_changed`
+  (docs/runbooks/model-evaluation.md, section 5).
+- **Stripe.** `packages/billing` passes no `apiVersion` (`stripe.ts`, ADR 0050), so a `stripe` release that moves the
+  API version it pins (its CHANGELOG says so) moves every request's `Stripe-Version`. Webhook payloads follow the
+  webhook endpoint's own API version, set in Stripe (docs/runbooks/billing.md), and billing parses them with its own
+  schema (`packages/billing/src/events.ts`): read the new version's change notes against `events.ts`, and record the
+  endpoint's version in the pull request (a person's check).
 
 ## Actions
 
