@@ -1,8 +1,18 @@
+import type * as timersPromises from 'node:timers/promises';
+
 import { GetObjectTaggingCommand } from '@aws-sdk/client-s3';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_SCAN_WAIT, GUARDDUTY_SCAN_TAG, GuardDutyScanService, LocalScanService, ScanPendingError, type ScanService, type ScanSubject, waitForVerdict } from './scan';
 import { EICAR } from './sniff';
+
+// scan.ts sleeps with node:timers/promises, which vitest's fake timers do not reach; route it through the global
+// setTimeout so a test on a mocked clock controls every wait (with real timers it behaves as before). Its options
+// (signal, ref) are not supported: scan.ts passes none.
+vi.mock('node:timers/promises', async (original) => ({
+  ...(await original<typeof timersPromises>()),
+  setTimeout: <T>(ms?: number, value?: T) => new Promise<T | undefined>((resolve) => globalThis.setTimeout(() => resolve(value), ms)),
+}));
 
 const KEY = 'intake/7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01/0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
 
@@ -55,6 +65,10 @@ describe('waitForVerdict', () => {
     const service = {
       asked: 0,
       verdict: () => {
+        if (service.asked >= 10) {
+          // On a mocked clock a wait that no longer sleeps would spin forever; fail it instead.
+          return Promise.reject(new Error('asked ten times without the clock moving: does the wait still sleep?'));
+        }
         const verdict = verdicts[Math.min(service.asked, verdicts.length - 1)];
         service.asked += 1;
         return Promise.resolve(verdict ?? { status: 'pending' as const });
@@ -63,16 +77,47 @@ describe('waitForVerdict', () => {
     return service;
   }
 
+  // Both tests run on a mocked clock, so a stalled runner cannot change how many times the scanner is asked.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('asks again while the verdict is pending, then returns it', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     const scan = answering({ status: 'pending' }, { status: 'pending' }, { status: 'clean' });
-    expect(await waitForVerdict(scan, subject(Buffer.alloc(0)), { pollMs: 1, timeoutMs: 1000 })).toEqual({ status: 'clean' });
+    const verdict = waitForVerdict(scan, subject(Buffer.alloc(0)), { pollMs: 1, timeoutMs: 1000 });
+    await vi.advanceTimersByTimeAsync(2);
+    expect(await verdict).toEqual({ status: 'clean' });
     expect(scan.asked).toBe(3);
   });
 
+  // With pollMs 5 and timeoutMs 12 the scanner is asked at 0, 5 and 10 ms; the wait then gives up, because the next
+  // ask (at 15 ms) would pass the deadline.
   it('gives up on this attempt once the wait is over, so the job retries', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     const scan = answering({ status: 'pending' });
-    await expect(waitForVerdict(scan, subject(Buffer.alloc(0)), { pollMs: 5, timeoutMs: 12 })).rejects.toThrow(ScanPendingError);
-    expect(scan.asked).toBeGreaterThanOrEqual(2);
+    const outcome = waitForVerdict(scan, subject(Buffer.alloc(0)), { pollMs: 5, timeoutMs: 12 }).then(
+      () => 'resolved',
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(4);
+    expect(scan.asked).toBe(1);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await outcome).toBeInstanceOf(ScanPendingError);
+    expect(scan.asked).toBe(3);
     expect(DEFAULT_SCAN_WAIT).toEqual({ pollMs: 5000, timeoutMs: 600_000 });
+  });
+
+  // At the deadline exactly (an ask at 5 ms with timeoutMs 10: 5 + 5 is not past 10) it still sleeps and asks again.
+  it('asks once more when the next ask falls exactly on the deadline', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const scan = answering({ status: 'pending' });
+    const outcome = waitForVerdict(scan, subject(Buffer.alloc(0)), { pollMs: 5, timeoutMs: 10 }).then(
+      () => 'resolved',
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await outcome).toBeInstanceOf(ScanPendingError);
+    expect(scan.asked).toBe(3);
   });
 });
