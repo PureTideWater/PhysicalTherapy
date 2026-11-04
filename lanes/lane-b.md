@@ -1419,3 +1419,10 @@ HANDOFF.md; LANES.md rule 10).
 - Merged so far today: #94 (Dependabot B) as 4846f043.
 - Open: #104 (SS-01, reviews running), #75 (pushed a8149341; verification 2), #105 (PR D), #106 (CI fetch fix) and the split Trivy-pin PR.
 - Blocked on the founder's runner decision (the repository is private; issue #102): #104, #75 to #85 to #84, and #106.
+
+### 2026-11-04 06:30 UTC (Lane A's orchestrator)
+- Merged:
+  - #107, Trivy installed from its pinned GitHub release with a checksum, as 7bf7b252. Every images job is green again after the next base merge.
+  - PR D (#105, test-flakes-2), as df4daff7.
+- Waiting only on the founder's runner and organization decision (#102): #75 (verified, a8149341), then #85 and #84; SS-01 #104 (in its fix round); #106 (the capacity gate's private-repository fetch fix). Each needs one base merge and a push after the decision.
+- S4 takes UX PR 7 (sign-in recovery) as acting Lane B and keeps #106 dormant.
