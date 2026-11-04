@@ -1,11 +1,16 @@
 import { CfnCondition, CfnParameter, CfnRule, Fn, Token } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import { MAIL_IDENTITIES_VERIFIED_VALUES, SCREENING_SENDER } from './mail';
+
 /** The ImageTag value before any image is released: the services run no task and no migration runs. */
 export const NO_IMAGE = 'none';
 
 /** A DNS host name (lowercase labels), as CloudFormation's AllowedPattern reads it. */
 const HOST_NAME = '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$';
+
+/** An IAM role's ARN, as CloudFormation's AllowedPattern reads it (unanchored; each use anchors it). */
+export const ROLE_ARN_PATTERN = 'arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]{1,512}';
 
 /** The CloudFormation parameters each stack takes at deploy time, by name. */
 export const PARAMETER_NAMES = {
@@ -18,7 +23,21 @@ export const PARAMETER_NAMES = {
   securityEmail: 'SecurityEmail',
   imageTag: 'ImageTag',
   screeningConsumer: 'ScreeningConsumer',
+  mailIdentitiesVerified: 'MailIdentitiesVerified',
+  mailValidationRoleArn: 'MailValidationRoleArn',
 } as const;
+
+/** The condition true once MailIdentitiesVerified is `true` (D2's phase 2). */
+export const MAIL_IDENTITIES_VERIFIED_CONDITION = 'MailIdentitiesReady';
+
+/** MailValidationRoleArn before the environment's address-validation account holds its stack. */
+export const NO_VALIDATION_ROLE = 'none';
+
+/** The condition true once MailValidationRoleArn names a role. */
+export const MAIL_VALIDATION_ROLE_CONDITION = 'MailValidationRoleSet';
+
+/** The rule that refuses a release before MailValidationRoleArn names a role (docs/adr/0065; review S3). */
+export const RELEASE_NEEDS_VALIDATION_ROLE_RULE = 'ReleaseNeedsAddressValidationRole';
 
 /** The launch value before the screening opens in production: the web keeps it closed (decision 13). */
 export const SCREENING_CLOSED = 'closed';
@@ -62,6 +81,21 @@ export const SCREENING_CONSUMER_STATES = ['held', 'running'] as const;
  *   (production) does it count: the consumer runs no task until it is `running` or the launch value is not `closed`, so
  *   a deploy that can open the screening always runs its consumer (a launch value with ScreeningConsumer left at
  *   `held`, or reset to it by a rollback across PR 6b-3, still runs it). Elsewhere it runs once released.
+ * - MailIdentitiesVerified (audit #76; docs/adr/0065, D2): `false` (the default) in phase 1, while the stack's two SES
+ *   identities (MailFromAddress's domain and its screening subdomain) wait for the DNS records the stack outputs: the
+ *   user pool keeps Cognito's own sender and the platform sends no probe, so the screening stays closed. `true` in
+ *   phase 2, once both identities read verified with DKIM `SUCCESS`: Cognito sends through the transactional set and
+ *   the probes start.
+ * - MailValidationRoleArn (docs/adr/0065, "Address validation in its own account"; review S3): the role the web assumes
+ *   to validate a screening's address with SES, in the environment's address-validation account (the
+ *   `AddressValidationRoleArn` output of `tp-<env>-address-validation`, deployed there with this stack's
+ *   `ApplicationRoleArn` output), so the call, whose request names the address, is recorded in that account alone.
+ *   `none` (the default) until that stack exists; the rule ReleaseNeedsAddressValidationRole refuses a deploy whose
+ *   ImageTag names a release while it is `none`, since the web validates through no other path.
+ *
+ * The screening's sender (Q12) is not a parameter: it is results@screening.<MailFromAddress's domain>, so its identity
+ * is always a subdomain of the main one and never the same identity (CloudFormation's rules cannot split an address to
+ * compare two domains).
  *
  * The screening's launch value (decision 13; docs/adr/0062) is not a parameter: the CDK app computes it at synthesis
  * from the release's capacity report and the ECR images the stack deploys (screening-launch.ts; the founder's ruling of
@@ -77,6 +111,12 @@ export class DeployParameters extends Construct {
   readonly mailFromAddress: string;
   /** The domain part of MailFromAddress: the SES identity Cognito sends through. */
   readonly mailFromDomain: string;
+  /** screening.<MailFromAddress's domain>: the screening stream's own SES identity (D2). */
+  readonly screeningMailDomain: string;
+  /** results@<screeningMailDomain>: the one sender of the screening stream (Q12). */
+  readonly screeningMailFromAddress: string;
+  /** True in phase 2 (MailIdentitiesVerified=true): Cognito sends through SES and the probes run. */
+  readonly mailIdentitiesVerified: CfnCondition;
   readonly supportEmail: string;
   readonly securityEmail: string;
   readonly imageTag: string;
@@ -86,6 +126,10 @@ export class DeployParameters extends Construct {
   readonly screeningConsumer: string;
   /** True once ImageTag names a release. */
   readonly released: CfnCondition;
+  /** `none`, or the address-validation account's role the web assumes (MailValidationRoleArn). */
+  readonly mailValidationRoleArn: string;
+  /** True once MailValidationRoleArn names a role. */
+  readonly mailValidationRoleSet: CfnCondition;
   private launchedCondition: CfnCondition | undefined;
   private readonly parameterScope: Construct;
 
@@ -136,6 +180,8 @@ export class DeployParameters extends Construct {
       constraintDescription: 'an email address on a lowercase domain',
     });
     this.mailFromDomain = Token.asString(Fn.select(1, Fn.split('@', this.mailFromAddress)));
+    this.screeningMailDomain = Fn.join('', [`${SCREENING_SENDER.subdomain}.`, this.mailFromDomain]);
+    this.screeningMailFromAddress = Fn.join('', [`${SCREENING_SENDER.localPart}@${SCREENING_SENDER.subdomain}.`, this.mailFromDomain]);
     this.supportEmail = parameter(PARAMETER_NAMES.supportEmail, {
       type: 'String',
       description: 'The support address the support, status and maintenance pages name',
@@ -161,8 +207,36 @@ export class DeployParameters extends Construct {
       default: SCREENING_CONSUMER_STATES[0],
       allowedValues: [...SCREENING_CONSUMER_STATES],
     });
+    const verified = parameter(PARAMETER_NAMES.mailIdentitiesVerified, {
+      type: 'String',
+      description: 'false until both SES identities read verified with DKIM SUCCESS (phase 1); true after (phase 2: Cognito sends through SES, probes run)',
+      default: MAIL_IDENTITIES_VERIFIED_VALUES[0],
+      allowedValues: [...MAIL_IDENTITIES_VERIFIED_VALUES],
+    });
+    this.mailIdentitiesVerified = new CfnCondition(scope, MAIL_IDENTITIES_VERIFIED_CONDITION, { expression: Fn.conditionEquals(verified, 'true') });
+    this.mailIdentitiesVerified.overrideLogicalId(MAIL_IDENTITIES_VERIFIED_CONDITION);
     this.released = new CfnCondition(scope, 'Released', { expression: Fn.conditionNot(Fn.conditionEquals(this.imageTag, NO_IMAGE)) });
     this.released.overrideLogicalId('Released');
+    this.mailValidationRoleArn = parameter(PARAMETER_NAMES.mailValidationRoleArn, {
+      type: 'String',
+      description: `The role the web assumes in the address-validation account to validate a screening address (tp-<env>-address-validation's AddressValidationRoleArn output); ${NO_VALIDATION_ROLE} until that stack exists, and no release runs before`,
+      default: NO_VALIDATION_ROLE,
+      allowedPattern: `^(${NO_VALIDATION_ROLE}|${ROLE_ARN_PATTERN})$`,
+      constraintDescription: `${NO_VALIDATION_ROLE}, or an IAM role ARN`,
+    });
+    const validationRoleSet = Fn.conditionNot(Fn.conditionEquals(this.mailValidationRoleArn, NO_VALIDATION_ROLE));
+    this.mailValidationRoleSet = new CfnCondition(scope, MAIL_VALIDATION_ROLE_CONDITION, { expression: validationRoleSet });
+    this.mailValidationRoleSet.overrideLogicalId(MAIL_VALIDATION_ROLE_CONDITION);
+    // CloudFormation refuses the deploy before any change: a released web validates only through that role.
+    const needsRole = new CfnRule(scope, RELEASE_NEEDS_VALIDATION_ROLE_RULE, {
+      assertions: [
+        {
+          assert: Fn.conditionOr(Fn.conditionEquals(this.imageTag, NO_IMAGE), validationRoleSet),
+          assertDescription: `A release runs the web, which validates a screening's address only in the environment's address-validation account (docs/adr/0065): deploy tp-<env>-address-validation there and pass ${PARAMETER_NAMES.mailValidationRoleArn}=<its AddressValidationRoleArn output>, or keep ImageTag=${NO_IMAGE}`,
+        },
+      ],
+    });
+    needsRole.overrideLogicalId(RELEASE_NEEDS_VALIDATION_ROLE_RULE);
     if (launch !== SCREENING_CLOSED) {
       // The value names the report of one tag: CloudFormation refuses the deploy before any change unless ImageTag is it.
       const tag = launch.slice(0, launch.lastIndexOf(':'));
@@ -207,6 +281,11 @@ export class DeployParameters extends Construct {
   /** `count` once ImageTag names a release, 0 until then (a service's desired count). */
   countOnceReleased(count: number): number {
     return Token.asNumber(Fn.conditionIf(this.released.logicalId, count, 0));
+  }
+
+  /** 'true' in phase 2 (MailIdentitiesVerified), 'false' in phase 1: the platform's MAIL_IDENTITIES_VERIFIED. */
+  get mailIdentitiesVerifiedFlag(): string {
+    return Token.asString(Fn.conditionIf(this.mailIdentitiesVerified.logicalId, 'true', 'false'));
   }
 
   /** 'true' once ImageTag names a release, 'false' until then. */

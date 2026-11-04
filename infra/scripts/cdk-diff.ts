@@ -5,7 +5,7 @@ import { awsCredentialsAvailable, planCdkDiff } from '../lib/cdk-diff-plan';
 const plan = planCdkDiff(await awsCredentialsAvailable(), process.env.GITHUB_ACTIONS === 'true');
 const result = spawnSync('cdk', plan.args, {
   stdio: 'inherit',
-  env: { ...process.env, CDK_DISABLE_CLI_TELEMETRY: 'true' },
+  env: { ...process.env, CDK_DISABLE_CLI_TELEMETRY: 'true', CDK_DISABLE_VERSION_CHECK: 'true' },
 });
 if (result.error !== undefined) {
   process.stderr.write(`cdk:diff: could not run the cdk CLI (${result.error.message})\n`);

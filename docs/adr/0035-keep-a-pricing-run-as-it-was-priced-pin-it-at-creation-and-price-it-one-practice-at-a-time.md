@@ -112,3 +112,23 @@ by, and what happens when the engine or the job fails part way.
 
 A practice's period holds more lines than one transaction should carry, the monthly schedule arrives, re-run diffs are
 built, or triage needs a pattern of its own.
+
+## Amendment (`co-001/unmapped-plan`, 2026-11-01): the guard at creation and at execution
+
+Combined audit #32 ("One unmapped plan freezes a whole month"), adopted by the founder with the whole audit on
+2026-10-20, with its milestone 3 exception; built under the founder's standing rule of 2026-10-18 and recorded in
+ADR [0075](0075-price-around-a-plan-with-no-mapping-and-price-its-months-again-from-the-mapping-screens-by-hand.md). The Decision above refused "a period over a plan with no
+mapping at all ... through `@tp/contracts`' `assertPracticePricingAllowed` (MAP-01), at creation and again at execution
+(`unmapped_plan`)". Both refusals are gone:
+
+- **At creation**, `createPricingRun` refuses only a period none of whose plans has a mapping
+  (`PricingRunNothingMapped`, MAP-07): such a run would price nothing. Every other period gets its run, and the location
+  check (ADR 0064) still follows the mapping check.
+- **At execution** nothing is refused for a mapping: a mapping is corrected, never removed, so the plans mapped at
+  creation are mapped when the run prices, and a run queued before this change prices as the rest of this amendment
+  says. Each line of a plan with no mapping is left `NO_MAPPING` where the resolver reaches it, one by one, beside every
+  other line priced (MAP-01, MAP-06). `unmapped_plan` stays in `FailureCode` for the runs that already failed with it.
+- **The run's coverage** (`tp-pricing-coverage/2`) records each plan that had no mapping when the run priced, with all
+  its lines and billed cents (PRC-30), from the same records the resolver priced with. A run stays as it was priced:
+  mapping the plan later changes no run, and the mapping screens offer a re-run of each month in that person's name,
+  accepted by hand under ADR 0037 (MAP-08, PRC-29).

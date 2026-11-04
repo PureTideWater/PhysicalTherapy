@@ -1,0 +1,21 @@
+{
+  "case": "PRC-31",
+  "module": "PRC",
+  "title": "Lines of mapped plans still unpriced as `NO_MAPPING` in the pricing in effect",
+  "assertion": "Coverage, Pricing runs, the home page and the mapping list count the lines whose pricing in effect is `NO_MAPPING` while a mapping is now in force on their date, in lines, billed cents and priced months only; the count falls to zero once the re-runs pricing them are accepted, and never counts a line of a plan with no mapping",
+  "synthetic": true,
+  "completesIn": 3,
+  "assertedBy": [
+    "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
+    "apps/web/src/lib/routes/mapping-routes.db.test.ts",
+    "apps/web/e2e/mapping.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of their own: MAP-06's file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

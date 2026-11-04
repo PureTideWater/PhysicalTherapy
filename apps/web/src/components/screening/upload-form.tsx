@@ -1,11 +1,13 @@
 'use client';
 
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
-import { type FormEvent, startTransition, useActionState, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { type FormEvent, type ReactNode, type Ref, startTransition, useActionState, useEffect, useRef, useState } from 'react';
 
 import type { ContentQuarters } from '@tp/worker/screening-format';
 
 import type { ActionState } from '../../lib/http/next';
+import { KEEP_ADDRESS_LABEL, addressHint, isSoftAddressMessage } from '../../lib/screening/address';
 import { FILE_MESSAGES, leftOutMessage, outsideContentMessage, screenedQuartersMessage } from '../../lib/screening/messages';
 import { type ScreeningParse, clockOffset, parseScreeningFile } from '../../lib/screening/parse';
 import { ABOUT_PRACTICE, HEARD_FROM_LABEL, REFERRING_FIRM_HINT, REFERRING_FIRM_LABEL, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
@@ -31,7 +33,10 @@ import { Field, SelectField } from '../field';
  * Q11 (a); docs/adr/0064). The result is emailed:
  * the page only says to check the email. Two optional fields say how the practice heard of PaidWhole (a closed list) and
  * which billing firm referred it, and the hint under the email address says what is deleted and what is kept (audit
- * #57; the founder's rulings of 2026-10-20).
+ * #57; the founder's rulings of 2026-10-20). The email address is checked as it is typed (audit #76; docs/adr/0065, D9):
+ * a likely typo of a large mail provider's domain offers the address meant, and an ending not in use is questioned; the
+ * prospect may use the suggestion or keep the address as typed, which the server asks again, as it does when SES cannot
+ * confirm the mailbox.
  */
 
 /** What the ZIP code field takes (PR 6b): the ZIP+4 is asked for only where Medicare splits the ZIP code. */
@@ -51,6 +56,65 @@ export interface ScreeningUploadFormProps {
   readonly sources: readonly { readonly value: string; readonly label: string }[];
 }
 
+/**
+ * The work email, with the hint for a likely typo or an ending not in use (address.ts), shown once the field is left,
+ * in a live region so it is announced, and the box that keeps a questioned address as typed: shown with a hint, or when
+ * the server questioned the address (a hint, or a mailbox SES could not confirm). A refused address offers no box.
+ */
+function ContactEmailField({ error }: { readonly error: string | undefined }) {
+  const [value, setValue] = useState('');
+  const [left, setLeft] = useState('');
+  const [keep, setKeep] = useState(false);
+  const hint = left === '' ? null : addressHint(left);
+  const message = hint?.message ?? null;
+  const suggestion = hint?.suggestion ?? null;
+  const questioned = message !== null || (error !== undefined && isSoftAddressMessage(error));
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {/* The hint is a legal surface counsel reviews before the screening opens: docs/product/legal-surfaces.md, data-legal-surface="screening-kept-upload". */}
+      <Field
+        label="Work email"
+        name="contactEmail"
+        type="email"
+        required
+        maxLength={254}
+        autoComplete="email"
+        hint={UPLOAD_EMAIL_HINT}
+        error={error}
+        value={value}
+        onChange={(event) => {
+          setValue(event.currentTarget.value);
+          setKeep(false);
+        }}
+        onBlur={() => setLeft(value)}
+      />
+      <div role="status" className="flex flex-wrap items-center gap-2 text-sm" data-slot="address-hint">
+        {message === null || message === error ? null : <p data-state="address-hint">{message}</p>}
+        {suggestion === null ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setValue(suggestion);
+              setLeft(suggestion);
+              setKeep(false);
+            }}
+          >
+            Use {suggestion}
+          </Button>
+        )}
+      </div>
+      {questioned ? (
+        <div className="flex items-center gap-2 text-sm">
+          <input type="checkbox" id="field-keepAddress" name="keepAddress" value="1" checked={keep} onChange={(event) => setKeep(event.currentTarget.checked)} />
+          <Label htmlFor="field-keepAddress">{KEEP_ADDRESS_LABEL}</Label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** The fields the server names in its refusals, as the form labels them. */
 const FIELD_NAMES: Readonly<Record<string, string>> = {
   practiceName: 'Practice name',
@@ -65,6 +129,65 @@ const FIELD_NAMES: Readonly<Record<string, string>> = {
 
 function issueField(field: string): string {
   return FIELD_NAMES[field] ?? field;
+}
+
+/** The words of a refusal that link to the audit request, where the page's own link is far below. */
+const REQUEST_AN_AUDIT = 'request an audit';
+
+/** A refusal's sentence as the alert's text: its first letter capitalized, and "request an audit" linked to the form. */
+function refusalSentence(message: string): ReactNode {
+  const sentence = `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
+  const at = sentence.indexOf(REQUEST_AN_AUDIT);
+  if (at < 0) {
+    return sentence;
+  }
+  return (
+    <>
+      {sentence.slice(0, at)}
+      <Link className="underline" href="/request-audit">
+        {REQUEST_AN_AUDIT}
+      </Link>
+      {sentence.slice(at + REQUEST_AN_AUDIT.length)}
+    </>
+  );
+}
+
+/**
+ * The server's refusal of an upload, which takes the focus when no field of the form is refused. A refusal of the form
+ * as a whole (every issue is "input": the screening paused or closed, or the bounce budget) is said as the alert's own
+ * text, with no "Check the fields marked below." and no "Form:" label, since no field is marked, and its "request an
+ * audit" links to the request form, the next step it names (the review of 2026-10-27). Any other refusal lists each issue
+ * by the field it names, which the form marks too.
+ */
+export function UploadRefusal({ state, ref }: { readonly state: ActionState; readonly ref?: Ref<HTMLDivElement> }) {
+  if (state.error === undefined) {
+    return null;
+  }
+  const issues = state.issues ?? [];
+  const formOnly = issues.length > 0 && issues.every((issue) => issue.field === 'input');
+  return (
+    <Alert variant="destructive" data-state="error" ref={ref} tabIndex={-1}>
+      <AlertTitle>Not done</AlertTitle>
+      <AlertDescription>
+        {formOnly ? (
+          issues.map((issue) => <p key={issue.message}>{refusalSentence(issue.message)}</p>)
+        ) : (
+          <>
+            <p>{state.error}</p>
+            {issues.length === 0 ? null : (
+              <ul className="mt-1 list-disc pl-5">
+                {issues.map((issue) => (
+                  <li key={`${issue.field}:${issue.message}`}>
+                    {issueField(issue.field)}: {issue.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /** The fields of this form the server may refuse, in the form's order: a refusal moves the focus to the first. */
@@ -178,8 +301,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
             hint={ZIP_HINT}
             error={refused('zip')}
           />
-          {/* The hint is a legal surface counsel reviews before the screening opens: docs/product/legal-surfaces.md, data-legal-surface="screening-kept-upload". */}
-          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint={UPLOAD_EMAIL_HINT} error={refused('contactEmail')} />
+          <ContactEmailField error={refused('contactEmail')} />
           <SelectField label={HEARD_FROM_LABEL} name="heardFrom" options={sources} error={refused('heardFrom')} />
           <Field label={REFERRING_FIRM_LABEL} name="referringFirm" maxLength={200} autoComplete="off" hint={REFERRING_FIRM_HINT} error={refused('referringFirm')} />
         </CardContent>
@@ -261,23 +383,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
           ) : null}
         </CardContent>
       </Card>
-      {state.error === undefined ? null : (
-        <Alert variant="destructive" data-state="error" ref={errorRef} tabIndex={-1}>
-          <AlertTitle>Not done</AlertTitle>
-          <AlertDescription>
-            <p>{state.error}</p>
-            {state.issues === undefined || state.issues.length === 0 ? null : (
-              <ul className="mt-1 list-disc pl-5">
-                {state.issues.map((issue) => (
-                  <li key={`${issue.field}:${issue.message}`}>
-                    {issueField(issue.field)}: {issue.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      <UploadRefusal state={state} ref={errorRef} />
       <div>
         <Button type="submit" disabled={pending || reading}>
           {pending ? 'Sending…' : 'Screen the file'}

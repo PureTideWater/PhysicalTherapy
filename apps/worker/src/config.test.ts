@@ -106,7 +106,7 @@ describe('readScreeningWorkerConfig and readScreeningConfig (docs/adr/0062)', ()
       screening: {
         databaseUrl: SCREENING,
         concurrency: DEFAULT_SCREENING_CONCURRENCY,
-        notifications: { mail: { kind: 'local', dir: '/tmp/outbox' }, appOrigin: 'http://localhost:3000', staticAssetOrigin: null },
+        notifications: { mail: { kind: 'local', dir: '/tmp/outbox', eventsDir: null, streamPrefix: 'tp-dev' }, appOrigin: 'http://localhost:3000', staticAssetOrigin: null },
       },
     });
     expect(DEFAULT_SCREENING_CONCURRENCY).toBe(3);
@@ -123,21 +123,37 @@ describe('readScreeningWorkerConfig and readScreeningConfig (docs/adr/0062)', ()
     }
   });
 
-  it('sends through SES from MAIL_FROM to an https application in production, and prices no screening without its login in development', () => {
-    expect(
-      readScreeningWorkerConfig({
-        NODE_ENV: 'production',
-        SCREENING_DATABASE_URL: SCREENING,
-        QUEUE_DATABASE_URL: QUEUE,
-        MAIL_FROM: 'results@synthetic.test',
-        APP_ORIGIN: 'https://app.synthetic.test',
-        STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
-      }).screening.notifications,
-    ).toEqual({ mail: { kind: 'ses', from: 'results@synthetic.test' }, appOrigin: 'https://app.synthetic.test', staticAssetOrigin: 'https://static.synthetic.test' });
-    expect(() => readScreeningWorkerConfig({ NODE_ENV: 'production', SCREENING_DATABASE_URL: SCREENING, QUEUE_DATABASE_URL: QUEUE, APP_ORIGIN: 'https://app.synthetic.test' })).toThrow(
-      /MAIL_FROM is required/,
-    );
+  const DEPLOYED = {
+    NODE_ENV: 'production',
+    SCREENING_DATABASE_URL: SCREENING,
+    QUEUE_DATABASE_URL: QUEUE,
+    MAIL_FROM: 'notices@synthetic.test',
+    MAIL_STREAM_PREFIX: 'tp-production',
+    SCREENING_MAIL_FROM: 'results@screening.synthetic.test',
+    SCREENING_REPLY_TO: 'support@synthetic.test',
+    APP_ORIGIN: 'https://app.synthetic.test',
+    STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
+  };
+
+  it('sends through SES from the screening’s own sender, Reply-To the support address, to an https application in production, and prices no screening without its login in development', () => {
+    expect(readScreeningWorkerConfig(DEPLOYED).screening.notifications).toEqual({
+      mail: { kind: 'ses', from: 'notices@synthetic.test', screening: { from: 'results@screening.synthetic.test', replyTo: 'support@synthetic.test' }, streamPrefix: 'tp-production' },
+      appOrigin: 'https://app.synthetic.test',
+      staticAssetOrigin: 'https://static.synthetic.test',
+    });
+    expect(() => readScreeningWorkerConfig({ ...DEPLOYED, MAIL_FROM: undefined })).toThrow(/MAIL_FROM is required/);
     expect(readScreeningConfig({})).toBeNull();
+  });
+
+  it.each([
+    ['no screening sender', { SCREENING_MAIL_FROM: undefined, SCREENING_REPLY_TO: undefined }, /SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required when the screening consumer sends through SES/],
+    ['a sender without its Reply-To', { SCREENING_REPLY_TO: undefined }, /SCREENING_MAIL_FROM and SCREENING_REPLY_TO are set together/],
+    ['a Reply-To that is not an address', { SCREENING_REPLY_TO: 'support' }, /SCREENING_MAIL_FROM and SCREENING_REPLY_TO are email addresses/],
+    ['no stream prefix', { MAIL_STREAM_PREFIX: undefined }, /MAIL_STREAM_PREFIX is required when NODE_ENV is production/],
+    ['a stream prefix of another shape', { MAIL_STREAM_PREFIX: 'production' }, /MAIL_STREAM_PREFIX is tp- and the environment/],
+    ['a local events directory', { MAIL_EVENTS_DIR: '/tmp/events' }, /MAIL_EVENTS_DIR is refused when NODE_ENV is production/],
+  ])('refuses %s', (_name, change, message) => {
+    expect(() => readScreeningWorkerConfig({ ...DEPLOYED, ...change })).toThrow(message);
   });
 });
 
@@ -170,6 +186,11 @@ describe('readPlatformConfig', () => {
     AUDIT_COPY_BUCKET: 'tp-production-audit-copies',
     AUDIT_COPY_LOCK_MODE: 'COMPLIANCE',
     MAIL_FROM: 'notices@synthetic.test',
+    MAIL_STREAM_PREFIX: 'tp-production',
+    SCREENING_MAIL_FROM: 'results@screening.synthetic.test',
+    SCREENING_REPLY_TO: 'support@synthetic.test',
+    MAIL_EVENTS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events',
+    MAIL_IDENTITIES_VERIFIED: 'false',
     APP_ORIGIN: 'https://app.synthetic.test',
     STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
     SUPPORT_MAIL_BUCKET: 'tp-production-support-mail',
@@ -187,9 +208,11 @@ describe('readPlatformConfig', () => {
       auditStore: { kind: 'local', dir: '/var/tp/audit' },
       restoreDrill: { kind: 'local', workDir: '/var/tp/drill', binDir: '/usr/lib/postgresql/18/bin', adminUrl: OPERATOR_DATABASE_URL },
       supportInbox: { kind: 'local', dir: expect.stringContaining('tp-support-inbox') },
-      mail: { kind: 'local', dir: expect.stringContaining('tp-mail-outbox') },
+      mail: { kind: 'local', dir: expect.stringContaining('tp-mail-outbox'), eventsDir: null, streamPrefix: 'tp-dev' },
       appOrigin: 'http://localhost:3000',
       staticAssetOrigin: null,
+      // No events directory, nothing to read; probes go to the local outbox.
+      mailEvents: { kind: 'local', dir: null, identitiesVerified: true },
     });
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', RESTORE_DRILL_ADMIN_URL: 'postgres://admin@localhost/d' })?.restoreDrill).toEqual({
       kind: 'local',
@@ -211,9 +234,10 @@ describe('readPlatformConfig', () => {
         securityGroupIds: ['sg-a', 'sg-b'],
       },
       supportInbox: { kind: 's3', bucket: 'tp-production-support-mail' },
-      mail: { kind: 'ses', from: 'notices@synthetic.test' },
+      mail: { kind: 'ses', from: 'notices@synthetic.test', screening: { from: 'results@screening.synthetic.test', replyTo: 'support@synthetic.test' }, streamPrefix: 'tp-production' },
       appOrigin: 'https://app.synthetic.test',
       staticAssetOrigin: 'https://static.synthetic.test',
+      mailEvents: { kind: 'sqs', queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events', identitiesVerified: false },
     });
     expect(readPlatformConfig({ ...PRODUCTION, AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' })?.auditStore).toEqual({ kind: 's3', bucket: 'tp-production-audit-copies', lockMode: 'GOVERNANCE' });
   });
@@ -223,12 +247,31 @@ describe('readPlatformConfig', () => {
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', SUPPORT_MAIL_BUCKET: 'mail' })?.supportInbox).toEqual({ kind: 's3', bucket: 'mail' });
   });
 
-  it('sends notices through SES from MAIL_FROM or to MAIL_OUTBOX_DIR, linking to APP_ORIGIN', () => {
-    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', MAIL_FROM: 'notices@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/x' })).toMatchObject({
-      mail: { kind: 'ses', from: 'notices@synthetic.test' },
+  it('sends notices through SES from MAIL_FROM or to MAIL_OUTBOX_DIR, linking to APP_ORIGIN, and reads SES’s events from the queue or the local events directory', () => {
+    const ses = {
+      OPERATOR_DATABASE_URL,
+      AUDIT_COPY_DIR: 'a',
+      MAIL_FROM: 'notices@synthetic.test',
+      SCREENING_MAIL_FROM: 'results@screening.synthetic.test',
+      SCREENING_REPLY_TO: 'support@synthetic.test',
+      MAIL_EVENTS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-staging-mail-events',
+      APP_ORIGIN: 'https://app.synthetic.test/x',
+    };
+    expect(readPlatformConfig(ses)).toMatchObject({
+      mail: { kind: 'ses', from: 'notices@synthetic.test', streamPrefix: 'tp-dev' },
       appOrigin: 'https://app.synthetic.test',
+      mailEvents: { kind: 'sqs', identitiesVerified: true },
     });
-    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', MAIL_OUTBOX_DIR: '/var/tp/mail' })?.mail).toEqual({ kind: 'local', dir: '/var/tp/mail' });
+    // The platform probes the screening stream from its own sender, and reads SES's events from the queue.
+    expect(() => readPlatformConfig({ ...ses, SCREENING_MAIL_FROM: undefined, SCREENING_REPLY_TO: undefined })).toThrow(/SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required when MAIL_FROM is set on a platform worker/);
+    expect(() => readPlatformConfig({ ...ses, MAIL_EVENTS_QUEUE_URL: undefined })).toThrow(/MAIL_EVENTS_QUEUE_URL is required when MAIL_FROM is set/);
+    expect(() => readPlatformConfig({ ...ses, MAIL_EVENTS_QUEUE_URL: 'https://queue.synthetic.test/mail' })).toThrow(/MAIL_EVENTS_QUEUE_URL is an SQS queue URL/);
+    expect(() => readPlatformConfig({ ...ses, MAIL_IDENTITIES_VERIFIED: 'yes' })).toThrow(/MAIL_IDENTITIES_VERIFIED is true or false/);
+    expect(() => readPlatformConfig({ ...ses, MAIL_EVENTS_DIR: '/var/tp/events' })).toThrow(/MAIL_EVENTS_DIR is refused when MAIL_FROM is set/);
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', MAIL_OUTBOX_DIR: '/var/tp/mail', MAIL_EVENTS_DIR: '/var/tp/events', MAIL_IDENTITIES_VERIFIED: 'false' })).toMatchObject({
+      mail: { kind: 'local', dir: '/var/tp/mail', eventsDir: '/var/tp/events', streamPrefix: 'tp-dev' },
+      mailEvents: { kind: 'local', dir: '/var/tp/events', identitiesVerified: false },
+    });
   });
 
   it.each([
@@ -261,6 +304,11 @@ describe('readPlatformConfig', () => {
     ['a local admin login', { RESTORE_DRILL_ADMIN_URL: 'postgres://admin@localhost/d' }, /RESTORE_DRILL_ADMIN_URL is refused when NODE_ENV is production/],
     ['no origin', { APP_ORIGIN: undefined }, /APP_ORIGIN is required when NODE_ENV is production/],
     ['a plain-http origin', { APP_ORIGIN: 'http://app.synthetic.test' }, /APP_ORIGIN is an https URL when NODE_ENV is production/],
+    ['no mail-events queue', { MAIL_EVENTS_QUEUE_URL: undefined }, /MAIL_EVENTS_QUEUE_URL is required when NODE_ENV is production/],
+    ['no word on the identities', { MAIL_IDENTITIES_VERIFIED: undefined }, /MAIL_IDENTITIES_VERIFIED is required when NODE_ENV is production/],
+    ['no screening sender', { SCREENING_MAIL_FROM: undefined, SCREENING_REPLY_TO: undefined }, /SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required/],
+    ['no stream prefix', { MAIL_STREAM_PREFIX: undefined }, /MAIL_STREAM_PREFIX is required when NODE_ENV is production/],
+    ['a local events directory', { MAIL_EVENTS_DIR: '/var/tp/events' }, /MAIL_EVENTS_DIR is refused when NODE_ENV is production/],
   ])('refuses %s in production', (_name, change, message) => {
     expect(() => readPlatformConfig({ ...PRODUCTION, ...change })).toThrow(message);
   });
@@ -268,13 +316,27 @@ describe('readPlatformConfig', () => {
 
 describe('readNotificationConfig', () => {
   it('sends the practices’ digests the way the platform sends its notices, with or without an operator connection', () => {
-    expect(readNotificationConfig({})).toEqual({ mail: { kind: 'local', dir: expect.stringMatching(/tp-mail-outbox$/) as unknown }, appOrigin: 'http://localhost:3000', staticAssetOrigin: null });
-    expect(readNotificationConfig({ MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/p' })).toEqual({ mail: { kind: 'ses', from: 'digests@synthetic.test' }, appOrigin: 'https://app.synthetic.test', staticAssetOrigin: null });
-    expect(readNotificationConfig({ NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test' }).mail).toEqual({ kind: 'ses', from: 'digests@synthetic.test' });
+    expect(readNotificationConfig({})).toEqual({
+      mail: { kind: 'local', dir: expect.stringMatching(/tp-mail-outbox$/) as unknown, eventsDir: null, streamPrefix: 'tp-dev' },
+      appOrigin: 'http://localhost:3000',
+      staticAssetOrigin: null,
+    });
+    expect(readNotificationConfig({ MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/p' })).toEqual({
+      mail: { kind: 'ses', from: 'digests@synthetic.test', screening: null, streamPrefix: 'tp-dev' },
+      appOrigin: 'https://app.synthetic.test',
+      staticAssetOrigin: null,
+    });
+    // The practices' worker sends only digests (the transactional stream): no screening sender is needed there.
+    expect(readNotificationConfig({ NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', MAIL_STREAM_PREFIX: 'tp-staging', APP_ORIGIN: 'https://app.synthetic.test' }).mail).toEqual({
+      kind: 'ses',
+      from: 'digests@synthetic.test',
+      screening: null,
+      streamPrefix: 'tp-staging',
+    });
   });
 
   it('embeds the email art from the static host the deployed tasks name (STATIC_ASSET_ORIGIN), and goes without it when there is none', () => {
-    const deployed = { NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test', STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' };
+    const deployed = { NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', MAIL_STREAM_PREFIX: 'tp-production', APP_ORIGIN: 'https://app.synthetic.test', STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' };
     expect(readNotificationConfig(deployed).staticAssetOrigin).toBe('https://static.synthetic.test');
     expect(readNotificationConfig({ STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' }).staticAssetOrigin).toBe('https://static.synthetic.test');
     // A local build: no static host, so no art (reconciliation-001, D7), in production too.
@@ -293,7 +355,7 @@ describe('readNotificationConfig', () => {
   it.each([
     [{ NODE_ENV: 'production', APP_ORIGIN: 'https://app.synthetic.test' }, /MAIL_FROM is required when NODE_ENV is production/],
     [{ NODE_ENV: 'production', MAIL_FROM: 'd@synthetic.test', MAIL_OUTBOX_DIR: '/var/tp/mail', APP_ORIGIN: 'https://app.synthetic.test' }, /MAIL_OUTBOX_DIR is refused when NODE_ENV is production/],
-    [{ NODE_ENV: 'production', MAIL_FROM: 'd@synthetic.test', APP_ORIGIN: 'http://app.synthetic.test' }, /APP_ORIGIN is an https URL when NODE_ENV is production/],
+    [{ NODE_ENV: 'production', MAIL_FROM: 'd@synthetic.test', MAIL_STREAM_PREFIX: 'tp-production', APP_ORIGIN: 'http://app.synthetic.test' }, /APP_ORIGIN is an https URL when NODE_ENV is production/],
     [{ MAIL_FROM: 'd@synthetic.test', MAIL_OUTBOX_DIR: 'm' }, /at most one of MAIL_FROM and MAIL_OUTBOX_DIR/],
   ])('refuses %j', (env, message) => {
     expect(() => readNotificationConfig(env)).toThrow(message);

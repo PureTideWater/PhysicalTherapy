@@ -150,3 +150,27 @@ screening's own consumer, and Q7, the queue it works in; migration 2026110609000
   returns when the web received the upload and why the run waited, for the time to email; the gauge returns counts and
   the oldest normal run's wait. No name, address or row reaches a log, a payload or an error.
 
+
+## Amendment (PR 6b-4, 2026-10-21): the mail record, as the operator role and the screening's own
+
+Audit #76, built under the founder's answers of 2026-10-21 (about 22:30 UTC) to PR 6b's Q1, Q9, Q10 (a), Q11 (b) and
+Q12; migration 20261107090000; docs/adr/0065 and 0014.
+
+- **The platform's mail jobs call definer functions only, as `tp_operator`.** `operator_record_mail_event()` records
+  one SES event of one message; `operator_mail_account_signal()` pauses the screening stream on an account alarm or SES's
+  enforcement; `operator_mail_streams()`, `operator_mail_stream_confirmed()` and `operator_mail_probe_sent()` serve the
+  reconcile and the probes; `operator_mail_expire()` the nightly expiry; `operator_open_support_notice()`,
+  `operator_support_notices_pending()`, `_claim()`, `_sent()` and `_failed()` the support-access outbox. The role still
+  owns nothing and reads no mail table: every one is SECURITY DEFINER with `SET search_path` and EXECUTE revoked from
+  PUBLIC, and the keyed hash's own function, `mail_recipient_sha256()`, is executable by no role.
+- **A notice's event runs in its practice's scope.** The job scopes the transaction that records a support notice's
+  event to exactly the practice its `tp_practice` tag names, and every other event to no practice; the function
+  refuses a support notice's event outside its practice (42501). The address an event carries is read only to resolve a
+  Cognito user and to hash a refused screening address; it is never stored, logged or returned.
+- **The screening consumer reads the mail gate, as `tp_screening`.** `screening_mail_gate()` (whether the screening's
+  mail is sending, and its last resume) is granted to `tp_screening` alone, never to its login, nor to `tp_operator`:
+  the consumer reads it in the claim's transaction, and a run found not sending is not claimed and spends no attempt
+  (D3). The triggers (`screening_run_mail_gate`) refuse a claim, completion or failure while not sending whoever calls.
+- **No standing path is added.** No login gains a grant; the application role reads the two support-notice tables in
+  the practice's scope (as the owning group or a platform administrator) and calls the console's mail functions only
+  with `feature_flag.manage`.

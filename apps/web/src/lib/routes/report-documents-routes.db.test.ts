@@ -88,8 +88,8 @@ function ok<R>(outcome: Outcome<R>): R {
 const P = () => ({ practiceId: practice.practiceId });
 const standIn = new TextEncoder().encode('%PDF-1.7\n% SYNTHETIC stand-in report document\n');
 
-/** The print job's own code, with a stand-in renderer. */
-async function print(target: Practice, documentId: string) {
+/** The print job's own code, with a stand-in renderer; `seen` receives the HTML it was handed. */
+async function print(target: Practice, documentId: string, seen: (html: string) => void = () => undefined) {
   const jobId = randomUUID();
   const context: JobContext = {
     jobId,
@@ -98,7 +98,21 @@ async function print(target: Practice, documentId: string) {
     enqueue: () => Promise.resolve(null),
     lastAttempt: false,
   };
-  return printReportDocument(context, { documents: w.reports, keys: w.keys, pdf: { render: () => Promise.resolve(standIn) } }, target.practiceId, documentId);
+  return printReportDocument(
+    context,
+    {
+      documents: w.reports,
+      keys: w.keys,
+      pdf: {
+        render: (html) => {
+          seen(html);
+          return Promise.resolve(standIn);
+        },
+      },
+    },
+    target.practiceId,
+    documentId,
+  );
 }
 
 function documentIdOf(redirect: string | undefined): string {
@@ -178,7 +192,7 @@ describe('the coverage report (PRD 6: CSV and PDF of the Coverage screen)', () =
     expect(content.reasons.every((entry) => entry.lines === 0)).toBe(true);
     expect(content.waiting).toMatchObject({ lines: 0, claims: 0, charge_cents: '0' });
     expect(content.waiting_plans).toEqual([]);
-    expect(content.readiness).toEqual({ allowed: true, unmapped_plans: 0 });
+    expect(content.readiness).toEqual({ allowed: true, unmapped_plans: 0, unmapped_lines: 0, unmapped_charge_cents: '0' });
   });
 
   it('downloads its CSV at once and its PDF once printed, each named by its opaque ID; another practice reaches neither', async () => {
@@ -202,6 +216,29 @@ describe('the coverage report (PRD 6: CSV and PDF of the Coverage screen)', () =
     expect((await call(reportDocumentPage, other.manager, elsewhere)).status).toBe('not_found');
     expect((await call(reportDocumentCsvRoute, other.manager, elsewhere)).status).toBe('not_found');
     expect((await call(reportDocumentPdfRoute, other.manager, elsewhere)).status).toBe('not_found');
+  });
+
+  it('records the plans with no mapping with their lines and billed cents, as Coverage counts them, and says their lines were not priced (combined audit #32; PRC-30, MAP-06, UX-5)', async () => {
+    // MAP-06's SYNTHETIC file with neither of its plans mapped: 2 plans, 7 lines, $750.00 billed, and no run.
+    const target = await w.practice('REPORT DOCUMENT ROUTES UNMAPPED');
+    await w.load(target, 'MAP-06/remit.835');
+    const at = { practiceId: target.practiceId };
+    const documentId = documentIdOf(ok(await call(generateReportDocumentAction, target.manager, at, { kind: 'coverage' })).redirect);
+    const content = ok(await call(reportDocumentPage, target.manager, { ...at, documentId })).document.content;
+    if (content.format !== 'tp-coverage-report/1') {
+      throw new Error('a coverage report');
+    }
+    expect(content.readiness).toEqual({ allowed: false, unmapped_plans: 2, unmapped_lines: 7, unmapped_charge_cents: '75000' });
+    // The Coverage screen's own figure (its line set is a run's, PRICEABLE_LINE).
+    const screen = ok(await call(coveragePage, target.manager, at)).unmappedPlans;
+    expect({ plans: content.readiness.unmapped_plans, lines: content.readiness.unmapped_lines, chargeCents: content.readiness.unmapped_charge_cents }).toEqual(screen);
+    let html = '';
+    expect(await print(target, documentId, (printed) => (html = printed))).toMatchObject({ outcome: 'printed' });
+    // UX-5: a stored snapshot states the past, so mapping a plan later never makes it false.
+    expect(html).toContain('2 plans had no mapping; their lines were not priced (7 lines, ');
+    expect(html).not.toContain('have no mapping; their lines are not priced');
+    expect(html).toMatch(/\$750\.00<\/span> billed\)\./);
+    expect(html).not.toContain('refused');
   });
 });
 
@@ -274,7 +311,15 @@ describe('the Reports screen and its export history (PRD 7: "export history ... 
 describe('the practice dashboard (PRD 7; PRD 12, the headline)', () => {
   it('shows actionable, payer approved and recovered as three numbers, the case near nothing, and the queues', async () => {
     const home = ok(await call(practiceHome, viewer, P()));
-    expect(home.dashboard.headline).toEqual({ actionable: { lines: 3, cents: '9000' }, payerApprovedCents: '0', recoveredCents: '0', proofLevel: 'posted', flagged: { lines: 0 }, validated: { lines: 0, cents: '0' } });
+    expect(home.dashboard.headline).toEqual({
+      actionable: { lines: 3, cents: '9000', outOfFigure: { movedOn: 0, stale: 0 } },
+      payerApprovedCents: '0',
+      recoveredCents: '0',
+      recoveredSince: null,
+      proofLevel: 'posted',
+      flagged: { lines: 0 },
+      validated: { lines: 0, cents: '0' },
+    });
     expect(home.dashboard.casesByState).toEqual([{ state: 'open', cases: 1, actionableCents: '9000' }]);
     // The window is ten years: no deadline within 14 days.
     expect(home.dashboard.deadlines).toEqual({ cases: 0, actionableCents: '0', earliest: null });

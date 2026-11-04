@@ -10,7 +10,8 @@ import { type CfnStatement, logicalIdOf, propertiesOf, resourceById, roleStateme
 
 /**
  * The screening consumer's task role (docs/adr/0049, 0062; PR 6b-3, the plan's G4): it emails a screening result from
- * MailFromAddress through SES, and nothing else. PR 6b-4 narrows it to the screening's own identity and set.
+ * results@screening.<domain> through SES, through the screening stream's own identity and set alone (PR 6b-4; docs/adr/0065;
+ * the plan's G4), and nothing else.
  */
 describe('the screening role\'s actions match what the consumer sends', () => {
   it('covers the one SES command the mail sender makes, and the consumer calls no other AWS service', () => {
@@ -46,22 +47,27 @@ describe.each(ENVIRONMENTS)('%s: screening role', (environment) => {
     expect(role.Policies).toBeUndefined();
   });
 
-  it('sends email only through MailFromAddress\'s identity, and only from that address', () => {
+  it('sends email only through the screening identity and the screening set, and only from results@screening.<domain>', () => {
     expect(statements).toHaveLength(1);
     const send = statements[0] as CfnStatement;
     expect(send).toMatchObject({ Sid: 'ScreeningResultEmail', Effect: 'Allow', Action: 'ses:SendEmail' });
-    expect(send.Condition).toEqual({ StringEquals: { 'ses:FromAddress': { Ref: PARAMETER_NAMES.mailFromAddress } } });
-    const resources = JSON.stringify(send.Resource);
-    expect(resources).toContain(':identity/');
-    expect(resources).toContain(`{"Ref":"${PARAMETER_NAMES.mailFromAddress}"}`);
-    // The domain is MailFromAddress's own (the part after the @), never every identity of the account.
-    expect(resources).toContain('"Fn::Split":["@",{"Ref":"MailFromAddress"}]');
-    expect(resources).not.toContain('identity/*');
+    const domain = { 'Fn::Select': [1, { 'Fn::Split': ['@', { Ref: PARAMETER_NAMES.mailFromAddress }] }] };
+    expect(send.Condition).toEqual({ StringEquals: { 'ses:FromAddress': { 'Fn::Join': ['', ['results@screening.', domain]] } } });
+    const resources = send.Resource as unknown[];
+    expect(resources).toHaveLength(2);
+    const text = JSON.stringify(resources);
+    expect(text).toContain(logicalIdOf(stack, stack.mailStreams.screeningIdentity));
+    expect(text).toContain(`:configuration-set/tp-${environment}-screening`);
+    // Never MailFromAddress's identity, another stream's set or every identity of the account.
+    expect(text).not.toContain(logicalIdOf(stack, stack.mailStreams.mailIdentity));
+    expect(text).not.toContain(`tp-${environment}-transactional`);
+    expect(text).not.toContain(`tp-${environment}-notices`);
+    expect(text).not.toContain('identity/*');
   });
 
   it('reads no secret, bucket, key, queue or model: the login reaches the container through the execution role', () => {
     const text = JSON.stringify(statements);
-    for (const forbidden of ['secretsmanager:', 's3:', 'kms:', 'sqs:', 'bedrock:', 'rds:', 'textract:', 'ses:SendRawEmail', 'ses:*']) {
+    for (const forbidden of ['secretsmanager:', 's3:', 'kms:', 'sqs:', 'bedrock:', 'rds:', 'textract:', 'ses:SendRawEmail', 'ses:*', 'ses:Put', 'ses:Get']) {
       expect(text, forbidden).not.toContain(forbidden);
     }
   });

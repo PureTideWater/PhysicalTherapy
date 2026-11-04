@@ -1,0 +1,20 @@
+{
+  "case": "HOM-03",
+  "module": "HOM",
+  "title": "The empty home names the upload gate",
+  "assertion": "The home's gate equals the Uploads page's: a practice BAA and an organization-wide BAA open it, a BAA signed in the future and none close it, a suspension pauses it; open shows the upload sentence with Go to Uploads, closed the BAA sentence with See the agreement chain for a role that may open Settings and no link for a viewer, paused the suspension sentence with no link",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [
+    "apps/web/src/lib/dashboard/home-figures.db.test.ts",
+    "apps/web/src/components/dashboard/headline.test.tsx"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
