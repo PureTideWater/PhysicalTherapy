@@ -54,9 +54,13 @@ async function shown(page: Page): Promise<number> {
   return Number((await page.locator('body').getAttribute('data-shown')) ?? '0');
 }
 
-/** Waits until the page's forms have shown `count` responses. */
+/**
+ * Waits until the page's forms have shown at least `count` responses. At least, never exactly: the count can move past
+ * `count` between two of Playwright's polls (S-SEC-2's stale summary, 1, is replaced by the cleared one, 2, within ~50 ms),
+ * and an exact wait would then never end. A test that needs exactly `count` asserts shown() once the page has settled.
+ */
 async function shownCount(page: Page, count: number): Promise<void> {
-  await page.waitForSelector(`body[data-shown="${String(count)}"]`, { state: 'attached' });
+  await page.waitForFunction((n) => Number(document.body.dataset.shown ?? '0') >= n, count, { timeout: 10_000 });
 }
 
 /** The stand-in router's refresh() calls. */
@@ -371,7 +375,10 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.fill('#field-password', TYPED_PASSWORD);
     await onRefresh(page, { requestKey: 'synthetic-request-key-2', person: PERSON_B });
     await refusedWith(page, STALE);
-    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    // Its own 10 s, under the test's 30 s: a cleared summary that never comes names this wait, not the test's timeout.
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`, { timeout: 10_000 });
+    // Settled: the stale refusal's summary and the cleared one that replaced it.
+    expect(await shown(page)).toBe(2);
     expect(await page.textContent(TITLE)).toBe('Form cleared');
     expect(await page.textContent(DESCRIPTION)).toBe('This page was out of date, so nothing was saved. The person signed in on this browser changed, so this form was cleared.');
     // Every field is back at what the page renders, and nothing marks or notes a field.
@@ -385,8 +392,23 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.fill('#field-zip', '27514');
     await refusedWith(page, invalid(ZIP));
     expect(await page.textContent(TITLE)).toBe('Not done');
+    expect(await shown(page)).toBe(3);
     expect(await sentKeys(page)).toEqual([FIRST_KEY, 'synthetic-request-key-2']);
     expect((await calls(page))[1]?.entries).not.toContainEqual(['why', 'SYNTHETIC reason']);
+    await page.close();
+  });
+
+  it('FRM-01: a count already past the one awaited ends the wait: the stale refusal’s 1 is 2 once the cleared summary replaces it (S-SEC-2)', async () => {
+    const page = await harness.open('keep');
+    await page.fill('#field-zip', '27514');
+    await onRefresh(page, { requestKey: 'synthetic-request-key-2', person: PERSON_B });
+    await script(page, { refuse: STALE });
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    // Settled past 1: an exact wait for 1 can never end now.
+    expect(await shown(page)).toBe(2);
+    expect(await page.locator('body[data-shown="1"]').count()).toBe(0);
+    await shownCount(page, 1);
     await page.close();
   });
 
@@ -487,6 +509,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     // The model's answer, though its action numbers it as the save's was, inserts a summary of its own.
     await shownCount(page, 3);
     expect(await page.textContent(DESCRIPTION)).toBe('SYNTHETIC second refusal of the model’s draft.');
+    expect(await shown(page)).toBe(3);
     expect(await focused(page)).toBe('refusal-summary');
     expect(await page.locator(SUMMARY).count()).toBe(1);
     await page.close();
