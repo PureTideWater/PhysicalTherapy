@@ -386,6 +386,12 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   check, draft PR, two reviews + skeptics, fix round with the suite once, verification); script archived. Before its merge,
   its diff and head go to S1, S2, S3 and the schema chain session. D (wf_b49ddbb6-964) still running, draft only.
 
+- 2026-11-04T03:40:00Z: orchestrator (03:32Z): fold the private-repository fetch failure into the Trivy PR (screening-capacity's
+  changes job, a blobless fetch without credentials, "could not read Username", PR #104 run 41765454689), with the workflow
+  token, contents: read, a test, and an audit of every workflow for other public-repository assumptions; runner size stays
+  the founder's. wf_87464ad4-ed6 stopped in its build stage; relaunched with the wider scope as **wf_3717f39c-6bd** (the builder
+  continues from its progress file); script archived.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
