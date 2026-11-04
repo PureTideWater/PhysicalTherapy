@@ -1780,7 +1780,8 @@ read and affecting no package: package.json scripts."db:domain-model" (no mutati
 - **Added to the global inputs**, none of which exists: `.npmrc`, `.pnpmfile.*`, `patches/**`,
   `.github/workflows/actions.lock` (GitHub's workflow dependency lockfile, in preview, under which "the locked commit
   is what runs"), `**/package.yaml` and `**/package.json5` (manifests pnpm reads and the tooling does not), `.pnp.cjs`
-  (required into every `pnpm exec` step) and `.github/actions/**`.
+  (required into every `pnpm exec` step) and `.github/actions/**`; and every `.gitattributes`, root or nested, which
+  the checkout applies to the bytes of every file a shard reads (N56).
 - **What a shard loads by path** (`GLOBAL_LOADED`): each package's `stryker/<package>.config.mjs`, the seed's setup
   file, and the canary's Stryker and Vitest configurations and five case tests. The global closure follows their
   imports with Part 4's entry points, tests included: 32 files, `tools/stryker/canary/**` among them, importing
@@ -1935,6 +1936,11 @@ since no closure imports `playwright-core`.
   setup steps or checkout was "proved" on money-ledger, which never ran that job's setup. Now both jobs run the same
   check, and it holds the checkout to `GITHUB_SHA` as well (the safer of the review's two severities). N47 reads:
   every shard, the changes job and the gate job are held to the pinned Node, Unicode, ICU and pnpm, and to one commit.
+- **N56** (the completeness critic of #96's reviews, C-G1). `.gitattributes` and `**/.gitattributes` are global
+  inputs. At 50029e64 neither was, so a pull request adding only `packages/pricing/src/*.ts text eol=crlf` or a
+  `docs/product/unpriced-reasons.md` line printed "shards: none", though every later checkout rewrites the bytes the
+  pricing and packets tests and their mutants read. It predates this part, which set out to list what the runner reads
+  on every step. `.gitmodules` stays outside: the checkouts fetch no submodules.
 
 ### Consequences
 

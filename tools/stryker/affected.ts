@@ -136,7 +136,8 @@ export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-
  * What affects every package, by glob, besides the import closure of GLOBAL_ENTRY_POINTS and GLOBAL_LOADED: the
  * mutation configurations and tooling, the root tsconfigs, and what pnpm or the runner reads at install or on every
  * step (.npmrc, a pnpmfile, patches, a package.yaml or package.json5 manifest, a Plug'n'Play loader, the workflows'
- * action lockfile and local actions). The root manifest, the workspace file and the workflow are listed here and
+ * action lockfile and local actions), and every .gitattributes, root or nested, which the checkout applies to the bytes
+ * of every file a shard reads (line ends, filters). The root manifest, the workspace file and the workflow are listed here and
  * read field by field (tools/stryker/manifests.ts); any other file a glob matches is never classified.
  */
 export const GLOBAL_INPUTS = [
@@ -156,6 +157,8 @@ export const GLOBAL_INPUTS = [
   '**/package.json5',
   '.pnp.cjs',
   '.github/actions/**',
+  '.gitattributes',
+  '**/.gitattributes',
 ] as const;
 
 /** The mutation tooling's own entry points: whatever they import decides what runs and how it is judged. */

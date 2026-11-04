@@ -829,6 +829,15 @@ describe('the field rule, the runner proof and what else affects every package, 
     }
   });
 
+  // The completeness critic of #96's reviews (C-G1): the checkout applies every .gitattributes to the bytes a shard reads.
+  it('gives all four for a root or nested .gitattributes, which the checkout applies to every file a shard reads', () => {
+    for (const file of ['.gitattributes', 'packages/money/.gitattributes', 'packages/pricing/src/.gitattributes', 'docs/product/.gitattributes']) {
+      const result = affected({ files: [file] }, closures, global);
+      expect(result.packages, file).toEqual(ALL);
+      expect(result.reasons.money?.some((reason) => reason.startsWith(file)), file).toBe(true);
+    }
+  });
+
   it('gives all four for a changed path holding a control character, wherever it lies, and prints it JSON-quoted, so no line it starts is a workflow command', () => {
     const forged = 'packages/money/src/a\n::warning title=forged::injected by a path.ts';
     // JSON-quoted, and each character JSON leaves bare that a log could read as a line break escaped too.
