@@ -98,6 +98,16 @@ its unpushed work is not waited for).
   https://github.com/PureTideWater/PhysicalTherapy/pull/104#discussion_r4465978371 . Reported to the orchestrator.
   Base moved to 24531dc2 (#86; no migration): merged after the founder commits, then CI green, ready, merge.
   **Running: wf_130f3090-169** (`workflow-scripts/lane-a-chain-forward-1b-interest.js`, args ss01Head 7076d64e).
+- **11:35 UTC. Chain forward (wf_130f3090-169):** 1b **ab8c9c27** pushed (SS-01 7076d64e merged; 20261109090000
+  unchanged); CAS-42.5 dispatched on it (release-capacity run 41810890284); interest **adf0f5d2** pushed (1b merged; its
+  migration unchanged); both merges' adversarial fresh-clone verifiers: ok. CAS-42.6 (local process route, one release
+  dir): **before** (56ed6279, #81) FAIL as expected: A triage, A report x2, D triage 53200 out of shared memory after 3
+  attempts, one backend at 13,703 advisory locks; **after** (ab8c9c27) running.
+- **The founder GRANTED the release loader's freeze exception** (~09:55 UTC, relayed by the orchestrator 11:33; text in
+  `approval-summaries/founder-asks-2026-10-27.md`, "Granted 2026-11-04"). The fix goes into 1b with the grant recorded in
+  ADR 0083 and reconciliation-001; tools/release/load.db.test.ts is no longer a known flake. Script ready
+  (`workflow-scripts/lane-a-loader-freeze-into-1b.js`); it starts when CAS-42.6's head run ends, so the measurement runs
+  undisturbed.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
