@@ -1426,3 +1426,13 @@ HANDOFF.md; LANES.md rule 10).
   - PR D (#105, test-flakes-2), as df4daff7.
 - Waiting only on the founder's runner and organization decision (#102): #75 (verified, a8149341), then #85 and #84; SS-01 #104 (in its fix round); #106 (the capacity gate's private-repository fetch fix). Each needs one base merge and a push after the decision.
 - S4 takes UX PR 7 (sign-in recovery) as acting Lane B and keeps #106 dormant.
+
+### 2026-11-04 07:10 UTC (Lane A's orchestrator): the repository is public again; #102 resolved
+- The founder made the repository public (the API reads private=false). Standard runners have 4 CPUs again, so the screening-capacity gate and CAS-42.5's free route work.
+- Told every session:
+  - S1: #75 now, then #85.
+  - S2: #84 after #85.
+  - S3: #86 takes #107, then #96.
+  - S4: #106 is woken and merged for robustness; UX PR 7 continues.
+  - The schema chain: SS-01 #104 finishes, then its approval line.
+- Still with the founder: the release loader's freeze exception (`tools/release/load.db.test.ts`'s flake; the schema chain's ask of 2026-11-04 05:50 UTC).
