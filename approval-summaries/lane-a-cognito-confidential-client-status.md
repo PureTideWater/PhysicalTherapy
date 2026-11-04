@@ -39,11 +39,17 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
   infra tests and cdk synth; adversarial checker; push and draft PR); script archived. Orchestrator told: the two-PR plan and
   the founder's items for PR 2.
 
+- 2026-11-04T12:55:00Z: **rulings 13-15 decided** by Lane A's orchestrator (12:28Z), as recommended. 13: only the break-glass
+  role may start a rotation. 14: only the break-glass role runs admin-delete-user for a stuck invitee. 15: N+1 reaches
+  production within 7 days of N in production, and before the first customer invitation. To be recorded in ADR 0088 as
+  "Lane A's orchestrator, 2026-11-04, on the co-founder's standing direction" (in PR 1's fix round, since the build
+  writes the ADR first). The founder's, listed when PR 2 approaches: ruling 16 (an SCP or permission boundary, an AWS
+  owner-admin setting) and F1-F5 (P-3's check is F2). PR 2 stays unstarted beyond its design until PR 1 is on staging.
+
 ## Waiting on someone
-- The founder, before PR 2 merges: design section 10's F1-F5 (the credentialed staging steps, exact), and rulings on risks
-  13 (who may start a rotation: the break-glass role recommended), 14 (who runs admin-delete-user for a stuck invitee),
-  15 (the N to N+1 window: within 7 days of N in production and before the first customer invitation, recommended) and 16
-  (an SCP or permission boundary denying DescribeUserPoolClient to read-only sets).
+- The founder, before PR 2 merges: design section 10's F1-F5 (the credentialed staging steps, exact), and ruling 16 (an SCP or
+  permission boundary denying DescribeUserPoolClient to read-only sets; an AWS owner-admin setting). Rulings 13-15: decided
+  (12:28Z).
 
 ## Next step
 Design.
