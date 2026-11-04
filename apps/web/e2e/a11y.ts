@@ -18,7 +18,9 @@ export interface TitleOptions {
   /**
    * The title the page should have, exact or a pattern, where the caller knows it: after a client-side navigation the
    * page before's title can still be in the head, and a title that is there is not yet this page's. Without it, any
-   * title that is not empty.
+   * title that is not empty, the page before's included: that wait guards axe's document-title rule, which a title
+   * still in the head satisfies, so it closes the window with no title and not the one with the page before's. A step
+   * that must scan the new page's own head names its title.
    */
   readonly title?: string | RegExp;
 }
