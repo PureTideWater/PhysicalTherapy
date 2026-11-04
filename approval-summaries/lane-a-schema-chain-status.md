@@ -153,6 +153,11 @@ its unpushed work is not waited for).
   grant in ADR 0083, the memory fix unless it needs a ruling) with the full suite once and one push; then the fresh-clone
   verification reading CI beside CAS-42.5 re-dispatched on the final head (and CAS-42.6's after side if the worker
   changed). Interest waits for 1b's final head.
+- **13:15 UTC. The founder GRANTED the loader amendment** (relayed by the orchestrator; `founder-asks-2026-10-27.md`,
+  "Granted 2026-11-04 (~13:15 UTC)"): "Granted: in the release loader's freeze, each retry pass runs VACUUM (FREEZE,
+  INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen; the warning names the
+  cause it can see." 1b's fix round reads that file and applies it (failing-first on the aborted-load reproduction; ADR
+  0083 and reconciliation-001 record it beside the first grant). Interest takes 1b's final head in one merge.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
