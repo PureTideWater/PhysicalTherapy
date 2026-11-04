@@ -1070,3 +1070,10 @@ Each finding checked by two skeptics (reproduce; intent and scope). The payment-
 | NEW-N2 | should fix | A scope stated with each cue after a list is flattened to one. | Round 2. |
 | NEW-N3 | nit | Export-blocked and hash-only texts name marked figures when none are marked. | Round 2. |
 The UX review read code only this round (no screen tour capture).
+
+## Round 2 and the converge stages, 2026-11-04 (acting S2; wf_d831f69a-b19)
+- Round 2 (payment-engine review at d7d587a2, two skeptics): PE-D1 (blocking, CORR-D1 incomplete), PE-D2, PE-D3; gateway fuzz 195,750 sentences, 0 role swaps against the base. Three fix-and-recheck passes (063274c8, 6b49d9ac, 9aa178c0) each found new scope cases.
+- Converge (the closed rules, 9001a0e2): reviews found PE3-1, PE3-2, CORR3-1 (blocking), PE3-3, CORR3-2..4; fixed in bb65c477; recheck PE4-1, CORR4-1 (blocking).
+- Converge 2 (scope by adjacency only, fail-closed part-of-the-lines triggers, f82bf183): reviews found PE5-1..3, CORR5-1..3 (blocking), CORR5-4, CORR5-5; fixed in 6e49c6b3 (CORR5-4 in part); recheck PE6-1..5 (blocking by the review's own bar: further words naming a part of the lines, "apiece", "per date", patient synonyms and pronouns) and PE6-6 (nit).
+- Disposition of PE6-1..5 and the rest of CORR5-4: **known limit, not fixed in #84** (ADR 0086 consequences, 3b276add). Every reproduction checked also passes the base 83d71fd6 (13 of 13 PASS at the base; the item's own swap "The payer allowed $300.00 in total" passes at the base and fails now), so #84 narrows the class and opens nothing. A list of trigger words cannot close it; the proposal that would (figures as placeholders bound to the facts, rendered at export, free-text numbers refused) is the founder's choice (ADR 0086 "Revisit when").
+- PE6-6 (nit): a per-line figure only some lines hold fails with no editor guidance: rides a follow-on.
