@@ -474,12 +474,41 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
       expect(redactLetter(`${label}1990-01-01`, patient, claimsOf('SYN00000')).text, label).toBe(`${label}[MEMBER_ID]`);
       expect(redactLetter(`${label}2027-03-15`, { ...patient, memberIds: ['ZZ7654321'] }, claimsOf('20270315')).text, label).toBe(`${label}2027-03-15`);
     }
-    // One claim's label on one line, abbreviated too, is none for a member ID written as a date (G2), as before.
-    for (const label of ['Claim ID: ', 'Acct. ID: ', 'Acct. No. ', 'Claim# ']) {
+    // One claim's label on one line, abbreviated too, is none for a member ID written as a date (G2), as before; "Acct. ID:"
+    // is no longer one (review finding security-rlb-sec-2, below).
+    for (const label of ['Claim ID: ', 'Acct. No. ', 'Claim# ', 'Claim\tID: ']) {
       expect(redactLetter(`${label}1990-01-01`, patient, claimsOf('SYN00000')).text, label).toBe(`${label}1990-01-01`);
     }
     // An abbreviation's full stop at a line's end ends the head: the next line's label is its own.
     expect(redactLetter('Acct.\nID: 1990-01-01', patient, claimsOf('SYN00000')).text).toBe('Acct.\nID: [MEMBER_ID]');
+  });
+
+  it('reads an "ID" written in capitals after a full stop as a label of its own, so a member ID after "acct. ID:" is replaced, and keeps an abbreviation with any other label one label (MOD-13, review finding security-rlb-sec-2)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN00000'] }];
+    const heads = ['acct', 'ACCT', 'Acct No', 'Claim No', 'ACCT NO', 'acct no', 'Member ID No', 'Claim Nbr', 'Pt. Acct', 'ref', 'claim', 'CLAIM'];
+    // A space, a tab, several spaces, NBSP, U+3000, U+2003, a soft hyphen, zero-width characters and a fullwidth full stop.
+    const stops = ['. ', '.  ', '.\t', '.\u00A0', '.\u3000', '.\u2003', '.\u00AD ', '.\u200B ', '.\uFEFF ', '.\u2060 ', '\uFF0E', '\uFF0E ', '.'];
+    for (const head of heads) {
+      for (const stop of stops) {
+        for (const label of ['ID: ', 'ID No. ', 'ID#']) {
+          for (const written of ['1990-01-01', '1990/01/01', '1990.01.01']) {
+            const text = `We updated the ${head}${stop}${label}${written} on file.`;
+            const redacted = redactLetter(text, patient, claims).text;
+            expect(redacted, JSON.stringify(text)).toContain('[MEMBER_ID]');
+            expect(redacted, JSON.stringify(text)).not.toContain('1990');
+            expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(text)).toBe(false);
+          }
+        }
+      }
+    }
+    // A claim's number so written is still its own after one: "Acct. ID:" is a claim's label as well.
+    expect(redactLetter('Acct. ID: 2026-04-26', { ...patient, memberIds: ['ZZ7654321'] }, [{ ...claims[0]!, claimNumbers: ['20260426'] }]).text).toBe('Acct. ID: [CLAIM_1]');
+    // Accepted residual (ADR 0054): an abbreviation's full stop before any other label, or a lowercase "id", stays within one
+    // claim's label ("Acct. No.", "Claim No. Number is"), so G2 keeps a member ID written as a date after it.
+    for (const label of ['acct. No. ', 'Acct. Number is ', 'acct. id: ', 'Claim No. Number is ']) {
+      expect(redactLetter(`We updated the ${label}1990-01-01 on file.`, patient, claims).text, label).toBe(`We updated the ${label}1990-01-01 on file.`);
+    }
   });
 
   it("reads a head word joined to its qualifier over the head's own full stop as one label, as before the fix, so a member ID or claim number written as a date after it is replaced (MOD-13, review finding correctness-rlb-oracle-1)", () => {

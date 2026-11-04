@@ -568,10 +568,10 @@ const LABEL_SPACE = '[\\s\\u00AD]';
 /** The abbreviations a label writes with a full stop of their own ("Acct. No.", "Ref. #", "Claim No. ID", "Pt. Acct. #"). */
 const LABEL_ABBREVIATION = 'acct|ref|no|nbr|num';
 /**
- * A qualifier after a head word, with its own full stop. A head word joins its qualifiers over its own full stop and over
- * white space and line breaks ("Member.ID", "Claim. No", "Member No.\nID", a wrapped "Claim\nNumber:"), as it always
- * has: such a reading may join over a sentence end ("CLAIM.\nID:"), so the label a line or a sentence begins counts
- * beside it (LINE_OR_SENTENCE_START, labelsBefore), which only ever adds a label (MOD-13, seed 460548619).
+ * A qualifier after a head word or a bare "ID", with its own full stop. A head word joins its qualifiers over its own
+ * full stop and over white space and line breaks ("Member.ID", "Claim. No", "Member No.\nID", a wrapped "Claim\nNumber:"),
+ * as it always has: such a reading may join over a sentence end ("CLAIM.\nID:"), so the label a line or a sentence begins
+ * counts beside it (LINE_OR_SENTENCE_START, labelsBefore), which only ever adds a label (MOD-13, seed 460548619).
  */
 const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b\\.?|#)`;
 const LABEL_END = `[\\s\\u00AD*]*(?:[:#=\\p{Pd}\\u2212][\\s\\u00AD*]*|,${LABEL_SPACE}*)?(?:is${LABEL_SPACE}+)?(?:[("'\\u201C\\u2018]${LABEL_SPACE}*)?$`;
@@ -589,6 +589,12 @@ const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
  * before the first letter ("- ID:", "**ID:**").
  */
 const LINE_OR_SENTENCE_START = new RegExp(`(?:[\\n\\r\\v\\f\\u0085\\u2028\\u2029]|(?<!\\b(?:${LABEL_ABBREVIATION}))[.!?]${LABEL_SPACE})[^\\p{L}\\p{N}]*(?=\\p{L})`, 'giu');
+/**
+ * An "ID" after a full stop, with or without white space ("acct. ID:", "Claim No. ID:", "Acct.ID:", "CLAIM.ID:", and
+ * "acct．ID:", which NFKC writes "acct.ID:"), at its "I": written "ID", it may begin the next sentence after an
+ * abbreviation's full stop or a word's, so its own label counts as well (labelsBefore, review finding security-rlb-sec-2).
+ */
+const STOP_THEN_ID = new RegExp(`(?<=\\.${LABEL_SPACE}*[^\\p{L}\\p{N}]*)id\\b`, 'giu');
 
 /**
  * Any identifier label: IDENTIFIER_LABEL, or a bare "id", "number", "nbr", "no", "num", "identification", "reference"
@@ -621,7 +627,10 @@ const kindOf = (match: RegExpExecArray): LabelKind => (match.groups?.claim !== u
  * wrapped "Claim\nNumber:", "Member.ID", "Claim. No"), so that reading may reach over a line's or a sentence's end; the
  * label the next line or sentence holds then counts as well, however many words it is and wherever on that line it
  * begins ("CLAIM.\nID:" is "ID:", MOD-13 seed 460548619; "claim\nID No." is "No.", review finding security-rlb-sec-1).
- * A label on one line within one sentence is one label ("Claim ID:", "Acct. No.", "Member ID No."), so G2 holds for it.
+ * So does the label an "ID" written in capitals begins after a full stop (STOP_THEN_ID: "acct. ID:" may end one
+ * sentence and begin the next). A label on one line within one sentence is otherwise one label ("Claim ID:", "Acct. No.",
+ * "Member ID No."), so G2 holds for it; an abbreviation's full stop before any other label ("acct. No.", "Claim No.
+ * Number is", "acct. id:") stays within that one label, a residual accepted (ADR 0054).
  * `written` gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never
  * "no.").
  */
@@ -638,6 +647,11 @@ function labelsBefore(text: string, at: number, written: (index: number) => stri
   readFrom(0);
   for (const start of before.matchAll(LINE_OR_SENTENCE_START)) {
     readFrom(start.index + start[0].length);
+  }
+  for (const id of before.matchAll(STOP_THEN_ID)) {
+    if (/^\p{Lu}{2}$/u.test(written(from + id.index) + written(from + id.index + 1))) {
+      readFrom(id.index);
+    }
   }
   return [...kinds];
 }
