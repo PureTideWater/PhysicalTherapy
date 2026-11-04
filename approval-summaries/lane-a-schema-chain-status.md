@@ -68,6 +68,11 @@ its unpushed work is not waited for).
   release, SHA-256 pinned; CI green), merging next; the gate's fetch fix is #106. SS-01 takes them by one base merge
   before its final push (no hand port). A schema PR's screening-capacity gate measures (migrations are watched) and stops
   RUNNER_TOO_SMALL on the private repository's 2-CPU runner until the founder's runner/organization decision (#102).
+- **07:12 UTC. The repository is public again** (API private=false; the orchestrator, 07:10): 4-CPU runners, the gate can
+  pass; **CAS-42.5's dispatch route is open again** for 1b. The loader freeze exception is still with the founder.
+  SS-01's fix round: all seven confirmed findings fixed (failing-first tests); base 7bf7b252 (#107) merged (84ec0093);
+  head 3b796604 locally: unit 7,376 + 4 skipped (two failures from this round fixed and re-run), golden, oracle, test:db
+  4 shards 9,720 + 1 skipped, build, e2e 73 passed; Stryker running; then one push and the PR body.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
