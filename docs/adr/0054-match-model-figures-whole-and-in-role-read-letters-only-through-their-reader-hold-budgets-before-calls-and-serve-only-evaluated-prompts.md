@@ -328,6 +328,13 @@ this amendment holds.
   label of that word's kind (`GLUED_LABEL`: a head word, `ID`, `Nbr`, `Num`, `Ref`, or `No` with a capital N, a whole
   word or after a small letter): `ICN99887766`, `Member ID12345678`, and `Claim №99887766`, `Member №ZZ12345678` and
   `Claim№99887766`, which NFKC writes `No99887766`, `NoZZ12345678` and `ClaimNo99887766`.
+  Since 2026-11-04 (MOD-13 seed 460548619) a sentence end breaks a label's head from what follows it: a head joins a
+  qualifier over white space or a line break, and over a full stop only as an abbreviation's own (`Acct`, `Ref`, `No`,
+  `Nbr`, `Num`) followed by its qualifier on the same line (`Acct. No.`, `Claim No.`, `Ref. #`, `Member ID No.` and
+  `Pt. Acct. #` stay one label), so "AA CLAIM.\nID:1990-01-01" and "the claim. ID: 1990-01-01" read `ID:`, not a
+  claim's label, and the member ID is replaced; and the label a line or a sentence begins counts beside the leftmost
+  one (`labelsBefore`), so a wrapped "Claim\nNumber:" stays a claim's label and "Claim\nID:" is `ID:` as well, while one
+  label on one line keeps G2 (`Claim ID: 1990-01-01` and `Acct. ID: 1990-01-01` keep the date for a member ID).
   The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
   digits included (review finding G1, 2026-11-02): a run of digits alone that a label introduces also joins over `.`
   and `/`, after any label when the run is no whole written date and after one of the head-word labels when it is, as

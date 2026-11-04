@@ -379,6 +379,15 @@ const sendsNoIdentifier = fc.property(letterCase, ({ patient, claims, segments }
  */
 const YEAR_BELOW_1900_SEED = 1162287068;
 
+/**
+ * The seed on which a member ID written as a date after a bare "ID:" was sent (MOD-13, 2026-11-04): a name part "CLAIM"
+ * ended the sentence before it ("Patient: AA CLAIM.\nID:1990-01-01"), and the label was read as one claim's label over
+ * the full stop and the line break, which a member ID written as a date does not count after (G2). It pins one more fixed
+ * run of the property, which draws that letter on this generator; the counterexample and its class (every head word
+ * ending a sentence, before a bare label of the other kind) are pinned on their own below, whatever the generator draws.
+ */
+const LABEL_BOUNDARY_SEED = 460548619;
+
 describe('MOD-13: every placeholder survives and no identifier survives', () => {
   it('sends no letter or digit the generator wrote an identifier with, keeps every claim’s placeholder, and writes only exact placeholders (property)', () => {
     fc.assert(sendsNoIdentifier, { numRuns: 400 });
@@ -387,6 +396,107 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
   it(`holds on seed ${String(YEAR_BELOW_1900_SEED)}, where a claim number written like a date with a year below 1900 was first found (a fixed run of the property)`, () => {
     fc.assert(sendsNoIdentifier, { numRuns: 400, seed: YEAR_BELOW_1900_SEED });
   }, 60_000);
+
+  it(`holds on seed ${String(LABEL_BOUNDARY_SEED)}, where a member ID written as a date after a sentence ending in "CLAIM" and a bare "ID:" was sent (a fixed run of the property)`, () => {
+    fc.assert(sendsNoIdentifier, { numRuns: 400, seed: LABEL_BOUNDARY_SEED });
+  }, 60_000);
+
+  it(`ends a label's head at a sentence end, so a member ID after "CLAIM." and a bare "ID:" is replaced (seed ${String(LABEL_BOUNDARY_SEED)}'s counterexample)`, () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['AA CLAIM'], datesOfBirth: ['1955-07-14'], memberIds: ['19900101'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN00000'] }];
+    for (const [written, expected] of [
+      ['Patient: AA CLAIM.\nID:1990-01-01 on file. Dear AA CLAIM, ', 'Patient: [PATIENT_NAME].\nID:[MEMBER_ID] on file. Dear [PATIENT_NAME], '],
+      ['Hi AA CLAIM. ID:1990-01-01 on file.', 'Hi [PATIENT_NAME]. ID:[MEMBER_ID] on file.'],
+      // Already replaced before the fix: another name before the sentence end, and the bare label alone.
+      ['Hi BB SMITH.\nID:1990-01-01', 'Hi BB SMITH.\nID:[MEMBER_ID]'],
+      ['ID:1990-01-01', 'ID:[MEMBER_ID]'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, written).toBe(expected);
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      expect(identifierCandidates(written), written).toContain('19900101');
+    }
+  });
+
+  it('reads the label a sentence or a line begins after any head word, for a member ID, a claim number and a patient control number written as a date (MOD-13, seed 460548619)', () => {
+    const memberPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claimPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    // A claim's head word, then a member's: each ends a sentence or a line before a bare label of the other kind.
+    const claimHeads = ['claim', 'CLAIM', 'ICN', 'pcn', 'dcn', 'tcn', 'control', 'Account', 'claim number', 'Claim ID'];
+    const memberHeads = ['member', 'MEMBER', 'subscriber', 'Member ID'];
+    const ends = ['. ', '.\n', '. \n', '.\r\n', '\n'];
+    const bareLabels = ['ID:', 'ID#', 'No.', 'No: ', 'Number is '];
+    const cases: [PatientIdentifiers, LetterClaim[], string, string, string][] = [];
+    for (const head of claimHeads) {
+      for (const end of ends) {
+        for (const label of bareLabels) {
+          for (const written of ['1990-01-01', '1990.01.01', '1990/01/01']) {
+            cases.push([memberPatient, claimsOf('SYN00000'), `We reviewed the ${head}${end}${label}${written} on file.`, '[MEMBER_ID]', '19900101']);
+          }
+        }
+      }
+    }
+    for (const head of memberHeads) {
+      for (const end of ends) {
+        for (const label of [...bareLabels, 'Control: ', 'Claim: ', 'ICN: ']) {
+          // A claim number, and a patient control number (a claim's number to the letter), digits alone written as a date.
+          for (const [value, written] of [['20260426', '2026-04-26'], ['04262026', '04.26.2026'], ['20260426', '2026/04/26']] as const) {
+            cases.push([claimPatient, claimsOf(value), `We reviewed the ${head}${end}${label}${written} on file.`, '[CLAIM_1]', value]);
+          }
+        }
+      }
+    }
+    for (const [patient, claims, written, placeholder, value] of cases) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, JSON.stringify(written)).toContain(placeholder);
+      expect(redacted, JSON.stringify(written)).not.toMatch(/\d{2}[-./]\d{2}/);
+      expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(written)).toBe(false);
+      expect(identifierCandidates(written), JSON.stringify(written)).toContain(value);
+    }
+    // "!", "?", ";" and ":" never joined a head to the next label, and still do not.
+    for (const end of ['!\n', '?\n', ';\n', ':\n', '! ', '? ']) {
+      expect(redactLetter(`We reviewed the claim${end}ID:1990-01-01 on file.`, memberPatient, claimsOf('SYN00000')).text, end).toBe(`We reviewed the claim${end}ID:[MEMBER_ID] on file.`);
+    }
+  });
+
+  it("keeps a label on one line within one sentence one label: an abbreviation's own full stop, a wrapped head, and G2 for each (MOD-13, seed 460548619)", () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    // One label of a claim: a claim number written as a date after it is the number.
+    for (const label of ['Acct. No. ', 'Claim No. ', 'Ref. # ', 'Pt. Acct. # ', 'Acct.#', 'Claim No. ID: ', 'Claim\nNumber: ', 'Patient control no.: ']) {
+      expect(redactLetter(`${label}2026-04-26`, patient, claimsOf('20260426')).text, label).toBe(`${label}[CLAIM_1]`);
+    }
+    // One label of a member: a member ID written as a date after it is the number, a claim number so written is not (G2).
+    for (const label of ['Member ID No. ', 'Member ID: ', 'Subscriber No. ']) {
+      expect(redactLetter(`${label}1990-01-01`, patient, claimsOf('SYN00000')).text, label).toBe(`${label}[MEMBER_ID]`);
+      expect(redactLetter(`${label}2027-03-15`, { ...patient, memberIds: ['ZZ7654321'] }, claimsOf('20270315')).text, label).toBe(`${label}2027-03-15`);
+    }
+    // One claim's label on one line, abbreviated too, is none for a member ID written as a date (G2), as before.
+    for (const label of ['Claim ID: ', 'Acct. ID: ', 'Acct. No. ', 'Claim# ']) {
+      expect(redactLetter(`${label}1990-01-01`, patient, claimsOf('SYN00000')).text, label).toBe(`${label}1990-01-01`);
+    }
+    // An abbreviation's full stop at a line's end ends the head: the next line's label is its own.
+    expect(redactLetter('Acct.\nID: 1990-01-01', patient, claimsOf('SYN00000')).text).toBe('Acct.\nID: [MEMBER_ID]');
+  });
+
+  it('replaces nothing more after a sentence end that a head word ends: deadlines, dates of service and remittance, amounts, CPT codes and NPIs stay (MOD-13, seed 460548619)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ7654321'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN12345678'] }];
+    for (const head of ['claim', 'CLAIM', 'member', 'account', 'Acct.', 'Ref.', 'ICN', 'claim number']) {
+      for (const end of ['. ', '.\n', '!\n', '?\n', ';\n', ':\n', '\n']) {
+        const written = `We reviewed the ${head}${end}Appeal by 2027-03-15. ID: seen 2026-04-26, paid 2026-05-01. No. 97110 billed $150.00 (NPI 1234567893).`;
+        expect(redactLetter(written, patient, claims).text, JSON.stringify(written)).toBe(written);
+        expect(holdsIdentifier(written, patient, claims), JSON.stringify(written)).toBe(false);
+      }
+    }
+    // A deadline equal to the claim's digits stays after a sentence a head word ends (no label of its kind before it, G2),
+    // and the claim's own number stays the call's own placeholder after one.
+    const dated: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315'] }];
+    expect(redactLetter('We reviewed the member.\nAppeal by 2027-03-15.', patient, dated).text).toBe('We reviewed the member.\nAppeal by 2027-03-15.');
+    expect(redactLetter('We reviewed the claim. ID 2027-03-15 is the deadline.', patient, dated).text).toBe('We reviewed the claim. ID 2027-03-15 is the deadline.');
+    expect(redactLetter('We reviewed the member.\nClaim No. 2027-03-15 was denied.', patient, dated).text).toBe('We reviewed the member.\nClaim No. [CLAIM_1] was denied.');
+  });
 
   it('reads a written date only with a year from 1900 to 2099, so a claim number written like a date is its placeholder and real dates keep their behaviour', () => {
     expect(EARLIEST_WRITTEN_YEAR).toBe(1900);

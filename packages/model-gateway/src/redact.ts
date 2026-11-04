@@ -564,16 +564,37 @@ const writtenAsDate = (normal: string, range: Range) =>
  * Digits joined over "." or "/" that are no whole written date are the number after any label (ANY_IDENTIFIER_LABEL).
  */
 const LABEL_SPACE = '[\\s\\u00AD]';
-const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b\\.?|#)`;
+/** The abbreviations a label writes with a full stop of their own ("Acct. No.", "Ref. #", "Claim No. ID", "Pt. Acct. #"). */
+const LABEL_ABBREVIATION = 'acct|ref|no|nbr|num';
+/**
+ * What joins a label's head to a qualifier, or one qualifier to the next: white space, a line break too (a label wrapped
+ * onto the next line, "Claim\nNumber:"), and a full stop only as an abbreviation's own, followed by its qualifier on the
+ * same line ("Acct. No.", "Ref. #"). A full stop after a whole word ("CLAIM.\nID:", "the claim number. ID:"), after an
+ * abbreviation at a line's end ("Acct.\nID:"), and "!", "?", ";" or ":" end the head (MOD-13, seed 460548619): what
+ * follows is a label of its own. A bare line break may still be a wrapped label, so the label the next line begins
+ * counts as well (LINE_OR_SENTENCE_START, labelsBefore).
+ */
+const LABEL_JOINT = `(?:(?<=\\b(?:${LABEL_ABBREVIATION}))\\.(?:[^\\S\\n\\r\\v\\f\\u2028\\u2029]|\\u00AD)*|${LABEL_SPACE}*)`;
+const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b|#)`;
+/** The qualifiers after a head or a bare label word, each after a joint (LABEL_JOINT), and an optional final full stop ("Claim No. ", "Claim. "). */
+const LABEL_QUALIFIERS = `(?:${LABEL_JOINT}${LABEL_QUALIFIER})*\\.?`;
 const LABEL_END = `[\\s\\u00AD*]*(?:[:#=\\p{Pd}\\u2212][\\s\\u00AD*]*|,${LABEL_SPACE}*)?(?:is${LABEL_SPACE}+)?(?:[("'\\u201C\\u2018]${LABEL_SPACE}*)?$`;
 const LABEL_HEAD =
-  `\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b\\.?(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*` +
-  `|\\breference(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+` +
+  `\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b${LABEL_QUALIFIERS}` +
+  `|\\breference(?:${LABEL_JOINT}${LABEL_QUALIFIER})+\\.?` +
   `|\\b(?<no>no)(?=\\.|${LABEL_SPACE}*[:#])\\.?` +
   `|\\bid(?=${LABEL_SPACE}*[:#])` +
   `|\\bnumber(?=${LABEL_SPACE}*[:=\\p{Pd}\\u2212]?${LABEL_SPACE}*is${LABEL_SPACE})` +
   `|\\bre(?=${LABEL_SPACE}*:)`;
 const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
+/** IDENTIFIER_LABEL read from one position only (sticky): the label a line or a sentence begins (labelsBefore). */
+const IDENTIFIER_LABEL_AT = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iuy');
+/**
+ * Where a line or a sentence begins, at its first letter: after a line break, or after a full stop, "!" or "?" and white
+ * space when the full stop is no abbreviation's own (LABEL_ABBREVIATION: "Acct. No." is one label), past any marks
+ * before the first letter ("- ID:", "**ID:**").
+ */
+const LINE_OR_SENTENCE_START = new RegExp(`(?:[\\n\\r\\v\\f\\u0085\\u2028\\u2029]|(?<!\\b(?:${LABEL_ABBREVIATION}))[.!?]${LABEL_SPACE})[^\\p{L}\\p{N}]*(?=\\p{L})`, 'giu');
 
 /**
  * Any identifier label: IDENTIFIER_LABEL, or a bare "id", "number", "nbr", "no", "num", "identification", "reference"
@@ -582,7 +603,7 @@ const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
  * written calendar date are the number (review finding phi-G2-regress-1: "Patient ID 1234.5678"): G2's narrowing keeps
  * a deadline, a whole written date, and so applies to whole written dates alone (IDENTIFIER_LABEL, labelFor).
  */
-const ANY_IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD.replace(/\(\?<\w+>/gu, '(?:')}|(?:\\b(?:id|number|nbr|no|num|identification|reference)\\b\\.?|#)(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*)${LABEL_END}`, 'iu');
+const ANY_IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD.replace(/\(\?<\w+>/gu, '(?:')}|(?:\\b(?:id|number|nbr|no|num|identification|reference)\\b|#)${LABEL_QUALIFIERS})${LABEL_END}`, 'iu');
 
 /**
  * A label word glued to the number it introduces, with no space ("ICN99887766", "Member ID12345678", and "№99887766",
@@ -596,32 +617,62 @@ const CAMEL_NO = /\p{L}no$/iu;
 /** What an identifier label introduces: a claim's number, a member ID, or either ("Ref", "No.", "ID:", "number is", "Re:"). */
 type LabelKind = 'claim' | 'member' | 'either';
 
+/** The kind a label match names: a claim's head, a member's, or either ("Ref", "No.", "ID:", "number is", "Re:"). */
+const kindOf = (match: RegExpExecArray): LabelKind => (match.groups?.claim !== undefined ? 'claim' : match.groups?.member !== undefined ? 'member' : 'either');
+
 /**
- * The kind of the identifier label (IDENTIFIER_LABEL, or GLUED_LABEL when `glued`) that ends at a position of text, or
- * null when none does. `written` gives the code point a letter wrote at a position, where "No" must be capitalized
- * ("No. 2027-03-15", never "no.").
+ * The kinds of the identifier labels (IDENTIFIER_LABEL) that end at a position of text, none when no label does: the
+ * leftmost label that ends there, and each label that begins a line or a sentence (LINE_OR_SENTENCE_START) and ends
+ * there. A head joins a qualifier on the next line (a wrapped "Claim\nNumber:"), so after a line break both the joined
+ * label and the next line's own count ("Claim\nID:" is a claim's label and "ID:"); and should any joint ever reach over
+ * a sentence end, the label the sentence begins still counts (MOD-13, seed 460548619: "CLAIM.\nID:" is "ID:"). A label
+ * on one line within one sentence is one label ("Claim ID:", "Acct. No.", "Member ID No."), so G2 holds for it.
+ * `written` gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never
+ * "no.").
  */
-function labelBefore(text: string, at: number, written: (index: number) => string, glued = false): LabelKind | null {
+function labelsBefore(text: string, at: number, written: (index: number) => string): LabelKind[] {
   const from = Math.max(0, at - 40);
   const before = text.slice(from, at);
-  const match = (glued ? GLUED_LABEL : IDENTIFIER_LABEL).exec(before);
-  if (glued && match === null && CAMEL_NO.test(before) && /^\p{Ll}N$/u.test(written(at - 3) + written(at - 2)) && written(at - 1) === 'o') {
+  const kinds = new Set<LabelKind>();
+  const read = (match: RegExpExecArray | null) => {
+    if (match !== null && (match.groups?.no === undefined || capital(written(from + match.index)))) {
+      kinds.add(kindOf(match));
+    }
+  };
+  read(IDENTIFIER_LABEL.exec(before));
+  for (const start of before.matchAll(LINE_OR_SENTENCE_START)) {
+    IDENTIFIER_LABEL_AT.lastIndex = start.index + start[0].length;
+    read(IDENTIFIER_LABEL_AT.exec(before));
+  }
+  return [...kinds];
+}
+
+/**
+ * The kind of the label word glued to a number (GLUED_LABEL) that ends at a position of text, or null when none does;
+ * "No" glued after a small letter ("ClaimNo99887766", CAMEL_NO) is either. `written` is as for labelsBefore.
+ */
+function gluedLabelBefore(text: string, at: number, written: (index: number) => string): LabelKind | null {
+  const from = Math.max(0, at - 40);
+  const before = text.slice(from, at);
+  const match = GLUED_LABEL.exec(before);
+  if (match === null && CAMEL_NO.test(before) && /^\p{Ll}N$/u.test(written(at - 3) + written(at - 2)) && written(at - 1) === 'o') {
     return 'either';
   }
   if (match === null || (match.groups?.no !== undefined && !capital(written(from + match.index)))) {
     return null;
   }
-  return match.groups?.claim !== undefined ? 'claim' : match.groups?.member !== undefined ? 'member' : 'either';
+  return kindOf(match);
 }
 
 /**
  * Whether an identifier label ends just before a view position that introduces this kind of number: a member label a
  * member ID, a claim label a claim's number (review finding G2: "Member: 2027-03-15" is no claim number), and "Ref",
- * "No.", "ID:", "number is" or "Re:" either. Only such a label makes a whole written calendar date the number.
+ * "No.", "ID:", "number is" or "Re:" either; any of the labels that end there (labelsBefore). Only such a label makes a
+ * whole written calendar date the number.
  */
 function labelFor(view: View, normal: string, start: number, kind: Kind): boolean {
-  const label = labelBefore(view.text, start, (index) => writtenAt(view, normal, index));
-  return label === 'either' || label === kind;
+  const labels = labelsBefore(view.text, start, (index) => writtenAt(view, normal, index));
+  return labels.includes('either') || labels.some((label) => label === kind);
 }
 
 /** Whether any identifier label (ANY_IDENTIFIER_LABEL) ends just before a position of text: after one, digits joined over "." or "/" that are not a whole written calendar date are the number. */
@@ -704,7 +755,7 @@ function matchesIn(normal: string, subject: Subject): Found[] {
         const glued = new RegExp(`(?<=\\p{L})${source.source.slice(BEFORE.length)}`, source.flags);
         for (let match = glued.exec(view.text); match !== null; match = glued.exec(view.text)) {
           const range = inNormal(view, match.index, match.index + match[0].length);
-          const label = labelBefore(view.text, match.index, (index) => writtenAt(view, normal, index), true);
+          const label = gluedLabelBefore(view.text, match.index, (index) => writtenAt(view, normal, index));
           const fits = label !== null && (label === 'either' || label === form.kind || !(form.digitsOnly && writtenAsDate(normal, range)));
           if (fits && !(form.kind === 'claim' && form.digitsOnly && isAmount(normal, range))) {
             found.push({ ...range, kind: form.kind, claim: form.claim });
@@ -977,7 +1028,7 @@ function labeledDigitsJoin(between: string, _left: string, right: string, run: {
   if (!LABELED_GAP.test(between) || !/^\p{N}+$/u.test(run.joined) || !/^\p{N}+$/u.test(compactIdentifier(right)) || !anyLabelAt(run.text, run.start)) {
     return false;
   }
-  return !writtenAsDate(run.text, { start: run.start, end: run.end }) || labelBefore(run.text, run.start, (index) => codePointAt(run.text, index)) !== null;
+  return !writtenAsDate(run.text, { start: run.start, end: run.end }) || labelsBefore(run.text, run.start, (index) => codePointAt(run.text, index)).length > 0;
 }
 
 /**
