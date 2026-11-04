@@ -4863,8 +4863,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(builds.filter(({ step }) => step.env?.DOCKER_BUILD_RECORD_UPLOAD !== "${{ github.event_name != 'pull_request' }}").map(({ where }) => where)).toEqual([]);
     // And nothing else: another of build-push-action's variables (DOCKER_BUILD_SUMMARY: false skips the record's export
     // and upload on every run) set on a build, or any DOCKER_BUILD_ or BUILDX_ variable set for a whole job (its env or
-    // its container's, which the runner gives every step it runs there) or workflow, where every step of it would
-    // read it, is named.
+    // its container's env or options, which the runner gives every step it runs there) or workflow, where every step
+    // of it would read it, is named.
     const BUILD_ENV = { BUILDX_METADATA_PROVENANCE: 'disabled', DOCKER_BUILD_RECORD_UPLOAD: "${{ github.event_name != 'pull_request' }}" };
     expect(builds.filter(({ step }) => !isDeepStrictEqual(step.env, BUILD_ENV)).map(({ where }) => where)).toEqual([]);
     const shared = workflowFiles().flatMap((file) => {
@@ -4876,6 +4876,25 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       return scopes.flatMap(([where, env]) => Object.keys(isRecord(env) ? env : {}).filter((name) => /^(?:DOCKER_BUILD_|BUILDX_)/i.test(name)).map((name) => `${where}.${name}`));
     });
     expect(shared).toEqual([]);
+    // Docker's own options set a container's env too (--env, -e, also among short flags joined, --env-file, whose file
+    // no rule reads), and an options string from an expression could hold one, so a job container's options set none
+    // and name no such variable; a service's, which no step runs in, name none and read no env file. A variable an
+    // image's own config sets is not read: each container image is the pin rules'.
+    const SETS_ENV = /(?:^|\s)(?:--env(?:-file)?(?=[=\s]|$)|-[A-Za-z]*e)|\$\{\{/;
+    const NAMES_BUILD = /DOCKER_BUILD_|BUILDX_|(?:^|\s)--env-file(?=[=\s]|$)/i;
+    const options = workflowFiles().flatMap((file) =>
+      Object.entries(workflow(file).jobs as Record<string, { readonly container?: unknown; readonly services?: unknown }>).flatMap(([id, job]) => {
+        const found: string[] = [];
+        const container = isRecord(job.container) ? job.container.options : undefined;
+        if (container !== undefined && (typeof container !== 'string' || SETS_ENV.test(container) || NAMES_BUILD.test(container))) found.push(`${file} job ${id} container.options: ${String(container)}`);
+        for (const [name, service] of Object.entries(isRecord(job.services) ? job.services : {})) {
+          const given = isRecord(service) ? service.options : undefined;
+          if (given !== undefined && (typeof given !== 'string' || NAMES_BUILD.test(given))) found.push(`${file} job ${id} services.${name}.options: ${String(given)}`);
+        }
+        return found;
+      }),
+    );
+    expect(options).toEqual([]);
     // The record stays home only on an event named pull_request; another whose payload carries a pull request
     // (pull_request_target, a review or a comment on one, workflow_run) would upload its description and title. So a
     // workflow that holds a build runs on a closed list of events: a push's, a pull request's, a schedule's, a dispatch's.

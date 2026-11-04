@@ -461,7 +461,8 @@ user that cannot run the binary.
   A `$GITHUB_PATH` write has no map: every script line naming it is refused. Every `docker/build-push-action` step
   sets `BUILDX_METADATA_PROVENANCE: disabled` and
   `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`, and no other variable (no `DOCKER_BUILD_`
-  or `BUILDX_` variable is set for a whole job (its env or its container's) or workflow): its build record (a
+  or `BUILDX_` variable is set for a whole job (its env or its container's, and a job container's `options` set no
+  variable) or workflow): its build record (a
   `.dockerbuild` artifact whose provenance holds the whole event, a description and title or commit messages and
   e-mails) can be downloaded by any signed-in account for 90 days in this public repository, so a pull request's run
   uploads none, while every other run (a push's, a scheduled or a dispatched one's, the release's) keeps the default
