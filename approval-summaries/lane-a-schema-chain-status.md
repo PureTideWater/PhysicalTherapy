@@ -40,6 +40,22 @@ its unpushed work is not waited for).
   or public again); the harness's CPU requirement is not lowered. **CAS-42.5 is blocked on that decision**; CAS-42.6
   (local process route) still runs. SS-01 continues; its suggested line goes up on the final head once every check that
   can pass has passed.
+- **04:25 UTC. wf_c5833de7-aa6 stopped; its reviews had not run.** Both reviewer agents (agentType security-reviewer,
+  ux-brand-reviewer) hit their frontmatter `maxTurns` (20, 30) before returning, so the fix round started with no findings.
+  Stopped before it could write "no findings" into #104's body. Its partial full suite on e4a6d2fc is kept as a record
+  (chain1 green; test:db 4 shards 9,718 + 1 skipped; build). Lesson: run the reviews as default workflow agents (LANES
+  rule 1) with the agent file as their brief.
+  **Running: wf_4c65fb5f-eab** (`workflow-scripts/lane-a-ss01-reviews-fix-verify-wf_4c65fb5f-eab.js`): both reviews
+  again as default agents, a skeptic per finding, fix round (full suite once, counting e4a6d2fc's parts if the tree is
+  unchanged), one push, verification reading CI; beside it, the flaky fix finished as a patch.
+- **Flaky `tools/release/load.db.test.ts`: root cause found** (progress record, to be archived): the loader's one
+  `VACUUM (FREEZE, ANALYZE) rule_record` freezes only rows older than its database's horizon; an autovacuum ANALYZE (or
+  catalog scan) in the scratch database holds a snapshot whose xmin precedes the load's xid when it predates the commit,
+  or when any older xid runs anywhere in the shared cluster (a snapshot's xmin is cluster-wide), so every page stays
+  unfrozen (relallvisible 0 of 7). Reproduced deterministically (a same-database snapshot before the load: 0/3 frozen) and
+  in the wild (private cluster beside a held xid: 1 of 20 fails with the CI symptom; none without). The proposed fix is
+  in `packages/rules/src/loader.ts` (re-VACUUM until frozen, bounded wait, `LoadResult.frozen`): no schema file, but it
+  is being checked against Change Order 001's content-pipeline freeze before it goes into 1b.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
