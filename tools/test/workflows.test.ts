@@ -2680,18 +2680,20 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     'echo "run=true" >> "$GITHUB_OUTPUT"',
     '',
   ].join('\n');
+  /** Each job's own runtime and checkout check (tools/stryker/runtime.ts), the changes job's and the gate's. */
+  const RUNTIME_CHECK = 'pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"';
   const RUNS: Readonly<Record<string, readonly string[]>> = {
-    changes: ['pnpm install --frozen-lockfile', 'pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"', 'pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"'],
+    changes: ['pnpm install --frozen-lockfile', RUNTIME_CHECK, 'pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"'],
     stryker: [
       'pnpm install --frozen-lockfile',
       'pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n',
       'pnpm -s exec tsx tools/stryker/shards.ts "$TP_MUTATION_SHARD"',
       'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --shard "$TP_MUTATION_SHARD"',
     ],
-    mutation: [NEEDS_SCRIPT, 'pnpm install --frozen-lockfile', 'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected "$SHARDS" --summary "$GITHUB_STEP_SUMMARY"'],
+    mutation: [NEEDS_SCRIPT, 'pnpm install --frozen-lockfile', RUNTIME_CHECK, 'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected "$SHARDS" --summary "$GITHUB_STEP_SUMMARY"'],
   };
 
-  it('runs only whole commands it lists, none of them a script, Stryker by path, and checks the changes job’s runtime before it decides', () => {
+  it('runs only whole commands it lists, none of them a script, Stryker by path, and checks the changes and gate jobs’ runtime and checkout before they decide or judge', () => {
     for (const [name, mutationJob] of Object.entries(parsed.jobs)) {
       expect(mutationJob.steps.filter((step) => step.run !== undefined).map((step) => step.run), name).toEqual(RUNS[name]);
     }
@@ -2708,9 +2710,24 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     const install = stepIndex(changes, (step) => step.run === 'pnpm install --frozen-lockfile');
     const runtime = stepIndex(changes, (step) => step.name === 'The runtime is the pinned one');
     const affected = stepIndex(changes, (step) => step.id === 'affected');
-    expect(changes[runtime]?.run).toBe('pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"');
+    expect(changes[runtime]?.run).toBe(RUNTIME_CHECK);
     expect(changes[runtime]?.if).toBeUndefined();
     expect([install, runtime]).toEqual([runtime - 1, affected - 1]);
+    // The review of #96 (N3): the gate job checks its own runtime and checkout too, after its install and before it
+    // reads a report, whenever it runs; the shard jobs are held by their canary verdicts instead.
+    const gate = job('mutation').steps;
+    const gateInstall = stepIndex(gate, (step) => step.run === 'pnpm install --frozen-lockfile');
+    const gateRuntime = stepIndex(gate, (step) => step.name === 'The runtime is the pinned one');
+    const download = stepIndex(gate, (step) => step.uses?.startsWith('actions/download-artifact@') === true);
+    const judge = stepIndex(gate, (step) => step.name === 'The gate');
+    expect(gate[gateRuntime]?.run).toBe(RUNTIME_CHECK);
+    expect(gate[gateRuntime]?.if).toBe("steps.needs.outputs.run == 'true'");
+    expect([gateInstall + 1, gateRuntime + 1]).toEqual([gateRuntime, download]);
+    expect(judge).toBeGreaterThan(download);
+    for (const [name, mutationJob] of Object.entries(parsed.jobs)) {
+      const tsx = mutationJob.steps.findIndex((step) => step.run?.includes('exec tsx tools/stryker/') === true);
+      if (name !== 'stryker') expect(mutationJob.steps[tsx]?.run, name).toBe(RUNTIME_CHECK);
+    }
   });
 
   /**

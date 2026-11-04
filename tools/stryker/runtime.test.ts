@@ -58,4 +58,30 @@ describe('the changes job’s runtime check', () => {
     // Both legs differing are both named.
     expect(checkRuntime({ ...pinned, pnpm: '10.34.9' }, TEST_PINS, { pnpmVersion: '10.35.0' }).lines.filter((line) => line.startsWith('::error::'))).toHaveLength(2);
   });
+
+  // The review of #96 (N3): the gate job checks its own runtime and its checkout, as the changes job does.
+  it('holds the commit checked out to the commit tested, naming both, and fails a tested commit that is not 40 hex', () => {
+    const pinned: Runtime = { node: `v${TEST_PINS.node}`, unicode: TEST_PINS.unicode, icu: TEST_PINS.icu, pnpm: TEST_PINS.pnpm };
+    const tested = 'a'.repeat(40);
+    const other = 'b'.repeat(40);
+    expect(checkRuntime(pinned, TEST_PINS, { pnpmVersion: '10.34.8', commit: { tested, checkedOut: tested } })).toEqual({
+      lines: [
+        'runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8',
+        'runtime: pnpm --version prints 10.34.8',
+        `checkout: commit ${tested}`,
+        "runtime: the pinned one (Node, Unicode and ICU as tools/stryker/unicode.json's checkedOn, pnpm as the root package.json's packageManager, by its user agent and by pnpm --version), at the commit tested",
+      ],
+      status: 0,
+    });
+    for (const [why, commit, line] of [
+      ['another commit', { tested, checkedOut: other }, `::error::The checkout is not the commit tested: the checkout is commit ${other}, not ${tested}, the commit tested (GITHUB_SHA)`],
+      ['no commit read', { tested, checkedOut: '' }, `::error::The checkout is not the commit tested: the checkout is commit (none), not ${tested}, the commit tested (GITHUB_SHA)`],
+      ['an empty GITHUB_SHA', { tested: '', checkedOut: '' }, '::error::The checkout is not the commit tested: the commit tested, "", is not a full commit (GITHUB_SHA)'],
+      ['a short GITHUB_SHA', { tested: tested.slice(0, 12), checkedOut: tested.slice(0, 12) }, `::error::The checkout is not the commit tested: the commit tested, "${tested.slice(0, 12)}", is not a full commit (GITHUB_SHA)`],
+    ] as const) {
+      const result = checkRuntime(pinned, TEST_PINS, { commit });
+      expect(result.status, why).toBe(1);
+      expect(result.lines.at(-1), why).toBe(line);
+    }
+  });
 });

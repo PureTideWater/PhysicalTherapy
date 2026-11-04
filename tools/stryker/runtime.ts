@@ -3,17 +3,19 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { repositoryRoot } from '../content-files';
-import type { Runtime } from './canary/verdict';
+import { type Runtime, headCommit } from './canary/verdict';
 
 /**
  * The runtime every mutation job is held to (docs/adr/0066, Part 7; test matrix CI-29): the Node, Unicode and ICU
  * tools/stryker/unicode.json's recorded equivalents were checked on (its checkedOn, the Node every mutation job pins),
  * and the pnpm the root manifest's packageManager names. A pin change can move each: setup-node the Node and its
  * Unicode and ICU data, pnpm/action-setup the pnpm. The gate holds every shard's canary verdict to them, the shard's
- * own view prints them, and the changes job checks its own before it decides anything.
+ * own view prints them, and the changes job and the gate job each check their own, and their checkout, before they
+ * decide or judge anything.
  *
- * `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"` is that check: it prints this process's
- * runtime and fails, naming each difference, unless its Node, Unicode, ICU and pnpm are the pins. It runs through the
+ * `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"` is that check: it
+ * prints this process's runtime and fails, naming each difference, unless its Node, Unicode, ICU and pnpm are the pins
+ * and, given --commit, the commit checked out (read from .git as files, as a canary verdict reads it) is that one. It runs through the
  * same pnpm and tsx shims as every later step, so a `node` bin a dependency links into the root's node_modules/.bin, or
  * another pnpm, fails the job.
  *
@@ -96,10 +98,16 @@ export function readPins(root: string = repositoryRoot): Pins {
   return { node, unicode, icu, pnpm };
 }
 
-/** What a job's check holds beside its runtime: the version `pnpm --version` printed, when the step gives one. */
+/**
+ * What a job's check holds beside its runtime: the version `pnpm --version` printed, and the commit tested with the one
+ * checked out, when the step gives them.
+ */
 export interface Checks {
   readonly pnpmVersion?: string | undefined;
+  readonly commit?: { readonly tested: string; readonly checkedOut: string } | undefined;
 }
+
+const COMMIT = /^[0-9a-f]{40}$/;
 
 /**
  * A job's check: the runtime, then every leg that is not the pinned one as an error, exit 1 on any. A `pnpm --version`
@@ -113,11 +121,19 @@ export function checkRuntime(runtime: Runtime, pins: Pins, checks: Checks = {}):
     lines.push(`runtime: pnpm --version prints ${shown(printed)}`);
     if (printed === '' || printed !== pins.pnpm) problems.push(`pnpm --version prints ${shown(printed)}, not the pinned ${shown(pins.pnpm)} (the root package.json's packageManager)`);
   }
-  if (problems.length === 0) {
-    lines.push(`runtime: the pinned one (Node, Unicode and ICU as ${UNICODE_FILE}'s checkedOn, pnpm as the root package.json's packageManager${printed === undefined ? '' : ', by its user agent and by pnpm --version'})`);
+  const commit = checks.commit;
+  let commitProblem = '';
+  if (commit !== undefined) {
+    lines.push(`checkout: commit ${shown(commit.checkedOut)}`);
+    if (!COMMIT.test(commit.tested)) commitProblem = `the commit tested, ${shown(JSON.stringify(commit.tested))}, is not a full commit (GITHUB_SHA)`;
+    else if (commit.checkedOut !== commit.tested) commitProblem = `the checkout is commit ${shown(commit.checkedOut)}, not ${commit.tested}, the commit tested (GITHUB_SHA)`;
+  }
+  if (problems.length === 0 && commitProblem === '') {
+    lines.push(`runtime: the pinned one (Node, Unicode and ICU as ${UNICODE_FILE}'s checkedOn, pnpm as the root package.json's packageManager${printed === undefined ? '' : ', by its user agent and by pnpm --version'})${commit === undefined ? '' : ', at the commit tested'}`);
     return { lines, status: 0 };
   }
   lines.push(...problems.map((problem) => `::error::The runtime is not the pinned one: ${problem}`));
+  if (commitProblem !== '') lines.push(`::error::The checkout is not the commit tested: ${commitProblem}`);
   return { lines, status: 1 };
 }
 
@@ -127,8 +143,9 @@ export function processRuntime(env: NodeJS.ProcessEnv = process.env): Runtime {
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  const { values } = parseArgs({ options: { pnpm: { type: 'string' } }, strict: true, allowPositionals: false });
-  const { lines, status } = checkRuntime(processRuntime(), readPins(), { pnpmVersion: values.pnpm });
+  const { values } = parseArgs({ options: { pnpm: { type: 'string' }, commit: { type: 'string' } }, strict: true, allowPositionals: false });
+  const commit = values.commit === undefined ? undefined : { tested: values.commit, checkedOut: headCommit() };
+  const { lines, status } = checkRuntime(processRuntime(), readPins(), { pnpmVersion: values.pnpm, commit });
   process.stdout.write(`${lines.join('\n')}\n`);
   process.exitCode = status;
 }

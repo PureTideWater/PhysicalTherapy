@@ -1813,13 +1813,15 @@ any other form fails, naming the value.
   `GITHUB_SHA`. Off Actions it holds the commits equal to each other and says so. Part 4's message for the
   Unicode-bound equivalents stays, after those failures, since it alone names the equivalents and their remedy. Each
   shard's own view prints its runtime and commit first.
-- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"` after its install and
-  before it decides, through the same pnpm and tsx shims as every later step, so a `node` bin a dependency links, or
-  another pnpm, fails the pull request's `mutation` whatever the classifier decided. Its pnpm has two legs, each held
-  to `packageManager` (N54): the user agent, which an `.npmrc` `user-agent` or a workspace `userAgent` can write (both
-  global inputs, so such a change runs every shard), and what the pnpm on the step's `PATH` prints for
-  `pnpm --version`, run by the step's shell before `pnpm exec` puts any `node_modules/.bin` first. A canary verdict's
-  pnpm is the user agent alone; the setting that could write it is global.
+- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"`
+  after its install and before it decides, and the gate job runs the same step after its install and before it reads a
+  report, whenever it runs (N55); each also fails unless the commit it checked out, read from `.git` as a canary
+  verdict reads it, is `GITHUB_SHA`. Both run through the same pnpm and tsx shims as every later step, so a `node` bin
+  a dependency links, or another pnpm, fails the pull request's `mutation` whatever the classifier decided. Its pnpm
+  has two legs, each held to `packageManager` (N54): the user agent, which an `.npmrc` `user-agent` or a workspace
+  `userAgent` can write (both global inputs, so such a change runs every shard), and what the pnpm on the step's
+  `PATH` prints for `pnpm --version`, run by the step's shell before `pnpm exec` puts any `node_modules/.bin` first. A
+  canary verdict's pnpm is the user agent alone; the setting that could write it is global.
 
 A pin-only change is then proved on the runner, a leg for each step a pin moves: setup-node by Node, Unicode and ICU,
 pnpm/action-setup by pnpm, the checkout by the commit, which on a pull request must be the merge commit GitHub tests.
@@ -1928,6 +1930,11 @@ since no closure imports `playwright-core`.
 - **N54** (the review of #96, N2). The changes job's pnpm leg read only the user agent, which pnpm settings write. It
   now also holds `pnpm --version`, printed by the step's own shell, to `packageManager`. npm_execpath is no leg, since
   `pnpm exec` leaves it unset; a test holds the workspace `userAgent` global.
+- **N55** (the review of #96, N3). The gate job checks its own runtime and checkout. At 50029e64 only the changes job
+  checked its runtime, and the shards were held by their canary verdicts, so a pin-only move of the gate job's own
+  setup steps or checkout was "proved" on money-ledger, which never ran that job's setup. Now both jobs run the same
+  check, and it holds the checkout to `GITHUB_SHA` as well (the safer of the review's two severities). N47 reads:
+  every shard, the changes job and the gate job are held to the pinned Node, Unicode, ICU and pnpm, and to one commit.
 
 ### Consequences
 

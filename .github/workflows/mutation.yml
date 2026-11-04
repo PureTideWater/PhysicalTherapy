@@ -22,8 +22,9 @@ name: mutation
 #
 # The runner proof (docs/adr/0066, Part 7): every job runs the one exact Node tools/stryker/unicode.json names, whose
 # Unicode and ICU data the recorded equivalents that rest on it were checked over, and the pnpm the root manifest's
-# packageManager names; the changes job checks its own before it decides, and the gate fails a shard whose canary
-# verdict names another Node, Unicode, ICU or pnpm, or another commit than the one tested (GITHUB_SHA). Stryker runs by
+# packageManager names; the changes job and the gate job each check their own, and that they checked out the commit
+# tested, before they decide or judge, and the gate fails a shard whose canary verdict names another Node, Unicode, ICU
+# or pnpm, or another commit than the one tested (GITHUB_SHA). Stryker runs by
 # path (tools/stryker/stryker.ts), never through a root script or a bin by name.
 on:
   push:
@@ -67,9 +68,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Before anything is decided: this job's Node, Unicode, ICU and pnpm must be the pinned ones, so a `node` bin a
       # dependency links, or another pnpm, fails the check whatever the change affects (tools/stryker/runtime.ts). pnpm
-      # is held by its user agent and by what the pnpm on this step's PATH prints, which no user-agent setting writes.
+      # is held by its user agent and by what the pnpm on this step's PATH prints, which no user-agent setting writes;
+      # the checkout must be the commit tested.
       - name: The runtime is the pinned one
-        run: pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"
+        run: pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"
       - name: What the change affects
         id: affected
         env:
@@ -192,6 +194,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: steps.needs.outputs.run == 'true'
+      # The gate's own runtime and checkout, as the changes job checks its own, so a pin this job alone moves is proved
+      # here too (tools/stryker/runtime.ts). Only when the gate runs: otherwise nothing is checked out or installed.
+      - name: The runtime is the pinned one
+        if: steps.needs.outputs.run == 'true'
+        run: pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.needs.outputs.run == 'true'
         with:
