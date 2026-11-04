@@ -84,4 +84,19 @@ describe('the changes job’s runtime check', () => {
       expect(result.lines.at(-1), why).toBe(line);
     }
   });
+
+  // The review of #96 (round 2): on a runner the check needs both flags, so its fail-closed holds without the run line.
+  it('fails on a runner a check run without --pnpm or --commit, naming each, and passes either missing off a runner', () => {
+    const pinned: Runtime = { node: `v${TEST_PINS.node}`, unicode: TEST_PINS.unicode, icu: TEST_PINS.icu, pnpm: TEST_PINS.pnpm };
+    const tested = 'a'.repeat(40);
+    const pnpmMissing = '::error::The runtime check runs without --pnpm "$(pnpm --version)" on a runner: the job\'s run line must pass it';
+    const commitMissing = '::error::The runtime check runs without --commit "$GITHUB_SHA" on a runner: the job\'s run line must pass it';
+    expect(checkRuntime(pinned, TEST_PINS, { onRunner: true }).lines.slice(-2)).toEqual([pnpmMissing, commitMissing]);
+    expect(checkRuntime(pinned, TEST_PINS, { onRunner: true }).status).toBe(1);
+    expect(checkRuntime(pinned, TEST_PINS, { onRunner: true, pnpmVersion: '10.34.8' })).toMatchObject({ status: 1, lines: expect.arrayContaining([commitMissing]) as unknown });
+    expect(checkRuntime(pinned, TEST_PINS, { onRunner: true, commit: { tested, checkedOut: tested } })).toMatchObject({ status: 1, lines: expect.arrayContaining([pnpmMissing]) as unknown });
+    expect(checkRuntime(pinned, TEST_PINS, { onRunner: true, pnpmVersion: '10.34.8', commit: { tested, checkedOut: tested } }).status).toBe(0);
+    expect(checkRuntime(pinned, TEST_PINS, { onRunner: false }).status).toBe(0);
+    expect(checkRuntime(pinned, TEST_PINS).status).toBe(0);
+  });
 });

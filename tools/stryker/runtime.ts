@@ -15,9 +15,10 @@ import { type Runtime, headCommit } from './canary/verdict';
  *
  * `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"` is that check: it
  * prints this process's runtime and fails, naming each difference, unless its Node, Unicode, ICU and pnpm are the pins
- * and, given --commit, the commit checked out (read from .git as files, as a canary verdict reads it) is that one. It runs through the
- * same pnpm and tsx shims as every later step, so a `node` bin a dependency links into the root's node_modules/.bin, or
- * another pnpm, fails the job.
+ * and, given --commit, the commit checked out (read from .git as files, as a canary verdict reads it) is that one. On
+ * a runner (GITHUB_ACTIONS) both flags are required (Checks onRunner). It runs through the same pnpm and tsx shims as
+ * every later step, so a `node` bin a dependency links into the root's node_modules/.bin, or another pnpm, fails the
+ * job.
  *
  * pnpm has two legs, and each must be the pin. The user agent pnpm sets for the step it runs can be set by an `.npmrc`
  * `user-agent` or a workspace `userAgent`; both are global to the classifier (`.npmrc` a global input, `userAgent`
@@ -105,6 +106,12 @@ export function readPins(root: string = repositoryRoot): Pins {
 export interface Checks {
   readonly pnpmVersion?: string | undefined;
   readonly commit?: { readonly tested: string; readonly checkedOut: string } | undefined;
+  /**
+   * The check runs on a runner (GITHUB_ACTIONS is "true"): there both are required, each one missing an error, so a
+   * job's check never holds less than the pnpm on PATH and the checkout. Off a runner (ci.md's local check of this
+   * machine) either may be left out.
+   */
+  readonly onRunner?: boolean | undefined;
 }
 
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -128,12 +135,14 @@ export function checkRuntime(runtime: Runtime, pins: Pins, checks: Checks = {}):
     if (!COMMIT.test(commit.tested)) commitProblem = `the commit tested, ${shown(JSON.stringify(commit.tested))}, is not a full commit (GITHUB_SHA)`;
     else if (commit.checkedOut !== commit.tested) commitProblem = `the checkout is commit ${shown(commit.checkedOut)}, not ${commit.tested}, the commit tested (GITHUB_SHA)`;
   }
-  if (problems.length === 0 && commitProblem === '') {
+  const missing = checks.onRunner === true ? [...(printed === undefined ? ['--pnpm "$(pnpm --version)"'] : []), ...(commit === undefined ? ['--commit "$GITHUB_SHA"'] : [])] : [];
+  if (problems.length === 0 && commitProblem === '' && missing.length === 0) {
     lines.push(`runtime: the pinned one (Node, Unicode and ICU as ${UNICODE_FILE}'s checkedOn, pnpm as the root package.json's packageManager${printed === undefined ? '' : ', by its user agent and by pnpm --version'})${commit === undefined ? '' : ', at the commit tested'}`);
     return { lines, status: 0 };
   }
   lines.push(...problems.map((problem) => `::error::The runtime is not the pinned one: ${problem}`));
   if (commitProblem !== '') lines.push(`::error::The checkout is not the commit tested: ${commitProblem}`);
+  lines.push(...missing.map((flag) => `::error::The runtime check runs without ${flag} on a runner: the job's run line must pass it`));
   return { lines, status: 1 };
 }
 
@@ -145,7 +154,7 @@ export function processRuntime(env: NodeJS.ProcessEnv = process.env): Runtime {
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
   const { values } = parseArgs({ options: { pnpm: { type: 'string' }, commit: { type: 'string' } }, strict: true, allowPositionals: false });
   const commit = values.commit === undefined ? undefined : { tested: values.commit, checkedOut: headCommit() };
-  const { lines, status } = checkRuntime(processRuntime(), readPins(), { pnpmVersion: values.pnpm, commit });
+  const { lines, status } = checkRuntime(processRuntime(), readPins(), { pnpmVersion: values.pnpm, commit, onRunner: process.env.GITHUB_ACTIONS === 'true' });
   process.stdout.write(`${lines.join('\n')}\n`);
   process.exitCode = status;
 }

@@ -640,8 +640,8 @@ compares them). Each entry has exactly these keys, in this order:
 Run one shard at a time, never two, every shard on one commit, on the Node the workflow pins and the pnpm the root
 `packageManager` names (24.22.0 and 10.34.8 today): the gate holds every shard to `tools/stryker/unicode.json`'s
 `checkedOn` and to `packageManager`, and the shards' commits to each other (`pnpm -s exec tsx tools/stryker/runtime.ts`
-checks this machine's). Each command writes `reports/mutation/<shard>/`, then the gate reads it, as CI runs them,
-Stryker by path:
+checks this machine's; off a runner its `--pnpm` and `--commit` may be left out, which on a runner fails). Each command
+writes `reports/mutation/<shard>/`, then the gate reads it, as CI runs them, Stryker by path:
 
 ```sh
 pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs
