@@ -496,6 +496,8 @@ describe('properties of the verifier', () => {
           const pool = Object.entries(ROLE_WORDS).flatMap(([role, words]) =>
             [...(oracle.get(role) ?? [])]
               .filter((value) => !value.startsWith('-'))
+              // A value only some lines hold is no figure a sentence of the lines states: per line it is not every line's (PE5-2).
+              .filter((value) => !(role in AMOUNT_ROLE_NAMES) || per(role, value) !== undefined || scoped.get(`row|${role}`)?.has(value) !== true)
               .map((value) => {
                 const found = role in AMOUNT_ROLE_NAMES ? per(role, value) : undefined;
                 return `${words.replace('{}', written(role, value))}${found === undefined ? '' : scope[found]}`;
@@ -714,9 +716,9 @@ describe('what a failing figure’s words must say (docs/adr/0086, rules 2 and 3
   };
 
   it('asks a figure in no role’s words for a scope only where an input holds it', () => {
-    expect(needs('The schedule lists $300.00 against the rest [3].', '$300.00')).toEqual({ passed: false, needs: 'scope' });
-    expect(needs('The schedule lists $300.00 in total against the rest [3].', '$300.00')).toEqual({ passed: true, needs: null });
-    expect(needs('The schedule lists $123.45 against the rest [3].', '$123.45')).toEqual({ passed: false, needs: null });
+    expect(needs('The schedule lists $300.00 against the letter [3].', '$300.00')).toEqual({ passed: false, needs: 'scope' });
+    expect(needs('The schedule lists $300.00 in total against the letter [3].', '$300.00')).toEqual({ passed: true, needs: null });
+    expect(needs('The schedule lists $123.45 against the letter [3].', '$123.45')).toEqual({ passed: false, needs: null });
   });
 
   it('asks a figure in a role for a scope only where one of its roles holds it, any of them or each of them', () => {
@@ -729,6 +731,7 @@ describe('what a failing figure’s words must say (docs/adr/0086, rules 2 and 3
     roles.set('amount:5600', new Set(['expected', 'paid']));
     const scoped = new Map(both.scoped);
     scoped.set('line|amount:5600', new Set(['expected', 'paid']));
+    scoped.set('row|amount:5600', new Set(['expected', 'paid']));
     scoped.set('total|amount:5600', new Set(['expected', 'paid']));
     const every = 'The contract requires more than the payer paid: $56.00 [1].';
     expect(needs(every, '$56.00', { ...both, roles, scoped })).toEqual({ passed: true, needs: null });

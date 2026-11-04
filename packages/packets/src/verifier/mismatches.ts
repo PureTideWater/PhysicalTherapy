@@ -114,9 +114,19 @@ export interface CheckedFigure {
  * (rule 3, `own_words`).
  */
 function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>): { readonly passed: boolean; readonly needs: FigureNeeds; readonly scope: Scope | null } {
-  // In a sentence that names a part of the lines, an amount keeps no scope but each unit's.
-  const scope = reading.scope !== 'unit' && reading.parts !== null && namesPart(reading.parts, facts) ? null : reading.scope;
-  const verdict = (passed: boolean, needs: FigureNeeds = null) => ({ passed, needs: passed ? null : needs, scope });
+  // In a sentence that names a part of the lines, an amount or a count of units in all keeps no scope but each unit's:
+  // it passes only where it is held as its words state it and with no scope too, so a trigger only ever fails a figure
+  // ("the patient owes ... $50.00 per line" is no line's $50.00 rate per unit).
+  if (reading.scope !== 'unit' && reading.parts !== null && namesPart(reading.parts, facts, reading.scope)) {
+    const own = heldAs(reading, facts, tokens, words, reading.scope);
+    return { ...(own.passed ? heldAs(reading, facts, tokens, words, null) : own), scope: null };
+  }
+  return { ...heldAs(reading, facts, tokens, words, reading.scope), scope: reading.scope };
+}
+
+/** Whether the inputs hold a figure as it is read, stated per `scope` (inInputs()), and what its words must say when they do not. */
+function heldAs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>, scope: Scope | null): { readonly passed: boolean; readonly needs: FigureNeeds } {
+  const verdict = (passed: boolean, needs: FigureNeeds = null) => ({ passed, needs: passed ? null : needs });
   const quoted = (inRole: boolean) => facts.quotes.some((quote) => quotedHolds(tokens, reading, quote, inRole, words));
   if (reading.unread) {
     return verdict(false, 'own_words');
@@ -165,13 +175,16 @@ function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonl
 }
 
 /**
- * Whether a sentence names a part of the lines (the fail-closed triggers of rule 1 of docs/adr/0086, as amended): a
- * row, a code, a date of service, a patient, a partitive or "remaining", "other", "first", "last" or "some" (the
- * reader's `named`), "the claim" or "the patient" where the pattern has more than one, a count of lines, claims or
- * patients the pattern does not hold so ("for 2 lines" of 3), or a date, month or day of a month a line's service
- * date is or falls in.
+ * Whether a sentence names a part of the lines for a figure stated per `scope` (the fail-closed triggers of rule 1 of
+ * docs/adr/0086, as amended): a row, a code, a date of service, a partitive, one line's noun, the lines qualified by
+ * any word but the closed few that name them all, "remaining", "other", "first", "last", "some", "both" and the like
+ * (the reader's `named`), a claim or a patient where the pattern has more than one, a count of lines, claims or
+ * patients the pattern does not hold so ("for 2 lines" of 3), a date, month or day of a month a line's service date is
+ * or falls in, a scope phrase beside no figure that states another scope than the figure's ("On each line the
+ * payer allowed $210.00 in total"), or, for a figure in total, "each claim", "per claim", "each patient" and the like
+ * where the pattern has more than one ("$300.00 in total per claim").
  */
-function namesPart(parts: SentenceParts, facts: NarrativeFacts): boolean {
+function namesPart(parts: SentenceParts, facts: NarrativeFacts, scope: Scope | null): boolean {
   const pattern: Partial<Record<FigureRole, number>> = { lines: facts.rows, claims: facts.claims, patients: facts.patients };
   // A figure read in a count's roles that the pattern holds in none of them.
   const other = parts.counts.some((count) => {
@@ -179,7 +192,11 @@ function namesPart(parts: SentenceParts, facts: NarrativeFacts): boolean {
     return held.length > 0 && !held.some((role) => decimal(String(pattern[role])).equals(decimal(count.value)));
   });
   const served = parts.dates.some((date) => heldRoles(facts, date.kind, date.value).has('service_date'));
-  return parts.named || (parts.claim && facts.claims !== 1) || (parts.patient && facts.patients !== 1) || other || served;
+  // (A figure with no scope is held with none either way: inInputs().)
+  const astray = parts.phrases.some((phrase) => phrase !== scope);
+  // "for each claim", "per patient": a total there is each one's, where there are more than one.
+  const each = scope === 'total' && ((parts.eachClaim && facts.claims !== 1) || (parts.eachPatient && facts.patients !== 1));
+  return parts.named || (parts.claim && facts.claims !== 1) || (parts.patient && facts.patients !== 1) || other || served || astray || each;
 }
 
 /** Every figure of a narrative, read in its role and checked against the facts (`sentenceOf` a narrative position's sentence). */

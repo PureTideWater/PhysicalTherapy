@@ -22,7 +22,8 @@ import { canonicalNumber, scanText } from './scan';
  * role its input holds (./verifier/mismatches.ts), so "3650 days" passes as the window's days and "3650 units" fails.
  *
  * An amount and a count of units are held also by what they are stated per (`scoped`; docs/adr/0086, the fix round of
- * 2026-11-01): a line's amounts and units per line; the pattern's and each code's totals, the sum of what the lines
+ * 2026-11-01): a line's amounts and units as some line's (`row`), and per line only where every line holds the same
+ * (PE5-2: "per line" says each line has it); the pattern's and each code's totals, the sum of what the lines
  * paid and of the patients' shares, and interest's total in total; the contract's rate per unit (per line for a
  * per-visit rate). A narrative's "per line" figure passes only as a line's, and its "in total" figure only as a total.
  * A fee schedule's year is the contract's locked year, or, with none, the years of the service dates (the schedule in
@@ -52,7 +53,7 @@ import { canonicalNumber, scanText } from './scan';
 export interface NarrativeFacts {
   /** Each value an input holds, by kind (`<kind>:<value>`), with the roles its records give it. */
   readonly roles: ReadonlyMap<string, ReadonlySet<FigureRole>>;
-  /** Each amount and count of units, by what it is stated per (`<scope>|<kind>:<value>`), with the roles its records give it so. */
+  /** Each amount and count of units, by what it is stated per (`<scope>|<kind>:<value>`, or `row|` for some line's), with the roles its records give it so. */
   readonly scoped: ReadonlyMap<string, ReadonlySet<FigureRole>>;
   /**
    * Whether the prompt-pay rule counts its days to pay in business days: "business days" passes only for those (a
@@ -86,12 +87,13 @@ export function heldRoles(facts: NarrativeFacts, kind: ReadKind, value: string, 
  * both ways, or holds values in one way only, needs no scope.
  */
 export function scopeUnstated(facts: NarrativeFacts, kind: ReadKind, value: string, role: FigureRole): boolean {
-  const line = facts.scoped.get(`line|${kind}:${value}`)?.has(role) === true;
+  // Some line's value (`row`), held per line or not (PE5-2: one only some lines hold is still a line's).
+  const line = facts.scoped.get(`row|${kind}:${value}`)?.has(role) === true;
   const total = facts.scoped.get(`total|${kind}:${value}`)?.has(role) === true;
   if (line === total) {
     return false;
   }
-  const other = `${line ? 'total' : 'line'}|${kind}:`;
+  const other = `${line ? 'total' : 'row'}|${kind}:`;
   return [...facts.scoped].some(([key, roles]) => key.startsWith(other) && roles.has(role));
 }
 
@@ -108,6 +110,10 @@ export function largestHeld(facts: NarrativeFacts, kind: ReadKind, roles: readon
 }
 
 type Fact = string | number | null | undefined;
+/** Whether an amount is whole cents (a trace writes an unrounded amount with its fraction; null is none). */
+const whole = (value: string | null | undefined): value is string => /^-?\d+$/.test(String(value));
+/** What a value is held per: a scope a narrative states, or `row`, some one line's (scopeUnstated()). */
+type Held = Scope | 'row';
 
 class Facts {
   readonly roles = new Map<string, Set<FigureRole>>();
@@ -118,8 +124,10 @@ class Facts {
   readonly identifiers = new Set<string>();
   readonly quotes: QuotedText[] = [];
 
-  private add(kind: ReadKind, value: string, role: FigureRole, scopes: readonly Scope[] = []): void {
-    for (const key of [`${kind}:${value}`, ...scopes.map((scope) => `${scope}|${kind}:${value}`)]) {
+  private add(kind: ReadKind, value: string, role: FigureRole, scopes: readonly Held[] = []): void {
+    // What is held per line is some line's too.
+    const all = scopes.includes('line') ? [...scopes, 'row'] : scopes;
+    for (const key of [`${kind}:${value}`, ...all.map((scope) => `${scope}|${kind}:${value}`)]) {
       const map = key.includes('|') ? this.scoped : this.roles;
       const roles = map.get(key) ?? new Set<FigureRole>();
       roles.add(role);
@@ -132,6 +140,27 @@ class Facts {
     if (value !== null && value !== undefined) {
       this.add('number', canonicalNumber(String(value)), role, scopes);
     }
+  }
+
+  /**
+   * A role's values line by line (`values`, the set of each line's): each is some line's (`row`), and one is held per
+   * line only where every line holds it (docs/adr/0086, PE5-2): "$100.00 per line" says each line has it, so a value
+   * only some lines have is no line's value stated so.
+   */
+  private lines(kind: ReadKind, role: FigureRole, values: readonly ReadonlySet<string>[]): void {
+    for (const value of values.flatMap((items) => [...items])) {
+      this.add(kind, value, role, values.every((items) => items.has(value)) ? ['line'] : ['row']);
+    }
+  }
+
+  /** Each line's amounts of a role, a list for each line: whole cents alone, as amount() holds them. */
+  lineAmounts(role: FigureRole, values: readonly (readonly (string | null | undefined)[])[]): void {
+    this.lines('amount', role, values.map((items) => new Set(items.filter(whole))));
+  }
+
+  /** Each line's count of units, as a plain decimal. */
+  lineUnits(role: FigureRole, values: readonly string[]): void {
+    this.lines('number', role, values.map((value) => new Set([canonicalNumber(value)])));
   }
 
   /** A page a record always states. */
@@ -295,17 +324,19 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     facts.amount('variance', code.variance_cents, ['total']);
   }
 
+  // Each line's units and amounts: some line's, and per line where every line holds it (Facts.lines()).
+  const each = (read: (line: (typeof content.lines)[number]) => string | null) => content.lines.map((line) => [read(line)]);
+  facts.lineUnits('units', content.lines.map((line) => line.units));
+  facts.lineUnits('line_units', content.lines.map((line) => line.units));
+  facts.lineAmounts('expected', each((line) => line.expected_cents));
+  facts.lineAmounts('allowed', each((line) => line.observed_cents));
+  facts.lineAmounts('variance', each((line) => line.variance_cents));
+  facts.lineAmounts('paid', each((line) => line.paid_cents));
   for (const line of content.lines) {
     facts.codes.add(line.procedure_code);
     for (const modifier of line.modifiers) {
       facts.modifiers.add(modifier);
     }
-    facts.number('units', line.units, ['line']);
-    facts.number('line_units', line.units, ['line']);
-    facts.amount('expected', line.expected_cents, ['line']);
-    facts.amount('allowed', line.observed_cents, ['line']);
-    facts.amount('variance', line.variance_cents, ['line']);
-    facts.amount('paid', line.paid_cents, ['line']);
     facts.date('service_date', line.service_date);
     facts.date('paid_date', line.paid_on);
     facts.date('received_date', line.received_on);
@@ -320,14 +351,16 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
       if (!nextLevel) {
         facts.date('deadline', line.deadline.ends_on);
       }
-      const { calculation } = line;
-      for (const step of calculation.steps) {
-        facts.amount('calculation', step.amount_cents, ['line']);
-      }
-      facts.amount('calculation', calculation.rounding?.unrounded_cents, ['line']);
-      facts.amount('calculation', calculation.rounding?.rounded_cents, ['line']);
-      facts.amount('patient_share', calculation.patient_share_cents, ['line']);
     }
+    // Each line's calculation, its steps and rounding, and its patient's share: per line where every line holds it.
+    facts.lineAmounts(
+      'calculation',
+      content.lines.map(({ calculation }) => [...calculation.steps.map((step) => step.amount_cents), calculation.rounding?.unrounded_cents, calculation.rounding?.rounded_cents]),
+    );
+    facts.lineAmounts(
+      'patient_share',
+      content.lines.map(({ calculation }) => [calculation.patient_share_cents]),
+    );
     // What the patients owe across the lines.
     facts.amount('patient_share', sum(content.lines.map((line) => line.calculation.patient_share_cents)), ['total']);
     facts.date('deadline', content.deadline.ends_on);
@@ -362,9 +395,13 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
         facts.date('due_date', line.due_on);
         facts.number('days_late', line.days_late);
         facts.number('days_late', line.days_unpaid);
-        facts.amount('interest', line.interest_cents, ['line']);
       }
     }
+    // A line's interest where it is stated: per line only where every line's is stated and the same.
+    facts.lineAmounts(
+      'interest',
+      interest.lines.map((line) => [lineInterestStated(line) ? line.interest_cents : null]),
+    );
   }
 
   return {

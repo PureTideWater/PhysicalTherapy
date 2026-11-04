@@ -1,4 +1,4 @@
-import { decimal } from '@tp/money';
+import { cents, decimal } from '@tp/money';
 
 import { assemblePacket } from './assemble';
 import type { FigureKind } from './scan';
@@ -49,6 +49,11 @@ export const ROLE_CONTENTS = [
   'locked2025',
   // The converging fix (rule 2): one line, whose value per line is its total.
   'oneLine',
+  // The review of the amended rule (PE5-2): line 2 bills 3 units at $150.00 expected, $105.00 allowed, $45.00 short and
+  // $84.00 paid, lines 1 and 3 their 2 units at $100.00, $70.00, $30.00 and $56.00 ($350.00, $245.00, $105.00 and 7 units
+  // in total); and the base with line 3 serviced on 2026-04-02 (CORR5-1).
+  'differing',
+  'april',
 ] as const;
 export type RoleContent = (typeof ROLE_CONTENTS)[number];
 
@@ -104,6 +109,8 @@ export function roleContents(): Readonly<Record<RoleContent, PacketContentV2>> {
     // A fixed schedule locked to the 2025 fee schedule.
     locked2025: packet({ citation: contractCitation({ parameters: { amount_cents: '5000', year_basis: 'LOCKED:2025' } }) }),
     oneLine: packet({ lines: [line(1)] }),
+    differing: packet({ lines: [line(1), line(2, { units: '3', expectedCents: cents(15000n), observedCents: cents(10500n), varianceCents: cents(4500n), paidCents: cents(8400n) }), line(3)] }),
+    april: packet({ lines: [line(1), line(2), line(3, { serviceDate: '2026-04-02' })] }),
   };
 }
 
@@ -433,7 +440,7 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['base', 'The payer should have allowed $100.00 on each line [3].'],
     ['base', 'The contract requires $100.00 per line, but the payer allowed $70.00 per line [1, 3].'],
     ['base', 'It allowed $70.00 per line where $100.00 per line was due [3].'],
-    ['base', 'The payer paid $56.00 per line, and the patient owes $14.00 per line [3].'],
+    ['base', 'The payer paid $56.00 per line, and the patients owe $14.00 per line [3].'],
     ['base', 'The window ends 2036-04-05 [1].'],
     ['base', 'The payer processed the claims on April 8, 2026 [3].'],
     ['base', 'SYNTHETIC THERAPY GROUP 01 billed the 3 lines [3].'],
@@ -704,7 +711,8 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-11 business days to pay, after "requires payment"', 'businessDays', 'The statute requires payment within 15 business days [1].'),
   reviewed('CORR-11 business days to pay, after "must pay"', 'businessDays', 'The payer must pay within 15 business days [1].'),
   reviewed('CORR-12 "appeal" as a verb before claims', 'base', 'We appeal 3 claims that were paid short [1].'),
-  reviewed('CORR-12 "appeal" as a verb before units', 'base', 'We appeal 6 units in all, billed under 97110 [1].'),
+  // A code names a part of the lines, and a count of units in all is held to it as an amount is (CORR5-3).
+  reviewed('CORR-12 "appeal" as a verb before units', 'base', 'We appeal 6 units in all, billed under 97110 [1].', unscoped('6', 'number')),
   reviewed('CORR-13 a comma that starts a clause', 'base', 'Under version 1, 2 of them were short [1].'),
   reviewed('CORR-15 rows in an en-dash range', 'base', 'Lines 1–3 were short [1].'),
   reviewed('CORR-15 rows in a range in words', 'base', 'Lines 1 to 3 were short [1].'),
@@ -922,23 +930,159 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('PE4-2 "the claim line schedule"', 'base', 'The payer allowed $70.00 on the claim line schedule [3].', unscoped('$70.00')),
   reviewed('PE4-2 "the claim line policy"', 'base', 'The payer allowed $70.00 under the claim line policy [3].', unscoped('$70.00')),
   reviewed('PE4-2 "the patient’s line of credit"', 'base', 'The payer allowed $70.00 on the patient’s line of credit [3].', unscoped('$70.00')),
+  // The review of the amended rule (PE5-1, CORR5-1, CORR5-2): the triggers read from the other side. One line's noun
+  // with any word before it but "each", "every" or "per", the lines in the plural after any word but the closed few
+  // that name them all, a claim or a patient in any place, an exclusion, a quantifier, a month's or a weekday's name.
+  ...(
+    [
+      ['PE5-1 "for the patient"', 'The shortfall for the patient is $90.00 in total [1].', '$90.00'],
+      ['PE5-1 "for patient B"', 'The shortfall is $90.00 in total for patient B [1].', '$90.00'],
+      ['PE5-1 "for one patient"', 'The shortfall for one patient is $90.00 in total [1].', '$90.00'],
+      ['PE5-1 "for both patients"', 'The shortfall for both patients is $90.00 in total [1].', '$90.00'],
+      ['PE5-1 "on both lines"', 'The payer allowed $210.00 in total on both lines [1].', '$210.00'],
+      ['PE5-1 "for both visits"', 'The payer allowed $210.00 in total for both visits [1].', '$210.00'],
+      ['PE5-1 "on a line"', 'The shortfall on a line is $90.00 in total [1].', '$90.00'],
+      ['PE5-1 "on a single line"', 'The contract expected $300.00 in total on a single line [1].', '$300.00'],
+      ['PE5-1 "excluding a line"', 'The payer allowed $210.00 in total, excluding a line the payer denied [1].', '$210.00'],
+      ['PE5-1 "on all lines but one"', 'The contract expected $300.00 in total on all lines but one [1].', '$300.00'],
+      ['PE5-1 "on line A"', 'The shortfall on line A is $90.00 in total [1].', '$90.00'],
+      ['PE5-1 "on the earliest visit"', 'The shortfall on the earliest visit is $90.00 in total [1].', '$90.00'],
+      ['PE5-1 "for the encounter"', 'The contract expected $300.00 in total for the encounter [1].', '$300.00'],
+      ['PE5-1 "in early March"', 'The shortfall is $90.00 in total in early March [1].', '$90.00'],
+      ['PE5-1 "on the GP lines"', 'The shortfall is $90.00 in total on the GP lines [1].', '$90.00'],
+      ['PE5-1 "on most lines"', 'The shortfall is $90.00 in total on most lines [1].', '$90.00'],
+      ['PE5-1 (variant) "on either line"', 'The payer allowed $210.00 in total on either line [1].', '$210.00'],
+      ['PE5-1 (variant) "for the session"', 'The payer allowed $210.00 in total for the session [1].', '$210.00'],
+      ['PE5-1 (variant) "for several lines"', 'The payer allowed $210.00 in total for several lines [1].', '$210.00'],
+      ['CORR5-1 "A line"', 'A line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "A visit"', 'A visit was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "A claim"', 'A claim was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "Both lines"', 'Both lines were allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "Another line"', 'Another line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "A single line"', 'A single line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "The rest of the lines"', 'The rest of the lines were allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "Most lines"', 'Most lines were allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "Several lines"', 'Several lines were allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "The final line"', 'The final line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "Either line"', 'Either line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "Her claim"', 'Her claim was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "His visit"', 'His visit was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 a person’s possessive before a line', 'Jane Roe’s line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 "for a visit"', 'The payer allowed $210.00 in total for a visit [3].', '$210.00'],
+      ['CORR5-1 "for row B"', 'The payer allowed $210.00 in total for row B [3].', '$210.00'],
+      ['CORR5-1 (variant) "Neither line"', 'Neither line was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-1 (variant) "A claim was paid"', 'A claim was paid $168.00 in total [3].', '$168.00'],
+      ['CORR5-2 "The patient owes"', 'The patient owes $42.00 in total [3].', '$42.00'],
+      ['CORR5-2 "The patient paid"', 'The patient paid $42.00 in total [3].', '$42.00'],
+      ['CORR5-2 "The patient was allowed"', 'The patient was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-2 "A patient was allowed"', 'A patient was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-2 "The claims of the patient"', 'The claims of the patient were allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-2 (variant) "A patient owes"', 'A patient owes $42.00 in total [3].', '$42.00'],
+      // PE5-3: "per claim", "for each patient" and the like after a total, where the pattern has three of each.
+      ['PE5-3 "in total per claim"', 'The contract expected $300.00 in total per claim [1].', '$300.00'],
+      ['PE5-3 "in total for each claim"', 'The contract expected $300.00 in total for each claim [1].', '$300.00'],
+      ['PE5-3 "in total for every claim"', 'The contract expected $300.00 in total for every claim [1].', '$300.00'],
+      ['PE5-3 "in total a claim"', 'The contract expected $300.00 in total a claim [1].', '$300.00'],
+      ['PE5-3 "in total per patient"', 'The contract expected $300.00 in total per patient [1].', '$300.00'],
+      ['PE5-3 "in total for each patient"', 'The contract expected $300.00 in total for each patient [1].', '$300.00'],
+      ['PE5-3 "in all for each patient"', 'The contract expected $300.00 in all for each patient [1].', '$300.00'],
+      ['PE5-3 "in total, for each claim"', 'The contract expected $300.00 in total, for each claim [1].', '$300.00'],
+      ['PE5-3 "in total; that is per claim"', 'The contract expected $300.00 in total; that is per claim [1].', '$300.00'],
+      ['PE5-3 (variant) "in total per member"', 'The contract expected $300.00 in total per member [1].', '$300.00'],
+      // CORR5-4, in part: a scope phrase of the closed list beside no figure that states another scope, and "each claim" or "each patient" before a total.
+      ['CORR5-4 "On each line" before a total', 'On each line the payer allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-4 "that is per line" after a total', 'The contract expected $300.00 in total; that is per line [1].', '$300.00'],
+      ['CORR5-4 "Each claim" before a total', 'Each claim was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-4 "Each patient" before a total', 'Each patient was allowed $210.00 in total [3].', '$210.00'],
+      ['CORR5-4 "Every claim" before a total', 'Every claim was paid $168.00 in total [3].', '$168.00'],
+    ] as const
+  ).map(([id, narrative, figure]) => reviewed(id, 'base', narrative, unscoped(figure))),
+  reviewed('CORR5-1 "The April visit"', 'april', 'The April visit was allowed $210.00 in total [3].', unscoped('$210.00')),
+  reviewed('CORR5-1 (variant) "The April line"', 'april', 'The April line was allowed $210.00 in total [3].', unscoped('$210.00')),
+  reviewed('CORR5-2 "the patient owes" per line, beside another figure', 'base', 'The payer paid $56.00 per line, and the patient owes $14.00 per line [3].', unscoped('$56.00'), unscoped('$14.00')),
+  // A trigger only ever fails a figure: one stated per line is held per line as well as with no scope.
+  reviewed('CORR5-2 a trigger fails the rate per unit stated per line', 'base', 'Although the patient owes, the contract requires $50.00 per line [1].', amount('$50.00')),
+  // CORR5-3: a count of units in all in a sentence that names a part of the lines.
+  ...(
+    [
+      ['CORR5-3 "Line 2" before units in total', 'Line 2 billed 6 units in total [3].'],
+      ['CORR5-3 "Claim 1" before units in total', 'Claim 1 billed 6 units in total [3].'],
+      ['CORR5-3 "The remaining lines" before units in total', 'The remaining lines billed 6 units in total [3].'],
+      ['CORR5-3 a code before units in total', 'For 97110, the lines billed 6 units in total [3].'],
+      ['CORR5-3 (variant) "The first line" before units in total', 'The first line billed 6 units in total [3].'],
+      ['CORR5-3 (variant) "Each claim" before units in total', 'Each claim billed 6 units in total [3].'],
+    ] as const
+  ).map(([id, narrative]) => reviewed(id, 'base', narrative, unscoped('6', 'number'))),
+  // PE5-2: per line is held only to a value every line holds.
+  reviewed('PE5-2 line 2’s expected amount per line', 'differing', 'The contract expected $150.00 per line [1].', amount('$150.00')),
+  reviewed('PE5-2 lines 1 and 3’s expected amount on each of the 3 lines', 'differing', 'The contract expected $100.00 on each of the 3 lines [1].', amount('$100.00')),
+  reviewed('PE5-2 "each line’s" for lines 1 and 3’s', 'differing', 'The contract expected each line’s $100.00 [1].', amount('$100.00')),
+  reviewed('PE5-2 line 2’s shortfall per line', 'differing', 'The shortfall is $45.00 per line [1].', amount('$45.00')),
+  reviewed('PE5-2 line 2’s paid amount per line', 'differing', 'The payer paid $84.00 per line [1].', amount('$84.00')),
+  reviewed('PE5-2 line 2’s units per line', 'differing', 'The lines billed 3 units per line [1].', at('3')),
+  reviewed('PE5-2 a "respectively" list per cue, line 2’s', 'differing', 'The contract expected per line and the payer allowed per line $150.00 and $105.00, respectively [1].', amount('$150.00'), amount('$105.00')),
+  reviewed('PE5-2 (variant) lines 1 and 3’s allowed amount for each line', 'differing', 'The payer allowed $70.00 for each line [3].', amount('$70.00')),
+  reviewed('PE5-2 (variant) lines 1 and 3’s units per line', 'differing', 'The lines billed 2 units per line [3].', at('2')),
+  reviewed('PE5-2 (variant) one line’s value with no scope', 'differing', 'The contract expected $150.00 [1].', unscoped('$150.00')),
+  reviewed('PE5-2 (variant) the total with no scope', 'differing', 'The contract expected $350.00 [1].', unscoped('$350.00')),
+  reviewed('PE5-2 control: the total in total', 'differing', 'The contract expected $350.00 in total [1].'),
+  reviewed('PE5-2 control: the units in total', 'differing', 'The lines billed 7 units in total [1].'),
+  // Controls: the lines named as all of them, a noun a line's word qualifies, a patient's share, each line's per line.
+  ...(
+    [
+      ['PE5-1 control: the total', 'The payer allowed $210.00 in total [3].'],
+      ['PE5-1 control: per line and in total beside their figures', 'The contract expected $100.00 per line and $300.00 in total [1].'],
+      ['PE5-1 control: "across the 3 lines"', 'The payer allowed $210.00 in total across the 3 lines [3].'],
+      ['PE5-1 control: "The 3 lines"', 'The 3 lines were allowed $210.00 in total [3].'],
+      ['PE5-1 control: "for the service lines"', 'The payer allowed $210.00 in total for the service lines [3].'],
+      ['PE5-1 control: "the dates of service"', 'The payer allowed $210.00 in total for the dates of service [3].'],
+      ['PE5-1 control: "the lines" after a verb', 'The payer underpaid the lines by $90.00 in total [3].'],
+      ['PE5-1 control: an opening phrase that agrees', 'Across the 3 lines, the payer allowed $210.00 in total [3].'],
+      ['CORR5-2 control: "The patients owe"', 'The patients owe $42.00 in total [3].'],
+      ['CORR5-2 control: "The patient share" per line', 'The patient share is $14.00 per line [3].'],
+      ['CORR5-3 control: units in total', 'The lines billed 6 units in total [3].'],
+      ['CORR5-3 control: units per line', 'The lines billed 2 units per line [3].'],
+      ['CORR5-4 control: "each patient’s share" per line', 'Each patient’s share was $14.00 per line [3].'],
+      ['CORR5-4 control: a hyphen’s "per-visit" before a total', 'The contract’s per-visit amount comes to $300.00 in total [1].'],
+    ] as const
+  ).map(([id, narrative]) => reviewed(id, 'base', narrative)),
+  reviewed('PE5-3 control: "per claim" with one claim', 'oneClaim', 'The contract expected $300.00 in total per claim [1].'),
+  reviewed('PE5-3 control: "for each patient" with one patient', 'oneClaim', 'The contract expected $300.00 in total for each patient [1].'),
+  reviewed('CORR5-2 control: "the patient" with one patient', 'oneClaim', 'The patient owes $42.00 in total [3].'),
 ];
 
 /**
  * What each amount role's values are stated per, read from the content's fields (a test's oracle, written apart from
- * ./facts.ts, as roleOracle() is): `line|<role>` each line's values, `total|<role>` the pattern's, each code's and the
- * lines' sums, `unit|expected` the contract's rate. A narrative states an amount with its scope where its role's
- * per-line and total values differ (rule 2 of docs/adr/0086).
+ * ./facts.ts, as roleOracle() is): `row|<role>` any one line's values, `line|<role>` the values every line holds (a
+ * "per line" figure says each line has it: PE5-2), `total|<role>` the pattern's, each code's and the lines' sums,
+ * `unit|expected` the contract's rate. A narrative states an amount with its scope where its role's per-line and total
+ * values differ (rule 2 of docs/adr/0086).
  */
 export function scopedOracle(content: PacketContentV2): ReadonlyMap<string, ReadonlySet<string>> {
   const held = new Map<string, Set<string>>();
-  const add = (scope: 'line' | 'total' | 'unit', role: string, value: string | null | undefined) => {
-    if (value === null || value === undefined || !/^-?\d+$/.test(value)) {
-      return;
-    }
+  const whole = (value: string | null | undefined): value is string => value !== null && value !== undefined && /^-?\d+$/.test(value);
+  const put = (scope: 'row' | 'line' | 'total' | 'unit', role: string, value: string) => {
     const values = held.get(`${scope}|${role}`) ?? new Set<string>();
     values.add(value);
     held.set(`${scope}|${role}`, values);
+  };
+  // Each line's values are some line's; what every line holds is held per line too.
+  const lines = new Map<string, Set<string>[]>();
+  const add = (scope: 'line' | 'total' | 'unit', role: string, value: string | null | undefined, line = -1) => {
+    if (scope !== 'line') {
+      if (whole(value)) {
+        put(scope, role, value);
+      }
+      return;
+    }
+    const rows = lines.get(role) ?? [];
+    const row = rows[line] ?? new Set<string>();
+    if (whole(value)) {
+      row.add(value);
+      put('row', role, value);
+    }
+    rows[line] = row;
+    lines.set(role, rows);
   };
   const { pattern, citation } = content;
   add('total', 'expected', pattern.expected_cents);
@@ -950,16 +1094,16 @@ export function scopedOracle(content: PacketContentV2): ReadonlyMap<string, Read
     add('total', 'variance', code.variance_cents);
     add('unit', 'expected', code.contract_amount_cents);
   }
-  for (const item of content.lines) {
-    add('line', 'expected', item.expected_cents);
-    add('line', 'allowed', item.observed_cents);
-    add('line', 'variance', item.variance_cents);
-    add('line', 'paid', item.paid_cents);
-    add('line', 'patient_share', item.calculation.patient_share_cents);
+  content.lines.forEach((item, index) => {
+    add('line', 'expected', item.expected_cents, index);
+    add('line', 'allowed', item.observed_cents, index);
+    add('line', 'variance', item.variance_cents, index);
+    add('line', 'paid', item.paid_cents, index);
+    add('line', 'patient_share', item.calculation.patient_share_cents, index);
     for (const amount of [...item.calculation.steps.map((step) => step.amount_cents), item.calculation.rounding?.unrounded_cents, item.calculation.rounding?.rounded_cents]) {
-      add('line', 'calculation', amount);
+      add('line', 'calculation', amount, index);
     }
-  }
+  });
   const total = (amounts: readonly (string | null)[]) => (amounts.every((item) => item !== null) ? amounts.reduce((sum, item) => sum + BigInt(item ?? '0'), 0n).toString() : null);
   add('total', 'paid', total(content.lines.map((item) => item.paid_cents)));
   add('total', 'patient_share', total(content.lines.map((item) => item.calculation.patient_share_cents)));
@@ -968,11 +1112,19 @@ export function scopedOracle(content: PacketContentV2): ReadonlyMap<string, Read
     add('unit', 'expected', typeof amount === 'string' ? amount : null);
   }
   // Interest where code computed it above zero, as roleOracle() holds it.
-  for (const item of content.interest?.lines ?? []) {
-    add('line', 'interest', item.interest_cents !== null && BigInt(item.interest_cents) > 0n ? item.interest_cents : null);
-  }
+  (content.interest?.lines ?? []).forEach((item, index) => {
+    add('line', 'interest', item.interest_cents !== null && BigInt(item.interest_cents) > 0n ? item.interest_cents : null, index);
+  });
   const interestTotal = content.interest?.total_cents ?? null;
   add('total', 'interest', interestTotal !== null && BigInt(interestTotal) > 0n ? interestTotal : null);
+  for (const [role, rows] of lines) {
+    const [first, ...rest] = rows;
+    for (const value of first ?? []) {
+      if (rest.every((row) => row.has(value))) {
+        put('line', role, value);
+      }
+    }
+  }
   return held;
 }
 
@@ -980,7 +1132,7 @@ export function scopedOracle(content: PacketContentV2): ReadonlyMap<string, Read
  * The values each role's inputs hold, read from the content's fields by role (a test's oracle, written apart from
  * ./facts.ts so a property does not test the facts against themselves): counts and numbers as plain decimals,
  * amounts as cents, dates ISO, years YYYY, percentages plain decimals. `units` are the units in all (the pattern's
- * and each code's), `line_units` each line's; amounts are held whatever they are stated per. Every date role is here:
+ * and each code's), `line_units` each line's where every line bills the same (PE5-2); amounts are held whatever they are stated per. Every date role is here:
  * the deadline (each line's window and deadline at the first level, and the version's), the due date of a line whose
  * interest is stated, the packet's date, and the fee schedule's year (the contract's locked year, or the service
  * years).
@@ -1027,8 +1179,12 @@ export function roleOracle(content: PacketContentV2): ReadonlyMap<string, Readon
     add('allowed', code.observed_cents);
     add('variance', code.variance_cents);
   }
+  // Each line's units: what every line bills (a "per line" count says each line has it; PE5-2).
+  const first = content.lines[0];
+  if (first !== undefined && content.lines.every((item) => decimal(item.units).equals(decimal(first.units)))) {
+    add('line_units', first.units);
+  }
   for (const item of content.lines) {
-    add('line_units', item.units);
     add('expected', item.expected_cents);
     add('allowed', item.observed_cents);
     add('variance', item.variance_cents);

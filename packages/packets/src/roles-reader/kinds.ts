@@ -84,7 +84,7 @@ export interface FigureReading {
   readonly token: number;
   /** A figure of a "respectively" list in neither of its two plain forms (rule 3 of docs/adr/0086): it fails, whatever it is. */
   readonly unread: boolean;
-  /** For an amount, what its sentence names of the lines (the fail-closed triggers of rule 1 of docs/adr/0086); null for any other figure. */
+  /** For an amount or a count of units in all, what its sentence names of the lines (the fail-closed triggers of rule 1 of docs/adr/0086); null for any other figure. */
   readonly parts: SentenceParts | null;
 }
 
@@ -100,14 +100,23 @@ export interface SentenceParts {
    * "remaining", "other", "first", "last" or "some".
    */
   readonly named: boolean;
-  /** It says "the claim" ("for the claim", "this claim"): a part of the claims unless the pattern has one. */
+  /** It names a claim ("for the claim", "a claim", "her claim", "the claim number"): a part of the claims unless the pattern has one. */
   readonly claim: boolean;
-  /** It says "the patient": a part of the patients unless the pattern has one. */
+  /** It names a patient or a member ("the patient", "a patient", "patient B", "the patient owes"): a part of the patients unless the pattern has one. */
   readonly patient: boolean;
+  /** It says "each claim", "every claim" or "per claim": a figure stated in total there is each claim's, unless the pattern has one claim (PE5-3). */
+  readonly eachClaim: boolean;
+  /** It says "each patient", "per patient" or "every patient's": a figure stated in total there is each patient's, unless the pattern has one. */
+  readonly eachPatient: boolean;
   /** Each figure it reads in roles, with its value: one in the roles of a count of lines, claims or patients the pattern does not hold so names a part. */
   readonly counts: readonly { readonly roles: readonly FigureRole[]; readonly value: string }[];
   /** Its dates, months and days of a month: one a line's service date is, or falls in, names a part, whatever role its words give it. */
   readonly dates: readonly { readonly kind: 'date' | 'month' | 'month_day'; readonly value: string }[];
+  /**
+   * The scope of each phrase of the closed list that stands beside no figure ("On each line the payer allowed $210.00 in
+   * total", "$300.00 in total; that is per line"): it grants nothing, and names a part for a figure stated per another.
+   */
+  readonly phrases: readonly Scope[];
 }
 
 /** A text read: its figures with their roles, and its tokens as quotedHolds() compares them (an edge is "|"). */

@@ -45,7 +45,7 @@ export const SAY_WHAT_IT_COUNTS = 'say what it counts or names: 3 claims, 6 unit
  * marked.
  */
 export const NEEDS_TEXT: Readonly<Record<Exclude<FigureNeeds, null>, string>> = {
-  scope: 'state whether this figure is per line or in total right after it (“per line”, “in total”, “for all the lines”), in a sentence that names no one line, code, date of service or patient',
+  scope: 'state whether this figure is per line or in total right after it (“per line”, “in total”, “across all the lines”), and keep any one line, group of lines, code, date of service, claim or patient in a sentence of its own',
   own_words: 'give each figure its own words instead of “respectively”',
 };
 

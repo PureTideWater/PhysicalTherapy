@@ -87,13 +87,146 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const ROWS_DETERMINERS = new Set(['the', 'all', 'these', 'those']);
   const TOTAL_DETERMINERS = new Set(['a', 'the']);
   /**
-   * What names a part of the lines in a sentence (the fail-closed triggers): these words; one line's noun after one of
-   * ONE_DETERMINERS, or after an owner's word (ROW_OWNERS: "the claim line", "the patient's row") not after "each"; a
+   * What names a part of the lines in a sentence (the fail-closed triggers of rule 1 of docs/adr/0086, as amended, read
+   * from the other side: PE5-1, CORR5-1, CORR5-2, PE5-3). A word of PART_WORDS anywhere; a month's or a weekday's name
+   * (DATE_WORDS; "May" only capitalised); an exclusion (EXCLUSIONS, and "but" before "one" or a figure, or after the
+   * lines in the plural: "all lines but one"); a quantifier before "of" (QUANTIFIERS: "most of the lines"); one line's
+   * noun (ONE_LINE or MORE_LINES) with any word before it but "each", "every" or "per" ("a line", "the earliest visit",
+   * "line A", "Jane Roe's line", "her visit"; never in a scope phrase beside a figure, "in line with", "of service"
+   * but "date of service", nor before a noun it qualifies, LINE_HEADS: "the service lines"), MORE_LINES's even after
+   * those ("per session"); the lines in the plural (PLURAL_ROWS) after any word but WHOLE_LEADS ("both lines", "most
+   * lines", "the GP lines", "the March lines"), unless a count stands right before them or one word before them (the
+   * verifier holds it to the pattern's); a claim's or a patient's (or a member's) noun with any word around it
+   * ("a claim", "per claim", "the patient owes", "patient B"), unless it qualifies a noun after it (CLAIM_HEADS,
+   * PATIENT_HEADS: "the claim lines", "the patient share"; a possessive never does), a part of the claims or the
+   * patients where the pattern has more than one; "a day", "per day" or "each day" (DAY_WORDS after PER or EACH); a
    * figure in one of PART_ROLES; and a count of lines, claims or patients the pattern does not hold (the verifier's).
    */
-  const PART_WORDS = new Set(['remaining', 'other', 'others', 'some', 'last', 'first']);
-  const ONE_DETERMINERS = new Set(['the', 'this', 'that', 'one', 'its']);
-  const ROW_OWNERS = new Set(['patient', 'claim']);
+  const PART_WORDS = new Set(['remaining', 'other', 'others', 'some', 'last', 'first', 'rest', 'excluding', 'except', 'excepting', 'besides', 'minus']);
+  const DATE_WORDS = new Set([
+    'january',
+    'february',
+    'march',
+    'april',
+    'may',
+    'june',
+    'july',
+    'august',
+    'september',
+    'october',
+    'november',
+    'december',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ]);
+  /** "half" is a number ("half of them" a partitive; ../scan.ts), which names a part with no count's noun after it. */
+  const QUANTIFIERS = new Set(['both', 'either', 'neither', 'most', 'many', 'several', 'few', 'any', 'none']);
+  const MORE_LINES = new Set(['encounter', 'session', 'appointment']);
+  const LINE_HEADS = new Set(['lines', 'visits', 'rows', 'services', 'items', 'amounts', 'totals', 'charges', 'dates', 'codes', 'level', 'levels', 'units', 'values']);
+  const PLURAL_ROWS_MORE = new Set(['encounters', 'sessions', 'appointments', 'patients', 'members']);
+  /** What may stand right before the lines in the plural for them to be all of them: determiners, prepositions, conjunctions, verbs and the words that qualify all of a pattern's lines. */
+  const WHOLE_LEADS = new Set([
+    'the',
+    'all',
+    'these',
+    'those',
+    'its',
+    'their',
+    'our',
+    'of',
+    'for',
+    'on',
+    'in',
+    'across',
+    'over',
+    'to',
+    'with',
+    'by',
+    'from',
+    'under',
+    'at',
+    'between',
+    'among',
+    'about',
+    'through',
+    'throughout',
+    'within',
+    'into',
+    'and',
+    'or',
+    'nor',
+    'than',
+    'are',
+    'were',
+    'is',
+    'was',
+    'be',
+    'been',
+    'has',
+    'have',
+    'had',
+    'cover',
+    'covers',
+    'include',
+    'includes',
+    'span',
+    'spans',
+    'affect',
+    'affects',
+    'service',
+    'visit',
+    'claim',
+    'therapy',
+    'billed',
+    'paid',
+    'underpaid',
+    'priced',
+    'disputed',
+    'affected',
+    'listed',
+    'reprocessed',
+    'same',
+  ]);
+  const CLAIM_HEADS = new Set(['line', 'lines', 'row', 'rows', 'visit', 'visits', 'service', 'services', 'filing', 'adjustment', 'adjustments', 'status', 'level', 'form', 'forms']);
+  const PATIENT_WORDS = new Set(['patient', 'member']);
+  const PATIENT_HEADS = new Set([
+    'share',
+    'shares',
+    'responsibility',
+    'responsibilities',
+    'portion',
+    'portions',
+    'balance',
+    'balances',
+    'liability',
+    'copay',
+    'copays',
+    'copayment',
+    'copayments',
+    'coinsurance',
+    'deductible',
+    'deductibles',
+    'account',
+    'accounts',
+    'cost',
+    'costs',
+    'line',
+    'lines',
+    'row',
+    'rows',
+    'visit',
+    'visits',
+    'service',
+    'services',
+  ]);
+  const DAY_WORDS = new Set(['day']);
+  /** The words between "each" and one line's noun that keep it each line's: "each claim line", "every patient's row", "each 2-unit line". */
+  const OWNERS = new Set(['claim', 'patient', 'member', 'unit']);
   const PART_ROLES: ReadonlySet<FigureRole> = new Set<FigureRole>(['row', 'claim_row', 'patient_row']);
   /**
    * A "respectively" list's own words besides its cues and a scope's (rule 3 of docs/adr/0086): determiners ("a" is
@@ -172,8 +305,17 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     TOTAL_DETERMINERS,
     // What names a part of the lines.
     PART_WORDS,
-    ONE_DETERMINERS,
-    ROW_OWNERS,
+    DATE_WORDS,
+    QUANTIFIERS,
+    MORE_LINES,
+    LINE_HEADS,
+    PLURAL_ROWS_MORE,
+    WHOLE_LEADS,
+    CLAIM_HEADS,
+    PATIENT_WORDS,
+    PATIENT_HEADS,
+    DAY_WORDS,
+    OWNERS,
     PART_ROLES,
     // A "respectively" list's own words.
     LIST_FILLERS,

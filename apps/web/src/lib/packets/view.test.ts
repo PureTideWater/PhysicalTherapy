@@ -124,7 +124,7 @@ describe('the words for a figure in the wrong role', () => {
 
   it('ask a figure whose words must say more for it, plainly, beside the figure marked (docs/adr/0086, rules 2 and 3; CAS-43)', () => {
     expect(NEEDS_TEXT).toEqual({
-      scope: 'state whether this figure is per line or in total right after it (“per line”, “in total”, “for all the lines”), in a sentence that names no one line, code, date of service or patient',
+      scope: 'state whether this figure is per line or in total right after it (“per line”, “in total”, “across all the lines”), and keep any one line, group of lines, code, date of service, claim or patient in a sentence of its own',
       own_words: 'give each figure its own words instead of “respectively”',
     });
     const content = assemblePacket(assemblyInput());

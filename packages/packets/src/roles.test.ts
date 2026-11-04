@@ -1053,17 +1053,18 @@ describe('amounts, percentages and dates', () => {
       'for one line',
       'for the claim line',
       'for a patient’s line',
-      'for a patient',
       'for Patient’s lines',
+      'on the bottom line',
     ]) {
       expect(named(`The payer allowed $9.00 per line ${part}.`), part).toBe(true);
     }
-    for (const whole of ['', 'for each claim line', 'for each patient', 'per patient', 'for the patient', 'in line with its policy', 'under version 1', 'on page 2', 'on 2026-04-08 after payment', 'for the 3 lines', 'as the patient share', 'on the bottom line']) {
+    for (const whole of ['', 'for each claim line', 'for each patient', 'per patient', 'for the patient', 'in line with its policy', 'under version 1', 'on page 2', 'on 2026-04-08 after payment', 'for the 3 lines', 'as the patient share', 'for a patient']) {
       expect(named(`The payer allowed $9.00 per line ${whole}.`), whole).toBe(false);
     }
     expect(parts('The payer allowed $9.00 for the claim.')).toMatchObject({ claim: true, patient: false });
     expect(parts('The payer allowed $9.00 for this claim.')).toMatchObject({ claim: true });
-    expect(parts('The payer allowed $9.00 for each claim.')).toMatchObject({ claim: false });
+    expect(parts('The payer allowed $9.00 for each claim.')).toMatchObject({ claim: false, eachClaim: true });
+    expect(parts('The payer allowed $9.00 for a patient.')).toMatchObject({ named: false, patient: true });
     expect(parts('The payer allowed $9.00 for the patient.')).toMatchObject({ claim: false, patient: true });
     expect(parts('The payer allowed $9.00 to the patient’s account.')).toMatchObject({ patient: true });
     expect(parts('The patient share is $9.00.')).toMatchObject({ patient: false, named: false });

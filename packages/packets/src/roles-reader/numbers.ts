@@ -9,6 +9,9 @@ import { type Counted, type NumberRole, cueAt, isOrdinal, numeral, phraseAt } fr
  * units is stated per.
  */
 export class NumberReader extends CueReader {
+  /** Each token of a scope phrase found beside a figure or a "respectively" list's cue (adjoining()), and of a list's cues before it (amountScope()): no part of the lines, and no phrase astray (parts()). */
+  protected readonly beside = new Set<number>();
+
   /** The scope one line's or one unit's noun names ("line", "visit", "row", "service"; "unit"), or null. */
   protected oneOf(word: string): Scope | null {
     return this.vocab.ONE_LINE.has(word) ? 'line' : this.vocab.ONE_UNIT.has(word) ? 'unit' : null;
@@ -78,7 +81,18 @@ export class NumberReader extends CueReader {
   /** The scope phrase that starts at token `at` (phraseAfter()), with no dash or parenthesis before it or inside it. */
   protected adjoining(at: number): { readonly scope: Scope; readonly end: number } | null {
     const found = this.phraseAfter(at);
-    return found === null || this.apart(at - 1, found.end - 1) ? null : found;
+    if (found === null || this.apart(at - 1, found.end - 1)) {
+      return null;
+    }
+    this.mark(at, found.end);
+    return found;
+  }
+
+  /** Marks the tokens from token `from` to the one before token `to` as a scope phrase's beside a figure. */
+  protected mark(from: number, to: number): void {
+    for (let at = from; at < to; at += 1) {
+      this.beside.add(at);
+    }
   }
 
   /** Whether a dash or a parenthesis stands between any two tokens from token `from` to token `to` (breakBefore()). */
@@ -103,6 +117,7 @@ export class NumberReader extends CueReader {
     const each = owner?.possessive === true && this.vocab.EACH.has(lead);
     const per = lead === 'per' && this.text.slice((this.at(index, -2) as Token).end, (owner as Token).start) === '-';
     const named = each || per ? this.oneOf(this.word(index, -1)) : null;
+    // No phrase astray starts in either (astray(): "each" alone leads none, a hyphen's "per-line" is none, nor is "a total").
     if (named !== null) {
       return this.apart(index - 2, index) ? null : named;
     }
@@ -135,6 +150,9 @@ export class NumberReader extends CueReader {
     if (form === null) {
       return null;
     }
+    // The words from its first cue to its last, their scopes among them, are rule 3's: no phrase there is astray
+    // (parts()); the last cue's own scope and the list's are beside them (scopeAfter()).
+    this.mark((form.cues[0] as ListCue).start, (form.cues[form.cues.length - 1] as ListCue).end);
     const own = this.scopeAfter((form.cues[list.indexOf(index)] as ListCue).end + 1);
     const last = form.cues.at(-1) as ListCue;
     const wide = (form.after === null ? null : this.scopeAfter(form.after)) ?? (last.noun ? this.scopeAfter(last.end + 1) : null);
@@ -171,52 +189,156 @@ export class NumberReader extends CueReader {
   }
 
   /**
-   * Whether the word at token `at` names a part of the lines: "remaining", "other", "some", "last" and the like ("one
-   * of" is read with the sentence: parts()); one line's noun after "the", "this", "that", "one" or "its", or after a
-   * claim's or a patient's word not after "each" ("the claim line", "a patient's row"; never "each claim line" or "per
-   * line").
+   * What the word at token `at` names of the lines (the fail-closed triggers, read from the other side: ../roles-words
+   * prose.ts PART_WORDS and the sets after it): 'line' for a part of the lines, 'claim' for one of the claims, 'patient'
+   * for one of the patients (a part where the pattern has more than one), 'each_claim' or 'each_patient' for each of
+   * them ("for each claim", "per patient": a total there is each one's), or null for none ("one of" is read with the
+   * sentence: parts()).
    */
-  protected wordPart(at: number): boolean {
+  protected wordPart(at: number): 'line' | 'claim' | 'patient' | 'each_claim' | 'each_patient' | null {
+    const token = this.tokens[at] as Token;
     const word = this.word(at, 0);
-    if (this.vocab.PART_WORDS.has(word)) {
-      return true;
-    }
-    if (!this.vocab.ONE_LINE.has(word)) {
-      return false;
-    }
+    const next = this.word(at, 1);
     const before = this.word(at, -1);
-    return this.vocab.ONE_DETERMINERS.has(before) || (this.vocab.ROW_OWNERS.has(before) && !this.vocab.EACH.has(this.word(at, -2)));
+    const v = this.vocab;
+    const capital = /^\p{Lu}/u.test(this.text.slice(token.start, token.end));
+    const exclusion = word === 'but' && (next === 'one' || this.at(at, 1)?.kind === 'figure' || this.plural(before));
+    if (v.PART_WORDS.has(word) || exclusion || (v.DATE_WORDS.has(word) && (word !== 'may' || capital)) || (v.QUANTIFIERS.has(word) && next === 'of')) {
+      return 'line';
+    }
+    // "each claim", "per patient", "every patient's share": each of them, which states no total (PE5-3, CORR5-4).
+    const each = v.EACH.has(before) || before === 'per';
+    if (v.PATIENT_WORDS.has(word)) {
+      return token.possessive || !v.PATIENT_HEADS.has(next) ? (each ? 'each_patient' : 'patient') : null;
+    }
+    if (word === 'claim') {
+      return token.possessive || !v.CLAIM_HEADS.has(next) ? (each ? 'each_claim' : 'claim') : null;
+    }
+    if (v.DAY_WORDS.has(word)) {
+      return v.PER.has(before) || v.EACH.has(before) ? 'line' : null;
+    }
+    if (v.MORE_LINES.has(word)) {
+      return 'line';
+    }
+    if (v.ONE_LINE.has(word)) {
+      return this.oneLine(at) ? 'line' : null;
+    }
+    return this.plural(word) && this.somePlural(at) ? 'line' : null;
+  }
+
+  /** Whether `word` is the lines (or the claims, the patients) in the plural. */
+  protected plural(word: string): boolean {
+    return this.vocab.PLURAL_ROWS.has(word) || this.vocab.PLURAL_ROWS_MORE.has(word);
   }
 
   /**
-   * What the sentence of the amount at token `index` names of the lines (the fail-closed triggers of rule 1 of
-   * docs/adr/0086, as amended): whether it names a part of them (figurePart(), wordPart()), whether it says "the
-   * claim" or "the patient" (one of the claims or patients, unless the pattern has one), each count it states of lines,
-   * claims or patients, which the verifier holds to the pattern's (one other than its own names a part), and each date,
-   * month or day of a month, which names a part where a line's service date is that date or falls in it, whatever role
-   * its words give it (a year names none: "the 2026 fee schedule").
+   * Whether one line's noun at token `at` names one of the lines: with any word before it but "each", "every" or "per",
+   * unless it is in a scope phrase beside a figure, says "in line with", is "of service" (but "date of service"), or
+   * qualifies a noun right after it ("the service lines", "the line items"; never with a possessive).
+   */
+  protected oneLine(at: number): boolean {
+    const token = this.tokens[at] as Token;
+    const word = this.word(at, 0);
+    const next = this.word(at, 1);
+    const before = this.word(at, -1);
+    // "its own line" is no line of the pattern's ("Prompt-pay interest ... is stated as its own line").
+    if (this.beside.has(at) || (!token.possessive && this.vocab.LINE_HEADS.has(next)) || (word === 'line' && before === 'in' && next === 'with') || before === 'own') {
+      return false;
+    }
+    if (word === 'service' && before === 'of') {
+      return this.word(at, -2) === 'date';
+    }
+    // Past an owner's word and a count of units joined to it ("each claim line", "every patient's row", "each 2-unit line").
+    let lead = at - 1;
+    while (lead > at - 4 && (this.at(lead, 0)?.kind === 'figure' || this.vocab.OWNERS.has(this.word(lead, 0)))) {
+      lead -= 1;
+    }
+    const determiner = this.word(lead, 0);
+    return !(this.vocab.EACH.has(determiner) || determiner === 'per');
+  }
+
+  /**
+   * Whether the lines in the plural at token `at` are a part of them: any word right before them but one of WHOLE_LEADS
+   * ("both lines", "most lines", "the GP lines", "half the lines"), unless a whole number stands right before them or
+   * one word before them (a count the verifier holds to the pattern's, or a code that names a part itself).
+   */
+  protected somePlural(at: number): boolean {
+    // A whole count right before them, or one word before them ("the 3 GP lines"); any other figure there names a part
+    // ("half the lines", "1.5 lines").
+    for (const offset of [-1, -2]) {
+      const figure = this.at(at, offset)?.figure;
+      if (figure !== undefined) {
+        return !/^\d+$/.test(figure.value);
+      }
+    }
+    const before = this.word(at, -1);
+    return before !== '' && !this.vocab.WHOLE_LEADS.has(before) && !this.plural(before);
+  }
+
+  /**
+   * A scope phrase of the closed list (phraseAfter()) that starts at token `at` and stands beside no figure ("On each
+   * line the payer allowed $210.00 in total"; "$300.00 in total; that is per line"): its scope, or null. A phrase is
+   * no figure's there, and one that states another scope than a figure's own makes that figure's sentence name a part
+   * of the lines (CORR5-4, PE5-3). A hyphen joins "per-line" to a noun it qualifies ("the per-visit rate"): none.
+   */
+  protected astray(at: number): Scope | null {
+    if (this.beside.has(at)) {
+      return null;
+    }
+    const found = this.phraseAfter(at);
+    if (found === null || found.scope === 'unit' || this.apart(at, found.end - 1)) {
+      return null;
+    }
+    const hyphen = this.word(at, 0) === 'per' && this.text.slice((this.tokens[at] as Token).end, (this.tokens[at + 1] as Token).start) === '-';
+    return hyphen ? null : found.scope;
+  }
+
+  /** Whether token `at` ends a sentence: a period, "!", "?" or a blank line (a semicolon does not, for parts()). */
+  protected closes(at: number): boolean {
+    return this.stop(at) && (this.tokens[at] as Token).text !== ';';
+  }
+
+  /**
+   * What the sentence of the figure at token `index` names of the lines (the fail-closed triggers of rule 1 of
+   * docs/adr/0086, as amended): whether it names a part of them (figurePart(), wordPart()), whether it names one of the
+   * claims or one of the patients (a part unless the pattern has one), each count it states of lines, claims or
+   * patients, which the verifier holds to the pattern's (one other than its own names a part), each date, month or day
+   * of a month, which names a part where a line's service date is that date or falls in it, whatever role its words
+   * give it (a year names none: "the 2026 fee schedule"), and the scope of each phrase of the closed list that stands
+   * beside no figure (astray()), which names a part for a figure stated per another.
    * `readings` holds each figure of the text as read, by token.
    */
   parts(index: number, readings: ReadonlyMap<number, FigureReading>): SentenceParts {
-    const start = this.sentenceStart(index);
-    const end = this.sentenceEnd(index);
+    // The whole sentence, past a semicolon too ("$300.00 in total; that is per claim"): only its end bounds it.
+    let start = index;
+    while (start > 0 && !this.closes(start - 1)) {
+      start -= 1;
+    }
+    let end = index + 1;
+    while (end < this.tokens.length && !this.closes(end)) {
+      end += 1;
+    }
     let named = false;
     let claim = false;
     let patient = false;
+    let eachClaim = false;
+    let eachPatient = false;
     const counts: { readonly roles: readonly FigureRole[]; readonly value: string }[] = [];
     const dates: { readonly kind: 'date' | 'month' | 'month_day'; readonly value: string }[] = [];
-    for (const [offset] of this.tokens.slice(start, end).entries()) {
-      const at = start + offset;
+    const phrases = new Set<Scope>();
+    for (let at = start; at < end; at += 1) {
       const reading = readings.get(at);
       if (reading === undefined) {
-        const word = this.word(at, 0);
-        const before = this.word(at, -1);
-        const one = this.vocab.ONE_DETERMINERS.has(before);
-        // A patient as a noun ("the patient", "a patient's line"), not a word before another ("the patient share").
-        const person = word === 'patient' && ((this.tokens[at] as Token).possessive || this.at(at, 1)?.kind !== 'word' || this.vocab.ONE_LINE.has(this.word(at, 1)));
-        named ||= this.wordPart(at) || (word === 'one' && this.word(at, 1) === 'of') || (person && !one && !this.vocab.EACH.has(before) && before !== 'per');
-        claim ||= word === 'claim' && one;
-        patient ||= person && one;
+        const part = this.wordPart(at);
+        named ||= part === 'line' || (this.word(at, 0) === 'one' && this.word(at, 1) === 'of');
+        claim ||= part === 'claim';
+        patient ||= part === 'patient';
+        eachClaim ||= part === 'each_claim';
+        eachPatient ||= part === 'each_patient';
+        const stray = this.astray(at);
+        if (stray !== null) {
+          phrases.add(stray);
+        }
         continue;
       }
       named ||= this.figurePart(reading, at);
@@ -228,7 +350,7 @@ export class NumberReader extends CueReader {
         counts.push({ roles: reading.roles, value: reading.value });
       }
     }
-    return { named, claim, patient, counts, dates };
+    return { named, claim, patient, eachClaim, eachPatient, counts, dates, phrases: [...phrases] };
   }
 
   /** Units, each line's when a scope phrase beside them says so ("2 units per line", "a 2-unit line"), and what they are stated per. */

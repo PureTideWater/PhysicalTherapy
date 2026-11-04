@@ -80,8 +80,9 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * each line", "on each of the 3 lines", "per unit", "in total", "in all", "for the claim", "across the 3 lines", "for
  * all the lines") or right before it ("each line's", "the per-line", "a total of"); nothing else in the sentence lends
  * one (scope()). A "respectively" list's figure takes the phrase right after its cue, else the one right after the list
- * or after "amounts" (amountScope()). What an amount's sentence names of the lines (a row, a code, a date, a patient, a
- * partitive, "remaining", a count: parts()) is read too, and a figure with no scope, or in a sentence that names a part
+ * or after "amounts" (amountScope()). What the sentence of an amount or of a count of units in all names of the lines
+ * (a row, a code, a date, a patient, a claim, a partitive, "remaining", "both lines", a count, a scope phrase beside
+ * no figure: parts()) is read too, and a figure with no scope, or in a sentence that names a part
  * of the lines, fails where its role's per-line and total values differ (rule 2; the
  * verifier's). "first" with no role is prose, as "one" and "zero" are.
  *
@@ -171,9 +172,11 @@ export function readFigures(text: string): ReadText {
   const tokens = tokenize(text, vocab);
   const reader = new Reader(text, tokens, vocab);
   const read = tokens.flatMap((token, index) => (token.figure === undefined ? [] : [reader.read(index, token.figure)]));
-  // An amount's sentence, once each figure of it is read: what it names of the lines (the fail-closed triggers).
+  // An amount's or a count of units' sentence, once each figure of it is read: what it names of the lines (the
+  // fail-closed triggers). Each line's units ("2 units per line", "97110 x 2") are stated per line by their words.
   const byToken = new Map(read.map((reading) => [reading.token, reading]));
-  const readings = read.map((reading) => (reading.kind === 'amount' ? { ...reading, parts: reader.parts(reading.token, byToken) } : reading));
+  const scoped = (reading: FigureReading) => reading.kind === 'amount' || (Array.isArray(reading.roles) && reading.roles.includes('units'));
+  const readings = read.map((reading) => (scoped(reading) ? { ...reading, parts: reader.parts(reading.token, byToken) } : reading));
   return { readings, tokens: tokens.map((token) => (token.kind === 'edge' ? '|' : token.kind === 'word' ? `w:${token.text}` : token.text)) };
 }
 

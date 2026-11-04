@@ -1,5 +1,5 @@
 import fc from 'fast-check';
-import { cents, formatCents } from '@tp/money';
+import { cents, decimal, formatCents } from '@tp/money';
 import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
@@ -191,7 +191,8 @@ const AMOUNT_CUES: Readonly<Record<string, readonly string[]>> = {
   paid: ['the payer paid', 'the remittance paid'],
   variance: ['the shortfall is', 'the payer underpaid'],
   interest: ['interest is'],
-  patient_share: ['the patient owes'],
+  // In the plural: "the patient" names one of the patients, a part of the lines where the pattern has more (CORR5-2).
+  patient_share: ['the patients owe'],
 };
 const DATE_CUES: Readonly<Record<string, string>> = {
   service_date: 'the lines were billed',
@@ -236,15 +237,16 @@ const heldPer = (scoped: ReadonlyMap<string, ReadonlySet<string>>, role: string,
 
 /**
  * Rule 2 as the oracles read it: a value stated with no scope passes in a role that holds it, unless the role holds it
- * only per line or only in total and holds another value the other way.
+ * only as some line's or only in total and holds another value the other way.
  */
 function unscopedHeld(oracle: ReadonlyMap<string, ReadonlySet<string>>, scoped: ReadonlyMap<string, ReadonlySet<string>>, role: string, value: string): boolean {
   if (oracle.get(role)?.has(value) !== true) {
     return false;
   }
-  const line = heldPer(scoped, role, value, 'line');
+  // Some line's value, held per line or not (PE5-2: one only some lines hold is still a line's).
+  const line = scoped.get(`row|${role}`)?.has(value) === true;
   const total = heldPer(scoped, role, value, 'total');
-  return line === total || (scoped.get(`${line ? 'total' : 'line'}|${role}`)?.size ?? 0) === 0;
+  return line === total || (scoped.get(`${line ? 'total' : 'row'}|${role}`)?.size ?? 0) === 0;
 }
 /** Two clauses joined so that the second's cue is the figure's nearest and the first's the farther. */
 const TWO_CUES = ['Although {A}, {B} {v} [3].', '{A} less, so {B} {v} [3].', 'Since {A}: {B} {v} [3].', '{A} and {B} {v} [3].'] as const;
@@ -542,8 +544,11 @@ describe('properties of the role reader', () => {
     let failed = 0;
     fc.assert(
       fc.property(generated, ({ content }) => {
-        // Each line's expected and allowed amounts, and the totals (the pattern's and each code's).
-        const lines = (pick: (item: (typeof content.lines)[number]) => string | null) => new Set(content.lines.map(pick).filter((item): item is string => item !== null && !item.startsWith('-')));
+        const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        // The expected and allowed amounts every line holds (per line: PE5-2), and the totals (the pattern's and each code's).
+        const lines = (pick: (item: (typeof content.lines)[number]) => string | null) =>
+          new Set(content.lines.map(pick).filter((item): item is string => item !== null && !item.startsWith('-') && content.lines.every((other) => pick(other) === item)));
         const totals = (pick: (item: { readonly expected_cents: string; readonly observed_cents: string }) => string) => new Set([content.pattern, ...content.pattern.codes].map(pick).filter((item) => !item.startsWith('-')));
         const expected = { line: lines((item) => item.expected_cents), total: totals((item) => item.expected_cents) };
         const allowed = { line: lines((item) => item.observed_cents), total: totals((item) => item.observed_cents) };
@@ -551,7 +556,11 @@ describe('properties of the role reader', () => {
         for (const x of expected.total) {
           for (const y of [...allowed.total, ...allowed.line]) {
             const held = allowed.total.has(y);
-            cases.push([`The contract expected in total and the payer allowed in total ${dollars(x)} and ${dollars(y)}, respectively, which the payer explained for each line [3].`, held]);
+            // A scope phrase astray after it that states another scope names a part of the lines (CORR5-4): each figure
+            // passes only where it is held so and with no scope too.
+            const astray = held && unscopedHeld(oracle, scoped, 'expected', x) && unscopedHeld(oracle, scoped, 'allowed', y);
+            cases.push([`The contract expected in total and the payer allowed in total ${dollars(x)} and ${dollars(y)}, respectively, which the payer explained for each line [3].`, astray]);
+            cases.push([`The contract expected in total and the payer allowed in total ${dollars(x)} and ${dollars(y)}, respectively, which the payer explained [3].`, held]);
             cases.push([`${dollars(x)} and ${dollars(y)} were expected in total and allowed in total, respectively [3].`, held]);
           }
           for (const y of [...allowed.line, ...allowed.total]) {
@@ -641,7 +650,7 @@ describe('properties of the role reader', () => {
     expect(unstated).toBeGreaterThan(0);
   }, 240_000);
 
-  it('fails an amount whose per-line and total values differ in a sentence that names a part of the lines, whatever scope phrase is beside it (the amended rule 1’s triggers)', () => {
+  it('fails an amount or a count of units in all whose per-line and total values differ in a sentence that names a part of the lines, whatever scope phrase is beside it (the amended rule 1’s triggers; PE5-1, CORR5-1 to CORR5-3, PE5-3)', () => {
     let triggered = 0;
     fc.assert(
       fc.property(generated, ({ content }) => {
@@ -649,8 +658,32 @@ describe('properties of the role reader', () => {
         const scoped = scopedOracle(content);
         const code = (content.lines[0] as (typeof content.lines)[number]).procedure_code;
         const served = (content.lines[0] as (typeof content.lines)[number]).service_date;
-        const after = ['on line 1', 'for Patient 1', 'for the remaining lines', 'for some lines', 'for the other lines', 'for one of the lines', 'for the last line'];
-        const opening = [`For ${code}, `, `For the services of ${served}, `, 'For the first line, '];
+        // The forms the review of the amended rule found (PE5-1, CORR5-1, CORR5-2), read from the other side; a claim or
+        // a patient names a part only where the pattern has more than one.
+        const after = [
+          'on line 1',
+          'for Patient 1',
+          'for the remaining lines',
+          'for some lines',
+          'for the other lines',
+          'for one of the lines',
+          'for the last line',
+          'on both lines',
+          'for a line',
+          'on line A',
+          'on most lines',
+          'excluding a line',
+          'for the session',
+          'in early March',
+          'on the GP lines',
+          'for the earliest visit',
+          'on all lines but one',
+          ...(content.pattern.patients > 1 ? ['for the patient', 'for patient B', 'as the patient owes'] : []),
+          ...(content.pattern.claims > 1 ? ['for a claim', 'for her claim'] : []),
+        ];
+        const opening = [`For ${code}, `, `For the services of ${served}, `, 'For the first line, ', 'A single line: ', 'Both lines: '];
+        // A total for each claim where there are more than one (PE5-3): a figure stated per line is held per line.
+        const each = content.pattern.claims > 1 ? ['per claim', 'for each claim'] : [];
         for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
           for (const value of [...(oracle.get(role) ?? [])].filter((item) => !item.startsWith('-'))) {
             // Where per line and in total are one, scope is beside the point: it passes as before.
@@ -658,15 +691,29 @@ describe('properties of the role reader', () => {
             triggered += held ? 0 : 1;
             for (const scope of STATED) {
               const stated = template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]}`);
+              // A trigger only ever fails a figure: it passes where it is held as stated and with no scope too.
+              const both = held && heldPer(scoped, role, value, scope);
               for (const words of after) {
                 const narrative = template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]} ${words}`);
-                expect(passes(narrative, content), narrative).toBe(held);
+                expect(passes(narrative, content), narrative).toBe(both);
               }
               for (const words of opening) {
                 const narrative = `${words}${stated.charAt(0).toLowerCase()}${stated.slice(1)}`;
-                expect(passes(narrative, content), narrative).toBe(held);
+                expect(passes(narrative, content), narrative).toBe(both);
+              }
+              for (const words of each) {
+                const narrative = template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]} ${words}`);
+                expect(passes(narrative, content), narrative).toBe(scope === 'total' ? both : heldPer(scoped, role, value, scope));
               }
             }
+          }
+        }
+        // A count of units in all, as an amount (CORR5-3): it passes where it is a total and some line bills it too.
+        const lines = new Set(content.lines.map((item) => decimal(item.units).toString()));
+        for (const value of oracle.get('units') ?? []) {
+          for (const words of after) {
+            const narrative = `The lines billed ${value} units in total ${words} [3].`;
+            expect(passes(narrative, content), narrative).toBe(lines.has(decimal(value).toString()));
           }
         }
       }),

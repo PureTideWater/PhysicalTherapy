@@ -109,22 +109,23 @@ describe('narrativeFacts', () => {
       }),
     );
     // An amount and a count of units are held also as stated per what their record states them per, and nothing else.
+    // Each line's are some line's (`row`); none is held per line, since line 2's differ from lines 1 and 3's (PE5-2).
     expect(scoped(narrativeFacts(content))).toEqual({
-      'line|amount:10000': 'calculation expected', // lines 1 and 3 expected and their calculation's step
-      'line|amount:12000': 'calculation expected', // line 2
-      'line|amount:131': 'interest', // interest, row 1
-      'line|amount:1400': 'patient_share', // lines 1 and 3
-      'line|amount:1600': 'patient_share', // line 2
-      'line|amount:174': 'interest', // interest, row 2
-      'line|amount:3000': 'variance',
-      'line|amount:4000': 'variance',
-      'line|amount:5600': 'paid',
-      'line|amount:6400': 'paid',
-      'line|amount:7000': 'allowed',
-      'line|amount:8000': 'allowed',
-      'line|number:10': 'line_units units', // each line's units
-      'line|number:7': 'line_units units',
-      'line|number:8': 'line_units units',
+      'row|amount:10000': 'calculation expected', // lines 1 and 3 expected and their calculation's step
+      'row|amount:12000': 'calculation expected', // line 2
+      'row|amount:131': 'interest', // interest, row 1
+      'row|amount:1400': 'patient_share', // lines 1 and 3
+      'row|amount:1600': 'patient_share', // line 2
+      'row|amount:174': 'interest', // interest, row 2
+      'row|amount:3000': 'variance',
+      'row|amount:4000': 'variance',
+      'row|amount:5600': 'paid',
+      'row|amount:6400': 'paid',
+      'row|amount:7000': 'allowed',
+      'row|amount:8000': 'allowed',
+      'row|number:10': 'line_units units', // each line's units
+      'row|number:7': 'line_units units',
+      'row|number:8': 'line_units units',
       'total|amount:10000': 'variance', // the pattern's
       'total|amount:12000': 'expected', // 97140's
       'total|amount:14000': 'allowed', // 97110's
@@ -548,6 +549,43 @@ describe('narrativeFacts', () => {
     expect(roles(facts, 'amount', '30000')).toEqual(['expected']);
   });
 
+  it('holds a line’s value per line only where every line holds it, and every line’s as some line’s (PE5-2)', () => {
+    // Line 2 bills 3 units at $150.00 expected, $105.00 allowed, $45.00 short and $84.00 paid; lines 1 and 3 their 2 units at $100.00, $70.00, $30.00 and $56.00.
+    const differ = { units: '3', expectedCents: cents(15000n), observedCents: cents(10500n), varianceCents: cents(4500n), paidCents: cents(8400n) };
+    const facts = narrativeFacts(assemblePacket(assemblyInput({ lines: [line(1), line(2, differ), line(3)] })));
+    const per = (kind: 'amount' | 'number', value: string) => [...heldRoles(facts, kind, value, 'line')].sort();
+    const row = (kind: 'amount' | 'number', value: string) => [...(facts.scoped.get(`row|${kind}:${value}`) ?? [])].sort();
+    for (const [kind, value, role] of [
+      ['amount', '10000', 'expected'],
+      ['amount', '15000', 'expected'],
+      ['amount', '7000', 'allowed'],
+      ['amount', '10500', 'allowed'],
+      ['amount', '3000', 'variance'],
+      ['amount', '4500', 'variance'],
+      ['amount', '5600', 'paid'],
+      ['amount', '8400', 'paid'],
+      ['number', '2', 'units'],
+      ['number', '3', 'units'],
+    ] as const) {
+      expect(per(kind, value), value).not.toContain(role);
+      expect(row(kind, value), value).toContain(role);
+    }
+    // What every line holds is per line, whatever else differs between the lines.
+    const same = narrativeFacts(assemblePacket(assemblyInput({ lines: [line(1), line(2, { paidOn: '2026-04-09' }), line(3)] })));
+    expect([...heldRoles(same, 'amount', '7000', 'line')]).toEqual(['allowed']);
+    expect([...(same.scoped.get('row|amount:7000') ?? [])]).toEqual(['allowed']);
+    // One line: its values are per line.
+    const one = narrativeFacts(assemblePacket(assemblyInput({ lines: [line(1, differ)] })));
+    expect([per('amount', '15000'), [...heldRoles(one, 'amount', '15000', 'line')].sort()]).toEqual([[], ['calculation', 'expected']]);
+    // A per-visit rate is held per line, and so as some line's too; each line's units as a plain decimal.
+    const visit = narrativeFacts(assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '4500' } }) })));
+    expect([[...(visit.scoped.get('line|amount:4500') ?? [])], [...(visit.scoped.get('row|amount:4500') ?? [])]]).toEqual([['expected'], ['expected']]);
+    const decimals = narrativeFacts(assemblePacket(assemblyInput({ lines: [line(1, { units: '2.50' }), line(2, { units: '2.5' })] })));
+    expect([...heldRoles(decimals, 'number', '2.5', 'line')].sort()).toEqual(['line_units', 'units']);
+    // Two lines that differ: neither's value is per line.
+    expect([...heldRoles(narrativeFacts(assemblePacket(assemblyInput({ lines: [line(1), line(2, differ)] }))), 'amount', '10000', 'line')]).not.toContain('expected');
+  });
+
   it('holds the lines’ paid amounts and patient shares in total only when each is whole cents, and no total of no lines (CORR-20)', () => {
     const content = assemblePacket(assemblyInput());
     const totals = (facts: NarrativeFacts, role: FigureRole) => [...facts.scoped].filter(([key, held]) => key.startsWith('total|amount:') && held.has(role)).map(([key]) => key);
@@ -590,7 +628,9 @@ describe('narrativeFacts', () => {
       ...content,
       lines: [{ ...first, calculation: { ...first.calculation, steps: first.calculation.steps.map((step) => ({ ...step, amount_cents: '777' })), rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '-250', rounded_cents: '-300' } } }, ...rest],
     });
-    expect(['777', '-250', '-300'].map((value) => [...heldRoles(own, 'amount', value, 'line')])).toEqual([['calculation'], ['calculation'], ['calculation']]);
+    // Line 1's alone: some line's, never per line, since lines 2 and 3 hold none of them (PE5-2).
+    expect(['777', '-250', '-300'].map((value) => [...(own.scoped.get(`row|amount:${value}`) ?? [])])).toEqual([['calculation'], ['calculation'], ['calculation']]);
+    expect(['777', '-250', '-300'].map((value) => [...heldRoles(own, 'amount', value, 'line')])).toEqual([[], [], []]);
     // No rounding and no patient share: no figure for either, nor a total of the patients' shares (one is not known),
     // and nothing else changes.
     const without = narrativeFacts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: null, patient_share_cents: null } }, ...rest] });
