@@ -7,6 +7,7 @@ import { roleName, utc } from '../../../components/format';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { SUPPORT_GRANT_HOURS, supportPage } from '../../../lib/routes/console';
+import { noticeStatus } from '../../../lib/routes/practice';
 import { createSupportGrantAction, endSupportGrantAction } from '../actions';
 import { FormKeys } from '../../../components/form-keys';
 
@@ -72,7 +73,7 @@ export default async function SupportPage() {
               <th className="py-1 pr-3 font-medium">Opened</th>
               <th className="py-1 pr-3 font-medium">Expires</th>
               <th className="py-1 pr-3 font-medium">Reads</th>
-              <th className="py-1 pr-3 font-medium">Expiry notice</th>
+              <th className="py-1 pr-3 font-medium">Notices</th>
               <th className="py-1 font-medium">
                 <span className="sr-only">End</span>
               </th>
@@ -93,7 +94,10 @@ export default async function SupportPage() {
                 <td className="py-1 pr-3">{utc(grant.createdAt)}</td>
                 <td className="py-1 pr-3">{utc(grant.expiresAt)}</td>
                 <td className="py-1 pr-3">{grant.reads}</td>
-                <td className="py-1 pr-3">{utc(grant.notifiedAt)}</td>
+                <td className="py-1 pr-3" data-slot="notices">
+                  <span className="block">Opening: {noticeStatus(grant.notices.opening, 'opening', grant.open, utc)}</span>
+                  <span className="block">Closing: {noticeStatus(grant.notices.closing, 'closing', grant.open, utc)}</span>
+                </td>
                 <td className="py-1">
                   {grant.open ? (
                     <ActionForm action={endSupportGrantAction} submit="End now" variant="outline" className="flex items-center gap-2">

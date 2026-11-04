@@ -1,8 +1,8 @@
-import { LOCATION_NOT_READY_STATUSES, type LocationStatus, PricingRefusedError, isLocationStatus } from '@tp/contracts';
+import { LOCATION_NOT_READY_STATUSES, type LocationStatus, isLocationStatus } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { subtractRanges } from '@tp/rules';
 
-import { PricingLocationWaiting, PricingRunInputError, createPricingRun } from '../price/create';
+import { PricingLocationWaiting, PricingRunInputError, PricingRunNothingMapped, createPricingRun } from '../price/create';
 import {
   CONTENT_FAILURE_CODES,
   type ContentFailureCode,
@@ -27,9 +27,14 @@ import {
  * 3. Otherwise each calendar month of service dates whose newest line no run covers (no queued, running
  *    or complete run of the practice whose period holds the whole month and whose cut-off is at or after
  *    that line's load) gets a run for that month, created the way a person creates one
- *    (createPricingRun: the release in force, the period's plans, MAP-01's refusal of a plan with no
- *    mapping), in the job's own name. A month refused for an unmapped plan waits for its mapping; a month
- *    whose lines are all reversals has nothing to price.
+ *    (createPricingRun: the release in force, the period's plans, and MAP-07's refusal of a period none of
+ *    whose lines has a mapping in force on its date), in the job's own name. A month none of whose lines is
+ *    mapped on its date waits for a mapping (decided per line date, PR #95 review R3N-1: a mapping only for
+ *    other dates does not count); in any other month a plan with no mapping leaves its own lines NO_MAPPING while the rest
+ *    price (MAP-01, MAP-06; combined audit #32, docs/adr/0075); a month whose lines are all reversals has
+ *    nothing to price. A job queued by a mapping names the months it may plan (D20): only those of them no
+ *    run covers are planned, each through steps 4 and 5 and the mapping check as any month, so a mapping's
+ *    job never prices a month still waiting on another plan's mapping.
  * 4. A month waits on the practice's pricing location (audit #33 and #7; docs/adr/0064), with no run
  *    created: while the practice has no location at all (createPricingRun refuses, PricingLocationWaiting),
  *    and while the newest run of that exact month failed location_not_ready (a line needed a ZIP+4, or a
@@ -86,7 +91,7 @@ export type MonitorPlan =
       readonly outcome: 'planned';
       readonly releaseNo: number;
       readonly created: readonly CreatedMonthRun[];
-      /** Months refused while a plan of their lines has no mapping (MAP-01). */
+      /** Months none of whose lines has a mapping of its plan in force on its date (MAP-07): no run, since it would price nothing. */
       readonly waitingOnMapping: readonly PlannedMonth[];
       /** Months waiting on the practice's location: none created while it is missing, or its last run failed location_not_ready. */
       readonly waitingOnLocation: readonly WaitingMonth[];
@@ -113,8 +118,11 @@ export async function pendingDocuments(client: ScopeClient, practiceId: string):
 /**
  * The months of service dates (a line's own date, else its claim's first) whose newest line, of any
  * claim (a reversal included: it changes how its original prices), no run of the practice covers.
+ * With `only` (first days of months, YYYY-MM-01), just those of them: a mapping's monitoring job plans
+ * the months it names and no other (D20; combined audit #32). Exported to the web through
+ * @tp/worker/pricing, whose screens read the same months (without `only`).
  */
-export async function uncoveredMonths(client: ScopeClient, practiceId: string): Promise<PlannedMonth[]> {
+export async function uncoveredMonths(client: ScopeClient, practiceId: string, only?: readonly string[]): Promise<PlannedMonth[]> {
   const { rows } = await client.query<{ period_from: string; period_to: string }>(
     `WITH line_months AS (
        SELECT date_trunc('month', coalesce(l.service_date, c.service_from))::date AS month_start, max(l.created_at) AS newest
@@ -130,9 +138,14 @@ export async function uncoveredMonths(client: ScopeClient, practiceId: string): 
         SELECT 1 FROM pricing_run r
          WHERE r.practice_id = $1 AND r.status <> 'failed'
            AND r.period_from <= m.month_start AND r.period_to >= m.month_end
-           AND coalesce(r.lines_loaded_by, r.created_at) >= m.newest)
+           AND coalesce(r.lines_loaded_by, r.created_at) >= m.newest)${
+        only === undefined
+          ? ''
+          : `
+        AND m.month_start = ANY ($2::date[])`
+      }
       ORDER BY m.month_start`,
-    [practiceId],
+    only === undefined ? [practiceId] : [practiceId, [...only]],
   );
   return rows.map((row) => ({ periodFrom: row.period_from, periodTo: row.period_to }));
 }
@@ -276,7 +289,12 @@ export async function queuedMonitoringRuns(client: ScopeClient, practiceId: stri
   return rows.map((row) => row.id);
 }
 
-export async function planMonitoring(scope: PracticeScope<ScopeClient>, practiceId: string, requestId: string): Promise<MonitorPlan> {
+/**
+ * Plans the practice's months (the steps of the module comment). `only`, the months a mapping's job names (their
+ * first days; D20), limits the plan to those of them still uncovered: each still goes through the location, content
+ * and "nothing mapped" checks, in that order. Without it, every month no run covers is planned.
+ */
+export async function planMonitoring(scope: PracticeScope<ScopeClient>, practiceId: string, requestId: string, only?: readonly string[]): Promise<MonitorPlan> {
   const { client } = scope;
   // One plan of a practice at a time, whatever the queue does.
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended('monitor:' || $1::text, 0))", [practiceId]);
@@ -293,7 +311,7 @@ export async function planMonitoring(scope: PracticeScope<ScopeClient>, practice
   const waitingLocation: WaitingMonth[] = [];
   const waitingOnContent: ContentWaitingMonth[] = [];
   const spans = spansOnce(client);
-  for (const month of await uncoveredMonths(client, practiceId)) {
+  for (const month of await uncoveredMonths(client, practiceId, only)) {
     if (await waitingOnLocation(client, practiceId, month, releaseNo)) {
       // Its last run failed location_not_ready and nothing it depends on changed since: no run today.
       waitingLocation.push({ ...month, status: await locationStatus(client, practiceId, month, releaseNo) });
@@ -309,7 +327,8 @@ export async function planMonitoring(scope: PracticeScope<ScopeClient>, practice
       const run = await createPricingRun(scope, { practiceId, periodFrom: month.periodFrom, periodTo: month.periodTo, releaseNo, requestId });
       created.push({ ...month, pricingRunId: run.pricingRunId });
     } catch (error) {
-      if (error instanceof PricingRefusedError) {
+      if (error instanceof PricingRunNothingMapped) {
+        // No line of the month has a mapping in force on its date (MAP-07): it waits for one.
         waitingOnMapping.push(month);
       } else if (error instanceof PricingLocationWaiting) {
         waitingLocation.push({ ...month, status: error.status });

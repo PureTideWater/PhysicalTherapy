@@ -178,6 +178,26 @@ function Table({
   );
 }
 
+/**
+ * The plans of the run's lines that had no mapping when it was priced, after the coverage line, as the PDF prints it
+ * (combined audit #32, docs/adr/0075; PRC-30): "2 plans had no mapping when this run was priced; their lines are not
+ * priced (14 lines, $1,234.00 billed)." Past tense: the report is of one run, as priced (decision D8). Nothing when
+ * none had, or for a report stored before the figure was recorded.
+ */
+function UnmappedPlansSentence({ unmapped }: { readonly unmapped: AuditReportContent['coverage']['unmapped_plans'] }) {
+  if (unmapped === undefined || unmapped.plans === 0) {
+    return null;
+  }
+  const one = unmapped.plans === 1;
+  return (
+    <span data-state="unmapped-plans">
+      {' '}
+      <span className="font-mono tabular-nums">{unmapped.plans}</span> {one ? 'plan' : 'plans'} had no mapping when this run was priced; {one ? 'its' : 'their'} lines are not priced (
+      <span className="font-mono tabular-nums">{unmapped.lines}</span> {unmapped.lines === 1 ? 'line' : 'lines'}, <Money value={unmapped.charge_cents} /> billed).
+    </span>
+  );
+}
+
 /** The report's sections, kept apart: coverage, anomalies, validated discrepancies, actionable cases, evidence gaps. */
 export function ReportSections({ content, practiceId }: { readonly content: AuditReportContent; readonly practiceId: string }) {
   const money = (value: string | null) => (value === null ? 'not estimated' : <Money value={value} />);
@@ -189,6 +209,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <CardDescription>
             {content.coverage.priced_lines} of {content.coverage.lines} lines priced (<Money value={content.coverage.priced_charge_cents} /> of <Money value={content.coverage.charge_cents} /> billed), under rule
             release {content.run.release_no}, for service from {content.run.period_from} to {content.run.period_to}; windows judged on {content.as_of}.
+            <UnmappedPlansSentence unmapped={content.coverage.unmapped_plans} />
           </CardDescription>
         </CardHeader>
         <CardContent>

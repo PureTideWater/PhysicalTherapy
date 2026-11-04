@@ -90,7 +90,7 @@ export {
   resolveAgreement,
   scopeMatches,
 } from './resolver';
-export { type CoverageLine, type MappedLine, PricingRefusedError, type WaitingOnMapping, assertPricingAllowed, unmappedPlanIds, waitingOnMapping } from './coverage';
+export { type CoverageLine, type MappedLine, type WaitingOnMapping, unmappedPlanIds, waitingOnMapping } from './coverage';
 export { type CalendarInput, type DerivedCalendarEvent, deriveCalendarEvents } from './calendar';
 export {
   LOCATION_NOT_READY_STATUSES,
@@ -117,13 +117,13 @@ export {
   ContractDataError,
   type PlanWaitingOnMapping,
   type ReadRequest,
-  assertPracticePricingAllowed,
   dollarsWaitingOnMapping,
   loadAgreementRecords,
   loadDisputeWindows,
   loadMappings,
   loadRateRecords,
   loadVersions,
+  practiceUnmappedPlanIds,
 } from './load';
 export {
   ContractWorkflowError,

@@ -25,15 +25,17 @@ docs/runbooks/github-governance.md, "The default branch until launch"):
 
 | Ecosystem | Day (UTC) | Cooldown | Pull requests |
 | --- | --- | --- | --- |
-| npm | Thursday 04:31 | 3 days, every update type | one per group, at most 8: `browser-tests`, `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`; and `security` for security updates |
+| npm | Thursday 04:31 | 3 days, every update type | one per group, at most 8: `browser-tests`, `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`; and `security` for security updates; each dependency is in exactly one group (minor-and-patch excludes the others' patterns) |
 | GitHub Actions | Tuesday 04:37 | 7 days | one, every action |
 | the node image and compose's postgres | Wednesday 04:43 | 7 days | one, `container-images` |
 
 Majors are ignored for `@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`, the node image and
-compose's postgres: each moves in a pull request of its own (below). The ignores hold for security updates too, so an
-advisory fixed only in one of those majors raises an alert and no pull request: the weekly triage reads the alerts for
-that reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no
-ecosystem runs then.
+compose's postgres: each moves in a pull request of its own (below). Those entries name update types, and Dependabot
+applies an update-type ignore to version updates only (dependabot-core 85379652, `ignore_condition.rb`: a security job
+keeps only an entry's `versions`), so an npm advisory fixed only in one of those majors may still open a `security`
+pull request that crosses it, and one that opens none leaves only an alert: the weekly triage reads the alerts for that
+reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no ecosystem
+runs then.
 
 npm's cooldown equals the release age on purpose (the co-founder's CQ1 (a)). Dependabot hands pnpm its own release
 age whenever that is longer than the repository's: its update checker probes each candidate with the version's
@@ -43,6 +45,20 @@ direct dependency was younger than that. Do not add semver-specific days to the 
 only `default-days`.
 
 ## The weekly triage
+
+A pull request that changes `.github/dependabot.yml` merges only with its `.github/dependabot.yml` check green as well
+as CI-12: GitHub's own "Dependabot config file validation", which is not a required check. CI-12 proves what the file
+means, not that GitHub accepts it, and GitHub stops using a file it rejects, with only a banner to say so.
+
+A merge that changes `.github/dependabot.yml` on the default branch starts Dependabot at once, under the new file: #27's
+merge (2026-10-20T22:24:07Z) started the npm, actions and docker version runs at 22:24:13Z (39507843042, 39507843420,
+39507843520) and a recreate of the open `minor-and-patch` pull request at 22:24:15Z (39507847707). A recreated group
+pull request whose dependencies changed is closed ("dependencies changed") and replaced under a new number (#89 by #97
+on 2026-11-02); one whose target versions changed is left to GitHub, which that day re-pushed #88 in place, under its
+own number and branch, and otherwise closes it as superseded by the new one; and one with nothing left to update is
+closed with none (dependabot-core 85379652, `group_update_refreshing.rb`). On the day of such a merge, read those runs
+as step 1 does, with `since` the merge's date, and record which bot pull requests were closed, re-pushed, replaced or
+opened.
 
 Once a week, after Thursday's npm batch:
 
@@ -58,7 +74,36 @@ Once a week, after Thursday's npm batch:
    Open each `failure` and read its log; fix the cause in a pull request (run 40223237798 of 2026-10-25 is the
    example: every npm update failed with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, because a locked version was under
    three days old). A successful run whose log says "release-age block detected" dropped a version without a pull
-   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it.
+   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. The routing
+   broke, and `.github/dependabot.yml` needs a fix (CI-12), when the npm run's log has any
+   `belongs to more specific group` line, or a `groups where no dependencies match` warning or a
+   `does not match any allowed dependencies` line naming a group whose packages are still in the manifests (when a
+   group matches nothing, its packages went to another group or arrive ungrouped, and no "belongs to" line says so).
+   Read the log, green runs included. The `groups where no dependencies match` warning names its groups on the lines
+   after it, one `- <group>` each, so the last command lists them:
+
+   ```sh
+   run=<the npm run's id>
+   job=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/runs/$run/jobs" --jq '.jobs[0].id')
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
+     | grep -E 'Pulling image|belongs to more specific group|no dependencies match|does not match any allowed'
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
+     | awk '/no dependencies match/ { on = 1; next } on && $2 == "-" { print "matches nothing: " $3; next } { on = 0 }'
+   ```
+
+   GitHub picks the updater for each run, and the log names it:
+   `Pulling image ghcr.io/dependabot/dependabot-updater-npm:<commit>`. CI-12's model ports dependabot-core 85379652
+   (`tools/test/dependabot-config.test.ts`), and run 40818560725 ran dec480ad, whose `updater/`, `common/` and
+   `npm_and_yarn/` equal 85379652's. When the commit differs from the last triage's, check the four files of the
+   group assignment in a blobless clone of dependabot-core:
+
+   ```sh
+   git diff --quiet 85379652 <commit> -- common/lib/dependabot/dependency_group.rb common/lib/wildcard_matcher.rb \
+     updater/lib/dependabot/dependency_group_engine.rb updater/lib/dependabot/updater/pattern_specificity_calculator.rb
+   ```
+
+   If it reports a difference, read the change against CI-12's port, record it, and amend the port in a pull request
+   when the routing changes.
 2. **Each open Dependabot pull request.** Read its checks, then its changes:
    - all green: read the release notes of every major or minor in it for a change in behaviour our code relies on,
      then take it as a pull request of the build's own: merge the build branch in, add what the notes call for, and
@@ -66,7 +111,13 @@ Once a week, after Thursday's npm batch:
    - red: read the failing check. A red test that names a real incompatibility is the update's work; a red check that
      is not about the update (a flaky journey, a runner lost) is fixed or re-run as any other (docs/runbooks/ci.md);
    - `browser-tests`: red by design (below);
-   - a group that moves a money closure's packages runs mutation in full; read its survivors like any other.
+   - a group that moves a money closure's packages runs mutation in full; read its survivors like any other;
+   - check that each group's pull request holds only its group's members; a replacement taken as the build's own pull
+     request closes the bot's with a comment naming it and its merge commit, once it merges (never
+     `@dependabot ignore`). Closing a grouped pull request ignores nothing. Closing an individual (ungrouped) one makes
+     Dependabot skip that exact version for good ("OK, I won't notify you again about this release", #16 and #17): the
+     version stays in each job's `existing-pull-requests`, and `@dependabot show` does not list it. Close an
+     individual one only when the replacement took that version or a newer one, and say which in the comment.
 3. **Open Dependabot alerts.** An alert can stand with no pull request behind it, so read the alerts, not only the
    pull requests:
 
@@ -76,27 +127,50 @@ Once a week, after Thursday's npm batch:
        (.security_vulnerability.first_patched_version.identifier // "no fix"), .html_url] | @tsv'
    ```
 
-   For each, find the `security` group's pull request that fixes it. When there is none:
-   - **the fix is only in a major the file ignores** (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`,
-     `pg-boss`): a file `ignore` entry applies to security updates too, so Dependabot opens nothing. (Alerts cover the
-     npm packages and the actions; the images' advisories surface in the images job's scan.) Handle it by hand as a
+   For each, find the `security` group's pull request that fixes it. One that crosses a major the file ignores
+   (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`) can open, since those entries bind
+   version updates only (above): read it as the deliberate upgrade it is (below, "The upgrades made on purpose"). When
+   there is none:
+   - **the fix is only in a major the file ignores, and no `security` pull request takes it**: handle it by hand as a
      deliberate upgrade (below, "The upgrades made on purpose"), in its own pull request, at once for a moderate or
      worse advisory on anything the product runs; if the advisory cannot reach what we run, record why in an audit
-     exception (below) instead;
+     exception (below) instead (alerts cover the npm packages and the actions; the images' advisories surface in the
+     images job's scan);
    - **no fixed version yet**: an audit exception with its reason and expiry (below), and the alert read again weekly;
    - **the fix is under three days old**: the pull request is red until its dated exclude is added (below, "The
      release age"); add it when the fix cannot wait.
    Never dismiss an alert without a written reason in the alert and, for a dependency we run, the founder's agreement.
-4. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
-   `pnpm toolchain:check` warns of each on every run until then. Read the audit exceptions likewise: an entry nearing
+4. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below), and
+   every expired entry of `tools/check-action-pins/age-exceptions.json` and `tools/check-toolchain/image-age-exceptions.json`
+   (below, "Actions" and "Base images and PostgreSQL"); `pnpm toolchain:check` and `pnpm actions:check` warn of each on
+   every run until then, and of an entry whose pin or image no workflow, Dockerfile or compose file names any longer. Read the audit exceptions likewise: an entry nearing
    30 days is fixed or renewed (below).
 5. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
    why upstream moved it; a pin is a commit, so nothing we run changed, but a moved tag on a security tool is reported
    to the founder.
-6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
-   them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
-   `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist.
+6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file; the
+   file's `ignore` entries are the only ones meant to exist. Read them first without writing anything: the npm run's
+   `Job definition:` log line (the job of step 1) lists every ignore condition with its `source`, and as
+   `existing-pull-requests` the individual pull requests Dependabot treats as existing, closed ones included, whose
+   versions it will not propose again (step 2):
+
+   ```sh
+   definition=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" | grep -m1 'Job definition' \
+     | sed 's/^[^{]*//')
+   printf '%s' "$definition" | jq -r '.job["ignore-conditions"][] | [.["dependency-name"], .source] | @tsv'
+   printf '%s' "$definition" | jq -r '.job["existing-pull-requests"][] | [.["pr-number"],
+     (.dependencies | map(.["dependency-name"] + " " + .["dependency-version"]) | join(", "))] | @tsv'
+   ```
+
+   A condition whose `source` is not `.github/dependabot.yml` was stored by a comment. On 2026-10-29 all five came from
+   the file, and `existing-pull-requests` held the closed #16 (typescript 7.0.2) and #17 (`@types/node` 26.6.5), both
+   majors the file ignores anyway. `@dependabot show <dependency> ignore conditions` on any Dependabot pull request
+   lists one dependency's, and `@dependabot unignore <dependency>` removes one; both are comments, so writes.
+
+Record each weekly triage, steps 1-6 in order, with the runs and pull requests read and what was done, in the
+build's lane log on `claude/build-ops` (`lanes/lane-b.md` while Lane B runs the triage), or in the item's design when
+the triage belongs to an item.
 
 For the first four weekly batches after the switch, read the bot queue time as `docs/runbooks/ci.md` says.
 
@@ -226,16 +300,60 @@ lockfile entry against the release age and the trust policy on every install (`t
   capacity measurement. To read a digest by hand, take the field `digest` (the index digest) of
   `curl -sS https://hub.docker.com/v2/repositories/library/node/tags/24-trixie-slim`.
 - **The BuildKit builder, by hand.** Every `docker/setup-buildx-action` step (ci.yml's images job, release.yml,
-  release-dry-run.yml and screening-capacity.yml) sets
-  `driver-opts: image=moby/buildkit:vX.Y.Z@sha256:<index digest>`, one value on all four, and neither Dockerfile has a
+  release-dry-run.yml, release-capacity.yml and screening-capacity.yml) sets
+  `driver-opts: image=moby/buildkit:vX.Y.Z@sha256:<index digest>`, one value on all five, and neither Dockerfile has a
   `# syntax` line, so the builder and its frontend run by digest (docs/adr/0066, Part 2). Dependabot cannot update a
-  step's `driver-opts`, so `pnpm actions:check` reads Docker Hub on every networked run and warns when a newer
-  `vX.Y.Z` release was pushed three days ago or more, the release age the workspace holds every dependency to. On that
-  warning: read the release notes at github.com/moby/buildkit/releases; take the field `digest` (the index digest) of
-  `curl -sS https://hub.docker.com/v2/repositories/moby/buildkit/tags/vX.Y.Z`; and set the new string on all four
-  steps in one pull request. workflows.test.ts holds the four equal, check-action-pins fails a new builder whose tag is
-  not that digest, and the images job and the release's dry run prove the build. Never take a `nightly`, `master` or
-  `-rc` tag, which the check does not offer.
+  step's `driver-opts`, so `pnpm actions:check` reads Docker Hub on every networked run (waiting out a rate limit for
+  the time Hub names, at most 60 s) and warns when a newer `vX.Y.Z` release was pushed at least the release age ago
+  (`minimumReleaseAge`, three days). On that warning: read the release notes at github.com/moby/buildkit/releases; take
+  the field `digest` (the index digest) of `curl -sS https://hub.docker.com/v2/repositories/moby/buildkit/tags/vX.Y.Z`;
+  and set the new string on all five steps in one pull request. workflows.test.ts holds the five equal,
+  check-action-pins fails a new builder whose tag is not that digest, `pnpm toolchain:check` holds the new digest to
+  three days from its push (below), and the images job and the release's dry run prove the build. Never take a
+  `nightly`, `master` or `-rc` tag, which the check does not offer.
+- **Every image held to three days** (docs/adr/0066, Part 5). `pnpm toolchain:check` reads Docker Hub for every digest
+  the pull request names that its base names nowhere: the Dockerfiles' `FROM` lines and frontend, read as BuildKit
+  v0.34.1 reads them (a `# syntax=` or `//syntax=` line, after a byte-order mark or a `#!` line), the compose file's
+  services (merge keys honoured), the builder above, and any workflow job container, service container, `docker://` step
+  or setup-qemu image. A digest passes when Docker Hub pushed it at least three days ago (the youngest of the tag's
+  `tag_last_pushed`, `last_updated` and its platforms' `last_pushed`); otherwise the step fails with the instant it is
+  old enough. What a change meets:
+  - Dependabot's images pull request writes the tag's current digest, which can be younger than its seven-day cooldown
+    (#33's was 5.14 days old); it passes from three days, and a re-run after the printed instant clears it.
+  - A digest the tag no longer names is looked for on the repository's most recently updated tags; found on none, it
+    fails, naming the tag's current digest and when that one is old enough, and no exclude clears it: pin a tag's
+    current digest.
+  - **A revert.** The exact revert of an images bump, back to a digest that a merge commit on the build branch's
+    first-parent history named (in an `apps/*/Dockerfile`, `docker-compose.yml` or a workflow) at least three days ago,
+    passes by that commit's time with no Docker Hub read, even after Docker Hub's tags stopped carrying it; the line
+    names the commit. A digest named there less than three days ago, or only by a merged side branch's own commits, is
+    read from Docker Hub as any other.
+  - An image from a registry other than Docker Hub is "age unprovable", since no push time is read there.
+  - Offline, every image is `name:tag@sha256:<64 hex>`, and a reference the rule does not read is refused:
+    - a `COPY --from=` or `RUN --mount=…,from=` naming an image (an ONBUILD trigger's too), and a Dockerfile line the
+      reader cannot place: a JSON Dockerfile, one BuildKit would not parse, a `FROM` line BuildKit does not read as a
+      `FROM` instruction (a heredoc's body, a continuation), a `from=` outside every COPY and RUN;
+    - on a build-push-action step: any `build-contexts`, a `BUILDKIT_SYNTAX` build-arg, a `context:` outside the
+      checkout, a literal `file:` other than `apps/<name>/Dockerfile`, a cache other than `type=gha`, an SBOM scan;
+    - another tracked image file, by Docker's own names (`Dockerfile`, `Containerfile`, `Dockerfile.dev`,
+      `web.Dockerfile`, `compose.yaml`, `docker-compose.override.yml`; never `dockerfile.ts` or `dockerfiles.md`);
+    - a compose `build:`, `include:` or `extends:`;
+    - a setup-buildx step that names no builder image or whose driver is not `docker-container` or `docker`, a
+      setup-qemu step that names no image, and a `docker/bake-action` step.
+  - "hub.docker.com: the image reads stopped at their deadline (180 s)" is an outage: re-run the job.
+  - A push run only warns, an exceptions entry outside its window included: the pull request was the gate.
+- **An image exclude** in `tools/check-toolchain/image-age-exceptions.json`, only when the image cannot wait. Each entry
+  names one exact `image` (`name:tag@sha256:<64 hex>`), its `kind`, `advisory`, `reason`, `added` and `expires` (UTC
+  instants), and waives one requirement:
+  - `security-fix`, for a young digest that fixes an advisory (a GHSA or CVE id) and `fixes: { package, version }`, the
+    package the advisory is against and the version the image now carries. It waives the release age only: the expiry
+    is no earlier than the push time plus three days and no later than seven days after `added`. The advisory is held
+    for form only (no registry answers for it), so the pull request's description says how the fix was verified, and a
+    digest found on no tag passes under no entry.
+  - `age-unprovable`, for an image on a registry other than Docker Hub, with its reason; an expiry within seven days of
+    `added` and no advisory. It never applies to a Docker Hub image.
+  An expired entry fails only a pull request that edits the list, and warns elsewhere until the weekly triage removes
+  it.
 - **Node 24 to 26, on a plan, before Gate 1.** Node 26 is LTS from 2026-10-28. One pull request moves the Dockerfiles'
   `FROM`, `.nvmrc`, `engines`, `@types/node` (major ignored until then) and the workflows' `node-version` together,
   and `mutation.yml`'s exact Node with `tools/stryker/unicode.json` after the Unicode-bound equivalents are checked
@@ -272,9 +390,31 @@ lockfile entry against the release age and the trust policy on every install (`t
   `typescript <6.1.0`); `typecheck.sh`'s time and `pnpm typecheck`'s are re-measured.
 - **The Anthropic SDK.** The `anthropic-sdk` group is never merged as it stands: a model-gateway change passes the
   evaluation gate first (packages/model-gateway; PRD 18), in a deliberate pull request.
-- **AWS.** `aws-cdk` with `aws-cdk-lib` and `constructs`, and `@aws-sdk/*`, come in their groups (minor and patch).
-  `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one.
-  `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation.
+- **AWS.** `aws-cdk`, `aws-cdk-lib` and `constructs` come in the `aws-cdk` group and `@aws-sdk/*` in the `aws-sdk`
+  group, minor and patch only; minor-and-patch excludes their patterns, so none of them comes in its pull request.
+  `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one. The CLI
+  moves with the library: a library's cloud assembly names the oldest CLI that reads it (`minimumCliVersion`).
+  `infra/test/cli-settings.test.ts` asks the installed CDK CLI whether its telemetry is off (its
+  `cli-telemetry --status`, under the synth script's variables), runs it with and without `--no-notices` to see that
+  the flag stops the notices fetch, and fails when its `lib/index.js` no longer skips the version check on
+  `CDK_DISABLE_VERSION_CHECK`. When it fails on a CDK CLI bump, read `canCollectTelemetry`, the `--no-notices`
+  handling and `shouldDisplayVersionMessage`, and change the settings and the test together.
+  `@aws-sdk/*` reaches pricing and packets through `packages/contracts` and `packages/db`'s manifests and the lockfile,
+  so its pull request runs those packages' mutation.
+  No CI job runs the SDK over a real socket or inside the worker's esbuild bundle (the capacity job uses local
+  providers, e2e imports the sources, the images job only builds), so an `@aws-sdk/*`, `@smithy/*` or
+  credential-provider move is also compared, base against head, over real sockets to local stubs and in the worker's
+  bundle: Bedrock over HTTP/2, S3 multipart with 100-continue and checksum validation, KMS, SES, RDS, and ECS
+  container credentials.
+  A `@aws-sdk/client-textract` or `@smithy/core` move is a Textract-reader bump (docs/adr/0070): `pnpm test:golden`
+  reads the evaluation's scans through a real `TextractClient` answering from their recordings
+  (`packages/model-gateway/eval/sets.ts`), so a move that changes the pages as read fails `set_changed`
+  (docs/runbooks/model-evaluation.md, section 5).
+- **Stripe.** `packages/billing` passes no `apiVersion` (`stripe.ts`, ADR 0050), so a `stripe` release that moves the
+  API version it pins (its CHANGELOG says so) moves every request's `Stripe-Version`. Webhook payloads follow the
+  webhook endpoint's own API version, set in Stripe (docs/runbooks/billing.md), and billing parses them with its own
+  schema (`packages/billing/src/events.ts`): read the new version's change notes against `events.ts`, and record the
+  endpoint's version in the pull request (a person's check).
 
 ## Actions
 
@@ -284,3 +424,45 @@ seven days old. The workflow tests find steps by the action's name, so a pin bum
 a changed default. `publish-content.yml` takes the same pins under the founder's standing exception F4; any other change
 to it fails its frozen-copy test. An action added by hand is pinned the same way, at its latest release
 (docs/runbooks/ci.md, "Changing CI").
+
+**Every new pin held to three days** (docs/adr/0066, Part 5). A pin no workflow of the base names passes only when its
+commit is on its repository's default branch, its tag still names it, and it is at least three days old by the youngest
+time read: the committer and author dates, an annotated tag's tagger date, the web-flow signature, and on CI GitHub's
+`verified_at` (with its `reason`), the release's `published_at` and `immutable`, and the push that brought it onto the
+default branch when GitHub's activity answers. One of them must be a time GitHub recorded: on CI a `verified_at` or an
+immutable release's `published_at`. What a change meets:
+- Dependabot's actions pull request is seven days old by its own date and passes on honest dates. It trips only when
+  another time is younger: a tag moved to a newer commit ("tag moved", both commits named), or a late `verified_at`.
+- A hand bump to a release three to six days old passes; under three days it fails, naming every time read, its
+  source and "old enough from <instant>". Wait, or for a security fix add an exclude (below).
+- **A late `verified_at`.** GitHub records it the next time it verifies an older commit's signature, which can be this
+  check. When it is the youngest time and more than three days after every other, the message names the instant to
+  re-run the check after; no exclude is needed.
+- "not on <branch>": the commit is not on the default branch. Choose a release on it; a release made on a maintenance
+  branch, as GitHub's guidance for action authors allows, takes an `off-default-branch` exclude.
+- "age unprovable": an unsigned commit with no immutable release, or on CI a `verified_at` that is null. Choose a
+  release GitHub signed or published immutable, or add an `age-unprovable` exclude with its reason.
+- A time in the future makes the pin young until then, and no exclude clears it: choose another release.
+- "… failed 3 times …" or "the age reads stopped at their 180 s deadline": GitHub did not answer; re-run the job.
+- A file in a subdirectory of `.github/workflows` fails offline: GitHub never runs it and the check never reads it, so
+  a pin parked there would vouch for nothing. Keep drafts outside `.github/workflows`.
+- A push run only warns, for a pin new against the previous head as for any other: a failed read, a moved tag, a pin
+  left unread at the deadline. A problem in what was read (an input, a nested action, an `action.yml` that does not
+  parse) stays an error. A push that aged a pin also compares GitHub's published web-flow keys with
+  `tools/check-action-pins/github-web-flow.asc`, and warns of a rotation: add the new key to the file.
+
+**An action exclude** in `tools/check-action-pins/age-exceptions.json`, one entry per pin and kind: `pin`
+(`owner/repo@<40 hex>`, exact, no pattern), `version` (the pin's `# vX.Y.Z`), `kind`, `advisory`, `reason`, `added` and
+`expires` (UTC instants). Each kind waives one requirement and nothing else:
+- `security-fix` waives the release age only, with the advisory's GHSA id. The expiry is no earlier than the pin's
+  youngest time plus three days and no later than seven days after `added`. On CI the check reads the advisory from
+  GitHub's advisory database: it must not be withdrawn, and must list a vulnerability in the `actions` ecosystem for
+  that repository whose range covers the version the base pins and not the new one; an action the base does not pin is
+  refused. This read has not yet run live (no such exclude has existed), so the first one is watched in its run's log.
+- `age-unprovable` waives only the need for a time GitHub recorded; `off-default-branch` only the default-branch rule.
+  Each takes `advisory: null`, a reason, and an expiry within seven days of `added`, and is refused when what it waives
+  holds (the age is known, or the pin is on the default branch). Under either the pin is still held to three days by
+  every time read, so the exclude never shortens the wait. A pin needing two waivers carries two entries.
+
+An expired entry fails only a pull request that edits the list, and warns elsewhere until the weekly triage removes it;
+an entry for a pin no workflow uses warns too.

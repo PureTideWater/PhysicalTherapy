@@ -69,7 +69,7 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly contractRequired: ScreeningGroupTotals;
   /** Medicaid and other rows. */
   readonly notScreened: ScreeningGroupTotals;
-  /** Medicare rows the engine left unpriced, or whose rates change inside the quarter. */
+  /** Medicare rows PaidWhole could not price, or whose rates change within the quarter. */
   readonly couldNotPrice: ScreeningGroupTotals;
   /** Rows of fewer than 11 claim lines the browser left out before sending: in no other figure. */
   readonly leftOut: ScreeningGroupTotals;
@@ -88,6 +88,20 @@ export function ScreeningMoney({ cents, className }: { readonly cents: Cents; re
 export function ScreeningCount({ value }: { readonly value: number }) {
   return <span className="font-mono tabular-nums">{value.toLocaleString('en-US')}</span>;
 }
+
+/** Nothing in a cell or a field, said as None to a screen reader where the eye sees a dash. */
+export function None() {
+  return (
+    <span className="text-muted-foreground">
+      <span aria-hidden="true">—</span>
+      <span className="sr-only">None</span>
+    </span>
+  );
+}
+
+/** The result's names for a count and for the file's own figure: one string each for every card, header and stacked term. */
+export const CLAIM_LINES = 'Claim lines';
+export const ALLOWED_IN_FILE = 'Allowed in your file';
 
 /**
  * Which side of a figure an allowed total sits, in words, never by color alone. The figure is named, since a code in
@@ -118,10 +132,10 @@ function GroupStats({ group, slot }: { readonly group: ScreeningGroupTotals; rea
       <Stat label="Rows" slot={`${slot}-rows`}>
         <ScreeningCount value={group.rows} />
       </Stat>
-      <Stat label="Claim lines" slot={`${slot}-claim-lines`}>
+      <Stat label={CLAIM_LINES} slot={`${slot}-claim-lines`}>
         <ScreeningCount value={group.claimLines} />
       </Stat>
-      <Stat label="Allowed in your file" slot={`${slot}-allowed`}>
+      <Stat label={ALLOWED_IN_FILE} slot={`${slot}-allowed`}>
         <ScreeningMoney cents={group.observedCents} />
       </Stat>
     </dl>
@@ -224,7 +238,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
             <Stat label={MEDICARE_FIGURE_LABEL} slot="priced-expected">
               <ScreeningMoney cents={priced.expectedCents} />
             </Stat>
-            <Stat label="Allowed in your file" slot="priced-allowed">
+            <Stat label={ALLOWED_IN_FILE} slot="priced-allowed">
               <ScreeningMoney cents={priced.observedCents} />
             </Stat>
             <Stat label={DIFFERENCE_LABEL} slot="priced-difference">
@@ -240,7 +254,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
                   {counted(priced.pooledRows, 'row')} of a code in the reduction across codes fully reduced; the others at their one figure.
                 </span>
               </Stat>
-              <Stat label="Allowed in your file" slot="priced-reduced-allowed">
+              <Stat label={ALLOWED_IN_FILE} slot="priced-reduced-allowed">
                 <ScreeningMoney cents={priced.observedCents} />
               </Stat>
               <Stat label={REDUCED_DIFFERENCE_LABEL} slot="priced-reduced-difference">
@@ -264,7 +278,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
         <Card data-section="could-not-price">
           <CardHeader>
             <CardTitle>Could not be priced</CardTitle>
-            <CardDescription>Medicare rows the engine left without a price, or whose rates change inside the quarter; the reasons are under coverage below.</CardDescription>
+            <CardDescription>Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each outcome, and the reason for a row PaidWhole could not price.</CardDescription>
           </CardHeader>
           <CardContent>
             <GroupStats group={summary.couldNotPrice} slot="could-not-price" />

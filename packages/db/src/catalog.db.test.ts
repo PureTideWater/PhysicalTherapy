@@ -112,6 +112,9 @@ describe('the catalog test', () => {
       { table_name: 'source_document', policy_name: 'source_document_tenant' },
       { table_name: 'submission', policy_name: 'submission_tenant' },
       { table_name: 'support_grant', policy_name: 'support_grant_tenant' },
+      // A break-glass notice and its recipients (migration 20261107090000): no PHI, registered for their practice_id.
+      { table_name: 'support_grant_notice', policy_name: 'support_grant_notice_tenant' },
+      { table_name: 'support_grant_notice_recipient', policy_name: 'support_grant_notice_recipient_tenant' },
     ]);
     expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event', 'eval_example', 'model_call']);
     expect(await tenantTables(client)).toEqual([
@@ -164,6 +167,8 @@ describe('the catalog test', () => {
       { table: 'source_document', tenantColumn: 'practice_id' },
       { table: 'submission', tenantColumn: 'practice_id' },
       { table: 'support_grant', tenantColumn: 'practice_id' },
+      { table: 'support_grant_notice', tenantColumn: 'practice_id' },
+      { table: 'support_grant_notice_recipient', tenantColumn: 'practice_id' },
     ]);
   });
 

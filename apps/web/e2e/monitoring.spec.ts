@@ -101,7 +101,7 @@ test('the chain plans, prices, triages and tells the practice; the monthly diges
       await page.goto(`/p/${practiceId}`);
       await expect(page.locator('[data-figure="actionable"]')).toContainText('$90.00');
       await expect(page.locator('[data-figure="payer-approved"]')).toContainText('$0.00');
-      await expect(page.locator('[data-figure="recovered-total"]')).toContainText('$0.00');
+      await expect(page.locator('[data-figure="recovered-to-date"]')).toHaveText('$0.00');
       await expect(page.locator('[data-figure="coverage"]')).toContainText('3 of 3 lines priced (100.0%)');
       await expect(page.locator('[data-figure="deadlines"]')).toContainText('1 case, $90.00 actionable');
       await expect(page.locator('[data-figure="last-run"]').locator('[data-outcome]')).toHaveAttribute('data-outcome', 'succeeded');

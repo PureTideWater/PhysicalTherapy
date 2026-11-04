@@ -213,9 +213,9 @@ interface OriginalRow {
  * would not be against the pricing a person replaces (PRC-28); while a first run of overlapping dates is
  * queued or being priced (PRC-27), since it would supersede the re-run as soon as it completes; and a release
  * that is not the one in force. No lock: a re-run created beside a completion is judged when it is accepted,
- * under the lock. Its lines are the original's, whose plans were all mapped when it was created and stay
- * mapped (a mapping is corrected, never removed); the price job checks MAP-01 again when it executes the
- * re-run, as it does for every run.
+ * under the lock. It prices the same lines as the original (the original's cut-off), under the mappings
+ * read when it prices: a plan mapped since leaves NO_MAPPING (PRC-29), and any plan still unmapped stays
+ * NO_MAPPING, line by line, while every other line prices (MAP-01; combined audit #32, docs/adr/0075).
  */
 export async function createRerun(scope: PracticeScope<ScopeClient>, input: CreateRerunInput): Promise<CreatedRerun> {
   const { rows } = await scope.client.query<OriginalRow>(

@@ -256,6 +256,20 @@ describe('asking for upload URLs', () => {
     expect(await call(requestUploads, viewer, practice(), { files: [file] })).toMatchObject({ status: 'forbidden', permission: 'file.upload' });
   });
 
+  it('refuses a file with no kind, an empty one or one it does not know, and records nothing (the server’s own rule; docs/adr/0070, Part 3)', async () => {
+    // The upload panel leaves the kind unchosen on the Contracts and Reconciliation screens until the person picks one;
+    // a request made around the panel is held to the same rule here, so no file is ever filed under a kind by default.
+    const file = { kind: 'contract', contentType: 'application/pdf', sizeBytes: 100 };
+    const { kind: _kind, ...kindless } = file;
+    const count = async () => (await owner.query<{ n: string }>('SELECT count(*)::text AS n FROM source_document WHERE practice_id = $1', [world.practiceId])).rows[0]?.n;
+    const before = await count();
+    for (const files of [[kindless], [{ ...file, kind: '' }], [{ ...file, kind: 'eob' }], [{ ...file, kind: null }], [file, kindless]]) {
+      const position = files.length - 1;
+      expect(await call(requestUploads, manager, practice(), { files }), String(position)).toMatchObject({ status: 'invalid', issues: [{ field: `files.${String(position)}.kind` }] });
+    }
+    expect(await count()).toBe(before);
+  });
+
   it('records an ERA export with the system it came from, requires the format of an ERA export and of no other file (docs/adr/0060)', async () => {
     const era = { kind: 'era_export', contentType: 'text/csv', sizeBytes: 100, formatId: 'spry_era_v0' };
     const [document] = ok(await call(requestUploads, manager, practice(), { files: [era] })).documents;

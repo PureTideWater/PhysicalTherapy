@@ -216,7 +216,7 @@ export default async function ContractsPage(props: Props) {
             canUpload={upload.canUpload}
             roleNames={roleNames(roles)}
             gate={upload.gate}
-            limits={{ ...upload.limits, contentTypes: upload.kinds[0]?.contentTypes ?? [] }}
+            limits={{ ...upload.limits, contentTypes: [...new Set(upload.kinds.flatMap((kind) => kind.contentTypes))] }}
             kinds={upload.kinds}
             heading="Choose contracts, exhibits or payer’s terms letters to upload"
             headingLevel={3}

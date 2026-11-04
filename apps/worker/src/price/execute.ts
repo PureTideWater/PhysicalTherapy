@@ -1,4 +1,4 @@
-import { type AgreementRecords, LOCATION_NOT_READY_STATUSES, PricingRefusedError, agreementResolver, assertPricingAllowed, loadAgreementRecords } from '@tp/contracts';
+import { type AgreementRecords, LOCATION_NOT_READY_STATUSES, agreementResolver, loadAgreementRecords, unmappedPlanIds } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 import {
@@ -45,8 +45,12 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *
  * - The run is taken from queued to running in a transaction of its own, so its screen says so.
  * - A run whose engine version is not this engine's fails (engine_version_mismatch): a run is priced
- *   only by the engine it records. A run over a plan with no mapping at all fails (unmapped_plan),
- *   whatever was loaded since the run was created (MAP-01). Neither retries: retrying changes nothing.
+ *   only by the engine it records. It does not retry: retrying changes nothing.
+ * - A plan with no mapping at all fails nothing (combined audit #32, docs/adr/0075; MAP-01, MAP-06): each of
+ *   its lines the resolver reaches is left NO_MAPPING, one by one, and every other line prices. The run's
+ *   coverage records those plans with all their lines and billed cents (tp-pricing-coverage/2, PRC-30), from
+ *   the same mappings the resolver priced with. A mapping is corrected, never removed, so a run whose plans
+ *   were mapped at creation still has them mapped here.
  * - One run of a practice executes at a time (a transaction-scoped advisory lock per practice), and
  *   a run already complete or failed is left as it is, so a replayed job has no effect (JOB-01).
  * - A run's completed_at is its pricing transaction's now(), stamped when the transaction began, before
@@ -88,6 +92,10 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *   before any stop is raised. The transaction is rolled back either way.
  */
 
+/**
+ * Why a run failed. unmapped_plan is historical: runs over a plan with no mapping failed with it before
+ * combined audit #32 (docs/adr/0075), and those rows keep it; no run fails with it now.
+ */
 export type FailureCode = 'engine_version_mismatch' | 'unmapped_plan' | 'job_failed' | 'location_not_ready' | 'release_read_outside_fetch' | ContentFailureCode;
 
 export type ExecuteOutcome =
@@ -373,15 +381,9 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     const lines: RunScope = { practiceId, periodFrom: run.period_from, periodTo: run.period_to, loadedBy: run.cut_off };
     const request = { practiceId, requestId: context.jobId, purpose: 'pricing' };
     const records = await loadAgreementRecords(scope, request);
-    try {
-      assertPricingAllowed(await runPlans(scope.client, lines), records.mappings);
-    } catch (error) {
-      if (!(error instanceof PricingRefusedError)) {
-        throw error;
-      }
-      await failRun(scope.client, practiceId, pricingRunId, 'unmapped_plan');
-      return { outcome: 'failed', failureCode: 'unmapped_plan' };
-    }
+    // The plans of the run's lines with no mapping in the very records the resolver prices with (PRC-30): their
+    // lines are never priced, and the coverage records them. Nothing is refused for them (combined audit #32).
+    const unmapped = unmappedPlanIds(await runPlans(scope.client, lines), records.mappings);
     const source = await storedReleaseSource(scope.client, run.release_no);
     const settings = await runSettings(scope.client, practiceId, pricingRunId);
     const stops = locationStops(await pricedLocationStatus(scope.client, run, settings));
@@ -446,7 +448,7 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       throw new ContentNotLoaded(contentFailureCode(families), gapLines + alertLines, operatorLines);
     }
     loudLines = alertLines;
-    const coverage = await computeCoverage(scope.client, pricingRunId);
+    const coverage = await computeCoverage(scope.client, pricingRunId, unmapped);
     await scope.client.query("UPDATE pricing_run SET status = 'complete', coverage = $2, completed_at = now() WHERE id = $1", [pricingRunId, JSON.stringify(coverage)]);
     return { outcome: 'complete', coverage };
   });

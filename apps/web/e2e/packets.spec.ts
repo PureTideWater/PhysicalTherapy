@@ -689,7 +689,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(approver.locator('[data-figure="recovered"]')).toContainText('$0.00');
       await approver.goto(`/p/${practiceId}`);
       await expect(approver.locator('[data-figure="payer-approved"]')).toContainText('$60.00');
-      await expect(approver.locator('[data-figure="recovered-total"]')).toContainText('$0.00');
+      await expect(approver.locator('[data-figure="recovered-to-date"]')).toHaveText('$0.00');
       assertNoPhi('url', approver.url(), { known: KNOWN });
     });
   } finally {

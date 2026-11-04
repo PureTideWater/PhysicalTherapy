@@ -264,6 +264,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     for (const name of TASKS) {
       const plain = environmentOf(definitions[name]);
       for (const variable of Object.keys(plain)) {
+        // The mail events queue's URL names a queue, not a login: no credential is in it (its access is the role's).
+        if (variable === 'MAIL_EVENTS_QUEUE_URL') {
+          continue;
+        }
         expect(variable, name).not.toMatch(/PASSWORD|SECRET|_URL$|USERNAME|LOGIN/);
       }
       expect(JSON.stringify(plain), name).not.toMatch(/SecretString|resolve:secretsmanager/);
@@ -363,6 +367,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       SCREENING_LAUNCH: SCREENING_CLOSED,
       // The "sent" page counts every slot busy at one task of three (Q12).
       SCREENING_SLOTS: '3',
+      // A screening's address is validated with SES at submit, under the day's cap (Q1 (g): 1,000 in production, 50
+      // elsewhere).
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: environment === 'production' ? '1000' : '50',
     });
     expect(plain.BEDROCK_REGION).toEqual(plain.AWS_REGION);
     expect(plain.KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));
@@ -383,6 +391,31 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(environmentOf(definitions.platform).DOCUMENTS_BUCKET).toBeUndefined();
     expect(environmentOf(definitions.worker)).toMatchObject({ MAIL_FROM: ref(PARAMETER_NAMES.mailFromAddress), DOCUMENTS_BUCKET: ref(logicalIdOf(stack, stack.storage.documents)) });
     expect(environmentOf(definitions.worker).AUDIT_COPY_BUCKET).toBeUndefined();
+  });
+
+  it('names each sender\'s stream and the screening\'s own sender, and gives the event queue and the phase to the platform alone (docs/adr/0065)', () => {
+    const screeningSender = {
+      'Fn::Join': ['', ['results@screening.', { 'Fn::Select': [1, { 'Fn::Split': ['@', ref(PARAMETER_NAMES.mailFromAddress)] }] }]],
+    };
+    for (const name of ['worker', 'platform', 'screening'] as const) {
+      expect(environmentOf(definitions[name]).MAIL_STREAM_PREFIX, name).toBe(`tp-${environment}`);
+    }
+    for (const name of ['platform', 'screening'] as const) {
+      expect(environmentOf(definitions[name]), name).toMatchObject({ SCREENING_MAIL_FROM: screeningSender, SCREENING_REPLY_TO: ref(PARAMETER_NAMES.supportEmail) });
+    }
+    expect(environmentOf(definitions.platform)).toMatchObject({
+      MAIL_EVENTS_QUEUE_URL: ref(logicalIdOf(stack, stack.mailStreams.queue)),
+      MAIL_IDENTITIES_VERIFIED: { 'Fn::If': ['MailIdentitiesReady', 'true', 'false'] },
+    });
+    for (const name of ['web', 'worker', 'screening', 'migration'] as const) {
+      expect(environmentOf(definitions[name]).MAIL_EVENTS_QUEUE_URL, name).toBeUndefined();
+      expect(environmentOf(definitions[name]).MAIL_IDENTITIES_VERIFIED, name).toBeUndefined();
+    }
+    expect(environmentOf(definitions.worker).SCREENING_MAIL_FROM).toBeUndefined();
+    // Only the web validates addresses.
+    for (const name of ['worker', 'platform', 'screening', 'migration'] as const) {
+      expect(environmentOf(definitions[name]).MAIL_VALIDATION, name).toBeUndefined();
+    }
   });
 
   it('names the static host to every task that sends email, the same host the web image loads its assets from', () => {
@@ -628,6 +661,6 @@ describe('the compute contract with the applications', () => {
     const pattern = (file: string) => /export const STATIC_ORIGIN_PATTERN = (\/.+\/);/.exec(source(file))?.[1];
     expect(pattern('apps/worker/src/config.ts')).toBeDefined();
     expect(pattern('apps/worker/src/config.ts')).toBe(pattern('apps/web/src/lib/http/security-headers.ts'));
-    expect(source('apps/worker/src/platform/wiring.ts')).toContain('sesMailSender(config.mail.from, config.staticAssetOrigin)');
+    expect(source('apps/worker/src/platform/wiring.ts')).toContain('configuredMailSender(config.mail, config.staticAssetOrigin)');
   });
 });

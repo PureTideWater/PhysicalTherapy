@@ -8,7 +8,7 @@ import type { ContractPagesInput, ContractTermsCandidate, ContractTermsProposal 
 import { sha256Hex } from './hash';
 import { PROMPTS } from './prompts';
 import { requestFor } from './specs';
-import { SYNTHETIC_IDS, localGateway, registerOutput } from './testing';
+import { SYNTHETIC_IDS, localGateway, registerOutput, syntheticPracticeCheck } from './testing';
 
 /**
  * The test matrix's synthetic contract cases (fixtures/synthetic/MOD-01, MOD-02 and MOD-04, generated
@@ -46,7 +46,7 @@ function agreement(caseId: string): ContractPagesInput {
       throw new Error(`${caseId}: page ${String(index + 1)} of the agreement's text is not where its banner says`);
     }
   }
-  return { documentId: SYNTHETIC_IDS.contract, documentSha256: sha256Hex(text), kind: 'contract', pages };
+  return { documentId: SYNTHETIC_IDS.contract, documentSha256: sha256Hex(text), kind: 'contract', pages, patientRecords: syntheticPracticeCheck() };
 }
 
 function proposal(caseId: string): FixtureField[] {

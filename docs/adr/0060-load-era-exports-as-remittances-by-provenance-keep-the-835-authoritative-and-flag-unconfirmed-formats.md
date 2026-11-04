@@ -273,3 +273,16 @@ The founder approved the domain model at this migration and ruled on the three q
   and plans do (MAP-01); nothing links them to an 835 payer by name.
 - **Both limits stand.** Place of service is a required column (an export without it is held with
   `export_column_missing`), and one export is at most 4 MiB; a longer period goes up as several files or a zip.
+
+## Amendment (`co-001/unmapped-plan`, 2026-11-01): an export's new plans no longer fail a run
+
+Combined audit #32 ("One unmapped plan freezes a whole month"), adopted by the founder with the whole audit on
+2026-10-20, with its milestone 3 exception; built under the founder's standing rule of 2026-10-18 and recorded in
+ADR [0075](0075-price-around-a-plan-with-no-mapping-and-price-its-months-again-from-the-mapping-screens-by-hand.md). Consequences, above, says that a practice's
+first export brings new `PLAN:` plans to the mapping queue "and a pricing run over them fails as `unmapped_plan`
+(MAP-01) until someone maps them". It no longer fails: a run over a period holding those plans prices every other line,
+the 835 lines of mapped plans included, and leaves each line of the export's unmapped plans unpriced as `NO_MAPPING`
+(MAP-01, MAP-06); only a period none of whose plans has a mapping gets no run (MAP-07). Coverage, Pricing runs and the
+home page count those plans, their lines and billed cents, and once they are mapped the mapping screens offer to price
+those months again, by hand (MAP-08). The Owner rulings below stand: no payer aliasing, so the export's payer and plans
+still need their own mappings.

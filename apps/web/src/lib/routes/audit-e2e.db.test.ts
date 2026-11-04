@@ -240,7 +240,7 @@ function jobContext(lastAttempt = false): JobContext {
 
 /**
  * Runs the queued jobs as the worker would, in order: intake, parse_835, the monitoring chain's planning
- * step the parse queues (the plans are not mapped yet when the file loads, so it prices nothing: MAP-01)
+ * step the parse queues (no plan is mapped yet when the file loads, so it prices nothing: MAP-07)
  * and the reconcile it queues for the document (docs/adr/0043; the ledger has nothing to do here),
  * price, triage, audit_report.
  */
@@ -431,8 +431,12 @@ describe('the synthetic audit, end to end (upload, parse, mapping, signed-off co
       const versionId = plan.contract === undefined ? undefined : await signedOffContract(plan.contract, payerId);
       ok(await call(mapPlanAction, manager, P(), { planId, kind: plan.mapping, contractVersionId: versionId ?? '', effectiveFrom: '2026-01-01' }));
     }
+    expect(queue.jobs).toEqual([{ type: 'monitor', payload: { practice_id: practiceId, request_id: expect.any(String) as unknown, months: ['2026-03-01'] } }]);
     runId = idIn(await call(createPricingRunAction, manager, P(), { fromMonth: inputs.run.from_month, toMonth: inputs.run.to_month, releaseNo: '900001' }), 'pricing-runs');
-    expect(await runQueue()).toEqual(['price']);
+    // Only the last mapping completes March (D2b), so it alone queued monitoring, of March only (D20), before the person's
+    // run queued its price job. The monitor found March covered by that queued run and created none.
+    expect(await runQueue()).toEqual(['monitor', 'price']);
+    expect((await owner.query<{ id: string; job: string | null }>('SELECT id, created_by_job_id AS job FROM pricing_run WHERE practice_id = $1', [practiceId])).rows).toEqual([{ id: runId, job: null }]);
     // Triage is a person's action on a complete run (the Cases screen), done by the triage job.
     ok(await call(triageRunAction, manager, P(), { runId }));
     expect(await runQueue()).toEqual(['triage']);

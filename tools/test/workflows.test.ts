@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
+import { readDockerfile } from '../check-toolchain/images';
 import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
@@ -1309,20 +1310,68 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   });
 });
 
+/** github.token as the runner reads it: its names in any case, spaces allowed around the dot (actions/runner, OrdinalIgnoreCase). */
+const GITHUB_TOKEN_NAMED = /\bgithub\s*\.\s*token\b/gi;
+/**
+ * The token by another name, in any case: secrets.GITHUB_TOKEN or secrets[…] (the same token), and the github context,
+ * which carries it, indexed, filtered (github.*), joined or as JSON, or toJSON(secrets).
+ */
+const TOKEN_ELSEWHERE = /\bsecrets\s*[.[]|\bgithub\s*\[|\bgithub\s*\.\s*\*|\bjoin\s*\(\s*github\b|\btojson\s*\(\s*(?:github|secrets)\b/gi;
+
+/**
+ * Where ci.yml hands a step the job's token (docs/adr/0066, Part 5; E8, S8): named once, as github.token in the Action
+ * pins step's env, and under no other name. GitHub reads an expression's context, property and function names ignoring
+ * case (actions/runner's ExpressionParser and DictionaryContextData), so every name is matched in any case and each
+ * step's text compared lower-cased (the reviews' CI-S1 and SEC-N2). Improve as you go: inside an expression, the github
+ * context is named only by a property (github.<name>), never whole, which would hand a step the token among the rest.
+ * The problems, or none.
+ */
+function tokenProblems(text: string): string[] {
+  const problems: string[] = [];
+  const named = text.match(GITHUB_TOKEN_NAMED) ?? [];
+  if (named.length !== 1) problems.push(`github.token is named ${String(named.length)} times, not once`);
+  const parsed = parse(text) as Workflow;
+  const holders = Object.entries(parsed.jobs).flatMap(([id, job]) =>
+    job.steps.flatMap((step, index) => (new RegExp(GITHUB_TOKEN_NAMED.source).test(JSON.stringify(step).toLowerCase()) ? [step.name ?? `${id} step ${String(index + 1)}`] : [])),
+  );
+  if (!isDeepStrictEqual(holders, ['Action pins'])) problems.push(`the steps naming github.token are ${JSON.stringify(holders)}, not the Action pins step alone`);
+  const pins = parsed.jobs.static?.steps.find((step) => step.name === 'Action pins');
+  if (pins?.env?.GITHUB_TOKEN !== '${{ github.token }}') problems.push(`the Action pins step's GITHUB_TOKEN is ${JSON.stringify(pins?.env?.GITHUB_TOKEN)}, not \${{ github.token }}`);
+  for (const match of text.matchAll(TOKEN_ELSEWHERE)) problems.push(`${match[0]}: reaches the token by another name`);
+  for (const [expression] of text.matchAll(/\$\{\{[\s\S]*?\}\}/g)) {
+    // String literals dropped first, so 'https://github.com' or 'github-x' in one is no name.
+    if (/\bgithub\b(?!\s*\.\s*[A-Za-z_])/i.test(expression.replace(/'(?:[^']|'')*'/g, "''"))) problems.push(`${expression}: names the whole github context, the token among it`);
+  }
+  return problems;
+}
+
 describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/adr/0066, Part 1)', () => {
   const ci = workflow('ci.yml');
   const JOBS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images', 'all-green'];
 
   it('runs on every pull request and every push to the build branch, with no path filter, a read-only token and bash with pipefail', () => {
     expect(ci.on).toEqual({ pull_request: null, push: { branches: ['claude/build-platform'] } });
-    // The whole workflow reads the repository and nothing more, and no checkout keeps the token.
+    // The whole workflow reads the repository and nothing more, no checkout keeps the token, and only the Action pins step is given it.
     expect(ci.permissions).toEqual({ contents: 'read' });
     for (const [id, job] of Object.entries(ci.jobs)) {
       for (const step of job.steps.filter((candidate) => usesAction(candidate, 'actions/checkout'))) {
         expect(step.with?.['persist-credentials'], id).toBe(false);
       }
     }
+    // The token is named once, in that step's env, and under no other name (tokenProblems).
+    expect(tokenProblems(readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8'))).toEqual([]);
     expect(ci.defaults).toEqual({ run: { shell: 'bash' } });
+  });
+
+  it('refuses the token handed to a second step under any spelling GitHub reads, its names in any case (the reviews’ CI-S1 and SEC-N2)', () => {
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    const toolchain = '        env: { BASE: "${{ steps.range.outputs.base }}" }\n        run: pnpm toolchain:check\n';
+    // The Toolchain step given the token as the reviewers wrote it: each reaches the same token, and the runner reads it.
+    const given = (value: string) => text.replace(toolchain, `        env: { BASE: "\${{ steps.range.outputs.base }}", T: "${value}" }\n        run: pnpm toolchain:check\n`);
+    const forms = ['${{ GITHUB.TOKEN }}', '${{ Secrets.GITHUB_TOKEN }}', '${{ ToJSON(GitHub) }}', "${{ join(github.*, ',') }}", '${{ github[\'token\'] }}', '${{ github . token }}', "${{ format('{0}', github) }}"];
+    expect(forms.map((form) => given(form) === text)).toEqual(forms.map(() => false));
+    expect(tokenProblems(given('${{ GITHUB.TOKEN }}'))).toEqual(['github.token is named 2 times, not once', 'the steps naming github.token are ["Action pins","Toolchain"], not the Action pins step alone']);
+    for (const form of forms) expect(tokenProblems(given(form)), form).not.toEqual([]);
   });
 
   it('groups a pull request’s runs by its number and a push’s by its commit, cancelling only a pull request’s older run', () => {
@@ -1393,12 +1442,17 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // The action pins and the toolchain, each once, after the install and the range step, against the range's base:
       // on every run, with no condition beyond the two steps they need (docs/adr/0066, Part 2).
       const range = stepIndex(steps(), (step) => step.id === 'range');
-      for (const run of ['pnpm actions:check', 'pnpm toolchain:check']) {
+      // The action pins step alone also gets the job's read-only token, for the age rule's API reads (Part 5); the
+      // toolchain reads npm and Docker Hub only.
+      for (const [run, env] of [
+        ['pnpm actions:check', { BASE: '${{ steps.range.outputs.base }}', GITHUB_TOKEN: '${{ github.token }}' }],
+        ['pnpm toolchain:check', { BASE: '${{ steps.range.outputs.base }}' }],
+      ] as const) {
         const at = stepIndex(steps(), (step) => step.run === run);
         expect(steps().filter((step) => step.run === run), run).toHaveLength(1);
         expect([at > install, at > range], run).toEqual([true, true]);
         expect(steps()[at]?.if, run).toBe("${{ !cancelled() && steps.install.outcome == 'success' && steps.range.outcome == 'success' }}");
-        expect(steps()[at]?.env, run).toEqual({ BASE: '${{ steps.range.outputs.base }}' });
+        expect(steps()[at]?.env, run).toEqual(env);
       }
       // Every step after the install runs on its own condition, so a red one leaves the others' verdicts.
       for (const step of steps().slice(install + 1)) expect(step.if, step.name ?? step.run ?? step.uses).toMatch(/^\$\{\{ (?:github\.event_name == 'pull_request' && )?!cancelled\(\)/);
@@ -1799,8 +1853,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     // Each archive's config digest, read from its bytes, is the one buildx reports for its build.
     const web = stepNamed(steps, 'The web archive holds the image buildx built');
     expect(web.if).toBe("${{ !cancelled() && steps.web.outcome == 'success' }}");
-    expect(web.env).toEqual({ METADATA: '${{ steps.web.outputs.metadata }}' });
-    expect(web.run).toContain(`built="$(jq -r '."containerimage.config.digest" // empty' <<< "$METADATA")"`);
+    expect(web.env).toEqual({ BUILT: "${{ fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(web.run).toContain('built="$BUILT"');
     expect(web.run).toContain(`read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"`);
     expect(web.run).toContain('if [ -z "$built" ] || [ "$read" != "$built" ]; then');
     // The worker's too, then it loads as the archive's top-level descriptor on the containerd store (its config digest
@@ -1808,7 +1862,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
     expect(worker.id).toBe('worker-identity');
     expect(worker.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
-    expect(worker.env).toEqual({ METADATA: '${{ steps.worker.outputs.metadata }}' });
+    expect(worker.env).toEqual({ BUILT: "${{ fromJSON(steps.worker.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(worker.run).toContain('built="$BUILT"');
     const script = worker.run ?? '';
     expect(script).toContain('identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"');
     expect(script).toContain('docker load --input "$RUNNER_TEMP/image/worker.tar"');
@@ -2211,6 +2266,8 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
     'tools/ci/browser-build.ts',
     'apps/web/e2e/browser.json',
     'apps/web/e2e/browser-builds/*',
+    // The pinned Trivy every build leg installs (tools/trivy/install.sh and its release.txt).
+    'tools/trivy/**',
   ];
   // Two of the release build's four legs: the web image (which stands for the capacity job's production web image) and
   // the worker image. web-staging and web-production differ from web only by a repository variable's static host.
@@ -2341,6 +2398,93 @@ describe('every checkout (CI-11)', () => {
         }
       }
     }
+  });
+});
+
+describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)', () => {
+  /** The step every job with a Trivy step runs first: the pinned release, its archive checked, onto this run's PATH. */
+  const INSTALL: Step = { name: 'The pinned Trivy', run: 'trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"\ndirname "$trivy" >> "$GITHUB_PATH"\necho "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"\n' };
+  /** A file's lines less its whole-line comments. */
+  const uncommented = (text: string) => text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+  const trivyJobs = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).filter(([, job]) => job.steps.some((step) => usesAction(step, 'aquasecurity/trivy-action'))).map(([id, job]) => ({ where: `${file} ${id}`, job })));
+
+  it('installs Trivy from its GitHub release, checked against tools/trivy/release.txt, before the first Trivy step of each job, and never by setup-trivy, whose installer downloads from get.trivy.dev', () => {
+    // ci.yml's images job, release.yml's build and the dry run's build: five Trivy steps in three jobs.
+    expect(trivyJobs().map(({ where }) => where)).toEqual(['ci.yml images', 'release-dry-run.yml build', 'release.yml build']);
+    for (const { where, job } of trivyJobs()) {
+      const install = job.steps.findIndex((step) => step.name === INSTALL.name);
+      expect(install, where).toBeGreaterThanOrEqual(0);
+      expect(job.steps[install], where).toEqual(INSTALL);
+      expect(install, where).toBeLessThan(job.steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action')));
+      // Each Trivy step runs the installed binary by its absolute path (TRIVY_CMD, which trivy-action's entrypoint runs in
+      // place of `trivy` from PATH, where each trivy-action step prepends its own directory), never one setup-trivy
+      // downloads, and no step sets TRIVY_CMD otherwise; nothing names a version for it.
+      for (const step of job.steps.filter((candidate) => usesAction(candidate, 'aquasecurity/trivy-action'))) {
+        expect([step.with?.['skip-setup-trivy'], step.with?.version, step.with?.cache], `${where}: ${step.name ?? ''}`).toEqual([true, undefined, false]);
+        expect([step.env?.TRIVY_CMD, job.env?.TRIVY_CMD], `${where}: ${step.name ?? ''}`).toEqual([undefined, undefined]);
+      }
+    }
+    // No line but a comment names setup-trivy or its installer's host.
+    for (const file of workflowFiles()) {
+      expect(uncommented(readFileSync(path.join(WORKFLOWS, file), 'utf8')), file).not.toMatch(/aquasecurity\/setup-trivy|get\.trivy\.dev|contrib\/install\.sh/);
+    }
+  });
+
+  it('pins one version and a SHA-256 for each Linux archive, and checks the archive before anything in it runs', () => {
+    const release = readFileSync(path.join(repositoryRoot, 'tools/trivy/release.txt'), 'utf8');
+    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+    for (const platform of ['linux_x64', 'linux_arm64']) expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+    const installer = readFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), 'utf8');
+    expect(installer).toContain('https://github.com/aquasecurity/trivy/releases/download/v$version');
+    expect(uncommented(installer)).not.toMatch(/get\.trivy\.dev/);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeGreaterThan(0);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // Both pinned installers download over https alone, and follow a redirect only to https (a file:// mirror is the
+    // tests'); the pinned SHA-256 still decides what runs.
+    for (const tool of ['trivy', 'gitleaks']) {
+      const text = readFileSync(path.join(repositoryRoot, `tools/${tool}/install.sh`), 'utf8');
+      const curls = uncommented(text).split('\n').filter((line) => /\bcurl\b/.test(line));
+      expect(curls.length, tool).toBe(1);
+      expect(curls[0], tool).toContain("curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 ");
+    }
+  });
+
+  const linux = process.platform === 'linux' && (process.arch === 'x64' || process.arch === 'arm64');
+  it.runIf(linux)('installs the archive whose SHA-256 release.txt pins into the directory it is given, and refuses another, leaving nothing installed', () => {
+    const root = mkdtempSync(path.join(scratch, 'trivy-'));
+    const version = '0.70.0';
+    const asset = `trivy_${version}_Linux-${process.arch === 'x64' ? '64bit' : 'ARM64'}.tar.gz`;
+    const archive = (dir: string, body: string) => {
+      mkdirSync(path.join(dir, 'x'), { recursive: true });
+      writeFileSync(path.join(dir, 'x/trivy'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      writeFileSync(path.join(dir, 'x/README.md'), 'not installed\n');
+      execFileSync('tar', ['-czf', path.join(dir, asset), '-C', path.join(dir, 'x'), 'trivy', 'README.md']);
+      return createHash('sha256').update(readFileSync(path.join(dir, asset))).digest('hex');
+    };
+    const good = archive(path.join(root, 'good'), `echo "Version: ${version}"`);
+    archive(path.join(root, 'bad'), `echo "Version: ${version}"; echo planted`);
+    // The repository's installer beside a release.txt that pins the good archive (the script reads the file beside it).
+    const tools = path.join(root, 'tools/trivy');
+    mkdirSync(tools, { recursive: true });
+    copyFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), path.join(tools, 'install.sh'));
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${good}\nlinux_arm64 ${good}\n`);
+    const install = (from: string, into: string) =>
+      spawnSync('bash', [path.join(tools, 'install.sh'), into], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, TRIVY_DOWNLOAD_BASE: `file://${path.join(root, from)}` }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    const ok = install('good', path.join(root, 'bin-good'));
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout.trim()).toBe(path.join(root, 'bin-good/trivy'));
+    expect(readdirSync(path.join(root, 'bin-good'))).toEqual(['trivy']);
+    const refused = install('bad', path.join(root, 'bin-bad'));
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`not the ${good} that`);
+    expect(existsSync(path.join(root, 'bin-bad/trivy'))).toBe(false);
+    // An archive that matches but whose trivy reports another version is refused too, and not left on PATH.
+    const other = archive(path.join(root, 'other'), 'echo "Version: 0.69.4"');
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${other}\nlinux_arm64 ${other}\n`);
+    const wrong = install('other', path.join(root, 'bin-other'));
+    expect(wrong.status).toBe(1);
+    expect(wrong.stderr).toContain('0.69.4');
+    expect(existsSync(path.join(root, 'bin-other/trivy'))).toBe(false);
   });
 });
 
@@ -2774,29 +2918,55 @@ describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () =
 
 describe('images by digest (CI-13)', () => {
   const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
-  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
-    const DIGEST = /@sha256:[0-9a-f]{64}$/;
-    for (const app of ['web', 'worker']) {
-      const from = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
-        .split('\n')
-        .filter((line) => /^FROM\s/i.test(line))
-        .map((line) => line.split(/\s+/)[1] ?? '');
-      expect(from.length, app).toBeGreaterThan(0);
-      for (const image of from) expect(image, `${app}: ${image}`).toMatch(DIGEST);
+
+  /** The one frontend a build may be handed: docker/dockerfile by version and digest. */
+  const FRONTEND = /^docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/;
+
+  /**
+   * A Dockerfile read through check-toolchain's readDockerfile, the image rule's own port of BuildKit v0.34.1's parser,
+   * so CI-13 and the rule cannot read a file differently (the security review's S1 and S2, and its proposal of one
+   * reader): every line placed (no JSON Dockerfile, no parse BuildKit refuses, no FROM or from= line it does not read as
+   * one), a FROM at least, each FROM that is not an earlier stage by digest, and each frontend (a `# syntax=` or
+   * `//syntax=` line, after a byte-order mark or a `#!` line) docker/dockerfile by version and digest: a frontend pulls
+   * its image by tag on every build otherwise. The problems, or none.
+   */
+  function dockerfileDigestProblems(text: string): string[] {
+    const read = readDockerfile(text);
+    const problems = read.problems.map(({ line, message }) => `line ${String(line)}: ${message}`);
+    if (read.stages.length === 0) problems.push('no FROM');
+    const stages: string[] = [];
+    for (const { line, image, name } of read.stages) {
+      if (!stages.includes(image.toLowerCase()) && !DIGEST_PIN.test(image)) problems.push(`line ${String(line)}: FROM ${image} names no digest`);
+      if (name !== null) stages.push(name.toLowerCase());
     }
+    for (const { line, image } of read.frontends) if (!FRONTEND.test(image)) problems.push(`line ${String(line)}: the frontend ${image} is not docker/dockerfile:<version>@sha256:<64 hex>`);
+    return problems;
+  }
+
+  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
+    for (const app of ['web', 'worker']) expect(dockerfileDigestProblems(readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')), app).toEqual([]);
     const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string }> };
-    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST);
+    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST_PIN);
   });
 
-  it('name every image a build runs by digest: the Dockerfile frontend and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
-    // The frontend: a `# syntax=` line pulls its image from Docker Hub by tag on every build, so either none (the
-    // frontend built into the pinned BuildKit) or one by digest.
-    for (const app of ['web', 'worker']) {
-      const syntax = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
-        .split('\n')
-        .filter((line) => /^#\s*syntax\s*=/i.test(line));
-      for (const line of syntax) expect(line, app).toMatch(/^# syntax=docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/);
-    }
+  it('read a Dockerfile as BuildKit does, so a FROM or frontend that a line-by-line read misses is held to its digest, and a FROM line BuildKit does not read as one is refused (the security review’s S1, S2)', () => {
+    const node = `node:24-trixie-slim@sha256:${'a'.repeat(64)}`;
+    const bom = String.fromCharCode(0xfeff);
+    const frontend = 'line 1: the frontend docker/dockerfile:1 is not docker/dockerfile:<version>@sha256:<64 hex>';
+    const cases: readonly (readonly [string, string, readonly unknown[]])[] = [
+      ['a byte-order mark before # syntax=', `${bom}# syntax=docker/dockerfile:1\nFROM ${node}\n`, [frontend]],
+      ['a // syntax line', `//syntax=docker/dockerfile:1\nFROM ${node}\n`, [frontend]],
+      ['an indented FROM', `FROM ${node} AS build\n  FROM synthetic/hidden:latest\n`, ['line 2: FROM synthetic/hidden:latest names no digest']],
+      ['a FROM split by a continuation', `FROM ${node} AS build\nFR\\\nOM synthetic/hidden:latest\n`, ['line 2: FROM synthetic/hidden:latest names no digest']],
+      ['a FROM line in a heredoc body', `FROM ${node} AS build\nRUN <<EOF\nFROM synthetic/hidden:1@sha256:${'b'.repeat(64)}\nEOF\n`, [expect.stringMatching(/^line 3: a FROM line BuildKit does not read as a FROM instruction \(a heredoc's body/)]],
+    ];
+    // Each of these passed the line-by-line read CI-13 had before (no problem), and each is a real FROM or frontend to BuildKit, or a line it cannot vouch for.
+    for (const [what, text, problems] of cases) expect(dockerfileDigestProblems(text), what).toEqual(problems);
+    // A FROM of an earlier stage names no image of its own.
+    expect(dockerfileDigestProblems(`FROM ${node} AS build\nFROM build AS test\n`)).toEqual([]);
+  });
+
+  it('name every image a build runs by digest: the Dockerfile frontend (dockerfileDigestProblems, above) and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
     // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
     const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
     const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));

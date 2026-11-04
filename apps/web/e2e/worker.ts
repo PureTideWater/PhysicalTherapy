@@ -46,9 +46,17 @@ export const CHAINED_PRACTICES: ReadonlySet<string> = new Set([MONITORED_PRACTIC
  */
 export const LOCATION_PRACTICE_PREFIX = 'SYNTHETIC LOCATION PRACTICE ';
 
+/**
+ * The mapping journey's practices (e2e/mapping.spec.ts; combined audit #32), one per attempt under this prefix and a
+ * suffix of its own: the chain plans their months, so the month that waits on its plans' mappings, the monitoring
+ * "Price them now" asks for and the first run it creates are the chain's own, and every count the journey reads is its
+ * practice's alone.
+ */
+export const MAPPING_PRACTICE_PREFIX = 'SYNTHETIC MAPPING PRACTICE ';
+
 /** Whether the monitoring chain's planning step is real for a practice of this name. */
 export function chained(name: string): boolean {
-  return CHAINED_PRACTICES.has(name) || name.startsWith(LOCATION_PRACTICE_PREFIX);
+  return CHAINED_PRACTICES.has(name) || name.startsWith(LOCATION_PRACTICE_PREFIX) || name.startsWith(MAPPING_PRACTICE_PREFIX);
 }
 
 /**
@@ -123,7 +131,8 @@ export async function holdExports(practiceId: string): Promise<{ release: () => 
 /**
  * The worker, as main.ts wires it in development, for the length of a test. The monitoring chain's
  * planning step (monitor; docs/adr/0039) is real for the monitoring and recovery journeys' practices
- * (CHAINED_PRACTICES) and the pricing-location journey's (LOCATION_PRACTICE_PREFIX), and the digest for the monitoring journey's alone (emailed to the local outbox,
+ * (CHAINED_PRACTICES), the pricing-location journey's (LOCATION_PRACTICE_PREFIX) and the mapping journey's
+ * (MAPPING_PRACTICE_PREFIX), and the digest for the monitoring journey's alone (emailed to the local outbox,
  * MAIL_OUTBOX_DIR's directory); both are placeholders for every other practice: each other spec's
  * pricing runs are the ones it creates, and the database tests run the chain on synthetic files. A spec
  * starts the monitor step a parse queued without its batch wait (e2e/journeys.ts, chainFrom). The

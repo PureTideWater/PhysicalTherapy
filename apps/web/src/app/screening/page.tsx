@@ -8,6 +8,7 @@ import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
 import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
 import { SENT_KEPT } from '../../lib/screening/retention';
+import { SCREENING_PAUSED } from '../../lib/screening/messages';
 import { screeningPage } from '../../lib/screening/routes';
 import { SCREENING_SENT_LINK, SCREENING_SENT_WAIT } from '../../lib/screening/sent';
 import { TEMPLATE_COLUMNS, TEMPLATE_RULES } from '../../lib/screening/template';
@@ -24,7 +25,9 @@ export const metadata: Metadata = { title: 'Free screening' };
  * left out before sending), and denied lines are left out of every total and claim count: the template's note lines
  * and the page beside it state both rules in plain words (the founder's rulings of 2026-10-18). The page shows the
  * lockup without the tagline (D11), and never says owed, underpaid or recovered. Screening opens once a rule release
- * is in force and a contract specialist has approved the place-of-service split.
+ * is in force and a contract specialist has approved the place-of-service split, and stays closed while the screening's
+ * mail cannot go: paused (the page says so, and that uploads already made are kept and emailed on resume), or, in staging
+ * and production, until the mail path is proven (docs/adr/0065, D7 and D8).
  */
 export default async function ScreeningPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const data = await loadPublicPage(screeningPage, props);
@@ -49,6 +52,21 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
               </span> If nothing arrives, check your spam folder, or{' '}
               <Link className="underline" href="/screening">
                 start again
+              </Link>
+              .
+            </AlertDescription>
+          </Alert>
+        ) : !data.open && data.closedReason === 'mail_paused' ? (
+          // The screening's mail stream is paused (docs/adr/0065, D7): uploads already made are kept and emailed on resume. A
+          // legal surface counsel reviews before the screening opens (docs/product/legal-surfaces.md, screening-mail-paused).
+          <Alert data-state="paused" role="status">
+            <AlertTitle>{SCREENING_PAUSED.title}</AlertTitle>
+            <AlertDescription>
+              <span data-copy="paused" data-legal-surface="screening-mail-paused">
+                {SCREENING_PAUSED.text}
+              </span> Meanwhile, you can{' '}
+              <Link className="underline" href="/request-audit">
+                request an audit
               </Link>
               .
             </AlertDescription>
