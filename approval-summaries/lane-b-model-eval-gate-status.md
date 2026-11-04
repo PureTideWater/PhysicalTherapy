@@ -1,3 +1,5 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifCJSbPYXpafL86Rm6J) holds this item from 2026-11-04T02:39Z; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
 # Lane B: model-eval-gate (#84, #120; LANES queue item 12): status
 
 Sessions: the original item session was session_01FmreSD8rXTREwwBkY2B4wh (Lane B's account; idle, BLOCKED since 2026-10-26 10:26 UTC), started by Lane B's old orchestrator session_01CntuGR3wkXMF6kK3at6bGh (the Plan B build chat, completed). The continuation was session_017SNqG4nQbbt6xqEG1ZDKe6 (Lane A's account; stopped ~2026-10-28 08:00 UTC, not visible from this account). **From 2026-11-01 ~16:45 UTC: this session, session_01FcouKPAcRv6FTuHCMKAre2 (https://claude.ai/code/session_01FcouKPAcRv6FTuHCMKAre2)**, started by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW. Reserved: ADR 0070 (Parts 1-3); test-matrix MOD-07 to MOD-12; `packages/synth` cases MOD-07 to MOD-12 (this PR uses ADR 0070 Part 3 and MOD-12; #53 used MOD-07 to MOD-11).
@@ -130,3 +132,7 @@ Not part of it: F3 (lookup hashes and a SECURITY DEFINER screen function) and F4
 
 ## Next step
 Wait for wf_4ca98146-d24; copy merge4.md, check5.md, shots-ref.md, shots6.md to `lane-b-model-eval-gate-wip/fix/`; if the critic says READY-TO-PUSH, push once (fast-forward from 871faff9) and read CI; then the description.
+
+## Acting Lane B S1 (session_019i9ifCJSbPYXpafL86Rm6J, from 2026-11-04T02:39Z)
+- 2026-11-04T02:39Z: setup run; `gh api user` PureTideWater; subscribed to #75 (accepted). Live: PR head 871faff9 (draft), newest WIP `-9` 315ac91e, base 21fa10df (#42 22789493 with a migration, #95, #91 since 88708069).
+- Plan (speed rules): ff to 315ac91e; merge the base once (pnpm install for #90's lockfile); two adversarial reviews (PHI) of the unreviewed delta (d2a609fd G1-G4, merges b81429f4, 315ac91e and the new base merge), one skeptic per finding; fix; the full local suite once on the final tree; a critic; one push; CI; description; fresh-clone verification reading CI; ready; merge.
