@@ -29,6 +29,16 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   seedMappedNotPriced), probably not this PR's (the base is green; 3/3 locally). Root-cause investigation wf_458de122-b65.
   Also owed: a base re-merge (30871f72) and the description's sweep count (176 to 179). Subscribed to #117.
 
+- 2026-11-04T22:10:00Z: **db (2/4) root cause** (wf_458de122-b65; skeptic UPHELD with corrections; record
+  `lane-a-test-flakes-5/db-flake-root-cause.md`). A product timing bug on the base, not #117's: createPricingRun
+  (apps/worker/src/price/create.ts:121) reads its `now()` cut-off as a millisecond JS Date; the job reads it to the
+  microsecond (execute.ts:243). So a line committed in the same millisecond is missed by the creation check only. The effect is false
+  refusals ("a period that holds at least one service line"; MAP-07), never a wrong allow, no amount changed. Seen 1 in 30
+  ci runs. Fix (its own PR, money code, two reviews): read it as text, plus a regression test that fails first. Reported to
+  Lane A's orchestrator, with an offer to take it. #117: one comment posted (the red check is not this PR's); base
+  30871f72 merged (aaaaf5c2: same 7-file diff, typecheck, synth and watched clean, synth tests 192); pushed; CI running;
+  the description's sweep count (179 + 3) and head are being corrected by an agent.
+
 ## Waiting on someone
 - None.
 
