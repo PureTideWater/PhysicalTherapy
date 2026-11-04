@@ -1,5 +1,5 @@
 import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { type PacketContent, type VerifierReport, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { type CheckedFigure, type PacketContent, type VerifierReport, checkedFigures, narrativeFacts, verifyNarrative } from '@tp/packets';
 
 import { scheduleIdentifiers } from './identifiers';
 
@@ -32,6 +32,11 @@ export interface VerifierNow {
   readonly standing: VerifierStanding;
   /** The report a screen shows and a refusal lists: the stored one when it failed, the verifier's own now otherwise. */
   readonly report: VerifierReport;
+  /**
+   * When it fails now, its failing figures as the check reads them now (what each was read as and what the records hold
+   * it as), so a refusal says each in the role's words, never the narrative's; none otherwise.
+   */
+  readonly figures: readonly CheckedFigure[];
 }
 
 /**
@@ -40,10 +45,14 @@ export interface VerifierNow {
  */
 export function verifierNow(narrative: string, content: PacketContent, stored: VerifierReport, identifiers: readonly string[]): VerifierNow {
   if (!stored.passed) {
-    return { standing: 'failed', report: stored };
+    return { standing: 'failed', report: stored, figures: [] };
   }
-  const now = verifyNarrative(narrative, narrativeFacts(content), identifiers);
-  return { standing: now.passed && now.narrative_sha256 === stored.narrative_sha256 ? 'passed' : 'fails_now', report: now };
+  const facts = narrativeFacts(content);
+  const now = verifyNarrative(narrative, facts, identifiers);
+  if (now.passed && now.narrative_sha256 === stored.narrative_sha256) {
+    return { standing: 'passed', report: now, figures: [] };
+  }
+  return { standing: 'fails_now', report: now, figures: checkedFigures(narrative, facts).filter((figure) => !figure.passed) };
 }
 
 interface StoredRow {
@@ -75,7 +84,7 @@ export async function verifyVersionNow(
   }
   if (!report.passed) {
     // Nothing to read again: a failed report stands (and the database refuses the step).
-    return { standing: 'failed', report };
+    return { standing: 'failed', report, figures: [] };
   }
   const [row] = await readStored(scope, input.practiceId, [input.versionId], input.requestId);
   if (row === undefined) {
@@ -101,7 +110,7 @@ export async function caseVerifiersNow(
     [input.caseId, input.practiceId],
   );
   // A stored pass counts only once read again: until then it is not a pass now.
-  const now = new Map<string, VerifierNow>(versions.map((version) => [version.id, { standing: version.verifier_report.passed ? 'fails_now' : 'failed', report: version.verifier_report }]));
+  const now = new Map<string, VerifierNow>(versions.map((version) => [version.id, { standing: version.verifier_report.passed ? 'fails_now' : 'failed', report: version.verifier_report, figures: [] }]));
   const passed = versions.filter((version) => version.verifier_report.passed).map((version) => version.id);
   if (passed.length === 0) {
     return now;

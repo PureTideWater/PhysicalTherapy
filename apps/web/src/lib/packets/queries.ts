@@ -98,6 +98,8 @@ export interface VersionView {
    * 1, D5): what the payer's copy prints in its approval line and names its files by, and what a payer quotes back.
    */
   readonly reference: string | null;
+  /** Whether the version is approved (an approval names it). */
+  readonly approved: boolean;
   /** The verifier's report stored when it was written. */
   readonly verifier: VerifierReport;
   /**
@@ -286,6 +288,7 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null, atte
     narrative: detail.narrative,
     contentSha256: detail.contentSha256,
     reference: detail.approvedAt === null ? null : packetReference(detail.contentSha256),
+    approved: detail.approvedAt !== null,
     verifier: detail.verifier,
     writtenAt: detail.createdAt.toISOString(),
     writtenBy,
@@ -344,7 +347,7 @@ export async function builderView(
   // The verifier again over every version's stored narrative (CORR-5): the badge, the history and the approval panel say it.
   const verifiers = await caseVerifiersNow(scope, services.keys, { practiceId: input.practiceId, caseId: input.caseId, requestId: input.requestId });
   const standingOf = (row: HistoryRow): VerifierStanding => verifiers.get(row.id)?.standing ?? (row.verifier_passed ? 'fails_now' : 'failed');
-  const shownNow = verifiers.get(shown.id) ?? { standing: standingOf(shown), report: detail.verifier };
+  const shownNow = verifiers.get(shown.id) ?? { standing: standingOf(shown), report: detail.verifier, figures: [] };
   const pricing = await pricingNow(scope, { practiceId: input.practiceId, content: detail.content, requestId: input.requestId });
   const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: shown.id, asOf: input.now.toISOString().slice(0, 10) });
   if (readiness === undefined) {

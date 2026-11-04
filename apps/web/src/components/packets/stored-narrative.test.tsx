@@ -4,7 +4,7 @@ import { verifierNow } from '@tp/worker/packets';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { FAILS_NOW_TEXT } from '../../lib/packets/view';
+import { type FailsNowState, failsNowText } from '../../lib/packets/view';
 import { StoredNarrative } from './display';
 
 /**
@@ -17,8 +17,10 @@ import { StoredNarrative } from './display';
 const content = assemblePacket(assemblyInput());
 const facts = narrativeFacts(content);
 
-function rendered(narrative: string, stored: ReturnType<typeof verifyNarrative>): string {
-  return renderToStaticMarkup(<StoredNarrative narrative={narrative} verifier={verifierNow(narrative, content, stored, [])} figures={checkedFigures(narrative, facts).filter((figure) => !figure.passed)} />);
+function rendered(narrative: string, stored: ReturnType<typeof verifyNarrative>, state: FailsNowState = 'unapproved'): string {
+  return renderToStaticMarkup(
+    <StoredNarrative narrative={narrative} verifier={verifierNow(narrative, content, stored, [])} figures={checkedFigures(narrative, facts).filter((figure) => !figure.passed)} state={state} />,
+  );
 }
 
 /** The text of the markup, its tags dropped. */
@@ -42,10 +44,35 @@ describe('the stored narrative', () => {
     expect(markup).toContain('data-verifier="fails_now"');
     expect(text(markup)).not.toContain('Verifier passed');
     expect(text(markup)).toContain('Verifier fails it now');
-    expect(text(markup)).toContain(FAILS_NOW_TEXT);
+    expect(text(markup)).toContain(failsNowText('unapproved', true));
+    expect(text(markup)).toContain('so this version cannot be approved: correct the marked figures and save a new version.');
     // The figure marked in the narrative, and listed with its sentence, what it was read as and what the records hold it as.
     expect(markup).toContain('<mark class="rounded bg-destructive/20 px-0.5">$100.00</mark>');
     expect(text(markup)).toContain('Sentence 1, $100.00: read as what the payer paid; the records hold it as what the contract requires');
+  });
+
+  it('says what to do by where the version stands: approved, exported or earlier, never "cannot be approved" beside an approval (UX-D1)', () => {
+    const narrative = 'The payer paid $100.00 for each line [1].';
+    const stored = { ...verifyNarrative(narrative, facts, []), passed: true, mismatches: [] };
+    const approved = text(rendered(narrative, stored, 'approved'));
+    expect(approved).toContain('The verifier passed this version when it was written and was approved, but it fails it now, so it cannot be exported: correct the marked figures and save a new version, which needs approval again.');
+    expect(approved).not.toContain('cannot be approved');
+    const exported = text(rendered(narrative, stored, 'exported'));
+    expect(exported).toContain('The verifier passed this version when it was written and when it was exported; it fails the narrative now. The exported files stand; a new version needs approval again.');
+    expect(exported).not.toContain('correct the marked figures');
+    const earlier = text(rendered(narrative, stored, 'earlier'));
+    expect(earlier).toContain('A later version is current.');
+    expect(earlier).not.toContain('save a new version');
+    expect(rendered(narrative, stored, 'approved')).toContain('data-version-state="approved"');
+  });
+
+  it('asks to save again, not to correct marked figures, when nothing is marked (its report is not of this narrative; UX-D3)', () => {
+    const narrative = draftNarrative(content);
+    const stored = { ...verifyNarrative(narrative, facts, []), narrative_sha256: 'f'.repeat(64) };
+    const shown = text(rendered(narrative, stored));
+    expect(shown).toContain('Verifier fails it now');
+    expect(shown).toContain('the stored narrative no longer matches its verifier report, so save it again as a new version.');
+    expect(shown).not.toContain('correct the marked figures');
   });
 
   it('shows a stored failure as stored', () => {
@@ -53,7 +80,7 @@ describe('the stored narrative', () => {
     const markup = rendered(narrative, verifyNarrative(narrative, facts, []));
     expect(markup).toContain('data-verifier="failed"');
     expect(text(markup)).toContain('Verifier failed');
-    expect(text(markup)).not.toContain(FAILS_NOW_TEXT);
+    expect(markup).not.toContain('data-verifier-now');
     expect(text(markup)).toContain('Sentence 1, 1234.56: an amount no record holds');
   });
 });

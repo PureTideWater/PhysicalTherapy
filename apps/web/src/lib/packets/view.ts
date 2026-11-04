@@ -178,19 +178,78 @@ export const HISTORY_VERIFIER_TEXT: Readonly<Record<VerifierStanding, string>> =
   fails_now: 'Fails now (passed when written)',
 };
 
-/** Why a version the verifier passed when it was written fails now, and what to do (beside its badge). */
-export const FAILS_NOW_TEXT =
-  'The verifier passed this version when it was written. It now checks each figure against what its words say it is, and fails it, so this version cannot be approved: correct the marked figures and save a new version.';
+/**
+ * Where a version the verifier passed when it was written and fails now stands, as its words say it (the review of the
+ * fix round, UX-D1): the current version, not approved; approved, not exported; exported; or an earlier version.
+ */
+export const FAILS_NOW_STATES = ['unapproved', 'approved', 'exported', 'earlier'] as const;
+export type FailsNowState = (typeof FAILS_NOW_STATES)[number];
+
+/** A version's state for those words: exported first, then an earlier version, then approved. */
+export function failsNowState(version: { readonly current: boolean; readonly approved: boolean; readonly exported: boolean }): FailsNowState {
+  return version.exported ? 'exported' : !version.current ? 'earlier' : version.approved ? 'approved' : 'unapproved';
+}
+
+/**
+ * Why a version the verifier passed when it was written fails now, and what to do (beside its badge), by where the
+ * version stands, and what to correct only when its figures are marked (with none marked, its stored report is not of
+ * this narrative).
+ */
+export function failsNowText(state: FailsNowState, marked: boolean): string {
+  const fix = marked ? 'correct the marked figures and save a new version' : 'the stored narrative no longer matches its verifier report, so save it again as a new version';
+  switch (state) {
+    case 'unapproved':
+      return `The verifier passed this version when it was written. It now checks each figure against what its words say it is, and fails it, so this version cannot be approved: ${fix}.`;
+    case 'approved':
+      return `The verifier passed this version when it was written and was approved, but it fails it now, so it cannot be exported: ${fix}, which needs approval again.`;
+    case 'exported':
+      return 'The verifier passed this version when it was written and when it was exported; it fails the narrative now. The exported files stand; a new version needs approval again.';
+    case 'earlier':
+      return 'The verifier passed this version when it was written. It now checks each figure against what its words say it is, and fails it. A later version is current.';
+  }
+}
+
+/** Why the export of a version the verifier fails now is held back, beside its disabled button (UX-D1). */
+export const EXPORT_FAILS_NOW_TEXT = 'The verifier fails this version’s narrative now, so it cannot be exported: correct the figures marked under Narrative above and save a new version, which needs approval again.';
 
 /**
  * Why a request for approval or an approval of a version the verifier fails now is refused, with each mismatch by its
- * sentence (its kind, never the narrative's words: a refusal carries the rule's words only). The builder marks each
- * figure in the narrative.
+ * sentence: a figure the check read in the role's words (what it was read as and what the records hold it as), any
+ * other by its kind, never the narrative's words (a refusal carries the rule's words only), the same item once with how
+ * many times. The builder marks each figure under Narrative. With no mismatch, its report is not of this narrative.
  */
-export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>): string {
-  const items = report.mismatches.map((mismatch) => `${mismatch.sentence < 0 ? '' : `sentence ${String(mismatch.sentence + 1)}: `}${mismatchText(mismatch.code, mismatch.kind)}`);
-  const count = `${String(items.length)} ${items.length === 1 ? 'mismatch' : 'mismatches'}`;
-  return `the verifier passed this version when it was written and fails it now (${items.length === 0 ? 'its report is not of this narrative' : `${count}: ${items.join('; ')}`}). Correct the narrative and save a new version; only a version the verifier passes now can be approved`;
+export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>, figures: readonly (FigureAsRead & { readonly start: number; readonly end: number })[] = []): string {
+  if (report.mismatches.length === 0) {
+    return 'the stored narrative no longer matches its verifier report. Save it again as a new version; only a version the verifier passes now can be approved';
+  }
+  const items: string[] = [];
+  const times = new Map<string, number>();
+  for (const mismatch of report.mismatches) {
+    const figure = mismatch.code === 'figure_not_in_input' ? figures.find((item) => item.start === mismatch.start && item.end === mismatch.end) : undefined;
+    const kind = mismatch.kind === null ? null : (FIGURE_KIND_TEXT[mismatch.kind] ?? null);
+    const what =
+      figure !== undefined && figure.roles !== null && figure.roles.length > 0
+        ? `${kind ?? 'a figure'} ${readAsText(figure.roles, figure.every)} that ${
+            figure.heldAs.length === 0
+              ? 'no record holds as that'
+              : `the records hold as ${listed(
+                  figure.heldAs.map((role) => ROLE_TEXT[role]),
+                  'and',
+                )}`
+          }`
+        : mismatchText(mismatch.code, mismatch.kind);
+    const item = `${mismatch.sentence < 0 ? '' : `in sentence ${String(mismatch.sentence + 1)}, `}${what}`;
+    if (!times.has(item)) {
+      items.push(item);
+    }
+    times.set(item, (times.get(item) ?? 0) + 1);
+  }
+  const said = items.map((item) => {
+    const count = times.get(item) ?? 1;
+    return count === 1 ? item : `${item} (${count === 2 ? 'twice' : `${String(count)} times`})`;
+  });
+  const count = `${String(report.mismatches.length)} ${report.mismatches.length === 1 ? 'mismatch' : 'mismatches'}`;
+  return `the verifier passed this version when it was written and fails it now (${count}: ${said.join('; ')}). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved`;
 }
 
 export const EVIDENCE_KIND_TEXT: Readonly<Record<EvidenceKind, string>> = {

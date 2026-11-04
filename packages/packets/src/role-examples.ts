@@ -575,6 +575,18 @@ export const REVIEWED: readonly ReviewedExample[] = [
   // CORR-6, CORR-7, CORR-20, CRIT-2: respectively, per line and in total, and a copula's subject.
   reviewed('CORR-6 respectively, in the wrong order', 'base', 'The contract expected and the payer allowed $70.00 and $100.00, respectively [1].', amount('$70.00'), amount('$100.00')),
   reviewed('CORR-6 respectively, in order', 'base', 'The contract expected and the payer allowed $100.00 and $70.00, respectively [1].'),
+  // CORR-D1, CORR-D2 (the review of the fix round): the cues after a "respectively" list, and one scope for the list.
+  reviewed('CORR-D1 respectively, the cues after the list, in the wrong order', 'base', '$70.00 and $100.00 were expected and allowed per line, respectively [1].', amount('$70.00'), amount('$100.00')),
+  reviewed('CORR-D1 respectively, the cues after the list, in order', 'base', '$100.00 and $70.00 were expected and allowed per line, respectively [1].'),
+  reviewed('CORR-D1 respectively, "the expected and allowed amounts" after the list, in the wrong order', 'base', 'Per line, $70.00 and $100.00 were the expected and allowed amounts, respectively [1].', amount('$70.00'), amount('$100.00')),
+  reviewed('CORR-D1 respectively, "the expected and allowed amounts" after the list, in order', 'base', 'Per line, $100.00 and $70.00 were the expected and allowed amounts, respectively [1].'),
+  reviewed('CORR-D1 (variant) respectively, the contracted and paid amounts after the list, swapped', 'base', '$56.00 and $100.00 were the contracted and paid amounts per line, respectively [1].', amount('$56.00'), amount('$100.00')),
+  reviewed('CORR-D1 (variant) respectively, the contracted and paid amounts after the list, in order', 'base', '$100.00 and $56.00 were the contracted and paid amounts per line, respectively [1].'),
+  reviewed('CORR-D2 respectively, a total stated per line after the list', 'base', 'The contract expected and the payer allowed $300.00 and $70.00 per line, respectively [1].', amount('$300.00')),
+  reviewed('CORR-D2 respectively, a total stated per line before the list', 'base', 'Per line, the contract expected and the payer allowed $100.00 and $210.00, respectively [1].', amount('$210.00')),
+  reviewed('CORR-D2 respectively, a line’s value stated in total after the list', 'base', 'The expected and allowed amounts were $100.00 and $210.00 in total, respectively [1].', amount('$100.00')),
+  reviewed('CORR-D2 respectively, each line’s values per line', 'base', 'The contract expected and the payer allowed $100.00 and $70.00 per line, respectively [1].'),
+  reviewed('CORR-D2 respectively, the totals in total', 'base', 'The contract expected and the payer allowed $300.00 and $210.00 in total, respectively [1].'),
   reviewed('CORR-6 a line’s amount, then the same role in total', 'base', 'The payer allowed $70.00 per line and $100.00 in total [1].', amount('$100.00')),
   reviewed('CORR-6 a line’s amount, then the allowed total', 'base', 'The payer allowed $70.00 per line and $210.00 in total [1].'),
   reviewed('CORR-6 the expected amount after "not the contract amount of"', 'base', 'The payer allowed, not the contract amount of $70.00, only $100.00 [1].', amount('$70.00')),

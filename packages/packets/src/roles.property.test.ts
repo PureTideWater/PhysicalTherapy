@@ -196,6 +196,9 @@ const DATE_CUES: Readonly<Record<string, string>> = {
   deadline: 'the window closes',
   effective_date: 'the contract took effect',
 };
+/** A "respectively" list's cues, one word each, and its sentences: the cues before the list and after it. */
+const LIST_CUES: Readonly<Record<string, string>> = { expected: 'expected', allowed: 'allowed', paid: 'paid' };
+const RESPECTIVELY = ['The {A} and {B} amounts were {x} and {y}, respectively [3].', '{x} and {y} were {A} and {B}, respectively [3].', '{x} and {y} were the {A} and {B} amounts, respectively [3].'] as const;
 /** Two clauses joined so that the second's cue is the figure's nearest and the first's the farther. */
 const TWO_CUES = ['Although {A}, {B} {v} [3].', '{A} less, so {B} {v} [3].', 'Since {A}: {B} {v} [3].', '{A} and {B} {v} [3].'] as const;
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -348,6 +351,34 @@ describe('properties of the role reader', () => {
     );
     // Some value was held only in the farther cue's role, and so failed.
     expect(farther).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('maps a "respectively" list to its cues in order, before the list or after it: a swapped pair fails (CORR-6, CORR-D1)', () => {
+    let swapped = 0;
+    fc.assert(
+      fc.property(generated, fc.constantFrom(...RESPECTIVELY), ({ content }, template) => {
+        const oracle = roleOracle(content);
+        const values = [...valuesIn(oracle, Object.keys(LIST_CUES))].filter((item) => !item.startsWith('-'));
+        for (const [a, cueA] of Object.entries(LIST_CUES)) {
+          for (const [b, cueB] of Object.entries(LIST_CUES)) {
+            if (a === b) {
+              continue;
+            }
+            for (const x of values) {
+              for (const y of values.filter((item) => item !== x)) {
+                const held = oracle.get(a)?.has(x) === true && oracle.get(b)?.has(y) === true;
+                swapped += !held && oracle.get(a)?.has(y) === true && oracle.get(b)?.has(x) === true ? 1 : 0;
+                const narrative = template.replace('{A}', cueA).replace('{B}', cueB).replace('{x}', dollars(x)).replace('{y}', dollars(y));
+                expect(passes(narrative, content), narrative).toBe(held);
+              }
+            }
+          }
+        }
+      }),
+      { numRuns: 8 },
+    );
+    // Some pair was held only in the other order, and so failed.
+    expect(swapped).toBeGreaterThan(0);
   }, 120_000);
 
   it('fails a value no input holds in every role’s words', () => {

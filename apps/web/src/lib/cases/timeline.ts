@@ -28,12 +28,14 @@ export const CHANNEL_TEXT = {
 
 /**
  * What a version written says of the verifier: what it said then and, for a version it passed then and fails now (the
- * verifier runs again over the stored narrative; docs/adr/0086, CORR-5), that too, since neither can be approved.
+ * verifier runs again over the stored narrative; docs/adr/0086, CORR-5), that too. A failed version cannot be
+ * approved; one that fails now may have been approved or exported under the earlier reading, so its words say only
+ * what the verifier says (UX-D1).
  */
 export const WRITTEN_VERIFIER_TEXT: Readonly<Record<VerifierStanding, string>> = {
   passed: 'the verifier passed it',
   failed: 'the verifier failed it, so it cannot be approved',
-  fails_now: 'the verifier passed it then and fails it now, so it cannot be approved',
+  fails_now: 'the verifier passed it then and fails it now',
 };
 
 export type TimelineEvent =

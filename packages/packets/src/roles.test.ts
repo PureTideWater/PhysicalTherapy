@@ -787,6 +787,33 @@ describe('amounts, percentages and dates', () => {
     expect(roles('The contract expected and the payer allowed $1.00 and $9.00, respectively.', '$1.00')).toBe('expected');
     expect(roles('The contract expected and the payer allowed $1.00 and $9.00, respectively.', '$9.00')).toBe('allowed');
     expect(reading('The payer allowed $1.00, $2.00 and $9.00, respectively.', '$9.00')).toMatchObject({ roles: ['allowed'], every: true });
+    // With no cue before the list, the cues after it, in order (CORR-D1): never the first figure in any role.
+    expect(roles('$1.00 and $9.00 were expected and allowed per line, respectively.', '$1.00')).toBe('expected');
+    expect(roles('$1.00 and $9.00 were expected and allowed per line, respectively.', '$9.00')).toBe('allowed');
+    expect(roles('Per line, $1.00 and $9.00 were the expected and allowed amounts, respectively.', '$1.00')).toBe('expected');
+    expect(roles('Per line, $1.00 and $9.00 were the expected and allowed amounts, respectively.', '$9.00')).toBe('allowed');
+    expect(reading('$1.00, $2.00 and $9.00 were allowed and paid, respectively.', '$1.00')).toMatchObject({ roles: ['allowed', 'paid'], every: true });
+    // Up to "respectively" when cues come before it, past it otherwise.
+    expect(roles('$1.00 and $9.00 were expected and allowed, respectively, and the payer paid less.', '$9.00')).toBe('allowed');
+    expect(roles('$1.00 and $9.00 were, respectively, expected and allowed.', '$1.00')).toBe('expected');
+  });
+
+  it('reads a "respectively" list in one scope, the scope its words state for the list (CORR-D2)', () => {
+    const scope = (text: string, written: string) => reading(text, written).scope;
+    expect(scope('The contract expected and the payer allowed $3.00 and $1.00 per line, respectively.', '$3.00')).toBe('line');
+    expect(scope('Per line, the contract expected and the payer allowed $1.00 and $2.00, respectively.', '$2.00')).toBe('line');
+    expect(scope('The expected and allowed amounts were $1.00 and $2.00 in total, respectively.', '$1.00')).toBe('total');
+    expect(scope('$1.00, $2.00 and $9.00 were expected, allowed and paid per line, respectively.', '$2.00')).toBe('line');
+    expect(scope('The contract expected and the payer allowed $3.00 and $1.00, respectively, per line.', '$3.00')).toBe('line');
+    // Two scopes that differ: each figure the nearer one's.
+    expect(scope('Per line, the contract expected and the payer allowed $1.00 and $2.00 in total, respectively.', '$1.00')).toBe('line');
+    expect(scope('Per line, the contract expected and the payer allowed $1.00 and $2.00 in total, respectively.', '$2.00')).toBe('total');
+    // Each of something else: stated per it, never in total; the sentence's when the list's words state none.
+    expect(scope('$1.00 and $9.00 were allowed and paid for each claim, respectively.', '$1.00')).toBe(null);
+    expect(scope('The 3 lines were allowed $1.00 and $2.00, respectively.', '$1.00')).toBe('total');
+    expect(scope('The 3 lines were allowed $1.00 and $2.00, respectively.', '$2.00')).toBe('total');
+    // No scope stated: each its own, as outside a list.
+    expect(scope('The contract expected and the payer allowed $1.00 and $2.00, respectively.', '$1.00')).toBe(null);
   });
 
   it('read what an amount or a count of units is stated per (CORR-7)', () => {

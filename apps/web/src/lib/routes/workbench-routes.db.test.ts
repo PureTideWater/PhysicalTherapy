@@ -624,9 +624,10 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(shown.approval).toEqual({ status: 'blocked', reason: 'verifier_now' });
     expect(shown.versions.map((version) => [version.versionNo, version.verifierPassed, version.verifierStanding])).toEqual([[1, true, 'fails_now']]);
 
-    // The request and the approval are refused with the plain words and the mismatch, and nothing is written.
+    // The request and the approval are refused with the plain words and the mismatch in the role's words (UX-D3), and
+    // nothing is written.
     const words =
-      'the verifier passed this version when it was written and fails it now (1 mismatch: sentence 1: an amount that does not match this version’s records). Correct the narrative and save a new version; only a version the verifier passes now can be approved';
+      'the verifier passed this version when it was written and fails it now (1 mismatch: in sentence 1, an amount read as what the payer paid that the records hold as what the contract requires and a step of a line’s calculation). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved';
     expect(refused(await call(requestApprovalAction, practice.manager, P, { caseId, versionId: first.id, message: '' }))).toBe(words);
     expect(refused(await call(approvePacketVersionAction, second, P, { caseId, versionId: first.id, versionSha256: first.contentSha256, wordsVersion: WORDS_VERSION }))).toBe(words);
     // The form keeps the person's place (a server action that refuses returns its state, never a redirect) and says it so.
@@ -640,7 +641,7 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     const page = ok(await call(casePage, practice.manager, { ...P, caseId }));
     expect(page.dispute.packet).toMatchObject({ versionNo: 1, verifier: 'fails_now', approved: false });
     const written = page.timeline.filter((event) => event.kind === 'version_written');
-    expect(written.map((event) => eventText(event))).toEqual(['Packet version 1 written; the verifier passed it then and fails it now, so it cannot be approved']);
+    expect(written.map((event) => eventText(event))).toEqual(['Packet version 1 written; the verifier passed it then and fails it now']);
 
     // A new version the verifier passes now is requested and approved as ever.
     ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: first.id, useDraft: 'on' }));

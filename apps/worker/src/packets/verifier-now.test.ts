@@ -23,7 +23,7 @@ describe('verifierNow', () => {
     const narrative = draftNarrative(content);
     const stored = verifyNarrative(narrative, narrativeFacts(content), []);
     expect(stored.passed).toBe(true);
-    expect(verifierNow(narrative, content, stored, [])).toEqual({ standing: 'passed', report: stored });
+    expect(verifierNow(narrative, content, stored, [])).toEqual({ standing: 'passed', report: stored, figures: [] });
   });
 
   it('says "fails now" of the review’s reproduction: "The payer paid $100.00 for each line [1]." passed when written, and $100.00 is what the contract requires', () => {
@@ -32,6 +32,8 @@ describe('verifierNow', () => {
     expect(now.standing).toBe('fails_now');
     expect(now.report.passed).toBe(false);
     expect(now.report.mismatches.map((mismatch) => [mismatch.code, mismatch.kind, narrative.slice(mismatch.start, mismatch.end)])).toEqual([['figure_not_in_input', 'amount', '$100.00']]);
+    // Its failing figure as read now, for a refusal in the role's words (UX-D3).
+    expect(now.figures).toMatchObject([{ kind: 'amount', roles: ['paid'], heldAs: ['expected', 'calculation'], passed: false, start: 15, end: 22 }]);
   });
 
   it('leaves a stored failure as stored, without reading again', () => {
@@ -39,7 +41,7 @@ describe('verifierNow', () => {
     const stored = verifyNarrative(narrative, narrativeFacts(content), []);
     expect(stored.passed).toBe(false);
     // Another narrative entirely: a failed report is not read again, so it is the one shown.
-    expect(verifierNow(draftNarrative(content), content, stored, [])).toEqual({ standing: 'failed', report: stored });
+    expect(verifierNow(draftNarrative(content), content, stored, [])).toEqual({ standing: 'failed', report: stored, figures: [] });
   });
 
   it('fails a report that is not of the narrative it is stored beside, as the export does', () => {

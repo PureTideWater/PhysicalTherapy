@@ -10,7 +10,7 @@ import { Money } from '../remittances/display';
 import { ScrollTable } from '../scroll-table';
 import { StatusChip, type StatusTone } from '../status';
 import { labelOf } from '../../lib/copy/words';
-import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, FAILS_NOW_TEXT, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, VERIFIER_STANDING_TEXT } from '../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, type FailsNowState, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, VERIFIER_STANDING_TEXT, failsNowText } from '../../lib/packets/view';
 import { MismatchList, type PlacedFigure } from './mismatch-list';
 
 /**
@@ -342,11 +342,22 @@ export function Sources({ content }: { readonly content: PacketContent }) {
 
 /**
  * The narrative as stored, with what the verifier says of it now (docs/adr/0086; the review of 2026-11-01, CORR-5): its
- * badge passed, failed, or fails now (a version the verifier passed when it was written and fails now, which cannot be
- * approved, with why and what to do), and each mismatch of that report marked where it is and listed with what the
- * figure was read as and what the records hold it as.
+ * badge passed, failed, or fails now (a version the verifier passed when it was written and fails now, with why and
+ * what to do by where the version stands, `state`: not approved, approved, exported or an earlier version; UX-D1), and
+ * each mismatch of that report marked where it is and listed with what the figure was read as and what the records
+ * hold it as.
  */
-export function StoredNarrative({ narrative, verifier, figures }: { readonly narrative: string; readonly verifier: VerifierNow; readonly figures: readonly PlacedFigure[] }) {
+export function StoredNarrative({
+  narrative,
+  verifier,
+  figures,
+  state,
+}: {
+  readonly narrative: string;
+  readonly verifier: VerifierNow;
+  readonly figures: readonly PlacedFigure[];
+  readonly state: FailsNowState;
+}) {
   const { report, standing } = verifier;
   const spans = report.mismatches.filter((mismatch) => mismatch.code !== 'sentence_without_citation' && mismatch.code !== 'empty_narrative');
   const parts: { readonly text: string; readonly marked: boolean }[] = [];
@@ -369,8 +380,8 @@ export function StoredNarrative({ narrative, verifier, figures }: { readonly nar
         </span>
       </p>
       {standing === 'fails_now' ? (
-        <p className="text-sm" data-verifier-now="fails">
-          {FAILS_NOW_TEXT}
+        <p className="text-sm" data-verifier-now="fails" data-version-state={state}>
+          {failsNowText(state, spans.length > 0)}
         </p>
       ) : null}
       <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-mono text-sm" aria-label="Stored narrative">

@@ -70,9 +70,14 @@ may be either. Two decimals without a dollar sign before a count's noun or "days
 An amount, a percentage, a date (a month, a day of a month, a year), a day count and a page each take one cue's roles,
 found in this order (`roles.ts` names each step):
 
-1. "respectively" maps a list's figures to the cues before it, in order; with no cue before the list, the steps after
-   read each figure (until the fix round's third part such a list was read in no role, which every figure passed:
-   "These were $300.00 and $91.00, respectively" passed an invented $91.00);
+1. "respectively" maps a list's figures to the cues before it, in order, or, with no cue before the list, to the cues
+   after it ("$100.00 and $70.00 were expected and allowed per line, respectively"), up to "respectively" when cues
+   come before it, else up to the next figure or the sentence's end; when the cues do not match the list one for
+   one, every figure is held in all of them; with no cue on either side, the steps after read each figure (until the
+   fix round's third part such a list was read in no role, which every figure passed: "These were $300.00 and $91.00,
+   respectively" passed an invented $91.00; until the review of the fix round, CORR-D1, a list with its cues after it
+   read its first figure in any role and its second in the first cue's, so the swap passed and the correct order
+   failed);
 2. the cue right after the figure ("the $30.00 difference", "$5.76 in interest", "9% a year", "3650 days late", "2025
    rates"), or the noun it completes with "of" ("a shortfall of $90.00");
 3. the nearest cue before it in its own clause, the longer at the same end: a participle after a noun is the noun's
@@ -95,7 +100,10 @@ found in this order (`roles.ts` names each step):
 words around it; "clause", "quote", "section" and "cited" may be either. An amount and a count of units also say what
 they are stated per (`scope`): each line ("per line", "each line", "apiece"), each unit, or the lines in total ("in
 total", "in all", "across the 3 lines", or a sentence about the lines in the plural that says nothing of each), so a
-total stated per line, or a line's value stated as a total, fails (CORR-7). "first" with no role is prose, as "one" is.
+total stated per line, or a line's value stated as a total, fails (CORR-7). A "respectively" list is stated per one
+scope: the words after its last figure (up to "respectively", or past it), else those before its first, give every
+figure of the list theirs, so "The contract expected and the payer allowed $300.00 and $70.00 per line,
+respectively" fails at $300.00 (CORR-D2); when the two state different scopes, each figure takes the nearer one. "first" with no role is prose, as "one" is.
 
 **Facts by role, `facts.ts`.** `NarrativeFacts` holds each value an input holds, by kind, with the roles its record
 gives it (`roles`), through one adder that names a role, so no value enters without one. A date's month, day of the
@@ -140,12 +148,17 @@ is a pass now only if the verifier passes the same narrative now (and its report
 "fails now". The export job asks it over what it prints. A request for approval and an approval ask it first
 (`verifyVersionNow()`: the narrative decrypted and the schedule rows' identifiers read again, each an audited read under
 `packet_verification`, as when the version was written) and refuse a version that fails now with plain words and each
-mismatch by its sentence and kind, never the narrative's words; nothing is written, and the form keeps the person's
-place (a server action's refusal is its state, not a redirect). The screens ask it for every version of the case
+mismatch by its sentence, a figure in the role's words (what it was read as and what the records hold it as) and any
+other by its kind, never the narrative's words, the same item once with how many times; with no mismatch (its report
+is not of this narrative) it asks for the narrative to be saved again; nothing is written, and the form keeps the
+person's place (a server action's refusal is its state, not a redirect). The screens ask it for every version of the case
 (`caseVerifiersNow()`: only stored passes are read again, without identifiers, which the stored report checked and each
-step checks today): the builder's badge reads "Verifier fails it now" with why and what to do, its marks and list are
-of today's report, the approval panel is blocked ahead (`verifier_now`), the history says "Fails now (passed when
-written)", and the case's packet line and timeline say it too. The database cannot run the reader; refusing such a
+step checks today): the builder's badge reads "Verifier fails it now" with why and what to do by where the version
+stands (not approved: it cannot be approved; approved: it cannot be exported, and a new version needs approval again;
+exported: the exported files stand; an earlier version: a later one is current; UX-D1), its marks and list are of
+today's report, the approval panel is blocked ahead (`verifier_now`), the Export card holds the export back with the
+reason and a disabled button before the click, the history says "Fails now (passed when written)", and the case's
+packet line and timeline say it too (the timeline only that the verifier passed it then and fails it now). The database cannot run the reader; refusing such a
 version in Postgres too is Lane A's `tp-packet-verifier/3` migration.
 
 **One reading serves every screen.** `checkedFigures()` (the package root) and `checkReading()` (`@tp/packets/check`,

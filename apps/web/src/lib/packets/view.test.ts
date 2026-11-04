@@ -1,4 +1,4 @@
-import { FIGURE_ROLES, MISMATCH_CODES, assemblePacket, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { FIGURE_ROLES, MISMATCH_CODES, assemblePacket, checkedFigures, narrativeFacts, verifyNarrative } from '@tp/packets';
 import { checkReading } from '@tp/packets/check';
 import { assemblyInput } from '@tp/packets/testing';
 import { VERIFIER_STANDINGS } from '@tp/worker/packets';
@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CASE_VERIFIER_TEXT,
-  FAILS_NOW_TEXT,
+  FAILS_NOW_STATES,
+  EXPORT_FAILS_NOW_TEXT,
   FIGURE_KIND_TEXT,
   HISTORY_VERIFIER_TEXT,
   MISMATCH_TEXT,
@@ -14,6 +15,8 @@ import {
   SAY_WHAT_IT_COUNTS,
   VERIFIER_STANDING_TEXT,
   failsNowRefusal,
+  failsNowState,
+  failsNowText,
   heldAsText,
   liveCheckSummary,
   mismatchShown,
@@ -123,7 +126,22 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(VERIFIER_STANDING_TEXT).toEqual({ passed: 'Verifier passed', failed: 'Verifier failed', fails_now: 'Verifier fails it now' });
     expect(HISTORY_VERIFIER_TEXT).toEqual({ passed: 'Passed', failed: 'Failed', fails_now: 'Fails now (passed when written)' });
     expect(CASE_VERIFIER_TEXT.fails_now).toBe('the verifier passed it when it was written and fails it now');
-    expect(FAILS_NOW_TEXT).toContain('cannot be approved');
+    expect(failsNowText('unapproved', true)).toContain('cannot be approved');
+    // By where the version stands (UX-D1): never "cannot be approved" for an approved or exported version.
+    expect(failsNowText('approved', true)).toContain('cannot be exported');
+    expect(failsNowText('exported', true)).toContain('The exported files stand');
+    for (const state of FAILS_NOW_STATES) {
+      if (state !== 'unapproved') {
+        expect(failsNowText(state, true), state).not.toContain('cannot be approved');
+      }
+      expect(failsNowText(state, false), state).not.toContain('marked');
+    }
+    expect(failsNowState({ current: true, approved: false, exported: false })).toBe('unapproved');
+    expect(failsNowState({ current: true, approved: true, exported: false })).toBe('approved');
+    expect(failsNowState({ current: true, approved: true, exported: true })).toBe('exported');
+    expect(failsNowState({ current: false, approved: true, exported: true })).toBe('exported');
+    expect(failsNowState({ current: false, approved: true, exported: false })).toBe('earlier');
+    expect(EXPORT_FAILS_NOW_TEXT).toContain('cannot be exported');
     for (const standing of VERIFIER_STANDINGS) {
       expect(VERIFIER_STANDING_TEXT[standing].length, standing).toBeGreaterThan(5);
     }
@@ -136,11 +154,28 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(report.passed).toBe(false);
     const refusal = failsNowRefusal(report);
     expect(refusal).toBe(
-      'the verifier passed this version when it was written and fails it now (2 mismatches: sentence 1: an amount that does not match this version’s records; sentence 2: a number that does not match this version’s records). Correct the narrative and save a new version; only a version the verifier passes now can be approved',
+      'the verifier passed this version when it was written and fails it now (2 mismatches: in sentence 1, an amount that does not match this version’s records; in sentence 2, a number that does not match this version’s records). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved',
     );
     expect(refusal).not.toContain('100.00');
     expect(refusal).not.toContain('3650');
-    expect(failsNowRefusal({ mismatches: [] })).toContain('its report is not of this narrative');
+    // With the figures as read: each in the role's words, never the narrative's (UX-D3).
+    const figures = checkedFigures(narrative, narrativeFacts(content)).filter((figure) => !figure.passed);
+    const worded = failsNowRefusal(report, figures);
+    expect(worded).toBe(
+      'the verifier passed this version when it was written and fails it now (2 mismatches: in sentence 1, an amount read as what the payer paid that the records hold as what the contract requires and a step of a line’s calculation; in sentence 2, a number read as a count of claims that the records hold as the dispute window’s days). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved',
+    );
+    expect(worded).not.toContain('100.00');
+    expect(worded).not.toContain('3650');
+    expect(worded.split(':').length).toBe(2);
+    expect(failsNowRefusal({ mismatches: [] })).toBe('the stored narrative no longer matches its verifier report. Save it again as a new version; only a version the verifier passes now can be approved');
+  });
+
+  it('say the same mismatch once, with how many times (UX-D3)', () => {
+    const content = assemblePacket(assemblyInput());
+    const narrative = 'The payer paid $100.00 and allowed $56.00 for each line [1]. These 4 claims were short [2].';
+    const report = verifyNarrative(narrative, narrativeFacts(content), []);
+    const refusal = failsNowRefusal(report);
+    expect(refusal).toContain('(3 mismatches: in sentence 1, an amount that does not match this version’s records (twice); in sentence 2, a number that does not match this version’s records)');
     expect(liveCheckSummary(true, 0)).toBe('Live check passes');
     expect(liveCheckSummary(false, 1)).toBe('Live check: 1 mismatch');
     expect(liveCheckSummary(false, 2)).toBe('Live check: 2 mismatches');

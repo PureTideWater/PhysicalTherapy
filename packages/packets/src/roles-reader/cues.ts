@@ -116,14 +116,16 @@ export class CueReader extends Walk {
     return found === undefined ? null : one(found.match.roles);
   }
 
-  /** Step 1: a list's figures mapped to the cues before it, in order, when its sentence says "respectively". */
-  protected respectively(index: number, family: Family, cues: Cues): Cued | null {
+  /**
+   * The "respectively" list token `index` is in: the figures of its kind around it in its sentence, each joined to the
+   * next by commas, "and" or "or" alone, when the sentence says "respectively" and the list has two or more (else null).
+   */
+  protected respectivelyList(index: number): readonly number[] | null {
     const start = this.sentenceStart(index);
     const sentence = this.tokens.slice(start, this.sentenceEnd(index));
     if (!sentence.some((token) => token.text === 'respectively')) {
       return null;
     }
-    // The list: the figures of its kind around it, each joined to the next by commas, "and" or "or" alone.
     const figures = sentence.flatMap((token, at) => (token.figure === undefined ? [] : [start + at]));
     const kindOf = (at: number) => ((this.tokens[at] as Token).figure as Figure).kind;
     const joined = (from: number, to: number) => kindOf(from) === kindOf(to) && this.tokens.slice(from + 1, to).every((token) => token.text === ',' || token.text === 'and' || token.text === 'or');
@@ -136,21 +138,55 @@ export class CueReader extends Walk {
       last += 1;
     }
     const list = figures.slice(first, last + 1);
-    if (list.length < 2) {
+    return list.length < 2 ? null : list;
+  }
+
+  /**
+   * The words after a "respectively" list, from its last figure: where "respectively" is among them (the last figure
+   * when it is not, so that the words before it are none), and where they end, at the next figure or the sentence's end.
+   */
+  protected afterList(list: readonly number[]): readonly [number, number] {
+    const last = list.at(-1) as number;
+    const end = this.sentenceEnd(last);
+    const figure = this.tokens.slice(last + 1, end).findIndex((token) => token.figure !== undefined);
+    const next = figure === -1 ? end : last + 1 + figure;
+    const word = this.tokens.slice(last, next).findIndex((token) => token.text === 'respectively');
+    return [last + word, next];
+  }
+
+  /**
+   * Step 1: a list's figures mapped, in order, to the cues before it, or, with none before it, to the cues after it
+   * ("$100.00 and $70.00 were expected and allowed, respectively"): up to "respectively" when cues come before it,
+   * else up to the next figure or the sentence's end. When the cues do not match the list one for one, every figure is
+   * held in all of them. With no cue on either side, the steps after read each figure.
+   */
+  protected respectively(index: number, family: Family, cues: Cues): Cued | null {
+    const list = this.respectivelyList(index);
+    if (list === null) {
       return null;
     }
-    const order: (readonly FigureRole[])[] = [];
-    for (const entry of this.entries(this.cues(this.since(list[0] as number), list[0] as number, cues), family)) {
-      const previous = order.at(-1);
-      if (previous === undefined || previous.join() !== entry.roles.join()) {
-        order.push(entry.roles);
+    const first = list[0] as number;
+    const last = list.at(-1) as number;
+    const order = (from: number, to: number) => {
+      const found: (readonly FigureRole[])[] = [];
+      for (const entry of this.entries(this.cues(from, to, cues), family)) {
+        const previous = found.at(-1);
+        if (previous === undefined || previous.join() !== entry.roles.join()) {
+          found.push(entry.roles);
+        }
       }
+      return found;
+    };
+    let mapped = order(this.since(first), first);
+    if (mapped.length === 0) {
+      const [word, next] = this.afterList(list);
+      const before = order(last, word);
+      mapped = before.length > 0 ? before : order(last, next);
     }
-    // No cue before the list: nothing to map, so the steps after read each figure (never as held in no role).
-    if (order.length === 0) {
+    if (mapped.length === 0) {
       return null;
     }
-    return order.length === list.length ? one(order[list.indexOf(index)] as readonly FigureRole[]) : { roles: ordered(order.flat()), every: true };
+    return mapped.length === list.length ? one(mapped[list.indexOf(index)] as readonly FigureRole[]) : { roles: ordered(mapped.flat()), every: true };
   }
 
   /**

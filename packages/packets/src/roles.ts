@@ -49,7 +49,9 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * roles, never the union of every cue around them (docs/adr/0086, the fix round of 2026-11-01):
  *
  * 1. "respectively" maps a list's figures to the cues before it, in order ("the contract expected and the payer
- *    allowed $100.00 and $70.00, respectively"); with no cue before the list, the steps after read each figure;
+ *    allowed $100.00 and $70.00, respectively"), or with none before it to the cues after it ("$100.00 and $70.00
+ *    were expected and allowed, respectively"); every one of them when they do not match the list one for one; with
+ *    no cue on either side, the steps after read each figure;
  * 2. the cue right after the figure ("the $30.00 difference", "$5.76 in interest", "9% a year", "112.5% of
  *    Medicare", "2025 rates"), or the noun it completes with "of" ("a shortfall of $90.00", "the contract rate of
  *    $56.00");
@@ -75,7 +77,8 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * words around it; a clause, a quote, a section or what is cited may be either. An amount and a count of units also
  * say what they are stated per (`scope`): each line ("per line", "each line", "apiece", "on each of the 3 lines"),
  * each unit ("per unit", "a unit"), or the lines in total ("in total", "in all", "across the 3 lines", "for these 3
- * lines", or a sentence about the lines in the plural that says nothing of each). "first" with no role is prose, as
+ * lines", or a sentence about the lines in the plural that says nothing of each); a "respectively" list's figures in
+ * the one scope its words state for the list (amountScope()). "first" with no role is prose, as
  * "one" and "zero" are.
  *
  * Pure, deterministic and browser-safe: no Node module, clock or network.
@@ -133,7 +136,7 @@ class Reader extends NumberReader {
         const found = written.includes('$') ? null : this.numberRole(index, token, figure, 'decimal');
         if (found === null) {
           const amount = cued('amount', this.role(index, 'amount', this.vocab.AMOUNT_CUES));
-          const scope = this.scope(index, index + 1);
+          const scope = this.amountScope(index);
           this.ends.set(index, this.scopeEnd(index));
           return reading('amount', figure.value, amount.roles, { every: amount.every, scope });
         }

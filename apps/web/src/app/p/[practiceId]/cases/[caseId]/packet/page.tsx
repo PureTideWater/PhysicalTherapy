@@ -28,7 +28,7 @@ import { waitText } from '../../../../../../lib/packets/approval';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
 import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
-import { DEADLINE_CAUSE_TEXT, HISTORY_VERIFIER_TEXT } from '../../../../../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, EXPORT_FAILS_NOW_TEXT, HISTORY_VERIFIER_TEXT, failsNowState } from '../../../../../../lib/packets/view';
 import { everyLineStale, staleExportBuilder } from '../../../../../../lib/packets/unattested';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
@@ -114,7 +114,10 @@ function PayerCopyNote({
   );
 }
 
-/** Why the export is blocked: every reason that holds, each with its fix, and the deadline's causes under its own. */
+/**
+ * Why the export is blocked: every reason that holds, each with its fix, the deadline's causes under its own, and the
+ * verifier's now, which the export job holds it to (UX-D1).
+ */
 function ExportBlocked({ version }: { readonly version: VersionView }) {
   if (version.exportReadiness.outcome !== 'refused') {
     return null;
@@ -142,6 +145,7 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
               ) : null}
             </li>
           ))}
+          {version.verifierNow.standing === 'fails_now' ? <li data-refusal="verifier_now">{EXPORT_FAILS_NOW_TEXT}</li> : null}
         </ul>
       </AlertDescription>
     </Alert>
@@ -379,7 +383,7 @@ export default async function PacketPage(props: Props) {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <StoredNarrative narrative={version.narrative} verifier={version.verifierNow} figures={version.figures} />
+              <StoredNarrative narrative={version.narrative} verifier={version.verifierNow} figures={version.figures} state={failsNowState({ current: version.current, approved: version.approved, exported: version.exportedAt !== null })} />
               {version.current ? (
                 <VersionForm
                   writeAction={writeVersionFormAction}
@@ -561,6 +565,25 @@ export default async function PacketPage(props: Props) {
                   if (attempt?.live === true) {
                     // Asked for and in progress: the status says when it finishes; asking again would queue nothing new.
                     return status;
+                  }
+                  if (version.verifierNow.standing === 'fails_now') {
+                    // Ready but for the verifier now: the job would refuse it (verifier_failed), so the reason shows before the click (UX-D1).
+                    return (
+                      <>
+                        {status}
+                        <Alert variant="destructive" data-export="blocked" data-reason="verifier_now">
+                          <AlertTitle>Export blocked</AlertTitle>
+                          <AlertDescription id="export-verifier-now">{EXPORT_FAILS_NOW_TEXT}</AlertDescription>
+                        </Alert>
+                        {canExport ? (
+                          <div>
+                            <Button type="button" disabled aria-describedby="export-verifier-now">
+                              Export PDF and CSV
+                            </Button>
+                          </div>
+                        ) : null}
+                      </>
+                    );
                   }
                   return (
                     <>

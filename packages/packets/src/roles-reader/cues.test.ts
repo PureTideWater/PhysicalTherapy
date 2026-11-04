@@ -133,9 +133,24 @@ describe('"respectively"', () => {
     expect(roles('On 2026-01-05 the contract expected and the payer allowed $1.00 and $9.00, respectively.', '$1.00')).toBe('expected');
   });
 
-  it('maps no figure alone, nor a list with no cue before it', () => {
+  it('maps no figure alone, nor a list with no cue before it or after it', () => {
     expect(reading('The contract expected and the payer allowed $9.00, respectively.', '$9.00')).toMatchObject({ roles: ['allowed'], every: false });
-    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$1.00')).toMatchObject({ roles: 'any', every: false });
+    expect(reading('These were $1.00 and $9.00, respectively.', '$1.00')).toMatchObject({ roles: 'any', every: false });
+  });
+
+  it('maps a list with no cue before it to the cues after it, in order (CORR-D1)', () => {
+    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$1.00')).toMatchObject({ roles: ['allowed'], every: false });
+    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
+    // The cues after it up to the next figure, when "respectively" comes first.
+    expect(reading('$1.00 and $9.00 were, respectively, allowed and paid, and 5% is owed.', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
+    // Up to the next figure, when "respectively" comes before the list.
+    expect(reading('Respectively, $1.00 and $9.00 were allowed and paid on 2026-01-05.', '$1.00')).toMatchObject({ roles: ['allowed'], every: false });
+    expect(reading('Respectively, $1.00 and $9.00 were allowed and paid on 2026-01-05.', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
+    expect(reading('Respectively, $1.00 and $9.00 were allowed and paid', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
+    // Up to "respectively" in its own sentence, never past it by where the text puts the list.
+    expect(reading('So. $1.00 and $9.00 were expected and allowed, respectively, paid late.', '$1.00')).toMatchObject({ roles: ['expected'], every: false });
+    // Not one for one: every figure held in all of them.
+    expect(reading('$1.00 and $9.00 were allowed, respectively.', '$1.00')).toMatchObject({ roles: ['allowed'], every: true });
   });
 });
 

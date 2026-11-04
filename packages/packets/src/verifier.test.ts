@@ -109,8 +109,9 @@ describe('verifyNarrative', () => {
   });
 
   it('holds a "respectively" list with no cue before it to the inputs, figure by figure, never to no role', () => {
-    // Read in no role, each figure passed whatever it was (every one of no roles holds it); the steps after read each.
-    for (const narrative of ['These were $300.00 and $91.00, respectively [3].', '$91.00 and $210.00 were allowed and paid, respectively [3].']) {
+    // Read in no role, each figure passed whatever it was (every one of no roles holds it); with no cue anywhere the
+    // steps after read each, and with cues after the list, each figure takes its cue in order (CORR-D1).
+    for (const narrative of ['These were $300.00 and $91.00, respectively [3].', '$91.00 and $168.00 were allowed and paid, respectively [3].']) {
       expect(flagged(narrative, verify(narrative)), narrative).toEqual(['$91.00']);
     }
     expect(verify('These were $300.00 and $210.00, respectively [3].')).toMatchObject({ passed: true, mismatches: [] });
