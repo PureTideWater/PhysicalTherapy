@@ -109,13 +109,34 @@ export function devOutbox(directory: string): (email: string, temporaryPassword:
   };
 }
 
-function provider(config: WebConfig, sealer: Sealer): AuthProvider {
+/** The words of the reset code's email, as proposed for Cognito's template (Lane A), so the e2e reads the code as it will arrive. */
+function resetCodeEmail(code: string): { readonly subject: string; readonly body: string } {
+  return {
+    subject: 'Your PaidWhole code',
+    body: `Your code to choose a new PaidWhole password is ${code}. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.`,
+  };
+}
+
+/**
+ * The local outbox where the development provider "sends" a password-reset code: a sibling of the invitations' outbox,
+ * which e2e/onboarding.spec.ts reads whole as invitations. Synthetic accounts only.
+ */
+export function devResetOutbox(directory: string): (email: string, code: string) => Promise<void> {
+  return async (email, code) => {
+    const outbox = path.join(directory, 'reset-outbox');
+    await mkdir(outbox, { recursive: true });
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ email, code, ...resetCodeEmail(code) })}\n`, { mode: 0o600 });
+  };
+}
+
+function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvider {
   if (config.auth.kind === 'cognito') {
     return new CognitoAuthProvider({
       client: new CognitoIdentityProviderClient({ region: config.auth.region }),
       userPoolId: config.auth.userPoolId,
       clientId: config.auth.clientId,
       verifier: CognitoJwtVerifier.create({ userPoolId: config.auth.userPoolId, tokenUse: 'id', clientId: config.auth.clientId }),
+      logger,
     });
   }
   return new DevAuthProvider({
@@ -123,6 +144,7 @@ function provider(config: WebConfig, sealer: Sealer): AuthProvider {
     sealer: sealer.derive('dev-provider'),
     webauthn: { rpId: config.rpId, rpName: 'Therapy Platform', origin: config.origin },
     deliverInvitation: devOutbox(config.auth.directory),
+    deliverResetCode: devResetOutbox(config.auth.directory),
   });
 }
 
@@ -223,7 +245,7 @@ export function servicesFromConfig(config: WebConfig): Services {
     esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, 2),
     // One connection for each call the process lets be in flight at once, and one to spare.
     modelPool: openPool(config.databaseUrl, DEFAULT_CALL_LIMITS.perProcess + 1),
-    provider: provider(config, sealer),
+    provider: provider(config, sealer, logger),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),
     sealer,
     logger,
