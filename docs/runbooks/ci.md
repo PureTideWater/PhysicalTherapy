@@ -447,8 +447,9 @@ user that cannot run the binary.
   A new step output or value one job hands another joins its list with its bound and its producers by name, exactly
   those its value reads (a step by job and id, a `uses:` step with its action, a job output that is one step's or
   needed job's output alone, a matrix key, a needed job, tool code as `path#symbol` with the unit test its owners keep
-  for its bound, named by its title: the test checks that title is one plain `it()` or `test()` that always runs as
-  written, not what it asserts), never by line; a row whose bound passes 131,072 bytes also names every place it is
+  for its bound, named by its title: the test checks that title is one plain `it()` or `test()` written to run whenever
+  its file runs (no skip, condition or `return` around it, no hook of its file or context of its own that can skip
+  it, no `it` of its own), not what it asserts), never by line; a row whose bound passes 131,072 bytes also names every place it is
   read (`sites`, each as the rule writes a place, its job, step and key), and any other read fails the value table's
   test. A row whose producer is a `run:` step holds the fingerprint of its script and what it runs with, its own
   `env`, `shell` and `working-directory` or those its job and the workflow give it, and its job's container: when the

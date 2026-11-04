@@ -4172,14 +4172,19 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
   }
 
   /**
-   * The titles of a test file's tests that always run as written, each title one test's alone in the file: an it() or
-   * test() call with a literal title, standing as a statement at the file's top level or directly in the callback of a
-   * describe() counted the same way, each with no modifier but concurrent or sequential, no options but a timeout,
-   * retry, repeats, concurrent or sequential, and no skip through its context (context.skip(), or a skip it takes
-   * apart). A test inside an if, a loop, a ternary or a function; one written it.skip, .todo, .only, .fails,
-   * .skipIf(…)(…), .runIf(…)(…) or .each(…)(…), or given { skip: true }; one inside a describe written so; and a title
-   * two tests share (the one that runs may not be the one that holds the bound) hold no bound. What a test asserts, or
-   * whether it returns early, is not read: its owners keep it for the bound, and review holds that.
+   * The titles of a test file's tests written to run whenever their file runs, each title one test's alone in the file:
+   * an it() or test() call with a literal title, standing as a statement at the file's top level or directly in the
+   * callback of a describe() counted the same way, each with no modifier but concurrent or sequential, no options but a
+   * timeout, retry, repeats, concurrent or sequential, and a context, where it takes one, read only for its expect or
+   * signal (so no skip through it: context.skip(), a skip it takes apart or renames, context['skip'], a skip it hands on
+   * or keeps), and no call named skip. A test inside an if, a loop, a ternary or a function; one written it.skip, .todo,
+   * .only, .fails, .skipIf(…)(…), .runIf(…)(…) or .each(…)(…), or given { skip: true }; one inside a describe written
+   * so, or in one whose callback holds a return (it may stop before the test is declared); every test of a file with a
+   * hook (beforeEach, beforeAll, afterEach, afterAll, aroundEach, aroundAll) whose context is read for anything else,
+   * or that declares a name it, test or describe of its own (an import from vitest under its own name aside), whose it()
+   * may be no test; and a title two tests share (the one that runs may not be the one that holds the bound) hold no
+   * bound. What a test asserts, or whether it returns early, is not read: its owners keep it for the bound, and review
+   * holds that. Nor is whether the file runs at all (the projects' include lists): review holds that too.
    */
   function testTitles(file: string, text: string): Set<string> {
     const RUNS = new Set(['concurrent', 'sequential']);
@@ -4193,7 +4198,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       }
       return { base: ts.isCallExpression(node) ? chain(node.expression).base : undefined, runs: false };
     };
-    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
     // Every it() or test() with a literal title, wherever and however it is written.
     const written = new Map<string, number>();
     const count = (node: ts.Node): void => {
@@ -4208,18 +4213,92 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     /** Whether a test's or a describe's other arguments let it run as written: its callback, a timeout, plain options. */
     const plain = (rest: readonly ts.Expression[]): boolean =>
       rest.every((argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument) || ts.isNumericLiteral(argument) || (ts.isObjectLiteralExpression(argument) && argument.properties.every((property) => ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && OPTIONS.has(property.name.text))));
-    /** Whether a callback that takes a context calls a skip: context.skip(), or a skip it takes apart. */
+    /** What a test's or a hook's context may be read for: nothing of it that skips or marks the test. */
+    const CONTEXT = new Set(['expect', 'signal']);
+    /** Whether a callback calls anything named skip, or reads its context for anything but CONTEXT, or takes more than it. */
     const skips = (callback: ts.ArrowFunction | ts.FunctionExpression): boolean => {
       let found = false;
       const look = (node: ts.Node): void => {
         if (ts.isCallExpression(node) && ((ts.isIdentifier(node.expression) && node.expression.text === 'skip') || (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'skip'))) found = true;
         ts.forEachChild(node, look);
       };
-      if (callback.parameters.length > 0) look(callback.body);
+      look(callback.body);
+      const [context, ...more] = callback.parameters;
+      if (context === undefined) return found;
+      if (more.length > 0 || context.dotDotDotToken !== undefined) return true;
+      const name = context.name;
+      // Taken apart: each element one of CONTEXT by name, under any local name, and no rest.
+      if (ts.isObjectBindingPattern(name)) return found || !name.elements.every((element) => element.dotDotDotToken === undefined && ts.isIdentifier(element.propertyName ?? element.name) && CONTEXT.has((element.propertyName ?? element.name).getText(source)));
+      if (!ts.isIdentifier(name)) return true;
+      // Kept whole: every use of its name in the body is context.<one of CONTEXT>; any other (handed on, indexed, kept,
+      // a shorthand property) is refused. A property's own name (x.context, { context: 1 }) is no use.
+      const uses = (node: ts.Node): void => {
+        if (ts.isIdentifier(node) && node.text === name.text) {
+          const parent = node.parent;
+          const ownName = (ts.isPropertyAccessExpression(parent) && parent.name === node) || ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent)) && parent.name === node);
+          if (!ownName && !(ts.isPropertyAccessExpression(parent) && parent.expression === node && CONTEXT.has(parent.name.text))) found = true;
+        }
+        ts.forEachChild(node, uses);
+      };
+      uses(callback.body);
+      return found;
+    };
+    const HOOKS = new Set(['beforeEach', 'beforeAll', 'afterEach', 'afterAll', 'aroundEach', 'aroundAll']);
+    const OWN = new Set(['it', 'test', 'describe']);
+    // A file with a hook that may skip, whose context is read for anything else or which is no function written there,
+    // holds no bound in any test.
+    let tainted = false;
+    const taint = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression;
+        const last = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined;
+        if (last !== undefined && HOOKS.has(last) && node.arguments.some((argument) => ((ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) && skips(argument)) || !(ts.isArrowFunction(argument) || ts.isFunctionExpression(argument) || ts.isNumericLiteral(argument)))) tainted = true;
+      }
+      ts.forEachChild(node, taint);
+    };
+    /** The names a binding (a name, or one taken apart) declares. */
+    const bound = (name: ts.BindingName): string[] => (ts.isIdentifier(name) ? [name.text] : name.elements.flatMap((element) => (ts.isOmittedExpression(element) ? [] : bound(element.name))));
+    /**
+     * Whether the scope these statements open (the file's, or a describe callback's) declares an it, test or describe of
+     * its own, which every call of that name in it and below would read: a let, const, function, class, enum or
+     * namespace there, a var anywhere in it outside a function, or an import of one but from vitest under its own name.
+     */
+    const shadows = (list: readonly ts.Statement[]): boolean => {
+      for (const statement of list) {
+        if (ts.isImportDeclaration(statement)) {
+          const clause = statement.importClause;
+          const vitest = ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === 'vitest';
+          if (clause?.name !== undefined && OWN.has(clause.name.text)) return true;
+          const named = clause?.namedBindings;
+          if (named !== undefined && ts.isNamespaceImport(named) && OWN.has(named.name.text)) return true;
+          if (named !== undefined && ts.isNamedImports(named) && named.elements.some((element) => OWN.has(element.name.text) && (!vitest || (element.propertyName !== undefined && element.propertyName.getText(source) !== element.name.text)))) return true;
+        } else if (ts.isImportEqualsDeclaration(statement) || ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement) || ts.isModuleDeclaration(statement)) {
+          if (statement.name !== undefined && ts.isIdentifier(statement.name) && OWN.has(statement.name.text)) return true;
+        } else if (ts.isVariableStatement(statement) && statement.declarationList.declarations.some((declaration) => bound(declaration.name).some((name) => OWN.has(name)))) {
+          return true;
+        }
+      }
+      let found = false;
+      const look = (node: ts.Node): void => {
+        if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.BlockScoped) === 0 && node.declarations.some((declaration) => bound(declaration.name).some((name) => OWN.has(name)))) found = true;
+        if (!ts.isFunctionLike(node) && !ts.isClassLike(node)) ts.forEachChild(node, look);
+      };
+      for (const statement of list) look(statement);
+      return found;
+    };
+    /** Whether a function's own body holds a return (one in a function inside it is that function's). */
+    const returns = (body: ts.Node): boolean => {
+      let found = false;
+      const look = (node: ts.Node): void => {
+        if (ts.isReturnStatement(node)) found = true;
+        if (!ts.isFunctionLike(node)) ts.forEachChild(node, look);
+      };
+      ts.forEachChild(body, look);
       return found;
     };
     const titles = new Set<string>();
     const statements = (list: readonly ts.Statement[]): void => {
+      if (shadows(list)) return;
       for (const statement of list) {
         if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) continue;
         const call = statement.expression;
@@ -4228,11 +4307,12 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         if (!runs || title === undefined || !ts.isStringLiteralLike(title) || !plain(rest)) continue;
         const callback = rest.find((argument): argument is ts.ArrowFunction | ts.FunctionExpression => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
         if ((base === 'it' || base === 'test') && callback !== undefined && !skips(callback)) titles.add(title.text);
-        if (base === 'describe' && callback !== undefined && ts.isBlock(callback.body)) statements(callback.body.statements);
+        if (base === 'describe' && callback !== undefined && ts.isBlock(callback.body) && !returns(callback.body) && callback.parameters.length === 0) statements(callback.body.statements);
       }
     };
     statements(source.statements);
-    return new Set([...titles].filter((title) => written.get(title) === 1));
+    taint(source);
+    return tainted ? new Set() : new Set([...titles].filter((title) => written.get(title) === 1));
   }
 
   /** A value as JSON with every mapping's keys sorted, so a reordered or restyled mapping reads the same. */
@@ -4643,6 +4723,26 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       "it('proves the digest', { skip: true }, () => {});\n",
       "describe('the digest', { skip: true }, () => {\n  it('proves the digest', () => {});\n});\n",
       "describe('one', () => {\n  it.skip('proves the digest', () => {});\n});\ndescribe('two', () => {\n  it('proves the digest', () => {});\n});\n",
+      // A hook that skips, in the describe or at the top; a describe that may return before the test is declared.
+      "describe('the digest', () => {\n  beforeEach((context) => {\n    context.skip();\n  });\n  it('proves the digest', () => {});\n});\n",
+      "beforeEach((context) => {\n  context.skip();\n});\nit('proves the digest', () => {});\n",
+      "if (process.env.CI) beforeEach(({ skip }) => skip());\nit('proves the digest', () => {});\n",
+      "beforeAll((suite) => {\n  suite.mode = 'skip';\n});\nit('proves the digest', () => {});\n",
+      "beforeEach(skipAll);\nit('proves the digest', () => {});\n",
+      "describe('the digest', () => {\n  return;\n  it('proves the digest', () => {});\n});\n",
+      "describe('the digest', () => {\n  if (process.env.CI === undefined) return;\n  it('proves the digest', () => {});\n});\n",
+      // A skip through its context under another name, indexed, kept, handed on or taken with the rest.
+      "it('proves the digest', ({ skip: s }) => {\n  s();\n});\n",
+      "it('proves the digest', (c) => {\n  c['skip']();\n});\n",
+      "it('proves the digest', (c) => {\n  const s = c.skip;\n  s();\n});\n",
+      "it('proves the digest', (c) => {\n  stop(c);\n});\n",
+      "it('proves the digest', ({ ...c }) => {\n  c.skip();\n});\n",
+      "it('proves the digest', ({ task }) => {\n  task.mode = 'skip';\n});\n",
+      // An it of the file's own, which may be no test.
+      "const it = (..._a: unknown[]): void => undefined;\nit('proves the digest', () => {});\n",
+      "import { it } from './not-vitest';\nit('proves the digest', () => {});\n",
+      "import { test as it } from 'vitest';\nit('proves the digest', () => {});\n",
+      "import { test } from 'vitest';\nconst it = test.skip;\nit('proves the digest', () => {});\n",
     ]) {
       expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([notRun]);
     }
@@ -4651,6 +4751,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       "test('proves the digest', () => {});\n",
       "describe('the digest', () => {\n  describe.sequential('inside', () => {\n    it('proves the digest', async () => {}, 30_000);\n  });\n});\n",
       "it('proves the digest', { timeout: 30_000, retry: 0 }, ({ expect: check }) => {\n  check(1).toBe(1);\n});\n",
+      // A context read for its expect alone, hooks that take none, an import from vitest, a return inside the test.
+      "import { afterAll, beforeAll, describe, it } from 'vitest';\nbeforeAll(() => {});\nafterAll(() => {}, 10_000);\ndescribe('the digest', () => {\n  it('proves the digest', (context) => {\n    context.expect(1).toBe(1);\n    if (Date.now() < 0) return;\n  });\n});\n",
     ]) {
       expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([]);
     }

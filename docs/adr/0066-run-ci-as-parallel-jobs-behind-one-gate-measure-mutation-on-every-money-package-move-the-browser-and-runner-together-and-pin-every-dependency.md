@@ -1033,9 +1033,12 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       job's container, so a changed script or input, its own or inherited, fails until a person re-reads the bound and
       updates it; a row whose bound is tool code's names instead, by its title, the unit test its owners keep for that
       bound, since other lanes change that code for their own reasons. The test checks that the title is one test's
-      alone in its file, written to always run: a plain `it()` or `test()` at the file's top level or directly in a
-      plain `describe`'s callback, with no skip, todo, only, fails, each, skipIf or runIf, no if, loop, ternary or
-      function around it, and no skip through its context or options. It does not check what that test asserts.
+      alone in its file, written to run whenever its file runs: a plain `it()` or `test()` at the file's top level or
+      directly in a plain `describe`'s callback, with no skip, todo, only, fails, each, skipIf or runIf, no if, loop,
+      ternary, function or `return` around it, no `it`, `test` or `describe` of its own scope's (an import from vitest
+      under its own name aside), its context read for its `expect` or `signal` alone, and no skip in its options, in a
+      call named `skip`, or in any hook of its file (each hook a function written there whose context is read the same
+      way). It does not check what that test asserts, nor that a project's include list runs its file.
     - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
       github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
