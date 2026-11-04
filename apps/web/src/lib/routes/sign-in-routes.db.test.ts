@@ -15,7 +15,7 @@ import { SoftAuthenticator } from '../auth/test-support/soft-authenticator';
 import { totpCode } from '../auth/totp';
 import { routeHandler } from '../http/handler';
 import { RATE_LIMITS, takeRateLimit } from '../http/rate-limit';
-import type { AuthStep, TotpSetup } from '../auth/provider';
+import { type AuthStep, ClientCredentialError, type TotpSetup } from '../auth/provider';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { homePage } from './index';
@@ -1071,5 +1071,34 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     expect(await step(forgotPasswordPage, closing)).toEqual(PHASE_ONE);
     expect(await step(resetConfirm, closing, { email: other.email, code: codeFor(other.email), password: CHOSEN, confirm: CHOSEN })).toEqual(RESET_CLOSED);
     expect(closing.written).not.toContain(KEPT_EMAIL_COOKIE);
+  });
+});
+
+describe('SEC-20: a refused client credential (docs/adr/0088, D2)', () => {
+  const COULD_NOT_CONTINUE = { status: 'ok', data: { error: 'Sign-in could not continue. Start again.', final: true } };
+
+  it('SEC-20: ends a sign-in, a code step and a reset confirmation with the generic words, counting no failure and keeping no step', async () => {
+    const user = await person();
+    const browser = new Browser();
+    const refused = vi.spyOn(services.provider, 'signIn').mockRejectedValueOnce(new ClientCredentialError('NotAuthorizedException'));
+    expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual(COULD_NOT_CONTINUE);
+    refused.mockRestore();
+    expect(browser.get(SIGN_IN_COOKIE)).toBeUndefined();
+    // A code step: the step ends, and nothing is counted.
+    const coded = new Browser();
+    await step(signInWithPassword, coded, { email: user.email, password: PASSWORD });
+    const answer = vi.spyOn(services.provider, 'answerTotp').mockRejectedValueOnce(new ClientCredentialError('NotAuthorizedException'));
+    expect(await step(answerMfa, coded, { code: nextCode() })).toEqual(COULD_NOT_CONTINUE);
+    answer.mockRestore();
+    expect(coded.get(SIGN_IN_COOKIE)).toBeUndefined();
+    expect(coded.get(KEPT_EMAIL_COOKIE)).toBeUndefined();
+    expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
+    // A reset confirmation: no code refusal, and the step ends.
+    const resetting = new Browser();
+    expect(await step(resetRequest, resetting, { email: user.email })).toEqual(CODE_SENT);
+    const confirm = vi.spyOn(services.provider, 'confirmPasswordReset').mockRejectedValueOnce(new ClientCredentialError('NotAuthorizedException'));
+    expect(await step(resetConfirm, resetting, { email: user.email, code: codeFor(user.email), password: CHOSEN, confirm: CHOSEN })).toEqual(COULD_NOT_CONTINUE);
+    confirm.mockRestore();
+    expect(resetting.get(SIGN_IN_COOKIE)).toBeUndefined();
   });
 });

@@ -1,12 +1,21 @@
+import { createHmac } from 'node:crypto';
+
 import { createLogger } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
 
 import { type CognitoClient, CognitoAuthProvider, type IdTokenVerifier, MfaNotProvenError } from './cognito-provider';
-import type { AuthStep } from './provider';
+import type { AuthStep, NewPasswordStep } from './provider';
+import { ClientSecret } from './secret-hash';
 
 /**
  * The Cognito provider against a mocked SDK client (no AWS account is reachable from where this is
  * built). Each test scripts what Cognito answers per command and checks what was sent.
+ *
+ * The mock is the confidential client's endpoint too (SEC-20; docs/adr/0088, D1): given the client's secret, it
+ * recomputes each request's hash over that request's own username (or compares RevokeToken's ClientSecret) and answers
+ * a missing or wrong one as Cognito does, and it refuses a credential on any call that takes none. So every scripted
+ * test below proves the username each call's hash is over. Without a secret (the public client of release N) it
+ * refuses any credential at all.
  */
 
 type Answer = Record<string, unknown> | Error;
@@ -22,13 +31,65 @@ function named(name: string, message = name): Error {
   return error;
 }
 
-function cognito(script: Record<string, Answer | Answer[]>) {
+/** The synthetic client's secret, as the endpoint holds it. */
+const SECRET = 'synthetic-client-secret-0000000000000000000000000000';
+const CLIENT_ID = 'syntheticclient';
+
+/** The hash the endpoint expects, computed here independently of the provider. */
+function hashOver(username: string, secret = SECRET): string {
+  return createHmac('sha256', secret).update(`${username}${CLIENT_ID}`).digest('base64');
+}
+
+/** Where each hashed call carries its username and its hash. */
+const HASHED: Readonly<Record<string, (input: Record<string, unknown>) => readonly [unknown, unknown]>> = {
+  InitiateAuthCommand: (input) => [(input.AuthParameters as Record<string, unknown> | undefined)?.USERNAME, (input.AuthParameters as Record<string, unknown> | undefined)?.SECRET_HASH],
+  RespondToAuthChallengeCommand: (input) => [
+    (input.ChallengeResponses as Record<string, unknown> | undefined)?.USERNAME,
+    (input.ChallengeResponses as Record<string, unknown> | undefined)?.SECRET_HASH,
+  ],
+  ForgotPasswordCommand: (input) => [input.Username, input.SecretHash],
+  ConfirmForgotPasswordCommand: (input) => [input.Username, input.SecretHash],
+};
+
+/** Whether a request carries any client credential, anywhere. */
+function carriesCredential(input: Record<string, unknown>): boolean {
+  return /"(SECRET_HASH|SecretHash|ClientSecret)"/.test(JSON.stringify(input));
+}
+
+/** What the confidential client's endpoint answers a request's credential: nothing when it holds, else Cognito's refusal. */
+function credentialRefusal(name: string, input: Record<string, unknown>, secret: string | null): Error | undefined {
+  if (secret === null) {
+    return carriesCredential(input) ? new Error(`unexpected credential on ${name}`) : undefined;
+  }
+  const hashed = HASHED[name];
+  if (hashed !== undefined) {
+    const [username, hash] = hashed(input);
+    if (hash === undefined) {
+      return named('NotAuthorizedException', `Client ${CLIENT_ID} is configured with secret but SECRET_HASH was not received`);
+    }
+    return typeof username === 'string' && hash === hashOver(username, secret) ? undefined : named('NotAuthorizedException', `Unable to verify secret hash for client ${CLIENT_ID}`);
+  }
+  if (name === 'RevokeTokenCommand') {
+    return input.ClientSecret === secret ? undefined : named('UnauthorizedException', 'Client secret is not valid for the client.');
+  }
+  return carriesCredential(input) ? new Error(`unexpected credential on ${name}`) : undefined;
+}
+
+/** Every request any test sent, for the checks across the file. */
+const everySent: Sent[] = [];
+
+function cognito(script: Record<string, Answer | Answer[]>, secret: string | null = SECRET) {
   const sent: Sent[] = [];
   const queues = new Map(Object.entries(script).map(([name, answers]) => [name, Array.isArray(answers) ? [...answers] : [answers]]));
   const client = {
     send: (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
       const name = command.constructor.name;
       sent.push({ command: name, input: command.input });
+      everySent.push({ command: name, input: command.input });
+      const refusal = credentialRefusal(name, command.input, secret);
+      if (refusal !== undefined) {
+        return Promise.reject(refusal);
+      }
       const queue = queues.get(name);
       const answer = queue !== undefined && queue.length > 1 ? queue.shift() : queue?.[0];
       if (answer === undefined) {
@@ -46,12 +107,26 @@ const verifier: IdTokenVerifier = {
 
 const TOKENS = { AuthenticationResult: { IdToken: 'id-token', AccessToken: 'access-token', RefreshToken: 'refresh-token' } };
 
-function make(script: Record<string, Answer | Answer[]>) {
-  const { client, sent } = cognito(script);
-  return { provider: new CognitoAuthProvider({ client, userPoolId: 'us-east-1_Synthetic', clientId: 'syntheticclient', verifier }), sent };
+/**
+ * A provider over the scripted endpoint. `secret`: what the provider is given (the client's own by default; null for
+ * the public client); `endpoint`: what the endpoint holds (the client's own by default).
+ */
+function make(script: Record<string, Answer | Answer[]>, options: { readonly secret?: string | null; readonly endpoint?: string | null } = {}) {
+  const secret = options.secret === undefined ? SECRET : options.secret;
+  const { client, sent } = cognito(script, options.endpoint === undefined ? secret : options.endpoint);
+  const lines: string[] = [];
+  const provider = new CognitoAuthProvider({
+    client,
+    userPoolId: 'us-east-1_Synthetic',
+    clientId: CLIENT_ID,
+    verifier,
+    ...(secret === null ? {} : { clientSecret: new ClientSecret(secret) }),
+    logger: createLogger({ sink: (line) => lines.push(line), level: 'debug' }),
+  });
+  return { provider, sent, lines };
 }
 
-function challengeOf(step: AuthStep): string {
+function challengeOf(step: AuthStep | NewPasswordStep): string {
   if (!('challenge' in step)) {
     throw new Error(`expected a challenge, got ${step.kind}`);
   }
@@ -64,12 +139,14 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
       InitiateAuthCommand: { ChallengeName: 'SOFTWARE_TOKEN_MFA', Session: 's1', ChallengeParameters: { USER_ID_FOR_SRP: 'internal-name' } },
       RespondToAuthChallengeCommand: TOKENS,
     });
-    const step = await provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026');
+    // What the person typed, sent as it was: the expectation below names this same value.
+    const typed = 'Synthetic-Pass-2026';
+    const step = await provider.signIn('person@synthetic.test', typed);
     expect(step.kind).toBe('mfa_required');
     expect(sent[0]?.input).toEqual({
       AuthFlow: 'USER_AUTH',
       ClientId: 'syntheticclient',
-      AuthParameters: { USERNAME: 'person@synthetic.test', PREFERRED_CHALLENGE: 'PASSWORD', PASSWORD: 'Synthetic-Pass-2026' },
+      AuthParameters: { USERNAME: 'person@synthetic.test', PREFERRED_CHALLENGE: 'PASSWORD', PASSWORD: typed, SECRET_HASH: hashOver('person@synthetic.test') },
     });
     const done = await provider.answerTotp(challengeOf(step), '123456');
     expect(done).toEqual({ kind: 'authenticated', identity: { sub: 'sub-1', email: 'person@synthetic.test', method: 'totp' }, grant: JSON.stringify({ a: 'access-token', r: 'refresh-token' }) });
@@ -77,7 +154,8 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
       ClientId: 'syntheticclient',
       ChallengeName: 'SOFTWARE_TOKEN_MFA',
       Session: 's1',
-      ChallengeResponses: { USERNAME: 'internal-name', SOFTWARE_TOKEN_MFA_CODE: '123456' },
+      // The challenge's hash is over Cognito's USERNAME, never the typed email.
+      ChallengeResponses: { USERNAME: 'internal-name', SOFTWARE_TOKEN_MFA_CODE: '123456', SECRET_HASH: hashOver('internal-name') },
     });
   });
 
@@ -115,7 +193,7 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
     const passwordOnly = make({ InitiateAuthCommand: TOKENS, RevokeTokenCommand: {} });
     await expect(passwordOnly.provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026')).rejects.toThrow(MfaNotProvenError);
     expect(passwordOnly.sent.map((entry) => entry.command)).toEqual(['InitiateAuthCommand', 'RevokeTokenCommand']);
-    expect(passwordOnly.sent[1]?.input).toEqual({ ClientId: 'syntheticclient', Token: 'refresh-token' });
+    expect(passwordOnly.sent[1]?.input).toEqual({ ClientId: 'syntheticclient', Token: 'refresh-token', ClientSecret: SECRET });
     // The same after a new password, even when revoking fails; and with no refresh token, nothing to revoke.
     const newPassword = make({ InitiateAuthCommand: { ChallengeName: 'NEW_PASSWORD_REQUIRED', Session: 's1' }, RespondToAuthChallengeCommand: TOKENS, RevokeTokenCommand: named('InternalErrorException') });
     const step = await newPassword.provider.signIn('person@synthetic.test', 'Temporary-Pass-1');
@@ -136,7 +214,10 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
     expect(sent).toHaveLength(1);
     const next = await provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2026');
     expect(next.kind).toBe('mfa_setup_required');
-    expect(sent[1]?.input).toMatchObject({ ChallengeName: 'NEW_PASSWORD_REQUIRED', ChallengeResponses: { NEW_PASSWORD: 'Chosen-Pass-2026', USERNAME: 'person@synthetic.test' } });
+    expect(sent[1]?.input).toMatchObject({
+      ChallengeName: 'NEW_PASSWORD_REQUIRED',
+      ChallengeResponses: { NEW_PASSWORD: 'Chosen-Pass-2026', USERNAME: 'person@synthetic.test', SECRET_HASH: hashOver('person@synthetic.test') },
+    });
     expect(await provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2027')).toEqual({ kind: 'invalid_password', problems: [] });
   });
 
@@ -189,7 +270,9 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
       'VerifySoftwareTokenCommand',
       'RespondToAuthChallengeCommand',
     ]);
-    expect(sent.at(-1)?.input).toMatchObject({ ChallengeName: 'MFA_SETUP', Session: 's3' });
+    expect(sent.at(-1)?.input).toMatchObject({ ChallengeName: 'MFA_SETUP', Session: 's3', ChallengeResponses: { SECRET_HASH: hashOver('person@synthetic.test') } });
+    // Associating and verifying the authenticator take the session alone, no credential.
+    expect(sent.filter((call) => call.command.endsWith('SoftwareTokenCommand')).every((call) => !carriesCredential(call.input))).toBe(true);
   });
 
   it('reports expired setup sessions and passes other setup failures through', async () => {
@@ -215,7 +298,11 @@ describe('CognitoAuthProvider: passkeys', () => {
     });
     const { options, challenge } = await provider.beginKeySignIn('person@synthetic.test');
     expect(options).toEqual(OPTIONS);
-    expect(sent[0]?.input).toMatchObject({ AuthParameters: { USERNAME: 'person@synthetic.test', PREFERRED_CHALLENGE: 'WEB_AUTHN' } });
+    expect(sent[0]?.input).toEqual({
+      AuthFlow: 'USER_AUTH',
+      ClientId: 'syntheticclient',
+      AuthParameters: { USERNAME: 'person@synthetic.test', PREFERRED_CHALLENGE: 'WEB_AUTHN', SECRET_HASH: hashOver('person@synthetic.test') },
+    });
     const response = { id: 'cred', rawId: 'cred', type: 'public-key', response: { clientDataJSON: 'x', authenticatorData: 'y', signature: 'z' }, clientExtensionResults: {} } as const;
     expect(await provider.completeKeySignIn(challenge, response)).toMatchObject({ kind: 'authenticated', identity: { method: 'webauthn' } });
     expect(sent[1]?.input).toMatchObject({ ChallengeName: 'WEB_AUTHN', ChallengeResponses: { CREDENTIAL: JSON.stringify(response) } });
@@ -250,7 +337,9 @@ describe('CognitoAuthProvider: passkeys', () => {
     await expect(provider.completeKeyRegistration(grant, begun.challenge, response)).rejects.toThrow('InternalErrorException');
     expect(sent.filter((call) => call.command !== 'RevokeTokenCommand').every((call) => call.input.AccessToken === 'access-token')).toBe(true);
     await provider.release(grant);
-    expect(sent.at(-1)).toEqual({ command: 'RevokeTokenCommand', input: { ClientId: 'syntheticclient', Token: 'refresh-token' } });
+    expect(sent.at(-1)).toEqual({ command: 'RevokeTokenCommand', input: { ClientId: 'syntheticclient', Token: 'refresh-token', ClientSecret: SECRET } });
+    // The passkey calls take the access token alone, no credential.
+    expect(sent.filter((call) => call.command !== 'RevokeTokenCommand').every((call) => !carriesCredential(call.input))).toBe(true);
     await provider.release(JSON.stringify({ a: 'only-access' }));
     expect(sent.filter((call) => call.command === 'RevokeTokenCommand')).toHaveLength(1);
     await expect(provider.hasHardwareKey('{}')).rejects.toThrow('access token');
@@ -315,25 +404,14 @@ describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
   const EMAIL = 'person@synthetic.test';
   const NEW_PASSWORD = 'Chosen-Reset-Pass-2026';
 
-  function resetting(script: Record<string, Answer | Answer[]>) {
-    const { client, sent } = cognito(script);
-    const lines: string[] = [];
-    const provider = new CognitoAuthProvider({
-      client,
-      userPoolId: 'us-east-1_Synthetic',
-      clientId: 'syntheticclient',
-      verifier,
-      logger: createLogger({ sink: (line) => lines.push(line), level: 'debug' }),
-    });
-    return { provider, sent, lines };
-  }
+  const resetting = make;
 
-  it('asks Cognito for a code with the client alone (no secret hash, no admin call), and never reads the masked destination', async () => {
+  it('asks Cognito for a code with the client and the hash over the typed address (no admin call), and never reads the masked destination', async () => {
     const { provider, sent, lines } = resetting({
       ForgotPasswordCommand: { CodeDeliveryDetails: { Destination: 'p***@s***', DeliveryMedium: 'EMAIL', AttributeName: 'email' } },
     });
     await expect(provider.requestPasswordReset(EMAIL, 'request-1')).resolves.toBeUndefined();
-    expect(sent).toEqual([{ command: 'ForgotPasswordCommand', input: { ClientId: 'syntheticclient', Username: EMAIL } }]);
+    expect(sent).toEqual([{ command: 'ForgotPasswordCommand', input: { ClientId: 'syntheticclient', Username: EMAIL, SecretHash: hashOver(EMAIL) } }]);
     expect(lines.join('\n')).not.toContain('p***');
     expect(lines.join('\n')).not.toContain(EMAIL);
   });
@@ -365,10 +443,12 @@ describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
     await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('socket hang up');
   });
 
-  it('sets the new password with the mailed code, with the client alone', async () => {
+  it('sets the new password with the mailed code, with the client and the hash over the typed address', async () => {
     const { provider, sent } = resetting({ ConfirmForgotPasswordCommand: {} });
     expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'reset' });
-    expect(sent).toEqual([{ command: 'ConfirmForgotPasswordCommand', input: { ClientId: 'syntheticclient', Username: EMAIL, ConfirmationCode: '123456', Password: NEW_PASSWORD } }]);
+    expect(sent).toEqual([
+      { command: 'ConfirmForgotPasswordCommand', input: { ClientId: 'syntheticclient', Username: EMAIL, ConfirmationCode: '123456', Password: NEW_PASSWORD, SecretHash: hashOver(EMAIL) } },
+    ]);
   });
 
   it('answers one refusal for every code problem and an unknown user', async () => {
@@ -385,5 +465,117 @@ describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
     expect(sent).toEqual([]);
     expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'invalid_password', problems: [] });
     await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toThrow('InternalErrorException');
+  });
+});
+
+describe('CognitoAuthProvider: the confidential client (SEC-20; docs/adr/0088, D1 and D2)', () => {
+  const EMAIL = 'person@synthetic.test';
+  const OPTIONS = { challenge: 'abc', rpId: 'app.synthetic.test', allowCredentials: [] };
+  const KEY_RESPONSE = { id: 'cred', rawId: 'cred', type: 'public-key', response: { clientDataJSON: 'x', authenticatorData: 'y', signature: 'z' }, clientExtensionResults: {} } as const;
+
+  /** What a ClientCredentialError looks like from outside: its name and the Cognito error it stands for, never Cognito's words. */
+  const credentialError = (code: string): unknown => expect.objectContaining({ name: 'ClientCredentialError', code, message: expect.not.stringMatching(/syntheticclient|secret hash/i) as unknown });
+
+  it('SEC-20: without a client secret (the public client of release N) sends no hash and no secret on any call', async () => {
+    const { provider, sent } = make(
+      {
+        InitiateAuthCommand: [{ ChallengeName: 'SOFTWARE_TOKEN_MFA', Session: 's1', ChallengeParameters: { USERNAME: 'internal-name' } }, { ChallengeName: 'WEB_AUTHN', Session: 'w1', ChallengeParameters: { CREDENTIAL_REQUEST_OPTIONS: JSON.stringify(OPTIONS) } }],
+        RespondToAuthChallengeCommand: TOKENS,
+        RevokeTokenCommand: {},
+        ForgotPasswordCommand: {},
+        ConfirmForgotPasswordCommand: {},
+      },
+      { secret: null },
+    );
+    const done = await provider.answerTotp(challengeOf(await provider.signIn(EMAIL, 'Synthetic-Pass-2026')), '123456');
+    await provider.release(done.kind === 'authenticated' ? done.grant : '{}');
+    await provider.beginKeySignIn(EMAIL);
+    await provider.requestPasswordReset(EMAIL, 'request-1');
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', 'Chosen-Reset-Pass-2026')).toEqual({ kind: 'reset' });
+    expect(sent.map((call) => call.command)).toEqual(['InitiateAuthCommand', 'RespondToAuthChallengeCommand', 'RevokeTokenCommand', 'InitiateAuthCommand', 'ForgotPasswordCommand', 'ConfirmForgotPasswordCommand']);
+    expect(sent.every((call) => !carriesCredential(call.input))).toBe(true);
+  });
+
+  it('SEC-20: a refused client credential is a ClientCredentialError from every call that takes it, never a wrong password, an expired step, a wrong code or a swallowed reset', async () => {
+    // The provider holds one secret and the endpoint another: every hashed call is refused as Cognito refuses it.
+    const wrong = { secret: `${SECRET.slice(0, -1)}1`, endpoint: SECRET };
+    const challenge = JSON.stringify({ s: 's', u: 'internal-name', email: EMAIL });
+    const { provider, lines } = make({ AssociateSoftwareTokenCommand: { SecretCode: 'JBSWY3DPEHPK3PXP', Session: 's2' }, VerifySoftwareTokenCommand: { Status: 'SUCCESS', Session: 's3' } }, wrong);
+    await expect(provider.signIn(EMAIL, 'Synthetic-Pass-2026')).rejects.toEqual(credentialError('NotAuthorizedException'));
+    await expect(provider.setNewPassword(challenge, 'Chosen-Pass-2026')).rejects.toEqual(credentialError('NotAuthorizedException'));
+    await expect(provider.answerTotp(challenge, '123456')).rejects.toEqual(credentialError('NotAuthorizedException'));
+    // Associate and verify take no credential; the MFA_SETUP answer after them does.
+    await expect(provider.completeTotpSetup(challenge, '123456')).rejects.toEqual(credentialError('NotAuthorizedException'));
+    await expect(provider.beginKeySignIn(EMAIL)).rejects.toEqual(credentialError('NotAuthorizedException'));
+    await expect(provider.completeKeySignIn(challenge, KEY_RESPONSE)).rejects.toEqual(credentialError('NotAuthorizedException'));
+    await expect(provider.requestPasswordReset(EMAIL, 'request-3')).rejects.toEqual(credentialError('NotAuthorizedException'));
+    await expect(provider.confirmPasswordReset(EMAIL, '123456', 'Chosen-Reset-Pass-2026')).rejects.toEqual(credentialError('NotAuthorizedException'));
+    // RevokeToken's modelled errors have no NotAuthorizedException: its refusal is UnauthorizedException (review infra-auth-IA-9).
+    await expect(provider.release(JSON.stringify({ a: 'access-token', r: 'refresh-token' }))).rejects.toEqual(credentialError('UnauthorizedException'));
+    // A reset request refused for the credential is not "not delivered": it is the platform's failure.
+    expect(lines.map((line) => (JSON.parse(line) as Record<string, unknown>).msg)).not.toContain('password reset request not delivered');
+    // A missing hash is the same refusal as a wrong one.
+    const missing = make({}, { secret: null, endpoint: SECRET });
+    await expect(missing.provider.signIn(EMAIL, 'Synthetic-Pass-2026')).rejects.toEqual(credentialError('NotAuthorizedException'));
+  });
+
+  it('SEC-20: the revoke after tokens for a password alone rethrows a credential refusal, and swallows every other failure as before', async () => {
+    const revokeRefused = make({ InitiateAuthCommand: TOKENS, RevokeTokenCommand: named('UnauthorizedException', 'Client secret is not valid for the client.') });
+    await expect(revokeRefused.provider.signIn(EMAIL, 'x')).rejects.toEqual(credentialError('UnauthorizedException'));
+    const revokeBroken = make({ InitiateAuthCommand: TOKENS, RevokeTokenCommand: named('InternalErrorException') });
+    await expect(revokeBroken.provider.signIn(EMAIL, 'x')).rejects.toThrow(MfaNotProvenError);
+  });
+
+  it('SEC-20: release() swallows a revoke failure that is not the credential, logging its code alone', async () => {
+    const { provider, lines } = make({ RevokeTokenCommand: [named('InternalErrorException', 'token refresh-token'), named('NotAuthorizedException', 'Token is not valid for the client')] });
+    const grant = JSON.stringify({ a: 'access-token', r: 'refresh-token' });
+    await expect(provider.release(grant)).resolves.toBeUndefined();
+    await expect(provider.release(grant)).resolves.toBeUndefined();
+    const entries = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(entries.map((entry) => [entry.level, entry.msg, entry.error_code])).toEqual([
+      ['warn', 'provider token revoke failed', 'InternalErrorException'],
+      ['warn', 'provider token revoke failed', 'NotAuthorizedException'],
+    ]);
+    expect(lines.join('\n')).not.toContain('refresh-token');
+  });
+
+  it('SEC-20: a wrong password, a wrong code and a stale session are still told apart from the credential', async () => {
+    const { provider } = make({
+      InitiateAuthCommand: [named('NotAuthorizedException', 'Incorrect username or password.'), { ChallengeName: 'SOFTWARE_TOKEN_MFA', Session: 's1' }],
+      RespondToAuthChallengeCommand: [named('CodeMismatchException'), named('NotAuthorizedException', 'Invalid session for the user, session is expired.')],
+      ConfirmForgotPasswordCommand: named('NotAuthorizedException', 'User cannot be confirmed.'),
+    });
+    expect(await provider.signIn(EMAIL, 'wrong')).toEqual({ kind: 'rejected', stage: 'password' });
+    const step = await provider.signIn(EMAIL, 'right');
+    expect(await provider.answerTotp(challengeOf(step), '000000')).toEqual({ kind: 'rejected', stage: 'mfa' });
+    expect(await provider.answerTotp(challengeOf(step), '123456')).toEqual({ kind: 'expired' });
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', 'Chosen-Reset-Pass-2026')).toEqual({ kind: 'rejected' });
+  });
+
+  it('SEC-20: the secret is in no challenge, grant, step or log line', async () => {
+    const { provider, lines } = make({
+      InitiateAuthCommand: { ChallengeName: 'NEW_PASSWORD_REQUIRED', Session: 's1', ChallengeParameters: { USER_ID_FOR_SRP: 'internal-name' } },
+      RespondToAuthChallengeCommand: [{ ChallengeName: 'MFA_SETUP', Session: 's2' }, TOKENS],
+      AssociateSoftwareTokenCommand: { SecretCode: 'JBSWY3DPEHPK3PXP', Session: 's3' },
+      VerifySoftwareTokenCommand: { Status: 'SUCCESS', Session: 's4' },
+      ForgotPasswordCommand: named('LimitExceededException'),
+      RevokeTokenCommand: named('InternalErrorException'),
+    });
+    const first = await provider.signIn(EMAIL, 'Temporary-Pass-1');
+    const second = await provider.setNewPassword(challengeOf(first), 'Chosen-Pass-2026');
+    const setup = await provider.beginTotpSetup(challengeOf(second));
+    const done = await provider.completeTotpSetup('challenge' in setup ? setup.challenge : '', '123456');
+    await provider.release(done.kind === 'authenticated' ? done.grant : '{}');
+    await provider.requestPasswordReset(EMAIL, 'request-4');
+    const shown = JSON.stringify([first, second, setup, done, lines]);
+    expect(shown).not.toContain(SECRET);
+    expect(shown).not.toContain(hashOver('internal-name'));
+  });
+});
+
+describe('every request in this file', () => {
+  it('SEC-20: never refreshes: no REFRESH_TOKEN_AUTH and no GetTokensFromRefreshToken (the app never refreshes; a refresh would hash over the sub)', () => {
+    expect(everySent.length).toBeGreaterThan(50);
+    expect(everySent.filter((call) => call.command === 'GetTokensFromRefreshTokenCommand' || call.input.AuthFlow === 'REFRESH_TOKEN_AUTH')).toEqual([]);
   });
 });

@@ -19,6 +19,19 @@ import type {
 
 export type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON };
 
+/**
+ * The provider refused this application's own client credential (docs/adr/0088, D2): a wrong or missing secret hash
+ * or client secret. It is the platform's failure, never the person's: the sign-in flow counts no failure, locks
+ * nothing and logs it as a security event. `code` is the provider's error name, for the log; the message is fixed
+ * text and never the provider's words, which name the client.
+ */
+export class ClientCredentialError extends Error {
+  override readonly name = 'ClientCredentialError';
+  constructor(readonly code: string) {
+    super('the identity provider refused this application’s client credential');
+  }
+}
+
 export type MfaMethod = 'totp' | 'webauthn';
 export type FailureStage = 'password' | 'mfa' | 'hardware_key';
 
@@ -95,7 +108,10 @@ export interface AuthProvider {
   beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>>;
   /** Whether the hardware key was verified and registered. */
   completeKeyRegistration(grant: string, challenge: string, response: RegistrationResponseJSON): Promise<boolean>;
-  /** Ends the provider's tokens behind a grant once the application's own session exists. */
+  /**
+   * Ends the provider's tokens behind a grant once the application's own session exists. A failure is logged by its
+   * code and swallowed (the tokens lapse on their own), except a ClientCredentialError, which is thrown.
+   */
   release(grant: string): Promise<void>;
   /**
    * The provider's account for an invited user, created when missing, with a temporary password the
