@@ -185,6 +185,13 @@ Choices the design left open, or where the build differed from it, each with its
 - The hardware-key challenge takes the name the same way (USERNAME, else USER_ID_FOR_SRP), so its
   `RespondToAuthChallenge` hashes over Cognito's name and not the typed email (review infra-auth-IA-1). The twin holds
   the name Cognito gave for each Session and refuses an answer sent under any other.
+- A new password is refused the same way before the step is sealed and again before `RespondToAuthChallenge` stores it
+  (review security-N2): open only for the email's account, not locked, that is an invitee holding a live invitation
+  or an active account with a factor. So an orphan in `FORCE_CHANGE_PASSWORD`, or an invitee whose invitation lapsed
+  mid-step, keeps its temporary password and never becomes a confirmed Cognito user with no factor. Cognito names no
+  subject on this step to the app, so the match is by the email; the subject is matched at `MFA_SETUP`.
+- After `VerifySoftwareToken`, tokens whose `sub` is not the subject the rule approved are refused with
+  `enrolment_not_open`, the grant given back, and no factor audited or session opened (review security-N1).
 - `beginTotpSetup`, `abandon` and `beginKey` take the sign-in context, so their security lines carry the request ID.
 - The `ClientSecret` wrapper lives in `secret-hash.ts`, so its private value is read in exactly one file.
 - A credential refusal on a reset request alone raises `PasswordResetRequestFailed`, not `ClientCredentialRefused`

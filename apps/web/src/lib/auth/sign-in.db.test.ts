@@ -149,6 +149,7 @@ describe('sign-in with a password and TOTP', () => {
     const staff = await person({ internal: true });
     expect(await flow.start(staff.email, PASSWORD, context())).toMatchObject({ kind: 'pending', pending: { step: 'mfa' }, keyRequired: true });
     const invitedStaff = await person({ status: 'invited', mfa: false, internal: true, temporary: true, totp: false });
+    await invitation(invitedStaff.id, 'live');
     expect(await flow.start(invitedStaff.email, PASSWORD, context())).toMatchObject({ kind: 'pending', pending: { step: 'new_password' }, keyRequired: true });
     const customer = await person();
     const result = await flow.start(customer.email, PASSWORD, context());
@@ -596,9 +597,11 @@ const ENROLMENT_REFUSED = 'security event: second-factor enrolment refused';
 
 /** An invitation of the person, live (sent a minute ago) or lapsed (sent eight days ago), as the console writes one. */
 async function invitation(userId: string, state: 'live' | 'lapsed'): Promise<void> {
-  const organization = await createOrganization(owner, 'group');
+  // On the person's membership when they have one (an internal user's), else on a group's made for it.
+  const [held] = (await owner.query<{ id: string; organization_id: string }>('SELECT id, organization_id FROM membership WHERE user_id = $1', [userId])).rows;
+  const organization = held?.organization_id ?? (await createOrganization(owner, 'group'));
   const inviter = await person();
-  const membership = await addMembership(owner, organization, userId, 'viewer');
+  const membership = held?.id ?? (await addMembership(owner, organization, userId, 'viewer'));
   await asOwner(owner, [], () =>
     owner.query(
       `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
@@ -698,7 +701,7 @@ describe('SEC-22: a second factor is enrolled only inside a live invitation (doc
     expect(logged(lines, ENROLMENT_REFUSED)).toEqual([{ level: 'warn', msg: ENROLMENT_REFUSED, time: expect.any(String), user_id: uninvited.id, request_id: request.requestId }]);
   });
 
-  it('SEC-22: refuses at a new password an invitee whose invitation lapsed or who was locked after the step began', async () => {
+  it('SEC-22: refuses at a new password an invitee whose invitation lapsed or who was locked after the step began, before the provider stores the password (review security-N2)', async () => {
     for (const change of ['lapsed', 'locked'] as const) {
       const invited = await person({ status: 'invited', mfa: false, temporary: true, totp: false });
       await invitation(invited.id, 'live');
@@ -709,9 +712,29 @@ describe('SEC-22: a second factor is enrolled only inside a live invitation (doc
       } else {
         await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [invited.id]);
       }
+      const choose = vi.spyOn(provider, 'setNewPassword');
       expect(await flow.newPassword(step, CHOSEN, context()), change).toEqual(NOT_OPEN);
+      expect(choose, change).not.toHaveBeenCalled();
+      choose.mockRestore();
+      expect((await store.bySub(invited.sub))?.temporary, change).toBe(true);
       expect(await factorOf(invited.sub), change).toBeNull();
     }
+  });
+
+  it('SEC-22: refuses the new password of an account only the provider knows, or an invitee with no invitation, so the provider keeps its temporary password (review security-N2)', async () => {
+    const sub = randomUUID();
+    const email = `${randomUUID()}@synthetic.test`;
+    await store.put({ sub, email, passwordHash: await hashPassword(PASSWORD, CHEAP), temporary: true, totpSecret: null, totpLastStep: -1, credentials: [] });
+    const uninvited = await person({ status: 'invited', mfa: false, temporary: true, totp: false });
+    const { flow: choosing, lines } = paced();
+    const choose = vi.spyOn(provider, 'setNewPassword');
+    expect(await choosing.start(email, PASSWORD, context())).toEqual(NOT_OPEN);
+    expect(await choosing.start(uninvited.email, PASSWORD, context())).toEqual(NOT_OPEN);
+    expect(choose).not.toHaveBeenCalled();
+    choose.mockRestore();
+    expect((await store.bySub(sub))?.temporary).toBe(true);
+    expect((await store.bySub(uninvited.sub))?.temporary).toBe(true);
+    expect(logged(lines, ENROLMENT_REFUSED).map((entry) => entry.user_id)).toEqual([null, uninvited.id]);
   });
 
   it('SEC-22: re-checks the account at the setup key and again at the code: a change after the step was sealed is refused, and the provider stores nothing', async () => {

@@ -211,6 +211,25 @@ export class SignInFlow {
   }
 
   /**
+   * Whether a new password may be chosen (review security-N2): the provider would store it before any enrolment rule
+   * runs, so an account the provider alone knows, or an invitee outside a live invitation, would become a confirmed
+   * provider user with no factor. Open for the email's account when it is not locked and is either an invitee, not
+   * enrolled, holding a live invitation, or an active account with a factor (whose next step asks for that factor, not
+   * for enrolment). Otherwise logs the enrolment refusal of IDs only, before the provider changes anything.
+   */
+  private async newPasswordOpen(email: string, context: SignInContext): Promise<boolean> {
+    const account = await this.account({ email });
+    const open =
+      account !== undefined &&
+      !account.locked &&
+      ((account.status === 'invited' && !account.mfa_enrolled && (await this.invitationLive(account.user_id))) || (account.status === 'active' && account.mfa_enrolled));
+    if (!open) {
+      this.deps.logger.warn('security event: second-factor enrolment refused', { user_id: account?.user_id ?? null, request_id: context.requestId });
+    }
+    return open;
+  }
+
+  /**
    * Runs a step that calls the provider: a refused client credential (docs/adr/0088, D2) is logged as a security event
    * by the provider's error name and answered as the platform's failure, before anything counts it as the person's.
    */
@@ -252,7 +271,7 @@ export class SignInFlow {
   private async after(step: AuthStep, email: string, context: SignInContext): Promise<FlowResult> {
     switch (step.kind) {
       case 'new_password_required':
-        return { kind: 'pending', pending: { step: 'new_password', email, challenge: step.challenge } };
+        return (await this.newPasswordOpen(email, context)) ? { kind: 'pending', pending: { step: 'new_password', email, challenge: step.challenge } } : refused('enrolment_not_open');
       case 'mfa_setup_required': {
         const subject = await this.enrolment(step.subject, email, context);
         return subject === undefined ? refused('enrolment_not_open') : { kind: 'pending', pending: { step: 'mfa_setup', email, challenge: step.challenge, subject } };
@@ -322,6 +341,10 @@ export class SignInFlow {
   private async passwordChosen(pending: Pending, password: string, context: SignInContext): Promise<FlowResult> {
     if (pending.step !== 'new_password') {
       return refused('expired');
+    }
+    // Checked again: the step can outlive a change to the account, and the provider stores the password first.
+    if (!(await this.newPasswordOpen(pending.email, context))) {
+      return refused('enrolment_not_open');
     }
     const step = await this.deps.provider.setNewPassword(pending.challenge, password);
     if (step.kind === 'invalid_password') {
