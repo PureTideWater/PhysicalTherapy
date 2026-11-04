@@ -54,6 +54,15 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
   and P-2 (for UX PR 65), in `lane-b-ux-sign-in-recovery-build/proposals.md`. **Reviews re-run**: wf_1b69883e-023 (both
   lenses as default agents with their briefs, on the existing shots; skeptics; a fix round only if confirmed; verification).
 
+- 2026-11-04T11:35:00Z: **reviews done** (wf_1b69883e-023): 10 findings, all confirmed. security S-1 (P-1: Cognito's public
+  client bypasses the SEC-B1 gate; on the base already) taken as text: ADR 0081 A2 qualified and "Not covered" names the
+  takeover chain; Lane A proposal P-1 now prefers a confidential client with SecretHash. N-1 (P-2, UX PR 65), N-2 (P-3:
+  Cognito's per-code cap unverified), N-3 recorded. UX: UXB-S1 (a support line on the reset page), UXB-S2 ("enter an email
+  address"), UXB-N1, N2 and N4 fixed, N3 left as ruled (departures D-5 to D-8). Fix round 2 pushed **e156d948** (base still
+  24531dc2); targeted re-check green; CI green on e156d948 (capacity gate pass, time advisory; O9 52.1 s). Verification 2
+  **VERIFIED**. Owed before merge: shots of the round-2 changes and a UX delta check, plus the O9 note in the description:
+  wf_038d8d8f-613.
+
 ## Waiting on someone
 - None blocks the merge (the repository is public again, 07:10Z).
 
