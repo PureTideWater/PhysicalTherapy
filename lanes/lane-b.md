@@ -1567,3 +1567,12 @@ HANDOFF.md; LANES.md rule 10).
 - Work:
   - **brand-settle** (`co-001/brand-settle`): the ADR 0056 amendment, BRAND.md section 4, and the `--pw-unpriced` darkening with its contrast test. In S4 after pricing-run-cutoff, before the emails; one UX and brand review with shots.
   - **dark-mode-ship** (the full pass, then the OS hook and the setting): queued for Lane B.
+
+### 2026-11-04 23:50 UTC: #84 (packet day counts) merged as 7fb3e102
+- Each figure now takes its own role.
+- verifierNow runs at request, approval, export and on screens.
+- The packets Stryker split now runs every shard, at 98.99%.
+- The CI mutation failure on a654224a was #84's own. Its role properties had pushed two recorded equivalents past Stryker's per-mutant clock. Fixed in ec974c60 by reducing those properties' runs: no timeout raised, no equivalent edited.
+- For Lane A: the tp-packet-verifier/3 migration (in #84's status file).
+- S2 next: test-flakes-6, then packet-figure-placeholders' build.
+- Merged on 2026-11-04 in all, 17: #94, #107, #105, #75, #106, #86, #108, #104, #109, #113, #114, #85, #115, #96, #117, #116, #84.
