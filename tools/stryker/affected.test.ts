@@ -15,6 +15,7 @@ import {
   type AffectedConfig,
   type Change,
   type Closure,
+  type GlobalInputs,
   DATA_FILES,
   DIRECTORY_READS,
   GLOBAL_INPUTS,
@@ -641,6 +642,12 @@ describe('what stops the changes job, and the tooling’s own packages, on this 
   it('gives all four for a lockfile move of typescript alone, which @stryker-mutator/core imports undeclared on every run', () => {
     const affects = (after: string) => affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after } }, closures, global).packages;
     expect(affects(bump(lock, 'typescript', version('typescript'), '6.0.99'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    // Held by TEST_TOOLING alone: no file of the mutation tooling imports typescript (the import graph reads a comment's
+    // import call as an import, so none may quote one), and with every import of it taken out the move still affects all four.
+    expect([...global.imports].filter(([, names]) => names.has('typescript')).map(([owner]) => owner)).toEqual([]);
+    const unimported: GlobalInputs = { ...global, imports: new Map([...global.imports].map(([owner, names]) => [owner, new Set([...names].filter((name) => name !== 'typescript'))])) };
+    const moved = bump(lock, 'typescript', version('typescript'), '6.0.99');
+    expect(affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after: moved } }, closures, unimported).packages).toEqual(['money', 'pricing', 'ledger', 'packets']);
     expect(TEST_TOOLING).toContain('typescript');
     expect(TEST_TOOLING).not.toContain('typescript-eslint');
   }, 60_000);

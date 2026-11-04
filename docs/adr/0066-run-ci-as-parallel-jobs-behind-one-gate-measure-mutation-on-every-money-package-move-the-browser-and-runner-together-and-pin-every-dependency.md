@@ -1975,6 +1975,9 @@ since no closure imports `playwright-core`.
   manifests (every dependency and installed peer below it, about 200 packages) and fails on a bare import, by literal,
   that its package does not declare, that resolves, and that neither `TEST_TOOLING` nor the tooling's lockfile closure
   holds, so a Stryker or Vitest upgrade that adds one fails until it is listed. At 50029e64 it names typescript alone.
+  The import graph reads an import call quoted in a comment as an import, which over-reads (toward more shards), so
+  `TEST_TOOLING`'s own comment names none: one did, which held typescript through the global imports and hid the
+  entry's removal from the guard and the lockfile test. That test now also takes every import of typescript out.
   The undeclared requires of the third-party packages a money closure imports, and a specifier built at run time,
   stay outside it.
 - **The pnpm version, not its bytes.** pnpm/action-setup self-updates by version, and no mutation runner checks
