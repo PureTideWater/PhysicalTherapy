@@ -3677,6 +3677,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(sum(keyed(`, include: [ { note: "${'y'.repeat(90_000)}" } ]`), tiny)).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
     expect(sum(keyed(', include: [ { note: "${{ vars.A }}${{ vars.B }}${{ vars.C }}" } ]', 'env: { M: "${{ matrix.note }}" }'), tiny)).toEqual([over('env.M', 'M', 2 + 3 * 49_152 + 1)]);
     expect(sum(keyed(', include: "${{ fromJSON(steps.web.outputs.whole) }}"'), tiny)).toEqual([over('env.M', 'M', 2 + 100_000 + 49_152 + 1)]);
+    expect(sum(keyed(', include: [ "${{ fromJSON(steps.web.outputs.whole) }}" ]'), tiny), 'an include entry from an expression').toEqual([over('env.M', 'M', 2 + 100_000 + 49_152 + 1)]);
     expect(sum(keyed(', include: [ { other: x }, { note: short } ]'), tiny)).toEqual([]);
     // And beside a key's list, as matrixValues reads one: an include entry's value counts there too.
     expect(sum(step('env: { M: "${{ matrix.note }}${{ vars.A }}" }', `    strategy: { matrix: { note: [a], include: [ { note: "${'y'.repeat(90_000)}" } ] } }\n`))).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
