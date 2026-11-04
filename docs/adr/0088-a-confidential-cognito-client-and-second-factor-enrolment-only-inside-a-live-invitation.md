@@ -182,6 +182,9 @@ Choices the design left open, or where the build differed from it, each with its
 - The Cognito challenge records which name Cognito gave (USERNAME or USER_ID_FOR_SRP), so an `MFA_SETUP` after a new
   password keeps the subject named on the `NEW_PASSWORD_REQUIRED` step when the second answer repeats neither. It is
   never filled from the email.
+- The hardware-key challenge takes the name the same way (USERNAME, else USER_ID_FOR_SRP), so its
+  `RespondToAuthChallenge` hashes over Cognito's name and not the typed email (review infra-auth-IA-1). The twin holds
+  the name Cognito gave for each Session and refuses an answer sent under any other.
 - `beginTotpSetup`, `abandon` and `beginKey` take the sign-in context, so their security lines carry the request ID.
 - The `ClientSecret` wrapper lives in `secret-hash.ts`, so its private value is read in exactly one file.
 - A credential refusal on a reset request alone raises `PasswordResetRequestFailed`, not `ClientCredentialRefused`
@@ -248,8 +251,11 @@ Choices the design left open, or where the build differed from it, each with its
 There is no user pool in this lane. Each item is a founder step on staging, with its result recorded here: that Cognito
 names the enrolling user (`USERNAME` or `USER_ID_FOR_SRP`) on `NEW_PASSWORD_REQUIRED` or `MFA_SETUP` under `USER_AUTH`,
 and that the name is the user's `sub`, the value `ensureUser` stores as `cognito_sub` (D3's rule matches on it, and
-every test here uses the twin or a scripted mock; a gate before release N reaches production, Two releases); Cognito's
-hash error texts (the classifier and the probe); `RevokeToken`'s credential error name; the three secret calls' IAM
+every test here uses the twin or a scripted mock; a gate before release N reaches production, Two releases); which
+name Cognito gives on the `WEB_AUTHN` challenge (`USERNAME`, `USER_ID_FOR_SRP` or neither): the key sign-in sends it,
+as the other challenges do, as `USERNAME` on `RespondToAuthChallenge` and hashes over it, falling back to the typed
+email only when Cognito names nobody, so a hardware-key sign-in on staging with the secret set is a gate before
+release N+1 reaches production; Cognito's hash error texts (the classifier and the probe); `RevokeToken`'s credential error name; the three secret calls' IAM
 action names; whether the Lambda runtime's SDK has those calls (a gate before release N+1 reaches production); whether
 `ListUserPoolClientSecrets` returns the value; whether CloudTrail logs `AddUserPoolClientSecret`'s request or response;
 whether a deleted client's tokens die with it; Cognito's per-code attempt cap, request throttle and code life (0081 A3);

@@ -381,7 +381,10 @@ export class CognitoAuthProvider implements AuthProvider {
     if (response.ChallengeName !== 'WEB_AUTHN' || options === undefined) {
       throw new Error('Cognito did not offer a hardware-key challenge');
     }
-    const challenge = JSON.stringify({ s: response.Session ?? '', u: response.ChallengeParameters?.USERNAME ?? email, email } satisfies Challenge);
+    // The name Cognito gave, as next() takes it: RespondToAuthChallenge sends it as USERNAME and hashes over it, never
+    // over the typed email (docs/adr/0088, D1; review infra-auth-IA-1).
+    const n = response.ChallengeParameters?.USERNAME ?? response.ChallengeParameters?.USER_ID_FOR_SRP;
+    const challenge = JSON.stringify({ s: response.Session ?? '', u: n ?? email, email, ...(n === undefined ? {} : { n }) } satisfies Challenge);
     return { options: JSON.parse(options) as PublicKeyCredentialRequestOptionsJSON, challenge };
   }
 

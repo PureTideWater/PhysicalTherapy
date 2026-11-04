@@ -78,15 +78,33 @@ function credentialRefusal(name: string, input: Record<string, unknown>, secret:
 /** Every request any test sent, for the checks across the file. */
 const everySent: Sent[] = [];
 
+/**
+ * The internal name a challenge's answer gave for its Session (USERNAME, or USER_ID_FOR_SRP alone), as Cognito holds the
+ * user behind a Session: a RespondToAuthChallenge on that Session must send that name as USERNAME, and its hash over it
+ * (docs/adr/0088, D1; review infra-auth-IA-1). A Session answered with no name is held to nothing here.
+ */
+function sessionNameRefusal(sessions: ReadonlyMap<string, string>, name: string, input: Record<string, unknown>, secret: string | null): Error | undefined {
+  if (name !== 'RespondToAuthChallengeCommand' || typeof input.Session !== 'string') {
+    return undefined;
+  }
+  const internal = sessions.get(input.Session);
+  const username = (input.ChallengeResponses as Record<string, unknown> | undefined)?.USERNAME;
+  if (internal === undefined || username === internal) {
+    return undefined;
+  }
+  return named('NotAuthorizedException', secret === null ? 'Incorrect username or password.' : `Unable to verify secret hash for client ${CLIENT_ID}`);
+}
+
 function cognito(script: Record<string, Answer | Answer[]>, secret: string | null = SECRET) {
   const sent: Sent[] = [];
+  const sessions = new Map<string, string>();
   const queues = new Map(Object.entries(script).map(([name, answers]) => [name, Array.isArray(answers) ? [...answers] : [answers]]));
   const client = {
     send: (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
       const name = command.constructor.name;
       sent.push({ command: name, input: command.input });
       everySent.push({ command: name, input: command.input });
-      const refusal = credentialRefusal(name, command.input, secret);
+      const refusal = credentialRefusal(name, command.input, secret) ?? sessionNameRefusal(sessions, name, command.input, secret);
       if (refusal !== undefined) {
         return Promise.reject(refusal);
       }
@@ -94,6 +112,13 @@ function cognito(script: Record<string, Answer | Answer[]>, secret: string | nul
       const answer = queue !== undefined && queue.length > 1 ? queue.shift() : queue?.[0];
       if (answer === undefined) {
         return Promise.reject(new Error(`unscripted ${name}`));
+      }
+      if (!(answer instanceof Error) && typeof answer.Session === 'string') {
+        const parameters = answer.ChallengeParameters as Record<string, string> | undefined;
+        const internal = parameters?.USERNAME ?? parameters?.USER_ID_FOR_SRP;
+        if (internal !== undefined) {
+          sessions.set(answer.Session, internal);
+        }
       }
       return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
     },
@@ -312,6 +337,34 @@ describe('CognitoAuthProvider: passkeys', () => {
     expect(sent[1]?.input).toMatchObject({ ChallengeName: 'WEB_AUTHN', ChallengeResponses: { CREDENTIAL: JSON.stringify(response) } });
     expect(await provider.completeKeySignIn(challenge, response)).toEqual({ kind: 'rejected', stage: 'hardware_key' });
     expect(await provider.completeKeySignIn(challenge, response)).toEqual({ kind: 'expired' });
+  });
+
+  it('answers the WEB_AUTHN challenge as Cognito named the user, USER_ID_FOR_SRP alone included, never as the typed email (review infra-auth-IA-1)', async () => {
+    for (const parameters of [{ USER_ID_FOR_SRP: 'internal-name' }, { USERNAME: 'internal-name', USER_ID_FOR_SRP: 'other-name' }]) {
+      const { provider, sent } = make({
+        InitiateAuthCommand: { ChallengeName: 'WEB_AUTHN', Session: 'w2', ChallengeParameters: { CREDENTIAL_REQUEST_OPTIONS: JSON.stringify(OPTIONS), ...parameters } },
+        RespondToAuthChallengeCommand: TOKENS,
+      });
+      const { challenge } = await provider.beginKeySignIn('person@synthetic.test');
+      const response = { id: 'cred', rawId: 'cred', type: 'public-key', response: { clientDataJSON: 'x', authenticatorData: 'y', signature: 'z' }, clientExtensionResults: {} } as const;
+      expect(await provider.completeKeySignIn(challenge, response)).toMatchObject({ kind: 'authenticated', identity: { method: 'webauthn' } });
+      expect(sent[1]?.input).toMatchObject({ ChallengeName: 'WEB_AUTHN', Session: 'w2', ChallengeResponses: { USERNAME: 'internal-name', SECRET_HASH: hashOver('internal-name') } });
+    }
+    // Without the secret (release N) the same name is sent, and no hash.
+    const open = make(
+      { InitiateAuthCommand: { ChallengeName: 'WEB_AUTHN', Session: 'w3', ChallengeParameters: { CREDENTIAL_REQUEST_OPTIONS: JSON.stringify(OPTIONS), USER_ID_FOR_SRP: 'internal-name' } }, RespondToAuthChallengeCommand: TOKENS },
+      { secret: null },
+    );
+    const { challenge } = await open.provider.beginKeySignIn('person@synthetic.test');
+    expect(await open.provider.completeKeySignIn(challenge, {} as never)).toMatchObject({ kind: 'authenticated' });
+    expect((open.sent[1]?.input.ChallengeResponses as Record<string, unknown>).USERNAME).toBe('internal-name');
+    expect(open.sent[1]?.input.ChallengeResponses).not.toHaveProperty('SECRET_HASH');
+  });
+
+  it('the twin refuses a challenge answered under another name than Cognito gave for its Session (review infra-auth-IA-1)', async () => {
+    const { provider } = make({ RespondToAuthChallengeCommand: TOKENS, InitiateAuthCommand: { ChallengeName: 'SOFTWARE_TOKEN_MFA', Session: 's9', ChallengeParameters: { USER_ID_FOR_SRP: 'internal-name' } } });
+    await provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026');
+    await expect(provider.answerTotp(JSON.stringify({ s: 's9', u: 'person@synthetic.test', email: 'person@synthetic.test' }), '123456')).rejects.toThrow('client credential');
   });
 
   it('refuses when Cognito offers no passkey challenge, and passes other failures through', async () => {
