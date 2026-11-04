@@ -2111,7 +2111,9 @@ since no closure imports `playwright-core`.
   - these figures predate the review's fixes (N51 to N56) and are re-measured before the push: #46, whose only global
     or money-path change is adding the root `.gitattributes` (linguist and eol attributes on
     `packages/db/functions/*.sql`), now runs every shard (N56), so its "none" becomes a full run.
-- **A shard's time on CI**, the mean over the 12 push runs since `stryker/shards.json` last changed (40324477819 to
+- **A shard's time on CI** (the seven shards before #84; #84, merged after this part, split packets' three shards into
+  thirteen, so the totals below are dated 2026-11-04 and are re-measured on the push runs after it), the mean over the
+  12 push runs since `stryker/shards.json` last changed (40324477819 to
   41348076075, each job from its start to its completion): money-ledger 4.49 minutes, packets-scan 7.23, packets-rest
   12.59, packets-explain 11.86, pricing-engine 7.41, pricing-recompute 4.15, pricing-rest 5.63; 53.36 for the shards and
   54.24 with the changes and gate jobs. By package: money and the ledger 4.49, pricing 17.19, packets 31.68.
