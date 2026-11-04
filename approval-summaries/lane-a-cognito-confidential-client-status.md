@@ -90,6 +90,15 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
   52.9 s). Verification: NOT VERIFIED on the description only (seed.ts is watched; watched-paths.txt is the list; the O9
   note was missing). An agent is correcting it, then ready and merge.
 
+- 2026-11-04T17:50:00Z: **PR 1 MERGED: #113 as 9b237a93** (merge commit; expectedHeadSha ed4318e8; base c4941291). Before it:
+  the description was corrected (seed.ts is watched; watched-paths.txt is the generated list; the O9 note; the
+  threads.test.ts flake noted) and read back byte-identical; ready 17:23Z; approval-of-record queued about 20 minutes on
+  GitHub's side (a merge attempt was refused with "Required status check approval-of-record is queued", as it should be),
+  then success at 17:23:52Z. Unsubscribed from #113. **PR 2 is not started** (the orchestrator, 12:28Z): it is cut only
+  after PR 1 is deployed to staging. Before PR 2, the founder runs F0 (on staging running release N, before production),
+  F1-F5 and ruling 16; proposals IA-4 and N5 are in `lane-a-cognito-confidential-client-pr1/proposals.md`.
+  The superseded branch `co-001/cognito-confidential-client` (#112) must never be merged or reused.
+
 ## Waiting on someone
 - The founder, before release N (PR 1) reaches production: **F0**, on staging running release N: invite a synthetic
   account, set its password, enrol a factor and sign in (it checks that Cognito's challenge names the user's sub, which the
@@ -99,4 +108,4 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
   (12:28Z).
 
 ## Next step
-Design.
+PR 1 merged (9b237a93). PR 2 waits for PR 1 on staging and the founder's F0-F5 and ruling 16 (design section 10).
