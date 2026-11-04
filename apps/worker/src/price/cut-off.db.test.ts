@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import type { MappedLine } from '@tp/contracts';
+import { type MappedLine, mapPlan } from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { asOwner } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { type CreatedPricingRun, createPricingRun } from './create';
+import { type RerunReason, rerunReasons } from './rerun';
 import { type Practice, PricingWorld, RELEASE } from './test-support/pricing-world';
 
 /**
@@ -191,5 +192,40 @@ describe('a run’s cut-off at its creation (PRC-32)', () => {
     ]);
     await w.execute(target, created.pricingRunId);
     expect(await pricedPlans(created.pricingRunId)).toEqual(judged);
+  });
+});
+
+/**
+ * The reasons a complete run's page offers a re-run, read as the Pricing runs page reads them (apps/web's pricing
+ * queries): the run's row as stored, then rerunReasons() in the billing manager's scope.
+ */
+async function offeredReasons(target: Practice, pricingRunId: string): Promise<RerunReason[]> {
+  return withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, async (scope) => {
+    const { rows } = await scope.client.query<{ practice_id: string; created_at: Date; release_no: number }>('SELECT practice_id, created_at, release_no FROM pricing_run WHERE id = $1', [
+      pricingRunId,
+    ]);
+    const row = rows[0] as { practice_id: string; created_at: Date; release_no: number };
+    return rerunReasons(scope.client, { practiceId: row.practice_id, createdAt: row.created_at, releaseNo: row.release_no });
+  });
+}
+
+describe('the reasons to re-run a complete run, against its creation to the microsecond (PRC-32)', () => {
+  it('does not count a mapping made in the run’s own transaction as made since, and counts one made after', async () => {
+    const target = await prc19('cut-off-rerun-reasons');
+    const planId = await newPlan(target, 'CE:SYNPLAN-CUTOFF-SAME');
+    // One transaction, so one now(): the mapping's created_at is the run's created_at, to the microsecond.
+    const created = await w.as(target, target.manager, async (context) => {
+      await mapPlan(context, { practiceId: target.practiceId, planId, kind: 'no_agreement', contractVersionId: null, effectiveFrom: '2026-01-01' });
+      return createPricingRun(context.scope, { practiceId: target.practiceId, periodFrom: '2026-02-01', periodTo: '2026-02-28', releaseNo: RELEASE, requestId: `test-${randomUUID()}` });
+    });
+    expect(await w.one('SELECT r.created_at = m.created_at AS same FROM pricing_run r, payer_plan_mapping m WHERE r.id = $1 AND m.plan_id = $2', [created.pricingRunId, planId])).toEqual({
+      same: true,
+    });
+    await w.execute(target, created.pricingRunId);
+    expect(await offeredReasons(target, created.pricingRunId)).toEqual([]);
+
+    const later = await newPlan(target, 'CE:SYNPLAN-CUTOFF-LATER');
+    await w.mapped(target, later, 'no_agreement', '2026-01-01');
+    expect(await offeredReasons(target, created.pricingRunId)).toEqual(['mapping_changed']);
   });
 });
