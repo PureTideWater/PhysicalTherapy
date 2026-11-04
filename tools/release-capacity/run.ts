@@ -21,7 +21,22 @@ import { CommandError, DockerRuntime, ProcessRuntime, type Runtime, type Service
 import { HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginUrl, loginsEnvironment, workerEnvironment } from '../screening-capacity/env';
 import { MIB, NETWORK_DELAY_MS, cpuLayout, harnessCpus, postgresLimit, productionLimits, runnerTooSmall, taskLimit } from '../screening-capacity/limits';
 import { memoryEvents, workerStarted } from '../screening-capacity/measure';
-import { type AdvisoryLockSamples, type CapacityMeasurements, type JobHeap, type JobOutcome, type JobPhase, type SampledPeriod, type WindowsQuery, type WorkerMemory, advisoriesOutput, errorCodes, jobHeaps, markdown, report } from './checks';
+import {
+  type AdvisoryLockSamples,
+  type CapacityMeasurements,
+  type JobHeap,
+  type JobOutcome,
+  type JobPhase,
+  OUTSIDE_SAMPLED_PERIODS,
+  type SampledPeriod,
+  type WindowsQuery,
+  type WorkerMemory,
+  advisoriesOutput,
+  errorCodes,
+  jobHeaps,
+  markdown,
+  report,
+} from './checks';
 import {
   FULL_SIZE,
   SMALL_SIZE,
@@ -356,11 +371,14 @@ async function readMemory(runtime: Runtime, limitBytes: number, periods: readonl
 
 /**
  * Samples, each second until stopped, the largest advisory-lock count any one backend of the run's database holds (D10),
- * on a connection of its own. A sample that cannot be read (a restart of Postgres) is skipped, not counted.
+ * on a connection of its own, and which sampled period `during` names as open when the peak was first seen, so a
+ * failing check names the phase whose jobs to read. A sample that cannot be read (a restart of Postgres) is skipped, not
+ * counted.
  */
-function advisoryLockSampler(url: string): { readonly stop: () => Promise<AdvisoryLockSamples | null> } {
+function advisoryLockSampler(url: string, during: () => string): { readonly stop: () => Promise<AdvisoryLockSamples | null> } {
   let running = true;
   let peak = 0;
+  let peakDuring = during();
   let samples = 0;
   const loop = (async () => {
     const client = await ownerClient(url).catch(() => null);
@@ -376,7 +394,11 @@ function advisoryLockSampler(url: string): { readonly stop: () => Promise<Adviso
           )
           .catch(() => null);
         if (read !== null) {
-          peak = Math.max(peak, read.rows[0]?.n ?? 0);
+          const n = read.rows[0]?.n ?? 0;
+          if (samples === 0 || n > peak) {
+            peak = n;
+            peakDuring = during();
+          }
           samples += 1;
         }
         await sleep(1000);
@@ -389,7 +411,7 @@ function advisoryLockSampler(url: string): { readonly stop: () => Promise<Adviso
     stop: async () => {
       running = false;
       await loop;
-      return samples === 0 ? null : { peak, samples };
+      return samples === 0 ? null : { peak, samples, peakDuring };
     },
   };
 }
@@ -424,6 +446,8 @@ async function main(): Promise<number> {
   };
   const jobs: JobOutcome[] = [];
   const periods: SampledPeriod[] = [];
+  /** The sampled period open now, for the lock sampler's peak (D10); none outside the phases. */
+  let openPeriod: string = OUTSIDE_SAMPLED_PERIODS;
   let release = { releaseNo: QUARTERLY_SCALE_RELEASE_NUMBER, records: 0, manifestSha256: '' };
   let run: CapacityMeasurements['run'] = null;
   let pricedLines: number | null = null;
@@ -466,7 +490,7 @@ async function main(): Promise<number> {
       ownerService = withDatabase(urls.serviceUrl, opts.database);
     }
     await timed('migrate', () => runtime.migrate(ownerService, loginsEnvironment(ownerService, logins)));
-    locks = advisoryLockSampler(ownerHarness);
+    locks = advisoryLockSampler(ownerHarness, () => openPeriod);
     say(`loaded: ${(await timed('release load', () => child('tools/release-capacity/load.ts', [ownerHarness, built.dir, String(built.releaseNo)], 8192))).trim()}`);
     const hostDirs = directories(runtime.dataDir.host);
     for (const dir of Object.values(hostDirs) as string[]) {
@@ -529,13 +553,17 @@ async function main(): Promise<number> {
       phase,
       jobId: await send(queue as PgBossQueue),
     });
-    /** memory.current sampled each second into the period named, from its first tick; `close` records how long it ran. */
+    /**
+     * memory.current sampled each second into the period named, from its first tick; `close` records how long it ran
+     * and ends it as the lock sampler's open period.
+     */
     const sampling = (what: string) => {
       const values: number[] = [];
       const started = Date.now();
       let entry: SampledPeriod = { what, peakBytes: null, samples: 0, ms: null };
       periods.push(entry);
-      const close = () => {
+      openPeriod = what;
+      const record = () => {
         const index = periods.indexOf(entry);
         entry = { what, peakBytes: values.length === 0 ? null : Math.max(...values), samples: values.length, ms: Date.now() - started };
         periods[index] = entry;
@@ -546,7 +574,11 @@ async function main(): Promise<number> {
         if (!Number.isNaN(value)) {
           values.push(value);
         }
-        close();
+        record();
+      };
+      const close = () => {
+        record();
+        openPeriod = OUTSIDE_SAMPLED_PERIODS;
       };
       return { tick, close };
     };
@@ -595,7 +627,7 @@ async function main(): Promise<number> {
       reprocessingDocuments.push(await stage835(seeding, a, file));
     }
     const exportId = await stagePostingExport(seeding, a, reprocessed.postingExport);
-    say(`A's reconcile: ${String(reprocessed.lines)} actionable lines in ${String(reprocessed.files.length)} reprocessing 835s`);
+    say(`A’s reconcile: ${String(reprocessed.lines)} actionable lines in ${String(reprocessed.files.length)} reprocessing 835s`);
     const reconcileMemory = sampling('A’s reconcile');
     await timed('A reconcile', async () => {
       const parses = await Promise.all(

@@ -78,7 +78,7 @@ const PASSING: CapacityMeasurements = {
   parsedClaims: 8_000,
   posted: { lines: 33_334, inFull: 33_334 },
   memory: { limitBytes: LIMIT, peakBytes: 700 * MIB, periods: PERIODS, oomKills: 0, oomKilled: false, restarts: 0, running: true },
-  advisoryLocks: { peak: 1, samples: 3_600 },
+  advisoryLocks: { peak: 1, samples: 3_600, peakDuring: 'the concurrent phase' },
   errorCodes: { CONTENT_NOT_LOADED: 0 },
   windows: { coldMs: 1200, warmMs: 300, coldRestarted: true, cacheDropped: true, contents: 14, plan: 'HashAggregate' },
   times: { 'concurrent phase': 600_000 },
@@ -98,10 +98,10 @@ describe('the release capacity verdict', () => {
   });
 
   it('fails a job that did not complete, or whose state could not be read, the concurrent phase’s included', () => {
-    failsWith({ jobs: JOBS.map((entry) => (entry.what === 'C parse 3' ? { ...entry, state: 'failed' } : entry)) }, /C parse 3 \(parse_835\) ended failed, not completed \(concurrent phase\)/);
+    failsWith({ jobs: JOBS.map((entry) => (entry.what === 'C parse 3' ? { ...entry, state: 'failed' } : entry)) }, /C parse 3 \(parse_835 [0-9a-f-]{36}\) ended failed, not completed, in the concurrent phase/);
     failsWith({ jobs: JOBS.map((entry) => (entry.what === 'A audit report' ? { ...entry, state: 'active' } : entry)) }, /A audit report .* ended active/);
-    failsWith({ jobs: JOBS.map((entry) => (entry.what === 'B triage' ? { ...entry, state: null } : entry)) }, /B triage \(triage\) could not be read/);
-    failsWith({ jobs: JOBS.map((entry) => (entry.what === 'A price' ? { ...entry, state: 'not_queued', jobId: null } : entry)) }, /A price .* ended not_queued/);
+    failsWith({ jobs: JOBS.map((entry) => (entry.what === 'B triage' ? { ...entry, state: null } : entry)) }, /^B triage \(triage [0-9a-f-]{36}\) could not be read$/);
+    failsWith({ jobs: JOBS.map((entry) => (entry.what === 'A price' ? { ...entry, state: 'not_queued', jobId: null } : entry)) }, /^A price \(price\) ended not_queued, not completed, in the concurrent phase$/);
   });
 
   it('fails a concurrent phase that did not queue its six jobs', () => {
@@ -151,9 +151,9 @@ describe('the release capacity verdict', () => {
   it(`fails a period sampled fewer than once each ${String(PHASE_SAMPLE_GAP_MS / 1000)} seconds, so a peak between samples is not missed unseen (int-surfaces improvement 5)`, () => {
     // 600 s of phase: 300 samples is the floor.
     expect(verdict({ ...PASSING, memory: { ...PASSING.memory, periods: withPeriod('the concurrent phase', { samples: 300 }) } }).pass).toBe(true);
-    failsWith({ memory: { ...PASSING.memory, periods: withPeriod('the concurrent phase', { samples: 299 }) } }, /the concurrent phase’s memory was sampled 299 times in 600.0 s, fewer than one each 2 seconds \(300\)/);
+    failsWith({ memory: { ...PASSING.memory, periods: withPeriod('the concurrent phase', { samples: 299 }) } }, /memory over the concurrent phase was sampled 299 times in 600.0 s, fewer than one each 2 seconds \(300\)/);
     failsWith({ memory: { ...PASSING.memory, periods: withPeriod('the concurrent phase', { samples: 0 }) } }, /sampled 0 times/);
-    failsWith({ memory: { ...PASSING.memory, periods: withPeriod('A’s triage', { samples: 10, ms: 60_000 }) } }, /A’s triage’s memory was sampled 10 times in 60.0 s, fewer than one each 2 seconds \(30\)/);
+    failsWith({ memory: { ...PASSING.memory, periods: withPeriod('A’s triage', { samples: 10, ms: 60_000 }) } }, /memory over A’s triage was sampled 10 times in 60.0 s, fewer than one each 2 seconds \(30\)/);
     // With the period's time unread, one sample is the floor.
     expect(verdict({ ...PASSING, memory: { ...PASSING.memory, periods: withPeriod('the concurrent phase', { samples: 1, ms: null }) } }).pass).toBe(true);
   });
@@ -166,44 +166,46 @@ describe('the release capacity verdict', () => {
   });
 
   it('fails a measured job that completed only on a later attempt, or whose attempts could not be read; setup’s retries are not measured (CAS-42.4)', () => {
-    failsWith({ jobs: change('A triage', { attempts: 2 }) }, /A triage \(triage\) completed on attempt 2, not its first \(the chain\)/);
-    failsWith({ jobs: change('D triage', { attempts: 3 }) }, /D triage \(triage\) completed on attempt 3, not its first \(the large jobs together\)/);
-    failsWith({ jobs: change('A reconcile', { attempts: null }) }, /A reconcile \(reconcile\) completed, but its attempts could not be read \(A’s reconcile\)/);
+    failsWith({ jobs: change('A triage', { attempts: 2 }) }, /A triage \(triage [0-9a-f-]{36}\) completed on attempt 2, not its first, in the chain/);
+    failsWith({ jobs: change('D triage', { attempts: 3 }) }, /D triage \(triage [0-9a-f-]{36}\) completed on attempt 3, not its first, in the large jobs together/);
+    failsWith({ jobs: change('A reconcile', { attempts: null }) }, /A reconcile \(reconcile [0-9a-f-]{36}\) completed, but its attempts could not be read, in A’s reconcile/);
     expect(verdict({ ...PASSING, jobs: change('B triage', { attempts: 2 }) }).pass).toBe(true);
   });
 
   it(`fails a backend above ${String(ADVISORY_LOCKS_PER_TRANSACTION)} advisory locks at any sample (the loader’s bound, imported), and a run whose locks could not be sampled (CAS-42.4)`, () => {
     expect(ADVISORY_LOCKS_PER_TRANSACTION).toBe(TRACE_LOCK_BUCKETS);
     expect(ADVISORY_LOCKS_PER_TRANSACTION).toBe(64);
-    expect(verdict({ ...PASSING, advisoryLocks: { peak: 64, samples: 3_600 } }).pass).toBe(true);
-    failsWith({ advisoryLocks: { peak: 65, samples: 3_600 } }, /a backend held 65 advisory locks at once, above 64/);
+    expect(verdict({ ...PASSING, advisoryLocks: { peak: 64, samples: 3_600, peakDuring: 'A’s triage' } }).pass).toBe(true);
+    // The line names the sampled period that was open when the peak was first seen, so the reader knows which jobs to read.
+    failsWith({ advisoryLocks: { peak: 65, samples: 3_600, peakDuring: 'A’s triage' } }, /^a backend held 65 advisory locks at once during A’s triage, above 64 \(a lock per line or per row is back\)$/);
+    failsWith({ advisoryLocks: { peak: 70, samples: 3_600, peakDuring: 'setup or between phases' } }, /held 70 advisory locks at once during setup or between phases, above 64/);
     failsWith({ advisoryLocks: null }, /advisory locks held could not be sampled/);
-    failsWith({ advisoryLocks: { peak: 0, samples: 0 } }, /advisory locks held could not be sampled/);
+    failsWith({ advisoryLocks: { peak: 0, samples: 0, peakDuring: null } }, /advisory locks held could not be sampled/);
   });
 
   it(`fails a job’s live heap above ${String(HEAP_LIVE_PERCENT)}% of its limit, and a measured job that logged no job heap line (CAS-42.4)`, () => {
     expect(HEAP_LIVE_PERCENT).toBe(75);
     expect(verdict({ ...PASSING, jobs: change('A audit report', { heap: { peakMib: 420, limitMib: 560 } }) }).pass).toBe(true);
-    failsWith({ jobs: change('A audit report', { heap: { peakMib: 421, limitMib: 560 } }) }, /A audit report \(audit_report 00000000-0000-4000-8000-\d{12}\) had a live heap of 421 MiB, above 75% of its 560 MiB limit \(420 MiB\) \(the chain\)/);
+    failsWith({ jobs: change('A audit report', { heap: { peakMib: 421, limitMib: 560 } }) }, /A audit report \(audit_report 00000000-0000-4000-8000-\d{12}\) had a live heap of 421 MiB, above 75% of its 560 MiB limit \(420 MiB\), in the chain$/);
     failsWith({ jobs: change('B triage', { heap: { peakMib: 500, limitMib: 560 } }) }, /B triage .* had a live heap of 500 MiB/);
     // V8's heap_size_limit adds the young generation to the flag (752 MiB under 560): the line is the flag's, as the alarm's is.
     expect(verdict({ ...PASSING, jobs: change('A audit report', { heap: { peakMib: 420, limitMib: 752 } }) }).pass).toBe(true);
-    failsWith({ jobs: change('A audit report', { heap: { peakMib: 421, limitMib: 752 } }) }, /A audit report .* had a live heap of 421 MiB, above 75% of its 560 MiB limit \(420 MiB\) \(the chain\)/);
+    failsWith({ jobs: change('A audit report', { heap: { peakMib: 421, limitMib: 752 } }) }, /A audit report .* had a live heap of 421 MiB, above 75% of its 560 MiB limit \(420 MiB\), in the chain$/);
     // With no flag in the worker's command, the limit the job logged.
     const unflagged = { ...PASSING.worker, command: ['node', 'dist/main.js'] };
     expect(verdict({ ...PASSING, worker: unflagged, jobs: change('A audit report', { heap: { peakMib: 564, limitMib: 752 } }) }).pass).toBe(true);
     failsWith({ worker: unflagged, jobs: change('A audit report', { heap: { peakMib: 565, limitMib: 752 } }) }, /A audit report .* had a live heap of 565 MiB, above 75% of its 752 MiB limit \(564 MiB\)/);
-    failsWith({ jobs: change('E price', { heap: null }) }, /E price \(price\) logged no job heap line \(the large jobs together\)/);
-    failsWith({ jobs: change('C parse 2', { heap: null }) }, /C parse 2 \(parse_835\) logged no job heap line \(concurrent phase\)/);
+    failsWith({ jobs: change('E price', { heap: null }) }, /E price \(price [0-9a-f-]{36}\) logged no `job heap` line, in the large jobs together/);
+    failsWith({ jobs: change('C parse 2', { heap: null }) }, /C parse 2 \(parse_835 [0-9a-f-]{36}\) logged no `job heap` line, in the concurrent phase/);
     // Setup's jobs are not measured; a job that did not complete fails as that alone.
     expect(verdict({ ...PASSING, jobs: change('D price', { heap: null }) }).pass).toBe(true);
-    failsWith({ jobs: change('A reconcile', { state: 'failed', heap: null, attempts: 3 }) }, /A reconcile \(reconcile\) ended failed, not completed \(A’s reconcile\)/);
+    failsWith({ jobs: change('A reconcile', { state: 'failed', heap: null, attempts: 3 }) }, /A reconcile \(reconcile [0-9a-f-]{36}\) ended failed, not completed, in A’s reconcile/);
   });
 
   it('fails the large jobs together not queued as seven, or any of them not completed (CAS-42.4)', () => {
-    failsWith({ jobs: JOBS.filter((entry) => entry.what !== 'C parse 8') }, /the large jobs together queued 6 jobs, not seven/);
-    failsWith({ jobs: change('D triage', { state: 'failed' }) }, /D triage \(triage\) ended failed, not completed \(the large jobs together\)/);
-    failsWith({ jobs: change('E price', { state: null }) }, /E price \(price\) could not be read \(the large jobs together\)/);
+    failsWith({ jobs: JOBS.filter((entry) => entry.what !== 'C parse 8') }, /the large jobs together queued 6 jobs, not seven \(A’s second audit report, D’s triage, E’s price job and C’s second four parses\)/);
+    failsWith({ jobs: change('D triage', { state: 'failed' }) }, /D triage \(triage [0-9a-f-]{36}\) ended failed, not completed, in the large jobs together/);
+    failsWith({ jobs: change('E price', { state: null }) }, /E price \(price [0-9a-f-]{36}\) could not be read, in the large jobs together/);
   });
 
   it('fails A’s reconcile posting other than each actionable line, a line posted short of its approval, or uncounted (CAS-42.4)', () => {
@@ -240,10 +242,13 @@ describe('the release capacity verdict', () => {
     const summary = markdown(failing);
     expect(summary).toMatch(/^# Release capacity: fail\n/);
     expect(summary).toContain('- 3 priced lines, not 100000');
-    expect(summary).toContain('| C parse 4 | concurrent | completed | 1 | 100 of 560 MiB | 1.0 s |');
+    expect(summary).toContain('| C parse 4 | the concurrent phase | completed | 1 | 100 of 560 MiB | 1.0 s |');
+    expect(summary).toContain('| A reprocessing parse 1 | A’s reconcile | completed | 1 | 100 of 560 MiB | 1.0 s |');
     expect(summary).toContain('| B price | setup | completed | 1 | none | 1.0 s |');
     expect(summary).toContain('690 MiB over A’s triage (300 samples)');
-    expect(summary).toContain('Advisory locks: at most 1 held by one backend (3600 samples), of 64.');
+    expect(summary).toContain('Advisory locks: at most 1 held by one backend (first during the concurrent phase; 3600 samples), of 64.');
+    // The live heap beside the limit the check holds it to (75% of the flag), never V8's larger heap_size_limit.
+    expect(markdown(report({ ...PASSING, jobs: change('A triage', { heap: { peakMib: 430, limitMib: 752 } }) }))).toContain('| A triage | the chain | completed | 1 | 430 of 560 MiB | 1.0 s |');
     expect(markdown(report(PASSING))).toContain('Every check passed.');
     expect(markdown(report(PASSING))).toContain('A’s lines posted 33334 (33334 in full) of 33334.');
   });

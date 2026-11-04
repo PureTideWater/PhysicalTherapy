@@ -88,24 +88,29 @@ who owns each change. Update the risk analysis. If a control failed, add the tes
 
 The alarm `JobHeapLivePeak` (on the operator topic, with the worker's other alarms) fires when a worker job's live heap
 passed 75% of the worker's heap limit (420 of 560 MiB, `infra/lib/heap.ts`) in a five-minute period. Each job attempt
-logs `job heap` as it ends, completed or failed, with `job_id`, `job_type`, `heap_live_peak_mib` (the heap in use just
-after the largest major collection while it ran) and `heap_limit_mib`; the alarm takes the largest peak. It is the line
-the weekly real-size run fails at (docs/runbooks/ci.md, `release-capacity`). Nothing has failed yet: it says a month, or
-several practices' large jobs at once, came near the margin that keeps the worker's process from running out of heap,
-which would fail every practice's jobs in flight. It is not a security event: open no incident record unless something
-else here applies.
+logs `job heap` as it ends, completed or failed, with `job_id`, `job_type`, `heap_live_peak_mib` (the largest heap in
+use just after a major collection while it ran) and `heap_limit_mib`; the alarm takes the largest peak. It is the line
+the weekly real-size run fails at (docs/runbooks/ci.md, `release-capacity`). The alarm alone does not mean a job
+failed: it says the worker's live heap passed 420 MiB, so a month, or several practices' large jobs at once, used up
+most of the margin that keeps the process from running out of heap. Running out would end every job then in flight;
+step 3 checks whether any did. It is not a security event: open no incident record unless something else here applies.
 
 1. In the worker's log group, find the `job heap` lines of the period above 420 and read their `job_id` and `job_type`.
-   Then read that job's other lines by its ID (its start, its outcome, any error code) and which other jobs ran at the
-   same time; the process is shared, so their heaps add up. Never copy a log line with anything but IDs and numbers into
-   a ticket.
+   Then read that job's other lines by its ID (its outcome, any error code) and which other jobs ended in the same
+   minutes. `heap_live_peak_mib` is the whole worker process's live heap, so every job running then logs the same peak:
+   the job named saw the peak but did not necessarily cause it. Never add peaks together. Never copy a log line with
+   anything but IDs and numbers into a ticket.
 2. Read the weekly run's last summary (the `release-capacity` report, its "Live heap" column and each phase's peak): a
-   month near the same size passing there points at the reader that holds a month's lines; a pass there points at size
-   or overlap in production.
-3. If jobs are failing too (a heap out-of-memory ends the worker's process, and pg-boss retries what was in flight;
-   the job-failure alarm fires on a job's last failed attempt), record the job IDs. Then fix forward: the bound goes
-   back to the reader that outgrew it (ADR 0083: no job holds a month's lines beyond a small, measured per-line holder),
-   never a larger heap alone.
+   month of about the same size that fails there, or passes close to 420 MiB, points at a reader that holds a month's
+   lines; a clear pass points at size or overlap in production.
+3. A heap out-of-memory ends the worker's process before it can log anything. The jobs that were running log neither
+   `job heap` nor `job failed on its last attempt`, so the job-failure alarm stays quiet for them, and pg-boss retries
+   them, under the same job IDs, once they expire. Look for the crash itself: a new `worker started` line in the
+   worker's log group, and the stopped worker task's exit code and reason in the ECS service's events. Record those job
+   IDs.
+4. Whether or not jobs failed, open a ticket with the job IDs, types and peaks (IDs and numbers only), and fix forward:
+   the bound goes back to the reader that outgrew it (ADR 0083: no job holds a month's lines beyond a small, measured
+   per-line holder), never a larger heap alone.
 
 ## The yearly tabletop
 

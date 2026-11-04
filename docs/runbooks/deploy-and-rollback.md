@@ -282,15 +282,17 @@ SHARE ROW EXCLUSIVE lock together with `NOWAIT`, once a second, up to 300 tries,
 replaces `line_status_rules()` and builds `claim_by_superseded`. A refused try holds and queues nothing, so stage writers
 (triage, the audit report, opening a case, reconcile, manual ledger work and a person's reopen) and 835 loads go on
 while it waits for a moment with neither in flight. Once it holds both locks, stage writes wait for the backfill (a few
-seconds per million events) and 835 loads for the index build. If no such moment comes in five minutes, the migration
-task fails with
+seconds per million events) and 835 loads for the index build. If no such moment comes in five minutes, the deploy
+fails: cdk reports "the migration task … stopped without migrating (exit code 1, …)", and the migration's log group
+`/tp/<env>/migration` ends with
 
-> line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)
+> db:migrate: 20261109090000_line_status_heads.sql failed: line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)
 
-(`lock_not_available`, 55P03). The migration runs in one transaction, so nothing changed, and no service moved (step 4:
-no service moves until the migration task exits 0). It means a long triage or audit report, or an 835 load, held its
-transaction through the whole five minutes. Run the deploy again, at a quieter hour if it repeats; never take the locks
-by hand or end another session's transaction to make room.
+(`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing (a migration before it in
+the same deploy stays applied: each commits on its own), and no service moved (step 4: no service moves until the
+migration task exits 0). It means no try in the five minutes found a moment free of stage writes and 835 loads: a long
+triage or audit report, or jobs running back to back. Run the deploy again, at a quieter hour if it repeats; never take
+the locks by hand or end another session's transaction to make room.
 
 **After it.** Two writers of the same line wait on that line's row in `line_status_head`: in `pg_stat_activity` the
 waiting backend shows `wait_event_type = 'Lock'` with `wait_event = 'transactionid'` (`tuple` for a third writer queued

@@ -60,8 +60,11 @@ export const TOGETHER_JOBS = 7;
  */
 export type JobPhase = 'setup' | 'concurrent' | 'chain' | 'reconcile' | 'together';
 
-/** How a failing check names a measured job's phase. */
-const PHASE_NAMES: Readonly<Record<JobPhase, string | null>> = { setup: null, concurrent: 'concurrent phase', chain: 'the chain', reconcile: 'A’s reconcile', together: 'the large jobs together' };
+/** How a failing check and the summary's table name a job's phase (setup's jobs are not measured). */
+const PHASE_NAMES: Readonly<Record<JobPhase, string>> = { setup: 'setup', concurrent: 'the concurrent phase', chain: 'the chain', reconcile: 'A’s reconcile', together: 'the large jobs together' };
+
+/** How a failing check names a job: its label in the run, its type and its pg-boss ID (release-capacity.json's `jobs[].jobId`). */
+const jobLabel = (job: JobOutcome) => `${job.what} (${job.name}${job.jobId === null ? '' : ` ${job.jobId}`})`;
 
 /** One job's `job heap` lines (D19), the largest of its attempts': its live heap peak and its heap limit, in MiB. */
 export interface JobHeap {
@@ -103,7 +106,15 @@ export const SAMPLED_PERIODS = ['the concurrent phase', 'A’s triage', 'A’s a
 export interface AdvisoryLockSamples {
   readonly peak: number;
   readonly samples: number;
+  /**
+   * The sampled period (one of SAMPLED_PERIODS) open when the peak was first seen, or `setup or between phases`
+   * (OUTSIDE_SAMPLED_PERIODS); null with no sample.
+   */
+  readonly peakDuring: string | null;
 }
+
+/** How the lock sampler names a moment no sampled period was open: seeding, setup, and the gaps between phases. */
+export const OUTSIDE_SAMPLED_PERIODS = 'setup or between phases';
 
 export interface WorkerMemory {
   readonly limitBytes: number;
@@ -226,29 +237,30 @@ export function verdict(m: CapacityMeasurements): Verdict {
     reasons.push(`the run stopped before it was read back: ${m.aborted}`);
   }
   for (const job of m.jobs) {
-    const phase = PHASE_NAMES[job.phase];
-    const where = phase === null ? '' : ` (${phase})`;
+    const measured = job.phase !== 'setup';
+    const where = measured ? `, in ${PHASE_NAMES[job.phase]}` : '';
+    const label = jobLabel(job);
     if (job.state !== 'completed') {
-      reasons.push(`${job.what} (${job.name}) ${job.state === null ? 'could not be read' : `ended ${job.state}, not completed`}${where}`);
-    } else if (phase !== null) {
+      reasons.push(`${label} ${job.state === null ? 'could not be read' : `ended ${job.state}, not completed`}${where}`);
+    } else if (measured) {
       // A measured job a retry rescued: a person in production would have waited on the failed attempt (D10).
       if (job.attempts === null) {
-        reasons.push(`${job.what} (${job.name}) completed, but its attempts could not be read${where}`);
+        reasons.push(`${label} completed, but its attempts could not be read${where}`);
       } else if (job.attempts > 1) {
-        reasons.push(`${job.what} (${job.name}) completed on attempt ${String(job.attempts)}, not its first${where}`);
+        reasons.push(`${label} completed on attempt ${String(job.attempts)}, not its first${where}`);
       }
       if (job.heap === null) {
-        reasons.push(`${job.what} (${job.name}) logged no job heap line${where}`);
+        reasons.push(`${label} logged no \`job heap\` line${where}`);
       }
     }
     const limitMib = job.heap === null ? null : heapLimitMib(m.worker.command, job.heap.limitMib);
     if (job.heap !== null && limitMib !== null && job.heap.peakMib > (limitMib * HEAP_LIVE_PERCENT) / 100) {
-      reasons.push(`${job.what} (${job.name}${job.jobId === null ? '' : ` ${job.jobId}`}) had a live heap of ${String(job.heap.peakMib)} MiB, above ${String(HEAP_LIVE_PERCENT)}% of its ${String(limitMib)} MiB limit (${String((limitMib * HEAP_LIVE_PERCENT) / 100)} MiB)${where}`);
+      reasons.push(`${label} had a live heap of ${String(job.heap.peakMib)} MiB, above ${String(HEAP_LIVE_PERCENT)}% of its ${String(limitMib)} MiB limit (${String((limitMib * HEAP_LIVE_PERCENT) / 100)} MiB)${where}`);
     }
   }
   for (const [phase, wanted, names] of [
     ['concurrent', CONCURRENT_JOBS, 'six (A’s price job, B’s audit report and C’s four parses)'],
-    ['together', TOGETHER_JOBS, 'seven (A’s second audit report, D’s triage, E’s price job and C’s four parses)'],
+    ['together', TOGETHER_JOBS, 'seven (A’s second audit report, D’s triage, E’s price job and C’s second four parses)'],
   ] as const) {
     const queued = m.jobs.filter((job) => job.phase === phase).length;
     if (queued !== wanted) {
@@ -309,13 +321,15 @@ export function verdict(m: CapacityMeasurements): Verdict {
     // Sampled each second, a period with half its samples missing did not see its peak (int-surfaces improvement 5).
     const fewestSamples = period.ms === null ? 1 : Math.max(1, Math.floor(period.ms / PHASE_SAMPLE_GAP_MS));
     if (period.samples < fewestSamples) {
-      reasons.push(`${what}’s memory was sampled ${String(period.samples)} times in ${seconds(period.ms)}, fewer than one each ${String(PHASE_SAMPLE_GAP_MS / 1000)} seconds (${String(fewestSamples)})`);
+      reasons.push(`memory over ${what} was sampled ${String(period.samples)} times in ${seconds(period.ms)}, fewer than one each ${String(PHASE_SAMPLE_GAP_MS / 1000)} seconds (${String(fewestSamples)})`);
     }
   }
   if (m.advisoryLocks === null || m.advisoryLocks.samples === 0) {
     reasons.push('the advisory locks held could not be sampled');
   } else if (m.advisoryLocks.peak > ADVISORY_LOCKS_PER_TRANSACTION) {
-    reasons.push(`a backend held ${String(m.advisoryLocks.peak)} advisory locks at once, above ${String(ADVISORY_LOCKS_PER_TRANSACTION)} (a lock per line or per row is back)`);
+    reasons.push(
+      `a backend held ${String(m.advisoryLocks.peak)} advisory locks at once${m.advisoryLocks.peakDuring === null ? '' : ` during ${m.advisoryLocks.peakDuring}`}, above ${String(ADVISORY_LOCKS_PER_TRANSACTION)} (a lock per line or per row is back)`,
+    );
   }
   if (m.errorCodes === null) {
     reasons.push('the worker’s log could not be read');
@@ -366,14 +380,15 @@ export function markdown(full: ReturnType<typeof report>): string {
     '| --- | --- | --- | --- | --- | --- |',
     ...full.jobs.map(
       (job) =>
-        `| ${job.what} | ${job.phase} | ${job.state ?? 'unread'} | ${job.attempts === null ? 'unread' : String(job.attempts)} | ${job.heap === null ? 'none' : `${String(job.heap.peakMib)} of ${String(job.heap.limitMib)} MiB`} | ${seconds(job.elapsedMs)} |`,
+        // The live heap beside the limit the check holds it to (heapLimitMib); V8's own limit stays in release-capacity.json.
+        `| ${job.what} | ${PHASE_NAMES[job.phase]} | ${job.state ?? 'unread'} | ${job.attempts === null ? 'unread' : String(job.attempts)} | ${job.heap === null ? 'none' : `${String(job.heap.peakMib)} of ${String(heapLimitMib(full.worker.command, job.heap.limitMib))} MiB`} | ${seconds(job.elapsedMs)} |`,
     ),
     '',
     `Run: ${full.run === null ? 'unread' : `${full.run.status}${full.run.failureCode === null ? '' : ` (${full.run.failureCode})`}`}; priced lines ${full.pricedLines === null ? 'unread' : String(full.pricedLines)} of ${String(full.expected.pricedLines)}; parsed claims ${full.parsedClaims === null ? 'unread' : String(full.parsedClaims)} of ${String(full.expected.parsedClaims)}; A’s lines posted ${full.posted === null ? 'unread' : `${String(full.posted.lines)} (${String(full.posted.inFull)} in full)`} of ${String(full.expected.postedLines)}.`,
     '',
     `Memory: peak ${memory.peakBytes === null ? 'unread' : mib(memory.peakBytes)} over the run, of ${mib(memory.limitBytes)}; ${memory.periods.map((period) => `${period.peakBytes === null ? 'unread' : mib(period.peakBytes)} over ${period.what} (${String(period.samples)} samples)`).join(', ')}; OOM kills ${memory.oomKills === null ? 'unread' : String(memory.oomKills)}, restarts ${memory.restarts === null ? 'unread' : String(memory.restarts)}.`,
     '',
-    `Advisory locks: at most ${full.advisoryLocks === null ? 'unread' : `${String(full.advisoryLocks.peak)} held by one backend (${String(full.advisoryLocks.samples)} samples)`}, of ${String(ADVISORY_LOCKS_PER_TRANSACTION)}.`,
+    `Advisory locks: at most ${full.advisoryLocks === null ? 'unread' : `${String(full.advisoryLocks.peak)} held by one backend (${full.advisoryLocks.peakDuring === null ? '' : `first during ${full.advisoryLocks.peakDuring}; `}${String(full.advisoryLocks.samples)} samples)`}, of ${String(ADVISORY_LOCKS_PER_TRANSACTION)}.`,
     '',
     `Windows query: ${full.windows === null ? 'not measured' : `${String(full.windows.coldMs)} ms cold${full.windows.cacheDropped ? ' (page cache dropped)' : ''}, ${String(full.windows.warmMs)} ms warm, ${String(full.windows.contents)} contents`}.`,
     '',
