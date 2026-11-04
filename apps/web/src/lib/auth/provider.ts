@@ -33,8 +33,12 @@ export interface ProviderIdentity {
 export type AuthStep =
   /** First sign-in with a temporary password: the user chooses a new one. */
   | { readonly kind: 'new_password_required'; readonly challenge: string }
-  /** No second factor yet: the user enrolls TOTP before anything else. */
-  | { readonly kind: 'mfa_setup_required'; readonly challenge: string }
+  /**
+   * No second factor yet: the user enrolls TOTP before anything else, if the application allows it (docs/adr/0088, D3).
+   * `subject`: the provider's own name for the user who is enrolling (user.cognito_sub), when the provider named one;
+   * never the typed email, so the application can match the account it allows to the user the factor is stored on.
+   */
+  | { readonly kind: 'mfa_setup_required'; readonly challenge: string; readonly subject?: string }
   | { readonly kind: 'mfa_required'; readonly challenge: string }
   /**
    * Proven. `grant` lets the application make follow-up calls for the user (hardware-key

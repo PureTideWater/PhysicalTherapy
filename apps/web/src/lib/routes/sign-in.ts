@@ -88,6 +88,14 @@ function lockedMessage(supportEmail: string): string {
   return `This account was locked after ten failed attempts. Write to ${supportEmail} from this address to have it unlocked.`;
 }
 
+/**
+ * An enrolment refused outside a live invitation (docs/adr/0088, D3): the way out, by the administrator or the support
+ * address. Shown only after the provider accepted the password, so it tells an outsider nothing.
+ */
+function enrolmentNotOpenMessage(supportEmail: string): string {
+  return `This account can’t set up a second factor here. Ask your organization’s administrator, or write to ${supportEmail}.`;
+}
+
 /** What a timed step's page is given for its timer: its limit, its warning, and when it closes (absent with no stamp). */
 export interface StepTime {
   readonly limitSeconds: number;
@@ -190,7 +198,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
         writeKeptEmail(cookies, sealer, { email: pending.email, ...(use === undefined ? {} : { use }) }, pending.step, options.at, now);
       }
       if (pending.step === 'mfa_setup' && pending.totp === undefined) {
-        const begun = await signIn.beginTotpSetup(pending);
+        const begun = await signIn.beginTotpSetup(pending, contextOf(context));
         if (begun.kind !== 'pending') {
           return settle(context, begun, options);
         }
@@ -231,6 +239,10 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           return { error: MESSAGES.no_account };
         case 'key_not_registered':
           return { error: MESSAGES.key_not_registered };
+        case 'enrolment_not_open':
+          // No press of this form can enrol the account: the attempt ends, and the kept email with it.
+          clearSignIn(cookies);
+          return { error: enrolmentNotOpenMessage(context.services.supportEmail), final: true };
       }
   }
 }

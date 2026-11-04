@@ -110,7 +110,8 @@ describe('DevAuthProvider: password and TOTP', () => {
   it('enrolls TOTP before anything else when none is set, then needs a code every time', async () => {
     const { dev, store } = await provider([await record({ totpSecret: null })]);
     const step = await dev.signIn('person@synthetic.test', PASSWORD);
-    expect(step.kind).toBe('mfa_setup_required');
+    // SEC-22: the step names the record's subject, as Cognito's USERNAME does (docs/adr/0088, D3).
+    expect(step).toMatchObject({ kind: 'mfa_setup_required', subject: 'sub-1' });
     const setup = await dev.beginTotpSetup(challengeOf(step));
     if ('kind' in setup) {
       throw new Error('expected a setup');
@@ -130,7 +131,7 @@ describe('DevAuthProvider: password and TOTP', () => {
     expect(step.kind).toBe('new_password_required');
     expect(await dev.setNewPassword(challengeOf(step), 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
     const next = await dev.setNewPassword(challengeOf(step), 'Chosen-Pass-2026');
-    expect(next.kind).toBe('mfa_setup_required');
+    expect(next).toMatchObject({ kind: 'mfa_setup_required', subject: 'sub-1' });
     expect((await dev.signIn('person@synthetic.test', PASSWORD)).kind).toBe('rejected');
     expect((await dev.signIn('person@synthetic.test', 'Chosen-Pass-2026')).kind).toBe('mfa_setup_required');
   });

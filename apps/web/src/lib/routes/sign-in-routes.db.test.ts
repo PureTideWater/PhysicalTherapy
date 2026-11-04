@@ -54,6 +54,8 @@ const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 const SUPPORT = 'support@synthetic.test';
 /** The refusal of a locked account, on the password step and the key step (UX-066). */
 const LOCKED = `This account was locked after ten failed attempts. Write to ${SUPPORT} from this address to have it unlocked.`;
+/** The refusal of an enrolment outside a live invitation (docs/adr/0088, D3): the way out, by the support address. */
+const NOT_OPEN = `This account can’t set up a second factor here. Ask your organization’s administrator, or write to ${SUPPORT}.`;
 /** Where a closed hardware-key step goes: back to the key surface, never the password page (UXS-01). */
 const KEY_RESTART = { redirect: '/sign-in/hardware-key?reason=step_expired' };
 
@@ -216,7 +218,8 @@ async function person(options: { readonly temporary?: boolean; readonly totp?: b
       email,
       options.totp !== false,
       options.internal ?? false,
-      options.status ?? 'active',
+      // A person with no second factor is an invitee (docs/adr/0088, D3: only an invitation enrols one).
+      options.status ?? (options.totp === false ? 'invited' : 'active'),
     ]),
   );
   if (options.internal === true) {
@@ -306,6 +309,17 @@ describe('the password and TOTP steps', () => {
       data: { error: LOCKED, locked: true },
     });
     expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: LOCKED, locked: true } });
+  });
+
+  it('SEC-22: refuses enrolment outside a live invitation with words that name the way out, ending the attempt (docs/adr/0088, D3)', async () => {
+    const active = await person({ status: 'active', totp: false });
+    const browser = new Browser();
+    expect(await step(signInWithPassword, browser, { email: active.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: NOT_OPEN, final: true } });
+    expect([browser.get(SIGN_IN_COOKIE), browser.get(KEPT_EMAIL_COOKIE)]).toEqual([undefined, undefined]);
+    expect(logLines.map((line) => JSON.parse(line) as Record<string, unknown>).filter((entry) => entry.msg === 'security event: second-factor enrolment refused').at(-1)).toMatchObject({
+      level: 'warn',
+      user_id: active.id,
+    });
   });
 
   it('sends a step that expired back to the start', async () => {
@@ -818,7 +832,7 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     const invited = await person({ status: 'invited', temporary: true, totp: false });
     const notEnrolled = await person({ status: 'invited', totp: false });
     // Active with no second factor, as a console factor reset (UX PR 65) leaves an account: no code (review SEC-B1).
-    const activeNotEnrolled = await person({ totp: false });
+    const activeNotEnrolled = await person({ status: 'active', totp: false });
     const disabled = await person({ status: 'disabled' });
     const addresses = {
       active: active.email,
