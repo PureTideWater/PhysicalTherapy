@@ -18,6 +18,9 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
 - 2026-11-04T06:35:00Z: branch created on origin at df4daff7 through the hook; worktree /home/user/ux-sign-in-recovery,
   installed. Next: the design workflow (scouts, writer, security reviewer at design, skeptic per finding, fold).
 
+- 2026-11-04T06:40:00Z: design workflow wf_3774eb46-b96 launched (3 scouts, writer, security and UX design reviews, a skeptic
+  per B/S finding, fold); script archived; check-in at about 11:50Z. #106 dormant until the orchestrator says the runner exists.
+
 ## Waiting on someone
 - The founder: the 4-CPU runner and organization (#102) before the merge.
 
