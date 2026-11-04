@@ -50,7 +50,7 @@ archive="gitleaks_${version}_${platform}.tar.gz"
 base="${GITLEAKS_DOWNLOAD_BASE:-https://github.com/gitleaks/gitleaks/releases/download/v$version}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-if ! curl -fsSL --retry 3 -o "$work/$archive" "$base/$archive"; then
+if ! curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 -o "$work/$archive" "$base/$archive"; then
   echo "gitleaks: could not download $base/$archive." >&2
   exit 1
 fi

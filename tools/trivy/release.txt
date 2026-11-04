@@ -1,0 +1,7 @@
+# The Trivy release every image scan and bill of materials runs (ci.yml's images job, release.yml's build and the dry
+# run's; docs/adr/0066, Part 2), and the SHA-256 of each archive tools/trivy/install.sh may download, copied from the
+# release's trivy_<version>_checksums.txt. trivy-action v0.36.0's default version, so the scans read as before. A new
+# version changes every line here in one pull request.
+version 0.70.0
+linux_x64 8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9
+linux_arm64 2f6bb988b553a1bbac6bdd1ce890f5e412439564e17522b88a4541b4f364fc8d
