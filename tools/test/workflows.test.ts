@@ -1253,7 +1253,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
    * download` copies fake/findings.json into its -D directory, after stalling as many tries as fake/stall holds (each
    * writing a cut findings.json first, as a try killed while it extracts leaves one), failing as many as fake/fail holds
    * and failing as many as fake/partial holds after writing a cut findings.json (a zip checksum error), and answers as
-   * gh does when there is no artifact. The artifact's file is named as fake/name holds (findings.json unless a case
+   * gh does when there is no artifact, after dying of SIGKILL on as many tries as fake/kill holds first (timeout then
+   * dies of it too, as it does when it kills a try that ignored the stop 10 seconds earlier, so bash reports the try
+   * "Killed" with its command line and the try exits 137, with no 11-second wait). The artifact's file is named as fake/name holds (findings.json unless a case
    * names another). As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
    * and never overwrites one. Its download prints a signed blob address, as gh does on a blob error, on stdout and in
    * every error. A `sleep` beside it logs each pause ("sleep <seconds>") and returns at once; the stall
@@ -1275,6 +1277,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
         'if [ "$1 $2" = "run download" ]; then',
         '  SIGNED_URL="https://blob.example.invalid/findings.zip?se=2026-11-04T21%3A40%3A56Z&sig=synthetic-signature"; echo "downloading from $SIGNED_URL"',
+        '  kills=$(cat "$FAKE_DIR/fake/kill" 2>/dev/null || echo 0); if [ "$kills" -gt 0 ]; then echo $((kills - 1)) > "$FAKE_DIR/fake/kill"; kill -9 $$; fi',
         '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0); name=$(cat "$FAKE_DIR/fake/name" 2>/dev/null || echo findings.json)',
         '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec /bin/sleep 30; fi',
         '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "error downloading findings: Get \\"$SIGNED_URL\\": HTTP 502: Bad Gateway" >&2; exit 1; fi',
@@ -1327,9 +1330,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
    * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, the fake's sleep logging each pause, `findings`, when not null,
    * staged as the run's findings artifact, and the fake's download stalling its first `stalls` tries (a sleep past any
    * DOWNLOAD_LIMIT a case gives), then failing its next `failures` tries, then its next `partials` after writing a cut
-   * findings.json, and the artifact's file named `artifactFile`.
+   * findings.json, and the artifact's file named `artifactFile`; before all of these, its first `kills` tries die of SIGKILL.
    */
-  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0, partials = 0, artifactFile = 'findings.json') {
+  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0, partials = 0, artifactFile = 'findings.json', kills = 0) {
     const step = notifyStep(name, job);
     if (step === undefined) throw new Error(`${name}: no job ${job}`);
     const gh = fakeGh(open);
@@ -1338,6 +1341,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     if (stalls > 0) writeFileSync(path.join(gh.dir, 'fake/stall'), String(stalls));
     if (partials > 0) writeFileSync(path.join(gh.dir, 'fake/partial'), String(partials));
     if (artifactFile !== 'findings.json') writeFileSync(path.join(gh.dir, 'fake/name'), artifactFile);
+    if (kills > 0) writeFileSync(path.join(gh.dir, 'fake/kill'), String(kills));
     const env = {
       ...notifyEnv(name, step, values, findings),
       RUNNER_TEMP: mkdtempSync(path.join(scratch, 'runner-temp-')),
@@ -1472,7 +1476,13 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect([stalled.status, issues(stalled), tries(stalled)], stalled.output).toEqual([0, [failing], 3]);
     expect(paced(stalled)).toEqual([t, p, t, p, t]);
     expect(stalled.output.split('\n').filter((line) => line.startsWith('content-calendar: try '))).toEqual([1, 2, 3].map((n) => `content-calendar: try ${String(n)} of 3 to download the findings failed (exit 124)`));
-    for (const ran of [over, down, slow, stalled, late]) expect(ran.output).not.toMatch(/blob\.example\.invalid|sig=/);
+    // A try killed by a signal (as timeout kills one that ignored the stop 10 seconds earlier) logs the fixed line with
+    // exit 137 and nothing else: bash's own report of the kill, its line number and the try's command line, goes nowhere.
+    const killed = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 0, 'findings.json', 1);
+    expect([killed.status, issues(killed), tries(killed)], killed.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    expect(paced(killed)).toEqual([t, p, t]);
+    expect(killed.stderr.split('\n').filter((line) => line !== ''), killed.output).toEqual(['content-calendar: try 1 of 3 to download the findings failed (exit 137)']);
+    for (const ran of [over, down, slow, stalled, late, killed]) expect(ran.output).not.toMatch(/blob\.example\.invalid|sig=|Killed|gh run download/);
     // A try that leaves a cut findings.json behind (a zip checksum error) is retried into an emptied directory, as gh
     // refuses to extract over a file already there: filed on the second try, never "file exists".
     const partial = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 1);
@@ -1518,7 +1528,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       lines.indexOf('# End of the download.') + 1,
     );
   };
-  const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?';
+  const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"';
   /** The read check, inside the download block: what notify files from and what handoff proves notify can read. */
   const SHAPE_CHECK = `if jq -e -s 'length == 1 and (.[0] | type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string"))' findings.json > /dev/null 2>&1; then readable=true; fi`;
   const BOUNDED_READ = 'head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json';
@@ -1530,8 +1540,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(step?.env?.DOWNLOAD_PAUSE).toBe('10');
     expect(step?.env?.DOWNLOAD_LIMIT).toBe('60');
     // Every try is stopped and killed 10 seconds later, so three tries and two pauses end inside the job's timeout.
-    // gh's output and errors, which can name the artifact's signed address, go nowhere; a failed try logs a fixed line.
-    expect(step?.run).toContain(`timeout -k 10 "$DOWNLOAD_LIMIT" ${DOWNLOAD}\n`);
+    // gh's output and errors, which can name the artifact's signed address, go nowhere, and so does bash's report of a
+    // killed try, the group's own stderr going nowhere; a failed try logs a fixed line.
+    expect(step?.run).toContain(`{ timeout -k 10 "$DOWNLOAD_LIMIT" ${DOWNLOAD}; } > /dev/null 2>&1 || code=$?\n`);
     expect(step?.run).toContain(`printf 'content-calendar: try %s of 3 to download the findings failed (exit %s)\\n' "$try" "$code" >&2\n`);
     expect(3 * (Number(step?.env?.DOWNLOAD_LIMIT) + 10) + 2 * Number(step?.env?.DOWNLOAD_PAUSE)).toBeLessThan(5 * 60);
     // The downloaded file is read once, at most MAX_FILE_BYTES + 1 bytes of it, and what was read is refused past the
@@ -1592,6 +1603,11 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       expect(retried.output, at).not.toMatch(/blob\.example\.invalid|sig=/);
       expect(paced(retried), at).toEqual(['run download', 'sleep 10', 'run download']);
     }
+    // A try killed by a signal logs the fixed line with exit 137 alone, never bash's report of the kill.
+    const killed = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], list, 'handoff', 0, 0, 0, 'findings.json', 1);
+    expect([killed.status, killed.log.filter((line) => line.startsWith('run download ')).length], killed.output).toEqual([0, 2]);
+    expect(killed.stderr.split('\n').filter((line) => line !== ''), killed.output).toEqual(['content-calendar: try 1 of 3 to download the findings failed (exit 137)']);
+    expect(killed.output).not.toMatch(/blob\.example\.invalid|sig=|Killed|gh run download/);
     for (const [at, values, findings] of [
       ['no artifact', { CHECK_RESULT: 'success' }, null],
       ['over MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }])],

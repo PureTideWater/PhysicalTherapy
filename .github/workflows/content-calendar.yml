@@ -97,14 +97,15 @@ jobs:
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
           # apart, each stopped after DOWNLOAD_LIMIT seconds; at most MAX_FILE_BYTES, as the check bounds it, or no findings
           # list. A failed try logs one fixed line with its exit status (124 when stopped, 137 when killed 10 seconds later):
-          # gh's own output and errors, which can name the artifact's signed download address, stay out of the run's log.
+          # gh's own output and errors, which can name the artifact's signed download address, stay out of the run's log, and
+          # so does bash's own report of a killed try (its line and command), the group's stderr going nowhere too.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
             for try in 1 2 3; do
               rm -rf "$RUNNER_TEMP/findings"
               code=0
-              timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?
+              { timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; } > /dev/null 2>&1 || code=$?
               if [ "$code" -eq 0 ]; then
                 downloaded=true
                 break
@@ -181,14 +182,15 @@ jobs:
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
           # apart, each stopped after DOWNLOAD_LIMIT seconds; at most MAX_FILE_BYTES, as the check bounds it, or no findings
           # list. A failed try logs one fixed line with its exit status (124 when stopped, 137 when killed 10 seconds later):
-          # gh's own output and errors, which can name the artifact's signed download address, stay out of the run's log.
+          # gh's own output and errors, which can name the artifact's signed download address, stay out of the run's log, and
+          # so does bash's own report of a killed try (its line and command), the group's stderr going nowhere too.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
             for try in 1 2 3; do
               rm -rf "$RUNNER_TEMP/findings"
               code=0
-              timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?
+              { timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; } > /dev/null 2>&1 || code=$?
               if [ "$code" -eq 0 ]; then
                 downloaded=true
                 break
