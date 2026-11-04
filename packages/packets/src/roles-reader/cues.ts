@@ -3,6 +3,12 @@ import type { Figure } from '../scan';
 import type { FigureRole, ReadKind, Token } from './kinds';
 import { ANY, type Cued, type Entry, type Family, type Match, Walk, cueAt, nearest, notWord, one, ordered } from './walk';
 
+/** A "respectively" list's cue: its roles and the token its words start at. */
+export interface ListCue {
+  readonly roles: readonly FigureRole[];
+  readonly start: number;
+}
+
 /**
  * The role reader's second layer (../roles.ts, steps 1 to 8; docs/adr/0086): the role of an amount, a percentage, a
  * date, a day count and a page from one cue's roles, never the union of every cue around it.
@@ -142,47 +148,82 @@ export class CueReader extends Walk {
   }
 
   /**
-   * The words after a "respectively" list, from its last figure: where "respectively" is among them (the last figure
-   * when it is not, so that the words before it are none), and where they end, at the next figure or the sentence's end.
+   * Where the words of a "respectively" list from token `from` (before `to`) end: at the first edge the clause after
+   * which (to the next edge) has no cue ("were expected, allowed and paid" goes on), and, with `openers`, at a word
+   * that opens a clause of its own ("which the payer allowed for each line", "as").
    */
-  protected afterList(list: readonly number[]): readonly [number, number] {
+  protected listWordsEnd(from: number, to: number, openers: boolean, cues: Cues): number {
+    const opener = openers ? this.tokens.slice(from, to).findIndex((token) => this.vocab.CLAUSE_OPENERS.has(token.text)) : -1;
+    const end = opener === -1 ? to : from + opener;
+    const words = this.tokens.slice(from, end);
+    const edge = words.findIndex((token, at) => {
+      if (token.kind !== 'edge') {
+        return false;
+      }
+      const next = words.findIndex((other, after) => after > at && other.kind === 'edge');
+      return this.cues(from + at + 1, next === -1 ? end : from + next, cues).length === 0;
+    });
+    return edge === -1 ? end : from + edge;
+  }
+
+  /**
+   * The words after a "respectively" list that are the list's own (docs/adr/0086, NEW-N1): `before`, those after its
+   * last figure up to "respectively", or to the next figure or the sentence's end when it is not after the list; and
+   * `after`, past "respectively" and the commas after it, those up to the next figure or the sentence's end (none when
+   * "respectively" is not after the list). Each ends at an edge the clause after which has no cue, and `after` at a
+   * word that opens a clause of its own ("which the payer explained for each line").
+   */
+  protected afterList(list: readonly number[], cues: Cues): { readonly before: readonly [number, number]; readonly after: readonly [number, number] } {
     const last = list.at(-1) as number;
     const end = this.sentenceEnd(last);
     const figure = this.tokens.slice(last + 1, end).findIndex((token) => token.figure !== undefined);
     const next = figure === -1 ? end : last + 1 + figure;
-    const word = this.tokens.slice(last, next).findIndex((token) => token.text === 'respectively');
-    return [last + word, next];
+    const word = this.tokens.slice(last + 1, next).findIndex((token) => token.text === 'respectively');
+    const until = word === -1 ? next : last + 1 + word;
+    const from = until + 1 + this.run(until, 1, (token) => token.text !== ',').length;
+    const start = last + 1;
+    return { before: [start, this.listWordsEnd(start, until, false, cues)], after: [from, this.listWordsEnd(from, next, true, cues)] };
+  }
+
+  /**
+   * A "respectively" list's cues, in order, one for each run of the same roles, each with the token its words start
+   * at, and the token the stretch they are read from ends at: the cues before the list (since the figure before it),
+   * else those after it up to "respectively" or its clause's edge, else those after "respectively" (afterList()).
+   */
+  protected listCues(list: readonly number[], family: Family, cues: Cues): { readonly cues: readonly ListCue[]; readonly end: number } {
+    const order = (from: number, to: number) => {
+      const found: ListCue[] = [];
+      for (const entry of this.entries(this.cues(from, to, cues), family)) {
+        const previous = found.at(-1);
+        if (previous === undefined || previous.roles.join() !== entry.roles.join()) {
+          found.push({ roles: entry.roles, start: entry.match.start });
+        }
+      }
+      return { cues: found, end: to };
+    };
+    const first = list[0] as number;
+    const opening = order(this.since(first), first);
+    if (opening.cues.length > 0) {
+      return opening;
+    }
+    const { before, after } = this.afterList(list, cues);
+    const inner = order(...before);
+    return inner.cues.length > 0 ? inner : order(...after);
   }
 
   /**
    * Step 1: a list's figures mapped, in order, to the cues before it, or, with none before it, to the cues after it
-   * ("$100.00 and $70.00 were expected and allowed, respectively"): up to "respectively" when cues come before it,
-   * else up to the next figure or the sentence's end. When the cues do not match the list one for one, every figure is
-   * held in all of them. With no cue on either side, the steps after read each figure.
+   * ("$100.00 and $70.00 were expected and allowed, respectively"): up to "respectively" or the first edge, else past
+   * "respectively" up to the next edge or a word that opens a clause of its own (listCues()). When the cues do not
+   * match the list one for one, every figure is held in all of them. With no cue on either side, the steps after read
+   * each figure.
    */
   protected respectively(index: number, family: Family, cues: Cues): Cued | null {
     const list = this.respectivelyList(index);
     if (list === null) {
       return null;
     }
-    const first = list[0] as number;
-    const last = list.at(-1) as number;
-    const order = (from: number, to: number) => {
-      const found: (readonly FigureRole[])[] = [];
-      for (const entry of this.entries(this.cues(from, to, cues), family)) {
-        const previous = found.at(-1);
-        if (previous === undefined || previous.join() !== entry.roles.join()) {
-          found.push(entry.roles);
-        }
-      }
-      return found;
-    };
-    let mapped = order(this.since(first), first);
-    if (mapped.length === 0) {
-      const [word, next] = this.afterList(list);
-      const before = order(last, word);
-      mapped = before.length > 0 ? before : order(last, next);
-    }
+    const mapped = this.listCues(list, family, cues).cues.map((cue) => cue.roles);
     if (mapped.length === 0) {
       return null;
     }

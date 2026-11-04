@@ -191,36 +191,79 @@ export function failsNowState(version: { readonly current: boolean; readonly app
 }
 
 /**
- * Why a version the verifier passed when it was written fails now, and what to do (beside its badge), by where the
- * version stands, and what to correct only when its figures are marked (with none marked, its stored report is not of
- * this narrative).
+ * Why a version the verifier passed when it was written fails now (the review of the fix round, NEW-N3): `marked`, a
+ * figure or other text the builder marks under Narrative; `unmarked`, only a mismatch it marks nothing for (a sentence
+ * without a citation, an empty narrative); `stale`, no mismatch, so the stored report is not of this narrative.
  */
-export function failsNowText(state: FailsNowState, marked: boolean): string {
-  const fix = marked ? 'correct the marked figures and save a new version' : 'the stored narrative no longer matches its verifier report, so save it again as a new version';
+export type FailsNowCause = 'marked' | 'unmarked' | 'stale';
+
+/** The mismatches the builder marks in the stored narrative: every one but a sentence without a citation or an empty narrative. */
+export function markedMismatches<T extends Pick<VerifierReport['mismatches'][number], 'code'>>(mismatches: readonly T[]): T[] {
+  return mismatches.filter((mismatch) => mismatch.code !== 'sentence_without_citation' && mismatch.code !== 'empty_narrative');
+}
+
+/** A report's cause, as failsNowText() and exportFailsNowText() say it. */
+export function failsNowCause(report: Pick<VerifierReport, 'mismatches'>): FailsNowCause {
+  return report.mismatches.length === 0 ? 'stale' : markedMismatches(report.mismatches).length > 0 ? 'marked' : 'unmarked';
+}
+
+const STALE = 'the stored narrative no longer matches its verifier report';
+const FIX: Readonly<Record<FailsNowCause, string>> = {
+  marked: 'correct the marked figures and save a new version',
+  unmarked: 'correct the narrative and save a new version',
+  stale: 'save it again as a new version',
+};
+
+/**
+ * Why a version the verifier passed when it was written fails now, and what to do (beside its badge), by where the
+ * version stands and by its cause: the figure check only when it fails a figure, what to correct only when something
+ * is marked, and with no mismatch, that its stored report is not of this narrative (NEW-N3).
+ */
+export function failsNowText(state: FailsNowState, cause: FailsNowCause): string {
+  const why =
+    cause === 'marked'
+      ? 'It now checks each figure against what its words say it is, and fails it'
+      : cause === 'unmarked'
+        ? 'It fails it now'
+        : `Now ${STALE}`;
   switch (state) {
     case 'unapproved':
-      return `The verifier passed this version when it was written. It now checks each figure against what its words say it is, and fails it, so this version cannot be approved: ${fix}.`;
+      return `The verifier passed this version when it was written. ${why}, so this version cannot be approved: ${FIX[cause]}.`;
     case 'approved':
-      return `The verifier passed this version when it was written and was approved, but it fails it now, so it cannot be exported: ${fix}, which needs approval again.`;
+      return cause === 'stale'
+        ? `This version was approved when the verifier passed it, but ${STALE} now, so it cannot be exported: ${FIX[cause]}, which needs approval again.`
+        : `This version was approved when the verifier passed it; the verifier fails it now, so it cannot be exported: ${FIX[cause]}, which needs approval again.`;
     case 'exported':
-      return 'The verifier passed this version when it was written and when it was exported; it fails the narrative now. The exported files stand; a new version needs approval again.';
+      return cause === 'stale'
+        ? `The verifier passed this version when it was written and when it was exported; ${STALE} now. The exported files stand; a new version needs approval again.`
+        : 'The verifier passed this version when it was written and when it was exported; it fails the narrative now. The exported files stand; a new version needs approval again.';
     case 'earlier':
-      return 'The verifier passed this version when it was written. It now checks each figure against what its words say it is, and fails it. A later version is current.';
+      return `The verifier passed this version when it was written. ${why}. A later version is current.`;
   }
 }
 
-/** Why the export of a version the verifier fails now is held back, beside its disabled button (UX-D1). */
-export const EXPORT_FAILS_NOW_TEXT = 'The verifier fails this version’s narrative now, so it cannot be exported: correct the figures marked under Narrative above and save a new version, which needs approval again.';
+/** Why the export of a version the verifier fails now is held back, beside its disabled button (UX-D1), by its cause (NEW-N3). */
+export function exportFailsNowText(cause: FailsNowCause): string {
+  switch (cause) {
+    case 'marked':
+      return 'The verifier fails this version’s narrative now, so it cannot be exported: correct the figures marked under Narrative above and save a new version, which needs approval again.';
+    case 'unmarked':
+      return 'The verifier fails this version’s narrative now, so it cannot be exported: correct the narrative and save a new version, which needs approval again.';
+    case 'stale':
+      return `This version cannot be exported: ${STALE}, so save it again as a new version, which needs approval again.`;
+  }
+}
 
 /**
  * Why a request for approval or an approval of a version the verifier fails now is refused, with each mismatch by its
  * sentence: a figure the check read in the role's words (what it was read as and what the records hold it as), any
  * other by its kind, never the narrative's words (a refusal carries the rule's words only), the same item once with how
- * many times. The builder marks each figure under Narrative. With no mismatch, its report is not of this narrative.
+ * many times; that its figures are marked under Narrative only when the builder marks one (NEW-N3). With no mismatch,
+ * its report is not of this narrative.
  */
 export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>, figures: readonly (FigureAsRead & { readonly start: number; readonly end: number })[] = []): string {
   if (report.mismatches.length === 0) {
-    return 'the stored narrative no longer matches its verifier report. Save it again as a new version; only a version the verifier passes now can be approved';
+    return `${STALE}. Save it again as a new version; only a version the verifier passes now can be approved`;
   }
   const items: string[] = [];
   const times = new Map<string, number>();
@@ -249,7 +292,8 @@ export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>, figu
     return count === 1 ? item : `${item} (${count === 2 ? 'twice' : `${String(count)} times`})`;
   });
   const count = `${String(report.mismatches.length)} ${report.mismatches.length === 1 ? 'mismatch' : 'mismatches'}`;
-  return `the verifier passed this version when it was written and fails it now (${count}: ${said.join('; ')}). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved`;
+  const marked = markedMismatches(report.mismatches).length > 0 ? ' Its figures are marked under Narrative above.' : '';
+  return `the verifier passed this version when it was written and fails it now (${count}: ${said.join('; ')}).${marked} Correct the narrative and save a new version; only a version the verifier passes now can be approved`;
 }
 
 export const EVIDENCE_KIND_TEXT: Readonly<Record<EvidenceKind, string>> = {

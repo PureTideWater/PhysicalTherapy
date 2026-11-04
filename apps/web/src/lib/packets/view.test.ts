@@ -7,13 +7,14 @@ import { describe, expect, it } from 'vitest';
 import {
   CASE_VERIFIER_TEXT,
   FAILS_NOW_STATES,
-  EXPORT_FAILS_NOW_TEXT,
   FIGURE_KIND_TEXT,
   HISTORY_VERIFIER_TEXT,
   MISMATCH_TEXT,
   ROLE_TEXT,
   SAY_WHAT_IT_COUNTS,
   VERIFIER_STANDING_TEXT,
+  exportFailsNowText,
+  failsNowCause,
   failsNowRefusal,
   failsNowState,
   failsNowText,
@@ -126,22 +127,40 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(VERIFIER_STANDING_TEXT).toEqual({ passed: 'Verifier passed', failed: 'Verifier failed', fails_now: 'Verifier fails it now' });
     expect(HISTORY_VERIFIER_TEXT).toEqual({ passed: 'Passed', failed: 'Failed', fails_now: 'Fails now (passed when written)' });
     expect(CASE_VERIFIER_TEXT.fails_now).toBe('the verifier passed it when it was written and fails it now');
-    expect(failsNowText('unapproved', true)).toContain('cannot be approved');
+    expect(failsNowText('unapproved', 'marked')).toContain('cannot be approved');
     // By where the version stands (UX-D1): never "cannot be approved" for an approved or exported version.
-    expect(failsNowText('approved', true)).toContain('cannot be exported');
-    expect(failsNowText('exported', true)).toContain('The exported files stand');
+    expect(failsNowText('approved', 'marked')).toBe('This version was approved when the verifier passed it; the verifier fails it now, so it cannot be exported: correct the marked figures and save a new version, which needs approval again.');
+    expect(failsNowText('exported', 'marked')).toContain('The exported files stand');
     for (const state of FAILS_NOW_STATES) {
       if (state !== 'unapproved') {
-        expect(failsNowText(state, true), state).not.toContain('cannot be approved');
+        expect(failsNowText(state, 'marked'), state).not.toContain('cannot be approved');
       }
-      expect(failsNowText(state, false), state).not.toContain('marked');
+      // Nothing marked: never "marked", and the figure check only when it fails a figure (NEW-N3).
+      for (const cause of ['unmarked', 'stale'] as const) {
+        expect(failsNowText(state, cause), `${state} ${cause}`).not.toContain('marked');
+        expect(failsNowText(state, cause), `${state} ${cause}`).not.toContain('checks each figure');
+      }
+      expect(failsNowText(state, 'stale'), state).toContain('the stored narrative no longer matches its verifier report');
+      expect(failsNowText(state, 'unmarked'), state).not.toContain('no longer matches');
+      // Never as if the verifier were approved.
+      expect(failsNowText(state, 'marked'), state).not.toContain('written and was approved');
     }
+    expect(failsNowText('unapproved', 'stale')).toBe('The verifier passed this version when it was written. Now the stored narrative no longer matches its verifier report, so this version cannot be approved: save it again as a new version.');
+    expect(failsNowText('approved', 'stale')).toBe('This version was approved when the verifier passed it, but the stored narrative no longer matches its verifier report now, so it cannot be exported: save it again as a new version, which needs approval again.');
+    expect(failsNowText('unapproved', 'unmarked')).toBe('The verifier passed this version when it was written. It fails it now, so this version cannot be approved: correct the narrative and save a new version.');
     expect(failsNowState({ current: true, approved: false, exported: false })).toBe('unapproved');
     expect(failsNowState({ current: true, approved: true, exported: false })).toBe('approved');
     expect(failsNowState({ current: true, approved: true, exported: true })).toBe('exported');
     expect(failsNowState({ current: false, approved: true, exported: true })).toBe('exported');
     expect(failsNowState({ current: false, approved: true, exported: false })).toBe('earlier');
-    expect(EXPORT_FAILS_NOW_TEXT).toContain('cannot be exported');
+    // The export held back by its cause (NEW-N3): the marked figures only when one is marked.
+    expect(exportFailsNowText('marked')).toBe('The verifier fails this version’s narrative now, so it cannot be exported: correct the figures marked under Narrative above and save a new version, which needs approval again.');
+    expect(exportFailsNowText('unmarked')).toBe('The verifier fails this version’s narrative now, so it cannot be exported: correct the narrative and save a new version, which needs approval again.');
+    expect(exportFailsNowText('stale')).toBe('This version cannot be exported: the stored narrative no longer matches its verifier report, so save it again as a new version, which needs approval again.');
+    const facts = narrativeFacts(assemblePacket(assemblyInput()));
+    expect(failsNowCause({ mismatches: [] })).toBe('stale');
+    expect(failsNowCause(verifyNarrative('The payer paid $100.00 for each line [1].', facts, []))).toBe('marked');
+    expect(failsNowCause(verifyNarrative('The payer paid less than the contract requires.', facts, []))).toBe('unmarked');
     for (const standing of VERIFIER_STANDINGS) {
       expect(VERIFIER_STANDING_TEXT[standing].length, standing).toBeGreaterThan(5);
     }
@@ -167,6 +186,10 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(worded).not.toContain('100.00');
     expect(worded).not.toContain('3650');
     expect(worded.split(':').length).toBe(2);
+    // A mismatch the builder marks nothing for: never "Its figures are marked" (NEW-N3).
+    const unmarked = verifyNarrative('The payer paid less than the contract requires.', narrativeFacts(content), []);
+    expect(unmarked.mismatches.map((mismatch) => mismatch.code)).toEqual(['sentence_without_citation']);
+    expect(failsNowRefusal(unmarked)).not.toContain('marked');
     expect(failsNowRefusal({ mismatches: [] })).toBe('the stored narrative no longer matches its verifier report. Save it again as a new version; only a version the verifier passes now can be approved');
   });
 

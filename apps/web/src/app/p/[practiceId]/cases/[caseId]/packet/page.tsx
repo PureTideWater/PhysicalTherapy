@@ -28,7 +28,7 @@ import { waitText } from '../../../../../../lib/packets/approval';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
 import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
-import { DEADLINE_CAUSE_TEXT, EXPORT_FAILS_NOW_TEXT, HISTORY_VERIFIER_TEXT, failsNowState } from '../../../../../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, HISTORY_VERIFIER_TEXT, exportFailsNowText, failsNowCause, failsNowState } from '../../../../../../lib/packets/view';
 import { everyLineStale, staleExportBuilder } from '../../../../../../lib/packets/unattested';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
@@ -145,7 +145,7 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
               ) : null}
             </li>
           ))}
-          {version.verifierNow.standing === 'fails_now' ? <li data-refusal="verifier_now">{EXPORT_FAILS_NOW_TEXT}</li> : null}
+          {version.verifierNow.standing === 'fails_now' ? <li data-refusal="verifier_now">{exportFailsNowText(failsNowCause(version.verifierNow.report))}</li> : null}
         </ul>
       </AlertDescription>
     </Alert>
@@ -573,7 +573,7 @@ export default async function PacketPage(props: Props) {
                         {status}
                         <Alert variant="destructive" data-export="blocked" data-reason="verifier_now">
                           <AlertTitle>Export blocked</AlertTitle>
-                          <AlertDescription id="export-verifier-now">{EXPORT_FAILS_NOW_TEXT}</AlertDescription>
+                          <AlertDescription id="export-verifier-now">{exportFailsNowText(failsNowCause(version.verifierNow.report))}</AlertDescription>
                         </Alert>
                         {canExport ? (
                           <div>

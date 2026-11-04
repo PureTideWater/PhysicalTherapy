@@ -77,8 +77,9 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * words around it; a clause, a quote, a section or what is cited may be either. An amount and a count of units also
  * say what they are stated per (`scope`): each line ("per line", "each line", "apiece", "on each of the 3 lines"),
  * each unit ("per unit", "a unit"), or the lines in total ("in total", "in all", "across the 3 lines", "for these 3
- * lines", or a sentence about the lines in the plural that says nothing of each); a "respectively" list's figures in
- * the one scope its words state for the list (amountScope()). "first" with no role is prose, as
+ * lines", an opening "On each of the 3 lines", or a sentence about the lines in the plural that says nothing of
+ * each); a "respectively" list's figures each in its cue's scope when each cue states one, else in the one scope the
+ * list's own words state for it, never a clause of its own after it (amountScope()). "first" with no role is prose, as
  * "one" and "zero" are.
  *
  * Pure, deterministic and browser-safe: no Node module, clock or network.

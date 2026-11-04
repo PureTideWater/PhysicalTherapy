@@ -19,6 +19,8 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const LIST_JOINERS = new Set(['and', 'or', 'to', 'through', 'thru', 'plus', ',', '–']);
   /** Conjunctions: the words after a figure stop at one, which opens the next figure's clause ("$300.00 and the remittances show $210.00"). */
   const CONJUNCTIONS = new Set(['and', 'but', 'or', 'while', 'whereas', 'yet']);
+  /** Words that open a clause of their own after a "respectively" list ("which the payer explained for each line"): its words are not the list's. */
+  const CLAUSE_OPENERS = new Set(['which', 'that', 'who', 'whom', 'whose', 'where', 'when', 'as', 'because', 'since', 'although', 'though', 'while', 'whereas', 'but', 'yet', 'so', 'if', 'unless']);
   /** Words that join a list across a comma: "rows 1, 2 and 3". */
   const LIST_CONTINUERS = new Set([',', 'and', 'or', 'to', 'through', 'thru', '–']);
   /** Determiners before an ordinal that make it prose before a noun that is no row's ("the sixth unit", "a second appeal"). */
@@ -132,6 +134,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     LIST_JOINERS,
     LIST_CONTINUERS,
     CONJUNCTIONS,
+    CLAUSE_OPENERS,
     // Ordinals, and the determiners, pronouns and prepositions around a count or a code.
     ORDINAL_WORDS,
     ORDINAL_DETERMINERS,

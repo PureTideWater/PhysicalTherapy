@@ -381,6 +381,38 @@ describe('properties of the role reader', () => {
     expect(swapped).toBeGreaterThan(0);
   }, 120_000);
 
+  it('reads a "respectively" list in the scope its own words state, never a clause of its own after it, and a scope with each cue as that cue’s figure’s (NEW-N1, NEW-N2)', () => {
+    let failed = 0;
+    fc.assert(
+      fc.property(generated, ({ content }) => {
+        // Each line's expected and allowed amounts, and the totals (the pattern's and each code's).
+        const lines = (pick: (item: (typeof content.lines)[number]) => string | null) => new Set(content.lines.map(pick).filter((item): item is string => item !== null && !item.startsWith('-')));
+        const totals = (pick: (item: { readonly expected_cents: string; readonly observed_cents: string }) => string) => new Set([content.pattern, ...content.pattern.codes].map(pick).filter((item) => !item.startsWith('-')));
+        const expected = { line: lines((item) => item.expected_cents), total: totals((item) => item.expected_cents) };
+        const allowed = { line: lines((item) => item.observed_cents), total: totals((item) => item.observed_cents) };
+        const cases: (readonly [string, boolean])[] = [];
+        for (const x of expected.total) {
+          for (const y of [...allowed.total, ...allowed.line]) {
+            const held = allowed.total.has(y);
+            cases.push([`In total, the contract expected and the payer allowed ${dollars(x)} and ${dollars(y)}, respectively, which the payer explained for each line [3].`, held]);
+            cases.push([`${dollars(x)} and ${dollars(y)} were expected in total and allowed in total, respectively [3].`, held]);
+          }
+          for (const y of [...allowed.line, ...allowed.total]) {
+            cases.push([`${dollars(x)} and ${dollars(y)} were expected in total and allowed per line, respectively [3].`, allowed.line.has(y)]);
+            cases.push([`${dollars(x)} and ${dollars(y)} were, respectively, expected in total and allowed per line [3].`, allowed.line.has(y)]);
+          }
+        }
+        for (const [narrative, held] of cases) {
+          failed += held ? 0 : 1;
+          expect(passes(narrative, content), narrative).toBe(held);
+        }
+      }),
+      { numRuns: 8 },
+    );
+    // Some figure was stated in the other scope, and so failed.
+    expect(failed).toBeGreaterThan(0);
+  }, 120_000);
+
   it('fails a value no input holds in every role’s words', () => {
     fc.assert(
       fc.property(generated, fc.integer({ min: 1, max: 50_000 }), fc.constantFrom<Form>('digits', 'commas', 'words'), ({ content }, offset, form) => {

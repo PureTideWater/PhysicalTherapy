@@ -59,6 +59,20 @@ export class NumberReader extends CueReader {
     return this.statesTotal(start, to) ? 'total' : null;
   }
 
+  /**
+   * The scope a sentence's opening phrase states with its second word ("On each of the 3 lines, ...", "For every
+   * line, ...") for every figure after it, past the figures between ("the 3" of "each of the 3 lines"; PE-D2). A
+   * sentence that opens with "Each" is about its subject alone ("Each of the 3 lines billed 2 units").
+   */
+  protected openingEach(index: number): Scope | 'each' | null {
+    return this.scopeAt(this.sentenceStart(index) + 1);
+  }
+
+  /** What the words before token `index` state it per: since the figure before it, else its sentence's opening "each" (openingEach()). */
+  protected statedBefore(index: number): Scope | 'each' | null {
+    return this.stated(this.since(index), index) ?? this.openingEach(index);
+  }
+
   /** What an amount or a count of units is stated per (`from` the token its words after start at). */
   protected scope(index: number, from: number): Scope | null {
     // After it, up to the next amount or edge (past counts: "for these 3 lines"); then before it, since the figure before.
@@ -66,7 +80,7 @@ export class NumberReader extends CueReader {
     while (to < from + 7 && this.tokens[to]?.kind !== 'edge' && this.tokens[to]?.figure?.kind !== 'amount') {
       to += 1;
     }
-    const near = this.stated(from, to) ?? this.stated(this.since(index), index);
+    const near = this.stated(from, to) ?? this.statedBefore(index);
     if (near !== null) {
       return near === 'each' ? null : near;
     }
@@ -84,23 +98,29 @@ export class NumberReader extends CueReader {
   }
 
   /**
-   * What an amount is stated per, a "respectively" list's figure as the whole list is (docs/adr/0086, CORR-D2): the
-   * words after the list's last figure, before "respectively" or after it ("$100.00 and $70.00, respectively, per
-   * line"), else those before its first since the figure before ("Per line, the contract expected and the payer
-   * allowed $100.00 and $70.00, respectively"). When both state one, each figure takes the one nearer it; with
-   * neither, its sentence's.
+   * What an amount is stated per, a "respectively" list's figure as its words state it (docs/adr/0086, CORR-D2, NEW-N1,
+   * NEW-N2). When the list's cues each state a scope of their own, one for each figure ("expected in total and allowed
+   * per line"), each figure takes its cue's, in order. Else the list is stated per one scope: the list's own words after
+   * its last figure (afterList(): up to "respectively"; else past it, through its cues when the list's are there, else
+   * seven tokens at most: "$100.00 and $70.00, respectively, per line"; never past a clause with no cue or a word that
+   * opens a clause of its own), else those before its first since the figure before it, or its sentence's opening
+   * "each" ("Per line, the contract expected and the payer allowed $100.00 and $70.00, respectively"). When both state
+   * one and they differ, or neither does, every figure takes its sentence's.
    */
   protected amountScope(index: number): Scope | null {
     const list = this.respectivelyList(index);
     if (list === null) {
       return this.scope(index, index + 1);
     }
-    const first = list[0] as number;
-    const last = list.at(-1) as number;
-    const [word, next] = this.afterList(list);
-    const after = this.stated(last, word) ?? this.stated(word, next);
-    const before = this.stated(this.since(first), first);
-    const found = after !== null && before !== null ? (list.indexOf(index) < list.length / 2 ? before : after) : (after ?? before);
+    const listed = this.listCues(list, 'amount', this.vocab.AMOUNT_CUES);
+    const each = listed.cues.map((cue, at) => this.stated(cue.start, listed.cues[at + 1]?.start ?? listed.end));
+    const own = each.length === list.length && each.every((found) => found !== null) ? (each[list.indexOf(index)] as Scope | 'each') : null;
+    const { before, after } = this.afterList(list, this.vocab.AMOUNT_CUES);
+    // After "respectively", through its cues when the list's cues are there; else seven tokens at most, as after any
+    // figure (scope()).
+    const trailing = this.stated(...before) ?? this.stated(after[0], listed.end === after[1] ? after[1] : Math.min(after[1], after[0] + 7));
+    const opening = this.statedBefore(list[0] as number);
+    const found = own ?? (trailing !== null && opening !== null && trailing !== opening ? null : (trailing ?? opening));
     return found === null ? this.sentenceScope(index) : found === 'each' ? null : found;
   }
 

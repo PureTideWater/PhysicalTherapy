@@ -44,7 +44,7 @@ describe('the stored narrative', () => {
     expect(markup).toContain('data-verifier="fails_now"');
     expect(text(markup)).not.toContain('Verifier passed');
     expect(text(markup)).toContain('Verifier fails it now');
-    expect(text(markup)).toContain(failsNowText('unapproved', true));
+    expect(text(markup)).toContain(failsNowText('unapproved', 'marked'));
     expect(text(markup)).toContain('so this version cannot be approved: correct the marked figures and save a new version.');
     // The figure marked in the narrative, and listed with its sentence, what it was read as and what the records hold it as.
     expect(markup).toContain('<mark class="rounded bg-destructive/20 px-0.5">$100.00</mark>');
@@ -55,7 +55,7 @@ describe('the stored narrative', () => {
     const narrative = 'The payer paid $100.00 for each line [1].';
     const stored = { ...verifyNarrative(narrative, facts, []), passed: true, mismatches: [] };
     const approved = text(rendered(narrative, stored, 'approved'));
-    expect(approved).toContain('The verifier passed this version when it was written and was approved, but it fails it now, so it cannot be exported: correct the marked figures and save a new version, which needs approval again.');
+    expect(approved).toContain('This version was approved when the verifier passed it; the verifier fails it now, so it cannot be exported: correct the marked figures and save a new version, which needs approval again.');
     expect(approved).not.toContain('cannot be approved');
     const exported = text(rendered(narrative, stored, 'exported'));
     expect(exported).toContain('The verifier passed this version when it was written and when it was exported; it fails the narrative now. The exported files stand; a new version needs approval again.');
@@ -71,8 +71,10 @@ describe('the stored narrative', () => {
     const stored = { ...verifyNarrative(narrative, facts, []), narrative_sha256: 'f'.repeat(64) };
     const shown = text(rendered(narrative, stored));
     expect(shown).toContain('Verifier fails it now');
-    expect(shown).toContain('the stored narrative no longer matches its verifier report, so save it again as a new version.');
+    expect(shown).toContain(failsNowText('unapproved', 'stale'));
     expect(shown).not.toContain('correct the marked figures');
+    // Nor the figure check, which fails no figure here (NEW-N3).
+    expect(shown).not.toContain('checks each figure');
   });
 
   it('shows a stored failure as stored', () => {

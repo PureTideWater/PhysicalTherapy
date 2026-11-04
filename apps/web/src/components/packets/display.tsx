@@ -10,7 +10,7 @@ import { Money } from '../remittances/display';
 import { ScrollTable } from '../scroll-table';
 import { StatusChip, type StatusTone } from '../status';
 import { labelOf } from '../../lib/copy/words';
-import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, type FailsNowState, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, VERIFIER_STANDING_TEXT, failsNowText } from '../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, type FailsNowState, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, VERIFIER_STANDING_TEXT, failsNowCause, failsNowText, markedMismatches } from '../../lib/packets/view';
 import { MismatchList, type PlacedFigure } from './mismatch-list';
 
 /**
@@ -359,7 +359,7 @@ export function StoredNarrative({
   readonly state: FailsNowState;
 }) {
   const { report, standing } = verifier;
-  const spans = report.mismatches.filter((mismatch) => mismatch.code !== 'sentence_without_citation' && mismatch.code !== 'empty_narrative');
+  const spans = markedMismatches(report.mismatches);
   const parts: { readonly text: string; readonly marked: boolean }[] = [];
   let at = 0;
   for (const span of [...spans].sort((a, b) => a.start - b.start)) {
@@ -381,7 +381,7 @@ export function StoredNarrative({
       </p>
       {standing === 'fails_now' ? (
         <p className="text-sm" data-verifier-now="fails" data-version-state={state}>
-          {failsNowText(state, spans.length > 0)}
+          {failsNowText(state, failsNowCause(report))}
         </p>
       ) : null}
       <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-mono text-sm" aria-label="Stored narrative">
