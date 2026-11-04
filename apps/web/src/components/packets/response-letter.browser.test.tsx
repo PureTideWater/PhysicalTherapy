@@ -116,6 +116,10 @@ interface StandIn {
   readonly sent: { readonly url: string; readonly method: string; readonly body: string | null }[];
   /** The receipt the receipts route answers with now: its status, and a duplicate's original. */
   receipt: { status: string; duplicateOf?: string };
+  /** How the request route answers: with an upload URL, or refused before any PUT. */
+  request: 'ok' | 'refuse';
+  /** Calls of the request route. */
+  requests: number;
   /** How the PUT answers: at once, held until releasePut(), or refused. */
   put: 'ok' | 'hold' | 'fail';
   releasePut: () => void;
@@ -128,6 +132,8 @@ async function standIn(page: Page): Promise<StandIn> {
   const server: StandIn = {
     sent: [],
     receipt: { status: 'received' },
+    request: 'ok',
+    requests: 0,
     put: 'ok',
     releasePut: () => {
       held?.();
@@ -137,9 +143,14 @@ async function standIn(page: Page): Promise<StandIn> {
   page.on('request', (request: Request) => {
     server.sent.push({ url: request.url(), method: request.method(), body: request.postData() });
   });
-  await page.route('**/p/practice-1/uploads/request', (route) =>
-    route.fulfill({ json: { documents: [{ documentId: UPLOADED, upload: { method: 'PUT', url: `/synthetic-put/${UPLOADED}`, headers: {} } }] } }),
-  );
+  await page.route('**/p/practice-1/uploads/request', (route) => {
+    server.requests += 1;
+    return route.fulfill(
+      server.request === 'refuse'
+        ? { status: 400, json: { status: 'invalid', issues: [{ field: 'files', message: 'SYNTHETIC: the upload request was refused.' }] } }
+        : { json: { documents: [{ documentId: UPLOADED, upload: { method: 'PUT', url: `/synthetic-put/${UPLOADED}`, headers: {} } }] } },
+    );
+  });
   await page.route('**/synthetic-put/**', async (route) => {
     if (server.put === 'hold') {
       await new Promise<void>((resolve) => {
@@ -186,6 +197,15 @@ async function openForm(letters: ResponseLetters = NONE, upload?: Partial<Respon
 
 function calls(page: Page): Promise<Control['calls']> {
   return page.evaluate(() => (window as unknown as { harness: Control }).harness.calls);
+}
+
+/** Whether the uploader's leave guard (docs/adr/0079) would have the browser ask before the page unloads. */
+function asksBeforeLeaving(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    return leaving.defaultPrevented;
+  });
 }
 
 /** The stand-in router's refresh() calls. */
@@ -447,15 +467,52 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await page.close();
   });
 
-  it('CAS-47: inside the form, leaving asks only while the letter is being sent; a Retry that sends it again asks again, and the press after the upload meets no question', async () => {
+  it('CAS-47: a refused upload request keeps the letter waiting in the form; its Upload and Clear send nothing of the form, Enter in Amount sends the response once and presses neither, and leaving asks until Clear', async () => {
     const { page, server } = await openForm({ ...NONE, unused: [letter(ON_FILE)] });
-    // Whether the uploader's leave guard (docs/adr/0079) would have the browser ask before the page unloads.
-    const asks = (): Promise<boolean> =>
-      page.evaluate(() => {
-        const leaving = new Event('beforeunload', { cancelable: true });
-        window.dispatchEvent(leaving);
-        return leaving.defaultPrevented;
-      });
+    // The form is filled first, so that any button that submitted it would send the response, not stop on a field.
+    await page.selectOption(SELECT, ON_FILE);
+    await page.selectOption('#response-kind', 'partial');
+    await page.fill('#amount', '60.00');
+    server.request = 'refuse';
+    await chooseFile(page);
+    const refused = page.getByRole('alert').filter({ hasText: 'SYNTHETIC: the upload request was refused.' });
+    await refused.waitFor();
+    // The letter waits inside the form, by name, with Upload and Clear, and no batch was started.
+    const waiting = page.locator('form').getByRole('group', { name: 'Waiting to upload: 1 file', exact: true });
+    await waiting.waitFor();
+    expect(await waiting.getByText(`${SENTINEL}-letter.pdf`).count()).toBe(1);
+    expect(await page.locator('[aria-label="This batch"]').count()).toBe(0);
+    expect(await page.getAttribute(STATUS, 'data-letter-status')).toBe('none');
+    expect(server.requests).toBe(1);
+    expect(await asksBeforeLeaving(page)).toBe(true);
+    // Upload asks the server again, which refuses again: the letter still waits, and the form posted nothing.
+    await waiting.getByRole('button', { name: 'Upload 1 file', exact: true }).click();
+    await expect.poll(() => server.requests).toBe(2);
+    await waiting.waitFor();
+    expect(await calls(page)).toHaveLength(0);
+    expect(await page.locator(SUMMARY).count()).toBe(0);
+    expect(await asksBeforeLeaving(page)).toBe(true);
+    // While the letter waits, the form's own button is still its default: Enter in a single-line field sends the
+    // response once, and presses neither Upload (no new request) nor Clear (the letter still waits).
+    await page.press('#amount', 'Enter');
+    await page.waitForSelector(SUMMARY);
+    const sent = await calls(page);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.entries).toEqual(expect.arrayContaining([['documentId', ON_FILE], ['kind', 'partial'], ['amount', '60.00']]));
+    expect(server.requests).toBe(2);
+    await waiting.waitFor();
+    // Clear drops the letter: nothing waits, leaving no longer asks, and the form posted nothing more.
+    await waiting.getByRole('button', { name: 'Clear', exact: true }).click();
+    await waiting.waitFor({ state: 'detached' });
+    expect(await asksBeforeLeaving(page)).toBe(false);
+    expect(await calls(page)).toHaveLength(1);
+    expect(server.requests).toBe(2);
+    await page.close();
+  });
+
+  it('CAS-47: inside the form, leaving asks while the letter is being sent or waits to upload, not after a failed PUT; a Retry that sends it again asks again, and the press after the upload meets no question', async () => {
+    const { page, server } = await openForm({ ...NONE, unused: [letter(ON_FILE)] });
+    const asks = (): Promise<boolean> => asksBeforeLeaving(page);
     expect(await asks()).toBe(false);
     server.put = 'hold';
     await chooseFile(page);

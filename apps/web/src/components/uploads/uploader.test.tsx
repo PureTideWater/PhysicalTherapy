@@ -247,12 +247,17 @@ describe('the files waiting', () => {
     expect(html).toContain('>letter.pdf</li>');
     expect(html).toContain('>Clear</button>');
     expect(html).not.toContain('>Upload 2 files</button>');
+    // Inside a form (the payer's letter in "Log a payer response"), Clear never submits it.
+    expect(html).toMatch(/<button[^>]*\btype="button"[^>]*>Clear<\/button>/);
   });
 
   it('upload only on the explicit Upload button, which counts them', () => {
     expect(held([pdf, letter], true)).toContain('>Upload 2 files</button>');
     expect(held([pdf, letter], true)).toContain('>Clear</button>');
     expect(held([pdf], true)).toContain('>Upload 1 file</button>');
+    // Inside a form (the payer's letter in "Log a payer response"), neither button submits it.
+    expect(held([pdf, letter], true)).toMatch(/<button[^>]*\btype="button"[^>]*>Upload 2 files<\/button>/);
+    expect(held([pdf, letter], true)).toMatch(/<button[^>]*\btype="button"[^>]*>Clear<\/button>/);
   });
 });
 
