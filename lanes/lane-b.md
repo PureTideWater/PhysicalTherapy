@@ -1469,3 +1469,13 @@ HANDOFF.md; LANES.md rule 10).
 - Queued after it in S4:
   - the dark sign-in frame's links at about 1.9:1 contrast (a WCAG failure, on the base already);
   - the branded code email and a "password changed" email.
+
+### 2026-11-04 12:30 UTC: cognito-confidential-client designed as two PRs (ADR 0088)
+- Why two: a Cognito client cannot gain a secret in place. CDK replaces it with a new client ID, so an image rollback across a single PR would break every sign-in.
+- PR 1, building now: the enrolment rule (MFA_SETUP only inside a live invitation, matched by sub and email; closes the app-path takeovers); the invitation rule; SecretHash support, inactive until a secret exists; the staging diff role denied DescribeUserPoolClient and ListUserPoolClientSecrets; the R-11 alarms; SEC-20 to SEC-23.
+- PR 2, after PR 1 is on staging: the confidential client, its secret in Secrets Manager (readable by the web role only), rotation, the cutover.
+- Decided by Lane A's orchestrator, as recommended:
+  - ruling 13: rotation by the break-glass role only;
+  - ruling 14: admin-delete-user by break-glass only;
+  - ruling 15: N+1 within 7 days of N in production, and before the first customer invitation.
+- For the founder before PR 2 merges: ruling 16 (an SCP or permission boundary denying DescribeUserPoolClient to read-only permission sets) and the credentialed steps F1 to F5 (design section 10).
