@@ -444,8 +444,13 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   Not #105's: it is the founder's runner item (#102); every push run of this workflow fails the same way until then. No
   re-run (a sizing refusal). Issue #102 updated by the notify job.
 
+- 2026-11-04T07:15:00Z: **the repository is public again** (orchestrator 07:10Z; confirmed: search API `private: false`).
+  The capacity gate's runner has 4 CPUs again. #106 woken (orchestrator: worth merging, to keep the gate working if the
+  repository goes private again): merge prep wf_e69a1f47-500 (base merge keeping #107's text, resolution check, targeted
+  re-check, one push, description, verification on CI); subscribed to #106; script archived.
+
 ## Waiting on someone
-- **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
+- (Resolved 07:10Z: public again.) **The founder (2026-11-04): the repository was private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.

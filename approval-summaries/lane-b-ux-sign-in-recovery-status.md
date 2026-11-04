@@ -32,8 +32,11 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
   integration; adversarial checker; push and draft PR); script archived. Next: two reviews (security; UX and brand with
   after shots), each finding checked by a skeptic; one fix round with the suite once; verification.
 
+- 2026-11-04T07:15:00Z: the repository is public again (confirmed), so **the merge no longer waits on #102** (orchestrator,
+  07:10Z).
+
 ## Waiting on someone
-- The founder: the 4-CPU runner and organization (#102) before the merge.
+- None blocks the merge (the repository is public again, 07:10Z).
 
 ## Next step
 Design.
