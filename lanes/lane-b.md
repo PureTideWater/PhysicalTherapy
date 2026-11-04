@@ -1576,3 +1576,10 @@ HANDOFF.md; LANES.md rule 10).
 - For Lane A: the tp-packet-verifier/3 migration (in #84's status file).
 - S2 next: test-flakes-6, then packet-figure-placeholders' build.
 - Merged on 2026-11-04 in all, 17: #94, #107, #105, #75, #106, #86, #108, #104, #109, #113, #114, #85, #115, #96, #117, #116, #84.
+
+### 2026-11-05 00:00 UTC: test-flakes-6's real fix; a latent memory-safety defect for untrusted PDFs
+- test-flakes-6: on Node 24 a worker thread cannot hold its own heap under a process-wide --max-old-space-size (measured). The oom case therefore runs in a child node started without the flag, passing with and without it. Lane A's orchestrator's first suggestion (execArgv/env) was wrong and is withdrawn.
+- **Found by its sweep (latent):** contract-page extraction (`packages/contracts/src/evidence/pages.ts`) relies on a worker thread's 192 MiB limit. heap.ts's planned `--max-old-space-size=560` on the worker task would override it, so a hostile PDF could exhaust the 1,024 MiB task.
+  - **Decided:** extraction runs in a child process with its own heap flag, with a test of its heap limit under the real command and a synth-time guard.
+  - **Order:** heap.ts's flag must not ship before it.
+  - Item `co-001/pages-child-process`, in S3 after ci-findings-transport.
