@@ -21,8 +21,10 @@ import {
   shardView,
   summaryMarkdown,
 } from './gate';
+import type { Runtime } from './canary/verdict';
 import { keyOf } from './mutants';
-import { TEST_SHARDS, canaryOf, equivalentOf, reportOf, scoredFile, shardResult } from './test-support';
+import { packageManagerVersion, readPins } from './runtime';
+import { TEST_COMMIT, TEST_PINS, TEST_RUNTIME, TEST_SHARDS, canaryOf, equivalentOf, reportOf, scoredFile, shardResult } from './test-support';
 
 /**
  * The mutation gate (tools/stryker/gate.ts; docs/adr/0066, Part 4; test matrix CI-16), on synthetic shard results: each
@@ -39,7 +41,7 @@ function moneyLedger(money = reportOf({ [MONEY]: scoredFile(4, 4) }), ledger = r
   return shardResult('money-ledger', { money, ledger });
 }
 
-const input = (ran: GateInput['ran'], rest: Partial<GateInput> = {}): GateInput => ({ shards: TEST_SHARDS, ran, equivalents: {}, ...rest });
+const input = (ran: GateInput['ran'], rest: Partial<GateInput> = {}): GateInput => ({ shards: TEST_SHARDS, ran, equivalents: {}, pins: TEST_PINS, commit: TEST_COMMIT, ...rest });
 
 describe('the threshold: above 85%, strictly, per fully-run package', () => {
   it('fails 85.00% and passes 85.01%, compared in integers', () => {
@@ -310,6 +312,8 @@ describe('reading the shards’ results and printing them', () => {
     const shard = TEST_SHARDS[0];
     if (shard === undefined) throw new Error('no shard');
     expect(shardView(shard, moneyLedger(report), { money: [equivalentOf(MONEY, 4)] })).toEqual([
+      // The runtime and commit its canary verdict names, first, so a mismatch shows in the shard's own log (E8).
+      `money-ledger ran on Node ${TEST_RUNTIME.node} (Unicode ${TEST_RUNTIME.unicode}, ICU ${TEST_RUNTIME.icu}) and pnpm ${TEST_RUNTIME.pnpm}, at commit ${TEST_COMMIT}`,
       `money-ledger money ${MONEY}: 75.00% (3/4, 0 load failures)`,
       `  equivalent Survived ${MONEY}:4:1 StringLiteral "x" #4 -> "\\"\\""`,
       `money-ledger ledger ${LEDGER}: 100.00% (4/4, 0 load failures)`,
@@ -394,26 +398,31 @@ describe('the runtime the Unicode-bound equivalents rest on', () => {
     judge(input(new Map([['money-ledger', { ...moneyLedger(report), canary: { ...canaryOf('money-ledger'), runtime } }]]), { equivalents: { money: [recorded] }, unicode: listing })).failures;
 
   it('fails a shard whose canary verdict does not name the Node that ran it', () => {
-    expect(run(undefined)).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu, from process.versions)"]);
-    expect(run({ node: 'v24.22.0', unicode: 17 })).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu, from process.versions)"]);
+    expect(run(undefined)).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu from process.versions, and pnpm from its user agent)"]);
+    expect(run({ node: 'v24.22.0', unicode: 17 })).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu from process.versions, and pnpm from its user agent)"]);
   });
 
   it('passes the equivalents on the Unicode data they were checked on, and fails them, naming each, on other data', () => {
-    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' })).toEqual([]);
-    // Another Node with the same data is the same data.
-    expect(run({ node: 'v24.23.0', unicode: '17.0', icu: '78.3' })).toEqual([]);
-    expect(run({ node: 'v26.1.0', unicode: '18.0', icu: '79.1' })).toEqual([
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' })).toEqual([]);
+    expect(run({ node: 'v24.23.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' })).toEqual(["shard money-ledger ran on Node v24.23.0, not the pinned v24.22.0 (tools/stryker/unicode.json's checkedOn.node)"]);
+    expect(run({ node: 'v26.1.0', unicode: '18.0', icu: '79.1', pnpm: '10.34.8' })).toEqual([
+      "shard money-ledger ran on Node v26.1.0, not the pinned v24.22.0 (tools/stryker/unicode.json's checkedOn.node)",
+      "shard money-ledger ran on Unicode 18.0, not the pinned 17.0 (tools/stryker/unicode.json's checkedOn.unicode)",
+      "shard money-ledger ran on ICU 79.1, not the pinned 78.3 (tools/stryker/unicode.json's checkedOn.icu)",
       `money: 1 recorded equivalent rests on the engine's Unicode data as Node 24.22.0 has it (Unicode 17.0, ICU 78.3), and shard money-ledger ran on Node v26.1.0 (Unicode 18.0, ICU 79.1): check it again over every code point on that Node, then record that Node in tools/stryker/unicode.json: ${MONEY} StringLiteral "x" #20 -> "\\"\\""`,
     ]);
-    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.4' })).toHaveLength(1);
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.4', pnpm: '10.34.8' })).toEqual([
+      "shard money-ledger ran on ICU 78.4, not the pinned 78.3 (tools/stryker/unicode.json's checkedOn.icu)",
+      `money: 1 recorded equivalent rests on the engine's Unicode data as Node 24.22.0 has it (Unicode 17.0, ICU 78.3), and shard money-ledger ran on Node v24.22.0 (Unicode 17.0, ICU 78.4): check it again over every code point on that Node, then record that Node in tools/stryker/unicode.json: ${MONEY} StringLiteral "x" #20 -> "\\"\\""`,
+    ]);
   });
 
   it('fails a listing no equivalent records, and a malformed listing', () => {
-    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' }, { ...unicode, records: [key, { ...key, occurrence: 19 }] })).toEqual([
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' }, { ...unicode, records: [key, { ...key, occurrence: 19 }] })).toEqual([
       `tools/stryker/unicode.json lists ${MONEY} StringLiteral "x" #19 -> "\\"\\"", which tools/stryker/equivalent/money.json does not record`,
     ]);
-    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' }, { records: [key] })).toEqual(['tools/stryker/unicode.json: checkedOn is not { node, unicode, icu }, each a string']);
-    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' }, { ...unicode, records: [{ ...key, extra: 1 }] })).toEqual([
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' }, { records: [key] })).toEqual(['tools/stryker/unicode.json: checkedOn is not { node, unicode, icu }, each a string']);
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' }, { ...unicode, records: [{ ...key, extra: 1 }] })).toEqual([
       'tools/stryker/unicode.json record 1: its keys must be exactly file, mutator, original, occurrence, replacement',
     ]);
   });
@@ -438,6 +447,92 @@ describe('the runtime the Unicode-bound equivalents rest on', () => {
     const naming = (['money', 'pricing', 'ledger', 'packets'] as const).flatMap((pkg) => ((equivalents[pkg] ?? []) as EquivalentEntry[]).filter((entry) => /\bUnicode\b/.test(entry.reason)));
     expect(naming.length).toBeGreaterThan(0);
     expect(naming.filter((entry) => !listed.has(keyOf(entry))).map((entry) => `${entry.file}: ${entry.original} -> ${entry.replacement}`)).toEqual([]);
+  });
+});
+
+/**
+ * Every shard on the pinned runtime and the tested commit (docs/adr/0066, Part 7; test matrix CI-29): its canary verdict
+ * names the Node, Unicode, ICU and pnpm it ran on and its commit, and the gate fails any that is not the pins'
+ * (tools/stryker/runtime.ts) or not the commit tested, whether or not the shard scores an equivalent that rests on
+ * Unicode data. A pin change can move each leg: setup-node the Node and its data, action-setup the pnpm, checkout the
+ * commit.
+ */
+describe('every shard on the pinned runtime and the tested commit', () => {
+  const failuresWith = (canary: unknown, rest: Partial<GateInput> = {}) => judge(input(new Map([['money-ledger', { ...moneyLedger(), canary }]]), rest)).failures;
+  const ranOn = (overrides: Partial<Runtime>) => ({ ...canaryOf('money-ledger'), runtime: { ...TEST_RUNTIME, ...overrides } });
+
+  it('fails a shard whose verdict names another Node than the pinned one, naming both', () => {
+    expect(failuresWith(ranOn({ node: 'v24.21.0' }))).toEqual(["shard money-ledger ran on Node v24.21.0, not the pinned v24.22.0 (tools/stryker/unicode.json's checkedOn.node)"]);
+  });
+
+  it('fails a shard whose verdict names another pnpm than the root packageManager’s, naming both', () => {
+    expect(failuresWith(ranOn({ pnpm: '10.34.9' }))).toEqual(["shard money-ledger ran on pnpm 10.34.9, not the pinned 10.34.8 (the root package.json's packageManager)"]);
+  });
+
+  it('fails a verdict that names no pnpm: it names no runtime', () => {
+    const { pnpm: _pnpm, ...withoutPnpm } = TEST_RUNTIME;
+    expect(failuresWith({ ...canaryOf('money-ledger'), runtime: withoutPnpm })).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu from process.versions, and pnpm from its user agent)"]);
+  });
+
+  it('fails a shard that scores no Unicode-bound equivalent and ran on other ICU data', () => {
+    const listing = { checkedOn: { node: TEST_PINS.node, unicode: TEST_PINS.unicode, icu: TEST_PINS.icu }, records: [] };
+    expect(failuresWith(ranOn({ icu: '77.1' }), { unicode: listing })).toEqual(["shard money-ledger ran on ICU 77.1, not the pinned 78.3 (tools/stryker/unicode.json's checkedOn.icu)"]);
+  });
+
+  it('passes a shard on the pinned runtime, its Node as process.version writes it against the pin as checkedOn does', () => {
+    expect([TEST_RUNTIME.node, TEST_PINS.node]).toEqual(['v24.22.0', '24.22.0']);
+    const result = judge(input(new Map([['money-ledger', moneyLedger()]])));
+    expect(result.failures).toEqual([]);
+    expect(result.passed).toBe(true);
+  });
+
+  it('reads the pnpm version out of packageManager, its +sha integrity allowed, and nothing out of any other form', () => {
+    const integrity = `+sha512.${'0a'.repeat(64)}`;
+    expect(packageManagerVersion(`pnpm@10.34.8${integrity}`)).toBe('10.34.8');
+    expect(packageManagerVersion('pnpm@10.34.8')).toBe('10.34.8');
+    expect(packageManagerVersion(`pnpm@10.34.8+sha1.${'0a'.repeat(20)}`)).toBe('10.34.8');
+    for (const value of ['pnpm@^10', 'pnpm@10.34', 'pnpm@latest', 'yarn@4.0.0', `pnpm@10.34.8+sha512.${'0A'.repeat(64)}`, `pnpm@10.34.8+md5.${'0a'.repeat(16)}`, ' pnpm@10.34.8', 'pnpm@10.34.8\n', undefined, 10]) {
+      expect(packageManagerVersion(value), String(value)).toBe('');
+    }
+  });
+
+  it('reads the pins from unicode.json’s checkedOn and the root packageManager, and refuses a packageManager it cannot pin, naming it', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'tp-gate-pins-'));
+    const write = (packageManager: unknown) => {
+      mkdirSync(path.join(root, 'tools/stryker'), { recursive: true });
+      writeFileSync(path.join(root, 'tools/stryker/unicode.json'), JSON.stringify({ checkedOn: { node: '24.22.0', unicode: '17.0', icu: '78.3' }, records: [] }));
+      writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'synthetic', packageManager }));
+    };
+    try {
+      write(`pnpm@10.34.8+sha512.${'0a'.repeat(64)}`);
+      expect(readPins(root)).toEqual({ node: '24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' });
+      for (const value of ['pnpm@^10', 'yarn@4.0.0', 'pnpm@10.34']) {
+        write(value);
+        expect(() => readPins(root), value).toThrow(`package.json's packageManager is "${value}", not pnpm@<x.y.z> with an optional +sha<n>.<hex>`);
+      }
+      write(undefined);
+      expect(() => readPins(root)).toThrow("package.json's packageManager is undefined, not pnpm@<x.y.z>");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a shard that names no commit, or ran on another commit than the tested one or than another shard, naming both', () => {
+    const other = 'fedcba9876543210fedcba9876543210fedcba98';
+    for (const commit of ['', 'HEAD', TEST_COMMIT.slice(1), undefined]) {
+      expect(failuresWith({ ...canaryOf('money-ledger'), commit }), String(commit)).toEqual(["shard money-ledger's canary verdict names no commit (the 40-hex commit its shard ran on, read from .git)"]);
+    }
+    // On Actions: every shard against the commit tested (GITHUB_SHA), and a tested commit that is none fails all.
+    expect(failuresWith({ ...canaryOf('money-ledger'), commit: other })).toEqual([`shard money-ledger ran on commit ${other}, not the tested commit ${TEST_COMMIT} (GITHUB_SHA)`]);
+    expect(failuresWith(canaryOf('money-ledger'), { commit: '' })).toEqual(['the tested commit (GITHUB_SHA) is "", not 40 hex, so no shard can be held to it']);
+    // Off Actions: every shard against the first, which the log says.
+    const pricingOne = shardResult('pricing-one', { pricing: reportOf({ [PRICING_ONE]: scoredFile(4, 4) }) });
+    const pricingTwo = shardResult('pricing-two', { pricing: reportOf({ [PRICING_TWO]: scoredFile(4, 4) }) }, { ...canaryOf('pricing-two'), commit: other });
+    const local = judge(input(new Map([['pricing-one', pricingOne], ['pricing-two', pricingTwo]]), { commit: undefined }));
+    expect(local.failures).toEqual([`shard pricing-two ran on commit ${other}, and shard pricing-one on ${TEST_COMMIT}: every shard runs on one commit`]);
+    expect(local.lines).toContain("The shards' commits are held equal to each other only: off Actions there is no GITHUB_SHA to hold them to.");
+    const same = judge(input(new Map([['pricing-one', pricingOne], ['pricing-two', shardResult('pricing-two', { pricing: reportOf({ [PRICING_TWO]: scoredFile(4, 4) }) })]]), { commit: undefined }));
+    expect(same.failures).toEqual([]);
   });
 });
 
