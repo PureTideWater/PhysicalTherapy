@@ -123,9 +123,13 @@ async function rerender(page: Page, next: Partial<PageKeys>): Promise<void> {
   }, next);
 }
 
-/** Waits until the page's forms have shown `count` responses (the harness counts each summary on body[data-shown]). */
+/**
+ * Waits until the page's forms have shown at least `count` responses (the harness counts each summary on body[data-shown]).
+ * At least, never exactly: the count can move past `count` between two of Playwright's polls, and an exact wait would then
+ * never end. A test that needs exactly `count` asserts it once the page has settled.
+ */
 async function shownCount(page: Page, count: number): Promise<void> {
-  await page.waitForSelector(`body[data-shown="${String(count)}"]`, { state: 'attached' });
+  await page.waitForFunction((n) => Number(document.body.dataset.shown ?? '0') >= n, count, { timeout: 10_000 });
 }
 
 describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the browser', { timeout: 30_000 }, () => {
@@ -335,6 +339,8 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await shownCount(page, 1);
     expect(await focused(page)).toBe('refusal-summary');
     expect(await said(page)).toEqual(['', WARNING]);
+    // Settled: one refusal, one summary shown.
+    expect(await page.locator('body').getAttribute('data-shown')).toBe('1');
     await page.close();
 
     // A refusal before the warning: the field it focused keeps the focus when the warning comes.
@@ -344,6 +350,7 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await before.locator(SUBMIT).click();
     await shownCount(before, 1);
     expect(await focused(before)).toBe('field-code');
+    expect(await before.locator('body').getAttribute('data-shown')).toBe('1');
     await before.clock.runFor('02:02');
     await reached(before, 'warning');
     expect(await focused(before)).toBe('field-code');

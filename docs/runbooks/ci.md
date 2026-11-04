@@ -256,6 +256,13 @@ push to `claude/build-platform` or pull request update touching the calendar, it
 a period's content is being loaded: together inside GitHub Team's included 3,000. Read the budget after the first
 private week (docs/runbooks/github-governance.md, step 1).
 
+A private repository answers git only with a token. A checkout that keeps no token (`persist-credentials: false`, every
+workflow's but publish-content's) must therefore fetch everything its job's git commands read: no partial clone
+(`filter:`), whose blobs a later command fetches with no credentials (screening-capacity's `changes` job failed so on
+2026-11-04, run 41765454724), and no `git fetch`, clone or `ls-remote` of this repository, nor a curl of its API or
+server, in a step or in a script a step runs; every `gh` step and every step whose script reads the API is given the
+job's token. `tools/test/workflows.test.ts` holds all of it (CI-11).
+
 ## Caches
 
 | Cache | Key | Saved by | Restored by |

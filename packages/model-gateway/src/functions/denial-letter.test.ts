@@ -355,10 +355,12 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('jo ann');
   });
 
-  it('joins a number with a slash or a colon next to a letter, never between digits', () => {
+  it('joins a number with a slash or a colon next to a letter, and between digits only after an identifier label', () => {
     expect(redact(['JANE VANTREE'], 'Member ZZ/1234567, ZZ:1234567; claim SYN/555001')).toBe('Member [MEMBER_ID], [MEMBER_ID]; claim [CLAIM_1]');
-    // The recorded residual: digits-only with a slash or a period between digits (a date's or an amount's writing).
-    expect(redact(['JANE VANTREE'], 'Ref 1234.5678 and 12/34/5678', ['12345678'])).toBe('Ref 1234.5678 and 12/34/5678');
+    // The recorded residual: digits-only with a slash or a period between digits (a date's or an amount's writing) and no label.
+    expect(redact(['JANE VANTREE'], 'Seen 1234.5678 and 12/34/5678', ['12345678'])).toBe('Seen 1234.5678 and 12/34/5678');
+    // After an identifier label they are the number (review finding R5-2).
+    expect(redact(['JANE VANTREE'], 'Ref 1234.5678 and claim 12/34/5678', ['12345678'])).toBe('Ref [CLAIM_1] and claim [CLAIM_1]');
     expect(identifierCandidates('also ZZ/7654321')).toContain('ZZ7654321');
   });
 

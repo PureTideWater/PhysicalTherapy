@@ -2,7 +2,7 @@
   "case": "CI-11",
   "module": "CI",
   "title": "Actions pinned to their release",
-  "assertion": "Every `uses:` is a full SHA with its version, one SHA per action; the SHA is the tag's and every input is declared; every action nested in a composite is pinned by SHA too; the release restores no cache",
+  "assertion": "Every `uses:` is a full SHA with its version, one SHA per action; the SHA is the tag's and every input is declared; every action nested in a composite is pinned by SHA too; the release restores no cache; every Trivy step runs the Trivy whose archive matches tools/trivy/release.txt's SHA-256, never setup-trivy's install; no checkout that keeps no token makes a partial clone; no step, and no script or TypeScript under tools/ a step runs, reads this repository's remote by git or curl, git reads only other repositories, and every step that runs gh or reads GitHub's API is given the job's token",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": [
