@@ -125,7 +125,7 @@ describe('sign-in with a password and TOTP', () => {
     expect(invalid).toMatchObject({ kind: 'invalid_password', problems: expect.arrayContaining(['at least 12 characters']) });
     const step2 = pendingOf(await flow.newPassword(step1, 'Chosen-Pass-2026', context()));
     expect(step2.step).toBe('mfa_setup');
-    const step3 = pendingOf(await flow.beginTotpSetup(step2));
+    const step3 = pendingOf(await flow.beginTotpSetup(step2, context()));
     if (step3.step !== 'mfa_setup' || step3.totp === undefined) {
       throw new Error('expected a TOTP secret');
     }
@@ -160,7 +160,7 @@ describe('sign-in with a password and TOTP', () => {
     const step = pendingOf(await flow.start(user.email.toUpperCase(), PASSWORD, context()));
     expect(step.step).toBe('mfa');
     expect(await flow.newPassword(step, 'x', context())).toEqual({ kind: 'refused', reason: 'expired' });
-    expect(await flow.beginTotpSetup(step)).toEqual({ kind: 'refused', reason: 'expired' });
+    expect(await flow.beginTotpSetup(step, context())).toEqual({ kind: 'refused', reason: 'expired' });
     expect(await flow.completeTotpSetup(step, '123456', context())).toEqual({ kind: 'refused', reason: 'expired' });
     expect(await flow.completeKey(step, {} as never, context())).toEqual({ kind: 'refused', reason: 'expired' });
     expect(await flow.beginKeyRegistration(step)).toEqual({ kind: 'refused', reason: 'expired' });
@@ -584,5 +584,207 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     signOut.mockRestore();
     expect(await openSessions(twice.id)).toBe(1);
     expect(logged(failed.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: twice.id, request_id: request.requestId })]);
+  });
+});
+
+/** The enrolment rule's refusal (docs/adr/0088, D3). */
+const NOT_OPEN: FlowResult = { kind: 'refused', reason: 'enrolment_not_open' };
+const ENROLMENT_REFUSED = 'security event: second-factor enrolment refused';
+
+/** An invitation of the person, live (sent a minute ago) or lapsed (sent eight days ago), as the console writes one. */
+async function invitation(userId: string, state: 'live' | 'lapsed'): Promise<void> {
+  const organization = await createOrganization(owner, 'group');
+  const inviter = await person();
+  const membership = await addMembership(owner, organization, userId, 'viewer');
+  await asOwner(owner, [], () =>
+    owner.query(
+      `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
+       VALUES ($1, $2, $3, $4, now() - $5::interval, now() - $5::interval + interval '7 days', $4)`,
+      [organization, membership, userId, inviter.id, state === 'live' ? '1 minute' : '8 days'],
+    ),
+  );
+}
+
+/** Every invitation of the person lapses now. */
+async function lapse(userId: string): Promise<void> {
+  await asOwner(owner, [], () => owner.query("UPDATE invitation SET sent_at = now() - interval '8 days', expires_at = now() - interval '1 day' WHERE user_id = $1", [userId]));
+}
+
+/** An invitee who chose a password and has not enrolled, inside a live invitation: the one state that may enrol. */
+async function invitee(): Promise<{ id: string; email: string; sub: string }> {
+  const invited = await person({ status: 'invited', mfa: false, totp: false });
+  await invitation(invited.id, 'live');
+  return invited;
+}
+
+/** The enrolment step with its setup key. */
+async function withSetupKey(pending: Pending): Promise<Pending> {
+  const begun = pendingOf(await flow.beginTotpSetup(pending, context()));
+  if (begun.step !== 'mfa_setup' || begun.totp === undefined) {
+    throw new Error('expected a setup key');
+  }
+  return begun;
+}
+
+/** A code for the setup key the step holds. */
+function setupCode(pending: Pending): string {
+  if (pending.step !== 'mfa_setup' || pending.totp === undefined) {
+    throw new Error('expected a setup key');
+  }
+  clock = new Date(clock.getTime() + 30_000);
+  return totpCode(pending.totp.secret, clock);
+}
+
+/** Whether the provider holds a second factor for the subject. */
+async function factorOf(sub: string): Promise<string | null | undefined> {
+  return (await store.bySub(sub))?.totpSecret;
+}
+
+describe('SEC-22: a second factor is enrolled only inside a live invitation (docs/adr/0088, D3)', () => {
+  it('SEC-22: refuses an active account with no factor, and one the provider cleared, before any enrolment call, storing nothing, and logs a security event of IDs only', async () => {
+    const active = await person({ mfa: false, totp: false });
+    // The row says enrolled, but the provider's factor is gone (a console or CLI clear: routes B1, D1).
+    const cleared = await person({ totp: false });
+    const { flow: enrolling, lines } = paced();
+    const begin = vi.spyOn(provider, 'beginTotpSetup');
+    const complete = vi.spyOn(provider, 'completeTotpSetup');
+    const request = context();
+    expect(await enrolling.start(active.email, PASSWORD, request)).toEqual(NOT_OPEN);
+    expect(await enrolling.start(cleared.email, PASSWORD, context())).toEqual(NOT_OPEN);
+    expect(begin).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    begin.mockRestore();
+    complete.mockRestore();
+    expect(await factorOf(active.sub)).toBeNull();
+    expect(await factorOf(cleared.sub)).toBeNull();
+    const refusals = logged(lines, ENROLMENT_REFUSED);
+    expect(refusals[0]).toEqual({ level: 'warn', msg: ENROLMENT_REFUSED, time: expect.any(String), user_id: active.id, request_id: request.requestId });
+    expect(refusals.map((entry) => entry.user_id)).toEqual([active.id, cleared.id]);
+    expect(lines.join('\n')).not.toMatch(new RegExp(`${active.email}|${cleared.email}|${active.sub}`));
+    // A refused enrolment is no failed sign-in: nothing counted, nothing locked.
+    expect(await events(active.id)).toEqual([]);
+    expect((await owner.query('SELECT failed_sign_ins, mfa_enrolled FROM "user" WHERE id = $1', [active.id])).rows).toEqual([{ failed_sign_ins: 0, mfa_enrolled: false }]);
+  });
+
+  it('SEC-22: refuses an account only the provider knows (an orphan) before the provider stores anything, logging no user', async () => {
+    const sub = randomUUID();
+    const email = `${randomUUID()}@synthetic.test`;
+    await store.put({ sub, email, passwordHash: await hashPassword(PASSWORD, CHEAP), temporary: false, totpSecret: null, totpLastStep: -1, credentials: [] });
+    const { flow: enrolling, lines } = paced();
+    const request = context();
+    expect(await enrolling.start(email, PASSWORD, request)).toEqual(NOT_OPEN);
+    expect(await factorOf(sub)).toBeNull();
+    expect(logged(lines, ENROLMENT_REFUSED)).toEqual([{ level: 'warn', msg: ENROLMENT_REFUSED, time: expect.any(String), user_id: null, request_id: request.requestId }]);
+  });
+
+  it('SEC-22: refuses at a new password an invitee whose invitation lapsed or who was locked after the step began', async () => {
+    for (const change of ['lapsed', 'locked'] as const) {
+      const invited = await person({ status: 'invited', mfa: false, temporary: true, totp: false });
+      await invitation(invited.id, 'live');
+      const step = pendingOf(await flow.start(invited.email, PASSWORD, context()));
+      expect(step.step, change).toBe('new_password');
+      if (change === 'lapsed') {
+        await lapse(invited.id);
+      } else {
+        await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [invited.id]);
+      }
+      expect(await flow.newPassword(step, CHOSEN, context()), change).toEqual(NOT_OPEN);
+      expect(await factorOf(invited.sub), change).toBeNull();
+    }
+  });
+
+  it('SEC-22: re-checks the account at the setup key and again at the code: a change after the step was sealed is refused, and the provider stores nothing', async () => {
+    const changes: Record<string, (id: string) => Promise<unknown>> = {
+      lapsed: lapse,
+      locked: (id) => owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [id]),
+      disabled: (id) => owner.query('UPDATE "user" SET status = \'disabled\' WHERE id = $1', [id]),
+      activated: (id) => owner.query('UPDATE "user" SET status = \'active\' WHERE id = $1', [id]),
+      enrolled: (id) => owner.query('UPDATE "user" SET mfa_enrolled = true WHERE id = $1', [id]),
+    };
+    for (const [name, change] of Object.entries(changes)) {
+      // At the setup key: the step was sealed while the invitation lived.
+      const early = await invitee();
+      const sealed = pendingOf(await flow.start(early.email, PASSWORD, context()));
+      expect(sealed.step, name).toBe('mfa_setup');
+      await change(early.id);
+      const begin = vi.spyOn(provider, 'beginTotpSetup');
+      expect(await flow.beginTotpSetup(sealed, context()), name).toEqual(NOT_OPEN);
+      expect(begin, name).not.toHaveBeenCalled();
+      begin.mockRestore();
+
+      // At the code: the setup key was shown while the invitation lived.
+      const late = await invitee();
+      const keyed = await withSetupKey(pendingOf(await flow.start(late.email, PASSWORD, context())));
+      await change(late.id);
+      const complete = vi.spyOn(provider, 'completeTotpSetup');
+      expect(await flow.completeTotpSetup(keyed, setupCode(keyed), context()), name).toEqual(NOT_OPEN);
+      expect(complete, name).not.toHaveBeenCalled();
+      complete.mockRestore();
+      expect(await factorOf(late.sub), name).toBeNull();
+    }
+  });
+
+  it('SEC-22: matches the account by the enrolling subject and the email, never by the typed email alone (review security-S2)', async () => {
+    // (a) A live invitee's address, but the provider's user for it is another subject, with no row of its own.
+    const unmatched = await invitee();
+    const stranger = randomUUID();
+    await store.update(unmatched.sub, (record) => ({ ...record, sub: stranger }));
+    expect(await flow.start(unmatched.email, PASSWORD, context())).toEqual(NOT_OPEN);
+    expect(await factorOf(stranger)).toBeNull();
+
+    // (b) The provider names no subject on the step: refused, never matched by the email.
+    const nameless = await invitee();
+    const signIn = vi.spyOn(provider, 'signIn').mockResolvedValueOnce({ kind: 'mfa_setup_required', challenge: 'synthetic-challenge' });
+    expect(await flow.start(nameless.email, PASSWORD, context())).toEqual(NOT_OPEN);
+    signIn.mockRestore();
+
+    // (c) A row for the address and a row for the subject, and they are different users.
+    const byEmail = await invitee();
+    const bySub = await invitee();
+    await store.update(bySub.sub, (record) => ({ ...record, sub: randomUUID() }));
+    await store.update(byEmail.sub, (record) => ({ ...record, sub: bySub.sub }));
+    expect(await flow.start(byEmail.email, PASSWORD, context())).toEqual(NOT_OPEN);
+    expect(await factorOf(bySub.sub)).toBeNull();
+
+    // The same at the setup key and at the code, for a step sealed while both matched.
+    const moved = await invitee();
+    const sealed = pendingOf(await flow.start(moved.email, PASSWORD, context()));
+    await owner.query('UPDATE "user" SET cognito_sub = $2 WHERE id = $1', [moved.id, randomUUID()]);
+    expect(await flow.beginTotpSetup(sealed, context())).toEqual(NOT_OPEN);
+
+    const taken = await invitee();
+    const keyed = await withSetupKey(pendingOf(await flow.start(taken.email, PASSWORD, context())));
+    const other = await person({ status: 'invited', mfa: false, totp: false });
+    await owner.query('UPDATE "user" SET cognito_sub = $2 WHERE id = $1', [taken.id, randomUUID()]);
+    await owner.query('UPDATE "user" SET cognito_sub = $2 WHERE id = $1', [other.id, taken.sub]);
+    expect(await flow.completeTotpSetup(keyed, setupCode(keyed), context())).toEqual(NOT_OPEN);
+    expect(await factorOf(taken.sub)).toBeNull();
+
+    // A step whose sealed subject is another live invitee's: that row's address is not the step's.
+    const first = await invitee();
+    const second = await invitee();
+    const swapped = pendingOf(await flow.start(first.email, PASSWORD, context()));
+    expect(await flow.beginTotpSetup({ ...swapped, subject: second.sub } as Pending, context())).toEqual(NOT_OPEN);
+    expect(await factorOf(first.sub)).toBeNull();
+  });
+
+  it('SEC-22: a step sealed by the release before, with no subject, starts again', async () => {
+    const invited = await invitee();
+    const sealed = pendingOf(await flow.start(invited.email, PASSWORD, context()));
+    const { subject: _subject, ...before } = sealed as Pending & { readonly subject?: string };
+    expect(await flow.beginTotpSetup(before as Pending, context())).toEqual({ kind: 'refused', reason: 'expired' });
+    expect(await flow.completeTotpSetup({ ...(before as Pending), totp: { secret: SECRET, uri: 'otpauth://totp/x' } } as Pending, '123456', context())).toEqual({ kind: 'refused', reason: 'expired' });
+  });
+
+  it('SEC-22: enrols an invitee inside a live invitation, the address typed in any case, on the subject the provider named', async () => {
+    const invited = await invitee();
+    const sealed = pendingOf(await flow.start(invited.email.toUpperCase(), PASSWORD, context()));
+    expect(sealed).toMatchObject({ step: 'mfa_setup', subject: invited.sub });
+    const keyed = await withSetupKey(sealed);
+    expect(keyed).toMatchObject({ step: 'mfa_setup', subject: invited.sub });
+    const done = await flow.completeTotpSetup(keyed, setupCode(keyed), context());
+    expect(done.kind).toBe('signed_in');
+    expect((await owner.query('SELECT status, mfa_enrolled FROM "user" WHERE id = $1', [invited.id])).rows).toEqual([{ status: 'active', mfa_enrolled: true }]);
+    expect(await factorOf(invited.sub)).toEqual(expect.any(String));
   });
 });

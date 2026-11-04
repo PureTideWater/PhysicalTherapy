@@ -140,6 +140,30 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
     expect(await provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2027')).toEqual({ kind: 'invalid_password', problems: [] });
   });
 
+  it('SEC-22: names the enrolling subject on MFA_SETUP from Cognito’s USERNAME or USER_ID_FOR_SRP, through a new password too, and never the typed email (docs/adr/0088, D3; review security-S2)', async () => {
+    const byUsername = make({ InitiateAuthCommand: { ChallengeName: 'MFA_SETUP', Session: 's1', ChallengeParameters: { USERNAME: 'internal-name' } } });
+    expect(await byUsername.provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026')).toMatchObject({ kind: 'mfa_setup_required', subject: 'internal-name' });
+    const bySrp = make({ InitiateAuthCommand: { ChallengeName: 'MFA_SETUP', Session: 's1', ChallengeParameters: { USER_ID_FOR_SRP: 'srp-name' } } });
+    expect(await bySrp.provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026')).toMatchObject({ kind: 'mfa_setup_required', subject: 'srp-name' });
+    // Neither named: no subject, and never the address that was typed.
+    const unnamed = make({ InitiateAuthCommand: { ChallengeName: 'MFA_SETUP', Session: 's1' } });
+    const bare = await unnamed.provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026');
+    expect(bare.kind).toBe('mfa_setup_required');
+    expect(bare).not.toHaveProperty('subject');
+    // A new password's MFA_SETUP keeps the name Cognito gave the step before it, and only that.
+    const invited = make({
+      InitiateAuthCommand: { ChallengeName: 'NEW_PASSWORD_REQUIRED', Session: 's1', ChallengeParameters: { USER_ID_FOR_SRP: 'internal-name' } },
+      RespondToAuthChallengeCommand: { ChallengeName: 'MFA_SETUP', Session: 's2' },
+    });
+    const first = await invited.provider.signIn('person@synthetic.test', 'Temporary-Pass-1');
+    expect(first).not.toHaveProperty('subject');
+    expect(await invited.provider.setNewPassword(challengeOf(first), 'Chosen-Pass-2026')).toMatchObject({ kind: 'mfa_setup_required', subject: 'internal-name' });
+    const nameless = make({ InitiateAuthCommand: { ChallengeName: 'NEW_PASSWORD_REQUIRED', Session: 's1' }, RespondToAuthChallengeCommand: { ChallengeName: 'MFA_SETUP', Session: 's2' } });
+    const after = await nameless.provider.setNewPassword(challengeOf(await nameless.provider.signIn('person@synthetic.test', 'Temporary-Pass-1')), 'Chosen-Pass-2026');
+    expect(after.kind).toBe('mfa_setup_required');
+    expect(after).not.toHaveProperty('subject');
+  });
+
   it('enrolls TOTP: associate, verify, then answer MFA_SETUP', async () => {
     const { provider, sent } = make({
       InitiateAuthCommand: { ChallengeName: 'MFA_SETUP', Session: 's1' },
