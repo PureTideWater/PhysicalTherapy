@@ -22,6 +22,11 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
 - 2026-11-04T22:15:00Z: branch on origin at c7bed0f7 (#117's merge) through the hook; worktree /home/user/pricing-cutoff.
   Next: the item workflow.
 
+- 2026-11-04T22:25:00Z: branch pushed (after the worktree's install, which the hook needs). Item workflow wf_cdca5fda-8a5
+  launched (red-first db test, full-precision fix, class sweep, rates; checker; draft PR; payment-engine and correctness
+  reviews as default agents with their briefs, skeptics; one fix round with the full suite and Stryker; verification);
+  script archived.
+
 ## Waiting on someone
 - None.
 
