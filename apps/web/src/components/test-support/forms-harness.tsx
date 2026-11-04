@@ -301,6 +301,25 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
     </StepTimer>
   ),
   /**
+   * The forgot-password page's code step (docs/adr/0081, the forgotten password): the timer with its own words and no
+   * Start again of its own (restart null), since the page's Send a new code and Use a different email sit below it.
+   */
+  resetTimer: (page) => (
+    <StepTimer
+      limitSeconds={180}
+      warningSeconds={60}
+      closesIn={page.closesIn ?? 180_000}
+      closesAt={page.closesAt ?? 1_800_000_000_000}
+      restart={null}
+      words={{ warning: 'SYNTHETIC warning words.', closed: 'SYNTHETIC closed words.' }}
+    >
+      <HarnessForm submit="Save password">
+        <Keys page={page} />
+        <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={12} hint="Six digits from the email. Spaces are fine." required />
+      </HarnessForm>
+    </StepTimer>
+  ),
+  /**
    * The sign-in page's notice after a step closed (ArrivalNotice), above a field: mounted again for each closesAt the
    * page's keys give, as a new arrival.
    */

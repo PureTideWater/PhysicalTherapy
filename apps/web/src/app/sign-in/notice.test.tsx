@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { SIGN_IN_REASONS, type PasswordToUse, type SignInReason } from '../../lib/routes/sign-in';
-import { SignInNotice } from './notice';
+import { type ForgotPasswordReason, SIGN_IN_REASONS, type PasswordToUse, type SignInReason } from '../../lib/routes/sign-in';
+import { ForgotPasswordNotice, NoEmailList, RESET_REQUEST_DESCRIPTION, SignInNotice } from './notice';
 import { StepHeading } from './step-heading';
 
 /**
@@ -14,6 +14,9 @@ import { StepHeading } from './step-heading';
  */
 
 const RESTARTS = ['step_expired', 'restarted'] as const;
+
+/** The reasons whose notice takes the focus once on arrival: the restarts, and a reset's (docs/adr/0081, A5). */
+const ARRIVALS: readonly SignInReason[] = [...RESTARTS, 'password_reset', 'password_reset_locked'];
 
 /** PaidWhole's support address as the page passes it (synthetic): not the person's, so it may sit in the words. */
 const SUPPORT = 'support@synthetic.test';
@@ -60,12 +63,12 @@ describe('the sign-in notice after a step', () => {
     expect(notice({ reason: 'key_registered', surface: 'key' })).toBe(notice({ reason: 'key_registered' }));
   });
 
-  it('SGN-03: takes the focus on arrival for the two restart reasons only, on either page, as a note said once, never also a live region', () => {
+  it('SGN-03, SGN-07: takes the focus on arrival for the two restart reasons and the two reset reasons only, on either page, as a note said once, never also a live region', () => {
     for (const reason of SIGN_IN_REASONS) {
       for (const surface of ['password', 'key'] as const) {
         const markup = notice({ reason, surface });
         const focusable = /^<div[^>]*data-slot="arrival-focus"[^>]*>/.exec(markup);
-        if ((RESTARTS as readonly string[]).includes(reason)) {
+        if (ARRIVALS.includes(reason)) {
           // The notice itself is what takes the focus: one element, a note, with nothing around it.
           expect(focusable?.[0], `${reason} on ${surface}`).toContain('tabindex="-1"');
           expect(focusable?.[0], `${reason} on ${surface}`).toContain('role="note"');
@@ -103,6 +106,89 @@ describe('the locked notice (UX-066)', () => {
     }
     // The address is the one the page is given, never a fixed one.
     expect(renderToStaticMarkup(<SignInNotice reason="locked" supportEmail="help@synthetic.test" />)).toContain('Write to help@synthetic.test from');
+  });
+});
+
+describe('the notice after a forgotten password was reset (docs/adr/0081, A5)', () => {
+  const ENDED = 'Your password is changed, and every session of this account has ended.';
+
+  it('SGN-07: says the password changed and every session ended, that the email is filled in when it was kept, and that the second factor is still asked', () => {
+    expect(text(notice({ reason: 'password_reset', kept: { use: 'chosen' } }))).toBe(
+      `Password changed ${ENDED} Your email is filled in: sign in with your new password and the code from your authenticator app. If you sign in with a hardware key, use it as before.`,
+    );
+    // No email kept (a disabled account): the same, without the filled-in email.
+    expect(text(notice({ reason: 'password_reset' }))).toBe(
+      `Password changed ${ENDED} Sign in with your new password and the code from your authenticator app. If you sign in with a hardware key, use it as before.`,
+    );
+    // Whichever password the kept email names, the words are the reset's: the new password is the one to use.
+    expect(notice({ reason: 'password_reset', kept: { use: null } })).toBe(notice({ reason: 'password_reset', kept: { use: 'chosen' } }));
+  });
+
+  it('SGN-07: for a locked account keeps no email, says the lock stays and names the support address, never a reset', () => {
+    const markup = notice({ reason: 'password_reset_locked' });
+    expect(text(markup)).toBe(`Password changed ${ENDED} This account is locked after ten failed attempts: write to ${SUPPORT} from the address you sign in with to have it unlocked.`);
+    expect(notice({ reason: 'password_reset_locked', kept: { use: 'chosen' } })).toBe(markup);
+    expect(text(markup)).not.toMatch(/filled in|forgot/i);
+  });
+
+  it('SGN-07: holds no address but the support one', () => {
+    for (const kept of [undefined, { use: 'chosen' as const }]) {
+      const markup = notice({ reason: 'password_reset', ...(kept === undefined ? {} : { kept }) });
+      expect(markup).not.toContain('@');
+      expect(markup).not.toMatch(/data-(?!slot|reason)[a-z-]+=/);
+    }
+    expect(notice({ reason: 'password_reset_locked' }).replaceAll(SUPPORT, '')).not.toContain('@');
+  });
+});
+
+describe('the forgot-password page’s notices and words (docs/adr/0081, A1, A2)', () => {
+  function forgot(props: { readonly phase: 'request' | 'confirm'; readonly reason: ForgotPasswordReason | null }): string {
+    return renderToStaticMarkup(<ForgotPasswordNotice {...props} startedAt={1_800_000_000_000} />);
+  }
+
+  it('SGN-05: says to check the email in the code’s phase, as a note focused once, and never names the address', () => {
+    const markup = forgot({ phase: 'confirm', reason: 'code_sent' });
+    expect(text(markup)).toBe('Check your email If an account uses the address you typed, we sent it a six-digit code. It can take a few minutes: check your spam folder too.');
+    expect(markup).toMatch(/^<div[^>]*data-slot="arrival-focus"[^>]*>/);
+    expect(markup.match(/role="/g)).toEqual(['role="']);
+    expect(markup).toContain('role="note"');
+    expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain('data-reason="code_sent"');
+    expect(markup).not.toContain('@');
+    expect(markup).not.toMatch(/role="status"|aria-live|role="alert"/);
+  });
+
+  it('SGN-06: says a closed step needs the email again in the request’s phase, as a note focused once', () => {
+    const markup = forgot({ phase: 'request', reason: 'step_expired' });
+    expect(text(markup)).toBe('Reset step closed That step closed. Enter your email for a new code.');
+    expect(markup).toContain('data-slot="arrival-focus"');
+    expect(markup).toContain('data-reason="step_expired"');
+  });
+
+  it('SGN-05, SGN-06: shows each reason only in its own phase, and nothing for the other phase’s or none (review UXR-12)', () => {
+    expect(forgot({ phase: 'request', reason: 'code_sent' })).toBe('');
+    expect(forgot({ phase: 'confirm', reason: 'step_expired' })).toBe('');
+    expect(forgot({ phase: 'request', reason: null })).toBe('');
+    expect(forgot({ phase: 'confirm', reason: null })).toBe('');
+  });
+
+  it('SGN-05: phase 1 says what an invited person does instead, the same for every address (review UXR-06)', () => {
+    expect(RESET_REQUEST_DESCRIPTION).toBe(
+      'Enter the email you sign in with. If it has an account, we send it a code for choosing a new password. Invited and not signed in yet? Use the temporary password from your invitation instead.',
+    );
+    expect(RESET_REQUEST_DESCRIPTION).not.toContain('@');
+  });
+
+  it('SGN-05, SGN-06: phase 2’s "No email?" list is a list with no heading, its words fixed for every address, naming the two controls below it', () => {
+    const markup = renderToStaticMarkup(<NoEmailList />);
+    expect(markup).not.toMatch(/<h[1-6]/);
+    expect(markup.match(/<li/g)).toHaveLength(4);
+    expect(text(markup.replace(/<\/li>/g, ' '))).toBe(
+      'No email? Check your spam folder. Typed the wrong address: Use a different email. Invited by your organization and not finished setting up: use the temporary password from your invitation, or ask your organization’s administrator to send a new invitation. Still nothing: Send a new code.',
+    );
+    // The two controls are named, not linked: they are the buttons below the list.
+    expect(markup).not.toContain('<a ');
+    expect(markup).not.toContain('@');
   });
 });
 

@@ -211,7 +211,7 @@ describe('the password and TOTP steps', () => {
     const started = clock.getTime();
     expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { redirect: '/sign-in/mfa' } });
     expect(browser.get(SIGN_IN_COOKIE)).toMatch(/^v1\./);
-    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null } });
+    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null, supportEmail: SUPPORT } });
     expect(await step(answerMfa, browser, { code: 'abc' })).toMatchObject({ status: 'invalid' });
     // FRM-07: a wrong code, after the password proved the account, names the code (and still says it did not match).
     expect(await step(answerMfa, browser, { code: '000000' })).toEqual({
@@ -417,7 +417,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     const browser = new Browser();
     const started = clock.getTime();
     await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
-    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null } });
+    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60, closesAt: started + 180_000, closesIn: 180_000 }, setup: null, supportEmail: SUPPORT } });
     clock = new Date(started + 170_000);
     expect(await step(mfaPage, browser)).toMatchObject({ status: 'ok', data: { time: { closesAt: started + 180_000, closesIn: 10_000 } } });
     clock = new Date(started + 180_000);
@@ -460,7 +460,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
     sealedBefore(browser, started + 300_000);
     browser.delete(KEPT_EMAIL_COOKIE);
-    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60 }, setup: null } });
+    expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email, time: { limitSeconds: 180, warningSeconds: 60 }, setup: null, supportEmail: SUPPORT } });
     clock = new Date(started + 200_000);
     browser.forget();
     expect(await step(answerMfa, browser, { code: totpCode(SECRET, clock) })).toEqual(RESTARTED);

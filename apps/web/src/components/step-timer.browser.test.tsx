@@ -426,4 +426,24 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await page.waitForFunction(() => document.activeElement?.getAttribute('data-slot') === 'arrival-focus');
     await page.close();
   });
+
+  it('SGN-06: a step with its own words and no Start again (the reset’s) says only those words, with no form and no pending row (review UXR-01, UXR-02)', async () => {
+    const page = await harness.open('resetTimer', { clock: START });
+    await reached(page, 'open');
+    await record(page);
+    await page.clock.runFor('02:02');
+    await reached(page, 'warning');
+    expect(await said(page)).toEqual(['', 'This step closes within a minuteSYNTHETIC warning words.']);
+    expect(await page.locator(`${REGION} form`).count()).toBe(0);
+    expect(await page.locator('[data-slot="restart-pending"]').count()).toBe(0);
+    await page.clock.runFor('01:00');
+    await reached(page, 'closed');
+    expect(await said(page)).toEqual(['', 'This step closes within a minuteSYNTHETIC warning words.', 'This step has closedSYNTHETIC closed words.']);
+    expect(await page.locator(`${REGION} form, ${REGION} button`).count()).toBe(0);
+    expect(await page.locator('[data-slot="restart-pending"]').count()).toBe(0);
+    // The status is the same polite atomic region.
+    expect(await page.locator(REGION).getAttribute('role')).toBe('status');
+    expect(await page.locator(REGION).getAttribute('aria-atomic')).toBe('true');
+    await page.close();
+  });
 });
