@@ -84,6 +84,30 @@ export interface FigureReading {
   readonly token: number;
   /** A figure of a "respectively" list in neither of its two plain forms (rule 3 of docs/adr/0086): it fails, whatever it is. */
   readonly unread: boolean;
+  /** For an amount, what its sentence names of the lines (the fail-closed triggers of rule 1 of docs/adr/0086); null for any other figure. */
+  readonly parts: SentenceParts | null;
+}
+
+/**
+ * What a sentence names of the lines (the fail-closed triggers of rule 1 of docs/adr/0086, as amended on 2026-11-04):
+ * where it names a part of them, an amount in it whose role's per-line and total values differ fails with no scope,
+ * whatever its words beside it say.
+ */
+export interface SentenceParts {
+  /**
+   * It names a part of the lines: a row, a claim's or a patient's ("line 2", "claim 1", "Patient 2", "the claim line",
+   * "the third line"), a code or a modifier, a date of service, a patient, a partitive ("two of the 3 lines"), or
+   * "remaining", "other", "first", "last" or "some".
+   */
+  readonly named: boolean;
+  /** It says "the claim" ("for the claim", "this claim"): a part of the claims unless the pattern has one. */
+  readonly claim: boolean;
+  /** It says "the patient": a part of the patients unless the pattern has one. */
+  readonly patient: boolean;
+  /** Each figure it reads in roles, with its value: one in the roles of a count of lines, claims or patients the pattern does not hold so names a part. */
+  readonly counts: readonly { readonly roles: readonly FigureRole[]; readonly value: string }[];
+  /** Its dates, months and days of a month: one a line's service date is, or falls in, names a part, whatever role its words give it. */
+  readonly dates: readonly { readonly kind: 'date' | 'month' | 'month_day'; readonly value: string }[];
 }
 
 /** A text read: its figures with their roles, and its tokens as quotedHolds() compares them (an edge is "|"). */

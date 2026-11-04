@@ -66,8 +66,11 @@ export interface NarrativeFacts {
   readonly identifiers: ReadonlySet<string>;
   /** Each quoted text, as its words and the roles its own words give its figures (./roles.ts quotedText()). */
   readonly quotes: readonly QuotedText[];
-  /** The schedule's rows: a placeholder names one of 1 to rows. */
+  /** The schedule's rows: a placeholder names one of 1 to rows. They are the pattern's lines, whose count a sentence must state as such for an amount in it to keep its scope (docs/adr/0086). */
   readonly rows: number;
+  /** The pattern's claims and patients: a sentence that states another count of them, or says "the claim" or "the patient" where there are more than one, names a part of the lines. */
+  readonly claims: number;
+  readonly patients: number;
   /** The citation markers a sentence may use. */
   readonly markers: ReadonlySet<number>;
 }
@@ -373,6 +376,8 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     identifiers: facts.identifiers,
     quotes: facts.quotes,
     rows: content.lines.length,
+    claims: pattern.claims,
+    patients: pattern.patients,
     markers: new Set(content.sources.map((source) => source.marker)),
   };
 }

@@ -2,7 +2,7 @@ import { decimal } from '@tp/money';
 
 import { type NarrativeFacts, PLACEHOLDER_KINDS, heldRoles, largestHeld, scopeUnstated } from '../facts';
 import { type ReadableText, type TextSpan, readableText } from '../readable';
-import { FIGURE_ROLES, type FigureReading, type FigureRole, type Scope, functionWords, quotedHolds, readFigures } from '../roles';
+import { FIGURE_ROLES, type FigureReading, type FigureRole, type Scope, type SentenceParts, functionWords, quotedHolds, readFigures } from '../roles';
 import { type FigureKind, scanText, sentenceSpans } from '../scan';
 
 /**
@@ -19,10 +19,10 @@ import { type FigureKind, scanText, sentenceSpans } from '../scan';
  *   do not hold in the role its own words give it (../roles.ts; docs/adr/0086): "3650 days" is the window's
  *   days, "page 2" a page, "3 claims" the claim count, "the payer allowed $70.00" the allowed amount, and a
  *   value the inputs hold in another role fails ("10000 visits" when 10000 is the window's days); one cue's
- *   role, never the union of every cue in the clause, and "per line" or "in total" in an amount's own clause or
- *   its sentence's opening scope phrase holds it to a line's or a total; with neither, it fails where its role's
- *   per-line and total values differ (rule 2 of docs/adr/0086), and a figure of a "respectively" list in neither
- *   plain form fails whatever it is (rule 3). A figure whose words name no role passes in any role of its kind (an
+ *   role, never the union of every cue in the clause, and a scope phrase beside an amount ("per line", "in total")
+ *   holds it to a line's or a total; with none, or in a sentence that names a part of the lines (namesPart()), it
+ *   fails where its role's per-line and total values differ (rules 1 and 2 of docs/adr/0086), and a figure of a
+ *   "respectively" list in neither plain form fails whatever it is (rule 3). A figure whose words name no role passes in any role of its kind (an
  *   amount, a percentage, a date), or, for a number, in none: only as a quoted text holds it, with the words around
  *   it ("Section 4");
  * - every hidden character (one that prints as nothing or as something else), and every figure written
@@ -74,8 +74,9 @@ export interface NarrativeCheck {
 
 /**
  * What a failing figure's words must say for it to be read (docs/adr/0086): `scope`, whether it is per line or in
- * total (rule 2: its words state neither, and its role's per-line and total values differ); `own_words`, its own words
- * instead of a "respectively" list in neither plain form (rule 3); null, nothing more: it is not in the inputs as read.
+ * total (rule 2: no scope phrase stands beside it, or its sentence names a part of the lines, and its role's per-line
+ * and total values differ); `own_words`, its own words instead of a "respectively" list in neither plain form (rule
+ * 3); null, nothing more: it is not in the inputs as read.
  * A stored report's mismatch stays figure_not_in_input; this is the reading's, for the words beside it.
  */
 export type FigureNeeds = 'scope' | 'own_words' | null;
@@ -91,7 +92,7 @@ export interface CheckedFigure {
   readonly passed: boolean;
   /** For a figure that failed, the roles the inputs hold its value in (a figure stated in the wrong role). */
   readonly heldAs: readonly FigureRole[];
-  /** What an amount or a count of units is stated per, as read (null: its words say neither). */
+  /** What an amount or a count of units is stated per, as read (null: no scope phrase beside it, or its sentence names a part of the lines). */
   readonly scope: Scope | null;
   /** For a figure that failed, what its words must say (FigureNeeds); null for one that passed. */
   readonly needs: FigureNeeds;
@@ -112,8 +113,10 @@ export interface CheckedFigure {
  * way (rule 2 of docs/adr/0086, `scope`), and a figure of a "respectively" list in neither plain form always fails
  * (rule 3, `own_words`).
  */
-function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>): { readonly passed: boolean; readonly needs: FigureNeeds } {
-  const verdict = (passed: boolean, needs: FigureNeeds = null) => ({ passed, needs: passed ? null : needs });
+function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>): { readonly passed: boolean; readonly needs: FigureNeeds; readonly scope: Scope | null } {
+  // In a sentence that names a part of the lines, an amount keeps no scope but each unit's.
+  const scope = reading.scope !== 'unit' && reading.parts !== null && namesPart(reading.parts, facts) ? null : reading.scope;
+  const verdict = (passed: boolean, needs: FigureNeeds = null) => ({ passed, needs: passed ? null : needs, scope });
   const quoted = (inRole: boolean) => facts.quotes.some((quote) => quotedHolds(tokens, reading, quote, inRole, words));
   if (reading.unread) {
     return verdict(false, 'own_words');
@@ -135,9 +138,9 @@ function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonl
       if (reading.prose || facts.codes.has(reading.code)) {
         return verdict(true);
       }
-      const held = heldRoles(facts, reading.kind, reading.value, reading.scope);
+      const held = heldRoles(facts, reading.kind, reading.value, scope);
       // Held with no scope stated where the role's per-line and total values differ: its words must say which.
-      const unstated = (role: FigureRole) => reading.scope === null && scopeUnstated(facts, reading.kind, reading.value, role);
+      const unstated = (role: FigureRole) => scope === null && scopeUnstated(facts, reading.kind, reading.value, role);
       const { roles } = reading;
       if (roles === 'any') {
         const clear = [...held].some((role) => !unstated(role));
@@ -161,12 +164,30 @@ function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonl
   }
 }
 
+/**
+ * Whether a sentence names a part of the lines (the fail-closed triggers of rule 1 of docs/adr/0086, as amended): a
+ * row, a code, a date of service, a patient, a partitive or "remaining", "other", "first", "last" or "some" (the
+ * reader's `named`), "the claim" or "the patient" where the pattern has more than one, a count of lines, claims or
+ * patients the pattern does not hold so ("for 2 lines" of 3), or a date, month or day of a month a line's service
+ * date is or falls in.
+ */
+function namesPart(parts: SentenceParts, facts: NarrativeFacts): boolean {
+  const pattern: Partial<Record<FigureRole, number>> = { lines: facts.rows, claims: facts.claims, patients: facts.patients };
+  // A figure read in a count's roles that the pattern holds in none of them.
+  const other = parts.counts.some((count) => {
+    const held = count.roles.filter((role) => pattern[role] !== undefined);
+    return held.length > 0 && !held.some((role) => decimal(String(pattern[role])).equals(decimal(count.value)));
+  });
+  const served = parts.dates.some((date) => heldRoles(facts, date.kind, date.value).has('service_date'));
+  return parts.named || (parts.claim && facts.claims !== 1) || (parts.patient && facts.patients !== 1) || other || served;
+}
+
 /** Every figure of a narrative, read in its role and checked against the facts (`sentenceOf` a narrative position's sentence). */
 function checkFigures(readable: ReadableText, facts: NarrativeFacts, sentenceOf: (position: number) => number): CheckedFigure[] {
   const read = readFigures(readable.text);
   const words = functionWords();
   return read.readings.map((reading) => {
-    const { passed, needs } = inInputs(reading, facts, read.tokens, words);
+    const { passed, needs, scope } = inInputs(reading, facts, read.tokens, words);
     const span = readable.original(reading.figure.start, reading.figure.end);
     // A five-digit figure that may be a code or a count is reported as the code it is written as.
     const kind: FigureKind = reading.code !== '' ? 'code' : reading.kind === 'year' ? 'number' : reading.kind;
@@ -177,7 +198,7 @@ function checkFigures(readable: ReadableText, facts: NarrativeFacts, sentenceOf:
       every: reading.every,
       passed,
       heldAs: passed ? [] : FIGURE_ROLES.filter((role) => held.has(role)),
-      scope: reading.scope,
+      scope,
       needs,
       sentence: sentenceOf(span.start),
       start: span.start,

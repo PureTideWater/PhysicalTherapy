@@ -3,18 +3,26 @@ import type { Figure } from '../scan';
 import type { FigureRole, ReadKind, Token } from './kinds';
 import { ANY, type Cued, type Entry, type Family, type Match, Walk, cueAt, nearest, notWord, one, ordered } from './walk';
 
-/** A "respectively" list's cue: its roles, the token its words start at, and the tokens that state its own scope. */
+/**
+ * A "respectively" list's cue: its roles, the tokens its words start and end at (a scope phrase right after them is
+ * its own), and whether they end with "amounts", the noun of every cue (after the last cue's, a scope phrase is the
+ * whole list's).
+ */
 export interface ListCue {
   readonly roles: readonly FigureRole[];
   readonly start: number;
-  readonly scope: readonly [number, number];
+  readonly end: number;
+  readonly noun: boolean;
 }
 
-/** A "respectively" list in one of its two plain forms: its cues, in order, and the tokens that state a scope for each of its figures. */
+/**
+ * A "respectively" list in one of its two plain forms: its cues, in order, and, with its cues after it, the token right
+ * after the list, where a scope phrase is the whole list's (null with its cues before it).
+ */
 export interface ListForm {
   readonly list: readonly number[];
   readonly cues: readonly ListCue[];
-  readonly wide: readonly (readonly [number, number])[];
+  readonly after: number | null;
 }
 
 /**
@@ -133,11 +141,10 @@ export class CueReader extends Walk {
   /**
    * The "respectively" list token `index` is in (rule 3 of docs/adr/0086), in a sentence that says "respectively":
    * among the amounts, percentages and dates before it (since the "respectively" before, if any, and since the last
-   * clause an edge and a conjunction or a clause's opener start before the list: "The payer paid $56.00 per line, and
-   * the contract expected ..."), the list is the run of them joined by commas, "and" or "or" alone that ends at the
-   * last. The figure takes it when it is in that run; when it is another of them and the run is in neither plain form
-   * (listForm()), it takes them all ("$70.00 and $100.00 per line on 2026-04-08 were ...": every one fails, `unread`),
-   * else none. After a "respectively" with no such figure before it ("Respectively, $1.00 and $9.00 were ..."): each
+   * clause an edge and a conjunction start before the list: "The payer paid $56.00 per line, and the contract expected
+   * ..."), the list is the run of them joined by commas, "and" or "or" alone that ends at the last. The figure takes it
+   * when it is in that run; when it is another of them and the run is in neither plain form (listForm()), it takes them
+   * all ("$70.00 and $100.00 per line on 2026-04-08 were ...": every one fails, `unread`), else none. After a "respectively" with no such figure before it ("Respectively, $1.00 and $9.00 were ..."): each
    * figure after it fails. Null when the figure is in no list. A list of one, of figures of two kinds, or of figures
    * not joined so, is in neither plain form, so each figure fails.
    */
@@ -164,11 +171,11 @@ export class CueReader extends Walk {
     }
     const to = index + 1 + after;
     const last = listed(from, to).at(-1) as number;
-    // The last clause an edge and a conjunction or an opener start before the last figure ("..., and the contract
-    // expected"), not a list's "$1.00, and $9.00"; the list's figures are after it.
+    // The last clause an edge and a conjunction start before the last figure ("..., and the contract expected"), not a
+    // list's "$1.00, and $9.00"; the list's figures are after it.
     const opened = this.tokens.slice(0, last).findLastIndex((_, at) => {
       const list = this.tokens[at - 2]?.kind === 'figure' && (this.tokens[at + 1] as Token).kind === 'figure';
-      return (this.vocab.CONJUNCTIONS.has(this.word(at, 0)) || this.vocab.CLAUSE_OPENERS.has(this.word(at, 0))) && this.tokens[at - 1]?.kind === 'edge' && !list;
+      return this.vocab.CONJUNCTIONS.has(this.word(at, 0)) && this.tokens[at - 1]?.kind === 'edge' && !list;
     });
     const candidates = listed(Math.max(from, opened), to);
     let head = candidates.length - 1;
@@ -197,13 +204,12 @@ export class CueReader extends Walk {
   }
 
   /**
-   * A list's cues in tokens [from, to), as they count (entries()), one for each run of the same roles, each with the
-   * tokens that state its own scope (PE3-1; docs/adr/0086): its own words, the list's words and commas right after them,
-   * and, for a cue after the first, those right before it back to the "and", "or" or comma that joins it ("and per line
-   * the payer allowed"): never a word of another cue. When the last cue's words hold "amounts", the noun
-   * of every cue ("the expected and allowed amounts per line"), they state the whole list's (`wide`).
+   * A list's cues in tokens [from, to), as they count (entries()), one for each run of the same roles, each to the end
+   * of its words, after which a scope phrase is its own ("expected in total", "the expected amounts in total"), past
+   * "amounts" (`noun`: after the last cue's, a scope phrase is the whole list's, "the expected and allowed amounts per
+   * line").
    */
-  protected listCues(from: number, to: number, family: Family, cues: Cues): { readonly cues: ListCue[]; readonly wide: (readonly [number, number])[] } {
+  protected listCues(from: number, to: number, family: Family, cues: Cues): ListCue[] {
     const runs: { roles: readonly FigureRole[]; start: number; end: number }[] = [];
     const words = this.cues(from, to, cues);
     const counted = this.entries(words, family);
@@ -215,31 +221,17 @@ export class CueReader extends Walk {
         runs.push({ roles: entry.roles, start: entry.match.start, end: entry.match.end });
       }
     }
-    // After a cue: a scope's word, a determiner, "were" or "are", a comma ("expected, in total, and") or a cue's word that
-    // does not count (a participle after its noun: "the interest owed in total"), and no counted cue's.
+    // A cue's words end past a cue's word that does not count (a participle after its noun: "the interest owed") and
+    // past "amounts", the noun of every cue.
     const inside = (matches: readonly Match[], at: number) => matches.some((match) => match.start <= at && at <= match.end);
-    const own = (at: number) => {
-      const text = (this.tokens[at] as Token).text;
-      const kept = text === ',' || this.vocab.SCOPE_WORDS.has(text) || this.vocab.LIST_FILLERS.has(text) || inside(words, at);
-      return kept && !inside(counted.map((entry) => entry.match), at);
-    };
-    // Before a cue after the first: back to the "and", "or" or comma that joins it, never into the cue before's words.
-    let reached = from;
-    const found = runs.map((cue, at): ListCue => {
-      let first = cue.start;
-      while (at > 0 && first > reached && !this.vocab.LIST_JOINED.has((this.tokens[first - 1] as Token).text)) {
-        first -= 1;
+    return runs.map((run): ListCue => {
+      let end = run.end;
+      while (inside(words, end + 1) && !inside(counted.map((entry) => entry.match), end + 1)) {
+        end += 1;
       }
-      let after = cue.end + 1;
-      while (after < to && own(after)) {
-        after += 1;
-      }
-      reached = after;
-      return { roles: cue.roles, start: cue.start, scope: [first, after] };
+      const noun = this.vocab.LIST_NOUNS.has(this.word(end, 1));
+      return { roles: run.roles, start: run.start, end: noun ? end + 1 : end, noun };
     });
-    const last = found.at(-1);
-    const noun = last !== undefined && this.tokens.slice(...last.scope).some((token) => this.vocab.LIST_NOUNS.has(token.text));
-    return { cues: found, wide: noun ? [last.scope] : [] };
   }
 
   /**
@@ -254,8 +246,9 @@ export class CueReader extends Walk {
    *   own, commas and one "respectively", to "respectively" when it follows the cues, else up to an edge or the
    *   sentence's end; once every figure has its cue, no "and", "or" or "the payer".
    *
-   * Either way there are as many cues as figures. The words between the list and its first cue after it state the
-   * whole list's scope, as the last cue's words with "amounts" do (listCues()).
+   * Either way there are as many cues as figures. A scope phrase right after a cue is its figure's; one right after
+   * the list (`after`), or right after "amounts" after the last cue (listCues()), is the whole list's
+   * (NumberReader.amountScope()).
    */
   protected listForm(list: readonly number[], family: Family, cues: Cues): ListForm | null {
     const first = list[0] as number;
@@ -280,8 +273,8 @@ export class CueReader extends Walk {
         from -= 1;
       }
       const before = this.listCues(from, first, family, cues);
-      if (before.cues.length === list.length) {
-        return { list, ...before };
+      if (before.length === list.length) {
+        return { list, cues: before, after: null };
       }
     }
     // Its cues after it.
@@ -330,7 +323,7 @@ export class CueReader extends Walk {
       return null;
     }
     const after = this.listCues(last, at, family, cues);
-    return after.cues.length === list.length ? { list, cues: after.cues, wide: [[last, (after.cues[0] as ListCue).start], ...after.wide] } : null;
+    return after.length === list.length ? { list, cues: after, after: last + 1 } : null;
   }
 
   /**

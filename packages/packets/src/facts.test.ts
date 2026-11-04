@@ -35,6 +35,8 @@ const sorted = (facts: NarrativeFacts) => ({
   identifiers: [...facts.identifiers].sort(),
   quotes: facts.quotes.map((quote) => quote.tokens.join(' ')),
   rows: facts.rows,
+  claims: facts.claims,
+  patients: facts.patients,
   markers: [...facts.markers].sort((a, b) => a - b),
 });
 
@@ -244,6 +246,8 @@ describe('narrativeFacts', () => {
         'w:synthetic w:statute w:zz i:1-2-3',
       ],
       rows: 3,
+      claims: 3,
+      patients: 3,
       markers: [1, 2, 3, 4, 5, 6, 7, 8],
     });
   });
@@ -431,6 +435,8 @@ describe('narrativeFacts', () => {
         'w:synthetic w:statute w:zz i:1-2-3',
       ],
       rows: 3,
+      claims: 3,
+      patients: 3,
       markers: [1, 2, 3, 4, 5, 6],
     });
   });

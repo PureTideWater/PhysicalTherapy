@@ -150,7 +150,7 @@ const NUMBER_TEMPLATES: Readonly<Record<string, string>> = {
   claims: 'There were {} claims [3].',
   patients: 'There were {} patients [3].',
   units: 'The lines billed {} units in all [3].',
-  line_units: 'Each line billed {} units [3].',
+  line_units: 'The lines billed {} units per line [3].',
   row: 'Line {} was short [3].',
   claim_row: 'Claim {} was short [3].',
   patient_row: 'Patient {} was underpaid [3].',
@@ -204,12 +204,12 @@ const DATE_CUES: Readonly<Record<string, string>> = {
 /** A "respectively" list's cues, one word each. */
 const LIST_CUES: Readonly<Record<string, string>> = { expected: 'expected', allowed: 'allowed', paid: 'paid' };
 /**
- * Its two plain forms (rule 3 of docs/adr/0086), each with the scopes it states: the cues before the list, with an
- * opening scope phrase or a scope after "amounts" ({S}, the whole list's); the cues after it, a scope with each cue
- * ({Sx}, {Sy}) or after "amounts"; and "respectively" right after the list, its cues after it.
+ * Its two plain forms (rule 3 of docs/adr/0086), each with the scopes it states beside a cue or the list (the amended
+ * rule 1): the cues before the list, a scope phrase right after each cue ({Sx}, {Sy}) or right after "amounts" ({S},
+ * the whole list's); the cues after it, the same; and "respectively" right after the list, its cues after it.
  */
 const RESPECTIVELY = [
-  '{O}, {A} and {B} were {x} and {y}, respectively [3].',
+  'The {A} {Sx} and the {B} {Sy} were {x} and {y}, respectively [3].',
   'The {A} and {B} amounts {S} were {x} and {y}, respectively [3].',
   '{x} and {y} were {A} {Sx} and {B} {Sy}, respectively [3].',
   '{x} and {y} were, respectively, {A} {Sx} and {B} {Sy} [3].',
@@ -226,9 +226,8 @@ const NOT_PLAIN = [
   'The contract {A} {x} and the payer {B} {y}, respectively [3].',
   'Respectively, {x} and {y} were {A} and {B} per line [3].',
 ] as const;
-/** The scope words an amount is written with, and its opening phrase. */
+/** The scope phrases an amount is written with, right after it. */
 const SCOPE_TEXT = { line: 'per line', total: 'in total' } as const;
-const OPENING_TEXT = { line: 'Per line', total: 'In total' } as const;
 type Stated = keyof typeof SCOPE_TEXT;
 const STATED: readonly Stated[] = ['line', 'total'];
 
@@ -437,7 +436,6 @@ describe('properties of the role reader', () => {
                   const held = heldPer(scoped, a, x, sx) && heldPer(scoped, b, y, sy);
                   swapped += !held && heldPer(scoped, a, y, sx) && heldPer(scoped, b, x, sy) ? 1 : 0;
                   const narrative = template
-                    .replace('{O}', OPENING_TEXT[sx])
                     .replace('{S}', SCOPE_TEXT[sx])
                     .replace('{Sx}', SCOPE_TEXT[sx])
                     .replace('{Sy}', SCOPE_TEXT[sy])
@@ -553,7 +551,7 @@ describe('properties of the role reader', () => {
         for (const x of expected.total) {
           for (const y of [...allowed.total, ...allowed.line]) {
             const held = allowed.total.has(y);
-            cases.push([`In total, the contract expected and the payer allowed ${dollars(x)} and ${dollars(y)}, respectively, which the payer explained for each line [3].`, held]);
+            cases.push([`The contract expected in total and the payer allowed in total ${dollars(x)} and ${dollars(y)}, respectively, which the payer explained for each line [3].`, held]);
             cases.push([`${dollars(x)} and ${dollars(y)} were expected in total and allowed in total, respectively [3].`, held]);
           }
           for (const y of [...allowed.line, ...allowed.total]) {
@@ -571,6 +569,112 @@ describe('properties of the role reader', () => {
     // Some figure was stated in the other scope, and so failed.
     expect(failed).toBeGreaterThan(0);
   }, 120_000);
+
+  it('grants a scope by a phrase of the closed list beside the figure, right after it or right before it, and passes it exactly where its role holds it so (the amended rule 1)', () => {
+    let granted = 0;
+    fc.assert(
+      fc.property(generated, ({ content }) => {
+        const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        const count = String(content.lines.length);
+        const after: Readonly<Record<Stated, readonly string[]>> = {
+          line: ['per line', 'a line', 'per visit', 'for each line', 'on each line', `on each of the ${count} lines`, `for each of ${count} lines`],
+          total: ['in total', 'in all', `across the ${count} lines`, 'for all the lines', `over these ${count} lines`, ...(content.pattern.claims === 1 ? ['for the claim'] : [])],
+        };
+        const before: Readonly<Record<Stated, readonly string[]>> = { line: ['each line’s', 'the per-line'], total: ['a total of', 'the total of'] };
+        for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
+          for (const value of [...(oracle.get(role) ?? [])].filter((item) => !item.startsWith('-'))) {
+            for (const scope of STATED) {
+              const held = heldPer(scoped, role, value, scope);
+              granted += held ? 1 : 0;
+              for (const phrase of after[scope]) {
+                const narrative = template.replace('{}', `${dollars(value)} ${phrase}`);
+                expect(passes(narrative, content), narrative).toBe(held);
+              }
+              for (const phrase of before[scope]) {
+                const narrative = template.replace('{}', `${phrase} ${dollars(value)}`);
+                expect(passes(narrative, content), narrative).toBe(held);
+              }
+            }
+          }
+        }
+      }),
+      { numRuns: 40 },
+    );
+    expect(granted).toBeGreaterThan(0);
+  }, 240_000);
+
+  it('never grants a scope by a phrase anywhere else in the sentence: an opening, another clause, past an edge, a dash or a word (the amended rule 1)', () => {
+    let unstated = 0;
+    fc.assert(
+      fc.property(generated, ({ content }) => {
+        const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        const count = String(content.lines.length);
+        const phrases = ['per line', 'for each line', `on each of the ${count} lines`, 'in total', `across the ${count} lines`, 'for the claim'];
+        for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
+          for (const value of [...(oracle.get(role) ?? [])].filter((item) => !item.startsWith('-'))) {
+            const held = unscopedHeld(oracle, scoped, role, value);
+            unstated += held ? 0 : 1;
+            const plain = template.replace('{}', dollars(value));
+            const lower = plain.charAt(0).toLowerCase() + plain.slice(1);
+            for (const phrase of phrases) {
+              const capitalized = phrase.charAt(0).toUpperCase() + phrase.slice(1);
+              for (const narrative of [
+                `${capitalized}, ${lower}`,
+                `${capitalized} ${lower}`,
+                template.replace('{}', `${dollars(value)}, ${phrase}`),
+                template.replace('{}', `${dollars(value)} – ${phrase}`),
+                template.replace('{}', `${dollars(value)} as stated ${phrase}`),
+                template.replace('{}', `${dollars(value)}, which the payer explained ${phrase}`),
+                template.replace('{}', `${dollars(value)} after the lines were reprocessed ${phrase}`),
+              ]) {
+                expect(passes(narrative, content), narrative).toBe(held);
+              }
+            }
+          }
+        }
+      }),
+      { numRuns: 40 },
+    );
+    // Some value was held one way only while its role's other values differed, and so failed with no scope.
+    expect(unstated).toBeGreaterThan(0);
+  }, 240_000);
+
+  it('fails an amount whose per-line and total values differ in a sentence that names a part of the lines, whatever scope phrase is beside it (the amended rule 1’s triggers)', () => {
+    let triggered = 0;
+    fc.assert(
+      fc.property(generated, ({ content }) => {
+        const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        const code = (content.lines[0] as (typeof content.lines)[number]).procedure_code;
+        const served = (content.lines[0] as (typeof content.lines)[number]).service_date;
+        const after = ['on line 1', 'for Patient 1', 'for the remaining lines', 'for some lines', 'for the other lines', 'for one of the lines', 'for the last line'];
+        const opening = [`For ${code}, `, `For the services of ${served}, `, 'For the first line, '];
+        for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
+          for (const value of [...(oracle.get(role) ?? [])].filter((item) => !item.startsWith('-'))) {
+            // Where per line and in total are one, scope is beside the point: it passes as before.
+            const held = unscopedHeld(oracle, scoped, role, value);
+            triggered += held ? 0 : 1;
+            for (const scope of STATED) {
+              const stated = template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]}`);
+              for (const words of after) {
+                const narrative = template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]} ${words}`);
+                expect(passes(narrative, content), narrative).toBe(held);
+              }
+              for (const words of opening) {
+                const narrative = `${words}${stated.charAt(0).toLowerCase()}${stated.slice(1)}`;
+                expect(passes(narrative, content), narrative).toBe(held);
+              }
+            }
+          }
+        }
+      }),
+      { numRuns: 40 },
+    );
+    // Some value's role held other values the other way, and so failed in a sentence that names a part.
+    expect(triggered).toBeGreaterThan(0);
+  }, 240_000);
 
   it('fails a value no input holds in every role’s words', () => {
     fc.assert(

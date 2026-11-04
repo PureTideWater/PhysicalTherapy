@@ -123,7 +123,10 @@ describe('the words for a figure in the wrong role', () => {
   });
 
   it('ask a figure whose words must say more for it, plainly, beside the figure marked (docs/adr/0086, rules 2 and 3; CAS-43)', () => {
-    expect(NEEDS_TEXT).toEqual({ scope: 'state whether this figure is per line or in total', own_words: 'give each figure its own words instead of “respectively”' });
+    expect(NEEDS_TEXT).toEqual({
+      scope: 'state whether this figure is per line or in total right after it (“per line”, “in total”, “for all the lines”), in a sentence that names no one line, code, date of service or patient',
+      own_words: 'give each figure its own words instead of “respectively”',
+    });
     const content = assemblePacket(assemblyInput());
     for (const [narrative, needs, figure] of [
       ['The payer allowed $210.00 [3].', 'scope', '$210.00'],

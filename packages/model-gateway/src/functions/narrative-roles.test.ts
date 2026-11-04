@@ -31,11 +31,11 @@ describe('a narrative whose figures fill their roles', () => {
   it('passes: the code-built draft, and the ways a person or a model states the same facts', () => {
     for (const narrative of [
       draftNarrative(content),
-      // Each amount with what it is stated per, where per line and in total differ (docs/adr/0086, rule 2).
-      'Across the 3 lines, the payer allowed $210.00 [3]. The contract requires $300.00 for these lines [3]. The difference owed is $90.00 in total [3].',
-      'Expected payment for the 3 lines in the schedule is $300.00 and the remittances show $210.00 in all [3]. The payer underpaid 3 claims by $90.00 in all [3].',
-      'The 6 units in all on 3 service lines fell short by $90.00 [3]. Original Medicare would have paid $300.00 in total [3].',
-      'For each line, the contract expected and the payer allowed $100.00 and $70.00, respectively [3].',
+      // Each amount with the scope phrase beside it, where per line and in total differ (docs/adr/0086, rules 1 and 2).
+      'The payer allowed $210.00 across the 3 lines [3]. The contract requires $300.00 in total for these lines [3]. The difference owed is $90.00 in total [3].',
+      'Expected payment for the 3 lines in the schedule is $300.00 in all and the remittances show $210.00 in all [3]. The payer underpaid 3 claims by $90.00 in all [3].',
+      'The 6 units in all on 3 service lines fell short by $90.00 in all [3]. Original Medicare would have paid $300.00 in total [3].',
+      'The contract expected per line and the payer allowed per line $100.00 and $70.00, respectively [3].',
       // Words that name no role leave a figure to any role of its kind.
       'The schedule lists $300.00 in total against $210.00 over 3 visits [3].',
     ]) {
@@ -188,7 +188,7 @@ describe('a figure in its role whose words must say more (docs/adr/0086, rules 2
     for (const narrative of [
       '$100.00 and $70.00, respectively, were the expected and allowed amounts per line, so the payer paid less [3].',
       '$300.00 and $70.00 were expected in total and allowed per line, respectively [3].',
-      'For each line, the payer allowed $70.00, and it allowed $210.00 for the claim [3].',
+      'The payer allowed $70.00 per line, and it allowed $210.00 in total [3].',
     ]) {
       expect(verify(narrative).passed, narrative).toBe(true);
     }

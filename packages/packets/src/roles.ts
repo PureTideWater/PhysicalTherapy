@@ -75,18 +75,20 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * A percentage takes every role its own clause and the words after it name, and is held in all of them when they
  * name both ("Interest runs at 112.5% of Medicare" fails). A page takes the dispute window's or the clause's from the
  * words around it; a clause, a quote, a section or what is cited may be either. An amount and a count of units also
- * say what they are stated per (`scope`): each line ("per line", "each line", "apiece", "on each of the 3 lines", "on
- * line 1"), each unit ("per unit", "a unit"), or the lines in total ("in total", "in all", "across the 3 lines", "for
- * these 3 lines", "for the claim"), read only from the words of its own clause, or from its sentence's opening scope
- * phrase ("For each line,", "In total,") when its clause states none (rule 1 of docs/adr/0086; scope()); a
- * "respectively" list's figures each in its cue's scope, else the whole list's, else the opening phrase's
- * (amountScope()). A figure with no scope where its role's per-line and total values differ fails (rule 2; the
+ * say what they are stated per (`scope`): each line, each unit, or the lines in total, granted only by a scope phrase
+ * of a closed list beside the figure (rule 1 of docs/adr/0086, as amended): right after it ("per line", "a line", "for
+ * each line", "on each of the 3 lines", "per unit", "in total", "in all", "for the claim", "across the 3 lines", "for
+ * all the lines") or right before it ("each line's", "the per-line", "a total of"); nothing else in the sentence lends
+ * one (scope()). A "respectively" list's figure takes the phrase right after its cue, else the one right after the list
+ * or after "amounts" (amountScope()). What an amount's sentence names of the lines (a row, a code, a date, a patient, a
+ * partitive, "remaining", a count: parts()) is read too, and a figure with no scope, or in a sentence that names a part
+ * of the lines, fails where its role's per-line and total values differ (rule 2; the
  * verifier's). "first" with no role is prose, as "one" and "zero" are.
  *
  * Pure, deterministic and browser-safe: no Node module, clock or network.
  */
 
-export { FIGURE_ROLES, type FigureReading, type FigureRole, type QuotedText, type ReadKind, type ReadText, SCOPES, type Scope } from './roles-reader/kinds';
+export { FIGURE_ROLES, type FigureReading, type FigureRole, type QuotedText, type ReadKind, type ReadText, SCOPES, type Scope, type SentenceParts } from './roles-reader/kinds';
 
 /** The reader: each figure read in its role, its layers below (./roles-reader: Walk, CueReader, NumberReader). */
 class Reader extends NumberReader {
@@ -106,6 +108,7 @@ class Reader extends NumberReader {
       prose: extra.prose ?? false,
       token: index,
       unread: this.unread.has(index),
+      parts: null,
     });
     const cued = (family: Family, found: Cued) => {
       this.families.set(index, family);
@@ -167,7 +170,10 @@ export function readFigures(text: string): ReadText {
   const vocab = vocabulary();
   const tokens = tokenize(text, vocab);
   const reader = new Reader(text, tokens, vocab);
-  const readings = tokens.flatMap((token, index) => (token.figure === undefined ? [] : [reader.read(index, token.figure)]));
+  const read = tokens.flatMap((token, index) => (token.figure === undefined ? [] : [reader.read(index, token.figure)]));
+  // An amount's sentence, once each figure of it is read: what it names of the lines (the fail-closed triggers).
+  const byToken = new Map(read.map((reading) => [reading.token, reading]));
+  const readings = read.map((reading) => (reading.kind === 'amount' ? { ...reading, parts: reader.parts(reading.token, byToken) } : reading));
   return { readings, tokens: tokens.map((token) => (token.kind === 'edge' ? '|' : token.kind === 'word' ? `w:${token.text}` : token.text)) };
 }
 

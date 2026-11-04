@@ -9,7 +9,9 @@
   the base, 2026-11-01 (the review of 2026-11-01's fix round); a stored version read again at each step and on each
   screen, and the editor's words, 2026-11-01 (the same fix round, its second part); the reader and its words split
   into layers and families, each mutated in a shard of its own, 2026-11-02 (its third part); what a figure is stated
-  per and "respectively" read under three closed rules, 2026-11-04 (the converging fix of the rounds of fix and recheck)
+  per and "respectively" read under three closed rules, 2026-11-04 (the converging fix of the rounds of fix and recheck);
+  a scope granted only by a phrase beside the figure, and none in a sentence that names a part of the lines, 2026-11-04
+  (rules 1 and 2 as amended at 11:00 UTC)
 - **Deciders:** the build (Lane B), on product observation (b) of the test-flakes item; the founder, on the pull
   request's review
 - **PRD sections:** 12 (The packet: "any figure that is not in the input fails verification"), 14
@@ -106,15 +108,16 @@ failure (NEW-N1 to N4). The session decided, by the founder's standing rule, wit
 maintainability: a false pass sends a wrong figure to a payer, a false failure only makes a person reword. So the reach
 is replaced by this closed rule set, word for word:
 
-1. A figure's scope is read only from (a) words inside its own clause, bounded by edges (comma, semicolon, colon,
+1. ~~A figure's scope is read only from (a) words inside its own clause, bounded by edges (comma, semicolon, colon,
    dash, parenthesis) and by a coordinating conjunction or subordinator that opens a new clause, with the existing
    7-token cap; or (b) one sentence-opening scope phrase ("For each line,", "On each of the N lines,", "In total,",
    "For the claim,") that covers the whole sentence unless a clause states its own. No other reach: nothing from a
-   trailing clause, nothing across a figure.
+   trailing clause, nothing across a figure.~~ Superseded by the amended rule 1 below.
 2. When the sentence's words give a figure no scope by 1, and the per-line and total values of its role differ, the
    figure fails, and its editor words say plainly: state whether this figure is per line or in total. An unscoped
    figure is never held to both values. Where per-line and total are equal, or the role has one value, it passes as
-   before.
+   before. (With the amendment below, "by 1" is by the amended rule 1, and its fail-closed triggers fail a figure the
+   same way.)
 3. "respectively" is read only in two plain forms: cues directly before the list ("The contract expected and the payer
    allowed $A and $B, respectively") or cues directly after it ("$A and $B were (the) expected and allowed (amounts),
    respectively" / "$A and $B, respectively, were the expected and allowed amounts"), where between the list and its
@@ -123,42 +126,54 @@ is replaced by this closed rule set, word for word:
    figure of the list fails, and its editor words say: give each figure its own words instead of "respectively". Never
    a fall back to per-figure guessing or to any role.
 
+**Rules 1 and 2 as amended** (2026-11-04 11:00 UTC; they supersede rule 1 above, word for word): a scope is granted ONLY
+by a scope phrase adjacent to the figure, from a closed list: right after it ("$X per line", "$X for each line", "$X on
+each of the N lines" where N is the pattern's line count, "$X a line", "$X in total", "$X in all", "$X for the claim"
+only when the pattern has one claim, "$X across the N lines" with N the pattern's count) or right before it ("per line,
+$X" is NOT adjacent: only "each line's $X"/"a total of $X"/"the total of $X"/"the per-line $X"-style determiner phrases
+directly before). The sentence-opening phrase rule is DROPPED. Nothing in any other clause, before or after, lends a
+scope. FAIL-CLOSED triggers: if the figure's sentence names any part of the lines (a count of lines other than the
+pattern's count, 'remaining', 'other', 'first', 'last', 'some', 'two of', a code, a date of service, a patient, 'line
+N'), an amount whose per-line and total values differ fails with needs=scope (the editor words already ask to state per
+line or in total; add "for all N lines" guidance if useful). Where per-line and total are equal, scope is irrelevant and
+it passes as now. The respectively rule 3 stays; its per-cue and list-wide scopes follow the same adjacency list.
+
 Everything else the reader does (the cue each figure takes, quotes in their own role, a year's lead against a count's
 noun) is unchanged. How the reader applies the rules (`roles-reader/numbers.ts` and `roles-reader/cues.ts`; the words in
 `roles-words/prose.ts`):
 
-- **A scope's words.** Each line: "per", "each", "every" or "a" with a line, visit, row or service up to two words on,
-  "apiece", "each of the N lines"; one row named alone is a line's value, never a total, in closed forms only: the row's
-  noun before its number or after an ordinal ("on line 1", "visit 2", "the third row"), or a patient's or a claim's line
-  or row ("Patient 2's line", "the patient's line", "the claim line"); the noun alone is no row ("in line with", "the
-  line schedule", "the bottom line", "the remittance line", "after the visit", "the patient's visit"; PE3-2). Each unit: "per", "each" or "a" with "unit". In total: "in all", "in total",
-  "all told", "total" and its forms, "altogether", "combined", "overall", "aggregate", "across", "together"; "for" or
-  "over" before the rows in the plural ("for these 3 lines"); "for", "on" or "over" before the claim not followed by a
-  line's noun ("for the claim", never "the claim line"); and, before the figure in its own clause, the rows in the
-  plural ("the 3 lines come to"). Rows named by their labels or a part of them ("for lines 1 and 2", "across claims 1 to
-  2", "Lines 1 and 2 were allowed", "2 of the 3 lines") are no pattern's rows: they state no total, and with a total's
-  own words ("in total", "across") none (CORR3-1). "per" before a determiner is "according to", no scope ("per the contract"). "each"
-  alone, or "each" of anything else ("each claim"), is stated per something but neither a line nor a unit: no scope;
-  with a line's or a unit's words beside it in the clause, that one. Every scope a clause's words state counts, wherever
-  it stands, and two that differ state none ("in total for each line"; PE3-1).
-- **Its own clause.** After the figure, seven tokens at most, past counts (a number or a code), up to an edge, a dash
-  or parenthesis, a conjunction ("and", "but", "or", "nor", "while", "whereas", "yet"), a clause's opener (a relative:
-  "which", "that", "who", "where", "whereby" and the like; a subordinator: "when", "whenever", "as", "because",
-  "since", "although", "if", "unless", "after", "before", "until", "till", "once", "than", and "despite" and "unlike",
-  which open a clause's like; and "so", "therefore", "thus", "hence") or any other figure ("$70.00 in total after each
-  line was reprocessed" states a total; PE3-1); before it, back to the same bounds, past counts, and nothing after a
-  subordinator, whose clause may meet the figure's with no edge ("After each line was reprocessed the payer allowed
-  $70.00" states nothing of $70.00), and after an amount there, past the words after it that state that amount's own scope
-  ("$300.00 for these 3 lines against $210.00" states nothing of $210.00).
-- **The opening phrase.** The words from the sentence's start to its first edge, when they are a scope phrase alone (a
-  scope's words, determiners and counts): "For each line,", "On each of the 3 lines,", "Per line,", "In total,",
-  "Across the 3 lines,", "For the claim,". It covers every figure whose own clause states no scope, in every clause of
-  the sentence ("For each line, the payer allowed $70.00, and the contract expected $300.00" fails at $300.00;
-  "..., while across the 3 lines it allowed $210.00" passes). A phrase with other words is no scope phrase ("Under the
-  contract for each line," and "Each of the 3 lines was short," state nothing of a later clause).
+- **The closed list of scope phrases** (`roles-reader/numbers.ts` `phraseAfter()`, `scopeAfter()`, `scopeBefore()`;
+  the words in `roles-words/prose.ts`). Right after the figure (after a count of units, right after its noun): "per" or
+  "a" before one line's noun ("line", "visit", "row", "service") or "unit"; "for" or "on" before "each" or "every" and
+  that noun, or "of", "the" or not, the lines' count and the lines in the plural ("on each of the 3 lines"); "in total",
+  "in all"; "for" or "on" before "the claim" not followed by a line's noun or written as a possessive; "across", "for"
+  or "over" before at most two of "the", "all", "these", "those" and the rows in the plural with their count or after
+  "all" ("across the 3 lines", "for all the lines"). Right before it: "each" or "every" before a line's or a unit's
+  possessive ("each line's $70.00"), "per-line" or "per-unit" written with a hyphen ("the per-line $70.00"), and "a" or
+  "the" before "total of". A count of units joined to "unit" by a hyphen before a line's noun ("a 2-unit line") is each
+  line's. No dash or parenthesis stands between the figure and its phrase or inside it; a second phrase right after the
+  first that states another grants none ("$70.00 in total for each line", "$70.00 per line for the 3 lines"); a phrase
+  before the figure and one after it that differ grant none. Nothing else grants a scope: no opening phrase ("Per line,
+  $70.00", "In total, the payer allowed"), no subject ("Each of the 3 lines was allowed"), no other clause, no phrase
+  past a comma or another word ("$70.00, per line", "$70.00 after each line was reprocessed"), and no "apiece", "each",
+  "total" or "altogether" alone. The count a phrase states, and "the claim", are held to the pattern's by the triggers
+  below, so "across the 2 lines" of 3 and "for the claim" of 3 claims grant nothing.
+- **What names a part of the lines** (the fail-closed triggers; `NumberReader.parts()`, held to the pattern by
+  `verifier/mismatches.ts` `namesPart()`). In the amount's sentence: a figure read as a row, a claim's or a patient's
+  ("line 2", "lines 1 and 2", "claim 1", "Patient 2", "the third line"); a code or a modifier; a date read as a service
+  date or in no role, and any date, month or day of a month a line's service date is or falls in, whatever role its
+  words give it (a year names none: "the 2026 fee schedule"); a partitive ("2 of the 3 lines", "two of them"), a number
+  in no role before "of", or "one of"; an ordinal read as prose ("the first 3 claims"); "remaining", "other", "others",
+  "some", "last", "first"; one line's noun after "the", "this", "that", "one" or "its", or after "claim" or "patient" not
+  after "each" ("the claim line", "a patient's row"); a patient as a noun not after "each" or "per" ("a patient", "the
+  patient's line"; "the patient share" names none); "the patient" or "the claim" where the pattern has more than one;
+  and a count of lines, claims or patients the pattern does not hold so ("for 2 lines" of 3). In such a sentence an
+  amount keeps no scope but each unit's ("$50.00 per unit for 97110" keeps its unit), so where its role's per-line and
+  total values differ it fails by rule 2 with `needs` `scope`, whatever phrase is beside it; where they are one (a
+  one-line pattern) it passes. The reading reports the scope it kept (`CheckedFigure.scope`).
 - **A "respectively" list.** In a sentence that says "respectively", among the amounts, percentages and dates before
-  it (since the "respectively" before, if any, and since the last clause an edge and a conjunction or a clause's opener
-  start before the list: "The payer paid $56.00 per line, and the contract expected ..." leaves $56.00 its own; CORR3-2),
+  it (since the "respectively" before, if any, and since the last clause an edge and a conjunction start before the
+  list: "The payer paid $56.00 per line, and the contract expected ..." leaves $56.00 its own; CORR3-2),
   the run of them joined by commas, "and" or "or" alone that ends at the last; when it is in neither plain form, every
   one of them fails ("$70.00 and $100.00 per line on 2026-04-08 were ..."; PE3-3), and when it is in one, the others
   read as any other figure. After a "respectively" with none before it ("Respectively, $1.00 and $9.00 were ..."),
@@ -166,29 +181,31 @@ noun) is unchanged. How the reader applies the rules (`roles-reader/numbers.ts` 
   "are", "amounts", a scope's words, "and", "or", "the payer"), with "respectively" right after the list and then an
   edge or the sentence's end. Its cues after it: the words after the list that are cues, the list's own, commas and one
   "respectively", to "respectively" when it follows the cues, else to an edge or the sentence's end, and once every
-  figure has its cue, no further cue, "and", "or" or "the payer". A cue's own scope is its own words, the scope words,
-  determiners and commas right after them, and, for a cue after the first, those right before it back to the "and" or
-  "or" that joins it ("The contract expected in total and per line the payer allowed ...": in total, then per line;
-  PE3-1), never a word of another cue; the words between the list and its cues after it, and those after "amounts" (the noun of every cue),
-  are the whole list's; a figure's cue's and the list's that differ state none; with neither, the opening phrase's.
+  figure has its cue, no further cue, "and", "or" or "the payer". A cue's own scope is the phrase of the closed list right
+  after its words (past a participle that is its noun's, "the interest owed in total", and past "amounts"), never one
+  before it or set off by a comma; the whole list's is the phrase right after the list, or right after "amounts" after
+  the last cue ("the expected and allowed amounts per line"); a figure's cue's and the list's that differ state none.
 - **The report.** A figure that fails by rule 2 or 3 is `figure_not_in_input` with its kind, like any other: the
   database's report check lists the codes, and a new code is a migration, Lane A's. The reading carries why (`needs`:
   `scope` or `own_words`; `verifier/mismatches.ts` `FigureNeeds`), and the editor, the builder's stored narrative and
   a refusal say it beside the figure marked (`apps/web/src/lib/packets/view.ts` `NEEDS_TEXT`: "state whether this figure
-  is per line or in total", "give each figure its own words instead of “respectively”"). The gateway's notice names no
+  is per line or in total right after it (“per line”, “in total”, “for all the lines”), in a sentence that names no one
+  line, code, date of service or patient", "give each figure its own words instead of “respectively”"). The gateway's notice names no
   wrong role for such a figure (`functions/narrative-roles.ts`); its draft fails on the verifier's report.
 
-Every reproduction of the rounds is a named example (`role-examples.ts` `REVIEWED`, the converging fix's section): a
-false pass fails (PE-D1, PE-D2, NEW-N1's "In total ... $70.00", NEW-R2P2-1, NEW-R2P2-2, N3's totals, N4); a false
-failure passes where its sentence is in a recognised form (NEW-N2, NF-3, PE-D3, N2, N3's line value) and else fails
-with the plain instruction: rule 2 for a list or figure whose words state no scope by rule 1 (NEW-N1's totals and line
-values before "which", NF-1, N1, the controls of NEW-R2P2-2), the opening phrase's scope for a later clause that
-states none (NF-2's "the claim was allowed" and "so the payer owes"), and rule 3 for a list in neither plain form.
-The review of the converging fix (PE3-1, PE3-2, PE3-3, CORR3-1, CORR3-2) has its own section there, read by the same
-three rules with no reach added: a figure's clause ends at a subordinator or "nor"; a row's noun alone names no row;
-rows named by their labels or a part of them state no total; a list's clause is the list's. "For the claim" stays a
-total whatever the pattern's claims, since rule 1(b) names it; reading it as the total only for a one-claim pattern
-(CORR3-1's last point) is the decision's to make, and is not changed here.
+Every reproduction of the rounds is a named example (`role-examples.ts` `REVIEWED`), read by the amended rule:
+every false pass fails (PE-D1, PE-D2, NEW-N1's "In total ... $70.00", NEW-R2P2-1, NEW-R2P2-2, N3's totals, N4, PE3-1,
+PE3-2, PE4-1, CORR3-1, CORR4-1, PE4-2); a sentence with the right figure and a scope phrase of the closed list beside it
+passes (NEW-N2, PE-D3, the cue-after controls of R1-NF-3, CORR3-2's second form); every other sentence fails with the
+plain instruction, `scope` for a figure with no phrase beside it or in a sentence that names a part of the lines
+(NEW-N1's totals before "which", an opening "For each line," "On each of the 3 lines," or "In total," in PE-D2, NF-2,
+NEW-R2P2-1, N1, N2 and N4, NF-3's phrases set off by commas, N3's "the claim line", N2's "for the claim" of 3 claims,
+PE3-2's "on line 1", "Patient 2's line" and "the third line", CORR3-1's "per line for lines 1 and 2", PE4-1's fronted
+and trailing clauses, CORR4-1's patients and remaining lines), and `own_words` for a list in neither plain form. The
+older examples that passed with an opening phrase or a subject's scope (CORR-6, CORR-7, CORR-9, CORR-12, CORR-20,
+CORR-D1, CORR-D2, the payment-engine probes L5, L12, L13 and L15, 42 of CAS-44's hand-written forms) are reworded so the
+scope phrase stands beside each figure, and pass; a section of its own (the amended rule) names each adjacency form,
+each non-adjacent form and each trigger. NEW-N3 is the builder's words, unchanged here.
 
 **Facts by role, `facts.ts`.** `NarrativeFacts` holds each value an input holds, by kind, with the roles its record
 gives it (`roles`), through one adder that names a role, so no value enters without one. A date's month, day of the
@@ -318,10 +335,22 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
   allowed amount and $56.00 was paid. "within 3650 business days" fails for a calendar-day window. "It is a 3650-day
   window" now passes. A figure's words that name two roles hold it to both, so "The contract requires more than the
   payer paid: $56.00" fails; the person says which it is.
-- An amount or a count of units states what it is per wherever its role's per-line and total values differ: "The
-  payer allowed $210.00" fails with "state whether this figure is per line or in total", and "The payer allowed
-  $210.00 in total" passes. The code-built draft says "a shortfall of $90.00 in total" and "Prompt-pay interest of $5.76
-  in total"; the MOD-03 reference narratives and the CAS-08 fixture state their totals the same way. A stored version
+- An amount or a count of units states what it is per, with a scope phrase of the closed list beside it, wherever its
+  role's per-line and total values differ: "The payer allowed $210.00" fails with "state whether this figure is per
+  line or in total right after it ...", and "The payer allowed $210.00 in total" passes; "In total, the payer allowed
+  $210.00" and "Each line was allowed $70.00" fail too, and are written "$210.00 in total", "$70.00 per line". A sentence
+  that names a part of the lines (a row, a code, a date of service, a patient, "remaining", a partitive, another count
+  of lines) states no amount whose two values differ: the person moves the code or the dates to a sentence of their own.
+  The code-built draft (`draft.ts`) therefore states the lines, claims and service dates in a sentence with no amount
+  ("The pattern is 3 lines on 3 claims with service dates from ... to ..."), then "The remittances allowed $210.00 in
+  total for those lines", "those lines come to $300.00 in total, a shortfall of $90.00 in total", and a per-visit rate in
+  a sentence of its own with its codes in the next ("That rate is for 97110"); the MOD-03 reference narratives
+  (`packages/synth/src/eval/narrative-set.ts`) and the CAS-08 fixture are reworded the same way. MOD-03's set therefore
+  changed, so its hash did: the local model's narrative entry in `packages/model-gateway/eval/baseline.json` was
+  re-recorded on the changed set with `eval --record --new-set` (the same prompt version, prompt hash, provider and
+  model; the two-step rule of ADR 0070 allows a set change alone), and scored 300 of 300 with no verifier failure, the
+  zero-tolerance gate unchanged; the contract entries' tallies are unchanged, and only their report's hash moved
+  (`eval/reports/e08319c6...json`). Nothing of the gate was lowered. A stored version
   an older reading passed that states an amount with no scope now reads "fails now" (CORR-5) and is reworded before its
   approval. A "respectively" list outside its two plain forms fails at every figure; the person writes each figure with
   its own words. A label before a colon ("Allowed per line: $70.00") states nothing past the colon.
@@ -329,22 +358,30 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
   templates), the 300 MOD-03 reference narratives, the code-built draft of every generated pattern and the CAS-08
   fixture are each as designed; CAS-43's 87 misstatements each fail at their figure. Every reproduction of the review of
   2026-11-01, of its fix round and of the rounds of fix and recheck after it, and each verifier's variant, is a named
-  example (`role-examples.ts` `REVIEWED`, 325: 223 fail at the figures they misstate, CAS-43, each with what its words
-  must say when that is why; 102 pass, CAS-44), asserted by the verifier, the gateway and the reader's tests. The
+  example (`role-examples.ts` `REVIEWED`, 394: 294 fail at the figures they misstate, CAS-43, each with what its words
+  must say when that is why; 100 pass, CAS-44), asserted by the verifier, the gateway and the reader's tests. The
   properties (`roles.property.test.ts`) add sentences with two cues, the figure held only in the farther one's role;
   quoted figures that fill a list between edges; a year's lead before a count's noun; every date role, the deadline's
   among them; and, with the closed rules, each amount written with and without its scope (rule 2), a "respectively"
   list in both plain forms mapped to its cues and their scopes in order with the swap failing, and a list in neither
   plain form failing at every figure (rule 3), and, after the review of the converging fix, a stated total or no scope
   with a trailing "after each line" clause, a row's noun alone ("in line with") and a part of the rows ("for lines 1
-  and 2", "on 1 of the N lines"), each held to its scope or failing by rule 2; each ran over 40 seeds with no failure.
+  and 2", "on 1 of the N lines"), each held to its scope or failing by rule 2; and, with the amended rule, a scope
+  phrase of the closed list beside the figure (right after it or right before it) holding it to that scope, the same
+  phrases anywhere else in the sentence (an opening, past a comma, a dash or a word, another clause) granting none, and
+  a sentence that names a part of the lines (a row, a patient, a code, a date of service, "remaining", "some", "other",
+  "one of", "the last line", "the first line") failing an amount whose two values differ whatever its phrase; each ran
+  over 40 seeds with no failure.
 - The gateway's swap faults (`eval/gate.golden.test.ts`) now fail the packets verifier too
   (`figure_not_in_input` beside `figure_in_wrong_role`).
 - What it does not do: amount, percentage and date roles rest on cue words, so a narrative can still place a cue the
   input does not contradict; a quoted figure is repeated only as its text writes it ("Section 422.214 of 42 CFR" does
   not repeat "42 CFR 422.214"); a five-digit input code before a noun after an article reads as the code. A difference
   written with no role's word ("$14.00 less than the $70.00 it allowed", after "paid $56.00") takes the figure before
-  it's role and fails; "a $14.00 patient share" passes.
+  it's role and fails; "a patient share of $14.00 per line" passes. The amended rule's false failures are the
+  price of its accuracy: "The payer allowed $70.00 per line for the 3 lines" (two phrases), "Per line, the payer
+  allowed $70.00" (an opening) and "The payer allowed $70.00 per line for 97110" (a code) fail with the scope
+  instruction, and are reworded.
 - A request for approval, an approval and the builder and case screens run the verifier again over a stored version
   that passed (CORR-5): a few milliseconds of reading per version shown, an audited read of each version read again, and
   at a step an audited read of its claims' identifiers. A version an older reading passed says "fails now" and is

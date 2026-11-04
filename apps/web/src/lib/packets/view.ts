@@ -39,11 +39,13 @@ export const SAY_WHAT_IT_COUNTS = 'say what it counts or names: 3 claims, 6 unit
 
 /**
  * What a figure in its role is asked for when its words must say more (docs/adr/0086): rule 2, an amount or a count of
- * units whose words state neither per line nor in total where the two differ; rule 3, a figure of a "respectively"
- * list in neither of its two plain forms. Said beside the figure marked, so "this figure" is the one marked.
+ * units with no scope phrase beside it where per line and in total differ, or an amount in a sentence that names a
+ * part of the lines (rule 1's fail-closed triggers), with the phrases that grant a scope; rule 3, a figure of a
+ * "respectively" list in neither of its two plain forms. Said beside the figure marked, so "this figure" is the one
+ * marked.
  */
 export const NEEDS_TEXT: Readonly<Record<Exclude<FigureNeeds, null>, string>> = {
-  scope: 'state whether this figure is per line or in total',
+  scope: 'state whether this figure is per line or in total right after it (“per line”, “in total”, “for all the lines”), in a sentence that names no one line, code, date of service or patient',
   own_words: 'give each figure its own words instead of “respectively”',
 };
 

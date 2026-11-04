@@ -4,8 +4,8 @@ import { readFigures } from '../roles';
 
 /**
  * The role reader's third layer (./numbers.ts; docs/adr/0086) held to its answers at its edges: where an amount's or a
- * count's own words end (what the figure after it reads in its place), what an amount is stated per when its words are
- * far from it, the partitive's and a list's boundaries. ../roles.test.ts holds the reader's rules as the ADR states them.
+ * count's own words end (what the figure after it reads in its place), the edges of the scope phrases beside an amount
+ * and of what its sentence names of the lines, the partitive's and a list's boundaries. ../roles.test.ts holds the reader's rules as the ADR states them.
  */
 
 /** The figure written as `written` in `text`, read. */
@@ -22,107 +22,92 @@ const roles = (text: string, written: string) => {
   return Array.isArray(found) ? found.join(' ') : found;
 };
 
-describe('what an amount is stated per', () => {
-  it('reads "each of" past determiners and figures to its noun, and nothing per line without one', () => {
-    expect(scope('The payer paid $5.00 to each of 3.', '$5.00')).toBeNull();
-    expect(scope('The payer paid $5.00 for each of the 3 claims.', '$5.00')).toBeNull();
-    expect(scope('The payer paid $5.00 for each of the 3 lines.', '$5.00')).toBe('line');
-  });
-
-  it('reads "a" before a noun that is no line or unit as nothing, so a total’s words after it still count', () => {
-    expect(scope('The payer paid $90.00 a claim in total.', '$90.00')).toBe('total');
-  });
-
-  it('reads "for", "across" or "over" before the rows in the plural as a total, past determiners and figures, and nothing before other words', () => {
-    expect(scope('$90.00 paid for these 3 lines.', '$90.00')).toBe('total');
-    expect(scope('$90.00 paid across the claims.', '$90.00')).toBe('total');
-    expect(scope('$90.00 paid for the payer.', '$90.00')).toBeNull();
-    expect(scope('$90.00 paid for 3.', '$90.00')).toBeNull();
-    // Only the words of its own stretch: a later sentence's "for these 3 lines" is not this amount's.
-    expect(scope('Note. The payer paid $5.00. It was for these 3 lines.', '$5.00')).toBeNull();
-  });
-
-  it('reads the words after it up to the next amount or edge, seven at most', () => {
-    expect(scope('$5.00 was paid to us by the payer apiece.', '$5.00')).toBeNull();
-    expect(scope('$5.00 was paid by the payer apiece.', '$5.00')).toBe('line');
-    expect(scope('The payer paid $5.00 and $6.00 apiece.', '$5.00')).toBeNull();
-    expect(scope('The payer paid $5.00 and $6.00 apiece.', '$6.00')).toBe('line');
-    expect(scope('The payer paid $5.00', '$5.00')).toBeNull();
-  });
-
-  it('reads its own clause before its sentence’s opening scope phrase, which states a scope only where its clause states none (rule 1)', () => {
-    expect(scope('Apiece, 3 lines were paid $5.00.', '$5.00')).toBe('total');
-    expect(scope('Per claim, 3 lines were paid $5.00.', '$5.00')).toBe('total');
-    expect(scope('Every visit, the lines were paid $5.00.', '$5.00')).toBe('total');
-    expect(scope('Each visit, the payer paid $5.00.', '$5.00')).toBe('line');
-    expect(scope('Per claim, the payer paid $5.00.', '$5.00')).toBeNull();
-    expect(scope('Then 3 lines were paid $5.00.', '$5.00')).toBe('total');
-  });
-});
-
-describe('what an amount is stated per, by the closed rules (rule 1 of docs/adr/0086)', () => {
-  it('reads a total’s words past other words in its own clause, after it and before it', () => {
-    expect(scope('It allowed $9.00 in fact for these lines.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 in fact for the claim.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 in fact for the claim line.', '$9.00')).toBe('line');
-    expect(scope('It allowed $9.00 in fact for the', '$9.00')).toBeNull();
-    expect(scope('Note. It allowed $9.00 in fact for these lines.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 for the claim', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 on these lines.', '$9.00')).toBeNull();
-    expect(scope('It allowed $9.00 for the 3 claim lines.', '$9.00')).toBeNull();
-  });
-
-  it('reads "per" before a determiner as no scope, and any other word after "each" as a scope of something else', () => {
-    expect(scope('Each the 3 lines were allowed $9.00.', '$9.00')).toBeNull();
-    expect(scope('The 3 lines were allowed $9.00 per the contract.', '$9.00')).toBe('total');
-    expect(scope('The 3 lines were allowed $9.00 per these terms.', '$9.00')).toBe('total');
-  });
-
-  it('takes "each" beside a line’s or a unit’s scope as that one, whichever side of the figure each is on', () => {
-    expect(scope('Per line the payer paid $9.00 each.', '$9.00')).toBe('line');
-    expect(scope('Each claim was paid $9.00 per unit.', '$9.00')).toBe('unit');
-    expect(scope('Each claim was paid $9.00 in total.', '$9.00')).toBeNull();
-    expect(scope('In total the payer paid $9.00 each.', '$9.00')).toBeNull();
-  });
-
-  it('leaves the words right after an amount to it, whatever they state, and reads its own before them', () => {
-    expect(scope('The payer allowed $1.00 to the 3 lines against $9.00.', '$9.00')).toBeNull();
-    expect(scope('The payer allowed $1.00 to the 3 lines against $9.00.', '$1.00')).toBeNull();
-    expect(scope('The 3 lines were allowed $1.00 against the contract’s $9.00.', '$9.00')).toBeNull();
-    expect(scope('$1.00 – for these 3 lines $9.00.', '$9.00')).toBe('total');
-    // A dash with a space on either side bounds a clause, as a parenthesis or an em dash does; a hyphen in a word never.
-    for (const dash of [' –for', '– for', ' -for', '- for', '—for', ' (for', ') for']) {
-      expect(scope(`The payer allowed $9.00${dash} each line.`, '$9.00'), dash).toBeNull();
+describe('what an amount is stated per: the scope phrase beside it alone (the amended rule 1 of docs/adr/0086)', () => {
+  it('reads "each of" with "the" or not, its count a number and the lines in the plural after it', () => {
+    for (const text of ['for each of the 3 lines', 'for each of 3 lines', 'for each of the three lines', 'on each of the 3 rows']) {
+      expect(scope(`The payer paid $5.00 ${text}.`, '$5.00'), text).toBe('line');
     }
-    expect(scope('For each line the prompt-pay payer allowed $9.00.', '$9.00')).toBe('line');
-    expect(scope('The payer allowed $9.00 for each line-item.', '$9.00')).toBe('line');
+    for (const text of ['for each of the 3 claims', 'for each of these 3 lines', 'for each of the lines', 'on each of the 3 line', 'for each of 3', 'for each in the 3 lines']) {
+      expect(scope(`The payer paid $5.00 ${text}.`, '$5.00'), text).toBeNull();
+    }
   });
 
-  it('reads an opening phrase of a scope’s words, determiners and counts alone, from the sentence’s own start', () => {
-    expect(scope('Note. For each line, the payer allowed $9.00.', '$9.00')).toBe('line');
-    expect(scope('For each line. The payer allowed $9.00.', '$9.00')).toBeNull();
-    expect(scope('For each line on 2026-01-05, the payer allowed $9.00.', '$9.00')).toBeNull();
-    expect(scope('On each of the 3 lines, the payer allowed $9.00.', '$9.00')).toBe('line');
-    expect(scope('For each line the payer allowed $1.00 and it paid $9.00.', '$9.00')).toBeNull();
+  it('reads the rows in the plural after "across", "for" or "over" with their count or "all", past two determiners at most', () => {
+    for (const text of ['across these 3 lines', 'across those 3 lines', 'for all the lines', 'for all these lines', 'for all lines', 'over 3 lines', 'for all the 3 claims']) {
+      expect(scope(`It paid $90.00 ${text}.`, '$90.00'), text).toBe('total');
+    }
+    for (const text of ['for the all lines', 'for the these the 3 lines', 'over 3 line', 'for 3 payers', 'across the 3', 'across the lines', 'by all the lines']) {
+      expect(scope(`It paid $90.00 ${text}.`, '$90.00'), text).toBeNull();
+    }
+    // Only the words right after it: a later sentence's are not this amount's.
+    expect(scope('The payer paid $5.00. It was for these 3 lines.', '$5.00')).toBeNull();
+  });
+
+  it('reads "for" or "on" before "the claim" as a total, never "the claim line", "the claim’s" or another lead', () => {
+    expect(scope('It paid $90.00 for the claim.', '$90.00')).toBe('total');
+    expect(scope('It paid $90.00 on the claim.', '$90.00')).toBe('total');
+    for (const text of ['over the claim', 'for the claim visit', 'for the claim’s total', 'for a claim', 'for the claims', 'for this claim']) {
+      expect(scope(`It paid $90.00 ${text}.`, '$90.00'), text).toBeNull();
+    }
+  });
+
+  it('reads "in total" and "in all" alone, and a line’s or a unit’s noun after "per", "a", or "for" or "on" with "each" or "every"', () => {
+    expect(scope('$90.00 in total.', '$90.00')).toBe('total');
+    expect(scope('$90.00 in all.', '$90.00')).toBe('total');
+    for (const text of ['in the total', 'in', 'all in', 'by each line', 'at each line', 'per lines', 'a lines', 'for each lines', 'for both lines']) {
+      expect(scope(`It paid $90.00 ${text}.`, '$90.00'), text).toBeNull();
+    }
+    expect(scope('It paid $90.00 per visit.', '$90.00')).toBe('line');
+    expect(scope('It paid $90.00 for every unit.', '$90.00')).toBe('unit');
+  });
+
+  it('reads the words right before it: "each" or "every" before a possessive line or unit, "per-line" with a hyphen, "a" or "the total of"', () => {
+    expect(scope('The payer paid each row’s $5.00.', '$5.00')).toBe('line');
+    expect(scope('The payer paid every unit’s $5.00.', '$5.00')).toBe('unit');
+    expect(scope('The payer paid the per-service $5.00.', '$5.00')).toBe('line');
+    for (const text of ['each line $5.00', 'the line’s $5.00', 'each claim’s $5.00', 'each payer’s $5.00', 'per-claim $5.00', 'a total sum $5.00', 'the total, $5.00', 'a totals of $5.00', 'per -line $5.00', 'per–line $5.00', 'per - line $5.00', 'the totals of $5.00', 'a sum of $5.00', 'each claim’s $5.00', 'a per-claim $5.00']) {
+      expect(scope(`The payer paid ${text}.`, '$5.00'), text).toBeNull();
+    }
+    expect(scope('The payer paid a total of $5.00.', '$5.00')).toBe('total');
+    // Before it and after it: one scope, or none when they differ.
+    expect(scope('The payer paid each line’s $5.00 per line.', '$5.00')).toBe('line');
+    expect(scope('The payer paid each line’s $5.00 for the claim.', '$5.00')).toBeNull();
+    expect(scope('The payer paid a total of $5.00 per line.', '$5.00')).toBeNull();
+  });
+
+  it('ends a phrase at its last word, so a second phrase right after it is read from there', () => {
+    expect(scope('It paid $5.00 for each of the 3 lines in total.', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 for each of 3 lines in total.', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 across the 3 lines per line.', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 across all lines per line.', '$5.00')).toBeNull();
+    // At the text's end, with no token after it.
+    for (const text of ['It paid $5.00 for each of', 'It paid $5.00 across', 'It paid $5.00 for each of the', 'It paid $5.00 over the']) {
+      expect(scope(text, '$5.00'), text).toBeNull();
+    }
+    expect(scope('It paid $5.00 a', '$5.00')).toBeNull();
+  });
+
+  it('reads no scope across a dash or a parenthesis, before the phrase or inside it, and none where a second phrase right after it differs', () => {
+    expect(scope('It paid $5.00 – per line.', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 (per line).', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 in (total).', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 for each (line).', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 per line – in total.', '$5.00')).toBe('line');
+    // A dash with a space on either side only is an edge too; a hyphen inside a word is none.
+    for (const text of ['It paid $5.00 per -line.', 'It paid $5.00 per- line.', 'It paid $5.00 for each -line.']) {
+      expect(scope(text, '$5.00'), text).toBeNull();
+    }
+    expect(scope('It paid $5.00 per line in total.', '$5.00')).toBeNull();
+    expect(scope('It paid $5.00 per line per line.', '$5.00')).toBe('line');
+    expect(scope('It paid each line’s – $5.00.', '$5.00')).toBeNull();
+    expect(scope('It paid a total of – $5.00.', '$5.00')).toBeNull();
+    expect(scope('It paid a total (of) $5.00.', '$5.00')).toBeNull();
   });
 });
 
 describe('an amount’s own words', () => {
-  it('end after a total’s words right after it, so the amount after reads its own', () => {
-    // Two scopes in one clause that differ: none (each line, in total).
-    expect(reading('Each line was paid $90.00 in total and $30.00.', '$90.00').scope).toBeNull();
-    expect(reading('The lines were paid $90.00 in total and $30.00.', '$90.00').scope).toBe('total');
-    expect(scope('Each line was paid $90.00 in total and $30.00.', '$30.00')).toBeNull();
-    expect(scope('Each line was paid $90.00 total and $30.00.', '$30.00')).toBeNull();
-    expect(scope('Each line was paid $90.00 in total and a line $30.00.', '$30.00')).toBe('line');
-  });
-
-  it('end after "apiece" or "each", or after "each", "per" or "a" with a line or a unit', () => {
-    expect(scope('The payer paid $30.00 apiece and $90.00.', '$90.00')).toBeNull();
-    expect(scope('The payer paid $30.00 each, a line $90.00.', '$90.00')).toBe('line');
+  it('end after "each", "every", "per" or "a" with a line’s noun, so a date after it reads the words that are not the amount’s', () => {
     expect(scope('The payer paid $30.00 per line and $90.00.', '$90.00')).toBeNull();
-    expect(scope('The payer paid $30.00 per unit and $90.00.', '$90.00')).toBeNull();
-    // A date after it reads the words that are not the amount's own.
     expect(roles('The payer paid $30.00 a service on 2026-01-05.', '2026-01-05')).toBe('paid_date');
     expect(roles('The payer paid $30.00 for service on 2026-01-05.', '2026-01-05')).toBe('service_date');
     expect(roles('The payer paid $30.00 per receipt on 2026-01-05.', '2026-01-05')).toBe('received_date');
@@ -139,9 +124,10 @@ describe('a count’s own words', () => {
   });
 
   it('end after a partitive’s noun, from which its units read what they are stated per', () => {
-    expect(reading('2 of the 3 units were billed to the payer per line.', '2')).toMatchObject({ roles: ['line_units'], part: { of: '3' } });
-    expect(reading('2 of the 3 billed units were sent to the payer per line.', '2')).toMatchObject({ roles: ['line_units'], part: { of: '3' } });
-    expect(reading('2 of the 3 billed units were sent to the payer per line.', '3')).toMatchObject({ roles: ['line_units'], scope: 'line' });
+    expect(reading('2 of the 3 units per line were billed to the payer.', '2')).toMatchObject({ roles: ['line_units'], part: { of: '3' } });
+    expect(reading('2 of the 3 billed units per line were sent to the payer.', '2')).toMatchObject({ roles: ['line_units'], part: { of: '3' } });
+    expect(reading('2 of the 3 billed units per line were sent to the payer.', '3')).toMatchObject({ roles: ['line_units'], scope: 'line' });
+    expect(reading('2 of the 3 billed units were sent to the payer per line.', '3')).toMatchObject({ roles: ['units'], scope: null });
   });
 });
 
@@ -199,73 +185,82 @@ describe('a list', () => {
   });
 });
 
-describe('what an amount is stated per, after the review of the converging fix (PE3-1, PE3-2, CORR3-1; docs/adr/0086)', () => {
-  const subordinators = ['when', 'whenever', 'as', 'because', 'since', 'although', 'though', 'if', 'unless', 'lest', 'after', 'before', 'until', 'till', 'once', 'than', 'despite', 'unlike'];
-  const relatives = ['which', 'that', 'who', 'whom', 'whose', 'where', 'wherever', 'whereby'];
+describe('what an amount’s sentence names of the lines (the fail-closed triggers of the amended rule 1; parts())', () => {
+  const parts = (text: string, written: string) => reading(text, written).parts;
 
-  it('ends a figure’s own clause at a subordinator, a relative or "nor", so a trailing clause’s scope is not the figure’s (PE3-1)', () => {
-    for (const word of [...subordinators, ...relatives, 'nor', 'but', 'yet']) {
-      expect(scope(`It allowed $9.00 ${word} each line was reprocessed.`, '$9.00'), word).toBeNull();
-      expect(scope(`It allowed $9.00 in total ${word} each line was reprocessed.`, '$9.00'), word).toBe('total');
-    }
-    // Its own clause's words before the subordinator still count.
-    expect(scope('It allowed $9.00 per line after the coinsurance.', '$9.00')).toBe('line');
+  it('reads its own sentence alone, from its start to its end', () => {
+    expect(parts('Line 2 was short. The payer paid $9.00 per line. It was 97110.', '$9.00')).toMatchObject({ named: false, counts: [{ roles: ['paid'], value: '900' }], dates: [] });
+    // To the text's end, with no edge after it.
+    expect(parts('The payer paid $9.00 per line for the patient', '$9.00')).toMatchObject({ named: false, patient: true });
+    expect(parts('Line 2 was short; the payer paid $9.00 per line.', '$9.00')).toMatchObject({ named: false });
+    expect(parts('Line 2 was short, so the payer paid $9.00 per line.', '$9.00')).toMatchObject({ named: true });
+    expect(parts('The payer paid $9.00 per line, and line 2 was short.', '$9.00')).toMatchObject({ named: true });
   });
 
-  it('reads none of a figure’s words before it after a subordinator, whose clause may end with no edge (PE3-1)', () => {
-    for (const word of subordinators) {
-      expect(scope(`${word} each line was reprocessed the payer allowed $9.00.`, '$9.00'), word).toBeNull();
-      expect(scope(`${word} each line was reprocessed the payer allowed $9.00 per line.`, '$9.00'), word).toBe('line');
+  it('names a part by a code, a modifier, a partitive, a number in no role before "of", or "one of"', () => {
+    for (const text of ['for patients 1 and 2', 'for claims 1 and 2', 'for rows 2 to 3', 'for the 97110 lines', 'for 97110-GP', 'with modifier GP', 'for 2 of the 3 lines', 'for 5 of the payer’s', 'for one of them', 'for 2 of them']) {
+      expect(parts(`The payer paid $9.00 per line ${text}.`, '$9.00')?.named, text).toBe(true);
     }
-    // After a relative, the figure's clause is the relative's own: its words count.
-    expect(scope('The amount, which each line was allowed, $9.00.', '$9.00')).toBeNull();
-    expect(scope('It is the amount which each line was allowed $9.00.', '$9.00')).toBe('line');
-    expect(scope('It is the amount because each line was allowed $9.00.', '$9.00')).toBeNull();
+    for (const text of ['for 5', 'for one', 'of the payer', 'in 2026', 'in March 2026', 'for version 1 of the contract', 'on page 2 of the contract']) {
+      expect(parts(`The payer paid $9.00 per line ${text}.`, '$9.00')?.named, text).toBe(false);
+    }
   });
 
-  it('reads every scope a clause states, wherever it stands, and none when two differ (PE3-1)', () => {
-    expect(scope('It allowed $9.00 in total for each line.', '$9.00')).toBeNull();
-    expect(scope('It allowed $9.00 for each line in total.', '$9.00')).toBeNull();
-    expect(scope('It allowed $9.00 per line on each line.', '$9.00')).toBe('line');
-    expect(scope('It allowed $9.00 each per line.', '$9.00')).toBe('line');
-    expect(scope('It allowed $9.00 each in total.', '$9.00')).toBeNull();
-    expect(scope('It allowed $9.00 per a contract in total.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 per unit for each line.', '$9.00')).toBeNull();
-    expect(scope('It allowed $9.00 each.', '$9.00')).toBeNull();
-    expect(scope('On each of the 3 lines the payer allowed $9.00.', '$9.00')).toBe('line');
-    expect(scope('For every one of the 3 lines the payer allowed $9.00.', '$9.00')).toBeNull();
-    expect(scope('The 3 lines were allowed $9.00.', '$9.00')).toBe('total');
-    expect(scope('The 3 lines were allowed $9.00 per line.', '$9.00')).toBeNull();
+  it('names a part by a date read as a service date or in no role, never one read as another’s', () => {
+    expect(parts('The lines serviced on 2026-03-05 were paid $9.00 per line.', '$9.00')?.named).toBe(true);
+    expect(roles('The 2 visits were on 2026-01-05 at $9.00 per line.', '2026-01-05')).toBe('any');
+    expect(parts('The 2 visits were on 2026-01-05 at $9.00 per line.', '$9.00')?.named).toBe(true);
+    expect(parts('The payer paid $9.00 per line, 2026-03-05.', '$9.00')?.named).toBe(false);
+    // A year in no role, or a service year, names none.
+    expect(roles('The 2 visits were in 2026 at $9.00 per line.', '2026')).toBe('any');
+    expect(parts('The 2 visits were in 2026 at $9.00 per line.', '$9.00')?.named).toBe(false);
+    expect(parts('The services in 2026 were paid $9.00 per line.', '$9.00')?.named).toBe(false);
+    expect(parts('The payer paid $9.00 per line on 2026-04-08.', '$9.00')?.named).toBe(false);
+    // A month or a day of a month as a date is.
+    expect(parts('The services in March 2026 were paid $9.00 per line.', '$9.00')?.named).toBe(true);
+    expect(parts('The services on March 5 were paid $9.00 per line.', '$9.00')?.named).toBe(true);
+    expect(parts('The payer paid $9.00 per line in March 2026.', '$9.00')?.named).toBe(false);
+    expect(parts('The payer paid $9.00 per line on March 5.', '$9.00')?.named).toBe(false);
+    // An ordinal not read as prose names none: "a second-level appeal" is the level.
+    expect(parts('This second-level appeal disputes $9.00 per line.', '$9.00')?.named).toBe(false);
   });
 
-  it('reads one row only by its number, an ordinal or a patient’s or a claim’s, never the row’s noun alone (PE3-2)', () => {
-    for (const row of ['line 1', 'row 2', 'visit 3', 'the 2nd line', 'the second row', 'Patient 2’s line', 'Patient 2’s row', 'the patient’s line', 'the claim’s row', 'the claim line']) {
-      expect(scope(`It allowed $9.00 for ${row}.`, '$9.00'), row).toBe('line');
+  it('names a part by a patient as a noun, never "each patient", "per patient" or a word before another noun', () => {
+    for (const text of ['for a patient', 'for patient’s lines', 'for a patient line']) {
+      expect(parts(`The payer paid $9.00 per line ${text}.`, '$9.00'), text).toMatchObject({ named: true, patient: false });
     }
-    for (const row of ['the line', 'the row', 'the visit', 'the line schedule', 'the remittance line', 'Patient 2’s visit', 'the patient’s visit', 'the payer’s line', 'the 2 line items']) {
-      expect(scope(`It allowed $9.00 for ${row}.`, '$9.00'), row).toBeNull();
+    for (const text of ['for each patient', 'for every patient’s line', 'per patient', 'as a patient share']) {
+      expect(parts(`The payer paid $9.00 per line ${text}.`, '$9.00'), text).toMatchObject({ named: false, patient: false });
     }
-    // An opening's total is the figure's where its own words name no row.
-    expect(scope('In total, the payer allowed $9.00 on the remittance line.', '$9.00')).toBe('total');
-    expect(scope('In total, the payer allowed $9.00 on line 2.', '$9.00')).toBe('line');
+    for (const determiner of ['the', 'this', 'that', 'one', 'its']) {
+      expect(parts(`The payer paid $9.00 per line for ${determiner} patient.`, '$9.00'), determiner).toMatchObject({ named: false, patient: true });
+      expect(parts(`The payer paid $9.00 per line for ${determiner} claim.`, '$9.00'), determiner).toMatchObject({ named: false, claim: true });
+      expect(parts(`The payer paid $9.00 per line for ${determiner} line.`, '$9.00')?.named, determiner).toBe(true);
+    }
+    expect(parts('The payer paid $9.00 per line for each claim.', '$9.00')).toMatchObject({ claim: false });
   });
 
-  it('reads a total over rows named by their labels or a partitive as no scope: no pattern’s total (CORR3-1)', () => {
-    for (const rows of ['for lines 1 and 2', 'across lines 1 and 2', 'over lines 1 to 2', 'for lines 1–2', 'across claims 1 and 2', 'for rows 1 through 2', 'for 2 of the 3 lines', 'for two of the lines', 'in total for lines 1, 2 and 3']) {
-      expect(scope(`It allowed $9.00 ${rows}.`, '$9.00'), rows).toBeNull();
+  it('names a part by one line’s noun after an owner’s word not after "each", or after a determiner, never another word', () => {
+    for (const text of ['for the claim line', 'for a claim row', 'for a patient visit', 'for the patient line', 'for this claim line']) {
+      expect(parts(`The payer paid $9.00 per line ${text}.`, '$9.00')?.named, text).toBe(true);
     }
-    for (const text of ['2 of the 3 lines were allowed $9.00.', 'On 2 of the 3 lines the payer allowed $9.00.', 'Lines 1 to 2 were allowed $9.00.', 'Lines 1 and 2 were allowed $9.00 in total.', 'Lines 1, 2 and 3 were allowed $9.00 in total.', 'Claims 1 and 2 were allowed $9.00.']) {
-      expect(scope(text, '$9.00'), text).toBeNull();
+    for (const text of ['for each claim line', 'for every claim row', 'in line with it', 'on the bottom line', 'per visit', 'a line']) {
+      expect(parts(`The payer paid $9.00 per line ${text}.`, '$9.00')?.named, text).toBe(false);
     }
-    expect(scope('On claim 2 the payer allowed $9.00 in total.', '$9.00')).toBeNull();
-    // A year or another label before the rows is no part of them.
-    expect(scope('In 2026 the payer allowed $9.00 per line.', '$9.00')).toBe('line');
-    expect(scope('Version 2 for the 3 lines was allowed $9.00.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 for the line', '$9.00')).toBeNull();
-    // Per line, a part of the rows is each line's; all of them, or "each of" them, as before.
-    expect(scope('It allowed $9.00 per line for lines 1 and 2.', '$9.00')).toBe('line');
-    expect(scope('All of the 3 lines were allowed $9.00.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 for all 3 lines.', '$9.00')).toBe('total');
-    expect(scope('It allowed $9.00 for each of the 3 lines.', '$9.00')).toBe('line');
+  });
+
+  it('holds each count of lines, claims or patients with the roles it may be, and no other count', () => {
+    expect(parts('The payer paid $9.00 per line for 3 lines of 2 patients.', '$9.00')?.counts).toEqual([
+      { roles: ['paid'], value: '900' },
+      { roles: ['lines'], value: '3' },
+      { roles: ['patients'], value: '2' },
+    ]);
+    expect(parts('The payer paid $9.00 per line for 6 units on page 2.', '$9.00')?.counts).toEqual([
+      { roles: ['paid'], value: '900' },
+      { roles: ['units'], value: '6' },
+      { roles: ['citation_page', 'window_page'], value: '2' },
+    ]);
+    // A figure in no role holds none.
+    expect(parts('The payer paid $9.00 per line for 5.', '$9.00')?.counts).toEqual([{ roles: ['paid'], value: '900' }]);
   });
 });

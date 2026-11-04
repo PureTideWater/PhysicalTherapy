@@ -1,3 +1,4 @@
+import type { FigureRole } from '../roles';
 
 /**
  * The reader's prose words (./index.ts; docs/adr/0086): what a word, an abbreviation and a clause's edge are, the words
@@ -17,26 +18,12 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const EDGES = /[.!?;:,]|\n[ \t]*\n/g;
   /** Words that join a list: "pages 1 and 2", "lines 1 to 3", "lines 1–3" (a dash between two numbers is read as "–"). */
   const LIST_JOINERS = new Set(['and', 'or', 'to', 'through', 'thru', 'plus', ',', '–']);
-  /** Conjunctions: the words after a figure stop at one, which opens the next figure's clause ("$300.00 and the remittances show $210.00"). */
+  /**
+   * Conjunctions: an amount's words after it stop at one, which opens the next figure's clause ("$300.00 and the
+   * remittances show $210.00"), and a "respectively" list's figures are after the last one an edge stands before ("The
+   * payer paid $56.00 per line, and the contract expected ...").
+   */
   const CONJUNCTIONS = new Set(['and', 'but', 'or', 'nor', 'while', 'whereas', 'yet']);
-  /**
-   * Words that open a clause of their own: with an edge, a dash, a parenthesis, the conjunctions ("while", "but") and
-   * RESULT_LEADS ("so"), they bound a figure's own clause, whose words alone state what it is per (rule 1 of
-   * docs/adr/0086): the relatives, and the subordinators (SUBORDINATORS).
-   */
-  const RELATIVES = ['which', 'that', 'who', 'whom', 'whose', 'where', 'wherever', 'whereby'];
-  /**
-   * The subordinators, and the prepositions that open a clause's like ("despite each line being reprocessed", "unlike
-   * each line's"). A clause one opens may end with no edge before the next ("After each line was reprocessed the payer
-   * allowed $70.00"), so a figure's words before it after one state nothing (PE3-1).
-   */
-  const SUBORDINATORS = new Set(['when', 'whenever', 'as', 'because', 'since', 'although', 'though', 'if', 'unless', 'lest', 'after', 'before', 'until', 'till', 'once', 'than', 'despite', 'unlike']);
-  const CLAUSE_OPENERS = new Set([...RELATIVES, ...SUBORDINATORS]);
-  /** Words that open a clause that states what follows from the sentence before it ("so the payer owes $90.00"): they bound a clause too. */
-  const RESULT_LEADS = new Set(['so', 'therefore', 'thus', 'hence']);
-  /** A singular noun that names the lines together after "for", "on" or "over", unless a line's noun follows it ("for the claim", never "the claim line"). */
-  const TOTAL_NOUNS = new Set(['claim']);
-  const TOTAL_NOUN_LEADS = new Set(['for', 'on', 'over']);
   /** Words that join a list across a comma: "rows 1, 2 and 3". */
   const LIST_CONTINUERS = new Set([',', 'and', 'or', 'to', 'through', 'thru', '–']);
   /** Determiners before an ordinal that make it prose before a noun that is no row's ("the sixth unit", "a second appeal"). */
@@ -79,48 +66,47 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const PARTITIVE_DETERMINERS = new Set(['the', 'these', 'those', 'its', 'their', 'all', 'our']);
   /** Pronouns in a partitive with no noun, "2 of them": a part of the lines, the claims or the patients. */
   const PARTITIVE_PRONOUNS = new Set(['them', 'these', 'those', 'which']);
-  /** Words that name each line: "each line", "per line", "a visit". */
-  const EACH = new Set(['each', 'every', 'per', 'a']);
-  const ONE_LINE = new Set(['line', 'visit', 'row', 'service']);
-  /** One row's noun: before its number ("on line 1", "visit 2"), or a patient's or a claim's line or row, it states a line's value. */
-  const ONE_ROW = new Set(['line', 'row', 'visit']);
-  /** The rows' owners whose possessive names one row: "the patient's line", "the claim's row" (a figure's possessive is one too: "Patient 2's line"). */
-  const ROW_OWNERS = new Set(['patient', 'claim']);
-  /** The lines after "each of": "on each of the 3 lines". */
-  const LINES = new Set(['line', 'lines', 'visit', 'visits', 'row', 'rows', 'service', 'services']);
-  /** A unit after "each", "per" or "a": an amount per unit ("$50.00 per unit", "at $50.00 a unit"). */
-  const ONE_UNIT = new Set(['unit']);
-  /** Words that state an amount or a count of units for the lines in total: "in all", "total" (so "in total"), "altogether", "across the 3 lines". */
-  const TOTAL_WORDS: readonly string[] = [
-    'in all',
-    'all told',
-    'total',
-    'totals',
-    'totaling',
-    'totalling',
-    'totaled',
-    'totalled',
-    'altogether',
-    'combined',
-    'overall',
-    'aggregate',
-    'across',
-    'together',
-  ];
-  /** Words before a plural row's noun after a figure that make the figure the rows' total: "$300.00 for these 3 lines" ("across" is a total's word wherever it is). */
-  const TOTAL_FOR = new Set(['for', 'over']);
   /**
-   * A "respectively" list's own words besides its cues and a scope's (rule 3 of docs/adr/0086): determiners, "were"
-   * and "are", and "amounts", the noun of every cue, after which a scope is the whole list's; and "and", "or" and "the
+   * The closed list of scope phrases (rule 1 of docs/adr/0086, as amended on 2026-11-04): right after a figure, "per"
+   * or "a" before one line's or one unit's noun ("$70.00 per line", "$50.00 a unit"), "for" or "on" before "each" or
+   * "every" and that noun or "of the N lines" ("for each line", "on each of the 3 lines"), "in total" or "in all", "for"
+   * or "on" before "the claim", and "across", "for" or "over" before the rows in the plural with their count or "all"
+   * ("across the 3 lines", "for all the lines"); right before it, "each" or "every" before a line's possessive ("each
+   * line's $70.00"), "per-line" or "per-unit", and "a total of" or "the total of".
+   */
+  const ONE_LINE = new Set(['line', 'visit', 'row', 'service']);
+  const ONE_UNIT = new Set(['unit']);
+  const PER = new Set(['per', 'a']);
+  const EACH = new Set(['each', 'every']);
+  const EACH_LEADS = new Set(['for', 'on']);
+  /** The lines in the plural after "each of the N": "on each of the 3 lines". */
+  const LINES = new Set(['lines', 'visits', 'rows', 'services']);
+  const TOTAL_PHRASES: readonly string[] = ['in total', 'in all'];
+  const CLAIM_LEADS = new Set(['for', 'on']);
+  const ROWS_LEADS = new Set(['across', 'for', 'over']);
+  const ROWS_DETERMINERS = new Set(['the', 'all', 'these', 'those']);
+  const TOTAL_DETERMINERS = new Set(['a', 'the']);
+  /**
+   * What names a part of the lines in a sentence (the fail-closed triggers): these words; one line's noun after one of
+   * ONE_DETERMINERS, or after an owner's word (ROW_OWNERS: "the claim line", "the patient's row") not after "each"; a
+   * figure in one of PART_ROLES; and a count of lines, claims or patients the pattern does not hold (the verifier's).
+   */
+  const PART_WORDS = new Set(['remaining', 'other', 'others', 'some', 'last', 'first']);
+  const ONE_DETERMINERS = new Set(['the', 'this', 'that', 'one', 'its']);
+  const ROW_OWNERS = new Set(['patient', 'claim']);
+  const PART_ROLES: ReadonlySet<FigureRole> = new Set<FigureRole>(['row', 'claim_row', 'patient_row']);
+  /**
+   * A "respectively" list's own words besides its cues and a scope's (rule 3 of docs/adr/0086): determiners ("a" is
+   * a scope phrase's word too, SCOPE_WORDS), "were" and "are", and "amounts", the noun of every cue, after which a scope is the whole list's; and "and", "or" and "the
    * payer" (LIST_LINKS), which join one cue to the next.
    */
-  const LIST_FILLERS = new Set(['the', 'a', 'an', 'these', 'those', 'this', 'its', 'their', 'our', 'were', 'are']);
+  const LIST_FILLERS = new Set(['the', 'an', 'these', 'those', 'this', 'its', 'their', 'our', 'were', 'are']);
   const LIST_NOUNS = new Set(['amounts']);
   const LIST_LINKS = new Set(['and', 'or', 'payer']);
   /** What alone joins a "respectively" list's figures: "$100.00 and $70.00", "$1.00, $2.00 or $3.00". */
   const LIST_JOINED = new Set([',', 'and', 'or']);
-  /** A scope's words, as a "respectively" list may hold them with its cues: "per line", "in total", "on each of the lines", "for the claim". */
-  const SCOPE_WORDS = new Set([...EACH, ...LINES, ...ONE_UNIT, ...TOTAL_FOR, ...TOTAL_NOUN_LEADS, ...TOTAL_NOUNS, ...TOTAL_WORDS.flatMap((phrase) => phrase.split(' ')), ...LIST_NOUNS, 'units', 'claims', 'of', 'apiece']);
+  /** A scope phrase's words (the closed list above), as a "respectively" list may hold them with its cues: "per line", "in total", "on each of the 3 lines", "for the claim". */
+  const SCOPE_WORDS = new Set([...PER, ...EACH, ...EACH_LEADS, ...ONE_LINE, ...ONE_UNIT, ...LINES, ...ROWS_LEADS, ...TOTAL_PHRASES.flatMap((phrase) => phrase.split(' ')), ...LIST_NOUNS, 'units', 'claim', 'claims', 'of']);
   /** Words that carry no meaning of their own: a quoted figure is never held by one of them alone. */
   const FUNCTION_WORDS = new Set([
     ...notTheCount,
@@ -166,26 +152,29 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     LIST_JOINERS,
     LIST_CONTINUERS,
     CONJUNCTIONS,
-    CLAUSE_OPENERS,
-    SUBORDINATORS,
-    RESULT_LEADS,
     // Ordinals, and the determiners, pronouns and prepositions around a count or a code.
     ORDINAL_WORDS,
     ORDINAL_DETERMINERS,
     CODE_MODIFIER_LEADS,
     PARTITIVE_DETERMINERS,
     PARTITIVE_PRONOUNS,
-    // What an amount or a count of units is stated per.
-    EACH,
+    // What an amount or a count of units is stated per: the closed list of scope phrases.
     ONE_LINE,
-    ONE_ROW,
-    ROW_OWNERS,
-    LINES,
     ONE_UNIT,
-    TOTAL_WORDS,
-    TOTAL_FOR,
-    TOTAL_NOUNS,
-    TOTAL_NOUN_LEADS,
+    PER,
+    EACH,
+    EACH_LEADS,
+    LINES,
+    TOTAL_PHRASES,
+    CLAIM_LEADS,
+    ROWS_LEADS,
+    ROWS_DETERMINERS,
+    TOTAL_DETERMINERS,
+    // What names a part of the lines.
+    PART_WORDS,
+    ONE_DETERMINERS,
+    ROW_OWNERS,
+    PART_ROLES,
     // A "respectively" list's own words.
     LIST_FILLERS,
     LIST_NOUNS,
