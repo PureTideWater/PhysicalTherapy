@@ -34,19 +34,24 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
 export const RERUN_REASONS = ['mapping_changed', 'release_published', 'release_withdrawn', 'version_signed_off'] as const;
 export type RerunReason = (typeof RERUN_REASONS)[number];
 
+/**
+ * The complete run whose reasons to re-run are asked. Its creation is read by Postgres from the run's own row and
+ * compared there, to the microsecond: never carried as a JS Date, which keeps milliseconds and would count a mapping
+ * or sign-off made in the run's own millisecond, at or before it, as made since (PRC-32).
+ */
 export interface RunSince {
   readonly practiceId: string;
-  readonly createdAt: Date;
-  readonly releaseNo: number;
+  readonly pricingRunId: string;
 }
 
 export async function rerunReasons(client: ScopeClient, run: RunSince): Promise<RerunReason[]> {
   const { rows } = await client.query<Record<RerunReason, boolean>>(
-    `SELECT EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.practice_id = $1 AND m.created_at > $2) AS mapping_changed,
-            coalesce(current_rule_release() > $3, false) AS release_published,
-            EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = $3) AS release_withdrawn,
-            EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = $1 AND v.signed_off_at > $2) AS version_signed_off`,
-    [run.practiceId, run.createdAt, run.releaseNo],
+    `WITH r AS (SELECT created_at, release_no FROM pricing_run WHERE id = $2 AND practice_id = $1)
+     SELECT EXISTS (SELECT 1 FROM payer_plan_mapping m, r WHERE m.practice_id = $1 AND m.created_at > r.created_at) AS mapping_changed,
+            coalesce(current_rule_release() > (SELECT r.release_no FROM r), false) AS release_published,
+            EXISTS (SELECT 1 FROM rule_release_withdrawal w, r WHERE w.release_no = r.release_no) AS release_withdrawn,
+            EXISTS (SELECT 1 FROM contract_version v, r WHERE v.practice_id = $1 AND v.signed_off_at > r.created_at) AS version_signed_off`,
+    [run.practiceId, run.pricingRunId],
   );
   const found = rows[0];
   return RERUN_REASONS.filter((reason) => found?.[reason] === true);

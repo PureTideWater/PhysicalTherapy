@@ -74,10 +74,7 @@ const accept = (target: Practice, pricingRunId: string, replacesId: string, acto
 const compare = (target: Practice, beforeRunId: string, afterRunId: string, filter?: 'all' | 'changed' | 'only_before' | 'only_after') =>
   scopeOf(target, target.manager, (scope) => compareRuns(scope, { practiceId: target.practiceId, beforeRunId, afterRunId, requestId: `test-${randomUUID()}`, filter }));
 const asJob = <T>(target: Practice, run: Parameters<typeof withJobScope<typeof w.app, T>>[2]) => withJobScope(w.app, { jobId: randomUUID(), practiceId: target.practiceId }, run);
-const reasonsOf = async (target: Practice, runId: string) => {
-  const run = await w.one<{ created_at: Date; release_no: number }>('SELECT created_at, release_no FROM pricing_run WHERE id = $1', [runId]);
-  return asJob(target, (scope) => rerunReasons(scope.client, { practiceId: target.practiceId, createdAt: run.created_at, releaseNo: run.release_no }));
-};
+const reasonsOf = (target: Practice, runId: string) => asJob(target, (scope) => rerunReasons(scope.client, { practiceId: target.practiceId, pricingRunId: runId }));
 
 /** The run row and its lines as stored, to show they never change. */
 async function snapshot(runId: string): Promise<unknown> {

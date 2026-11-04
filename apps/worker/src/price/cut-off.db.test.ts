@@ -197,16 +197,10 @@ describe('a run’s cut-off at its creation (PRC-32)', () => {
 
 /**
  * The reasons a complete run's page offers a re-run, read as the Pricing runs page reads them (apps/web's pricing
- * queries): the run's row as stored, then rerunReasons() in the billing manager's scope.
+ * queries): rerunReasons() for the run, in the billing manager's scope.
  */
 async function offeredReasons(target: Practice, pricingRunId: string): Promise<RerunReason[]> {
-  return withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, async (scope) => {
-    const { rows } = await scope.client.query<{ practice_id: string; created_at: Date; release_no: number }>('SELECT practice_id, created_at, release_no FROM pricing_run WHERE id = $1', [
-      pricingRunId,
-    ]);
-    const row = rows[0] as { practice_id: string; created_at: Date; release_no: number };
-    return rerunReasons(scope.client, { practiceId: row.practice_id, createdAt: row.created_at, releaseNo: row.release_no });
-  });
+  return withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) => rerunReasons(scope.client, { practiceId: target.practiceId, pricingRunId }));
 }
 
 describe('the reasons to re-run a complete run, against its creation to the microsecond (PRC-32)', () => {
