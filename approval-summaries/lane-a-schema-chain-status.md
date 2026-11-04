@@ -164,6 +164,12 @@ its unpushed work is not waited for).
   ci.md guide, the release:load warning, the capacity summary). **Decision:** those are words a person reads, so they get a
   words review too: wf_78024f0c-4c1 (archived) reviews them with a skeptic per finding and hands confirmed ones to the fix
   round's record before it starts. Reviews and the two investigations running in wf_a38ce7b6-ec3.
+- **14:25 UTC. Operator-words review done** (wf_78024f0c-4c1): 17 findings, 14 confirmed by a skeptic (all should-fix
+  or nit: the incident runbook's live-heap steps (peaks are the whole process's, never added; an out-of-memory crash logs
+  nothing and the job-failure alarm stays quiet; step 2's two readings; "nothing has failed yet"); ci.md's reading guide
+  (check lines carry no job ID; no SQLSTATE in the worker log; the lock check names no job type; the missing-heap-line
+  cause); and more), 3 refuted (OPS-9, OPS-11, OPS-17). The hand-over cut off after OPS-3; the session appended the other
+  11 and the refuted list to the fix round's record before it started.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
