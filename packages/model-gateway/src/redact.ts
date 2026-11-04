@@ -555,25 +555,33 @@ const writtenAsDate = (normal: string, range: Range) =>
  * "Account", "Acct", "Member", "Subscriber", "Ref") with any of "number", "nbr", "no", "id", "control" and "#" after
  * it ("Claim #", "Claim No.", "Member ID", "Patient control no.", "CLAIM NUMBER IS"); "Reference" only with one of
  * those after it ("Reference number"); "No" alone only written "No.", "No:" or "No#" with a capital N; "ID" alone only
- * written "ID:" or "ID#"; "number is"; and "Re:". Its end may take ":", "#" or "-", "is", "*" (Markdown bold), one ",", "(" and an opening quote
- * ("**Claim:** ", "Claim, ", "ICN (", "Claim: “"; review finding G3). A bare "no", "number", "id", "#" or
- * "reference" is no label ("The number 2027-03-15", "No 2027-03-15 appeal", "Answer: no. 2027-03-15", "reference:
- * 2027-03-15", "Reference date #2027-03-15": review finding G2). A digits-only match after one is the identifier even
- * when its written form is a calendar date, and digits joined over "." or "/" after one are the number: the letter
- * says what it is (review finding R5-2), as BIRTH_LABEL says a date of birth.
+ * written "ID:" or "ID#"; "number is"; and "Re:". Its end (LABEL_END) may take ":", "#" or "-", "is", "*" (Markdown
+ * bold), one ",", "(" and an opening quote ("**Claim:** ", "Claim, ", "ICN (", "Claim: “"; review finding G3). A bare
+ * "no", "number", "id", "#" or "reference" is no such label ("The number 2027-03-15", "No 2027-03-15 appeal", "Answer: no. 2027-03-15", "reference:
+ * 2027-03-15", "Reference date #2027-03-15": review finding G2): only this label makes a number written as a whole
+ * calendar date the identifier, the letter saying what it is (review finding R5-2), as BIRTH_LABEL says a date of birth.
+ * Digits joined over "." or "/" that are no whole written date are the number after any label (ANY_IDENTIFIER_LABEL).
  */
 const LABEL_SPACE = '[\\s\\u00AD]';
 const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b\\.?|#)`;
-const IDENTIFIER_LABEL = new RegExp(
-  `(?:\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b\\.?(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*` +
-    `|\\breference(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+` +
-    `|\\b(?<no>no)(?=\\.|${LABEL_SPACE}*[:#])\\.?` +
-    `|\\bid(?=${LABEL_SPACE}*[:#])` +
-    `|\\bnumber(?=${LABEL_SPACE}*[:-]?${LABEL_SPACE}*is${LABEL_SPACE})` +
-    `|\\bre(?=${LABEL_SPACE}*:))` +
-    `[\\s\\u00AD*]*(?:[:#-][\\s\\u00AD*]*|,${LABEL_SPACE}*)?(?:is${LABEL_SPACE}+)?(?:[("'\\u201C\\u2018]${LABEL_SPACE}*)?$`,
-  'iu',
-);
+const LABEL_END = `[\\s\\u00AD*]*(?:[:#-][\\s\\u00AD*]*|,${LABEL_SPACE}*)?(?:is${LABEL_SPACE}+)?(?:[("'\\u201C\\u2018]${LABEL_SPACE}*)?$`;
+const LABEL_HEAD =
+  `\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b\\.?(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*` +
+  `|\\breference(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+` +
+  `|\\b(?<no>no)(?=\\.|${LABEL_SPACE}*[:#])\\.?` +
+  `|\\bid(?=${LABEL_SPACE}*[:#])` +
+  `|\\bnumber(?=${LABEL_SPACE}*[:-]?${LABEL_SPACE}*is${LABEL_SPACE})` +
+  `|\\bre(?=${LABEL_SPACE}*:)`;
+const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
+
+/**
+ * Any identifier label: IDENTIFIER_LABEL, or a bare "id", "number", "nbr", "no", "num", "identification", "reference"
+ * or "#", with any qualifiers after it, so any word before one ("Patient ID", "Policy number", "Insurance ID", "Member's
+ * ID", "Member Identification Number", "Policy #", "ID"). After it, digits joined over "." or "/" that are no whole
+ * written calendar date are the number (review finding phi-G2-regress-1: "Patient ID 1234.5678"): G2's narrowing keeps
+ * a deadline, a whole written date, and so applies to whole written dates alone (IDENTIFIER_LABEL, labelFor).
+ */
+const ANY_IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD.replace(/\(\?<\w+>/gu, '(?:')}|(?:\\b(?:id|number|nbr|no|num|identification|reference)\\b\\.?|#)(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*)${LABEL_END}`, 'iu');
 
 /** What an identifier label introduces: a claim's number, a member ID, or either ("Ref", "No.", "ID:", "number is", "Re:"). */
 type LabelKind = 'claim' | 'member' | 'either';
@@ -601,8 +609,8 @@ function labelFor(view: View, normal: string, start: number, kind: Kind): boolea
   return label === 'either' || label === kind;
 }
 
-/** Whether any identifier label ends just before a view position: after one, digits joined over "." or "/" that are not a whole written calendar date are the number. */
-const labeledAt = (view: View, normal: string, start: number) => labelBefore(view.text, start, (index) => writtenAt(view, normal, index)) !== null;
+/** Whether any identifier label (ANY_IDENTIFIER_LABEL) ends just before a position of text: after one, digits joined over "." or "/" that are not a whole written calendar date are the number. */
+const anyLabelAt = (text: string, start: number) => ANY_IDENTIFIER_LABEL.test(text.slice(Math.max(0, start - 40), start));
 
 interface Found extends Range {
   readonly kind: Kind;
@@ -663,7 +671,7 @@ function matchesIn(normal: string, subject: Subject): Found[] {
       const labeled = new RegExp(form.labeled.source, form.labeled.flags);
       for (let match = labeled.exec(view.text); match !== null; match = labeled.exec(view.text)) {
         const range = inNormal(view, match.index, match.index + match[0].length);
-        const fits = labelFor(view, normal, match.index, form.kind) || (labeledAt(view, normal, match.index) && !writtenAsDate(normal, range));
+        const fits = labelFor(view, normal, match.index, form.kind) || (anyLabelAt(view.text, match.index) && !writtenAsDate(normal, range));
         if (fits && !(form.kind === 'claim' && isAmount(normal, range))) {
           found.push({ ...range, kind: form.kind, claim: form.claim });
         }
@@ -883,12 +891,13 @@ export function holdsNameOrNumber(text: string, identifiers: { readonly names: r
  * space, and an invisible character is VANISHED and never part of a token, so "REF<ZWSP>ZZ7654321" gives
  * "ZZ7654321" and the run joined across it. From each token, a run extends over at most maxTokens tokens
  * while `joins` accepts what lies between two of them (given with the two tokens); `keep` decides which
- * runs are returned. `joins` is also given the scanned text, where the run's first token starts in it and the run so far
- * (compact), so it may read what comes before the run (an identifier label: letterJoins).
+ * runs are returned. `joins` is also given the scanned text, where the run's first token starts in it, where the next
+ * token ends and the run so far (compact), so it may read what comes before the run and what the run writes (an
+ * identifier label, and whether the run is a whole written calendar date: labeledDigitsJoin).
  */
 export function identifierTokenRuns(
   text: string,
-  options: { readonly joins: (between: string, left: string, right: string, run: { readonly text: string; readonly start: number; readonly joined: string }) => boolean; readonly maxTokens: number; readonly keep: (run: string) => boolean },
+  options: { readonly joins: (between: string, left: string, right: string, run: { readonly text: string; readonly start: number; readonly end: number; readonly joined: string }) => boolean; readonly maxTokens: number; readonly keep: (run: string) => boolean },
 ): string[] {
   // An APOSTROPHE_LETTER, a letter by class, is an apostrophe here, as in the matcher (compactFolded), so "12ʼ345ʼ678" is three tokens a caller may join.
   const scan = text.normalize('NFKC').replace(/[\s\S]/gu, (character) => (BLANK.test(character) ? ' ' : IGNORABLE.test(character) ? VANISHED : APOSTROPHE_LETTER.test(character) ? "'" : character));
@@ -899,7 +908,7 @@ export function identifierTokenRuns(
     for (let length = 1; length <= options.maxTokens && start + length <= tokens.length; length += 1) {
       const token = tokens[start + length - 1];
       const before = tokens[start + length - 2];
-      if (token === undefined || (length > 1 && (before === undefined || !options.joins(scan.slice(before.end, token.start), before.text, token.text, { text: scan, start: tokens[start]?.start ?? 0, joined })))) {
+      if (token === undefined || (length > 1 && (before === undefined || !options.joins(scan.slice(before.end, token.start), before.text, token.text, { text: scan, start: tokens[start]?.start ?? 0, end: token.end, joined })))) {
         break;
       }
       joined += compactIdentifier(token.text);
@@ -922,13 +931,18 @@ function letterJoins(between: string, left: string, right: string): boolean {
 }
 
 /**
- * What joins two tokens of a digits-only identifier an identifier label (IDENTIFIER_LABEL, of any kind) introduces: the
- * number joiners and "." or "/" between digits, when the run so far and the next token are digits alone and the label
- * ends right before the run, as the matcher reads a digits-only number after a label (GAP.labeledNumber; review finding
- * G1: "ICN 1234.5678", "Claim 1955/07/14", "Member ID: 7654.321").
+ * What joins two tokens of a digits-only identifier an identifier label introduces: the number joiners and "." or "/"
+ * between digits, when the run so far and the next token are digits alone and a label ends right before the run, as
+ * the matcher reads a digits-only number after a label (GAP.labeledNumber; review finding G1: "ICN 1234.5678",
+ * "Claim 1955/07/14", "Member ID: 7654.321"): any label (ANY_IDENTIFIER_LABEL) when the run with the next token is no
+ * whole written calendar date ("Patient ID 1234.5678", "Policy number 1234/5678": review finding phi-G2-regress-1), and
+ * one of IDENTIFIER_LABEL's, of either kind, when it is ("Claim 1955/07/14", never "ID 2027/03/15").
  */
-function labeledDigitsJoin(between: string, _left: string, right: string, run: { readonly text: string; readonly start: number; readonly joined: string }): boolean {
-  return LABELED_GAP.test(between) && /^\p{N}+$/u.test(run.joined) && /^\p{N}+$/u.test(compactIdentifier(right)) && labelBefore(run.text, run.start, (index) => codePointAt(run.text, index)) !== null;
+function labeledDigitsJoin(between: string, _left: string, right: string, run: { readonly text: string; readonly start: number; readonly end: number; readonly joined: string }): boolean {
+  if (!LABELED_GAP.test(between) || !/^\p{N}+$/u.test(run.joined) || !/^\p{N}+$/u.test(compactIdentifier(right)) || !anyLabelAt(run.text, run.start)) {
+    return false;
+  }
+  return !writtenAsDate(run.text, { start: run.start, end: run.end }) || labelBefore(run.text, run.start, (index) => codePointAt(run.text, index)) !== null;
 }
 
 /**
@@ -937,7 +951,8 @@ function labeledDigitsJoin(between: string, _left: string, right: string, run: {
  * white space, dashes, "_", "|", "\\", invisible characters and the other number joiners (NUMBER_JOINERS:
  * grouping apostrophes and primes, "~", middle dots, bullets, ";", double quotes), next to a letter over ".", "/",
  * ":", "#" or "(" too ("ZZ 1234567", "1234|5678", "12'345'678", "ZZ_7654321", "ZZ/7654321", "ZZ#7654321",
- * "ID:ZZ7654321"), and digits alone over "." or "/" too after an identifier label (labeledDigitsJoin: "ICN 1234.5678"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
+ * "ID:ZZ7654321"), and digits alone over "." or "/" too after an identifier label (labeledDigitsJoin: "ICN 1234.5678",
+ * "Patient ID 1234.5678"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
  * (a redacted letter's [CLAIM_n] number its claims, never five digits; a letter's own "[CLAIM_7654321]"
  * offers 7654321).
  */

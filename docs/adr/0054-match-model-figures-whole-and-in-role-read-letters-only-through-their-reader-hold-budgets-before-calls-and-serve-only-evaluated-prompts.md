@@ -316,10 +316,17 @@ this amendment holds.
   "Answer: no. 2027-03-15", "reference: 2027-03-15" and "Reference date #2027-03-15" keep their deadline when it equals
   a claim's digits. A member's label (`Member`, `Subscriber`) makes a whole written date a member ID only, a claim's
   label a claim's number only (`Member: 2027-03-15` keeps a deadline equal to a claim's digits), and the others
-  either; digits joined over `.` or `/` that are not a whole written date are the number after a label of either kind.
+  either. Digits joined over `.` or `/` that are not a whole written date are the number after any label: one of
+  these, or a bare `ID`, `number`, `nbr`, `no`, `num`, `identification`, `reference` or `#` with any qualifiers after
+  it, so after any word before one (`Patient ID 1234.5678`, `Policy number 1234/5678`, `Member's ID 1234.5678`,
+  `Member Identification Number 1234.5678`, `Policy # 1234.5678`, `ID 1234.5678`; `ANY_IDENTIFIER_LABEL`). Review
+  finding phi-G2-regress-1 (2026-11-04) found that G2's narrowing had sent these, the patient's own number among
+  them: the narrowing keeps a deadline, a whole written date, so it applies to whole written dates alone.
   The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
-  digits included (review finding G1, 2026-11-02): a run of digits alone that a label of any kind introduces also joins
-  over `.` and `/` (`ICN 1234.5678` offers 12345678, `Claim 1955/07/14` 19550714, `Member ID: 7654.321` 7654321), so
+  digits included (review finding G1, 2026-11-02): a run of digits alone that a label introduces also joins over `.`
+  and `/`, after any label when the run is no whole written date and after one of the head-word labels when it is, as
+  the matcher reads them (`ICN 1234.5678` offers 12345678, `Claim 1955/07/14` 19550714, `Member ID: 7654.321` 7654321,
+  and since phi-G2-regress-1 `Patient ID 1234.5678` 12345678, never `ID 2027/03/15` 20270315), so
   `more_than_one_patient` sees another patient's number written so. Digits alone are kept in two
   cases only. A claim's digits written as an amount, after a currency sign and with cents (`$15000.00` for claim
   15000), are kept: with their cents they are never the claim's own written form; `$555001`, `555001.01` and
@@ -419,8 +426,9 @@ an identifier label stands right before them (R5-2), and then the candidates joi
 (`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name.
 Recorded with review findings G2 to G4 (2026-11-02), each the cost of keeping a deadline or a word: a bare `ID`,
 `number`, `no` (lower case, or with no `.`, `:` or `#`), `#` or `reference` before a claim number or member ID written as
-a calendar date, or with `.` or `/` between its digits, is no label, so that date or those digits are kept as an
-ordinary letter's would be (`ID 03-14-1962`, `#1955/07/14`; the head words, `No.`, `ID:` and `Re:` are labels); a
+a whole calendar date is no label, so that date is kept as an ordinary letter's would be (`ID 03-14-1962`,
+`#1955/07/14`; the head words, `No.`, `ID:` and `Re:` are labels; digits with `.` or `/` between them that are no whole
+date are the number after any label since review finding phi-G2-regress-1); a
 claim's label before a member ID written as a whole calendar date, or a member's label before a claim's number written
 so, keeps the date (`Claim# 1955-07-14` for member 19550714); a label more than 40 characters before its number, or
 with other words between them (`Claim number for this service: 2026-04-26`), is none; and the katakana prolonged sound

@@ -549,6 +549,46 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     }
   });
 
+  it('reads digits joined over "." or "/" that are no whole written date as the number after any label, a word before "ID", "number", "no" or "#" too (review finding phi-G2-regress-1)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['12345678'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['99887766'] }];
+    for (const [written, expected] of [
+      ['Patient ID 1234.5678', 'Patient ID [MEMBER_ID]'],
+      ['Policy number 1234/5678', 'Policy number [MEMBER_ID]'],
+      ["Member's ID 1234.5678", "Member's ID [MEMBER_ID]"],
+      ['Member’s ID 1234.5678', 'Member’s ID [MEMBER_ID]'],
+      ['Insurance ID 1234/5678', 'Insurance ID [MEMBER_ID]'],
+      ['Health plan ID 1234.5678', 'Health plan ID [MEMBER_ID]'],
+      ['Medicaid ID 1234.5678', 'Medicaid ID [MEMBER_ID]'],
+      ['Insured ID number 1234.5678', 'Insured ID number [MEMBER_ID]'],
+      ["Subscriber's ID number 1234.5678", "Subscriber's ID number [MEMBER_ID]"],
+      ['Member Identification Number 1234.5678', 'Member Identification Number [MEMBER_ID]'],
+      ['Policy # 1234.5678', 'Policy # [MEMBER_ID]'],
+      ['ID 1234.5678', 'ID [MEMBER_ID]'],
+      ['The number 9988.7766 was denied', 'The number [CLAIM_1] was denied'],
+      ['reference: 9988/7766', 'reference: [CLAIM_1]'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, written).toBe(expected);
+      expect(holdsIdentifier(written, patient, claims), written).toBe(true);
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      // Another patient's number written so is offered to the one-patient screen (G1's join, after any label).
+      expect(identifierCandidates(written), written).toContain(written.includes('9988') ? '99887766' : '12345678');
+    }
+    // A whole written calendar date still needs G2's label of the number's kind: a deadline after a bare word stays.
+    for (const written of ['ID 2027-03-15', 'ID 2027/03/15', 'Patient ID 2027.03.15', 'Policy # 2027/03/15', 'The number 2027-03-15 is the deadline']) {
+      const theirs: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315'] }];
+      expect(redactLetter(written, patient, theirs).text, written).toBe(written);
+      // Over "." or "/" (over a dash digits alone join anywhere, as before).
+      if (!written.includes('-')) {
+        expect(identifierCandidates(written), written).not.toContain('20270315');
+      }
+    }
+    // And no label, no join: digits with a period between them stay apart.
+    expect(redactLetter('Also 1234.5678 and 9988/7766', patient, claims).text).toBe('Also 1234.5678 and 9988/7766');
+    expect(identifierCandidates('Also 1234.5678')).not.toContain('12345678');
+  });
+
   it('still replaces every letter or digit today’s code replaced, but in a date that is not a date of birth or an amount (property and the design’s section 1 rows)', () => {
     const check = (text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
       const { text: normal, spans } = redactionSpans(text, patient, claims);

@@ -1335,7 +1335,9 @@ The fix round of the pull request's review (2026-10-27) adds these:
     2026-11-01), and a dot or slash next to a letter.
   - Only the contract screen joins over a dot or slash between two digits (the letter path too, but only after an
     identifier label such as "Claim" or "ICN:": its redaction since review finding R5-2, and its candidates,
-    `identifierCandidates`, for a run of digits alone since review finding G1, 2026-11-02), an asterisk anywhere
+    `identifierCandidates`, for a run of digits alone since review finding G1, 2026-11-02; for digits that are no whole
+    written date any label, "Patient ID" or a bare "ID", "number" or "#" too, since review finding phi-G2-regress-1,
+    2026-11-04), an asterisk anywhere
     ("1234.567890", "20261234/01", "SYN*PCN*44551"), any separator the practice's own kept values hold, and more than
     three tokens, where the letter's candidates stop at three. The letter redaction rewrites the text the model reads,
     so it must leave "150.00" an amount and "03/15/2027" a deadline. The screen rewrites nothing; it refuses. Joining

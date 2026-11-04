@@ -172,10 +172,10 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
     // one dot, slash, underscore or asterisk, and invisible characters anywhere in a gap.
     const separator = fc.constantFrom('', ' ', '-', ' - ', '–', ' – ', ' ', '- ', ' -', '.', '/', '_', '*', '\u2212', ' \u2212 ', '\u00AD', '\u200B', '\uFEFF', '-\u200B', '\u200B.', '_\u00AD');
     const before = fc.constantFrom('', 'Member ID:', 'Claim#', '(', 'ID ', 'see the claim ', 'X\n', '\t', 'ICN (', 'Claim: \u201C', '**Claim:** ', 'Re: ', 'The number ', 'reference: ', 'no. ');
-    // The prefixes that are identifier labels (redact.ts IDENTIFIER_LABEL), after which digits alone join over "." and "/" too (review
-    // finding R5-2), of either kind (a claim label before a member ID too, but for a whole written date); a bare "ID", "number",
-    // "reference" or lower-case "no." is none (review finding G2).
-    const LABELS = new Set(['Member ID:', 'Claim#', 'see the claim ', 'ICN (', 'Claim: \u201C', '**Claim:** ', 'Re: ']);
+    // The prefixes that are identifier labels (redact.ts ANY_IDENTIFIER_LABEL), after which digits alone join over "." and "/" too
+    // (review finding R5-2), of either kind: a bare "ID", "number", "reference" or lower-case "no." too for digits that are no whole
+    // written date, the only digits this property draws (review finding phi-G2-regress-1; G2's narrower label is for whole dates).
+    const LABELS = new Set(['Member ID:', 'Claim#', 'ID ', 'see the claim ', 'ICN (', 'Claim: \u201C', '**Claim:** ', 'Re: ', 'The number ', 'reference: ', 'no. ']);
     const after = fc.constantFrom('', ')', '.', ',', ' on file', '\n', '  next', ';');
     const letter = /\p{L}/u;
     fc.assert(
