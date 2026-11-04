@@ -307,6 +307,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; a message SES accepted and never sent, its administrator on the account's suppression list for an earlier bounce or complaint, reads not delivered, never delivered; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, one SES held back with its suppression list or reported as spam offering no resend (a resend posted anyway is refused) and naming PaidWhole's support, which releases the address, and the late bounce of a message a resend replaced flags nothing",
   },
   {
+    id: 'SEC-20',
+    title: "Every Cognito call that takes the client's credential (ADR 0088 D1, D2)",
+    assertion:
+      "`InitiateAuth`, `RespondToAuthChallenge`, `ForgotPassword` and `ConfirmForgotPassword` carry a hash over the username that request sends (a challenge's over Cognito's USERNAME, never the typed email), `RevokeToken` the client secret, and no other call either; a hash mismatch answers as Cognito does and surfaces as a client-credential error that writes no sign-in failure, locks nothing, answers a reset request alike at the floor and logs only its name; a credential refusal at start-up fails the web task's readiness, and any other probe outcome passes; from release N+1, once the client is confidential, a direct reset or sign-in without the hash is refused on staging (F2)",
+  },
+  {
+    id: 'SEC-21',
+    title: "The client secret's custody (both read paths)",
+    assertion:
+      "From release N+1 (release N carries only the pull-request diff role's explicit deny below): the web client is confidential and narrowed (user-auth only, no writable attributes); its secret is in Secrets Manager under the environment key, injected into the web container by the web execution role only; its resource policy denies reads to every principal but the web execution role and the custodian, and writes to all but the custodian (and the rotation's caller for `RotateSecret`); in Cognito, `DescribeUserPoolClient` and `ListUserPoolClientSecrets` are held by the custodian's role only, explicitly denied to the pull-request diff role, and granted to no other role in the stack; the worker's, platform's and screening's containers and the shared task role hold no read of it; the stack has no shared custom-resource read of the client; no env file, log line, error reason, serialised config or client module carries it; the stored value is a fixed literal until seeded, and any change to the secret re-runs the custodian's ensure step; rotation is on demand, Cognito-generated, scoped to this secret and account, refuses to delete a value running tasks may hold, and keeps the client ID; on staging the resource-policy deny is shown to override an identity allow (F3)",
+  },
+  {
+    id: 'SEC-22',
+    title: 'A second factor enrolled outside a live invitation (ADR 0088 D3, D4)',
+    assertion:
+      'An unknown, active, enrolled, locked, disabled or lapsed-invitation account, or an invited account with no invitation at all, answered `MFA_SETUP` is refused before any enrolment call, at the challenge and again before associate and verify, Cognito stores nothing, and a security event is logged; the account is the one matched by both the enrolling Cognito subject and the email, so a row whose `cognito_sub` differs from the subject, a challenge with no subject, or email and sub rows that are different users are refused; an invited, unenrolled account enrols only while it holds an unaccepted, unexpired invitation whose membership has not ended; an invitation onto a Cognito user that has signed in is refused, and onto one that never has re-sends its temporary password',
+  },
+  {
+    id: 'SEC-23',
+    title: 'Reset and enrolment signals reach the operator (R-11)',
+    assertion:
+      "Undelivered reset requests (configuration and throttle codes), failed requests, refused enrolments, refused client credentials and the start-up probe's refusal each have a filter and an alarm on the operator topic; reset requests per user over 5 in an hour alarm through a contributor rule keyed on the user ID, with no per-user metric; the messages are read from the app's source",
+  },
+  {
     id: 'SCR-01',
     title: 'Screening upload with a date-of-service or member-ID column',
     assertion: 'Rejected with the column named by position and kind; only the row count and reasons stored, no hash',

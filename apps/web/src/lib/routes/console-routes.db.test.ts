@@ -54,6 +54,7 @@ let app: DatabasePool;
 let services: Services;
 let keys: LocalKeyProvider;
 let provider: DevAuthProvider;
+let store: MemoryDevStore;
 let invitations: string[];
 let queue: SeenAtSend;
 
@@ -81,8 +82,9 @@ beforeAll(async () => {
   keys = LocalKeyProvider.random();
   invitations = [];
   const sealer = new Sealer(randomBytes(32));
+  store = new MemoryDevStore();
   provider = new DevAuthProvider({
-    store: new MemoryDevStore(),
+    store,
     sealer: sealer.derive('dev-provider'),
     webauthn: { rpId: 'localhost', rpName: 'Test', origin: 'http://localhost:3100' },
     deliverInvitation: (email) => {
@@ -299,6 +301,49 @@ describe('members', () => {
       status: 'invalid',
       issues: [{ field: 'email', message: expect.stringContaining('another identity') }],
     });
+  });
+
+  // SEC-22, docs/adr/0088 D4: an address with no account here whose provider account already exists is linked only
+  // when that provider account has never signed in (Cognito's FORCE_CHANGE_PASSWORD; the twin's temporary password).
+  it('refuses an invitation onto a provider account that has signed in, and links and sends nothing (SEC-22)', async () => {
+    const email = `orphan-signed-in-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    await store.update(sub, (current) => ({ ...current, temporary: false }));
+    const sent = invitations.length;
+    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }],
+    });
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
+  });
+
+  it('links an invitation onto a provider account that never signed in, and sends its invitation again (SEC-22)', async () => {
+    const email = `orphan-never-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    const sent = invitations.length;
+    expect((await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).status).toBe('ok');
+    expect((await owner.query('SELECT cognito_sub, status FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([{ cognito_sub: sub, status: 'invited' }]);
+    expect(invitations.slice(sent)).toEqual([email]);
+  });
+
+  it('refuses, writing nothing, a link whose provider account signs in between the check and the resend (SEC-22, review security-N3)', async () => {
+    const email = `orphan-race-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    const resend = provider.resendInvitation.bind(provider);
+    // The holder of the earlier temporary password sets their own just before the resend.
+    const raced = vi.spyOn(provider, 'resendInvitation').mockImplementationOnce(async (address) => {
+      await store.update(sub, (current) => ({ ...current, temporary: false }));
+      return resend(address);
+    });
+    const sent = invitations.length;
+    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }],
+    });
+    raced.mockRestore();
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
   });
 
   it('ends a membership: the user’s sessions end at once and the provider signs them out', async () => {
