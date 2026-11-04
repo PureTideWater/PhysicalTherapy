@@ -75,7 +75,7 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     // Part 3): a file dropped or chosen before the kind is kept in this browser, the kind select is marked, described
     // and focused, and nothing is uploaded until the person chooses the kind and presses Upload, so a payer letter is
     // never filed as a contract by default, nor by an arrow key on the select (the PR #75 review's UX-1).
-    const panel = page.getByRole('region', { name: 'Upload a contract, exhibit or payer letter' });
+    const panel = page.getByRole('region', { name: 'Upload a contract, exhibit or payer’s terms or policy letter' });
     const kind = panel.getByLabel('Kind of document');
     await expect(kind).toHaveValue('');
     await expect(kind).toHaveAccessibleDescription('A document’s kind cannot be changed once it is uploaded.');
@@ -110,7 +110,7 @@ test('a contract abstracted by hand, approved and signed off becomes the version
       transfer.items.add(new File(['%PDF-1.4 SYNTHETIC'], 'dropped.pdf', { type: 'application/pdf' }));
       return transfer;
     });
-    await panel.getByRole('region', { name: 'Drop zone' }).dispatchEvent('drop', { dataTransfer: dropped });
+    await panel.getByRole('region', { name: 'Choose contracts, exhibits or payer’s terms or policy letters to upload' }).dispatchEvent('drop', { dataTransfer: dropped });
     const waiting = panel.getByRole('group', { name: /^Waiting to upload/ });
     await expect(waiting).toContainText('dropped.pdf');
     await expect(kind).toBeFocused();

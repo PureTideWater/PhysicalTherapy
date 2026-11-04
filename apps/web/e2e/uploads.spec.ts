@@ -33,7 +33,7 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
     assertNoPhi('url', page.url());
   }).not.toThrow();
   await expect(page.getByRole('heading', { level: 1, name: 'Uploads' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Drop zone' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Choose 835 files or ERA exports to upload' })).toBeVisible();
   // At a phone's width the drop zone's fields stay inside it, though the zone sizes its other children to their
   // content: the kind, then the ERA export's system list and its hint (FRM-08; docs/adr/0077, D6). The two selects
   // line up and show their chosen text whole, so neither needs it shown under it (the merged #74 shots' M4-2).
@@ -113,7 +113,7 @@ test('a viewer reads the receipts but cannot upload: the permission state says w
   const north = await practiceId('north');
   await page.goto(`/p/${north}/uploads`);
   await expect(page.getByText('As Viewer, you cannot upload files.')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Drop zone' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Choose 835 files or ERA exports to upload' })).toHaveCount(0);
 });
 
 test('uploads stay disabled, with the reason, until the practice’s BAA is on file (J1)', async ({ page }) => {
@@ -129,6 +129,6 @@ test('uploads stay disabled, with the reason, until the practice’s BAA is on f
   await page.goto(`/p/${east}/uploads`);
   await expect(page.getByText('Uploads are not open yet')).toBeVisible();
   await expect(page.getByText('business associate agreement is on file')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Drop zone' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Choose 835 files or ERA exports to upload' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'No files uploaded yet' })).toBeVisible();
 });

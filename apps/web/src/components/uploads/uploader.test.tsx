@@ -46,10 +46,12 @@ const letter = { name: 'letter.pdf', type: 'application/pdf', size: 800, lastMod
 const csv = { name: 'era.csv', type: 'text/csv', size: 100, lastModified: 1_790_000_200_000 };
 
 const noop = () => undefined;
+/** The uploader's single mode, as the response form uses it: one PDF. */
+const ONE = { refusal: 'Choose one PDF: SYNTHETIC refusal.', tooLarge: (limit: string) => `The file is larger than ${limit}; save it smaller.` };
 
 function rendered(props: Partial<UploaderProps>): string {
   return renderToStaticMarkup(
-    <Uploader practiceId={PRACTICE} canUpload csrfToken="token" roleNames="Billing manager" gate={{ open: true, reason: null }} limits={LIMITS} showReceipts={false} {...props} />,
+    <Uploader practiceId={PRACTICE} canUpload csrfToken="token" roleNames="Billing manager" gate={{ open: true, title: null, reason: null }} limits={LIMITS} showReceipts={false} {...props} />,
   );
 }
 
@@ -110,6 +112,16 @@ describe('the panel’s kind select', () => {
 
   it('is not shown on a panel of 835s alone', () => {
     expect(rendered({})).not.toContain('id="upload-kind"');
+  });
+
+  it('is not shown on a panel of one kind, which starts with it chosen: the kind every file is sent as (the response form’s payer letter)', () => {
+    expect(startingKind([LETTER], undefined, LIMITS.contentTypes)).toEqual(LETTER);
+    const html = rendered({ kinds: [LETTER], single: ONE });
+    expect(html).not.toContain('id="upload-kind"');
+    expect(html).not.toContain(CHOOSE_KIND_PLACEHOLDER);
+    expect(html).toContain('The file is scanned for malware before anything reads it.');
+    expect(openingTag(html, 'upload-files')).toContain('accept="application/pdf"');
+    expect(openingTag(html, 'upload-files')).not.toContain('multiple');
   });
 
   it('starts with nothing waiting: no file listed, no error and nothing to upload', () => {
@@ -235,12 +247,17 @@ describe('the files waiting', () => {
     expect(html).toContain('>letter.pdf</li>');
     expect(html).toContain('>Clear</button>');
     expect(html).not.toContain('>Upload 2 files</button>');
+    // Inside a form (the payer's letter in "Log a payer response"), Clear never submits it.
+    expect(html).toMatch(/<button[^>]*\btype="button"[^>]*>Clear<\/button>/);
   });
 
   it('upload only on the explicit Upload button, which counts them', () => {
     expect(held([pdf, letter], true)).toContain('>Upload 2 files</button>');
     expect(held([pdf, letter], true)).toContain('>Clear</button>');
     expect(held([pdf], true)).toContain('>Upload 1 file</button>');
+    // Inside a form (the payer's letter in "Log a payer response"), neither button submits it.
+    expect(held([pdf, letter], true)).toMatch(/<button[^>]*\btype="button"[^>]*>Upload 2 files<\/button>/);
+    expect(held([pdf, letter], true)).toMatch(/<button[^>]*\btype="button"[^>]*>Clear<\/button>/);
   });
 });
 
@@ -263,6 +280,22 @@ describe('a batch’s own problems', () => {
   it('never include a choice still to make, which the panel waits for instead of refusing', () => {
     expect(batchProblems([pdf], null, LIMITS)).toEqual([]);
     expect(batchProblems([csv], ERA, LIMITS)).toEqual([]);
+  });
+
+  it('in single mode refuse several files, a zip or another type in the caller’s words, and one file’s problems in one file’s words', () => {
+    const one = { ...LIMITS, maxFiles: 1 };
+    expect(batchProblems([letter], LETTER, one, ONE)).toEqual([]);
+    expect(batchProblems([letter, pdf], LETTER, one, ONE)).toEqual([ONE.refusal]);
+    expect(batchProblems([{ name: 'letters.zip', type: 'application/zip', size: 100 }], LETTER, one, ONE)).toEqual([ONE.refusal]);
+    expect(batchProblems([{ name: 'letter.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 100 }], LETTER, one, ONE)).toEqual([ONE.refusal]);
+    expect(batchProblems([{ ...letter, size: 0 }], LETTER, one, ONE)).toEqual(['The file is empty.']);
+    expect(batchProblems([{ ...letter, size: one.maxBytes + 1 }], LETTER, one, ONE)).toEqual(['The file is larger than 2.0 GiB; save it smaller.']);
+  });
+
+  it('in single mode start the one file at once, and refuse a second beside one waiting in the caller’s words', () => {
+    const one = { ...LIMITS, maxFiles: 1 };
+    expect(afterChoosing([], [letter], LETTER, undefined, one, ONE)).toEqual({ step: 'start', files: [letter] });
+    expect(afterChoosing([letter], [pdf], LETTER, undefined, one, ONE)).toEqual({ step: 'refuse', problems: [ONE.refusal] });
   });
 });
 
@@ -293,5 +326,13 @@ describe('leaving the Uploads screen', () => {
   it('never asks once nothing waits and every file of the batch is sent or failed (the merge of #78)', () => {
     expect(leaveAsks([], 0)).toBe(false);
     expect(leaveAsks([{ phase: 'sent' }, { phase: 'failed' }], 0)).toBe(false);
+  });
+});
+
+describe('the drop zone’s heading', () => {
+  it('says to choose files, never "Drop", when the page names none, and names its region by it', () => {
+    const html = rendered({ kinds: [ANSI] });
+    expect(html).toMatch(/<h2 id="[^"]+" class="[^"]*">Choose 835 files to upload<\/h2>/);
+    expect(html).not.toContain('Drop ');
   });
 });

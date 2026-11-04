@@ -51,29 +51,39 @@ export interface PracticeHold {
  * A hold that stops the person's work needing one run-starting permission here now (lib/billing/hold.ts workPause): the
  * database's sentence (R1 to R6), whose hold it is, and whether lifting it restarts the work (a closure restarts none).
  * The owner's hold stops the practice's own jobs too; a grantee's stops only this person's work through its grant, and
- * the practice's own monitoring carries on (docs/adr/0080).
+ * the practice's own monitoring carries on (docs/adr/0080). `restarts` is null for a cause these words do not know (the
+ * database's function changed): nothing is promised, and no page calls it a pause or a closure (docs/adr/0085).
  */
 export interface WorkPause {
   readonly reason: string;
   readonly source: HoldSource;
-  readonly restarts: boolean;
+  readonly restarts: boolean | null;
+}
+
+/** The database's sentence whole, as a sentence of its own: its first letter capitalized and one full stop. */
+function asSentence(text: string): string {
+  const sentence = text.trim().replace(/[.\s]+$/, '');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }
 
 /**
- * Uploads under a hold on the person's uploads (practice_run_refusal_for with file.upload): Uploads' gate, its title and
- * the database's sentence (R1 to R6), and the empty home's, under the notice that names the hold (HOM-03; SS-01
- * review UX-SS01-3). A hold that lifts pauses them; a closure stops them and promises no restart (BIL-09).
+ * Uploads under a hold on the person's uploads (practice_run_refusal_for with file.upload): the upload panels' gate
+ * (lib/routes/uploads.ts uploadGate: Uploads, Contracts, Reconciliation and the payer's letter), its title true to the
+ * state and the database's sentence (R1 to R6) whole as its body, never repeating the title (docs/adr/0085), and the
+ * empty home's, under the notice that names the hold (HOM-03; SS-01 review UX-SS01-3). A hold that lifts pauses them; a
+ * closure closes them and promises no restart (BIL-09); a cause these words do not know stops them, promising nothing.
+ * "Uploads are not open yet" is the BAA's alone.
  */
 export function uploadsHeld(pause: WorkPause): { readonly title: string; readonly reason: string; readonly home: { readonly title: string; readonly nextStep: string } } {
-  return pause.restarts
-    ? { title: 'Uploads are not open yet', reason: `Uploads are paused: ${pause.reason}.`, home: FIRST_UPLOAD_HELD.paused }
-    : { title: 'No new uploads start', reason: `Uploads have stopped: ${pause.reason}.`, home: FIRST_UPLOAD_HELD.stopped };
+  const home = pause.restarts === true ? FIRST_UPLOAD_HELD.paused : pause.restarts === false ? FIRST_UPLOAD_HELD.stopped : FIRST_UPLOAD_HELD.unknown;
+  return { title: home.title, reason: asSentence(pause.reason), home };
 }
 
 /** The empty home's gate under a hold on the person's uploads, below the notice that names the hold (uploadsHeld). */
 export const FIRST_UPLOAD_HELD = {
   paused: { title: 'Uploads are paused', nextStep: 'They start again once the hold above is lifted.' },
-  stopped: { title: 'No new uploads start', nextStep: 'The closure above stops them here.' },
+  stopped: { title: 'Uploads are closed', nextStep: 'The closure above stops them here.' },
+  unknown: { title: 'Uploads are stopped', nextStep: 'The hold above stops them here.' },
 } as const;
 
 /** The line under the notice: a link and the words after it, or words alone. */
