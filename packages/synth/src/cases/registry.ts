@@ -894,6 +894,38 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
     'apps/web/e2e/sign-in-time.spec.ts',
   ]),
+  // The forgotten password of the UX baseline review's seventh pull request (docs/adr/0081, its amendment).
+  'SGN-05': none(1, 'Synthetic personas and unregistered synthetic addresses ask for a reset through the local identity provider on an injected clock; no file.', [
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  'SGN-06': none(1, 'The local identity provider mails its reset codes to a synthetic outbox the tests read, and the step timer runs on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-07': none(1, 'A synthetic persona of its own resets its password and signs in again through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  'SGN-08': none(1, 'Synthetic personas reach the code and key steps through the local identity provider; the support address is the synthetic one; no file.', [
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
   'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [
