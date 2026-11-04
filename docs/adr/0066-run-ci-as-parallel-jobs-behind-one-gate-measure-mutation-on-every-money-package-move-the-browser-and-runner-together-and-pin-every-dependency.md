@@ -1941,7 +1941,9 @@ since no closure imports `playwright-core`.
   inputs. At 50029e64 neither was, so a pull request adding only `packages/pricing/src/*.ts text eol=crlf` or a
   `docs/product/unpriced-reasons.md` line printed "shards: none", though every later checkout rewrites the bytes the
   pricing and packets tests and their mutants read. It predates this part, which set out to list what the runner reads
-  on every step. `.gitmodules` stays outside: the checkouts fetch no submodules.
+  on every step. `.gitmodules` stays outside: the checkouts fetch no submodules. Every `.gitattributes` edit counts,
+  a `linguist-*`, `diff`, `merge` or `export-ignore` one included, since the file is not read attribute by attribute:
+  replayed, #46's root `.gitattributes`, which rewrites only `packages/db/functions/*.sql`, now runs every shard.
 
 ### Consequences
 
