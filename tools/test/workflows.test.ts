@@ -1255,7 +1255,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
    * and failing as many as fake/partial holds after writing a cut findings.json (a zip checksum error), and answers as
    * gh does when there is no artifact. The artifact's file is named as fake/name holds (findings.json unless a case
    * names another). As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
-   * and never overwrites one. A `sleep` beside it logs each pause ("sleep <seconds>") and returns at once; the stall
+   * and never overwrites one. Its download prints a signed blob address, as gh does on a blob error, on stdout and in
+   * every error. A `sleep` beside it logs each pause ("sleep <seconds>") and returns at once; the stall
    * waits with /bin/sleep, which it does not log.
    */
   function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
@@ -1273,12 +1274,13 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
         'if [ "$1 $2" = "run download" ]; then',
+        '  SIGNED_URL="https://blob.example.invalid/findings.zip?se=2026-11-04T21%3A40%3A56Z&sig=synthetic-signature"; echo "downloading from $SIGNED_URL"',
         '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0); name=$(cat "$FAKE_DIR/fake/name" 2>/dev/null || echo findings.json)',
         '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec /bin/sleep 30; fi',
-        '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "HTTP 502: Bad Gateway" >&2; exit 1; fi',
+        '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "error downloading findings: Get \\"$SIGNED_URL\\": HTTP 502: Bad Gateway" >&2; exit 1; fi',
         '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
         '  if [ -e "$dest/findings.json" ]; then echo "error downloading findings: error extracting \\"findings.json\\": open $dest/findings.json: file exists" >&2; exit 1; fi',
-        '  if [ "$partials" -gt 0 ]; then echo $((partials - 1)) > "$FAKE_DIR/fake/partial"; mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; echo "error downloading findings: zip: checksum error" >&2; exit 1; fi',
+        '  if [ "$partials" -gt 0 ]; then echo $((partials - 1)) > "$FAKE_DIR/fake/partial"; mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; echo "error downloading findings: $SIGNED_URL: zip: checksum error" >&2; exit 1; fi',
         '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/$name"; exit 0',
         'fi',
         'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
@@ -1452,7 +1454,10 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     // Two failed tries, then the artifact: filed, each failure's message in the log.
     const late = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 2);
     expect([late.status, issues(late), tries(late)], late.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 3]);
-    expect(late.output.split('HTTP 502: Bad Gateway')).toHaveLength(3);
+    // Each failed try logs one fixed line with its exit status; gh's own output, which names the artifact's signed
+    // address, stays out of the public log.
+    expect(late.output.split('\n').filter((line) => line.startsWith('content-calendar: try '))).toEqual(['content-calendar: try 1 of 3 to download the findings failed (exit 1)', 'content-calendar: try 2 of 3 to download the findings failed (exit 1)']);
+    expect(late.output).not.toContain('blob.example.invalid');
     expect(paced(late)).toEqual([t, p, t, p, t]);
     // Three failed tries: "check failing".
     const down = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 3);
@@ -1466,12 +1471,15 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     const stalled = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 3);
     expect([stalled.status, issues(stalled), tries(stalled)], stalled.output).toEqual([0, [failing], 3]);
     expect(paced(stalled)).toEqual([t, p, t, p, t]);
+    expect(stalled.output.split('\n').filter((line) => line.startsWith('content-calendar: try '))).toEqual([1, 2, 3].map((n) => `content-calendar: try ${String(n)} of 3 to download the findings failed (exit 124)`));
+    for (const ran of [over, down, slow, stalled, late]) expect(ran.output).not.toMatch(/blob\.example\.invalid|sig=/);
     // A try that leaves a cut findings.json behind (a zip checksum error) is retried into an emptied directory, as gh
     // refuses to extract over a file already there: filed on the second try, never "file exists".
     const partial = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 1);
     expect([partial.status, issues(partial), tries(partial)], partial.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
     expect(partial.output).not.toContain('file exists');
     expect(paced(partial)).toEqual([t, p, t]);
+    expect(partial.output).not.toMatch(/blob\.example\.invalid|sig=/);
     // An artifact that downloads but holds no findings.json: "check failing", not a red job with no issue.
     const nameless = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 0, 'other.txt');
     expect([nameless.status, issues(nameless), tries(nameless)], nameless.output).toEqual([0, [failing], 1]);
@@ -1506,7 +1514,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       lines.indexOf('# End of the download.') + 1,
     );
   };
-  const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"';
+  const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?';
   /** The read check, inside the download block: what notify files from and what handoff proves notify can read. */
   const SHAPE_CHECK = `if jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then readable=true; fi`;
   const BOUNDED_READ = 'head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json';
@@ -1518,7 +1526,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(step?.env?.DOWNLOAD_PAUSE).toBe('10');
     expect(step?.env?.DOWNLOAD_LIMIT).toBe('60');
     // Every try is stopped and killed 10 seconds later, so three tries and two pauses end inside the job's timeout.
-    expect(step?.run).toContain(`if timeout -k 10 "$DOWNLOAD_LIMIT" ${DOWNLOAD}; then`);
+    // gh's output and errors, which can name the artifact's signed address, go nowhere; a failed try logs a fixed line.
+    expect(step?.run).toContain(`timeout -k 10 "$DOWNLOAD_LIMIT" ${DOWNLOAD}\n`);
+    expect(step?.run).toContain(`printf 'content-calendar: try %s of 3 to download the findings failed (exit %s)\\n' "$try" "$code" >&2\n`);
     expect(3 * (Number(step?.env?.DOWNLOAD_LIMIT) + 10) + 2 * Number(step?.env?.DOWNLOAD_PAUSE)).toBeLessThan(5 * 60);
     // The downloaded file is read once, at most MAX_FILE_BYTES + 1 bytes of it, and what was read is refused past the
     // bound (downloadBlock holds handoff's lines equal to these).
@@ -1562,6 +1572,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(reads.status, reads.output).toBe(0);
     expect(reads.stdout).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes, SHA-256 ${createHash('sha256').update(list).digest('hex')}\n`);
     expect(reads.log.filter((line) => !line.startsWith('run download '))).toEqual([]);
+    expect(reads.output).not.toMatch(/blob\.example\.invalid|sig=/);
     expect(paced(reads)).toEqual(['run download']);
     // A file of exactly MAX_FILE_BYTES reads; one byte more is a failure row below.
     const atBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(100), 'handoff');
@@ -1573,6 +1584,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       expect([retried.status, retried.log.filter((line) => line.startsWith('run download ')).length], `${at} ${retried.output}`).toEqual([0, 2]);
       expect(retried.stdout, at).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes`);
       expect(retried.output, at).not.toContain('file exists');
+      expect(retried.output, at).not.toMatch(/blob\.example\.invalid|sig=/);
       expect(paced(retried), at).toEqual(['run download', 'sleep 10', 'run download']);
     }
     for (const [at, values, findings] of [
@@ -1588,6 +1600,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       const failed = runNotify('content-calendar.yml', values, [], findings, 'handoff');
       expect(failed.status, `${at} ${failed.output}`).toBe(1);
       expect(failed.stderr, at).toContain("content-calendar: the notify job could not read this run's findings (the check: success)\n");
+      expect(failed.output, at).not.toMatch(/blob\.example\.invalid|sig=/);
       expect(failed.log.filter((line) => !line.startsWith('run download ') && !line.startsWith('sleep ')), at).toEqual([]);
       expect(paced(failed), at).toEqual(findings === null ? ['run download', 'sleep 10', 'run download', 'sleep 10', 'run download'] : ['run download']);
     }

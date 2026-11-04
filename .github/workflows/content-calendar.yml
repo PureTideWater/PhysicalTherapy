@@ -95,17 +95,21 @@ jobs:
           set -euo pipefail
           # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
-          # apart, each stopped after DOWNLOAD_LIMIT seconds, gh's error each time in the log; at most MAX_FILE_BYTES, as
-          # the check bounds it, or no findings list.
+          # apart, each stopped after DOWNLOAD_LIMIT seconds; at most MAX_FILE_BYTES, as the check bounds it, or no findings
+          # list. A failed try logs one fixed line with its exit status (124 when stopped): gh's own output and errors, which
+          # can name the artifact's signed download address, stay out of the run's log.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
             for try in 1 2 3; do
               rm -rf "$RUNNER_TEMP/findings"
-              if timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
+              code=0
+              timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?
+              if [ "$code" -eq 0 ]; then
                 downloaded=true
                 break
               fi
+              printf 'content-calendar: try %s of 3 to download the findings failed (exit %s)\n' "$try" "$code" >&2
               if [ "$try" -lt 3 ]; then sleep "$DOWNLOAD_PAUSE"; fi
             done
           fi
@@ -174,17 +178,21 @@ jobs:
           }
           # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
           # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
-          # apart, each stopped after DOWNLOAD_LIMIT seconds, gh's error each time in the log; at most MAX_FILE_BYTES, as
-          # the check bounds it, or no findings list.
+          # apart, each stopped after DOWNLOAD_LIMIT seconds; at most MAX_FILE_BYTES, as the check bounds it, or no findings
+          # list. A failed try logs one fixed line with its exit status (124 when stopped): gh's own output and errors, which
+          # can name the artifact's signed download address, stay out of the run's log.
           : > findings.json
           downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
             for try in 1 2 3; do
               rm -rf "$RUNNER_TEMP/findings"
-              if timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
+              code=0
+              timeout -k 10 "$DOWNLOAD_LIMIT" gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings" > /dev/null 2>&1 || code=$?
+              if [ "$code" -eq 0 ]; then
                 downloaded=true
                 break
               fi
+              printf 'content-calendar: try %s of 3 to download the findings failed (exit %s)\n' "$try" "$code" >&2
               if [ "$try" -lt 3 ]; then sleep "$DOWNLOAD_PAUSE"; fi
             done
           fi
