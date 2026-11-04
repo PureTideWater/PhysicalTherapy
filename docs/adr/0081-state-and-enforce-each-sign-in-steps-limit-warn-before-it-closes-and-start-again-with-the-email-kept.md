@@ -226,8 +226,9 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   refusal, one rule across the sign-in forms (WCAG 3.3.7's security exception), so no submitted code is left on a page
   that may be left unattended, and the code, still valid, is copied again from the email (review UXB-N3).
 - **A2. Every address gets the same answer and the same timing class, and the app asks the provider for a code only
-  for an account that already has a second factor (on the app's path; see Not covered).** The provider is asked only for an active account with `mfa_enrolled`; every other address
-  (unknown, invited, a password set but no factor enrolled, disabled) does the same lookup and skips the send. Its
+  for an account that already has a second factor (on the app's path; see Not covered).** The provider is asked only
+  for an active account with `mfa_enrolled`; every other address (unknown, invited, a password set but no factor
+  enrolled, disabled) does the same lookup and skips the send. Its
   account-only refusals are swallowed, and the request is padded to `RESET_REQUEST_FLOOR_MS` (1,500 ms) in a `finally`,
   so a thrown path answers at the floor too. Any other failure of the send or of the request's audit write (an
   `InternalErrorException`, a network failure) is logged as `password reset request failed` at error with
