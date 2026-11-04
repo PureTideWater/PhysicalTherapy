@@ -77,6 +77,19 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
 - For Lane A's queue (orchestrator, 14:38Z): relinking an app row to a new Cognito subject is a migration; until then,
   a stuck invitee gets the re-send remedy.
 
+- 2026-11-04T17:35:00Z: **#113 reviews and fix round done** (wf_f0e7c3c4-4c4): both lenses reported, 12 findings (2 S, 10 N), all
+  confirmed. Fixed: security-S1 (a live invitation must exist, not merely "not every one lapsed"; the seed records each
+  invited persona's invitation), infra-auth-IA-1 (the key challenge hashes over USERNAME else USER_ID_FOR_SRP; a gate
+  before N+1), N1-N4, N5 in part, N6 (docs), N7, IA-2 (a probe-refusal alarm), IA-3 (the IAM pin by glob, NotAction,
+  managed policies). IA-4 (the diff role's log reads of N+1's seeding function) and N5's probe control are PR 2 matters
+  (`proposals.md`). The head is **ed4318e8** (base c4941291 unchanged; gitleaks clean; .gitleaksignore untouched). Full suite
+  once: typecheck, lint, unit 7,620 passed/4 skipped/**1 failed** (`apps/worker/src/screening/threads.test.ts`, a 5 s
+  timeout in a file this PR does not touch; it passed 3/3 alone; reported as a test-flake item), golden 381, db 9,792/1
+  skipped, infra 726, cdk:diff (all six stacks; 14 additive resources per environment; tp-staging's diff role deny), build,
+  e2e 77, synth clean, Stryker none. CI on ed4318e8: all green incl. unit; the capacity gate passes (time advisory; O9
+  52.9 s). Verification: NOT VERIFIED on the description only (seed.ts is watched; watched-paths.txt is the list; the O9
+  note was missing). An agent is correcting it, then ready and merge.
+
 ## Waiting on someone
 - The founder, before release N (PR 1) reaches production: **F0**, on staging running release N: invite a synthetic
   account, set its password, enrol a factor and sign in (it checks that Cognito's challenge names the user's sub, which the
