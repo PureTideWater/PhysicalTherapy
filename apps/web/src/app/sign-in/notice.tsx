@@ -177,6 +177,18 @@ export function NoEmailList() {
   );
 }
 
+/**
+ * PaidWhole's support address as a mail link, with no subject and no body (UX-066): the person's own address, which
+ * support opens a ticket from, is never put in it.
+ */
+export function SupportLink({ supportEmail }: { readonly supportEmail: string }) {
+  return (
+    <a className="underline" href={`mailto:${supportEmail}`}>
+      {supportEmail}
+    </a>
+  );
+}
+
 /** PRD 7: internal roles see the hardware-key requirement on the sign-in screen. */
 export function HardwareKeyRequirement() {
   return (

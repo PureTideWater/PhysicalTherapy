@@ -8,7 +8,7 @@ import { PasswordField } from '../../components/password-field';
 import { loadPublicPage } from '../../lib/http/next';
 import { signInPage } from '../../lib/routes/sign-in';
 import { signInStep } from './actions';
-import { HardwareKeyRequirement, SignInNotice } from './notice';
+import { HardwareKeyRequirement, SignInNotice, SupportLink } from './notice';
 
 export const metadata: Metadata = { title: 'Sign in' };
 
@@ -30,23 +30,51 @@ export default async function SignInPage(props: { readonly searchParams: Promise
           </ActionForm>
         </CardContent>
       </Card>
+      {/* Next to the password it serves, and seen first after a refusal at a phone's width (review UXR-03). */}
+      <p className="text-sm">
+        <Link className="underline" href="/sign-in/forgot-password">
+          Forgot your password?
+        </Link>
+      </p>
       <HardwareKeyRequirement />
       <p className="text-sm">
         <Link className="underline" href="/sign-in/hardware-key">
           Sign in with a hardware key
         </Link>
       </p>
-      <p className="text-sm text-muted-foreground">
-        New here?{' '}
-        <Link className="underline" href="/request-audit">
-          Request an audit
-        </Link>
-        . Trouble signing in? Check the{' '}
-        <Link className="underline" href="/status">
-          service status
-        </Link>
-        .
-      </p>
+      <section aria-labelledby="sign-in-help" className="flex flex-col gap-2 text-sm text-muted-foreground">
+        <h2 id="sign-in-help" className="text-sm font-semibold text-foreground">
+          Help signing in
+        </h2>
+        <ul className="flex list-disc flex-col gap-1 pl-5">
+          <li>Invited by your organization? Use the email and temporary password from your invitation.</li>
+          <li>
+            Forgot your password?{' '}
+            <Link className="underline" href="/sign-in/forgot-password">
+              Reset it by email
+            </Link>
+            .
+          </li>
+          <li>
+            Lost your authenticator app? Write to <SupportLink supportEmail={supportEmail} /> from the address you sign in with.
+          </li>
+          <li>
+            Lost a hardware key? Sign in with your second key. If you have none, write to <SupportLink supportEmail={supportEmail} /> from the address you sign in with.
+          </li>
+          <li>
+            New to PaidWhole?{' '}
+            <Link className="underline" href="/request-audit">
+              Request an audit
+            </Link>
+            .
+          </li>
+          <li>
+            <Link className="underline" href="/status">
+              Service status
+            </Link>
+          </li>
+        </ul>
+      </section>
     </main>
   );
 }
