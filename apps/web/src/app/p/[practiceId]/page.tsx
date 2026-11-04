@@ -140,8 +140,9 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
  * last file and the last run, and a banner with the job reference when a run failed on its last attempt;
  * test matrix JOB-02), coverage, cases by stage, deadlines in 14 days, overdue follow-ups, the queues to
  * jump to, the practice record and its agreements. Every number links to the screen and stage it came
- * from; before the first file, the empty state names the gate Uploads uses (the BAA on file, then the
- * organization not suspended; test matrix HOM-03) and the next step it leaves.
+ * from; before the first file, the empty state names the gate Uploads uses (the BAA on file, then no hold on
+ * this person's uploads, practice_run_refusal_for with file.upload; test matrix HOM-03, docs/adr/0080) and the
+ * next step it leaves.
  * Above the queues, the plans with no mapping, whose lines no run prices, and the lines of mapped plans still
  * NO_MAPPING in effect, as Coverage counts them, each linking to Payer and plan mapping ("Map them" for a person who
  * may map plans; combined audit #32, docs/adr/0075; MAP-06, PRC-31).
@@ -151,7 +152,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold, uploadsPaused } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -192,7 +193,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
       {freshness.lastFileAt === null ? (
         <FirstUpload
           practiceId={practice.id}
-          gate={uploadGate(dashboard.uploads, suspension !== null)}
+          gate={uploadGate(dashboard.uploads, uploadsPaused)}
           // The agreement chain is the next step for the roles that work the practice; a viewer only reads it (UX-119).
           agreements={access.roles.some((role) => role !== 'viewer')}
         />

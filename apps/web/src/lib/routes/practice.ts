@@ -1,4 +1,5 @@
 import { NOTICE_UNDELIVERED_STATES, type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
+import { practiceRunRefusalFor } from '@tp/worker/billing';
 import { z } from 'zod';
 
 import { practiceHold } from '../billing/hold';
@@ -251,6 +252,11 @@ export const practiceHome = practiceRoute({
       freshness: await freshness(scope, practiceId),
       /** The hold on new work here for this person, in the notice's words, or null (docs/adr/0050, 0080). */
       hold: await practiceHold(scope, practiceId).then((held) => (held === null ? null : holdNotice(held))),
+      /**
+       * Whether uploads are paused for this person, asked as Uploads asks it (practice_run_refusal_for with file.upload;
+       * test matrix HOM-03): the empty home's gate. A grantee's hold that leaves this person their uploads leaves it open.
+       */
+      uploadsPaused: (await practiceRunRefusalFor(scope.client, practiceId, 'file.upload')) !== null,
       dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10)),
       notifications: { unread: await unreadNotifications(scope, practiceId), latest: await listNotifications(scope, practiceId, 3) } satisfies { unread: number; latest: NotificationView[] },
     };

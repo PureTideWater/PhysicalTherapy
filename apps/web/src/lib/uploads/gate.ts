@@ -4,8 +4,8 @@ import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
  * The upload gate's agreement half (PRD 6: "no upload without a BAA"; J1): whether the practice's BAA is
  * on file, asked of the database (practice_baa_on_file(): the practice's own BAA or its organization's,
  * signed by now), and the sentence a closed gate shows. Uploads, Contracts, Reconciliation and the
- * practice home read it, so they open and close together and say why in the same words; a suspended
- * organization's pause is the other half (practiceRunRefusal, docs/adr/0050).
+ * practice home read it, so they open and close together and say why in the same words; a hold on the
+ * person's uploads is the other half (practiceRunRefusalFor with file.upload, docs/adr/0050, 0080).
  */
 
 /** Whether the practice's BAA is on file (practice_baa_on_file()). */

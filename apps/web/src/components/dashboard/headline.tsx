@@ -100,7 +100,7 @@ export function HeadlineTiles({ practiceId, headline, recoveredQuarter }: { read
   );
 }
 
-/** Whether a practice may upload now, as Uploads decides it: its BAA on file (practice_baa_on_file()), then its organization not suspended. */
+/** Whether the person may upload here now, as Uploads decides it: the BAA on file (practice_baa_on_file()), then no hold on their uploads (docs/adr/0080). */
 export type UploadGate = 'open' | 'no_baa' | 'paused';
 
 export function uploadGate(uploads: Dashboard['uploads'], suspended: boolean): UploadGate {

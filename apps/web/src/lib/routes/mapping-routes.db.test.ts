@@ -47,6 +47,8 @@ const documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-mapping-routes-'));
 const documents = new DocumentStore(new LocalSealedBytes(documentsDir));
 const FIXTURES = path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic');
 const FEBRUARY = { periodFrom: '2026-02-01', periodTo: '2026-02-28' };
+/** PaidWhole's suspension of the practice's own organization, as Postgres words it for that organization's members (R1; docs/adr/0080). */
+const SUSPENDED = 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable';
 
 let database: MigratedDatabase;
 let owner: DatabaseClient;
@@ -542,8 +544,8 @@ describe('under SYNTHETIC release 900001', () => {
     expect(redirectOf(await mapAs(target, b))).toBe(`/p/${target.practiceId}/mapping/${b}?notice=mapped_held`);
     expect(monitorJobs()).toEqual([]);
     expect((await owner.query('SELECT 1 FROM payer_plan_mapping WHERE plan_id = $1', [b])).rowCount).toBe(1);
-    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toMatch(/^the organization is suspended/);
-    expect(ok(await call(mappingPage, target.viewer, P)).suspension).toMatch(/^the organization is suspended/);
+    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toBe(SUSPENDED);
+    expect(ok(await call(mappingPage, target.viewer, P)).suspension).toBe(SUSPENDED);
     // A correction made while suspended is held the same way.
     const mappingId = (await owner.query<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [b])).rows[0]?.id ?? '';
     expect(redirectOf(await call(mapPlanAction, target.manager, P, { planId: b, kind: 'no_agreement', effectiveFrom: '2026-01-02', supersedesId: mappingId }))).toBe(

@@ -184,7 +184,7 @@ describe('a person with two paths, held per permission (BIL-07; D1)', () => {
     }
   });
 
-  it('pauses uploads at the gate only for those whose uploads stop', async () => {
+  it('pauses uploads at the gate, and on the practice home, only for those whose uploads stop (HOM-03)', async () => {
     for (const one of [principal, X, Y, Z, W]) {
       const { gate } = await data(uploadsPage, one.userId);
       if (one.stopped.includes('file.upload')) {
@@ -192,6 +192,8 @@ describe('a person with two paths, held per permission (BIL-07; D1)', () => {
       } else {
         expect(gate, one.name).toEqual({ open: true, reason: null });
       }
+      // The home's empty state names the gate Uploads uses: Z is held (a notice above it) yet still uploads.
+      expect((await data(practiceHome, one.userId)).uploadsPaused, one.name).toBe(!gate.open);
     }
   });
 
@@ -259,6 +261,10 @@ describe('a closed grantee, and the owner’s hold (BIL-07; D6)', () => {
         nextStep: { link: null, href: null, text: "The practice's administrator sees why and what to do next in Settings, Billing." },
       });
       expect(JSON.stringify(outsider)).not.toMatch(/request|invoice|unpaid|suspended/i);
+      // The owner's hold pauses the home's uploads for everyone, as it does Uploads (HOM-03).
+      for (const one of [Z, principal, W]) {
+        expect((await data(practiceHome, one.userId)).uploadsPaused, one.name).toBe(true);
+      }
       // The practice's administrator holds the group's billing.
       expect((await data(practiceHome, world.refs.adminUserId)).hold?.nextStep).toEqual({
         link: 'Settings, Billing',
