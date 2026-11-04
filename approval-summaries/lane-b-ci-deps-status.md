@@ -11,6 +11,13 @@ Open questions: none.
 Waiting on someone: nothing (Dependabot #33 was closed unmerged at 2026-11-01T14:03:52Z).
 
 <!-- RESUME-BLOCK -->
+## P4 #96 MERGED 2026-11-04 ~21:05 UTC as 30871f72 (acting S3)
+- Method merge, `expectedHeadSha` 0a750dd4…, title "Merge pull request #96: CI follow-up P4, ci-mutation-trigger: mutation runs only on what can change a shard's result (ADR 0066 Part 7)", the message the title; base 00fd2906… an ancestor of the head at the merge. Before: the verification passed; the description (55,197 characters) stored byte for byte (SHA-256 b185e4ba…); ready; approval-of-record 41912236430 (edit) and 41912301279 (ready) green.
+- Worktree /home/user/ci-mutation-trigger removed. Not subscribed (refused throughout).
+- **PE-S1 hands to #84** (co-001/packet-day-counts, merging second): keep P4's ci.md shard table with all nine rows (packets-roles, packets-words timed on P4's basis), re-measure or re-date every seven-shard figure (ci.md's "53.4 / 54.2 runner-minutes", "about 54", ADR 0066 Part 7's savings), re-run the shard-count assertions and the replay so `shardsFor([...MUTATION_PACKAGES])` is 9; the trial merge conflicted only in ci.md's shard table.
+- **P2 `co-001/ci-trivy-version`** (designed, not built) is not in S3's acting list; it stays Lane B's.
+- Next for S3: ci-findings-transport (orchestrator, 09:22 UTC).
+
 ## ACTING S3 (2026-11-04 ~05:35 UTC): P4 #96 reviews done (wf_a31d8827-acd); fix build next, base merge after #86
 - **Reviews** (`…-review-{ci-tooling-security,payment-engine}.md`; three skeptics per finding; critic `…-wip/progress/critic.md`). All confirmed:
   - **Blocking, found by both:** B1 = PE-B1, a `typescript` change (root devDependency or catalog) runs no shard, but Stryker core's ts-config-preprocessor imports the root's typescript on every run (skeptics 5 blocking, 1 should). Fix: `typescript` in TEST_TOOLING, plus a guard against undeclared imports that tooling packages resolve from the root.
