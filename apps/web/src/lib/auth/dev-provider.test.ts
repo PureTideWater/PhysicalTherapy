@@ -158,7 +158,8 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const { dev, invitations } = await provider();
     const first = await dev.ensureUser('new@synthetic.test');
     expect(first.created).toBe(true);
-    expect(await dev.ensureUser('NEW@synthetic.test')).toEqual({ sub: first.sub, created: false });
+    expect(first.neverSignedIn).toBe(true);
+    expect(await dev.ensureUser('NEW@synthetic.test')).toEqual({ sub: first.sub, created: false, neverSignedIn: true });
     expect(invitations).toHaveLength(1);
     const password = invitations[0]?.password ?? '';
     expect(passwordProblems(password)).toEqual([]);
@@ -180,6 +181,8 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const step = await dev.signIn('again@synthetic.test', second);
     expect(step.kind).toBe('new_password_required');
     await dev.setNewPassword(challengeOf(step), 'Chosen-Synthetic-Pass-2026!');
+    // Once a password is chosen, the account has signed in: an invitation is never linked onto it (SEC-22).
+    expect(await dev.ensureUser('again@synthetic.test')).toMatchObject({ created: false, neverSignedIn: false });
     await dev.resendInvitation('again@synthetic.test');
     await dev.resendInvitation('nobody@synthetic.test');
     expect(invitations).toHaveLength(2);

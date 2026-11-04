@@ -258,12 +258,23 @@ describe('CognitoAuthProvider: passkeys', () => {
 });
 
 describe('CognitoAuthProvider: administration', () => {
-  it('creates an invited user (Cognito emails the temporary password), or finds the existing one', async () => {
+  it('creates an invited user (Cognito emails the temporary password), or finds the existing one and whether it ever signed in (SEC-22)', async () => {
     const { provider, sent } = make({
-      AdminCreateUserCommand: [{ User: { Attributes: [{ Name: 'sub', Value: 'sub-new' }] } }, named('UsernameExistsException'), named('InternalErrorException'), { User: {} }],
-      AdminGetUserCommand: { UserAttributes: [{ Name: 'email', Value: 'x' }, { Name: 'sub', Value: 'sub-old' }] },
+      AdminCreateUserCommand: [
+        { User: { Attributes: [{ Name: 'sub', Value: 'sub-new' }] } },
+        named('UsernameExistsException'),
+        named('UsernameExistsException'),
+        named('UsernameExistsException'),
+        named('InternalErrorException'),
+        { User: {} },
+      ],
+      AdminGetUserCommand: [
+        { UserStatus: 'CONFIRMED', UserAttributes: [{ Name: 'email', Value: 'x' }, { Name: 'sub', Value: 'sub-old' }] },
+        { UserStatus: 'FORCE_CHANGE_PASSWORD', UserAttributes: [{ Name: 'sub', Value: 'sub-invited' }] },
+        { UserAttributes: [{ Name: 'sub', Value: 'sub-unknown-status' }] },
+      ],
     });
-    expect(await provider.ensureUser('new@synthetic.test')).toEqual({ sub: 'sub-new', created: true });
+    expect(await provider.ensureUser('new@synthetic.test')).toEqual({ sub: 'sub-new', created: true, neverSignedIn: true });
     expect(sent[0]?.input).toEqual({
       UserPoolId: 'us-east-1_Synthetic',
       Username: 'new@synthetic.test',
@@ -273,7 +284,11 @@ describe('CognitoAuthProvider: administration', () => {
       ],
       DesiredDeliveryMediums: ['EMAIL'],
     });
-    expect(await provider.ensureUser('old@synthetic.test')).toEqual({ sub: 'sub-old', created: false });
+    expect(await provider.ensureUser('old@synthetic.test')).toEqual({ sub: 'sub-old', created: false, neverSignedIn: false });
+    expect(sent.at(-1)).toEqual({ command: 'AdminGetUserCommand', input: { UserPoolId: 'us-east-1_Synthetic', Username: 'old@synthetic.test' } });
+    expect(await provider.ensureUser('invited@synthetic.test')).toEqual({ sub: 'sub-invited', created: false, neverSignedIn: true });
+    // A status Cognito did not name is not taken for "never signed in".
+    expect(await provider.ensureUser('unknown@synthetic.test')).toEqual({ sub: 'sub-unknown-status', created: false, neverSignedIn: false });
     await expect(provider.ensureUser('x@synthetic.test')).rejects.toThrow('InternalErrorException');
     await expect(provider.ensureUser('y@synthetic.test')).rejects.toThrow('without a subject');
   });

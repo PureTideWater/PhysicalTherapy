@@ -30,7 +30,7 @@ import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/con
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
-import { ROLES_BY_KIND } from './console';
+import { ANOTHER_IDENTITY, ROLES_BY_KIND } from './console';
 import { blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
 
 /**
@@ -1005,7 +1005,13 @@ export const inviteUserAction = organizationRoute({
     if (inUse !== false) {
       throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
     }
-    const { sub } = await services.provider.ensureUser(input.email);
+    const ensured = await services.provider.ensureUser(input.email);
+    const { sub } = ensured;
+    // SEC-22, docs/adr/0088 D4: the address has no account anywhere, so a provider account found (not made now) is an
+    // orphan; it is linked only if it has never signed in, since whoever holds its password would take the invitation.
+    if (!ensured.created && !ensured.neverSignedIn) {
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
+    }
     const userId = randomUUID();
     const membershipId = randomUUID();
     try {
@@ -1020,6 +1026,10 @@ export const inviteUserAction = organizationRoute({
         throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
       }
       throw error;
+    }
+    if (!ensured.created) {
+      // A new temporary password for this invitation; the provider voids the one it mailed before.
+      await services.provider.resendInvitation(input.email);
     }
     return { objectId: membershipId, redirect: `/settings/organizations/${organizationId}/users?notice=invited` };
   },

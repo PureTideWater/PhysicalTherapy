@@ -57,8 +57,26 @@ account's name. Work from the ticket ID and the user ID only, never the message'
 - **Mail from an address that is not the account's own.** Never act on it. The job already refuses it as
   `unknown_sender` (above); ask the person to write from the address they sign in with.
 - **A password set, but no second factor ever enrolled, and the reset sends nothing.** A code goes only to an account
-  with an enrolled second factor, so this person cannot reset. Their organization's administrator removes and
-  re-invites them.
+  with an enrolled second factor, so this person cannot reset, and a second factor is set up only inside a live
+  invitation (docs/adr/0088 D3). Check with the organization's administrator that the request is genuine. If the person
+  still knows the password they chose, the administrator sends the invitation again (Settings, or the console): that
+  opens seven new days and mails nothing, since the person has a password of their own; they sign in with it and set up
+  the authenticator app. If they do not know it, escalate the ticket ID to the founder. Do not delete their Cognito user
+  and invite them again: the account keeps the deleted user's subject, so the new invitation is refused (from Settings
+  as an address in use; from the console as "another identity", after Cognito has already mailed a temporary password
+  to a new user), and moving an account to a new subject needs a database change that does not exist yet
+  (docs/adr/0088, Revisit when).
+- **An invitation answered "this email belongs to another identity; ask an engineer to reconcile it".** If the address
+  already has an account here, its Cognito subject no longer matches: escalate the ticket ID to the founder (the
+  previous item's database change). If it has none, a Cognito user for the address exists and has signed in, so an
+  invitation is never linked to it (docs/adr/0088 D4): whoever holds its password would take the invitation. Check with
+  the organization's administrator that the person is genuine; then, in the founder's break-glass session (the operator
+  role holds no Cognito action and is not widened for this), find the Cognito username with `aws cognito-idp list-users
+  --user-pool-id <UserPoolId output> --filter 'email = "<address>"' --query 'Users[].Username'` (the address typed in
+  that session only, never pasted into the ticket or a log), confirm exactly one is listed, delete it with `aws
+  cognito-idp admin-delete-user --user-pool-id <UserPoolId output> --username <that username>`, and ask the
+  administrator to invite the person again (a new Cognito user and a new temporary password). Record the ticket ID, the
+  Cognito username and the time in the ticket, never the address.
 
 ## Nothing arrives at all
 

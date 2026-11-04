@@ -74,6 +74,13 @@ export interface KeyChallenge<O> {
   readonly challenge: string;
 }
 
+/** The provider's account for an invited address, and whether it was made now or has ever signed in (ensureUser). */
+export interface EnsuredUser {
+  readonly sub: string;
+  readonly created: boolean;
+  readonly neverSignedIn: boolean;
+}
+
 export interface AuthProvider {
   readonly name: 'cognito' | 'dev';
   signIn(email: string, password: string): Promise<AuthStep>;
@@ -92,9 +99,11 @@ export interface AuthProvider {
   release(grant: string): Promise<void>;
   /**
    * The provider's account for an invited user, created when missing, with a temporary password the
-   * provider delivers itself (Cognito's invitation email; the local outbox in development).
+   * provider delivers itself (Cognito's invitation email; the local outbox in development). `neverSignedIn`
+   * says the account still waits on its temporary password (Cognito's FORCE_CHANGE_PASSWORD, which this platform
+   * never sets on a user who has signed in): only such an account may be linked to an invitation (docs/adr/0088 D4).
    */
-  ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }>;
+  ensureUser(email: string): Promise<EnsuredUser>;
   /**
    * Sends an invited user's invitation again with a new temporary password (J2: "an expired invitation is
    * re-sent by the administrator"): Cognito's resend; the local outbox in development. A user who has chosen
