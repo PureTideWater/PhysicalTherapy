@@ -1,0 +1,101 @@
+export const meta = {
+  name: 'lane-b-ci-images-digest-finish',
+  description: '#86: check repair 2 (a5bc1170..5c01f150) adversarially, repair if needed, then base merge, full local suite once, records, the pre-push read and one push (R3)',
+  phases: [
+    { title: 'Check', detail: 'three area verifiers over the repair-2 delta plus a whole-diff adversary; repair loop up to 2' },
+    { title: 'Integrate', detail: 'base merge 21fa10df, generators, trial merges, full suite once, records, §6.3 read, one push' },
+  ],
+}
+
+const PROG = '/home/user/ops/approval-summaries/lane-b-ci-images-digest-wip/progress'
+const SUM = '/home/user/ops/approval-summaries'
+const LOGS = '/tmp/claude-0/-home-user-PhysicalTherapy/84980be8-4825-5e0c-971b-13455480b76c/scratchpad/imgdigest/logs'
+const WT = '/home/user/ci-images-digest'
+const WIP = 'co-001/wip-ci-images-digest'
+const SESSION = 'https://claude.ai/code/session_019i9ifDkvaQzK4YgTGnKWC3'
+const SAVE = (file, what) => `Save as you go: keep ${PROG}/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, check git status and git log, trust what it holds unless the repository says otherwise, and continue from where it stopped.`
+
+const COMMON = `Context: PaidWhole build, repository PureTideWater/PhysicalTherapy. You work for the acting Lane B session S3 (on Lane A's account) that owns PR #86, ci-images-digest (branch co-001/ci-images-digest, draft, base claude/build-platform).
+What #86 is: CI's \`images\` job passed docker/build-push-action's whole metadata output into one env var; buildx's metadata held buildx.build.provenance with the whole pull_request event; on #42 that reached 132,387 bytes, over Linux's 131,072-byte MAX_ARG_STRLEN, so bash never started. The fix: identity steps take only BUILT: "\${{ fromJSON(steps.<id>.outputs.metadata || '{}')['containerimage.config.digest'] }}"; the seven docker/build-push-action steps set BUILDX_METADATA_PROVENANCE: disabled (and, from fix-round D7, DOCKER_BUILD_RECORD_UPLOAD off on pull_request); tools/test/workflows.test.ts holds a closed allowlist of every value that may reach a process, each with its bound (T1–T6; T3 unboundedValueProblems, T4 places fixtures, T5 the build rule, T6 BOUNDED_VALUES with structural refs and run: fingerprints); documents: ADR 0066 Part 3 notice N32 (commit messages say N29), docs/runbooks/ci.md, docs/product/reconciliation-001.md.
+State (2026-11-04): PR head 83167b8f (R2). The WIP ref ${WIP} is at 5c01f150 = the fix round's builder (d257fe6d, dispositions D1–D10), repair 1 (to a5bc1170), and repair 2 (a5bc1170..5c01f150, 41 commits of 2026-11-02 ~08:44–09:18 UTC, made after check round 2). Check round 2's verdicts survive only for D1, D2 and D3 (${PROG}/fix-check-D{1,2,3}-2.md: D1's gap that run: fingerprints miss inherited job/workflow env and defaults; D2's no-space key spelling and the "refuses the file for one anywhere else" overstatement; D3's matrix include gap). The other round-2 verifier results and repair 2's own progress file were lost with the old container, so repair 2's commits are unreviewed. Worktree ${WT} is on co-001/ci-images-digest checked out at 5c01f150 (local branch fast-forwarded; origin's PR branch is still 83167b8f). claude/build-platform is at 21fa10df (since 88708069: #42 merged as 22789493 carrying #86's exact digest lines, #95 as 2affb854, #91 as 21fa10df); git merge-tree of 5c01f150 with it is clean. #96 (co-001/ci-mutation-trigger, 50029e64) merges after #86 and resolves against it. Resolve every head live with git ls-remote; never trust a hash written here.
+Dispositions D1–D10 as built: in ${SUM}/lane-b-ci-images-digest-status.md (RESUME-BLOCK) and the archived script /home/user/ops/workflow-scripts/lane-b-ci-images-digest-fix-round-wf_401c564d-6b7.js (DISPOSITIONS). Design /home/user/ops/designs/lane-b-ci/ci-images-digest.md. Reviews ${SUM}/lane-b-ci-images-digest-review-{ci-infra,security-supply}.md. Round-1 checks and repair 1: ${PROG}/fix-check-*-1.md, fix-repair-1.md.
+Rules for you:
+- Every shell command starts with: export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH (default node is 22).
+- Heavy commands (pnpm install, typecheck, lint, vitest, builds, test:db, e2e, stryker, synth) only under: flock /tmp/laneb-heavy.lock <command>. PostgreSQL 18 is on port 5433 (pg_isready -h localhost -p 5433; if down: bash /tmp/setup-container.sh co-001/ci-images-digest:${WT} co-001/ci-mutation-trigger:/home/user/ci-mutation-trigger restarts it).
+- Synthetic data only; no PHI. No model name or identifier in any file, commit or text. Shorten any 40/64-hex hash written into an approval-summaries or design file to 8 hex digits and an ellipsis.
+- Never force, never --no-verify, never amend/rebase/reset --hard a pushed commit, never a .gitleaksignore entry. Never write files through the GitHub connector; never comment, review, approve, edit a PR body, mark ready or merge. GitHub reads only through git and the GitHub MCP read tools.
+- No migration, no docs/product/domain-model.md regeneration. Generated files only by their generators: pnpm install --frozen-lockfile; pnpm exec tsx tools/screening-capacity/watched.ts --write; pnpm synth --all.
+- Keep records short: decisions, results, next step.
+- Long commands: run_in_background and wait for the notification. Logs under ${LOGS}/ (mkdir -p).`
+const COMMIT_TAIL = `Commit messages in the repository's style (git log), one concern per commit, each ending with a blank line and then exactly:
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: ${SESSION}`
+
+const AREAS = [
+  { id: 'A1', what: 'D1 (structural refs, run: fingerprints now covering inherited env/defaults/container, a row\'s producers exactly the ones its value reads, toJSON rows\' byte bounds, a named test counting only as a real top-level/plain-describe test), D4 (sites lists, the over row exempt only alone and still in its process\'s whole) and D8 (the findings rows\' wording). Check the D1-2 progress file\'s confirmed gaps are each closed.' },
+  { id: 'A2', what: 'D2 (the key walk: no-space spelling, job id, on: inputs fixtures; the ADR/JSDoc wording of where GitHub refuses a key expression at parse time) and D3 (the per-environment-string byte sum: matrix include entries beside a key expression, each expression part at its own bound in UTF-8 bytes, a container/service image string with an expression, a called workflow\'s secrets at 48 KB, the 131,072 limit inclusive). Check the D2-2 and D3-2 progress files\' confirmed gaps are each closed.' },
+  { id: 'A3', what: 'D5/D7 (T5: job container env DOCKER_BUILD_/BUILDX_ variables, triggers limited to push, pull_request, schedule, workflow_dispatch where a build exists, the count messages), D6 (only a step\'s run: may name $GITHUB_ENV; runner file-command files; $GITHUB_PATH refused everywhere), D9 (reconciliation-001\'s runs of record wording) and D10 (ADR N32 / ci.md scope wording, actions:check never bounding a value).' },
+]
+
+const VCHK = { type: 'object', properties: {
+  resolved: { type: 'boolean' }, loosened: { type: 'boolean', description: 'true if a change weakens any existing protection or widens a bound beyond what a value can carry' },
+  issues: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, where: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should', 'nit'] } }, required: ['what', 'where', 'evidence', 'fix', 'severity'] } },
+  checked: { type: 'string' } }, required: ['resolved', 'loosened', 'issues', 'checked'] }
+
+phase('Check')
+let report = 'Repair 2 (a5bc1170..5c01f150) as pushed; no report survived; read the commits.'
+let checks = []
+let pending = AREAS.map(a => a.id).concat(['whole'])
+for (let round = 3; round <= 4; round++) {
+  const head = round === 3 ? '5c01f150' : 'the WIP head named in the repair report'
+  const thunks = AREAS.filter(a => pending.includes(a.id)).map(a => () => agent(`${COMMON}
+
+You are an ADVERSARIAL VERIFIER of #86's fix round, check round ${round}, area ${a.id}. Assume the fixes are wrong until you show them right. Scope: ${a.what}
+Repairs so far: ${report}
+Work in a fresh clone (read only; never push): git clone --filter=blob:none https://github.com/PureTideWater/PhysicalTherapy.git /home/user/fx-imgdigest-${a.id}-${round}; fetch refs/heads/${WIP}; check out ${head} (it must equal origin/${WIP}); flock /tmp/laneb-heavy.lock pnpm install --frozen-lockfile.
+Read git log and git diff a5bc1170..<head> for your area's commits, and the code they touch. Prove with commands and output: (1) each gap the round-2 progress files confirmed for your area, and each claim the commit messages make, now fails the test where it should (mutated CI_TREE copies or fixtures, run); (2) harmless variants stay green; (3) nothing loosened: the a5bc1170 rule's red cases are still red (graft its fixtures); (4) the documents say what the code does; (5) the whole tools/test/workflows.test.ts passes at the head and on the trial merge with origin/claude/build-platform (git merge-tree --write-tree, materialise with CI_TREE). Classify each issue blocking / should / nit; only a real defect is blocking or should. Remove your clone. ${SAVE('fix-check-' + a.id + '-' + round + '.md', 'each check and its result')}`, { label: `check:${a.id}:${round}`, phase: 'Check', schema: VCHK }))
+  if (pending.includes('whole')) thunks.push(() => agent(`${COMMON}
+
+You are the WHOLE-DIFF ADVERSARY for #86's fix round, check round ${round}. Repairs so far: ${report}
+In a fresh clone /home/user/fx-imgdigest-whole-${round} (read only; fetch refs/heads/${WIP}; check out ${head}), read git diff b2a41a00..<head> whole (focus on a5bc1170..<head>), and the full T1–T6 code at the head. Hunt for: a regression (a rule now passing something it refused; a fixture weakened; an assertion deleted), an unhandled place, a bound wrong in bytes, a resolver silently resolving nothing (an empty list passing), flakiness, runtime of workflows.test.ts before (b2a41a00) and after, documents disagreeing with code, and over-reach (a rule that would turn a harmless future workflow red with no safety gain). Run the whole unit project's tools tests and pnpm typecheck under the lock; run workflows.test.ts on the trial merge with origin/claude/build-platform and with #96's live head (git ls-remote origin refs/pull/96/head) via CI_TREE. Classify each issue blocking / should / nit. Remove the clone. ${SAVE('fix-check-whole-' + round + '.md', 'what was checked and found')}`, { label: `check:whole:${round}`, phase: 'Check', schema: VCHK }))
+  const ran = AREAS.filter(a => pending.includes(a.id)).map(a => a.id).concat(pending.includes('whole') ? ['whole'] : [])
+  const raw = await parallel(thunks)
+  if (raw.some(r => !r)) throw new Error(`check round ${round}: ${raw.filter(r => !r).length} verifier(s) returned nothing; resume this run`)
+  checks = raw.map((r, i) => ({ id: ran[i], ...r }))
+  const real = c => !c.resolved || c.loosened || c.issues.some(x => x.severity !== 'nit')
+  const bad = checks.filter(real)
+  pending = bad.map(c => c.id)
+  const nits = checks.flatMap(c => c.issues.filter(x => x.severity === 'nit').map(x => ({ id: c.id, ...x })))
+  if (!bad.length && !nits.length) { log(`check round ${round}: every repair verified`); break }
+  if (round === 4) { log(`check round 4: ${bad.length} still open; they go to the integrator`); break }
+  log(`check round ${round}: ${bad.length} area(s) with real issues, ${nits.length} nits; repairing`)
+  const fix = await agent(`${COMMON}
+
+Verifiers found these in #86's fix round, check round ${round} (each with evidence):
+${JSON.stringify({ real: bad, nits }, null, 2)}
+In ${WT} (at the WIP head; git fetch and confirm it equals origin/${WIP}), fix each real issue and each nit that is a correct, in-file fix, one commit per concern, each with red/green evidence logged under ${LOGS}/; if you judge an issue not real, say why with evidence. Never loosen a rule. Re-run flock /tmp/laneb-heavy.lock pnpm exec vitest run --project unit tools/test tools/check-action-pins tools/check-toolchain and pnpm typecheck, then git push origin HEAD:refs/heads/${WIP} (fast-forward only; the pre-push hook runs). Never push co-001/ci-images-digest.
+${COMMIT_TAIL}
+${SAVE('fix-repair-' + round + '.md', 'each issue and what was done')}
+Return the new head sha, per issue what changed or why not, and the check results.`, { label: `repair:${round}`, phase: 'Check' })
+  if (!fix || !String(fix).trim()) throw new Error(`repair round ${round} returned nothing; resume this run`)
+  report += `\n\n=== REPAIR ROUND ${round} ===\n${fix}`
+  if (!bad.length) { log(`round ${round} had nits only; repaired, no re-check needed beyond the integrator's suite`); break }
+}
+
+phase('Integrate')
+const integ = await agent(`${COMMON}
+
+YOUR TASK: integrate #86's fix round and push it ONCE to the PR. Repairs: ${report}
+Final verifier results: ${JSON.stringify(checks)}
+${SAVE('fix-integrate.md', 'each step, every check with its numbers, the pre-push read, the pushed sha and the time')}
+0. In ${WT}: git fetch origin ${WIP} claude/build-platform; confirm HEAD equals origin/${WIP}.
+1. Merge the base once: git merge --no-ff origin/claude/build-platform -m "Merge claude/build-platform <short sha> (<the PRs it brings, from git log --merges --first-parent>) into co-001/ci-images-digest" (keep both sides of any conflict; ci.yml should merge trivially since #42 carries #86's digest lines; the merge commit only resolves). Then the generators, under the lock: pnpm install --frozen-lockfile; pnpm exec tsx tools/screening-capacity/watched.ts --write; pnpm synth --all; commit what they write in its own commit, or record that they changed nothing. Re-check T6: a fingerprint or ref the base's workflows legitimately change is updated in its own commit with the bound re-read and stated. Push the WIP ref (fast-forward).
+2. Trial merges: for every live co-001 head that changes a workflow, tools/test/workflows.test.ts or a file a T6 row cites (git ls-remote origin 'refs/heads/co-001/*'; #96's co-001/ci-mutation-trigger at least): git merge-tree --write-tree HEAD <ref>; for each clean one materialise it (CI_TREE on an exported tree) and run the whole workflows.test.ts; record clean/conflicted and pass/fail per branch; a failure #86 causes is fixed now in a commit; one from the other branch's own content (e.g. a fingerprint it legitimately changes) is recorded with the exact row and new fingerprint for that branch's base merge.
+3. The full local suite once, on the final tree, under the lock, logs in ${LOGS}/suite/: pnpm typecheck; pnpm lint; pnpm lint:copy (if the script exists); pnpm lint:logs; pnpm check:fixtures (if it exists); pnpm verify-content; pnpm test (unit with coverage: files, passed, failed, skipped; name each local skip); pnpm test:golden; pnpm test:oracle (if it exists); pnpm test:db in its four shards one after another, each on a fresh PG18 database on port 5433 (read package.json and the shard config for how; each shard's totals); pnpm build, the build stamp, then E2E_PREBUILT=1 pnpm test:e2e --workers=2 (count); tsx tools/stryker/affected.ts against the merged base, then the gate (or record no shard affected); the synth check (pnpm synth --all leaves git status clean); pnpm actions:check --offline; BASE=origin/claude/build-platform pnpm actions:check; BASE=origin/claude/build-platform pnpm toolchain:check; actionlint -shellcheck= -pyflakes= -ignore 'label "ubuntu-26\\.04" is unknown' .github/workflows/*.yml. Fix anything red #86 causes with a small commit and its test, then rerun what it touches; something red on the base too is recorded with the base's evidence.
+4. Records in /home/user/ops (write, do not commit): (a) append to /home/user/ops/designs/lane-b-ci/ci-images-digest.md a section "## Fix round (2026-11-01 to 2026-11-04)" after the Review section: heads now, N29→N32, D1–D10 each with reason and commits, repairs 1–N, refuted findings (CI N5 folded into D7; security N3 by design), proposals; one line each marking §9.1, §9.2 and line 15/§8 C9 superseded. (b) write ${SUM}/lane-b-ci-images-digest-fix-round.md: dispositions table (finding, reviewer, skeptics' verdicts, resolution, commits), check rounds and repairs, the full suite with every number, failing-first table (red/green logs), trial merges table, and for ci-findings-transport by anchor text: "#86's notice is ADR 0066 Part 3 N32; N29 is #82's Part 5 revert-path notice; the sentence to rewrite is in N32's 'What holds it' bullet, starting 'One listed value is over the limit' (re-locate by text); the T6 rows are the two findings rows (FINDINGS_B64 with over: 'ci-findings-transport', and their sites lists) and the over-98,292-bytes bound".
+5. The pre-push read (design §6.3). Do NOT edit the PR description. Immediately before the push: read PR #86 with the GitHub MCP pull_request_read get (if saved to a file, parse with python), record the UTC time, the body's length in characters, and the SHA-256 (UTF-8) of the substring from "| Row | Characters so far" through the newline after the row starting "| 1000 |" (expected 100,061 characters, 5bb5e558…). If it differs, STOP and return without pushing. Then: git push origin HEAD:co-001/ci-images-digest (fast-forward from 83167b8f; the hook; never force). Record the pushed sha and time; push the WIP ref to the same sha. Then list approval-of-record.yml runs for the branch (actions_list list_workflow_runs) created between the read and the push: there must be none; record that, and the new ci.yml run id for the pushed head once it appears (a background until-loop of up to 5 minutes).
+6. Do not wait for CI beyond that.
+${COMMIT_TAIL}
+Return: the pushed sha, the base merge commit and what it brought, the pre-push read (time, length, ruler hash), the window check, the new ci run id, every suite number, the trial merges table, the fix-round summary file's text, and anything open.`, { label: 'integrate', phase: 'Integrate' })
+if (!integ || !String(integ).trim()) throw new Error('integrator returned nothing')
+return { report, checks, integ }
