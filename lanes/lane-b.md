@@ -1440,3 +1440,9 @@ HANDOFF.md; LANES.md rule 10).
 ### 2026-11-04 07:40 UTC: #75 (contract-phi-check) merged as 72096e94
 - CI: all 26 checks green, the capacity gate and images included. S1 goes on to #85 (four conflicts to resolve at its base merge), then hands to S2 for #84.
 - redact-ssn-phone, which waited for #75, can now start. It is Lane B's, paused until Lane B's reset.
+
+### 2026-11-04 09:25 UTC: #106 merged as 881e2bbd; #86 merged as 24531dc2
+- #106: the screening-capacity gate's private-repository fetch fix and the CI-11 guard.
+- #86 (ci-images-digest): description cut to 33,954 characters.
+- New merge step, in force from 08:00: GitHub now enforces the up-to-date rule, so a PR whose base moved since its last CI merges the base again and re-runs CI first (`lanes/acting-lane-b-2026-11-04.md`, 2a).
+- S3: #96, then ci-findings-transport. S1: #85, then redact-ssn-phone. S4: UX PR 7.
