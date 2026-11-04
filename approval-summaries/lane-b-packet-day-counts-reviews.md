@@ -1056,3 +1056,17 @@ No finding was refuted: all 34 reached the two votes needed. The refutations rec
 - CRIT-3: a date after a figure, or opening the sentence, gets no role.
 - CRIT-4: a correct deadline after "days after payment" fails, a regression.
 - The percentage, page and due-date parts of PE-4.
+
+## Re-review of the fix round, 2026-11-04 (acting S2; wf_4ca2cf69-8dc, delta 1c423691..ac727b15)
+Each finding checked by two skeptics (reproduce; intent and scope). The payment-engine review returned no result (it ran out of room on a fuzz dump); it is redone at d7d587a2 in round 2 (wf_d831f69a-b19).
+| Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| CORR-D1 | blocking | A "respectively" list with its cues after it: the swapped dispute passed, the correct one failed (CORR-6 incomplete; the gateway shares the reader). | Fixed in d7d587a2 (cues after the list map in order); rechecked fixed. |
+| CORR-D2 | should fix | "per line"/"in total" beside a "respectively" list applied to one figure only. | Fixed in d7d587a2 (amountScope); rechecked fixed. |
+| UX-D1 | should fix | "Fails now" said "cannot be approved" on an approved, exported or earlier version. | Fixed in d7d587a2 (wording by state; Export blocked alert); rechecked fixed. |
+| UX-D3 | nit | The refusal listed mismatches by kind only, repeated items, nested colons. | Fixed in d7d587a2; rechecked fixed. |
+| UX-D2, UX-D4 | nit | Counts not in mono; an internal role named. | Refuted (one of two skeptics). |
+| NEW-N1 | blocking | d7d587a2's list scope reaches past the clause edge, so a total read as per line passes (regression). | Round 2. |
+| NEW-N2 | should fix | A scope stated with each cue after a list is flattened to one. | Round 2. |
+| NEW-N3 | nit | Export-blocked and hash-only texts name marked figures when none are marked. | Round 2. |
+The UX review read code only this round (no screen tour capture).
