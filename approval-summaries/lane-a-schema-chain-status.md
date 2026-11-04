@@ -184,6 +184,15 @@ its unpushed work is not waited for).
   Chromium flags save <= 12 MiB. **Asked of the founder (18:05, via the orchestrator):** apply the unchanged 90% line to
   the container's working set (memory.current minus inactive_file), memory.peak and memory by kind reported beside it.
   Until a ruling 1b does not merge on a failing CAS-42.5.
+- **18:20 UTC. Decided by Lane A's orchestrator (~18:10, on the co-founder's standing direction; not a founder
+  ruling):** CAS-42.5's 90% memory line (921.6 of 1,024 MiB) applies to the worker container's working set,
+  memory.current minus inactive_file; memory.peak and memory by kind reported beside it; the run also fails on any OOM
+  kill or memory.events oom/oom_kill increment. Recorded in ADR 0083 with the two runs as evidence; checks.ts and tests
+  failing first. wf_a38ce7b6-ec3 stopped after its fix round returned (its verification and CAS-42.5 would have measured
+  4a8357d9 without the change); a CAS-42.5 run it dispatched on 4a8357d9 (41882546709) is left to finish as evidence.
+  **Asked of the orchestrator (18:20):** step 7b at full size (A's ~31,000 open lines cannot reconcile in one attempt until
+  SUITE-CAP-3): recommended (a) 7b on its own practice at CAS-42.3's 2,000 lines until SUITE-CAP-3 moves it back.
+  Next: `workflow-scripts/lane-a-sc1b-working-set.js` (the change, an adversarial review, then verification + CAS-42.5).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
