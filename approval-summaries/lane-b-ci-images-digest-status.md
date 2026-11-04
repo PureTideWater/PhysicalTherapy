@@ -18,7 +18,7 @@ Open questions: none.
 - Unsubscribed. Worktree /home/user/ci-images-digest and the trial worktrees removed.
 - **For ci-findings-transport:** #86's notice is ADR 0066 Part 3 **N32** (N29 is #82's Part 5 revert-path notice). The sentence to rewrite is in N32's "What holds it" bullet, starting "One listed value is over the limit" (ADR 0066:1205 at 24531dc2). The T6 rows are the two findings rows (FINDINGS_B64 with `over: 'ci-findings-transport'`, and their `sites` lists) and the over-98,292-bytes bound (design §12 P3).
 - Open (nits, recorded in `lane-b-ci-images-digest-fix-round.md` and the body): round 4's eight test-strength and wording nits; none loosens the rule.
-- Next: read the push runs on claude/build-platform at 24531dc2.
+- **Push runs at 24531dc2, all success (read 11:55 UTC):** ci 41806743379, release-dry-run 41806743555, mutation 41806743666, screening-capacity 41806743500. #86 is done.
 
 ## ACTING S3 (2026-11-04 02:45 UTC): repair 2 under check; then base, suite once, push R3
 - Live at 02:35 UTC: PR branch 83167b8f; WIP 5c01f150 (repair 2: 21 commits a5bc1170..5c01f150 (git log; earlier "41" was wrong), 2026-11-02 08:44-09:18 UTC, after check round 2; its progress file and the round-2 verdicts other than D1-D3 were lost). Base 21fa10df (#42 22789493, #95, #91); merge-tree with 5c01f150 clean. Subscribed to #86.
