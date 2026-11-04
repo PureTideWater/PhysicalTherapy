@@ -472,7 +472,7 @@ describe('CognitoAuthProvider: the confidential client (SEC-20; docs/adr/0088, D
   const KEY_RESPONSE = { id: 'cred', rawId: 'cred', type: 'public-key', response: { clientDataJSON: 'x', authenticatorData: 'y', signature: 'z' }, clientExtensionResults: {} } as const;
 
   /** What a ClientCredentialError looks like from outside: its name and the Cognito error it stands for, never Cognito's words. */
-  const credentialError = (code: string) => expect.objectContaining({ name: 'ClientCredentialError', code, message: expect.not.stringMatching(/syntheticclient|secret hash/i) as unknown });
+  const credentialError = (code: string): unknown => expect.objectContaining({ name: 'ClientCredentialError', code, message: expect.not.stringMatching(/syntheticclient|secret hash/i) as unknown });
 
   it('SEC-20: without a client secret (the public client of release N) sends no hash and no secret on any call', async () => {
     const { provider, sent } = make(

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { billingDevLoginUrl, developmentMasterKey, esignDevLoginUrl } from '@tp/db/runtime';
 import { z } from 'zod';
 
+import { ClientSecret } from '../auth/secret-hash';
 import { STATIC_ORIGIN_PATTERN } from '../http/security-headers';
 
 /**
@@ -32,6 +33,9 @@ const schema = z.object({
   TP_DEV_AUTH_DIR: z.string().min(1).optional(),
   COGNITO_USER_POOL_ID: z.string().regex(/^[a-z]{2}-[a-z]+-\d_[A-Za-z0-9]+$/).optional(),
   COGNITO_CLIENT_ID: z.string().regex(/^[a-z0-9]+$/).optional(),
+  // The confidential client's secret (docs/adr/0088, D1), injected by the web task's execution role; optional in
+  // release N (the public client), required in N+1. No format guessed beyond its length; reported by name only.
+  COGNITO_CLIENT_SECRET: z.string().min(16).max(128).optional(),
   TP_KEY_PROVIDER: z.enum(['local', 'kms']).optional(),
   TP_ALLOW_LOCAL_PROVIDERS: z.literal('e2e').optional(),
   TP_LOCAL_MASTER_KEY: base64Key.optional(),
@@ -86,7 +90,14 @@ export type MailValidationSettings =
 
 export type AuthProviderSettings =
   | { readonly kind: 'dev'; readonly directory: string }
-  | { readonly kind: 'cognito'; readonly userPoolId: string; readonly clientId: string; readonly region: string };
+  /** `clientSecret`: the confidential client's secret in its wrapper (never a plain string), or null for the public client. */
+  | { readonly kind: 'cognito'; readonly userPoolId: string; readonly clientId: string; readonly region: string; readonly clientSecret: ClientSecret | null };
+
+/**
+ * The literal the stack stores in the client secret until its custodian seeds the value Cognito generated (docs/adr/0088;
+ * review infra-auth-IA-5): a task started on it fails at once, with a cause that names the setting and not the value.
+ */
+export const CLIENT_SECRET_PLACEHOLDER = 'unset';
 
 export type KeyProviderSettings = { readonly kind: 'local'; readonly masterKey: Buffer } | { readonly kind: 'kms'; readonly keyId: string };
 
@@ -244,6 +255,9 @@ function mailValidationSettings(settings: z.output<typeof schema>, deployed: boo
 }
 
 export function readWebConfig(env: Readonly<Record<string, string | undefined>> = process.env): WebConfig {
+  if (env.COGNITO_CLIENT_SECRET === CLIENT_SECRET_PLACEHOLDER) {
+    throw new ConfigError('COGNITO_CLIENT_SECRET is the stack’s placeholder, not a client secret: the secret was never seeded');
+  }
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
     const names = [...new Set(parsed.error.issues.map((issue) => issue.path.join('.')))].join(', ');
@@ -273,8 +287,12 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
   if (authKind === 'cognito') {
     const userPoolId = needed(settings.COGNITO_USER_POOL_ID, 'COGNITO_USER_POOL_ID', 'for Cognito');
     const clientId = needed(settings.COGNITO_CLIENT_ID, 'COGNITO_CLIENT_ID', 'for Cognito');
-    auth = { kind: 'cognito', userPoolId, clientId, region: userPoolId.slice(0, userPoolId.indexOf('_')) };
+    const clientSecret = settings.COGNITO_CLIENT_SECRET === undefined ? null : new ClientSecret(settings.COGNITO_CLIENT_SECRET);
+    auth = { kind: 'cognito', userPoolId, clientId, region: userPoolId.slice(0, userPoolId.indexOf('_')), clientSecret };
   } else {
+    if (settings.COGNITO_CLIENT_SECRET !== undefined) {
+      throw new ConfigError('COGNITO_CLIENT_SECRET is refused with TP_AUTH_PROVIDER=dev (the dev provider takes no client secret)');
+    }
     auth = { kind: 'dev', directory: settings.TP_DEV_AUTH_DIR ?? defaultDevAuthDirectory() };
   }
 

@@ -135,6 +135,7 @@ function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvid
       client: new CognitoIdentityProviderClient({ region: config.auth.region }),
       userPoolId: config.auth.userPoolId,
       clientId: config.auth.clientId,
+      ...(config.auth.clientSecret === null ? {} : { clientSecret: config.auth.clientSecret }),
       verifier: CognitoJwtVerifier.create({ userPoolId: config.auth.userPoolId, tokenUse: 'id', clientId: config.auth.clientId }),
       logger,
     });

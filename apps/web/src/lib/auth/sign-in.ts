@@ -1,14 +1,16 @@
 import { type ScopeClient, type ScopePool, recordAuditEvent, withActor } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 
-import type {
-  AuthProvider,
-  AuthStep,
-  AuthenticationResponseJSON,
-  FailureStage,
-  PublicKeyCredentialCreationOptionsJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-  RegistrationResponseJSON,
+import {
+  type AuthProvider,
+  type AuthStep,
+  type AuthenticationResponseJSON,
+  ClientCredentialError,
+  type FailureStage,
+  type PasswordResetResult,
+  type PublicKeyCredentialCreationOptionsJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
+  type RegistrationResponseJSON,
 } from './provider';
 import { type OpenedSession, openSession, revokeUserSessions } from './sessions';
 
@@ -29,6 +31,9 @@ import { type OpenedSession, openSession, revokeUserSessions } from './sessions'
  * - Internal roles must use a hardware key: a TOTP sign-in by such a user only registers a key (when
  *   they have none) and never opens a session; they then sign in with the key.
  *
+ * - A refused client credential (the provider refused this application's own secret: docs/adr/0088, D2) is the
+ *   platform's failure, never the person's: it counts no failure, locks nothing, ends the attempt and is logged as a
+ *   security event by the provider's error name alone.
  * - A forgotten password is reset by a code mailed to the address (docs/adr/0081, the forgotten password): the
  *   request answers alike for every address, at a floor, and a code goes only to an active account that already has a
  *   second factor; a reset ends every session of the account and still asks for the second factor next time.
@@ -69,7 +74,9 @@ export type RefusalReason =
   | 'key_not_registered'
   | 'invitation_expired'
   /** A second factor asked for outside a live invitation (docs/adr/0088, D3). */
-  | 'enrolment_not_open';
+  | 'enrolment_not_open'
+  /** The provider refused this application's client credential (docs/adr/0088, D2): the platform's failure. */
+  | 'client_credential';
 
 export type FlowResult =
   /** `keyRequired`: on the first step's result, the account must also register a hardware key (the web layer numbers the setup steps). */
@@ -98,7 +105,9 @@ export type ResetResult =
   | { readonly kind: 'reset'; readonly locked: boolean; readonly keepEmail: boolean }
   | { readonly kind: 'rejected' }
   | { readonly kind: 'invalid_password'; readonly problems: readonly string[] }
-  | { readonly kind: 'sessions_not_ended' };
+  | { readonly kind: 'sessions_not_ended' }
+  /** The provider refused this application's client credential (docs/adr/0088, D2): nothing was reset. */
+  | { readonly kind: 'client_credential' };
 
 export interface SignInDependencies {
   readonly pool: ScopePool<ScopeClient>;
@@ -182,6 +191,22 @@ export class SignInFlow {
     return subject;
   }
 
+  /**
+   * Runs a step that calls the provider: a refused client credential (docs/adr/0088, D2) is logged as a security event
+   * by the provider's error name and answered as the platform's failure, before anything counts it as the person's.
+   */
+  private async guarded<R>(context: SignInContext | undefined, refusal: R, run: () => Promise<R>): Promise<R> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!(error instanceof ClientCredentialError)) {
+        throw error;
+      }
+      this.deps.logger.error('security event: client credential refused', { request_id: context?.requestId ?? null, error_code: error.code });
+      return refusal;
+    }
+  }
+
   private audit(userId: string, action: string, requestId: string, purpose?: string): Promise<void> {
     return withActor(this.deps.pool, userId, (scope) => recordAuditEvent(scope, { action, objectType: 'user', objectId: userId, purpose, requestId }));
   }
@@ -251,6 +276,10 @@ export class SignInFlow {
 
   /** Email and password. */
   async start(email: string, password: string, context: SignInContext): Promise<FlowResult> {
+    return this.guarded(context, refused('client_credential'), () => this.started(email, password, context));
+  }
+
+  private async started(email: string, password: string, context: SignInContext): Promise<FlowResult> {
     const account = await this.account({ email });
     if (account?.locked === true) {
       return refused('locked');
@@ -268,6 +297,10 @@ export class SignInFlow {
   }
 
   async newPassword(pending: Pending, password: string, context: SignInContext): Promise<FlowResult> {
+    return this.guarded(context, refused('client_credential'), () => this.passwordChosen(pending, password, context));
+  }
+
+  private async passwordChosen(pending: Pending, password: string, context: SignInContext): Promise<FlowResult> {
     if (pending.step !== 'new_password') {
       return refused('expired');
     }
@@ -287,6 +320,10 @@ export class SignInFlow {
    * sealed subject: the step can outlive a change to the account. A step sealed with no subject starts again.
    */
   async beginTotpSetup(pending: Pending, context: SignInContext): Promise<FlowResult> {
+    return this.guarded(context, refused('client_credential'), () => this.totpSetupBegun(pending, context));
+  }
+
+  private async totpSetupBegun(pending: Pending, context: SignInContext): Promise<FlowResult> {
     if (pending.step !== 'mfa_setup' || pending.subject === undefined) {
       return refused('expired');
     }
@@ -303,6 +340,10 @@ export class SignInFlow {
 
   /** The code that proves the secret: the enrolment rule is checked once more, the last point before the provider stores the factor. */
   async completeTotpSetup(pending: Pending, code: string, context: SignInContext): Promise<FlowResult> {
+    return this.guarded(context, refused('client_credential'), () => this.totpSetupCompleted(pending, code, context));
+  }
+
+  private async totpSetupCompleted(pending: Pending, code: string, context: SignInContext): Promise<FlowResult> {
     if (pending.step !== 'mfa_setup' || pending.totp === undefined || pending.subject === undefined) {
       return refused('expired');
     }
@@ -323,24 +364,26 @@ export class SignInFlow {
     if (pending.step !== 'mfa') {
       return refused('expired');
     }
-    return this.after(await this.deps.provider.answerTotp(pending.challenge, code), pending.email, context);
+    return this.guarded(context, refused('client_credential'), async () => this.after(await this.deps.provider.answerTotp(pending.challenge, code), pending.email, context));
   }
 
   /** Hardware-key sign-in: the browser's request options. A locked account gets none. */
-  async beginKey(email: string): Promise<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult> {
+  async beginKey(email: string, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult> {
     const account = await this.account({ email });
     if (account?.locked === true) {
       return refused('locked');
     }
-    const { options, challenge } = await this.deps.provider.beginKeySignIn(email);
-    return { options, pending: { step: 'key', email, challenge } };
+    return this.guarded<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult>(context, refused('client_credential'), async () => {
+      const { options, challenge } = await this.deps.provider.beginKeySignIn(email);
+      return { options, pending: { step: 'key', email, challenge } };
+    });
   }
 
   async completeKey(pending: Pending, response: AuthenticationResponseJSON, context: SignInContext): Promise<FlowResult> {
     if (pending.step !== 'key') {
       return refused('expired');
     }
-    return this.after(await this.deps.provider.completeKeySignIn(pending.challenge, response), pending.email, context);
+    return this.guarded(context, refused('client_credential'), async () => this.after(await this.deps.provider.completeKeySignIn(pending.challenge, response), pending.email, context));
   }
 
   async beginKeyRegistration(pending: Pending): Promise<{ readonly options: PublicKeyCredentialCreationOptionsJSON; readonly pending: Pending } | FlowResult> {
@@ -359,7 +402,8 @@ export class SignInFlow {
       return refused('key_not_registered');
     }
     await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
-    await this.deps.provider.release(pending.grant);
+    // The key is registered whatever the revoke answers; a refused credential is still logged.
+    await this.guarded(context, undefined, () => this.deps.provider.release(pending.grant));
     return { kind: 'key_registered' };
   }
 
@@ -414,7 +458,12 @@ export class SignInFlow {
    * lock and the second factor stay: a reset proves the mailbox, nothing more.
    */
   async confirmPasswordReset(email: string, code: string, password: string, context: SignInContext): Promise<ResetResult> {
-    const result = await this.deps.provider.confirmPasswordReset(email, code, password);
+    const result = await this.guarded<PasswordResetResult | { readonly kind: 'client_credential' }>(context, { kind: 'client_credential' }, () =>
+      this.deps.provider.confirmPasswordReset(email, code, password),
+    );
+    if (result.kind === 'client_credential') {
+      return result;
+    }
     if (result.kind === 'rejected') {
       this.deps.logger.warn('password reset code refused', { request_id: context.requestId, error_code: 'rejected' });
       return result;
@@ -458,10 +507,10 @@ export class SignInFlow {
    * out of that step gives it back. The other steps hold only a challenge, which the provider ends at its own limit and
    * which nothing can answer once the cookie that seals it is gone; the reset step holds not even that.
    */
-  async abandon(pending: Pending): Promise<void> {
+  async abandon(pending: Pending, context?: SignInContext): Promise<void> {
     switch (pending.step) {
       case 'register_key':
-        await this.deps.provider.release(pending.grant);
+        await this.guarded(context, undefined, () => this.deps.provider.release(pending.grant));
         return;
       case 'new_password':
       case 'mfa_setup':
