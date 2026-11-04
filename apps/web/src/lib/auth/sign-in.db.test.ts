@@ -764,16 +764,22 @@ describe('SEC-22: a second factor is enrolled only inside a live invitation (doc
     const first = await invitee();
     const second = await invitee();
     const swapped = pendingOf(await flow.start(first.email, PASSWORD, context()));
-    expect(await flow.beginTotpSetup({ ...swapped, subject: second.sub } as Pending, context())).toEqual(NOT_OPEN);
+    if (swapped.step !== 'mfa_setup') {
+      throw new Error('expected the enrolment step');
+    }
+    expect(await flow.beginTotpSetup({ ...swapped, subject: second.sub }, context())).toEqual(NOT_OPEN);
     expect(await factorOf(first.sub)).toBeNull();
   });
 
   it('SEC-22: a step sealed by the release before, with no subject, starts again', async () => {
     const invited = await invitee();
     const sealed = pendingOf(await flow.start(invited.email, PASSWORD, context()));
-    const { subject: _subject, ...before } = sealed as Pending & { readonly subject?: string };
-    expect(await flow.beginTotpSetup(before as Pending, context())).toEqual({ kind: 'refused', reason: 'expired' });
-    expect(await flow.completeTotpSetup({ ...(before as Pending), totp: { secret: SECRET, uri: 'otpauth://totp/x' } } as Pending, '123456', context())).toEqual({ kind: 'refused', reason: 'expired' });
+    if (sealed.step !== 'mfa_setup') {
+      throw new Error('expected the enrolment step');
+    }
+    const { subject: _subject, ...before } = sealed;
+    expect(await flow.beginTotpSetup(before, context())).toEqual({ kind: 'refused', reason: 'expired' });
+    expect(await flow.completeTotpSetup({ ...before, totp: { secret: SECRET, uri: 'otpauth://totp/x' } }, '123456', context())).toEqual({ kind: 'refused', reason: 'expired' });
   });
 
   it('SEC-22: enrols an invitee inside a live invitation, the address typed in any case, on the subject the provider named', async () => {

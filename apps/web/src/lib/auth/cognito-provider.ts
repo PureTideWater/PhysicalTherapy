@@ -70,6 +70,8 @@ interface Challenge {
   /** The USERNAME the responses carry. */
   readonly u: string;
   readonly email: string;
+  /** The user's name as Cognito gave it (USERNAME or USER_ID_FOR_SRP, the internal UUID here), when it gave one: never the email. */
+  readonly n?: string;
 }
 
 interface Grant {
@@ -121,7 +123,9 @@ const NEXT_STEPS: Readonly<Record<string, 'new_password_required' | 'mfa_setup_r
 function parseChallenge(challenge: string): Challenge | undefined {
   try {
     const parsed = JSON.parse(challenge) as Partial<Challenge>;
-    return typeof parsed.s === 'string' && typeof parsed.u === 'string' && typeof parsed.email === 'string' ? (parsed as Challenge) : undefined;
+    return typeof parsed.s === 'string' && typeof parsed.u === 'string' && typeof parsed.email === 'string' && (parsed.n === undefined || typeof parsed.n === 'string')
+      ? (parsed as Challenge)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -171,20 +175,20 @@ export class CognitoAuthProvider implements AuthProvider {
     response: { ChallengeName?: string; Session?: string; ChallengeParameters?: Record<string, string>; AuthenticationResult?: AuthenticationResultType },
     email: string,
     method: MfaMethod | null,
+    named?: string,
   ): Promise<AuthStep> {
     if (response.AuthenticationResult !== undefined) {
       return this.identity(response.AuthenticationResult, method);
     }
-    const challenge = JSON.stringify({
-      s: response.Session ?? '',
-      u: response.ChallengeParameters?.USERNAME ?? response.ChallengeParameters?.USER_ID_FOR_SRP ?? email,
-      email,
-    } satisfies Challenge);
+    // The name Cognito gave, in this answer or the step before it (a new password's MFA_SETUP), never the typed email:
+    // the enrolment rule matches the account by it (docs/adr/0088, D3; review security-S2).
+    const n = response.ChallengeParameters?.USERNAME ?? response.ChallengeParameters?.USER_ID_FOR_SRP ?? named;
+    const challenge = JSON.stringify({ s: response.Session ?? '', u: n ?? email, email, ...(n === undefined ? {} : { n }) } satisfies Challenge);
     const next = NEXT_STEPS[response.ChallengeName ?? ''];
     if (next === undefined) {
       throw new Error('Cognito asked for a challenge this application does not answer');
     }
-    return { kind: next, challenge };
+    return next === 'mfa_setup_required' && n !== undefined ? { kind: next, challenge, subject: n } : { kind: next, challenge };
   }
 
   private async respond(challenge: string, name: string, responses: Record<string, string>, method: MfaMethod | null, stage: FailureStage): Promise<AuthStep> {
@@ -196,7 +200,7 @@ export class CognitoAuthProvider implements AuthProvider {
       const response = await this.options.client.send(
         new RespondToAuthChallengeCommand({ ClientId: this.options.clientId, ChallengeName: name as never, Session: opened.s, ChallengeResponses: { USERNAME: opened.u, ...responses } }),
       );
-      return await this.next(response, opened.email, method);
+      return await this.next(response, opened.email, method, opened.n);
     } catch (error) {
       if (WRONG_CODE.has(errorName(error)) && stage !== 'password') {
         return { kind: 'rejected', stage };

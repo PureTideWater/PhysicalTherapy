@@ -129,7 +129,8 @@ export class DevAuthProvider implements AuthProvider {
   /** After the password: enroll TOTP first, then a code every time. */
   private secondFactor(record: DevUserRecord): AuthStep {
     return record.totpSecret === null
-      ? { kind: 'mfa_setup_required', challenge: this.challenge({ sub: record.sub, step: 'mfa_setup' }) }
+      ? // The record's subject, as Cognito names its user on MFA_SETUP (docs/adr/0088, D3).
+        { kind: 'mfa_setup_required', challenge: this.challenge({ sub: record.sub, step: 'mfa_setup' }), subject: record.sub }
       : { kind: 'mfa_required', challenge: this.challenge({ sub: record.sub, step: 'mfa' }) };
   }
 

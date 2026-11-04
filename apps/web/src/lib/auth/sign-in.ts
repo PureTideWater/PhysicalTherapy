@@ -22,6 +22,10 @@ import { type OpenedSession, openSession, revokeUserSessions } from './sessions'
  *   and audited; three failed second factors within fifteen minutes are a security event.
  * - MFA is mandatory: there is no path to a session without a TOTP code or a hardware key, and a
  *   first sign-in enrolls TOTP before anything else.
+ * - A second factor is enrolled only inside a live invitation (docs/adr/0088, D3): the account the provider's
+ *   enrolling subject names, with the same email, invited, not enrolled, not locked and with an invitation that has
+ *   not lapsed. It is checked when the provider asks for enrolment and again before each enrolment call, so the
+ *   provider stores no factor for anyone else; a cleared or missing factor is re-enrolled only through support.
  * - Internal roles must use a hardware key: a TOTP sign-in by such a user only registers a key (when
  *   they have none) and never opens a session; they then sign in with the key.
  *
@@ -47,7 +51,8 @@ export interface TotpEnrollment {
 
 export type Pending =
   | { readonly step: 'new_password'; readonly email: string; readonly challenge: string }
-  | { readonly step: 'mfa_setup'; readonly email: string; readonly challenge: string; readonly totp?: TotpEnrollment }
+  /** `subject`: the provider's enrolling user (docs/adr/0088, D3); absent only on a step the release before this rule sealed. */
+  | { readonly step: 'mfa_setup'; readonly email: string; readonly challenge: string; readonly subject?: string; readonly totp?: TotpEnrollment }
   | { readonly step: 'mfa'; readonly email: string; readonly challenge: string }
   | { readonly step: 'key'; readonly email: string; readonly challenge: string }
   /** An internal user proved password and TOTP but has no hardware key yet: they may register one. */
@@ -55,7 +60,16 @@ export type Pending =
   /** A reset code was asked for the typed address: unproven until the code is, so it holds no challenge and opens nothing. */
   | { readonly step: 'reset'; readonly email: string };
 
-export type RefusalReason = 'credentials' | 'locked' | 'expired' | 'hardware_key_required' | 'no_account' | 'key_not_registered' | 'invitation_expired';
+export type RefusalReason =
+  | 'credentials'
+  | 'locked'
+  | 'expired'
+  | 'hardware_key_required'
+  | 'no_account'
+  | 'key_not_registered'
+  | 'invitation_expired'
+  /** A second factor asked for outside a live invitation (docs/adr/0088, D3). */
+  | 'enrolment_not_open';
 
 export type FlowResult =
   /** `keyRequired`: on the first step's result, the account must also register a hardware key (the web layer numbers the setup steps). */
@@ -135,6 +149,39 @@ export class SignInFlow {
     return row;
   }
 
+  /** Whether every invitation of an invited user has lapsed (the database's rule; false for anyone not invited). */
+  private async invitationExpired(userId: string): Promise<boolean> {
+    const [state] = await this.query<{ expired: boolean }>('SELECT invitation_expired($1) AS expired', [userId]);
+    return state?.expired === true;
+  }
+
+  /**
+   * The enrolment rule (docs/adr/0088, D3; review security-S2): the subject the provider is enrolling, when it named
+   * one, names an app account whose email is the step's, which the email alone finds too (sign_in_account's OR would
+   * return either row), and that account is invited, not enrolled, not locked, inside an invitation that has not
+   * lapsed. Answers the subject when enrolment is open; otherwise logs a security event of IDs only and answers
+   * nothing, before any enrolment call, so the provider stores nothing.
+   */
+  private async enrolment(subject: string | undefined, email: string, context: SignInContext): Promise<string | undefined> {
+    const bySub = subject === undefined ? undefined : await this.account({ sub: subject });
+    const byEmail = await this.account({ email });
+    const open =
+      subject !== undefined &&
+      bySub !== undefined &&
+      bySub.cognito_sub === subject &&
+      bySub.email.toLowerCase() === email.toLowerCase() &&
+      byEmail?.user_id === bySub.user_id &&
+      bySub.status === 'invited' &&
+      !bySub.mfa_enrolled &&
+      !bySub.locked &&
+      !(await this.invitationExpired(bySub.user_id));
+    if (!open) {
+      this.deps.logger.warn('security event: second-factor enrolment refused', { user_id: (bySub ?? byEmail)?.user_id ?? null, request_id: context.requestId });
+      return undefined;
+    }
+    return subject;
+  }
+
   private audit(userId: string, action: string, requestId: string, purpose?: string): Promise<void> {
     return withActor(this.deps.pool, userId, (scope) => recordAuditEvent(scope, { action, objectType: 'user', objectId: userId, purpose, requestId }));
   }
@@ -162,8 +209,10 @@ export class SignInFlow {
     switch (step.kind) {
       case 'new_password_required':
         return { kind: 'pending', pending: { step: 'new_password', email, challenge: step.challenge } };
-      case 'mfa_setup_required':
-        return { kind: 'pending', pending: { step: 'mfa_setup', email, challenge: step.challenge } };
+      case 'mfa_setup_required': {
+        const subject = await this.enrolment(step.subject, email, context);
+        return subject === undefined ? refused('enrolment_not_open') : { kind: 'pending', pending: { step: 'mfa_setup', email, challenge: step.challenge, subject } };
+      }
       case 'mfa_required':
         return { kind: 'pending', pending: { step: 'mfa', email, challenge: step.challenge } };
       case 'expired':
@@ -211,11 +260,8 @@ export class SignInFlow {
     }
     // An invitation lasts seven days (PRD 5, J2: "an expired invitation is re-sent by the administrator"), as
     // Cognito's temporary password does; the database says when every invitation of the user has lapsed.
-    if (account?.status === 'invited') {
-      const [state] = await this.query<{ expired: boolean }>('SELECT invitation_expired($1) AS expired', [account.user_id]);
-      if (state?.expired === true) {
-        return refused('invitation_expired');
-      }
+    if (account?.status === 'invited' && (await this.invitationExpired(account.user_id))) {
+      return refused('invitation_expired');
     }
     const result = await this.after(await this.deps.provider.signIn(email, password), email, context);
     return result.kind === 'pending' && account?.hardware_key_required === true ? { ...result, keyRequired: true } : result;
@@ -236,21 +282,32 @@ export class SignInFlow {
     return this.after(step, pending.email, context);
   }
 
-  /** The TOTP secret to enroll, shown once on the enrollment screen. */
-  async beginTotpSetup(pending: Pending): Promise<FlowResult> {
-    if (pending.step !== 'mfa_setup') {
+  /**
+   * The TOTP secret to enroll, shown once on the enrollment screen. The enrolment rule is checked again first, on the
+   * sealed subject: the step can outlive a change to the account. A step sealed with no subject starts again.
+   */
+  async beginTotpSetup(pending: Pending, context: SignInContext): Promise<FlowResult> {
+    if (pending.step !== 'mfa_setup' || pending.subject === undefined) {
       return refused('expired');
+    }
+    const subject = await this.enrolment(pending.subject, pending.email, context);
+    if (subject === undefined) {
+      return refused('enrolment_not_open');
     }
     const setup = await this.deps.provider.beginTotpSetup(pending.challenge);
     if ('kind' in setup) {
       return refused('expired');
     }
-    return { kind: 'pending', pending: { step: 'mfa_setup', email: pending.email, challenge: setup.challenge, totp: { secret: setup.secret, uri: setup.uri } } };
+    return { kind: 'pending', pending: { step: 'mfa_setup', email: pending.email, challenge: setup.challenge, subject, totp: { secret: setup.secret, uri: setup.uri } } };
   }
 
+  /** The code that proves the secret: the enrolment rule is checked once more, the last point before the provider stores the factor. */
   async completeTotpSetup(pending: Pending, code: string, context: SignInContext): Promise<FlowResult> {
-    if (pending.step !== 'mfa_setup' || pending.totp === undefined) {
+    if (pending.step !== 'mfa_setup' || pending.totp === undefined || pending.subject === undefined) {
       return refused('expired');
+    }
+    if ((await this.enrolment(pending.subject, pending.email, context)) === undefined) {
+      return refused('enrolment_not_open');
     }
     const step = await this.deps.provider.completeTotpSetup(pending.challenge, code);
     if (step.kind === 'authenticated') {
