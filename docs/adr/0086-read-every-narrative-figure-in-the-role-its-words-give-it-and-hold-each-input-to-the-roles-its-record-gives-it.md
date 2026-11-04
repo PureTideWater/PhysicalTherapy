@@ -415,6 +415,14 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
   price of its accuracy: "The payer allowed $70.00 per line for the 3 lines" (two phrases), "Per line, the payer
   allowed $70.00" (an opening) and "The payer allowed $70.00 per line for 97110" (a code) fail with the scope
   instruction, and are reworded.
+- Known limit (2026-11-04): the fail-closed triggers are a list of the words that name a part of the lines, and English
+  has more of them than any list holds. A total stated "in total" in a sentence that names a part some other way still
+  passes as the pattern's total: "on a couple of lines", "on a subset of the lines", "on her service lines", "on the
+  lines save one", "that were not denied", "for each of the claims", "apiece", "per date", "to the claimant", "for her".
+  The base reading passed every one of these too (its facts were sets by kind), so this is a gap this decision narrows,
+  not one it opens; the person who approves a packet reads its narrative, and the export job reads it again. The
+  review rounds of 2026-11-04 added triggers pass after pass and each found more, so the list is not grown further
+  here. Closing the class needs a reading that does not depend on English at all (Revisit when, below).
 - A request for approval, an approval and the builder and case screens run the verifier again over a stored version
   that passed (CORR-5): a few milliseconds of reading per version shown, an audited read of each version read again, and
   at a step an audited read of its claims' identifiers. A version an older reading passed says "fails now" and is
@@ -428,3 +436,7 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
 - A real model's drafts (ADR 0051's evaluation) or people's narratives show a role form the reader does not know: add
   its words to the reader and a named example to CAS-44, never a looser rule.
 - The verifier format moves to `/3` (Lane A's migration).
+- The founder decides how a narrative carries its figures. A narrative whose figures are placeholders bound to the
+  facts by code (written and checked by role and scope as data, rendered to text only at export), with any free-text
+  number refused, would close the known limit above without reading English, and would keep every figure computed by
+  code (CLAUDE.md rule 1). Proposed 2026-11-04; not this decision.
