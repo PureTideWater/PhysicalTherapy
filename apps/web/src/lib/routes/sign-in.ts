@@ -22,7 +22,7 @@ import { stepSeconds, warningSeconds } from '../auth/step-limits';
 import { cookieToken } from '../auth/tokens';
 import { listed } from '../copy/words';
 import { publicRoute } from '../http/invoke';
-import type { Issue, PublicContext, RouteRequest } from '../http/route';
+import type { Issue, PublicContext, Route, RouteRequest } from '../http/route';
 import { emailAddress, sixDigitCode } from './schemas';
 
 /**
@@ -51,6 +51,10 @@ export const SIGN_IN_REASONS = [
   'key_registered',
   'locked',
   'restarted',
+  /** A forgotten password was reset (docs/adr/0081, the forgotten password): the email is kept unless the account is disabled. */
+  'password_reset',
+  /** The same, for a locked account: the lock stays, and no email is kept. */
+  'password_reset_locked',
 ] as const;
 export type SignInReason = (typeof SIGN_IN_REASONS)[number];
 /** Which password a restart takes, as the sign-in page is told it. */
@@ -292,8 +296,9 @@ export const signInPage = publicRoute({
   params: reasonParams,
   handle: (context) => {
     const reason = context.params.reason ?? null;
-    // The kept email fills the form only after a step closed or the person chose to start again; never otherwise.
-    const kept = reason === 'step_expired' || reason === 'restarted' ? readKeptEmail(context.request.cookies, context.services.sealer, context.services.now()) : undefined;
+    // The kept email fills the form only after a step closed, the person chose to start again or a reset proved the
+    // address; never otherwise.
+    const kept = reason === 'step_expired' || reason === 'restarted' || reason === 'password_reset' ? readKeptEmail(context.request.cookies, context.services.sealer, context.services.now()) : undefined;
     return Promise.resolve({ reason, email: kept?.email ?? null, use: kept?.use ?? null, supportEmail: context.services.supportEmail });
   },
 });
@@ -318,6 +323,9 @@ export const signInWithPassword = publicRoute({
     }),
 });
 
+/** Where the reset page's own ways out land (review UXR-01): the forgot page's first phase, or the sign-in page. */
+const RESTART_TO = { forgot_password: '/sign-in/forgot-password', sign_in: '/sign-in' } as const;
+
 /**
  * Start again (docs/adr/0081, D6): ends the step the person is leaving before the sign-in page renders, so its setup
  * key, its code challenge or its key-registration grant (given back to the provider) opens nothing for whoever presses
@@ -326,6 +334,8 @@ export const signInWithPassword = publicRoute({
  * names, never an account). It records no audit event, as a step that closes at its limit records none. When that rate
  * limit refuses it (a person who spent the step's count on codes or key ceremonies), the step's cookie still goes, so
  * Back opens nothing; only giving a grant back to the provider waits, and the grant lapses at the step's limit.
+ * The reset step's ways out (Use a different email, Back to sign in) run it too, naming where they go (`to`, set by
+ * their server actions, from a closed list); a reset step left with none named goes back to the forgot page.
  */
 const restartRoute = publicRoute({
   id: 'sign_in.restart',
@@ -335,15 +345,19 @@ const restartRoute = publicRoute({
   rateAccount: pendingAccount,
   phi: false,
   params: noParams,
-  input: noParams,
-  handle: async (context) => {
+  input: z.object({ to: z.enum(['forgot_password', 'sign_in']).optional() }),
+  handle: async (context): Promise<StepResult> => {
     const { cookies } = context.request;
     const pending = readPending(cookies, context.services.sealer, context.services.now());
     clearPending(cookies);
     if (pending !== undefined) {
       await context.services.signIn.abandon(pending);
     }
-    return RESTARTED;
+    const { to } = context.input;
+    if (to !== undefined) {
+      return { redirect: RESTART_TO[to] };
+    }
+    return pending?.step === 'reset' ? { redirect: RESTART_TO.forgot_password } : RESTARTED;
   },
 });
 
@@ -570,6 +584,154 @@ export const registerHardwareKey = publicRoute({
   },
 });
 
+/**
+ * A forgotten password (UX-006; docs/adr/0081, the forgotten password). The page has two phases, chosen by the server
+ * from the sealed step: with no live reset step, the request; with one, the code and the new password. Each phase shows
+ * only its own reason, so a Back or a bookmark to the other's shows the phase plainly (review UXR-12). The address is
+ * never in the URL, a notice, an error or a log; phase 2 shows the one this browser typed, from the sealed step.
+ */
+const FORGOT_PASSWORD_REASONS = ['code_sent', 'step_expired'] as const;
+export type ForgotPasswordReason = (typeof FORGOT_PASSWORD_REASONS)[number];
+
+export type ForgotPasswordPage =
+  | { readonly phase: 'request'; readonly reason: 'step_expired' | null }
+  | { readonly phase: 'confirm'; readonly reason: 'code_sent' | null; readonly email: string; readonly startedAt: number; readonly time: StepTime };
+
+/** Where a reset request lands, for every address alike: phase 2, which says to check the email. */
+const CODE_SENT: StepResult = { redirect: '/sign-in/forgot-password?reason=code_sent' };
+
+/**
+ * A mailed code as it may be typed or copied ("123 456"): six digits, spaces and hyphens dropped. Its hint names the
+ * email, not an authenticator app.
+ */
+const mailedCode = z
+  .string()
+  .max(32)
+  .transform((value) => value.replace(/[\s-]/g, ''))
+  .pipe(z.string().regex(/^\d{6}$/, 'enter the six digits from the email'));
+
+/**
+ * Every code problem's one refusal (wrong, expired, used, replaced, over-tried, an unknown address, a changed hidden
+ * address): never split by cause, which would tell accounts apart (docs/adr/0081, A2).
+ */
+const CODE_REFUSED: StepResult = { error: 'That did not match.', issues: [{ field: 'code', message: 'the code did not match, or it has expired: check it, or send a new code' }] };
+
+/** A reset route whose rate-limit refusals are logged by the request alone, never an address or its hash (review SEC-S1). */
+function resetRoute<R>(route: Route<R>): Route<R> {
+  return {
+    ...route,
+    invoke: async (request, services) => {
+      const outcome = await route.invoke(request, services);
+      if (outcome.status === 'rate_limited') {
+        services.logger.warn('password reset rate limited', { request_id: request.requestId });
+      }
+      return outcome;
+    },
+  };
+}
+
+export const forgotPasswordPage = publicRoute({
+  id: 'sign_in.forgot_password_page',
+  kind: 'page',
+  path: '/sign-in/forgot-password',
+  phi: false,
+  params: z.object({ reason: z.enum(FORGOT_PASSWORD_REASONS).optional() }),
+  handle: (context): Promise<ForgotPasswordPage> => {
+    const now = context.services.now();
+    const pending = pendingOf(context, 'reset', now);
+    const reason = context.params.reason ?? null;
+    if (pending === undefined) {
+      return Promise.resolve({ phase: 'request', reason: reason === 'step_expired' ? reason : null });
+    }
+    return Promise.resolve({
+      phase: 'confirm',
+      reason: reason === 'code_sent' ? reason : null,
+      email: pending.email,
+      startedAt: pending.startedAt ?? now.getTime(),
+      time: stepPage(pending, now).time,
+    });
+  },
+});
+
+/**
+ * The request, from phase 1 and from phase 2's Send a new code (which opens the step again without typing). It answers
+ * every address alike: the same redirect, the same cookies (the step written, any kept email ended, since any typed
+ * address reaches this step), at the flow's floor. Counted in `sign_in` by the typed address, shared with password
+ * attempts (docs/adr/0081, A3).
+ */
+export const resetRequest = resetRoute(
+  publicRoute({
+    id: 'sign_in.reset_request',
+    kind: 'action',
+    path: '/sign-in/forgot-password',
+    rateLimit: 'sign_in',
+    rateAccount: (input) => input.email,
+    phi: false,
+    params: noParams,
+    input: z.object({ email: emailAddress }),
+    handle: async (context): Promise<StepResult> => {
+      const { cookies } = context.request;
+      const at = context.services.now().getTime();
+      clearKeptEmail(cookies);
+      const pending = await context.services.signIn.requestPasswordReset(context.input.email, contextOf(context));
+      writePending(cookies, context.services.sealer, pending, { startedAt: at }, context.services.now());
+      return CODE_SENT;
+    },
+  }),
+);
+
+/**
+ * The code and the new password. Counted in `sign_in` by the hidden email, which must be the sealed one: a changed one
+ * is the code's refusal, with no provider call (never counted by the cookie, which each request mints afresh). A
+ * refusal keeps the step live; a reset ends it, and keeps the proven address for the sign-in page unless the account
+ * is locked or disabled.
+ */
+export const resetConfirm = resetRoute(
+  publicRoute({
+    id: 'sign_in.reset_confirm',
+    kind: 'action',
+    path: '/sign-in/forgot-password/confirm',
+    rateLimit: 'sign_in',
+    rateAccount: (input) => input.email,
+    phi: false,
+    params: noParams,
+    input: z
+      .object({ email: emailAddress, code: mailedCode, password: z.string().min(1, 'fill this in').max(256), confirm: z.string().max(256) })
+      .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords do not match: type the same password in both fields' }),
+    handle: async (context): Promise<StepResult> => {
+      const pending = pendingOf(context, 'reset');
+      if (pending === undefined) {
+        return RESET_RESTART;
+      }
+      const { cookies } = context.request;
+      const { email, code, password } = context.input;
+      if (email !== pending.email) {
+        context.services.logger.warn('password reset code refused', { request_id: context.request.requestId, error_code: 'address_changed' });
+        return CODE_REFUSED;
+      }
+      const result = await context.services.signIn.confirmPasswordReset(email, code, password, contextOf(context));
+      switch (result.kind) {
+        case 'rejected':
+          return CODE_REFUSED;
+        case 'invalid_password':
+          return { error: 'Choose a stronger password.', issues: [passwordIssue(result.problems)] };
+        case 'sessions_not_ended':
+          clearSignIn(cookies);
+          return { error: 'Sign-in could not continue. Start again.', final: true };
+        case 'reset':
+          clearSignIn(cookies);
+          if (result.locked) {
+            return { redirect: '/sign-in?reason=password_reset_locked' };
+          }
+          if (result.keepEmail) {
+            writeKeptEmail(cookies, context.services.sealer, { email, use: 'chosen' }, 'reset', pending.startedAt ?? context.services.now().getTime(), context.services.now());
+          }
+          return { redirect: '/sign-in?reason=password_reset' };
+      }
+    },
+  }),
+);
+
 export const SIGN_IN_ROUTES = [
   signInPage,
   signInWithPassword,
@@ -586,4 +748,7 @@ export const SIGN_IN_ROUTES = [
   registerKeyPage,
   hardwareKeyRegistrationOptions,
   registerHardwareKey,
+  forgotPasswordPage,
+  resetRequest,
+  resetConfirm,
 ] as const;

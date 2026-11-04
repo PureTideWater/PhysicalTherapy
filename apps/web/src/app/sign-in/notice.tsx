@@ -4,7 +4,7 @@ import { ArrivalNotice } from '../../components/arrival-focus';
 import type { PasswordToUse, SignInReason } from '../../lib/routes/sign-in';
 
 /** Why the user is signing in again, in words (the URL carries only the code); `locked`'s are built with the support address. */
-const REASONS: Readonly<Record<Exclude<SignInReason, 'locked'>, { readonly title: string; readonly text: string }>> = {
+const REASONS: Readonly<Record<Exclude<SignInReason, 'locked' | 'password_reset_locked'>, { readonly title: string; readonly text: string }>> = {
   signed_out: { title: 'Signed out', text: 'You have signed out.' },
   idle: { title: 'Session expired', text: 'You were signed out after 30 minutes without activity. Sign in again to continue.' },
   expired: { title: 'Session expired', text: 'Sessions last 12 hours. Sign in again to continue.' },
@@ -16,6 +16,10 @@ const REASONS: Readonly<Record<Exclude<SignInReason, 'locked'>, { readonly title
   hardware_key_required: { title: 'Hardware key required', text: 'Your role signs in with a hardware key. Use it below.' },
   key_registered: { title: 'Hardware key registered', text: 'Your hardware key is registered. Sign in with it now.' },
   restarted: { title: 'Start again', text: 'Start again from your email and password.' },
+  password_reset: {
+    title: 'Password changed',
+    text: 'Your password is changed, and every session of this account has ended. Sign in with your new password and the code from your authenticator app. If you sign in with a hardware key, use it as before.',
+  },
 };
 
 /**
@@ -26,9 +30,20 @@ function locked(supportEmail: string): { readonly title: string; readonly text: 
   return { title: 'Account locked', text: `This account was locked after ten failed attempts. Write to ${supportEmail} from the address you sign in with to have it unlocked.` };
 }
 
+/** A locked account's reset (docs/adr/0081, the forgotten password): the lock stays, and the words say how to lift it. */
+function resetLocked(supportEmail: string): { readonly title: string; readonly text: string } {
+  return {
+    title: 'Password changed',
+    text: `Your password is changed, and every session of this account has ended. This account is locked after ten failed attempts: write to ${supportEmail} from the address you sign in with to have it unlocked.`,
+  };
+}
+
 /** A reason's title and default words. */
 function reasonOf(reason: SignInReason, supportEmail: string): { readonly title: string; readonly text: string } {
-  return reason === 'locked' ? locked(supportEmail) : REASONS[reason];
+  if (reason === 'locked') {
+    return locked(supportEmail);
+  }
+  return reason === 'password_reset_locked' ? resetLocked(supportEmail) : REASONS[reason];
 }
 
 /** The two reasons a person is back after a sign-in step: it closed, or they chose to start again (docs/adr/0081). */
