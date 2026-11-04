@@ -33,7 +33,9 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * SYNTHETIC FIRM CLIENT PRACTICE, and the practice administrator of that practice's own group, SYNTHETIC FIRM CLIENT
  * GROUP; and the platform administrator who suspends and reinstates SYNTHETIC CONSOLE SUSPENSION FIRM in the console, a
  * firm with no one who signs in; and a billing manager and a viewer of the other group for the journey of refused
- * downloads, in a practice of its own).
+ * downloads, in a practice of its own; and, for the sign-in steps' time limits, a viewer whose code step is warned and
+ * closed, a viewer whose step closes in real time, an invited viewer and an invited support engineer who choose a
+ * password and enrol, each alone).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -169,6 +171,15 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   // The console's suspension journey (BIL-09): the platform administrator who suspends and reinstates SYNTHETIC CONSOLE
   // SUSPENSION FIRM, with a hardware key of its own.
   { key: 'suspension-admin', organization: 'internal', role: 'platform_admin' },
+  // The sign-in steps' time limits (docs/adr/0081; test matrix SGN-01 to SGN-04), each alone, because the steps count
+  // toward the ten-failure lock and the mfa bucket: a viewer whose code step is warned and closed, a viewer whose step
+  // closes in real time, an invited viewer who chooses a password and enrols, and an invited support engineer (so a
+  // hardware key is required) who chooses a password, enrols and registers a key. The invited two choose their password
+  // once per run, each run starting from a fresh seed.
+  { key: 'time-mfa', organization: 'group', role: 'viewer' },
+  { key: 'time-real', organization: 'group', role: 'viewer' },
+  { key: 'time-invited', organization: 'group', role: 'viewer', invited: true },
+  { key: 'time-staff', organization: 'internal', role: 'support', invited: true },
 ];
 
 /** The group the seed holds suspended by PaidWhole (BIL-06): no practice, one administrator, never reinstated. */

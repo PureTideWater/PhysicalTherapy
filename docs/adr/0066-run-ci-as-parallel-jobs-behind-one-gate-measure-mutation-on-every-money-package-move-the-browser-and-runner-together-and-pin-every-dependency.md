@@ -24,7 +24,8 @@
     (the release restores no cache, so the attested capacity report depends only on its own run) and
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
-    SHA at its release).
+    SHA at its release). Amended 2026-11-01 (`co-001/dependabot-group-routing`): each dependency in one Dependabot
+    group (the amendment closing Part 2).
   - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
     read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
     newness is read from the base's workflows, and its digest is aged with every other image).
@@ -727,6 +728,27 @@ on every install); actionlint accepts `concurrency.queue` and the bot-queue read
 (O13); a newer trivy is wanted than trivy-action's default (a `version:` pin and its check); the repository goes private
 (about 10 bot pull requests a week, about 3,500 to 4,000 billed minutes a month); or the launch switches the default
 branch back to `main`.
+
+### Amendment (`co-001/dependabot-group-routing`, 2026-11-01): each dependency in one group
+
+"In this order" (above) did not route. Dependabot ranks a group with no patterns (500) above a wildcard pattern
+(`@aws-sdk/*` 95, `@next/*` 92) and the empty group never gives a dependency up (dependabot-core 85379652,
+`pattern_specificity_calculator.rb`, `dependency_group_engine.rb`), so npm run 40818560725 assigned the nine
+`@aws-sdk/*` packages and `@next/eslint-plugin-next` to minor-and-patch, and its pull request (#89) carried the nine
+`@aws-sdk/*` with stripe (`@next/eslint-plugin-next` had no update); an exact name was in two groups, kept out of
+minor-and-patch's pull request only by the file's order. GitHub's documentation says the first matching group wins.
+minor-and-patch now excludes every pattern the specific groups name, which routes each dependency to one group under
+both rules; CI-12 ports the assignment and routes every direct dependency. Alternative: `patterns: ["*"]` on
+minor-and-patch (rests on undocumented scores; routes as before under the documented rule). Revisit when: Dependabot
+documents its group precedence; a group is added (the test fails until it is excluded); or dependabot-core changes its
+group assignment, such as how `exclude-patterns` or a group without patterns matches (GitHub picks the updater for
+each run: the weekly triage's step 1 reads each npm run's updater and its log for it).
+
+The same reading corrects a consequence above: the file's `ignore` entries do not hold for security updates. They name
+update types, which dependabot-core applies to version updates only (`ignore_condition.rb` at 85379652: a security job
+keeps only an entry's `versions`), so an advisory fixed only in an ignored major may open a `security` pull request
+that crosses it. The weekly triage reads such a pull request as a deliberate upgrade, and still reads the open alerts
+for a fix no pull request takes.
 
 ## Part 3 (`co-001/ci-browser`)
 

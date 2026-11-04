@@ -135,6 +135,19 @@ describe('sign-in with a password and TOTP', () => {
     expect(await events(invited.id)).toEqual(['password_changed:', 'mfa_enrolled:totp', 'sign_in:totp']);
   });
 
+  it('SGN-04: reports on the first step’s pending result that the account must also register a hardware key, and nothing for a customer', async () => {
+    const staff = await person({ internal: true });
+    expect(await flow.start(staff.email, PASSWORD, context())).toMatchObject({ kind: 'pending', pending: { step: 'mfa' }, keyRequired: true });
+    const invitedStaff = await person({ status: 'invited', mfa: false, internal: true, temporary: true, totp: false });
+    expect(await flow.start(invitedStaff.email, PASSWORD, context())).toMatchObject({ kind: 'pending', pending: { step: 'new_password' }, keyRequired: true });
+    const customer = await person();
+    const result = await flow.start(customer.email, PASSWORD, context());
+    expect(result).toMatchObject({ kind: 'pending', pending: { step: 'mfa' } });
+    expect(result).not.toHaveProperty('keyRequired');
+    // A refusal carries no flag, whatever the account: nothing address-dependent is added before the provider answers.
+    expect(await flow.start(staff.email, 'Wrong-Pass-2026!', context())).toEqual({ kind: 'refused', reason: 'credentials' });
+  });
+
   it('signs in an enrolled user with a code, and refuses the wrong step or an expired one', async () => {
     const user = await person();
     const step = pendingOf(await flow.start(user.email.toUpperCase(), PASSWORD, context()));

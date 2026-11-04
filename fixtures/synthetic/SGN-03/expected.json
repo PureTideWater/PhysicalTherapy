@@ -1,0 +1,23 @@
+{
+  "case": "SGN-03",
+  "module": "SGN",
+  "title": "Starting again keeps the email",
+  "assertion": "Start again, a press after the limit and a step page loaded after it land on the sign-in page with the email filled and the password empty, from a sealed, HttpOnly, SameSite=Lax cookie written only after the password was proven, never for the hardware-key step, and lasting 15 minutes past the step; Start again ends the step it leaves before the sign-in page renders, so Back and the step's address open it no more and key registration's grant is given back; the notice, a note and never also a live region, takes the focus once and says to use the temporary password after a new-password step, or the chosen one once it was saved; the email is in no URL and is filled only on those two reasons; an unknown address and a wrong password write the same cookies; the kept email ends when a session opens, an account locks or is found disabled, a key is required or registered, or a first step opens no step, and outlives an expiry and Start again",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/pending.test.ts",
+    "apps/web/src/app/sign-in/notice.test.tsx",
+    "apps/web/src/components/step-timer.browser.test.tsx",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/e2e/sign-in-time.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas sign in through the local identity provider; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

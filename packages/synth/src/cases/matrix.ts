@@ -38,11 +38,40 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'PAR-28', title: 'Renamed executable in a zip', assertion: 'Quarantined; nothing parsed' },
   { id: 'PAR-29', title: '10,000-claim file', assertion: 'Parses within target; memory bounded' },
   { id: 'PAR-30', title: 'Same file uploaded concurrently twice', assertion: 'Exactly one remittance row' },
-  { id: 'MAP-01', title: 'Unmapped payer and plan', assertion: 'Pricing refused; coverage shows dollars waiting' },
+  {
+    id: 'MAP-01',
+    title: 'Unmapped payer and plan',
+    assertion:
+      'No line of the plan is ever priced; a line the resolver reaches is left unpriced as `NO_MAPPING`, one by one; the run prices every other line of its period. Coverage shows dollars waiting',
+  },
   { id: 'MAP-02', title: 'Mapping with an effective date after some lines', assertion: 'Earlier lines `NO_MAPPING`; later priced' },
   { id: 'MAP-03', title: 'Mapping corrected', assertion: 'New mapping; old run unchanged; re-run offered' },
   { id: 'MAP-04', title: 'Mapped as no agreement', assertion: 'Lines go to anomaly screening only' },
   { id: 'MAP-05', title: 'Mapped as MA non-contracted', assertion: 'Priced from the fee schedule with all flags on' },
+  {
+    id: 'MAP-06',
+    title: 'A month holding lines of a mapped plan and of a plan with no mapping',
+    assertion:
+      "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs and the home page say the plan has no mapping and its lines are not priced; the run's page and the printed audit report say it had no mapping when the run was priced, and the printed coverage report that it had none when the report was made, in counts and cents only. The engine is unchanged",
+  },
+  {
+    id: 'MAP-07',
+    title: 'A period none of whose plans has a mapping, and the mapping that completes it',
+    assertion:
+      'No run is created: the monitor leaves the month waiting, logged as `UNMAPPED_PLAN` with the count of months, and a person\'s run is refused as pricing nothing. A mapping queues monitoring only when, with a release in force, it leaves a month no run covers with every plan of its lines mapped and no wait on the billing ZIP or on Medicare content holding it; that job names every such month, by its first day only, and prices those months alone as first runs in effect with no hand re-run, never a month still waiting on another plan\'s mapping (with month 1 holding plans A and B and month 2 holding A and C, mapping A, then B, then C gives each month one first run and no re-run). A mapping that leaves the month mixed, or held on the billing ZIP, queues nothing and says only "Mapped", and the page says how many months wait and offers "Price them now", which queues monitoring of every uncovered month and is refused while the practice is suspended. Two people mapping a month\'s last two plans at the same moment queue monitoring exactly once. A month whose last run waited on Medicare content is planned again once a mapping completes it',
+  },
+  {
+    id: 'MAP-08',
+    title: 'Plans mapped after their months were priced',
+    assertion:
+      'The mapping list and each plan\'s page list, oldest first, each run in effect holding `NO_MAPPING` lines that a mapping now covers, with their lines and billed dollars. "Price these months again" creates one re-run of each in that person\'s name, queued and not accepted, with one audit event per re-run; two plans mapped and pressed in turn give one counting re-run per month, and a second press of the same page, by anyone, at any moment, including two presses at once, creates no second re-run. A month whose first run of overlapping dates is queued or being priced is not re-run (`newer_run_pending`) and says it waits. A month whose re-run since the mapping is pending links to it; one whose re-run is superseded or pinned to a withdrawn release is ready again. A month whose re-run since the mapping failed on the billing ZIP or on Medicare content says so, links to it and is not offered again until the location is saved, the terms change or a release loads more of that content; after any other failure it is ready again and says the last re-run failed. Once accepted, the month says to triage it on Cases until triage has validated its short lines that were `NO_MAPPING` before; a re-run accepted after a sign-off or a release alone is not listed. A job never creates the re-runs',
+  },
+  {
+    id: 'MAP-09',
+    title: 'Pricing months again from a page that is out of date, or without the right',
+    assertion:
+      "When a month became ready that the form did not send, or the form sent a month that is neither ready nor already being priced again, the request is refused as `months_changed` with nothing created, the refused field is named in the form's summary, and the page shows the months as they are now. A refusal of one month names it by its dates and creates nothing. A run of another practice, a plan of another practice, a release not in force, a practice that is suspended, and a person without `mapping.edit` are refused, with nothing created",
+  },
   { id: 'CON-01', title: 'Two versions with overlapping windows', assertion: 'Refused' },
   { id: 'CON-02', title: 'Amendment closes the prior window', assertion: 'Prior `effective_to` set; prior unchanged otherwise' },
   { id: 'CON-03', title: 'Edit attempt on a signed-off version', assertion: 'Refused; supersession required' },
@@ -117,6 +146,24 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'Re-running a run that is not in effect',
     assertion:
       'A run that a later run or an accepted re-run replaced, and a re-run nobody accepted, are not re-run (`not_in_effect`). Their pages offer the run in effect for those service dates instead. A run in effect is re-run as before. A re-run of a re-run nobody accepted, left from before this rule, is not accepted (`superseded`)',
+  },
+  {
+    id: 'PRC-29',
+    title: 'A re-run of a month priced around a plan with no mapping, after the plan is mapped',
+    assertion:
+      "The re-run prices the same lines (the original's cut-off), the plan's lines under the mapping and every other line as the original did, unless something else changed since. Its page lists exactly the lines whose pricing in effect changes. Accepted, it is the run in effect and the plan's lines leave `NO_MAPPING`; `recompute(trace)` holds on every priced line; triaged from Cases, the plan's short lines reach validated",
+  },
+  {
+    id: 'PRC-30',
+    title: 'The coverage a run records of plans with no mapping',
+    assertion:
+      '`tp-pricing-coverage/2` lists each plan of the run\'s lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run\'s unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says "N plans had no mapping when this run was priced; their lines are not priced", and a new coverage report, its figures fixed when it was made, "N plans had no mapping; their lines were not priced"; a coverage report stored before keeps both of its own sentences',
+  },
+  {
+    id: 'PRC-31',
+    title: 'Lines of mapped plans still unpriced as `NO_MAPPING` in the pricing in effect',
+    assertion:
+      'Coverage, Pricing runs, the home page and the mapping list count the lines whose pricing in effect is `NO_MAPPING` while a mapping is now in force on their date, in lines, billed cents and priced months only; the count falls to zero once the re-runs pricing them are accepted, and never counts a line of a plan with no mapping',
   },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
@@ -411,6 +458,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   },
   {
+    id: 'MOD-17',
+    title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; the configuration with extra headers asked for on the Anthropic path; the installed SDK's own code; and the failures a request through that client meets",
+    assertion:
+      "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; no webhook key, whatever `ANTHROPIC_WEBHOOK_SIGNING_KEY` says; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others; the environment variables the installed SDK reads, the number of other places each of its files touches the environment and the packages its manifest names, of every kind, are the reviewed lists, each closed, and no package it brings in, its dependencies' own included, reads or touches the environment; through that client, a 429 reaches the gateway as `throttled`, a 529, a 500, a 503 that is not JSON and a refused connection as `unavailable`, a connect timeout, the SDK's own timeout and the gateway's abort as `timeout`, and a 400 or 401 as `rejected`, each after one request",
+  },
+  {
+    id: 'MOD-18',
+    title: "A request through that client while the process has a tracer provider and a trace-context propagator registered and the environment asks for debug logging and another host",
+    assertion:
+      "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console (but the SDK's own deprecation warning, for a model on its lists, which carries the model id and never request content); the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log, and lets `ANTHROPIC_CUSTOM_HEADERS` replace its key (the control)",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:
@@ -481,7 +540,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'CI-09', title: "The domain model's approval as its own check", assertion: '`domain model` runs `--check --strict --require-approval`; the database suite carries no approval case' },
   { id: 'CI-10', title: 'A timeout on every job', assertion: 'Every job of every workflow has the timeout its table names' },
   { id: 'CI-11', title: 'Actions pinned to their release', assertion: "Every `uses:` is a full SHA with its version, one SHA per action; the SHA is the tag's and every input is declared; every action nested in a composite is pinned by SHA too; the release restores no cache" },
-  { id: 'CI-12', title: "Dependabot's configuration", assertion: "Groups in order, majors ignored for the Node image, its types, TypeScript, Next and pg-boss, and for the compose file's postgres; cooldowns; staggered days; and an entry per ecosystem in use" },
+  { id: 'CI-12', title: "Dependabot's configuration", assertion: "Groups in order, each dependency in one: minor-and-patch excludes every pattern a specific group names, and a model of Dependabot's group assignment routes every direct dependency to its group; majors ignored for the Node image, its types, TypeScript, Next and pg-boss, and for the compose file's postgres; cooldowns; staggered days; and an entry per ecosystem in use" },
   { id: 'CI-13', title: 'Images pinned by digest from one source', assertion: 'Every base and service image carries a digest; CI and the capacity harness take Postgres from docker-compose.yml' },
   { id: 'CI-14', title: 'A toolchain without known advisories', assertion: 'The pinned pnpm has no moderate or worse advisory; both images derive it; every musl package in the lockfile carries libc; every version the lockfile adds is at least three days old or a dated exclude' },
   { id: 'CI-15', title: 'The mutation canary', assertion: 'In every shard, each of its five cases reports its expected status before any score' },
@@ -585,5 +644,53 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'The person sees it in the frame (e2e and axe)',
     assertion:
       "In a practice of its own, a letter with \"ABC\" sent past the pattern returns to Coverage with the entries kept, the codes field `aria-invalid`, its message first in its description and the focus on it, and axe (WCAG 2.1 A and AA) passing at 1280 px and at 390 px with no sideways scroll; a contract that is not the payer's is stopped in the browser in the words its refusal would be marked with, and sent past that comes back marked on its control; once corrected, the letter downloads with its marks cleared and the refusal out of the URL, and a reload shows the plain form; a payer that is not the practice's comes back marked and unanswered, and choosing one clears the mark; a refusal the form cannot mark is said as a notice and takes the letter's entries out of the URL; the pattern stops \"ABC\" before the round trip and takes good codes; a good letter downloads and the page stays; a refused file of the Reports list comes back beside that list, and the list leaves the URL with the refusal; a viewer who opens the audit report's line CSV as a page lands on the report with the forbidden notice focused, still there after a router refresh that never asks for the refusal and gone after a reload, while a script's request keeps the JSON refusal; on Uploads a receipt's report downloads in place and its refusal is said above the receipts, focused, while the page stays; and a viewer who opens a packet's PDF lands on the packet's permission state, told who downloads its files, with the refusal out of the URL",
+  },
+  {
+    id: 'SGN-01',
+    title: "A sign-in step's time limit, stated and enforced",
+    assertion:
+      "The new-password, enrolment and code steps say \"This step stays open for 3 minutes.\" before their work, and key registration says 15 minutes (a page rendered later in the step says the time left instead, \"This step closes within 2 minutes.\", rounded up), from one constant that infra's sign-in session and access token pin: the shorter of the provider's limit and the pending cookie's; the dev provider's challenge reads the same constant; the server closes a step at that limit, counted from before the provider issued its challenge, whatever the cookie's own life, and the rewrite after a refused new password extends nothing; a page or a press after the limit starts again without asking the provider and counts no failure; a step sealed before the deploy shows no countdown and is left to the provider",
+  },
+  {
+    id: 'SGN-02',
+    title: 'The warning before a step closes',
+    assertion:
+      "At one minute left (two on a step of ten minutes or more) one polite status, never an alert and never focused, says the step closes within a minute, what Start again costs and keeps, and on enrolment that it gives a new setup key; it is said once and never each second, the limit sentence above the work shows the same state in place and stays in view on a phone with its keyboard up, nothing above it moves, and the focus and what was typed stay, Start again's too; a tab that slept, was hidden, or had its clock set back or forward shows the right state when it is visible again, and says it then; a re-render keeps the count; at the limit the same status says once that the step has closed, nothing redirects and the form stays usable; nothing animates",
+  },
+  {
+    id: 'SGN-03',
+    title: 'Starting again keeps the email',
+    assertion:
+      "Start again, a press after the limit and a step page loaded after it land on the sign-in page with the email filled and the password empty, from a sealed, HttpOnly, SameSite=Lax cookie written only after the password was proven, never for the hardware-key step, and lasting 15 minutes past the step; Start again ends the step it leaves before the sign-in page renders, so Back and the step's address open it no more and key registration's grant is given back; the notice, a note and never also a live region, takes the focus once and says to use the temporary password after a new-password step, or the chosen one once it was saved; the email is in no URL and is filled only on those two reasons; an unknown address and a wrong password write the same cookies; the kept email ends when a session opens, an account locks or is found disabled, a key is required or registered, or a first step opens no step, and outlives an expiry and Start again",
+  },
+  {
+    id: 'SGN-04',
+    title: 'The invited paths are numbered, and the timed steps pass axe',
+    assertion:
+      "An invited customer's headings read \"Step 1 of 2: Choose a password\" and \"Step 2 of 2: Set up two-step verification\", the number shown over the step's name, and an invited staff member's run from \"Step 1 of 3\" to \"Step 3 of 3: Register a hardware key\", counted by the server from the provider's answer and the account; an everyday sign-in, and a restart with one step left, show no number; the code and enrolment steps pass axe (WCAG 2.1 A and AA) with the warning shown, at 1280 and 390 px, and when closed, as do key registration with its warning and the sign-in page with the email kept",
+  },
+  {
+    id: 'HOM-01',
+    title: 'One actionable figure everywhere',
+    assertion:
+      "On one synthetic case before and after its re-run is accepted (its lines priced again), on a case whose rule release is withdrawn, and on a case with a line moved on to payer approved, the home's headline dollars and lines, its cases by state and deadlines, the Cases header and each row's figure and count, the case page's figure and counted lines, an ROI statement generated on demand and the digest's nearing-deadline figure agree, each read through the one predicate; every line not written off is in the figure, moved past actionable or on pricing no longer current, and is counted under that one cause; the case's stored total is untouched and shown nowhere as actionable; the statement recomputes from its entries and the database accepts it; the home reads its cases in one statement that runs the pricing check at one plan node, once per case line at actionable and for no line written off or moved off actionable; the recovered figures to date and for the quarter, from one ledger read, equal ledgerTotalsOver (practiceLedgerTotals's own totals) for all time and for the quarter, on random ledgers whose reversals cross the quarter's boundary, and to date is dated from the first counted entry that stands, none when every recovery was reversed",
+  },
+  {
+    id: 'HOM-02',
+    title: "The home's figures in words",
+    assertion:
+      "The tile counts its lines with counted() and names each cause of the lines out of the figure (0, 1 and 2 of each) only when there are any, as the case page and the packet builder do through outOfFigureWords(); the Recovered tile reads to date since its first counted entry that stands, or none yet, and this quarter from quarter(), each date and quarter key kept on one line; quarter() writes a quarter key and refuses any other; the Payer approved notes say the figure is to date and never the patient’s share and, with the ledger totals' help and the statement's empty line, follow the proof level; the case page's Net expected value shows an amount only on a case still being worked with a line in the figure and a pursuit estimate, and otherwise says why (resolved or closed, not estimated, no line in the figure, every line written off); no read text of the home, Reconciliation, the case page or the statement says a stage number (stage five, stage-five or stage 5), except the home's help (components/help.ts, a #42 file; follow-up after #42); pnpm lint:copy passes",
+  },
+  {
+    id: 'HOM-03',
+    title: 'The empty home names the upload gate',
+    assertion:
+      "The home's gate equals the Uploads page's: a practice BAA and an organization-wide BAA open it, a BAA signed in the future and none close it, a suspension pauses it; open shows the upload sentence with Go to Uploads, closed the BAA sentence with See the agreement chain for a role that may open Settings and no link for a viewer, paused the suspension sentence with no link",
+  },
+  {
+    id: 'HOM-04',
+    title: 'The home and the statement agree in the browser',
+    assertion:
+      "In the LED-06 journey after the recoupment, the home's actionable tile reads $0.00 and \"what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current\", and the Cases header, the case page and an ROI statement generated then (Actionable in cases still being worked) read $0.00; the Recovered tile's to-date figure reads since 2026-06-09 with this quarter's line; the Payer approved note reads deposited or not, never the patient’s share; the home's read text, its help apart, the case page and Reconciliation's recovered figure carry no stage number, and the home's help still says stage-five until #42's follow-up; the statement's empty approval line names deposited",
   },
 ];

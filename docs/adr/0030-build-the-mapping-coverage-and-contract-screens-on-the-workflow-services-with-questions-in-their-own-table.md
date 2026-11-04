@@ -105,3 +105,20 @@ result.
 
 Pricing runs exist (Coverage's counts, the re-run offer), the model gateway proposes abstractions (the proposals
 column and its verifier on the review screen), or a customer needs to answer or upload against a question in one step.
+
+## Amendment (`co-001/unmapped-plan`, 2026-11-01): Coverage's readiness counts the plans with no mapping and the mapped lines still unpriced
+
+Combined audit #32 ("One unmapped plan freezes a whole month"), adopted by the founder with the whole audit on
+2026-10-20, with its milestone 3 exception; built under the founder's standing rule of 2026-10-18 and recorded in
+ADR [0075](0075-price-around-a-plan-with-no-mapping-and-price-its-months-again-from-the-mapping-screens-by-hand.md). The Decision
+above has Coverage show "whether a run over every line would be refused for an unmapped plan (the run's own guard,
+`assertPracticePricingAllowed`)". No run is refused for that any more, so the guard and its screen read
+(`pricingReadiness`) are gone. Coverage, Pricing runs, the home page and Payer and plan mapping now show two live figures,
+in counts and cents only: the plans with no mapping, whose lines no run prices ("N plans have no mapping; their lines are
+not priced", `unmappedPlanTotals`, over the run's own line set), and the lines of mapped plans still unpriced as
+`NO_MAPPING` in the pricing in effect ("N lines of mapped plans are still not priced", PRC-31), each as a default Alert,
+never destructive, linking to the mapping screens. The mapping list and each plan's page list the months waiting for a
+first run (with "Price them now") and the months to price again (with "Price these months again"), beside the re-run a
+run's own page already offers after a mapping changes (MAP-03): one re-run per month, in that person's name, accepted by
+hand under ADR 0037's rule (MAP-08, MAP-09). The reasons table keeps the closed list's remedy for `NO_MAPPING`, word for
+word.

@@ -2,7 +2,8 @@
 
 - **Status:** accepted (`co-001/ux-forms`, the UX baseline review's first pull request); amends
   [0056](0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md) (the type
-  scale's phone exception, decision D6)
+  scale's phone exception, decision D6); amended by
+  [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md)
 - **Date:** 2026-10-26 (revised 2026-10-27 after the security and accessibility review and the UX and brand review)
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings of 2026-10-25 (about 21:27 and 21:34 UTC) have the build improve as it goes and take each
@@ -65,6 +66,11 @@ refused the "123 456" an authenticator app copies; and that several fields check
   itself, never a client wrapper; and `<FormKeys/>` is rendered by pages, never by a layout, or a second submit after a
   success would replay the old request key. A ref, not React state, guards a second press: it is the only guard that
   stops two presses in one frame.
+
+  *Amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md) (decision D6): the one value the server renders back into a form is the sign-in email,
+  as the Email field's `defaultValue` on `/sign-in?reason=step_expired` and `?reason=restarted`, from a sealed HttpOnly
+  cookie written only after the password was proven; `ActionState` still carries no value.*
+
 - **D2. Secrets are emptied after a refusal, and the field says so.** Every control the shared components mark
   `data-secret` (a `PasswordField`, and a `Field` whose `autoComplete` is `one-time-code`) is emptied after every
   refusal, before anything is marked or focused (WCAG 2.2 3.3.7's exception for security fields), with any
@@ -244,6 +250,11 @@ refused the "123 456" an authenticator app copies; and that several fields check
   and the post itself still works.
 - **A session that ends while a form is open** sends the person to sign in, and what was typed is lost, on purpose:
   typed text is never kept in browser storage, because it may hold patient information.
+
+  *Amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md) (decision D6): the sign-in email is kept for 15 minutes past a closed step in a sealed,
+  HttpOnly cookie, which no script can read, and never in browser storage; it is the person's own sign-in address, never
+  patient information.*
+
 - **Without JavaScript, what was typed is lost on a refusal.** The post still reaches the action once, and the page
   comes back with the summary and each field's own message, but every field is empty and a new request key is
   rendered: keeping the values would mean echoing them from the server, which D1 rules out.
