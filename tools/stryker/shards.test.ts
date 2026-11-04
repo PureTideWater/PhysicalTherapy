@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MUTATE, MUTATION_PACKAGES, PACKAGE_VARIABLE, SHARD_VARIABLE, packageOptions, readNoMutants, readShards } from '../../stryker/base.mjs';
 import { repositoryRoot } from '../content-files';
 import { selectFiles, shardsFor, trackedFiles } from './affected';
-import { packagesOf, shardNamed, shardsOf } from './shards';
+import { packagesOf, runShard, shardNamed, shardsOf } from './shards';
+import type { Spawn } from './stryker';
 
 /**
  * The mutation workflow's shards (stryker/shards.json; docs/adr/0066, Part 4): every file a package's configuration
@@ -67,6 +69,41 @@ describe('the shard partition', () => {
     expect(packagesOf(shardNamed('money-ledger'))).toEqual(['money', 'ledger']);
     expect(shardsOf('pricing').map((shard) => shard.name)).toEqual(['pricing-engine', 'pricing-recompute', 'pricing-rest']);
     expect(() => shardNamed('nowhere')).toThrow('stryker/shards.json has no shard "nowhere": money-ledger, packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest');
+  });
+});
+
+/**
+ * A shard's run (docs/adr/0066, Part 7; test matrix CI-29): each of its packages through Stryker by path
+ * (tools/stryker/stryker.ts), never `pnpm stryker`, so no root script, pre or post script, or other package's `stryker`
+ * bin decides what runs. The spawn is a recorder, so no process starts; the shards are read from stryker/shards.json.
+ */
+describe('running a shard', () => {
+  it('runs each of the shard’s packages through Stryker by path, under the shard’s variable, in the root, and starts no pnpm', () => {
+    // @stryker-mutator/core's bin, as its own manifest names it, resolved from the repository's root.
+    const manifest = createRequire(path.join(repositoryRoot, 'package.json')).resolve('@stryker-mutator/core/package.json');
+    const bin = path.join(path.dirname(manifest), (JSON.parse(readFileSync(manifest, 'utf8')) as { bin: { stryker: string } }).bin.stryker);
+    for (const shard of readShards()) {
+      const calls: { command: string; args: readonly string[]; cwd: unknown; stdio: unknown; shard: unknown; path: unknown }[] = [];
+      const spawn: Spawn = (command, args, options) => {
+        calls.push({ command, args: [...args], cwd: options.cwd, stdio: options.stdio, shard: options.env?.[SHARD_VARIABLE], path: options.env?.PATH });
+        return { status: 0 };
+      };
+      const written: string[] = [];
+      const write = vi.spyOn(process.stdout, 'write').mockImplementation((text) => {
+        written.push(String(text));
+        return true;
+      });
+      try {
+        expect(runShard(shard.name, repositoryRoot, spawn), shard.name).toBe(0);
+      } finally {
+        write.mockRestore();
+      }
+      expect(calls.map((call) => call.command), shard.name).not.toContain('pnpm');
+      expect(calls, shard.name).toEqual(
+        packagesOf(shard).map((pkg) => ({ command: process.execPath, args: [bin, 'run', `stryker/${pkg}.config.mjs`], cwd: repositoryRoot, stdio: 'inherit', shard: shard.name, path: process.env.PATH })),
+      );
+      expect(written, shard.name).toEqual(packagesOf(shard).map((pkg) => `stryker (${shard.name}): ${pkg}\n`));
+    }
   });
 });
 
