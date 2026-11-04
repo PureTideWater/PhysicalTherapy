@@ -108,6 +108,12 @@ describe('the noun a figure completes with "of"', () => {
     expect(Open.of('a, s of 5').boundAt(4, cues)).toEqual({ roles: ['variance'], every: false });
   });
 
+  it('is one word before "of" only when a determiner is between: never before a determiner alone, nor before "of" and another word', () => {
+    expect(Open.of('s of the 5').boundAt(3, cues)).toEqual({ roles: ['variance'], every: false });
+    expect(Open.of('s x the 5').boundAt(3, cues)).toBeNull();
+    expect(Open.of('s of x 5').boundAt(3, cues)).toBeNull();
+  });
+
   it('is read past "of" after the figure, and before "of the" with the figure after it', () => {
     expect(roles('The payer paid $90.00 of shortfall.', '$90.00')).toBe('variance');
     expect(roles('The payer paid the contract rate of the $56.00.', '$56.00')).toBe('expected');
