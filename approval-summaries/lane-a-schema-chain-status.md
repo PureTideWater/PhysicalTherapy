@@ -56,6 +56,14 @@ its unpushed work is not waited for).
   in the wild (private cluster beside a held xid: 1 of 20 fails with the CI symptom; none without). The proposed fix is
   in `packages/rules/src/loader.ts` (re-VACUUM until frozen, bounded wait, `LoadResult.frozen`): no schema file, but it
   is being checked against Change Order 001's content-pipeline freeze before it goes into 1b.
+- **05:55 UTC. Container restart (~05:40); setup re-run OK; resuming wf_4c65fb5f-eab.** Before the restart: both reviews
+  returned (11 findings; skeptics confirmed 7: UX-SS01-1 blocking, SEC-F1, UX-SS01-2, UX-SS01-3 should-fix, UX-SS01-5,
+  -6, -8 nits; refuted SEC-F2, SEC-F3, UX-SS01-4, UX-SS01-7); the fix round had its failing-first tests written
+  (uncommitted; saved as WIP ref `co-001/wip-ss01-fix2` f99ea08e).
+- **Flaky load test: the fix is a content-pipeline change (Change Order 001 rule 4; change-order-001.md:10, :115).** No
+  deterministic test-only fix exists (record and patch: `approval-summaries/lane-a-wip/flaky-load/`). **Asked of the
+  founder via the orchestrator (05:50 UTC):** the exception, text proposed in the record. Until a ruling it stays a
+  known flake and the patch is not applied anywhere.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
