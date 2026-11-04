@@ -236,6 +236,7 @@ apps/worker/src/report/remedies.ts
 apps/worker/src/screening/adapter.ts
 apps/worker/src/screening/consumer.ts
 apps/worker/src/screening/expiry.ts
+apps/worker/src/screening/failure-code.ts
 apps/worker/src/screening/format.ts
 apps/worker/src/screening/job.ts
 apps/worker/src/screening/message.ts

@@ -168,21 +168,31 @@ describe('uploads under a hold on the person’s uploads (SS-01 review UX-SS01-3
   const r2 = "the practice's organization is closed, so no new work starts here; everything here stays readable";
   const r5 = 'your organization is closed, so you start no new work here through its grant';
 
+  // The panel's title says the state and the database's sentence follows whole as its body, never repeating the title;
+  // "Uploads are not open yet" is the BAA's alone (docs/adr/0085).
   it('says a hold that lifts as paused, starting again once the hold above is lifted', () => {
     expect(uploadsHeld({ reason: r1, source: 'owner', restarts: true })).toEqual({
-      title: 'Uploads are not open yet',
-      reason: `Uploads are paused: ${r1}.`,
+      title: 'Uploads are paused',
+      reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable.',
       home: { title: 'Uploads are paused', nextStep: 'They start again once the hold above is lifted.' },
     });
   });
 
-  it('says a closure, the owner’s or a grantee’s, as stopped, with no restart (H3, H7, R2, R5)', () => {
+  it('says a closure, the owner’s or a grantee’s, as closed, with no restart (H3, H7, R2, R5)', () => {
     expect(uploadsHeld({ reason: r2, source: 'owner', restarts: false })).toEqual({
-      title: 'No new uploads start',
-      reason: `Uploads have stopped: ${r2}.`,
-      home: { title: 'No new uploads start', nextStep: 'The closure above stops them here.' },
+      title: 'Uploads are closed',
+      reason: "The practice's organization is closed, so no new work starts here; everything here stays readable.",
+      home: { title: 'Uploads are closed', nextStep: 'The closure above stops them here.' },
     });
-    expect(uploadsHeld({ reason: r5, source: 'grantee', restarts: false }).reason).toBe(`Uploads have stopped: ${r5}.`);
+    expect(uploadsHeld({ reason: r5, source: 'grantee', restarts: false }).reason).toBe('Your organization is closed, so you start no new work here through its grant.');
+  });
+
+  it('says a hold whose cause the words do not know as stopped, promising nothing and calling it neither pause nor closure', () => {
+    expect(uploadsHeld({ reason: 'the organization is SYNTHETIC: a reason not known here', source: 'owner', restarts: null })).toEqual({
+      title: 'Uploads are stopped',
+      reason: 'The organization is SYNTHETIC: a reason not known here.',
+      home: { title: 'Uploads are stopped', nextStep: 'The hold above stops them here.' },
+    });
   });
 });
 
@@ -297,9 +307,12 @@ describe('the notice over every hold (BIL-09, property)', () => {
       fc.property(anyHold, fc.string(), (hold, reason) => {
         const restarts = hold.cause !== 'closed';
         const held = uploadsHeld({ reason, source: hold.source, restarts });
-        // The database's sentence is said whole, last; what the page adds around it is what is checked.
-        expect(held.reason.endsWith(`: ${reason}.`)).toBe(true);
-        const text = [held.title, held.home.title, held.home.nextStep, held.reason.slice(0, held.reason.length - reason.length - 1)].join(' ');
+        // The database's sentence is the whole body (its first letter capitalized, one full stop), so the page adds
+        // nothing to it; what the page adds around it is what is checked (docs/adr/0085).
+        const sentence = reason.trim().replace(/[.\s]+$/, '');
+        expect(held.reason).toBe(`${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`);
+        const text = [held.title, held.home.title, held.home.nextStep].join(' ');
+        expect(text).not.toMatch(/not open yet/i);
         if (restarts) {
           expect(text).toMatch(/paused/);
         } else {
