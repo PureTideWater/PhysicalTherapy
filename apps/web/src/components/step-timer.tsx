@@ -7,10 +7,11 @@ import { counted } from '../lib/copy/words';
 import { PendingStatus } from './form-issues';
 
 /**
- * A sign-in step's time limit (docs/adr/0081; test matrix SGN-01, SGN-02): the limit stated once before the work, then
- * one polite status below it, present and empty from the first render, that speaks twice over the step's life: at the
- * warning and when the step has closed, each time with Start again, a POST that ends the step before the sign-in page
- * opens. No ticking count, no focus moved, nothing animated, no redirect and no disabled form: the server closes the
+ * A sign-in step's time limit (docs/adr/0081; test matrix SGN-01, SGN-02, SGN-06): the limit stated once before the
+ * work, then one polite status below it, present and empty from the first render, that speaks twice over the step's
+ * life: at the warning and when the step has closed, each time with Start again, a POST that ends the step before the
+ * sign-in page opens. The reset step is the exception (the amendment's A1): it passes its own `words` and `restart={null}`,
+ * since its page has its own ways on (Send a new code, Use a different email). No ticking count, no focus moved, nothing animated, no redirect and no disabled form: the server closes the
  * step itself (lib/routes/sign-in.ts), and the next press or a reload lands on the sign-in page with the email kept.
  * The sentence above the work shows the same state in a few words, in a cell sized from the first render, so a phone
  * with its keyboard up sees it beside the field and nothing moves; a page rendered after the step began (a reload, a
