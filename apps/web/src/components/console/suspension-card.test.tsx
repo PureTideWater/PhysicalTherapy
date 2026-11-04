@@ -108,12 +108,18 @@ describe('the suspension history (TBL-02; docs/adr/0078)', () => {
   ];
 
   it('scrolls in its ScrollTable from a floor wide enough for its five columns, so a phone scrolls it sideways', () => {
-    const html = renderToStaticMarkup(<SuspensionHistory history={history} />);
+    const html = renderToStaticMarkup(<SuspensionHistory history={history} suspended={false} />);
     expect(html).toMatch(new RegExp(`<table class="w-full min-w-\\[48rem\\] text-left text-sm" aria-label="${HISTORY_CAPTION}">`));
   });
 
+  // SS-01 UX review 5: a suspension written before changes were recorded has no row, and the empty history says so.
+  it('says, while suspended with no change recorded, that the suspension shows only on the card above', () => {
+    expect(renderToStaticMarkup(<SuspensionHistory history={[]} suspended />)).toContain('No change recorded here yet; a suspension made before changes were recorded shows only on the card above.');
+    expect(renderToStaticMarkup(<SuspensionHistory history={[]} suspended={false} />)).toContain('No suspension recorded.');
+  });
+
   it('breaks an email or a note only inside a block with a min-w, never on the cell', () => {
-    const html = renderToStaticMarkup(<SuspensionHistory history={history} />);
+    const html = renderToStaticMarkup(<SuspensionHistory history={history} suspended={false} />);
     expect(html).not.toMatch(/<td[^>]*class="[^"]*break-(all|words)/);
     expect(html.match(/<span class="block min-w-40 wrap-anywhere">synthetic-admin@synthetic\.test<\/span>/g)).toHaveLength(2);
     expect(html).toContain('<span class="block min-w-48 wrap-anywhere">SYNTHETIC NOTE</span>');
