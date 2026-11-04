@@ -259,3 +259,6 @@ and Contributor Insights on a KMS-encrypted log group.
   `audit_event`, and the weekly query stands meanwhile.
 - Refresh tokens are ever used (the hash is then over the subject).
 - Cognito allows a client secret to be set or read in CloudFormation.
+
+- A federated identity provider is added to the pool: `DescribeIdentityProvider` and `GetIdentityProviderByIdentifier`
+  return its `client_secret` in `ProviderDetails`, and the diff role's deny (D1) names neither.
