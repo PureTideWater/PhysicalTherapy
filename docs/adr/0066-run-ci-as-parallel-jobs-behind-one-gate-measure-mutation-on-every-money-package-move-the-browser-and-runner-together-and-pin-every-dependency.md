@@ -1795,8 +1795,9 @@ read and affecting no package: package.json scripts."db:domain-model" (no mutati
 
 **Stryker by path** (`tools/stryker/stryker.ts`). Every Stryker run, the canary's and each shard's, is this Node on the
 `bin.stryker` file that `@stryker-mutator/core`'s own manifest names, resolved from the repository's root:
-`pnpm -s exec tsx tools/stryker/stryker.ts run <config>`. The package must lie under the root's own `node_modules`, so
-one a parent directory or `NODE_PATH` supplies is refused. No root `stryker`, `prestryker` or `poststryker` script, and
+`pnpm -s exec tsx tools/stryker/stryker.ts run <config>`. The package must be the root's own direct link,
+`node_modules/@stryker-mutator/core`, so one a parent directory supplies, or a copy only hoisted under
+`node_modules/.pnpm/node_modules` that `NODE_PATH` resolves, is refused (N53). No root `stryker`, `prestryker` or `poststryker` script, and
 no other package's `stryker` bin, decides what runs, so those scripts are inert too. The root `stryker` script stays,
 for people.
 
@@ -1915,6 +1916,11 @@ since no closure imports `playwright-core`.
   command in the log and summary, and one under `tools/stryker/**`, `patches/**` or a data glob such as
   `fixtures/golden/**` affected no package, since a trailing `**` compiled to a `.` that does not match a line break.
   Both predate this part; it had quoted manifest paths only.
+- **N53** (the review of #96, N1). Stryker's core must be the root's direct link. At 50029e64 the check asked only that
+  the resolved core lie under `<root>/node_modules`, and the tsx and stryker shims set `NODE_PATH` to
+  `<root>/node_modules/.pnpm/node_modules`, which is inside it, so with the root's own `@stryker-mutator/core` removed a
+  hoisted copy would have run. `strykerBin` now also requires `node_modules/@stryker-mutator/core/package.json` to
+  exist and to be the manifest it resolved; a child-process test sets that `NODE_PATH` and is refused.
 
 ### Consequences
 

@@ -1,6 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -41,6 +44,8 @@ function syntheticRoot(files: Readonly<Record<string, string>>): string {
 }
 
 const CORE = 'node_modules/@stryker-mutator/core';
+const TSX = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
+const STRYKER_TS = pathToFileURL(path.join(import.meta.dirname, 'stryker.ts')).href;
 const coreManifest = (bin: unknown) => JSON.stringify({ name: '@stryker-mutator/core', version: '0.0.0', bin, exports: { '.': './dist/index.js', './package.json': './package.json' } });
 
 describe('Stryker by path', () => {
@@ -76,6 +81,21 @@ describe('Stryker by path', () => {
       } finally {
         rmSync(top, { recursive: true, force: true });
       }
+    }
+  });
+
+  // The review of #96 (N1): NODE_PATH is read when Node starts, so this runs strykerBin in a child Node.
+  it('refuses a core only hoisted under node_modules/.pnpm/node_modules, though NODE_PATH (as the tsx and stryker shims set it) resolves it from the root', () => {
+    const HOISTED = 'node_modules/.pnpm/node_modules/@stryker-mutator/core';
+    const root = syntheticRoot({ 'package.json': '{"name":"synthetic"}', [`${HOISTED}/package.json`]: coreManifest({ stryker: './bin/stryker.js' }), [`${HOISTED}/bin/stryker.js`]: '' });
+    try {
+      const script = `import(${JSON.stringify(STRYKER_TS)}).then((m) => { try { console.log('bin ' + m.strykerBin(process.env.TP_ROOT)); } catch (error) { console.log('refused ' + error.message); } });`;
+      const run = (nodePath: string | undefined) => execFileSync(process.execPath, ['--import', TSX, '--input-type=module', '-e', script], { env: { ...process.env, TP_ROOT: root, NODE_PATH: nodePath }, encoding: 'utf8' }).trim();
+      // Without NODE_PATH nothing resolves; with it the hoisted copy does, and is still not the root's own install.
+      expect(run(undefined)).toMatch(/^refused @stryker-mutator\/core is not installed in /);
+      expect(run(path.join(realpathSync(root), 'node_modules/.pnpm/node_modules'))).toMatch(/^refused @stryker-mutator\/core is not installed in .+ as the root's own dependency/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

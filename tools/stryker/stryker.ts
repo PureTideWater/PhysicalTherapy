@@ -10,8 +10,10 @@ import { repositoryRoot } from '../content-files';
  * manifest names, resolved from the repository's root, never `pnpm stryker` or a bin by name. So no root `stryker`,
  * `prestryker` or `poststryker` script, and no other package's `stryker` bin, decides what runs, and those scripts
  * stay inert for mutation. The package's exports allow its manifest (`./package.json`), not its bin file, so the bin
- * is found through the manifest. The core must be the root's own install, under <root>/node_modules: one a parent
- * directory or NODE_PATH supplies is refused.
+ * is found through the manifest. The core must be the root's own install, its direct link
+ * <root>/node_modules/@stryker-mutator/core: one a parent directory supplies, or a copy only hoisted under
+ * <root>/node_modules/.pnpm/node_modules that NODE_PATH (which the tsx and stryker shims set to it) resolves, is
+ * refused.
  *
  * `pnpm -s exec tsx tools/stryker/stryker.ts run <config>` runs Stryker as the canary's step does
  * (tools/stryker/shards.ts runs each package's configuration the same way).
@@ -39,6 +41,12 @@ export function strykerBin(root: string = repositoryRoot): string {
   }
   // A parent directory's node_modules, or NODE_PATH (which the tsx and stryker shims set), is not the root's install.
   if (outside(modules, manifestPath)) throw new Error(`${STRYKER_PACKAGE} is not installed in ${modules} (it resolves to ${manifestPath}, outside it), so Stryker cannot run by path: run pnpm install --frozen-lockfile`);
+  // Nor is a copy under node_modules but not the root's direct link: NODE_PATH points into node_modules/.pnpm/node_modules,
+  // where pnpm hoists every package, so a core the root no longer declares can still resolve from there.
+  const direct = path.join(modules, STRYKER_PACKAGE, 'package.json');
+  if (!existsSync(direct) || realpathSync(direct) !== realpathSync(manifestPath)) {
+    throw new Error(`${STRYKER_PACKAGE} is not installed in ${modules} as the root's own dependency (it resolves to ${manifestPath}), so Stryker cannot run by path: run pnpm install --frozen-lockfile`);
+  }
   const directory = path.dirname(manifestPath);
   const bin = (JSON.parse(readFileSync(manifestPath, 'utf8')) as { bin?: unknown } | null)?.bin;
   const named = typeof bin === 'object' && bin !== null ? (bin as Record<string, unknown>).stryker : undefined;
