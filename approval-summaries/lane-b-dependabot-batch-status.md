@@ -373,7 +373,21 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   restored from cache); gate red; notify updated the capacity issue. #94's own head passed both on 2026-11-02. No re-run.
   Read-only investigation with a skeptic: wf_62f83f6d-b18 (whose, root cause, fix, owner). Orchestrator told.
 
+- 2026-11-04T03:40:00Z: **4846f043's red push runs: neither is #94's** (wf_62f83f6d-b18; skeptic upheld with one correction;
+  notes in `lane-b-dependabot-batch-red-push/`). (1) **images:** Trivy never scanned: setup-trivy's installer gets the binary
+  from get.trivy.dev, now NXDOMAIN (curl exit 6; 6 of 6 installs since 02:54Z, PRs #103 and #104 too; third-party reports
+  date it to the trivy.dev zone edit of 2026-11-03), so a re-run cannot pass. (2) **screening-capacity: the repository is
+  now private** (API `private: true`, still the personal account): the 2-CPU private runner gets RUNNER_TOO_SMALL by design
+  (screening-capacity.md:128, :353; ci.md:240-247): the founder's (organization on Team, then a 4-core larger runner for
+  both capacity jobs and the weekly release-capacity run; O15; ADR 0063:280 on private Free). Issue #102. No re-run.
+  Orchestrator's direction (03:23Z): the red base first, then D. **New PR `co-001/ci-trivy-install-2026-11-04`** (from
+  4846f043; worktree /home/user/ci-trivy): Trivy from its pinned GitHub release asset, hash-checked, skip-setup-trivy, in
+  ci.yml, release.yml, release-dry-run.yml; ADR 0066 amended; two reviews (supply chain). Workflow wf_87464ad4-ed6 (build,
+  check, draft PR, two reviews + skeptics, fix round with the suite once, verification); script archived. Before its merge,
+  its diff and head go to S1, S2, S3 and the schema chain session. D (wf_b49ddbb6-964) still running, draft only.
+
 ## Waiting on someone
+- **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
