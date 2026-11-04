@@ -418,7 +418,11 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       body: 'An invoice of your organization has been unpaid for 30 days since its payment failed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start here until it is paid. Everything here stays readable.',
       nextStep: { link: 'Settings, Billing', href: `/settings/billing/${world.organizationId}`, text: ' shows why and what to do next.' },
     });
-    expect(ok(await call(uploadsPage, admin, P)).gate).toEqual({ open: false, reason: expect.stringMatching(/^Uploads are paused: an invoice of your organization has been unpaid for 30 days/) as string });
+    expect(ok(await call(uploadsPage, admin, P)).gate).toEqual({
+      open: false,
+      title: 'Uploads are not open yet',
+      reason: expect.stringMatching(/^Uploads are paused: an invoice of your organization has been unpaid for 30 days/) as string,
+    });
     expect((await call(pricingRunsPage, admin, P)).status).toBe('ok');
     // The billing page dates the suspension from billing and names the invoice holding it (BIL-05).
     const billingPage = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));

@@ -1,36 +1,50 @@
 import { MAPPING_KINDS } from '@tp/db/runtime';
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PermissionState } from '@tp/ui';
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
 import { MappingText, TotalsText, VersionStatusBadge } from '../../../../../components/contracts/display';
+import { MappingNotice } from '../../../../../components/mapping/held-notice';
+import { MONTHS_NOTICES, MonthsToPriceAgainRegion, MonthsWaitingRegion, heldText } from '../../../../../components/mapping/months';
 import { UtcTime } from '../../../../../components/dates';
 import { Field, SelectField } from '../../../../../components/field';
 import { roleNames } from '../../../../../components/format';
 import { Money } from '../../../../../components/remittances/display';
 import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import type { WorkPause } from '../../../../../lib/billing/suspension-words';
 import { MAPPING_KIND_NAMES, windowText } from '../../../../../lib/contracts/display';
 import type { ResolutionBucket } from '../../../../../lib/contracts/mapping-queries';
 import { unpricedReasonText } from '../../../../../lib/contracts/remedies';
 import { loadPage } from '../../../../../lib/http/next';
-import { planPage } from '../../../../../lib/routes/mapping';
-import { mapPlanFormAction } from '../actions';
+import { type MappingNotice as MappingNoticeKey, planPage } from '../../../../../lib/routes/mapping';
+import { mapPlanFormAction, priceAgainFormAction, priceWaitingFormAction } from '../actions';
 import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Plan mapping' };
 
 type Props = { readonly params: Promise<{ practiceId: string; planId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-const NOTICES = {
-  mapped: { title: 'Mapped', text: 'The plan is mapped from the date given. Its lines on those dates no longer wait on mapping.' },
-  corrected: {
-    title: 'Mapping corrected',
-    text: 'A new mapping supersedes the one it corrects, which stays recorded as it was. Pricing runs made before the correction keep the mapping they priced with; once pricing runs exist, each run that used the corrected mapping is offered a re-run here.',
-  },
-  unchanged: { title: 'Nothing changed', text: 'The plan already has exactly this mapping.' },
-} as const;
+/** What months completed by the mapping are now priced: said after a mapping that queued their monitoring (design 4.3). */
+const PRICING = 'The months whose plans now all have a mapping are being priced; they show on Pricing runs when done.';
+
+const CORRECTED =
+  'A new mapping supersedes the one it corrects, which stays recorded as it was. Pricing runs made before the correction keep the mapping they priced with; once pricing runs exist, each run that used the corrected mapping is offered a re-run here.';
+
+/** The page's notices, each a title and a text (design 5.3; C2): today's three word for word, and the ones for combined audit #32. */
+function planNotices(suspension: WorkPause | null): Readonly<Record<MappingNoticeKey, { readonly title: string; readonly text: string }>> {
+  return {
+    mapped: { title: 'Mapped', text: 'The plan is mapped from the date given. Its lines on those dates no longer wait on mapping.' },
+    corrected: { title: 'Mapping corrected', text: CORRECTED },
+    unchanged: { title: 'Nothing changed', text: 'The plan already has exactly this mapping.' },
+    mapped_pricing: { title: 'Mapped', text: `The plan is mapped from the date given. ${PRICING}` },
+    corrected_pricing: { title: 'Mapping corrected', text: `${CORRECTED} ${PRICING}` },
+    mapped_held: { title: 'Mapped', text: `The plan is mapped from the date given. ${heldText(suspension)}` },
+    corrected_held: { title: 'Mapping corrected', text: `${CORRECTED} ${heldText(suspension)}` },
+    ...MONTHS_NOTICES,
+  };
+}
 
 function outcomeText(bucket: ResolutionBucket): string {
   switch (bucket.outcome) {
@@ -54,14 +68,19 @@ function outcomeText(bucket: ResolutionBucket): string {
  * One payer and plan (PRD 7, Payer and plan mapping; PRD 5, J6): its lines and the dollars waiting on
  * a mapping, how its lines resolve against the practice's agreements now (the version pricing will
  * use, or the unpriced reason; PRD 11, step 1), every mapping it has had, and the form that maps it or
- * corrects a mapping with a new one (MAP-03).
+ * corrects a mapping with a new one (MAP-03). Below the resolution, what the plan's mapping leaves to price (combined
+ * audit #32; docs/adr/0075; MAP-07, MAP-08): the months holding its lines that wait for other plans' mappings, with
+ * "Price them now", and, once it has a mapping, the priced months holding its lines still NO_MAPPING, each in its state,
+ * with "Price these months again". After a mapping that completed months, the notice says they are being priced, or,
+ * while the practice may not start work, when they are (security F1). The notice is said once and leaves the address
+ * bar (MappingNotice; UX-7), and is a note, never an alert (C-2).
  */
 export default async function PlanPage(props: Props) {
   const page = await loadPage(planPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="mapping" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, detail, canMap, roles, notice } = page.data;
+  const { practiceId, detail, months, canMap, canWorkCases, roles, notice, suspension } = page.data;
   const { plan, history, targets, resolution } = detail;
   const kinds = MAPPING_KINDS.filter((kind) => kind !== 'contract' || targets.length > 0);
   return (
@@ -80,12 +99,7 @@ export default async function PlanPage(props: Props) {
           {plan.medicareAdvantage ? '; Medicare Advantage' : ''}.
         </p>
       </div>
-      {notice === null ? null : (
-        <Alert data-notice={notice}>
-          <AlertTitle>{NOTICES[notice].title}</AlertTitle>
-          <AlertDescription>{NOTICES[notice].text}</AlertDescription>
-        </Alert>
-      )}
+      <MappingNotice notice={notice === null ? null : { key: notice, ...planNotices(suspension)[notice] }} />
       <Card role="region" aria-label="This plan's lines">
         <CardHeader>
           <CardTitle>
@@ -141,6 +155,27 @@ export default async function PlanPage(props: Props) {
           </p>
         </CardContent>
       </Card>
+      <MonthsWaitingRegion
+        practiceId={practiceId}
+        planId={plan.id}
+        waiting={months.waiting}
+        canMap={canMap}
+        action={priceWaitingFormAction}
+        formKeys={() => <FormKeys />}
+        suspension={suspension}
+      />
+      {history.length === 0 ? null : (
+        <MonthsToPriceAgainRegion
+          practiceId={practiceId}
+          planId={plan.id}
+          months={months}
+          canMap={canMap}
+          canWorkCases={canWorkCases}
+          action={priceAgainFormAction}
+          formKeys={() => <FormKeys />}
+          suspension={suspension}
+        />
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{plan.current.length === 0 ? 'Map this plan' : 'Map from another date, or correct a mapping'}</CardTitle>
@@ -201,7 +236,7 @@ export default async function PlanPage(props: Props) {
       <section aria-label="Mapping history" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Every mapping of this plan</h2>
         {history.length === 0 ? (
-          <EmptyState title="Never mapped" nextStep="Until it is mapped, every line of this plan waits on mapping and pricing refuses to run over it." />
+          <EmptyState title="Never mapped" nextStep="Until it is mapped, no line of this plan is priced; lines of every other plan price as usual." />
         ) : (
           <ScrollTable label="Mappings">
             <table className="w-full text-left text-sm" aria-label="Mappings">

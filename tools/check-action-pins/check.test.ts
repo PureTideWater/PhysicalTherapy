@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { AGE_EXCEPTIONS, AGE_FILE, baseState, CHECKER_FILE, selectPins } from './base';
+import { AGE_EXCEPTIONS, AGE_FILE, baseState, CHECKER_FILE, PINNED_RELEASES, selectPins } from './base';
 import { checkActionPins, PUSH_CONCURRENCY } from './check';
 import { blob, HANG, lightweight, recordedTransport, sha } from './fixtures';
+import { releaseVersion } from './releases';
 
 /**
  * Which pins the networked checks read, and what a run reports (CI-11): an unchanged pin makes no network read and a
@@ -181,6 +182,9 @@ describe('the pins the network reads', () => {
   it('name each path read at the merge base once, in base.ts, and each is a file the head holds, so a rename that leaves one behind fails here instead of bootstrapping every later pull request (CI-N4)', async () => {
     const root = fileURLToPath(new URL('../../', import.meta.url));
     for (const file of [CHECKER_FILE, AGE_FILE, AGE_EXCEPTIONS]) expect(existsSync(path.join(root, file)), file).toBe(true);
+    // Each release pin is a file the head holds, with the version line releases.ts ages: a rename would leave it unaged.
+    expect(PINNED_RELEASES.map(({ file }) => file)).toEqual(['tools/trivy/release.txt', 'tools/gitleaks/release.txt']);
+    for (const { file } of PINNED_RELEASES) expect(releaseVersion(readFileSync(path.join(root, file), 'utf8')), file).toMatch(/^\d+\.\d+\.\d+$/);
     // The selection and the age rule read the one marker: a base without it bootstraps, and the note names it.
     const without = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, baseAge: false });
     expect(baseState(without.dir, without.base).hasAge).toBe(false);

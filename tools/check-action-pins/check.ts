@@ -6,6 +6,7 @@ import { ageRule, exceptionProblems, webFlowKeys, type WebFlowKeys } from './age
 import { AGE_EXCEPTIONS, baseState, selectPins, type BaseState } from './base';
 import { builderOf, checkBuilder } from './buildkit';
 import { NetworkError, pool, tagCommit, type Transport } from './network';
+import { releasePins } from './releases';
 import { ActionReader, verifyPin } from './verify';
 import { actionUses, consistencyProblems, formProblems, parsePin, reusableWorkflowProblems, versionsByRef, type WorkflowText } from './workflows';
 
@@ -230,6 +231,10 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
       notes.push(...verdict.notes);
     }
 
+    // The release binaries' pins (releases.ts), aged with the workflows' under the same deadline and verdict.
+    const released = await releasePins(options.root, state, options.transport, ageDeadline.signal);
+    (push ? warnings : errors).push(...released.errors);
+    notes.push(...released.notes);
     const aged = await ageRule({
       transport: options.transport,
       workflows,
@@ -247,6 +252,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
       signal: ageDeadline.signal,
       deadlineMs: ageDeadlineMs,
       gpgv: options.gpgv ?? 'gpgv',
+      releases: released.pins,
     });
     errors.push(...aged.errors);
     warnings.push(...aged.warnings);

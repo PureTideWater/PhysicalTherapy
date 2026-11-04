@@ -1,29 +1,22 @@
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, cn } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { rolesPermit } from '@tp/db/runtime';
 import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Figure, PricedShare } from '../../../components/coverage/share';
+import { FirstUpload, HeadlineTiles, uploadGate } from '../../../components/dashboard/headline';
+import { HoldAlert, RunOutcomeBadge } from '../../../components/dashboard/hold-notice';
 import { roleNames, utc, utcDate } from '../../../components/format';
+import { MappedNotPricedAlert, UnmappedPlansAlert } from '../../../components/mapping/months';
 import { NotificationText } from '../../../components/monitoring/display';
-import { proofLevelWords, recoveredLabel } from '../../../components/reconciliation/display';
 import { Money } from '../../../components/remittances/display';
 import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { DEADLINE_WINDOW_DAYS, type Queues } from '../../../lib/dashboard/queries';
 import { stageLinesHref } from '../../../lib/reports/links';
-import { JOB_REFUSED_LABEL } from '../../../lib/billing/suspension-words';
 import { practiceHome } from '../../../lib/routes/practice';
-
-/**
- * The dashboard's tiles (docs/brand/BRAND.md, section 7): label in Slate at 12 px, value in Plex Mono 500,
- * note in Slate; a tile is a link to the screen its figure comes from, in the foreground color.
- */
-const TILE = 'flex flex-col gap-1 rounded-lg border bg-card p-4 text-fg no-underline hover:bg-accent hover:text-fg';
-const TILE_LABEL = 'block text-xs font-medium text-fg-muted';
-const TILE_VALUE = 'block text-2xl font-medium';
-const TILE_NOTE = 'block text-xs text-fg-muted';
 
 export const metadata: Metadata = { title: 'Practice' };
 
@@ -131,30 +124,27 @@ function queueLinks(practiceId: string, queues: Queues, followUpsDue: number): r
   ];
 }
 
-const OUTCOME_NAMES: Readonly<Record<string, string>> = {
-  running: 'Running',
-  retrying: 'Failed; retrying',
-  succeeded: 'Succeeded',
-  failed: 'Failed three times',
-  refused: JOB_REFUSED_LABEL,
-};
-
 /**
  * The practice dashboard (PRD 7, Practice dashboard; PRD 12, What a customer sees as the headline; a
  * PHI route: MFA, the 30-minute idle limit, private no-store, the practice record read through
- * readWithAudit): the headline's three numbers (actionable, payer approved, recovered) with flagged and
- * validated below them, data freshness (the last file and the last run, and a banner with the job
- * reference when a run failed on its last attempt; test matrix JOB-02), coverage, cases by stage,
- * deadlines in 14 days, overdue follow-ups, recovered this quarter (stage five only), the queues to jump
- * to, the practice record and its agreements. Every number links to the screen and stage it came from;
- * before the first file, the empty state says to upload it.
+ * readWithAudit): the headline's three numbers (actionable, payer approved, recovered to date and this
+ * quarter; components/dashboard/headline.tsx) with flagged and validated below them, data freshness (the
+ * last file and the last run, and a banner with the job reference when a run failed on its last attempt;
+ * test matrix JOB-02), coverage, cases by stage, deadlines in 14 days, overdue follow-ups, the queues to
+ * jump to, the practice record and its agreements. Every number links to the screen and stage it came
+ * from; before the first file, the empty state names the gate Uploads uses (the BAA on file, then no hold on
+ * this person's uploads, practice_run_refusal_for with file.upload; test matrix HOM-03, docs/adr/0080) and the
+ * next step it leaves.
+ * Above the queues, the plans with no mapping, whose lines no run prices, and the lines of mapped plans still
+ * NO_MAPPING in effect, as Coverage counts them, each linking to Payer and plan mapping ("Map them" for a person who
+ * may map plans; combined audit #32, docs/adr/0075; MAP-06, PRC-31).
  */
 export default async function PracticePage(props: { readonly params: Promise<{ practiceId: string }> }) {
   const page = await loadPage(practiceHome, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold, uploadsHold } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -163,26 +153,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
-      {hold === null ? null : (
-        <Alert variant="destructive" data-notice="suspended" data-hold-source={hold.source} role="alert">
-          <AlertTitle>{hold.title}</AlertTitle>
-          <AlertDescription>
-            <p>{hold.body}</p>
-            {hold.nextStep === null ? null : (
-              <p data-next-step>
-                {hold.nextStep.link === null ? null : hold.nextStep.href === null ? (
-                  hold.nextStep.link
-                ) : (
-                  <Link className="underline" href={hold.nextStep.href}>
-                    {hold.nextStep.link}
-                  </Link>
-                )}
-                {hold.nextStep.text}
-              </p>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      {hold === null ? null : <HoldAlert hold={hold} />}
       {freshness.failedRun === null ? null : (
         <Alert variant="destructive" data-job={freshness.failedRun.jobId}>
           <AlertTitle>Last run failed</AlertTitle>
@@ -193,46 +164,18 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
         </Alert>
       )}
       {freshness.lastFileAt === null ? (
-        <EmptyState
-          mark
-          title="Upload your first 835 files"
-          nextStep="The practice's workspace fills as its billing team uploads 835 files and contracts: each file's receipt follows it from received to loaded, and the dashboard counts what it finds here. Uploads open once the agreement chain below is on file."
-          action={
-            <Link className="text-sm underline" href={`/p/${practice.id}/uploads`}>
-              Go to Uploads
-            </Link>
-          }
+        <FirstUpload
+          practiceId={practice.id}
+          gate={uploadGate(dashboard.uploads, uploadsHold)}
+          // The agreement chain is the next step for the roles that work the practice; a viewer only reads it (UX-119).
+          agreements={access.roles.some((role) => role !== 'viewer')}
         />
       ) : (
         <>
           <section aria-label="Headline" className="flex flex-col gap-3">
             <h2 className="text-xl font-bold tracking-display">The headline</h2>
             <p className="text-sm text-muted-foreground">Three numbers, never one: each is its own stage, and none is added to another. Each opens the screen it comes from.</p>
-            <div className="grid gap-3 sm:grid-cols-3" data-slot="tile-row">
-              <Link href={`/p/${practice.id}/cases`} className={TILE} data-figure="actionable">
-                <span className={TILE_LABEL}>{STAGE_LABELS.actionable}</span>
-                <span className={TILE_VALUE}>
-                  <Money value={dashboard.headline.actionable.cents} />
-                </span>
-                <span className={TILE_NOTE}>
-                  what the packets ask for: {dashboard.headline.actionable.lines} {dashboard.headline.actionable.lines === 1 ? 'line' : 'lines'} in cases still being worked
-                </span>
-              </Link>
-              <Link href={`/p/${practice.id}/reconciliation`} className={TILE} data-figure="payer-approved">
-                <span className={TILE_LABEL}>{STAGE_LABELS.payer_approved}</span>
-                <span className={TILE_VALUE}>
-                  <Money value={dashboard.headline.payerApprovedCents} />
-                </span>
-                <span className={TILE_NOTE}>what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts</span>
-              </Link>
-              <Link href={`/p/${practice.id}/reconciliation`} className={cn(TILE, 'border-border-strong')} data-figure="recovered-total">
-                <span className={TILE_LABEL}>{recoveredLabel(dashboard.headline.proofLevel)}</span>
-                <span className={TILE_VALUE}>
-                  <Money value={dashboard.headline.recoveredCents} />
-                </span>
-                <span className={TILE_NOTE}>stage five: cash {proofLevelWords(dashboard.headline.proofLevel)}, net of recoupments and reversals</span>
-              </Link>
-            </div>
+            <HeadlineTiles practiceId={practice.id} headline={dashboard.headline} recoveredQuarter={dashboard.recoveredQuarter} />
             <ul className="flex flex-col gap-1 text-sm" aria-label="Below the headline">
               <li data-figure="flagged">
                 <Link className="underline" href={stageLinesHref(practice.id, 'flagged')}>
@@ -272,9 +215,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                   ) : (
                     <>
                       {JOB_NAMES[freshness.lastRun.jobType] ?? freshness.lastRun.jobType}, {utc(freshness.lastRun.finishedAt ?? freshness.lastRun.startedAt)}:{' '}
-                      <Badge variant={freshness.lastRun.outcome === 'failed' ? 'destructive' : freshness.lastRun.outcome === 'succeeded' ? 'default' : 'secondary'} data-outcome={freshness.lastRun.outcome}>
-                        {OUTCOME_NAMES[freshness.lastRun.outcome] ?? freshness.lastRun.outcome}
-                      </Badge>
+                      <RunOutcomeBadge outcome={freshness.lastRun.outcome} />
                     </>
                   )}
                 </dd>
@@ -366,17 +307,11 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                     </>
                   )}
                 </dd>
-                <dt className="text-muted-foreground">{recoveredLabel(dashboard.headline.proofLevel)} this quarter</dt>
-                <dd data-figure="recovered">
-                  <Link className="underline" href={`/p/${practice.id}/reconciliation`}>
-                    <Money value={dashboard.recoveredQuarter.cents} />
-                  </Link>{' '}
-                  ({dashboard.recoveredQuarter.quarter}, {dashboard.recoveredQuarter.from} to {dashboard.recoveredQuarter.to}: stage five only, cash {proofLevelWords(dashboard.headline.proofLevel)}, net of recoupments and reversals, from the
-                  recovery ledger)
-                </dd>
               </dl>
             </CardContent>
           </Card>
+          <UnmappedPlansAlert practiceId={practice.id} totals={dashboard.unmappedPlans} canMap={rolesPermit(access.roles, 'mapping.edit')} place="home" />
+          <MappedNotPricedAlert practiceId={practice.id} totals={dashboard.mappedNotPriced} canMap={rolesPermit(access.roles, 'mapping.edit')} />
           <Card role="region" aria-label="Queues">
             <CardHeader>
               <CardTitle>Queues</CardTitle>

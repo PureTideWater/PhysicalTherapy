@@ -9,6 +9,7 @@ import { type DevUserRecord, FileDevStore, MemoryDevStore } from './dev-store';
 import { hashPassword, passwordProblems } from './password';
 import type { AuthStep } from './provider';
 import { Sealer } from './seal';
+import { PROVIDER_CHALLENGE_SECONDS } from './step-limits';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
 import { totpCode } from './totp';
 
@@ -80,12 +81,14 @@ describe('DevAuthProvider: password and TOTP', () => {
     expect(await dev.signIn('nobody@synthetic.test', PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
   });
 
-  it('expires a challenge after three minutes, and refuses one sealed for another step', async () => {
+  it('SGN-01: expires a challenge at the sign-in steps’ constant (three minutes), and refuses one sealed for another step', async () => {
     const { dev } = await provider([await record()]);
     const step = await dev.signIn('person@synthetic.test', PASSWORD);
     expect(await dev.completeTotpSetup(challengeOf(step), '123456')).toEqual({ kind: 'expired' });
     expect(await dev.setNewPassword(challengeOf(step), 'Another-Pass-2026')).toEqual({ kind: 'expired' });
-    advance(181);
+    advance(PROVIDER_CHALLENGE_SECONDS - 1);
+    expect(await dev.answerTotp(challengeOf(step), '000000')).toEqual({ kind: 'rejected', stage: 'mfa' });
+    advance(1);
     expect(await dev.answerTotp(challengeOf(step), totpCode('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', clock))).toEqual({ kind: 'expired' });
     expect(await dev.answerTotp('not a challenge', '123456')).toEqual({ kind: 'expired' });
   });

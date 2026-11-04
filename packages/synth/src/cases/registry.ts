@@ -83,11 +83,41 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'PAR-28': { completesIn: 3, build: par.par28, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/intake/zip.test.ts'] },
   'PAR-29': { completesIn: 2, build: par29, assertedBy: ['packages/edi835/src/performance.test.ts', 'packages/synth/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
   'PAR-30': { completesIn: 2, build: par.par30, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'packages/db/src/documents.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
-  'MAP-01': { completesIn: 3, build: pricing.map01, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/mapping.spec.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts'] },
+  'MAP-01': { completesIn: 3, build: pricing.map01, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/mapping.spec.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/web/src/lib/routes/mapping-routes.db.test.ts'] },
   'MAP-02': { completesIn: 5, build: pricing.map02, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts'] },
   'MAP-03': { completesIn: 7, build: pricing.map03, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/worker/src/price/rerun.db.test.ts'] },
   'MAP-04': { completesIn: 6, build: pricing.map04, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts'] },
   'MAP-05': { completesIn: 5, build: pricing.map05, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/web/e2e/pricing.spec.ts'] },
+  // Combined audit #32 (`co-001/unmapped-plan`; docs/adr/0075): one unmapped plan no longer freezes a whole month.
+  'MAP-06': {
+    completesIn: 3,
+    build: pricing.map06,
+    assertedBy: [
+      'apps/worker/src/price/price.db.test.ts',
+      'apps/worker/src/monitor/monitor.db.test.ts',
+      'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+      'apps/web/e2e/mapping.spec.ts',
+    ],
+  },
+  'MAP-07': none(7, "No file of its own: MAP-01's and MAP-06's files, loaded with no plan mapped.", [
+    'apps/worker/src/price/price.db.test.ts',
+    'apps/worker/src/monitor/job.test.ts',
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/worker/src/jobs/registry.test.ts',
+    'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+    'apps/web/src/lib/routes/pricing-routes.db.test.ts',
+    'apps/web/src/lib/routes/audit-e2e.db.test.ts',
+    'apps/web/e2e/mapping.spec.ts',
+  ]),
+  'MAP-08': none(7, "No file of their own: MAP-06's file.", [
+    'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/pricing/mapped-plan-content.db.test.ts',
+    'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+    'apps/web/src/components/mapping/months.test.tsx',
+    'apps/web/e2e/mapping.spec.ts',
+  ]),
+  'MAP-09': none(7, "No file of their own: MAP-06's file.", ['apps/web/src/lib/routes/mapping-routes.db.test.ts']),
   'CON-01': { completesIn: 4, build: pricing.con01, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts'] },
   'CON-02': { completesIn: 4, build: pricing.con02, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
   'CON-03': { completesIn: 4, build: pricing.con03, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts'] },
@@ -166,6 +196,23 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/price/rerun-rule.property.test.ts',
     'apps/web/src/lib/routes/reruns-routes.db.test.ts',
     'apps/web/e2e/pricing.spec.ts',
+  ]),
+  // Combined audit #32 (`co-001/unmapped-plan`; docs/adr/0075): the months priced around a plan with no mapping, and pricing them again.
+  'PRC-29': none(7, "No file of their own: MAP-06's file.", ['apps/web/src/lib/pricing/mapped-plan.db.test.ts']),
+  'PRC-30': none(3, "No file of its own: MAP-06's and MAP-01's files.", [
+    'apps/worker/src/price/price.test.ts',
+    'apps/worker/src/price/price.db.test.ts',
+    'apps/web/src/components/pricing/display.test.tsx',
+    'apps/worker/src/report/documents.test.ts',
+    'apps/worker/src/report/report.test.ts',
+    'apps/worker/src/report/unmapped-report.db.test.ts',
+    'apps/web/src/components/reports/display.test.tsx',
+    'apps/web/src/lib/routes/report-documents-routes.db.test.ts',
+  ]),
+  'PRC-31': none(3, "No file of their own: MAP-06's file.", [
+    'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+    'apps/web/e2e/mapping.spec.ts',
   ]),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
@@ -628,9 +675,29 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/model-gateway/eval/gate.golden.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
+  // The contract PHI check (combined audit item 120; docs/adr/0070 Part 3).
+  'MOD-12': {
+    completesIn: 10,
+    build: workflow.mod12,
+    assertedBy: [
+      'packages/model-gateway/src/redact.test.ts',
+      'packages/model-gateway/src/patient-records.test.ts',
+      'packages/model-gateway/src/patient-records.db.test.ts',
+      'packages/model-gateway/src/specs.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/src/gateway.test.ts',
+      'packages/model-gateway/src/gateway.db.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/worker/src/models/permitted.db.test.ts',
+    ],
+  },
   // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
   'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  // SDK 1.x on the Anthropic path: the client's tracing, logging and host held, extra headers refused (docs/adr/0048, amendment of 2026-11-01).
+  'MOD-17': none(10, 'The client and the configuration are built in memory with a synthetic key, the SDK’s code is read where pnpm installed it, and a fake fetch answers each failure in memory; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts', 'packages/model-gateway/src/config.test.ts']),
+  'MOD-18': none(10, 'A fake fetch answers a synthetic message in memory; no request leaves the process; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
@@ -831,6 +898,56 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/download-refusal.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
+  // The sign-in steps of the UX baseline review's sixth pull request (docs/adr/0081).
+  'SGN-01': none(1, 'Synthetic personas sign in through the local identity provider on an injected clock and in the browser, and the limit is read from infra’s source text; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-02': none(1, 'The step timer runs in the browser harness and on synthetic sign-ins, on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-03': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-04': none(1, 'Synthetic invited personas, a customer and a staff member, choose a password and enrol through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
+  // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
+  'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [
+    'apps/web/src/lib/routes/pricing-current-routes.db.test.ts',
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/worker/src/triage/actionable-now.db.test.ts',
+    'apps/worker/src/reconcile/recovered-periods.test.ts',
+  ]),
+  'HOM-02': none(9, 'The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.', [
+    'apps/web/src/components/dashboard/headline.test.tsx',
+    'apps/web/src/components/format.test.ts',
+    'apps/web/src/components/reconciliation/display.test.tsx',
+    'apps/web/src/components/triage/display.test.tsx',
+    'apps/web/src/lib/triage/queries.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'HOM-03': none(9, 'The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.', [
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/web/src/components/dashboard/headline.test.tsx',
+  ]),
+  'HOM-04': none(9, 'The LED-06 journey uploads SYNTHETIC LED-06’s remittances and exports, whose files belong to that case, in a practice of its own; no file.', ['apps/web/e2e/reconciliation.spec.ts']),
 };
 
 export interface CaseDefinition {

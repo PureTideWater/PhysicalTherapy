@@ -184,14 +184,16 @@ describe('a person with two paths, held per permission (BIL-07; D1)', () => {
     }
   });
 
-  it('pauses uploads at the gate only for those whose uploads stop', async () => {
+  it('pauses uploads at the gate, and on the practice home, only for those whose uploads stop (HOM-03)', async () => {
     for (const one of [principal, X, Y, Z, W]) {
       const { gate } = await data(uploadsPage, one.userId);
       if (one.stopped.includes('file.upload')) {
-        expect(gate, one.name).toEqual({ open: false, reason: `Uploads are paused: ${R4}.` });
+        expect(gate, one.name).toEqual({ open: false, title: 'Uploads are not open yet', reason: `Uploads are paused: ${R4}.` });
       } else {
-        expect(gate, one.name).toEqual({ open: true, reason: null });
+        expect(gate, one.name).toEqual({ open: true, title: null, reason: null });
       }
+      // The home's empty state names the gate Uploads uses: Z is held (a notice above it) yet still uploads.
+      expect((await data(practiceHome, one.userId)).uploadsHold, one.name).toEqual(gate.open ? null : { reason: R4, source: 'grantee', restarts: true });
     }
   });
 
@@ -225,6 +227,9 @@ describe('a closed grantee, and the owner’s hold (BIL-07; D6)', () => {
     try {
       const upload = ROUTES.find((route) => route.id === 'practice.uploads.request') as Route;
       expect(await call(upload, principal.userId)).toEqual({ status: 'suspended', reason: R5 });
+      // Uploads and the empty home say the closure as stopped, never paused or opening later (SS-01 review UX-SS01-3).
+      expect((await data(uploadsPage, principal.userId)).gate).toEqual({ open: false, title: 'No new uploads start', reason: `Uploads have stopped: ${R5}.` });
+      expect((await data(practiceHome, principal.userId)).uploadsHold).toEqual({ reason: R5, source: 'grantee', restarts: false });
       expect((await data(practiceHome, principal.userId)).hold).toEqual({
         source: 'grantee',
         title: "Work through your organization's grant has stopped",
@@ -259,6 +264,10 @@ describe('a closed grantee, and the owner’s hold (BIL-07; D6)', () => {
         nextStep: { link: null, href: null, text: "The practice's administrator sees why and what to do next in Settings, Billing." },
       });
       expect(JSON.stringify(outsider)).not.toMatch(/request|invoice|unpaid|suspended/i);
+      // The owner's hold pauses the home's uploads for everyone, as it does Uploads (HOM-03).
+      for (const one of [Z, principal, W]) {
+        expect((await data(practiceHome, one.userId)).uploadsHold, one.name).toMatchObject({ source: 'owner', restarts: true });
+      }
       // The practice's administrator holds the group's billing.
       expect((await data(practiceHome, world.refs.adminUserId)).hold?.nextStep).toEqual({
         link: 'Settings, Billing',

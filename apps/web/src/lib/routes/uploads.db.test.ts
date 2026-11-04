@@ -196,7 +196,7 @@ describe('the Uploads page', () => {
     expect(ok(await call(uploadsPage, manager, practice()))).toMatchObject({ canUpload: true, gate: { open: true, reason: null }, limits: { maxFiles: 100, maxBytes: 2 * 1024 ** 3 } });
     expect(ok(await call(uploadsPage, viewer, practice()))).toMatchObject({ canUpload: false, roles: ['viewer'] });
     const closed = ok(await call(uploadsPage, manager, { practiceId: unsigned }));
-    expect(closed.gate).toEqual({ open: false, reason: expect.stringContaining('business associate agreement') });
+    expect(closed.gate).toEqual({ open: false, title: 'Uploads are not open yet', reason: expect.stringContaining('business associate agreement') });
   });
 
   it('offers the ERA export formats to choose from, each flagged while its layout is unconfirmed (docs/adr/0060)', async () => {
@@ -254,6 +254,20 @@ describe('asking for upload URLs', () => {
     expect(await call(requestUploads, manager, practice(), { files: [{ ...csv, kind: 'eft_export', contentType: 'application/octet-stream' }] })).toEqual({ status: 'invalid', issues: [{ field: 'files.0.contentType', message: `File 1 is not a CSV: ${save}` }] });
     expect(await call(requestUploads, manager, practice(), { files: [csv, { ...csv, contentType: 'application/vnd.ms-excel' }] })).toMatchObject({ status: 'ok' });
     expect(await call(requestUploads, viewer, practice(), { files: [file] })).toMatchObject({ status: 'forbidden', permission: 'file.upload' });
+  });
+
+  it('refuses a file with no kind, an empty one or one it does not know, and records nothing (the server’s own rule; docs/adr/0070, Part 3)', async () => {
+    // The upload panel leaves the kind unchosen on the Contracts and Reconciliation screens until the person picks one;
+    // a request made around the panel is held to the same rule here, so no file is ever filed under a kind by default.
+    const file = { kind: 'contract', contentType: 'application/pdf', sizeBytes: 100 };
+    const { kind: _kind, ...kindless } = file;
+    const count = async () => (await owner.query<{ n: string }>('SELECT count(*)::text AS n FROM source_document WHERE practice_id = $1', [world.practiceId])).rows[0]?.n;
+    const before = await count();
+    for (const files of [[kindless], [{ ...file, kind: '' }], [{ ...file, kind: 'eob' }], [{ ...file, kind: null }], [file, kindless]]) {
+      const position = files.length - 1;
+      expect(await call(requestUploads, manager, practice(), { files }), String(position)).toMatchObject({ status: 'invalid', issues: [{ field: `files.${String(position)}.kind` }] });
+    }
+    expect(await count()).toBe(before);
   });
 
   it('records an ERA export with the system it came from, requires the format of an ERA export and of no other file (docs/adr/0060)', async () => {

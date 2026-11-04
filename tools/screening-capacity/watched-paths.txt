@@ -68,6 +68,7 @@ apps/web/src/lib/auth/provider.ts
 apps/web/src/lib/auth/seal.ts
 apps/web/src/lib/auth/sessions.ts
 apps/web/src/lib/auth/sign-in.ts
+apps/web/src/lib/auth/step-limits.ts
 apps/web/src/lib/auth/tokens.ts
 apps/web/src/lib/auth/totp.ts
 apps/web/src/lib/billing/config.ts
@@ -253,6 +254,7 @@ apps/worker/src/storage/s3-object-lock-store.ts
 apps/worker/src/support/inbox.ts
 apps/worker/src/support/mime.ts
 apps/worker/src/support/support-mail.ts
+apps/worker/src/triage/actionable-now.ts
 apps/worker/src/triage/deadline.ts
 apps/worker/src/triage/execute.ts
 apps/worker/src/triage/job.ts
@@ -387,6 +389,7 @@ packages/model-gateway/src/gateway.ts
 packages/model-gateway/src/hash.ts
 packages/model-gateway/src/index.ts
 packages/model-gateway/src/limiter.ts
+packages/model-gateway/src/patient-records.ts
 packages/model-gateway/src/permitted.ts
 packages/model-gateway/src/postgres-store.ts
 packages/model-gateway/src/prices.ts
@@ -507,6 +510,7 @@ packages/synth/src/guard/xlsx.ts
 packages/synth/src/identity.ts
 packages/synth/src/index.ts
 packages/synth/src/release/scale.ts
+packages/synth/src/screen/patient-twins.ts
 packages/synth/src/screening/uploads.ts
 packages/synth/src/twin/boundary.ts
 packages/synth/src/twin/roles.ts

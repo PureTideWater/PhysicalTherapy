@@ -9,10 +9,10 @@ import { describe, expect, it } from 'vitest';
 
 import { CONTENT_NOT_LOADED_REASONS, type ReportLine, contentNotLoadedReason, deadlineRemedy } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
-import { auditHtml, auditReconciliation, caseStateText, escapeHtml, reasonText } from './html';
+import { auditHtml, auditReconciliation, caseStateText, escapeHtml, reasonText, unmappedPlansText } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { UNPRICED_REMEDIES } from './remedies';
-import { CONTENT } from './test-support/audit-content';
+import { CONTENT, CONTENT_WITH_UNMAPPED_PLANS } from './test-support/audit-content';
 import { amountsNotInMono } from './test-support/figures';
 
 const LINE: ReportLine = {
@@ -174,6 +174,26 @@ describe('the report HTML', () => {
     expect(corrected.state).toBe('submitted');
     expect(auditHtml({ ...CONTENT, cases: [corrected] })).toContain('<td>submitted; payer corrected, balance is the patient’s</td>');
   });
+
+  it('says in its coverage how many plans had no mapping when the run was priced, and that their lines are not priced (combined audit #32; PRC-30, MAP-06)', () => {
+    const coverage = (report: string) => report.slice(report.indexOf('aria-label="Coverage"'), report.indexOf('aria-label="Anomalies"'));
+    const two = coverage(auditHtml(CONTENT_WITH_UNMAPPED_PLANS));
+    expect(two).toContain(
+      '<p>2 plans had no mapping when this run was priced; their lines are not priced (14 lines, <span class="figure-amount">$1,234.00</span> billed).</p><table',
+    );
+    expect(two).toContain('<td>NO_MAPPING</td>');
+    expect(unmappedPlansText({ plans: 1, lines: 1, charge_cents: '2500' })).toBe('1 plan had no mapping when this run was priced; its lines are not priced (1 line, $25.00 billed).');
+    expect(unmappedPlansText({ plans: 1, lines: 3, charge_cents: '-700' })).toBe('1 plan had no mapping when this run was priced; its lines are not priced (3 lines, -$7.00 billed).');
+    // Nothing is said when the run had none, nor in a report stored before the run's unmapped plans were recorded.
+    expect(unmappedPlansText({ plans: 0, lines: 0, charge_cents: '0' })).toBeNull();
+    expect(unmappedPlansText(undefined)).toBeNull();
+    expect(coverage(auditHtml({ ...CONTENT, coverage: { ...CONTENT.coverage, unmapped_plans: { plans: 0, lines: 0, charge_cents: '0' } } }))).not.toContain('no mapping');
+    expect(coverage(html)).not.toContain('no mapping');
+  });
+
+  it.skipIf(!chromiumInstalled())('sets the unmapped plans’ billed dollars in IBM Plex Mono (skipped without Chromium)', async () => {
+    expect(await amountsNotInMono(auditHtml(CONTENT_WITH_UNMAPPED_PLANS))).toEqual([]);
+  }, 60_000);
 
   it('escapes every text it shows and loads nothing from outside the document', () => {
     expect(html).toContain('SYNTHETIC PRACTICE &lt;A&amp;B&gt;');

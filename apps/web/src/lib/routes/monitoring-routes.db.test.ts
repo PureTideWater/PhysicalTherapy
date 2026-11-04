@@ -150,17 +150,20 @@ describe('the practice dashboard (JOB-02)', () => {
       recoveredQuarter: { cents: '0' },
     });
     // The headline: three numbers, each its own stage (actionable is the Cases screen's figure; payer
-    // approved and recovered the ledger's, which holds no entry), and the stages below it: the one line
-    // of the pattern below materiality is validated, its shortfall beside it, never added to actionable.
+    // approved and recovered the ledger's, which holds no entry, so nothing is recovered since any date), and the
+    // stages below it: the one line of the pattern below materiality is validated, its shortfall beside it, never
+    // added to actionable. Every case line is in the figure: none moved on, none off its pricing in effect.
     expect(home.dashboard.headline).toEqual({
-      actionable: { lines: 16, cents: '55200' },
+      actionable: { lines: 16, cents: '55200', outOfFigure: { movedOn: 0, stale: 0 } },
       payerApprovedCents: '0',
       recoveredCents: '0',
+      recoveredSince: null,
       proofLevel: 'posted',
       flagged: { lines: 0 },
       validated: { lines: 1, cents: '300' },
     });
     expect(home.dashboard.queues).toEqual({ heldFiles: 0, plansWaiting: 0, openQuestions: 0, anomaliesToReview: 0, unassignedCases: 2, unmatched: 0 });
+    expect(home.dashboard.uploads).toEqual({ baaOnFile: true });
 
     const jobId = randomUUID();
     const key = `monitor:${practice.practiceId}:2026-11-01`;

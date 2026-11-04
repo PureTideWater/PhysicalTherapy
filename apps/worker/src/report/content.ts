@@ -40,7 +40,8 @@ import { UNPRICED_REMEDIES } from './remedies';
  * complete pricing run after its triage on the report's date, and kept as `audit_report.content`
  * (tp-audit-report/1) with the PDF and the line CSV made from them. Kept apart, each with its stage:
  *
- * - coverage: the run's lines and billed dollars priced, and the unpriced reasons by count;
+ * - coverage: the run's lines and billed dollars priced, the unpriced reasons by count, and the plans
+ *   that had no mapping when it was priced, with their lines and billed dollars (docs/adr/0075);
  * - anomalies (flagged, investigatory): counts and dollar ranges, in no total;
  * - validated discrepancies: priced lines paid below the contract, by payer pattern, with why each
  *   that is not actionable is not; a per-visit line is counted with its visit (the visit's net
@@ -223,6 +224,14 @@ export interface AuditReportContent {
     readonly priced_lines: number;
     readonly priced_charge_cents: string;
     readonly reasons: readonly { readonly reason: UnpricedReason; readonly lines: number; readonly charge_cents: string; readonly remedy: string }[];
+    /**
+     * The plans of the run's lines that had no mapping at all when it was priced, how many lines of
+     * theirs it holds and their billed cents (signed): none of those lines is priced (combined audit
+     * #32, docs/adr/0075; PRC-30). From the run's own coverage (tp-pricing-coverage/2; none for a /1
+     * run), never today's mappings, so the report says what was true of the run as priced. Absent in a
+     * report stored before it was recorded, which prints nothing about it.
+     */
+    readonly unmapped_plans?: { readonly plans: number; readonly lines: number; readonly charge_cents: string };
   };
   readonly anomalies: readonly ReportAnomaly[];
   readonly validated: {
@@ -1066,6 +1075,12 @@ async function gatherInto(scope: PracticeScope<ScopeClient>, input: GatherInput,
       priced_lines: coverage.priced.lines,
       priced_charge_cents: coverage.priced.charge_cents,
       reasons: coverage.reasons.filter((entry) => entry.lines > 0).map((entry) => ({ ...entry, remedy: UNPRICED_REMEDIES[entry.reason].remedy })),
+      // From the run row read above: no line is read for it (#81's batched reads, docs/adr/0083).
+      unmapped_plans: {
+        plans: coverage.unmapped_plans.length,
+        lines: coverage.unmapped_plans.reduce((total, plan) => total + plan.lines, 0),
+        charge_cents: text(sum(coverage.unmapped_plans.map((plan) => plan.charge_cents))),
+      },
     },
     anomalies,
     validated: {

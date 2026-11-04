@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { TextractPageReader, type TextractPageReaderOptions, pageTextHash } from '@tp/contracts';
+import { TextractPageReader, pageTextHash } from '@tp/contracts';
 import { readDocumentPages } from '@tp/contracts/pages';
+import { recordedTextractClient } from '@tp/contracts/testing';
 import { parseCents } from '@tp/money';
 import { type AssemblyInput, type PacketCitation, assemblePacket, canonicalJson } from '@tp/packets';
 import {
@@ -30,7 +31,7 @@ import {
 } from '@tp/synth';
 import { z } from 'zod';
 
-import type { ContractPagesInput } from '../src/functions/contract-terms';
+import type { ContractPages } from '../src/functions/contract-terms';
 import type { NarrativeInput } from '../src/functions/narrative';
 
 /**
@@ -38,10 +39,10 @@ import type { NarrativeInput } from '../src/functions/narrative';
  * fixtures/synthetic (MOD-09: the contract set v2, 63 contracts and exhibits; MOD-03: 300 narratives;
  * docs/adr/0051 and 0070). A contract's pages are read the way intake reads them (@tp/contracts/pages:
  * pdf.js in a bounded thread for a text PDF, the CSV reader for a CSV), and a scanned document's pages,
- * where pdf.js finds no text, by the Textract page reader over the scan reader's recorded answer
- * instead of the service. A narrative case is assembled into a packet version's content by
- * @tp/packets, exactly as the packet builder does. Every file is SYNTHETIC; a file that says otherwise
- * is refused.
+ * where pdf.js finds no text, by the Textract page reader over the scan reader's recorded answer,
+ * served to a real Textract client instead of the service. A narrative case is assembled into a
+ * packet version's content by @tp/packets, exactly as the packet builder does. Every file is
+ * SYNTHETIC; a file that says otherwise is refused.
  *
  * The contract set v2's manifest (MOD-09/contract-set-v2/set.json) names each case's directory relative
  * to fixtures/synthetic, so its cases live under several roots: v1's 40 under MOD-01/contract-set (their
@@ -73,19 +74,16 @@ const recordingSchema = z.looseObject({
 export type Recording = z.output<typeof recordingSchema>;
 
 /**
- * A text-detection client that answers from a recording: the job starts, and its result is the
- * recorded blocks. TextractPageReader drives it exactly as it drives the service.
+ * The page reader a scanned document is read with: Textract's, over a real TextractClient that answers
+ * from the recording's bytes (@tp/contracts/testing; a long result paged by NextToken, as Textract pages
+ * it). The pages as read, and so the set hash, pass through the installed @aws-sdk/client-textract and
+ * @smithy/core deserializers as the deployed reader's do, so a bump of either that reads a recording
+ * differently changes the set (docs/adr/0070). The recording is checked against its format first.
  */
-export function recordedTextractClient(recording: Recording): TextractPageReaderOptions['client'] {
-  const send = (command: { readonly input: object }) =>
-    Promise.resolve('DocumentLocation' in command.input ? { JobId: 'synthetic-recorded-job' } : { JobStatus: recording.JobStatus, DocumentMetadata: recording.DocumentMetadata, Blocks: recording.Blocks });
-  return { send };
-}
-
-/** The page reader a scanned document is read with: Textract's, over its recording. */
-export function recordedScanReader(recording: Recording): TextractPageReader {
+export function recordedScanReader(recordingBytes: Uint8Array): TextractPageReader {
+  recordingSchema.parse(JSON.parse(Buffer.from(recordingBytes).toString('utf8')));
   return new TextractPageReader({
-    client: recordedTextractClient(recording),
+    client: recordedTextractClient(recordingBytes),
     staging: { stage: () => Promise.resolve({ bucket: 'synthetic-recording', name: 'recorded' }) },
     pollMilliseconds: 0,
   });
@@ -159,8 +157,8 @@ export interface ContractCase {
   readonly tier: ContractTier;
   readonly pageText: PageTextFidelity;
   readonly truth: ContractTruth;
-  /** The document as intake read it, as the gateway is given it. */
-  readonly input: ContractPagesInput;
+  /** The document as intake read it, as the gateway is given it (the harness adds the synthetic records check). */
+  readonly input: ContractPages;
   /** Whether a text reader found no text on any page (an image-only scan's pages carry none). */
   readonly textless: boolean;
 }
@@ -250,7 +248,7 @@ async function readCase(fixtures: string, entry: ManifestCase): Promise<ReadCase
   if (truth.scan !== null) {
     const recordingBytes = readFileSync(path.join(at, truth.scan));
     files.push({ case: truth.id, name: truth.scan, sha256: sha256(recordingBytes) });
-    scans = recordedScanReader(recordingSchema.parse(JSON.parse(recordingBytes.toString('utf8'))));
+    scans = recordedScanReader(recordingBytes);
   }
   const plain = await readDocumentPages({ bytes, contentType: truth.contentType });
   const read = scans === undefined ? plain : await readDocumentPages({ bytes, contentType: truth.contentType }, { scans });

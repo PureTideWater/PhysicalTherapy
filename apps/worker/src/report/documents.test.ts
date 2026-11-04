@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
 import { chromiumInstalled } from './pdf';
-import { PINS, PLAN, RUN, coverage, monthly } from './test-support/document-content';
+import { PINS, PLAN, RUN, coverage, coverageWithUnmappedLines, monthly } from './test-support/document-content';
 import { amountsNotInMono } from './test-support/figures';
 
 import {
@@ -114,6 +114,40 @@ describe('the report documents (docs/adr/0045)', () => {
     expect(coverageReportHtml(coverage({ run: null, pricing_runs: 2 }), PINS)).toContain('No pricing run had completed');
   });
 
+  it('says in the past tense that a new report’s plans had no mapping and their lines were not priced, and a stored report keeps both of its sentences (combined audit #32; PRC-30, MAP-06, R3-9, UX-5)', () => {
+    const now = coverageWithUnmappedLines();
+    expect(parseReportDocument('coverage', now)).toEqual(now);
+    // UX-5: the figures are fixed when the report is generated, so it states the past; a plan mapped since never makes it false.
+    expect(coverageReportHtml(now, PINS)).toContain('<p>1 plan had no mapping; its lines were not priced (1 line, <span class="figure-amount">$100.00</span> billed).</p>');
+    const two = coverageWithUnmappedLines({ readiness: { allowed: false, unmapped_plans: 2, unmapped_lines: 14, unmapped_charge_cents: '123400' } });
+    expect(coverageReportHtml(two, PINS)).toContain('2 plans had no mapping; their lines were not priced (14 lines, <span class="figure-amount">$1,234.00</span> billed).');
+    // Signed cents: a line's charge has no sign check, so neither has the sum.
+    const negative = coverageWithUnmappedLines({ readiness: { allowed: false, unmapped_plans: 1, unmapped_lines: 2, unmapped_charge_cents: '-500' } });
+    expect(parseReportDocument('coverage', negative)).toEqual(negative);
+    expect(coverageReportHtml(negative, PINS)).toContain('(2 lines, <span class="figure-amount">-$5.00</span> billed)');
+    const mapped = coverageWithUnmappedLines({ readiness: { allowed: true, unmapped_plans: 0, unmapped_lines: 0, unmapped_charge_cents: '0' }, waiting_plans: [] });
+    expect(coverageReportHtml(mapped, PINS)).toContain('<p>Every plan with lines had a mapping.</p>');
+    for (const html of [coverageReportHtml(now, PINS), coverageReportHtml(two, PINS), coverageReportHtml(mapped, PINS)]) {
+      expect(html).not.toContain('refused');
+      expect(html).not.toContain('a pricing run can start');
+      // UX-5: no present-tense claim about the practice in a stored snapshot's sentences. The reasons table's
+      // NO_MAPPING row defines the reason ("The payer and plan have no mapping on the service date"), a definition in a
+      // cell, not a claim, so only the paragraphs are read.
+      expect(html).not.toMatch(/<p>[^<]*(plans? (has|have) no mapping|lines are not priced|lines has a mapping)/);
+    }
+    // A report stored before records neither field, and prints the sentences it was generated with.
+    expect(coverageReportHtml(coverage(), PINS)).toContain('<p>1 plan had no mapping at all: a pricing run over them is refused until they are mapped.</p>');
+    expect(coverageReportHtml(coverage({ readiness: { allowed: false, unmapped_plans: 3 } }), PINS)).toContain('3 plans had no mapping at all: a pricing run over them is refused until they are mapped.');
+    expect(coverageReportHtml(coverage({ readiness: { allowed: true, unmapped_plans: 0 } }), PINS)).toContain('<p>Every plan with lines has a mapping: a pricing run can start.</p>');
+    // The two are recorded together, as integers; a float or a stray field never reads.
+    expect(() => parseReportDocument('coverage', coverage({ readiness: { allowed: false, unmapped_plans: 1, unmapped_lines: 1 } }))).toThrow(ZodError);
+    expect(() => parseReportDocument('coverage', coverage({ readiness: { allowed: false, unmapped_plans: 1, unmapped_charge_cents: '100' } }))).toThrow(ZodError);
+    expect(() => parseReportDocument('coverage', coverageWithUnmappedLines({ readiness: { allowed: false, unmapped_plans: 1, unmapped_lines: 1, unmapped_charge_cents: '100.00' } }))).toThrow(ZodError);
+    expect(() => parseReportDocument('coverage', { ...now, readiness: { ...now.readiness, plan_ids: [PLAN] } })).toThrow(ZodError);
+    // The CSV is unchanged: its NO_MAPPING row already counts the lines.
+    expect(reportDocumentCsv(now)).toBe(reportDocumentCsv(coverage()));
+  });
+
   it('shows the single-user approval gap: each packet approved alone in the PDF, their count in the CSV (CAS-10)', () => {
     const alone = {
       ...monthly(),
@@ -133,6 +167,7 @@ describe('the report documents (docs/adr/0045)', () => {
 
   it.skipIf(!chromiumInstalled())('sets every dollar figure of both documents in IBM Plex Mono, headings and running text included (skipped without Chromium)', async () => {
     expect(await amountsNotInMono(coverageReportHtml(coverage(), PINS))).toEqual([]);
+    expect(await amountsNotInMono(coverageReportHtml(coverageWithUnmappedLines(), PINS))).toEqual([]);
     expect(await amountsNotInMono(monthlySummaryHtml(monthly(), PINS))).toEqual([]);
   }, 60_000);
 
