@@ -64,6 +64,10 @@ its unpushed work is not waited for).
   deterministic test-only fix exists (record and patch: `approval-summaries/lane-a-wip/flaky-load/`). **Asked of the
   founder via the orchestrator (05:50 UTC):** the exception, text proposed in the record. Until a ruling it stays a
   known flake and the patch is not applied anywhere.
+- **05:57 UTC. S4:** the images fix is #107 (`co-001/ci-trivy-pin-2026-11-04`, 41818ac4; Trivy 0.70.0 from its GitHub
+  release, SHA-256 pinned; CI green), merging next; the gate's fetch fix is #106. SS-01 takes them by one base merge
+  before its final push (no hand port). A schema PR's screening-capacity gate measures (migrations are watched) and stops
+  RUNNER_TOO_SMALL on the private repository's 2-CPU runner until the founder's runner/organization decision (#102).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
