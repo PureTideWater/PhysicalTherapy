@@ -449,6 +449,15 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   repository goes private again): merge prep wf_e69a1f47-500 (base merge keeping #107's text, resolution check, targeted
   re-check, one push, description, verification on CI); subscribed to #106; script archived.
 
+- 2026-11-04T07:50:00Z: **#106**: merge prep wf_e69a1f47-500 done: base df4daff7 merged (92ae9a25; ADR 0066 credits #107 and
+  #106 under separate headings), resolution check clean, verification **VERIFIED** (record `ci-trivy-install-verification-2.md`):
+  CI green incl. the capacity gate on 4 CPUs (`verdict: pass (time advisory)`; S4 middle run 54.9 s, O9 recorded in the
+  description under the 2026-11-02 01:02Z ruling). Ready 07:43Z; approval-of-record success 07:44:12Z. **Merge refused:**
+  "405 Repository rule violations found: 4 of 4 required status checks are expected". Public again, the repository's rules
+  apply and want the checks on a head with the current base (72096e94, #75, moved after CI). Base 72096e94 merged
+  (2f17796a: diff unchanged, synth 0 written, 708 tests, typecheck, check:fixtures) and pushed; CI running. Orchestrator
+  told: the speed rule needs a re-merge whenever the base moves after the last push.
+
 ## Waiting on someone
 - (Resolved 07:10Z: public again.) **The founder (2026-11-04): the repository was private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
