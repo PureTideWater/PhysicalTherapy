@@ -392,6 +392,18 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   the founder's. wf_87464ad4-ed6 stopped in its build stage; relaunched with the wider scope as **wf_3717f39c-6bd** (the builder
   continues from its progress file); script archived.
 
+- 2026-11-04T05:05:00Z: **PR D opened: draft #105** (`co-001/test-flakes-2`; wf_b49ddbb6-964 done, 8 agents). Head **7c97f9c0**
+  (base 4846f043 merged in the fix round). Design `designs/lane-b-dependabot-batch-test-flakes-2.md`: FRM-01's `shownCount`
+  waits `data-shown >= N` (10 s own timeout) with exact counts asserted once settled (S-SEC-2 2 then 3, FRM-03 3); the same
+  helper in `step-timer.browser.test.tsx` (SGN-02) fixed alike, with exact counts; a failing-first case proves the exact
+  wait hangs (30 s timeout on the old helper). **CAS-41.3: no timeout** (the ruling's "or the reason why not"): 95% of its
+  time was vitest's toEqual on a 470 KB Buffer (CI 1.8-4.4 s of 5 s); an exact `sameBytes` comparison takes it to 30-67 ms.
+  One review (speed rule 3, test-only; supersedes the 06:22Z ruling's two): 3 findings (S1 = CI images red, the base's
+  Trivy failure, not D's; N1, N2 fixed). Full suite once at 7c97f9c0: unit 7,303 passed/4 skipped (root-only and engine-
+  freeze skips), golden 376, loops 30/30 each, synth clean, Stryker none. Verifier returned before CI finished (not
+  verified). Subscribed to #105. **D waits for the Trivy PR (#106):** then the base merged once more, one push, CI, the
+  fresh-clone verification, ready, merge. **Trivy PR: draft #106**, fix round pushed 78cd55d2; its verifier reads CI.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
