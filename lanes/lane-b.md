@@ -1484,3 +1484,6 @@ HANDOFF.md; LANES.md rule 10).
 - The first schema PR of the chain. It rested on: the founder's line d214ad6c; `--check --require-approval` exit 0 (08c1ba47…6142); all required checks green, the domain model included; approval-of-record re-run after ready; fresh-clone verification passed.
 - Next in the chain: SUITE-CAP-1b's PR stage. Its open items: CAS-42.5's memory.peak (980 MiB against 921.6); the loader warning's wording; the founder's ruling on the INDEX_CLEANUP ON amendment.
 - Merged today in all: #94, #107, #105, #75, #106, #86, #108, #104.
+
+### 2026-11-04 13:15 UTC: the loader freeze's INDEX_CLEANUP ON amendment granted
+- Recorded in `approval-summaries/founder-asks-2026-10-27.md`. It goes into SUITE-CAP-1b's PR with the loader fix.

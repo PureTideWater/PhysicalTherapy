@@ -62,3 +62,7 @@ as on #39. In order:
 ## Granted 2026-11-04 (~09:55 UTC): the release loader's freeze
 Sent in Lane A's orchestrator session in reply to the request for the founder's grant: "Granted: an exception to reconciliation-001's content-pipeline check for the release loader's freeze, as written: after a load commits, loadRelease runs VACUUM (FREEZE, ANALYZE) rule_record and, while pg_class shows rule_record not all-frozen, pauses and runs VACUUM (FREEZE) rule_record again, for up to 180 seconds; its result gains frozen, false only when the wait runs out; loading an already-loaded release writes nothing and runs the same freeze; release:load warns on stderr when not yet frozen; release:rollback does not wait. Everything else in the pipeline stays frozen. It also covers PR 6b-3's original VACUUM."
 The fix goes into SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`). Its ADR and reconciliation-001 record the grant.
+
+## Granted 2026-11-04 (~13:15 UTC): an amendment to the release loader's freeze
+Sent in Lane A's orchestrator session in reply to the request for the founder's grant: "Granted: in the release loader's freeze, each retry pass runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen; the warning names the cause it can see."
+It goes into SUITE-CAP-1b with the loader fix (978891a3). Its ADR 0083 and reconciliation-001 record it beside the first grant.
