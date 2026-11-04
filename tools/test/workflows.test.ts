@@ -3708,10 +3708,12 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(sum(step('env: { E: x }', `    container: "node:${vars3}"\n`))).toEqual([argumentOver('job images container image', 'node:'.length + 3 * 49_152 + 1)]);
     expect(sum(step('env: { E: x }', `    services: { db: "postgres:${vars3}" }\n`))).toEqual([argumentOver('job images services.db image', 'postgres:'.length + 3 * 49_152 + 1)]);
     // A value a job passes a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's own sum
-    // gives secrets.<name>: one secret passes, three joined are refused.
+    // gives secrets.<name>: one secret passes; two joined, under an environment string's 131,072 bytes but over a
+    // secret's, and three are refused.
     const call = (secrets: string) => sum(`jobs:\n  images:\n    uses: ./.github/workflows/called.yml\n    secrets: ${secrets}\n`);
     expect(call('{ TOKEN: "${{ secrets.A }}" }')).toEqual([]);
     expect(call('inherit')).toEqual([]);
+    expect(call('{ TOKEN: "${{ secrets.A }}${{ secrets.B }}" }')).toEqual([`fixture.yml job images secrets.TOKEN: up to ${String(2 * 49_152)} bytes, over the 49152 a called workflow bounds secrets.TOKEN at`]);
     expect(call('{ TOKEN: "${{ secrets.A }}${{ secrets.B }}${{ secrets.C }}" }')).toEqual([`fixture.yml job images secrets.TOKEN: up to ${String(3 * 49_152)} bytes, over the 49152 a called workflow bounds secrets.TOKEN at`]);
     expect(call('{ TOKEN: "${{ inputs.note }}" }')).toEqual(['fixture.yml job images secrets.TOKEN: no bound for inputs.note']);
     expect(call('"${{ fromJSON(vars.A) }}"')).toEqual([fromExpression('job images secrets')]);
