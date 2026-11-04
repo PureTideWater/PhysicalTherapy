@@ -1352,6 +1352,12 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   }
   const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
   /** A run's download tries and pauses in order, each try as "run download". */
+  /** A one-finding list of exactly `bytes` bytes, its body padding it, for a MAX_FILE_BYTES of 100 in a case. */
+  const listOf = (bytes: number) => {
+    const list = JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(bytes - JSON.stringify([{ title: 'Finding 1', body: '' }]).length) }]);
+    expect(Buffer.byteLength(list)).toBe(bytes);
+    return list;
+  };
   const paced = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ') || line.startsWith('sleep ')).map((line) => (line.startsWith('run download ') ? 'run download' : line));
 
   it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
@@ -1428,6 +1434,11 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     const over = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }]));
     expect([over.status, issues(over), tries(over)], over.output).toEqual([0, [failing], 1]);
     expect(paced(over)).toEqual([t]);
+    // The bound itself: a file of exactly MAX_FILE_BYTES is read and filed, one byte more is refused.
+    const atBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(100));
+    expect([atBound.status, issues(atBound), tries(atBound)], atBound.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 1]);
+    const pastBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(101));
+    expect([pastBound.status, issues(pastBound), tries(pastBound)], pastBound.output).toEqual([0, [failing], 1]);
     // Two failed tries, then the artifact: filed, each failure's message in the log.
     const late = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 2);
     expect([late.status, issues(late), tries(late)], late.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 3]);
@@ -1523,6 +1534,10 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(reads.stdout).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes, SHA-256 ${createHash('sha256').update(list).digest('hex')}\n`);
     expect(reads.log.filter((line) => !line.startsWith('run download '))).toEqual([]);
     expect(paced(reads)).toEqual(['run download']);
+    // A file of exactly MAX_FILE_BYTES reads; one byte more is a failure row below.
+    const atBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(100), 'handoff');
+    expect(atBound.status, atBound.output).toBe(0);
+    expect(atBound.stdout).toContain(`content-calendar: the notify job reads 1 findings, 100 bytes, SHA-256 ${createHash('sha256').update(listOf(100)).digest('hex')}\n`);
     // A try that leaves a cut findings.json behind, or is stopped while it extracts, is retried into an emptied directory.
     for (const [at, stalls, partials] of [['partial', 0, 1], ['stalled', 1, 0]] as const) {
       const retried = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], list, 'handoff', 0, stalls, partials);
@@ -1534,6 +1549,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     for (const [at, values, findings] of [
       ['no artifact', { CHECK_RESULT: 'success' }, null],
       ['over MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }])],
+      ['one byte over MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, listOf(101)],
       ['not a list', { CHECK_RESULT: 'success' }, JSON.stringify({ title: 'x' })],
     ] as const) {
       const failed = runNotify('content-calendar.yml', values, [], findings, 'handoff');
