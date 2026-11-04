@@ -99,4 +99,27 @@ describe('the changes job’s runtime check', () => {
     expect(checkRuntime(pinned, TEST_PINS, { onRunner: false }).status).toBe(0);
     expect(checkRuntime(pinned, TEST_PINS).status).toBe(0);
   });
+
+  // The review of #96 (round 3): a pnpm the step or the user agent gives is printed JSON-quoted unless it is a plain
+  // version, so a multi-line `pnpm --version` cannot split the check's lines or start a workflow command.
+  it('prints a --pnpm value or a user agent pnpm that is not a plain version JSON-quoted, and a plain one as it is', () => {
+    const pinned: Runtime = { node: `v${TEST_PINS.node}`, unicode: TEST_PINS.unicode, icu: TEST_PINS.icu, pnpm: TEST_PINS.pnpm };
+    const multiLine = checkRuntime(pinned, TEST_PINS, { pnpmVersion: '10.34.8\n::error::forged' });
+    expect(multiLine).toEqual({
+      lines: [
+        'runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8',
+        'runtime: pnpm --version prints "10.34.8\\n::error::forged"',
+        '::error::The runtime is not the pinned one: pnpm --version prints "10.34.8\\n::error::forged", not the pinned 10.34.8 (the root package.json\'s packageManager)',
+      ],
+      status: 1,
+    });
+    expect(multiLine.lines.join('\n').split('\n')).toHaveLength(3);
+    expect(checkRuntime(pinned, TEST_PINS, { pnpmVersion: '10.34.8 extra' }).lines[1]).toBe('runtime: pnpm --version prints "10.34.8 extra"');
+    const agent = checkRuntime({ ...pinned, pnpm: '10.34.9\u001b[2K\u0085' }, TEST_PINS);
+    expect(agent.lines).toEqual([
+      'runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm "10.34.9\\u001b[2K\\u0085"',
+      '::error::The runtime is not the pinned one: pnpm "10.34.9\\u001b[2K\\u0085", not the pinned 10.34.8 (the root package.json\'s packageManager)',
+    ]);
+    expect(checkRuntime(pinned, TEST_PINS, { pnpmVersion: '11.0.0-rc.1+build' }).lines[1]).toBe('runtime: pnpm --version prints 11.0.0-rc.1+build');
+  });
 });

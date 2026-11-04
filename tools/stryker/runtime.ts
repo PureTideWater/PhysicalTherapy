@@ -59,11 +59,19 @@ export function pnpmOfUserAgent(agent: string | undefined): string {
 
 const withoutV = (version: string) => (version.startsWith('v') ? version.slice(1) : version);
 const shown = (value: string) => (value === '' ? '(none)' : value);
+/**
+ * A pnpm version the step or the user agent gives, for the log: as it is when it is a plain version, else JSON-quoted
+ * as manifests.ts's quoted writes it (C1, U+2028 and U+2029 escaped too), so a multi-line `pnpm --version` or a
+ * control character in the user agent cannot split the check's lines or start a workflow command (as affected.ts
+ * prints a path). Inlined, not imported: manifests.ts would bring the classifier into every canary verdict.
+ */
+const shownPnpm = (value: string) =>
+  value === '' ? '(none)' : /^[0-9A-Za-z][0-9A-Za-z.+-]*$/.test(value) ? value : JSON.stringify(value).replace(/[\u007f-\u009f\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
 const shownNode = (value: string) => (value === '' ? '(none)' : `v${withoutV(value)}`);
 
 /** A runtime as the logs print it. */
 export function describeRuntime(runtime: Runtime): string {
-  return `Node ${shownNode(runtime.node)} (Unicode ${shown(runtime.unicode)}, ICU ${shown(runtime.icu)}) and pnpm ${shown(runtime.pnpm)}`;
+  return `Node ${shownNode(runtime.node)} (Unicode ${shown(runtime.unicode)}, ICU ${shown(runtime.icu)}) and pnpm ${shownPnpm(runtime.pnpm)}`;
 }
 
 /**
@@ -75,7 +83,7 @@ export function runtimeProblems(runtime: Runtime, pins: Pins): string[] {
     ['Node', withoutV(runtime.node), withoutV(pins.node), shownNode(runtime.node), shownNode(pins.node), `${UNICODE_FILE}'s checkedOn.node`],
     ['Unicode', runtime.unicode, pins.unicode, shown(runtime.unicode), shown(pins.unicode), `${UNICODE_FILE}'s checkedOn.unicode`],
     ['ICU', runtime.icu, pins.icu, shown(runtime.icu), shown(pins.icu), `${UNICODE_FILE}'s checkedOn.icu`],
-    ['pnpm', runtime.pnpm, pins.pnpm, shown(runtime.pnpm), shown(pins.pnpm), "the root package.json's packageManager"],
+    ['pnpm', runtime.pnpm, pins.pnpm, shownPnpm(runtime.pnpm), shown(pins.pnpm), "the root package.json's packageManager"],
   ] as const;
   return legs.filter(([, value, pin]) => value === '' || pin === '' || value !== pin).map(([leg, , , value, pin, source]) => `${leg} ${value}, not the pinned ${pin} (${source})`);
 }
@@ -125,8 +133,8 @@ export function checkRuntime(runtime: Runtime, pins: Pins, checks: Checks = {}):
   const lines = [`runtime: ${describeRuntime(runtime)}`];
   const printed = checks.pnpmVersion?.trim();
   if (printed !== undefined) {
-    lines.push(`runtime: pnpm --version prints ${shown(printed)}`);
-    if (printed === '' || printed !== pins.pnpm) problems.push(`pnpm --version prints ${shown(printed)}, not the pinned ${shown(pins.pnpm)} (the root package.json's packageManager)`);
+    lines.push(`runtime: pnpm --version prints ${shownPnpm(printed)}`);
+    if (printed === '' || printed !== pins.pnpm) problems.push(`pnpm --version prints ${shownPnpm(printed)}, not the pinned ${shown(pins.pnpm)} (the root package.json's packageManager)`);
   }
   const commit = checks.commit;
   let commitProblem = '';
