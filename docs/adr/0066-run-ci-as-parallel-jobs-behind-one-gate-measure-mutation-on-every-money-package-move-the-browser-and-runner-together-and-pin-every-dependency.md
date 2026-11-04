@@ -1904,7 +1904,8 @@ since no closure imports `playwright-core`.
   to parse and rewrite the root tsconfig in the sandbox, and it resolves to the root's own typescript. At 50029e64 a
   catalog or root move of typescript, with the lockfile moved to match, ran no shard (at the base, all seven), and a
   stub typescript failed the canary. It is the hoisting limit below, met in the tooling itself: a move of typescript in
-  the catalog, a manifest or the lockfile now runs every shard.
+  the catalog, a manifest or the lockfile now runs every shard, and a test now fails on any other undeclared import
+  of the installed tooling that resolves outside the tooling's lockfile closure.
 
 ### Consequences
 
@@ -1925,7 +1926,13 @@ since no closure imports `playwright-core`.
 - **The lockfile rule's limit, unchanged.** pnpm hoists every package into `node_modules/.pnpm/node_modules`, so a new
   root dependency can change what an imported package reaches through an undeclared require, which the lockfile rule
   (declared dependencies only) does not see. Part 4's whole-file root rule happened to cover that. It is now the
-  lockfile rule's limit, as it already was for every other manifest.
+  lockfile rule's limit, as it already was for every other manifest. For the test tooling's own code it is guarded
+  (N51): `tools/stryker/affected.test.ts` walks the installed tooling from the root's and the mutation tooling's
+  manifests (every dependency and installed peer below it, about 200 packages) and fails on a bare import, by literal,
+  that its package does not declare, that resolves, and that neither `TEST_TOOLING` nor the tooling's lockfile closure
+  holds, so a Stryker or Vitest upgrade that adds one fails until it is listed. At 50029e64 it names typescript alone.
+  The undeclared requires of the third-party packages a money closure imports, and a specifier built at run time,
+  stay outside it.
 - **The pnpm version, not its bytes.** pnpm/action-setup self-updates by version, and no mutation runner checks
   `packageManager`'s hash (proposed separately, P44).
 - **A pull request still decides its own `mutation`** with its own classifier (P43).

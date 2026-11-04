@@ -127,7 +127,8 @@ export const DATA_FILES: Readonly<Record<MutationPackage, readonly DataEntry[]>>
  * to parse and rewrite the root tsconfig in every sandbox, so it resolves to the root's own typescript. A move in any of
  * them, or below them, affects all four, and so does a move of what the mutation tooling's own files import
  * (GLOBAL_ENTRY_POINTS' closure: yaml, which reads the lockfile here, and vitest/config). Each name is exact or a
- * scope: typescript-eslint is not tooling.
+ * scope: typescript-eslint is not tooling. affected.test.ts scans the installed tooling's code for any other bare
+ * import its package does not declare that resolves outside this list and its lockfile closure.
  */
 export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-check', 'tsx', 'typescript'] as const;
 

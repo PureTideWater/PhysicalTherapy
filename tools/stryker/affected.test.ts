@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -859,6 +860,100 @@ describe('the field rule, the runner proof and what else affects every package, 
       }).packages,
     ).toEqual([]);
   });
+});
+
+/** A directory's own package manifest: its name, version and the three fields that declare what it may import. */
+interface InstalledManifest {
+  readonly name?: string;
+  readonly version?: string;
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+}
+
+/** The directory Node's resolution finds for a bare name from `from`: each ancestor's node_modules, nearest first (pnpm's hoisted node_modules/.pnpm/node_modules among them), realpath'd. */
+function installedFrom(from: string, name: string): string | undefined {
+  for (let directory = from; ; directory = path.dirname(directory)) {
+    if (path.basename(directory) !== 'node_modules') {
+      const candidate = path.join(directory, 'node_modules', name);
+      if (existsSync(path.join(candidate, 'package.json'))) return realpathSync(candidate);
+    }
+    if (path.dirname(directory) === directory) return undefined;
+  }
+}
+
+/** Directories of an installed package that hold no code it loads at run time (its own tests, benchmarks and examples). */
+const NOT_LOADED = new Set(['node_modules', 'test', 'tests', '__tests__', 'benchmark', 'benchmarks', 'bench', 'example', 'examples']);
+
+function codeFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) return NOT_LOADED.has(entry.name) ? [] : codeFiles(file);
+    return /\.(?:m|c)?js$/.test(entry.name) ? [file] : [];
+  });
+}
+
+/**
+ * Every bare specifier a built file imports, re-exports or requires by a string literal (a package's own `#` imports,
+ * URLs and Node's built-ins left out), except on a line that is a comment's own (`//`, `/*` or a doc comment's `*`):
+ * a bundle carries the doc comments of what it inlined (vite's `require('braces')` examples). Only a literal is
+ * read; a specifier built at run time is not.
+ */
+function bareSpecifiers(source: string): string[] {
+  const found = new Set<string>();
+  for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)['"]([^'"\s]+)['"]/g)) {
+    const line = source.slice(source.lastIndexOf('\n', match.index) + 1, match.index).trimStart();
+    if (line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
+    const specifier = match[1] ?? '';
+    if (/^[./#]/.test(specifier) || /^[a-z]+:/.test(specifier)) continue;
+    const name = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : (specifier.split('/')[0] ?? specifier);
+    if (!builtinModules.includes(name)) found.add(name);
+  }
+  return [...found];
+}
+
+describe('the test tooling’s own undeclared imports, as installed (docs/adr/0066, Part 7, N51)', () => {
+  it('finds no bare import in the installed tooling’s code that its package does not declare, that resolves, and that neither TEST_TOOLING nor the tooling’s lockfile closure holds', () => {
+    const files = trackedFiles();
+    const global = globalFiles(repositoryRoot, files);
+    const lock = parseLockfile(readFileSync(path.join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8'));
+    // What the lockfile rule already follows for every package: the tooling and what the mutation tooling imports, each name@version.
+    const held = new Set(lockedPackages(lock, global.imports, TEST_TOOLING).map((key) => key.replace(/\(.*$/, '')));
+    const tooling = TEST_TOOLING.map(globToRegExp);
+    // The installed tooling: each tooling entry of the root's and the mutation tooling's own manifests, as each resolves it, and every dependency and installed peer below it.
+    const installed = new Map<string, InstalledManifest>();
+    const stack: (readonly [string, string])[] = [];
+    for (const importer of new Set(['.', ...global.imports.keys()])) {
+      const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, importer, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
+      for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+        for (const name of Object.keys(manifest[field] ?? {})) if (tooling.some((pattern) => pattern.test(name))) stack.push([path.join(repositoryRoot, importer), name]);
+      }
+    }
+    expect(stack.length).toBeGreaterThan(0);
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      const directory = installedFrom(next[0], next[1]);
+      if (directory === undefined || installed.has(directory)) continue;
+      const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as InstalledManifest;
+      installed.set(directory, manifest);
+      // A peer it finds installed (vite, below vitest) loads as its dependencies do.
+      for (const name of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.peerDependencies })) stack.push([directory, name]);
+    }
+    expect([...installed.values()].map((manifest) => manifest.name)).toEqual(expect.arrayContaining(['@stryker-mutator/core', '@stryker-mutator/instrumenter', 'vitest', 'vite', 'tsx', 'fast-check']));
+    const found: string[] = [];
+    for (const [directory, manifest] of installed) {
+      const declared = new Set([manifest.name, ...Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies, ...manifest.optionalDependencies })]);
+      for (const file of codeFiles(directory)) {
+        for (const name of bareSpecifiers(readFileSync(file, 'utf8'))) {
+          if (declared.has(name) || tooling.some((pattern) => pattern.test(name))) continue;
+          const target = installedFrom(path.dirname(file), name);
+          if (target === undefined) continue;
+          const { version } = JSON.parse(readFileSync(path.join(target, 'package.json'), 'utf8')) as InstalledManifest;
+          if (!held.has(`${name}@${version ?? ''}`)) found.push(`${manifest.name ?? directory}: ${path.relative(directory, file)} imports ${name}, undeclared, which resolves to ${path.relative(repositoryRoot, target)}`);
+        }
+      }
+    }
+    expect([...new Set(found)].sort()).toEqual([]);
+  }, 120_000);
 });
 
 describe('every git the changes job runs', () => {
