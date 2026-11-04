@@ -33,6 +33,13 @@ its unpushed work is not waited for).
   job's blobless clone cannot fetch blobs without credentials. (3) This voids 1b's CAS-42.5 route (free 4-CPU runner
   while public). The domain model job fails only for the approval line, as expected. Failed jobs re-run once.
   Reported to the orchestrator for the founder/co-founder. No merge in the chain until required checks can go green.
+- **03:33 UTC. The orchestrator's ruling on the CI breakage:** S4 (session_019i9ifAfByN2caCea4jgSdu) owns the CI fixes
+  (Trivy from its GitHub release with a pinned SHA-256, `co-001/ci-trivy-install-2026-11-04`; the gate's `changes` fetch
+  with the workflow token; any other public-repository assumption) and sends the diff, which goes into #104 (one comment) or
+  at its base merge. The founder decides on the private repository (GitHub Team organization with a 4-core larger runner,
+  or public again); the harness's CPU requirement is not lowered. **CAS-42.5 is blocked on that decision**; CAS-42.6
+  (local process route) still runs. SS-01 continues; its suggested line goes up on the final head once every check that
+  can pass has passed.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
