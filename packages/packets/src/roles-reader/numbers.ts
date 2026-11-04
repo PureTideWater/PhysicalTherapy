@@ -61,16 +61,41 @@ export class NumberReader extends CueReader {
 
   /**
    * The scope a sentence's opening phrase states with its second word ("On each of the 3 lines, ...", "For every
-   * line, ...") for every figure after it, past the figures between ("the 3" of "each of the 3 lines"; PE-D2). A
-   * sentence that opens with "Each" is about its subject alone ("Each of the 3 lines billed 2 units").
+   * line, ...") for every figure after it in its clause, past the figures between ("the 3" of "each of the 3 lines";
+   * PE-D2), never past an edge after the opening's own that a conjunction or a clause's opener follows ("For each line,
+   * the payer allowed $70.00, while across the 3 lines it allowed $210.00"; R1-NF-2). A sentence that opens with "Each"
+   * is about its subject (its scope is that subject's words, statedBefore()).
    */
   protected openingEach(index: number): Scope | 'each' | null {
-    return this.scopeAt(this.sentenceStart(index) + 1);
+    const start = this.sentenceStart(index);
+    const edges = this.tokens
+      .slice(start, index)
+      .flatMap((token, at) => (token.kind === 'edge' ? [start + at] : []))
+      .slice(1);
+    const next = (at: number) => this.word(at, 1);
+    return edges.some((at) => this.vocab.CONJUNCTIONS.has(next(at)) || this.vocab.CLAUSE_OPENERS.has(next(at))) ? null : this.scopeAt(start + 1);
   }
 
-  /** What the words before token `index` state it per: since the figure before it, else its sentence's opening "each" (openingEach()). */
+  /**
+   * Where the words before token `index` that state what it is per start: since the figure before it (since()), or,
+   * when that figure keeps words for itself (a count's noun, "across the 3 lines"; an amount never does), since the
+   * amount before it or the last edge, whichever is later, so that the count's words still state the scope (R1-NF-2).
+   */
+  protected statedFrom(index: number): number {
+    const since = this.since(index);
+    if (!this.ends.has(this.previousFigure(index))) {
+      return since;
+    }
+    const start = this.sentenceStart(index);
+    const bound = this.tokens.slice(start, index).findLastIndex((token) => token.kind === 'edge' || token.figure?.kind === 'amount');
+    // After the edge, or after the amount's own words (an edge keeps none); with neither, after the stop before the
+    // sentence, which keeps none either: its start.
+    return Math.min(since, this.end(start + bound));
+  }
+
+  /** What the words before token `index` state it per: since statedFrom(), else its sentence's opening "each" (openingEach()). */
   protected statedBefore(index: number): Scope | 'each' | null {
-    return this.stated(this.since(index), index) ?? this.openingEach(index);
+    return this.stated(this.statedFrom(index), index) ?? this.openingEach(index);
   }
 
   /** What an amount or a count of units is stated per (`from` the token its words after start at). */

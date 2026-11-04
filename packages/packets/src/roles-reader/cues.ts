@@ -148,20 +148,51 @@ export class CueReader extends Walk {
   }
 
   /**
+   * Whether tokens [from, to) are a scope phrase alone, the words of one ("in total", "per line", "on each of the
+   * lines"; R1-NF-3): no verb and no other word.
+   */
+  protected scopeOnly(from: number, to: number): boolean {
+    const words = new Set([...this.vocab.EACH, ...this.vocab.ONE_LINE, ...this.vocab.ONE_UNIT, ...this.vocab.LINES, ...this.vocab.PLURAL_ROWS, ...this.vocab.PARTITIVE_DETERMINERS, ...this.vocab.TOTAL_FOR, ...this.vocab.SCOPE_LEADS, ...this.vocab.TOTAL_WORDS.flatMap((phrase) => phrase.split(' '))]);
+    const range = this.tokens.slice(from, to);
+    // A figure ends the list's words before it (afterList()), so none is here.
+    return range.length > 0 && range.every((token) => words.has(token.text));
+  }
+
+  /**
+   * Whether token `at` (from `from` up to `to`) opens a clause of its own after a "respectively" list: a clause's opener
+   * ("which", "as", "so"), or, first after "respectively" or after an edge, a conjunction, "with" or a participle that
+   * is no total's word nor a cue ("respectively, and each line is short", "leaving each line short"; NEW-N1, R1-NF-1).
+   */
+  protected opensClause(at: number, from: number, to: number, cues: Cues): boolean {
+    const text = (this.tokens[at] as Token).text;
+    if (this.vocab.CLAUSE_OPENERS.has(text)) {
+      return true;
+    }
+    if (at !== from && (this.tokens[at - 1] as Token).kind !== 'edge') {
+      return false;
+    }
+    const participle = this.vocab.ING_WORD.test(text) && !this.vocab.TOTAL_WORDS.includes(text) && !this.cues(at, to, cues).some((match) => match.start === at);
+    return this.vocab.CONJUNCTIONS.has(text) || this.vocab.CLAUSE_LEADS.has(text) || participle;
+  }
+
+  /**
    * Where the words of a "respectively" list from token `from` (before `to`) end: at the first edge the clause after
-   * which (to the next edge) has no cue ("were expected, allowed and paid" goes on), and, with `openers`, at a word
-   * that opens a clause of its own ("which the payer allowed for each line", "as").
+   * which (to the next edge) has no cue ("were expected, allowed and paid" goes on), unless that clause is a scope
+   * phrase alone right after a cue ("expected, in total, and allowed, per line"; R1-NF-3), and, with `openers`, at a
+   * word that opens a clause of its own (opensClause(): "which the payer allowed for each line", "as", ", and").
    */
   protected listWordsEnd(from: number, to: number, openers: boolean, cues: Cues): number {
-    const opener = openers ? this.tokens.slice(from, to).findIndex((token) => this.vocab.CLAUSE_OPENERS.has(token.text)) : -1;
+    const opener = openers ? this.tokens.slice(from, to).findIndex((_, at) => this.opensClause(from + at, from, to, cues)) : -1;
     const end = opener === -1 ? to : from + opener;
     const words = this.tokens.slice(from, end);
+    const cueEnds = new Set(this.cues(from, end, cues).map((match) => match.end));
     const edge = words.findIndex((token, at) => {
       if (token.kind !== 'edge') {
         return false;
       }
       const next = words.findIndex((other, after) => after > at && other.kind === 'edge');
-      return this.cues(from + at + 1, next === -1 ? end : from + next, cues).length === 0;
+      const clause = [from + at + 1, next === -1 ? end : from + next] as const;
+      return this.cues(...clause, cues).length === 0 && !(cueEnds.has(from + at - 1) && this.scopeOnly(...clause));
     });
     return edge === -1 ? end : from + edge;
   }

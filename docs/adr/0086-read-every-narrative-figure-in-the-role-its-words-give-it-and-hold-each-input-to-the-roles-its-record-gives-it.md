@@ -75,7 +75,10 @@ found in this order (`roles.ts` names each step):
    come before it, else past "respectively" ("$100.00 and $70.00 were, respectively, expected and allowed"), each
    stretch up to the next figure or the sentence's end, ending at an edge the clause after which has no cue, and past
    "respectively" at a word that opens a clause of its own ("which", "as"; round 2 of the review of the fix round,
-   NEW-N1); when the cues do not match the list one for
+   NEW-N1), or, first after "respectively" or after an edge, at a conjunction, "with" or a participle (", and each
+   line is short", "leaving each line short"; R1-NF-1), but never at an edge before a scope phrase alone right after
+   a cue ("$300.00 and $70.00 were expected, in total, and allowed, per line, respectively"; R1-NF-3); when the cues do
+   not match the list one for
    one, every figure is held in all of them; with no cue on either side, the steps after read each figure (until the
    fix round's third part such a list was read in no role, which every figure passed: "These were $300.00 and $91.00,
    respectively" passed an invented $91.00; until the review of the fix round, CORR-D1, a list with its cues after it
@@ -104,8 +107,13 @@ words around it; "clause", "quote", "section" and "cited" may be either. An amou
 they are stated per (`scope`): each line ("per line", "each line", "apiece"), each unit, or the lines in total ("in
 total", "in all", "across the 3 lines", or a sentence about the lines in the plural that says nothing of each), so a
 total stated per line, or a line's value stated as a total, fails (CORR-7); a sentence's opening phrase with
-"each" or "every" as its second word states each line for every figure after it, past its count, so "On each of the 3
-lines, the contract expected $300.00" fails (PE-D2); a sentence that opens with "Each" is about its subject alone.
+"each" or "every" as its second word states each line for every figure after it in its clause, past its count, so "On
+each of the 3 lines, the contract expected $300.00" fails (PE-D2), but never past an edge after the opening's own that a
+conjunction or a clause's opener follows, so "For each line, the payer allowed $70.00, so the payer owes $90.00" and
+"..., while across the 3 lines it allowed $210.00" pass (R1-NF-2); a count that keeps its noun ("the 3 lines") does not
+cut the words before a figure short, which reach back to the amount or the edge before it, so "across the 3 lines"
+still states a total and a sentence that opens with "Each of the 3 lines" states its subject's scope ("Each of the 3
+lines was expected at $300.00" fails, "Each of the 3 lines billed 2 units" passes).
 A "respectively" list's cues that each state a scope give each figure its cue's, in order, so "$300.00 and $70.00
 were expected in total and allowed per line, respectively" passes and the scopes swapped fail (NEW-N2). Else the list
 is stated per one scope: the list's own words after its last figure (up to "respectively"; or past it, through the list's

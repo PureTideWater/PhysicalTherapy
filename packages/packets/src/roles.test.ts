@@ -816,6 +816,33 @@ describe('amounts, percentages and dates', () => {
       expect(scope(`The contract expected and the payer allowed $3.00 and $1.00, respectively, ${opener} the payer explained for each line.`, '$3.00'), opener).toBe(null);
     }
     expect(scope('The contract expected and the payer allowed $3.00 and $1.00, respectively, then the payer explained for each line.', '$3.00')).toBe('line');
+    // First after "respectively" or past an edge, a conjunction, "with" or a participle opens a clause of its own (R1-NF-1).
+    for (const lead of ['and', 'but', 'or', 'while', 'whereas', 'yet', 'with', 'without', 'leaving', 'making']) {
+      expect(scope(`$3.00 and $1.00 were expected and allowed, respectively, ${lead} each line short.`, '$3.00'), lead).toBe(null);
+      expect(scope(`$3.00 and $1.00 were expected and allowed, respectively, in the remittance, ${lead} each line short.`, '$3.00'), lead).toBe(null);
+    }
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, in the remittance and each line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, per line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, for each line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, totaling per line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were, respectively, owing and allowed per line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, ing each line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, earnings per line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, o’going each line.', '$3.00')).toBe('line');
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively and each line short.', '$3.00')).toBe(null);
+    // A figure after the list ends its words.
+    expect(scope('$3.00 and $1.00 were expected and allowed, respectively, the 2 claims per line.', '$3.00')).toBe(null);
+    expect(scope('$3.00 and $1.00 were expected and allowed for 2 visits per line, respectively.', '$3.00')).toBe('total');
+    // A scope phrase alone between edges right after a cue is the list's words, its cue's (R1-NF-3).
+    expect(scope('$3.00 and $1.00 were expected, in total, and allowed, per line, respectively.', '$3.00')).toBe('total');
+    expect(scope('$3.00 and $1.00 were expected, in total, and allowed, per line, respectively.', '$1.00')).toBe('line');
+    expect(roles('$3.00 and $1.00 were expected, in total, and allowed, per line, respectively.', '$1.00')).toBe('allowed');
+    for (const phrase of ['on each line', 'for each of the lines', 'over these claims', 'in all', 'all told', 'apiece', 'per unit', 'a row', 'every visit', 'across those services', 'for its encounters', 'for their procedures', 'for our rows', 'altogether']) {
+      expect(roles(`$3.00 and $1.00 were expected, ${phrase}, and allowed, respectively.`, '$1.00'), phrase).toBe('allowed');
+    }
+    expect(reading('$3.00 and $1.00 were expected, , and allowed, respectively.', '$1.00')).toMatchObject({ roles: ['expected'], every: true });
+    expect(reading('$3.00 and $1.00 were expected, in the end, and allowed, respectively.', '$1.00')).toMatchObject({ roles: ['expected'], every: true });
+    expect(reading('$3.00 and $1.00 were expected by it, in total, and allowed, respectively.', '$1.00')).toMatchObject({ roles: ['expected'], every: true });
     expect(scope('The contract expected and the payer allowed $3.00 and $1.00, respectively, as the payer allowed for each line.', '$3.00')).toBe(null);
     expect(scope('The contract expected and the payer allowed $3.00 and $1.00, respectively, the payer said, for each line.', '$3.00')).toBe(null);
     expect(scope('$3.00 and $1.00 were expected and allowed, which the payer explained for each line, respectively.', '$3.00')).toBe(null);
@@ -887,7 +914,21 @@ describe('amounts, percentages and dates', () => {
     expect(scope('On 3 of the lines, the contract expected $9.00.', '$9.00')).toBe('total');
     expect(scope('For every line, 2 units were billed at $9.00.', '$9.00')).toBe('line');
     expect(scope('Each of the 3 lines was short, so the payer owes $9.00.', '$9.00')).toBe(null);
-    expect(scope('Each of the 3 lines billed 2 units.', '2')).toBe(null);
+    // A count that keeps its noun: the words before it still state the scope, back to the amount or the edge before (R1-NF-2).
+    expect(scope('Each of the 3 lines billed 2 units.', '2')).toBe('line');
+    expect(scope('Each of the 3 lines was allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('The payer allowed $1.00, while across the 3 lines it allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('Per line, the payer allowed $1.00 and for the 3 claims it allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('For each line, the payer allowed $1.00, so for the 3 claims it allowed $9.00.', '$9.00')).toBe('total');
+    // An opening "each" states its own clause's figures, never past an edge a conjunction or a clause's opener follows (R1-NF-2).
+    expect(scope('For each line, the payer allowed $1.00, and the claim was allowed $9.00.', '$9.00')).toBe(null);
+    expect(scope('For each line, the payer allowed $1.00, so the payer owes $9.00.', '$9.00')).toBe(null);
+    expect(scope('For each line, the payer allowed $1.00, the payer said, $9.00.', '$9.00')).toBe('line');
+    expect(scope('For each line, while the contract expected $1.00, the payer allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('For each line, the payer allowed $1.00 and the contract expected $9.00.', '$9.00')).toBe('line');
+    expect(scope('For each line, the payer allowed $1.00 and paid $9.00, and the claim was allowed $2.00.', '$9.00')).toBe('line');
+    expect(scope('Per line the payer allowed $1.00 and the 3 lines billed $9.00.', '$9.00')).toBe(null);
+    expect(scope('Per line, the payer allowed $1.00, so the 3 lines billed $9.00.', '$9.00')).toBe(null);
     expect(scope('On each of the 3 lines, the contract expected and the payer allowed $9.00 and $7.00, respectively.', '$7.00')).toBe('line');
     expect(scope('It allowed $9.00 across the board.', '$9.00')).toBe('total');
     expect(scope('Each line was expected at $9.00.', '$9.00')).toBe('line');

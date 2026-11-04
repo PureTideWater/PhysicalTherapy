@@ -21,6 +21,15 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const CONJUNCTIONS = new Set(['and', 'but', 'or', 'while', 'whereas', 'yet']);
   /** Words that open a clause of their own after a "respectively" list ("which the payer explained for each line"): its words are not the list's. */
   const CLAUSE_OPENERS = new Set(['which', 'that', 'who', 'whom', 'whose', 'where', 'when', 'as', 'because', 'since', 'although', 'though', 'while', 'whereas', 'but', 'yet', 'so', 'if', 'unless']);
+  /**
+   * Words that, first after "respectively" and its commas or after an edge past it, open a clause of their own besides
+   * CLAUSE_OPENERS and the conjunctions ("respectively, with each line short"; R1-NF-1), and a participle's ending
+   * ("respectively, leaving each line short"; a total's word or a cue, "totaling" or "owing", is the list's own).
+   */
+  const CLAUSE_LEADS = new Set(['with', 'without']);
+  const ING_WORD = /^\p{L}{2,}ing$/u;
+  /** The words a scope phrase holds besides those of each line, a unit and a total ("in" is a total's: "in all"): "on each of the lines", "apiece" (R1-NF-3). */
+  const SCOPE_LEADS = new Set(['on', 'of', 'apiece']);
   /** Words that join a list across a comma: "rows 1, 2 and 3". */
   const LIST_CONTINUERS = new Set([',', 'and', 'or', 'to', 'through', 'thru', '–']);
   /** Determiners before an ordinal that make it prose before a noun that is no row's ("the sixth unit", "a second appeal"). */
@@ -135,6 +144,8 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     LIST_CONTINUERS,
     CONJUNCTIONS,
     CLAUSE_OPENERS,
+    CLAUSE_LEADS,
+    ING_WORD,
     // Ordinals, and the determiners, pronouns and prepositions around a count or a code.
     ORDINAL_WORDS,
     ORDINAL_DETERMINERS,
@@ -148,6 +159,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     ONE_UNIT,
     TOTAL_WORDS,
     TOTAL_FOR,
+    SCOPE_LEADS,
     // Prose.
     FUNCTION_WORDS,
   } as const;
