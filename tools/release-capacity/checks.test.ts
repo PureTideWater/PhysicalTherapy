@@ -71,12 +71,12 @@ const PASSING: CapacityMeasurements = {
   runner: { cpus: 4, memoryMiB: 16_000, cpuModel: 'SYNTHETIC CPU', kernel: '6.0' },
   worker: { cpus: 0.5, memoryMiB: 1024, cpuset: '3', command: ['node', '--max-old-space-size=560', '--enable-source-maps', 'dist/main.js'] },
   release: { releaseNo: 900_110, records: 4_174_000, manifestSha256: 'a'.repeat(64) },
-  expected: { pricedLines: 100_000, parsedClaims: 8_000, postedEntries: 33_334 },
+  expected: { pricedLines: 100_000, parsedClaims: 8_000, postedLines: 33_334 },
   jobs: JOBS,
   run: { status: 'complete', failureCode: null },
   pricedLines: 100_000,
   parsedClaims: 8_000,
-  postedEntries: 33_334,
+  posted: { lines: 33_334, inFull: 33_334 },
   memory: { limitBytes: LIMIT, peakBytes: 700 * MIB, periods: PERIODS, oomKills: 0, oomKilled: false, restarts: 0, running: true },
   advisoryLocks: { peak: 1, samples: 3_600 },
   errorCodes: { CONTENT_NOT_LOADED: 0 },
@@ -206,9 +206,19 @@ describe('the release capacity verdict', () => {
     failsWith({ jobs: change('E price', { state: null }) }, /E price \(price\) could not be read \(the large jobs together\)/);
   });
 
-  it('fails A’s reconcile posting other than one entry for each actionable line, or uncounted (CAS-42.4)', () => {
-    failsWith({ postedEntries: 33_333 }, /33333 posted entries for A, not 33334 \(one for each actionable line\)/);
-    failsWith({ postedEntries: null }, /A’s posted entries could not be counted/);
+  it('fails A’s reconcile posting other than each actionable line, a line posted short of its approval, or uncounted (CAS-42.4)', () => {
+    failsWith({ posted: { lines: 33_333, inFull: 33_333 } }, /33333 of A’s lines posted, not 33334 \(each actionable line\)/);
+    failsWith({ posted: { lines: 33_335, inFull: 33_335 } }, /33335 of A’s lines posted, not 33334 \(each actionable line\)/);
+    failsWith({ posted: { lines: 33_334, inFull: 33_332 } }, /2 of A’s posted lines not posted in full \(their posted entries do not sum to their approved ones\)/);
+    failsWith({ posted: null }, /A’s posted lines could not be counted/);
+  });
+
+  it('fails A’s reconcile of no actionable line, which posts 0 of 0 and measures nothing', () => {
+    failsWith({ expected: { ...PASSING.expected, postedLines: 0 }, posted: { lines: 0, inFull: 0 } }, /A’s reconcile had no actionable line to post: A’s triage made none actionable, so the reconcile measured nothing/);
+    // Uncounted as well: both are said.
+    const uncounted = verdict({ ...PASSING, expected: { ...PASSING.expected, postedLines: 0 }, posted: null });
+    expect(uncounted.pass).toBe(false);
+    expect(uncounted.reasons).toEqual(['A’s reconcile had no actionable line to post: A’s triage made none actionable, so the reconcile measured nothing', 'A’s posted lines could not be counted']);
   });
 
   it('fails a run that stopped before it was read back', () => {
@@ -235,6 +245,7 @@ describe('the release capacity verdict', () => {
     expect(summary).toContain('690 MiB over A’s triage (300 samples)');
     expect(summary).toContain('Advisory locks: at most 1 held by one backend (3600 samples), of 64.');
     expect(markdown(report(PASSING))).toContain('Every check passed.');
+    expect(markdown(report(PASSING))).toContain('A’s lines posted 33334 (33334 in full) of 33334.');
   });
 });
 

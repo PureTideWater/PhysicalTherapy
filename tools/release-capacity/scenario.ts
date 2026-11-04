@@ -8,10 +8,12 @@ import {
   addRateRecord,
   approveRateRecordField,
   approveVersion,
+  citeDisputeWindow,
   createContract,
   createDraftVersion,
   mapPlan,
   signOffVersion,
+  verifyDisputeWindow,
 } from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
@@ -52,7 +54,10 @@ import { createPricingRun } from '@tp/worker/pricing';
  *   (the therapy codes half the time), every claim's lines on one or two dates so the claims hold same-date pairs,
  *   dates spread over 2026-Q1 to Q4 so the keyed read fetches several quarters per code; half the claims under a plan
  *   mapped Medicare Advantage non-contracted (every Medicare flag on), half under a SYNTHETIC contract at 110% of
- *   Medicare; the practice's location a ZIP of the scale release.
+ *   Medicare whose own dispute window is cited and verified (CONTRACT_DISPUTE_WINDOW), so its material lines are
+ *   actionable (the Medicare Advantage lines' deadlines stay unverified: the release's Medicare window record is L1,
+ *   and no Medicare Advantage route is confirmed until golden QUESTIONS Q34 is answered); the practice's location a ZIP
+ *   of the scale release.
  * - B, a 20,000-line period of the same shape, priced and triaged during setup, with an audit report requested as the
  *   report action requests one; its job runs in the concurrent phase.
  * - C, four SYNTHETIC 835s of 2,000 claims each, written by packages/synth's 835 writer and staged as intake leaves a
@@ -434,19 +439,38 @@ const termsAt = (percentage: string) => ({
 const quoteAt = (percentage: string) => `Every covered service is paid at ${percentage}% of the Medicare fee schedule`;
 
 /**
- * A's and B's plans mapped: the Medicare Advantage plan non-contracted, the other to a SYNTHETIC contract at 110% of
- * Medicare, drafted and signed off by the billing manager and abstracted and approved by the specialist through
- * @tp/contracts' services, its quote on a SYNTHETIC PDF's page.
+ * The SYNTHETIC contract's own dispute window (D17 a): its days counted as calendar days after the payment date (BPR16),
+ * the rule the product computes, so the specialist can verify it and its lines' deadlines are verified, as the large
+ * triage test's contract's are (CAS-42.1). Without it the contract is silent, its lines take the release's
+ * commercial_default, which release 900110 does not carry (NO_WINDOW) and which is never verified, and no line of A is
+ * actionable, so A's reconcile (step 7b) would post nothing. Ten years, the most a version's window may state: the
+ * weekly run triages on the day it runs and A's remittance is paid on REPROCESSING_PAID_ON (2026-12-31), so its windows
+ * stay open on every run until 2036-12-28 (a passed window strikes a line through and leaves it nothing to reconcile).
+ */
+export const CONTRACT_DISPUTE_WINDOW = { days: 3_650, rule: { unit: 'calendar_days', measuredFrom: 'payment_date' } } as const;
+/** The words the agreement's page 1 states its dispute window in, which the specialist cites. */
+export const windowQuote = (days: number) => `Disputes are raised within ${String(days)} days of the payment date.`;
+
+/** The SYNTHETIC agreement's pages: its dispute window on page 1 (cited by the window), its fee schedule on page 2 (cited by the rate record). */
+export function contractPages(): string[][] {
+  return [
+    ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', windowQuote(CONTRACT_DISPUTE_WINDOW.days)],
+    ['SYNTHETIC EXHIBIT A FEE SCHEDULE', quoteAt('110')],
+  ];
+}
+
+/**
+ * A practice's plans mapped: the Medicare Advantage plan non-contracted, the other to a SYNTHETIC contract at 110% of
+ * Medicare with its own dispute window (CONTRACT_DISPUTE_WINDOW), drafted and signed off by the billing manager, and
+ * abstracted, its window cited and verified, and approved by the specialist, through @tp/contracts' services, each
+ * quote on a SYNTHETIC PDF's page.
  */
 export async function mapPlans(seeding: Seeding, practice: SeededPractice, specialistId: string): Promise<void> {
   const { owner } = seeding;
   const names = practiceNames(practice.label);
   const { practiceId } = practice;
   const documentId = randomUUID();
-  const pdf = syntheticPdf([
-    ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.'],
-    ['SYNTHETIC EXHIBIT A FEE SCHEDULE', quoteAt('110')],
-  ]);
+  const pdf = syntheticPdf(contractPages());
   const ids = await asOwner(owner, [practiceId], async () => {
     await owner.query(
       `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)
@@ -463,12 +487,26 @@ export async function mapPlans(seeding: Seeding, practice: SeededPractice, speci
     );
   const versionId = await as(practice.manager, async (context) => {
     const contract = await createContract(context, { practiceId, payerId: ids.payer, title: 'SYNTHETIC CAPACITY AGREEMENT' });
-    return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: PERIOD.from, effectiveTo: null, sourceDocumentIds: [documentId] })).versionId;
+    return (
+      await createDraftVersion(context, {
+        practiceId,
+        contractId: contract.contractId,
+        effectiveFrom: PERIOD.from,
+        effectiveTo: null,
+        sourceDocumentIds: [documentId],
+        disputeWindowDays: CONTRACT_DISPUTE_WINDOW.days,
+      })
+    ).versionId;
   });
   await as(specialistId, async (context) => {
     const { rateRecordId } = await addRateRecord(context, { practiceId, versionId, terms: termsAt('110'), citation: { documentId, page: 2, quote: quoteAt('110') } });
     for (const field of RATE_RECORD_FIELDS) {
       await approveRateRecordField(context, { practiceId, rateRecordId, field });
+    }
+    await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote(CONTRACT_DISPUTE_WINDOW.days) }, rule: CONTRACT_DISPUTE_WINDOW.rule });
+    const window = await verifyDisputeWindow(context, { practiceId, versionId });
+    if (!window.verified) {
+      throw new Error('the SYNTHETIC contract’s dispute window was not verified against its page');
     }
     await approveVersion(context, { practiceId, versionId });
   });

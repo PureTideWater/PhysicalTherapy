@@ -66,7 +66,8 @@ import {
  *  7b. A's reconcile (the ledger freeze exception granted 2026-10-27; docs/adr/0083): SYNTHETIC 835s reprocessing every
  *     claim with an actionable line, each line paid its expected amount, staged and parsed, then a SYNTHETIC posting
  *     export posting each actionable line from its own row, staged as intake leaves it and reconciled by the reconcile
- *     job (the approvals and the postings in one pass), measured like the chain;
+ *     job (the approvals and the postings in one pass), measured like the chain; the monitoring chain each parse queues
+ *     is cancelled before it starts (cancelMonitoring), so this phase and the next run only their own jobs;
  *  7c. the large jobs together (D20): A's second audit report (its inline triage a re-triage), D's triage, E's run
  *     created and its price job, and C's second four parses, queued within a second, memory.current sampled each
  *     second until all seven finish;
@@ -261,6 +262,27 @@ async function jobOutcome(owner: DatabaseClient, job: Queued): Promise<JobOutcom
 }
 
 /**
+ * Cancels the monitoring chain's planning job that each of `documentIds`' parses queued (monitor, keyed by its document,
+ * MONITOR_DELAY_SECONDS after the parse; apps/worker/src/monitor/trigger.ts) before it starts. Step 7b measures A's
+ * reprocessing parses and its reconcile; the chain would price A's months again and queue a whole-practice reconcile for
+ * each month run, beside 7b and the large jobs together and measured by neither. Stops the run unless every one was
+ * found waiting, so a chain is never left to run unmeasured.
+ */
+async function cancelMonitoring(owner: DatabaseClient, practiceId: string, documentIds: readonly string[]): Promise<void> {
+  const { rows } = await owner.query<{ n: number }>(
+    `WITH cancelled AS (
+       UPDATE pgboss.job SET state = 'cancelled', completed_on = now()
+        WHERE name = 'monitor' AND state IN ('created', 'retry') AND data ->> 'practice_id' = $1 AND data ->> 'document_id' = ANY ($2::text[])
+        RETURNING id)
+     SELECT count(*)::int AS n FROM cancelled`,
+    [practiceId, [...documentIds]],
+  );
+  if ((rows[0]?.n ?? 0) !== documentIds.length) {
+    throw new HarnessStop('REPROCESSING_MONITOR_NOT_CANCELLED');
+  }
+}
+
+/**
  * Waits until every job is finished (completed, failed or cancelled) or the wait ends; `tick` runs once at the start and
  * then every second meanwhile, so a period it samples has a sample however soon its jobs finish.
  */
@@ -406,7 +428,7 @@ async function main(): Promise<number> {
   let run: CapacityMeasurements['run'] = null;
   let pricedLines: number | null = null;
   let parsedClaims: number | null = null;
-  let postedEntries: number | null = null;
+  let posted: CapacityMeasurements['posted'] = null;
   let expectedPosted = 0;
   let memory: WorkerMemory = { limitBytes: workerLimit.memoryMiB * MIB, peakBytes: null, periods, oomKills: null, oomKilled: null, restarts: null, running: null };
   let codes: Record<string, number> | null = null;
@@ -580,6 +602,7 @@ async function main(): Promise<number> {
         reprocessingDocuments.map((documentId, index) => queued(`A reprocessing parse ${String(index + 1)}`, 'parse_835', 'reconcile', (q) => q.enqueue('parse_835', { practice_id: a.practiceId, document_id: documentId }))),
       );
       jobs.push(...(await waitForJobs(owner as DatabaseClient, parses, reconcileMemory.tick)));
+      await cancelMonitoring(owner as DatabaseClient, a.practiceId, reprocessingDocuments);
       jobs.push(...(await waitForJobs(owner as DatabaseClient, [await queued('A reconcile', 'reconcile', 'reconcile', (q) => q.enqueue('reconcile', { practice_id: a.practiceId, document_id: exportId }))], reconcileMemory.tick)));
     });
     reconcileMemory.close();
@@ -612,11 +635,16 @@ async function main(): Promise<number> {
       return rows[0] === undefined ? null : { status: rows[0].status, failureCode: rows[0].failure_code };
     });
     parsedClaims = await asOwner(ownerNow, [c.practiceId], async () => (await ownerNow.query<{ n: number }>('SELECT count(*)::int AS n FROM claim WHERE practice_id = $1', [c.practiceId])).rows[0]?.n ?? null);
-    postedEntries = await asOwner(
-      ownerNow,
-      [a.practiceId],
-      async () => (await ownerNow.query<{ n: number }>("SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'posted'", [a.practiceId])).rows[0]?.n ?? null,
-    );
+    // A's lines posted, and posted in full: lines, not entries (checks.ts, CapacityMeasurements.posted).
+    posted = await asOwner(ownerNow, [a.practiceId], async () => {
+      const { rows } = await ownerNow.query<{ lines: number; in_full: number }>(
+        `SELECT count(*)::int AS lines, (count(*) FILTER (WHERE x.posted = x.approved))::int AS in_full
+           FROM (SELECT sum(amount_cents) FILTER (WHERE stage = 'posted') AS posted, sum(amount_cents) FILTER (WHERE stage = 'approved') AS approved
+                   FROM ledger_entry WHERE practice_id = $1 GROUP BY service_line_id HAVING bool_or(stage = 'posted')) x`,
+        [a.practiceId],
+      );
+      return rows[0] === undefined ? null : { lines: rows[0].lines, inFull: rows[0].in_full };
+    });
     advisoryLocks = await locks.stop();
     locks = null;
     memory = await readMemory(runtime, workerLimit.memoryMiB * MIB, periods);
@@ -665,12 +693,12 @@ async function main(): Promise<number> {
     runner,
     worker: { cpus: workerLimit.cpus, memoryMiB: workerLimit.memoryMiB, cpuset: layout.web, command },
     release,
-    expected: { pricedLines: size.measuredLines, parsedClaims: 2 * size.remittances * size.claimsPerRemittance, postedEntries: expectedPosted },
+    expected: { pricedLines: size.measuredLines, parsedClaims: 2 * size.remittances * size.claimsPerRemittance, postedLines: expectedPosted },
     jobs: measuredJobs,
     run,
     pricedLines,
     parsedClaims,
-    postedEntries,
+    posted,
     memory,
     advisoryLocks,
     errorCodes: codes,

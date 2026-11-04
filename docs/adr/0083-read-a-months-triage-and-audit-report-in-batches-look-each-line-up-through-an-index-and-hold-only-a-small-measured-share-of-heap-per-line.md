@@ -401,6 +401,17 @@ went on. Four readings of the numbers:
   logs V8's limit, as D19 says.
 - **The sampled `heapUsed` and the resident memory are printed for the record only.** They count garbage V8 has yet to
   collect, and resident memory leaves out the Chromium processes.
+- **The weekly run's A had no actionable line, so its reconcile (step 7b) posted 0 of 0 and passed.** A's contract was
+  silent on its dispute window, release 900110 carries no `commercial_default`, so its lines had no window
+  (`NO_WINDOW`), and the Medicare Advantage lines' deadlines stay unverified (the release's Medicare record is L1, and no
+  route is confirmed until golden QUESTIONS Q34). The seed now drafts the contract with a ten-year window on page 1,
+  cited and verified by the specialist as the large triage test's contract is (CAS-42.1), so A's material contract
+  lines are actionable, and D's triage in the large jobs together writes its actionable lines too. The check now fails
+  a reconcile with no actionable line to post, and counts A's lines posted, and posted in full, not entries: a claim's
+  twin lines (one code, date and amount) cannot be told apart by a line-level posting row, so one of them may be
+  posted from two rows. The monitoring chain each reprocessing parse queues is cancelled before it starts, so step 7b
+  and the large jobs together run only their own jobs. Small runs: 607 actionable lines posted in full, A's reconcile
+  on attempt 1 in 37.6 to 66.1 s; 6,600 lines: 2,084 posted, 333.2 s.
 
 #### The release loader's freeze, 2026-11-04
 
@@ -523,3 +534,7 @@ files as the first grant, and no other.
 - The reconcile pass's own time at size (CAS-42.3 runs 2,000 lines, not 20,000): `candidatesFor`'s two queries per
   open case line, `claimLines`' per-line correction chain and `syncLineStages`' statement per stage, which grow faster
   than the lines. SUITE-CAP-3 measures reconcile at real size.
+- The weekly run's step 7b at full size: about 31% of A's 100,000 lines are now actionable, and the reconcile pass
+  walks every open case line (2,084 lines took 333.2 s at 0.5 vCPU), so A's reconcile cannot finish in an attempt until
+  SUITE-CAP-3. Whether step 7b runs on its own practice at CAS-42.3's 2,000 lines until then, or stays on A with that
+  failure read as SUITE-CAP-3's, is asked of the founder (SUITE-CAP-1b's pull request).

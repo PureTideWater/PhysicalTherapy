@@ -1,29 +1,39 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { windowRuleComputed } from '@tp/contracts';
+import { cents } from '@tp/money';
+import { disputeWindow, indexRelease } from '@tp/pricing';
+import { readRecordFile } from '@tp/rules/content';
 import { SCALE_RELEASE_SHAPE, SCALE_THERAPY_CODES, scaleCodes, scaleZips } from '@tp/synth';
+import { type DeadlineStatus, type TriageFacts, contractWindowRuleComputed, deadlineVerification, judgeLine } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import { COMMANDS, WORKER_JOBS } from '../../infra/lib/constructs/compute';
 import { heapFlag } from '../../infra/lib/heap';
 import { repositoryRoot } from '../content-files';
+import { SYNTHETIC_RELEASE_DIR } from '../release/synthetic';
 import { SERVICE_COMMANDS, serviceCommand } from '../screening-capacity/containers';
 import { HARNESS_LOGINS, type HarnessDirectories, workerEnvironment } from '../screening-capacity/env';
 import {
   CAPACITY_CODES,
   CAPACITY_ZIP,
+  CONTRACT_DISPUTE_WINDOW,
   FULL_SIZE,
   PERIOD,
   REPROCESSING_CHECK_CLAIMS,
   REPROCESSING_CHECKS_PER_FILE,
+  REPROCESSING_PAID_ON,
   SETTINGS,
   SMALL_SIZE,
   capacity835,
   claimNumber,
+  contractPages,
   lineKey,
   practiceClaims,
   practiceNames,
   reprocessing,
+  windowQuote,
   withHeapFlag,
 } from './scenario';
 
@@ -168,6 +178,82 @@ describe('the practices', () => {
         expect(value, value).toMatch(/SYN/);
       }
     }
+  });
+});
+
+describe('the SYNTHETIC contract’s dispute window, which makes A’s contract lines actionable (step 7b)', () => {
+  // The dispute-window records release 900110 carries (tools/release/scale.ts, HAND_TYPED): release 900001's, Medicare's only.
+  const carried = readRecordFile(path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR, 'dispute_window', '2026', 'records.json'), 'dispute_window/2026/records.json').records.map((located) => located.record);
+  const release = indexRelease({ releaseNo: 900_110, manifestSha256: 'a'.repeat(64), records: carried });
+  const versionId = '00000000-0000-4000-8000-000000000001';
+  const asOf = '2026-11-04';
+  const paidOn = REPROCESSING_PAID_ON;
+  const material = cents(1_234n);
+  // A priced line's facts as triage reads them, but for its window and deadline.
+  const facts = (mappingKind: 'contract' | 'ma_noncontracted', windowEndsOn: string | null, deadlineStatus: DeadlineStatus): TriageFacts => ({
+    varianceCents: material,
+    windowEndsOn,
+    deadlineStatus,
+    windowRuleComputed: true,
+    claimReversed: false,
+    claimSuperseded: false,
+    mappingKind,
+    mappingInForce: true,
+    contractVersionStatus: mappingKind === 'contract' ? 'signed_off' : null,
+    contractVersionCoversService: true,
+    releaseWithdrawn: false,
+    contentNotLoaded: false,
+    writtenOff: false,
+    visitVarianceCents: null,
+    reviewFlags: [],
+  });
+  const windowOf = (days: number | null, ma = false) =>
+    disputeWindow({ contractWindows: ma ? null : { timely_filing_days: null, dispute_window_days: days, appeal_levels: [] }, remittanceDate: paidOn, serviceDate: '2026-06-01', asOf, release });
+
+  it('states its days on page 1 in the rule the product computes, the most a version may state, cited apart from the fee schedule on page 2', () => {
+    expect(windowRuleComputed(CONTRACT_DISPUTE_WINDOW.rule)).toBe(true);
+    expect(contractWindowRuleComputed(CONTRACT_DISPUTE_WINDOW.rule)).toBe(true);
+    expect(CONTRACT_DISPUTE_WINDOW.days).toBe(3_650);
+    const [first, second] = contractPages();
+    expect(first).toContain(windowQuote(CONTRACT_DISPUTE_WINDOW.days));
+    expect(windowQuote(CONTRACT_DISPUTE_WINDOW.days)).toBe('Disputes are raised within 3650 days of the payment date.');
+    expect(second).toContain('Every covered service is paid at 110% of the Medicare fee schedule');
+    expect(second?.some((text) => text.startsWith('Disputes'))).toBe(false);
+  });
+
+  it('keeps a contract line’s window open for ten years from A’s payment date, and its deadline verified as the seed leaves the version', () => {
+    const window = windowOf(CONTRACT_DISPUTE_WINDOW.days);
+    expect(window).toMatchObject({ source: 'contract', length: 3_650, unit: 'days', measured_from: 'remittance_date', from_date: '2026-12-31', ends_on: '2036-12-28', status: 'OPEN' });
+    const deadline = deadlineVerification({
+      trace: { agreement: { contract_version_id: versionId }, steps: { window } },
+      recordLevel: null,
+      releaseWithdrawn: false,
+      contractWindow: {
+        contractVersionId: versionId,
+        status: 'signed_off',
+        disputeWindowDays: CONTRACT_DISPUTE_WINDOW.days,
+        evidence: { documentId: versionId, page: 1, quote: windowQuote(CONTRACT_DISPUTE_WINDOW.days), hash: 'b'.repeat(64), ...CONTRACT_DISPUTE_WINDOW.rule },
+        verifiedBy: versionId,
+        verifiedAt: '2026-11-04T00:00:00.000Z',
+      },
+    });
+    expect(deadline).toMatchObject({ status: 'verified', source: 'contract', endsOn: '2036-12-28', cause: null });
+    expect(judgeLine(facts('contract', window.ends_on, deadline.status), cents(500n), asOf)).toMatchObject({ validated: true, actionable: true, reasons: [] });
+  });
+
+  it('is why: a silent contract has no window under release 900110, and a Medicare Advantage line’s deadline is unverified', () => {
+    // The release carries no commercial_default window, and that one would never be verified either.
+    expect(carried.some((record) => (record.key as { readonly program?: string }).program === 'commercial_default')).toBe(false);
+    const silent = windowOf(null);
+    expect(silent).toMatchObject({ source: null, ends_on: null, status: 'NO_WINDOW' });
+    expect(judgeLine(facts('contract', null, 'not_applicable'), cents(500n), asOf)).toMatchObject({ validated: true, actionable: false, reasons: ['NO_WINDOW'] });
+    // Medicare's redetermination window, open, but its record is L1 and no Medicare Advantage route is confirmed (Q34).
+    const ma = windowOf(null, true);
+    expect(ma).toMatchObject({ source: 'release', ends_on: '2027-04-21', status: 'OPEN' });
+    const level = carried.find((record) => (record.key as { readonly window?: string }).window === 'redetermination')?.verification.level ?? null;
+    const deadline = deadlineVerification({ trace: { agreement: { contract_version_id: null }, steps: { window: ma } }, recordLevel: level, releaseWithdrawn: false, contractWindow: null });
+    expect(deadline).toMatchObject({ status: 'unverified', cause: 'RECORD_BELOW_LEVEL' });
+    expect(judgeLine(facts('ma_noncontracted', ma.ends_on, deadline.status), cents(500n), asOf)).toMatchObject({ validated: true, actionable: false, reasons: ['DEADLINE_UNVERIFIED'] });
   });
 });
 

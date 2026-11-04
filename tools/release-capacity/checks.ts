@@ -5,8 +5,9 @@ import { TRACE_LOCK_BUCKETS } from '../../apps/worker/src/parse/loader';
  * over what the harness read back, so every fail condition is unit-tested (checks.test.ts). It fails on any job not
  * finished complete, the concurrent phase's six and the large jobs together's seven included; a measured job that
  * completed on a later attempt than its first, or whose attempts could not be read; the run not complete; a priced-line
- * count other than the measured period's lines, parsed claims other than the 835s held, or posted entries other than
- * A's actionable lines (A's reconcile); an OOM kill or a restart of the worker; the worker's memory.peak above 90% of
+ * count other than the measured period's lines, parsed claims other than the 835s held, A's lines posted other than its
+ * actionable lines or posted other than in full (A's reconcile), or no actionable line of A at all (a reconcile of
+ * nothing measures nothing); an OOM kill or a restart of the worker; the worker's memory.peak above 90% of
  * its task's memory over the whole run, or memory.current sampled above it in any phase or chain job (SAMPLED_PERIODS),
  * or any of these sampled fewer than once each 2 seconds; a backend holding more than ADVISORY_LOCKS_PER_TRANSACTION
  * advisory locks at any sample over the run; a job's live heap above HEAP_LIVE_PERCENT of its heap limit, or a measured
@@ -137,15 +138,20 @@ export interface CapacityMeasurements {
   /** The worker task's limits and the heap flag its command ran with. */
   readonly worker: { readonly cpus: number; readonly memoryMiB: number; readonly cpuset: string; readonly command: readonly string[] };
   readonly release: { readonly releaseNo: number; readonly records: number; readonly manifestSha256: string };
-  /** What the counts must be: A's lines, C's claims (both sets), and a posted entry for each of A's actionable lines. */
-  readonly expected: { readonly pricedLines: number; readonly parsedClaims: number; readonly postedEntries: number };
+  /** What the counts must be: A's lines, C's claims (both sets), and each of A's actionable lines posted. */
+  readonly expected: { readonly pricedLines: number; readonly parsedClaims: number; readonly postedLines: number };
   readonly jobs: readonly JobOutcome[];
   /** A's run as it ended; null when it could not be read. */
   readonly run: { readonly status: string; readonly failureCode: string | null } | null;
   readonly pricedLines: number | null;
   readonly parsedClaims: number | null;
-  /** A's posted entries after its reconcile; null when they could not be counted. */
-  readonly postedEntries: number | null;
+  /**
+   * A's lines posted after its reconcile: those with a posted entry, and of them those posted in full (their posted
+   * entries sum to their approved ones). Lines, not entries: a claim's two lines of one code, date and amount cannot be
+   * told apart by a line-level posting row, so the ledger may post one of them from two rows, the first row's amount
+   * past the first line's approval going to its twin (the amounts are the same). Null when they could not be counted.
+   */
+  readonly posted: { readonly lines: number; readonly inFull: number } | null;
   readonly memory: WorkerMemory;
   /** null when the sampler could not run. */
   readonly advisoryLocks: AdvisoryLockSamples | null;
@@ -260,8 +266,18 @@ export function verdict(m: CapacityMeasurements): Verdict {
   if (m.parsedClaims !== m.expected.parsedClaims) {
     reasons.push(m.parsedClaims === null ? 'the parsed claims could not be counted' : `${String(m.parsedClaims)} parsed claims, not ${String(m.expected.parsedClaims)}`);
   }
-  if (m.postedEntries !== m.expected.postedEntries) {
-    reasons.push(m.postedEntries === null ? 'A’s posted entries could not be counted' : `${String(m.postedEntries)} posted entries for A, not ${String(m.expected.postedEntries)} (one for each actionable line)`);
+  if (m.expected.postedLines === 0) {
+    reasons.push('A’s reconcile had no actionable line to post: A’s triage made none actionable, so the reconcile measured nothing');
+  }
+  if (m.posted === null) {
+    reasons.push('A’s posted lines could not be counted');
+  } else {
+    if (m.posted.lines !== m.expected.postedLines) {
+      reasons.push(`${String(m.posted.lines)} of A’s lines posted, not ${String(m.expected.postedLines)} (each actionable line)`);
+    }
+    if (m.posted.inFull !== m.posted.lines) {
+      reasons.push(`${String(m.posted.lines - m.posted.inFull)} of A’s posted lines not posted in full (their posted entries do not sum to their approved ones)`);
+    }
   }
   const { memory } = m;
   if (memory.oomKilled === null || memory.oomKills === null) {
@@ -353,7 +369,7 @@ export function markdown(full: ReturnType<typeof report>): string {
         `| ${job.what} | ${job.phase} | ${job.state ?? 'unread'} | ${job.attempts === null ? 'unread' : String(job.attempts)} | ${job.heap === null ? 'none' : `${String(job.heap.peakMib)} of ${String(job.heap.limitMib)} MiB`} | ${seconds(job.elapsedMs)} |`,
     ),
     '',
-    `Run: ${full.run === null ? 'unread' : `${full.run.status}${full.run.failureCode === null ? '' : ` (${full.run.failureCode})`}`}; priced lines ${full.pricedLines === null ? 'unread' : String(full.pricedLines)} of ${String(full.expected.pricedLines)}; parsed claims ${full.parsedClaims === null ? 'unread' : String(full.parsedClaims)} of ${String(full.expected.parsedClaims)}; A’s posted entries ${full.postedEntries === null ? 'unread' : String(full.postedEntries)} of ${String(full.expected.postedEntries)}.`,
+    `Run: ${full.run === null ? 'unread' : `${full.run.status}${full.run.failureCode === null ? '' : ` (${full.run.failureCode})`}`}; priced lines ${full.pricedLines === null ? 'unread' : String(full.pricedLines)} of ${String(full.expected.pricedLines)}; parsed claims ${full.parsedClaims === null ? 'unread' : String(full.parsedClaims)} of ${String(full.expected.parsedClaims)}; A’s lines posted ${full.posted === null ? 'unread' : `${String(full.posted.lines)} (${String(full.posted.inFull)} in full)`} of ${String(full.expected.postedLines)}.`,
     '',
     `Memory: peak ${memory.peakBytes === null ? 'unread' : mib(memory.peakBytes)} over the run, of ${mib(memory.limitBytes)}; ${memory.periods.map((period) => `${period.peakBytes === null ? 'unread' : mib(period.peakBytes)} over ${period.what} (${String(period.samples)} samples)`).join(', ')}; OOM kills ${memory.oomKills === null ? 'unread' : String(memory.oomKills)}, restarts ${memory.restarts === null ? 'unread' : String(memory.restarts)}.`,
     '',
