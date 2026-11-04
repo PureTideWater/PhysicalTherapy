@@ -4322,13 +4322,19 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    */
   function producersOf(row: BoundedValue, jobs: Readonly<Record<string, Job>>): string[] {
     const step = /^(?:fromjson\()?steps\.([^.]+)\.outputs\./.exec(row.value);
-    if (step !== null) return [`step ${step[1] ?? ''} of job ${row.job}`];
+    if (step !== null) return [`step ${step[1] ?? ''} of job ${row.job.toLowerCase()}`];
     const handed = /^needs\.([^.]+)\.outputs\.([^.]+)$/.exec(row.value);
     if (handed !== null) return [`needed job ${handed[1] ?? ''}`, `output ${handed[2] ?? ''} of job ${handed[1] ?? ''}`];
     const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
     const given = whole === null ? [] : whole[1] === undefined ? needsOf(jobs[row.job]).map((job) => job.toLowerCase()) : [whole[1]];
-    return given.flatMap((job) => [`needed job ${job}`, ...outputsOf(jobs[job]).map((name) => `output ${name.toLowerCase()} of job ${job}`)]);
+    return given.flatMap((job) => [`needed job ${job}`, ...outputsOf(jobNamed(jobs, job)).map((name) => `output ${name.toLowerCase()} of job ${job}`)]);
   }
+
+  /**
+   * The job an id names as an expression reads it, in any case (needs.Build and needs.build are one job): a row's value
+   * is in lower case, its jobs as written, so every lookup from a value goes through this.
+   */
+  const jobNamed = (jobs: Readonly<Record<string, Job>>, id: string): Job | undefined => Object.entries(jobs).find(([key]) => key.toLowerCase() === id.toLowerCase())?.[1];
 
   /**
    * What does not resolve of each row's references on these workflows (text gives a file's) and this repository's
@@ -4441,7 +4447,9 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       // with its name and indent (toJsonBytes), and for needs each job's own lines.
       const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
       if (whole !== null) {
-        const bounds = (job: string): Record<string, number> => Object.fromEntries(outputsOf(jobs[job]).map((name) => [name, rows.find((entry) => entry.file === row.file && entry.job === job && entry.value === handedValue(jobOutput(jobs[job], name)))?.bytes ?? 0]));
+        // An output with no row counts nothing here: the row must cite it (above), and the cited output's check refuses one
+        // with no row or not one value alone.
+        const bounds = (job: string): Record<string, number> => Object.fromEntries(outputsOf(jobNamed(jobs, job)).map((name) => [name, rows.find((entry) => entry.file === row.file && entry.job.toLowerCase() === job.toLowerCase() && entry.value === handedValue(jobOutput(jobNamed(jobs, job), name)))?.bytes ?? 0]));
         const most = whole[1] === undefined ? needsJsonBytes(Object.fromEntries(needsOf(reader).map((job) => [job, bounds(job)]))) : toJsonBytes(bounds(whole[1]));
         if (most > row.bytes) say(`toJSON writes up to ${String(most)} bytes of what it reads, each output quoted and escaped, over this row's ${String(row.bytes)}`);
       }
@@ -4691,6 +4699,27 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(needsJsonBytes({ build: { digest_web: 71 } })).toBe(522);
     expect(needsRow(522)).toEqual([]);
     expect(needsRow(521)).toEqual(["fixture.yml use tojson(needs): toJSON writes up to 522 bytes of what it reads, each output quoted and escaped, over this row's 521"]);
+    // A job id with a capital letter is one job in every case an expression writes it (a row's value is in lower case):
+    // its step's row and the toJSON(needs) that reads it are tied to it as for any other, so a joined output it hands on
+    // is still refused.
+    const capital = [
+      'name: fixture', 'on: push', 'jobs:',
+      '  up:', '    runs-on: ubuntu-26.04', '    outputs:', '      a: ${{ steps.s.outputs.a }}', '    steps:', '      - id: s', '        run: echo "a=x" >> "$GITHUB_OUTPUT"',
+      '  Build:', '    needs: up', '    runs-on: ubuntu-26.04', '    outputs:', '      big: ${{ needs.up.outputs.a }}${{ needs.up.outputs.a }}', '    steps:',
+      '      - id: identity', '        run: echo "digest=x" >> "$GITHUB_OUTPUT"', '      - env: { DIGEST: "${{ steps.identity.outputs.digest }}" }', '        run: echo "$DIGEST"',
+      '  use:', '    needs: Build', '    runs-on: ubuntu-26.04', '    steps:', '      - env: { ALL: "${{ toJSON(needs) }}" }', '        run: echo "$ALL"', '',
+    ].join('\n');
+    const capitalRows: BoundedValue[] = [
+      { file: 'fixture.yml', job: 'up', value: 'steps.s.outputs.a', refs: [script('up', 's', fingerprint({ run: 'echo "a=x" >> "$GITHUB_OUTPUT"' }))], bound: 'x', bytes: 60_000 },
+      { file: 'fixture.yml', job: 'Build', value: 'needs.up.outputs.a', refs: [needs('up'), output('up', 'a')], bound: 'x', bytes: 60_000 },
+      { file: 'fixture.yml', job: 'Build', value: 'steps.identity.outputs.digest', refs: [script('Build', 'identity', fingerprint({ run: 'echo "digest=x" >> "$GITHUB_OUTPUT"' }))], bound: 'x', bytes: 71 },
+      { file: 'fixture.yml', job: 'use', value: 'tojson(needs)', refs: [needs('Build')], bound: 'x', bytes: 200 },
+    ];
+    const capitalProblems = (table: readonly BoundedValue[]) => refProblems(table, unboundedValueProblems('fixture.yml', parse(capital)).values, () => capital);
+    expect(capitalProblems(capitalRows)).toEqual(['fixture.yml use tojson(needs): names no output big of job build']);
+    expect(capitalProblems([...capitalRows.slice(0, 3), { ...(capitalRows[3] as BoundedValue), refs: [needs('Build'), output('Build', 'big')] }]).filter((problem) => problem.startsWith('fixture.yml use'))).toEqual([
+      'fixture.yml use tojson(needs): job Build\'s output big is "${{ needs.up.outputs.a }}${{ needs.up.outputs.a }}", not one step\'s or needed job\'s output alone',
+    ]);
   });
 
   it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, with no other variable, and nothing else writes or reads buildx’s metadata provenance', () => {
