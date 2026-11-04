@@ -14,3 +14,6 @@ Worktree /home/user/ci-findings-transport, branch co-001/wip-ci-findings-transpo
 - Generators under the lock (pnpm install --frozen-lockfile, watched.ts --write, synth --all: 307 cases, 0 written): nothing to commit.
 - Checks under one lock hold 21:16-21:24 UTC, all exit 0: typecheck, lint, lint:copy, lint:logs, check:fixtures, workflows.test.ts 142/142, vitest unit tools/test tools/content-calendar packages/synth 37 files 545/545, actionlint (1.7.7, -shellcheck= -pyflakes=, ubuntu-26.04 label ignored), actions:check --offline. Logs scratchpad cft/logs/check-*.log.
 - Pushed 21:25 UTC: co-001/wip-ci-findings-transport b9a83bd3…..1322c7cf… (fast-forward, the hook: 3 commits checked, gitleaks clean). DONE.
+
+- 2026-11-04 ~22:30 UTC (fix round build, critic G4): the live base is now c7bed0f7… (#117); this merge record's 30871f72… is the base the WIP holds, not the live one. The next base merge takes c7bed0f7… or later.
+- 2026-11-04 23:32 UTC (fix repair round 1): the live base is now 35422a92… (#116); the next base merge takes 35422a92… or later. Still to do.

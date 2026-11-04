@@ -181,3 +181,12 @@ Start head 872d06ad. New head b9a83bd3 (b9a83bd3…), pushed to origin/co-001/wi
 - Verify, under the lock: vitest unit on tools/test, tools/content-calendar and tools/brand-copy passed 382 of 382; typecheck, lint, lint:logs and actions:check all exit 0.
 - Left for the session: the §7 local proof under /home/user/ops/designs/lane-b-ci/ci-findings-transport/proof/ (scripts/prove.mjs and its script hashes) still records the download block without the timeout. I did not touch /home/user/ops. Proposal: the session regenerates the proof against b9a83bd3. It should also add a stall case to its fake gh.
 - Proposal, not done: the "Content calendar check failing" path could log one line per failed try, giving the exit status (124 means the try ran past DOWNLOAD_LIMIT). A stalled try prints nothing from gh today.
+
+## Fix round build (2026-11-04)
+
+The reviews' confirmed findings were fixed on WIP 1322c7cf… → 6a3c9258…, each failing first, one commit per finding:
+a62a0fa6… ci-infra S1, 086d2953… S2, fb29b355… N1, 44757e39… security S1, 5f45db7c… critic G2, 1bf36150… critic G1
+(the read check inside the download block), 6a3c9258… security N1 (a fixed line per failed try, gh's output kept out
+of the log). The earlier "byte-identical to the proved scripts" held at 872d06ad… only; the §7 proof is regenerated
+against 6a3c9258… (critic G3, design §7). Live base 35422a92… (#116, checked 2026-11-04 23:32 UTC); the WIP holds 30871f72…, the base merge still to do (critic G4). Fix repair round 1 took the WIP to 14e71f0c… and §7 was regenerated there (`…-wip/progress/fix-repair-1.md`). Fix repair round 2 took it to 3d48d0b3… (a killed try logs only the fixed line, never bash's "Killed" report), §7 regenerated there, base still 35422a92… at 23:49 UTC (`…-wip/progress/fix-repair-2.md`). Details:
+`lane-b-ci-findings-transport-wip/progress/fix-build.md`.
