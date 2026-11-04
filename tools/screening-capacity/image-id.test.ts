@@ -161,7 +161,8 @@ describe('an image archive’s identity', () => {
       return { path: `blobs/sha256/${sha(data)}`, data };
     });
     expect(await imageIdentity(write('small-layers.tar', tar([...layers, config, manifestList])))).toEqual({ config: config.digest });
-  });
+    // It writes and hashes 144 MiB of archives: about 3 s alone under coverage, past vitest's 5 s default in the full suite.
+  }, 60_000);
 
   it('refuses an image manifest or index that is no JSON document as an archive it refuses, naming it', async () => {
     const config = blobEntry(CONFIG);

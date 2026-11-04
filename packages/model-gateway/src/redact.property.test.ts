@@ -460,7 +460,8 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     for (const end of ['!\n', '?\n', ';\n', ':\n', '! ', '? ']) {
       expect(redactLetter(`We reviewed the claim${end}ID:1990-01-01 on file.`, memberPatient, claimsOf('SYN00000')).text, end).toBe(`We reviewed the claim${end}ID:[MEMBER_ID] on file.`);
     }
-  });
+    // About 5,900 letters, each redacted, checked and screened: past vitest's 5 s default under coverage.
+  }, 60_000);
 
   it("keeps a label on one line within one sentence one label: an abbreviation's own full stop, a wrapped head, and G2 for each (MOD-13, seed 460548619)", () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
@@ -509,7 +510,7 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     for (const label of ['acct. No. ', 'Acct. Number is ', 'acct. id: ', 'Claim No. Number is ']) {
       expect(redactLetter(`We updated the ${label}1990-01-01 on file.`, patient, claims).text, label).toBe(`We updated the ${label}1990-01-01 on file.`);
     }
-  });
+  }, 60_000);
 
   it("reads a head word joined to its qualifier over the head's own full stop as one label, as before the fix, so a member ID or claim number written as a date after it is replaced (MOD-13, review finding correctness-rlb-oracle-1)", () => {
     const memberPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
