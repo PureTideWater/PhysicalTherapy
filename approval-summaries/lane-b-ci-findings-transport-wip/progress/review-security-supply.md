@@ -1,0 +1,16 @@
+# Review (security and supply chain) progress
+- started 2026-11-04; cloning
+- clone /home/user/rv-cft-security-supply at 1322c7cf (= origin WIP), base 30871f72; install ok; vitest workflows+content-calendar 177/177; actions:check --offline ok
+- checked: permissions notify {actions: read, issues: write}, handoff {actions: read}; no uses/checkout in notify/handoff; upload-artifact pin cf430e03 is the repo's existing pin (8 other uses); download bounded copy then jq on the copy (no TOCTOU); exemption removal in workflows.test.ts makes rule stricter
+- real gh 2.89.0: dash-led titles (--repo=evil/x, --help, -R) taken as the title value (repo stayed the invalid host): no argument injection
+- real gh run download: missing artifact -> "no artifact matches..." rc=1 (fail closed); a blob GET failure prints the whole signed (SAS) blob URL with sig= to stderr -> candidate nit N1 (log carries a ~10-min bearer URL)
+- source titles from calendar entries; external file names percent-encoded (fetch.ts) - pre-existing, sound
+- mutations running (logs sec-mut-*.log)
+- mutation output-back (job output + FINDINGS_B64 restored): 7 red incl. #86's value rule ("no bound for needs.check.outputs.findings") -> exemption removal is stricter, proven
+- #86 rule intact: GITHUB_ENV/PATH, ARG_MAX totals (2 cases left; the third was the marked-over case), argument bounds unchanged in diff
+- mutations red so far: output-back 7, github-env 3, notify-contents 2, notify-actions-write 2, handoff-prw 2, notify-uses 10, retention-90 2
+- mutations also red: prt 4, other-run 3, expr-in-run 10, notify-on-pr 2, download-artifact 3. SURVIVED: no-bound (wc refusal line deleted) and cp-unbounded (head -c -> cp), 142/142 each
+- scenario: 234-byte file = valid list + 200 spaces, MAX_FILE_BYTES=100: HEAD -> "check failing"; no-bound mutation -> files "Finding 1". Finding S1 (should): the size refusal line is load-bearing but untested
+- finding N1 (nit): gh prints the signed blob URL on download failure into the public log
+- writing review
+- review written: approval-summaries/lane-b-ci-findings-transport-review-security-supply.md (S1 should, N1 nit; no blocking); clone removed. DONE
