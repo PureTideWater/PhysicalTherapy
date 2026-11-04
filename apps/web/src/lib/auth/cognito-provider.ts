@@ -22,6 +22,7 @@ import type {
   AuthProvider,
   AuthStep,
   AuthenticationResponseJSON,
+  EnsuredUser,
   FailureStage,
   KeyChallenge,
   MfaMethod,
@@ -343,7 +344,7 @@ export class CognitoAuthProvider implements AuthProvider {
     }
   }
 
-  async ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }> {
+  async ensureUser(email: string): Promise<EnsuredUser> {
     const subOf = (attributes: readonly { Name?: string; Value?: string }[] | undefined): string => {
       const sub = attributes?.find((attribute) => attribute.Name === 'sub')?.Value;
       if (sub === undefined) {
@@ -363,13 +364,14 @@ export class CognitoAuthProvider implements AuthProvider {
           DesiredDeliveryMediums: ['EMAIL'],
         }),
       );
-      return { sub: subOf(created.User?.Attributes), created: true };
+      return { sub: subOf(created.User?.Attributes), created: true, neverSignedIn: true };
     } catch (error) {
       if (errorName(error) !== 'UsernameExistsException') {
         throw error;
       }
       const existing = await this.options.client.send(new AdminGetUserCommand({ UserPoolId: this.options.userPoolId, Username: email }));
-      return { sub: subOf(existing.UserAttributes), created: false };
+      // Only a user still on its temporary password has never signed in; any other status (or none) has, or may have.
+      return { sub: subOf(existing.UserAttributes), created: false, neverSignedIn: existing.UserStatus === 'FORCE_CHANGE_PASSWORD' };
     }
   }
 
