@@ -750,9 +750,9 @@ keeps only an entry's `versions`), so an advisory fixed only in an ignored major
 that crosses it. The weekly triage reads such a pull request as a deliberate upgrade, and still reads the open alerts
 for a fix no pull request takes.
 
-### Amendment (`co-001/ci-trivy-install-2026-11-04`, 2026-11-04): Trivy from its pinned release, and no partial clone on a private repository
+### Amendment (`co-001/ci-trivy-pin-2026-11-04`, 2026-11-04): Trivy from its pinned release
 
-**Trivy.** From 2026-11-03 every Trivy step failed before scanning. trivy-action v0.36.0 (`ed142fd0`) installs Trivy
+From 2026-11-03 every Trivy step failed before scanning. trivy-action v0.36.0 (`ed142fd0`) installs Trivy
 through setup-trivy (`3fb12ec1`), whose installer (trivy's `contrib/install.sh` at `75c4dc0f`) downloads the binary
 only from get.trivy.dev, and that name stopped resolving (NXDOMAIN, aquasecurity/setup-trivy#42; curl exit 6 in ci run
 41763423759, job 126356134153, and on PRs #103 and #104, six installs of six). The release assets on GitHub still
@@ -833,16 +833,19 @@ Alternatives considered for Trivy:
 - **The `aquasec/trivy` image by digest.** It is another artifact to pin and age. It would also need Docker to reach
   each archive and the daemon's image.
 
-**A private repository.** The repository went private on 2026-11-04 at about 02:51Z. screening-capacity's `changes` job
-checked out with `filter: blob:none` and `persist-credentials: false`, so its `git diff --name-only` (rename detection)
-and `git show` fetched blobs from the promisor remote with no credentials. That failed: "could not read Username for
-'https://github.com'", run 41765454724, job 126369187941, exit 128.
+### Amendment (`co-001/ci-trivy-install-2026-11-04`, 2026-11-04): no partial clone on a private repository
+
+The repository went private on 2026-11-04 at about 02:51Z. screening-capacity's `changes` job checked out with
+`filter: blob:none` and `persist-credentials: false`, so its `git diff --name-only` (rename detection) and `git show`
+fetched blobs from the promisor remote with no credentials. That failed: "could not read Username for
+'https://github.com'", run 41765454724, job 126369187941, exit 128. The repository was public again from about 07:10Z;
+the rules below stay, so the gate keeps working if it goes private again.
 
 - Its checkout now fetches every object, once, with the job's token (`fetch-depth: 0`, no filter, about 34 MiB packed).
   `persist-credentials: false` and `contents: read` stay.
 - A blobless clone could also have read an unfetchable list as "the base keeps no watched list", through
   `git cat-file -e`. A full clone cannot.
-- `workflows.test.ts` holds three rules (CI-11):
+- `workflows.test.ts` holds four rules (CI-11):
   - no checkout that keeps no token makes a partial clone;
   - the `changes` script passes on a full clone whose remote is gone and fails on a blobless one;
   - no step runs git fetch, clone, `ls-remote`, pull, `submodule update` or `archive --remote` (with any global
