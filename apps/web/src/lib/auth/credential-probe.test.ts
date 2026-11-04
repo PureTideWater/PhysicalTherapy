@@ -111,7 +111,7 @@ describe('the start-up credential probe', () => {
     const logger = createLogger({ sink: () => undefined });
     const cognito = (clientSecret?: ClientSecret) =>
       new CognitoAuthProvider({
-        client: { send: () => Promise.reject(new Error('unscripted')) } as unknown as CognitoClient,
+        client: { send: () => Promise.reject(new Error('unscripted')) },
         userPoolId: 'us-east-1_Synthetic',
         clientId: 'syntheticclient',
         verifier: { verify: () => Promise.reject(new Error('unscripted')) },

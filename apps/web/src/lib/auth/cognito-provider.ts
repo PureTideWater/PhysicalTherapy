@@ -523,6 +523,15 @@ export class CognitoAuthProvider implements AuthProvider {
     }
   }
 
+  /**
+   * The start-up credential probe's one request (docs/adr/0088, D8): a choice-based sign-in for `username` with the
+   * hash and no password, resolving on any answer and rejecting with Cognito's error as it came (credential-probe.ts
+   * classifies it).
+   */
+  async probe(username: string): Promise<void> {
+    await this.options.client.send(new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: username, ...this.hash(username) } }));
+  }
+
   async globalSignOut(sub: string): Promise<void> {
     await this.options.client.send(new AdminUserGlobalSignOutCommand({ UserPoolId: this.options.userPoolId, Username: sub }));
   }

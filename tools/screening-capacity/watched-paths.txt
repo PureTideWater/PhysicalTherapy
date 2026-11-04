@@ -60,6 +60,7 @@ apps/web/src/components/status.tsx
 apps/web/src/lib/agreements/documents.ts
 apps/web/src/lib/agreements/esign.ts
 apps/web/src/lib/auth/cognito-provider.ts
+apps/web/src/lib/auth/credential-probe.ts
 apps/web/src/lib/auth/dev-provider.ts
 apps/web/src/lib/auth/dev-store.ts
 apps/web/src/lib/auth/password.ts

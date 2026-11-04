@@ -17,6 +17,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { type AgreementDocuments, LocalAgreementDocuments, S3AgreementDocuments } from '../agreements/documents';
 import { type ESignatureProvider, LocalESignature } from '../agreements/esign';
 import { CognitoAuthProvider } from '../auth/cognito-provider';
+import { CredentialProbe, PROBE_USERNAME } from '../auth/credential-probe';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { FileDevStore } from '../auth/dev-store';
 import type { AuthProvider } from '../auth/provider';
@@ -29,7 +30,7 @@ import { type AddressCheckServices, localAddressChecks, sesAddressInsights, syst
 import { assumedRoleCredentials } from '../screening/validation-credentials';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
-import { DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+import { type AuthProviderSettings, DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -98,6 +99,11 @@ export interface Services {
    * deployed server, the stand-ins elsewhere (WebConfig.mailValidation).
    */
   readonly addressChecks: AddressCheckServices;
+  /**
+   * The start-up credential probe (docs/adr/0088, D8): run once, on the process's first services() call, while a
+   * client secret is set; the health check answers 503 while it holds a refusal. Skipped otherwise.
+   */
+  readonly credentialProbe: CredentialProbe;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -187,6 +193,8 @@ export interface ServiceParts {
   readonly screeningSlots?: number;
   /** Tests that check addresses give their own; otherwise the stand-ins, which call no one, at the default cap. */
   readonly addressChecks?: AddressCheckServices;
+  /** The deployed server's start-up probe; skipped by default. */
+  readonly credentialProbe?: CredentialProbe;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -231,7 +239,19 @@ export function createServices(parts: ServiceParts): Services {
     screeningLaunch: parts.screeningLaunch ?? { imageTag: null, value: null },
     screeningSlots: parts.screeningSlots ?? DEFAULT_SCREENING_SLOTS,
     addressChecks: parts.addressChecks ?? localAddressChecks(DEFAULT_MAIL_VALIDATION_DAILY_CAP),
+    credentialProbe: parts.credentialProbe ?? CredentialProbe.skipped(),
   };
+}
+
+/**
+ * The start-up credential probe for these settings (docs/adr/0088, D8): Cognito's probe request when the client has a
+ * secret, skipped while it has none (release N) and for the dev provider.
+ */
+export function credentialProbeOf(auth: AuthProviderSettings, provider: AuthProvider, logger: Logger): CredentialProbe {
+  if (auth.kind !== 'cognito' || auth.clientSecret === null || !(provider instanceof CognitoAuthProvider)) {
+    return CredentialProbe.skipped();
+  }
+  return new CredentialProbe(() => provider.probe(PROBE_USERNAME), logger);
 }
 
 export function servicesFromConfig(config: WebConfig): Services {
@@ -240,6 +260,7 @@ export function servicesFromConfig(config: WebConfig): Services {
   const documents = config.documents;
   const pool = openPool(config.databaseUrl, 10);
   const billingPool = openPool(config.billingDatabaseUrl, 4);
+  const auth = provider(config, sealer, logger);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
@@ -248,7 +269,8 @@ export function servicesFromConfig(config: WebConfig): Services {
     esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, 2),
     // One connection for each call the process lets be in flight at once, and one to spare.
     modelPool: openPool(config.databaseUrl, DEFAULT_CALL_LIMITS.perProcess + 1),
-    provider: provider(config, sealer, logger),
+    provider: auth,
+    credentialProbe: credentialProbeOf(config.auth, auth, logger),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),
     sealer,
     logger,
@@ -281,8 +303,11 @@ export function servicesFromConfig(config: WebConfig): Services {
 
 let cached: Services | undefined;
 
-/** The process's services, built from the environment on first use. */
+/** The process's services, built from the environment on first use, which also starts the credential probe once. */
 export function services(): Services {
-  cached ??= servicesFromConfig(readWebConfig());
+  if (cached === undefined) {
+    cached = servicesFromConfig(readWebConfig());
+    void cached.credentialProbe.start();
+  }
   return cached;
 }
