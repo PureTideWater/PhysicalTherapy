@@ -23,6 +23,9 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
 - 2026-11-04T11:50:00Z: branch created on origin at 45d7d0c1 (#108's merge) through the hook; worktree /home/user/cognito-cc,
   installed. ADR 0088 free; SEC-20..23 unused. Next: the design workflow.
 
+- 2026-11-04T11:55:00Z: design workflow wf_9fcd676d-d05 launched (3 scouts: infra and IAM, provider, takeover path with P-3 and
+  R-11; writer; security and infra/auth design reviews; skeptics; fold); script archived.
+
 ## Waiting on someone
 - The founder: a credentialed staging step (to be written with exact steps).
 
