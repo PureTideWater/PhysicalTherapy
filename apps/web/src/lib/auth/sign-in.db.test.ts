@@ -121,6 +121,7 @@ async function events(userId: string): Promise<string[]> {
 describe('sign-in with a password and TOTP', () => {
   it('takes an invited user through a new password and TOTP enrollment to an active session', async () => {
     const invited = await person({ status: 'invited', mfa: false, temporary: true, totp: false });
+    await invitation(invited.id, 'live');
     const step1 = pendingOf(await flow.start(invited.email, PASSWORD, context()));
     expect(step1.step).toBe('new_password');
     const invalid = await flow.newPassword(step1, 'weak', context());
@@ -677,6 +678,24 @@ describe('SEC-22: a second factor is enrolled only inside a live invitation (doc
     expect(await enrolling.start(email, PASSWORD, request)).toEqual(NOT_OPEN);
     expect(await factorOf(sub)).toBeNull();
     expect(logged(lines, ENROLMENT_REFUSED)).toEqual([{ level: 'warn', msg: ENROLMENT_REFUSED, time: expect.any(String), user_id: null, request_id: request.requestId }]);
+  });
+
+  it('SEC-22: refuses an invited, unenrolled, unlocked account with no invitation at all, at the challenge, before any enrolment call (review security-S1)', async () => {
+    // Inserted with no actor, as a seed or a bootstrap insert writes one: the membership trigger records no invitation.
+    const uninvited = await person({ status: 'invited', mfa: false, totp: false });
+    await addMembership(owner, await createOrganization(owner, 'group'), uninvited.id, 'viewer');
+    expect((await owner.query('SELECT count(*)::int AS n FROM invitation WHERE user_id = $1', [uninvited.id])).rows).toEqual([{ n: 0 }]);
+    const { flow: enrolling, lines } = paced();
+    const begin = vi.spyOn(provider, 'beginTotpSetup');
+    const complete = vi.spyOn(provider, 'completeTotpSetup');
+    const request = context();
+    expect(await enrolling.start(uninvited.email, PASSWORD, request)).toEqual(NOT_OPEN);
+    expect(begin).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    begin.mockRestore();
+    complete.mockRestore();
+    expect(await factorOf(uninvited.sub)).toBeNull();
+    expect(logged(lines, ENROLMENT_REFUSED)).toEqual([{ level: 'warn', msg: ENROLMENT_REFUSED, time: expect.any(String), user_id: uninvited.id, request_id: request.requestId }]);
   });
 
   it('SEC-22: refuses at a new password an invitee whose invitation lapsed or who was locked after the step began', async () => {

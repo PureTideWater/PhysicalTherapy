@@ -222,10 +222,36 @@ async function person(options: { readonly temporary?: boolean; readonly totp?: b
       options.status ?? (options.totp === false ? 'invited' : 'active'),
     ]),
   );
-  if (options.internal === true) {
-    await addMembership(owner, await createOrganization(owner, 'internal'), id, 'platform_admin');
+  // An invitee's invitation is on the membership the console created for it: an internal user's, or a group's.
+  const invited = (options.status ?? (options.totp === false ? 'invited' : 'active')) === 'invited';
+  if (options.internal === true || invited) {
+    const organization = await createOrganization(owner, options.internal === true ? 'internal' : 'group');
+    const membership = await addMembership(owner, organization, id, options.internal === true ? 'platform_admin' : 'viewer');
+    if (invited) {
+      await liveInvitation(organization, membership, id);
+    }
   }
   return { id, email };
+}
+
+/** A live invitation of the person, sent a minute ago, as the console writes one: only inside one may a factor be enrolled (docs/adr/0088, D3). */
+async function liveInvitation(organization: string, membership: string, userId: string): Promise<void> {
+  const inviter = randomUUID();
+  await asOwner(owner, [], () =>
+    owner.query('INSERT INTO "user" (id, cognito_sub, email, mfa_enrolled, hardware_key_required, status) VALUES ($1, $2, $3, true, false, $4)', [
+      inviter,
+      randomUUID(),
+      `${inviter}@synthetic.test`,
+      'active',
+    ]),
+  );
+  await asOwner(owner, [], () =>
+    owner.query(
+      `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
+       VALUES ($1, $2, $3, $4, now() - interval '1 minute', now() + interval '7 days' - interval '1 minute', $4)`,
+      [organization, membership, userId, inviter],
+    ),
+  );
 }
 
 function nextCode(secret = SECRET): string {

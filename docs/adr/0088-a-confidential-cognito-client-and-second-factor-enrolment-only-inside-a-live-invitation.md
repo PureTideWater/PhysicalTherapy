@@ -88,7 +88,11 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
   `provider token revoke failed` with its code), and the sign-in revoke rethrows only this one. Release N sends the
   hash only when `COGNITO_CLIENT_SECRET` is set, which no environment does until N+1.
 - **D3. A second factor is enrolled only inside a live invitation:** an app account with `status = 'invited'`,
-  `mfa_enrolled = false`, not locked, and `invitation_expired(user_id) = false`. The account is the one matched by
+  `mfa_enrolled = false`, not locked, and holding a live invitation: an unaccepted, unexpired invitation exists whose
+  membership has not ended. This is a positive check, read as the invitee under the invitation and membership policies
+  that let a user read their own rows, never `invitation_expired(user_id) = false`, which is also false for an invited
+  user with no invitation row at all (one invited before invitations were recorded, or inserted with no actor). The
+  seed records each invited persona's invitation for that reason. The account is the one matched by
   **both** the enrolling Cognito subject and the email: the provider names the subject on the `mfa_setup_required`
   step only when Cognito gave it (USERNAME or USER_ID_FOR_SRP), never from the email; the row found by that subject must
   have the step's email (lower-cased), and an email-only lookup must return the same user. The rule runs in

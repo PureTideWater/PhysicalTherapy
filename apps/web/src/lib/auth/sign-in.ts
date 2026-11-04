@@ -25,9 +25,9 @@ import { type OpenedSession, openSession, revokeUserSessions } from './sessions'
  * - MFA is mandatory: there is no path to a session without a TOTP code or a hardware key, and a
  *   first sign-in enrolls TOTP before anything else.
  * - A second factor is enrolled only inside a live invitation (docs/adr/0088, D3): the account the provider's
- *   enrolling subject names, with the same email, invited, not enrolled, not locked and with an invitation that has
- *   not lapsed. It is checked when the provider asks for enrolment and again before each enrolment call, so the
- *   provider stores no factor for anyone else; a cleared or missing factor is re-enrolled only through support.
+ *   enrolling subject names, with the same email, invited, not enrolled, not locked and holding a live invitation (an
+ *   unaccepted, unexpired one whose membership has not ended). It is checked when the provider asks for enrolment and
+ *   again before each enrolment call, so the provider stores no factor for anyone else; a cleared or missing factor is re-enrolled only through support.
  * - Internal roles must use a hardware key: a TOTP sign-in by such a user only registers a key (when
  *   they have none) and never opens a session; they then sign in with the key.
  *
@@ -165,10 +165,29 @@ export class SignInFlow {
   }
 
   /**
+   * Whether the user has a live invitation (docs/adr/0088, D3; review security-S1): an unaccepted, unexpired invitation
+   * whose membership has not ended. A positive check, read as the invitee under the invitation and membership policies
+   * that let a user read their own rows: an invited user with no invitation row at all (one invited before invitations
+   * were recorded, or inserted with no actor) has none, where invitation_expired() would call that not expired.
+   */
+  private async invitationLive(userId: string): Promise<boolean> {
+    return withActor(this.deps.pool, userId, async (scope) => {
+      const { rows } = await scope.client.query<{ live: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM invitation i JOIN membership m ON m.id = i.membership_id
+            WHERE i.user_id = $1 AND i.accepted_at IS NULL AND i.expires_at > now() AND (m.ends_at IS NULL OR m.ends_at > now())
+         ) AS live`,
+        [userId],
+      );
+      return rows[0]?.live === true;
+    });
+  }
+
+  /**
    * The enrolment rule (docs/adr/0088, D3; review security-S2): the subject the provider is enrolling, when it named
    * one, names an app account whose email is the step's, which the email alone finds too (sign_in_account's OR would
-   * return either row), and that account is invited, not enrolled, not locked, inside an invitation that has not
-   * lapsed. Answers the subject when enrolment is open; otherwise logs a security event of IDs only and answers
+   * return either row), and that account is invited, not enrolled, not locked, and holds a live invitation (an
+   * unaccepted, unexpired invitation whose membership has not ended; none at all is no live one). Answers the subject when enrolment is open; otherwise logs a security event of IDs only and answers
    * nothing, before any enrolment call, so the provider stores nothing.
    */
   private async enrolment(subject: string | undefined, email: string, context: SignInContext): Promise<string | undefined> {
@@ -183,7 +202,7 @@ export class SignInFlow {
       bySub.status === 'invited' &&
       !bySub.mfa_enrolled &&
       !bySub.locked &&
-      !(await this.invitationExpired(bySub.user_id));
+      (await this.invitationLive(bySub.user_id));
     if (!open) {
       this.deps.logger.warn('security event: second-factor enrolment refused', { user_id: (bySub ?? byEmail)?.user_id ?? null, request_id: context.requestId });
       return undefined;

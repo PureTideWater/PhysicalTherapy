@@ -2,7 +2,7 @@
   "case": "SEC-22",
   "module": "SEC",
   "title": "A second factor enrolled outside a live invitation (ADR 0088 D3, D4)",
-  "assertion": "An unknown, active, enrolled, locked, disabled or lapsed-invitation account answered `MFA_SETUP` is refused before any enrolment call, at the challenge and again before associate and verify, Cognito stores nothing, and a security event is logged; the account is the one matched by both the enrolling Cognito subject and the email, so a row whose `cognito_sub` differs from the subject, a challenge with no subject, or email and sub rows that are different users are refused; an invited, unexpired, unenrolled account enrols; an invitation onto a Cognito user that has signed in is refused, and onto one that never has re-sends its temporary password",
+  "assertion": "An unknown, active, enrolled, locked, disabled or lapsed-invitation account, or an invited account with no invitation at all, answered `MFA_SETUP` is refused before any enrolment call, at the challenge and again before associate and verify, Cognito stores nothing, and a security event is logged; the account is the one matched by both the enrolling Cognito subject and the email, so a row whose `cognito_sub` differs from the subject, a challenge with no subject, or email and sub rows that are different users are refused; an invited, unenrolled account enrols only while it holds an unaccepted, unexpired invitation whose membership has not ended; an invitation onto a Cognito user that has signed in is refused, and onto one that never has re-sends its temporary password",
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": [
