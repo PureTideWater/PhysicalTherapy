@@ -335,7 +335,9 @@ this amendment holds.
   correctness-rlb-oracle-1), so where that reading reaches over a sentence end ("AA CLAIM.\nID:1990-01-01", "the claim.
   ID: 1990-01-01") the next sentence's `ID:` counts as well and the member ID is replaced; only labels are added, never
   removed. One label on one line keeps G2 (`Claim ID: 1990-01-01` keeps the date for a member ID), and a deadline equal to
-  the claim's digits after "the claim. ID" is replaced, an over-redaction accepted as before.
+  the claim's digits after "the claim. ID" is replaced, an over-redaction accepted as before. A bare `ID` with a
+  qualifier after it (`ID Number:`, `ID No.`, `ID nbr`) is a label of either kind, as `ID:` is (review finding
+  security-rlb-sec-3); `ID` alone with no colon is none (G2: "ID 2027-03-15" stays).
   The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
   digits included (review finding G1, 2026-11-02): a run of digits alone that a label introduces also joins over `.`
   and `/`, after any label when the run is no whole written date and after one of the head-word labels when it is, as

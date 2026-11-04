@@ -428,7 +428,7 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     // A line break of any kind, a blank line and an indented line too, and a label of more than one word on the next line
     // (review finding security-rlb-sec-1: "claim\nID No." was read only as the claim's joined label).
     const ends = ['. ', '.\n', '. \n', '.\r\n', '\n', '\r\n', '\u2028', '\u2029', '\v', '\n\n', '\n  '];
-    const bareLabels = ['ID:', 'ID#', 'No.', 'No: ', 'Number is ', 'ID No. ', 'No. ID: ', 'ID NO. '];
+    const bareLabels = ['ID:', 'ID#', 'No.', 'No: ', 'Number is ', 'ID No. ', 'No. ID: ', 'ID NO. ', 'id no: ', 'ID nbr ', 'ID Number: '];
     const cases: [PatientIdentifiers, LetterClaim[], string, string, string][] = [];
     for (const head of claimHeads) {
       for (const end of ends) {
@@ -664,6 +664,10 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     }
     // And a claim's label is none for a member ID written as a date; the member's own label is.
     expect(redactLetter('Claim# 1955-07-14; Member: 1955-07-14', patient, []).text).toBe('Claim# 1955-07-14; Member: [MEMBER_ID]');
+    // "ID" with a qualifier after it introduces a member ID too (review finding security-rlb-sec-3).
+    for (const label of ['ID Number: ', 'ID No. ', 'ID No: ', 'ID nbr ', 'The file. ID Number: ']) {
+      expect(redactLetter(`${label}1955-07-14`, patient, []).text, label).toBe(`${label}[MEMBER_ID]`);
+    }
     // Still the number: a head word with "no", "number" or "id" after it, "No." and "ID:", "number is", and "Reference number".
     for (const [written, value, expected] of [
       ['Claim no 04/26/2026', '04262026', 'Claim no [CLAIM_1]'],
@@ -672,6 +676,12 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
       ['Patient control no.: 2026-04-26', '20260426', 'Patient control no.: [CLAIM_1]'],
       ['No. 2026-04-26', '20260426', 'No. [CLAIM_1]'],
       ['ID: 2026-04-26', '20260426', 'ID: [CLAIM_1]'],
+      // "ID" with a qualifier after it, with or without a colon (review finding security-rlb-sec-3).
+      ['ID Number: 2026-04-26', '20260426', 'ID Number: [CLAIM_1]'],
+      ['ID No. 2026-04-26', '20260426', 'ID No. [CLAIM_1]'],
+      ['ID No: 2026-04-26', '20260426', 'ID No: [CLAIM_1]'],
+      ['ID nbr 2026-04-26', '20260426', 'ID nbr [CLAIM_1]'],
+      ['The file. ID Number: 2026-04-26', '20260426', 'The file. ID Number: [CLAIM_1]'],
       ['The number is 2026-04-26', '20260426', 'The number is [CLAIM_1]'],
       ['Reference number 2026-04-26', '20260426', 'Reference number [CLAIM_1]'],
       // G3: the label's end through an opening quote, "(", Markdown bold, a comma, and "Re:".

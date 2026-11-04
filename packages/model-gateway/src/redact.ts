@@ -555,7 +555,8 @@ const writtenAsDate = (normal: string, range: Range) =>
  * "Account", "Acct", "Member", "Subscriber", "Ref") with any of "number", "nbr", "no", "id", "control" and "#" after
  * it ("Claim #", "Claim No.", "Member ID", "Patient control no.", "CLAIM NUMBER IS"); "Reference" only with one of
  * those after it ("Reference number"); "No" alone only written "No.", "No:" or "No#" with a capital N; "ID" alone only
- * written "ID:" or "ID#"; "number is"; and "Re:". Its end (LABEL_END) may take ":", "#", "=", a dash or the minus sign
+ * written "ID:" or "ID#", or with a qualifier after it ("ID Number:", "ID No.", "ID nbr": review finding
+ * security-rlb-sec-3); "number is"; and "Re:". Its end (LABEL_END) may take ":", "#", "=", a dash or the minus sign
  * (review finding phi-label-end-dash: "Member ID – 1234.5678"), "is", "*" (Markdown bold), one ",", "(" and an opening
  * quote ("**Claim:** ", "Claim, ", "ICN (", "Claim: “"; review finding G3). A bare "no", "number", "id", "#" or
  * "reference" is no such label ("The number 2027-03-15", "No 2027-03-15 appeal", "Answer: no. 2027-03-15", "reference:
@@ -578,7 +579,7 @@ const LABEL_HEAD =
   `\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b\\.?(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*` +
   `|\\breference(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+` +
   `|\\b(?<no>no)(?=\\.|${LABEL_SPACE}*[:#])\\.?` +
-  `|\\bid(?=${LABEL_SPACE}*[:#])` +
+  `|\\bid(?:(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+|(?=${LABEL_SPACE}*[:#]))` +
   `|\\bnumber(?=${LABEL_SPACE}*[:=\\p{Pd}\\u2212]?${LABEL_SPACE}*is${LABEL_SPACE})` +
   `|\\bre(?=${LABEL_SPACE}*:)`;
 const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
