@@ -35,6 +35,10 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
   PR 2 (cut after PR 1 is deployed to staging, release N+1): the confidential client, the custodian custom resource,
   rotation and the cutover; it needs the founder's F1-F5 and rulings 13-16. Next: PR 1's build.
 
+- 2026-11-04T12:50:00Z: PR 1 build workflow wf_5e1967cd-fde launched (slices 1, 2, 3, 3b, 4, 5 red first; integration with the
+  infra tests and cdk synth; adversarial checker; push and draft PR); script archived. Orchestrator told: the two-PR plan and
+  the founder's items for PR 2.
+
 ## Waiting on someone
 - The founder, before PR 2 merges: design section 10's F1-F5 (the credentialed staging steps, exact), and rulings on risks
   13 (who may start a rotation: the break-glass role recommended), 14 (who runs admin-delete-user for a stuck invitee),
