@@ -357,7 +357,6 @@ export class SignInFlow {
     if (account === undefined) {
       return { kind: 'reset', locked: false, keepEmail: false };
     }
-    const fields = { user_id: account.user_id, request_id: context.requestId };
     let ended = false;
     for (let attempt = 0; attempt < 2 && !ended; attempt += 1) {
       try {
@@ -371,17 +370,17 @@ export class SignInFlow {
       }
     }
     if (!ended) {
-      this.deps.logger.error('security event: password reset sessions not ended', fields);
+      this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId });
     }
     try {
       await this.deps.provider.globalSignOut(account.cognito_sub);
     } catch (error) {
-      this.deps.logger.error('security event: password reset provider sign-out failed', { ...fields, error_code: errorCode(error) });
+      this.deps.logger.error('security event: password reset provider sign-out failed', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });
     }
     if (!ended) {
       return { kind: 'sessions_not_ended' };
     }
-    this.deps.logger.warn('security event: password reset completed', fields);
+    this.deps.logger.warn('security event: password reset completed', { user_id: account.user_id, request_id: context.requestId });
     return { kind: 'reset', locked: account.locked, keepEmail: !account.locked && account.status !== 'disabled' };
   }
 
