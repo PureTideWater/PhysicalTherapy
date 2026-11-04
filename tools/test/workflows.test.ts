@@ -2404,6 +2404,21 @@ describe('every checkout (CI-11)', () => {
   });
 });
 
+/**
+ * A read of this repository from its remote, which a private repository refuses without the job's token (CI-11): git's
+ * fetch, clone, ls-remote, pull, submodule update or archive --remote, with any global options before the command; and
+ * raw.githubusercontent.com, or curl or wget of the API, the server or this repository by any of their names.
+ */
+const REMOTE_READ = new RegExp(
+  [
+    /\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+|--[\w-]+(?:=\S+)?))*\s+(?:fetch|clone|ls-remote|pull|submodule\s+update|archive\s+--remote)\b/.source,
+    /raw\.githubusercontent\.com/.source,
+    /\b(?:curl|wget)\b[^\n]*(?:api\.github\.com|github\.com\/\$|\$\{?GITHUB_(?:API_URL|SERVER_URL|REPOSITORY)\b|\$\{\{\s*github\.(?:repository|api_url|server_url)\b|PureTideWater\/PhysicalTherapy\b)/.source,
+  ].join('|'),
+);
+/** A command line that runs gh. */
+const RUNS_GH = /(?:^|[\s;&|(`$])gh\s+(?:api|issue|pr|release|run|repo|attestation|secret|variable|workflow|cache|label|search)\b/m;
+
 describe('every read of this repository works when it is private (CI-11)', () => {
   /** Every step of every workflow, with its job, named for a message. */
   const everyStep = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, job, step }))));
@@ -2417,14 +2432,105 @@ describe('every read of this repository works when it is private (CI-11)', () =>
     for (const { where, step } of everyStep().filter((entry) => usesAction(entry.step, 'actions/checkout'))) expect(step.with?.['sparse-checkout'], where).toBeUndefined();
   });
 
+  it('knows every form of a read of this repository from its remote: each git form with any global options before its command, and curl or wget of the API, the server or this repository by any of their names', () => {
+    // Each would fail on the private repository without a token; each must be caught (mutation cases: the review's S1).
+    const caught = [
+      'git fetch origin main',
+      'git -C . fetch origin main',
+      'git -C "$dir" --no-pager fetch --depth=1 origin main',
+      'git --no-pager fetch origin main',
+      'git -c protocol.version=2 fetch --depth=1 origin main',
+      'git --git-dir=.git fetch origin',
+      'git clone https://github.com/PureTideWater/PhysicalTherapy',
+      'git ls-remote origin',
+      'git pull --ff-only',
+      'git submodule update --init',
+      'git archive --remote=origin HEAD',
+      'curl -fsSL "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/contents/x"',
+      'curl -fsSL "${GITHUB_API_URL}/repos/x"',
+      'curl -fsSL "${{ github.api_url }}/repos/x"',
+      'curl -fsSL "$GITHUB_SERVER_URL/x/archive/main.tar.gz"',
+      'wget -q "${{ github.server_url }}/x"',
+      'curl -fsSL "https://example.invalid/$GITHUB_REPOSITORY"',
+      'curl -fsSL https://github.com/PureTideWater/PhysicalTherapy/archive/main.tar.gz',
+      'curl -fsSL https://github.com/${{ github.repository }}/archive/main.tar.gz',
+      'curl -fsSL https://api.github.com/repos/x',
+      'curl -fsSL https://raw.githubusercontent.com/x/y/main/z',
+    ];
+    expect(caught.filter((text) => !REMOTE_READ.test(text))).toEqual([]);
+    // What the workflows and their scripts do run, none of it a read of this repository's remote.
+    const local = ['git diff --name-only "$BASE" "$HEAD"', 'git -C "$dir" rev-parse HEAD', 'git --no-pager log --format=%H', 'curl -fsSL --retry 3 -o "$work/$archive" "$base/$archive"', 'git cat-file -e "$BASE^{commit}"'];
+    expect(local.filter((text) => REMOTE_READ.test(text))).toEqual([]);
+    expect(['gh api repos/x', 'out=$(gh pr view 1)', 'x && gh release view'].filter((text) => !RUNS_GH.test(text))).toEqual([]);
+  });
+
   it('reads this repository with the job’s token alone: no step fetches, clones or lists a remote, or reads raw.githubusercontent.com or the API by curl, and every step that runs gh sets GH_TOKEN', () => {
     const scripts = everyStep().filter(({ step }) => step.run !== undefined);
     expect(scripts.length).toBeGreaterThan(50);
-    const unauthenticated = /\bgit\s+(?:-c\s+\S+\s+)*(?:fetch|clone|ls-remote|pull|archive\s+--remote)\b|raw\.githubusercontent\.com|\b(?:curl|wget)\b[^\n]*(?:api\.github\.com|github\.com\/\$|\$\{\{\s*github\.repository)/;
-    expect(scripts.filter(({ step }) => unauthenticated.test(step.run ?? '')).map(({ where }) => where)).toEqual([]);
-    const gh = scripts.filter(({ step }) => /(?:^|[\s;&|(`$])gh\s+(?:api|issue|pr|release|run|repo|attestation|secret|variable|workflow|cache|label|search)\b/m.test(step.run ?? ''));
+    expect(scripts.filter(({ step }) => REMOTE_READ.test(step.run ?? '')).map(({ where }) => where)).toEqual([]);
+    const gh = scripts.filter(({ step }) => RUNS_GH.test(step.run ?? ''));
     expect(gh.length).toBeGreaterThan(3);
     for (const { where, job, step } of gh) expect(step.env?.GH_TOKEN ?? job.env?.GH_TOKEN, where).toBe('${{ github.token }}');
+  });
+
+  it('reads this repository with the job’s token alone in what the steps run: no shell script reads the remote or runs gh, the TypeScript a step runs lists or fetches only other repositories with git, and reads the API only where the step gives it the job’s token', () => {
+    // Read from the repository, never from CI_TREE's copy, which holds only the CI files.
+    const files = (dir: string, pattern: RegExp) =>
+      readdirSync(path.join(repositoryRoot, dir), { recursive: true, encoding: 'utf8' })
+        .map((file) => path.posix.join(dir, file.split(path.sep).join('/')))
+        .filter((file) => pattern.test(file) && !file.split('/').includes('node_modules'))
+        .sort();
+    const read = (file: string) => readFileSync(path.join(repositoryRoot, file), 'utf8');
+    const shell = [...files('tools', /\.sh$/), ...files('.github', /\.sh$/)];
+    expect(shell.length).toBeGreaterThan(5);
+    expect(shell.filter((file) => REMOTE_READ.test(read(file)) || RUNS_GH.test(read(file)))).toEqual([]);
+
+    // The TypeScript entry points the steps run, directly (tsx or node) or through a package.json script, and the files
+    // under tools/ each imports, transitively.
+    const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
+    const ENTRY = /\b(?:tsx|node)\s+(tools\/[\w./-]+\.(?:ts|mjs))/g;
+    const runs = everyStep().filter(({ step }) => step.run !== undefined);
+    const entries = runs.flatMap((entry) => [
+      ...[...(entry.step.run ?? '').matchAll(ENTRY)].map((match) => ({ ...entry, file: match[1] ?? '' })),
+      ...[...(entry.step.run ?? '').matchAll(/\bpnpm\s+(?:run\s+)?([a-z][\w:.-]*)/g)].flatMap((match) => [...(scripts[match[1] ?? ''] ?? '').matchAll(ENTRY)].map((named) => ({ ...entry, file: named[1] ?? '' }))),
+    ]);
+    expect(new Set(entries.map(({ file }) => file)).size).toBeGreaterThan(15);
+    const closure = (entry: string) => {
+      const seen = new Set<string>();
+      const queue = [entry];
+      while (queue.length > 0) {
+        const file = queue.pop() ?? '';
+        if (seen.has(file) || !existsSync(path.join(repositoryRoot, file))) continue;
+        seen.add(file);
+        for (const match of read(file).matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
+          let next = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1] ?? ''));
+          if (next.endsWith('.js')) next = `${next.slice(0, -3)}.ts`;
+          else if (!/\.(?:ts|mjs|json)$/.test(next)) next = `${next}.ts`;
+          if (next.startsWith('tools/') && !next.endsWith('.json')) queue.push(next);
+        }
+      }
+      return [...seen];
+    };
+    // git's remote commands as an argument list, and the API, the server or this repository by any name, or gh.
+    const GIT_REMOTE = /['"`](?:fetch|clone|ls-remote|pull|submodule)['"`]\s*[,\]]/;
+    const API = /api\.github\.com|raw\.githubusercontent\.com|GITHUB_(?:API|SERVER)_URL|GITHUB_REPOSITORY|PureTideWater\/PhysicalTherapy|['"`]gh['"`]/;
+    expect(['git(["-C", dir, "fetch", url])', "run('git', ['ls-remote', url])", "git('clone', url)"].filter((text) => !GIT_REMOTE.test(text))).toEqual([]);
+    const gitReaders = new Set<string>();
+    for (const { where, job, step, file } of entries) {
+      const reached = closure(file);
+      expect(reached.length, where).toBeGreaterThan(0);
+      for (const found of reached.filter((candidate) => GIT_REMOTE.test(read(candidate)))) gitReaders.add(found);
+      if (reached.some((candidate) => API.test(read(candidate)))) {
+        const token = step.env?.GITHUB_TOKEN ?? step.env?.GH_TOKEN ?? job.env?.GITHUB_TOKEN ?? job.env?.GH_TOKEN;
+        expect(token, `${where} runs ${file}, which reads GitHub's API or runs gh`).toBe('${{ github.token }}');
+      }
+    }
+    // check-action-pins alone runs git against a remote: the upstreams of the actions the workflows pin, read by
+    // owner/name, never this repository, which no `uses:` names (no local action, no reusable workflow of its own).
+    expect([...gitReaders].sort()).toEqual(['tools/check-action-pins/network.ts']);
+    const uses = everyStep().map(({ step }) => step.uses ?? '').filter((uses) => uses !== '');
+    expect(uses.filter((uses) => uses.startsWith('./') || uses.toLowerCase().startsWith('puretidewater/'))).toEqual([]);
+    expect(workflowFiles().flatMap((file) => Object.values(workflow(file).jobs)).filter((job) => typeof (job as { uses?: unknown }).uses === 'string')).toEqual([]);
   });
 
   it('reads the changed paths of screening-capacity’s pull request from its checkout alone: the script passes on a full clone whose remote is gone, and a blobless clone fails it', () => {
