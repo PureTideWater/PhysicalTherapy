@@ -53,9 +53,10 @@ const INTERNAL_ROLES = ['platform_admin', 'contract_specialist', 'reviewer', 'su
 const PERSON_STARTED_JOBS: ReadonlySet<string> = new Set(['triage', 'packet_export', 'intake', 'price', 'audit_report', 'report_document', 'roi_statement']);
 
 /**
- * The practice's own monitoring and reconciliation, which a person's settings bring forward (the pricing location, the
- * proof level, a reconciliation template): they carry on under a grantee's hold, as the practice's work and not the
- * grantee's (design SS-01, section 2), and the worker's gate refuses them for the owner's hold (RUN_STARTING_JOBS).
+ * The practice's own monitoring and reconciliation, which a person's settings and mappings bring forward (the pricing
+ * location, a plan's mapping that leaves months with every plan mapped, the proof level, a reconciliation template):
+ * they carry on under a grantee's hold, as the practice's work and not the grantee's (design SS-01, section 2), and the
+ * worker's gate refuses them for the owner's hold (RUN_STARTING_JOBS), the only hold the mapping holds them back for.
  */
 const PRACTICE_OWN_JOBS: ReadonlySet<string> = new Set(['monitor', 'reconcile']);
 

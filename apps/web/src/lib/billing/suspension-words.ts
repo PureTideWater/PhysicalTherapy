@@ -47,6 +47,18 @@ export interface PracticeHold {
   readonly billingHref: string | null;
 }
 
+/**
+ * A hold that stops the person's work needing one run-starting permission here now (lib/billing/hold.ts workPause): the
+ * database's sentence (R1 to R6), whose hold it is, and whether lifting it restarts the work (a closure restarts none).
+ * The owner's hold stops the practice's own jobs too; a grantee's stops only this person's work through its grant, and
+ * the practice's own monitoring carries on (docs/adr/0080).
+ */
+export interface WorkPause {
+  readonly reason: string;
+  readonly source: HoldSource;
+  readonly restarts: boolean;
+}
+
 /** The line under the notice: a link and the words after it, or words alone. */
 export interface HoldNextStep {
   readonly link: string | null;

@@ -229,9 +229,12 @@ closure lifecycle, with its own decision on reopening.
   `RUN_STARTING_ROUTES` or to `CONTINUES_STARTED_WORK` (the upload's completion, which queues intake for an upload its
   request route already gated). The owner's hold has the same shape for triage and an upload's retry today.
 - **A held grantee's person can still bring the practice's own monitoring or reconciliation forward.** Setting the
-  pricing location queues `monitor`, and saving the posting template, or setting the proof level, queues `reconcile`.
-  These are the practice's own work, which section 1 says continues under a grantee's hold, and the worker gates them
-  for the owner's hold only. The registry test names them as such. Refusing those settings writes would be a redesign.
+  pricing location, or mapping a plan that leaves months with every plan mapped, queues `monitor`, and saving the
+  posting template, or setting the proof level, queues `reconcile`. These are the practice's own work, which section 1
+  says continues under a grantee's hold, and the worker gates them for the owner's hold only. The registry test names
+  them as such, and the mapping holds its monitoring back for the owner's hold alone (`practice_run_hold`'s owner row,
+  the gate's decision), so a grantee's hold never delays the practice's pricing. Refusing those settings writes would be
+  a redesign.
 - **The previous image's home suffix** (F9). During a deploy or a rollback, for as long as it runs, the previous image
   prints its fixed suffix after the database's sentence: "Everything here stays readable; uploads, pricing runs,
   monitoring, packet exports and reports start again once it is resolved. The organization's administrator sees the

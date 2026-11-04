@@ -2,6 +2,7 @@ import { Alert, AlertDescription, AlertTitle } from '@tp/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import type { WorkPause } from '../../lib/billing/suspension-words';
 import type { UnmappedPlanTotals } from '../../lib/contracts/mapping-queries';
 import type { ActionState } from '../../lib/http/next';
 import type { LastFailure, LastFailureReason, MappedNotPricedTotals, MonthAwaitingMappings, MonthToPriceAgain, MonthToTriage, MonthsWaiting, PriceAgainState } from '../../lib/pricing/mapped-plan';
@@ -240,15 +241,19 @@ export const MONTHS_NOTICES = {
 } as const;
 
 /**
- * What a plan page's notice says after a mapping that completed months while the practice may not start work (PR #95
- * review security F1; mapped_held, corrected_held): nothing was queued, since the worker would refuse it, and the daily
- * monitoring prices the months once work may start again. With the database's reason while it holds (as Uploads says
- * it); without one once it is resolved.
+ * What a plan page's notice says after a mapping that completed months while the practice's own organization held new
+ * work (PR #95 review security F1; mapped_held, corrected_held): nothing was queued, since the worker would refuse it,
+ * and the daily monitoring prices the months once work may start again. With the database's reason while the owner's
+ * hold lasts (as Uploads says it), and for a closure no restart (BIL-09); without one once it is lifted. A grantee's hold
+ * on the reader never held the practice's monitoring (PR #104 review security F1), so it reads as lifted.
  */
-export function heldText(suspension: string | null): string {
-  return suspension === null
-    ? 'New runs were stopped when the mapping was saved, so the months whose plans now all have a mapping were not queued; the daily monitoring prices them now that runs have started again.'
-    : `Pricing is paused: ${suspension}. The months whose plans now all have a mapping are priced by the daily monitoring once it is resolved.`;
+export function heldText(suspension: WorkPause | null): string {
+  if (suspension === null || suspension.source === 'grantee') {
+    return 'New runs were stopped when the mapping was saved, so the months whose plans now all have a mapping were not queued; the daily monitoring prices them now that runs have started again.';
+  }
+  return suspension.restarts
+    ? `Pricing is paused: ${suspension.reason}. The months whose plans now all have a mapping are priced by the daily monitoring once it is resolved.`
+    : `Pricing has stopped: ${suspension.reason}. The months whose plans now all have a mapping were not queued.`;
 }
 
 /** "2026-03-01 to 2026-03-31", each date kept whole, in the mono face. */
@@ -367,14 +372,26 @@ function FilterFields({ filters }: { readonly filters: ListFilters | undefined }
   );
 }
 
+/** The database's sentence as a sentence's start. */
+const sentenceStart = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
 /**
- * Said in place of a region's form while the practice may not start work (security F1): the database's reason, as
- * Uploads says it, and when the months are priced. The press would be refused (RUN_STARTING_ROUTES), so none is offered.
+ * Said in place of a region's form while the person may not start pricing here (security F1): the database's reason,
+ * as Uploads says it, and when the months are priced. The press would be refused (RUN_STARTING_ROUTES), so none is
+ * offered. The owner's hold pauses the practice's own pricing until it is lifted (`resumes`), and a closure restarts
+ * nothing (BIL-09). A grantee's hold stops only this person's work through the grant (PR #104 review security F1;
+ * docs/adr/0080): its sentence alone, and what the practice's own work still does (`carriesOn`), if anything.
  */
-export function PausedText({ suspension, what }: { readonly suspension: string; readonly what: string }) {
+export function PausedText({ suspension, resumes, carriesOn = null }: { readonly suspension: WorkPause; readonly resumes: string; readonly carriesOn?: string | null }) {
+  const text =
+    suspension.source === 'grantee'
+      ? `${sentenceStart(suspension.reason)}.${carriesOn === null ? '' : ` ${carriesOn}`}`
+      : suspension.restarts
+        ? `Pricing is paused: ${suspension.reason}. ${resumes}`
+        : `Pricing has stopped: ${suspension.reason}.`;
   return (
-    <p className="text-sm" data-state="paused">
-      Pricing is paused: {suspension}. {what}
+    <p className="text-sm" data-state="paused" data-hold-source={suspension.source}>
+      {text}
     </p>
   );
 }
@@ -405,8 +422,8 @@ export function MonthsWaitingRegion({
   readonly formKeys: () => ReactNode;
   /** The mapping list's filters, posted back with the form (UX-7); none on a plan's page. */
   readonly filters?: ListFilters;
-  /** Why the practice may not start work now (practice_run_refusal), or null. */
-  readonly suspension?: string | null;
+  /** Why the person starts no pricing here now (workPause with mapping.edit), or null. */
+  readonly suspension?: WorkPause | null;
 }) {
   if (waiting.months.length === 0) {
     return null;
@@ -461,7 +478,11 @@ export function MonthsWaitingRegion({
         )}
       />
       {!canMap ? null : suspension !== null ? (
-        <PausedText suspension={suspension} what="These months are priced by the daily monitoring once it is resolved." />
+        <PausedText
+          suspension={suspension}
+          resumes="These months are priced by the daily monitoring once it is resolved."
+          carriesOn="The practice’s daily monitoring still prices these months."
+        />
       ) : (
         <ActionForm action={action} submit="Price them now" variant="outline" className="flex w-full flex-col gap-2 sm:w-auto [&_button[type=submit]]:w-full sm:[&_button[type=submit]]:w-auto">
           {formKeys()}
@@ -685,8 +706,8 @@ export function MonthsToPriceAgainRegion({
   readonly formKeys: () => ReactNode;
   /** The mapping list's filters, posted back with the form (UX-7); none on a plan's page. */
   readonly filters?: ListFilters;
-  /** Why the practice may not start work now (practice_run_refusal), or null: no form is offered while it holds. */
-  readonly suspension?: string | null;
+  /** Why the person starts no pricing here now (workPause with mapping.edit), or null: no form is offered while it holds. */
+  readonly suspension?: WorkPause | null;
 }) {
   const rows: readonly MonthRow[] = [...months.priceAgain.map((month) => ({ kind: 'price_again' as const, month })), ...months.toTriage.map((month) => ({ kind: 'to_triage' as const, month }))];
   const title = planId === null ? 'Months with lines of mapped plans not priced' : 'Months holding this plan’s lines that are not priced';
@@ -776,7 +797,7 @@ export function MonthsToPriceAgainRegion({
         </ActionForm>
       ) : null}
       {canMap && suspension !== null && ready.length > 0 ? (
-        <PausedText suspension={suspension} what="These months can be priced again here once it is resolved." />
+        <PausedText suspension={suspension} resumes="These months can be priced again here once it is resolved." />
       ) : null}
       {canMap ? (
         <RefusalFallback

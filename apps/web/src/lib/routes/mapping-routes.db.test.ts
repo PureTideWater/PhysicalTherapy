@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool } from '@tp/db/testing';
+import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { RerunRefusedError, createRerun } from '@tp/worker/pricing';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
@@ -49,6 +49,8 @@ const FIXTURES = path.resolve(import.meta.dirname, '../../../../../fixtures/synt
 const FEBRUARY = { periodFrom: '2026-02-01', periodTo: '2026-02-28' };
 /** PaidWhole's suspension of the practice's own organization, as Postgres words it for that organization's members (R1; docs/adr/0080). */
 const SUSPENDED = 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable';
+/** PaidWhole's suspension of a firm granted the practice, as Postgres words it for the firm's people, for the work only its grant gives them (R4). */
+const GRANTEE_SUSPENDED = "PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records";
 
 let database: MigratedDatabase;
 let owner: DatabaseClient;
@@ -141,6 +143,8 @@ const redirectOf = (outcome: Outcome<MutationResult>) => ok(outcome).redirect ??
 interface Target {
   readonly practiceId: string;
   readonly organizationId: string;
+  /** The practice's administrator, who approves its grants. */
+  readonly admin: string;
   readonly manager: string;
   /** A second billing manager, for two people at once. */
   readonly other: string;
@@ -168,7 +172,28 @@ async function practice(label: string): Promise<Target> {
       [world.organizationId, practiceId, randomBytes(32).toString('hex')],
     ),
   );
-  return { practiceId, organizationId: world.organizationId, manager, other, viewer };
+  return { practiceId, organizationId: world.organizationId, admin: world.adminUserId, manager, other, viewer };
+}
+
+/** A billing firm granted the practice (its engagement and a grant in force giving the firm principal's role), and the firm's principal. */
+async function grantedFirm(target: Target, label: string): Promise<{ readonly firmId: string; readonly principal: string }> {
+  const firmId = await createOrganization(owner, 'firm', label);
+  const principal = await createUser(owner);
+  await addMembership(owner, firmId, principal, 'firm_principal');
+  const agreementId = randomUUID();
+  await asOwner(owner, [target.practiceId], async () => {
+    await owner.query(
+      `INSERT INTO agreement (id, organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256)
+       VALUES ($1, $2, $3, 'engagement', '1', now(), 'SYNTHETIC SIGNER', 'agreements/engagement', $4)`,
+      [agreementId, firmId, target.practiceId, randomBytes(32).toString('hex')],
+    );
+    await owner.query(
+      `INSERT INTO "grant" (organization_id, practice_id, scope, ends_at, approved_by_user_id, agreement_id)
+       VALUES ($1, $2, '{"roles":["firm_principal"]}', now() + interval '30 days', $3, $4)`,
+      [firmId, target.practiceId, target.admin, agreementId],
+    );
+  });
+  return { firmId, principal };
 }
 
 function jobContext(practiceId: string): JobContext {
@@ -544,8 +569,8 @@ describe('under SYNTHETIC release 900001', () => {
     expect(redirectOf(await mapAs(target, b))).toBe(`/p/${target.practiceId}/mapping/${b}?notice=mapped_held`);
     expect(monitorJobs()).toEqual([]);
     expect((await owner.query('SELECT 1 FROM payer_plan_mapping WHERE plan_id = $1', [b])).rowCount).toBe(1);
-    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toBe(SUSPENDED);
-    expect(ok(await call(mappingPage, target.viewer, P)).suspension).toBe(SUSPENDED);
+    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toEqual({ reason: SUSPENDED, source: 'owner', restarts: true });
+    expect(ok(await call(mappingPage, target.viewer, P)).suspension).toEqual({ reason: SUSPENDED, source: 'owner', restarts: true });
     // A correction made while suspended is held the same way.
     const mappingId = (await owner.query<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [b])).rows[0]?.id ?? '';
     expect(redirectOf(await call(mapPlanAction, target.manager, P, { planId: b, kind: 'no_agreement', effectiveFrom: '2026-01-02', supersedesId: mappingId }))).toBe(
@@ -559,6 +584,33 @@ describe('under SYNTHETIC release 900001', () => {
     expect(redirectOf(await call(priceWaitingAction, target.manager, P, {}))).toBe(`/p/${target.practiceId}/mapping?notice=pricing_requested`);
     expect(await runQueue({ monitor: true })).toEqual(['monitor', 'price']);
     expect((await owner.query('SELECT status FROM pricing_run WHERE practice_id = $1', [target.practiceId])).rows).toEqual([{ status: 'complete' }]);
+  });
+
+  // SS-01 security F1: a grantee's hold stops its people's own pricing, never the practice's monitoring (docs/adr/0080): the
+  // worker's gate applies the owner's hold alone to the practice's jobs, so the mapping queues it as the practice's work.
+  it('SS-01 security F1: a held firm’s principal maps a plan: the practice’s own monitoring is queued and prices the month; the page stops only the principal’s own pricing', async () => {
+    const target = await practice('mapping held firm');
+    const P = { practiceId: target.practiceId };
+    await send(target, map06());
+    queue.jobs.splice(0);
+    const [a, b] = [await planOf(target, 'SYNPLAN-COMM-06'), await planOf(target, 'SYNPLAN-UNMAPPED-06')];
+    const firm = await grantedFirm(target, 'mapping held firm');
+    expect(redirectOf(await mapAs(target, a, firm.principal))).toMatch(/notice=mapped$/);
+    await owner.query("UPDATE organization SET status = 'suspended', status_reason = 'security_hold' WHERE id = $1", [firm.firmId]);
+    try {
+      expect(redirectOf(await mapAs(target, b, firm.principal))).toBe(`/p/${target.practiceId}/mapping/${b}?notice=mapped_pricing`);
+      expect(queue.jobs).toEqual([{ type: 'monitor', payload: { practice_id: target.practiceId, request_id: expect.any(String) as unknown, months: ['2026-02-01'] } }]);
+      // The principal's own pricing is stopped through the grant; the practice's own staff are not held.
+      const held = { reason: GRANTEE_SUSPENDED, source: 'grantee', restarts: true };
+      expect(ok(await call(planPage, firm.principal, { ...P, planId: b })).suspension).toEqual(held);
+      expect(ok(await call(mappingPage, firm.principal, P)).suspension).toEqual(held);
+      expect(ok(await call(mappingPage, target.manager, P)).suspension).toBeNull();
+      // The worker prices the month as the practice's own work.
+      expect(await runQueue({ monitor: true })).toEqual(['monitor', 'price']);
+      expect((await owner.query('SELECT status FROM pricing_run WHERE practice_id = $1', [target.practiceId])).rows).toEqual([{ status: 'complete' }]);
+    } finally {
+      await owner.query("UPDATE organization SET status = 'active', status_reason = NULL WHERE id = $1", [firm.firmId]);
+    }
   });
 
   // UX-7: a press on the filtered list returns to the same filtered list; a filter that is not valid is dropped.

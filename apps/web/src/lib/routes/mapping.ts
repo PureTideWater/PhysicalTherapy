@@ -1,9 +1,10 @@
 import { mapPlan } from '@tp/contracts';
 import { MAPPING_KINDS, type PracticeScope, type ScopeClient, recordAuditEvent, rolesPermit } from '@tp/db/runtime';
-import { practiceRunRefusal } from '@tp/worker/billing';
 import { PricingLocationWaiting, RerunRefusedError, RuleReleaseMismatchError, createRerun, currentReleaseNo } from '@tp/worker/pricing';
 import { z } from 'zod';
 
+import { ownerHolds, workPause } from '../billing/hold';
+import type { WorkPause } from '../billing/suspension-words';
 import { exclusiveEnd } from '../contracts/display';
 import {
   type PlanDetail,
@@ -60,9 +61,11 @@ import { opaqueId, optionalText } from './schemas';
  * month already being priced again since its newest mapping. The mapping and the press take the practice's months
  * lock first (D22), so two people at once queue monitoring once and create one re-run per month. Both new routes
  * start work and are refused while the practice is suspended (RUN_STARTING_ROUTES); the mapping itself stays allowed
- * while suspended, but queues nothing then and says why (mapped_held, corrected_held; PR #95 review security F1): the
- * worker would refuse its monitoring job, so "being priced" would be false. The mapping's own monitoring is the
- * practice's work, in neither of SS-01's lists.
+ * while suspended, but queues nothing while the practice's own organization holds it and says why (mapped_held,
+ * corrected_held; PR #95 review security F1): the worker would refuse its monitoring job, so "being priced" would be
+ * false. The mapping's own monitoring is the practice's work, in neither of SS-01's lists: a grantee's hold on the
+ * person who maps never stops it, since the worker's gate applies the owner's hold alone to the practice's jobs
+ * (docs/adr/0080, Known limits; PR #104 review security F1).
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -124,11 +127,12 @@ export interface MappingPageData {
   readonly months: MonthsToPrice;
   readonly notice: MappingListNotice | null;
   /**
-   * Why the practice may not start work now (the database's practice_run_refusal: an organization suspended for
-   * billing), or null. "Price them now" and "Price these months again" are refused while it holds (RUN_STARTING_ROUTES),
-   * and a mapping queues nothing; the screens say so with this reason, as Uploads does (security F1).
+   * Why the person starts no pricing here now (lib/billing/hold.ts workPause with mapping.edit, the price buttons'
+   * permission: the route wrapper's question), whose hold it is and whether lifting it restarts the work, or null.
+   * "Price them now" and "Price these months again" are refused while it holds (RUN_STARTING_ROUTES); the screens say
+   * so with this reason, as Uploads does (security F1). Only the owner's hold also stops the practice's own monitoring.
    */
-  readonly suspension: string | null;
+  readonly suspension: WorkPause | null;
   readonly canMap: boolean;
   /** Whether the person may triage on Cases (case.work), which an accepted re-run's row links to. */
   readonly canWorkCases: boolean;
@@ -160,7 +164,7 @@ export const mappingPage = practiceRoute({
       mappedNotPriced: await mappedNotPricedTotals(scope.client, practiceId),
       months: await monthsToPrice(scope, practiceId, null, request.requestId),
       notice: params.notice ?? null,
-      suspension: await practiceRunRefusal(scope.client, practiceId),
+      suspension: await workPause(scope, practiceId, 'mapping.edit'),
       canMap: rolesPermit(access.roles, 'mapping.edit'),
       canWorkCases: rolesPermit(access.roles, 'case.work'),
       roles: access.roles,
@@ -171,8 +175,8 @@ export const mappingPage = practiceRoute({
 
 /**
  * The plan page's notices (design 5.3): today's three, and after a mapping that queued monitoring of the months it
- * completed (mapped_pricing, corrected_pricing), after a mapping that completed months while the practice is suspended,
- * so nothing was queued (mapped_held, corrected_held: priced once billing is current; the page shows `suspension`),
+ * completed (mapped_pricing, corrected_pricing), after a mapping that completed months while the practice's own
+ * organization held new work, so nothing was queued (mapped_held, corrected_held; the page shows `suspension`),
  * after "Price these months again" (priced_again, or already_pricing when every posted month was already being priced
  * again) and after "Price them now" (pricing_requested).
  */
@@ -200,8 +204,8 @@ export interface PlanPageData {
   readonly canWorkCases: boolean;
   readonly roles: readonly string[];
   readonly notice: MappingNotice | null;
-  /** Why the practice may not start work now (practice_run_refusal), or null: see MappingPageData.suspension. */
-  readonly suspension: string | null;
+  /** Why the person starts no pricing here now (workPause with mapping.edit), or null: see MappingPageData.suspension. */
+  readonly suspension: WorkPause | null;
 }
 
 export const planPage = practiceRoute({
@@ -224,7 +228,7 @@ export const planPage = practiceRoute({
       canWorkCases: rolesPermit(access.roles, 'case.work'),
       roles: access.roles,
       notice: params.notice ?? null,
-      suspension: await practiceRunRefusal(scope.client, practiceId),
+      suspension: await workPause(scope, practiceId, 'mapping.edit'),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, planId: refs.planId }) },
@@ -237,11 +241,12 @@ export const planPage = practiceRoute({
  * and not held on the billing ZIP or on Medicare content, it queues monitoring once the mapping commits, keyed by the
  * request and naming every such complete month (D2b, D20), and says so (mapped_pricing, corrected_pricing); otherwise
  * nothing is queued and the notice is today's. A month's plans count as mapped by the mapping in force on their lines'
- * dates (R3N-1), so a mapping only for other dates completes nothing. While the practice is suspended
- * (practice_run_refusal, asked in the same transaction) the mapping is kept and nothing is queued, since the worker
- * would refuse the job: the notice says the months are priced once billing is current (mapped_held, corrected_held;
- * security F1), and the daily monitor prices them after reinstatement. The same mapping again changes nothing and
- * queues nothing.
+ * dates (R3N-1), so a mapping only for other dates completes nothing. While the practice's own organization holds new
+ * work (practice_run_hold's owner row, asked in the same transaction: the hold the worker's gate applies to the
+ * practice's jobs) the mapping is kept and nothing is queued, since the worker would refuse the job: the notice says so
+ * (mapped_held, corrected_held; security F1), and the daily monitor prices the months once the hold lifts. A grantee's
+ * hold on the person who maps stops only their own work, so the practice's monitoring is queued as under no hold (PR #104
+ * review security F1; docs/adr/0080). The same mapping again changes nothing and queues nothing.
  */
 export const mapPlanAction = practiceRoute({
   id: 'practice.mapping.map',
@@ -308,7 +313,7 @@ export const mapPlanAction = practiceRoute({
     // The months this mapping completes (D2b), and with them every complete month (D20): planned once the mapping
     // commits, so the plan the job starts reads it. Dates only in the payload.
     const months = monthsToQueue(await monthsAwaitingMappings(scope, practiceId), input.planId);
-    const held = months.length > 0 && (await practiceRunRefusal(scope.client, practiceId)) !== null;
+    const held = months.length > 0 && (await ownerHolds(scope, practiceId));
     if (months.length > 0 && !held) {
       afterCommit(() => services.queue.enqueue('monitor', { practice_id: practiceId, request_id: request.requestId, months }));
     }
