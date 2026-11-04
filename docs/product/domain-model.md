@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `e04fe9222a5696ac810809b458abd3f2728f4f1c` on branch `co-001/suite-cap-1-triage-locks` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `5282164151725db8449902309cf72c3954283d6d` on branch `co-001/suite-cap-1-triage-locks` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 47; head `20261109090000_line_status_heads.sql`
 - PostgreSQL 18; schema `public`: 100 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
