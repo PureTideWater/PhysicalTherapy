@@ -1536,3 +1536,10 @@ HANDOFF.md; LANES.md rule 10).
   - test-flakes-5 (S4): axe waits for the page title.
   - #96 and ci-findings-transport (S3).
 - Merged today: 12.
+
+### 2026-11-04 21:05 UTC: #115 merged (00fd2906); #96 merged (30871f72)
+- #115 (redact-label-boundary): a sentence end now breaks a label's head, so an ID written as a date after a bare "ID:" is redacted. MOD-13's seed 460548619 is pinned.
+- #96 (P4, ci-mutation-trigger): a change that Stryker core loads (the root typescript) now runs its shards. The mutant counts equal the base push run on all 42 files.
+- PE-S1 (nine shard rows in ci.md, shardsFor = 9) goes to #84, which merges second.
+- S1 is on redact-ssn-phone; S3 on ci-findings-transport. P2 (ci-trivy-version) stays Lane B's.
+- Merged today: 14.
