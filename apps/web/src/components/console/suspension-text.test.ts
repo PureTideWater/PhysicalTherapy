@@ -10,6 +10,7 @@ import {
   SUSPENSION_REASON_HINT,
   SUSPENSION_REASON_OPTIONS,
   grantState,
+  historyEmpty,
   reasonLabel,
   suspendedByPaidWhole,
   suspendedEffect,
@@ -63,6 +64,13 @@ describe('the active card (C1 to C6)', () => {
       'Suspend SYNTHETIC FIRM: its people start no new work through its grants at the 2 practices it is granted; every record stays readable.',
     );
     expect(suspensionTick('firm', 'SYNTHETIC FIRM', { practices: 0, grants: 0 })).toBe('Suspend SYNTHETIC FIRM: it holds no grant in force now; every record stays readable.');
+    // Counts through counted(): digits grouped by thousands (SS-01 UX review 8).
+    expect(suspensionTick('firm', 'SYNTHETIC FIRM', { practices: 2000, grants: 2000 })).toBe(
+      'Suspend SYNTHETIC FIRM: its people start no new work through its grants at the 2,000 practices it is granted; every record stays readable.',
+    );
+    expect(suspensionTick('group', 'SYNTHETIC GROUP', { practices: 1250, grants: 1001 })).toBe(
+      'Suspend SYNTHETIC GROUP: new work stops at its 1,250 practices for everyone, and its people start no new work through the 1,001 grants it holds; every record stays readable.',
+    );
   });
 });
 
@@ -93,6 +101,18 @@ describe('the suspended card (C7 to C9)', () => {
     expect(suspendedEffect('firm', { practices: 4, grants: 4 })).toBe(
       "Its people start no new work through its grants at the 4 practices it is granted; the practices' own staff carry on. Reinstating lifts it at once.",
     );
+    expect(suspendedEffect('firm', { practices: 2000, grants: 2000 })).toBe(
+      "Its people start no new work through its grants at the 2,000 practices it is granted; the practices' own staff carry on. Reinstating lifts it at once.",
+    );
+    // With nothing to reach, no vacuous count (SS-01 UX review 5): as C6 says it.
+    expect(suspendedEffect('group', { practices: 0, grants: 0 })).toBe('It has no active practice now; every record stays readable. Reinstating lifts it at once.');
+    expect(suspendedEffect('group', { practices: 0, grants: 2 })).toBe(
+      'It has no active practice now, and its people start no new work through the 2 grants it holds; every record stays readable. Reinstating lifts it at once.',
+    );
+    expect(suspendedEffect('firm', { practices: 0, grants: 0 })).toBe('It holds no grant in force now; every record stays readable. Reinstating lifts it at once.');
+    for (const kind of ['group', 'firm'] as const) {
+      expect(suspendedEffect(kind, { practices: 0, grants: 0 })).not.toMatch(/\b0 /);
+    }
     expect(suspendedNote('SYNTHETIC NOTE')).toBe('Note: SYNTHETIC NOTE');
     expect(REINSTATE_SUBMITS).toEqual({ resolved: 'Reinstate: the cause is resolved', in_error: 'Reinstate: suspended in error' });
     expect(Object.keys(REINSTATE_SUBMITS)).toEqual([...REINSTATEMENT_REASONS]);
@@ -103,6 +123,9 @@ describe('the history, the grants and the billing status (C10 to C12, O1)', () =
   it('reads each change and reason in words', () => {
     expect(HISTORY_COLUMNS).toEqual(['When (UTC)', 'Change', 'Reason', 'By', 'Note']);
     expect(HISTORY_EMPTY).toBe('No suspension recorded.');
+    // Beside a suspension written before changes were recorded (D11), the empty history says so (SS-01 UX review 5).
+    expect(historyEmpty(false)).toBe(HISTORY_EMPTY);
+    expect(historyEmpty(true)).toBe('No change recorded here yet; a suspension made before changes were recorded shows only on the card above.');
     expect(HISTORY_CHANGES).toEqual({ suspended: 'Suspended', reinstated: 'Reinstated', reason_changed: 'Reason changed' });
     expect(['customer_request', 'security_hold', 'agreement_ended', 'resolved', 'in_error'].map(reasonLabel)).toEqual([
       "At the customer's request",

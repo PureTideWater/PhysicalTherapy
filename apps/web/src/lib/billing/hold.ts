@@ -1,6 +1,6 @@
 import { type PracticeScope, type ScopeClient, SUSPENSION_REASONS, type SuspensionReason, rolesPermit } from '@tp/db/runtime';
 
-import { type HoldCause, type HoldSource, type PracticeHold, RUN_STARTING_PERMISSIONS, type RunStartingPermission } from './suspension-words';
+import { type HoldCause, type HoldSource, type PracticeHold, RUN_STARTING_PERMISSIONS, type RunStartingPermission, type WorkPause } from './suspension-words';
 
 /**
  * The hold on new work at a practice, as the scope's person reads it (docs/adr/0080; design SS-01, section 5.3): Postgres
@@ -45,4 +45,38 @@ export async function practiceHold(scope: PracticeScope<ScopeClient>, practiceId
     viewer: member ? 'member' : 'other',
     billingHref: billing ? `/settings/billing/${row.organization_id}` : null,
   };
+}
+
+interface PauseRow {
+  readonly reason: string | null;
+  readonly source: HoldSource | null;
+  readonly cause: HoldCause | null;
+}
+
+/**
+ * Why the scope's person starts no new work needing `permission` at the practice now (practice_run_refusal_for, the
+ * route wrapper's question), with whose hold it is and whether lifting it restarts the work (practice_run_hold), or null.
+ * One statement, so the sentence and the hold agree.
+ */
+export async function workPause(scope: PracticeScope<ScopeClient>, practiceId: string, permission: RunStartingPermission): Promise<WorkPause | null> {
+  const row = (
+    await scope.client.query<PauseRow>('SELECT r.reason, h.source, h.cause FROM practice_run_refusal_for($1, $2) AS r(reason) LEFT JOIN practice_run_hold($1) AS h ON true', [
+      practiceId,
+      permission,
+    ])
+  ).rows[0];
+  if (row?.reason === null || row?.reason === undefined || row.source === null) {
+    return null;
+  }
+  return { reason: row.reason, source: row.source, restarts: row.cause !== 'closed' };
+}
+
+/**
+ * Whether the practice's own organization holds new work at it (practice_run_hold's owner row): the hold the worker's
+ * gate applies to the practice's own jobs, which see no grantee's hold in a job's scope (docs/adr/0080). A grantee's hold
+ * on the person stops their own work only, never the practice's monitoring.
+ */
+export async function ownerHolds(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<boolean> {
+  const { rows } = await scope.client.query<{ held: boolean }>("SELECT EXISTS (SELECT 1 FROM practice_run_hold($1) WHERE source = 'owner') AS held", [practiceId]);
+  return rows[0]?.held === true;
 }
