@@ -26,8 +26,20 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
 - 2026-11-04T11:55:00Z: design workflow wf_9fcd676d-d05 launched (3 scouts: infra and IAM, provider, takeover path with P-3 and
   R-11; writer; security and infra/auth design reviews; skeptics; fold); script archived.
 
+- 2026-11-04T12:45:00Z: **design done** (wf_9fcd676d-d05, 20 agents): `designs/lane-a-cognito-confidential-client.md` (834 lines),
+  review `-review.md` (24 findings: 2 B, 10 S, 12 N; 21 confirmed and folded, 2 refuted; both lenses reported), scouts in
+  `lane-a-cognito-confidential-client/`. ADR 0088 used. **Two PRs.** PR 1 (this branch, release N, no client change): the
+  enrolment rule (MFA_SETUP only inside a live invitation; closes B1, B2, C1', C3, D1), the invitation rule (C2), SecretHash
+  and credential-error support in the provider (inactive until a secret is set), the staging diff role's deny on
+  DescribeUserPoolClient and ListUserPoolClientSecrets (security-B1), the R-11 alarms, ADR 0088 (proposed) and SEC-20..23.
+  PR 2 (cut after PR 1 is deployed to staging, release N+1): the confidential client, the custodian custom resource,
+  rotation and the cutover; it needs the founder's F1-F5 and rulings 13-16. Next: PR 1's build.
+
 ## Waiting on someone
-- The founder: a credentialed staging step (to be written with exact steps).
+- The founder, before PR 2 merges: design section 10's F1-F5 (the credentialed staging steps, exact), and rulings on risks
+  13 (who may start a rotation: the break-glass role recommended), 14 (who runs admin-delete-user for a stuck invitee),
+  15 (the N to N+1 window: within 7 days of N in production and before the first customer invitation, recommended) and 16
+  (an SCP or permission boundary denying DescribeUserPoolClient to read-only sets).
 
 ## Next step
 Design.
