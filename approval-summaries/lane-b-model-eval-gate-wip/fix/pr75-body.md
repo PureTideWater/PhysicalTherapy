@@ -128,7 +128,7 @@ Each merge commit keeps both lanes' changes (LANES.md rule 6), and the lockfile,
 | 315ac91e | 88708069: #93 the home's figures, #90 the model client SDK 1.x | None. `test-matrix.md`, `matrix.ts`, `registry.ts` (MOD-12; MOD-17, MOD-18; HOM-01 to HOM-04), `docs/runbooks/model-evaluation.md` (the contract-screen paragraph and #90's note), `watched-paths.txt`; the lockfile as #90 wrote it. |
 | a03654ce | 21fa10df: #42 PR 6b-4, #95 one unmapped plan, #91 Dependabot routing | None. Eight both-sides files checked three ways (each side's lines kept, line multisets equal, hunks apart): `contracts.spec.ts`, `PRD.md`, `reconciliation-001.md`, `test-matrix.md`, `packages/db/src/runtime.ts` (#42's `canonicalMailbox` and #75's `openedPool`), `matrix.ts`, `registry.ts`, `watched-paths.txt`. #42's migration touches none of the tables the screen reads; `readWithAudit` and `rate_limit_take` are unchanged, and the screen's buckets are untouched. |
 
-The base has since moved to 4846f043 (#94, the aws-cdk minor and patch update). It is not merged here; a trial merge-tree of a8149341 with it is clean, and the PR's CI runs on the merge ref.
+The base has since moved to 7bf7b252 (#94, the aws-cdk minor and patch update; #107, the pinned Trivy install). Neither is merged here yet; a trial merge-tree of a8149341 with 7bf7b252 is clean. The base is merged once more right before the push that precedes the merge (it brings #107, which turns `images` green).
 
 ## Why
 
@@ -141,7 +141,7 @@ The base has since moved to 4846f043 (#94, the aws-cdk minor and patch update). 
 
 ## What it does not change
 
-- Pricing engine (`packages/pricing`): no change. `tools/engine-freeze/check.ts origin/claude/build-platform` (4846f043; diffed from the merge base 21fa10df): nothing let through, no problems.
+- Pricing engine (`packages/pricing`): no change. `tools/engine-freeze/check.ts origin/claude/build-platform` (from the tip 4846f043; and from the merge base 21fa10df, as CI runs it: the same): nothing let through, no problems.
 - Ledger (`packages/ledger`): no change.
 - Database schema and migrations: none.
   - The screen uses the existing audit columns: `action`, `purpose` and `request_id` are open code patterns.
@@ -161,10 +161,11 @@ The base has since moved to 4846f043 (#94, the aws-cdk minor and patch update). 
 The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
 `screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
-CI on a8149341: <!-- ci -->**red: two required checks fail**, `screening-capacity gate` and `all green`; neither is a fault in this PR's code.
-- `capacity` failed with `RUNNER_TOO_SMALL` (2 CPUs where 4 are needed: the repository is private; issue #102, a founder item), so the required `screening-capacity gate` failed (PR comment 6623462279).
-- `images` failed: the Trivy installer exits 6 because get.trivy.dev has not resolved since 2026-11-03, across the whole base (PR comment 6623424027). So the required `all green` failed.
-- Passed: approval-of-record, changes, build, lint, static, domain model, unit, db 1/6 to 6/6, e2e 1/3 to 3/3, and stryker pricing-engine, pricing-recompute, pricing-rest, packets-scan and packets-explain. Still running: stryker packets-rest, so `mutation` has not reported.<!-- /ci -->
+CI on a8149341 (merge ref 95b61061, a8149341 with 4846f043): <!-- ci -->all 31 check runs completed. **Required:** `approval-of-record` and `mutation` green; `all green` red from `images` only; `screening-capacity gate` red from `capacity` only. Neither red is a fault in this PR's code.
+- `images` failed installing Trivy: the installer exits 6 because get.trivy.dev has not resolved since 2026-11-03, across the whole base (PR comment 6623424027). The fix merged into the base afterwards as #107 (7bf7b252); this PR picks it up with its final base merge.
+- `capacity` failed with `RUNNER_TOO_SMALL` (2 CPUs where 4 are needed: the repository is private; issue #102, a founder item), so the required `screening-capacity gate` failed (PR comment 6623462279). No change in this PR can clear it.
+- Passed: approval-of-record, changes, build, lint, static, domain model, unit, db 1/6 to 6/6, e2e 1/3 to 3/3, and all six stryker shards (pricing 98.67%, packets 97.75%); `notify` skipped.
+- CI totals: unit 437 files, 7,453 passed, 1 skipped (the merge ref adds #94's tests); golden 381; db 140 files, 9,675 passed, 0 skipped (the local restore-drill skip runs in CI); e2e 70; oracle 689 agree.<!-- /ci -->
 
 The full local suite ran once on the head, a8149341 (check7; Node 24, each step under the shared lock, one at a time, no code changed after the first step):
 
