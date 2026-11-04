@@ -441,17 +441,32 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await requested()).toBe(before + 6);
   });
 
-  it('SGN-05: answers at the floor when the audit write or the provider throws, and warns of a run over it', async () => {
+  it('SGN-05: answers a failed audit write or provider send as an unknown address, at the floor, with one error log of IDs only (S-3), and warns of a run over it', async () => {
     const user = await person();
-    const audit = paced(failing(/INSERT INTO audit_event/, 1));
-    await expect(audit.flow.requestPasswordReset(user.email, context())).rejects.toThrow('synthetic failure');
-    expect(audit.pace.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
+    const unknown = `${randomUUID()}@synthetic.test`;
+    const nobody = paced();
+    expect(await nobody.flow.requestPasswordReset(unknown, context())).toEqual({ step: 'reset', email: unknown });
+    expect(nobody.pace.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
+    expect(logged(nobody.lines, 'password reset request failed')).toEqual([]);
+
+    /** A failed request: the unknown address's answer and floor, and one error line that names IDs only. */
+    const failedAlike = async (run: { readonly flow: SignInFlow; readonly pace: Pace; readonly lines: string[] }, name: string): Promise<void> => {
+      const request = context();
+      expect(await run.flow.requestPasswordReset(user.email, request), name).toEqual({ step: 'reset', email: user.email });
+      expect(run.pace.slept, name).toEqual([RESET_REQUEST_FLOOR_MS]);
+      const failed = logged(run.lines, 'password reset request failed');
+      expect(failed, name).toEqual([{ level: 'error', msg: 'password reset request failed', time: expect.any(String), request_id: request.requestId, error_code: 'Error' }]);
+      expect(run.lines.join('\n'), name).not.toMatch(new RegExp(`${user.email}|synthetic`));
+    };
+
+    await failedAlike(paced(failing(/INSERT INTO audit_event/, 1)), 'audit');
 
     const thrown = paced();
     const broken = vi.spyOn(provider, 'requestPasswordReset').mockRejectedValueOnce(new Error('synthetic provider failure'));
-    await expect(thrown.flow.requestPasswordReset(user.email, context())).rejects.toThrow('synthetic provider failure');
-    expect(thrown.pace.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
+    await failedAlike(thrown, 'provider');
     broken.mockRestore();
+    // The send failed, and the request is still recorded.
+    expect(await events(user.id)).toContain('password_reset_requested:unverified_request');
 
     const slow = paced();
     const ask = provider.requestPasswordReset.bind(provider);

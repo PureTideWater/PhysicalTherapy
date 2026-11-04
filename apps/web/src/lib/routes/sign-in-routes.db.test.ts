@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
+import type { ScopeClient, ScopePool } from '@tp/db/runtime';
 import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createOrganization, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -81,11 +82,11 @@ beforeAll(async () => {
   services = servicesWith(DevAuthProvider);
 });
 
-/** The services on this file's store, sealer and clock, with the dev provider or a subclass of it. */
-function servicesWith(Provider: typeof DevAuthProvider): Services {
+/** The services on this file's store, sealer and clock, with the dev provider or a subclass of it, on this pool. */
+function servicesWith(Provider: typeof DevAuthProvider, pool: ScopePool<ScopeClient> = app): Services {
   return createServices({
     origin: ORIGIN,
-    pool: app,
+    pool,
     provider: new Provider({
       store,
       sealer: sealer.derive('dev-provider'),
@@ -118,6 +119,31 @@ afterAll(async () => {
   await owner.end();
   await database.drop();
 });
+
+/** The application's pool, except that queries matching `match` fail the first `times` times (a synthetic failure). */
+function failing(match: RegExp, times: number): ScopePool<ScopeClient> {
+  let left = times;
+  return {
+    connect: async () => {
+      const client = await app.connect();
+      return new Proxy(client, {
+        get(target, property) {
+          if (property === 'query') {
+            return (text: unknown, values?: unknown[]) => {
+              if (left > 0 && typeof text === 'string' && match.test(text)) {
+                left -= 1;
+                return Promise.reject(new Error('synthetic failure'));
+              }
+              return target.query(text as string, values);
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+    },
+  };
+}
 
 /** A browser's cookie jar that remembers what each response set, with each write's Max-Age and the names written since `forget`. */
 class Browser implements CookieJar {
@@ -831,6 +857,35 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     expect(asked.mock.calls.map(([email]) => email)).toEqual([active.email, locked.email]);
     asked.mockRestore();
     expect(mailed.slice(sent).map((entry) => entry.email)).toEqual([active.email, locked.email]);
+  });
+
+  it('SGN-05: answers a request whose provider send or audit write fails as an unknown address, with one error log of IDs only (S-3)', async () => {
+    const user = await person();
+    /** One request: its answer, cookies, floor and page, the address masked, and the lines it logged. */
+    const ask = async (email: string, using: Services = services) => {
+      const browser = new Browser();
+      slept.length = 0;
+      const from = logLines.length;
+      const answer = await step(resetRequest, browser, { email }, using);
+      const shown = await page(forgotPasswordPage, browser, { reason: 'code_sent' });
+      const seen = JSON.stringify({ answer, slept: [...slept], written: browser.written, deleted: browser.deleted, shown }).replace(email, '<typed>');
+      return { seen, lines: logLines.slice(from), failed: loggedSince(from, 'password reset request failed') };
+    };
+    const nobody = await ask(`${randomUUID()}@synthetic.test`);
+    expect(JSON.parse(nobody.seen)).toMatchObject({ answer: CODE_SENT, slept: [1500] });
+    expect(nobody.failed).toEqual([]);
+
+    const broken = vi.spyOn(services.provider, 'requestPasswordReset').mockRejectedValueOnce(new Error('synthetic provider failure'));
+    const provider = await ask(user.email);
+    broken.mockRestore();
+    const audit = await ask(user.email, servicesWith(DevAuthProvider, failing(/INSERT INTO audit_event/, 1)));
+    for (const [name, failed] of Object.entries({ provider, audit })) {
+      expect(failed.seen, name).toBe(nobody.seen);
+      expect(failed.failed, name).toHaveLength(1);
+      expect(Object.keys(failed.failed[0] ?? {}).sort(), name).toEqual(['error_code', 'level', 'msg', 'request_id', 'time']);
+      expect(failed.failed[0], name).toMatchObject({ level: 'error', error_code: 'Error' });
+      expect(failed.lines.join('\n'), name).not.toMatch(new RegExp(`${user.email}|synthetic`));
+    }
   });
 
   it('SGN-05: counts a request in `sign_in` by the typed address, shared with password attempts; the refusal reads alike and logs the request ID only', async () => {

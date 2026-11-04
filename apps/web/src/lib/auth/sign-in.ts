@@ -312,18 +312,21 @@ export class SignInFlow {
    * active account with a second factor: an account with none would be offered enrolment after a reset, so a mailbox
    * would be enough to take it. A locked account still gets one: the lock stays after the reset. The request is
    * recorded for every account, the actor being the account named, not a proven person (`unverified_request`); an
-   * unknown address has no actor and records nothing. Every path, a thrown one included, takes at least the floor, and
-   * the wait comes after every connection is given back.
+   * unknown address has no actor and records nothing. A failed send or audit write is logged at error with IDs only and
+   * answered like every other path: only an account reaches either, so a different answer would mark the accounts
+   * whenever the provider fails (review S-3; ADR 0081 A2). Every path, a thrown one included, takes at least the floor,
+   * and the wait comes after every connection is given back.
    */
   async requestPasswordReset(email: string, context: SignInContext): Promise<Extract<Pending, { step: 'reset' }>> {
     const started = this.now();
     try {
       const account = await this.account({ email });
       if (account?.status === 'active' && account.mfa_enrolled) {
-        await this.deps.provider.requestPasswordReset(email, context.requestId);
+        await this.unlessFailed(context, () => this.deps.provider.requestPasswordReset(email, context.requestId));
       }
       if (account !== undefined) {
-        await this.audit(account.user_id, 'password_reset_requested', context.requestId, 'unverified_request');
+        const userId = account.user_id;
+        await this.unlessFailed(context, () => this.audit(userId, 'password_reset_requested', context.requestId, 'unverified_request'));
       }
       return { step: 'reset', email };
     } finally {
@@ -334,6 +337,15 @@ export class SignInFlow {
       } else if (elapsed < RESET_REQUEST_FLOOR_MS) {
         await this.sleep(RESET_REQUEST_FLOOR_MS - elapsed);
       }
+    }
+  }
+
+  /** A reset request's send or audit write: a failure is logged with IDs only and not rethrown (review S-3). */
+  private async unlessFailed(context: SignInContext, work: () => Promise<void>): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      this.deps.logger.error('password reset request failed', { request_id: context.requestId, error_code: errorCode(error) });
     }
   }
 
