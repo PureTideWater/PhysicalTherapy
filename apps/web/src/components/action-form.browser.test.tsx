@@ -375,7 +375,8 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.fill('#field-password', TYPED_PASSWORD);
     await onRefresh(page, { requestKey: 'synthetic-request-key-2', person: PERSON_B });
     await refusedWith(page, STALE);
-    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    // Its own 10 s, under the test's 30 s: a cleared summary that never comes names this wait, not the test's timeout.
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`, { timeout: 10_000 });
     // Settled: the stale refusal's summary and the cleared one that replaced it.
     expect(await shown(page)).toBe(2);
     expect(await page.textContent(TITLE)).toBe('Form cleared');
