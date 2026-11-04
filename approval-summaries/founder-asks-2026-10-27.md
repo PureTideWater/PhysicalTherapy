@@ -58,3 +58,7 @@ as on #39. In order:
 - #42's legal text: signed off as written.
 - Social Security and phone numbers in letters are redacted by pattern before the model reads them (PRD 14): item `co-001/redact-ssn-phone`.
 - Dependabot #33: closed, not merged.
+
+## Granted 2026-11-04 (~09:55 UTC): the release loader's freeze
+Sent in Lane A's orchestrator session in reply to the request for the founder's grant: "Granted: an exception to reconciliation-001's content-pipeline check for the release loader's freeze, as written: after a load commits, loadRelease runs VACUUM (FREEZE, ANALYZE) rule_record and, while pg_class shows rule_record not all-frozen, pauses and runs VACUUM (FREEZE) rule_record again, for up to 180 seconds; its result gains frozen, false only when the wait runs out; loading an already-loaded release writes nothing and runs the same freeze; release:load warns on stderr when not yet frozen; release:rollback does not wait. Everything else in the pipeline stays frozen. It also covers PR 6b-3's original VACUUM."
+The fix goes into SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`). Its ADR and reconciliation-001 record the grant.

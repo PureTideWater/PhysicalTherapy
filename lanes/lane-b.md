@@ -1453,3 +1453,7 @@ HANDOFF.md; LANES.md rule 10).
 - The wording departures D-1 to D-4 from the UX review's ruled words are listed in the PR body. Taken under the co-founder's "decide without asking" direction; none is legal text.
 - Two reviews are running.
 - Handed to Lane A (not blocking): alarms on password-reset requests per user and on undelivered requests (R-11); branded wording for Cognito's code email; a "your password was changed" email.
+
+### 2026-11-04 09:55 UTC: the release loader's freeze exception granted
+- Recorded in `approval-summaries/founder-asks-2026-10-27.md`. The schema chain puts the loader fix (its failing-first patch: 4 files) into SUITE-CAP-1b. That fixes the flaky `tools/release/load.db.test.ts` at its root.
+- SS-01 (#104) awaits the founder's commit of its suggested approval line (https://github.com/PureTideWater/PhysicalTherapy/pull/104#discussion_r4465978371).
