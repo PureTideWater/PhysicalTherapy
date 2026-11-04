@@ -21,6 +21,7 @@ import { CommandError, DockerRuntime, ProcessRuntime, type Runtime, type Service
 import { HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginUrl, loginsEnvironment, workerEnvironment } from '../screening-capacity/env';
 import { MIB, NETWORK_DELAY_MS, cpuLayout, harnessCpus, postgresLimit, productionLimits, runnerTooSmall, taskLimit } from '../screening-capacity/limits';
 import { memoryEvents, workerStarted } from '../screening-capacity/measure';
+import { type MemoryProbe, startMemoryProbe } from './memory-probe';
 import { type AdvisoryLockSamples, type CapacityMeasurements, type JobHeap, type JobOutcome, type JobPhase, type SampledPeriod, type WindowsQuery, type WorkerMemory, advisoriesOutput, errorCodes, jobHeaps, markdown, report } from './checks';
 import {
   FULL_SIZE,
@@ -418,6 +419,11 @@ async function main(): Promise<number> {
   let owner: DatabaseClient | null = null;
   let app: DatabasePool | null = null;
   let queue: PgBossQueue | null = null;
+  // WIP instrumentation (co-001/wip-sc1b-mem-1): the worker's cgroup split, printed to the log.
+  let probe: MemoryProbe | null = null;
+  const probePhase = async (label: string) => {
+    await probe?.phase(label).catch(() => undefined);
+  };
   say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB; runtime ${opts.runtime}; worker ${String(workerLimit.cpus)} vCPU and ${String(workerLimit.memoryMiB)} MiB on CPUs ${layout.web}: ${command.join(' ')}`);
   try {
     const problems = runnerTooSmall(runner, limits);
@@ -500,6 +506,14 @@ async function main(): Promise<number> {
         await sleep(500);
       }
     });
+    probe = await startMemoryProbe({
+      version: runtime.cgroupVersion,
+      docker: opts.runtime === 'docker' ? 'tp-capacity-worker' : null,
+      dirs: runtime.cgroupVersion === 2 ? ['/sys/fs/cgroup/tp-capacity-worker'] : ['/sys/fs/cgroup/memory/tp-capacity-worker'],
+      dataDir: runtime.dataDir.host,
+      say,
+    }).catch(() => null);
+    await probePhase('setup');
     queue = new PgBossQueue(loginUrl(ownerHarness, logins.queue), createLogger());
     const queued = async (what: string, name: 'price' | 'triage' | 'audit_report' | 'parse_835' | 'reconcile', phase: JobPhase, send: (q: PgBossQueue) => Promise<string | null>): Promise<Queued> => ({
       what,
@@ -541,6 +555,7 @@ async function main(): Promise<number> {
     const bReport = await requestReport(seeding, b, bRun);
     // The concurrent phase: A's run, B's report and C's four parses, queued together.
     const aRun = await createRun(seeding, a, release.releaseNo);
+    await probePhase('concurrent');
     const concurrentMemory = sampling('the concurrent phase');
     const concurrent = await timed('concurrent phase', async () => {
       const sent = await Promise.all([
@@ -554,10 +569,12 @@ async function main(): Promise<number> {
     jobs.push(...concurrent);
     say(`concurrent phase: ${concurrent.map((job) => `${job.what} ${job.state ?? 'unread'}`).join(', ')}`);
     // The chain: A's triage, then A's audit report, each job's memory sampled alone.
+    await probePhase('A triage');
     const triageMemory = sampling('A’s triage');
     jobs.push(...(await timed('A triage', async () => waitForJobs(owner as DatabaseClient, [await queued('A triage', 'triage', 'chain', (q) => q.enqueue('triage', { practice_id: a.practiceId, pricing_run_id: aRun }))], triageMemory.tick))));
     triageMemory.close();
     const aReport = await requestReport(seeding, a, aRun);
+    await probePhase('A report');
     const reportMemory = sampling('A’s audit report');
     jobs.push(
       ...(await timed('A audit report', async () =>
@@ -574,6 +591,7 @@ async function main(): Promise<number> {
     }
     const exportId = await stagePostingExport(seeding, a, reprocessed.postingExport);
     say(`A's reconcile: ${String(reprocessed.lines)} actionable lines in ${String(reprocessed.files.length)} reprocessing 835s`);
+    await probePhase('A reconcile');
     const reconcileMemory = sampling('A’s reconcile');
     await timed('A reconcile', async () => {
       const parses = await Promise.all(
@@ -586,6 +604,7 @@ async function main(): Promise<number> {
     // 7c, the large jobs together (D20): A's second report, D's triage, E's price job and C's second four parses.
     const aSecondReport = await requestReport(seeding, a, aRun);
     const eRun = await createRun(seeding, e, release.releaseNo);
+    await probePhase('together');
     const togetherMemory = sampling('the large jobs together');
     const together = await timed('large jobs together', async () => {
       const sent = await Promise.all([
@@ -601,6 +620,7 @@ async function main(): Promise<number> {
     togetherMemory.close();
     jobs.push(...together);
     say(`large jobs together: ${together.map((job) => `${job.what} ${job.state ?? 'unread'}`).join(', ')}`);
+    await probePhase('readback');
     // Read back, before the worker stops.
     const ownerNow = owner;
     run = await asOwner(ownerNow, [a.practiceId], async () => {
@@ -620,6 +640,8 @@ async function main(): Promise<number> {
     advisoryLocks = await locks.stop();
     locks = null;
     memory = await readMemory(runtime, workerLimit.memoryMiB * MIB, periods);
+    await probe?.stop().catch(() => undefined);
+    probe = null;
     lines = await runtime.logs('worker');
     codes = errorCodes(lines);
     await runtime.stopService('worker');
@@ -639,6 +661,7 @@ async function main(): Promise<number> {
       codes = lines === null ? null : errorCodes(lines);
     }
   } finally {
+    await probe?.stop().catch(() => undefined);
     if (locks !== null) {
       advisoryLocks = await locks.stop();
     }
