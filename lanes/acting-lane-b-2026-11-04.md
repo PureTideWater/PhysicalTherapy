@@ -30,6 +30,7 @@ The schema chain runs alongside in session_019i9ifEG147aKfNHEAsoS7h (Lane A's ow
 2. **Merge the base once, right before the push that precedes the merge.** Never chase the base otherwise.
    - Order matters only between conflicting pairs, and the PR merged second resolves: #75 then #85 then #84; #86 then #96.
    - Any other verified, green PR merges as soon as it is ready.
+2a. **The up-to-date rule (since the repository went public again, 2026-11-04).** GitHub refuses a merge when the base moved after the PR's last CI run. Before merging, check that origin/claude/build-platform is an ancestor of the head. If it is not, merge the base again (rule 6), run the fast checks and the generators, push, wait for CI to go green, then merge. Merge promptly once CI is green on an up-to-date head.
 3. **Review depth matches risk.**
    - Two adversarial reviews, each finding checked by a skeptic, for a change to:
      - the database (a migration or a function);
