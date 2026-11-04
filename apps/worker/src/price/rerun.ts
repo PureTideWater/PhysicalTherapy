@@ -45,16 +45,21 @@ export interface RunSince {
 }
 
 export async function rerunReasons(client: ScopeClient, run: RunSince): Promise<RerunReason[]> {
-  const { rows } = await client.query<Record<RerunReason, boolean>>(
+  const { rows } = await client.query<Record<RerunReason, boolean> & { found: boolean }>(
     `WITH r AS (SELECT created_at, release_no FROM pricing_run WHERE id = $2 AND practice_id = $1)
-     SELECT EXISTS (SELECT 1 FROM payer_plan_mapping m, r WHERE m.practice_id = $1 AND m.created_at > r.created_at) AS mapping_changed,
+     SELECT (SELECT count(*) FROM r) = 1 AS found,
+            EXISTS (SELECT 1 FROM payer_plan_mapping m, r WHERE m.practice_id = $1 AND m.created_at > r.created_at) AS mapping_changed,
             coalesce(current_rule_release() > (SELECT r.release_no FROM r), false) AS release_published,
             EXISTS (SELECT 1 FROM rule_release_withdrawal w, r WHERE w.release_no = r.release_no) AS release_withdrawn,
             EXISTS (SELECT 1 FROM contract_version v, r WHERE v.practice_id = $1 AND v.signed_off_at > r.created_at) AS version_signed_off`,
     [run.practiceId, run.pricingRunId],
   );
   const found = rows[0];
-  return RERUN_REASONS.filter((reason) => found?.[reason] === true);
+  // A run this scope cannot read, or not the practice's, fails closed: never read as a run with nothing changed.
+  if (found?.found !== true) {
+    throw new RerunRefusedError('not_found', NOT_FOUND);
+  }
+  return RERUN_REASONS.filter((reason) => found[reason] === true);
 }
 
 /**
