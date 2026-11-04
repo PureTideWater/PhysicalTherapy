@@ -27,6 +27,20 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   reviews as default agents with their briefs, skeptics; one fix round with the full suite and Stryker; verification);
   script archived.
 
+- 2026-11-05T00:00:00Z: **draft #118** at 82bafc0a (base 35422a92 merged; CI green, 22 runs). Built by wf_cdca5fda-8a5 (7 agents):
+  - The fix: create.ts reads the cut-off as `now()::text` in the creating transaction, so it equals the run's created_at,
+    which the job reads back as text. RunScope.loadedBy is narrowed to string.
+  - The sweep fixed two more sites: rerun.ts rerunReasons now compares in SQL, and location.ts runsPricedElsewhere is
+    one statement. The access-log cursor (settings.ts:837) is left to #49.
+  - Red first: cut-off.db.test.ts failed 10/10 and passes 10/10. Rates: Date 0.46% to 4.04% (by gap mix), text 0% every
+    time.
+  - PRC-32 added. The engine freeze holds; Stryker selected no shard.
+  - Reviews (payment engine; correctness; default agents with their briefs) reported 8 nits, no B or S, all confirmed.
+  The fix round's agent returned early with SIX UNPUSHED commits, 82bafc0a..bf33d5b9: the console status_since sweep fix,
+  rerunReasons failing closed, updatedAt dropped, and docs. Its suite had died, so verification was NOT VERIFIED
+  (unpushed head). Saved as WIP ref `co-001/wip-pricing-run-cutoff` (bf33d5b9). Finishing workflow wf_8f9d925a-a9f: a
+  delta review with skeptics, the full suite once, push, description, verification. Subscribed to #118.
+
 ## Waiting on someone
 - None.
 
