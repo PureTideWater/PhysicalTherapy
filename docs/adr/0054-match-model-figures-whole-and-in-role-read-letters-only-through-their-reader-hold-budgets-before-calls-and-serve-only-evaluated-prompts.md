@@ -323,13 +323,19 @@ this amendment holds.
   it, so after any word before one (`Patient ID 1234.5678`, `Policy number 1234/5678`, `Member's ID 1234.5678`,
   `Member Identification Number 1234.5678`, `Policy # 1234.5678`, `ID 1234.5678`; `ANY_IDENTIFIER_LABEL`). Review
   finding phi-G2-regress-1 (2026-11-04) found that G2's narrowing had sent these, the patient's own number among
-  them: the narrowing keeps a deadline, a whole written date, so it applies to whole written dates alone.
+  them: the narrowing keeps a deadline, a whole written date, so it applies to whole written dates alone. Since review
+  finding phi-numero-glued (2026-11-04) a number glued to a label word with no space before it is read as after a
+  label of that word's kind (`GLUED_LABEL`: a head word, `ID`, `Nbr`, `Num`, `Ref`, or `No` with a capital N, a whole
+  word or after a small letter): `ICN99887766`, `Member ID12345678`, and `Claim №99887766`, `Member №ZZ12345678` and
+  `Claim№99887766`, which NFKC writes `No99887766`, `NoZZ12345678` and `ClaimNo99887766`.
   The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
   digits included (review finding G1, 2026-11-02): a run of digits alone that a label introduces also joins over `.`
   and `/`, after any label when the run is no whole written date and after one of the head-word labels when it is, as
   the matcher reads them (`ICN 1234.5678` offers 12345678, `Claim 1955/07/14` 19550714, `Member ID: 7654.321` 7654321,
-  and since phi-G2-regress-1 `Patient ID 1234.5678` 12345678, never `ID 2027/03/15` 20270315), so
-  `more_than_one_patient` sees another patient's number written so. Digits alone are kept in two
+  and since phi-G2-regress-1 `Patient ID 1234.5678` 12345678, never `ID 2027/03/15` 20270315), and they read the
+  text with each label word glued to a number set apart too (`unglued`, since phi-numero-glued: `ICN99887766` and
+  `Claim №99887766` offer 99887766, `Member №ZZ12345678` ZZ12345678), so `more_than_one_patient` sees another patient's
+  number written so. Digits alone are kept in two
   cases only. A claim's digits written as an amount, after a currency sign and with cents (`$15000.00` for claim
   15000), are kept: with their cents they are never the claim's own written form; `$555001`, `555001.01` and
   `555001,12` are the claim's. A member ID is never read as an amount (`$12345678` for member 12345678 is replaced).
@@ -433,8 +439,10 @@ a whole calendar date is no label, so that date is kept as an ordinary letter's 
 date are the number after any label since review finding phi-G2-regress-1); a
 claim's label before a member ID written as a whole calendar date, or a member's label before a claim's number written
 so, keeps the date (`Claim# 1955-07-14` for member 19550714); a label more than 40 characters before its number, or
-with other words between them (`Claim number for this service: 2026-04-26`), is none; and the katakana prolonged sound
-mark U+30FC, a letter inside Japanese words and names, joins no number (`1234ー5678`). Recorded with the second review round: a
+with other words between them (`Claim number for this service: 2026-04-26`), is none; a number glued to a word that
+is no label word (`Room AB99887766`), or to `NO` after a capital letter (`CLAIMNO99887766`, which cannot be told from a
+word ending in "NO"), is not read as labeled (review finding phi-numero-glued); and the katakana prolonged sound mark
+U+30FC, a letter inside Japanese words and names, joins no number (`1234ー5678`). Recorded with the second review round: a
 date of birth with its day or month spelled out as a word (`MARCH THIRD 1961`), which `datesIn` does not read; and the
 `)` after a member ID written `ZZ(1234567)`, which is sent after the placeholder (`[MEMBER_ID])`) and holds no digit.
 

@@ -584,16 +584,30 @@ const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
  */
 const ANY_IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD.replace(/\(\?<\w+>/gu, '(?:')}|(?:\\b(?:id|number|nbr|no|num|identification|reference)\\b\\.?|#)(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*)${LABEL_END}`, 'iu');
 
+/**
+ * A label word glued to the number it introduces, with no space ("ICN99887766", "Member ID12345678", and "№99887766",
+ * which NFKC writes "No99887766": review finding phi-numero-glued), ending where the number begins: a head word, "id",
+ * "nbr", "num", "ref", or "No" with a capital N, a whole word or after a small letter ("ClaimNo99887766" from
+ * "Claim№99887766": CAMEL_NO, written "No" after a small letter). The number is then read as after a label of that kind.
+ */
+const GLUED_LABEL = /(?<![\p{L}\p{N}])(?:(?<claim>claim|icn|pcn|dcn|tcn|acct)|(?<member>member|subscriber)|(?<no>no)|id|nbr|num|ref)$/iu;
+const CAMEL_NO = /\p{L}no$/iu;
+
 /** What an identifier label introduces: a claim's number, a member ID, or either ("Ref", "No.", "ID:", "number is", "Re:"). */
 type LabelKind = 'claim' | 'member' | 'either';
 
 /**
- * The kind of the identifier label (IDENTIFIER_LABEL) that ends at a position of text, or null when none does. `written`
- * gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never "no.").
+ * The kind of the identifier label (IDENTIFIER_LABEL, or GLUED_LABEL when `glued`) that ends at a position of text, or
+ * null when none does. `written` gives the code point a letter wrote at a position, where "No" must be capitalized
+ * ("No. 2027-03-15", never "no.").
  */
-function labelBefore(text: string, at: number, written: (index: number) => string): LabelKind | null {
+function labelBefore(text: string, at: number, written: (index: number) => string, glued = false): LabelKind | null {
   const from = Math.max(0, at - 40);
-  const match = IDENTIFIER_LABEL.exec(text.slice(from, at));
+  const before = text.slice(from, at);
+  const match = (glued ? GLUED_LABEL : IDENTIFIER_LABEL).exec(before);
+  if (glued && match === null && CAMEL_NO.test(before) && /^\p{Ll}N$/u.test(written(at - 3) + written(at - 2)) && written(at - 1) === 'o') {
+    return 'either';
+  }
   if (match === null || (match.groups?.no !== undefined && !capital(written(from + match.index)))) {
     return null;
   }
@@ -675,6 +689,26 @@ function matchesIn(normal: string, subject: Subject): Found[] {
         const fits = labelFor(view, normal, match.index, form.kind) || (anyLabelAt(view.text, match.index) && !writtenAsDate(normal, range));
         if (fits && !(form.kind === 'claim' && isAmount(normal, range))) {
           found.push({ ...range, kind: form.kind, claim: form.claim });
+        }
+      }
+    }
+    if (form.kind === 'claim' || form.kind === 'member') {
+      // A number glued to a label word with no space before it ("ICN99887766", "Member ID12345678", "No99887766" from
+      // "№99887766": review finding phi-numero-glued), which BEFORE alone never reads: a letter stands before it. It is
+      // read as after a label of that kind, over "." and "/" too for digits alone, a whole written date only after a
+      // label of the number's kind.
+      for (const source of [form.pattern, form.labeled]) {
+        if (source === null) {
+          continue;
+        }
+        const glued = new RegExp(`(?<=\\p{L})${source.source.slice(BEFORE.length)}`, source.flags);
+        for (let match = glued.exec(view.text); match !== null; match = glued.exec(view.text)) {
+          const range = inNormal(view, match.index, match.index + match[0].length);
+          const label = labelBefore(view.text, match.index, (index) => writtenAt(view, normal, index), true);
+          const fits = label !== null && (label === 'either' || label === form.kind || !(form.digitsOnly && writtenAsDate(normal, range)));
+          if (fits && !(form.kind === 'claim' && form.digitsOnly && isAmount(normal, range))) {
+            found.push({ ...range, kind: form.kind, claim: form.claim });
+          }
         }
       }
     }
@@ -947,20 +981,33 @@ function labeledDigitsJoin(between: string, _left: string, right: string, run: {
 }
 
 /**
+ * The scanned text with a space after each label word glued to the number it introduces (GLUED_LABEL's words before a
+ * digit, and "No" or "NO", a whole word or after a small letter, before a run of capitals and digits that holds a
+ * digit: "ICN99887766", "Member ID12345678", and "No99887766", "ClaimNo99887766" and "NoZZ12345678" from "№99887766",
+ * "Claim№99887766" and "№ZZ12345678"), so the number is a token of its own (review finding phi-numero-glued). The
+ * candidates read it beside the text as it is.
+ */
+const unglued = (scanned: string) =>
+  scanned.replace(/(?<![\p{L}\p{N}])(?:claim|icn|pcn|dcn|tcn|acct|member|subscriber|id|nbr|num|ref)(?=\p{N})/giu, '$& ').replace(/(?:(?<![\p{L}\p{N}])N[Oo]|(?<=\p{Ll})No)(?=[\p{Lu}\p{N}]*\p{N})/gu, '$& ');
+
+/**
  * The runs of the redacted text that could be another patient's member ID or claim number: each token
  * with a digit in it, and each run of up to three tokens joined as letterJoins reads it: anywhere over
  * white space, dashes, "_", "|", "\\", invisible characters and the other number joiners (NUMBER_JOINERS:
  * grouping apostrophes and primes, "~", middle dots, bullets, ";", double quotes), next to a letter over ".", "/",
  * ":", "#" or "(" too ("ZZ 1234567", "1234|5678", "12'345'678", "ZZ_7654321", "ZZ/7654321", "ZZ#7654321",
  * "ID:ZZ7654321"), and digits alone over "." or "/" too after an identifier label (labeledDigitsJoin: "ICN 1234.5678",
- * "Patient ID 1234.5678"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
+ * "Patient ID 1234.5678"), read on the text as it is and with each label word glued to its number set apart (unglued:
+ * "ICN99887766", "№99887766"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
  * (a redacted letter's [CLAIM_n] number its claims, never five digits; a letter's own "[CLAIM_7654321]"
  * offers 7654321).
  */
 export function identifierCandidates(text: string): string[] {
   const scanned = masked(text);
   const keep = (run: string) => /\d/.test(run) && run.length >= 5;
-  return [...new Set([...identifierTokenRuns(scanned, { joins: letterJoins, maxTokens: 3, keep }), ...identifierTokenRuns(scanned, { joins: labeledDigitsJoin, maxTokens: 3, keep })])].sort();
+  const split = unglued(scanned);
+  const readings = split === scanned ? [scanned] : [scanned, split];
+  return [...new Set(readings.flatMap((reading) => [...identifierTokenRuns(reading, { joins: letterJoins, maxTokens: 3, keep }), ...identifierTokenRuns(reading, { joins: labeledDigitsJoin, maxTokens: 3, keep })]))].sort();
 }
 
 // ---------------------------------------------------------------------------------------------------

@@ -1026,7 +1026,9 @@ over time", S2 as "The practice's access log", S3 under "The audit trail", S4 un
     (review finding R5-3; the letter path records the same gap, ADR 0054). Folding every Unicode decimal digit to 0-9
     on both sides is the proposal in "Revisit when";
   - an identifier with a prefix or suffix glued on (a person-code or dependent suffix, payer letters, a check digit:
-    "ZZ712003401" or "XYZZZ7120034" against a stored "ZZ7120034"), since the match is exact on whole tokens. It arises
+    "ZZ712003401" or "XYZZZ7120034" against a stored "ZZ7120034"), since the match is exact on whole tokens; among
+    these, a label word glued to the identifier ("ICN98765432", and "№98765432", which NFKC writes "No98765432"), which
+    the letter path reads since review finding phi-numero-glued (2026-11-04: ADR 0054, Numbers). It arises
     only when the page prints a form neither the 835's patient (QC) nor its insured (IL) segment carried: the loader
     stores both (`apps/worker/src/parse/loader.ts`);
   - leading zeros dropped ("12345678" against a stored "0012345678") and spreadsheet artefacts such as thousands

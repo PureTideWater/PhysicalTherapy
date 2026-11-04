@@ -589,6 +589,33 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     expect(identifierCandidates('Also 1234.5678')).not.toContain('12345678');
   });
 
+  it('reads a number glued to its label, "№" (which NFKC writes "No") among them, as after that label (review finding phi-numero-glued)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ12345678', '12345678'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315', '99887766'] }];
+    for (const [written, expected, candidate] of [
+      ['Claim №99887766 denied', 'Claim No[CLAIM_1] denied', '99887766'],
+      ['Member №12345678', 'Member No[MEMBER_ID]', '12345678'],
+      ['Member №ZZ12345678', 'Member No[MEMBER_ID]', 'ZZ12345678'],
+      ['Claim№99887766', 'ClaimNo[CLAIM_1]', '99887766'],
+      ['ICN99887766 denied', 'ICN[CLAIM_1] denied', '99887766'],
+      ['Member ID12345678 on file', 'Member ID[MEMBER_ID] on file', '12345678'],
+      ['CLAIM NO99887766', 'CLAIM NO[CLAIM_1]', '99887766'],
+      ['ICN9988.7766', 'ICN[CLAIM_1]', '99887766'],
+      ['Claim №2027-03-15', 'Claim No[CLAIM_1]', '20270315'],
+      ['Claim № 99887766', 'Claim No [CLAIM_1]', '99887766'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, written).toBe(expected);
+      expect(holdsIdentifier(written, patient, claims), written).toBe(true);
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      expect(identifierCandidates(written.normalize('NFKC')), written).toContain(candidate);
+    }
+    // Only a label word: the patient's digits glued to another word, or a glued word that is no label, stay.
+    for (const written of ['Room AB99887766', 'Casino 2027-03-15', 'Nov 2027-03-15']) {
+      expect(redactLetter(written, patient, claims).text, written).toBe(written);
+    }
+  });
+
   it('reads a label’s end through "=", an en or em dash and the minus sign (review finding phi-label-end-dash)', () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['12345678'] };
     const claims: LetterClaim[] = [
