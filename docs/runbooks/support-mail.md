@@ -66,7 +66,10 @@ account's name. Work from the ticket ID and the user ID only, never the message'
   as an address in use; from the console as "another identity", after Cognito has already mailed a temporary password
   to a new user), and moving an account to a new subject needs a database change that does not exist yet
   (docs/adr/0088, Revisit when).
-- **An invitation answered "this email belongs to another identity; ask an engineer to reconcile it".** If the address
+- **An invitation answered "this email belongs to another identity; ask an engineer to reconcile it".** Only the
+  console says this; Settings answers "this address cannot be invited from here", as for any address in use, so an
+  administrator who reports that answer for a person with no account here is asked to have a platform administrator add
+  them, and the console then shows this answer if it applies. If the address
   already has an account here, its Cognito subject no longer matches: escalate the ticket ID to the founder (the
   previous item's database change). If it has none, a Cognito user for the address exists and has signed in, so an
   invitation is never linked to it (docs/adr/0088 D4): whoever holds its password would take the invitation. Check with

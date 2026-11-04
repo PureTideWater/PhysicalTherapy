@@ -101,9 +101,11 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
   that has signed in.** No role holds `AdminSetUserPassword` or `AdminResetUserPassword`, and both linking paths run
   only when no app row exists for the email. `ensureUser` returns `{ sub, created, neverSignedIn }` from the
   `AdminGetUser` response it already fetches (no new grant); the dev twin reads its record's temporary flag. From
-  Settings and from the console, an existing Cognito user that has signed in is refused with the console's words "this
-  email belongs to another identity; ask an engineer to reconcile it" before any row is written; one that never signed
-  in is linked, and its invitation is re-sent after the rows are written (Cognito mails a new temporary password and
+  Settings and from the console, an existing Cognito user that has signed in is refused before any row is written:
+  Settings answers as for any address in use ("this address cannot be invited from here"), so an organization never
+  learns that Cognito knows an address (such a user is usually another organization's invitation that rolled back), and
+  the console, a platform administrator's, names it: "this email belongs to another identity; ask an engineer to
+  reconcile it". One that never signed in is linked, and its invitation is re-sent after the rows are written (Cognito mails a new temporary password and
   voids the old one). The console's known-user path is unchanged. Anything else is an engineer's reconcile, run in the
   founder's break-glass session (the operator role holds no Cognito action and is not widened):
   `docs/runbooks/support-mail.md`, "Sign-in help tickets".
