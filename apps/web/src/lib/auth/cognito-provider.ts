@@ -6,6 +6,8 @@ import {
   type AuthenticationResultType,
   CompleteWebAuthnRegistrationCommand,
   type CognitoIdentityProviderClient,
+  ConfirmForgotPasswordCommand,
+  ForgotPasswordCommand,
   InitiateAuthCommand,
   ListWebAuthnCredentialsCommand,
   RespondToAuthChallengeCommand,
@@ -13,21 +15,26 @@ import {
   StartWebAuthnRegistrationCommand,
   VerifySoftwareTokenCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
+import { type Logger, createLogger } from '@tp/observability';
 
 import { passwordProblems } from './password';
-import type {
-  AuthProvider,
-  AuthStep,
-  AuthenticationResponseJSON,
-  FailureStage,
-  KeyChallenge,
-  MfaMethod,
-  NewPasswordStep,
-  PublicKeyCredentialCreationOptionsJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-  RegistrationResponseJSON,
-  TotpSetup,
+import {
+  type AuthProvider,
+  type AuthStep,
+  type AuthenticationResponseJSON,
+  ClientCredentialError,
+  type EnsuredUser,
+  type FailureStage,
+  type KeyChallenge,
+  type MfaMethod,
+  type NewPasswordStep,
+  type PasswordResetResult,
+  type PublicKeyCredentialCreationOptionsJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
+  type RegistrationResponseJSON,
+  type TotpSetup,
 } from './provider';
+import { type ClientSecret, clientSecretValue, secretHash } from './secret-hash';
 import { totpUri } from './totp';
 
 /**
@@ -38,6 +45,12 @@ import { totpUri } from './totp';
  * application's own session exists the refresh token is revoked: the application's session, not
  * Cognito's tokens, carries the user from then on. Device tracking is off in the pool (a remembered
  * device would skip MFA), so devices are the application's (docs/adr/0016).
+ *
+ * The web client is confidential once its secret is set (docs/adr/0088, D1): every call that takes the client's
+ * credential carries SECRET_HASH or SecretHash over the username that request sends (a challenge's over Cognito's
+ * USERNAME, never the typed email), and RevokeToken the secret itself; no other call carries either. A refused
+ * credential is a ClientCredentialError (D2), told apart from a wrong password, a wrong code or a stale step before
+ * any of them. Without the secret (the public client, release N) nothing is sent.
  *
  * Written against the official SDK; tested with a mocked client (no AWS account is reachable from
  * where this was built).
@@ -56,6 +69,13 @@ export interface CognitoProviderOptions {
   readonly userPoolId: string;
   readonly clientId: string;
   readonly verifier: IdTokenVerifier;
+  /**
+   * The confidential client's secret (docs/adr/0088, D1), held in its wrapper; absent for the public client of
+   * release N, when no hash is sent.
+   */
+  readonly clientSecret?: ClientSecret;
+  /** Where a swallowed reset refusal or revoke failure is logged, by its error code and the request alone; standard output by default. */
+  readonly logger?: Logger;
 }
 
 interface Challenge {
@@ -64,6 +84,8 @@ interface Challenge {
   /** The USERNAME the responses carry. */
   readonly u: string;
   readonly email: string;
+  /** The user's name as Cognito gave it (USERNAME or USER_ID_FOR_SRP, the internal UUID here), when it gave one: never the email. */
+  readonly n?: string;
 }
 
 interface Grant {
@@ -83,12 +105,63 @@ function errorName(error: unknown): string {
   return typeof error === 'object' && error !== null && 'name' in error && typeof error.name === 'string' ? error.name : '';
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '';
+}
+
+/** Cognito's words for a missing or wrong secret hash or client secret (texts unverified: ADR 0088, Not verified here). */
+/**
+ * Any word about a secret or the client (review security-N5): Cognito's texts are unverified, and a miss would count the
+ * platform's failure against people and lock real accounts, so the match is wide. None of the person-facing texts
+ * (a wrong password, a disabled user, a stale session, a revoked token) names either.
+ */
+const CREDENTIAL_WORDS = /secret|\bclient\b/i;
+/**
+ * RevokeToken's narrower words: its refusal of a token issued to another client names the client too ("Token is not
+ * valid for the client"), and a revoke is never counted against a person, so only the secret's own words are taken.
+ */
+const REVOKE_CREDENTIAL_WORDS = /secret[ _]?hash|client secret/i;
+
+/**
+ * Whether Cognito refused the client's own credential (docs/adr/0088, D2): NotAuthorizedException with words about a
+ * secret or the client, or for RevokeToken, whose modelled errors have no NotAuthorizedException,
+ * UnauthorizedException with the same words (review infra-auth-IA-9). The message classifies only; it is never
+ * logged, since it names the client.
+ */
+export function isClientCredentialFailure(error: unknown, call: 'revoke' | 'other' = 'other'): boolean {
+  const name = errorName(error);
+  const named = name === 'NotAuthorizedException' || (call === 'revoke' && name === 'UnauthorizedException');
+  return named && (call === 'revoke' ? REVOKE_CREDENTIAL_WORDS : CREDENTIAL_WORDS).test(errorMessage(error));
+}
+
+/** Throws a ClientCredentialError in place of Cognito's refusal of the credential; returns for anything else. */
+function refuseCredential(error: unknown, call: 'revoke' | 'other' = 'other'): void {
+  if (isClientCredentialFailure(error, call)) {
+    throw new ClientCredentialError(errorName(error));
+  }
+}
+
 /** Wrong credentials. */
 const REJECTED = new Set(['NotAuthorizedException', 'UserNotFoundException', 'PasswordResetRequiredException', 'UserNotConfirmedException']);
 /** A wrong second factor. */
 const WRONG_CODE = new Set(['CodeMismatchException', 'ExpiredCodeException', 'EnableSoftwareTokenMFAException']);
 /** A step whose session expired: Cognito answers NotAuthorizedException for a stale session. */
 const STALE = new Set(['NotAuthorizedException', 'ExpiredCodeException']);
+
+/**
+ * ForgotPassword refusals that only a real account (invited or disabled in Cognito, no verified email) or a quota can
+ * cause: showing any would tell that the address has an account, so they are answered as success (ADR 0081, A2).
+ */
+const RESET_NOT_DELIVERED = new Set([
+  'UserNotFoundException',
+  'NotAuthorizedException',
+  'InvalidParameterException',
+  'LimitExceededException',
+  'CodeDeliveryFailureException',
+  'TooManyRequestsException',
+]);
+/** ConfirmForgotPassword's code problems and an unknown user: one refusal, never split by cause. */
+const RESET_REJECTED = new Set(['CodeMismatchException', 'ExpiredCodeException', 'LimitExceededException', 'TooManyFailedAttemptsException', 'UserNotFoundException', 'NotAuthorizedException']);
 
 /** The challenges this application answers, and the step each is. */
 const NEXT_STEPS: Readonly<Record<string, 'new_password_required' | 'mfa_setup_required' | 'mfa_required'>> = {
@@ -100,7 +173,9 @@ const NEXT_STEPS: Readonly<Record<string, 'new_password_required' | 'mfa_setup_r
 function parseChallenge(challenge: string): Challenge | undefined {
   try {
     const parsed = JSON.parse(challenge) as Partial<Challenge>;
-    return typeof parsed.s === 'string' && typeof parsed.u === 'string' && typeof parsed.email === 'string' ? (parsed as Challenge) : undefined;
+    return typeof parsed.s === 'string' && typeof parsed.u === 'string' && typeof parsed.email === 'string' && (parsed.n === undefined || typeof parsed.n === 'string')
+      ? (parsed as Challenge)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -117,15 +192,47 @@ function parseGrant(grant: string): Grant {
 export class CognitoAuthProvider implements AuthProvider {
   readonly name = 'cognito';
 
-  constructor(private readonly options: CognitoProviderOptions) {}
+  private readonly logger: Logger;
+
+  constructor(private readonly options: CognitoProviderOptions) {
+    this.logger = options.logger ?? createLogger();
+  }
+
+  /** SECRET_HASH over the username a request sends, for its AuthParameters or ChallengeResponses; nothing for the public client. */
+  private hash(username: string): { readonly SECRET_HASH?: string } {
+    const secret = this.options.clientSecret;
+    return secret === undefined ? {} : { SECRET_HASH: secretHash(secret, username, this.options.clientId) };
+  }
+
+  /** SecretHash over the username, for ForgotPassword and ConfirmForgotPassword; nothing for the public client. */
+  private secretHash(username: string): { readonly SecretHash?: string } {
+    const secret = this.options.clientSecret;
+    return secret === undefined ? {} : { SecretHash: secretHash(secret, username, this.options.clientId) };
+  }
+
+  /** Revokes a refresh token with the client's secret; a refused credential is a ClientCredentialError, anything else as thrown. */
+  private async revoke(token: string): Promise<void> {
+    const secret = this.options.clientSecret;
+    try {
+      await this.options.client.send(new RevokeTokenCommand({ ClientId: this.options.clientId, Token: token, ...(secret === undefined ? {} : { ClientSecret: clientSecretValue(secret) }) }));
+    } catch (error) {
+      refuseCredential(error, 'revoke');
+      throw error;
+    }
+  }
 
   private async identity(result: AuthenticationResultType, method: MfaMethod | null): Promise<AuthStep> {
     if (method === null) {
       // Tokens for a password alone (InitiateAuth with PASSWORD, or NEW_PASSWORD_REQUIRED answered):
       // the pool did not ask for a second factor, so no session may come of it (PRD 6: no PHI route
       // without MFA). The tokens are revoked and the sign-in fails loudly; the pool's MFA is misconfigured.
+      // A failed revoke is swallowed, but never a refused credential, which is the platform's failure (ADR 0088, D2).
       if (result.RefreshToken !== undefined) {
-        await this.options.client.send(new RevokeTokenCommand({ ClientId: this.options.clientId, Token: result.RefreshToken })).catch(() => undefined);
+        await this.revoke(result.RefreshToken).catch((error: unknown) => {
+          if (error instanceof ClientCredentialError) {
+            throw error;
+          }
+        });
       }
       throw new MfaNotProvenError();
     }
@@ -146,20 +253,20 @@ export class CognitoAuthProvider implements AuthProvider {
     response: { ChallengeName?: string; Session?: string; ChallengeParameters?: Record<string, string>; AuthenticationResult?: AuthenticationResultType },
     email: string,
     method: MfaMethod | null,
+    named?: string,
   ): Promise<AuthStep> {
     if (response.AuthenticationResult !== undefined) {
       return this.identity(response.AuthenticationResult, method);
     }
-    const challenge = JSON.stringify({
-      s: response.Session ?? '',
-      u: response.ChallengeParameters?.USERNAME ?? response.ChallengeParameters?.USER_ID_FOR_SRP ?? email,
-      email,
-    } satisfies Challenge);
+    // The name Cognito gave, in this answer or the step before it (a new password's MFA_SETUP), never the typed email:
+    // the enrolment rule matches the account by it (docs/adr/0088, D3; review security-S2).
+    const n = response.ChallengeParameters?.USERNAME ?? response.ChallengeParameters?.USER_ID_FOR_SRP ?? named;
+    const challenge = JSON.stringify({ s: response.Session ?? '', u: n ?? email, email, ...(n === undefined ? {} : { n }) } satisfies Challenge);
     const next = NEXT_STEPS[response.ChallengeName ?? ''];
     if (next === undefined) {
       throw new Error('Cognito asked for a challenge this application does not answer');
     }
-    return { kind: next, challenge };
+    return next === 'mfa_setup_required' && n !== undefined ? { kind: next, challenge, subject: n } : { kind: next, challenge };
   }
 
   private async respond(challenge: string, name: string, responses: Record<string, string>, method: MfaMethod | null, stage: FailureStage): Promise<AuthStep> {
@@ -168,11 +275,18 @@ export class CognitoAuthProvider implements AuthProvider {
       return { kind: 'expired' };
     }
     try {
+      // The hash is over the USERNAME this request sends (Cognito's, never the typed email), set after the spread.
       const response = await this.options.client.send(
-        new RespondToAuthChallengeCommand({ ClientId: this.options.clientId, ChallengeName: name as never, Session: opened.s, ChallengeResponses: { USERNAME: opened.u, ...responses } }),
+        new RespondToAuthChallengeCommand({
+          ClientId: this.options.clientId,
+          ChallengeName: name as never,
+          Session: opened.s,
+          ChallengeResponses: { USERNAME: opened.u, ...responses, ...this.hash(opened.u) },
+        }),
       );
-      return await this.next(response, opened.email, method);
+      return await this.next(response, opened.email, method, opened.n);
     } catch (error) {
+      refuseCredential(error);
       if (WRONG_CODE.has(errorName(error)) && stage !== 'password') {
         return { kind: 'rejected', stage };
       }
@@ -186,10 +300,15 @@ export class CognitoAuthProvider implements AuthProvider {
   async signIn(email: string, password: string): Promise<AuthStep> {
     try {
       const response = await this.options.client.send(
-        new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: email, PREFERRED_CHALLENGE: 'PASSWORD', PASSWORD: password } }),
+        new InitiateAuthCommand({
+          AuthFlow: 'USER_AUTH',
+          ClientId: this.options.clientId,
+          AuthParameters: { USERNAME: email, PREFERRED_CHALLENGE: 'PASSWORD', PASSWORD: password, ...this.hash(email) },
+        }),
       );
       return await this.next(response, email, null);
     } catch (error) {
+      refuseCredential(error);
       if (REJECTED.has(errorName(error))) {
         return { kind: 'rejected', stage: 'password' };
       }
@@ -259,14 +378,23 @@ export class CognitoAuthProvider implements AuthProvider {
   }
 
   async beginKeySignIn(email: string): Promise<KeyChallenge<PublicKeyCredentialRequestOptionsJSON>> {
-    const response = await this.options.client.send(
-      new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: email, PREFERRED_CHALLENGE: 'WEB_AUTHN' } }),
-    );
+    let response;
+    try {
+      response = await this.options.client.send(
+        new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: email, PREFERRED_CHALLENGE: 'WEB_AUTHN', ...this.hash(email) } }),
+      );
+    } catch (error) {
+      refuseCredential(error);
+      throw error;
+    }
     const options = response.ChallengeParameters?.CREDENTIAL_REQUEST_OPTIONS;
     if (response.ChallengeName !== 'WEB_AUTHN' || options === undefined) {
       throw new Error('Cognito did not offer a hardware-key challenge');
     }
-    const challenge = JSON.stringify({ s: response.Session ?? '', u: response.ChallengeParameters?.USERNAME ?? email, email } satisfies Challenge);
+    // The name Cognito gave, as next() takes it: RespondToAuthChallenge sends it as USERNAME and hashes over it, never
+    // over the typed email (docs/adr/0088, D1; review infra-auth-IA-1).
+    const n = response.ChallengeParameters?.USERNAME ?? response.ChallengeParameters?.USER_ID_FOR_SRP;
+    const challenge = JSON.stringify({ s: response.Session ?? '', u: n ?? email, email, ...(n === undefined ? {} : { n }) } satisfies Challenge);
     return { options: JSON.parse(options) as PublicKeyCredentialRequestOptionsJSON, challenge };
   }
 
@@ -309,12 +437,21 @@ export class CognitoAuthProvider implements AuthProvider {
 
   async release(grant: string): Promise<void> {
     const { r } = parseGrant(grant);
-    if (r !== undefined) {
-      await this.options.client.send(new RevokeTokenCommand({ ClientId: this.options.clientId, Token: r }));
+    if (r === undefined) {
+      return;
+    }
+    try {
+      await this.revoke(r);
+    } catch (error) {
+      if (error instanceof ClientCredentialError) {
+        throw error;
+      }
+      // The token lapses on its own; a revoke across a client replacement (ADR 0088, cutover) must not fail a sign-in.
+      this.logger.warn('provider token revoke failed', { error_code: errorName(error) || 'unknown' });
     }
   }
 
-  async ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }> {
+  async ensureUser(email: string): Promise<EnsuredUser> {
     const subOf = (attributes: readonly { Name?: string; Value?: string }[] | undefined): string => {
       const sub = attributes?.find((attribute) => attribute.Name === 'sub')?.Value;
       if (sub === undefined) {
@@ -334,26 +471,80 @@ export class CognitoAuthProvider implements AuthProvider {
           DesiredDeliveryMediums: ['EMAIL'],
         }),
       );
-      return { sub: subOf(created.User?.Attributes), created: true };
+      return { sub: subOf(created.User?.Attributes), created: true, neverSignedIn: true };
     } catch (error) {
       if (errorName(error) !== 'UsernameExistsException') {
         throw error;
       }
       const existing = await this.options.client.send(new AdminGetUserCommand({ UserPoolId: this.options.userPoolId, Username: email }));
-      return { sub: subOf(existing.UserAttributes), created: false };
+      // Only a user still on its temporary password has never signed in; any other status (or none) has, or may have.
+      return { sub: subOf(existing.UserAttributes), created: false, neverSignedIn: existing.UserStatus === 'FORCE_CHANGE_PASSWORD' };
     }
   }
 
-  async resendInvitation(email: string): Promise<void> {
+  async resendInvitation(email: string): Promise<boolean> {
     // Cognito sends the invitation again (with a new temporary password and a new validity period) only for a
-    // user still in FORCE_CHANGE_PASSWORD; it refuses one who has signed in.
+    // user still in FORCE_CHANGE_PASSWORD; it refuses one who has signed in, which is answered as not sent.
     try {
       await this.options.client.send(new AdminCreateUserCommand({ UserPoolId: this.options.userPoolId, Username: email, MessageAction: 'RESEND', DesiredDeliveryMediums: ['EMAIL'] }));
+      return true;
     } catch (error) {
       if (errorName(error) !== 'UnsupportedUserStateException') {
         throw error;
       }
+      return false;
     }
+  }
+
+  async requestPasswordReset(email: string, requestId?: string): Promise<void> {
+    // SecretHash over the typed address once the client is confidential; UserContextData does nothing on the Essentials
+    // plan. The masked CodeDeliveryDetails.Destination is never read, shown or logged. A refused credential is no
+    // refusal only an account could cause: it is thrown (ADR 0088, D2).
+    try {
+      await this.options.client.send(new ForgotPasswordCommand({ ClientId: this.options.clientId, Username: email, ...this.secretHash(email) }));
+    } catch (error) {
+      refuseCredential(error);
+      const code = errorName(error);
+      if (!RESET_NOT_DELIVERED.has(code)) {
+        // Our failure (the provider, the network): it can happen for any address, so it tells nothing.
+        throw error;
+      }
+      this.logger.warn('password reset request not delivered', { error_code: code, request_id: requestId ?? null });
+    }
+  }
+
+  async confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult> {
+    const problems = passwordProblems(password);
+    if (problems.length > 0) {
+      return { kind: 'invalid_password', problems };
+    }
+    try {
+      // It returns no tokens and opens no session: the next sign-in asks for the second factor.
+      await this.options.client.send(
+        new ConfirmForgotPasswordCommand({ ClientId: this.options.clientId, Username: email, ConfirmationCode: code, Password: password, ...this.secretHash(email) }),
+      );
+      return { kind: 'reset' };
+    } catch (error) {
+      refuseCredential(error);
+      const name = errorName(error);
+      if (RESET_REJECTED.has(name)) {
+        return { kind: 'rejected' };
+      }
+      if (name === 'InvalidPasswordException') {
+        // Unreachable while the pool's policy matches passwordProblems: no rule to name, as setNewPassword says it.
+        return { kind: 'invalid_password', problems: [] };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The start-up credential probe's one request (docs/adr/0088, D8): a choice-based sign-in for `username` with the
+   * hash and no password, resolving on any answer and rejecting with Cognito's error as it came (credential-probe.ts
+   * classifies it).
+   */
+  async probe(username: string): Promise<void> {
+    await this.options.client.send(new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: username, ...this.hash(username) } }));
   }
 
   async globalSignOut(sub: string): Promise<void> {

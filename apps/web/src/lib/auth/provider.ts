@@ -19,6 +19,19 @@ import type {
 
 export type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON };
 
+/**
+ * The provider refused this application's own client credential (docs/adr/0088, D2): a wrong or missing secret hash
+ * or client secret. It is the platform's failure, never the person's: the sign-in flow counts no failure, locks
+ * nothing and logs it as a security event. `code` is the provider's error name, for the log; the message is fixed
+ * text and never the provider's words, which name the client.
+ */
+export class ClientCredentialError extends Error {
+  override readonly name = 'ClientCredentialError';
+  constructor(readonly code: string) {
+    super('the identity provider refused this application’s client credential');
+  }
+}
+
 export type MfaMethod = 'totp' | 'webauthn';
 export type FailureStage = 'password' | 'mfa' | 'hardware_key';
 
@@ -33,8 +46,12 @@ export interface ProviderIdentity {
 export type AuthStep =
   /** First sign-in with a temporary password: the user chooses a new one. */
   | { readonly kind: 'new_password_required'; readonly challenge: string }
-  /** No second factor yet: the user enrolls TOTP before anything else. */
-  | { readonly kind: 'mfa_setup_required'; readonly challenge: string }
+  /**
+   * No second factor yet: the user enrolls TOTP before anything else, if the application allows it (docs/adr/0088, D3).
+   * `subject`: the provider's own name for the user who is enrolling (user.cognito_sub), when the provider named one;
+   * never the typed email, so the application can match the account it allows to the user the factor is stored on.
+   */
+  | { readonly kind: 'mfa_setup_required'; readonly challenge: string; readonly subject?: string }
   | { readonly kind: 'mfa_required'; readonly challenge: string }
   /**
    * Proven. `grant` lets the application make follow-up calls for the user (hardware-key
@@ -48,6 +65,15 @@ export type AuthStep =
 
 export type NewPasswordStep = AuthStep | { readonly kind: 'invalid_password'; readonly problems: readonly string[] };
 
+/**
+ * A forgotten password's confirmation (docs/adr/0081, the forgotten password). Every code problem (wrong, expired,
+ * used, replaced, too many tries) and an unknown address are one 'rejected', so the answer never tells them apart.
+ */
+export type PasswordResetResult =
+  | { readonly kind: 'reset' }
+  | { readonly kind: 'rejected' }
+  | { readonly kind: 'invalid_password'; readonly problems: readonly string[] };
+
 export interface TotpSetup {
   /** The base32 secret the user's authenticator app is given. */
   readonly secret: string;
@@ -59,6 +85,13 @@ export interface TotpSetup {
 export interface KeyChallenge<O> {
   readonly options: O;
   readonly challenge: string;
+}
+
+/** The provider's account for an invited address, and whether it was made now or has ever signed in (ensureUser). */
+export interface EnsuredUser {
+  readonly sub: string;
+  readonly created: boolean;
+  readonly neverSignedIn: boolean;
 }
 
 export interface AuthProvider {
@@ -75,19 +108,34 @@ export interface AuthProvider {
   beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>>;
   /** Whether the hardware key was verified and registered. */
   completeKeyRegistration(grant: string, challenge: string, response: RegistrationResponseJSON): Promise<boolean>;
-  /** Ends the provider's tokens behind a grant once the application's own session exists. */
+  /**
+   * Ends the provider's tokens behind a grant once the application's own session exists. A failure is logged by its
+   * code and swallowed (the tokens lapse on their own), except a ClientCredentialError, which is thrown.
+   */
   release(grant: string): Promise<void>;
   /**
    * The provider's account for an invited user, created when missing, with a temporary password the
-   * provider delivers itself (Cognito's invitation email; the local outbox in development).
+   * provider delivers itself (Cognito's invitation email; the local outbox in development). `neverSignedIn`
+   * says the account still waits on its temporary password (Cognito's FORCE_CHANGE_PASSWORD, which this platform
+   * never sets on a user who has signed in): only such an account may be linked to an invitation (docs/adr/0088 D4).
    */
-  ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }>;
+  ensureUser(email: string): Promise<EnsuredUser>;
   /**
    * Sends an invited user's invitation again with a new temporary password (J2: "an expired invitation is
    * re-sent by the administrator"): Cognito's resend; the local outbox in development. A user who has chosen
-   * a password already is not invited and is left as they are.
+   * a password already is not invited and is left as they are. Answers whether it was sent: false for a user who has
+   * signed in (or none), so a caller linking an invitation onto the account can refuse it (docs/adr/0088 D4; review
+   * security-N3).
    */
-  resendInvitation(email: string): Promise<void>;
+  resendInvitation(email: string): Promise<boolean>;
+  /**
+   * Sends a reset code if the address names a user who can reset. Resolves the same for every address: a refusal
+   * only a real account could cause is swallowed (logged by its error code and `requestId` alone), and only the
+   * provider's own failures throw. The sign-in flow asks only for an active account with a second factor (SEC-B1).
+   */
+  requestPasswordReset(email: string, requestId?: string): Promise<void>;
+  /** Sets a new password with the mailed code, the password policy checked first. Every code problem is one 'rejected'. */
+  confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult>;
   /** Signs the user out of the provider everywhere (their membership ended, their sessions were revoked). */
   globalSignOut(sub: string): Promise<void>;
 }

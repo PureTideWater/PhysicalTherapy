@@ -1,0 +1,23 @@
+{
+  "case": "SGN-07",
+  "module": "SGN",
+  "title": "After a reset the second factor is still asked",
+  "assertion": "A reset ends every session of the account and signs it out at the provider (a provider sign-out failure is logged and does not fail the reset), records `password_reset_completed`, keeps the lock, the authenticator and the keys, and lands on the sign-in page with the email filled and a notice focused once, written only now (never for a locked or disabled account, whose notice names the support address); the next sign-in with the new password asks for the code, and the old password is refused",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/dev-provider.test.ts",
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/app/sign-in/notice.test.tsx",
+    "apps/web/e2e/sign-in.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A synthetic persona of its own resets its password and signs in again through the local identity provider; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

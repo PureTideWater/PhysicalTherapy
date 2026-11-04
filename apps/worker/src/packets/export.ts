@@ -254,6 +254,8 @@ export const EXPORT_REFUSALS = {
   inputs_differ: 'PACKET_CONTENT_NOT_ITS_INPUTS',
   contact_missing: 'PACKET_CORRESPONDENCE_CONTACT_MISSING',
   verifier_failed: 'PACKET_VERIFIER_FAILED',
+  // The worker gate's (worker.ts refusedByHold), the code its refused run records (billing/refusal.ts SUSPENDED_ERROR_CODE).
+  organization_suspended: 'ORGANIZATION_SUSPENDED',
 } as const satisfies Readonly<Record<PacketExportRefusal | 'missing', string>>;
 
 /** The error code a failed try is logged with, by its failure code. */

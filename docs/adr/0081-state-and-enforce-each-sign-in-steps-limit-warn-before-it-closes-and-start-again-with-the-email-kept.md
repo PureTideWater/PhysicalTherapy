@@ -6,14 +6,15 @@
   limit that binds, counted from its challenge, and a second sealed cookie keeps the email); adds to
   [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
   (its one exception: the sign-in email, rendered back after a step closes); reverses none of their rulings. UX PR 7
-  (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08
+  (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08, whose A4 and Not covered
+  [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends
 - **Date:** 2026-11-01
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking (UX-128's marker
   form and every wording of this decision, with its departures from the review's words); the build (Lane B). Each
   reversible by the founder
 - **PRD sections:** 6 (Identity and sessions; Cross-cutting: accessibility, every error with a next step), 7 (Sign-in
-  and MFA); `docs/product/sessions.md`; test matrix SGN-01 to SGN-04; ADRs
+  and MFA); `docs/product/sessions.md`; test matrix SGN-01 to SGN-08 (SGN-05 to SGN-08 the amendment's); ADRs
   [0012](0012-aws-foundation-from-shared-cdk-constructs.md),
   0016 and 0077
 
@@ -213,10 +214,108 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
 - iOS Safari's timers in a background tab: the visibility rule covers the return. Whether a real iOS or Android
   keyboard leaves the sentence's cue in view is checked by hand there; the tests assert it at 390 by 500 px.
 
+## Amendment: the forgotten password (UX PR 7, co-001/ux-sign-in-recovery, 2026-11-04)
+
+- **A1. A reset is a timed sign-in step.** `/sign-in/forgot-password` requests a code by email (the provider's
+  `requestPasswordReset`: Cognito `ForgotPassword`, the dev twin's mirror) and seals a `reset` step holding the typed
+  address; the code and the new password go to `confirmPasswordReset` (`ConfirmForgotPassword`). The step's lengths are
+  the code's hour and a 15-minute cookie, so it states and enforces 15 minutes and warns at two (D1-D5); Send a new
+  code opens it again without typing, and "Use a different email" ends it at any time with the address not kept. Its
+  warning and closed words are its own (`StepTimer`'s `words`), since nothing is kept before the code is proven. The
+  code email states 15 minutes; the provider's hour is not shown. Any refusal of the confirm, a password-only one
+  (mismatch, policy) included, empties the code with both passwords: the form empties every secret field on every
+  refusal, one rule across the sign-in forms (WCAG 3.3.7's security exception), so no submitted code is left on a page
+  that may be left unattended, and the code, still valid, is copied again from the email (review UXB-N3).
+- **A2. Every address gets the same answer and the same timing class, and the app asks the provider for a code only
+  for an account that already has a second factor (on the app's path; see Not covered).** The provider is asked only
+  for an active account with `mfa_enrolled`; every other address (unknown, invited, a password set but no factor
+  enrolled, disabled) does the same lookup and skips the send. Its
+  account-only refusals are swallowed, and the request is padded to `RESET_REQUEST_FLOOR_MS` (1,500 ms) in a `finally`,
+  so a thrown path answers at the floor too. Any other failure of the send or of the request's audit write (an
+  `InternalErrorException`, a network failure) is logged as `password reset request failed` at error with
+  `{ request_id, error_code }` only and answered `code_sent` like every other path, at the floor: only an account
+  reaches either, so a 500 there would tell the accounts apart whenever the provider fails (review S-3). An outage is
+  seen in that log, not by the person, whose notice already reads "If an account uses the address you typed".
+  Every code problem is one refusal; the password policy is checked before
+  the provider. The reset matches or exceeds the password step's enumeration resistance; it is not a platform-wide
+  guarantee: the password step already discloses that an account exists and is locked (the locked refusal comes before
+  the provider, and a wrong password writes `sign_in_failed` for a known account only), a known, accepted disclosure
+  that predates UX-066.
+- **A3. One rate limit.** Both actions count in the `sign_in` bucket by the address (the confirm's checked against the
+  sealed one), so reset requests and sign-in attempts for an address share one 15-minute count; a flood of requests
+  can hold a sign-in for that long, as wrong passwords can. The bound on code guessing is a rate, not a per-code
+  count: about 64 to 80 guesses per account per hour with no end, in parallel across accounts, since a new request
+  replaces the code; Cognito's per-code and per-request caps are unverified.
+- **A4. A wrong reset code is not a sign-in failure.** It counts toward no lock and writes no event: counting would mark
+  real accounts by timing and let anyone lock an account. Sustained guessing shows instead as a run of
+  `password_reset_requested` events for one user, and refused codes and the reset routes' rate-limit refusals log at
+  warn with the request ID only. ADR 0088 D7 alarms on them per user (`password reset requested`, 5 or more in an hour,
+  through a contributor rule keyed on the user ID) and runs the per-user query weekly
+  (`docs/runbooks/incident-response.md`, "Weekly sign-in review").
+- **A5. After a reset** every application session of the account ends (`revoke_user_sessions`, the user as actor,
+  retried once), the provider signs the user out everywhere (a failure there is logged and does not fail the reset),
+  the lock stays, and the second factor is asked at the next sign-in. The mailed code is the authorization; Postgres
+  confines the actor-scoped transaction to the named user's own rows, and the request-time transaction holds only the
+  audit insert. The kept
+  email (D6) is written only now, with `use: 'chosen'`, and not for a locked or disabled account. Two reasons are
+  appended: `password_reset` and `password_reset_locked`.
+- **A6. Events.** `password_reset_requested` (purpose `unverified_request`, written for an account only) and
+  `password_reset_completed` (`email_code`) are audit events with the user as actor. `record_security_event()` is
+  callable by triggers only; making them `security_event` rows is a migration left to Lane A.
+- **A7. The way forward on every step.** The sign-in help list, the lost-factor lines on the code and key steps, and the
+  locked words name the support address (UX-066). A closed hardware-key step returns to the key surface
+  (`KEY_RESTART`).
+- **Alternatives considered:** a separate hour-long reset cookie (a second sealed state outside D1's tables, untimed,
+  with no warning); the request deferred with `after()` or a job (errors unseen; the email in a payload); a lockout
+  count on reset codes; unlocking on reset; a refusal split by cause; the confirm counted by its cookie; a code for
+  every account (it lets a mailbox holder enrol their own factor on an account with none); a keyed hash of the email
+  in logs for correlation (a stable pseudonym; the per-user audit trail does the job).
+- **Not covered:**
+  - the branded code email and a "password changed" email (Lane A, #42 files);
+  - an invited person who lost the temporary password (their organization's administrator resends it);
+  - a person who set a password but never enrolled a second factor cannot reset it, and Cognito's `RESEND` no longer
+    works for a `CONFIRMED` user, so their administrator sends the invitation again, which opens seven new days in
+    which they sign in with their own password and enrol (ADR 0088 D3); one who has forgotten that password goes to
+    the founder's break-glass session (`docs/runbooks/support-mail.md`, "Sign-in help tickets"), since deleting the
+    Cognito user and inviting again cannot complete for an existing account (ADR 0088, Not covered); a console factor
+    reset (UX PR 65) must issue its own re-enrolment right (ADR 0088 D3);
+  - second-factor and key resets (UX PRs 65 and 8): until UX PR 65 lands, lost-authenticator tickets are held at the
+    desk with no resolution, and lost-key tickets until UX PR 8 or a key-reset path exists
+    (`docs/runbooks/support-mail.md`, "Sign-in help tickets");
+  - a sign-in begun with both factors less than 3 minutes before a reset (Cognito's auth session) can still open an
+    app session after the revoke; a reset time checked against `auth_time` would close it (a migration, Lane A);
+  - SEC-B1 holds on the app's path only until ADR 0088's second release makes the client confidential (D1). The
+    pool's app client is public (`generateSecret: false`) and recovery is `EMAIL_ONLY`, so a caller who knows the
+    client ID (an identifier: the environment, stack outputs, any ID token's `aud`) can call `ForgotPassword` and
+    `ConfirmForgotPassword` directly. That goes past the gate, the `sign_in` limit and the `password_reset_*` audit,
+    and it revokes no app session. The same client lets a caller run `InitiateAuth` directly, past the app's
+    ten-failure lock. This was so on base 24531dc2, before this amendment. A Cognito `CONFIRMED` user with no factor
+    could then be taken over through the app's own enrolment, which took the attacker's TOTP and, for staff, their
+    key; ADR 0088 D3 closes that now: a factor is enrolled only inside a live invitation, on the account matched by
+    both the enrolling Cognito subject and the email, so a code obtained that way and redeemed on the app's own
+    confirm route (proposal P-2) no longer leads to an enrolment either. The `CustomMessage` trigger of proposal P-1
+    was not built (ADR 0088, Alternatives considered).
+- **Not verified here:** Cognito's attempt and request caps (the per-code cap on `ConfirmForgotPassword`, a
+  `LimitExceededException` after some number of wrong codes, is what bounds guessing in production; the dev twin's
+  five tries model it and are not evidence of it), its code's hour and replacement, its p99 for
+  `ForgotPassword` against the floor, and whether `ConfirmForgotPassword` revokes tokens (both are revoked regardless):
+  there is no user pool in this lane. The founder's pool smoke check includes one real `ForgotPassword` delivery,
+  counts the wrong codes `ConfirmForgotPassword` takes before `LimitExceededException`, and reads the
+  `password reset request timed` distribution. For combined audit #103's manual checks: the "Check your
+  email" notice heard once (and again after Send a new code), the "Password changed" notice heard once, the help list
+  read as a list.
+
 ## Revisit when
 
 - UX PR 66 lands: the constants, and the code step kept at 5 minutes by the app once Cognito allows 15.
 - Cognito offers a way to refresh a sign-in session: then Extend, and 2.2.1 in full.
-- UX PR 7 amends this decision with its forgotten-password steps.
+- UX PR 65 lands (the mfa line's second sentence).
+- Lane A brands the code email or adds a security_event function.
+- The floor's log shows runs over it, or the `password reset request timed` p99 nears the floor: raise it.
+- ADR 0088's second release (the confidential client) reaches production: the Not covered bullet on the app's path
+  goes.
+- UX PR 65 lands: end live reset codes on a factor clear, or re-check the gate on confirm (P-2), with a refused account
+  answered by the one code refusal at a wrong code's timing.
+- UX PR 65 adds a console factor reset (it must issue its own re-enrolment right, ADR 0088 D3).
 - Combined audit #103's manual checks report.
 - UX PR 14's Notice replaces the region's look.

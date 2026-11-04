@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 
 import { type ActionState, runSignInStep } from '../../lib/http/next';
-import { RESTARTED, answerMfa, chooseNewPassword, enrollTotp, restartSignIn, signInWithPassword } from '../../lib/routes/sign-in';
+import { RESTARTED, answerMfa, chooseNewPassword, enrollTotp, resetConfirm, resetRequest, restartSignIn, signInWithPassword } from '../../lib/routes/sign-in';
 
 /** Server actions for the sign-in steps; each runs its registered route (src/lib/routes/sign-in.ts). */
 
@@ -30,4 +30,31 @@ export async function mfaStep(_state: ActionState, form: FormData): Promise<Acti
 export async function restartStep(form: FormData): Promise<void> {
   await runSignInStep(restartSignIn, form);
   redirect(RESTARTED.redirect);
+}
+
+/** A forgotten password's request, from the first phase and from Send a new code (docs/adr/0081, the forgotten password). */
+export async function resetRequestStep(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runSignInStep(resetRequest, form);
+}
+
+/** The mailed code and the new password. */
+export async function resetConfirmStep(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runSignInStep(resetConfirm, form);
+}
+
+/**
+ * Use a different email (review UXR-01): ends the reset step, then the forgot page's first phase with nothing filled,
+ * since the typed address was never proven. The destination is this action's, never the form's.
+ */
+export async function useDifferentEmailStep(form: FormData): Promise<void> {
+  form.set('to', 'forgot_password');
+  await runSignInStep(restartSignIn, form);
+  redirect('/sign-in/forgot-password');
+}
+
+/** Back to sign in: ends the reset step, so "Forgot your password?" opens the first phase again, then the sign-in page. */
+export async function backToSignInStep(form: FormData): Promise<void> {
+  form.set('to', 'sign_in');
+  await runSignInStep(restartSignIn, form);
+  redirect('/sign-in');
 }

@@ -28,7 +28,9 @@ import { type BillingClient, type BillingPool, billingRows, withBilling } from '
  * minute's dunning_notices job (sendDunningNotices), and fails after the fifth or at once on a permanent SES error. An
  * owner not delivered reports the stage's notice once: notice_undelivered on the invoice and NOTICE_UNDELIVERED with
  * its ID. When an organization is suspended is unchanged (the billing PR decides whether a delivered notice is waited
- * for).
+ * for). Each message's words are chosen when it is sent, from the organization's kind and status and billing's standing
+ * (dunningEffect; SS-08, docs/adr/0080): it never says new runs started again while PaidWhole's suspension, a closure or
+ * another unpaid invoice holds them, and never promises a firm anything about runs.
  */
 
 export interface DunningOptions {
@@ -89,29 +91,88 @@ export function suspensionText(firstFailedAt: Date): string {
 /** The invoice as a notice names it. */
 export type DunningInvoice = Pick<DueRow, 'id' | 'number' | 'amount_remaining_cents' | 'first_failed_at'>;
 
-/** The notice's fixed sentences, to one billing owner: the invoice's number and amount, dates and one link. */
-export function dunningMessage(step: Exclude<DunningStageCode, 'resolved'>, to: string, recipientUserId: string, row: DunningInvoice, link: string): MailMessage {
+/**
+ * What holds the organization's runs when a notice is sent (SS-08; docs/adr/0080, D13), first match wins: nothing to
+ * promise for every firm and a closed group (a firm's nonpayment refuses nothing before milestone 12, docs/adr/0050;
+ * a closure ends runs), PaidWhole's suspension of a group, billing's own hold (this invoice at its suspended stage, or
+ * another that has reached its 30 days), or runs that follow this invoice alone.
+ */
+export type DunningEffect = 'runs' | 'billing_held' | 'held' | 'none';
+
+/** The organization as a notice is decided by, read when it is sent: its kind and status, and billing's standing. */
+export interface DunningOrganization {
+  readonly kind: 'group' | 'firm' | 'internal';
+  readonly status: 'active' | 'suspended' | 'closed';
+  readonly standing: 'good' | 'past_due' | 'suspended';
+}
+
+export function dunningEffect(organization: DunningOrganization): DunningEffect {
+  if (organization.kind !== 'group' || organization.status === 'closed') {
+    return 'none';
+  }
+  if (organization.status === 'suspended') {
+    return 'held';
+  }
+  return organization.standing === 'suspended' ? 'billing_held' : 'runs';
+}
+
+type NoticeStep = Exclude<DunningStageCode, 'resolved'>;
+
+/**
+ * The notice's fixed sentences, to one billing owner: the invoice's number and amount, dates and one link. `effect` is
+ * what holds runs when it is sent (dunningEffect): only `runs` keeps the schedule's promises, and only `runs` says new
+ * runs started again.
+ */
+export function dunningMessage(step: NoticeStep, to: string, recipientUserId: string, row: DunningInvoice, link: string, effect: DunningEffect): MailMessage {
   const invoice = row.number === null ? 'an invoice' : `invoice ${row.number}`;
   const Invoice = row.number === null ? 'An invoice' : `Invoice ${row.number}`;
   const owed = formatUsd(parseCents(row.amount_remaining_cents));
-  const suspends = suspensionText(row.first_failed_at);
-  const lines: Record<typeof step, readonly string[]> = {
-    payment_failed: [`The payment for ${invoice} (${owed}) failed.`, `Update the payment method or pay the invoice before ${suspends}; from then new runs stop until it is paid.`],
-    second_notice: [`${Invoice} (${owed}) is still unpaid.`, `New runs stop on ${suspends} unless it is paid.`],
-    third_notice: [`${Invoice} (${owed}) is still unpaid.`, `New runs stop on ${suspends} unless it is paid.`],
-    final_notice: [`Final notice: ${invoice} (${owed}) is unpaid.`, `New runs stop on ${suspends}: pricing, monitoring, packet exports and reports. Your data stays readable.`],
-    suspended: [`${Invoice} (${owed}) has been unpaid for 30 days since its payment failed, so new runs have stopped.`, 'Your data stays readable. Runs start again as soon as the invoice is paid.'],
-    reinstated: [`${Invoice} is paid. New runs have started again.`],
+  const failed = `The payment for ${invoice} (${owed}) failed.`;
+  const unpaid = `${Invoice} (${owed}) is still unpaid.`;
+  const thirtyDays = `${Invoice} (${owed}) has been unpaid for 30 days since its payment failed.`;
+  const paid = `${Invoice} is paid.`;
+  const payFailed = 'Update the payment method or pay the invoice from the billing page.';
+  const payUnpaid = 'Pay it, or update the payment method, from the billing page.';
+  const already: Partial<Record<DunningEffect, string>> = {
+    billing_held: 'New runs are already stopped until another unpaid invoice is paid.',
+    held: "New runs are already stopped while PaidWhole's suspension of the organization lasts.",
   };
-  const subjects: Record<typeof step, string> = {
+  const stillUnpaid = (hold: string | undefined) => [unpaid, payUnpaid, ...(hold === undefined ? [] : [hold])];
+  let lines: readonly string[];
+  if (effect === 'runs' || (effect === 'billing_held' && step === 'suspended')) {
+    // Today's words: true while runs follow this invoice, and at its own suspension while billing holds runs for it.
+    const suspends = suspensionText(row.first_failed_at);
+    const schedule: Record<NoticeStep, readonly string[]> = {
+      payment_failed: [failed, `Update the payment method or pay the invoice before ${suspends}; from then new runs stop until it is paid.`],
+      second_notice: [unpaid, `New runs stop on ${suspends} unless it is paid.`],
+      third_notice: [unpaid, `New runs stop on ${suspends} unless it is paid.`],
+      final_notice: [`Final notice: ${invoice} (${owed}) is unpaid.`, `New runs stop on ${suspends}: pricing, monitoring, packet exports and reports. Your data stays readable.`],
+      suspended: [`${Invoice} (${owed}) has been unpaid for 30 days since its payment failed, so new runs have stopped.`, 'Your data stays readable. Runs start again as soon as the invoice is paid.'],
+      reinstated: [`${paid} New runs have started again.`],
+    };
+    lines = schedule[step];
+  } else if (step === 'payment_failed') {
+    lines = [failed, payFailed, ...(already[effect] === undefined ? [] : [already[effect]])];
+  } else if (step === 'suspended') {
+    lines = [thirtyDays, effect === 'held' ? 'New runs stay stopped until it is paid and PaidWhole reinstates the organization.' : 'Pay it from the billing page.'];
+  } else if (step === 'reinstated') {
+    const still: Partial<Record<DunningEffect, string>> = {
+      billing_held: 'Another invoice is still unpaid, so new runs stay stopped until it is paid.',
+      held: 'PaidWhole has also suspended the organization, so new runs stay stopped until PaidWhole reinstates it. The billing page says why and what to do next.',
+    };
+    lines = [paid, ...(still[effect] === undefined ? [] : [still[effect]])];
+  } else {
+    lines = stillUnpaid(already[effect]);
+  }
+  const subjects: Record<NoticeStep, string> = {
     payment_failed: 'A payment failed',
     second_notice: 'An invoice is still unpaid',
     third_notice: 'An invoice is still unpaid',
-    final_notice: 'Final notice before new runs stop',
-    suspended: 'New runs have stopped until an invoice is paid',
-    reinstated: 'New runs have started again',
+    final_notice: effect === 'runs' ? 'Final notice before new runs stop' : 'An invoice is still unpaid',
+    suspended: effect === 'runs' || effect === 'billing_held' ? 'New runs have stopped until an invoice is paid' : 'An invoice has been unpaid for 30 days',
+    reinstated: effect === 'runs' ? 'New runs have started again' : `${Invoice} is paid`,
   };
-  return { to: [to], subject: subjects[step], lines: lines[step], links: [link], identity: { stream: 'notices', kind: 'dunning', subjectId: row.id, recipientUserId } };
+  return { to: [to], subject: subjects[step], lines, links: [link], identity: { stream: 'notices', kind: 'dunning', subjectId: row.id, recipientUserId } };
 }
 
 const AUDIT = "SELECT billing_record_audit($1, $2, $3, $4, $5)";
@@ -121,7 +182,7 @@ const SEND_AT_MOST = 500;
 
 interface PendingOwner {
   readonly invoice_id: string;
-  readonly stage: Exclude<DunningStageCode, 'resolved'>;
+  readonly stage: NoticeStep;
   readonly organization_id: string;
   readonly user_id: string;
 }
@@ -149,9 +210,19 @@ async function sendOne(options: Pick<DunningOptions, 'pool' | 'mail' | 'origin' 
       if (invoice === undefined) {
         return 'skipped';
       }
+      // What holds runs now, not when the stage was recorded: a retry comes 1 to 60 minutes later, and in between
+      // PaidWhole may suspend or reinstate the organization, or another invoice reach its 30 days (D13).
+      const [organization] = await billingRows<DunningOrganization>(
+        client,
+        'SELECT o.kind, o.status, s.standing FROM organization o JOIN billing_standing s ON s.organization_id = o.id WHERE o.id = $1',
+        [owner.organization_id],
+      );
+      if (organization === undefined) {
+        return 'skipped';
+      }
       let messageId: string;
       try {
-        ({ messageId } = await options.mail.send(dunningMessage(owner.stage, claimed.email, owner.user_id, invoice, billingLink(options.origin, owner.organization_id))));
+        ({ messageId } = await options.mail.send(dunningMessage(owner.stage, claimed.email, owner.user_id, invoice, billingLink(options.origin, owner.organization_id), dunningEffect(organization))));
       } catch (error) {
         throw new DunningSendFailed(error);
       }

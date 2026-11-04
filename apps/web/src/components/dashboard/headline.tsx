@@ -2,6 +2,7 @@ import { EmptyState, cn } from '@tp/ui';
 import { STAGE_LABELS } from '@tp/triage';
 import Link from 'next/link';
 
+import { FIRST_UPLOAD_HELD, type WorkPause } from '../../lib/billing/suspension-words';
 import { counted } from '../../lib/copy/words';
 import type { Dashboard, Headline } from '../../lib/dashboard/queries';
 import { NO_BAA } from '../../lib/uploads/gate';
@@ -100,17 +101,21 @@ export function HeadlineTiles({ practiceId, headline, recoveredQuarter }: { read
   );
 }
 
-/** Whether a practice may upload now, as Uploads decides it: its BAA on file (practice_baa_on_file()), then its organization not suspended. */
-export type UploadGate = 'open' | 'no_baa' | 'paused';
+/**
+ * Whether the person may upload here now, as Uploads decides it: the BAA on file (practice_baa_on_file()), then no hold
+ * on their uploads (docs/adr/0080): paused while it can lift, stopped by a closure (SS-01 review UX-SS01-3).
+ */
+export type UploadGate = 'open' | 'no_baa' | 'paused' | 'stopped';
 
-export function uploadGate(uploads: Dashboard['uploads'], suspended: boolean): UploadGate {
-  return !uploads.baaOnFile ? 'no_baa' : suspended ? 'paused' : 'open';
+export function uploadGate(uploads: Dashboard['uploads'], hold: WorkPause | null): UploadGate {
+  return !uploads.baaOnFile ? 'no_baa' : hold === null ? 'open' : hold.restarts ? 'paused' : 'stopped';
 }
 
 /**
  * The home before its first file (UX-140): the gate Uploads itself uses, in its words. Open: the upload sentence and
  * Go to Uploads. No BAA: the BAA sentence Uploads shows, and the agreement chain for a role that may act on it
- * (`agreements`), never Uploads. Paused: the suspension named above it, and no link.
+ * (`agreements`), never Uploads. Paused or stopped: the hold named above it, which lifts or, for a closure, does not
+ * (uploadsHeld; BIL-09), and no link.
  */
 export function FirstUpload({ practiceId, gate, agreements }: { readonly practiceId: string; readonly gate: UploadGate; readonly agreements: boolean }) {
   switch (gate) {
@@ -143,6 +148,7 @@ export function FirstUpload({ practiceId, gate, agreements }: { readonly practic
         <EmptyState mark title="Waiting for the business associate agreement" nextStep={NO_BAA} />
       );
     case 'paused':
-      return <EmptyState mark title="Uploads are paused" nextStep="They start again once the suspension above is resolved." />;
+    case 'stopped':
+      return <EmptyState mark title={FIRST_UPLOAD_HELD[gate].title} nextStep={FIRST_UPLOAD_HELD[gate].nextStep} />;
   }
 }

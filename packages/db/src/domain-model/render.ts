@@ -465,7 +465,7 @@ export function renderDocument(input: RenderInput): string {
   out('## Appendix C: functions');
   out();
   out(
-    'Every function in schema `public`. SECURITY DEFINER functions run as their owner; "Sets app.practice_ids" marks a function that sets the tenant scope itself. "Body" is the first 16 hex digits of the SHA-256 of the function\'s body as the catalog holds it, so a changed body changes this document.',
+    'Every function in schema `public`. SECURITY DEFINER functions run as their owner; "Sets app.practice_ids" marks a function that sets the tenant scope itself. "Body" is the first 16 hex digits of the SHA-256 of the function\'s body as the catalog holds it, so a changed body changes this document. Each function\'s full definition, owner and privileges are in packages/db/functions (docs/adr/0068).',
   );
   out();
   out('| Function | Returns | Lang | Security | Volatility | Config | EXECUTE granted to | Sets app.practice_ids | Body |');

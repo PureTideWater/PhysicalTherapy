@@ -433,6 +433,36 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'infra/test/monitoring.test.ts',
     'apps/web/e2e/mail-notices.spec.ts',
   ]),
+  // The confidential Cognito client and second-factor enrolment only inside a live invitation (docs/adr/0088). Its
+  // first pull request's tests are named here; the confidential client, the secret's custody in Secrets Manager and its
+  // rotation are its second pull request's (release N+1), which adds their infra tests, and the staging checks are
+  // the founder's (the design's F1 to F5).
+  'SEC-20': none(1, 'A hash-checking twin of the Cognito endpoint, a synthetic client ID and secret, and synthetic personas through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/secret-hash.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/credential-probe.test.ts',
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+  ]),
+  'SEC-21': none(1, 'The client modules are scanned from source, the wrapper is serialised with a synthetic secret, and the stacks are synthesized in memory; no file.', [
+    'apps/web/src/lib/auth/client-secret.test.ts',
+    'apps/web/src/lib/auth/client-bundle.test.ts',
+    'apps/web/src/lib/auth/secret-hash.test.ts',
+    'infra/test/pull-request-diff-role.test.ts',
+  ]),
+  'SEC-22': none(1, 'Synthetic invited, active, enrolled, locked and orphan personas answer the enrolment challenge through the local identity provider and the Cognito twin; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+  ]),
+  'SEC-23': none(1, 'The monitoring stack is synthesized in memory and its messages are read from the web source; synthetic personas ask for resets; no file.', [
+    'infra/test/monitoring.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
   'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
     'apps/worker/src/screening/format.test.ts',
     'apps/web/src/lib/screening/parse.test.ts',
@@ -713,6 +743,30 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
     'apps/web/scripts/seed.db.test.ts',
   ]),
+  // SS-01: whose hold stops which work, PaidWhole's stored suspension and the dunning mail's truth (docs/adr/0080).
+  'BIL-07': none(11, 'Synthetic organizations, people and grants the tests write as the owner on a migrated database, and the route world’s firm; no file.', [
+    'packages/db/src/suspension.db.test.ts',
+    'apps/web/src/lib/routes/suspension-refusal.db.test.ts',
+    'apps/web/src/lib/routes/route-tests/define.ts',
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/worker/src/worker.test.ts',
+  ]),
+  'BIL-08': none(11, 'The setter and the routes run on synthetic organizations and platform administrators the tests write; no file.', [
+    'packages/db/src/organization-status.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'BIL-09': none(11, 'The words are pure functions of values the test passes in memory, and the journeys read a firm, a client practice and a console firm the seed holds; no file.', [
+    'apps/web/src/lib/billing/suspension-words.test.ts',
+    'apps/web/src/components/console/suspension-text.test.ts',
+    'apps/web/src/components/billing/account-standing.test.tsx',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'apps/web/e2e/billing.spec.ts',
+  ]),
+  'BIL-10': none(11, 'dunningMessage is a pure function of values the test passes in memory, and the sends run on synthetic organizations and invoices; no file.', [
+    'apps/worker/src/billing/dunning-words.test.ts',
+    'apps/worker/src/billing/billing.db.test.ts',
+  ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
   'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
   'CI-02': none(0, 'The partition reads the route registry; no file.', ['apps/web/src/lib/routes/route-tests/partition.test.ts']),
@@ -892,6 +946,38 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/auth/sign-in.db.test.ts',
     'apps/web/src/app/sign-in/notice.test.tsx',
     'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  // The forgotten password of the UX baseline review's seventh pull request (docs/adr/0081, its amendment).
+  'SGN-05': none(1, 'Synthetic personas and unregistered synthetic addresses ask for a reset through the local identity provider on an injected clock; no file.', [
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  'SGN-06': none(1, 'The local identity provider mails its reset codes to a synthetic outbox the tests read, and the step timer runs on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-07': none(1, 'A synthetic persona of its own resets its password and signs in again through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  'SGN-08': none(1, 'Synthetic personas reach the code and key steps through the local identity provider; the support address is the synthetic one; no file.', [
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
     'apps/web/e2e/sign-in-time.spec.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one

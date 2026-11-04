@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { WorkPause } from '../../lib/billing/suspension-words';
 import type { ActionState } from '../../lib/http/next';
 import type { MonthAwaitingMappings, MonthToPriceAgain, PriceAgainState } from '../../lib/pricing/mapped-plan';
 import type { MonthsToPrice } from '../../lib/routes/mapping';
@@ -35,6 +36,22 @@ import {
 
 // The form that refreshes the page after a refusal (refreshOnError) reads the router, which no test mounts.
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+
+/** Holds on the person's pricing here, as lib/billing/hold.ts workPause gives them (SS-01 security F1; docs/adr/0080). */
+const OWNER_HOLD: WorkPause = { reason: 'the organization is suspended for nonpayment', source: 'owner', restarts: true };
+const OWNER_CLOSED: WorkPause = { reason: "the practice's organization is closed, so no new work starts here; everything here stays readable", source: 'owner', restarts: false };
+const GRANTEE_HOLD: WorkPause = {
+  reason: "PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records",
+  source: 'grantee',
+  restarts: true,
+};
+const GRANTEE_CLOSED: WorkPause = { reason: 'your organization is closed, so you start no new work here through its grant', source: 'grantee', restarts: false };
+/** A sentence as words() reads it from the markup: React writes an apostrophe as &#x27;, which words() reads as ’. */
+const said = (text: string): string => text.replace(/'/g, '’');
+/** A closure promises no restart (BIL-09). */
+const RESTART = /until|again|reinstat|restart|once it is resolved/i;
+/** The words said in place of a region's form (PausedText), apart from the region's other sentences. */
+const pausedWords = (html: string): string => words(/<p[^>]*data-state="paused"[^>]*>(.*?)<\/p>/.exec(html)?.[1] ?? '');
 
 const PRACTICE = '00000000-0000-4000-8000-0000000000c1';
 const PLAN = '00000000-0000-4000-8000-0000000000d1';
@@ -93,7 +110,7 @@ function toPrice(changes: Partial<MonthsToPrice> = {}): MonthsToPrice {
 
 function region(
   months: MonthsToPrice,
-  options: { readonly planId?: string | null; readonly canMap?: boolean; readonly canWorkCases?: boolean; readonly suspension?: string | null; readonly filters?: { view: string; payer?: string } } = {},
+  options: { readonly planId?: string | null; readonly canMap?: boolean; readonly canWorkCases?: boolean; readonly suspension?: WorkPause | null; readonly filters?: { view: string; payer?: string } } = {},
 ): string {
   return renderToStaticMarkup(
     <MonthsToPriceAgainRegion
@@ -323,11 +340,28 @@ describe('months waiting for a first run (MAP-07)', () => {
   // Security F1: while the practice may not start work, the press would be refused, so the reason is said instead.
   it('say why pricing is paused instead of offering "Price them now" while the practice may not start work (security F1)', () => {
     const waiting = { months: [awaiting(2, OTHER)], plans: 2, self: false };
-    const html = renderToStaticMarkup(
-      <MonthsWaitingRegion practiceId={PRACTICE} planId={PLAN} waiting={waiting} canMap action={action} formKeys={formKeys} suspension="the organization is suspended for nonpayment" />,
+    const paused = (pause: WorkPause) => renderToStaticMarkup(<MonthsWaitingRegion practiceId={PRACTICE} planId={PLAN} waiting={waiting} canMap action={action} formKeys={formKeys} suspension={pause} />);
+    expect(paused(OWNER_HOLD)).not.toContain('<form');
+    expect(words(paused(OWNER_HOLD))).toContain('Pricing is paused: the organization is suspended for nonpayment. These months are priced by the daily monitoring once it is resolved.');
+    // A closure promises no restart (BIL-09).
+    expect(paused(OWNER_CLOSED)).not.toContain('<form');
+    expect(words(paused(OWNER_CLOSED))).toContain(said("Pricing has stopped: the practice's organization is closed, so no new work starts here; everything here stays readable."));
+    expect(pausedWords(paused(OWNER_CLOSED))).toMatch(/closed/);
+    expect(pausedWords(paused(OWNER_CLOSED))).not.toMatch(RESTART);
+  });
+
+  // SS-01 security F1: a grantee's hold stops this person's press, never the practice's own monitoring (docs/adr/0080).
+  it('say to a person held through their organization’s grant that the practice’s daily monitoring still prices the months, offering no press (SS-01 security F1)', () => {
+    const waiting = { months: [awaiting(2, OTHER)], plans: 2, self: false };
+    const paused = (pause: WorkPause) => renderToStaticMarkup(<MonthsWaitingRegion practiceId={PRACTICE} planId={PLAN} waiting={waiting} canMap action={action} formKeys={formKeys} suspension={pause} />);
+    expect(paused(GRANTEE_HOLD)).not.toContain('<form');
+    expect(words(paused(GRANTEE_HOLD))).toContain(
+      said("PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records. The practice’s daily monitoring still prices these months."),
     );
-    expect(html).not.toContain('<form');
-    expect(words(html)).toContain('Pricing is paused: the organization is suspended for nonpayment. These months are priced by the daily monitoring once it is resolved.');
+    expect(words(paused(GRANTEE_HOLD))).not.toMatch(/Pricing is paused|once it is resolved/);
+    expect(words(paused(GRANTEE_CLOSED))).toContain('Your organization is closed, so you start no new work here through its grant. The practice’s daily monitoring still prices these months.');
+    expect(pausedWords(paused(GRANTEE_CLOSED))).toMatch(/closed/);
+    expect(pausedWords(paused(GRANTEE_CLOSED))).not.toMatch(RESTART);
   });
 });
 
@@ -452,9 +486,19 @@ describe('the months to price again, each in its state (MAP-08; design 4.2, 9)',
     expect(list).toContain('<input type="hidden" name="view" value="mapped"/>');
     expect(list).toContain('<input type="hidden" name="payer" value="00000000-0000-4000-8000-0000000000a1"/>');
     expect(region(months, { planId: null, filters: { view: 'unmapped' } })).not.toContain('name="payer"');
-    const paused = region(months, { suspension: 'the organization is suspended for nonpayment' });
+    const paused = region(months, { suspension: OWNER_HOLD });
     expect(paused).not.toContain('<form');
     expect(words(paused)).toContain('Pricing is paused: the organization is suspended for nonpayment. These months can be priced again here once it is resolved.');
+    // SS-01 security F1 and BIL-09: a grantee's hold says the database's sentence alone; a closure promises no restart.
+    expect(region(months, { suspension: GRANTEE_HOLD })).not.toContain('<form');
+    expect(words(region(months, { suspension: GRANTEE_HOLD }))).toContain(said(`${GRANTEE_HOLD.reason}.`));
+    expect(words(region(months, { suspension: GRANTEE_HOLD }))).not.toMatch(/Pricing is paused|once it is resolved/);
+    expect(words(region(months, { suspension: OWNER_CLOSED }))).toContain(said(`Pricing has stopped: ${OWNER_CLOSED.reason}.`));
+    for (const closed of [OWNER_CLOSED, GRANTEE_CLOSED]) {
+      expect(region(months, { suspension: closed })).not.toContain('<form');
+      expect(pausedWords(region(months, { suspension: closed }))).toMatch(/closed/);
+      expect(pausedWords(region(months, { suspension: closed }))).not.toMatch(RESTART);
+    }
   });
 
   it('say on a mapped plan’s page that no priced month holds its lines without a mapping, and nothing on the list when none does', () => {
@@ -515,12 +559,16 @@ describe('the mapping screens’ notices (design 5.3; C2)', () => {
 
   // Security F1: a mapping that completed months while the practice may not start work queued nothing; the notice says why and when.
   it('say after a mapping in a suspended practice why nothing is being priced and when it is, never "being priced" (security F1)', () => {
-    expect(heldText('the organization is suspended for nonpayment')).toBe(
+    expect(heldText(OWNER_HOLD)).toBe(
       'Pricing is paused: the organization is suspended for nonpayment. The months whose plans now all have a mapping are priced by the daily monitoring once it is resolved.',
     );
-    expect(heldText(null)).toBe(
-      'New runs were stopped when the mapping was saved, so the months whose plans now all have a mapping were not queued; the daily monitoring prices them now that runs have started again.',
-    );
+    const lifted = 'New runs were stopped when the mapping was saved, so the months whose plans now all have a mapping were not queued; the daily monitoring prices them now that runs have started again.';
+    expect(heldText(null)).toBe(lifted);
     expect(heldText(null)).not.toContain('are being priced');
+    // SS-01 security F1: only the practice's own hold holds its monitoring, so a grantee's hold on the reader is the lifted case.
+    expect(heldText(GRANTEE_HOLD)).toBe(lifted);
+    // BIL-09: a closure promises no restart.
+    expect(heldText(OWNER_CLOSED)).toBe(`Pricing has stopped: ${OWNER_CLOSED.reason}. The months whose plans now all have a mapping were not queued.`);
+    expect(heldText(OWNER_CLOSED)).not.toMatch(RESTART);
   });
 });
