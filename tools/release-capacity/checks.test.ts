@@ -110,6 +110,7 @@ const PASSING: CapacityMeasurements = {
   pricedLines: 100_000,
   parsedClaims: 8_000,
   posted: { lines: 2_000, inFull: 2_000 },
+  aActionable: { lines: 30_795, expected: 30_795, matched: 30_795 },
   memory: { limitBytes: LIMIT, peakBytes: 700 * MIB, run: RUN, periods: PERIODS, oomKills: 0, oomKilled: false, oomEvents: { start: { oom: 0, oomKill: 0 }, end: { oom: 0, oomKill: 0 } }, restarts: 0, running: true },
   advisoryLocks: { peak: 1, samples: 3_600, peakDuring: 'the concurrent phase' },
   errorCodes: { CONTENT_NOT_LOADED: 0 },
@@ -314,6 +315,21 @@ describe('the release capacity verdict', () => {
     );
   });
 
+  it('fails A’s triage making other than the lines the scenario makes actionable, none, or uncounted, since A keeps its full month for triage and reports (Lane A’s orchestrator, 2026-11-04)', () => {
+    const scenario = 'the scenario expects \\(each of its contract lines priced at least the line materiality short, none of its Medicare Advantage lines\\)';
+    failsWith({ aActionable: null }, /^A’s actionable lines after its triage could not be counted$/);
+    // None: the chain's triage and A's reports would measure no open case (the guard step 7b on A held until it moved to F).
+    failsWith({ aActionable: { lines: 0, expected: 30_795, matched: 0 } }, new RegExp(`^A’s triage made none of its lines actionable, of the 30795 ${scenario}, so the chain’s triage and A’s reports measured no open case$`));
+    failsWith({ aActionable: { lines: 0, expected: 0, matched: 0 } }, new RegExp(`^A’s triage made none of its lines actionable, of the 0 ${scenario}`));
+    // Fewer or more than expected: a lighter or another month than the one A was seeded with.
+    failsWith({ aActionable: { lines: 15_000, expected: 30_795, matched: 15_000 } }, new RegExp(`^A’s triage made 15000 of its lines actionable, 15000 of them among the 30795 ${scenario}, so the chain measured another month than the one A was seeded with$`));
+    failsWith({ aActionable: { lines: 30_796, expected: 30_795, matched: 30_795 } }, /^A’s triage made 30796 of its lines actionable, 30795 of them among the 30795 /);
+    // As many as expected, one of them not an expected line (a Medicare Advantage line actionable while a contract line was not).
+    failsWith({ aActionable: { lines: 30_795, expected: 30_795, matched: 30_794 } }, /^A’s triage made 30795 of its lines actionable, 30794 of them among the 30795 /);
+    // Read with the rest: a run that stopped before A's triage says both.
+    expect(verdict({ ...PASSING, aborted: 'WORKER_NOT_READY', aActionable: null }).reasons).toEqual(['the run stopped before it was read back: WORKER_NOT_READY', 'A’s actionable lines after its triage could not be counted']);
+  });
+
   it('fails a run that stopped before it was read back', () => {
     failsWith({ aborted: 'WORKER_NOT_READY' }, /stopped before it was read back: WORKER_NOT_READY/);
   });
@@ -342,6 +358,9 @@ describe('the release capacity verdict', () => {
     expect(markdown(report({ ...PASSING, jobs: change('A triage', { heap: { peakMib: 430, limitMib: 752 } }) }))).toContain('| A triage | the chain | completed | 1 | 430 of 560 MiB | 1.0 s |');
     expect(markdown(report(PASSING))).toContain('Every check passed.');
     expect(markdown(report(PASSING))).toContain('F’s lines posted 2000 (2000 in full) of 2000 actionable, of its 2000 lines.');
+    // A's actionable lines beside the scenario's expectation, in the Run line on every run.
+    expect(markdown(report(PASSING))).toContain('priced lines 100000 of 100000; A’s lines actionable after its triage 30795 (30795 of them expected) of 30795 expected, of its 100000 lines; parsed claims 8000 of 8000;');
+    expect(markdown(report({ ...PASSING, aActionable: null }))).toContain('; A’s lines actionable after its triage unread, of its 100000 lines; ');
   });
 });
 

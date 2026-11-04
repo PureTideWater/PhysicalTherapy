@@ -7,15 +7,16 @@ import { TRACE_LOCK_BUCKETS } from '../../apps/worker/src/parse/loader';
  * completed on a later attempt than its first, or whose attempts could not be read; the run not complete; a priced-line
  * count other than the measured period's lines, parsed claims other than the 835s held, F's lines posted other than its
  * actionable lines or posted other than in full (step 7b's reconcile, on F, a practice of its own), F's triage making
- * other than each of its lines actionable, or none at all (a reconcile of nothing measures nothing); an OOM kill or a
- * restart of the worker, or any oom or oom_kill event memory.events counts between the worker's start and the end; the
- * worker's working set (memory.current less inactive_file, sampled each second) above 90% of its task's memory over the
- * whole run or in any phase or chain job (SAMPLED_PERIODS), or any of these sampled fewer than once each 2 seconds; a
- * backend holding more than ADVISORY_LOCKS_PER_TRANSACTION advisory locks at any sample over the run; a job's live heap
- * above HEAP_LIVE_PERCENT of its heap limit, or a measured job that logged no `job heap` line (D19); a worker log line
- * with error_code RELEASE_READ_OUTSIDE_FETCH or JOB_FAILED; and any of these that could not be read (fail closed).
- * memory.peak and the memory by kind are reported beside the working set, never judged. Times are recorded and
- * advisory, as the founder ruled for the screening's test (2026-10-23, reconciliation-001.md).
+ * other than each of its lines actionable, or none at all (a reconcile of nothing measures nothing); A's triage making
+ * other than the lines the scenario makes actionable, or none (A keeps its full month for triage and reports); an OOM
+ * kill or a restart of the worker, or any oom or oom_kill event memory.events counts between the worker's start and the
+ * end; the worker's working set (memory.current less inactive_file, sampled each second) above 90% of its task's memory
+ * over the whole run or in any phase or chain job (SAMPLED_PERIODS), or any of these sampled fewer than once each 2
+ * seconds; a backend holding more than ADVISORY_LOCKS_PER_TRANSACTION advisory locks at any sample over the run; a
+ * job's live heap above HEAP_LIVE_PERCENT of its heap limit, or a measured job that logged no `job heap` line (D19); a
+ * worker log line with error_code RELEASE_READ_OUTSIDE_FETCH or JOB_FAILED; and any of these that could not be read
+ * (fail closed). memory.peak and the memory by kind are reported beside the working set, never judged. Times are
+ * recorded and advisory, as the founder ruled for the screening's test (2026-10-23, reconciliation-001.md).
  */
 
 /**
@@ -276,6 +277,13 @@ export interface WindowsQuery {
   readonly plan: string | null;
 }
 
+/** A practice's actionable lines after its triage, the lines the scenario expects actionable, and how many of the first are among the second. */
+export interface TriagedLines {
+  readonly lines: number;
+  readonly expected: number;
+  readonly matched: number;
+}
+
 export interface CapacityMeasurements {
   readonly commit: string;
   readonly runtime: 'docker' | 'process';
@@ -301,6 +309,13 @@ export interface CapacityMeasurements {
    * past the first line's approval going to its twin (the amounts are the same). Null when they could not be counted.
    */
   readonly posted: { readonly lines: number; readonly inFull: number } | null;
+  /**
+   * A's lines its chain triage made actionable (in an open case), beside the scenario's expectation of them: each of A's
+   * lines priced on the contract's plan at least the line materiality short, none of its Medicare Advantage lines
+   * (scenario.ts, expectedActionableLines). A keeps its full month for triage and reports (Lane A's orchestrator,
+   * 2026-11-04), so the chain's triage and A's reports measure that month's open cases. Null when they could not be counted.
+   */
+  readonly aActionable: TriagedLines | null;
   readonly memory: WorkerMemory;
   /** null when the sampler could not run. */
   readonly advisoryLocks: AdvisoryLockSamples | null;
@@ -422,6 +437,20 @@ export function verdict(m: CapacityMeasurements): Verdict {
     reasons.push('F’s reconcile had no actionable line to post: F’s triage made none actionable, so the reconcile measured nothing');
   } else if (m.expected.postedLines !== m.expected.reconcileLines) {
     reasons.push(`F’s triage made ${String(m.expected.postedLines)} of its ${String(m.expected.reconcileLines)} lines actionable, not each of them, so step 7b reconciled other than the lines it was seeded with`);
+  }
+  // A's full month for triage and reports (Lane A's orchestrator, 2026-11-04): its chain triage makes actionable each line
+  // the scenario does, so its reports print that month's open cases; none, fewer or others would measure a lighter month
+  // than the one it was seeded with, and nothing else would flag it.
+  if (m.aActionable === null) {
+    reasons.push('A’s actionable lines after its triage could not be counted');
+  } else {
+    const { lines, expected, matched } = m.aActionable;
+    const scenario = `the ${String(expected)} the scenario expects (each of its contract lines priced at least the line materiality short, none of its Medicare Advantage lines)`;
+    if (lines === 0) {
+      reasons.push(`A’s triage made none of its lines actionable, of ${scenario}, so the chain’s triage and A’s reports measured no open case`);
+    } else if (lines !== expected || matched !== expected) {
+      reasons.push(`A’s triage made ${String(lines)} of its lines actionable, ${String(matched)} of them among ${scenario}, so the chain measured another month than the one A was seeded with`);
+    }
   }
   if (m.posted === null) {
     reasons.push('F’s posted lines could not be counted');
@@ -562,7 +591,7 @@ export function markdown(full: ReturnType<typeof report>): string {
         `| ${job.what} | ${PHASE_NAMES[job.phase]} | ${job.state ?? 'unread'} | ${job.attempts === null ? 'unread' : String(job.attempts)} | ${job.heap === null ? 'none' : `${String(job.heap.peakMib)} of ${String(heapLimitMib(full.worker.command, job.heap.limitMib))} MiB`} | ${seconds(job.elapsedMs)} |`,
     ),
     '',
-    `Run: ${full.run === null ? 'unread' : `${full.run.status}${full.run.failureCode === null ? '' : ` (${full.run.failureCode})`}`}; priced lines ${full.pricedLines === null ? 'unread' : String(full.pricedLines)} of ${String(full.expected.pricedLines)}; parsed claims ${full.parsedClaims === null ? 'unread' : String(full.parsedClaims)} of ${String(full.expected.parsedClaims)}; F’s lines posted ${full.posted === null ? 'unread' : `${String(full.posted.lines)} (${String(full.posted.inFull)} in full)`} of ${String(full.expected.postedLines)} actionable, of its ${String(full.expected.reconcileLines)} lines.`,
+    `Run: ${full.run === null ? 'unread' : `${full.run.status}${full.run.failureCode === null ? '' : ` (${full.run.failureCode})`}`}; priced lines ${full.pricedLines === null ? 'unread' : String(full.pricedLines)} of ${String(full.expected.pricedLines)}; A’s lines actionable after its triage ${full.aActionable === null ? 'unread' : `${String(full.aActionable.lines)} (${String(full.aActionable.matched)} of them expected) of ${String(full.aActionable.expected)} expected`}, of its ${String(full.expected.pricedLines)} lines; parsed claims ${full.parsedClaims === null ? 'unread' : String(full.parsedClaims)} of ${String(full.expected.parsedClaims)}; F’s lines posted ${full.posted === null ? 'unread' : `${String(full.posted.lines)} (${String(full.posted.inFull)} in full)`} of ${String(full.expected.postedLines)} actionable, of its ${String(full.expected.reconcileLines)} lines.`,
     '',
     `Memory: the ${String(MEMORY_PEAK_PERCENT)}% line (${mib((memory.limitBytes * MEMORY_PEAK_PERCENT) / 100)} of ${mib(memory.limitBytes)}) judges the worker’s ${WORKING_SET}, the measure the kubelet and cAdvisor evict on: at most ${memory.run.workingSetPeakBytes === null ? 'unread' : mib(memory.run.workingSetPeakBytes)} over the whole run (${String(memory.run.samples)} samples); memory.peak ${memory.peakBytes === null ? 'unread' : mib(memory.peakBytes)} over the run, page cache included (reported, not judged); OOM kills ${memory.oomKills === null ? 'unread' : String(memory.oomKills)}; ${eventsLine(memory)}; restarts ${memory.restarts === null ? 'unread' : String(memory.restarts)}.`,
     '',

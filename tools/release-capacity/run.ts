@@ -53,8 +53,10 @@ import {
   type SeededPractice,
   type Seeding,
   actionableLines,
+  againstExpected,
   capacity835,
   createRun,
+  expectedActionableLines,
   insertClaims,
   mapPlans,
   practiceClaims,
@@ -86,7 +88,8 @@ import {
  *     audit_report job (a PDF printed by Chromium in the same container), C's four parse_835 jobs; the worker's memory
  *     sampled every second until all six finish;
  *  7. the chain: A's triage job, then A's audit report; each wait up to 45 minutes, the memory sampled each second for
- *     each job alone;
+ *     each job alone; then A's actionable lines read back beside the lines the scenario makes actionable
+ *     (expectedActionableLines), since A keeps its full month for triage and reports;
  *  7b. F's reconcile (the ledger freeze exception granted 2026-10-27; docs/adr/0083), on a practice of its own at
  *     CAS-42.3's 2,000 lines, each actionable once F's setup triage ran, while A keeps its full month for triage and
  *     reports (Lane A's orchestrator, 2026-11-04, until SUITE-CAP-3 moves step 7b back to A; the summary's Known gap
@@ -294,8 +297,8 @@ async function jobOutcome(owner: DatabaseClient, job: Queued): Promise<JobOutcom
 
 /**
  * Cancels the monitoring chain's planning job that each of `documentIds`' parses queued (monitor, keyed by its document,
- * MONITOR_DELAY_SECONDS after the parse; apps/worker/src/monitor/trigger.ts) before it starts. Step 7b measures A's
- * reprocessing parses and its reconcile; the chain would price A's months again and queue a whole-practice reconcile for
+ * MONITOR_DELAY_SECONDS after the parse; apps/worker/src/monitor/trigger.ts) before it starts. Step 7b measures F's
+ * reprocessing parses and its reconcile; the chain would price F's months again and queue a whole-practice reconcile for
  * each month run, beside 7b and the large jobs together and measured by neither. Stops the run unless every one was
  * found waiting, so a chain is never left to run unmeasured.
  */
@@ -516,6 +519,7 @@ async function main(): Promise<number> {
   let pricedLines: number | null = null;
   let parsedClaims: number | null = null;
   let posted: CapacityMeasurements['posted'] = null;
+  let aActionable: CapacityMeasurements['aActionable'] = null;
   let expectedPosted = 0;
   let memory: WorkerMemory = {
     limitBytes: workerLimit.memoryMiB * MIB,
@@ -703,6 +707,9 @@ async function main(): Promise<number> {
       )),
     );
     await reportMemory.close();
+    // A's full month, read back once its chain triage ran: its actionable lines beside the scenario's (checks.ts).
+    aActionable = againstExpected(await actionableLines(seeding, a, aRun), await expectedActionableLines(seeding, a, aRun));
+    say(`A’s triage: ${String(aActionable.lines)} actionable lines (${String(aActionable.matched)} of them expected) of the ${String(aActionable.expected)} the scenario expects, of its ${String(size.measuredLines)}`);
     // 7b, F's reconcile, on a practice of its own (docs/adr/0083): its reprocessing 835s parsed, then its posting export
     // reconciled (approvals and postings in one pass).
     const reprocessed = reprocessing(RECONCILE_PRACTICE, fClaims, await actionableLines(seeding, f, fRun));
@@ -821,6 +828,7 @@ async function main(): Promise<number> {
     pricedLines,
     parsedClaims,
     posted,
+    aActionable,
     memory,
     advisoryLocks,
     errorCodes: codes,

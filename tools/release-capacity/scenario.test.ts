@@ -7,7 +7,7 @@ import { type PricedLine, disputeWindow, indexRelease, price } from '@tp/pricing
 import { contractAgreement, lineFacts, pricingInput, syntheticRelease } from '@tp/pricing/testing';
 import { readRecordFile } from '@tp/rules/content';
 import { SCALE_RELEASE_SHAPE, SCALE_THERAPY_CODES, dollars, scaleCodes, scaleZips } from '@tp/synth';
-import { DEFAULT_TRIAGE_SETTINGS, type DeadlineStatus, type TriageFacts, contractWindowRuleComputed, deadlineVerification, judgeLine } from '@tp/triage';
+import { DEFAULT_TRIAGE_SETTINGS, type DeadlineStatus, type TriageFacts, contractWindowRuleComputed, deadlineVerification, judgeLine, triageSettings } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import { COMMANDS, WORKER_JOBS } from '../../infra/lib/constructs/compute';
@@ -32,6 +32,7 @@ import {
   REPROCESSING_PAID_ON,
   SETTINGS,
   SMALL_SIZE,
+  againstExpected,
   capacity835,
   claimNumber,
   contractPages,
@@ -262,6 +263,21 @@ describe('the SYNTHETIC contract’s dispute window, which makes the practices�
     expect(deadline).toMatchObject({ status: 'unverified', cause: 'RECORD_BELOW_LEVEL' });
     expect(judgeLine(facts('ma_noncontracted', ma.ends_on, deadline.status), cents(500n), asOf)).toMatchObject({ validated: true, actionable: false, reasons: ['DEADLINE_UNVERIFIED'] });
   });
+
+  it('makes a contract line actionable from the practice’s line materiality up, and none of the Medicare Advantage lines, which is what the run expects of A’s triage (expectedActionableLines)', () => {
+    // The materiality triage reads from the practice's settings: the seed states none, so the default.
+    const materiality = triageSettings(SETTINGS).lineMaterialityCents;
+    expect(materiality).toBe(DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents);
+    const window = windowOf(CONTRACT_DISPUTE_WINDOW.days);
+    const contract = (variance: bigint): TriageFacts => ({ ...facts('contract', window.ends_on, 'verified'), varianceCents: cents(variance) });
+    expect(judgeLine(contract(materiality), materiality, asOf)).toMatchObject({ validated: true, actionable: true, reasons: [] });
+    expect(judgeLine(contract(materiality + 10_000n), materiality, asOf)).toMatchObject({ actionable: true });
+    expect(judgeLine(contract(materiality - 1n), materiality, asOf)).toMatchObject({ validated: true, actionable: false, reasons: ['BELOW_LINE_MATERIALITY'] });
+    expect(judgeLine(contract(0n), materiality, asOf)).toMatchObject({ validated: false, actionable: false });
+    // A Medicare Advantage line is never expected, however short.
+    const ma = windowOf(null, true);
+    expect(judgeLine({ ...facts('ma_noncontracted', ma.ends_on, 'unverified'), varianceCents: cents(materiality + 10_000n) }, materiality, asOf)).toMatchObject({ actionable: false, reasons: ['DEADLINE_UNVERIFIED'] });
+  });
 });
 
 describe('the reprocessing step 7b loads and posts, over a month of both plans (CAS-42.4)', () => {
@@ -423,5 +439,26 @@ describe('step 7b’s practice, F (Lane A’s orchestrator, 2026-11-04: a practi
       reviewFlags: [],
     };
     expect(judgeLine(facts, materiality, '2026-11-04')).toMatchObject({ validated: true, actionable: true, reasons: [] });
+  });
+
+  it('describes step 7b and its settings as F’s wherever the harness names them: A only keeps its full month for triage and reports', () => {
+    for (const file of ['run.ts', 'scenario.ts', 'checks.ts']) {
+      // Comments joined across their line breaks, so a phrase split over two lines is read whole.
+      const text = readFileSync(path.join(repositoryRoot, 'tools/release-capacity', file), 'utf8').replace(/\n\s*(?:\*|\/\/)\s*/g, ' ');
+      expect(text, file).not.toMatch(/A['’]s (?:reconcile|reprocessing)/);
+      expect(text, file).not.toMatch(/price A['’]s months/);
+    }
+  });
+});
+
+describe('A’s full month for triage and reports: its actionable lines beside the scenario’s (Lane A’s orchestrator, 2026-11-04)', () => {
+  it('counts A’s actionable lines, those of them the scenario expects, and how many it expects, by lineKey', () => {
+    const expected = new Set([lineKey(1, 1), lineKey(1, 2), lineKey(3, 1)]);
+    expect(againstExpected(new Map([[lineKey(1, 1), 5_500n], [lineKey(1, 2), 6_000n], [lineKey(3, 1), 7_000n]]), expected)).toEqual({ lines: 3, expected: 3, matched: 3 });
+    // A line of a Medicare Advantage claim actionable while an expected line is not: as many lines, one fewer matched.
+    expect(againstExpected(new Map([[lineKey(1, 1), 5_500n], [lineKey(2, 1), 6_000n], [lineKey(3, 1), 7_000n]]), expected)).toEqual({ lines: 3, expected: 3, matched: 2 });
+    expect(againstExpected(new Map([[lineKey(1, 1), 5_500n]]), expected)).toEqual({ lines: 1, expected: 3, matched: 1 });
+    expect(againstExpected(new Map(), expected)).toEqual({ lines: 0, expected: 3, matched: 0 });
+    expect(againstExpected(new Map(), new Set())).toEqual({ lines: 0, expected: 0, matched: 0 });
   });
 });

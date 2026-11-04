@@ -43,8 +43,11 @@ import {
   singleTransactionFile,
 } from '@tp/synth';
 import { type Cents, cents } from '@tp/money';
+import { triageSettings } from '@tp/triage';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { createPricingRun } from '@tp/worker/pricing';
+
+import type { TriagedLines } from './checks';
 
 /**
  * The weekly real-size test's practices (audit #31; docs/adr/0071; tools/release-capacity/run.ts), all SYNTHETIC: what
@@ -57,7 +60,8 @@ import { createPricingRun } from '@tp/worker/pricing';
  *   Medicare whose own dispute window is cited and verified (CONTRACT_DISPUTE_WINDOW), so its material lines are
  *   actionable (the Medicare Advantage lines' deadlines stay unverified: the release's Medicare window record is L1,
  *   and no Medicare Advantage route is confirmed until golden QUESTIONS Q34 is answered); the practice's location a ZIP
- *   of the scale release.
+ *   of the scale release. The run fails unless its chain triage makes exactly those lines actionable
+ *   (expectedActionableLines): A keeps its full month for triage and reports (Lane A's orchestrator, 2026-11-04).
  * - B, a 20,000-line period of the same shape, priced and triaged during setup, with an audit report requested as the
  *   report action requests one; its job runs in the concurrent phase.
  * - C, four SYNTHETIC 835s of 2,000 claims each, written by packages/synth's 835 writer and staged as intake leaves a
@@ -119,7 +123,8 @@ export const CAPACITY_ZIP: string = (scaleZips(SCALE_RELEASE_SHAPE).find((zip) =
 export const PLACE_OF_SERVICE = { '11': 'non_facility', '22': 'facility' } as const;
 /**
  * Every practice's settings: the place-of-service split and rounding it prices with, and the ledger's (a posted entry
- * proves recovery; posting exports read with the SYNTHETIC PM EXPORT v1 template), for A's reconcile.
+ * proves recovery; posting exports read with the SYNTHETIC PM EXPORT v1 template), for F's reconcile (step 7b). No
+ * triage setting: each practice triages at the default line materiality.
  */
 export const SETTINGS = { place_of_service_settings: PLACE_OF_SERVICE, default_rounding: 'HALF_UP_CENT', proof_level: 'posted', posting_export_template: { template: 'synthetic_pm_export_v1' } } as const;
 
@@ -591,7 +596,7 @@ export async function requestReport(seeding: Seeding, practice: SeededPractice, 
   return id;
 }
 
-/** A practice's actionable lines after its triage (F's, step 7b), by lineKey (claim number and line number), each with its expected allowed amount. */
+/** A practice's actionable lines after its triage (A's after the chain's, F's for step 7b), by lineKey (claim number and line number), each with its expected allowed amount. */
 export async function actionableLines(seeding: Seeding, practice: SeededPractice, runId: string): Promise<Map<string, bigint>> {
   const { owner } = seeding;
   const { rows } = await asOwner(owner, [practice.practiceId], () =>
@@ -604,6 +609,40 @@ export async function actionableLines(seeding: Seeding, practice: SeededPractice
     ),
   );
   return new Map(rows.map((row) => [lineKey(row.claim_no, row.line_no), BigInt(row.expected)]));
+}
+
+/**
+ * The lines the scenario makes actionable once a practice of A's shape is triaged (the practices, above), by lineKey:
+ * each line priced in the run on the contract's plan, whose dispute window is cited and verified, with a variance of at
+ * least the line materiality triage reads from the practice's settings; none on the Medicare Advantage plan, whose
+ * deadlines stay unverified. Read from the price job's priced lines, never from triage's own rows, so a triage that
+ * makes fewer, more or other lines actionable shows against it.
+ */
+export async function expectedActionableLines(seeding: Seeding, practice: SeededPractice, runId: string): Promise<Set<string>> {
+  const { owner } = seeding;
+  const rows = await asOwner(owner, [practice.practiceId], async () => {
+    const settings = (await owner.query<{ settings: unknown }>('SELECT settings FROM practice WHERE id = $1', [practice.practiceId])).rows[0]?.settings;
+    const materiality = triageSettings(settings ?? {}).lineMaterialityCents;
+    const { rows: priced } = await owner.query<{ claim_no: number; line_no: number }>(
+      `SELECT c.claim_no, l.line_no
+         FROM priced_line p JOIN service_line l ON l.id = p.service_line_id JOIN claim c ON c.id = l.claim_id JOIN plan pl ON pl.id = l.payer_plan_key
+        WHERE p.practice_id = $1 AND p.pricing_run_id = $2 AND pl.plan_key = $3 AND p.variance_cents >= $4`,
+      [practice.practiceId, runId, practiceNames(practice.label).contractPlan, materiality.toString()],
+    );
+    return priced;
+  });
+  return new Set(rows.map((row) => lineKey(row.claim_no, row.line_no)));
+}
+
+/** A practice's actionable lines (actionableLines) beside those the scenario expects (expectedActionableLines). */
+export function againstExpected(actionable: ReadonlyMap<string, bigint>, expected: ReadonlySet<string>): TriagedLines {
+  let matched = 0;
+  for (const key of actionable.keys()) {
+    if (expected.has(key)) {
+      matched += 1;
+    }
+  }
+  return { lines: actionable.size, expected: expected.size, matched };
 }
 
 /**

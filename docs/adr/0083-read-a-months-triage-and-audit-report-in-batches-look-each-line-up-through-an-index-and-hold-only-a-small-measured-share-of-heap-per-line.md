@@ -494,7 +494,14 @@ As built (`tools/release-capacity/scenario.ts`, `run.ts`, `checks.ts`):
   step 7b always reconciles the size it was seeded at. The 30 s actionable write budget is CAS-42.1's, on A's triage of
   its full month (`triage.large.db.test.ts`), unchanged; the weekly run's times stay advisory.
 - A keeps its full month: priced in the concurrent phase, triaged and reported in the chain, reported again in the
-  large jobs together. Its actionable lines are not reconciled until SUITE-CAP-3.
+  large jobs together. Its actionable lines are not reconciled until SUITE-CAP-3. Once its chain triage has run, the run
+  reads A's actionable lines (those in an open case) beside the lines the scenario makes actionable, read from the price
+  job's priced lines rather than from triage's own rows (`expectedActionableLines`: each of A's lines on the contract's
+  plan at least the line materiality short, none of its Medicare Advantage lines, whose deadlines stay unverified), and
+  fails unless they are the same lines, none of them included; the summary's Run line prints both. While step 7b ran on
+  A, its guard against a reconcile of nothing covered a triage of A that made no line actionable; this check keeps that
+  cover on A once step 7b moved to F, and also catches a triage that makes fewer, more or other lines actionable than
+  the month it was seeded with (the review of 2026-11-04).
 - Every summary, on a pass, a failure, a smoke run or a run that stopped early, prints the fixed line
   (`KNOWN_GAP`), word for word: "Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F,
   a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage
@@ -507,6 +514,9 @@ As built (`tools/release-capacity/scenario.ts`, `run.ts`, `checks.ts`):
 - Failing first: the new scenario tests (F seeded at CAS-42.3's 2,000 lines, not A; each of F's lines priced and judged
   actionable) fail on the old `scenario.ts`, 3 of the file's 22 tests; the new checks (F's posted lines, F's triage
   making each line actionable, the Known gap line on a pass and on a failure) are among the 20 above.
+  A's check (none, fewer, more or other lines than the scenario's, or uncounted; and the Run line) fails on the
+  `checks.ts` before it, 2 of the file's 35 tests, and its scenario test (A's actionable lines matched against the
+  expected ones) on the `scenario.ts` before it.
 
 #### The release loader's freeze, 2026-11-04
 
