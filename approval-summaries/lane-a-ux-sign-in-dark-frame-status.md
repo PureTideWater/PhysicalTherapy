@@ -28,9 +28,15 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   3/3 alone); e2e 78; CI green on f5676fae. Verification: **RE-MERGE NEEDED** only (base moved to 30871f72). Plan: after
   test-flakes-5 (which also edits e2e/a11y.ts) merges, merge the base into #116 once (keeping both helpers), push, CI, merge.
 
+- 2026-11-04T22:35:00Z: **MERGED: #116 as 35422a92** (merge commit; expectedHeadSha 8a23b4da; base c7bed0f7). Before it, the base
+  (with #117) was merged once (8a23b4da), keeping both a11y.ts helpers. expectAccessibleInDark now calls expectAccessible,
+  so it gets #117's title wait, and AccessibleOptions adds `soft`, which brand.spec.ts uses. The re-check was green: typecheck,
+  lint, build, e2e brand, sign-in-time and a11y-title 13/13, synth and watched clean. CI green on 8a23b4da (22 runs). Ready
+  22:31Z; approval-of-record success 22:32:02Z. Unsubscribed.
+
 ## Waiting on someone
 - The brand owner (not blocking): dark sign-in keeps Paper or takes the dark ground (ADR 0056:134); #116 takes the dark
   ground, within BRAND.md section 4.
 
 ## Next step
-The item workflow.
+Merged (35422a92).
