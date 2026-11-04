@@ -10,6 +10,10 @@ c220f82fc5b52f685347449046ab3e13dd2c6c68:apps/worker/src/support/inbox.test.ts:g
 9ddb39e5ce3d4c538c44d37167a89e220fbd83b9:apps/web/src/lib/auth/dev-provider.test.ts:generic-api-key:17
 9ddb39e5ce3d4c538c44d37167a89e220fbd83b9:apps/web/src/lib/auth/sign-in.db.test.ts:generic-api-key:25
 9ddb39e5ce3d4c538c44d37167a89e220fbd83b9:apps/web/src/lib/routes/sign-in-routes.db.test.ts:generic-api-key:41
+# the same synthetic password on the Cognito provider test's sign-in expectation, the line rewritten when the
+# SECRET_HASH expectation was added (commit 9d71767, co-001/cognito-confidential-client); the match is
+# `PASSWORD: 'Synthetic-Pass-2026'`, and SECRET_HASH there is a call on a synthetic test secret, not a value
+9d71767210db34e111ed8ff379a3e09437145b10:apps/web/src/lib/auth/cognito-provider.test.ts:generic-api-key:147
 
 # synthetic Stripe keys (sk_/pk_ live and test, whsec_) built from "synthetic0000000000" for the billing config tests
 a301ad8d52c282fa47b8d4c019f845d1678138eb:apps/web/src/lib/billing/config.test.ts:stripe-access-token:21
