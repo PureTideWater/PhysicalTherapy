@@ -1,8 +1,9 @@
+import type * as crypto from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DevAuthProvider, temporaryPassword } from './dev-provider';
 import { type DevUserRecord, FileDevStore, MemoryDevStore } from './dev-store';
@@ -12,6 +13,14 @@ import { Sealer } from './seal';
 import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS } from './step-limits';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
 import { totpCode } from './totp';
+
+// The real comparison, watched: a plain `===` would pass every answer, so the reset code's test reads the call (N-1).
+const { timingSafeEqual } = vi.hoisted(() => ({ timingSafeEqual: vi.fn<(a: NodeJS.ArrayBufferView, b: NodeJS.ArrayBufferView) => boolean>() }));
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof crypto>();
+  timingSafeEqual.mockImplementation(actual.timingSafeEqual);
+  return { ...actual, timingSafeEqual };
+});
 
 const ORIGIN = 'http://localhost:3100';
 const CHEAP = { n: 1024, r: 8, p: 1 };
@@ -259,6 +268,19 @@ describe('DevAuthProvider: a forgotten password (SGN-06)', () => {
     await dev.requestPasswordReset('person@synthetic.test');
     await store.update('sub-1', (current) => (current.reset === undefined ? current : { ...current, reset: { ...current.reset, codeHash: 'short' } }));
     expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('compares a code’s hash of the same length with timingSafeEqual, not ===, for a wrong code and the right one (N-1)', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const code = codeFor(resets);
+    const wrong = code === '000000' ? '000001' : '000000';
+    timingSafeEqual.mockClear();
+    expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', code, NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    // Both hashes reach the comparison, of one nonzero length.
+    expect(timingSafeEqual.mock.calls.map(([kept, offered]) => kept.byteLength > 0 && kept.byteLength === offered.byteLength)).toEqual([true, true]);
+    expect(timingSafeEqual.mock.results.map((result) => result.value as boolean)).toEqual([false, true]);
   });
 
   it('checks the password policy before the code, spending no try', async () => {
