@@ -370,6 +370,14 @@ export class SignInFlow {
       return refused('enrolment_not_open');
     }
     const step = await this.deps.provider.completeTotpSetup(pending.challenge, code);
+    // The tokens must name the subject the rule approved: otherwise the factor and the session would belong to a user
+    // the rule never checked (review security-N1). No factor is audited and no session opened.
+    if (step.kind === 'authenticated' && step.identity.sub !== pending.subject) {
+      await this.deps.provider.release(step.grant);
+      const approved = await this.account({ sub: pending.subject });
+      this.deps.logger.warn('security event: second-factor enrolment refused', { user_id: approved?.user_id ?? null, request_id: context.requestId });
+      return refused('enrolment_not_open');
+    }
     if (step.kind === 'authenticated') {
       const account = await this.account({ sub: step.identity.sub });
       if (account !== undefined) {

@@ -792,6 +792,22 @@ describe('SEC-22: a second factor is enrolled only inside a live invitation (doc
     expect(await factorOf(first.sub)).toBeNull();
   });
 
+  it('SEC-22: refuses a verified setup whose tokens name another subject than the rule approved, opening no session and auditing no factor (review security-N1)', async () => {
+    const invited = await invitee();
+    const keyed = await withSetupKey(pendingOf(await flow.start(invited.email, PASSWORD, context())));
+    const { flow: enrolling, lines } = paced();
+    const complete = vi.spyOn(provider, 'completeTotpSetup').mockResolvedValueOnce({ kind: 'authenticated', identity: { sub: randomUUID(), email: invited.email, method: 'totp' }, grant: 'synthetic-grant' });
+    const release = vi.spyOn(provider, 'release').mockResolvedValueOnce(undefined);
+    const request = context();
+    expect(await enrolling.completeTotpSetup(keyed, setupCode(keyed), request)).toEqual(NOT_OPEN);
+    expect(release).toHaveBeenCalledWith('synthetic-grant');
+    complete.mockRestore();
+    release.mockRestore();
+    expect(await events(invited.id)).toEqual([]);
+    expect(await openSessions(invited.id)).toBe(0);
+    expect(logged(lines, ENROLMENT_REFUSED)).toEqual([{ level: 'warn', msg: ENROLMENT_REFUSED, time: expect.any(String), user_id: invited.id, request_id: request.requestId }]);
+  });
+
   it('SEC-22: a step sealed by the release before, with no subject, starts again', async () => {
     const invited = await invitee();
     const sealed = pendingOf(await flow.start(invited.email, PASSWORD, context()));
