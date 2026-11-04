@@ -155,6 +155,9 @@ function repository(options: {
   readonly headCheckerEdit?: boolean;
   readonly baseExceptions?: unknown;
   readonly headExceptions?: unknown;
+  /** Further files of the base and of the head (a release pin's release.txt). */
+  readonly baseFiles?: Readonly<Record<string, string>>;
+  readonly headFiles?: Readonly<Record<string, string>>;
 }) {
   const dir = mkdtempSync(path.join(scratch, 'repo-'));
   const env = { ...process.env, HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
@@ -168,12 +171,14 @@ function repository(options: {
   write(CHECKER_FILE, '// the checker\n');
   if (options.baseAge ?? true) write(AGE_FILE, '// the age rule\n');
   if (options.baseExceptions !== undefined) write(AGE_EXCEPTIONS, JSON.stringify(options.baseExceptions));
+  for (const [file, text] of Object.entries(options.baseFiles ?? {})) write(file, text);
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
   write('.github/workflows/ci.yml', options.head);
   if (options.headCheckerEdit === true) write(CHECKER_FILE, '// the checker, edited\n');
   if (options.headExceptions !== undefined) write(AGE_EXCEPTIONS, JSON.stringify(options.headExceptions));
+  for (const [file, text] of Object.entries(options.headFiles ?? {})) write(file, text);
   write('README.md', 'head\n');
   git('add', '.');
   git('commit', '-q', '-m', 'head');
@@ -649,6 +654,51 @@ describe('the times read', SPAWNS, () => {
       vi.doUnmock('../check-toolchain/exclude-window');
       vi.resetModules();
     }
+  });
+});
+
+describe('a pinned release (tools/trivy/release.txt, tools/gitleaks/release.txt)', SPAWNS, () => {
+  // The upstreams are the list's (PINNED_RELEASES); their commits, tags and answers here are synthetic.
+  const TRIVY = 'aquasecurity/trivy';
+  const FILE = 'tools/trivy/release.txt';
+  const pinned = (version: string) => `# synthetic\nversion ${version}\nlinux_x64 ${'a'.repeat(64)}\n`;
+  const bumps = (from: string | undefined, to: string) => repository({ base: workflow([]), head: workflow([]), ...(from === undefined ? {} : { baseFiles: { [FILE]: pinned(from) } }), headFiles: { [FILE]: pinned(to) } });
+  const upstream = (commit: { sha: string; raw: string | Buffer }, version = 'v1.2.3', tagged = true) =>
+    recordedTransport({ tags: { [TRIVY]: tagged ? lightweight(version, commit.sha) : '' }, git: { [TRIVY]: { head: commit.sha, tags: tagged ? { [version]: { object: commit.sha, commit: commit.sha } } : {}, objects: { [commit.sha]: commit.raw } } } });
+
+  it('ages a version new against the base by its tag’s commit, as a new action pin: under three days old it fails naming the file, and passes at ten', async () => {
+    const commit = signedObject('signed.commit');
+    const repo = bumps('1.2.2', '1.2.3');
+    const young = await run(repo, upstream(commit), { now: new Date(SIGNED + DAY) });
+    expect(young.errors).toEqual([expect.stringContaining(`${TRIVY}@${commit.sha} v1.2.3: under three days old:`)]);
+    expect(young.notes).toContain(`age: ${FILE} names ${TRIVY} v1.2.3, new against the base: aged as ${TRIVY}@${commit.sha}, the commit its tag names`);
+    const old = await run(repo, upstream(commit), { now: new Date(SIGNED + 10 * DAY) });
+    expect(old.errors).toEqual([]);
+    // A file the base does not have is new too (the pull request that adds it).
+    expect((await run(bumps(undefined, '1.2.3'), upstream(commit), { now: new Date(SIGNED + DAY) })).errors).toEqual([expect.stringContaining(': under three days old:')]);
+  });
+
+  it('refuses a version whose tag the upstream does not list, as a compromised release whose tag was deleted, and fails closed when the upstream cannot be read', async () => {
+    const commit = signedObject('signed.commit');
+    const repo = bumps('1.2.2', '1.2.3');
+    const gone = await run(repo, upstream(commit, 'v1.2.3', false), { now: new Date(SIGNED + 10 * DAY) });
+    expect(gone.errors).toEqual([`${FILE}: no tag v1.2.3 in ${TRIVY} (git ls-remote), so version 1.2.3 names no release (as when a compromised release's tag is deleted upstream); pin another release`]);
+    const down = recordedTransport({ tags: { [TRIVY]: new Error('fatal: unable to access') } });
+    const failed = await run(repo, down, { now: new Date(SIGNED + 10 * DAY) });
+    expect(failed.errors).toEqual([expect.stringMatching(/^tools\/trivy\/release\.txt: github\.com: git ls-remote of aquasecurity\/trivy refs\/tags\/v1\.2\.3 failed 3 times .*the check fails closed$/)]);
+    const push = await run(repo, upstream(commit, 'v1.2.3', false), { now: new Date(SIGNED + 10 * DAY), event: 'push' });
+    expect(push.errors).toEqual([]);
+    expect(push.warnings).toContain(`${FILE}: no tag v1.2.3 in ${TRIVY} (git ls-remote), so version 1.2.3 names no release (as when a compromised release's tag is deleted upstream); pin another release`);
+  });
+
+  it('never reads a version the base already pins, and refuses a file with no version line', async () => {
+    const commit = signedObject('signed.commit');
+    const transport = upstream(commit);
+    const same = await run(bumps('1.2.3', '1.2.3'), transport, { now: new Date(SIGNED + DAY) });
+    expect(same.errors).toEqual([]);
+    expect(transport.reads.filter((read) => read.includes(TRIVY))).toEqual([]);
+    const broken = repository({ base: workflow([]), head: workflow([]), headFiles: { [FILE]: '# no version\n' } });
+    expect((await run(broken, upstream(commit), { now: new Date(SIGNED + 10 * DAY) })).errors).toEqual([`${FILE}: no line "version <major>.<minor>.<patch>", so the release it pins cannot be aged`]);
   });
 });
 

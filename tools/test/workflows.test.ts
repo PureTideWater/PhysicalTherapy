@@ -2266,6 +2266,8 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
     'tools/ci/browser-build.ts',
     'apps/web/e2e/browser.json',
     'apps/web/e2e/browser-builds/*',
+    // The pinned Trivy every build leg installs (tools/trivy/install.sh and its release.txt).
+    'tools/trivy/**',
   ];
   // Two of the release build's four legs: the web image (which stands for the capacity job's production web image) and
   // the worker image. web-staging and web-production differ from web only by a repository variable's static host.
@@ -2396,6 +2398,93 @@ describe('every checkout (CI-11)', () => {
         }
       }
     }
+  });
+});
+
+describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)', () => {
+  /** The step every job with a Trivy step runs first: the pinned release, its archive checked, onto this run's PATH. */
+  const INSTALL: Step = { name: 'The pinned Trivy', run: 'trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"\ndirname "$trivy" >> "$GITHUB_PATH"\necho "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"\n' };
+  /** A file's lines less its whole-line comments. */
+  const uncommented = (text: string) => text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+  const trivyJobs = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).filter(([, job]) => job.steps.some((step) => usesAction(step, 'aquasecurity/trivy-action'))).map(([id, job]) => ({ where: `${file} ${id}`, job })));
+
+  it('installs Trivy from its GitHub release, checked against tools/trivy/release.txt, before the first Trivy step of each job, and never by setup-trivy, whose installer downloads from get.trivy.dev', () => {
+    // ci.yml's images job, release.yml's build and the dry run's build: five Trivy steps in three jobs.
+    expect(trivyJobs().map(({ where }) => where)).toEqual(['ci.yml images', 'release-dry-run.yml build', 'release.yml build']);
+    for (const { where, job } of trivyJobs()) {
+      const install = job.steps.findIndex((step) => step.name === INSTALL.name);
+      expect(install, where).toBeGreaterThanOrEqual(0);
+      expect(job.steps[install], where).toEqual(INSTALL);
+      expect(install, where).toBeLessThan(job.steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action')));
+      // Each Trivy step runs the installed binary by its absolute path (TRIVY_CMD, which trivy-action's entrypoint runs in
+      // place of `trivy` from PATH, where each trivy-action step prepends its own directory), never one setup-trivy
+      // downloads, and no step sets TRIVY_CMD otherwise; nothing names a version for it.
+      for (const step of job.steps.filter((candidate) => usesAction(candidate, 'aquasecurity/trivy-action'))) {
+        expect([step.with?.['skip-setup-trivy'], step.with?.version, step.with?.cache], `${where}: ${step.name ?? ''}`).toEqual([true, undefined, false]);
+        expect([step.env?.TRIVY_CMD, job.env?.TRIVY_CMD], `${where}: ${step.name ?? ''}`).toEqual([undefined, undefined]);
+      }
+    }
+    // No line but a comment names setup-trivy or its installer's host.
+    for (const file of workflowFiles()) {
+      expect(uncommented(readFileSync(path.join(WORKFLOWS, file), 'utf8')), file).not.toMatch(/aquasecurity\/setup-trivy|get\.trivy\.dev|contrib\/install\.sh/);
+    }
+  });
+
+  it('pins one version and a SHA-256 for each Linux archive, and checks the archive before anything in it runs', () => {
+    const release = readFileSync(path.join(repositoryRoot, 'tools/trivy/release.txt'), 'utf8');
+    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+    for (const platform of ['linux_x64', 'linux_arm64']) expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+    const installer = readFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), 'utf8');
+    expect(installer).toContain('https://github.com/aquasecurity/trivy/releases/download/v$version');
+    expect(uncommented(installer)).not.toMatch(/get\.trivy\.dev/);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeGreaterThan(0);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // Both pinned installers download over https alone, and follow a redirect only to https (a file:// mirror is the
+    // tests'); the pinned SHA-256 still decides what runs.
+    for (const tool of ['trivy', 'gitleaks']) {
+      const text = readFileSync(path.join(repositoryRoot, `tools/${tool}/install.sh`), 'utf8');
+      const curls = uncommented(text).split('\n').filter((line) => /\bcurl\b/.test(line));
+      expect(curls.length, tool).toBe(1);
+      expect(curls[0], tool).toContain("curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 ");
+    }
+  });
+
+  const linux = process.platform === 'linux' && (process.arch === 'x64' || process.arch === 'arm64');
+  it.runIf(linux)('installs the archive whose SHA-256 release.txt pins into the directory it is given, and refuses another, leaving nothing installed', () => {
+    const root = mkdtempSync(path.join(scratch, 'trivy-'));
+    const version = '0.70.0';
+    const asset = `trivy_${version}_Linux-${process.arch === 'x64' ? '64bit' : 'ARM64'}.tar.gz`;
+    const archive = (dir: string, body: string) => {
+      mkdirSync(path.join(dir, 'x'), { recursive: true });
+      writeFileSync(path.join(dir, 'x/trivy'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      writeFileSync(path.join(dir, 'x/README.md'), 'not installed\n');
+      execFileSync('tar', ['-czf', path.join(dir, asset), '-C', path.join(dir, 'x'), 'trivy', 'README.md']);
+      return createHash('sha256').update(readFileSync(path.join(dir, asset))).digest('hex');
+    };
+    const good = archive(path.join(root, 'good'), `echo "Version: ${version}"`);
+    archive(path.join(root, 'bad'), `echo "Version: ${version}"; echo planted`);
+    // The repository's installer beside a release.txt that pins the good archive (the script reads the file beside it).
+    const tools = path.join(root, 'tools/trivy');
+    mkdirSync(tools, { recursive: true });
+    copyFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), path.join(tools, 'install.sh'));
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${good}\nlinux_arm64 ${good}\n`);
+    const install = (from: string, into: string) =>
+      spawnSync('bash', [path.join(tools, 'install.sh'), into], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, TRIVY_DOWNLOAD_BASE: `file://${path.join(root, from)}` }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    const ok = install('good', path.join(root, 'bin-good'));
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout.trim()).toBe(path.join(root, 'bin-good/trivy'));
+    expect(readdirSync(path.join(root, 'bin-good'))).toEqual(['trivy']);
+    const refused = install('bad', path.join(root, 'bin-bad'));
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`not the ${good} that`);
+    expect(existsSync(path.join(root, 'bin-bad/trivy'))).toBe(false);
+    // An archive that matches but whose trivy reports another version is refused too, and not left on PATH.
+    const other = archive(path.join(root, 'other'), 'echo "Version: 0.69.4"');
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${other}\nlinux_arm64 ${other}\n`);
+    const wrong = install('other', path.join(root, 'bin-other'));
+    expect(wrong.status).toBe(1);
+    expect(wrong.stderr).toContain('0.69.4');
+    expect(existsSync(path.join(root, 'bin-other/trivy'))).toBe(false);
   });
 });
 
