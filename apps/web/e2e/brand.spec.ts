@@ -391,6 +391,8 @@ const DARK_GROUND = 'rgb(11, 22, 38)';
  * only: none of these needs an account.
  */
 test('the sign-in frame reads in dark: the dark ground, axe-core contrast, and the focus at 3:1 on the frame', async ({ page }) => {
+  // Five screens, each with soft checks that wait out their own timeout when they fail: room for a red run to report all.
+  test.setTimeout(120_000);
   const screens: readonly { readonly name: string; readonly path: string; readonly width: number; readonly focus?: string }[] = [
     { name: 'sign-in', path: '/sign-in', width: 1280, focus: 'Forgot your password?' },
     { name: 'sign-in', path: '/sign-in', width: 390, focus: 'Forgot your password?' },
