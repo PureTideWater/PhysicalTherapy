@@ -1518,3 +1518,10 @@ HANDOFF.md; LANES.md rule 10).
 - PR 2 (the confidential client and the cutover) is cut after PR 1 is deployed to staging.
 - For the founder: F0 (a staging sign-in with a synthetic account, before release N reaches production); F1 to F5 and ruling 16 (the SCP), before PR 2.
 - #114 (test-flakes-4) is open, opened by the orchestrator for S2. S4 goes on to the dark sign-in frame's link contrast, then the code email and the "password changed" email.
+
+### 2026-11-04 18:10 UTC: SUITE-CAP-1b (#110) fix round pushed 4a8357d9; CAS-42.5's memory measure decided
+- #110's fix round: the confirmed findings fixed; the loader amendment, failing first; 14 operator-word fixes; the harness exercises step 7b; #109 and #113 merged in. Full suite once, green: unit 7,610; test:db 9,815; e2e 77; Stryker.
+- **Decided (not a founder ruling: no ruling chose memory.peak; ADR 0062's own check already judges anonymous memory):** CAS-42.5's 90% line (921.6 MiB) applies to the worker container's working set, memory.current minus inactive_file. That is the kubelet's eviction measure, and the kernel reclaims inactive cache before an OOM kill.
+  - memory.peak and memory by kind stay reported beside it.
+  - Any oom or oom_kill event fails the run.
+  - Evidence from two instrumented runs on one tree: peak 842.9 and 958.6 MiB, all of the swing page cache (238 and 335 MiB); the worker's own memory 595.8 and 622.8 MiB.
