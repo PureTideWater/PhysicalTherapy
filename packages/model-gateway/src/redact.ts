@@ -582,8 +582,6 @@ const LABEL_HEAD =
   `|\\bnumber(?=${LABEL_SPACE}*[:=\\p{Pd}\\u2212]?${LABEL_SPACE}*is${LABEL_SPACE})` +
   `|\\bre(?=${LABEL_SPACE}*:)`;
 const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
-/** IDENTIFIER_LABEL read from one position only (sticky): the label a line or a sentence begins (labelsBefore). */
-const IDENTIFIER_LABEL_AT = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iuy');
 /**
  * Where a line or a sentence begins, at its first letter: after a line break, or after a full stop, "!" or "?" and white
  * space when the full stop is no abbreviation's own (LABEL_ABBREVIATION: "Acct. No." is one label), past any marks
@@ -617,12 +615,12 @@ const kindOf = (match: RegExpExecArray): LabelKind => (match.groups?.claim !== u
 
 /**
  * The kinds of the identifier labels (IDENTIFIER_LABEL) that end at a position of text, none when no label does: the
- * leftmost label that ends there, and each label that begins a line or a sentence (LINE_OR_SENTENCE_START) and ends
- * there. A head joins a qualifier on the next line (a wrapped "Claim\nNumber:"), so after a line break both the joined
- * label and the next line's own count ("Claim\nID:" is a claim's label and "ID:"); a head joins its qualifiers over its
- * own full stop too ("Member.ID", "Claim. No"), so where that reading reaches over a sentence end the label the sentence
- * begins counts as well (MOD-13, seed 460548619: "CLAIM.\nID:" is "ID:"). A label
- * on one line within one sentence is one label ("Claim ID:", "Acct. No.", "Member ID No."), so G2 holds for it.
+ * leftmost label that ends there, and the leftmost one that begins at or after each start of a line or a sentence
+ * (LINE_OR_SENTENCE_START) and ends there. A head joins its qualifiers over its own full stop and over a line break (a
+ * wrapped "Claim\nNumber:", "Member.ID", "Claim. No"), so that reading may reach over a line's or a sentence's end; the
+ * label the next line or sentence holds then counts as well, however many words it is and wherever on that line it
+ * begins ("CLAIM.\nID:" is "ID:", MOD-13 seed 460548619; "claim\nID No." is "No.", review finding security-rlb-sec-1).
+ * A label on one line within one sentence is one label ("Claim ID:", "Acct. No.", "Member ID No."), so G2 holds for it.
  * `written` gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never
  * "no.").
  */
@@ -630,15 +628,15 @@ function labelsBefore(text: string, at: number, written: (index: number) => stri
   const from = Math.max(0, at - 40);
   const before = text.slice(from, at);
   const kinds = new Set<LabelKind>();
-  const read = (match: RegExpExecArray | null) => {
-    if (match !== null && (match.groups?.no === undefined || capital(written(from + match.index)))) {
+  const readFrom = (start: number) => {
+    const match = IDENTIFIER_LABEL.exec(before.slice(start));
+    if (match !== null && (match.groups?.no === undefined || capital(written(from + start + match.index)))) {
       kinds.add(kindOf(match));
     }
   };
-  read(IDENTIFIER_LABEL.exec(before));
+  readFrom(0);
   for (const start of before.matchAll(LINE_OR_SENTENCE_START)) {
-    IDENTIFIER_LABEL_AT.lastIndex = start.index + start[0].length;
-    read(IDENTIFIER_LABEL_AT.exec(before));
+    readFrom(start.index + start[0].length);
   }
   return [...kinds];
 }

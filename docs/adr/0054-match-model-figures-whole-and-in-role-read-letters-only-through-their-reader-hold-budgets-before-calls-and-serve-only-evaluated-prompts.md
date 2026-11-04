@@ -328,8 +328,9 @@ this amendment holds.
   label of that word's kind (`GLUED_LABEL`: a head word, `ID`, `Nbr`, `Num`, `Ref`, or `No` with a capital N, a whole
   word or after a small letter): `ICN99887766`, `Member ID12345678`, and `Claim №99887766`, `Member №ZZ12345678` and
   `Claim№99887766`, which NFKC writes `No99887766`, `NoZZ12345678` and `ClaimNo99887766`.
-  Since 2026-11-04 (MOD-13 seed 460548619) the label a line or a sentence begins counts beside the leftmost one
-  (`labelsBefore`): a head joins its qualifiers over its own full stop and over white space and line breaks, as before
+  Since 2026-11-04 (MOD-13 seed 460548619) the leftmost label at or after each start of a line or a sentence counts
+  beside the leftmost one, of any line break and however many words it is (`labelsBefore`; "claim\nID No." and
+  "claim\n\nNo. ID:" are `No.` and `ID:` as well, review finding security-rlb-sec-1): a head joins its qualifiers over its own full stop and over white space and line breaks, as before
   (`Member.ID`, `Claim. No`, `Member No.\nID` and a wrapped `Claim\nNumber:` stay one label, review finding
   correctness-rlb-oracle-1), so where that reading reaches over a sentence end ("AA CLAIM.\nID:1990-01-01", "the claim.
   ID: 1990-01-01") the next sentence's `ID:` counts as well and the member ID is replaced; only labels are added, never

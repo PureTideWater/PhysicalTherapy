@@ -423,10 +423,12 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     const claimPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
     const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
     // A claim's head word, then a member's: each ends a sentence or a line before a bare label of the other kind.
-    const claimHeads = ['claim', 'CLAIM', 'ICN', 'pcn', 'dcn', 'tcn', 'control', 'Account', 'claim number', 'Claim ID'];
+    const claimHeads = ['claim', 'CLAIM', 'ICN', 'pcn', 'dcn', 'tcn', 'control', 'Account', 'account', 'claim number', 'Claim ID'];
     const memberHeads = ['member', 'MEMBER', 'subscriber', 'Member ID'];
-    const ends = ['. ', '.\n', '. \n', '.\r\n', '\n'];
-    const bareLabels = ['ID:', 'ID#', 'No.', 'No: ', 'Number is '];
+    // A line break of any kind, a blank line and an indented line too, and a label of more than one word on the next line
+    // (review finding security-rlb-sec-1: "claim\nID No." was read only as the claim's joined label).
+    const ends = ['. ', '.\n', '. \n', '.\r\n', '\n', '\r\n', '\u2028', '\u2029', '\v', '\n\n', '\n  '];
+    const bareLabels = ['ID:', 'ID#', 'No.', 'No: ', 'Number is ', 'ID No. ', 'No. ID: ', 'ID NO. '];
     const cases: [PatientIdentifiers, LetterClaim[], string, string, string][] = [];
     for (const head of claimHeads) {
       for (const end of ends) {
