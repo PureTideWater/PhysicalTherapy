@@ -3281,7 +3281,10 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     // is listed). A shell (a step's or a default), an input, an env name or value, or any other string naming either,
     // and anything naming the runner's file command files themselves, would let a command template or an action set a
     // later step's environment that no line of a script shows, so each is refused.
-    const fileCommand = (text: string): boolean => text.includes('GITHUB_ENV') || text.includes('GITHUB_PATH') || /_runner_file_commands/i.test(text);
+    // The runner's file command files by their directory or their own names (set_env_<uuid>, add_path_<uuid>), which a
+    // script could reach beside $GITHUB_OUTPUT's file without naming $GITHUB_ENV.
+    const RUNNER_FILES = /_runner_file_commands|set_env_|add_path_/i;
+    const fileCommand = (text: string): boolean => text.includes('GITHUB_ENV') || text.includes('GITHUB_PATH') || RUNNER_FILES.test(text);
     const outsideRun = (where: string) => `${file} ${where}: names $GITHUB_ENV, $GITHUB_PATH or the runner's file commands outside a step's run:, where a shell, an input or an action could set a later step's environment unread`;
     const commands = (value: unknown, where: string): void => {
       if (typeof value === 'string') {
@@ -3316,7 +3319,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         for (const key of ['env', 'with', 'run', 'working-directory', 'shell']) visit(step[key], `${named} ${key}`, id, index);
         // Each line as bash reads it, a backslash-newline joining two, so a write split across lines is still read.
         const lines = (typeof step.run === 'string' ? step.run : '').replace(/\\\n/g, '').split('\n');
-        for (const line of lines.filter((text) => /_runner_file_commands/i.test(text))) problems.push(`${file} ${named} run: names the runner's file commands, which set a later step's environment unread: ${line.trim()}`);
+        for (const line of lines.filter((text) => RUNNER_FILES.test(text))) problems.push(`${file} ${named} run: names the runner's file commands, which set a later step's environment unread: ${line.trim()}`);
         for (const line of lines.filter((text) => text.includes('GITHUB_PATH'))) problems.push(`${file} ${named} run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: ${line.trim()}`);
         for (const line of lines.filter((text) => text.includes('GITHUB_ENV'))) {
           const write = Object.entries(GITHUB_ENV_WRITES).find(([, entry]) => entry.file === file && entry.job === id && entry.step === step.name && entry.line === line.trim());
@@ -3893,6 +3896,14 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { path: "$RUNNER_TEMP/_runner_file_commands" } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.path')]);
     expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: $GITHUB_PATH } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
     expect(write(['echo "$V$V$V" >> "$GITHUB_PATH"'])).toEqual(['ci.yml job unit step "The engine freeze\'s base" run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: echo "$V$V$V" >> "$GITHUB_PATH"']);
+    // Or by a file's own name, beside $GITHUB_OUTPUT's, so a script reaching it without naming $GITHUB_ENV is refused.
+    expect(write(['echo "X=$V$V$V" >> "${GITHUB_OUTPUT%/*}"/set_env_${GITHUB_OUTPUT##*set_output_}'])).toEqual([
+      'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: echo "X=$V$V$V" >> "${GITHUB_OUTPUT%/*}"/set_env_${GITHUB_OUTPUT##*set_output_}',
+    ]);
+    expect(write(['echo /tmp/bin >> "$(dirname "$GITHUB_OUTPUT")"/ADD_PATH_x'])).toEqual([
+      'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: echo /tmp/bin >> "$(dirname "$GITHUB_OUTPUT")"/ADD_PATH_x',
+    ]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: set_env_x } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
     expect(write(['cat file >> "$RUNNER_TEMP"/_runner_file_commands/set_env_*'])).toEqual([
       'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: cat file >> "$RUNNER_TEMP"/_runner_file_commands/set_env_*',
     ]);
