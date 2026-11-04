@@ -567,21 +567,16 @@ const LABEL_SPACE = '[\\s\\u00AD]';
 /** The abbreviations a label writes with a full stop of their own ("Acct. No.", "Ref. #", "Claim No. ID", "Pt. Acct. #"). */
 const LABEL_ABBREVIATION = 'acct|ref|no|nbr|num';
 /**
- * What joins a label's head to a qualifier, or one qualifier to the next: white space, a line break too (a label wrapped
- * onto the next line, "Claim\nNumber:"), and a full stop only as an abbreviation's own, followed by its qualifier on the
- * same line ("Acct. No.", "Ref. #"). A full stop after a whole word ("CLAIM.\nID:", "the claim number. ID:"), after an
- * abbreviation at a line's end ("Acct.\nID:"), and "!", "?", ";" or ":" end the head (MOD-13, seed 460548619): what
- * follows is a label of its own. A bare line break may still be a wrapped label, so the label the next line begins
- * counts as well (LINE_OR_SENTENCE_START, labelsBefore).
+ * A qualifier after a head word, with its own full stop. A head word joins its qualifiers over its own full stop and over
+ * white space and line breaks ("Member.ID", "Claim. No", "Member No.\nID", a wrapped "Claim\nNumber:"), as it always
+ * has: such a reading may join over a sentence end ("CLAIM.\nID:"), so the label a line or a sentence begins counts
+ * beside it (LINE_OR_SENTENCE_START, labelsBefore), which only ever adds a label (MOD-13, seed 460548619).
  */
-const LABEL_JOINT = `(?:(?<=\\b(?:${LABEL_ABBREVIATION}))\\.(?:[^\\S\\n\\r\\v\\f\\u2028\\u2029]|\\u00AD)*|${LABEL_SPACE}*)`;
-const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b|#)`;
-/** The qualifiers after a head or a bare label word, each after a joint (LABEL_JOINT), and an optional final full stop ("Claim No. ", "Claim. "). */
-const LABEL_QUALIFIERS = `(?:${LABEL_JOINT}${LABEL_QUALIFIER})*\\.?`;
+const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b\\.?|#)`;
 const LABEL_END = `[\\s\\u00AD*]*(?:[:#=\\p{Pd}\\u2212][\\s\\u00AD*]*|,${LABEL_SPACE}*)?(?:is${LABEL_SPACE}+)?(?:[("'\\u201C\\u2018]${LABEL_SPACE}*)?$`;
 const LABEL_HEAD =
-  `\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b${LABEL_QUALIFIERS}` +
-  `|\\breference(?:${LABEL_JOINT}${LABEL_QUALIFIER})+\\.?` +
+  `\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b\\.?(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*` +
+  `|\\breference(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+` +
   `|\\b(?<no>no)(?=\\.|${LABEL_SPACE}*[:#])\\.?` +
   `|\\bid(?=${LABEL_SPACE}*[:#])` +
   `|\\bnumber(?=${LABEL_SPACE}*[:=\\p{Pd}\\u2212]?${LABEL_SPACE}*is${LABEL_SPACE})` +
@@ -603,7 +598,7 @@ const LINE_OR_SENTENCE_START = new RegExp(`(?:[\\n\\r\\v\\f\\u0085\\u2028\\u2029
  * written calendar date are the number (review finding phi-G2-regress-1: "Patient ID 1234.5678"): G2's narrowing keeps
  * a deadline, a whole written date, and so applies to whole written dates alone (IDENTIFIER_LABEL, labelFor).
  */
-const ANY_IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD.replace(/\(\?<\w+>/gu, '(?:')}|(?:\\b(?:id|number|nbr|no|num|identification|reference)\\b|#)${LABEL_QUALIFIERS})${LABEL_END}`, 'iu');
+const ANY_IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD.replace(/\(\?<\w+>/gu, '(?:')}|(?:\\b(?:id|number|nbr|no|num|identification|reference)\\b\\.?|#)(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*)${LABEL_END}`, 'iu');
 
 /**
  * A label word glued to the number it introduces, with no space ("ICN99887766", "Member ID12345678", and "№99887766",
@@ -624,8 +619,9 @@ const kindOf = (match: RegExpExecArray): LabelKind => (match.groups?.claim !== u
  * The kinds of the identifier labels (IDENTIFIER_LABEL) that end at a position of text, none when no label does: the
  * leftmost label that ends there, and each label that begins a line or a sentence (LINE_OR_SENTENCE_START) and ends
  * there. A head joins a qualifier on the next line (a wrapped "Claim\nNumber:"), so after a line break both the joined
- * label and the next line's own count ("Claim\nID:" is a claim's label and "ID:"); and should any joint ever reach over
- * a sentence end, the label the sentence begins still counts (MOD-13, seed 460548619: "CLAIM.\nID:" is "ID:"). A label
+ * label and the next line's own count ("Claim\nID:" is a claim's label and "ID:"); a head joins its qualifiers over its
+ * own full stop too ("Member.ID", "Claim. No"), so where that reading reaches over a sentence end the label the sentence
+ * begins counts as well (MOD-13, seed 460548619: "CLAIM.\nID:" is "ID:"). A label
  * on one line within one sentence is one label ("Claim ID:", "Acct. No.", "Member ID No."), so G2 holds for it.
  * `written` gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never
  * "no.").

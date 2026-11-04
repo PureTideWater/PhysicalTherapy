@@ -480,6 +480,29 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     expect(redactLetter('Acct.\nID: 1990-01-01', patient, claimsOf('SYN00000')).text).toBe('Acct.\nID: [MEMBER_ID]');
   });
 
+  it("reads a head word joined to its qualifier over the head's own full stop as one label, as before the fix, so a member ID or claim number written as a date after it is replaced (MOD-13, review finding correctness-rlb-oracle-1)", () => {
+    const memberPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claimPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    const memberLabels = ['Member.ID', 'MEMBER.ID', 'Subscriber.ID', 'Member. ID', 'Member.No', 'Member.Number', 'Subscriber. No', 'Member No.\nID'];
+    const claimLabels = ['Claim.No', 'Claim.ID', 'Claim.Nbr', 'Claim.Number', 'Claim. No', 'Claim. Number', 'ICN.No', 'Account.Number', 'Control.No', 'Claim No.\nNumber'];
+    for (const [labels, patient, claims, value, placeholder] of [
+      [memberLabels, memberPatient, claimsOf('SYN00000'), '19900101', '[MEMBER_ID]'],
+      [claimLabels, claimPatient, claimsOf('20260426'), '20260426', '[CLAIM_1]'],
+    ] as const) {
+      for (const label of labels) {
+        for (const colon of [' ', ': ']) {
+          for (const written of [`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`, `${value.slice(0, 4)}/${value.slice(4, 6)}/${value.slice(6)}`]) {
+            const text = `Dear Jane Vantree, your ${label}${colon}${written} is on file.`;
+            const redacted = redactLetter(text, patient, claims).text;
+            expect(redacted, JSON.stringify(text)).toBe(`Dear [PATIENT_NAME] [PATIENT_NAME], your ${label}${colon}${placeholder} is on file.`);
+            expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(text)).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
   it('replaces nothing more after a sentence end that a head word ends: deadlines, dates of service and remittance, amounts, CPT codes and NPIs stay (MOD-13, seed 460548619)', () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ7654321'] };
     const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN12345678'] }];
@@ -494,7 +517,10 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     // and the claim's own number stays the call's own placeholder after one.
     const dated: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315'] }];
     expect(redactLetter('We reviewed the member.\nAppeal by 2027-03-15.', patient, dated).text).toBe('We reviewed the member.\nAppeal by 2027-03-15.');
-    expect(redactLetter('We reviewed the claim. ID 2027-03-15 is the deadline.', patient, dated).text).toBe('We reviewed the claim. ID 2027-03-15 is the deadline.');
+    // A head word joins its qualifier over its own full stop ("Claim. ID" is a claim's label, as "Member.ID" is a member's),
+    // so a deadline equal to the claim's digits after one is replaced: an over-redaction accepted, as before the fix, since
+    // reading it apart would send a claim number or member ID so written (review finding correctness-rlb-oracle-1).
+    expect(redactLetter('We reviewed the claim. ID 2027-03-15 is the deadline.', patient, dated).text).toBe('We reviewed the claim. ID [CLAIM_1] is the deadline.');
     expect(redactLetter('We reviewed the member.\nClaim No. 2027-03-15 was denied.', patient, dated).text).toBe('We reviewed the member.\nClaim No. [CLAIM_1] was denied.');
   });
 
