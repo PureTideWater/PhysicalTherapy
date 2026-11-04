@@ -558,6 +558,10 @@ describe('on this repository', () => {
     expect(workspace(replaced('  - infra\n', '  - "infra"\n'))).toEqual(ALL);
   });
 
+  it('affects all four for a workspace userAgent, which writes the user agent tools/stryker/runtime.ts reads as a pnpm leg', () => {
+    expect(workspace(replaced('trustPolicyExclude:\n', 'userAgent: pnpm/10.34.8 npm/? node/v24.22.0 linux x64\ntrustPolicyExclude:\n'))).toEqual(ALL);
+  });
+
   it('affects none for comments alone (a YAML comment outside packages) or JSON whitespace', () => {
     expect(workspace(replaced('  zod: ^4.6.7\n', '  # the schema library\n  zod: ^4.6.7 # pinned by catalog\n'))).toEqual([]);
     expect(packages(changed('package.json', ROOT, `${JSON.stringify(JSON.parse(ROOT), null, 4)}\n\n`))).toEqual([]);

@@ -1813,9 +1813,13 @@ any other form fails, naming the value.
   `GITHUB_SHA`. Off Actions it holds the commits equal to each other and says so. Part 4's message for the
   Unicode-bound equivalents stays, after those failures, since it alone names the equivalents and their remedy. Each
   shard's own view prints its runtime and commit first.
-- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts` after its install and before it decides, through
-  the same pnpm and tsx shims as every later step, so a `node` bin a dependency links, or another pnpm, fails the pull
-  request's `mutation` whatever the classifier decided.
+- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"` after its install and
+  before it decides, through the same pnpm and tsx shims as every later step, so a `node` bin a dependency links, or
+  another pnpm, fails the pull request's `mutation` whatever the classifier decided. Its pnpm has two legs, each held
+  to `packageManager` (N54): the user agent, which an `.npmrc` `user-agent` or a workspace `userAgent` can write (both
+  global inputs, so such a change runs every shard), and what the pnpm on the step's `PATH` prints for
+  `pnpm --version`, run by the step's shell before `pnpm exec` puts any `node_modules/.bin` first. A canary verdict's
+  pnpm is the user agent alone; the setting that could write it is global.
 
 A pin-only change is then proved on the runner, a leg for each step a pin moves: setup-node by Node, Unicode and ICU,
 pnpm/action-setup by pnpm, the checkout by the commit, which on a pull request must be the merge commit GitHub tests.
@@ -1921,6 +1925,9 @@ since no closure imports `playwright-core`.
   `<root>/node_modules/.pnpm/node_modules`, which is inside it, so with the root's own `@stryker-mutator/core` removed a
   hoisted copy would have run. `strykerBin` now also requires `node_modules/@stryker-mutator/core/package.json` to
   exist and to be the manifest it resolved; a child-process test sets that `NODE_PATH` and is refused.
+- **N54** (the review of #96, N2). The changes job's pnpm leg read only the user agent, which pnpm settings write. It
+  now also holds `pnpm --version`, printed by the step's own shell, to `packageManager`. npm_execpath is no leg, since
+  `pnpm exec` leaves it unset; a test holds the workspace `userAgent` global.
 
 ### Consequences
 

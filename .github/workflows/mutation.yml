@@ -66,9 +66,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Before anything is decided: this job's Node, Unicode, ICU and pnpm must be the pinned ones, so a `node` bin a
-      # dependency links, or another pnpm, fails the check whatever the change affects (tools/stryker/runtime.ts).
+      # dependency links, or another pnpm, fails the check whatever the change affects (tools/stryker/runtime.ts). pnpm
+      # is held by its user agent and by what the pnpm on this step's PATH prints, which no user-agent setting writes.
       - name: The runtime is the pinned one
-        run: pnpm -s exec tsx tools/stryker/runtime.ts
+        run: pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"
       - name: What the change affects
         id: affected
         env:

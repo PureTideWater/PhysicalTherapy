@@ -2681,7 +2681,7 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     '',
   ].join('\n');
   const RUNS: Readonly<Record<string, readonly string[]>> = {
-    changes: ['pnpm install --frozen-lockfile', 'pnpm -s exec tsx tools/stryker/runtime.ts', 'pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"'],
+    changes: ['pnpm install --frozen-lockfile', 'pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"', 'pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"'],
     stryker: [
       'pnpm install --frozen-lockfile',
       'pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n',
@@ -2708,7 +2708,7 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     const install = stepIndex(changes, (step) => step.run === 'pnpm install --frozen-lockfile');
     const runtime = stepIndex(changes, (step) => step.name === 'The runtime is the pinned one');
     const affected = stepIndex(changes, (step) => step.id === 'affected');
-    expect(changes[runtime]?.run).toBe('pnpm -s exec tsx tools/stryker/runtime.ts');
+    expect(changes[runtime]?.run).toBe('pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"');
     expect(changes[runtime]?.if).toBeUndefined();
     expect([install, runtime]).toEqual([runtime - 1, affected - 1]);
   });

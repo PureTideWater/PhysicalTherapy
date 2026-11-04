@@ -40,4 +40,22 @@ describe('the changes job’s runtime check', () => {
       status: 1,
     });
   });
+
+  // The review of #96 (N2): the user agent is one pnpm leg, and a setting can write it; `pnpm --version` is the other.
+  it('holds the pnpm --version the step gives to the pin as a second leg, naming it, and an empty one is no pnpm', () => {
+    const pinned: Runtime = { node: `v${TEST_PINS.node}`, unicode: TEST_PINS.unicode, icu: TEST_PINS.icu, pnpm: TEST_PINS.pnpm };
+    const described = 'runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8';
+    expect(checkRuntime(pinned, TEST_PINS, { pnpmVersion: '10.34.8\n' })).toEqual({
+      lines: [described, 'runtime: pnpm --version prints 10.34.8', "runtime: the pinned one (Node, Unicode and ICU as tools/stryker/unicode.json's checkedOn, pnpm as the root package.json's packageManager, by its user agent and by pnpm --version)"],
+      status: 0,
+    });
+    // A user agent a setting wrote to the pin does not pass for a pnpm that prints another version.
+    expect(checkRuntime(pinned, TEST_PINS, { pnpmVersion: '10.35.0' })).toEqual({
+      lines: [described, 'runtime: pnpm --version prints 10.35.0', "::error::The runtime is not the pinned one: pnpm --version prints 10.35.0, not the pinned 10.34.8 (the root package.json's packageManager)"],
+      status: 1,
+    });
+    expect(checkRuntime(pinned, TEST_PINS, { pnpmVersion: '' }).lines.at(-1)).toBe("::error::The runtime is not the pinned one: pnpm --version prints (none), not the pinned 10.34.8 (the root package.json's packageManager)");
+    // Both legs differing are both named.
+    expect(checkRuntime({ ...pinned, pnpm: '10.34.9' }, TEST_PINS, { pnpmVersion: '10.35.0' }).lines.filter((line) => line.startsWith('::error::'))).toHaveLength(2);
+  });
 });

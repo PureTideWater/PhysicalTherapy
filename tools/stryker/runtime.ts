@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { parseArgs } from 'node:util';
 
 import { repositoryRoot } from '../content-files';
 import type { Runtime } from './canary/verdict';
@@ -11,10 +12,16 @@ import type { Runtime } from './canary/verdict';
  * Unicode and ICU data, pnpm/action-setup the pnpm. The gate holds every shard's canary verdict to them, the shard's
  * own view prints them, and the changes job checks its own before it decides anything.
  *
- * `pnpm -s exec tsx tools/stryker/runtime.ts` is that check: it prints this process's runtime and fails, naming each
- * difference, unless its Node, Unicode, ICU and pnpm (from the user agent pnpm sets for the step it runs) are the pins.
- * It runs through the same pnpm and tsx shims as every later step, so a `node` bin a dependency links into the root's
- * node_modules/.bin, or another pnpm, fails the job.
+ * `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)"` is that check: it prints this process's
+ * runtime and fails, naming each difference, unless its Node, Unicode, ICU and pnpm are the pins. It runs through the
+ * same pnpm and tsx shims as every later step, so a `node` bin a dependency links into the root's node_modules/.bin, or
+ * another pnpm, fails the job.
+ *
+ * pnpm has two legs, and each must be the pin. The user agent pnpm sets for the step it runs can be set by an `.npmrc`
+ * `user-agent` or a workspace `userAgent`; both are global to the classifier (`.npmrc` a global input, `userAgent`
+ * outside WORKSPACE_INERT_KEYS), so such a change runs every shard and is in the founder's review. `--pnpm` is what
+ * the pnpm on the step's PATH prints for `pnpm --version`, run by the step's shell before `pnpm exec` puts any
+ * node_modules/.bin first, which no user-agent setting changes. npm_execpath is no leg: `pnpm exec` leaves it unset.
  */
 
 /** The pins: Node as checkedOn writes it (no `v`), its Unicode and ICU data, and pnpm's version. */
@@ -89,12 +96,25 @@ export function readPins(root: string = repositoryRoot): Pins {
   return { node, unicode, icu, pnpm };
 }
 
-/** The changes job's check: the runtime, then every leg that is not the pinned one as an error, exit 1 on any. */
-export function checkRuntime(runtime: Runtime, pins: Pins): RuntimeCheck {
+/** What a job's check holds beside its runtime: the version `pnpm --version` printed, when the step gives one. */
+export interface Checks {
+  readonly pnpmVersion?: string | undefined;
+}
+
+/**
+ * A job's check: the runtime, then every leg that is not the pinned one as an error, exit 1 on any. A `pnpm --version`
+ * the step gives is a second pnpm leg, held to the same pin; an empty one (pnpm printed nothing) is no pnpm.
+ */
+export function checkRuntime(runtime: Runtime, pins: Pins, checks: Checks = {}): RuntimeCheck {
   const problems = runtimeProblems(runtime, pins);
   const lines = [`runtime: ${describeRuntime(runtime)}`];
+  const printed = checks.pnpmVersion?.trim();
+  if (printed !== undefined) {
+    lines.push(`runtime: pnpm --version prints ${shown(printed)}`);
+    if (printed === '' || printed !== pins.pnpm) problems.push(`pnpm --version prints ${shown(printed)}, not the pinned ${shown(pins.pnpm)} (the root package.json's packageManager)`);
+  }
   if (problems.length === 0) {
-    lines.push(`runtime: the pinned one (Node, Unicode and ICU as ${UNICODE_FILE}'s checkedOn, pnpm as the root package.json's packageManager)`);
+    lines.push(`runtime: the pinned one (Node, Unicode and ICU as ${UNICODE_FILE}'s checkedOn, pnpm as the root package.json's packageManager${printed === undefined ? '' : ', by its user agent and by pnpm --version'})`);
     return { lines, status: 0 };
   }
   lines.push(...problems.map((problem) => `::error::The runtime is not the pinned one: ${problem}`));
@@ -107,7 +127,8 @@ export function processRuntime(env: NodeJS.ProcessEnv = process.env): Runtime {
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  const { lines, status } = checkRuntime(processRuntime(), readPins());
+  const { values } = parseArgs({ options: { pnpm: { type: 'string' } }, strict: true, allowPositionals: false });
+  const { lines, status } = checkRuntime(processRuntime(), readPins(), { pnpmVersion: values.pnpm });
   process.stdout.write(`${lines.join('\n')}\n`);
   process.exitCode = status;
 }

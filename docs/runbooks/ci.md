@@ -504,8 +504,9 @@ checks above.
   ```
 
   Before it decides, the `changes` job checks its own runtime ("The runtime is the pinned one",
-  `tools/stryker/runtime.ts`). It prints `runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8`, then that
-  this is the pinned one, or an error for each difference. Every shard's canary verdict names its runtime and the commit
+  `tools/stryker/runtime.ts`). It prints `runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8` (pnpm from
+  the user agent), then `runtime: pnpm --version prints 10.34.8` (the pnpm on the step's `PATH`), then that this is the
+  pinned one, or an error for each difference: both pnpm legs must be `packageManager`'s. Every shard's canary verdict names its runtime and the commit
   it checked out (`canary: on Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8, at commit <sha>`), and each
   shard's own view prints them first. The gate fails a shard whose Node, Unicode, ICU or pnpm is not the pinned one
   (`tools/stryker/unicode.json`'s `checkedOn`, the root `packageManager`), or whose commit differs from another
