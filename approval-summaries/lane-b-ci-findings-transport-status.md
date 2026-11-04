@@ -1,3 +1,5 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDkvaQzK4YgTGnKWC3) holds this item from 2026-11-04 21:05 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
 # Lane B: ci-findings-transport (the content calendar's findings could exceed one environment string): status
 
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW), which took the item back on
@@ -12,6 +14,10 @@ ADR expected (ADR 0071 amended; ADR 0066's Part 3 sentence at `:982-983` on #86 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
+## ACTING S3 (2026-11-04 ~21:10 UTC): taken over at the orchestrator's word (09:22 UTC)
+- Live: WIP `co-001/wip-ci-findings-transport` b9a83bd3… (cut from #86's d257fe6d…); no `co-001/ci-findings-transport`, no PR. #86 merged as 24531dc2 (09:20 UTC) and #96 as 30871f72 (21:05 UTC); base claude/build-platform is 30871f72. The old reviews workflow left no result. #86's hand-over is in `lane-b-ci-images-digest-status.md` (MERGED block): N32, the sentence "One listed value is over the limit" (ADR 0066:1205 at 24531dc2), the T6 findings rows and their `sites`, and the 98,292-byte bound.
+- Plan: (1) setup; (2) one workflow: merge the base into the WIP (keep both sides; take #86's final value rule, and remove the over row only as this item's design says), push the WIP; two adversarial reviews (CI and test infrastructure; security and supply chain), three skeptics each, a critic; (3) the fix round, the full suite once, the branch push, the draft PR, CI, verification, the up-to-date check, merge. Handback 2026-11-06 18:30 UTC if not merged.
+
 ## Current state (2026-11-02T02:07:38Z): PAUSED (the co-founder's pacing call, 02:10 UTC); built on WIP b9a83bd3; reviews next
 - **PAUSED at 2026-11-02T02:07:38Z** on the co-founder's pacing call relayed by the orchestrator (02:10 UTC: the account's 7-day limit at its
   warning level, resets Fri 2026-11-06 19:00 UTC; design/build-stage items pause at the next clean point, start no new
