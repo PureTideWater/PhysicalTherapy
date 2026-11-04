@@ -356,6 +356,17 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   Next: on VERIFIED, mark #94 ready, approval-of-record's re-run, merge (expectedHeadSha e3fc02e4); close #99/#100 with a
   comment, comment on #88/#89; #101 left to the next weekly triage.
 
+- 2026-11-04T02:55:00Z: **PR B MERGED: #94 as 4846f043** (merge commit; expectedHeadSha e3fc02e4). Fresh-clone
+  verification wf_ea2961e5-096 **VERIFIED**, its skeptic UPHELD (record `B-verification.md`; fix round `B-fix-round.md`):
+  heads unchanged (base 21fa10df); frozen install, lockfile regeneration no change, typecheck, lint:logs, verify-content,
+  check:fixtures, synth/watched clean, cli-settings + recorded-textract 14/14, infra 710, toolchain 0 errors; CI 30 runs (29
+  success, 1 skipped; unit 7,305/1 skipped; mutation gate passed); merge-tree vs every open head: only Dependabot #99
+  conflicts because of #94 (lockfile); no ready PR jumped. The verifier's five description corrections were timestamp
+  refreshes of dated, still-true claims: not applied (no change to the outcome). Marked ready 02:49Z; approval-of-record
+  re-ran on ready (success 02:50:04Z). **#99 and #100 closed** with a comment naming #94 and 4846f043; **#88 and #89**
+  commented. #101 left to the next weekly triage. Not subscribed (refused), so nothing to unsubscribe. Next: PR D
+  (wf_b49ddbb6-964 running); read 4846f043's push runs.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
@@ -424,4 +435,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).
+Next (2026-11-04T02:55Z): #94 merged; PR D (wf_b49ddbb6-964) to its merge; then stop at a clean point. Before: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).
