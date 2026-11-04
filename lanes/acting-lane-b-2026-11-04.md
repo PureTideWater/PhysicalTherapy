@@ -6,10 +6,10 @@ session_01TrKDxeLbxVo7t7zwRXFzrg. Each session below holds its items alone.
 
 | Session | Items, in order | Lane B's item prompt (`lanes/lane-b-item-prompts-2026-11-01/`) and status file |
 | --- | --- | --- |
-| S1 | #75 contract-phi-check, then #85 UX PR 10 (it waits for #75 only) | `contract-phi-check.md`, `ux-payer-response.md`; `approval-summaries/lane-b-model-eval-gate-status.md` (#75's sections), `lane-b-ux-payer-response-status.md` |
-| S2 | #84 packet day counts (merges after #85) | `packet-day-counts.md`; `lane-b-packet-day-counts-status.md` |
-| S3 | #86 ci-images-digest, then #96 P4 ci-mutation-trigger | `ci-images-digest.md`, `ci-pin-age.md` (P4); `lane-b-ci-images-digest-status.md`, `lane-b-ci-deps-status.md` |
-| S4 | #94 Dependabot B (closing #99 and #100 with a comment when it merges; #88 and #89 get a comment), then PR D test-flakes-2 (FRM-01's monotonic wait, `csv-arena.test.ts:151`'s explicit timeout) | `dependabot-batch.md`; `lane-b-dependabot-batch-status.md` |
+| S1 session_019i9ifCJSbPYXpafL86Rm6J | #75 contract-phi-check, then #85 UX PR 10 (it waits for #75 only) | `contract-phi-check.md`, `ux-payer-response.md`; `approval-summaries/lane-b-model-eval-gate-status.md` (#75's sections), `lane-b-ux-payer-response-status.md` |
+| S2 session_019i9ifAd3jhRt1Vkzz2vUSQ | #84 packet day counts (merges after #85) | `packet-day-counts.md`; `lane-b-packet-day-counts-status.md` |
+| S3 session_019i9ifDkvaQzK4YgTGnKWC3 | #86 ci-images-digest, then #96 P4 ci-mutation-trigger | `ci-images-digest.md`, `ci-pin-age.md` (P4); `lane-b-ci-images-digest-status.md`, `lane-b-ci-deps-status.md` |
+| S4 session_019i9ifAfByN2caCea4jgSdu | #94 Dependabot B (closing #99 and #100 with a comment when it merges; #88 and #89 get a comment), then PR D test-flakes-2 (FRM-01's monotonic wait, `csv-arena.test.ts:151`'s explicit timeout) | `dependabot-batch.md`; `lane-b-dependabot-batch-status.md` |
 
 The schema chain runs alongside in session_019i9ifEG147aKfNHEAsoS7h (Lane A's own).
 
