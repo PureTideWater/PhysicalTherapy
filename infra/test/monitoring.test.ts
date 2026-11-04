@@ -457,7 +457,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       const rules = resourcesOf(template, 'AWS::CloudWatch::InsightRule');
       expect(rules).toHaveLength(1);
       const [id, rule] = rules[0] as [string, CfnResource & { readonly DependsOn?: readonly string[] }];
-      expect(id).toBe(logicalIdOf(stack, stack.monitoring.resetRequestsPerUserRule));
+      // The rule is itself the CloudFormation resource (an L1), so its logical ID is read from it, not a default child.
+      expect(id).toBe(stack.getLogicalId(stack.monitoring.resetRequestsPerUserRule));
       const properties = propertiesOf(rule);
       expect(properties.RuleName).toBe(resetRequestsRuleName(environment));
       expect(properties.RuleState).toBe('ENABLED');

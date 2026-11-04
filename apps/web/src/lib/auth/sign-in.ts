@@ -415,7 +415,8 @@ export class SignInFlow {
    * recorded for every account, the actor being the account named, not a proven person (`unverified_request`); an
    * unknown address has no actor and records nothing. A failed send or audit write is logged at error with IDs only and
    * answered like every other path: only an account reaches either, so a different answer would mark the accounts
-   * whenever the provider fails (review S-3; ADR 0081 A2). Every path, a thrown one included, takes at least the floor,
+   * whenever the provider fails (review S-3; ADR 0081 A2). Each account's request is also logged by its user ID, so
+   * the operator hears of one account's requests piling up (ADR 0088, D7); an unknown address logs none. Every path, a thrown one included, takes at least the floor,
    * and the wait comes after every connection is given back.
    */
   async requestPasswordReset(email: string, context: SignInContext): Promise<Extract<Pending, { step: 'reset' }>> {
@@ -427,6 +428,8 @@ export class SignInFlow {
       }
       if (account !== undefined) {
         const userId = account.user_id;
+        // Each account's request, by its ID alone, sent or not: the per-user alarm counts these (ADR 0088, D7).
+        this.deps.logger.info('password reset requested', { user_id: userId, request_id: context.requestId });
         await this.unlessFailed(context, () => this.audit(userId, 'password_reset_requested', context.requestId, 'unverified_request'));
       }
       return { step: 'reset', email };
