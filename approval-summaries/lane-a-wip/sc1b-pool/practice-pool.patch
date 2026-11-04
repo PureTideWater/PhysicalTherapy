@@ -1,0 +1,641 @@
+From 3faf55455db571fe0627fe804637f2f491b9d574 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 4 Nov 2026 22:03:23 +0000
+Subject: [PATCH] worker: the practice pool holds a connection for each job the
+ worker runs at once, and each failed attempt logs its error's code (CAS-42.5
+ on 3ac856d5)
+
+CAS-42.5 on 3ac856d5 (run 41901463895) failed only because A price and C parse 4 completed on attempt 2. The worker runs
+a job from each practice queue and four parses at once (fifteen), each holding one of the application login's
+connections at a time, on a pool of four with a ten-second connection timeout: a month's price job and an audit report
+hold theirs for minutes, so the concurrent phase's six jobs left two waiting, and on that slower runner past ten
+seconds. The instrumented run 41913629020 (co-001/wip-sc1b-retry-1, harness only) showed it: A's second report and C's
+parses 7 and 8 failed their first attempts with pg-pool's "timeout exceeded when trying to connect", raised in the
+handler's transaction, while four longer jobs held the four connections. Production's worker task runs the same pool.
+
+- practicePool (worker.ts; main.ts and the end-to-end worker) opens PRACTICE_JOB_SLOTS connections, counted from the
+  queues' local concurrency (registry.ts: 15); the ten-second timeout stays (ADR 0055).
+- Each failed attempt logs "job attempt failed" with the job's ID and type and attemptErrorCode's code
+  (DB_POOL_TIMEOUT, DB_CONNECT_TIMEOUT, DB_<SQLSTATE>, a code the error carries, or its class), never its text.
+- The weekly run prints those codes beside a job that completed on a later attempt (checks.ts attemptFailures); the
+  check is unchanged.
+- ADR 0083 records it ("The practice pool, 2026-11-04"); docs/runbooks/ci.md reads the codes.
+
+Tests, each failing first: fifteen jobs at once each holding its transaction past a shortened timeout on the pool
+main.ts opens (11 of 15 failed on four connections); the pool's size against startWorker's loops (4, now 15); each
+failed attempt's line and code; the summary's codes beside a retried job.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_019i9ifEG147aKfNHEAsoS7h
+---
+ apps/web/e2e/worker.ts                        |  7 +-
+ apps/worker/src/jobs/registry.ts              |  7 ++
+ apps/worker/src/main.ts                       |  9 +--
+ apps/worker/src/runtime.ts                    |  2 +-
+ apps/worker/src/worker.db.test.ts             | 69 +++++++++++++++++-
+ apps/worker/src/worker.test.ts                | 70 ++++++++++++++++++-
+ apps/worker/src/worker.ts                     | 69 +++++++++++++++++-
+ ...a-small-measured-share-of-heap-per-line.md | 37 ++++++++++
+ docs/runbooks/ci.md                           | 14 ++--
+ tools/release-capacity/checks.test.ts         | 25 +++++++
+ tools/release-capacity/checks.ts              | 35 +++++++++-
+ tools/release-capacity/run.ts                 |  9 ++-
+ 12 files changed, 330 insertions(+), 23 deletions(-)
+
+diff --git a/apps/web/e2e/worker.ts b/apps/web/e2e/worker.ts
+index 05110408..a77a0072 100644
+--- a/apps/web/e2e/worker.ts
++++ b/apps/web/e2e/worker.ts
+@@ -1,6 +1,6 @@
+ import { setTimeout } from 'node:timers/promises';
+ 
+-import { databaseClient, developmentMasterKey, openPool, workerDevLoginUrl } from '@tp/db';
++import { databaseClient, developmentMasterKey, workerDevLoginUrl } from '@tp/db';
+ import { createLogger } from '@tp/observability';
+ import {
+   ChromiumPdfRenderer,
+@@ -17,6 +17,7 @@ import {
+   packetExportHandler,
+   parseHandler,
+   placeholderHandlers,
++  practicePool,
+   priceHandler,
+   reconcileHandler,
+   reportDocumentHandler,
+@@ -141,8 +142,8 @@ export async function holdExports(practiceId: string): Promise<{ release: () =>
+  * so every worker takes them.
+  */
+ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
+-  // The worker's own login, as in development and production (docs/adr/0061).
+-  const pool = openPool(workerDevLoginUrl(e2eDatabaseUrl()), 4);
++  // The worker's own login, as in development and production (docs/adr/0061), on the pool main.ts opens.
++  const pool = practicePool(workerDevLoginUrl(e2eDatabaseUrl()));
+   const boss = new PgBoss(e2eDatabaseUrl());
+   boss.on('error', () => undefined);
+   let stopping = false;
+diff --git a/apps/worker/src/jobs/registry.ts b/apps/worker/src/jobs/registry.ts
+index 92077619..bc52e7d2 100644
+--- a/apps/worker/src/jobs/registry.ts
++++ b/apps/worker/src/jobs/registry.ts
+@@ -176,3 +176,10 @@ export const PARSE_CONCURRENCY = 4;
+ export function workOptions(type: JobType): WorkOptions {
+   return type === 'parse_835' ? { batchSize: 1, pollingIntervalSeconds: 0.5, localConcurrency: PARSE_CONCURRENCY } : { batchSize: 1 };
+ }
++
++/**
++ * How many practice jobs one worker runs at once: one from each practice queue's loop and PARSE_CONCURRENCY parses
++ * (workOptions). Every attempt holds at most one of the application login's connections at a time (its job_run writes,
++ * its gate and each of its transactions in turn), so the practice pool holds this many (worker.ts practicePool).
++ */
++export const PRACTICE_JOB_SLOTS: number = JOB_TYPES.reduce((slots, type) => slots + (workOptions(type).localConcurrency ?? 1), 0);
+diff --git a/apps/worker/src/main.ts b/apps/worker/src/main.ts
+index 00bafbb7..9bdcbd36 100644
+--- a/apps/worker/src/main.ts
++++ b/apps/worker/src/main.ts
+@@ -1,6 +1,6 @@
+ import { randomUUID } from 'node:crypto';
+ 
+-import { CONNECTION_TIMEOUT_MS, openPool } from '@tp/db';
++import { CONNECTION_TIMEOUT_MS } from '@tp/db';
+ import { createLogger } from '@tp/observability';
+ import { PgBoss } from 'pg-boss';
+ 
+@@ -41,7 +41,7 @@ import { reportDocumentHandler } from './report/print-document';
+ import { startScreeningConsumer } from './screening/consumer';
+ import { installShutdownHandlers } from './shutdown';
+ import { triageHandler } from './triage/job';
+-import { startWorker } from './worker';
++import { practicePool, startWorker } from './worker';
+ 
+ const workerId = randomUUID();
+ const logger = createLogger({ base: { worker_id: workerId } });
+@@ -135,8 +135,9 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
+     if (runtime === undefined) {
+       logger.info('platform jobs not configured on this worker');
+     }
+-    // Practice jobs: the application login, each transaction scoped to the job's one practice.
+-    const pool = openPool(config.databaseUrl, 4);
++    // Practice jobs: the application login, each transaction scoped to the job's one practice, a connection for each
++    // job the worker runs at once (practicePool).
++    const pool = practicePool(config.databaseUrl);
+     // Intake takes uploads in and queues parse_835 per clean 835, which parses and loads it and queues
+     // the monitoring chain: monitor plans the months to price, price executes a pricing run, triage
+     // screens a complete run and groups its lines into cases, reconcile is the ledger's step; digest
+diff --git a/apps/worker/src/runtime.ts b/apps/worker/src/runtime.ts
+index 4f5a761d..b2881a3d 100644
+--- a/apps/worker/src/runtime.ts
++++ b/apps/worker/src/runtime.ts
+@@ -46,7 +46,7 @@ export { ChromiumPdfRenderer, type PdfRenderer } from './report/pdf';
+ export { type DocumentPrintOutcome, type DocumentPrintServices, printReportDocument, reportDocumentHandler } from './report/print-document';
+ export { type TriageJobContext, type TriageOptions, type TriageOutcome, executeTriage, todayUtc } from './triage/execute';
+ export { triageHandler } from './triage/job';
+-export { type QueueClient, type RunningWorker, refusedByHold, startWorker } from './worker';
++export { type QueueClient, type RunningWorker, practicePool, refusedByHold, startWorker } from './worker';
+ export {
+   type ResendResult,
+   SCREENING_BATCH,
+diff --git a/apps/worker/src/worker.db.test.ts b/apps/worker/src/worker.db.test.ts
+index e6708d48..c0b31afd 100644
+--- a/apps/worker/src/worker.db.test.ts
++++ b/apps/worker/src/worker.db.test.ts
+@@ -11,12 +11,12 @@ import { describe, expect, it } from 'vitest';
+ 
+ import { MemorySealedBytes } from './intake/test-support/memory-bytes';
+ import { enqueue } from './jobs/enqueue';
+-import { placeholderHandlers } from './jobs/handlers';
+-import { QUEUE_OPTIONS } from './jobs/registry';
++import { type JobHandler, type JobHandlers, placeholderHandlers } from './jobs/handlers';
++import { JOB_TYPES, type JobType, QUEUE_OPTIONS, workOptions } from './jobs/registry';
+ import { databaseJobRuns } from './jobs/runs';
+ import { parseHandler } from './parse/job';
+ import { DocumentStore } from './storage/documents';
+-import { JOB_FAILED_MESSAGE, type QueueClient, startWorker } from './worker';
++import { JOB_FAILED_MESSAGE, type QueueClient, practicePool, startWorker } from './worker';
+ 
+ const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
+ const OTHER_PRACTICE = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
+@@ -206,3 +206,66 @@ describe('practice jobs against PostgreSQL', () => {
+     }
+   });
+ });
++
++/** A valid payload of each practice job type for `practiceId`, every other ID a fresh one. */
++const PAYLOADS: { readonly [T in JobType]: (practiceId: string) => unknown } = {
++  intake: (practiceId) => ({ practice_id: practiceId, document_id: randomUUID() }),
++  parse_835: (practiceId) => ({ practice_id: practiceId, document_id: randomUUID() }),
++  monitor: (practiceId) => ({ practice_id: practiceId, day: '2026-11-04' }),
++  price: (practiceId) => ({ practice_id: practiceId, pricing_run_id: randomUUID() }),
++  triage: (practiceId) => ({ practice_id: practiceId, pricing_run_id: randomUUID() }),
++  audit_report: (practiceId) => ({ practice_id: practiceId, audit_report_id: randomUUID() }),
++  reconcile: (practiceId) => ({ practice_id: practiceId, day: '2026-11-04' }),
++  digest: (practiceId) => ({ practice_id: practiceId, period: '2026-10' }),
++  export: (practiceId) => ({ practice_id: practiceId, export_job_id: randomUUID() }),
++  packet_export: (practiceId) => ({ practice_id: practiceId, packet_version_id: randomUUID() }),
++  roi_statement: (practiceId) => ({ practice_id: practiceId, roi_statement_id: randomUUID() }),
++  report_document: (practiceId) => ({ practice_id: practiceId, report_document_id: randomUUID() }),
++};
++
++/** How long each job below holds its transaction: past the pool's connection timeout, as a month's price job holds its one for minutes. */
++const HOLD_MS = 1_000;
++
++describe('the practice pool', () => {
++  it('gives every practice job the worker runs at once a connection, so no attempt fails waiting for one (CAS-42.5 on 3ac856d5)', async () => {
++    const database = await createMigratedDatabase(readDatabaseUrl());
++    const owner = databaseClient(database.url);
++    await owner.connect();
++    // The pool main.ts opens, its connection timeout shortened from ten seconds so the test waits one.
++    const pool = practicePool(database.appUrl, { connectionTimeoutMillis: HOLD_MS / 4 });
++    try {
++      const world = await createTenantWorld(owner, 'pool-slots');
++      const hold: JobHandler<JobType> = async (_payload, context) => {
++        await context.transaction((scope) => scope.client.query('SELECT pg_sleep($1)', [HOLD_MS / 1000]));
++      };
++      const handlers = Object.fromEntries(JOB_TYPES.map((type) => [type, hold])) as unknown as JobHandlers;
++      const { client, handlers: queues } = directQueue();
++      const worker = await startWorker({ boss: client, pool, logger: silent, runs: databaseJobRuns(pool), handlers, heartbeatMs: 60_000 });
++      // As many jobs at once as one worker runs: one from each queue's loop and PARSE_CONCURRENCY parses (workOptions).
++      // CAS-42.5's concurrent phase was six of them (a price, an audit report and four parses) on four connections.
++      const jobs = JOB_TYPES.flatMap((type) => Array.from({ length: workOptions(type).localConcurrency ?? 1 }, () => ({ type, id: randomUUID() })));
++      let settled: PromiseSettledResult<unknown>[];
++      try {
++        settled = await Promise.allSettled(
++          jobs.map(async ({ type, id }) => {
++            const work = queues.get(type);
++            if (work === undefined) {
++              throw new Error(`no loop works ${type}`);
++            }
++            return work([{ id, data: PAYLOADS[type](world.practiceId) }]);
++          }),
++        );
++      } finally {
++        await worker.stop();
++      }
++      const failures = settled.flatMap((result, index) => (result.status === 'rejected' ? [`${jobs[index]?.type ?? '?'}: ${result.reason instanceof Error ? result.reason.message : 'unknown'}`] : []));
++      expect(failures).toEqual([]);
++      const outcomes = await owner.query<{ outcome: string; n: number }>('SELECT outcome, count(*)::int AS n FROM job_run WHERE practice_id = $1 GROUP BY outcome', [world.practiceId]);
++      expect(outcomes.rows).toEqual([{ outcome: 'succeeded', n: jobs.length }]);
++    } finally {
++      await endPool(pool);
++      await owner.end();
++      await database.drop();
++    }
++  }, 60_000);
++});
+diff --git a/apps/worker/src/worker.test.ts b/apps/worker/src/worker.test.ts
+index b94f23c4..96ecbe1a 100644
+--- a/apps/worker/src/worker.test.ts
++++ b/apps/worker/src/worker.test.ts
+@@ -5,10 +5,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import type { JobHandlers } from './jobs/handlers';
+ import { placeholderHandlers } from './jobs/handlers';
+ import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
+-import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
++import { JOB_TYPES, PARSE_CONCURRENCY, PRACTICE_JOB_SLOTS, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
+ import { SCREENING_JOB_TYPES, type ScreeningHandlers, type ScreeningJobs } from './jobs/screening';
+ import type { JobRunRecorder } from './jobs/runs';
+-import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JOB_HEAP_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
++import {
++  CrossPracticeJobError,
++  JOB_ATTEMPT_FAILED_MESSAGE,
++  JOB_FAILED_MESSAGE,
++  JOB_HEAP_MESSAGE,
++  JobPayloadError,
++  type QueueClient,
++  attemptErrorCode,
++  practicePool,
++  startWorker,
++} from './worker';
+ 
+ const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
+ const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
+@@ -239,6 +249,62 @@ describe('startWorker', () => {
+     await worker.stop();
+   });
+ 
++  it('logs each failed attempt, the last among them, with its error’s code and never its text (CAS-42.5 on 3ac856d5)', async () => {
++    const { handlers, client } = fakeBoss();
++    const { lines, logger } = capture();
++    const timedOut = new Error('timeout exceeded when trying to connect');
++    const worker = await startWorker({ boss: client, pool, logger, handlers: { ...placeholderHandlers, price: () => Promise.reject(timedOut) }, heartbeatMs: 60_000 });
++    for (let retryCount = 0; retryCount <= QUEUE_OPTIONS.retryLimit; retryCount += 1) {
++      await expect(handlers.get('price')?.([{ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toBe(timedOut);
++    }
++    expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE)).toEqual(
++      [0, 1, 2].map((retryCount) => ({ time: expect.any(String), level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, job_id: `job-${String(retryCount)}`, job_type: 'price', error_code: 'DB_POOL_TIMEOUT' })),
++    );
++    // The fixed text, written out for the log lint in worker.ts.
++    expect(JOB_ATTEMPT_FAILED_MESSAGE).toBe('job attempt failed');
++    expect(JSON.stringify(lines)).not.toContain('timeout exceeded');
++    await worker.stop();
++  });
++
++  it('names a failed attempt’s error by a code: the pool’s own failures, a SQLSTATE, a code it carries, its class, never its text', () => {
++    const database = Object.assign(new Error('deadlock detected'), { code: '40P01', severity: 'ERROR', name: 'error' });
++    class PricingRunNotFoundError extends Error {
++      override readonly name = 'PricingRunNotFoundError';
++    }
++    expect(attemptErrorCode(new Error('timeout exceeded when trying to connect'))).toBe('DB_POOL_TIMEOUT');
++    expect(attemptErrorCode(new Error('Connection terminated due to connection timeout', { cause: new Error('x') }))).toBe('DB_CONNECT_TIMEOUT');
++    expect(attemptErrorCode(new Error('Connection terminated unexpectedly'))).toBe('DB_CONNECTION_TERMINATED');
++    expect(attemptErrorCode(database)).toBe('DB_40P01');
++    expect(attemptErrorCode(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toBe('ECONNRESET');
++    expect(attemptErrorCode(Object.assign(new Error('content'), { code: 'CONTENT_NOT_LOADED' }))).toBe('CONTENT_NOT_LOADED');
++    expect(attemptErrorCode(new PricingRunNotFoundError('the pricing run is not recorded yet'))).toBe('PRICING_RUN_NOT_FOUND_ERROR');
++    expect(attemptErrorCode(new TypeError('x is not a function'))).toBe('TYPE_ERROR');
++    expect(attemptErrorCode(new Error('synthetic failure'))).toBe('ERROR');
++    // A name that is not an Error class's, a code in no known form, and no object at all.
++    expect(attemptErrorCode(Object.assign(new Error('x'), { name: 'Pat Doe' }))).toBe('UNCLASSIFIED');
++    expect(attemptErrorCode(Object.assign(new Error('x'), { code: 'member 123', name: 'Smith' }))).toBe('UNCLASSIFIED');
++    expect(attemptErrorCode('timeout exceeded when trying to connect')).toBe('UNCLASSIFIED');
++    expect(attemptErrorCode(null)).toBe('UNCLASSIFIED');
++  });
++
++  it('opens the practice pool with a connection for each practice job it works at once: one from each queue and PARSE_CONCURRENCY parses', async () => {
++    const { boss, client } = fakeBoss();
++    const worker = await startWorker({ boss: client, pool, logger: createLogger({ sink: () => undefined }), handlers: placeholderHandlers, heartbeatMs: 60_000 });
++    const slots = boss.work.mock.calls
++      .filter(([name]) => (JOB_TYPES as readonly string[]).includes(name))
++      .reduce((total, [, options]) => total + ((options as { localConcurrency?: number }).localConcurrency ?? 1), 0);
++    await worker.stop();
++    expect(slots).toBe(JOB_TYPES.length - 1 + PARSE_CONCURRENCY);
++    expect(PRACTICE_JOB_SLOTS).toBe(slots);
++    // Opened, not connected: pg's pool connects on first use.
++    const opened = practicePool('postgres://nobody:nothing@127.0.0.1:1/none');
++    try {
++      expect(opened.options.max).toBe(slots);
++    } finally {
++      await opened.end();
++    }
++  });
++
+   it('logs the live heap once per attempt as it ends, completed or failed, with IDs and numbers only (D19)', async () => {
+     const { handlers, client } = fakeBoss();
+     const { lines, logger } = capture();
+diff --git a/apps/worker/src/worker.ts b/apps/worker/src/worker.ts
+index 143121f0..dc0cf511 100644
+--- a/apps/worker/src/worker.ts
++++ b/apps/worker/src/worker.ts
+@@ -1,4 +1,4 @@
+-import { type PracticeScope, type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
++import { type DatabasePool, type PracticeScope, type ScopeClient, type ScopePool, openPool, withJobScope } from '@tp/db';
+ import { recordAuditEvent } from '@tp/db/runtime';
+ import type { Logger } from '@tp/observability';
+ import type { PgBoss } from 'pg-boss';
+@@ -13,6 +13,7 @@ import {
+   JOB_TYPES,
+   type JobPayload,
+   type JobType,
++  PRACTICE_JOB_SLOTS,
+   QUEUE_OPTIONS,
+   SCREENING_JOB_HEARTBEAT_SECONDS,
+   SCREENING_QUEUE_OPTIONS,
+@@ -64,6 +65,18 @@ export interface RunningWorker {
+   stop(): Promise<void>;
+ }
+ 
++/**
++ * The application login's pool for the practice jobs (main.ts): a connection for each job the worker runs at once
++ * (PRACTICE_JOB_SLOTS, fifteen: a job from each practice queue and four parses), since each attempt holds one at a time.
++ * So no job waits for a connection another job holds: a month's price job or audit report holds its one for minutes, and
++ * on four connections the concurrent phase's six jobs left two waiting until the connection timeout failed their
++ * attempts (CAS-42.5 on 3ac856d5: A price and C parse 4 completed on attempt 2; docs/adr/0083). The timeout stays, for a
++ * database that cannot give a connection at all (CONNECTION_TIMEOUT_MS, docs/adr/0055).
++ */
++export function practicePool(url: string, options: { readonly connectionTimeoutMillis?: number } = {}): DatabasePool {
++  return openPool(url, PRACTICE_JOB_SLOTS, options);
++}
++
+ export class JobPayloadError extends Error {
+   override readonly name = 'JobPayloadError';
+ }
+@@ -88,6 +101,49 @@ export const JOB_FAILED_MESSAGE = 'job failed on its last attempt';
+  */
+ export const JOB_HEAP_MESSAGE = 'job heap';
+ 
++/**
++ * The line each failed attempt logs, the last among them, with the job's ID and type and its error's code
++ * (attemptErrorCode), never the error's text: an attempt that is retried leaves its cause in the log, which the weekly
++ * real-size run prints beside a job that completed on a later attempt (docs/adr/0083). The last attempt also logs
++ * JOB_FAILED_MESSAGE for the operator alarm.
++ */
++export const JOB_ATTEMPT_FAILED_MESSAGE = 'job attempt failed';
++
++/** pg-pool's own failures, by their fixed texts: a waiter past connectionTimeoutMillis, a new connection slower than it, a dropped one. */
++const POOL_FAILURES: readonly (readonly [string, string])[] = [
++  ['timeout exceeded when trying to connect', 'DB_POOL_TIMEOUT'],
++  ['Connection terminated due to connection timeout', 'DB_CONNECT_TIMEOUT'],
++  ['Connection terminated unexpectedly', 'DB_CONNECTION_TERMINATED'],
++];
++
++/**
++ * The code a failed attempt logs for its error, never its text: the pool's own failures (DB_POOL_TIMEOUT when the job
++ * waited CONNECTION_TIMEOUT_MS for a connection, DB_CONNECT_TIMEOUT, DB_CONNECTION_TERMINATED); PostgreSQL's SQLSTATE as
++ * DB_<state> (DB_40P01 a deadlock, DB_53200 out of shared memory); a code the error carries in this codebase's form or
++ * Node's (ECONNRESET); else the name of its class, an Error by name, in upper snake case (PRICING_RUN_NOT_FOUND_ERROR,
++ * TYPE_ERROR); UNCLASSIFIED for anything else.
++ */
++export function attemptErrorCode(error: unknown): string {
++  if (typeof error !== 'object' || error === null) {
++    return 'UNCLASSIFIED';
++  }
++  const { message, code, severity, name } = error as { readonly message?: unknown; readonly code?: unknown; readonly severity?: unknown; readonly name?: unknown };
++  const pool = POOL_FAILURES.find(([text]) => message === text)?.[1];
++  if (pool !== undefined) {
++    return pool;
++  }
++  if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && typeof severity === 'string') {
++    return `DB_${code}`;
++  }
++  if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,62}$/.test(code)) {
++    return code;
++  }
++  if (typeof name === 'string' && /^(?:[A-Z][A-Za-z0-9]{0,40})?Error$/.test(name)) {
++    return name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
++  }
++  return 'UNCLASSIFIED';
++}
++
+ interface QueuedJob {
+   readonly id: string;
+   readonly data: unknown;
+@@ -96,14 +152,21 @@ interface QueuedJob {
+ }
+ 
+ /**
+- * Runs one attempt, logging the job's final failure (its third attempt) for the operator alarm, and, however it ends,
+- * the live heap it saw (JOB_HEAP_MESSAGE).
++ * Runs one attempt, logging a failure's code (JOB_ATTEMPT_FAILED_MESSAGE) and the job's final failure (its third attempt)
++ * for the operator alarm, and, however it ends, the live heap it saw (JOB_HEAP_MESSAGE).
+  */
+ async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => Promise<void>): Promise<void> {
+   const heap = jobHeap();
+   try {
+     await run();
+   } catch (error) {
++    try {
++      // The text is JOB_ATTEMPT_FAILED_MESSAGE, written out for the log lint; worker.test.ts holds them equal. A line
++      // only: it never replaces the job's own error.
++      logger.warn('job attempt failed', { job_id: job.id, job_type: type, error_code: attemptErrorCode(error) });
++    } catch {
++      // Nothing to do: the attempt fails with its own error below.
++    }
+     if ((job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit) {
+       // The text is JOB_FAILED_MESSAGE, written out for the log lint (fixed text only); worker.test.ts holds them equal.
+       logger.error('job failed on its last attempt', { job_id: job.id, job_type: type, error_code: 'JOB_FAILED' });
+diff --git a/docs/adr/0083-read-a-months-triage-and-audit-report-in-batches-look-each-line-up-through-an-index-and-hold-only-a-small-measured-share-of-heap-per-line.md b/docs/adr/0083-read-a-months-triage-and-audit-report-in-batches-look-each-line-up-through-an-index-and-hold-only-a-small-measured-share-of-heap-per-line.md
+index 6b3e2056..49a3248e 100644
+--- a/docs/adr/0083-read-a-months-triage-and-audit-report-in-batches-look-each-line-up-through-an-index-and-hold-only-a-small-measured-share-of-heap-per-line.md
++++ b/docs/adr/0083-read-a-months-triage-and-audit-report-in-batches-look-each-line-up-through-an-index-and-hold-only-a-small-measured-share-of-heap-per-line.md
+@@ -599,6 +599,43 @@ runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load
+ the warning names the cause it can see." Recorded also in reconciliation-001, "Content pipeline". It changes the same
+ files as the first grant, and no other.
+ 
++#### The practice pool, 2026-11-04
++
++**Why A price and C parse 4 completed on attempt 2 (CAS-42.5 on 3ac856d5, run 41901463895).** The practice worker runs a
++job from each practice queue's loop and four parses at once (`workOptions`): fifteen jobs, each holding one of the
++application login's connections at a time, for its `job_run` writes, its gate and each of its transactions in turn.
++`main.ts` opened that pool with four connections and the ten-second connection timeout (`CONNECTION_TIMEOUT_MS`, ADR
++0055). A month's price job holds its one connection for its whole run, and an audit report for its triage, its reading
++and its print, so the concurrent phase's six jobs (A's price, B's report, C's four parses) left two of them waiting for
++a connection. That run's runner was slower across the board (its seed 62 s against 37 s on run 41848025627, its parses
++13.1 s against 5.0 to 5.6 s), the connections stayed held past ten seconds, and the two waiting attempts failed; pg-boss
++ran them again 30 to 60 seconds later and both completed. An instrumented run of the same tree (run 41913629020, on
++`co-001/wip-sc1b-retry-1`, the harness alone changed) caught it directly. Its large jobs together failed A's second
++report and C's parses 7 and 8 on their first attempts, each with pg-pool's `timeout exceeded when trying to connect`,
++raised in the handler's transaction (`transaction` in `packages/db/src/authz/scope.ts`, awaiting `pool.connect()`) while
++E's price, D's triage and C's parses 5 and 6 held the four connections, the two parses for 11 seconds. In its concurrent
++phase the four parses held all four connections for 7 seconds, and A's price and B's report waited 7 seconds for theirs,
++inside the timeout. Every local run, and the faster runners, waited less than ten seconds, so no attempt failed.
++Production runs the same worker (`WORKER_JOBS=practice`, one task at half a vCPU) with the same pool: a job that needs a
++connection while four longer jobs hold theirs fails its attempt after ten seconds, and three such attempts fail the job
++(a parse marks its document failed).
++
++**The fix: a connection for each job the worker runs at once, and a code for each failed attempt.** `practicePool`
++(`apps/worker/src/worker.ts`, opened by `main.ts` and by the end-to-end worker) holds `PRACTICE_JOB_SLOTS` connections,
++counted from the queues' local concurrency (`jobs/registry.ts`: fifteen), so no job waits for a connection another job
++holds. The ten-second timeout stays, for a database that cannot give a connection at all. Each failed attempt now logs
++`job attempt failed` with the job's ID and type and an `error_code` (`attemptErrorCode`: `DB_POOL_TIMEOUT`,
++`DB_CONNECT_TIMEOUT`, `DB_<SQLSTATE>`, a code the error carries, or its class), never the error's text. The weekly run
++prints those codes beside a job that completed on a later attempt, so the job log says why. The check itself is
++unchanged: a retry still fails the run. The database's share: the worker may hold fifteen application connections where
++it held four, eleven more in the worst case, when every pool of every task is full at once (about 101 connections in
++production with its two web tasks, against `db.t4g.medium`'s default `max_connections` of several hundred; 78 in
++development and staging with one, which leaves `db.t4g.micro`'s smaller default less room). Every pool connects on
++demand and closes a connection idle for thirty seconds. Tests, each failing first: fifteen jobs at once, one from each
++queue and four parses, each holding its transaction past a shortened timeout on the pool `main.ts` opens (on four
++connections 11 of the 15 attempts failed; now all complete); the pool's size against the loops `startWorker` starts (4,
++now 15); each failed attempt's line and code; and the summary's codes beside a retried job.
++
+ ## Alternatives considered
+ 
+ | Option | Why not (or when we would switch) |
+diff --git a/docs/runbooks/ci.md b/docs/runbooks/ci.md
+index 0eced03d..87f58608 100644
+--- a/docs/runbooks/ci.md
++++ b/docs/runbooks/ci.md
+@@ -69,11 +69,15 @@ whole run's and each phase's and chain job's working set; a failing check names
+ Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
+ 2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure.
+ - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
+-  would have waited on. The worker logs no error for an attempt that is retried, but an attempt that throws logs a
+-  `job heap` line with the job's ID as it ends, so the job's first one marks when the failed attempt ended. At that
+-  time, look in the Postgres log in the artifact's `logs/` for `out of shared memory` (53200: the lock table is full).
+-  A heap out-of-memory ends the worker's process before it logs anything: the summary's restarts count shows it. The
+-  run never counts a retry as a pass.
++  would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
++  `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
++  waited `CONNECTION_TIMEOUT_MS` (ten seconds) for one of the practice pool's connections, so the worker ran more jobs
++  at once than the pool holds (`practicePool` holds `PRACTICE_JOB_SLOTS`, one per job: if it fires, look for a job
++  that holds two); `DB_CONNECT_TIMEOUT` a new connection that took longer than that; `DB_<SQLSTATE>` an error from
++  PostgreSQL (`DB_53200` out of shared memory: the lock table is full; `DB_40P01` a deadlock); otherwise the error's own
++  code or its class (`PRICING_RUN_NOT_FOUND_ERROR`). The attempt's `job heap` line, with the same job ID, marks when it
++  ended; read the Postgres log in the artifact's `logs/` at that time. A heap out-of-memory ends the worker's process
++  before it logs anything: the summary's restarts count shows it. The run never counts a retry as a pass.
+ - **A backend held more than 64 advisory locks.** The sampler reads, each second, the largest advisory-lock count any
+   one backend holds (`pg_locks`, `locktype = 'advisory'`, grouped by `pid`); 64 is the loader's trace bound
+   (`TRACE_LOCK_BUCKETS`, equal to the default `max_locks_per_transaction`). A job that takes a lock per line or per row
+diff --git a/tools/release-capacity/checks.test.ts b/tools/release-capacity/checks.test.ts
+index a076ee82..df8ec341 100644
+--- a/tools/release-capacity/checks.test.ts
++++ b/tools/release-capacity/checks.test.ts
+@@ -1,6 +1,7 @@
+ import { describe, expect, it } from 'vitest';
+ 
+ import { TRACE_LOCK_BUCKETS } from '../../apps/worker/src/parse/loader';
++import { JOB_ATTEMPT_FAILED_MESSAGE } from '../../apps/worker/src/worker';
+ import {
+   ADVISORY_LOCKS_PER_TRANSACTION,
+   type CapacityMeasurements,
+@@ -19,6 +20,7 @@ import {
+   WINDOWS_COLD_BUDGET_MS,
+   WORKING_SET,
+   advisoriesOutput,
++  attemptFailures,
+   errorCodes,
+   jobHeaps,
+   markdown,
+@@ -251,6 +253,12 @@ describe('the release capacity verdict', () => {
+     failsWith({ jobs: change('A triage', { attempts: 2 }) }, /A triage \(triage [0-9a-f-]{36}\) completed on attempt 2, not its first, in the chain/);
+     failsWith({ jobs: change('D triage', { attempts: 3 }) }, /D triage \(triage [0-9a-f-]{36}\) completed on attempt 3, not its first, in the large jobs together/);
+     failsWith({ jobs: change('F reconcile', { attempts: null }) }, /F reconcile \(reconcile [0-9a-f-]{36}\) completed, but its attempts could not be read, in F’s reconcile/);
++    // The codes its failed attempts logged, read from the worker's log (CAS-42.5 on 3ac856d5 had none to read).
++    failsWith(
++      { jobs: change('A price', { attempts: 2, failedAttempts: ['DB_POOL_TIMEOUT'] }) },
++      /A price \(price [0-9a-f-]{36}\) completed on attempt 2, not its first, in the concurrent phase \(its failed attempts logged DB_POOL_TIMEOUT\)$/,
++    );
++    failsWith({ jobs: change('A price', { attempts: 3, failedAttempts: [] }) }, /A price .* completed on attempt 3, not its first, in the concurrent phase \(its failed attempts logged no `job attempt failed` line\)$/);
+     expect(verdict({ ...PASSING, jobs: change('B triage', { attempts: 2 }) }).pass).toBe(true);
+   });
+ 
+@@ -493,3 +501,20 @@ describe('the advisories output (fix round S3)', () => {
+     expect(Buffer.from(output, 'base64').toString('utf8')).toBe('the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\nthe windows query was not measured');
+   });
+ });
++
++describe('attemptFailures', () => {
++  it('reads each failed attempt’s code by its job’s ID from the worker’s `job attempt failed` lines, in order, and nothing else', () => {
++    const id = '4227f755-8ec2-4d8f-8bb2-0fb7356a4541';
++    const line = (fields: Record<string, unknown>) => `worker-1  | ${JSON.stringify({ worker_id: 'w', time: '2026-11-04T20:13:12.000Z', level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, ...fields })}`;
++    const failures = attemptFailures([
++      line({ job_id: id, job_type: 'price', error_code: 'DB_POOL_TIMEOUT' }),
++      '[harness] worker started for run',
++      JSON.stringify({ level: 'info', msg: 'job heap', job_id: id, heap_live_peak_mib: 200, heap_limit_mib: 560 }),
++      line({ job_id: id, job_type: 'price', error_code: 'DB_40P01' }),
++      line({ job_id: 'fa81bd58-8481-4296-9332-b85f78530826', job_type: 'parse_835', error_code: 'not a code' }),
++      line({ msg: 'job failed on its last attempt', job_id: id, error_code: 'JOB_FAILED' }),
++      '{ not json "job attempt failed"',
++    ]);
++    expect(Object.fromEntries(failures)).toEqual({ [id]: ['DB_POOL_TIMEOUT', 'DB_40P01'], 'fa81bd58-8481-4296-9332-b85f78530826': ['UNREADABLE'] });
++  });
++});
+diff --git a/tools/release-capacity/checks.ts b/tools/release-capacity/checks.ts
+index 0bba82d1..5207f1c9 100644
+--- a/tools/release-capacity/checks.ts
++++ b/tools/release-capacity/checks.ts
+@@ -104,6 +104,11 @@ export interface JobOutcome {
+   readonly attempts: number | null;
+   /** Its `job heap` lines from the worker's log; null when it logged none or the log could not be read. */
+   readonly heap: JobHeap | null;
++  /**
++   * The error code each of its failed attempts logged (the worker's `job attempt failed` lines, attemptFailures), in the
++   * log's order; absent when the log could not be read.
++   */
++  readonly failedAttempts?: readonly string[];
+ }
+ 
+ /**
+@@ -355,6 +360,32 @@ export function errorCodes(lines: Iterable<string>): Record<string, number> {
+   return counts;
+ }
+ 
++/**
++ * The worker log's `job attempt failed` lines by job ID (apps/worker/src/worker.ts JOB_ATTEMPT_FAILED_MESSAGE): each
++ * failed attempt's error code, in the log's order, so a job a retry rescued says in the summary, and so in the job log,
++ * why its earlier attempt failed. Codes only: the line carries no error text.
++ */
++export function attemptFailures(lines: Iterable<string>): Map<string, string[]> {
++  const failures = new Map<string, string[]>();
++  for (const line of lines) {
++    const start = line.indexOf('{');
++    if (start === -1 || !line.includes('"job attempt failed"')) {
++      continue;
++    }
++    try {
++      const entry = JSON.parse(line.slice(start)) as { msg?: unknown; job_id?: unknown; error_code?: unknown };
++      if (entry.msg !== 'job attempt failed' || typeof entry.job_id !== 'string') {
++        continue;
++      }
++      const code = typeof entry.error_code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(entry.error_code) ? entry.error_code : 'UNREADABLE';
++      failures.set(entry.job_id, [...(failures.get(entry.job_id) ?? []), code]);
++    } catch {
++      // Not a log line of the worker's.
++    }
++  }
++  return failures;
++}
++
+ /** The worker log's `job heap` lines (D19) by job ID: the largest live heap peak of the job's attempts, with its limit. */
+ export function jobHeaps(lines: Iterable<string>): Map<string, JobHeap> {
+   const heaps = new Map<string, JobHeap>();
+@@ -400,7 +431,9 @@ export function verdict(m: CapacityMeasurements): Verdict {
+       if (job.attempts === null) {
+         reasons.push(`${label} completed, but its attempts could not be read${where}`);
+       } else if (job.attempts > 1) {
+-        reasons.push(`${label} completed on attempt ${String(job.attempts)}, not its first${where}`);
++        const logged =
++          job.failedAttempts === undefined ? '' : job.failedAttempts.length === 0 ? ' (its failed attempts logged no `job attempt failed` line)' : ` (its failed attempts logged ${job.failedAttempts.join(', ')})`;
++        reasons.push(`${label} completed on attempt ${String(job.attempts)}, not its first${where}${logged}`);
+       }
+       if (job.heap === null) {
+         reasons.push(`${label} logged no \`job heap\` line${where}`);
+diff --git a/tools/release-capacity/run.ts b/tools/release-capacity/run.ts
+index a8022bdd..9b9b1b93 100644
+--- a/tools/release-capacity/run.ts
++++ b/tools/release-capacity/run.ts
+@@ -35,6 +35,7 @@ import {
+   type WindowsQuery,
+   type WorkerMemory,
+   advisoriesOutput,
++  attemptFailures,
+   errorCodes,
+   jobHeaps,
+   markdown,
+@@ -814,7 +815,13 @@ async function main(): Promise<number> {
+   }
+   // Each job's `job heap` lines, by its ID (D19): none when the log could not be read, which fails closed.
+   const heaps = lines === null ? new Map<string, JobHeap>() : jobHeaps(lines);
+-  const measuredJobs = jobs.map((job) => ({ ...job, heap: job.jobId === null ? null : (heaps.get(job.jobId) ?? null) }));
++  // Each failed attempt's error code by its job's ID (the worker's `job attempt failed` lines), none when the log could not be read.
++  const failures = lines === null ? null : attemptFailures(lines);
++  const measuredJobs = jobs.map((job) => ({
++    ...job,
++    heap: job.jobId === null ? null : (heaps.get(job.jobId) ?? null),
++    ...(failures === null || job.jobId === null ? {} : { failedAttempts: failures.get(job.jobId) ?? [] }),
++  }));
+   const full = report({
+     commit,
+     runtime: opts.runtime,
+-- 
+2.43.0
+
