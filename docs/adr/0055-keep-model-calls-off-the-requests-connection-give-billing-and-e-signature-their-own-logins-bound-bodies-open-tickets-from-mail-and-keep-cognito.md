@@ -3,7 +3,9 @@
 - **Status:** accepted; several parts are proven only by tests until the first staging deploy (see Consequences);
   amended by PR 6b-4 (below: Cognito's mail through the stack's identity and the transactional configuration set from
   the mail's phase 2;
-  [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md))
+  [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md));
+  amended by SS-01 (below, 2026-10-27: the console's suspension takes a reason and is set in Postgres;
+  [0080](0080-stop-a-held-organizations-people-through-its-grants-per-permission-store-paidwholes-suspension-with-its-reason-and-history-and-keep-nonpayment-billings-computed-hold.md))
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 5 (J18), 6 (Admin console; Billing; Agreements), 7 (Internal console; every screen's states), 13
@@ -193,3 +195,27 @@ arrived.
 - **Open (O11):** whether Cognito needs a sending-authorization policy on an identity in its own account when a
   configuration set is named; staging's phase 2 shows it (docs/runbooks/deliverability.md, section 2), and a policy, if
   needed, is a change to `infra/lib/constructs/mail-streams.ts`.
+
+## Amendment (SS-01, 2026-10-27): the console's suspension keeps its reason, and Postgres checks it
+
+[0080](0080-stop-a-held-organizations-people-through-its-grants-per-permission-store-paidwholes-suspension-with-its-reason-and-history-and-keep-nonpayment-billings-computed-hold.md) decides it; migration 20261108090000. Read with "The console switches the model features" above, whose
+last sentence it amends.
+
+- **One setter.** `console.organization_status` keeps its ID, path and permission (`organization.manage`). It now takes
+  a suspension with a reason from a closed list (at the customer's request, a security hold, the agreement ended; never
+  nonpayment, which stays billing's computed hold), an optional internal note and a tick that confirms what the
+  suspension stops; a change of reason; or a reinstatement with its reason (the cause is resolved, or suspended in
+  error), one click each. The handler calls `console_set_organization_status`, a definer that checks a person with the
+  platform permission, the status the page showed, the move and the reason, and writes the status, its reason and its
+  time, an append-only history row (`organization_status_change`, read by platform administrators alone) and the
+  reserved audit action `organization_suspended` or `organization_reinstated`, which the application role cannot write.
+  The wrapper still audits `organization_status_set`.
+- **In Postgres, not the handler alone.** A trigger refuses, for every role but the owner, any move into or out of
+  `closed` and any organization created other than active, and a CHECK refuses suspending the internal organization for
+  every role. Nothing reopens a closed organization.
+- **"Through the same run refusal billing uses"** stays true, and its reach widens. The refusal is the shared decision
+  of 0080: suspending a group stops new work at its practices for everyone, and its people's work through any grant it
+  holds; suspending a firm stops its people's new work through its grants, where before it refused nothing. The card
+  says which, with the real counts.
+- **For one release** the application role keeps its direct status write, guarded by the trigger, so the previous
+  image's suspend and reinstate keep working; the first schema PR after this one is deployed revokes it.

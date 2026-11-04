@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
 import { LOCATION_STATUSES, type LocationStatus } from '@tp/contracts';
-import { AGREEMENT_KINDS, MEMBERSHIP_ROLES, type MembershipRole, type ScopeClient, provisionPracticeKey } from '@tp/db/runtime';
+import {
+  AGREEMENT_KINDS,
+  MEMBERSHIP_ROLES,
+  type MembershipRole,
+  REINSTATEMENT_REASONS,
+  SUSPENSION_REASONS,
+  type ScopeClient,
+  type SuspensionReason,
+  provisionPracticeKey,
+} from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { revokeUserSessions } from '../auth/sessions';
@@ -35,6 +44,10 @@ export interface OrganizationSummary {
   readonly kind: 'group' | 'firm' | 'internal';
   readonly name: string;
   readonly status: string;
+  /** PaidWhole's reason for the suspension in force; null otherwise, or when none was recorded (docs/adr/0080). */
+  readonly statusReason: SuspensionReason | null;
+  /** When the current status began; null for a status unchanged since migration 20261108090000. */
+  readonly statusSince: Date | null;
   readonly createdAt: Date;
 }
 
@@ -43,10 +56,22 @@ interface OrganizationRow {
   readonly kind: 'group' | 'firm' | 'internal';
   readonly name: string;
   readonly status: string;
+  readonly status_reason: SuspensionReason | null;
+  readonly status_since: Date | null;
   readonly created_at: Date;
 }
 
-const organizationOf = (row: OrganizationRow): OrganizationSummary => ({ id: row.id, kind: row.kind, name: row.name, status: row.status, createdAt: row.created_at });
+const ORGANIZATION_COLUMNS = 'id, kind, name, status, status_reason, status_since, created_at';
+
+const organizationOf = (row: OrganizationRow): OrganizationSummary => ({
+  id: row.id,
+  kind: row.kind,
+  name: row.name,
+  status: row.status,
+  statusReason: row.status_reason,
+  statusSince: row.status_since,
+  createdAt: row.created_at,
+});
 
 export const organizationsPage = platformRoute({
   id: 'console.organizations',
@@ -56,7 +81,7 @@ export const organizationsPage = platformRoute({
   permission: 'organization.manage',
   params: z.object({}),
   handle: async ({ scope }) => {
-    const { rows } = await scope.client.query<OrganizationRow>('SELECT id, kind, name, status, created_at FROM organization ORDER BY kind, name, id');
+    const { rows } = await scope.client.query<OrganizationRow>(`SELECT ${ORGANIZATION_COLUMNS} FROM organization ORDER BY kind, name, id`);
     return { organizations: rows.map(organizationOf) };
   },
   sample: { params: () => ({}) },
@@ -80,12 +105,54 @@ export const createOrganization = platformRoute({
   sample: { params: () => ({}), input: () => ({ kind: 'firm', name: 'SYNTHETIC CONSOLE FIRM' }) },
 });
 
+/** The (from, to) status of each change the console asks for: the status the person saw, and the one asked. */
+const STATUS_CHANGES = { suspend: ['active', 'suspended'], reason: ['suspended', 'suspended'], reinstate: ['suspended', 'active'] } as const;
+
+/** The note's rule, the CHECK organization_status_change_note's: one line of at most 500 characters. */
+const statusNote = optionalText(
+  z
+    .string()
+    .trim()
+    .max(500, 'at most 500 characters')
+    .regex(/^[^\p{Cc}]*$/u, 'one line, with no line breaks'),
+);
+
+const CLOSED_REFUSAL = 'a closed organization is neither suspended nor reinstated';
+
+/** X1 to X3: the reason each change takes, as its form's refusal says it. */
+const REASON_REFUSAL = { suspend: 'choose why PaidWhole suspends it', reason: 'choose the new reason', reinstate: 'choose why it is reinstated' } as const;
+
+/** The setter's refusals as the form shows them (docs/adr/0080); anything else is the wrapper's to map. */
+function statusRefused(error: unknown, change: keyof typeof STATUS_CHANGES): Error | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return undefined;
+  }
+  if (error.code === 'P0002') {
+    return new NotFoundError();
+  }
+  const constraint = 'constraint' in error ? error.constraint : undefined;
+  if (error.code === '23514' && constraint === 'organization_closed_by_closure_only') {
+    return new InputError([{ field: 'change', message: CLOSED_REFUSAL }]);
+  }
+  if (error.code === '23514' && constraint === 'organization_status_changed_meanwhile') {
+    return new InputError([{ field: 'change', message: "the organization's status changed since this page loaded; reload the page" }]);
+  }
+  if (error.code === '23514' && constraint === 'organization_status_change_reason') {
+    return new InputError([{ field: 'reason', message: REASON_REFUSAL[change] }]);
+  }
+  return undefined;
+}
+
 /**
- * A platform administrator suspends a customer organization, or reinstates it (PRD 7, Internal console,
- * Organizations and practices: "Create, edit, hold, suspend"; PRD 5, J18; docs/adr/0055). A suspension refuses new
- * runs for the organization's practices by the path a nonpayment suspension takes (organization_run_refusal: the
- * routes, the job chain and the database), and leaves every record readable; reinstating lifts it at once. Setting
- * the status it has changes nothing. A closed organization, and the company's own, are neither.
+ * A platform administrator suspends a customer organization, changes the suspension's reason, or reinstates it (PRD 7,
+ * Internal console, Organizations and practices: "Create, edit, hold, suspend"; PRD 5, J18; docs/adr/0055, docs/adr/0080).
+ * Every change goes through console_set_organization_status, which checks the person and organization.manage again in
+ * Postgres, refuses a change from a status the page no longer shows, and stores the reason (a closed list: nonpayment is
+ * billing's own hold, never a reason here), the internal note in the history, and the reserved audit action. A
+ * suspension takes the tick that confirms what it stops. A group's suspension stops new work at its practices for
+ * everyone; a firm's, or a group's as a grantee, stops its people's new work through its grants (practice_work_hold);
+ * every record stays readable, and reinstating lifts it at once. A change that changes nothing writes nothing but the
+ * wrapper's record of the request. A closed organization, and the company's own, are neither.
  */
 export const setOrganizationStatus = platformRoute({
   id: 'console.organization_status',
@@ -94,7 +161,17 @@ export const setOrganizationStatus = platformRoute({
   phi: false,
   permission: 'organization.manage',
   params: z.object({}),
-  input: z.object({ organizationId: opaqueId, status: z.enum(['suspended', 'active'], { message: 'suspend or reinstate' }) }),
+  input: z.discriminatedUnion('change', [
+    z.object({
+      change: z.literal('suspend'),
+      organizationId: opaqueId,
+      reason: z.enum(SUSPENSION_REASONS, { message: REASON_REFUSAL.suspend }),
+      note: statusNote,
+      confirm: z.literal('on', { message: 'tick to confirm what the suspension stops' }),
+    }),
+    z.object({ change: z.literal('reason'), organizationId: opaqueId, reason: z.enum(SUSPENSION_REASONS, { message: REASON_REFUSAL.reason }), note: statusNote }),
+    z.object({ change: z.literal('reinstate'), organizationId: opaqueId, reason: z.enum(REINSTATEMENT_REASONS, { message: REASON_REFUSAL.reinstate }) }),
+  ]),
   audit: { action: 'organization_status_set', objectType: 'organization' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
     const found = (await scope.client.query<{ status: string }>("SELECT status FROM organization WHERE id = $1 AND kind IN ('group', 'firm')", [input.organizationId])).rows[0];
@@ -102,14 +179,18 @@ export const setOrganizationStatus = platformRoute({
       throw new NotFoundError();
     }
     if (found.status === 'closed') {
-      throw new InputError([{ field: 'status', message: 'a closed organization is neither suspended nor reinstated' }]);
+      throw new InputError([{ field: 'change', message: CLOSED_REFUSAL }]);
     }
-    if (found.status !== input.status) {
-      await scope.client.query('UPDATE organization SET status = $2 WHERE id = $1', [input.organizationId, input.status]);
+    const [from, to] = STATUS_CHANGES[input.change];
+    const note = input.change === 'reinstate' ? null : (input.note ?? null);
+    try {
+      await scope.client.query('SELECT console_set_organization_status($1, $2, $3, $4, $5) AS changed', [input.organizationId, from, to, input.reason, note]);
+    } catch (error) {
+      throw statusRefused(error, input.change) ?? error;
     }
     return { objectId: input.organizationId, redirect: `/console/organizations/${input.organizationId}` };
   },
-  sample: { params: () => ({}), input: (refs) => ({ organizationId: refs.organizationId, status: 'active' }) },
+  sample: { params: () => ({}), input: (refs) => ({ change: 'reinstate', organizationId: refs.organizationId, reason: 'resolved' }) },
 });
 
 export interface MemberSummary {
@@ -146,6 +227,89 @@ export interface ConsoleGrant {
   readonly endsAt: Date;
   readonly revokedAt: Date | null;
   readonly agreementId: string;
+  /** The grantee's status: its people start no new work through the grant while it is suspended or closed (docs/adr/0080). */
+  readonly granteeStatus: string;
+}
+
+/** Who made a change of an organization's status, and when (organization_status_change). */
+export interface StatusChangeAuthor {
+  readonly email: string;
+  readonly at: Date;
+}
+
+/**
+ * The suspension in force, as the card reads it (C7): who suspended it and when, from the suspension's own history row
+ * (from active, at the organization's status_since: the setter's update and insert share one now()), so a change of
+ * reason by another administrator never reads as theirs (review finding F6); who changed its reason since, if anyone;
+ * and the latest note. suspendedBy is null for a suspension the previous image wrote directly (D11).
+ */
+export interface OrganizationSuspension {
+  readonly reason: SuspensionReason | null;
+  readonly since: Date | null;
+  readonly suspendedBy: StatusChangeAuthor | null;
+  readonly reasonChangedBy: StatusChangeAuthor | null;
+  readonly note: string | null;
+}
+
+/**
+ * What a suspension reaches (C6, C8): for a group, its active practices; for a firm, the practices it is granted; for
+ * either, the grants in force it holds as a grantee.
+ */
+export interface SuspensionReach {
+  readonly practices: number;
+  readonly grants: number;
+}
+
+/** One row of the organization's status history (C10), newest first. */
+export interface StatusChange {
+  readonly id: string;
+  readonly at: Date;
+  readonly change: 'suspended' | 'reinstated' | 'reason_changed';
+  /** A suspension reason, or a reinstatement reason (resolved, in_error). */
+  readonly reason: string;
+  readonly by: string;
+  readonly note: string | null;
+}
+
+interface StatusChangeRow {
+  readonly id: string;
+  readonly from_status: 'active' | 'suspended';
+  readonly to_status: 'active' | 'suspended';
+  readonly reason: string;
+  readonly note: string | null;
+  readonly at: Date;
+  readonly email: string;
+}
+
+const changeOf = (row: StatusChangeRow): StatusChange['change'] => (row.to_status === 'active' ? 'reinstated' : row.from_status === 'active' ? 'suspended' : 'reason_changed');
+
+/**
+ * The suspension in force, from its rows since it began (oldest first): a row from suspended to suspended that gives a
+ * reason other than the one before it changed the reason; one that keeps it only added a note.
+ */
+export function suspensionOf(organization: Pick<OrganizationSummary, 'status' | 'statusReason' | 'statusSince'>, rows: readonly StatusChangeRow[]): OrganizationSuspension | null {
+  if (organization.status !== 'suspended') {
+    return null;
+  }
+  const since = organization.statusSince;
+  const own = since === null ? undefined : rows.find((row) => row.from_status === 'active' && row.at.getTime() === since.getTime());
+  let reason: string | null = own?.reason ?? null;
+  let reasonChangedBy: StatusChangeAuthor | null = null;
+  let note: string | null = null;
+  for (const row of rows) {
+    if (row.from_status === 'suspended' && row.reason !== reason) {
+      reasonChangedBy = { email: row.email, at: row.at };
+    }
+    reason = row.reason;
+    note = row.note ?? note;
+  }
+  return {
+    reason: organization.statusReason,
+    since,
+    suspendedBy: own === undefined ? null : { email: own.email, at: own.at },
+    reasonChangedBy,
+    note,
+  };
 }
 
 /**
@@ -190,10 +354,25 @@ export const organizationPage = platformRoute({
   params: z.object({ organizationId: opaqueId, created: optionalText(opaqueId).catch(undefined) }),
   handle: async ({ scope, params }) => {
     const id = params.organizationId;
-    const organization = (await scope.client.query<OrganizationRow>('SELECT id, kind, name, status, created_at FROM organization WHERE id = $1', [id])).rows[0];
-    if (organization === undefined) {
+    const row = (await scope.client.query<OrganizationRow>(`SELECT ${ORGANIZATION_COLUMNS} FROM organization WHERE id = $1`, [id])).rows[0];
+    if (row === undefined) {
       throw new NotFoundError();
     }
+    const organization = organizationOf(row);
+    // The history (organization_status_change: platform administrators read it, organization.manage), with each
+    // actor's email; the suspension in force from its own rows, however long the history is.
+    const changeColumns = 'c.id, c.from_status, c.to_status, c.reason, c.note, c.at, u.email FROM organization_status_change c JOIN "user" u ON u.id = c.changed_by';
+    const history = await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 ORDER BY c.at DESC, c.id DESC LIMIT 20`, [id]);
+    const current =
+      organization.status === 'suspended' && organization.statusSince !== null
+        ? (await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 AND c.to_status = 'suspended' AND c.at >= $2 ORDER BY c.at, c.id`, [id, organization.statusSince])).rows
+        : [];
+    // What a suspension reaches: the grants in force the organization holds, and the practices they reach.
+    const held = await scope.client.query<{ grants: number; practices: number }>(
+      `SELECT count(*)::int AS grants, count(DISTINCT practice_id)::int AS practices FROM console_grants($1)
+        WHERE organization_id = $1 AND revoked_at IS NULL AND starts_at <= now() AND now() < ends_at`,
+      [id],
+    );
     const practices = await scope.client.query<{ practice_id: string; name: string; status: string; created_at: Date }>('SELECT practice_id, name, status, created_at FROM console_practices($1)', [id]);
     const members = await scope.client.query<{
       id: string;
@@ -223,11 +402,13 @@ export const organizationPage = platformRoute({
       'SELECT grant_id, organization_id, practice_id, scope, starts_at, ends_at, revoked_at, agreement_id FROM console_grants($1)',
       [id],
     );
-    const names = await scope.client.query<{ id: string; name: string }>(
-      'SELECT id, name FROM organization WHERE id = ANY ($1::uuid[]) UNION ALL SELECT practice_id, name FROM console_practices(NULL) WHERE practice_id = ANY ($2::uuid[])',
-      [grants.rows.map((row) => row.organization_id), grants.rows.map((row) => row.practice_id)],
+    // The grantees' names and statuses (C11, C12), and the practices' names.
+    const names = await scope.client.query<{ id: string; name: string; status: string | null }>(
+      'SELECT id, name, status FROM organization WHERE id = ANY ($1::uuid[]) UNION ALL SELECT practice_id, name, NULL FROM console_practices(NULL) WHERE practice_id = ANY ($2::uuid[])',
+      [grants.rows.map((grant) => grant.organization_id), grants.rows.map((grant) => grant.practice_id)],
     );
-    const nameOf = new Map(names.rows.map((row) => [row.id, row.name]));
+    const nameOf = new Map(names.rows.map((name) => [name.id, name.name]));
+    const statusOf = new Map(names.rows.map((name) => [name.id, name.status]));
     // Invitations (PRD 5, J2), with whether each has lapsed: an expired one is sent again from here.
     const invitations = await scope.client.query<{ id: string; email: string; role: MembershipRole; sent_at: Date; expires_at: Date; sends: number; accepted_at: Date | null; expired: boolean }>(
       `SELECT i.id, u.email, m.role, i.sent_at, i.expires_at, i.sends, i.accepted_at, (i.accepted_at IS NULL AND i.expires_at <= now()) AS expired
@@ -236,7 +417,13 @@ export const organizationPage = platformRoute({
       [id],
     );
     return {
-      organization: organizationOf(organization),
+      organization,
+      suspension: suspensionOf(organization, current),
+      reach: {
+        practices: organization.kind === 'group' ? practices.rows.filter((practice) => practice.status === 'active').length : (held.rows[0]?.practices ?? 0),
+        grants: held.rows[0]?.grants ?? 0,
+      } satisfies SuspensionReach,
+      history: history.rows.map((change): StatusChange => ({ id: change.id, at: change.at, change: changeOf(change), reason: change.reason, by: change.email, note: change.note })),
       invitations: invitations.rows.map(
         (row): InvitationSummary => ({
           id: row.id,
@@ -287,6 +474,7 @@ export const organizationPage = platformRoute({
           endsAt: row.ends_at,
           revokedAt: row.revoked_at,
           agreementId: row.agreement_id,
+          granteeStatus: statusOf.get(row.organization_id) ?? 'active',
         }),
       ),
     };

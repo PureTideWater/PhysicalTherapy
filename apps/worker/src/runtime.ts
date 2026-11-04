@@ -46,7 +46,7 @@ export { ChromiumPdfRenderer, type PdfRenderer } from './report/pdf';
 export { type DocumentPrintOutcome, type DocumentPrintServices, printReportDocument, reportDocumentHandler } from './report/print-document';
 export { type TriageJobContext, type TriageOptions, type TriageOutcome, executeTriage, todayUtc } from './triage/execute';
 export { triageHandler } from './triage/job';
-export { type QueueClient, type RunningWorker, startWorker } from './worker';
+export { type QueueClient, type RunningWorker, refusedByHold, startWorker } from './worker';
 export {
   type ResendResult,
   SCREENING_BATCH,

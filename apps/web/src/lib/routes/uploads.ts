@@ -12,10 +12,11 @@ import {
   recordAuditEvent,
   rolesPermit,
 } from '@tp/db/runtime';
-import { practiceRunRefusal } from '@tp/worker/billing';
 import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
+import { workPause } from '../billing/hold';
+import { type WorkPause, uploadsHeld } from '../billing/suspension-words';
 import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
@@ -71,58 +72,40 @@ export { NO_BAA, baaOnFile };
 
 export interface UploadGate {
   readonly open: boolean;
-  /** The closed gate's title, true to its state: not open yet (no BAA), paused (suspended) or closed. */
+  /**
+   * The closed gate's title, true to its state (docs/adr/0080, 0085): not open yet (no BAA), paused (a hold that lifts),
+   * closed (a closure, which promises no restart) or stopped (a hold whose cause these words do not know); null while open.
+   */
   readonly title: string | null;
   readonly reason: string | null;
 }
 
-/**
- * The organization's refusal (organization_run_refusal(), docs/adr/0050), said for an upload: a run's words ("new
- * runs start again") read wrong on a drop zone. Keyed by the database's exact text; a text not here (the function
- * changed) is still shown whole as the body, under "Uploads are stopped", so the panel never says less than the database. billing-routes'
- * db test holds each state to its words here.
- */
-const SUSPENSION_FOR_UPLOADS: Readonly<Record<string, { readonly title: string; readonly reason: string }>> = {
-  'the organization is suspended: its data stays readable, and new runs start again once a platform administrator reinstates it': {
-    title: 'Uploads are paused',
-    reason: 'The organization is suspended. What is on file stays readable, and uploads open again once a platform administrator reinstates it.',
-  },
-  'the organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed; its data stays readable, and new runs start again once the invoice is paid':
-    {
-      title: 'Uploads are paused',
-      reason:
-        'The organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed. What is on file stays readable, and uploads open again once the invoice is paid.',
-    },
-  'the organization is closed: its data stays readable, and no new run starts': {
-    title: 'Uploads are closed',
-    reason: 'The organization is closed. What is on file stays readable, and nothing new is uploaded.',
-  },
-};
+/** A closed gate's title while the BAA is not on file: the only state that is "not open yet". */
+const NOT_OPEN_YET = 'Uploads are not open yet';
 
-/** The closed gate for an organization's refusal, in an upload's words. */
-export function suspendedGate(refusal: string): UploadGate {
-  const words = SUSPENSION_FOR_UPLOADS[refusal];
-  if (words !== undefined) {
-    return { open: false, ...words };
-  }
-  // The database's own sentence, whole, under a title true of a pause and a closure alike: the panel never repeats its
-  // title as the body's first words, and never calls a stop it does not know a pause.
-  const sentence = refusal.trim().replace(/[.\s]+$/, '');
-  return { open: false, title: 'Uploads are stopped', reason: `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.` };
+/**
+ * The closed gate for a hold on the person's uploads (lib/billing/hold.ts workPause with file.upload, the upload
+ * routes' own question; docs/adr/0080), in an upload's words (uploadsHeld): titled for the state, the database's
+ * sentence whole as the body, so the panel never says less than the database nor repeats its title (docs/adr/0085).
+ */
+export function suspendedGate(pause: WorkPause): UploadGate {
+  const held = uploadsHeld(pause);
+  return { open: false, title: held.title, reason: held.reason };
 }
 
 /**
- * Whether the practice may upload now, and why not: its BAA on file (J1) and its organization not suspended, whose
- * uploads pause with the reason (docs/adr/0050). One gate for every page that offers an upload (Uploads, Contracts,
- * Reconciliation, and the payer's letter on Submissions), so each says so before a file is chosen rather than after,
- * under a title true to the state.
+ * Whether the person may upload here now, and why not: the practice's BAA on file (J1), then no hold on their uploads
+ * (practice_run_refusal_for with file.upload: the owner's hold, or a grantee's when only its grants let this person
+ * upload; docs/adr/0050, 0080). One gate for every page that offers an upload (Uploads, Contracts, Reconciliation, and
+ * the payer's letter on Submissions), so each says so before a file is chosen rather than after, under a title true to
+ * the state. What is on file stays readable.
  */
 export async function uploadGate(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<UploadGate> {
   if (!(await baaOnFile(scope, practiceId))) {
-    return { open: false, title: 'Uploads are not open yet', reason: NO_BAA };
+    return { open: false, title: NOT_OPEN_YET, reason: NO_BAA };
   }
-  const suspension = await practiceRunRefusal(scope.client, practiceId);
-  return suspension === null ? { open: true, title: null, reason: null } : suspendedGate(suspension);
+  const hold = await workPause(scope, practiceId, 'file.upload');
+  return hold === null ? { open: true, title: null, reason: null } : suspendedGate(hold);
 }
 
 /** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */
@@ -155,7 +138,6 @@ export const uploadsPage = practiceRoute({
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
-    // A suspended organization's uploads pause with the reason (docs/adr/0050); what is on file stays readable.
     const gate = await uploadGate(scope, practiceId);
     return {
       practiceId,

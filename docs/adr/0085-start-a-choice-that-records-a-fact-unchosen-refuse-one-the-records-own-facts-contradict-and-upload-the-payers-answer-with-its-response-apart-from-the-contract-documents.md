@@ -90,8 +90,12 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
   time it was uploaded, its kind and its SHA-256's prefix. Where this person cannot upload, or the practice's uploads
   are closed, the card says to choose a letter on file, or, with none on file, that no response can be recorded yet,
   and the uploader's panel says why, under a title true to the
-  state ("Uploads are not open yet" before the BAA, "Uploads are paused" while the organization is suspended,
-  "Uploads are closed" once it is closed), in an upload's words, on every page that offers an upload. One letter's
+  state ("Uploads are not open yet" before the BAA, and only then; "Uploads are paused" while a hold on the person's
+  uploads can lift; "Uploads are closed" for a closure, which promises no restart; "Uploads are stopped" for a hold whose
+  cause these words do not know), the hold as ADR 0080 decides it for this person (`practice_run_refusal_for` with
+  `file.upload`: the owner's hold, or a grantee's through its grant) and the database's sentence whole beneath, never
+  repeating the title, on every page that offers an upload (one gate, `lib/routes/uploads.ts` `uploadGate`, which the
+  practice home's empty state titles alike). One letter's
   refusals are in its own words ("The file is empty."; "save the letter as a smaller PDF"), never a batch's "split it
   or zip it". An uploader inside a form:
   - renders only `type="button"` buttons and unnamed controls, so the server action never receives the file or its

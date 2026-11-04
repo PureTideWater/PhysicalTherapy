@@ -13,6 +13,7 @@ import { roleNames } from '../../../../../components/format';
 import { Money } from '../../../../../components/remittances/display';
 import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import type { WorkPause } from '../../../../../lib/billing/suspension-words';
 import { MAPPING_KIND_NAMES, windowText } from '../../../../../lib/contracts/display';
 import type { ResolutionBucket } from '../../../../../lib/contracts/mapping-queries';
 import { unpricedReasonText } from '../../../../../lib/contracts/remedies';
@@ -32,7 +33,7 @@ const CORRECTED =
   'A new mapping supersedes the one it corrects, which stays recorded as it was. Pricing runs made before the correction keep the mapping they priced with; once pricing runs exist, each run that used the corrected mapping is offered a re-run here.';
 
 /** The page's notices, each a title and a text (design 5.3; C2): today's three word for word, and the ones for combined audit #32. */
-function planNotices(suspension: string | null): Readonly<Record<MappingNoticeKey, { readonly title: string; readonly text: string }>> {
+function planNotices(suspension: WorkPause | null): Readonly<Record<MappingNoticeKey, { readonly title: string; readonly text: string }>> {
   return {
     mapped: { title: 'Mapped', text: 'The plan is mapped from the date given. Its lines on those dates no longer wait on mapping.' },
     corrected: { title: 'Mapping corrected', text: CORRECTED },

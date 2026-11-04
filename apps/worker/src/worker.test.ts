@@ -322,7 +322,7 @@ describe('startWorker', () => {
         Promise.resolve({
           query: (text: string) => {
             queries.push(text);
-            const rows: unknown[] = text.startsWith('SELECT practice_run_refusal') ? [{ reason: 'the organization is suspended for nonpayment' }] : [];
+            const rows: unknown[] = text.startsWith('SELECT practice_run_refusal') ? [{ reason: "the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable" }] : [];
             return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
           },
           release: () => undefined,
@@ -344,6 +344,73 @@ describe('startWorker', () => {
     await handlers.get('parse_835')?.([{ id: '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382705', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
     expect(parse).toHaveBeenCalled();
     expect(queries.some((text) => text.includes('practice_run_refusal'))).toBe(false);
+    await worker.stop();
+  });
+
+  it('refuses a packet export of a held practice and records its refusal on the version, in the same job-scope transaction (BIL-07, F3)', async () => {
+    const { handlers, client } = fakeBoss();
+    const { logger } = capture();
+    const queries: { text: string; values?: unknown[] }[] = [];
+    const held = {
+      connect: () =>
+        Promise.resolve({
+          query: (text: string, values?: unknown[]) => {
+            queries.push({ text, values });
+            const rows: unknown[] = text.startsWith('SELECT practice_run_refusal')
+              ? [{ reason: "the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable" }]
+              : [];
+            return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+          },
+          release: () => undefined,
+        }),
+    } as unknown as ScopePool<ScopeClient>;
+    const ends: unknown[] = [];
+    const runs: JobRunRecorder = { started: () => Promise.resolve(), finished: (end) => Promise.resolve(void ends.push(end)) };
+    const exportPacket = vi.fn(() => Promise.resolve());
+    const worker = await startWorker({ boss: client, pool: held, logger, runs, handlers: { ...placeholderHandlers, packet_export: exportPacket }, heartbeatMs: 60_000 });
+    const jobId = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382706';
+    const versionId = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b07';
+    await handlers.get('packet_export')?.([{ id: jobId, data: { practice_id: PRACTICE, packet_version_id: versionId } }]);
+    expect(exportPacket).not.toHaveBeenCalled();
+    expect(ends).toEqual([{ jobId, practiceId: PRACTICE, outcome: 'refused', errorCode: 'ORGANIZATION_SUSPENDED' }]);
+    // One transaction: the hold asked, then packet_export_refused on the version, in the job's name, with the code
+    // the packet page words as E1 (packet_export_refusal_codes(), migration 20261108090000); nothing else.
+    const texts = queries.map((query) => query.text);
+    expect(texts.filter((text) => text === 'BEGIN')).toHaveLength(1);
+    const asked = texts.indexOf('SELECT practice_run_refusal($1) AS reason');
+    const recorded = texts.findIndex((text) => text.includes('INSERT INTO audit_event'));
+    expect(asked).toBeGreaterThan(0);
+    expect(recorded).toBeGreaterThan(asked);
+    expect(texts.slice(recorded + 1)).toEqual(['COMMIT']);
+    expect(queries[recorded]?.values).toEqual([jobId, 'service', 'packet_export_refused', 'packet_version', 'organization_suspended', jobId, [versionId], [PRACTICE], [null]]);
+    await worker.stop();
+  });
+
+  it('records no export refusal for any other refused job', async () => {
+    const { handlers, client } = fakeBoss();
+    const { logger } = capture();
+    const queries: string[] = [];
+    const held = {
+      connect: () =>
+        Promise.resolve({
+          query: (text: string) => {
+            queries.push(text);
+            const rows: unknown[] = text.startsWith('SELECT practice_run_refusal') ? [{ reason: 'held' }] : [];
+            return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+          },
+          release: () => undefined,
+        }),
+    } as unknown as ScopePool<ScopeClient>;
+    const worker = await startWorker({ boss: client, pool: held, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    for (const [type, data] of [
+      ['monitor', { practice_id: PRACTICE, day: '2026-10-16' }],
+      ['reconcile', { practice_id: PRACTICE, day: '2026-10-16' }],
+      ['digest', { practice_id: PRACTICE, period: '2026-10' }],
+    ] as const) {
+      await handlers.get(type)?.([{ id: '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382708', data }]);
+    }
+    expect(queries.filter((text) => text.startsWith('SELECT practice_run_refusal'))).toHaveLength(3);
+    expect(queries.some((text) => text.includes('audit_event'))).toBe(false);
     await worker.stop();
   });
 

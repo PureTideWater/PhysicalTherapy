@@ -91,7 +91,7 @@ export interface UploaderProps {
   /** The session's CSRF token, sent with every request this form makes (docs/adr/0053). */
   readonly csrfToken: string;
   readonly roleNames: string;
-  /** Whether uploads are open, and when not, a title true to the state and the reason (uploadGate()). */
+  /** Whether uploads are open, and when not, a title true to the state and the reason (lib/routes/uploads.ts uploadGate(): the BAA, then a hold on the person's uploads, docs/adr/0080, 0085). */
   readonly gate: { readonly open: boolean; readonly title: string | null; readonly reason: string | null };
   /**
    * The batch's limits. `contentTypes` is every type the drop zone takes: the 835's when `kinds` is absent, else every

@@ -403,7 +403,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     await addMembership(owner, world.organizationId, uploader, 'billing_manager');
     // Twenty-nine days after the failure: past due, still running.
     const invoiceId = await failedInvoice(world, 29);
-    expect(ok(await call(practiceHome, admin, P)).suspension).toBeNull();
+    expect(ok(await call(practiceHome, admin, P)).hold).toBeNull();
     expect((await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).status).toBe('ok');
 
     const suspendedInvoice = await failedInvoice(world, 31, 'SIM-HAND-0031');
@@ -411,14 +411,20 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     const before = await documents();
 
     const home = ok(await call(practiceHome, admin, P));
-    expect(home.suspension).toMatch(/suspended for nonpayment.*data stays readable/);
-    // Every page that offers an upload says so in an upload's words, under a title true to the state (ux85-1): never
-    // "Uploads are not open yet", and never a run's "new runs start again".
+    // The home tells the group's own administrator why, and links its billing (H4, H8; docs/adr/0080).
+    expect(home.hold).toEqual({
+      source: 'owner',
+      title: 'New runs have stopped',
+      body: 'An invoice of your organization has been unpaid for 30 days since its payment failed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start here until it is paid. Everything here stays readable.',
+      nextStep: { link: 'Settings, Billing', href: `/settings/billing/${world.organizationId}`, text: ' shows why and what to do next.' },
+    });
+    // Every page that offers an upload says so under a title true to the state (ux85-1; docs/adr/0085): never "Uploads
+    // are not open yet" (the BAA's alone), with the database's sentence whole as the body (docs/adr/0080), which the
+    // title does not repeat.
     const nonpayment = {
       open: false,
       title: 'Uploads are paused',
-      reason:
-        'The organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed. What is on file stays readable, and uploads open again once the invoice is paid.',
+      reason: 'An invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable.',
     };
     // (Contracts and Reconciliation read the same uploadGate(); their own suites hold their panels to it.)
     expect(ok(await call(uploadsPage, admin, P)).gate).toEqual(nonpayment);
@@ -436,7 +442,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
 
     // The wrapper refuses with the database's reason; over HTTP, a 402.
     const refused = await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] });
-    expect(refused).toEqual({ status: 'suspended', reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string });
+    expect(refused).toEqual({ status: 'suspended', reason: expect.stringMatching(/^an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable$/) as string });
     const response = await routeHandler(requestUploads, () => services)(
       new Request(`http://localhost:3100/p/${world.practiceId}/uploads/request`, {
         method: 'POST',
@@ -447,12 +453,12 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     );
     expect(response.status).toBe(402);
     // Past the wrapper, the database refuses the same work, and the outcome is the same.
-    expect(await call(uncheckedUpload, uploader, P, {})).toEqual({ status: 'suspended', reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string });
+    expect(await call(uncheckedUpload, uploader, P, {})).toEqual({ status: 'suspended', reason: expect.stringMatching(/^an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable$/) as string });
     expect(await documents()).toBe(before);
 
     // Paid (here, as Stripe's invoice.paid would leave it): runs start again at once, nothing to reinstate by hand.
     await owner.query("UPDATE invoice SET status = 'paid', paid_at = now(), amount_paid_cents = amount_due_cents, amount_remaining_cents = 0 WHERE id = ANY ($1::uuid[])", [[invoiceId, suspendedInvoice]]);
-    expect(ok(await call(practiceHome, admin, P)).suspension).toBeNull();
+    expect(ok(await call(practiceHome, admin, P)).hold).toBeNull();
     expect((await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).status).toBe('ok');
     const reinstated = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));
     expect(reinstated.billing).toMatchObject({ standing: 'good', holdingInvoice: null });
@@ -495,7 +501,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
 
     // Paying the holding invoice moves billing's hold to the second, and the database still refuses new work.
     await owner.query("UPDATE invoice SET status = 'paid', paid_at = now(), amount_paid_cents = amount_due_cents, amount_remaining_cents = 0 WHERE id = $1", [older]);
-    expect(await upload()).toEqual({ status: 'suspended', reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string });
+    expect(await upload()).toEqual({ status: 'suspended', reason: expect.stringMatching(/^an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable$/) as string });
     const after = ok(await call(organizationBillingPage, world.adminUserId, { organizationId: world.organizationId }));
     expect(after.billing).toMatchObject({ standing: 'suspended', holdingCount: 1, holdingInvoice: { id: newer, number: 'SIM-HAND-0031' } });
     expect(after.standing).toMatchObject({ kind: 'suspended_nonpayment', nextSteps: [{ action: 'Pay SIM-HAND-0031', href: `#pay-${newer}` }, { action: 'Open a support ticket' }] });
@@ -506,18 +512,19 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     const world = await createTenantWorld(owner, 'SYNTHETIC BILLING HELD');
     const uploader = await createUser(owner);
     await addMembership(owner, world.organizationId, uploader, 'billing_manager');
+    // As the previous image's console did it: the status alone; the trigger stamps its time, and no reason is stored.
     await owner.query("UPDATE organization SET status = 'suspended' WHERE id = $1", [world.organizationId]);
     const P = { practiceId: world.practiceId };
     expect(await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).toEqual({
       status: 'suspended',
-      reason: expect.stringMatching(/^the organization is suspended: its data stays readable/) as string,
+      reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable',
     });
     expect((await call(pricingRunsPage, world.adminUserId, P)).status).toBe('ok');
-    // Its upload panels say uploads are paused, in an upload's words (ux85-1).
+    // Its upload panels say uploads are paused, the database's sentence whole beneath (ux85-1; docs/adr/0080, 0085).
     const heldGate = {
       open: false,
       title: 'Uploads are paused',
-      reason: 'The organization is suspended. What is on file stays readable, and uploads open again once a platform administrator reinstates it.',
+      reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable.',
     };
     expect(ok(await call(uploadsPage, world.adminUserId, P)).gate).toEqual(heldGate);
 
@@ -527,9 +534,10 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     const held = ok(await call(organizationBillingPage, world.adminUserId, { organizationId }));
     expect(held.billing).toMatchObject({ status: 'suspended', standing: 'good', holdingInvoice: null });
     expect(held).not.toHaveProperty('suspension');
+    expect(held.billing).toMatchObject({ statusReason: null, statusSince: expect.any(Date) as Date });
     expect(held.standing).toEqual({
       kind: 'suspended_by_paidwhole',
-      label: 'Suspended by PaidWhole',
+      label: `Suspended by PaidWhole since ${(held.billing.statusSince as Date).toISOString().slice(0, 10)}`,
       tone: 'danger',
       title: 'New runs have stopped',
       notice: 'PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.',
@@ -552,18 +560,21 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     // Suspended by PaidWhole and an invoice unpaid for 31 days: both holds are named, and paying is the second step,
     // since reinstating alone restarts nothing (the database's refusal then names the invoice).
     const unpaid = await failedInvoice(world, 31, 'SIM-HAND-HELD');
+    // With a reason stored (B3, B7, B10): the notice says why, and the ticket's step follows the reason.
+    await owner.query("UPDATE organization SET status_reason = 'agreement_ended' WHERE id = $1", [world.organizationId]);
     const both = ok(await call(organizationBillingPage, world.adminUserId, { organizationId }));
     expect(both.standing).toMatchObject({
       kind: 'suspended_by_paidwhole',
-      label: 'Suspended by PaidWhole',
+      label: expect.stringMatching(/^Suspended by PaidWhole since \d{4}-\d{2}-\d{2}$/) as string,
       billingHold: { kind: 'suspended_nonpayment', invoice: { id: unpaid, number: 'SIM-HAND-HELD' } },
-      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing' }, { action: 'Pay SIM-HAND-HELD', href: `#pay-${unpaid}`, detail: ' below.' }],
+      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' to discuss a new agreement.' }, { action: 'Pay SIM-HAND-HELD', href: `#pay-${unpaid}`, detail: ' below.' }],
     });
+    expect(both.standing.notice).toMatch(/^PaidWhole has suspended the organization because the organization's agreement with PaidWhole has ended: new runs have stopped/);
     expect(both.standing.notice).toMatch(/Paying an invoice does not reinstate it\. An invoice is also unpaid since \d{4}-\d{2}-\d{2}; new runs stay stopped until it is paid as well\.$/);
     await owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [organizationId]);
     expect(await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).toEqual({
       status: 'suspended',
-      reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string,
+      reason: expect.stringMatching(/^an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable$/) as string,
     });
     expect(ok(await call(organizationBillingPage, world.adminUserId, { organizationId })).standing.kind).toBe('suspended_nonpayment');
   });
@@ -577,16 +588,17 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect(ok(await call(uploadsPage, world.adminUserId, { practiceId: world.practiceId })).gate).toEqual({
       open: false,
       title: 'Uploads are closed',
-      reason: 'The organization is closed. What is on file stays readable, and nothing new is uploaded.',
+      reason: "The practice's organization is closed, so no new work starts here; everything here stays readable.",
     });
-    // A refusal the upload words do not know yet (the database's function changed) is still shown whole as the body, as
-    // a sentence, under a title that neither repeats it nor calls it a pause.
-    expect(suspendedGate('the organization is SYNTHETIC: a reason not known here')).toEqual({
+    // A hold whose cause the upload words do not know (the database's function changed) is still shown whole as the
+    // body, as a sentence, under a title that neither repeats it nor calls it a pause or a closure (docs/adr/0085).
+    const unknown = { reason: 'the organization is SYNTHETIC: a reason not known here', source: 'owner', restarts: null } as const;
+    expect(suspendedGate(unknown)).toEqual({
       open: false,
       title: 'Uploads are stopped',
       reason: 'The organization is SYNTHETIC: a reason not known here.',
     });
-    expect(suspendedGate('the organization is SYNTHETIC.').reason).toBe('The organization is SYNTHETIC.');
+    expect(suspendedGate({ ...unknown, reason: 'the organization is SYNTHETIC.' }).reason).toBe('The organization is SYNTHETIC.');
     expect(await call(choosePlanAction, world.adminUserId, { organizationId }, { plan: 'monthly' })).toMatchObject({
       status: 'invalid',
       issues: [{ field: 'plan', message: 'a closed organization takes no new plan' }],
