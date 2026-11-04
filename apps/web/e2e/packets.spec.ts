@@ -621,12 +621,12 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await approver.goto(`/p/${practiceId}/contracts`);
         await expect(approver.getByRole('region', { name: 'Documents to tag' })).toBeVisible();
         await expect(approver.getByRole('region', { name: 'Documents to tag' }).locator(`[data-document="${letterId}"]`)).toHaveCount(0);
-        // The panel takes its name from its title, which names the payer's terms letter it also takes (ux85-5); its drop
+        // The panel takes its name from its title, which names the payer's terms or policy letter it also takes, by the kind select's own name (ux85-5); its drop
         // zone takes its name from its own heading, one level below, and says the size limit as a size (ux85-7).
-        const panel = approver.getByRole('region', { name: 'Upload a contract, exhibit or payer’s terms letter' });
-        await expect(panel.getByRole('heading', { level: 2 })).toHaveText('Upload a contract, exhibit or payer’s terms letter');
-        const dropZone = panel.getByRole('region', { name: 'Choose contracts, exhibits or payer’s terms letters to upload' });
-        await expect(dropZone.getByRole('heading', { level: 3 })).toHaveText('Choose contracts, exhibits or payer’s terms letters to upload');
+        const panel = approver.getByRole('region', { name: 'Upload a contract, exhibit or payer’s terms or policy letter' });
+        await expect(panel.getByRole('heading', { level: 2 })).toHaveText('Upload a contract, exhibit or payer’s terms or policy letter');
+        const dropZone = panel.getByRole('region', { name: 'Choose contracts, exhibits or payer’s terms or policy letters to upload' });
+        await expect(dropZone.getByRole('heading', { level: 3 })).toHaveText('Choose contracts, exhibits or payer’s terms or policy letters to upload');
         await expect(dropZone.locator('p').first()).toHaveText(
           /^PDFs \(a fee-schedule exhibit may also be a spreadsheet\), one at a time or a batch, up to 2\.0 GiB each\. Each file is scanned for malware before anything reads it\.$/,
         );
@@ -635,7 +635,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         // At a phone's width the kind select, holding its longest choice, says it whole, never cut short (ux85-2): the
         // width a select of the same classes takes for that text alone, its own arrow and padding counted, fits it.
         await kind.selectOption('payer_letter');
-        await atPhoneWidth(approver, 'Contracts, the upload panel with the payer’s terms letter chosen');
+        await atPhoneWidth(approver, 'Contracts, the upload panel with the payer’s terms or policy letter chosen');
         const desktop = approver.viewportSize();
         await approver.setViewportSize({ width: 390, height: 844 });
         try {

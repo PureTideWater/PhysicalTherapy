@@ -300,7 +300,7 @@ const LETTER_REFUSED = { status: 'invalid', issues: [{ field: 'documentId', mess
 /** The refusal of a response's letter as a contract's document, by the tag, amendment and correction handlers (D4). */
 const REFUSED_AS_SOURCE = {
   status: 'invalid',
-  issues: [{ field: 'documentId', message: 'a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms letter instead' }],
+  issues: [{ field: 'documentId', message: 'a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms or policy letter instead' }],
 };
 
 /** The lock every handler that makes a document a response's evidence or a contract's source takes first (D4). */

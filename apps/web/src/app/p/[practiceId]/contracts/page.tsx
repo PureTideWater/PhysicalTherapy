@@ -203,7 +203,7 @@ export default async function ContractsPage(props: Props) {
 
       <Card role="region" aria-labelledby="contract-upload-title">
         <CardHeader>
-          <CardTitle id="contract-upload-title">Upload a contract, exhibit or payer’s terms letter</CardTitle>
+          <CardTitle id="contract-upload-title">Upload a contract, exhibit or payer’s terms or policy letter</CardTitle>
           <CardDescription>
             Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then enters the contract specialist’s queue.{' '}
             {RESPONSE_LETTER_ELSEWHERE}
@@ -218,7 +218,7 @@ export default async function ContractsPage(props: Props) {
             gate={upload.gate}
             limits={{ ...upload.limits, contentTypes: [...new Set(upload.kinds.flatMap((kind) => kind.contentTypes))] }}
             kinds={upload.kinds}
-            heading="Choose contracts, exhibits or payer’s terms letters to upload"
+            heading="Choose contracts, exhibits or payer’s terms or policy letters to upload"
             headingLevel={3}
             description={`PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to ${formatBytes(upload.limits.maxBytes)} each.`}
             uploaders="Billing managers, analysts and firm principals upload contracts."

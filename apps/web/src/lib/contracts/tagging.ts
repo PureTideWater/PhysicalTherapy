@@ -48,7 +48,7 @@ export type TagInput = z.output<typeof tagInput>;
 export const DOCUMENT_USE_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('document_use:' || $1::text, 0))";
 
 /** Why a payer's answer is not taken as a contract's document, and what to choose instead. */
-export const RESPONSE_LETTER_NOT_A_SOURCE = 'a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms letter instead';
+export const RESPONSE_LETTER_NOT_A_SOURCE = 'a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms or policy letter instead';
 
 /**
  * Refuses, on documentId, a document a payer response names (NOT_A_RESPONSE_LETTER): it is that case's evidence,
