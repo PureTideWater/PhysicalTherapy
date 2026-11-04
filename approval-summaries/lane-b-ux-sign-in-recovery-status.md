@@ -35,6 +35,16 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
 - 2026-11-04T07:15:00Z: the repository is public again (confirmed), so **the merge no longer waits on #102** (orchestrator,
   07:10Z).
 
+- 2026-11-04T08:30:00Z: **draft PR #108 opened** (build wf_a3949540-155, 9 agents): head 6b25ed60 on df4daff7; 40 files, +2.4k;
+  slices A-E red first; integration green (unit apps/web 1,381; browser 53; db 46; build; e2e sign-in + axe specs 26);
+  51 before shots on the base. Checker (record `lane-b-ux-sign-in-recovery-build/check.md`): S-1 and S-2 fixed with tests
+  (ce2a20fc, 6b25ed60); **S-3 ruled TAKEN by S4** (a provider or audit failure on a real account would answer 500 while
+  non-accounts get code_sent: catch it, log IDs only, answer code_sent; ADR A2 amended); N-1 taken (a test for
+  timingSafeEqual); N-2 to N-6 not defects; N-7 settled (public again, so the merge waits on the gate itself, not #102).
+  The PR footer was rewritten by gh: it is restored through update_pull_request in the fix round. Subscribed to #108.
+  Reviews wf_341d1a32-40c launched (security; UX and brand with after shots; skeptics; one fix round: S-3, N-1, findings,
+  base merge, full suite once, one push; verification); script archived.
+
 ## Waiting on someone
 - None blocks the merge (the repository is public again, 07:10Z).
 
