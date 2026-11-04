@@ -659,7 +659,8 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
             await approver.setViewportSize(desktop);
           }
         }
-        await kind.selectOption({ index: 0 });
+        // The panel starts with no kind and its placeholder cannot be chosen again (#75): the kind goes to Contract.
+        await kind.selectOption('contract');
         await expect(panel).toContainText('A payer’s answer to a dispute goes with its response instead, on the case’s Submissions and responses page.');
       } finally {
         approver.off('request', collect);
