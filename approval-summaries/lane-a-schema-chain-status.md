@@ -193,6 +193,13 @@ its unpushed work is not waited for).
   **Asked of the orchestrator (18:20):** step 7b at full size (A's ~31,000 open lines cannot reconcile in one attempt until
   SUITE-CAP-3): recommended (a) 7b on its own practice at CAS-42.3's 2,000 lines until SUITE-CAP-3 moves it back.
   Next: `workflow-scripts/lane-a-sc1b-working-set.js` (the change, an adversarial review, then verification + CAS-42.5).
+- **18:30 UTC. Decided by the orchestrator (~18:25; test scope, not a founder ruling): (a)** step 7b on a practice of its
+  own at CAS-42.3's 2,000 lines, A keeps its full month; a fixed "Known gap" line on every run (full-size reconcile is
+  SUITE-CAP-3's, 10,000 lines in 3,412 s, revisit condition); ADR 0083 records it as temporary, the move back to A being
+  SUITE-CAP-3's acceptance step. **Running: wf_7e937213-93c** (`workflow-scripts/lane-a-sc1b-working-set.js`, args head
+  4a8357d9): both decisions built with failing-first tests, memory by kind and the OOM-events check, ADR 0083; fast checks,
+  tools tests, a --small smoke; push; adversarial review (and its fixes); then the fresh-clone verification reading CI
+  beside CAS-42.5 on the final head. Then the suggested line.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
