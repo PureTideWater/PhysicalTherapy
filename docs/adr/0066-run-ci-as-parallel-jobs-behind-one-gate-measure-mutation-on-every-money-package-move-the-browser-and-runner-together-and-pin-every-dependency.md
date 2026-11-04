@@ -1011,9 +1011,10 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   - **What holds it.** `workflows.test.ts` reads every expression of this repository's workflows that reaches a step's
     environment, an input or a script, or a key, as the runner reads it, and admits only a closed list; it refuses an
     expression in any key: GitHub evaluates one in an env name, a step input's name (`INPUT_<key>`), a service's id or
-    a matrix key, and in keys that reach no process (a container's or a service's own, registry credentials,
-    `strategy`, a matrix's `include` entries, `defaults.run`), and refuses one when it parses the file in the rest
-    (`on:`, a job's id or outputs, a step's own keys, a reusable workflow's `with:` and `secrets:`). It refuses a key
+    a matrix key, and in keys whose own text reaches no process (a container's or a service's own, registry
+    credentials, `strategy`, a matrix's `include` entries, a job's `defaults.run`), and refuses one when it parses the
+    file in the rest (`on:`, the workflow's `defaults.run`, a job's id or outputs, a step's own keys, a reusable
+    workflow's `with:` and `secrets:`). It refuses a key
     of a workflow, a job or a step outside the closed list it reads (a nested `parallel:` list of steps, say), so no
     expression in a workflow goes unread. That list holds values GitHub or the workflow bounds, and every step output
     and value one job hands another, each listed with its bound. It reads this repository's workflows: a pinned

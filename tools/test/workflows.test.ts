@@ -3222,10 +3222,10 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    * the runner starts); each step's env, with, run, working-directory and shell (`if:` and `name:` reach none). A key
    * outside the closed lists of a workflow's, a job's and a step's keys is refused, so none goes unread. GitHub's contexts table
    * names every key that takes a context. A mapping's keys are read too, anywhere in the file: GitHub evaluates an
-   * expression in an env name, an input's name (INPUT_<key>), a service's id or a matrix key, and in keys that reach no
-   * process (a container's or a service's own, registry credentials, strategy, a matrix's include entries,
-   * defaults.run), and refuses one when it parses the file in the rest (on:, a job's id or outputs, a step's own keys,
-   * a reusable workflow's with: and secrets:); none may hold one. What it refuses, each naming its file, job, step and
+   * expression in an env name, an input's name (INPUT_<key>), a service's id or a matrix key, and in keys whose own
+   * text reaches no process (a container's or a service's own, registry credentials, strategy, a matrix's include
+   * entries, a job's defaults.run), and refuses one when it parses the file in the rest (on:, the workflow's
+   * defaults.run, a job's id or outputs, a step's own keys, a reusable workflow's with: and secrets:); none may hold one. What it refuses, each naming its file, job, step and
    * key, and the values it found for BOUNDED_VALUES.
    */
   function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
