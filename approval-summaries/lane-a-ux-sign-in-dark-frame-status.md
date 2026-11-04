@@ -15,6 +15,9 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
 - 2026-11-04T17:55:00Z: branch on origin at 9b237a93 through the hook; worktree /home/user/ux-dark-frame, installed. No CSS
   file is in the capacity-watched list. Next: the item workflow.
 
+- 2026-11-04T18:00:00Z: item workflow wf_85a93b20-bdd launched (design with measured ratios; build red first; before and after
+  shots; draft PR; one UX and brand review with skeptics; one fix round with the full suite; verification); script archived.
+
 ## Waiting on someone
 - None.
 
