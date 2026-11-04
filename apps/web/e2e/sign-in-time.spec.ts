@@ -3,7 +3,7 @@ import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { totpCode } from '../src/lib/auth/totp';
-import { atPhoneWidth, expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible, expectAccessibleInDark } from './a11y';
 import { addVirtualKey, enterPassword, refusal, withDatabase } from './helpers';
 
 /**
@@ -231,6 +231,8 @@ test('the code step states its limit, warns once, closes, and starts again with 
   await test.step('below the card, the lost-authenticator line names the support address, and the step passes axe with it at 1280 and 390 px (SGN-08)', async () => {
     await expectLostFactorLine(page, 'Lost your authenticator app? Write to ', ' from the address you sign in with.');
     await expectAccessible(page, 'Code step, open, lost-authenticator line');
+    // In dark too: the frame's muted line and its link, on the frame's own ground (review UXD-N1).
+    await expectAccessibleInDark(page, 'Code step, open, lost-authenticator line');
     await atPhoneWidth(page, 'Code step, open, lost-authenticator line');
   });
 
@@ -653,6 +655,8 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     await expect(page.locator('[data-slot="no-email"] li').last()).toContainText('Still nothing after a new code: write to');
     await expect(page.locator('[data-slot="no-email"] a')).toHaveAttribute('href', /^mailto:[^?&]+@[^?&]+$/);
     await expectAccessible(page, 'Forgot password, code step');
+    // In dark too: Back to sign in (the link button) and the No email? list on the frame's own ground (review UXD-N1).
+    await expectAccessibleInDark(page, 'Forgot password, code step');
     await atPhoneWidth(page, 'Forgot password, code step');
     const before = page.viewportSize();
     await page.setViewportSize({ width: 390, height: 844 });
