@@ -34,3 +34,25 @@ The words changed in round 2 (UXB-S1, S2, N2, N4) and the Back to sign in colour
 shots; they are asserted by notice.test.tsx, schemas.test.ts and the sign-in-time e2e. Retaking
 `sign-in-forgot-password.{code-sent,error-malformed,error-wrong-code,closed,warning}.*` and
 `sign-in.reason-password-reset-locked.*` on the new head is owed.
+
+## Delta round, on e156d948 (2026-11-04)
+
+The shots owed above, retaken on the head `e156d948` with the tour tool (`/home/user/ops/tools/lane-b-screen-tour`,
+"From another lane"): 9 shots, none skipped and none failed, 11:37 UTC, fresh prepare, populate skipped (these states
+need no records), synthetic personas only; server stopped, port free, the tour database dropped. Index
+`/tmp/claude-0/-home-user-PhysicalTherapy/41a30c20-8b29-54c0-aac9-2d7e26acf337/scratchpad/sgn7e/shots-delta/INDEX.md`, each compared by pixel with the `0bd5721a` shot of the same name in `sgn7c/shots-after`.
+- `sign-in.default.1280` (control): identical.
+- `sign-in-forgot-password.code-sent.{1280,390,1280-dark}`: the "No email?" list in the new order with the fifth
+  support item (UXB-S1, UXB-N2), Back to sign in in the link colour (UXB-N1), visible in dark.
+- `sign-in-forgot-password.error-malformed.{1280,390}`: only the message, "enter an email address" (UXB-S2).
+- `sign-in.reason-password-reset-locked.{1280,390,1280-dark}`: only the notice's title and text (UXB-N4).
+- Not retaken: `error-wrong-code`, `warning`, `closed` (they share code-sent's list and button; the tests assert them).
+- Checked: UXB-S1, S2, N1, N2 and N4 do what was asked; CO-11 and the brand words hold; light link 7.3:1 on Paper.
+
+| ID | Sev | Finding | Skeptic | Disposition |
+| --- | --- | --- | --- | --- |
+| UXD-N1 | N | Dark (tokens only, advisory): phase 2's Back to sign in is now the dark link blue on the Paper frame, about 1.9:1 (as phase 1's link already is) | No verdict returned (none) | Recorded as a follow-up; no code change in #108 |
+
+No blocker or should-fix, so nothing is open before merge. Not seen, by sample: the new `emailAddress` message on
+onboarding, settings and the console invite. PR #108's description was updated to carry this result and the gate's O9
+note (readback identical, 54,872 characters). Not committed.

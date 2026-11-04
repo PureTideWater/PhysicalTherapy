@@ -249,7 +249,7 @@ Neither name starts with `Admin`.
 | --- | --- | --- | --- |
 | ForgotPassword | none | resolve | `CodeDeliveryDetails.Destination` is never read, shown or logged |
 | ForgotPassword | `UserNotFoundException`, `NotAuthorizedException` (invited or disabled in Cognito), `InvalidParameterException` (no verified email), `LimitExceededException`, `CodeDeliveryFailureException`, `TooManyRequestsException` | resolve, after `logger.warn('password reset request not delivered', { error_code, request_id })` | Each happens only for real accounts, or is a quota; showing any of them enumerates |
-| ForgotPassword | anything else (`InternalErrorException`, `ResourceNotFoundException`, network) | rethrow, giving the generic 500 | Our failure. It can happen for any address, so it leaks nothing, and a broken provider never says "check your email" |
+| ForgotPassword | anything else (`InternalErrorException`, `ResourceNotFoundException`, network) | rethrow; the flow catches it, logs `password reset request failed` at error with `{ request_id, error_code }` only, and answers `code_sent` at the floor (S-3, session ruling 2026-11-04) | Our failure. SEC-B1 sends only for an active, enrolled account, so a 500 here would tell accounts apart during an outage; the log is where an outage shows. The notice already reads "If an account uses the address you typed" |
 | ConfirmForgotPassword | none | `reset` | Returns no tokens and no session |
 | ConfirmForgotPassword | `CodeMismatchException`, `ExpiredCodeException`, `LimitExceededException`, `TooManyFailedAttemptsException`, `UserNotFoundException`, `NotAuthorizedException` | `rejected` | An unknown user gets a mismatch or an expiry. A limit only ever reaches a real account, so it must not differ |
 | ConfirmForgotPassword | `InvalidPasswordException` | `invalid_password` with problems `[]` | As :208-211. It is unreachable while the pinned policy matches `passwordProblems` |
@@ -350,8 +350,10 @@ account gets a code.
 Every address gets the same status, cookies, redirect and words. **The handler is padded to a floor (SEC-N2):**
 - `RESET_REQUEST_FLOOR_MS = 1500`, measured from entry on the flow's injected `now()`, sleeps the remainder through an
   injected `sleep()` (defaults: `Date.now`, `setTimeout`).
-- The floor is applied in a `finally` around steps 2-5, so the sleep runs before a return **and** before a rethrow: an
-  audit transaction that throws only for real accounts still answers at the floor. The sleep runs after every pool
+- The floor is applied in a `finally` around steps 2-5, so the sleep runs before a return **and** before a rethrow. A
+  failed send or audit write, which only real accounts reach, is caught, logged `password reset request failed` at
+  error with `{ request_id, error_code }`, and answered `code_sent` like every other path (S-3); only a failed lookup,
+  which every address makes, still rethrows. The sleep runs after every pool
   client is released, so a padded request holds no connection.
 - The floor covers the lookup, the audit transaction, the skipped or real send, and swallowed errors.
 - Every run logs `password reset request timed` at info with `{ request_id, elapsed_ms }` (`elapsed_ms` is allowlisted,
@@ -597,7 +599,8 @@ Each test is written failing-first in its slice (7).
 **`sign-in-routes.db.test.ts`** (models: the enumeration test :460-489, lockout :233, key options :291):
 - The request for a known, unknown, invited, not-enrolled (password set, no TOTP), disabled and locked address gives the
   same redirect, the same cookies written and deleted, and the same data. All resolve at the floor on the injected
-  clock, including a path whose audit write is made to throw (the sleep runs before the rethrow, SEC-N2).
+  clock. A throwing provider and a throwing audit insert each get the unknown address's answer, cookies, floor and page,
+  with one `password reset request failed` error line of IDs only (S-3).
 - A code is delivered only for the active enrolled and the locked active enrolled address; none for unknown, invited,
   not-enrolled or disabled (SEC-B1).
 - A rejected confirm logs `password reset code refused` with neither the address nor the code; a rate-limited reset

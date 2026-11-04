@@ -63,8 +63,18 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
   **VERIFIED**. Owed before merge: shots of the round-2 changes and a UX delta check, plus the O9 note in the description:
   wf_038d8d8f-613.
 
+- 2026-11-04T11:46:00Z: **UX PR 7 MERGED: #108 as 45d7d0c1** (merge commit; expectedHeadSha e156d948; base 24531dc2). Before it:
+  the UX delta check (wf_038d8d8f-613, 9 shots on e156d948): every round-2 fix does what its finding asked, and nothing else
+  changed by pixel diff. One nit, UXD-N1: in dark, the sign-in frame stays Paper, so links there are about 1.9:1. This was
+  on the base already; follow-up for the brand owner (ADR 0056/0058). The description now has the delta and the O9 note
+  under the 2026-11-02 01:02Z ruling. Ready 11:43Z; approval-of-record success 11:43:28Z. Unsubscribed from #108.
+  **For Lane A** (`lane-b-ux-sign-in-recovery-build/proposals.md`): P-1, close the Cognito public-client gap (a
+  confidential client with SecretHash preferred; on the base before this PR); P-2, the confirm re-checks the gate (UX PR
+  65); P-3, verify Cognito's per-code cap; R-11, alarms on reset requests; branded wording for Cognito's code email; a
+  "password changed" email. **For the co-founder:** wording departures D-1 to D-8 (PR body). **For the founder:** O9 (#41).
+
 ## Waiting on someone
 - None blocks the merge (the repository is public again, 07:10Z).
 
 ## Next step
-Design.
+Merged (45d7d0c1). Next: UX PR 8 (`co-001/ux-account-security`) depends on this; it is not assigned to S4.
