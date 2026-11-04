@@ -145,6 +145,14 @@ its unpushed work is not waited for).
   (no time advisory this run), approval-of-record (re-run after ready: 41834628129 success); base 45d7d0c1 an ancestor;
   mergeable clean; fresh-clone verification passed. Unsubscribed from #104. Reported to the orchestrator.
   **Next: SUITE-CAP-1b's PR stage** (base e084da22 into 1b 978891a3).
+- **13:15 UTC. Running: wf_a38ce7b6-ec3** (`workflow-scripts/lane-a-sc1b-pr-stage-wf_a38ce7b6-ec3.js`), 1b's PR stage:
+  base e084da22 merged (re-read; regenerate; checks; push); the draft PR headed by the summary (Freeze exception: both
+  rulings quoted); reviews as default agents (security/tenancy, ledger/money, reliability/capacity; UX only if a scout
+  finds changed words), a skeptic per finding; beside them two investigations (CAS-42.5's memory.peak; the harness's
+  0-actionable reconcile); fix round (findings, the loader's in-grant wording, INDEX_CLEANUP only if ruled, the 2026-10-27
+  grant in ADR 0083, the memory fix unless it needs a ruling) with the full suite once and one push; then the fresh-clone
+  verification reading CI beside CAS-42.5 re-dispatched on the final head (and CAS-42.6's after side if the worker
+  changed). Interest waits for 1b's final head.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
