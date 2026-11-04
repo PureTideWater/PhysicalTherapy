@@ -327,6 +327,25 @@ describe('members', () => {
     expect(invitations.slice(sent)).toEqual([email]);
   });
 
+  it('refuses, writing nothing, a link whose provider account signs in between the check and the resend (SEC-22, review security-N3)', async () => {
+    const email = `orphan-race-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    const resend = provider.resendInvitation.bind(provider);
+    // The holder of the earlier temporary password sets their own just before the resend.
+    const raced = vi.spyOn(provider, 'resendInvitation').mockImplementationOnce(async (address) => {
+      await store.update(sub, (current) => ({ ...current, temporary: false }));
+      return resend(address);
+    });
+    const sent = invitations.length;
+    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }],
+    });
+    raced.mockRestore();
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
+  });
+
   it('ends a membership: the user’s sessions end at once and the provider signs them out', async () => {
     const userId = await createUser(owner);
     const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');

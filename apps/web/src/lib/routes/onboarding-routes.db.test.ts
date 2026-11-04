@@ -8,7 +8,7 @@ import { MemoryCompliancePlatform, complianceExportSchema } from '@tp/compliance
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { LocalAgreementDocuments } from '../agreements/documents';
 import { ESIGN_SIGNATURE_HEADER, LocalESignature } from '../agreements/esign';
@@ -354,6 +354,24 @@ describe('inviting an address the identity provider already knows (SEC-22)', () 
     expect(invitations.slice(sent).map((sentTo) => sentTo.email)).toEqual([email]);
     expect(invitations.at(-1)?.password).not.toBe(old);
     expect((await services.provider.signIn(email, old)).kind).toBe('rejected');
+  });
+
+  it('refuses, writing nothing, a link whose provider account signs in between the check and the resend (review security-N3)', async () => {
+    const email = `orphan-race-${randomUUID()}@synthetic.test`;
+    const { sub } = await services.provider.ensureUser(email);
+    const resend = services.provider.resendInvitation.bind(services.provider);
+    const raced = vi.spyOn(services.provider, 'resendInvitation').mockImplementationOnce(async (address) => {
+      await store.update(sub, (current) => ({ ...current, temporary: false }));
+      return resend(address);
+    });
+    const sent = invitations.length;
+    expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: EMAIL_IN_USE }],
+    });
+    raced.mockRestore();
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
   });
 });
 

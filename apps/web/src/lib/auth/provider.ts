@@ -123,9 +123,11 @@ export interface AuthProvider {
   /**
    * Sends an invited user's invitation again with a new temporary password (J2: "an expired invitation is
    * re-sent by the administrator"): Cognito's resend; the local outbox in development. A user who has chosen
-   * a password already is not invited and is left as they are.
+   * a password already is not invited and is left as they are. Answers whether it was sent: false for a user who has
+   * signed in (or none), so a caller linking an invitation onto the account can refuse it (docs/adr/0088 D4; review
+   * security-N3).
    */
-  resendInvitation(email: string): Promise<void>;
+  resendInvitation(email: string): Promise<boolean>;
   /**
    * Sends a reset code if the address names a user who can reset. Resolves the same for every address: a refusal
    * only a real account could cause is swallowed (logged by its error code and `requestId` alone), and only the

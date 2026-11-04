@@ -318,15 +318,16 @@ export class DevAuthProvider implements AuthProvider {
     return { sub, created: true, neverSignedIn: true };
   }
 
-  async resendInvitation(email: string): Promise<void> {
+  async resendInvitation(email: string): Promise<boolean> {
     const existing = await this.options.store.byEmail(email);
     if (existing?.temporary !== true) {
-      return;
+      return false;
     }
     const password = temporaryPassword();
     const passwordHash = await hashPassword(password, this.cost);
     await this.options.store.update(existing.sub, (current) => ({ ...current, passwordHash }));
     await this.options.deliverInvitation(email, password);
+    return true;
   }
 
   /** The code's keyed hash: what the store keeps instead of the code. */

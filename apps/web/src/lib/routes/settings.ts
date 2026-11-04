@@ -1029,9 +1029,11 @@ export const inviteUserAction = organizationRoute({
       }
       throw error;
     }
-    if (!ensured.created) {
-      // A new temporary password for this invitation; the provider voids the one it mailed before.
-      await services.provider.resendInvitation(input.email);
+    // A new temporary password for this invitation; the provider voids the one it mailed before. An account that signed
+    // in since the check above is not sent one, and is answered as any address in use: the transaction writes nothing
+    // (review security-N3).
+    if (!ensured.created && !(await services.provider.resendInvitation(input.email))) {
+      throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
     }
     return { objectId: membershipId, redirect: `/settings/organizations/${organizationId}/users?notice=invited` };
   },

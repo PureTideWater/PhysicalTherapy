@@ -441,12 +441,13 @@ describe('CognitoAuthProvider: administration', () => {
 
   it('sends an invitation again, and leaves a user who has signed in as they are (J2)', async () => {
     const { provider, sent } = make({ AdminCreateUserCommand: [{}, named('UnsupportedUserStateException'), named('InternalErrorException')] });
-    await provider.resendInvitation('invited@synthetic.test');
+    expect(await provider.resendInvitation('invited@synthetic.test')).toBe(true);
     expect(sent[0]).toEqual({
       command: 'AdminCreateUserCommand',
       input: { UserPoolId: 'us-east-1_Synthetic', Username: 'invited@synthetic.test', MessageAction: 'RESEND', DesiredDeliveryMediums: ['EMAIL'] },
     });
-    await expect(provider.resendInvitation('active@synthetic.test')).resolves.toBeUndefined();
+    // Signed in since: nothing sent, and the answer says so, so a link onto the account is refused (review security-N3).
+    await expect(provider.resendInvitation('active@synthetic.test')).resolves.toBe(false);
     await expect(provider.resendInvitation('x@synthetic.test')).rejects.toThrow('InternalErrorException');
   });
 

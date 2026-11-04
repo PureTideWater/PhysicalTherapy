@@ -472,15 +472,17 @@ export class CognitoAuthProvider implements AuthProvider {
     }
   }
 
-  async resendInvitation(email: string): Promise<void> {
+  async resendInvitation(email: string): Promise<boolean> {
     // Cognito sends the invitation again (with a new temporary password and a new validity period) only for a
-    // user still in FORCE_CHANGE_PASSWORD; it refuses one who has signed in.
+    // user still in FORCE_CHANGE_PASSWORD; it refuses one who has signed in, which is answered as not sent.
     try {
       await this.options.client.send(new AdminCreateUserCommand({ UserPoolId: this.options.userPoolId, Username: email, MessageAction: 'RESEND', DesiredDeliveryMediums: ['EMAIL'] }));
+      return true;
     } catch (error) {
       if (errorName(error) !== 'UnsupportedUserStateException') {
         throw error;
       }
+      return false;
     }
   }
 

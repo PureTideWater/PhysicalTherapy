@@ -744,9 +744,11 @@ export const inviteMember = platformRoute({
       }
       throw error;
     }
-    if (linksExisting) {
-      // A new temporary password for this invitation; the provider voids the one it mailed before.
-      await services.provider.resendInvitation(input.email);
+    // A new temporary password for this invitation; the provider voids the one it mailed before. An account that signed
+    // in since the check above is not sent one, and is refused as one that had: the transaction writes nothing (review
+    // security-N3).
+    if (linksExisting && !(await services.provider.resendInvitation(input.email))) {
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
     }
     return { objectId: membershipId, redirect: `/console/organizations/${input.organizationId}` };
   },
