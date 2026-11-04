@@ -1250,8 +1250,11 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   /**
    * A fake gh on PATH for a notify script: `gh api` answers with the open issues (as its --jq would print them, one
    * object a line), `gh issue list` with them as one JSON array, and every call is logged one line each. `gh run
-   * download` copies fake/findings.json into its -D directory, after failing as many tries as fake/fail holds, and
-   * answers as gh does when there is no artifact.
+   * download` copies fake/findings.json into its -D directory, after stalling as many tries as fake/stall holds (each
+   * writing a cut findings.json first, as a try killed while it extracts leaves one), failing as many as fake/fail holds
+   * and failing as many as fake/partial holds after writing a cut findings.json (a zip checksum error), and answers as
+   * gh does when there is no artifact. As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
+   * and never overwrites one.
    */
   function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
     const dir = mkdtempSync(path.join(scratch, 'notify-'));
@@ -1268,10 +1271,12 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
         'if [ "$1 $2" = "run download" ]; then',
-        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0)',
-        '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; exec sleep 30; fi',
+        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0)',
+        '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec sleep 30; fi',
         '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "HTTP 502: Bad Gateway" >&2; exit 1; fi',
         '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
+        '  if [ -e "$dest/findings.json" ]; then echo "error downloading findings: error extracting \\"findings.json\\": open $dest/findings.json: file exists" >&2; exit 1; fi',
+        '  if [ "$partials" -gt 0 ]; then echo $((partials - 1)) > "$FAKE_DIR/fake/partial"; mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; echo "error downloading findings: zip: checksum error" >&2; exit 1; fi',
         '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/findings.json"; exit 0',
         'fi',
         'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
@@ -1315,16 +1320,18 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   /**
    * Runs a notify job's step as the runner starts it (a file, bash --noprofile --norc -e -o pipefail), with notifyEnv's
    * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, no pause between download tries, `findings`, when not null,
-   * staged as the run's findings artifact, and the fake's download failing its first `failures` tries and then stalling
-   * its next `stalls` tries (a sleep past any DOWNLOAD_LIMIT a case gives).
+   * staged as the run's findings artifact, and the fake's download stalling its first `stalls` tries (a sleep past any
+   * DOWNLOAD_LIMIT a case gives), then failing its next `failures` tries, then its next `partials` after writing a cut
+   * findings.json.
    */
-  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0) {
+  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0, partials = 0) {
     const step = notifyStep(name, job);
     if (step === undefined) throw new Error(`${name}: no job ${job}`);
     const gh = fakeGh(open);
     if (findings !== null) writeFileSync(path.join(gh.dir, 'fake/findings.json'), findings);
     if (failures > 0) writeFileSync(path.join(gh.dir, 'fake/fail'), String(failures));
     if (stalls > 0) writeFileSync(path.join(gh.dir, 'fake/stall'), String(stalls));
+    if (partials > 0) writeFileSync(path.join(gh.dir, 'fake/partial'), String(partials));
     const env = {
       ...notifyEnv(name, step, values, findings),
       RUNNER_TEMP: mkdtempSync(path.join(scratch, 'runner-temp-')),
@@ -1427,6 +1434,11 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect([slow.status, issues(slow), tries(slow)], slow.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
     const stalled = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 3);
     expect([stalled.status, issues(stalled), tries(stalled)], stalled.output).toEqual([0, [failing], 3]);
+    // A try that leaves a cut findings.json behind (a zip checksum error) is retried into an emptied directory, as gh
+    // refuses to extract over a file already there: filed on the second try, never "file exists".
+    const partial = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 1);
+    expect([partial.status, issues(partial), tries(partial)], partial.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    expect(partial.output).not.toContain('file exists');
   });
 
   it('content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)', () => {
@@ -1498,6 +1510,13 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(reads.status, reads.output).toBe(0);
     expect(reads.stdout).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes, SHA-256 ${createHash('sha256').update(list).digest('hex')}\n`);
     expect(reads.log.filter((line) => !line.startsWith('run download '))).toEqual([]);
+    // A try that leaves a cut findings.json behind, or is stopped while it extracts, is retried into an emptied directory.
+    for (const [at, stalls, partials] of [['partial', 0, 1], ['stalled', 1, 0]] as const) {
+      const retried = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], list, 'handoff', 0, stalls, partials);
+      expect([retried.status, retried.log.filter((line) => line.startsWith('run download ')).length], `${at} ${retried.output}`).toEqual([0, 2]);
+      expect(retried.stdout, at).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes`);
+      expect(retried.output, at).not.toContain('file exists');
+    }
     for (const [at, values, findings] of [
       ['no artifact', { CHECK_RESULT: 'success' }, null],
       ['over MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }])],
