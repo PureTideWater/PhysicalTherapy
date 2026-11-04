@@ -1543,3 +1543,12 @@ HANDOFF.md; LANES.md rule 10).
 - PE-S1 (nine shard rows in ci.md, shardsFor = 9) goes to #84, which merges second.
 - S1 is on redact-ssn-phone; S3 on ci-findings-transport. P2 (ci-trivy-version) stays Lane B's.
 - Merged today: 14.
+
+### 2026-11-04 22:35 UTC: two production causes found by SUITE-CAP-1b's acceptance run
+- **The worker's practice pool** holds 4 connections, but the worker runs up to 15 practice jobs at once. Long jobs hold a connection for their whole run, so later jobs time out waiting and pg-boss retries them; this happens in production whenever more than 4 long jobs overlap.
+  - The fix rides #110: the pool sized to the job slots (15), failed attempts logged by code, failing-first tests.
+  - Added guards: a synth-time check that the pools never exceed each environment's max_connections, and a DatabaseConnections alarm at 80%.
+  - Pre-existing; recorded in ADR 0083.
+- **A 2,000-line reconcile** takes 538 to 731 s against the 900 s attempt. It is pre-existing and handed to SUITE-CAP-3 with the profile: byPatient about 403 s; the case refresh 90 to 115 s. The capacity summary's "Known gap" line shows the margin.
+- Also handed back to Lane B: test-flakes-6 (threads.test.ts's oom case under a process-wide max-old-space-size).
+- S4's next item after #117 and #116: `co-001/pricing-run-cutoff`, a product defect. The run's creation check reads now() as a JS Date (milliseconds) while the price job reads it to the microsecond, so a line created in the same millisecond is missed. It causes false refusals only; the fix keeps the cut-off at full precision.
