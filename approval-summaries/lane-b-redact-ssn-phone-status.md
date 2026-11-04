@@ -1,3 +1,5 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifCJSbPYXpafL86Rm6J) holds this item from 2026-11-04T19:45Z; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
 # Lane B item: letters have Social Security and phone numbers redacted by pattern (`co-001/redact-ssn-phone`)
 
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) from the item prompt
@@ -125,3 +127,7 @@ ADR 0054, test-matrix and synth against 871faff9 — expect at least the WIP -7/
 R7, R14 with them; record); cut `co-001/redact-ssn-phone` from a base containing #75's merge (item prompt step 6); setup with
 `co-001/redact-ssn-phone:/home/user/redact-ssn-phone`; remove the probe worktree; then the build workflow (stage 2) on design §13
 and §17, and the draft PR (stage 3).
+
+## Acting Lane B S1 (session_019i9ifCJSbPYXpafL86Rm6J), from 2026-11-04 19:45 UTC
+- Assigned by Lane A's orchestrator (07:40 UTC) after #85. #75 merged as 72096e94 and #115 (redact-label-boundary, the label-boundary fix on the same matcher) as 00fd2906. Branch `co-001/redact-ssn-phone` cut from **00fd2906**, worktree `/home/user/redact-ssn-phone`; the probe worktree is not needed (the base holds #75's code).
+- Build workflow running (script archived as `workflow-scripts/lane-b-redact-ssn-phone-build-<runId>.js`). Step 0 re-reads #75's final redact.ts (fixes 4, 4b, G1-G4, phi-G2-regress-1, numero-glued, label-end-dash) and #115's label rules against design §17 and re-runs the probe and prototype. Then the build per §13 and §17 R1-R14, and two adversarial reviews (security; correctness with the redaction oracle), each finding checked by a skeptic. Then fixes, the full suite once, and a critic. No push yet.
