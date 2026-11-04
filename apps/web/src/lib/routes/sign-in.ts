@@ -439,7 +439,8 @@ export const mfaPage = publicRoute({
   handle: (context) => {
     const now = context.services.now();
     const pending = pendingOf(context, 'mfa', now);
-    return Promise.resolve(pending === undefined ? RESTART : { email: pending.email, ...stepPage(pending, now) });
+    // The support address, for the lost-authenticator line (UX-006 part 2).
+    return Promise.resolve(pending === undefined ? RESTART : { email: pending.email, ...stepPage(pending, now), supportEmail: context.services.supportEmail });
   },
 });
 

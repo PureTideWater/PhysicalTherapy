@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { HardwareKeySignIn } from '../../../components/hardware-key';
 import { loadPublicPage } from '../../../lib/http/next';
 import { hardwareKeyPage } from '../../../lib/routes/sign-in';
-import { HardwareKeyRequirement, SignInNotice } from '../notice';
+import { HardwareKeyRequirement, SignInNotice, SupportLink } from '../notice';
 
 export const metadata: Metadata = { title: 'Sign in with a hardware key' };
 
@@ -25,6 +25,9 @@ export default async function HardwareKeyPage(props: { readonly searchParams: Pr
           <HardwareKeySignIn />
         </CardContent>
       </Card>
+      <p className="text-sm text-muted-foreground">
+        Lost your hardware key? Sign in with your second key. If you have none, write to <SupportLink supportEmail={supportEmail} /> from the address you sign in with.
+      </p>
       <p className="text-sm text-muted-foreground">
         No key registered yet?{' '}
         <Link className="underline" href="/sign-in">
