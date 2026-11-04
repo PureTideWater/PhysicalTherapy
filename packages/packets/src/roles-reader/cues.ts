@@ -161,7 +161,9 @@ export class CueReader extends Walk {
   /**
    * Whether token `at` (from `from` up to `to`) opens a clause of its own after a "respectively" list: a clause's opener
    * ("which", "as", "so"), or, first after "respectively" or after an edge, a conjunction, "with" or a participle that
-   * is no total's word nor a cue ("respectively, and each line is short", "leaving each line short"; NEW-N1, R1-NF-1).
+   * is no total's word nor a cue ("respectively, and each line is short", "leaving each line short"; NEW-N1, R1-NF-1),
+   * before words of their own besides a scope: before a scope phrase alone up to the next edge, it is the list's
+   * ("respectively, being per line", "applying to each line", "with each line", "and for each line"; R2-NEW-R2P2-2).
    */
   protected opensClause(at: number, from: number, to: number, cues: Cues): boolean {
     const text = (this.tokens[at] as Token).text;
@@ -172,7 +174,11 @@ export class CueReader extends Walk {
       return false;
     }
     const participle = this.vocab.ING_WORD.test(text) && !this.vocab.TOTAL_WORDS.includes(text) && !this.cues(at, to, cues).some((match) => match.start === at);
-    return this.vocab.CONJUNCTIONS.has(text) || this.vocab.CLAUSE_LEADS.has(text) || participle;
+    if (!(this.vocab.CONJUNCTIONS.has(text) || this.vocab.CLAUSE_LEADS.has(text) || participle)) {
+      return false;
+    }
+    const edge = this.tokens.slice(at + 1, to).findIndex((token) => token.kind === 'edge');
+    return !this.scopeOnly(at + 1, edge === -1 ? to : at + 1 + edge);
   }
 
   /**

@@ -60,20 +60,35 @@ export class NumberReader extends CueReader {
   }
 
   /**
-   * The scope a sentence's opening phrase states with its second word ("On each of the 3 lines, ...", "For every
-   * line, ...") for every figure after it in its clause, past the figures between ("the 3" of "each of the 3 lines";
-   * PE-D2), never past an edge after the opening's own that a conjunction or a clause's opener follows ("For each line,
-   * the payer allowed $70.00, while across the 3 lines it allowed $210.00"; R1-NF-2). A sentence that opens with "Each"
-   * is about its subject (its scope is that subject's words, statedBefore()).
+   * The scope a sentence's opening phrase states ("On each of the 3 lines, ...", "For every line, ...", "Per line, ...")
+   * for every figure after it, past the figures between ("the 3" of "each of the 3 lines"; PE-D2), and into the clauses
+   * coordinated after it ("For each line, the payer allowed $70.00, and the contract expected $300.00" fails;
+   * R2-NEW-R2P2-1), unless the words of the clause a figure is in, from the conjunction or clause's opener that starts
+   * it to its first amount, state a scope of their own or name the lines together ("while across the 3 lines it allowed
+   * $210.00", "while the 3 lines together were allowed", "and the claim was allowed"; R1-NF-2). A clause that states
+   * what follows from the sentence before it ("so the payer owes $90.00") is outside the opening's reach. A sentence
+   * that opens with "Each" is about its subject (its scope is that subject's words, statedBefore()).
    */
   protected openingEach(index: number): Scope | 'each' | null {
     const start = this.sentenceStart(index);
-    const edges = this.tokens
-      .slice(start, index)
-      .flatMap((token, at) => (token.kind === 'edge' ? [start + at] : []))
-      .slice(1);
-    const next = (at: number) => this.word(at, 1);
-    return edges.some((at) => this.vocab.CONJUNCTIONS.has(next(at)) || this.vocab.CLAUSE_OPENERS.has(next(at))) ? null : this.scopeAt(start + 1);
+    const lead = this.word(start, 0) === 'per' ? start : start + 1;
+    const opening = this.scopeAt(lead);
+    if (opening === null) {
+      return null;
+    }
+    const opens = (token: Token) => this.vocab.CONJUNCTIONS.has(token.text) || this.vocab.CLAUSE_OPENERS.has(token.text) || this.vocab.RESULT_LEADS.has(token.text);
+    const from = this.tokens.slice(lead + 1, index).findLastIndex(opens) + lead + 1;
+    if (from === lead) {
+      return opening;
+    }
+    if (this.vocab.RESULT_LEADS.has((this.tokens[from] as Token).text)) {
+      return null;
+    }
+    // Its own words: to its first amount (a count's noun is its subject's: "the 3 lines").
+    const amount = this.tokens.slice(from, index).findIndex((token) => token.figure?.kind === 'amount');
+    const to = amount === -1 ? index : from + amount;
+    const together = this.tokens.slice(from, to).some((token) => this.vocab.PLURAL_ROWS.has(token.text) || this.vocab.TOTAL_NOUNS.has(token.text));
+    return this.stated(from + 1, to) ?? (together ? 'total' : opening);
   }
 
   /**

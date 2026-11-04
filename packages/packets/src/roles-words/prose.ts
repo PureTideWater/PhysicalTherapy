@@ -28,8 +28,18 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
    */
   const CLAUSE_LEADS = new Set(['with', 'without']);
   const ING_WORD = /^\p{L}{2,}ing$/u;
-  /** The words a scope phrase holds besides those of each line, a unit and a total ("in" is a total's: "in all"): "on each of the lines", "apiece" (R1-NF-3). */
-  const SCOPE_LEADS = new Set(['on', 'of', 'apiece']);
+  /**
+   * Words that open a clause that states what follows from the sentence before it ("For each line, the payer allowed
+   * $70.00, so the payer owes $90.00"; R1-NF-2): an opening "each" does not reach into it.
+   */
+  const RESULT_LEADS = new Set(['so', 'therefore', 'thus', 'hence']);
+  /** A singular noun that names the lines together: a clause whose subject it is states a total ("..., and the claim was allowed $210.00"; R1-NF-2). */
+  const TOTAL_NOUNS = new Set(['claim']);
+  /**
+   * The words a scope phrase holds besides those of each line, a unit and a total ("in" is a total's: "in all"): "on
+   * each of the lines", "apiece" (R1-NF-3), "applying to each line" (R2-NEW-R2P2-2).
+   */
+  const SCOPE_LEADS = new Set(['on', 'of', 'to', 'apiece']);
   /** Words that join a list across a comma: "rows 1, 2 and 3". */
   const LIST_CONTINUERS = new Set([',', 'and', 'or', 'to', 'through', 'thru', '–']);
   /** Determiners before an ordinal that make it prose before a noun that is no row's ("the sixth unit", "a second appeal"). */
@@ -146,6 +156,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     CLAUSE_OPENERS,
     CLAUSE_LEADS,
     ING_WORD,
+    RESULT_LEADS,
     // Ordinals, and the determiners, pronouns and prepositions around a count or a code.
     ORDINAL_WORDS,
     ORDINAL_DETERMINERS,
@@ -159,6 +170,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     ONE_UNIT,
     TOTAL_WORDS,
     TOTAL_FOR,
+    TOTAL_NOUNS,
     SCOPE_LEADS,
     // Prose.
     FUNCTION_WORDS,

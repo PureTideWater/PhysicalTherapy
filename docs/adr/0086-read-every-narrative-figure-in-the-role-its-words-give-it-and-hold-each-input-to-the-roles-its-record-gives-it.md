@@ -76,7 +76,9 @@ found in this order (`roles.ts` names each step):
    stretch up to the next figure or the sentence's end, ending at an edge the clause after which has no cue, and past
    "respectively" at a word that opens a clause of its own ("which", "as"; round 2 of the review of the fix round,
    NEW-N1), or, first after "respectively" or after an edge, at a conjunction, "with" or a participle (", and each
-   line is short", "leaving each line short"; R1-NF-1), but never at an edge before a scope phrase alone right after
+   line is short", "leaving each line short"; R1-NF-1) before words of its own besides a scope (before a scope phrase
+   alone up to the next edge it is the list's: "respectively, being per line", "applying to each line", "with each
+   line", "and for each line"; R2-NEW-R2P2-2), but never at an edge before a scope phrase alone right after
    a cue ("$300.00 and $70.00 were expected, in total, and allowed, per line, respectively"; R1-NF-3); when the cues do
    not match the list one for
    one, every figure is held in all of them; with no cue on either side, the steps after read each figure (until the
@@ -107,10 +109,15 @@ words around it; "clause", "quote", "section" and "cited" may be either. An amou
 they are stated per (`scope`): each line ("per line", "each line", "apiece"), each unit, or the lines in total ("in
 total", "in all", "across the 3 lines", or a sentence about the lines in the plural that says nothing of each), so a
 total stated per line, or a line's value stated as a total, fails (CORR-7); a sentence's opening phrase with
-"each" or "every" as its second word states each line for every figure after it in its clause, past its count, so "On
-each of the 3 lines, the contract expected $300.00" fails (PE-D2), but never past an edge after the opening's own that a
-conjunction or a clause's opener follows, so "For each line, the payer allowed $70.00, so the payer owes $90.00" and
-"..., while across the 3 lines it allowed $210.00" pass (R1-NF-2); a count that keeps its noun ("the 3 lines") does not
+"each" or "every" as its second word, or "per" as its first, states each line for every figure after it, past its
+count, so "On each of the 3 lines, the contract expected $300.00" fails (PE-D2), and into the clauses coordinated after
+it, with or without a comma, so "For each line, the payer allowed $70.00, and the contract expected $300.00" fails
+(R2-NEW-R2P2-1), unless the words of a figure's clause, from the conjunction or clause's opener that starts it to its
+first amount, state a scope of their own or name the lines together (the rows in the plural, "the claim"), so
+"..., while across the 3 lines it allowed $210.00", "..., while the 3 lines together were allowed $210.00" and "...,
+and the claim was allowed $210.00" pass (R1-NF-2); a clause that states what follows ("so", "therefore", "thus",
+"hence") is outside the opening's reach, so "On each of the 3 lines, the payer allowed $70.00, so the payer owes
+$90.00" passes; a count that keeps its noun ("the 3 lines") does not
 cut the words before a figure short, which reach back to the amount or the edge before it, so "across the 3 lines"
 still states a total and a sentence that opens with "Each of the 3 lines" states its subject's scope ("Each of the 3
 lines was expected at $300.00" fails, "Each of the 3 lines billed 2 units" passes).
