@@ -113,7 +113,7 @@ export function verifyEvidenceRequests(input: EvidenceRequestsInput, output: Evi
   return { proposal: { items, rejected }, passed: rejected.length === 0, citations: [] };
 }
 
-export const evidenceRequestsSpec: PurposeSpec<EvidenceRequestsInput, EvidenceRequestsOutput, EvidenceRequestsProposal> = {
+export const evidenceRequestsSpec = Object.freeze<PurposeSpec<EvidenceRequestsInput, EvidenceRequestsOutput, EvidenceRequestsProposal>>({
   purpose: 'suggestEvidenceRequests',
   prompt: PROMPTS.suggestEvidenceRequests,
   output: evidenceRequestsOutput,
@@ -133,4 +133,4 @@ export const evidenceRequestsSpec: PurposeSpec<EvidenceRequestsInput, EvidenceRe
     };
   },
   verify: verifyEvidenceRequests,
-};
+});

@@ -1,0 +1,72 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 423 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+54 738 Td
+(SYNTHETIC Payer G fee schedule exhibit) Tj T*
+(Provider NPI 9932538736 and group NPI 9948470015; TIN 00-0481549.) Tj T*
+(Remit to SYNTHVILLE NC 00013-0042 or SYNTHTOWN NC 00011-1234; phone 555-555-0142.) Tj T*
+(Effective 2026-01-01 \(01/01/2026; 01-01-2026; 20260101\) through December 31 2026 \(12-31-2026\).) Tj T*
+(This SCHEDULE is part of the AGREEMENT and governs REIMBURSEMENT.) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 415 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+54 738 Td
+(97110   $40.00 per unit) Tj T*
+(97112   $42.00 per unit) Tj T*
+(97116   $46.00 per unit) Tj T*
+(97140   $30.00 per unit) Tj T*
+(97530   $60.00 per unit) Tj T*
+(97161   $51.00 per unit) Tj T*
+(97162   $52.00 per unit) Tj T*
+(97163   $53.00 per unit) Tj T*
+(97164   $54.00 per unit) Tj T*
+(97026   $56.00 per unit) Tj T*
+(97035   $65.00 per unit) Tj T*
+(G0283   $33.00 per unit) Tj T*
+ET
+endstream
+endobj
+8 0 obj
+<< /Title (SYNTHETIC fee-schedule-twin) /Producer (packages/synth SYNTHETIC exhibit writer) >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000218 00000 n 
+0000000344 00000 n 
+0000000818 00000 n 
+0000000944 00000 n 
+0000001410 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R /Info 8 0 R /ID [<53594e5448455449432045584849424954> <53594e5448455449432045584849424954>] >>
+startxref
+1520
+%%EOF

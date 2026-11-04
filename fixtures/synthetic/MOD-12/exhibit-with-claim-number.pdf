@@ -1,0 +1,43 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 186 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+54 738 Td
+(SYNTHETIC Payer G Exhibit B: rate correction) Tj T*
+(The corrected rate applies from claim 77-1200-0000345 onward.) Tj T*
+(97110   $43.10 per unit) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Title (SYNTHETIC exhibit-with-claim-number) /Producer (packages/synth SYNTHETIC exhibit writer) >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000338 00000 n 
+0000000575 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R /Info 6 0 R /ID [<53594e5448455449432045584849424954> <53594e5448455449432045584849424954>] >>
+startxref
+693
+%%EOF
