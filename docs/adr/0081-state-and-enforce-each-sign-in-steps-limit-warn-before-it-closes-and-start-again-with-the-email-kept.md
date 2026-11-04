@@ -230,7 +230,8 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   `InternalErrorException`, a network failure) is logged as `password reset request failed` at error with
   `{ request_id, error_code }` only and answered `code_sent` like every other path, at the floor: only an account
   reaches either, so a 500 there would tell the accounts apart whenever the provider fails (review S-3). An outage is
-  seen in that log, not by the person, whose notice already reads "If an account uses the address you typed". Every code problem is one refusal; the password policy is checked before
+  seen in that log, not by the person, whose notice already reads "If an account uses the address you typed".
+  Every code problem is one refusal; the password policy is checked before
   the provider. The reset matches or exceeds the password step's enumeration resistance; it is not a platform-wide
   guarantee: the password step already discloses that an account exists and is locked (the locked refusal comes before
   the provider, and a wrong password writes `sign_in_failed` for a known account only), a known, accepted disclosure
