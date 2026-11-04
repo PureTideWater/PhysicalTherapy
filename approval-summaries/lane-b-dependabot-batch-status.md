@@ -434,6 +434,10 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   and the rows) waits on the founder's runner and organization decision (#102); its next step is a base merge of df4daff7
   that keeps #107's Trivy text (check N1), then CI, once the gate can pass.
 
+- 2026-11-04T06:32:00Z: push runs of **7bf7b252** (#107): ci 41782516502 success (images scanning again), mutation 41782516484
+  success, release-dry-run 41782516510 success; no screening-capacity run (nothing watched). The build branch is green
+  again apart from the capacity gate on watched changes (#102). df4daff7's (#105) push runs are in progress.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
