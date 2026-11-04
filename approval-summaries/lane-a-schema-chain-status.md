@@ -14,6 +14,12 @@ its unpushed work is not waited for).
   PureTideWater. Heads: base 21fa10df; SS-01 bb13be1b (no PR); 1b 22177731; interest 74a6b290. Base delta for SS-01
   since 43565235: #92, #93, #90, #42's final (22789493), #95, #91; the only migration in it is #42's own
   20261107090000. Next: SS-01's PR stage (base merge, draft PR, two reviews, fix round, verification), one workflow.
+- **02:40 UTC. Running: wf_c5833de7-aa6** (`workflow-scripts/lane-a-ss01-pr-stage-wf_c5833de7-aa6.js`): base
+  21fa10df into SS-01 (re-read of SS-01's recreated objects on the base's bodies; regenerate; fast checks; push); the
+  draft PR headed by the summary; security and UX/brand reviews in fresh clones, a skeptic per finding; fix round with the
+  full local suite once and one push (WIP ref `co-001/wip-ss01-chain` before the suite); fresh-clone verification reading
+  CI. Beside it, read-only: the flaky `tools/release/load.db.test.ts` root cause (fix as a patch, for 1b). Check-in
+  scheduled 07:46 UTC (trig_01G5HLTy6TevngHswpbJDA2S).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
