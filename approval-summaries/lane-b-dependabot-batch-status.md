@@ -404,6 +404,16 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   verified). Subscribed to #105. **D waits for the Trivy PR (#106):** then the base merged once more, one push, CI, the
   fresh-clone verification, ready, merge. **Trivy PR: draft #106**, fix round pushed 78cd55d2; its verifier reads CI.
 
+- 2026-11-04T05:40:00Z: **#106 VERIFIED, cannot merge: its screening-capacity gate is red.** wf_3717f39c-6bd done (9 agents; two
+  reviews: 10 findings, 2 S + 8 N confirmed, all fixed or recorded; suite once green; records `lane-b-ci-trivy-install-
+  {review,fix-round,verification}.md`). CI on 78cd55d2: all green, mutation and approval-of-record pass; images installs
+  pinned Trivy 0.70.0 (hash-checked, setup-trivy skipped) and scans both images, 0 HIGH/CRITICAL. The gate fails because
+  #106 touches two watched paths (screening-capacity.yml for the fetch fix; matrix.ts for the CI-11/CI-21 rows), and the
+  private 2-CPU runner stops with RUNNER_TOO_SMALL (the founder's, #102). **Decision: split.** New PR
+  `co-001/ci-trivy-pin-2026-11-04` with only the Trivy part, no watched path and no row text (wf_328041c8-16e: build, delta
+  check, draft PR, verification on CI; #106's reviews stand for the subset). It merges on green; #106 keeps the fetch fix and
+  waits on the founder. Orchestrator told.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
