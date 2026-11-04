@@ -1525,3 +1525,14 @@ HANDOFF.md; LANES.md rule 10).
   - memory.peak and memory by kind stay reported beside it.
   - Any oom or oom_kill event fails the run.
   - Evidence from two instrumented runs on one tree: peak 842.9 and 958.6 MiB, all of the swing page cache (238 and 335 MiB); the worker's own memory 595.8 and 622.8 MiB.
+
+### 2026-11-04 18:40 UTC: #114 merged (9c6bb102); #85 merged (17641c88)
+- #114 (test-flakes-4): the screening thread's failure code moved to a module of its own, so its test no longer loads the thread's whole graph.
+- #85 (UX PR 10): the payer's answer and the write-off reason start unchosen; the letter is uploaded inside "Log a payer response". #104's suspension gate and #85's upload gate are resolved into one upload gate, with the resolution reviewed (0 findings).
+- Open:
+  - #84: S2's final base merge, now unblocked.
+  - #115 (redact-label-boundary): CI re-running after the #108 sign-in-time flake.
+  - #110 (SUITE-CAP-1b): working-set measure and step 7b on its own practice.
+  - test-flakes-5 (S4): axe waits for the page title.
+  - #96 and ci-findings-transport (S3).
+- Merged today: 12.
