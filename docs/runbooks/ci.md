@@ -485,8 +485,9 @@ checks above.
     root's `name`, an install script (`preinstall`, `install`, `postinstall`, `prepare`, `prepublishOnly` and the
     rest) or `dependenciesMeta` in any workspace manifest, the workspace's `packages`, `overrides` and
     `onlyBuiltDependencies`, the test tooling, a root entry named `node`, `deno` or `bun` or not from the registry,
-    `tools/package.json`'s module fields, any key no table lists, any YAML anchor, alias, tag or duplicate key, and any
-    file that cannot be read or parsed;
+    `tools/package.json`'s `type`, `imports` and other module fields (its `name` and `exports` only when a file the
+    mutation tooling loads imports that name, else its owners' shards), any key no table lists, any YAML anchor,
+    alias, tag or duplicate key, and any file that cannot be read or parsed;
   - **a package's shards:** a dependency or catalog entry its closure imports, and its closure manifests' `exports`,
     `imports`, `type` and other module fields;
   - **none:** every other script, a dependency or catalog entry no closure and none of the tooling imports, the
