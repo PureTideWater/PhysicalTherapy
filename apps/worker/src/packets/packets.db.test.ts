@@ -248,6 +248,7 @@ describe('CAS-43: a narrative that states an input’s figure in another role (d
     expect(await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: failing.versionId, requestId: 'test-now-failed' }))).toEqual({
       standing: 'failed',
       report: failing.verifier,
+      figures: [],
     });
     expect(await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: randomUUID(), requestId: 'test-now-none' }))).toBeUndefined();
     // Every version of the case, as the screens say it.
