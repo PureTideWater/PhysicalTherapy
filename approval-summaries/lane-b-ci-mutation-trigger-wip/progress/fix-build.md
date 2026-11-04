@@ -26,3 +26,8 @@ Plan (one commit per finding): B1 (typescript), B1-guard, S1, S2, C-G2 (+C-G3 ca
 - **N3 done**: 29acf3c8… Suite 35 / 490. Pushed.
 - **PE-N1 done**: 3ddd235c… Red PE-N1-red.log (1 failed on assertion), green PE-N1-green.log 4/4. Suite 35 / 491. Pushed.
 - **C-G1 done**: b02b93db… (synth wrote fixtures/synthetic/CI-27/expected.json only). Red C-G1-red.log (1 failed on assertion), green C-G1-green.log 56/56. Suite 35 / 492. Pushed.
+- **C-G4 done**: 30efef6d… (ci.md wording only; red/green wording logs C-G4-red.log / C-G4-green.log). Suite 35 / 492. Pushed.
+- **Final checks at 30efef6d…** (logs/fix/final-*.log): typecheck 0, lint 0, lint:logs 0, actions:check --offline 0, actionlint 0, watched.ts --write no diff; affected.ts --event pull_request --base 43565235… : all four packages (mutation.yml jobs' steps, a workflow change other than step pins; the four stryker/*.config.mjs as mutation tooling), shards money-ledger, packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest.
+- WIP head 30efef6d… = origin/co-001/wip-ci-mutation-trigger. co-001/ci-mutation-trigger untouched at 50029e64…, base not merged. Draft worktree removed.
+- Pending: PE-S1 (#84's packets-roles and packets-words shards in ci.md and runner-minute figures) at the base merge after #84 merges.
+- Description (C-G3): replace the claim that the read-whole rule is asserted for a data entry with: "A manifest a closure reads as a file counts whole, asserted for both halves: an imported manifest (the by-path-loaded test's case) and a data entry (a synthetic DATA_FILES glob over apps/site/package.json, whose script edit then affects that closure; added by the review fixes, C07 killed)."
