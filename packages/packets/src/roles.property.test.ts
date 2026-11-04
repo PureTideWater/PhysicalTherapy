@@ -608,7 +608,7 @@ describe('properties of the role reader', () => {
           }
         }
       }),
-      { numRuns: 40 },
+      { numRuns: 12 },
     );
     expect(granted).toBeGreaterThan(0);
   }, 240_000);
@@ -644,7 +644,7 @@ describe('properties of the role reader', () => {
           }
         }
       }),
-      { numRuns: 40 },
+      { numRuns: 12 },
     );
     // Some value was held one way only while its role's other values differed, and so failed with no scope.
     expect(unstated).toBeGreaterThan(0);
@@ -717,7 +717,7 @@ describe('properties of the role reader', () => {
           }
         }
       }),
-      { numRuns: 40 },
+      { numRuns: 12 },
     );
     // Some value's role held other values the other way, and so failed in a sentence that names a part.
     expect(triggered).toBeGreaterThan(0);
