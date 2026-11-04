@@ -156,6 +156,28 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect([...ADDRESS_VALIDATION_ACTIONS]).toEqual(['ses:GetEmailAddressInsights']);
   });
 
+  // docs/adr/0088 D4: an invitation links only a Cognito user in FORCE_CHANGE_PASSWORD, which holds only while no
+  // principal of the stack may set or reset a password; so no Allow anywhere in the template names either call.
+  it('lets no principal of the stack set or reset a Cognito password (docs/adr/0088 D4)', () => {
+    expect([...USER_POOL_ADMIN_ACTIONS]).toEqual(['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminUserGlobalSignOut']);
+    const allowed: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+      } else if (typeof node === 'object' && node !== null) {
+        const record = node as Record<string, unknown>;
+        if (record.Effect === 'Allow' && 'Action' in record) {
+          allowed.push(...[record.Action].flat().filter((action): action is string => typeof action === 'string'));
+        }
+        Object.values(record).forEach(walk);
+      }
+    };
+    walk(template.toJSON());
+    const refused = new Set(['*', 'cognito-idp:*', 'cognito-idp:Admin*', 'cognito-idp:AdminSetUserPassword', 'cognito-idp:AdminResetUserPassword']);
+    expect(allowed.length).toBeGreaterThan(0);
+    expect(allowed.filter((action) => refused.has(action) || /^cognito-idp:Admin(Set|Reset)?\*$/i.test(action))).toEqual([]);
+  });
+
   it('makes the web app\'s administrative Cognito calls on this environment\'s user pool only', () => {
     const cognito = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('cognito-idp:')));
     expect(cognito).toEqual([

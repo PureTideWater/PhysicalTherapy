@@ -30,7 +30,7 @@ import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/con
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
-import { ANOTHER_IDENTITY, ROLES_BY_KIND } from './console';
+import { ROLES_BY_KIND } from './console';
 import { blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
 
 /**
@@ -1009,8 +1009,10 @@ export const inviteUserAction = organizationRoute({
     const { sub } = ensured;
     // SEC-22, docs/adr/0088 D4: the address has no account anywhere, so a provider account found (not made now) is an
     // orphan; it is linked only if it has never signed in, since whoever holds its password would take the invitation.
+    // The answer is the one for any address in use: an orphan is usually another organization's invitation that rolled
+    // back, so naming it here would tell this organization that another one knows the person (the console names it).
     if (!ensured.created && !ensured.neverSignedIn) {
-      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
+      throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
     }
     const userId = randomUUID();
     const membershipId = randomUUID();

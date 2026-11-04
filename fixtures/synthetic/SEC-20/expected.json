@@ -2,7 +2,7 @@
   "case": "SEC-20",
   "module": "SEC",
   "title": "Every Cognito call that takes the client's credential (ADR 0088 D1, D2)",
-  "assertion": "`InitiateAuth`, `RespondToAuthChallenge`, `ForgotPassword` and `ConfirmForgotPassword` carry a hash over the username that request sends (a challenge's over Cognito's USERNAME, never the typed email), `RevokeToken` the client secret, and no other call either; a hash mismatch answers as Cognito does and surfaces as a client-credential error that writes no sign-in failure, locks nothing, answers a reset request alike at the floor and logs only its name; a credential refusal at start-up fails the web task's readiness, and any other probe outcome passes; a direct reset or sign-in without the hash is refused on staging (F2)",
+  "assertion": "`InitiateAuth`, `RespondToAuthChallenge`, `ForgotPassword` and `ConfirmForgotPassword` carry a hash over the username that request sends (a challenge's over Cognito's USERNAME, never the typed email), `RevokeToken` the client secret, and no other call either; a hash mismatch answers as Cognito does and surfaces as a client-credential error that writes no sign-in failure, locks nothing, answers a reset request alike at the floor and logs only its name; a credential refusal at start-up fails the web task's readiness, and any other probe outcome passes; from release N+1, once the client is confidential, a direct reset or sign-in without the hash is refused on staging (F2)",
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": [

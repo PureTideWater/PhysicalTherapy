@@ -14,7 +14,11 @@
   (`/api/health` also reflects one cached start-up result, D8; 0055's note is written with release N+1)
 - **Date:** 2026-11-04
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the build (Lane A), for the design's choices and its
-  security and infra-auth reviews' findings, each reversible by the founder
+  security and infra-auth reviews' findings, each reversible by the founder; Lane A's orchestrator, 2026-11-04, on the
+  co-founder's standing direction, for the design's rulings 13 (only the founder's break-glass role may start a
+  rotation, D5), 14 (only the founder's break-glass session runs `admin-delete-user` for a stuck invitee, D4) and 15
+  (N+1 reaches production within 7 days of N in production, and before the first customer invitation, Two releases),
+  each as recommended and reversible by the founder. Ruling 16 (an account-level guard, Not covered) is the owner's.
 - **PRD sections:** 6 (Identity and sessions), 7 (Sign-in and MFA); `docs/product/sessions.md`; test matrix SEC-20 to
   SEC-23; ADRs 0012, 0016, 0055 and 0081
 
@@ -101,12 +105,14 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
   that has signed in.** No role holds `AdminSetUserPassword` or `AdminResetUserPassword`, and both linking paths run
   only when no app row exists for the email. `ensureUser` returns `{ sub, created, neverSignedIn }` from the
   `AdminGetUser` response it already fetches (no new grant); the dev twin reads its record's temporary flag. From
-  Settings and from the console, an existing Cognito user that has signed in is refused with the console's words "this
-  email belongs to another identity; ask an engineer to reconcile it" before any row is written; one that never signed
-  in is linked, and its invitation is re-sent after the rows are written (Cognito mails a new temporary password and
-  voids the old one). The console's known-user path is unchanged. Anything else is an engineer's reconcile, run in the
-  founder's break-glass session (the operator role holds no Cognito action and is not widened):
-  `docs/runbooks/support-mail.md`, "Sign-in help tickets".
+  Settings and from the console, an existing Cognito user that has signed in is refused before any row is written:
+  Settings answers as for any address in use ("this address cannot be invited from here"), so an organization never
+  learns that Cognito knows an address (such a user is usually another organization's invitation that rolled back), and
+  the console, a platform administrator's, names it: "this email belongs to another identity; ask an engineer to
+  reconcile it". One that never signed in is linked, and its invitation is re-sent after the rows are written
+  (Cognito mails a new temporary password and voids the old one). The console's known-user path is unchanged.
+  Anything else is an engineer's reconcile, run in the founder's break-glass session (the operator role holds no
+  Cognito action and is not widened): `docs/runbooks/support-mail.md`, "Sign-in help tickets".
 - **D5. The client secret rotates on demand** (yearly and on suspicion), release N+1: Cognito's two-secret overlap,
   a value Cognito generates (`AddUserPoolClientSecret` with no caller value), and a forced web redeploy that the
   rotation function checks (`ecs:DescribeServices`, read only) before it deletes the previous value. The secret has one
@@ -146,7 +152,11 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
 - **Release N (the first pull request, built):** D2, D3, D4, D7 and D8 as above; D1's hash, wrapper, client-module scan
   and diff-role deny, with `COGNITO_CLIENT_SECRET` optional (refused with `TP_AUTH_PROVIDER=dev` and as the marker).
   No change to the Cognito client, no secret, no rotation, no custom resource. A hash-checking twin of the Cognito
-  endpoint in `cognito-provider.test.ts` proves the username each call hashes.
+  endpoint in `cognito-provider.test.ts` proves the username each call hashes. The enrolment rule (D3) is live in
+  this release and rests on an unverified Cognito behaviour (Not verified here), so release N reaches production only
+  after a founder step on staging running release N: invite a synthetic account, set its password, enrol TOTP and sign
+  in, expecting `signed_in` and no `security event: second-factor enrolment refused`. If it fails, release N stays off
+  production until the subject the rule reads is corrected.
 - **Release N+1 (the second pull request, cut after release N is on staging):** the confidential client (narrowed),
   the secret with its literal value and both resource-policy denies, `Custom::WebClientSecret` (Create reads the value
   with `DescribeUserPoolClient` and writes it without an ID; an Update on a changed client ID or `SeedVersion` re-seeds;
@@ -231,15 +241,19 @@ Choices the design left open, or where the build differed from it, each with its
 
 ## Not verified here
 
-There is no user pool in this lane. Each item is a founder step on staging, with its result recorded here:
-Cognito's hash error texts (the classifier and the probe); `RevokeToken`'s credential error name; the three secret
-calls' IAM action names; whether the Lambda runtime's SDK has those calls (a gate before release N+1 reaches
-production); whether `ListUserPoolClientSecrets` returns the value; whether CloudTrail logs
-`AddUserPoolClientSecret`'s request or response; whether a deleted client's tokens die with it; Cognito's per-code
-attempt cap, request throttle and code life (0081 A3); and Contributor Insights on a KMS-encrypted log group.
+There is no user pool in this lane. Each item is a founder step on staging, with its result recorded here: that Cognito
+names the enrolling user (`USERNAME` or `USER_ID_FOR_SRP`) on `NEW_PASSWORD_REQUIRED` or `MFA_SETUP` under `USER_AUTH`,
+and that the name is the user's `sub`, the value `ensureUser` stores as `cognito_sub` (D3's rule matches on it, and
+every test here uses the twin or a scripted mock; a gate before release N reaches production, Two releases); Cognito's
+hash error texts (the classifier and the probe); `RevokeToken`'s credential error name; the three secret calls' IAM
+action names; whether the Lambda runtime's SDK has those calls (a gate before release N+1 reaches production); whether
+`ListUserPoolClientSecrets` returns the value; whether CloudTrail logs `AddUserPoolClientSecret`'s request or response;
+whether a deleted client's tokens die with it; Cognito's per-code attempt cap, request throttle and code life (0081 A3);
+and Contributor Insights on a KMS-encrypted log group.
 
 ## Revisit when
 
+- The release-N staging check of the enrolment subject reports (it gates release N in production).
 - The staging checks report (the check of the runtime SDK and the action names gates release N+1 in production; the
   account-level guard is the owner's ruling).
 - UX PR 65 lands: its server-recorded re-enrolment right, and narrowing `record_sign_in_with_mfa` to `invited` in its
@@ -249,3 +263,5 @@ attempt cap, request throttle and code life (0081 A3); and Contributor Insights 
   `audit_event`, and the weekly query stands meanwhile.
 - Refresh tokens are ever used (the hash is then over the subject).
 - Cognito allows a client secret to be set or read in CloudFormation.
+- A federated identity provider is added to the pool: `DescribeIdentityProvider` and `GetIdentityProviderByIdentifier`
+  return its `client_secret` in `ProviderDetails`, and the diff role's deny (D1) names neither.

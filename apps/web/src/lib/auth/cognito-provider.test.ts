@@ -285,6 +285,10 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
     const broken = make({ AssociateSoftwareTokenCommand: named('InternalErrorException'), VerifySoftwareTokenCommand: named('InternalErrorException') });
     await expect(broken.provider.beginTotpSetup(challenge)).rejects.toThrow('InternalErrorException');
     await expect(broken.provider.completeTotpSetup(challenge, '123456')).rejects.toThrow('InternalErrorException');
+    // A challenge whose subject is not a string is not one this server sealed: nothing is sent for it.
+    const odd = JSON.stringify({ s: 's', u: 'u', email: 'e@synthetic.test', n: 7 });
+    expect(await broken.provider.beginTotpSetup(odd)).toEqual({ kind: 'expired' });
+    expect(await broken.provider.completeTotpSetup(odd, '123456')).toEqual({ kind: 'expired' });
   });
 });
 

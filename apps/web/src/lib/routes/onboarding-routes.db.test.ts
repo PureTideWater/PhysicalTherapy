@@ -328,15 +328,18 @@ describe('invitations (J2)', () => {
 // SEC-22, docs/adr/0088 D4: an address with no account here whose identity-provider account already exists is linked
 // only when that provider account has never signed in (Cognito's FORCE_CHANGE_PASSWORD; the twin's temporary password).
 describe('inviting an address the identity provider already knows (SEC-22)', () => {
-  it('refuses a provider account that has signed in, and links and sends nothing', async () => {
+  // Settings answers as for any address in use, so an organization never learns that the identity provider knows the
+  // address (an orphan is usually another organization's invitation that rolled back); the console names the identity.
+  it('refuses a provider account that has signed in with the same answer as any address in use, and links and sends nothing', async () => {
     const email = `orphan-signed-in-${randomUUID()}@synthetic.test`;
     const { sub } = await services.provider.ensureUser(email);
     await store.update(sub, (current) => ({ ...current, temporary: false }));
     const sent = invitations.length;
     expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'viewer' })).toEqual({
       status: 'invalid',
-      issues: [{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }],
+      issues: [{ field: 'email', message: EMAIL_IN_USE }],
     });
+    expect(EMAIL_IN_USE).not.toMatch(/identity/);
     expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
     expect(invitations).toHaveLength(sent);
   });
