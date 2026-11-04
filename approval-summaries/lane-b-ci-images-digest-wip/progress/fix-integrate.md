@@ -37,3 +37,6 @@ Next: step 2b (wait for #107).
 Next: step 3, full suite on 9936688b…, logs/suite/.
 - step 3 start 2026-11-04T06:29:02Z on 9936688b…: scratchpad/imgdigest/suite.sh, logs/suite/summary.txt
 - suite so far (9936688b…): typecheck 22 projects pass; lint 1,749 files 0/0; lint:copy 557 files; lint:logs 1,116 files; check:fixtures 334 guarded / 4,032 searched; verify-content pass; pnpm test (coverage) 432 files, 7,317 passed, 4 skipped, 0 failed, exit 0. Skips: 3 differential.test.ts (ENGINE_FREEZE_BASE unset locally; CI sets it), 1 content.test.ts "throws when content/outgoing is unreadable" (root uid).
+- golden 5 files 376 passed; oracle pyx12 agrees 688 (677 valid, 11 malformed); test:db 1/4 (fresh tp_laneb_imgd_db1, 45 migrations) 35 files, 3,218 passed, 1 skipped (995 s).
+- test:db 2/4 35 files 2,787 passed (435 s); 3/4 35 files 2,666 passed (709 s).
+- test:db 4/4 34 files 977 passed (346 s). db total 139 files, 9,648 passed, 1 skipped (restore-drill pg_dump: local pg_dump 16 vs server 18), 0 failed; each shard's database dropped.
