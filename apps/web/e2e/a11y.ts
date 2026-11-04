@@ -9,9 +9,15 @@ import { type Locator, type Page, expect } from '@playwright/test';
  * origin: axe is injected by Playwright for the test alone. The page's title is waited for first (`expectTitled`), so a
  * page a client-side navigation has just committed is not checked before its <title> is in the head.
  */
-export async function expectAccessible(page: Page, what: string, options: TitleOptions = {}): Promise<void> {
-  await expectTitled(page, what, expect, options.title);
-  expect(await axeViolations(page), `${what}: axe-core WCAG 2.1 AA violations`).toEqual([]);
+export async function expectAccessible(page: Page, what: string, options: AccessibleOptions = {}): Promise<void> {
+  const check = options.soft === true ? expect.configure({ soft: true }) : expect;
+  await expectTitled(page, what, check, options.title);
+  check(await axeViolations(page), `${what}: axe-core WCAG 2.1 AA violations`).toEqual([]);
+}
+
+export interface AccessibleOptions extends TitleOptions {
+  /** Each check reports its failure and the call goes on (expect.soft), so one test reports every screen that fails. */
+  readonly soft?: boolean;
 }
 
 export interface TitleOptions {
@@ -44,6 +50,87 @@ async function expectTitled(page: Page, what: string, check: typeof expect, titl
   } else {
     await check(page, `${what}: the page’s title before axe runs`).toHaveTitle(title, { timeout: TITLE_WAIT_MS });
   }
+}
+
+/**
+ * The same check on the dark tokens (docs/adr/0056: dark is the tokens' own, under `[data-theme="dark"]`): the
+ * attribute is set on the document, the page's transitions are let finish, `expectAccessible` runs (the page's title,
+ * `title` or any, waited for first; then axe-core, its color-contrast rule among the rest), and the attribute is
+ * cleared again whatever the result, so the steps after it see the light page. With `soft`, a violation is reported
+ * and the test goes on (expect.soft), so one test reports every screen that fails.
+ */
+export async function expectAccessibleInDark(page: Page, what: string, options: AccessibleOptions = {}): Promise<void> {
+  await setDark(page, true);
+  try {
+    await expectAccessible(page, `${what}, dark`, options);
+  } finally {
+    await setDark(page, false);
+  }
+}
+
+/**
+ * Sets or clears `data-theme="dark"` on the document, then waits for the frame after it and for any transition it
+ * started, so what is measured next is the theme's own colours, never a colour on its way there.
+ */
+export async function setDark(page: Page, dark: boolean): Promise<void> {
+  await page.evaluate(async (on) => {
+    if (on) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  }, dark);
+}
+
+/**
+ * The contrast of the focused element's outline against what it is drawn on (WCAG 1.4.11 asks 3:1 of a focus
+ * indicator): the outline's colour against the background colour of the nearest element, from the focused one up,
+ * that paints an opaque one (White, the browser's canvas, when none does). The ratio is WCAG's: each channel s = C/255
+ * linearised (s/12.92 up to 0.04045, else ((s + 0.055)/1.055)^2.4), L = 0.2126 R + 0.7152 G + 0.0722 B, and
+ * (lighter + 0.05) / (darker + 0.05), to two places. A focus that draws no outline (a box-shadow ring) throws, so it is
+ * never counted as passing.
+ */
+export async function focusContrast(page: Page): Promise<{ readonly outline: string; readonly ground: string; readonly ratio: number }> {
+  return page.evaluate(() => {
+    const element = document.activeElement;
+    if (element === null || element === document.body) {
+      throw new Error('focusContrast: nothing is focused');
+    }
+    const channels = (colour: string): readonly [number, number, number, number] => {
+      const match = /^rgba?\((\d+(?:\.\d+)?),?\s*(\d+(?:\.\d+)?),?\s*(\d+(?:\.\d+)?)(?:\s*[,/]\s*(\d+(?:\.\d+)?))?\)$/.exec(colour);
+      if (match === null) {
+        throw new Error(`focusContrast: a colour it cannot read: ${colour}`);
+      }
+      return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])];
+    };
+    const style = getComputedStyle(element);
+    if (style.outlineStyle === 'none' || Number.parseFloat(style.outlineWidth) === 0) {
+      throw new Error(`focusContrast: the focus on ${element.tagName.toLowerCase()} draws no outline (box-shadow ${style.boxShadow})`);
+    }
+    let ground = 'rgb(255, 255, 255)';
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      const background = getComputedStyle(node).backgroundColor;
+      if (channels(background)[3] === 1) {
+        ground = background;
+        break;
+      }
+    }
+    const luminance = (colour: string): number => {
+      const [red, green, blue] = channels(colour)
+        .slice(0, 3)
+        .map((channel) => {
+          const s = channel / 255;
+          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+      return 0.2126 * (red ?? 0) + 0.7152 * (green ?? 0) + 0.0722 * (blue ?? 0);
+    };
+    const outline = luminance(style.outlineColor);
+    const behind = luminance(ground);
+    const ratio = (Math.max(outline, behind) + 0.05) / (Math.min(outline, behind) + 0.05);
+    return { outline: style.outlineColor, ground, ratio: Math.round(ratio * 100) / 100 };
+  });
 }
 
 /**
