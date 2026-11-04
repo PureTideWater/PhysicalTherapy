@@ -222,4 +222,15 @@ describe('the reasons to re-run a complete run, against its creation to the micr
     await w.mapped(target, later, 'no_agreement', '2026-01-01');
     expect(await offeredReasons(target, created.pricingRunId)).toEqual(['mapping_changed']);
   });
+  it('fails closed for a run that is not the practice’s, never reading as nothing changed', async () => {
+    const target = await prc19('cut-off-rerun-reasons-own');
+    const other = await prc19('cut-off-rerun-reasons-other');
+    const created = await w.as(target, target.manager, (context) =>
+      createPricingRun(context.scope, { practiceId: target.practiceId, periodFrom: '2026-02-01', periodTo: '2026-02-28', releaseNo: RELEASE, requestId: `test-${randomUUID()}` }),
+    );
+    await w.execute(target, created.pricingRunId);
+    // Another practice's run, and an ID no run has: neither is answered with no reasons.
+    await expect(offeredReasons(other, created.pricingRunId)).rejects.toMatchObject({ name: 'RerunRefusedError', reason: 'not_found' });
+    await expect(offeredReasons(target, randomUUID())).rejects.toMatchObject({ name: 'RerunRefusedError', reason: 'not_found' });
+  });
 });
