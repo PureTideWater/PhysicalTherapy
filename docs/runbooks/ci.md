@@ -192,11 +192,11 @@ there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres o
 at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
 runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
 mutation only for what a shard reads (docs/adr/0066, Part 7): every shard, about 54 runner-minutes, when it moves the
-test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves, or a catalog or
-manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an actions pull
-request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports what moved.
-A full Thursday batch is about 550 to 650 runner-minutes and fills GitHub Free's 20 concurrent jobs per account for
-about 30 to 35 minutes. A person triages every one and never merges one as it stands
+test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves,
+or a catalog or manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an
+actions pull request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports
+what moved. A full Thursday batch is about 550 to 650 runner-minutes and fills GitHub Free's 20 concurrent jobs per
+account for about 30 to 35 minutes. A person triages every one and never merges one as it stands
 (docs/runbooks/dependency-upgrades.md).
 
 **The bot queue, for the first four weekly batches.** For each Dependabot head, and for each lane pull request pushed
@@ -506,14 +506,16 @@ checks above.
   ```
 
   Before it decides, the `changes` job checks its own runtime and checkout ("The runtime is the pinned one",
-  `tools/stryker/runtime.ts`), and the `mutation` job runs the same step before its gate whenever the gate runs. It prints `runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8` (pnpm from
-  the user agent), then `runtime: pnpm --version prints 10.34.8` (the pnpm on the step's `PATH`), then that this is the
-  pinned one, or an error for each difference: both pnpm legs must be `packageManager`'s. It also prints
-  `checkout: commit <sha>` and fails ("The checkout is not the commit tested") unless that is `GITHUB_SHA`. Every shard's canary verdict names its runtime and the commit
-  it checked out (`canary: on Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8, at commit <sha>`), and each
-  shard's own view prints them first. The gate fails a shard whose Node, Unicode, ICU or pnpm is not the pinned one
-  (`tools/stryker/unicode.json`'s `checkedOn`, the root `packageManager`), or whose commit differs from another
-  shard's or from the one tested (`GITHUB_SHA`).
+  `tools/stryker/runtime.ts`), and the `mutation` job runs the same step before its gate whenever the gate runs. It
+  prints `runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8` (pnpm from the user agent), then
+  `runtime: pnpm --version prints 10.34.8` (the pnpm on the step's `PATH`), then that this is the pinned one, or an
+  error for each difference: both pnpm legs must be `packageManager`'s. It also prints `checkout: commit <sha>` and
+  fails ("The checkout is not the commit tested") unless that is `GITHUB_SHA`. Every shard's canary verdict names its
+  runtime and the commit it checked out
+  (`canary: on Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8, at commit <sha>`), and each shard's own view
+  prints them first. The gate fails a shard whose Node, Unicode, ICU or pnpm is not the pinned one
+  (`tools/stryker/unicode.json`'s `checkedOn`, the root `packageManager`), or whose commit differs from another shard's
+  or from the one tested (`GITHUB_SHA`).
 - **A pull request that touches no money path** runs only `changes` and `mutation`, which passes with "No money path
   changed".
 

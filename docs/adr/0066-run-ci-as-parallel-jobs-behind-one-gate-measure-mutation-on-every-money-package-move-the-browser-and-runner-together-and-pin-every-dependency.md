@@ -1798,9 +1798,9 @@ read and affecting no package: package.json scripts."db:domain-model" (no mutati
 `bin.stryker` file that `@stryker-mutator/core`'s own manifest names, resolved from the repository's root:
 `pnpm -s exec tsx tools/stryker/stryker.ts run <config>`. The package must be the root's own direct link,
 `node_modules/@stryker-mutator/core`, so one a parent directory supplies, or a copy only hoisted under
-`node_modules/.pnpm/node_modules` that `NODE_PATH` resolves, is refused (N53). No root `stryker`, `prestryker` or `poststryker` script, and
-no other package's `stryker` bin, decides what runs, so those scripts are inert too. The root `stryker` script stays,
-for people.
+`node_modules/.pnpm/node_modules` that `NODE_PATH` resolves, is refused (N53). No root `stryker`, `prestryker` or
+`poststryker` script, and no other package's `stryker` bin, decides what runs, so those scripts are inert too. The root
+`stryker` script stays, for people.
 
 **Every shard on the pinned runtime and one commit** (`tools/stryker/runtime.ts`, `tools/stryker/canary/verdict.ts`,
 `tools/stryker/gate.ts`). The pins are the Node, Unicode and ICU that `tools/stryker/unicode.json`'s `checkedOn` names
