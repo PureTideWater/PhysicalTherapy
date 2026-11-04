@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse, stringify } from 'yaml';
 
-import { MUTATION_PACKAGES, type MutationPackage } from '../../stryker/base.mjs';
+import { MUTATION_PACKAGES, type MutationPackage, type Shard, readShards } from '../../stryker/base.mjs';
 import { SEED_SETUP_FILE, mutationTestConfig } from '../../vitest.mutation.config';
 import { repositoryRoot } from '../content-files';
 import {
@@ -776,6 +776,38 @@ describe('the field rule, the runner proof and what else affects every package, 
     ] as const) {
       expect(before === after, what).toBe(false);
       expect(workflow(before, after).packages, what).toEqual(ALL);
+    }
+  });
+
+  // The review of #96 (S2): the pin-only rule's fail-closed parts, each with a case that turns red when it is removed.
+  it('gives all four when a step pin moves and the same step’s scalar is re-quoted to the same value, so the source text differs', () => {
+    const moved = FLOW.replace(PINS.node, other(PINS.node));
+    const requoted = moved.replace('node-version: 24.22.0', 'node-version: "24.22.0"');
+    expect(workflow(FLOW, moved).packages).toEqual(proof);
+    expect(workflow(FLOW, requoted).packages).toEqual(ALL);
+    expect(workflow(FLOW, moved.replace(`actions/setup-node@${other(PINS.node)}`, `"actions/setup-node@${other(PINS.node)}"`)).packages).toEqual(ALL);
+  });
+
+  it('gives all four for a pin-only change when the runner-proof shard does not hold its packages whole', () => {
+    const shards = readShards();
+    const shared = proof[0];
+    expect(shared).toBeDefined();
+    const split = [...shards, { name: 'synthetic-other', mutate: { [shared ?? 'money']: ['packages/money/src/cents.ts'] } } as Shard];
+    const result = affected({ files: ['.github/workflows/mutation.yml'], texts: { '.github/workflows/mutation.yml': { before: FLOW, after: FLOW.replace(PINS.setup, other(PINS.setup)) } } }, closures, global, TEST_TOOLING, split);
+    expect(result.packages).toEqual(ALL);
+    expect(result.reasons.money).toEqual([`.github/workflows/mutation.yml (step references only, but ${RUNNER_PROOF_SHARD} does not hold its packages whole, every package)`]);
+  });
+
+  it('gives all four for a pin-only change to a workflow holding a byte-order mark, a %YAML directive or a merge key on both sides, naming the rule', () => {
+    const pinned = (text: string) => text.replace(PINS.setup, other(PINS.setup));
+    for (const [what, text, why] of [
+      ['a byte-order mark', `\uFEFF${FLOW}`, 'a YAML byte-order-mark before'],
+      ['a %YAML directive', `%YAML 1.2\n---\n${FLOW}`, 'a YAML directive-line before'],
+      ['a merge key', `${FLOW}x-defaults:\n  <<: { a: 1 }\n`, 'a YAML merge key before'],
+    ] as const) {
+      const result = workflow(text, pinned(text));
+      expect(result.packages, what).toEqual(ALL);
+      expect(result.reasons.money, what).toEqual([`.github/workflows/mutation.yml (${why}, every package)`]);
     }
   });
 

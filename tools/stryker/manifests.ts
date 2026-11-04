@@ -1,6 +1,6 @@
 import { CST, Lexer, type Node as YamlNode, isMap, isScalar, isSeq, parseDocument } from 'yaml';
 
-import type { MutationPackage } from '../../stryker/base.mjs';
+import { type MutationPackage, type Shard, readShards } from '../../stryker/base.mjs';
 import { type Change, type Closure, type GlobalInputs, RUNNER_PROOF_SHARD, globToRegExp } from './affected';
 import { packagesOf, shardNamed, shardsOf } from './shards';
 import { workspacePatterns } from './workspace';
@@ -470,7 +470,7 @@ function withoutShas(workflow: unknown, steps: ReadonlySet<string>): unknown {
  * pinned to a full SHA on both sides, of the same action and path and not an artifact action, has its SHA removed is
  * proved on the runner-proof shard; anything else affects every package.
  */
-function classifyWorkflow(judgement: Judgement, before: string, after: string): void {
+function classifyWorkflow(judgement: Judgement, before: string, after: string, shards: readonly Shard[]): void {
   const b = readYaml(before);
   const a = readYaml(after);
   if (typeof b === 'string') return judgement.global('', `${b} before`);
@@ -501,9 +501,9 @@ function classifyWorkflow(judgement: Judgement, before: string, after: string): 
   const moved = [...substituted].filter((step) => pinsBefore.get(step)?.sha !== pinsAfter.get(step)?.sha);
   const pinOnly = moved.length > 0 && same(withoutShas(b.value, substituted), withoutShas(a.value, substituted)) && same(sources(b, movedBefore), sources(a, movedAfter));
   if (!pinOnly) return judgement.global(differences(b.value, a.value), 'a workflow change other than step pins');
-  const shard = shardNamed(RUNNER_PROOF_SHARD);
+  const shard = shardNamed(RUNNER_PROOF_SHARD, shards);
   const proof = packagesOf(shard);
-  const whole = proof.length > 0 && proof.every((pkg) => shardsOf(pkg).every((other) => other.name === shard.name));
+  const whole = proof.length > 0 && proof.every((pkg) => shardsOf(pkg, shards).every((other) => other.name === shard.name));
   if (!whole) return judgement.global('', `step references only, but ${RUNNER_PROOF_SHARD} does not hold its packages whole`);
   judgement.proved(proof, `step references only: runner proved on ${RUNNER_PROOF_SHARD}`);
 }
@@ -555,9 +555,9 @@ export function workspaceManifestGlobs(text: string): string[] {
  * file whole (imports it, or lists it as data), which affected() then judges as it judges any other file. No text, an
  * unread side or a file that does not parse affects every package; an absent side is `{}` for a workspace manifest and
  * affects every package for a named file. A manifest whose path holds a control character affects every package and
- * is printed JSON-quoted, as a key is.
+ * is printed JSON-quoted, as a key is. `shards` are stryker/shards.json's unless a test gives its own.
  */
-export function classifyManifests(change: Change, closures: readonly Closure[], global: GlobalInputs, tooling: readonly string[]): ManifestVerdict[] {
+export function classifyManifests(change: Change, closures: readonly Closure[], global: GlobalInputs, tooling: readonly string[], shards: readonly Shard[] = readShards()): ManifestVerdict[] {
   const context: Context = { closures, global, tooling: tooling.map(globToRegExp), globalNames: new Set([...global.imports.values()].flatMap((names) => [...names])) };
   const verdicts: ManifestVerdict[] = [];
   for (const file of change.files) {
@@ -572,7 +572,7 @@ export function classifyManifests(change: Change, closures: readonly Closure[], 
     else if (named && before !== null && after !== null) {
       if (file === ROOT_MANIFEST) classifyRoot(judgement, before, after, context);
       else if (file === WORKSPACE_FILE) classifyWorkspace(judgement, before, after, context);
-      else classifyWorkflow(judgement, before, after);
+      else classifyWorkflow(judgement, before, after, shards);
     } else classifyPackage(judgement, before, after, context);
     verdicts.push(judgement.verdict());
   }

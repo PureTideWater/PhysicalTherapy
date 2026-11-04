@@ -705,9 +705,9 @@ function isHoldingTsconfig(file: string, global: GlobalInputs): boolean {
 /**
  * The packages a change affects, given each package's closure. The root manifest, the workspace file, the workflow
  * and each workspace package's manifest no glob holds are judged field by field from the change's texts
- * (classifyManifests); every other path as before.
+ * (classifyManifests, which reads the runner-proof shard from `shards`); every other path as before.
  */
-export function affected(change: Change, closures: readonly Closure[], global: GlobalInputs, tooling: readonly string[] = TEST_TOOLING): Affected {
+export function affected(change: Change, closures: readonly Closure[], global: GlobalInputs, tooling: readonly string[] = TEST_TOOLING, shards: readonly Shard[] = readShards()): Affected {
   const reasons: Partial<Record<MutationPackage, string[]>> = {};
   const note = (pkg: MutationPackage, why: string) => {
     const list = reasons[pkg] ?? [];
@@ -715,7 +715,7 @@ export function affected(change: Change, closures: readonly Closure[], global: G
     reasons[pkg] = list;
   };
   const lockfile = 'pnpm-lock.yaml';
-  const verdicts = classifyManifests(change, closures, global, tooling);
+  const verdicts = classifyManifests(change, closures, global, tooling, shards);
   const classified = new Set(verdicts.map((verdict) => verdict.file));
   for (const verdict of verdicts) {
     for (const why of verdict.global) for (const pkg of MUTATION_PACKAGES) note(pkg, why);

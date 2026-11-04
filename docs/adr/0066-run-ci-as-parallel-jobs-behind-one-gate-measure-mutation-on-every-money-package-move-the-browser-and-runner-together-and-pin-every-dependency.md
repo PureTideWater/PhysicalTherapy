@@ -1925,6 +1925,12 @@ since no closure imports `playwright-core`.
   the new pins on its runner. The first push run after its merge runs every shard on the same pins.
 - A move of `mutation.yml`'s Node or of `packageManager` affects every package, and is now also a change of the pins:
   `unicode.json`'s `checkedOn` follows the Node, as Part 4 already requires, and `packageManager` is the pnpm pin.
+- Each fail-closed rule of the field rule has a test of its own that turns red when the rule is dropped (the review of
+  #96, S2): each of the nine install scripts, written out in the test, at the root, in packages/db and in a workspace
+  manifest added with it; a key holding U+2028 or U+2029; the root manifest, the workspace file and the workflow
+  added or deleted; a step pin moved with its scalar re-quoted; a runner-proof shard that does not hold its packages
+  whole; a byte-order mark, a `%YAML` directive, a warning and a merge key; and a specifier of 257 characters. Each was
+  shown killing its mutant (M01 to M16).
 - A new file a shard loads by path fails `GLOBAL_LOADED`'s test until it is listed. A new tooling file that runs a
   process or names a manifest fails the guard until it is listed with what it reads.
 - A local shard run needs the pinned Node and `packageManager`'s pnpm, and every shard on one commit

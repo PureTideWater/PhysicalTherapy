@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MUTATION_PACKAGES, type MutationPackage } from '../../stryker/base.mjs';
 import { repositoryRoot } from '../content-files';
 import { type AffectedConfig, type Change, type Closure, type GlobalInputs, affected, closureOf, globalFiles, repositoryClosures, trackedFiles, unionClosures, unionGlobal } from './affected';
+import { LIFECYCLE_SCRIPTS } from './manifests';
 
 /**
  * The root manifest, the workspace file and every workspace package's manifest read field by field (docs/adr/0066,
@@ -455,6 +456,73 @@ describe('on this repository', () => {
       expect(packages(changed(file, text, undefined)), `${file}: unread after`).toEqual(ALL);
       expect(packages({}, [file]), `${file}: no text`).toEqual(ALL);
     }
+  });
+
+  // The review of #96 (S2): each fail-closed rule below has a case of its own that turns red when the rule is removed.
+
+  /** The nine scripts pnpm runs on an install, written out here, not imported, so dropping one from the rule fails. */
+  const INSTALL_SCRIPTS = ['pnpm:devPreinstall', 'preinstall', 'install', 'postinstall', 'prepublish', 'preprepare', 'prepare', 'postprepare', 'prepublishOnly'] as const;
+
+  it('holds LIFECYCLE_SCRIPTS to the nine install scripts', () => {
+    expect([...LIFECYCLE_SCRIPTS]).toEqual([...INSTALL_SCRIPTS]);
+  });
+
+  it.each(INSTALL_SCRIPTS)('affects all four for the install script %s, in the root manifest, in packages/db and in a workspace manifest added with it', (name) => {
+    const script = (manifest: Manifest) => void (manifest.scripts = { ...manifest.scripts, [name]: 'node x.js' });
+    expect(root(script), 'the root').toEqual(ALL);
+    expect(db(script), 'packages/db').toEqual(ALL);
+    expect(packages(changed('apps/foo/package.json', null, json({ name: '@tp/foo', scripts: { [name]: 'node x.js' } }))), 'apps/foo added').toEqual(ALL);
+  });
+
+  it('affects all four for a script key holding U+2028 or U+2029, and prints it escaped', () => {
+    for (const key of ['x\u2028y', 'x\u2029y']) {
+      const result = judge(changed('apps/web/package.json', WEB, edit(WEB, (manifest) => void (manifest.scripts = { ...manifest.scripts, [key]: 'node x.js' }))));
+      expect(result.packages, JSON.stringify(key)).toEqual(ALL);
+      const reasons = Object.values(result.reasons).flat();
+      expect(reasons.some((reason) => reason.includes(`scripts.${JSON.stringify(key).replace(/[\u2028\u2029]/, (char) => `\\u${char.charCodeAt(0).toString(16)}`)}`)), JSON.stringify(key)).toBe(true);
+      expect(reasons.filter((reason) => /[\u2028\u2029]/.test(reason)), JSON.stringify(key)).toEqual([]);
+    }
+  });
+
+  it('affects all four, as added or deleted, for the root manifest, the workspace file or the workflow added or deleted', () => {
+    const WORKFLOW = read('.github/workflows/mutation.yml');
+    for (const [file, text] of [
+      ['package.json', ROOT],
+      ['pnpm-workspace.yaml', YAML],
+      ['.github/workflows/mutation.yml', WORKFLOW],
+    ] as const) {
+      for (const [side, before, after] of [
+        ['added', null, text],
+        ['deleted', text, null],
+      ] as const) {
+        const result = judge(changed(file, before, after));
+        expect(result.packages, `${file} ${side}`).toEqual(ALL);
+        expect(result.reasons.money, `${file} ${side}`).toContain(`${file} (added or deleted, every package)`);
+      }
+    }
+  });
+
+  it('affects all four, naming the rule, for a byte-order mark, a %YAML directive, a warning or a merge key in the workspace file, with nothing else changed but an inert key', () => {
+    const inert = (text: string) => replaced('trustPolicyExclude:\n  - semver@6.3.1\n', 'trustPolicyExclude:\n  - semver@6.3.1\n  - semver@5.7.2\n', text);
+    for (const [what, after, why] of [
+      ['a byte-order mark', `\uFEFF${inert(YAML)}`, 'a YAML byte-order-mark after'],
+      ['a %YAML directive', `%YAML 1.2\n---\n${inert(YAML)}`, 'a YAML directive-line after'],
+      ['an unknown directive, a warning', `%FOO bar\n---\n${inert(YAML)}`, 'a YAML warning (BAD_DIRECTIVE) after'],
+      ['a merge key under an inert key', replaced('trustPolicyExclude:\n  - semver@6.3.1\n', 'trustPolicyExclude:\n  <<: { a: 1 }\n'), 'a YAML merge key after'],
+    ] as const) {
+      const result = judge(changed('pnpm-workspace.yaml', YAML, after));
+      expect(result.packages, what).toEqual(ALL);
+      expect(result.reasons.money, what).toEqual([`pnpm-workspace.yaml (${why}, every package)`]);
+    }
+  });
+
+  it('reads a specifier of 256 characters as a registry range, and one of 257 as not one, which affects all four', () => {
+    const range = `^16.0.0${' || ^16.0.0'.repeat(22)}`;
+    const at = (length: number) => range.padEnd(length, ' ');
+    expect(range.length).toBeLessThanOrEqual(256);
+    const bump = (specifier: string) => root((manifest) => void (manifest.devDependencies = { ...manifest.devDependencies, '@next/eslint-plugin-next': specifier }));
+    expect(bump(at(256))).toEqual([]);
+    expect(bump(at(257))).toEqual(ALL);
   });
 
   it('affects none for comments alone (a YAML comment outside packages) or JSON whitespace', () => {
