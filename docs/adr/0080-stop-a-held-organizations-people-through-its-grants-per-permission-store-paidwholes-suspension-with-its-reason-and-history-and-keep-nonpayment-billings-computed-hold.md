@@ -90,7 +90,8 @@ run-starting permissions it stops for this person (`stopped`), never an organiza
 turns it into one sentence for one piece of work. Neither is executable by an application role. Around them:
 
 - `run_starting_permissions()`: the closed list `mapping.edit`, `case.work`, `posting.reconcile`, `phi.export`,
-  `file.upload`, the permissions of the nine `RUN_STARTING_ROUTES` (a test holds the two equal);
+  `file.upload`, the permissions of the `RUN_STARTING_ROUTES` (eleven since #95 added "Price them now" and "Price
+  these months again", both `mapping.edit`; a test holds the two equal);
 - `practice_run_refusal_for(practice, permission)` (`tp_app`): the route wrapper's question, asked with the route's
   permission after `requirePracticePermission`, and the uploads gate's with `file.upload`; a permission outside the list
   is a parameter error (22023), so a route added with a new permission fails its test at once;
@@ -238,7 +239,7 @@ closure lifecycle, with its own decision on reopening.
   grantee's it is wrong in one point, since monitoring never stopped, and does not say which organization's
   administrator it means. Accepted: the refusal itself is right, the suffix is that image's own text, and no wording of
   the grantee sentences can make "monitoring … start again" true. The previous image also fails closed for a person
-  whose held grant stops only part of their work: it asks `practice_run_refusal`, so it refuses all nine routes.
+  whose held grant stops only part of their work: it asks `practice_run_refusal`, so it refuses every run-starting route.
 - **A security hold does not contain reads** (F7). It stops new work only: the held organization's people still read
   and download everything at every practice they reach. The console's hint says so, and that ending their memberships
   stops their access.
