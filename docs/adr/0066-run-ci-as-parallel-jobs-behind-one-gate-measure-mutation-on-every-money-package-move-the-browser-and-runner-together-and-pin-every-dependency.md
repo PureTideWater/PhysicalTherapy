@@ -833,6 +833,46 @@ Alternatives considered for Trivy:
 - **The `aquasec/trivy` image by digest.** It is another artifact to pin and age. It would also need Docker to reach
   each archive and the daemon's image.
 
+### Amendment (`co-001/ci-trivy-install-2026-11-04`, 2026-11-04): no partial clone on a private repository
+
+The repository went private on 2026-11-04 at about 02:51Z. screening-capacity's `changes` job checked out with
+`filter: blob:none` and `persist-credentials: false`, so its `git diff --name-only` (rename detection) and `git show`
+fetched blobs from the promisor remote with no credentials. That failed: "could not read Username for
+'https://github.com'", run 41765454724, job 126369187941, exit 128. The repository was public again from about 07:10Z;
+the rules below stay, so the gate keeps working if it goes private again.
+
+- Its checkout now fetches every object, once, with the job's token (`fetch-depth: 0`, no filter, about 34 MiB packed).
+  `persist-credentials: false` and `contents: read` stay.
+- A blobless clone could also have read an unfetchable list as "the base keeps no watched list", through
+  `git cat-file -e`. A full clone cannot.
+- `workflows.test.ts` holds four rules (CI-11):
+  - no checkout that keeps no token makes a partial clone;
+  - the `changes` script passes on a full clone whose remote is gone and fails on a blobless one;
+  - no step runs git fetch, clone, `ls-remote`, pull, `submodule update` or `archive --remote` (with any global
+    options before the command), reads raw.githubusercontent.com, or curls the API, the server or this repository by
+    any of their names (`$GITHUB_API_URL`, `${{ github.api_url }}`, `$GITHUB_SERVER_URL`, `$GITHUB_REPOSITORY`,
+    owner/name), and every `gh` step sets `GH_TOKEN`; a mutation case per form;
+  - the same scan holds every shell script under `tools/` and `.github/`, and every TypeScript entry point a step
+    runs (directly or through a package.json script) with the `tools/` files it imports: git against a remote only in
+    `check-action-pins` (other owners' upstreams; no `uses:` names this repository), and GitHub's API or `gh` only
+    where the step is given the job's token.
+
+The audit of every workflow and the scripts they run found nothing else that read this repository unauthenticated:
+- Every other checkout is full (`fetch-depth: 0`) or reads only its own commit, and no step fetches after it.
+- Every `gh` step (the content calendar, release-capacity, screening-capacity's `notify`, release.yml's `report`) sets
+  `GH_TOKEN` and `GH_REPO`.
+- approval-of-record reads the API with the job's token.
+- `check-action-pins` and `check-toolchain` read only upstream repositories and registries.
+- gitleaks, fixture-check, check-releases-immutable, engine-freeze and stryker's affected set read the local clone.
+- The launch check's `gh attestation verify` reads only the release's bundle and Sigstore's trusted root, never this
+  repository.
+- Not a read, and the founder's: release.yml's `report` job runs actions/attest-build-provenance, and artifact
+  attestations for a private repository need GitHub Enterprise Cloud, so a release's report goes unattested and
+  production's screening stays closed until that is decided (open item O15, docs/runbooks/screening-capacity.md). Not
+  changed here.
+- Runner sizes, the 4-CPU harness minimum and the larger-runner and GitHub Team decision are the founder's, and are not
+  changed here.
+
 ## Part 3 (`co-001/ci-browser`)
 
 ### Context
