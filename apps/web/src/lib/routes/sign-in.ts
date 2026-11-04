@@ -70,11 +70,19 @@ export type StepResult = { readonly redirect: string } | { readonly error: strin
 
 const MESSAGES = {
   credentials: 'That did not match. Check the email, the password or the code, and try again.',
-  locked: 'This account is locked after ten failed attempts. A platform administrator can unlock it.',
   no_account: 'That did not match. Check the email, the password or the code, and try again.',
   key_not_registered: 'The hardware key was not registered. Try again with the key connected.',
   invitation_expired: 'This invitation has expired. Ask your organization’s administrator to send it again.',
 } as const;
+
+/**
+ * A locked account's refusal, on the password step and the key step (UX-066): the way out, by the support address
+ * (PaidWhole's, never the person's), from the address just typed. A password reset never lifts the lock, so these words
+ * never offer one.
+ */
+function lockedMessage(supportEmail: string): string {
+  return `This account was locked after ten failed attempts. Write to ${supportEmail} from this address to have it unlocked.`;
+}
 
 /** What a timed step's page is given for its timer: its limit, its warning, and when it closes (absent with no stamp). */
 export interface StepTime {
@@ -191,7 +199,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           return { redirect: '/sign-in/hardware-key?reason=hardware_key_required' };
         case 'locked':
           clearSignIn(cookies);
-          return { error: MESSAGES.locked, locked: true };
+          return { error: lockedMessage(context.services.supportEmail), locked: true };
         case 'credentials':
           return options.credentials === undefined ? { error: MESSAGES.credentials } : { error: 'That did not match.', issues: [options.credentials] };
         case 'invitation_expired':
@@ -266,7 +274,7 @@ export const signInPage = publicRoute({
     const reason = context.params.reason ?? null;
     // The kept email fills the form only after a step closed or the person chose to start again; never otherwise.
     const kept = reason === 'step_expired' || reason === 'restarted' ? readKeptEmail(context.request.cookies, context.services.sealer, context.services.now()) : undefined;
-    return Promise.resolve({ reason, email: kept?.email ?? null, use: kept?.use ?? null });
+    return Promise.resolve({ reason, email: kept?.email ?? null, use: kept?.use ?? null, supportEmail: context.services.supportEmail });
   },
 });
 
@@ -422,7 +430,7 @@ export const hardwareKeyPage = publicRoute({
   path: '/sign-in/hardware-key',
   phi: false,
   params: reasonParams,
-  handle: ({ params }) => Promise.resolve({ reason: params.reason ?? null }),
+  handle: ({ params, services }) => Promise.resolve({ reason: params.reason ?? null, supportEmail: services.supportEmail }),
 });
 
 export type KeyOptionsResult = { readonly options: PublicKeyCredentialRequestOptionsJSON } | { readonly error: string; readonly locked?: boolean };

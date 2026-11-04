@@ -3,8 +3,8 @@ import { Alert, AlertDescription, AlertTitle } from '@tp/ui';
 import { ArrivalNotice } from '../../components/arrival-focus';
 import type { PasswordToUse, SignInReason } from '../../lib/routes/sign-in';
 
-/** Why the user is signing in again, in words (the URL carries only the code). */
-const REASONS: Readonly<Record<SignInReason, { readonly title: string; readonly text: string }>> = {
+/** Why the user is signing in again, in words (the URL carries only the code); `locked`'s are built with the support address. */
+const REASONS: Readonly<Record<Exclude<SignInReason, 'locked'>, { readonly title: string; readonly text: string }>> = {
   signed_out: { title: 'Signed out', text: 'You have signed out.' },
   idle: { title: 'Session expired', text: 'You were signed out after 30 minutes without activity. Sign in again to continue.' },
   expired: { title: 'Session expired', text: 'Sessions last 12 hours. Sign in again to continue.' },
@@ -15,9 +15,21 @@ const REASONS: Readonly<Record<SignInReason, { readonly title: string; readonly 
   step_expired: { title: 'Sign-in step closed', text: 'That sign-in step closed. Start again from your email and password.' },
   hardware_key_required: { title: 'Hardware key required', text: 'Your role signs in with a hardware key. Use it below.' },
   key_registered: { title: 'Hardware key registered', text: 'Your hardware key is registered. Sign in with it now.' },
-  locked: { title: 'Account locked', text: 'This account is locked after ten failed attempts. A platform administrator can unlock it.' },
   restarted: { title: 'Start again', text: 'Start again from your email and password.' },
 };
+
+/**
+ * The locked notice (UX-066): the way out, by the support address. No address is on screen here, so it says "the address
+ * you sign in with", not the refusal's "this address" (D-4). A reset never lifts the lock, so it is never offered.
+ */
+function locked(supportEmail: string): { readonly title: string; readonly text: string } {
+  return { title: 'Account locked', text: `This account was locked after ten failed attempts. Write to ${supportEmail} from the address you sign in with to have it unlocked.` };
+}
+
+/** A reason's title and default words. */
+function reasonOf(reason: SignInReason, supportEmail: string): { readonly title: string; readonly text: string } {
+  return reason === 'locked' ? locked(supportEmail) : REASONS[reason];
+}
 
 /** The two reasons a person is back after a sign-in step: it closed, or they chose to start again (docs/adr/0081). */
 type RestartReason = Extract<SignInReason, 'step_expired' | 'restarted'>;
@@ -40,9 +52,9 @@ const PASSWORD_TO_USE: Readonly<Record<PasswordToUse, string>> = {
 };
 
 /** The notice's words: the reason's, or after a step, the kept email's and which password, or the key's. */
-function wordsOf(reason: SignInReason, kept: { readonly use: PasswordToUse | null } | undefined, surface: 'password' | 'key'): string {
+function wordsOf(reason: SignInReason, kept: { readonly use: PasswordToUse | null } | undefined, surface: 'password' | 'key', supportEmail: string): string {
   if (!isRestart(reason)) {
-    return REASONS[reason].text;
+    return reasonOf(reason, supportEmail).text;
   }
   if (surface === 'key') {
     return RESTARTS[reason].key;
@@ -55,7 +67,8 @@ function wordsOf(reason: SignInReason, kept: { readonly use: PasswordToUse | nul
 
 /**
  * Why the person is on a sign-in page. `kept` is given only when the page filled in the email kept from a step (never
- * the address itself, which only the Email field holds); `surface` is the page: the password's, or the hardware key's.
+ * the address itself, which only the Email field holds); `surface` is the page: the password's, or the hardware key's;
+ * `supportEmail` is PaidWhole's support address, which the locked words name (never the person's own).
  * After a step closed or was started again the notice is a note that takes the focus once, so it is read on arrival,
  * once (docs/adr/0081); every other reason is a polite status, which takes no focus.
  */
@@ -63,16 +76,18 @@ export function SignInNotice({
   reason,
   kept,
   surface = 'password',
+  supportEmail,
 }: {
   readonly reason: SignInReason | null;
   readonly kept?: { readonly use: PasswordToUse | null };
   readonly surface?: 'password' | 'key';
+  readonly supportEmail: string;
 }) {
   if (reason === null) {
     return null;
   }
-  const { title } = REASONS[reason];
-  const text = wordsOf(reason, kept, surface);
+  const { title } = reasonOf(reason, supportEmail);
+  const text = wordsOf(reason, kept, surface, supportEmail);
   return isRestart(reason) ? (
     <ArrivalNotice reason={reason} title={title} text={text} />
   ) : (

@@ -10,11 +10,11 @@ import { HardwareKeyRequirement, SignInNotice } from '../notice';
 export const metadata: Metadata = { title: 'Sign in with a hardware key' };
 
 export default async function HardwareKeyPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { reason } = await loadPublicPage(hardwareKeyPage, props);
+  const { reason, supportEmail } = await loadPublicPage(hardwareKeyPage, props);
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Sign in with a hardware key</h1>
-      <SignInNotice reason={reason} surface="key" />
+      <SignInNotice reason={reason} surface="key" supportEmail={supportEmail} />
       <HardwareKeyRequirement />
       <Card>
         <CardHeader>
