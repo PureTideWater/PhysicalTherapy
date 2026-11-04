@@ -44,7 +44,7 @@ const pricedElsewhere = (target: Practice) =>
   withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, async (scope) => {
     const location = await practiceLocation(scope.client, target.practiceId);
     const inEffect = await runsInEffect(scope, target.practiceId, `test-${randomUUID()}`);
-    return location === null ? [] : [...(await runsPricedElsewhere(scope.client, target.practiceId, inEffect, location))];
+    return location === null ? [] : [...(await runsPricedElsewhere(scope.client, target.practiceId, inEffect))];
   });
 
 /** A complete run of February with no priced line, created at `createdAt`; the location last saved at `savedAt`. */
