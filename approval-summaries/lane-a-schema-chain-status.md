@@ -220,6 +220,15 @@ its unpushed work is not waited for).
   55.2 s): one backend at 100% CPU on single-row INSERT INTO line_status. **Running: wf_caf81379-09e** (archived): both
   root-caused (local profile; an instrumented WIP run if needed), the 1b parts fixed failing-first (SUITE-CAP-3's parts
   recorded and handed to Lane B), base merged, one push, then verification and CAS-42.5 again.
+- **22:35 UTC. Container restart ~22:20; setup re-run OK; resuming wf_caf81379-09e.** Findings so far (records and the
+  patch: `approval-summaries/lane-a-wip/sc1b-pool/`): **the retries are a pre-existing worker defect, confirmed in CI**
+  (instrumented run 41913629020 on co-001/wip-sc1b-retry-1): the practice pool has 4 connections (main.ts:139, 10 s timeout)
+  while the worker runs up to 15 practice jobs at once; long holders starve the rest, pg-pool times out, pg-boss retries.
+  **Session's decision (22:30):** the fix rides #110 since it blocks 1b's acceptance run (pool sized to the 15 job slots,
+  timeout kept, every failed attempt logged with an error code, the harness prints them; failing first: 11 of 15 time out
+  on 4 connections); cost: +11 worst-case connections per worker task; told the orchestrator. **F's reconcile time is
+  pre-existing, SUITE-CAP-3's** (same statements, plans and buffer counts on the base; 1b ~25 s faster via
+  claim_by_superseded; byPatient ~403 s and the case refresh dominate): a known limit in ADR 0083, handed to Lane B.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
