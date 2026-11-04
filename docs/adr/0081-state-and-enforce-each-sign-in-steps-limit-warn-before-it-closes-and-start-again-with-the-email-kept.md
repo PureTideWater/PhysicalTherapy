@@ -221,7 +221,10 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   the code's hour and a 15-minute cookie, so it states and enforces 15 minutes and warns at two (D1-D5); Send a new
   code opens it again without typing, and "Use a different email" ends it at any time with the address not kept. Its
   warning and closed words are its own (`StepTimer`'s `words`), since nothing is kept before the code is proven. The
-  code email states 15 minutes; the provider's hour is not shown.
+  code email states 15 minutes; the provider's hour is not shown. Any refusal of the confirm, a password-only one
+  (mismatch, policy) included, empties the code with both passwords: the form empties every secret field on every
+  refusal, one rule across the sign-in forms (WCAG 3.3.7's security exception), so no submitted code is left on a page
+  that may be left unattended, and the code, still valid, is copied again from the email (review UXB-N3).
 - **A2. Every address gets the same answer and the same timing class, and the app asks the provider for a code only
   for an account that already has a second factor (on the app's path; see Not covered).** The provider is asked only for an active account with `mfa_enrolled`; every other address
   (unknown, invited, a password set but no factor enrolled, disabled) does the same lookup and skips the send. Its
