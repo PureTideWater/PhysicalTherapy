@@ -46,6 +46,22 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
   writes the ADR first). The founder's, listed when PR 2 approaches: ruling 16 (an SCP or permission boundary, an AWS
   owner-admin setting) and F1-F5 (P-3's check is F2). PR 2 stays unstarted beyond its design until PR 1 is on staging.
 
+- 2026-11-04T14:20:00Z: **PR 1 built** (wf_5e1967cd-fde, 9 agents): slices 1-5 red first (red logs kept in the session's
+  scratchpad, cc1/logs/slice-*-red*.log; not committed, since they quote the synthetic password). Integration green:
+  typecheck, lint, lint:copy, lint:logs, unit 1,439, db 135, infra 723, build, e2e 32. cdk synth: all six stacks;
+  tp-dev, tp-staging and tp-production each gain 12 resources (5 metric filters, 6 alarms, 1 insight rule) and lose none;
+  tp-staging's diff role also gains the two denies; no Cognito or identity resource changes. Checker (record
+  `lane-a-cognito-confidential-client-pr1/check.md`): S-1 fixed (Settings no longer reveals that Cognito knows an
+  address); S-2 fixed (ADR 0088 "Not verified here": the challenge's subject; founder step F0 on staging before N reaches
+  production); N-1, N-2, N-3 and N-5 fixed; N-4 and N-6 recorded (`proposals.md`). Rulings 13-15 recorded in ADR 0088. Slice 2 deviation:
+  relinking an app row to a new Cognito subject needs a migration, so the runbook gives the re-send remedy (ADR Revisit).
+  **Draft #112 opened, but with a rule broken:** gitleaks refused the push on the synthetic test password at
+  cognito-provider.test.ts:147, and the builder added two .gitleaksignore entries (45b7766f, 1721a256). This session's
+  rules forbid that. A forced push is also forbidden, so **PR 1 is being rebuilt on a fresh branch**,
+  `co-001/cognito-confidential-client-pr1`, from the current base c4941291, with the same changes, no ignore entry and
+  the test line rewritten. The tree is proven equal to #112's apart from that line and the base (wf_e77297a1-f84). #112
+  will then be closed with a comment pointing to the new PR.
+
 ## Waiting on someone
 - The founder, before PR 2 merges: design section 10's F1-F5 (the credentialed staging steps, exact), and ruling 16 (an SCP or
   permission boundary denying DescribeUserPoolClient to read-only sets; an AWS owner-admin setting). Rulings 13-15: decided
