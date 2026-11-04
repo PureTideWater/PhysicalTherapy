@@ -110,18 +110,28 @@ function errorMessage(error: unknown): string {
 }
 
 /** Cognito's words for a missing or wrong secret hash or client secret (texts unverified: ADR 0088, Not verified here). */
-const CREDENTIAL_WORDS = /secret[ _]?hash|client secret/i;
+/**
+ * Any word about a secret or the client (review security-N5): Cognito's texts are unverified, and a miss would count the
+ * platform's failure against people and lock real accounts, so the match is wide. None of the person-facing texts
+ * (a wrong password, a disabled user, a stale session, a revoked token) names either.
+ */
+const CREDENTIAL_WORDS = /secret|\bclient\b/i;
+/**
+ * RevokeToken's narrower words: its refusal of a token issued to another client names the client too ("Token is not
+ * valid for the client"), and a revoke is never counted against a person, so only the secret's own words are taken.
+ */
+const REVOKE_CREDENTIAL_WORDS = /secret[ _]?hash|client secret/i;
 
 /**
- * Whether Cognito refused the client's own credential (docs/adr/0088, D2): NotAuthorizedException with words about the
- * secret hash or the client secret, or for RevokeToken, whose modelled errors have no NotAuthorizedException,
+ * Whether Cognito refused the client's own credential (docs/adr/0088, D2): NotAuthorizedException with words about a
+ * secret or the client, or for RevokeToken, whose modelled errors have no NotAuthorizedException,
  * UnauthorizedException with the same words (review infra-auth-IA-9). The message classifies only; it is never
  * logged, since it names the client.
  */
 export function isClientCredentialFailure(error: unknown, call: 'revoke' | 'other' = 'other'): boolean {
   const name = errorName(error);
   const named = name === 'NotAuthorizedException' || (call === 'revoke' && name === 'UnauthorizedException');
-  return named && CREDENTIAL_WORDS.test(errorMessage(error));
+  return named && (call === 'revoke' ? REVOKE_CREDENTIAL_WORDS : CREDENTIAL_WORDS).test(errorMessage(error));
 }
 
 /** Throws a ClientCredentialError in place of Cognito's refusal of the credential; returns for anything else. */

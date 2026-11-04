@@ -262,7 +262,11 @@ every test here uses the twin or a scripted mock; a gate before release N reache
 name Cognito gives on the `WEB_AUTHN` challenge (`USERNAME`, `USER_ID_FOR_SRP` or neither): the key sign-in sends it,
 as the other challenges do, as `USERNAME` on `RespondToAuthChallenge` and hashes over it, falling back to the typed
 email only when Cognito names nobody, so a hardware-key sign-in on staging with the secret set is a gate before
-release N+1 reaches production; Cognito's hash error texts (the classifier and the probe); `RevokeToken`'s credential error name; the three secret calls' IAM
+release N+1 reaches production; Cognito's hash error texts for both mismatch directions (a secret sent to a client
+without one, and a missing or wrong one to a client with one), for the classifier and the probe, a gate before release
+N+1 reaches production: a text the classifier missed would turn the platform's failure into failures counted against
+people, locking real accounts at ten, so the classifier takes any `NotAuthorizedException` naming a secret or the
+client (review security-N5); `RevokeToken`'s credential error name; the three secret calls' IAM
 action names; whether the Lambda runtime's SDK has those calls (a gate before release N+1 reaches production); whether
 `ListUserPoolClientSecrets` returns the value; whether CloudTrail logs `AddUserPoolClientSecret`'s request or response;
 whether a deleted client's tokens die with it; Cognito's per-code attempt cap, request throttle and code life (0081 A3);

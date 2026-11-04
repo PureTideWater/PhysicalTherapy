@@ -4,8 +4,8 @@ import { createLogger } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
 
 import { credentialProbeOf } from '../server/services';
-import { type CognitoClient, CognitoAuthProvider } from './cognito-provider';
-import { CredentialProbe, PROBE_USERNAME, probeRefusal } from './credential-probe';
+import { type CognitoClient, CognitoAuthProvider, isClientCredentialFailure } from './cognito-provider';
+import { CredentialProbe, PROBE_USERNAME, classifyProbe, probeRefusal } from './credential-probe';
 import { DevAuthProvider } from './dev-provider';
 import { MemoryDevStore } from './dev-store';
 import { Sealer } from './seal';
@@ -56,6 +56,24 @@ describe('the start-up credential probe', () => {
     expect(wrongClient.entries()).toEqual([['error', 'cognito probe refused', 'ResourceNotFoundException']]);
     const doesNotExist = probing(() => Promise.reject(named('InvalidParameterException', 'User pool client syntheticclient does not exist.')));
     expect(await doesNotExist.probe.start()).toBe('refused');
+  });
+
+  it('SEC-20: takes any NotAuthorizedException that names the client or a secret as the client credential, and the person-facing texts as the person’s (review security-N5)', () => {
+    // Texts for both mismatch directions, the verified ones and plausible others (the staging gate records Cognito's own).
+    for (const message of [
+      'Unable to verify secret hash for client syntheticclient',
+      'Client syntheticclient is configured with secret but SECRET_HASH was not received',
+      'Client syntheticclient is configured without secret.',
+      'Client syntheticclient is not configured with a secret',
+      'Invalid client syntheticclient',
+    ]) {
+      expect(isClientCredentialFailure(named('NotAuthorizedException', message)), message).toBe(true);
+      expect(classifyProbe(named('NotAuthorizedException', message)), message).toBe('refused');
+    }
+    for (const message of ['Incorrect username or password.', 'Password attempts exceeded', 'User is disabled.', 'Invalid session for the user, session is expired.', 'Access Token has been revoked']) {
+      expect(isClientCredentialFailure(named('NotAuthorizedException', message)), message).toBe(false);
+    }
+    expect(isClientCredentialFailure(named('UserNotFoundException', 'client secret'))).toBe(false);
   });
 
   it('SEC-20: passes on the expected refusal of an unknown user and on a challenge', async () => {
