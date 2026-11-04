@@ -28,10 +28,19 @@ export interface StepTimerProps {
   readonly closesIn?: number;
   /** The server's deadline, epoch ms on the server's clock: only a key tying a re-render to its first count. */
   readonly closesAt?: number;
-  /** Start again: the form action that ends the step and goes to the sign-in page with the email kept (a server action). */
-  readonly restart: (form: FormData) => void | Promise<void>;
+  /**
+   * Start again: the form action that ends the step and goes to the sign-in page with the email kept (a server action).
+   * null leaves Start again and its pending row out, for a step whose page has its own ways on below the work (the
+   * forgotten password's Send a new code and Use a different email, review UXR-01); the status still speaks.
+   */
+  readonly restart: ((form: FormData) => void | Promise<void>) | null;
   /** This step's own words, said with the warning and with the closed notice (enrolment's new key). */
   readonly notes?: { readonly warning?: string; readonly closed?: string };
+  /**
+   * This step's own words in place of the default sentence, which says the email is kept and the password typed again:
+   * false on a step that keeps nothing (the forgotten password's, review UXR-02). With them, `notes` is not said.
+   */
+  readonly words?: { readonly warning: string; readonly closed: string };
   /**
    * This step's own sentence above the work once closed, in place of "This step has closed." (enrolment names its setup
    * key, which sits right below it). It shares the sentence's cell, so it must fit on one line at 390 px, as the others do.
@@ -86,12 +95,22 @@ export function limitPhrases(limitSeconds: number, warningSeconds: number, close
   };
 }
 
-/** What the status says at the warning and once closed: its title, and its words with the step's own note after them. */
-export function spokenWords(phase: 'warning' | 'closed', warningSeconds: number, notes: StepTimerProps['notes'] = {}): { readonly title: string; readonly words: string } {
-  const [title, words, note] =
-    phase === 'warning'
-      ? [`This step closes ${within(warningSeconds)}`, 'If you need more time, start again: your email is kept, and you type your password again.', notes.warning]
-      : ['This step has closed', 'Start again: your email is kept, and you type your password again.', notes.closed];
+/**
+ * What the status says at the warning and once closed: its title, and its words with the step's own note after them,
+ * or the step's own words alone in place of both.
+ */
+export function spokenWords(
+  phase: 'warning' | 'closed',
+  warningSeconds: number,
+  notes: StepTimerProps['notes'] = {},
+  own?: StepTimerProps['words'],
+): { readonly title: string; readonly words: string } {
+  const title = phase === 'warning' ? `This step closes ${within(warningSeconds)}` : 'This step has closed';
+  if (own !== undefined) {
+    return { title, words: own[phase] };
+  }
+  const [words, note] =
+    phase === 'warning' ? ['If you need more time, start again: your email is kept, and you type your password again.', notes.warning] : ['Start again: your email is kept, and you type your password again.', notes.closed];
   return { title, words: note === undefined ? words : `${words} ${note}` };
 }
 
@@ -132,7 +151,7 @@ function anchorOf(closesIn: number, closesAt: number | undefined, firstInDocumen
  * it stays in the accessibility tree from the first render. Start again is one form and button in both phases, so a
  * person who reached it during the warning still holds it once the step has closed.
  */
-export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, restart, notes, cue, children }: StepTimerProps) {
+export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, restart, notes, words, cue, children }: StepTimerProps) {
   // The phase shown, with the step it belongs to: a new deadline is a new step, whose count starts again.
   const [shown, setShown] = useState<{ readonly closesAt: number | undefined; readonly phase: StepPhase } | null>(null);
   const phase = shown !== null && shown.closesAt === closesAt ? shown.phase : undefined;
@@ -192,7 +211,7 @@ export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, re
   // status stays empty until the count, so nothing is said at load.
   const visible = phase ?? (closesIn === undefined ? 'open' : stepPhase(closesIn, warningSeconds * 1000));
   const speaking = phase === 'warning' || phase === 'closed';
-  const said = speaking ? spokenWords(phase, warningSeconds, notes) : null;
+  const said = speaking ? spokenWords(phase, warningSeconds, notes, words) : null;
   return (
     <div data-slot="step-timer-frame">
       <div className="flex flex-col gap-4">
@@ -212,7 +231,7 @@ export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, re
             <AlertDescription>{said.words}</AlertDescription>
           </>
         )}
-        {said === null ? null : (
+        {said === null || restart === null ? null : (
           <form action={restart} onSubmit={onRestart} className="mt-2 justify-self-start">
             <button type="submit" aria-disabled={restartPending ? true : undefined} className={buttonVariants({ variant: 'outline' })}>
               Start again
@@ -220,7 +239,7 @@ export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, re
           </form>
         )}
       </div>
-      {said === null ? null : (
+      {said === null || restart === null ? null : (
         <div className="mt-2" data-slot="restart-pending">
           <PendingStatus pending={restartPending} />
         </div>
