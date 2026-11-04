@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -140,23 +141,51 @@ describe('ScreeningThreadPool', () => {
     await threads.close();
   });
 
-  it('fails only the run whose thread failed it, stopped or ran out of memory, replaces that thread and goes on', async () => {
-    const { pool: threads, lines } = pool({ heapMb: 32 });
-    await threads.start();
-    const beside = threads.price({ runId: 'wait:600', jobId: 'beside' });
-    await expect(threads.price({ runId: 'throw', jobId: 'a' })).rejects.toThrow(ScreeningThreadError);
-    await expect(threads.price({ runId: 'die', jobId: 'b' })).rejects.toThrow('the screening thread stopped while it priced the run');
-    await expect(threads.price({ runId: 'oom', jobId: 'c' })).rejects.toThrow(ScreeningThreadError);
-    expect(await beside).toBe('complete');
+  // Node gives a worker thread its process's --max-old-space-size whatever resourceLimits asks (threads.ts), and a
+  // worker cannot set its own: so under a unit run's NODE_OPTIONS=--max-old-space-size=6144 the 32 MiB stand-in filled
+  // gigabytes and outlived the test's budget. The case runs in a child process whose environment carries no heap flag,
+  // where the thread's resourceLimits hold, and reports what it saw; nothing the case asserts changed.
+  it('fails only the run whose thread failed it, stopped or ran out of memory, replaces that thread and goes on', () => {
+    const child = path.join(dir, 'out-of-memory.mts');
+    writeFileSync(
+      child,
+      `import { createLogger } from ${JSON.stringify(pathToFileURL(createRequire(import.meta.url).resolve('@tp/observability')).href)};
+import { ScreeningThreadError, ScreeningThreadPool } from ${JSON.stringify(new URL('./threads.ts', import.meta.url).href)};
+const lines = [];
+const logger = createLogger({ sink: (line) => lines.push(JSON.parse(line)) });
+const threads = new ScreeningThreadPool({ size: 3, script: new URL(${JSON.stringify(script.href)}), execArgv: [], workerData: null, heapMb: 32, logger, readyTimeoutMs: 10_000 });
+const outcome = (promise) => promise.then((value) => ({ value }), (error) => ({ error: error instanceof ScreeningThreadError, message: error instanceof Error ? error.message : String(error) }));
+await threads.start();
+const beside = outcome(threads.price({ runId: 'wait:600', jobId: 'beside' }));
+const failed = await outcome(threads.price({ runId: 'throw', jobId: 'a' }));
+const stopped = await outcome(threads.price({ runId: 'die', jobId: 'b' }));
+const outOfMemory = await outcome(threads.price({ runId: 'oom', jobId: 'c' }));
+const after = await Promise.all([1, 2, 3].map((index) => threads.price({ runId: 'wait:50', jobId: 'after-' + String(index) })));
+await threads.close();
+process.stdout.write(JSON.stringify({ failed, stopped, outOfMemory, beside: await beside, after, lines }));
+`,
+    );
+    const env = { ...process.env, NODE_OPTIONS: (process.env.NODE_OPTIONS ?? '').replace(/--max-old-space-size=\S+/g, '').trim() };
+    const seen = JSON.parse(execFileSync(process.execPath, [...screeningThreadScript().execArgv, child], { encoding: 'utf8', env })) as {
+      readonly failed: { readonly error?: boolean };
+      readonly stopped: { readonly error?: boolean; readonly message?: string };
+      readonly outOfMemory: { readonly error?: boolean };
+      readonly beside: { readonly value?: string };
+      readonly after: readonly string[];
+      readonly lines: readonly Record<string, unknown>[];
+    };
+    expect(seen.failed.error).toBe(true);
+    expect(seen.stopped).toMatchObject({ error: true, message: 'the screening thread stopped while it priced the run' });
+    expect(seen.outOfMemory.error).toBe(true);
+    expect(seen.beside.value).toBe('complete');
     // Replaced: three runs at once again.
-    expect(await Promise.all([1, 2, 3].map((index) => threads.price({ runId: 'wait:50', jobId: `after-${String(index)}` })))).toEqual(['complete', 'complete', 'complete']);
-    expect(lines.filter((line) => line.level !== 'info').map((line) => line.error_code)).toEqual(
+    expect(seen.after).toEqual(['complete', 'complete', 'complete']);
+    expect(seen.lines.filter((line) => line.level !== 'info').map((line) => line.error_code)).toEqual(
       expect.arrayContaining(['SCREENING_THREAD_REPLACED', 'SCREENING_THREAD_OUT_OF_MEMORY']),
     );
     // Codes only: no error's text reaches a line.
-    expect(lines.every((line) => Object.keys(line).every((key) => ['time', 'level', 'msg', 'error_code'].includes(key)))).toBe(true);
-    await threads.close();
-  });
+    expect(seen.lines.every((line) => Object.keys(line).every((key) => ['time', 'level', 'msg', 'error_code'].includes(key)))).toBe(true);
+  }, 30_000);
 
   it('waits for the runs in hand when it closes, refuses new ones, and ends every thread', async () => {
     const { pool: threads } = pool({ size: 2 });
