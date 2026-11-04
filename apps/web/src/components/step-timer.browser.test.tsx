@@ -339,6 +339,8 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await shownCount(page, 1);
     expect(await focused(page)).toBe('refusal-summary');
     expect(await said(page)).toEqual(['', WARNING]);
+    // Settled: one refusal, one summary shown.
+    expect(await page.locator('body').getAttribute('data-shown')).toBe('1');
     await page.close();
 
     // A refusal before the warning: the field it focused keeps the focus when the warning comes.
@@ -348,6 +350,7 @@ describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the brow
     await before.locator(SUBMIT).click();
     await shownCount(before, 1);
     expect(await focused(before)).toBe('field-code');
+    expect(await before.locator('body').getAttribute('data-shown')).toBe('1');
     await before.clock.runFor('02:02');
     await reached(before, 'warning');
     expect(await focused(before)).toBe('field-code');
