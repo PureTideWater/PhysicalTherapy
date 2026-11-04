@@ -301,8 +301,8 @@ can read; once the repository is private it reads private run logs and artifacts
 notify job still checks nothing out, runs no action and runs no repository code: `actions/download-artifact` would
 have needed no permission, but would have run third-party code beside the write token. A download that fails
 opens or comments on "Content calendar check failing". On a pull request, a `handoff` job with `actions: read`
-alone downloads the artifact with the same lines as the notify job and writes nothing, so the hand-over is proved
-on a runner before a change merges. The file's bound is 2,000,000 bytes: a run has at most 41 findings (two of the
+alone downloads the artifact with the same lines as the notify job, the check that the file reads as a findings list
+among them, and writes nothing, so the hand-over is proved on a runner before a change merges. The file's bound is 2,000,000 bytes: a run has at most 41 findings (two of the
 calendar's own and three per family, held by a property test of the generators), titles at most 256 characters,
 and at their worst they take 1,540,660 bytes, so the notify job always receives every finding whole, opens 20 and
 lists the rest by title (at most 200 titles, a bound a run does not reach). The artifact and the check's summary

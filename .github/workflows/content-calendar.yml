@@ -113,8 +113,12 @@ jobs:
             head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json
             [ "$(wc -c < findings.json)" -le "$MAX_FILE_BYTES" ] || : > findings.json
           fi
+          # Whether that file reads as a findings list, an array whose every entry has a string title and a string body:
+          # notify files only from such a list, and handoff proves on a pull request that notify can read this run's.
+          readable=false
+          if jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then readable=true; fi
           # End of the download.
-          if ! jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then
+          if [ "$readable" != true ]; then
             printf 'content-calendar: the notify job could not read this run'"'"'s findings (the check: %s)\n' "$CHECK_RESULT" >&2
             exit 1
           fi
@@ -188,8 +192,12 @@ jobs:
             head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json
             [ "$(wc -c < findings.json)" -le "$MAX_FILE_BYTES" ] || : > findings.json
           fi
+          # Whether that file reads as a findings list, an array whose every entry has a string title and a string body:
+          # notify files only from such a list, and handoff proves on a pull request that notify can read this run's.
+          readable=false
+          if jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then readable=true; fi
           # End of the download.
-          if ! jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then
+          if [ "$readable" != true ]; then
             printf '%s\n' "Content calendar check failing" > title.txt
             printf 'The content calendar check did not hand on its findings (the check: %s) on %s at %s: %s\n' "$CHECK_RESULT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
             open_or_comment

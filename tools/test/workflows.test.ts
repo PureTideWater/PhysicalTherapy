@@ -1507,6 +1507,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     );
   };
   const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"';
+  /** The read check, inside the download block: what notify files from and what handoff proves notify can read. */
+  const SHAPE_CHECK = `if jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then readable=true; fi`;
   const BOUNDED_READ = 'head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json';
 
   it("content-calendar: notify makes one Actions call, the download of this run's findings artifact, and reads no findings from its env (ci-findings-transport)", () => {
@@ -1545,6 +1547,14 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     for (const key of keys) expect(step?.env?.[key], key).toBe(notify?.env?.[key]);
     // The download, word for word in both jobs, and its one gh line the only one in handoff's script.
     expect(downloadBlock(step?.run ?? '')).toEqual(downloadBlock(notify?.run ?? ''));
+    // The read check is in that block, so handoff cannot pass a file notify would refuse; after the block, each job
+    // only branches on its result.
+    expect(downloadBlock(notify?.run ?? '').map((line) => line.trim())).toContain(SHAPE_CHECK);
+    for (const [job, script] of [['handoff', step?.run ?? ''], ['notify', notify?.run ?? '']] as const) {
+      const after = script.split('\n').slice(script.split('\n').indexOf('# End of the download.') + 1);
+      expect(after.filter((line) => line.includes('jq -e') || line.includes('readable=')), job).toEqual([]);
+      expect(after[0], job).toBe('if [ "$readable" != true ]; then');
+    }
     expect(ghCommands(step?.run ?? '')).toEqual([DOWNLOAD]);
     // As the runner runs it: a findings list reads, with its count, size and SHA-256 logged; anything else exits 1.
     const list = JSON.stringify([finding(1), finding(2)]);
@@ -1572,6 +1582,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       ['a list padded past MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, PAST_BOUND[0] ?? ''],
       ['a list followed by other bytes past MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, PAST_BOUND[1] ?? ''],
       ['not a list', { CHECK_RESULT: 'success' }, JSON.stringify({ title: 'x' })],
+      ['an entry with no body', { CHECK_RESULT: 'success' }, JSON.stringify([{ title: 'x' }])],
+      ['an entry whose title is not a string', { CHECK_RESULT: 'success' }, JSON.stringify([{ title: 1, body: 'b' }])],
     ] as const) {
       const failed = runNotify('content-calendar.yml', values, [], findings, 'handoff');
       expect(failed.status, `${at} ${failed.output}`).toBe(1);
