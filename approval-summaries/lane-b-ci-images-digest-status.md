@@ -12,6 +12,14 @@ safer), recorded here and in the PR description.
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
+## MERGED 2026-11-04 ~09:25 UTC as 24531dc2 (acting S3)
+- #86 merged with method merge, `expectedHeadSha` 932ea45f…, title "Merge pull request #86: CI: the images job takes only the digest it checks, so a long pull-request description no longer stops it (ci-browser's identity steps)", the message the title. Parents 881e2bbd… (base, an ancestor of the head at the merge) and 932ea45f…. The first merge call timed out at the MCP layer without merging (base unchanged, checked); the retry merged.
+- Before the merge: the verification passed; the one description edit (33,954 characters, ruler cut) read back matching; ready; approval-of-record ready_for_review run 41806408933 green (the edited run 41806379750 cancelled by its concurrency group).
+- Unsubscribed. Worktree /home/user/ci-images-digest and the trial worktrees removed.
+- **For ci-findings-transport:** #86's notice is ADR 0066 Part 3 **N32** (N29 is #82's Part 5 revert-path notice). The sentence to rewrite is in N32's "What holds it" bullet, starting "One listed value is over the limit" (ADR 0066:1205 at 24531dc2). The T6 rows are the two findings rows (FINDINGS_B64 with `over: 'ci-findings-transport'`, and their `sites` lists) and the over-98,292-bytes bound (design §12 P3).
+- Open (nits, recorded in `lane-b-ci-images-digest-fix-round.md` and the body): round 4's eight test-strength and wording nits; none loosens the rule.
+- Next: read the push runs on claude/build-platform at 24531dc2.
+
 ## ACTING S3 (2026-11-04 02:45 UTC): repair 2 under check; then base, suite once, push R3
 - Live at 02:35 UTC: PR branch 83167b8f; WIP 5c01f150 (repair 2: 21 commits a5bc1170..5c01f150 (git log; earlier "41" was wrong), 2026-11-02 08:44-09:18 UTC, after check round 2; its progress file and the round-2 verdicts other than D1-D3 were lost). Base 21fa10df (#42 22789493, #95, #91); merge-tree with 5c01f150 clean. Subscribed to #86.
 - Workflow wf_2970023f-7c8 (`workflow-scripts/lane-b-ci-images-digest-finish-wf_2970023f-7c8.js`), run from this session: check round 3 over the repair-2 delta (A1 D1/D4/D8, A2 D2/D3, A3 D5-D7/D9/D10, whole diff), repair loop (round 4 at most), then the integrator: base merge once, generators, trial merges (#96), full local suite once, records, the §6.3 read (ruler 5bb5e558…), one push (R3). Progress `…-wip/progress/fix-check-A*-3.md`, `fix-integrate.md`.
