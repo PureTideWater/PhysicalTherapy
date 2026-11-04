@@ -30,7 +30,7 @@ docs/runbooks/github-governance.md, step 4A), has required them from GitHub Acti
 | `domain model` | its own Postgres from `docker-compose.yml`; on a pull request "Changes since the last approved domain model"; `pnpm db:migrate`; `pnpm db:domain-model --check --strict --require-approval` | 10 min |
 | `build` | `pnpm build` (web and worker); the web build stamped and kept as `web-build`; `pnpm cdk:diff` | 15 min |
 | `e2e (k/M)` | after `build`: its own Postgres from `docker-compose.yml`, Chromium and its build check, the downloaded build, `pnpm test:e2e --shard=k/M`; in `e2e (1/M)`, the baseline step; its report kept as `playwright-<k>` | 25 min |
-| `images` | both images built from their Dockerfiles as archives and scanned by Trivy; the worker image's headless shell held to `browser.json` | 20 min |
+| `images` | the pinned Trivy (`tools/trivy/install.sh`, its archive checked against `tools/trivy/release.txt`); both images built from their Dockerfiles as archives and scanned by it; the worker image's headless shell held to `browser.json` | 20 min |
 | `all green` | every job's result, to its log and its summary | 5 min |
 
 Every job runs on `ubuntu-26.04` but the release's capacity chain (`release.yml`'s `build`, `capacity`, `push` and
@@ -146,16 +146,21 @@ differential test, which prices the base's engine and this commit's.
      one that passed only on its retry, fails the run by design: fix it, never re-run it to green. A refusal of the
      build's stamp means the shard was handed another commit's build: re-run the whole workflow, not the shard.
    - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a
-     base-image or package bump), or record why not in docs/adr/0010's way. An identity step's `::error` names the
-     archive's config digest and the one buildx reported ("nothing it reported" when the metadata lacked it);
-     "Argument list too long" on any step means an environment string (`NAME=value` and its NUL) or one argument over
-     131,072 bytes, or the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment
-     string and argument a workflow sets, and each step's and container's whole, and refuses a string or argument over
-     131,072 bytes, or one holding a value it does not list with its bound (but for the content calendar's
-     `FINDINGS_B64`, recorded over the limit and `ci-findings-transport`'s to fix, which it holds alone in its string
-     at its one place), and a whole over `ARG_MAX` less 256 KiB, that value counted in it (docs/adr/0066, Part 3,
-     N32). A pull request's run uploads no build record (`.dockerbuild`) by design; a push's run on the build branch
-     does.
+     base-image or package bump), or record why not in docs/adr/0010's way. No table and a failed "The pinned Trivy"
+     step means the install failed: a download refused (re-run), or an archive whose SHA-256 is not the one
+     `tools/trivy/release.txt` pins, which is never re-run past: read which archive was served. A new Trivy is a pull
+     request that changes every line of `release.txt`, each SHA-256 copied from the release's
+     `trivy_<version>_checksums.txt`; `pnpm actions:check` refuses a version whose tag is under three days old or no
+     longer listed (docs/adr/0066, Part 2, amendment of 2026-11-04). setup-trivy's own install is never used: its
+     installer downloads from get.trivy.dev, gone since 2026-11-03. An identity step's `::error` names the archive's
+     config digest and the one buildx reported ("nothing it reported" when the metadata lacked it); "Argument list too
+     long" on any step means an environment string (`NAME=value` and its NUL) or one argument over 131,072 bytes, or
+     the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string and argument
+     a workflow sets, and each step's and container's whole, and refuses a string or argument over 131,072 bytes, or
+     one holding a value it does not list with its bound (but for the content calendar's `FINDINGS_B64`, recorded over
+     the limit and `ci-findings-transport`'s to fix, which it holds alone in its string at its one place), and a whole
+     over `ARG_MAX` less 256 KiB, that value counted in it (docs/adr/0066, Part 3, N32). A pull request's run uploads
+     no build record (`.dockerbuild`) by design; a push's run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -277,7 +282,7 @@ restores none, and builds or downloads everything its attested report rests on i
 hash, the durations only order a shard's files, whose membership the paths alone fix, and the browsers' key is the
 list of builds the installed Playwright pins, whose install fetches any build missing from the cache (on a hit it
 fetches only the system libraries; in run 40166129200, whose seven installs took 18 to 29 seconds, the browsers'
-download was about 10 of `e2e (1/2)`'s 24). The image scans keep no cache: each downloads Trivy's vulnerability
+download was about 10 of `e2e (1/2)`'s 24). The image scans keep no cache: each installs the pinned Trivy and downloads its vulnerability
 database, the data its verdict is made from, into the runner's temporary directory, outside the checkout the worker
 image is then built from. To clear one: `gh cache list --key <its key's prefix>` (`tsc-v1-`, `apt-v1-`, …) and
 `gh cache delete <id>`.

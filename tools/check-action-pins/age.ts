@@ -192,6 +192,8 @@ export interface AgeInput {
   readonly deadlineMs: number;
   /** The gpgv binary. */
   readonly gpgv: string;
+  /** The release pins new against the base (releases.ts), aged as the workflows' new pins are. */
+  readonly releases?: readonly { readonly ref: string; readonly version: string }[];
 }
 
 export interface AgeResult {
@@ -786,14 +788,16 @@ export async function ageRule(input: AgeInput): Promise<AgeResult> {
   const notes: string[] = [];
   const set = ageSet(input.workflows, input.state);
   if (set.why !== undefined) notes.push(`age: ${set.why}`);
-  const versions = versionsByRef(input.workflows);
-  const ageKeys = new Set(groupsOf(set.refs, versions).map((group) => group.key));
+  const releases = input.releases ?? [];
+  const versions = new Map([...versionsByRef(input.workflows), ...releases.map((release) => [release.ref, release.version] as const)]);
+  const refs = [...new Set([...set.refs, ...releases.map((release) => release.ref)])];
+  const ageKeys = new Set(groupsOf(refs, versions).map((group) => group.key));
   const groups = groupsOf(
-    set.refs.filter((ref) => !input.failed.has(ref)),
+    refs.filter((ref) => !input.failed.has(ref)),
     versions,
   );
-  if (set.refs.length === 0) notes.push('age: no pin new against the base, nothing read');
-  else if (groups.length === 0) notes.push(`age: no pin aged: the verify reads of ${set.refs.join(', ')} failed above`);
+  if (refs.length === 0) notes.push('age: no pin new against the base, nothing read');
+  else if (groups.length === 0) notes.push(`age: no pin aged: the verify reads of ${refs.join(', ')} failed above`);
   if (!input.ci && groups.length > 0) notes.push("age: GitHub's API (verified_at, the release, the arrival on the default branch, an exclude's advisory) is read on CI only; locally a web-flow signature stands in for a time GitHub recorded");
 
   const head = parseExceptions(input.exceptions);

@@ -727,7 +727,7 @@ together.
 
 GitHub lists pnpm 11 or later as supported for Dependabot (pnpm 11.3's `trustLockfile` then checks every lockfile entry
 on every install); actionlint accepts `concurrency.queue` and the bot-queue reading shows a lane waiting over 15 minutes
-(O13); a newer trivy is wanted than trivy-action's default (a `version:` pin and its check); the repository goes private
+(O13); a newer Trivy is wanted (`tools/trivy/release.txt`, below, amended 2026-11-04); the repository goes private
 (about 10 bot pull requests a week, about 3,500 to 4,000 billed minutes a month); or the launch switches the default
 branch back to `main`.
 
@@ -751,6 +751,89 @@ update types, which dependabot-core applies to version updates only (`ignore_con
 keeps only an entry's `versions`), so an advisory fixed only in an ignored major may open a `security` pull request
 that crosses it. The weekly triage reads such a pull request as a deliberate upgrade, and still reads the open alerts
 for a fix no pull request takes.
+
+### Amendment (`co-001/ci-trivy-pin-2026-11-04`, 2026-11-04): Trivy from its pinned release
+
+From 2026-11-03 every Trivy step failed before scanning. trivy-action v0.36.0 (`ed142fd0`) installs Trivy
+through setup-trivy (`3fb12ec1`), whose installer (trivy's `contrib/install.sh` at `75c4dc0f`) downloads the binary
+only from get.trivy.dev, and that name stopped resolving (NXDOMAIN, aquasecurity/setup-trivy#42; curl exit 6 in ci run
+41763423759, job 126356134153, and on PRs #103 and #104, six installs of six). The release assets on GitHub still
+download, so a re-run cannot pass, and no release could scan.
+
+- `tools/trivy/install.sh <dir>` installs Trivy the way `tools/gitleaks/install.sh` installs gitleaks:
+  - it reads `tools/trivy/release.txt`: version 0.70.0, trivy-action v0.36.0's default, so every scan reads as before;
+  - it downloads `trivy_0.70.0_Linux-64bit.tar.gz` (or `Linux-ARM64`) from
+    `github.com/aquasecurity/trivy/releases/download/v0.70.0/`;
+  - it checks the archive against the SHA-256 that `release.txt` pins before anything in it runs;
+  - it extracts `trivy` alone and requires it to report the pinned version;
+  - it installs it into the directory given, with no cache.
+- One step, "The pinned Trivy", word for word the same, installs it into `$RUNNER_TEMP/trivy-bin`, puts that
+  directory on `PATH` and writes `TRIVY_CMD`, its absolute path, which trivy-action's entrypoint runs in place of
+  `trivy` from `PATH` (where each trivy-action step prepends its own directory). It runs in ci.yml's `images` job, in
+  release.yml's `build` and in the dry run's `build`.
+- The installer's curl takes https alone and follows a redirect only to https (`--proto '=https,file'
+  --proto-redir '=https'`, `file:` for the tests' mirror), as `tools/gitleaks/install.sh`'s now does.
+- Each trivy-action step keeps its pin and adds only `skip-setup-trivy: true`. Severity, `ignore-unfixed`,
+  `exit-code`, format, `cache: false`, `cache-dir` under `runner.temp` and the database source are unchanged. The
+  database source is Trivy 0.70.0's default, `mirror.gcr.io/aquasec/trivy-db:2`. That database is trusted by its
+  registry tag and the transport, as it was before; pinning it, or reading `ghcr.io/aquasecurity/trivy-db:2` from
+  aquasecurity's own namespace, is a separate decision, not taken here.
+- So "the release restores no cache" holds for the binary as it did through setup-trivy's `cache: false`: every run
+  installs its own copy.
+- release-dry-run.yml also runs on a change to `tools/trivy/**`.
+- `workflows.test.ts` holds it, red on 4846f043 first (CI-11):
+  - every job with a Trivy step runs the install step before that step;
+  - every Trivy step skips setup-trivy and names no version;
+  - no workflow line but a comment names setup-trivy or its host;
+  - the pins are in their form, and the hash is checked before `tar`;
+  - the installer runs offline from a `file://` mirror: the pinned archive installs, another archive is refused and
+    leaves nothing, and a trivy that reports another version is refused.
+
+The pin, read on 2026-11-04:
+- `trivy_0.70.0_checksums.txt` has SHA-256 `c45281240bb9211ea9e830fc0bf5cf8acf7c0ca830feb64ac8a0aa932c5c92d9`.
+- Both archives' SHA-256s are the file's lines, and the two pinned in `release.txt`.
+- The file's Sigstore bundle (`trivy_0.70.0_checksums.txt.sigstore.json`) holds a certificate for
+  `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v0.70.0`. The certificate
+  names commit `8a3177aedf7ee0864920eb1852eef031cd3742b8`, run 24550601142, a GitHub-hosted runner and a push
+  trigger, and was issued 2026-04-17.
+- That is about six and a half months old, far past the three-day floor (Part 5). It is also after the March 2026
+  trivy-action tag hijack that Part 5 names. The upstream tag `v0.70.0` names that commit (git ls-remote, 2026-11-04).
+- The bundle verifies offline against Sigstore's public-good trusted root as sigstore-python 4.5.1 ships it (no TUF
+  fetch; sigstore-python's own verifier refuses the bundle only for want of its RFC 3161 timestamp authority, which
+  the Rekor entry makes unnecessary): the leaf certificate chains to Fulcio; its ECDSA signature over
+  `trivy_0.70.0_checksums.txt` verifies; the bundle's digest is the file's SHA-256; the Rekor entry's body names that
+  hash, that signature and that certificate; Rekor's signed entry timestamp verifies with rekor.sigstore.dev's key; and
+  its integrated time, 2026-04-17T06:46:08Z, lies inside the certificate's ten minutes.
+- At run time the pinned SHA-256 decides, as it does for gitleaks. It is a stronger check than setup-trivy's: that
+  installer fetched its checksum from the same release at run time.
+- Part 5's age rule reads `release.txt` (`tools/check-action-pins/releases.ts`, `PINNED_RELEASES`, with
+  `tools/gitleaks/release.txt`): a version new against the base resolves its upstream tag `v<version>` (git ls-remote,
+  three tries, then it fails closed), a tag the upstream does not list is refused (the compromised v0.69.4's tag was
+  deleted upstream), and the tag's commit is aged as a new action pin is: on the default branch, a time GitHub
+  recorded, three days by the youngest time read, the same excludes (CI-21). Before this, the version came from
+  trivy-action's pin, which that rule aged; a file no machine read would have loosened it.
+- A new Trivy is a pull request that changes every line of `release.txt`, each SHA-256 copied from the release's
+  checksums file; `pnpm actions:check` holds its age. docs/runbooks/ci.md says so.
+- Follow-up, not in this change: a pin-time check of the checksums file's Sigstore bundle against a pinned trusted
+  root, requiring the identity `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v<version>`,
+  the issuer `https://token.actions.githubusercontent.com` and a GitHub-hosted runner, with the file's SHA-256 recorded
+  in `release.txt`; the same for gitleaks and for the actionlint pin in `tools/setup-container.sh`.
+
+Alternatives considered for Trivy:
+- **Re-run until get.trivy.dev answers.** The name looks removed rather than briefly down: the `trivy.dev` zone was
+  edited on 2026-11-03, and other repositories moved to the release assets.
+- **Run `trivy` directly, without trivy-action.** It would rewrite five steps and their tests next to #86's hunks.
+  setup-trivy no longer runs either way. It would also stop the runner downloading setup-trivy and its nested checkout
+  at "Set up job", which it does for every action a composite nests whatever each step's `if:` says, so an
+  unresolvable setup-trivy would still fail these jobs there; that was weighed against the conflict surface with #86
+  and left for a later change.
+- **A `version:` input.** It still installs through get.trivy.dev.
+- **Verify the checksums file with cosign on every run.** That is another pinned binary, plus Sigstore's TUF and
+  transparency log on every scan. It would be a new network dependency of the kind that just failed, while the pinned
+  hash already fixes the bytes.
+- **Fetch the checksums file at run time.** It adds nothing to a hash committed here.
+- **The `aquasec/trivy` image by digest.** It is another artifact to pin and age. It would also need Docker to reach
+  each archive and the daemon's image.
 
 ## Part 3 (`co-001/ci-browser`)
 
