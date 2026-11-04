@@ -1,8 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { repositoryRoot } from '../../content-files';
 import { type KeyedMutant, MUTANT_STATUSES, type MutantStatus, type MutationReport, describeMutant, keyOf, keyedMutants } from '../mutants';
+import { describeRuntime, processRuntime } from '../runtime';
 
 /**
  * The mutation canary's verdict (tools/stryker/canary/stryker.config.mjs; docs/adr/0066, Part 4): each of its five
@@ -12,8 +13,9 @@ import { type KeyedMutant, MUTANT_STATUSES, type MutantStatus, type MutationRepo
  *
  * `pnpm -s exec tsx tools/stryker/canary/verdict.ts [--shard <shard>] [--report <file>]` reads the canary's report
  * (reports/canary/report.json), prints each case's verdict and writes them for the mutation gate, with the Node,
- * Unicode and ICU versions the shard runs on, to reports/mutation/<shard>/canary.json (reports/canary/verdict.json
- * without a shard). It exits 1 unless all five cases are as expected.
+ * Unicode and ICU versions the shard runs on, the pnpm that runs it and the commit it checked out (docs/adr/0066,
+ * Part 7: the gate holds every shard to the pins and to one commit), to reports/mutation/<shard>/canary.json
+ * (reports/canary/verdict.json without a shard). It exits 1 unless all five cases are as expected.
  */
 
 /** The verdict file's format, which the gate requires. */
@@ -54,16 +56,62 @@ export interface CaseVerdict {
   readonly problems: readonly string[];
 }
 
-/** The Node a shard ran on, and the Unicode and ICU data its engine holds (process.versions). */
+/** The Node a shard ran on, the Unicode and ICU data its engine holds (process.versions), and the pnpm that ran it. */
 export interface Runtime {
   readonly node: string;
   readonly unicode: string;
   readonly icu: string;
+  readonly pnpm: string;
 }
 
-/** This process's runtime: the shard's, since its canary step and its Stryker run use the same Node. */
+/**
+ * This process's runtime: the shard's, since its canary step and its Stryker run use the same Node and are started by
+ * the same pnpm (its user agent names it; tools/stryker/runtime.ts).
+ */
 export function currentRuntime(): Runtime {
-  return { node: process.version, unicode: process.versions.unicode ?? '', icu: process.versions.icu ?? '' };
+  return processRuntime();
+}
+
+const COMMIT = /^[0-9a-f]{40}$/;
+const REF = /^refs\/[A-Za-z0-9._/-]+$/;
+
+/**
+ * The commit checked out at `root`, read from its .git as files, never by running git: HEAD itself when detached (a
+ * pull request's checkout of its merge commit), or the branch HEAD names (a push's `checkout -B <branch>`) through its
+ * loose ref, in the git directory and then the common one (a linked worktree's .git is a file naming its git
+ * directory, whose commondir holds the branches), or packed-refs. '' for anything else, which the gate fails on
+ * Actions.
+ */
+export function headCommit(root: string = repositoryRoot): string {
+  const firstLine = (file: string) => (existsSync(file) && statSync(file).isFile() ? (readFileSync(file, 'utf8').split('\n')[0] ?? '').trim() : '');
+  try {
+    const dotGit = path.join(root, '.git');
+    if (!existsSync(dotGit)) return '';
+    let gitDir = dotGit;
+    if (statSync(dotGit).isFile()) {
+      const pointer = /^gitdir: (.+)$/.exec(firstLine(dotGit))?.[1];
+      if (pointer === undefined) return '';
+      gitDir = path.resolve(root, pointer);
+    }
+    const common = firstLine(path.join(gitDir, 'commondir'));
+    const commonDir = common === '' ? gitDir : path.resolve(gitDir, common);
+    const head = firstLine(path.join(gitDir, 'HEAD'));
+    if (COMMIT.test(head)) return head;
+    const ref = /^ref: (\S+)$/.exec(head)?.[1];
+    if (ref === undefined || !REF.test(ref) || ref.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) return '';
+    for (const directory of [gitDir, commonDir]) {
+      const loose = firstLine(path.join(directory, ref));
+      if (COMMIT.test(loose)) return loose;
+    }
+    const packed = existsSync(path.join(commonDir, 'packed-refs')) ? readFileSync(path.join(commonDir, 'packed-refs'), 'utf8').split('\n') : [];
+    for (const line of packed) {
+      const [commit, name] = line.trim().split(' ');
+      if (name === ref && commit !== undefined && COMMIT.test(commit)) return commit;
+    }
+    return '';
+  } catch {
+    return '';
+  }
 }
 
 export interface CanaryVerdict {
@@ -71,6 +119,8 @@ export interface CanaryVerdict {
   readonly shard: string | null;
   /** The Node the shard ran on: the gate holds the equivalents that rest on Unicode data to it (tools/stryker/unicode.json). */
   readonly runtime: Runtime;
+  /** The commit the shard ran on. */
+  readonly commit: string;
   readonly total: number;
   readonly asExpected: number;
   readonly cases: readonly CaseVerdict[];
@@ -103,8 +153,8 @@ export function parseExpected(value: unknown): Expected {
   };
 }
 
-/** Judges the canary's report case by case, on the runtime given (this process's by default). */
-export function judgeCanary(report: MutationReport, expected: Expected, shard: string | null = null, runtime: Runtime = currentRuntime()): CanaryVerdict {
+/** Judges the canary's report case by case, on the runtime and commit given (this process's and checkout's by default). */
+export function judgeCanary(report: MutationReport, expected: Expected, shard: string | null = null, runtime: Runtime = currentRuntime(), commit: string = headCommit()): CanaryVerdict {
   const mutants = keyedMutants(report);
   const caseFiles = new Set(expected.cases.map((item) => item.file));
   const problems = [...new Set(mutants.filter((mutant) => !caseFiles.has(mutant.file)).map((mutant) => mutant.file))].map((file) => `${file} is mutated, but no case names it`);
@@ -132,7 +182,7 @@ export function judgeCanary(report: MutationReport, expected: Expected, shard: s
     return { case: item.case, proves: item.proves, file: item.file, mutants: reported.size, asExpected: caseProblems.length === 0, problems: caseProblems };
   });
   const asExpected = problems.length === 0 ? cases.filter((item) => item.asExpected).length : 0;
-  return { format: CANARY_FORMAT, shard, runtime, total: CANARY_CASES, asExpected, cases, problems };
+  return { format: CANARY_FORMAT, shard, runtime, commit, total: CANARY_CASES, asExpected, cases, problems };
 }
 
 /** Whether a verdict lets its shard score: all five cases as expected and nothing else wrong. */
@@ -147,7 +197,7 @@ export function verdictLines(verdict: CanaryVerdict): string[] {
     ...item.problems.map((problem) => `  ${problem}`),
   ]);
   lines.push(...verdict.problems.map((problem) => `canary: ${problem}`));
-  lines.push(`canary: on Node ${verdict.runtime.node} (Unicode ${verdict.runtime.unicode}, ICU ${verdict.runtime.icu})`);
+  lines.push(`canary: on ${describeRuntime(verdict.runtime)}, at commit ${verdict.commit === '' ? '(none: .git names none)' : verdict.commit}`);
   lines.push(`canary${verdict.shard === null ? '' : ` (${verdict.shard})`}: ${String(verdict.asExpected)} of ${String(verdict.total)} cases as expected`);
   return lines;
 }
