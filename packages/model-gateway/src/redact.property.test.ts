@@ -589,6 +589,28 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     expect(identifierCandidates('Also 1234.5678')).not.toContain('12345678');
   });
 
+  it('reads a label’s end through "=", an en or em dash and the minus sign (review finding phi-label-end-dash)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['12345678'] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20260426'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['99887766'] },
+    ];
+    for (const [written, expected] of [
+      ['Member ID – 1234.5678', 'Member ID – [MEMBER_ID]'],
+      ['Member ID — 1234.5678', 'Member ID — [MEMBER_ID]'],
+      ['Member ID = 1234.5678', 'Member ID = [MEMBER_ID]'],
+      ['Member ID − 1234/5678', 'Member ID − [MEMBER_ID]'],
+      ['Claim # – 9988/7766', 'Claim # – [CLAIM_2]'],
+      ['Claim — 2026-04-26', 'Claim — [CLAIM_1]'],
+      ['The number – is 2026-04-26', 'The number – is [CLAIM_1]'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      expect(redacted, written).toBe(expected);
+      expect(identifierCandidates(written), written).toContain(written.includes('9988') ? '99887766' : written.includes('1234') ? '12345678' : '20260426');
+    }
+  });
+
   it('still replaces every letter or digit today’s code replaced, but in a date that is not a date of birth or an amount (property and the design’s section 1 rows)', () => {
     const check = (text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
       const { text: normal, spans } = redactionSpans(text, patient, claims);

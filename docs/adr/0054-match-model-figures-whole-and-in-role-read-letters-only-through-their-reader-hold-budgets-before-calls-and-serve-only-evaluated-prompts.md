@@ -311,7 +311,9 @@ this amendment holds.
   `Reference` only with one of those after it; `No.`, `No:` or `No#` with a capital N; `ID:` or `ID#`; `number is`;
   or `Re:`. Its end may hold white space, invisible characters, `*` (Markdown bold), one `:`, `#` or `-` or one `,`,
   `is`, and then `(` or an opening quote (`"`, `'`, U+201C, U+2018) right before the number (review finding G3:
-  `**Claim:** 2026-04-26`, `Claim, 2026-04-26,`, `ICN (2026-04-26)`, `Claim: “2026-04-26”`, `Re: 2026-04-26`). A bare
+  `**Claim:** 2026-04-26`, `Claim, 2026-04-26,`, `ICN (2026-04-26)`, `Claim: “2026-04-26”`, `Re: 2026-04-26`); since
+  review finding phi-label-end-dash (2026-11-04) its `:`, `#` or `-` may be `=`, any dash or the minus sign too
+  (`Member ID – 1234.5678`, `Member ID — 1234.5678`, `Member ID = 1234.5678`, `Claim # – 9988/7766`). A bare
   `no`, `number`, `id`, `#` or `reference` is no label, so "The number 2027-03-15", "No 2027-03-15 appeal",
   "Answer: no. 2027-03-15", "reference: 2027-03-15" and "Reference date #2027-03-15" keep their deadline when it equals
   a claim's digits. A member's label (`Member`, `Subscriber`) makes a whole written date a member ID only, a claim's
