@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, packetExportKey, recordAuditEvent } from '@tp/db/runtime';
-import { type PacketContent, type PacketWords, type VerifierReport, WORDS_VERSION, explainPacket, insertIdentifiers, narrativeFacts, packetReference, verifyNarrative } from '@tp/packets';
+import { type PacketContent, type PacketWords, type VerifierReport, WORDS_VERSION, explainPacket, insertIdentifiers, packetReference } from '@tp/packets';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { PdfRenderer } from '../report/pdf';
@@ -14,6 +14,7 @@ import { packetHtml } from './html';
 import { scheduleIdentifiers } from './identifiers';
 import { type PacketExportFailure, type PacketExportRefusal, exportReadiness } from './readiness';
 import { packetTraces } from './records';
+import { verifierNow } from './verifier-now';
 
 export { exportDeadlineStatus } from './readiness';
 
@@ -194,12 +195,14 @@ export async function exportPacketVersion(
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
     const identifiers = await scheduleIdentifiers(scope, cipher, version.content, { purpose: 'packet_export', requestId: context.jobId });
-    // The verifier again, over exactly what is printed below: this narrative, this content, today's identifiers.
-    const verifier = verifyNarrative(narrative, narrativeFacts(version.content), identifiers.all);
-    if (!verifier.passed || verifier.narrative_sha256 !== version.verifier_report.narrative_sha256) {
+    // The verifier again, over exactly what is printed below: this narrative, this content, today's identifiers (the
+    // same verifierNow() a request for approval, an approval and the screens ask; ./verifier-now.ts).
+    const verified = verifierNow(narrative, version.content, version.verifier_report, identifiers.all);
+    if (verified.standing !== 'passed') {
       await recordRefusal(scope, context, practiceId, versionId, 'verifier_failed');
       return { outcome: 'not_exportable', reason: 'verifier_failed' };
     }
+    const verifier = verified.report;
     const exported = insertIdentifiers(version.content, narrative, identifiers.rows);
     // The payer's copy: the approval's UTC date, the reference its approved hash gives, the contact (D4 to D6, D13).
     // One reference for both files: the PDF prints it, and every row of the CSV carries it (the founder's ruling of

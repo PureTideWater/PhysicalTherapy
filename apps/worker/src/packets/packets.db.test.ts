@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { JobActorIsPersonError, type PracticeScope, type ScopeClient, readDatabaseUrl, withJobScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
-import { ExplainBindingError, SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, nextDisputeWindow } from '@tp/packets';
+import { ExplainBindingError, SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, dollars, narrativeSha256, nextDisputeWindow } from '@tp/packets';
 import { type CaseDispute, deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -41,6 +41,7 @@ import {
   writePacketVersion,
 } from './services';
 import { PacketWorld } from './test-support/packet-world';
+import { caseVerifiersNow, verifyVersionNow } from './verifier-now';
 import { grantedReviewer } from './test-support/reviewer';
 
 /**
@@ -190,6 +191,96 @@ describe('CAS-08: a narrative with a figure not in the input', () => {
     const passing = await write(setup, setup.practice.manager, { basedOn: failing.versionId });
     expect(passing).toMatchObject({ versionNo: 2, verifier: { passed: true, mismatches: [] } });
     await expect(approve(setup, setup.second, passing.versionId, passing.contentSha256)).resolves.toMatchObject({ approvedAlone: false });
+  });
+});
+
+describe('CAS-43: a narrative that states an input’s figure in another role (docs/adr/0086)', () => {
+  it('fails the verifier at the figure, its approval is blocked, and the export refuses a version an older reading passed', async () => {
+    const setup = await cas08('CAS-43');
+    const draft = await write(setup, setup.practice.manager);
+    const { content } = draft;
+    const release = content.rule_releases[0]?.release_no ?? 0;
+    // The remittances' allowed amount stated as the shortfall, and the rule release stated as a count of units: every
+    // figure an input, each in a role its input does not hold it in.
+    const allowed = dollars(content.pattern.observed_cents);
+    const misstated = `The shortfall was ${allowed} [3]. There were ${String(release)} units [3].`;
+    const failing = await write(setup, setup.practice.manager, { narrative: misstated, basedOn: draft.versionId });
+    expect(failing.verifier.passed).toBe(false);
+    expect(failing.verifier.mismatches.map((item) => [item.code, item.kind, misstated.slice(item.start, item.end)])).toEqual([
+      ['figure_not_in_input', 'amount', allowed],
+      ['figure_not_in_input', 'number', String(release)],
+    ]);
+    const blocked = await refusal(approve(setup, setup.second, failing.versionId, failing.contentSha256));
+    expect(blocked.message).toBe('a packet version the verifier failed cannot be approved');
+
+    // A version written and approved under a reading that passed "There were 900001 units" (the release's number among
+    // the counts): the export reads it again, fails it, and prints nothing.
+    const passing = await write(setup, setup.practice.manager, { narrative: 'The payer paid these lines short of the contract [3].', basedOn: failing.versionId });
+    expect(passing.verifier.passed).toBe(true);
+    await approve(setup, setup.second, passing.versionId, passing.contentSha256);
+    const older = `There were ${String(release)} units [3].`;
+    await w.superuser(`UPDATE packet_version SET narrative = $2, verifier_report = jsonb_set(verifier_report, '{narrative_sha256}', to_jsonb($3::text)) WHERE id = $1`, [
+      passing.versionId,
+      setup.practice.cipher.encrypt('packet_version.narrative', older),
+      narrativeSha256(older),
+    ]);
+    expect(await w.export(setup.practice, passing.versionId)).toEqual({ outcome: 'not_exportable', reason: 'verifier_failed' });
+  });
+
+  it('reads a stored version again for each step and screen: one an older reading passed fails now, a stored failure stands, each read audited (CORR-5)', async () => {
+    const setup = await cas08('CAS-43 now');
+    const P = { practiceId: setup.practice.practiceId, caseId: setup.caseId };
+    const draft = await write(setup, setup.practice.manager);
+    const failing = await write(setup, setup.practice.manager, { narrative: 'The payer withheld 1234.56 on these claims [3].', basedOn: draft.versionId });
+    expect(failing.verifier.passed).toBe(false);
+    const passing = await write(setup, setup.practice.manager, { narrative: 'The payer paid these lines short of the contract [3].', basedOn: failing.versionId });
+    // A version written under a reading that passed "There were 900001 units" (the release's number among the counts).
+    const older = `There were ${String(draft.content.rule_releases[0]?.release_no ?? 0)} units [3].`;
+    await w.superuser(`UPDATE packet_version SET narrative = $2, verifier_report = jsonb_set(verifier_report, '{narrative_sha256}', to_jsonb($3::text)) WHERE id = $1`, [
+      passing.versionId,
+      setup.practice.cipher.encrypt('packet_version.narrative', older),
+      narrativeSha256(older),
+    ]);
+    const now = await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: passing.versionId, requestId: 'test-now-step' }));
+    expect(now?.standing).toBe('fails_now');
+    expect(now?.report.mismatches.map((mismatch) => [mismatch.code, mismatch.kind, older.slice(mismatch.start, mismatch.end)])).toEqual([['figure_not_in_input', 'number', '900001']]);
+    // A stored failure stands as stored, read from its report alone; a version of another practice is not found.
+    expect(await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: failing.versionId, requestId: 'test-now-failed' }))).toEqual({
+      standing: 'failed',
+      report: failing.verifier,
+      figures: [],
+    });
+    expect(await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: randomUUID(), requestId: 'test-now-none' }))).toBeUndefined();
+    // Every version of the case, as the screens say it.
+    const screens = await w.as(setup.practice, setup.second, (scope) => caseVerifiersNow(scope, w.keys, { ...P, requestId: 'test-now-screens' }));
+    expect(new Map([...screens].map(([id, verdict]) => [id, verdict.standing]))).toEqual(
+      new Map([
+        [draft.versionId, 'passed'],
+        [failing.versionId, 'failed'],
+        [passing.versionId, 'fails_now'],
+      ]),
+    );
+    // The step read the version and its claims for packet_verification; the screens read only the versions they read again.
+    const audited = async (requestId: string) =>
+      (
+        await asOwner(w.owner, [P.practiceId], () =>
+          w.owner.query<{ object_type: string; object_id: string; purpose: string }>('SELECT object_type, object_id, purpose FROM audit_event WHERE practice_id = $1 AND request_id = $2 AND action = $3 ORDER BY object_type, object_id', [
+            P.practiceId,
+            requestId,
+            'read',
+          ]),
+        )
+      ).rows;
+    const step = await audited('test-now-step');
+    expect([...new Set(step.map((row) => `${row.object_type}:${row.purpose}`))].sort()).toEqual(['claim:packet_verification', 'packet_version:packet_verification']);
+    expect(step.filter((row) => row.object_type === 'packet_version').map((row) => row.object_id)).toEqual([passing.versionId]);
+    expect(await audited('test-now-failed')).toEqual([]);
+    expect((await audited('test-now-screens')).map((row) => [row.object_type, row.object_id, row.purpose]).sort()).toEqual(
+      [
+        ['packet_version', draft.versionId, 'packet_verification'],
+        ['packet_version', passing.versionId, 'packet_verification'],
+      ].sort(),
+    );
   });
 });
 
