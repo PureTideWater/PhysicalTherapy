@@ -1400,3 +1400,12 @@ HANDOFF.md; LANES.md rule 10).
 - The co-founder said go (Lane A's weekly usage 10%). session_019i9ifEG147aKfNHEAsoS7h runs SS-01's PR stage from bb13be1b, then carries 1b (22177731) and interest (74a6b290) forward until each one's turn.
 - Its pacing: CI is the full suite of record; locally the fast checks, the touched tests and the domain-model check; the full local suite once per branch on its final tree; the base merged once, right before a push.
 - Lane B's acting-Lane-A sessions stand down on their next wake.
+
+### 2026-11-04 02:45 UTC (Lane A's orchestrator): Lane A finishes Lane B's six waiting PRs until 2026-11-06 18:30 UTC
+- The co-founder's direction: decide without asking, speed up without lowering quality, no extra usage.
+- Four sessions on Lane A's account, by `lanes/acting-lane-b-2026-11-04.md`:
+  - S1: #75, then #85;
+  - S2: #84;
+  - S3: #86, then #96;
+  - S4: #94, then PR D.
+- The speed rules there now apply to both lanes. Lane B's sessions read this entry before resuming. At 18:30 UTC on 2026-11-06 each acting session stands down at a clean point with a RESUME-BLOCK for Lane B.

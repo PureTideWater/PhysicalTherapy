@@ -164,6 +164,14 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
 
 > **2026-11-01 14:50 UTC: Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) takes back every Lane B item (handoff sections 2 and 3) and, until Lane A's account returns (2026-11-03 14:00 UTC), acts as Lane A for #42's last steps and the schema chain. One session per item; the sessions are named in each row as they start.**
 
+> **2026-11-04 02:45 UTC, speed rules for both lanes, and acting Lane B:** see `lanes/acting-lane-b-2026-11-04.md`. In short:
+> - CI is the full suite of record; the full local suite runs once per PR.
+> - The base is merged once, right before the last push.
+> - Review depth matches risk: two adversarial reviews for the database, money, PHI and the gateway, sign-in, authorization and security, and CI permissions; one for wording, display, test-only and dependency changes.
+> - Usage is paced to the week.
+>
+> Lane A's account runs #75, #85, #84, #86, #96, #94 and PR D as acting Lane B until 2026-11-06 18:30 UTC, then hands back.
+
 > **2026-11-04 02:30 UTC: Lane A is back (weekly usage 10%) and has taken back the schema chain (SS-01, SUITE-CAP-1b, interest), #42's follow-ups and the counters, from the live heads (lanes/lane-b.md, 2026-11-03 14:20 UTC). The chain runs in session_019i9ifEG147aKfNHEAsoS7h. #42 merged 2026-11-02 as 22789493. The SS-01, SUITE-CAP-1b and interest rows are Lane A's again.**
 
 > **2026-10-30 14:15 UTC: Lane A's account stopped at its weekly limit at ~08:00 UTC on 2026-10-28 (resets 2026-11-03 14:00 UTC); every session on it stopped. Lane B takes back its items at its return (2026-10-30 19:00 UTC): `lanes/lane-a-handoff-to-lane-b.md`. Rows reading "B (run by Lane A's orchestrator)" are Lane B's again. Lane A's account is out of usage until 2026-11-03 14:00 UTC, so until then Lane B's account also runs Lane A's #42 and schema chain as acting Lane A (one schema PR at a time; the founder's approvals unchanged) and allocates the counters. The merge hold below lapsed at 11:00 UTC on 2026-10-28 with #75 unmerged.**
