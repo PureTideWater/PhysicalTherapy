@@ -9,6 +9,15 @@ import { bedrockModelArns, pinnedBedrockModels } from '../lib/models';
 import { ENVIRONMENTS } from '../lib/environments';
 import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
 
+/** Whether an IAM action pattern (`*` any run, `?` one character, case-insensitive) covers setting or resetting a password. */
+function setsPassword(pattern: string): boolean {
+  const glob = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
+  return ['cognito-idp:AdminSetUserPassword', 'cognito-idp:AdminResetUserPassword'].some((action) => glob.test(action));
+}
+
+/** The AWS managed policies any principal of the stacks holds (review infra-auth-IA-3); neither grants a Cognito write. */
+const MANAGED_POLICIES_ALLOWED: readonly string[] = ['ReadOnlyAccess', 'service-role/AWSLambdaBasicExecutionRole'];
+
 /**
  * PRD 15 and 16: per-practice data keys under the environment key. The application may generate
  * and decrypt data keys only with an encryption context of practice_id alone; every other use of
@@ -158,9 +167,18 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
 
   // docs/adr/0088 D4: an invitation links only a Cognito user in FORCE_CHANGE_PASSWORD, which holds only while no
   // principal of the stack may set or reset a password; so no Allow anywhere in the template names either call.
-  it('lets no principal of the stack set or reset a Cognito password (docs/adr/0088 D4)', () => {
+  it('lets no principal of the stack set or reset a Cognito password (docs/adr/0088 D4; review infra-auth-IA-3)', () => {
     expect([...USER_POOL_ADMIN_ACTIONS]).toEqual(['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminUserGlobalSignOut']);
+    // The matcher itself: IAM's globs, case-insensitive, so no spelling of a wildcard slips past.
+    for (const action of ['*', 'cognito-idp:*', 'Cognito-IDP:Admin*', 'cognito-idp:Admin?etUserPassword', 'cognito-idp:AdminS*', 'cognito-idp:*Password', 'cognito-idp:AdminResetUserPassword']) {
+      expect(setsPassword(action), action).toBe(true);
+    }
+    for (const action of [...USER_POOL_ADMIN_ACTIONS, 'cognito-idp:Describe*', 'cognito-idp:AdminGet*', 's3:*']) {
+      expect(setsPassword(action), action).toBe(false);
+    }
     const allowed: string[] = [];
+    const notActions: unknown[] = [];
+    const managed: string[] = [];
     const walk = (node: unknown): void => {
       if (Array.isArray(node)) {
         node.forEach(walk);
@@ -169,13 +187,24 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
         if (record.Effect === 'Allow' && 'Action' in record) {
           allowed.push(...[record.Action].flat().filter((action): action is string => typeof action === 'string'));
         }
+        if (record.Effect === 'Allow' && 'NotAction' in record) {
+          notActions.push(record.NotAction);
+        }
+        if ('ManagedPolicyArns' in record) {
+          managed.push(...[...JSON.stringify(record.ManagedPolicyArns).matchAll(/:policy\/((?:service-role\/)?[\w+=,.@-]+)/g)].map((match) => match[1] ?? ''));
+        }
         Object.values(record).forEach(walk);
       }
     };
+    // This environment's stack and its address-validation account's stack.
     walk(template.toJSON());
-    const refused = new Set(['*', 'cognito-idp:*', 'cognito-idp:Admin*', 'cognito-idp:AdminSetUserPassword', 'cognito-idp:AdminResetUserPassword']);
+    walk(synthesized(environment).validation.template.toJSON());
     expect(allowed.length).toBeGreaterThan(0);
-    expect(allowed.filter((action) => refused.has(action) || /^cognito-idp:Admin(Set|Reset)?\*$/i.test(action))).toEqual([]);
+    expect(allowed.filter(setsPassword)).toEqual([]);
+    // An Allow by NotAction allows every action it does not name, the password calls included.
+    expect(notActions).toEqual([]);
+    // A managed policy is not walked here, so the ones attached are pinned: neither lets a principal set a password.
+    expect(managed.filter((name) => !MANAGED_POLICIES_ALLOWED.includes(name))).toEqual([]);
   });
 
   it('makes the web app\'s administrative Cognito calls on this environment\'s user pool only', () => {
