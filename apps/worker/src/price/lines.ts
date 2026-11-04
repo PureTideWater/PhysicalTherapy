@@ -19,10 +19,11 @@ export interface RunScope {
   readonly periodFrom: string;
   readonly periodTo: string;
   /**
-   * Lines loaded after this instant are not the run's: its creation, or for a re-run the original's
-   * (as text it keeps the database's microseconds).
+   * Lines loaded after this instant are not the run's: its creation, or for a re-run the original's. A
+   * timestamptz as Postgres prints it (`::text`), which keeps its microseconds; never a JS Date, which keeps
+   * milliseconds and would leave out a line loaded in the cut-off's own millisecond (PRC-32).
    */
-  readonly loadedBy: Date | string;
+  readonly loadedBy: string;
 }
 
 /**

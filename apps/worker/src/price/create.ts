@@ -118,8 +118,14 @@ export async function createPricingRun(scope: PracticeScope<ScopeClient>, input:
   if (current === null || current !== input.releaseNo) {
     throw new RuleReleaseMismatchError(input.releaseNo, current);
   }
-  const { rows: clock } = await scope.client.query<{ now: Date }>('SELECT now() AS now');
-  const loadedBy = clock[0]?.now ?? new Date(0);
+  // The run's cut-off is this transaction's now(), the created_at recordRun gives the run and the price job reads
+  // back as text: read as text here too, to the microsecond, so this check judges the very lines the job prices. A
+  // JS Date keeps milliseconds only, and would leave out a line loaded in the run's own millisecond (PRC-32).
+  const { rows: clock } = await scope.client.query<{ now: string }>('SELECT now()::text AS now');
+  const loadedBy = clock[0]?.now;
+  if (loadedBy === undefined) {
+    throw new Error('the database did not answer its clock');
+  }
   const lines = await runPlans(scope.client, { practiceId: input.practiceId, periodFrom: input.periodFrom, periodTo: input.periodTo, loadedBy });
   if (lines.length === 0) {
     throw new PricingRunInputError('period', 'a period that holds at least one service line');
