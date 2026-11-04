@@ -630,6 +630,7 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     await field.fill('reset-no-dot@synthetic');
     await page.getByRole('button', { name: 'Send code' }).click();
     await expect(refusal(page)).toBeVisible();
+    await expect(refusal(page)).toContainText('Email: enter an email address');
     await expect(field).toHaveAttribute('aria-invalid', 'true');
     await expect(field).toHaveValue('reset-no-dot@synthetic');
     await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
@@ -648,6 +649,9 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     // Back to sign in is a POST here and a link in phase 1, with one look: the link's colour (review UXB-N1).
     const colour = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).color);
     expect(await colour(page.getByRole('button', { name: 'Back to sign in' }))).toBe(await colour(page.locator('[data-slot="no-email"] a')));
+    // The "No email?" list names the support address last, with no subject and no body (review UXB-S1, UX-066).
+    await expect(page.locator('[data-slot="no-email"] li').last()).toContainText('Still nothing after a new code: write to');
+    await expect(page.locator('[data-slot="no-email"] a')).toHaveAttribute('href', /^mailto:[^?&]+@[^?&]+$/);
     await expectAccessible(page, 'Forgot password, code step');
     await atPhoneWidth(page, 'Forgot password, code step');
     const before = page.viewportSize();
