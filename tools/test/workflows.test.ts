@@ -4920,10 +4920,10 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       Object.entries(workflow(file).jobs as Record<string, { readonly container?: unknown; readonly services?: unknown }>).flatMap(([id, job]) => {
         const found: string[] = [];
         const container = isRecord(job.container) ? job.container.options : undefined;
-        if (container !== undefined && (typeof container !== 'string' || SETS_ENV.test(container) || NAMES_BUILD.test(container))) found.push(`${file} job ${id} container.options: ${String(container)}`);
+        if (container !== undefined && (typeof container !== 'string' || SETS_ENV.test(container) || NAMES_BUILD.test(container))) found.push(`${file} job ${id} container.options: ${JSON.stringify(container)}`);
         for (const [name, service] of Object.entries(isRecord(job.services) ? job.services : {})) {
           const given = isRecord(service) ? service.options : undefined;
-          if (given !== undefined && (typeof given !== 'string' || NAMES_BUILD.test(given))) found.push(`${file} job ${id} services.${name}.options: ${String(given)}`);
+          if (given !== undefined && (typeof given !== 'string' || NAMES_BUILD.test(given))) found.push(`${file} job ${id} services.${name}.options: ${JSON.stringify(given)}`);
         }
         return found;
       }),
