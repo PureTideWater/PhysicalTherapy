@@ -11,6 +11,7 @@ import {
   grantHoldState,
   holdNotice,
   stoppedWork,
+  uploadsHeld,
 } from './suspension-words';
 
 /**
@@ -162,6 +163,29 @@ describe('the practice home’s notice (H1 to H13)', () => {
   });
 });
 
+describe('uploads under a hold on the person’s uploads (SS-01 review UX-SS01-3; HOM-03)', () => {
+  const r1 = 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable';
+  const r2 = "the practice's organization is closed, so no new work starts here; everything here stays readable";
+  const r5 = 'your organization is closed, so you start no new work here through its grant';
+
+  it('says a hold that lifts as paused, starting again once the hold above is lifted', () => {
+    expect(uploadsHeld({ reason: r1, source: 'owner', restarts: true })).toEqual({
+      title: 'Uploads are not open yet',
+      reason: `Uploads are paused: ${r1}.`,
+      home: { title: 'Uploads are paused', nextStep: 'They start again once the hold above is lifted.' },
+    });
+  });
+
+  it('says a closure, the owner’s or a grantee’s, as stopped, with no restart (H3, H7, R2, R5)', () => {
+    expect(uploadsHeld({ reason: r2, source: 'owner', restarts: false })).toEqual({
+      title: 'No new uploads start',
+      reason: `Uploads have stopped: ${r2}.`,
+      home: { title: 'No new uploads start', nextStep: 'The closure above stops them here.' },
+    });
+    expect(uploadsHeld({ reason: r5, source: 'grantee', restarts: false }).reason).toBe(`Uploads have stopped: ${r5}.`);
+  });
+});
+
 describe('the job outcome and the grant states (J1, G1, G2)', () => {
   it('words a refused job as new work having stopped for the practice’s organization', () => {
     expect(JOB_REFUSED_LABEL).toBe("Refused: new work had stopped for the practice's organization");
@@ -263,6 +287,23 @@ describe('the notice over every hold (BIL-09, property)', () => {
           expect(text).toMatch(/until (PaidWhole reinstates|it is paid)/);
         } else {
           expect(text).toMatch(/is on hold|has been on hold since \d{4}-\d{2}-\d{2}/);
+        }
+      }),
+    );
+  });
+
+  it('words the uploads gates, on Uploads and the empty home, with no restart for a closure (UX-SS01-3)', () => {
+    fc.assert(
+      fc.property(anyHold, fc.string(), (hold, reason) => {
+        const restarts = hold.cause !== 'closed';
+        const held = uploadsHeld({ reason, source: hold.source, restarts });
+        // The database's sentence is said whole, last; what the page adds around it is what is checked.
+        expect(held.reason.endsWith(`: ${reason}.`)).toBe(true);
+        const text = [held.title, held.home.title, held.home.nextStep, held.reason.slice(0, held.reason.length - reason.length - 1)].join(' ');
+        if (restarts) {
+          expect(text).toMatch(/paused/);
+        } else {
+          expect(text).not.toMatch(/until|again|reinstat|restart|paused|not open yet|on hold/i);
         }
       }),
     );

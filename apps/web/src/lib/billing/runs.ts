@@ -22,6 +22,8 @@ export const RUN_STARTING_ROUTES: ReadonlySet<string> = new Set([
   'practice.cases.packet.export',
   'practice.uploads.request',
   'practice.uploads.retry',
+  'practice.mapping.price_again',
+  'practice.mapping.price_waiting',
 ]);
 
 /**

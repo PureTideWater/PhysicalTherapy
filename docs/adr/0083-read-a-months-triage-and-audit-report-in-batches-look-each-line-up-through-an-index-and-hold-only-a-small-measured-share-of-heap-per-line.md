@@ -347,7 +347,7 @@ table runs out first, as probe B found. So CAS-42.1 and CAS-42.2 fail on the bas
 on the head.
 
 Every live peak is far below 75% of the flag in force, so the gate of section 8.2 (the heap) holds and SUITE-CAP-1b
-went on. Three readings of the numbers:
+went on. Four readings of the numbers:
 - **A report right after its own practice's triage took the wrong plan (fixed here).** 391.8 s of the 460.2 s is
   `FETCH 2000 FROM triage_candidates` (21 fetches): the report's own read of the candidates, `candidateRows`' query. The
   same practice's next report (CAS-42.2, minutes later) took 87.2 s, its candidate read 10.3 s. With autovacuum off on `line_status`, `case_line`
@@ -364,6 +364,30 @@ went on. Three readings of the numbers:
   (100,000 lines, A's and Y's months priced, autovacuum off on the three tables, the cursor read as the worker's login),
   the old form had read 16,000 of 41,665 candidates when it was stopped at 120 s; the new one read all of them in 4.4 s
   (3.9 s for the old form once analysed). CAS-42.1 holds the report to its 180 s budget.
+- **The report's own lines' query had the same dependence (fixed here).** At `048bc843`, the interest integration ran
+  CAS-42.1 twice on fresh databases and A's report took 748.4 and 730.4 s, 688.1 and 672.7 s of it in
+  `FETCH 2000 FROM report_lines` (51 fetches), while the pair's report (CAS-42.2) took 92 to 95 s; 1b's own run had
+  95.8 s. `runLines`' query joined each priced line to a `DISTINCT ON` of the practice's every stage event and to every
+  case line. With autovacuum off on `line_status`, `case_line` and `line_status_head` after the setup's `ANALYZE`
+  (statistics as they were before A's triage: `case_line` 8,334 tuples against 50,001 live, `line_status` 25,000
+  against 149,999), the cursor read as the worker's login, `auto_explain` with `log_analyze`: the old form's plan is a
+  nested loop that rescans a materialized copy of every current stage (83,332 rows) and every case line (41,667) for
+  each line, and its first `FETCH 2000` took 27.4 s with 111,057,071 and 83,334,000 rows removed by the join filters
+  (about 23 minutes for the 100,000 lines at that rate). The query now reads a line's stage from its head row through
+  `line_status_head_once (practice_id, service_line_id)` (a scalar subquery; the head row holds the stage of the line's
+  latest event, written by `line_status_rules()` in the event's own statement) and its case line through a `LATERAL`
+  with `LIMIT 1` through `case_line_once (service_line_id)`, so the planner keeps both per row and has no join to
+  choose: on the same database and statistics it read all 100,000 lines in 16.6 s (100,000 index lookups each). Its
+  rows are unchanged (one head row and at most one case line per line); the report's streamed-equals-whole test
+  (`streamed.db.test.ts`) still compares it with the whole read's old form. No `ANALYZE` at the end of triage instead:
+  the application role owns no table and may not analyze one, and a `SECURITY DEFINER` helper would add a migration
+  for what the query's shape settles. Measured with the fix (2026-11-02, this container): CAS-42.1 three times in a
+  row with autovacuum on, A's report right after A's triage **83.2, 81.3 and 80.8 s** (180 s; `report_lines` 22.6,
+  21.6 and 22.2 s), A's triage 65.9, 66.0 and 61.8 s, and 85.9 s a fourth time in the database run of the report's and
+  triage's directories; once with autovacuum off on the three tables (a scratch setting in an untracked copy of the
+  file, never committed), A's triage 63.2 s and A's report **79.5 s** (`report_lines` 21.7 s); CAS-42.2's report
+  91.5, 90.1, 86.7, 110.6 and 86.3 s and Y's triage 74.3, 74.1, 70.2, 88.0 and 70.9 s; at most 1 advisory lock per
+  backend throughout; both tests passed in all five runs.
 - **The limit V8 reports is not the flag.** `heap_size_limit` is the old generation's limit plus the young
   generation's: 612 MiB under `--max-old-space-size=420` and 752 MiB under 560, measured on Node 24.22. CAS-42 holds
   each peak to 75% of the flag itself. The weekly run's check took 75% of the `job heap` line's `heap_limit_mib`, which
@@ -408,8 +432,9 @@ went on. Three readings of the numbers:
   same two rules and its own measurement.
 - The Cases page's time (it recomputes its waiting patterns on every load, over 20 s for 33,332 waiting candidates on
   4 CPUs): bounded in memory here, not in time; storing the waiting patterns at triage is handed to Lane A.
-- `candidateRows`' and `runLines`' queries still read the practice's whole stage log through a `DISTINCT ON`, which
-  grows with the practice's history: SUITE-CAP-1b's head row, or a per-line lookup, would remove it in a later item.
+- `candidateRows`' query still reads the practice's whole stage log through a `DISTINCT ON`, which grows with the
+  practice's history (`runLines`' now reads each line's head row): the head row, or a per-line lookup, would remove it
+  in a later item.
 - The reconcile pass's own time at size (CAS-42.3 runs 2,000 lines, not 20,000): `candidatesFor`'s two queries per
   open case line, `claimLines`' per-line correction chain and `syncLineStages`' statement per stage, which grow faster
   than the lines. SUITE-CAP-3 measures reconcile at real size.

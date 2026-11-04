@@ -14,16 +14,25 @@ import { z } from 'zod';
  * it with the adjustment behavior it detects from the traces (PRD 12, From validated to actionable).
  * Underpaid is the sum of positive variances (each a validated discrepancy); overpaid, of negative
  * ones (recorded and shown, never pursued: PRC-15).
+ *
+ * Format 2 (combined audit #32, docs/adr/0075; PRC-30) adds the plans of the run's lines that had no
+ * mapping at all when it was priced, with every line of theirs the run holds and its billed cents: none
+ * of them is priced, and a run is immutable, so the printed report says what was true when it priced.
+ * A format 1 summary reads as having none, which is exact: under the guard that format 2 replaced, a run
+ * over a plan with no mapping never completed (it failed as unmapped_plan), so no complete format 1 run
+ * held one. parseCoverage returns the format 2 shape for both; the stored format is kept as it is.
  */
 
-export const COVERAGE_FORMAT = 'tp-pricing-coverage/1';
+export const COVERAGE_FORMAT = 'tp-pricing-coverage/2';
+/** The format of runs completed before combined audit #32: no unmapped plans, since none could complete. */
+export const COVERAGE_FORMAT_1 = 'tp-pricing-coverage/1';
 
 const count = z.number().int().nonnegative();
 const centsText = z.string().regex(/^-?(?:0|[1-9]\d*)$/);
 const id = z.uuid();
 
-export const runCoverageSchema = z.strictObject({
-  format: z.literal(COVERAGE_FORMAT),
+/** The fields both formats hold. */
+const COVERAGE_FIELDS = {
   lines: count,
   charge_cents: centsText,
   priced: z.strictObject({ lines: count, charge_cents: centsText }),
@@ -47,9 +56,26 @@ export const runCoverageSchema = z.strictObject({
       overpaid_cents: centsText,
     }),
   ),
-});
+};
 
-export type RunCoverage = z.infer<typeof runCoverageSchema>;
+/**
+ * The plans of the run's lines that had no mapping at all when it was priced, with every line of theirs
+ * the run holds: none is priced (a line the resolver reaches is NO_MAPPING; one that fails the engine's
+ * fact checks first is ENGINE_ERROR, and counts here too). Opaque plan IDs, counts and cents, ordered by
+ * plan. Cents are signed: a line's charge has no sign check in SQL, so a sum is never forced non-negative.
+ */
+const unmappedPlansSchema = z.array(z.strictObject({ plan_id: id, lines: count, charge_cents: centsText }));
+
+const coverage2Schema = z.strictObject({ format: z.literal(COVERAGE_FORMAT), ...COVERAGE_FIELDS, unmapped_plans: unmappedPlansSchema });
+const coverage1Schema = z.strictObject({ format: z.literal(COVERAGE_FORMAT_1), ...COVERAGE_FIELDS });
+
+/** A stored summary of either format, read as format 2's shape: a format 1 run had no unmapped plan. */
+export const runCoverageSchema = z
+  .discriminatedUnion('format', [coverage2Schema, coverage1Schema])
+  .transform((stored): RunCoverage => ('unmapped_plans' in stored ? stored : { ...stored, unmapped_plans: [] }));
+
+/** A complete run's summary as read: format 2's fields, whichever format it was stored in. */
+export type RunCoverage = Omit<z.infer<typeof coverage2Schema>, 'format'> & { readonly format: typeof COVERAGE_FORMAT | typeof COVERAGE_FORMAT_1 };
 
 /** Reads a stored coverage summary; throws a ZodError naming the field that fails. */
 export function parseCoverage(value: unknown): RunCoverage {
@@ -99,6 +125,12 @@ interface PatternRow {
   readonly overpaid_cents: string;
 }
 
+interface UnmappedPlanRow {
+  readonly plan_id: string;
+  readonly lines: number;
+  readonly charge_cents: string;
+}
+
 /** The parts the database totals, shaped into the stored summary. */
 export interface CoverageParts {
   readonly totals: TotalsRow;
@@ -106,6 +138,8 @@ export interface CoverageParts {
   readonly details: readonly DetailRow[];
   readonly versions: readonly VersionRow[];
   readonly patterns: readonly PatternRow[];
+  /** The plans with no mapping when the run priced, ordered by plan (PRC-30). */
+  readonly unmappedPlans: readonly UnmappedPlanRow[];
 }
 
 function isDetail(value: string | null): value is EngineErrorDetail {
@@ -132,11 +166,18 @@ export function coverageOf(parts: CoverageParts): RunCoverage {
       .map(([detail, lines]) => ({ detail, lines, pages_operator: pagesOperator(detail) })),
     versions: parts.versions.map((row) => ({ contract_version_id: row.contract_version_id, contract_id: row.contract_id, version_no: row.version_no, lines: row.lines })),
     patterns: parts.patterns.map((row) => ({ ...row })),
+    unmapped_plans: parts.unmappedPlans.map((row) => ({ plan_id: row.plan_id, lines: row.lines, charge_cents: row.charge_cents })),
   };
 }
 
-/** Totals the run's priced lines in the database (inside the run's own transaction, before it completes). */
-export async function computeCoverage(client: ScopeClient, pricingRunId: string): Promise<RunCoverage> {
+/**
+ * Totals the run's priced lines in the database (inside the run's own transaction, before it completes).
+ * `unmappedPlanIds` are the plans of the run's lines with no mapping in the very records the run priced
+ * with (execute.ts), so the list agrees with the lines it describes even when a mapping commits while
+ * the run prices. Every priced line of those plans is counted, whatever its unpriced reason (PRC-30,
+ * review R3-5), through the index priced_line_once (pricing_run_id, service_line_id).
+ */
+export async function computeCoverage(client: ScopeClient, pricingRunId: string, unmappedPlanIds: readonly string[]): Promise<RunCoverage> {
   const totals = await client.query<TotalsRow>(
     `SELECT count(*)::int AS lines, coalesce(sum(l.charge_cents), 0)::text AS charge_cents,
             count(*) FILTER (WHERE p.unpriced_reason IS NULL)::int AS priced_lines,
@@ -182,11 +223,25 @@ export async function computeCoverage(client: ScopeClient, pricingRunId: string)
       ORDER BY coalesce(sum(p.variance_cents) FILTER (WHERE p.variance_cents > 0), 0) DESC, pl.payer_id, l.payer_plan_key, m.mapping_kind, p.contract_version_id NULLS FIRST, p.rate_record_id NULLS FIRST`,
     [pricingRunId],
   );
+  const unmappedPlans =
+    unmappedPlanIds.length === 0
+      ? []
+      : (
+          await client.query<UnmappedPlanRow>(
+            `SELECT l.payer_plan_key AS plan_id, count(*)::int AS lines, coalesce(sum(l.charge_cents), 0)::text AS charge_cents
+               FROM priced_line p JOIN service_line l ON l.id = p.service_line_id
+              WHERE p.pricing_run_id = $1 AND l.payer_plan_key = ANY ($2::uuid[])
+              GROUP BY l.payer_plan_key
+              ORDER BY l.payer_plan_key`,
+            [pricingRunId, [...unmappedPlanIds]],
+          )
+        ).rows;
   return coverageOf({
     totals: totals.rows[0] ?? { lines: 0, charge_cents: '0', priced_lines: 0, priced_charge_cents: '0' },
     reasons: reasons.rows,
     details: details.rows,
     versions: versions.rows,
     patterns: patterns.rows,
+    unmappedPlans,
   });
 }

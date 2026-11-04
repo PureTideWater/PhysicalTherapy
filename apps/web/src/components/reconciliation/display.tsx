@@ -10,8 +10,8 @@ import { Money } from '../remittances/display';
 /**
  * Display pieces of the Reconciliation screen and the ROI statements (PRD 7, Reconciliation and
  * Reports; PRD 13): every dollar figure carries its stage's label, "recovered" stands only beside the
- * proof level's cash net of recoupments and reversals (stage five), approved and interest are their own
- * figures, and nothing unmatched is in any of them.
+ * proof level's cash net of recoupments and reversals, approved and interest are their own figures, and
+ * nothing unmatched is in any of them.
  */
 
 /** A ledger entry's stage in words. */
@@ -50,10 +50,11 @@ export function recoveredLabel(level: string): string {
 
 /**
  * The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says
- * "posted"): the cash it counts, deposited or posted, then what proves it. It follows "cash" or a recovered label.
+ * "posted"): the cash it counts, deposited or posted, then what proves it. It follows "cash" or a recovered label, and
+ * a screen may set it in parentheses ("$0.00 (cash posted, ...)"), so it holds none of its own.
  */
 export function proofLevelWords(level: 'posted' | 'deposited'): string {
-  return level === 'deposited' ? 'deposited, proved by the bank export' : 'posted, proved by the posting export (no deposit data is supplied)';
+  return level === 'deposited' ? 'deposited, proved by the bank export' : 'posted, proved by the posting export, as no deposit data is supplied';
 }
 
 export interface TotalsFigures {
@@ -67,11 +68,39 @@ export interface TotalsFigures {
   readonly recoveredCents: string;
 }
 
-/** The Payer approved tile's note: short, so the six tiles keep one height (UX-9); its reversal detail is in LEDGER_TOTALS_HELP. */
-export const PAYER_APPROVED_NOTE = 'what payers agreed to pay, never the patient’s share; recovered only once posted or deposited';
+/** The cash a recovered figure counts, in words, at the proof level: "cash deposited, proved by the bank export, net of recoupments and reversals". */
+export function recoveredCashWords(level: 'posted' | 'deposited'): string {
+  return `cash ${proofLevelWords(level)}, net of recoupments and reversals`;
+}
 
-/** The totals' help beneath the screen's description: what Payer approved is net of, moved from its tile's note (UX-9). */
-export const LEDGER_TOTALS_HELP = 'Payer approved is net of reversals and of what was taken back before it posted.';
+/**
+ * The Payer approved tile's note on Reconciliation, by proof level: short, so the six tiles keep one height (UX-9);
+ * its reversal detail is in LEDGER_TOTALS_HELP. The figure is cumulative (an approval stays approved once its cash
+ * arrives, and after a takeback), so the note says "to date" and gives the proof level's rule, never a status: "only
+ * deposited cash counts as recovered", not "counted as recovered only once it is deposited", which read as money still
+ * to come beside a smaller Recovered; the Deposited tile beside it says how much has come. As long as the note it
+ * replaced, so the row keeps its height. Each is written out whole for the copy lint.
+ */
+export const PAYER_APPROVED_NOTE: Readonly<Record<'posted' | 'deposited', string>> = {
+  posted: 'what payers agreed to pay to date, never the patient’s share; only posted cash counts as recovered',
+  deposited: 'what payers agreed to pay to date, never the patient’s share; only deposited cash counts as recovered',
+};
+
+/**
+ * The practice home's Payer approved tile's note, by proof level: PAYER_APPROVED_NOTE's terms (to date, never the
+ * patient's share, the proof level's rule), and, since no Deposited tile stands beside it, the lines it is on and that
+ * it holds what has come as well as what has not; the home's three tiles have room for it.
+ */
+export const PAYER_APPROVED_HOME_NOTE: Readonly<Record<'posted' | 'deposited', string>> = {
+  posted: 'what payers agreed to pay to date on the lines they corrected, posted or not, never the patient’s share; only posted cash counts as recovered',
+  deposited: 'what payers agreed to pay to date on the lines they corrected, deposited or not, never the patient’s share; only deposited cash counts as recovered',
+};
+
+/** The totals' help beneath the screen's description, by proof level: what Payer approved is net of, moved from its tile's note (UX-9). */
+export const LEDGER_TOTALS_HELP: Readonly<Record<'posted' | 'deposited', string>> = {
+  posted: 'Payer approved is net of reversals and of what was taken back before it posted.',
+  deposited: 'Payer approved is net of reversals and of what was taken back before it was deposited.',
+};
 
 /** The ledger's totals, each its own stage; recovered last, with its proof level. */
 export function LedgerTotals({ totals, title, description }: { readonly totals: TotalsFigures; readonly title: string; readonly description: string }) {
@@ -80,7 +109,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
       key: 'approved',
       label: 'Payer approved',
       cents: totals.payerApprovedCents,
-      note: PAYER_APPROVED_NOTE,
+      note: PAYER_APPROVED_NOTE[totals.proofLevel],
     },
     { key: 'posted', label: 'Posted', cents: totals.postedCents, note: 'posting export rows matched to the remittance' },
     { key: 'deposited', label: 'Deposited', cents: totals.depositedCents, note: 'bank export rows matched to the remittance' },
@@ -92,7 +121,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          {description} <span data-help="payer-approved">{LEDGER_TOTALS_HELP}</span>
+          {description} <span data-help="payer-approved">{LEDGER_TOTALS_HELP[totals.proofLevel]}</span>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -111,7 +140,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
             <dd className="text-lg font-medium">
               <Money value={totals.recoveredCents} />
             </dd>
-            <dd className="text-xs text-muted-foreground">stage five: cash {proofLevelWords(totals.proofLevel)}, net of recoupments and reversals</dd>
+            <dd className="text-xs text-muted-foreground">{recoveredCashWords(totals.proofLevel)}</dd>
           </div>
         </dl>
       </CardContent>

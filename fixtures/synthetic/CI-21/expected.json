@@ -2,7 +2,7 @@
   "case": "CI-21",
   "module": "CI",
   "title": "An action pin held to three days",
-  "assertion": "A pin new against the base passes on a pull request only when its commit is on the upstream default branch, its tag still names it, and it is at least three days old by the youngest time read with a time GitHub recorded; an unchanged pin is never read for its age, except on the change that adds the rule; on a push a finding warns",
+  "assertion": "A pin new against the base, and a tools/trivy or tools/gitleaks release.txt version new against it by the commit its upstream tag names (a tag the upstream does not list is refused), passes on a pull request only when its commit is on the upstream default branch, its tag still names it, and it is at least three days old by the youngest time read with a time GitHub recorded; an unchanged pin is never read for its age, except on the change that adds the rule; on a push a finding warns",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": [

@@ -2,7 +2,20 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { CorrectionView, MatchView } from '../../lib/reconciliation/queries';
-import { LEDGER_TOTALS_HELP, LedgerTotals, LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, correctionWords, lineEntriesEmptyText, outcomeWords, showsBillableFact } from './display';
+import {
+  LEDGER_TOTALS_HELP,
+  LedgerTotals,
+  LineCorrectionWords,
+  PATIENT_BALANCE_NEXT_STEP,
+  PAYER_APPROVED_HOME_NOTE,
+  PAYER_APPROVED_NOTE,
+  correctionWords,
+  lineEntriesEmptyText,
+  outcomeWords,
+  proofLevelWords,
+  recoveredCashWords,
+  showsBillableFact,
+} from './display';
 
 /**
  * The Reconciliation screen's words in payment terms (PRD 13, Matching step 1; docs/adr/0067; design review S5): a
@@ -327,18 +340,41 @@ describe('the next step and the empty states around a correction', () => {
 });
 
 describe('the ledger’s totals', () => {
-  it('notes payer approved as what payers agreed to pay, never the patient’s share, its reversal detail in the help (UX-9)', () => {
-    const shown = text(
+  const totals = (proofLevel: 'posted' | 'deposited') =>
+    text(
       <LedgerTotals
-        totals={{ proofLevel: 'deposited', approvedCents: '2400', payerApprovedCents: '2400', postedCents: '0', depositedCents: '2400', recoupedCents: '0', interestCents: '0', recoveredCents: '2400' }}
+        totals={{ proofLevel, approvedCents: '2400', payerApprovedCents: '2400', postedCents: '0', depositedCents: '2400', recoupedCents: '0', interestCents: '0', recoveredCents: '2400' }}
         title="Ledger totals"
         description="By stage."
       />,
     );
-    expect(shown).toContain(
-      'Payer approved$24.00what payers agreed to pay, never the patient’s share; recovered only once posted or deposited',
-    );
-    expect(shown).toContain(`By stage. ${LEDGER_TOTALS_HELP}`);
-    expect(LEDGER_TOTALS_HELP).toBe('Payer approved is net of reversals and of what was taken back before it posted.');
+
+  it('notes payer approved as what payers agreed to pay to date, never the patient’s share, its reversal detail in the help (UX-9)', () => {
+    const shown = totals('deposited');
+    expect(shown).toContain('Payer approved$24.00what payers agreed to pay to date, never the patient’s share; only deposited cash counts as recovered');
+    expect(shown).toContain(`By stage. ${LEDGER_TOTALS_HELP.deposited}`);
+    expect(LEDGER_TOTALS_HELP.deposited).toBe('Payer approved is net of reversals and of what was taken back before it was deposited.');
+  });
+
+  it('names the proof level’s stage in the approval note and the help, and recovered without a stage number (HOM-02)', () => {
+    const posted = totals('posted');
+    expect(posted).toContain('only posted cash counts as recovered');
+    expect(posted).toContain(`By stage. ${LEDGER_TOTALS_HELP.posted}`);
+    expect(LEDGER_TOTALS_HELP.posted).toBe('Payer approved is net of reversals and of what was taken back before it posted.');
+    expect(posted).toContain('Recovered (posted)$24.00cash posted, proved by the posting export, as no deposit data is supplied, net of recoupments and reversals');
+    expect(totals('deposited')).toContain('Recovered (deposited)$24.00cash deposited, proved by the bank export, net of recoupments and reversals');
+    for (const shown of [posted, totals('deposited')]) {
+      expect(shown).not.toMatch(/stage[\s-]*(five|5)/i);
+    }
+    for (const level of ['posted', 'deposited'] as const) {
+      // Both notes: cumulative, never the patient's share, and the proof level's rule, never a status (UX-R1-02, ux-r3-02).
+      for (const note of [PAYER_APPROVED_NOTE[level], PAYER_APPROVED_HOME_NOTE[level]]) {
+        expect(note).toContain('to date');
+        expect(note).toContain(`never the patient’s share; only ${level} cash counts as recovered`);
+      }
+      expect(recoveredCashWords(level)).toBe(`cash ${proofLevelWords(level)}, net of recoupments and reversals`);
+      // A screen sets the cash words in parentheses, so they hold none of their own (ux-r2-03).
+      expect(recoveredCashWords(level)).not.toContain('(');
+    }
   });
 });

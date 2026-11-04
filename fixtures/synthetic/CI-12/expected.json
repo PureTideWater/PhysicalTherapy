@@ -2,7 +2,7 @@
   "case": "CI-12",
   "module": "CI",
   "title": "Dependabot's configuration",
-  "assertion": "Groups in order, majors ignored for the Node image, its types, TypeScript, Next and pg-boss, and for the compose file's postgres; cooldowns; staggered days; and an entry per ecosystem in use",
+  "assertion": "Groups in order, each dependency in one: minor-and-patch excludes every pattern a specific group names, and a model of Dependabot's group assignment routes every direct dependency to its group; majors ignored for the Node image, its types, TypeScript, Next and pg-boss, and for the compose file's postgres; cooldowns; staggered days; and an entry per ecosystem in use",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": ["tools/test/dependabot-config.test.ts","tools/test/workflows.test.ts"],

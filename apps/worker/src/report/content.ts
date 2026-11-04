@@ -40,7 +40,8 @@ import { UNPRICED_REMEDIES } from './remedies';
  * complete pricing run after its triage on the report's date, and kept as `audit_report.content`
  * (tp-audit-report/1) with the PDF and the line CSV made from them. Kept apart, each with its stage:
  *
- * - coverage: the run's lines and billed dollars priced, and the unpriced reasons by count;
+ * - coverage: the run's lines and billed dollars priced, the unpriced reasons by count, and the plans
+ *   that had no mapping when it was priced, with their lines and billed dollars (docs/adr/0075);
  * - anomalies (flagged, investigatory): counts and dollar ranges, in no total;
  * - validated discrepancies: priced lines paid below the contract, by payer pattern, with why each
  *   that is not actionable is not; a per-visit line is counted with its visit (the visit's net
@@ -223,6 +224,14 @@ export interface AuditReportContent {
     readonly priced_lines: number;
     readonly priced_charge_cents: string;
     readonly reasons: readonly { readonly reason: UnpricedReason; readonly lines: number; readonly charge_cents: string; readonly remedy: string }[];
+    /**
+     * The plans of the run's lines that had no mapping at all when it was priced, how many lines of
+     * theirs it holds and their billed cents (signed): none of those lines is priced (combined audit
+     * #32, docs/adr/0075; PRC-30). From the run's own coverage (tp-pricing-coverage/2; none for a /1
+     * run), never today's mappings, so the report says what was true of the run as priced. Absent in a
+     * report stored before it was recorded, which prints nothing about it.
+     */
+    readonly unmapped_plans?: { readonly plans: number; readonly lines: number; readonly charge_cents: string };
   };
   readonly anomalies: readonly ReportAnomaly[];
   readonly validated: {
@@ -389,11 +398,15 @@ const sum = (values: readonly string[]) => sumCents(values.map(parseCents));
  * The run's lines, each with what the report reads of it: its claim, plan and payer, its stage now, its case line, the
  * trace of a line with a shortfall, its visit's net and its review flags. $1 is the pricing run, $2 the practice.
  * gatherReport reads it through a cursor, REPORT_BATCH_LINES rows at a time (SUITE-CAP-1a D14; docs/adr/0083).
+ *
+ * A line's stage and its case line are each found by the line's own lookup, through line_status_head_once and
+ * case_line_once (a scalar subquery and a LATERAL with LIMIT, which the planner keeps per row), never by a join to
+ * the practice's every event and case line: right after a triage the statistics predate its events and case lines, and
+ * the cursor's plan then rescanned all of them for every line in a nested loop (27 s for the first 2,000 of 100,000
+ * lines, 194 million rows filtered; this form reads all 100,000 in 17 s on the same statistics, whatever autovacuum has
+ * analyzed; docs/adr/0083, SUITE-CAP-1b). A line's head row is its latest stage event's stage (line_status_rules()).
  */
-const RUN_LINES_QUERY = `WITH current_stage AS (
-     SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage FROM line_status s WHERE s.practice_id = $2 ORDER BY s.service_line_id, s.seq DESC
-   )
-   SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text,
+const RUN_LINES_QUERY = `SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text,
           p.unpriced_reason, p.window_ends_on::text, p.contract_version_id, p.rate_record_id, m.mapping_kind, v.status AS version_status,
           coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
           (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
@@ -403,7 +416,7 @@ const RUN_LINES_QUERY = `WITH current_stage AS (
           l.charge_cents::text, c.payer_claim_control_number, py.id AS payer_id, py.name_raw AS payer_name, pl.id AS plan_id, coalesce(pl.name, pl.plan_key) AS plan_name,
           (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
           c.superseded_by_claim_id IS NOT NULL AS superseded,
-          cs.stage, cl.case_id, cl.priced_line_id = p.id AS case_in_run, cl.written_off_reason,
+          (SELECT h.stage FROM line_status_head h WHERE h.practice_id = $2 AND h.service_line_id = p.service_line_id) AS stage, cl.case_id, cl.priced_line_id = p.id AS case_in_run, cl.written_off_reason,
           CASE WHEN p.variance_cents > 0 THEN p.trace END AS trace,
           CASE WHEN jsonb_typeof(p.trace #> '{steps,per_visit}') = 'object' THEN p.trace #> '{steps,per_visit}' END AS per_visit,
           priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
@@ -415,8 +428,8 @@ const RUN_LINES_QUERY = `WITH current_stage AS (
      JOIN payer py ON py.id = pl.payer_id
      LEFT JOIN payer_plan_mapping m ON m.id = p.mapping_id
      LEFT JOIN contract_version v ON v.id = p.contract_version_id
-     LEFT JOIN current_stage cs ON cs.service_line_id = p.service_line_id
-     LEFT JOIN case_line cl ON cl.service_line_id = p.service_line_id
+     LEFT JOIN LATERAL (SELECT x.case_id, x.priced_line_id, x.written_off_reason FROM case_line x
+                         WHERE x.service_line_id = p.service_line_id LIMIT 1) cl ON true
     WHERE p.pricing_run_id = $1 AND p.practice_id = $2`;
 
 /** How many of the run's lines the report holds at a time (SUITE-CAP-1a D14, D18; docs/adr/0083). */
@@ -1062,6 +1075,12 @@ async function gatherInto(scope: PracticeScope<ScopeClient>, input: GatherInput,
       priced_lines: coverage.priced.lines,
       priced_charge_cents: coverage.priced.charge_cents,
       reasons: coverage.reasons.filter((entry) => entry.lines > 0).map((entry) => ({ ...entry, remedy: UNPRICED_REMEDIES[entry.reason].remedy })),
+      // From the run row read above: no line is read for it (#81's batched reads, docs/adr/0083).
+      unmapped_plans: {
+        plans: coverage.unmapped_plans.length,
+        lines: coverage.unmapped_plans.reduce((total, plan) => total + plan.lines, 0),
+        charge_cents: text(sum(coverage.unmapped_plans.map((plan) => plan.charge_cents))),
+      },
     },
     anomalies,
     validated: {

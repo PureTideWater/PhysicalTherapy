@@ -1,5 +1,6 @@
 import { REINSTATEMENT_REASONS, type ReinstatementReason, SUSPENSION_REASONS, type SuspensionReason } from '@tp/db/runtime';
 
+import { counted } from '../../lib/copy/words';
 import { utc, utcDate } from '../format';
 
 /**
@@ -44,8 +45,9 @@ export interface Reach {
   readonly grants: number;
 }
 
-const practicesText = (n: number) => `${String(n)} ${n === 1 ? 'practice' : 'practices'}`;
-const grantsText = (m: number) => `${String(m)} ${m === 1 ? 'grant' : 'grants'}`;
+/** Counts through counted(): digits grouped by thousands (SS-01 review UX-SS01-8). */
+const practicesText = (n: number) => counted(n, 'practice');
+const grantsText = (m: number) => counted(m, 'grant');
 
 /** C1 (active) or C7's title (suspended). */
 export function suspensionTitle(status: string): string {
@@ -96,13 +98,17 @@ export function suspendedLines(suspension: SuspensionRecord): readonly string[] 
   return [first, reason, ...changed];
 }
 
-/** C8: what the suspension in force stops. */
+/** C8: what the suspension in force stops; with nothing to reach, no vacuous count, as C6 says it (SS-01 review UX-SS01-5). */
 export function suspendedEffect(kind: SuspendableKind, reach: Reach): string {
   if (kind === 'firm') {
-    return `Its people start no new work through its grants at the ${practicesText(reach.practices)} it is granted; the practices' own staff carry on. Reinstating lifts it at once.`;
+    return reach.practices === 0
+      ? 'It holds no grant in force now; every record stays readable. Reinstating lifts it at once.'
+      : `Its people start no new work through its grants at the ${practicesText(reach.practices)} it is granted; the practices' own staff carry on. Reinstating lifts it at once.`;
   }
   const held = reach.grants > 0 ? `, and its people start no new work through the ${grantsText(reach.grants)} it holds` : '';
-  return `New work is refused at its ${practicesText(reach.practices)} for everyone${held}; every record stays readable. Reinstating lifts it at once.`;
+  return reach.practices === 0
+    ? `It has no active practice now${held}; every record stays readable. Reinstating lifts it at once.`
+    : `New work is refused at its ${practicesText(reach.practices)} for everyone${held}; every record stays readable. Reinstating lifts it at once.`;
 }
 
 /** C9: the note, and the actions on a suspension in force. */
@@ -117,6 +123,14 @@ export const REINSTATE_SUBMITS: Readonly<Record<ReinstatementReason, string>> = 
 export const HISTORY_CAPTION = 'History';
 export const HISTORY_COLUMNS = ['When (UTC)', 'Change', 'Reason', 'By', 'Note'] as const;
 export const HISTORY_EMPTY = 'No suspension recorded.';
+
+/**
+ * C10's empty history: beside a suspension in force written before changes were recorded (by the owner path or the
+ * previous image, D11), which has no row, it says where that suspension shows (SS-01 review UX-SS01-5).
+ */
+export function historyEmpty(suspended: boolean): string {
+  return suspended ? 'No change recorded here yet; a suspension made before changes were recorded shows only on the card above.' : HISTORY_EMPTY;
+}
 export const HISTORY_CHANGES: Readonly<Record<'suspended' | 'reinstated' | 'reason_changed', string>> = {
   suspended: 'Suspended',
   reinstated: 'Reinstated',

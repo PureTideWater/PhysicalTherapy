@@ -60,7 +60,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
       {organization.kind !== 'internal' && organization.status !== 'closed' ? (
         <SuspensionCard organization={{ id: organization.id, name: organization.name, kind: organization.kind, status: organization.status }} suspension={suspension} reach={reach} action={setOrganizationStatusAction} />
       ) : null}
-      {organization.kind !== 'internal' ? <SuspensionHistory history={history} /> : null}
+      {organization.kind !== 'internal' ? <SuspensionHistory history={history} suspended={organization.status === 'suspended'} /> : null}
 
       {organization.kind === 'group' ? (
         <Card>

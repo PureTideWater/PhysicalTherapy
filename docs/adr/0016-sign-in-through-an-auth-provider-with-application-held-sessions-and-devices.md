@@ -1,6 +1,7 @@
 # 0016. Sign in through an identity provider interface, and keep sessions, devices and the lockout in the application's database
 
-- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
+- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md) and
+  [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (authorization in code, lifecycle events), 5 (J1, J2, J16), 6 (Identity and sessions), 7 (Sign-in and
@@ -29,6 +30,12 @@ and real WebAuthn verification (@simplewebauthn/server, user verification requir
 authenticator exercises the hardware-key path; its store is a JSON file outside the database (as Cognito's is), written by
 `pnpm db:seed` from derived synthetic credentials. Challenges between steps are sealed (AES-256-GCM, purpose-bound,
 expiring) into a five-minute HttpOnly cookie.
+
+*Amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md) (decisions D1, D2 and D6): the cookie still lives five minutes (fifteen for key
+registration), but a step closes at the limit that binds, the provider's three minutes (fifteen for key
+registration), counted from before the provider issued its challenge, and no rewrite extends it; a second sealed
+cookie, `tp_sign_in_email`, keeps the email until 15 minutes past the step, so that starting again does not ask for
+it.*
 
 **The application's rules sit above the provider, the same for both** (`SignInFlow`, `src/lib/auth/sign-in.ts`):
 

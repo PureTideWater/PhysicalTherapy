@@ -3,7 +3,7 @@ import { type Cents, formatUsd } from '@tp/money';
 
 import { brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
-import { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from '../report/recovered-words';
+import { ACTIONABLE_OPEN_LABEL, ACTIONABLE_OPEN_NOTE, NO_RECOVERED_CASH, NOTHING_APPROVED_WAITING, RECOVERED_PRINCIPAL_LABELS } from '../report/recovered-words';
 
 /**
  * The ROI statement as one self-contained HTML document, which the statement job prints to PDF with
@@ -112,9 +112,9 @@ export function statementHtml(document: StatementDocument): string {
   )}</p>
   ${figure(recovered, 'Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it.', check.recovered, NO_RECOVERED_CASH[statement.proofLevel])}
   ${figure('Interest, net', 'Interest the payer paid in the period, less any it took back, shown apart from principal.', check.interest, 'No interest was paid in the period.')}
-  ${figure('Payer approved, not yet at the proof level', 'Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage, never summed into recovered (posted or deposited).', check.approvedUnposted, 'Nothing approved is waiting to be posted.')}
-  <h2>Actionable in open cases: <span class="figure-amount">${escapeHtml(usd(statement.actionableOpenCents))}</span></h2>
-  <p>${escapeHtml(cases.length === 0 ? 'No case was open when the statement was generated.' : `The actionable totals of ${String(cases.length)} open ${cases.length === 1 ? 'case' : 'cases'} when the statement was generated: ${cases.join(', ')}.`)}</p>
+  ${figure('Payer approved, not yet at the proof level', 'Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage, never summed into recovered (posted or deposited).', check.approvedUnposted, NOTHING_APPROVED_WAITING[statement.proofLevel])}
+  <h2>${escapeHtml(ACTIONABLE_OPEN_LABEL)}: <span class="figure-amount">${escapeHtml(usd(statement.actionableOpenCents))}</span></h2>
+  <p>${escapeHtml(`${ACTIONABLE_OPEN_NOTE} ${cases.length === 0 ? 'No case was being worked when the statement was generated.' : `Its ${String(cases.length)} ${cases.length === 1 ? 'case' : 'cases'}: ${cases.join(', ')}.`}`)}</p>
   <h2>Pursuit hours logged: <span class="figure-amount">${escapeHtml(statement.pursuitHours)}</span></h2>
   <p>${escapeHtml('Hours the cases’ time log records for the period; no time log is kept yet.')}</p>
   <footer>Amounts are computed in integer cents from the ledger; no figure adds two stages together.</footer>`,

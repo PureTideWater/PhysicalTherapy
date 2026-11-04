@@ -990,7 +990,10 @@ describe('workflows', () => {
     expect(changes?.['runs-on']).toBe(RUNNER);
     expect(changes?.permissions).toBeUndefined();
     expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
-    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    // Every object fetched by the checkout, with the job's token: a blobless clone fetches each blob it reads later from
+    // its promisor remote with no credentials, which a private repository refuses (run 41765454724, "could not read
+    // Username"); the script's run on a clone without its remote is below.
+    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0 } });
     const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
     const script = watched?.run ?? '';
     expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
@@ -2266,6 +2269,8 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
     'tools/ci/browser-build.ts',
     'apps/web/e2e/browser.json',
     'apps/web/e2e/browser-builds/*',
+    // The pinned Trivy every build leg installs (tools/trivy/install.sh and its release.txt).
+    'tools/trivy/**',
   ];
   // Two of the release build's four legs: the web image (which stands for the capacity job's production web image) and
   // the worker image. web-staging and web-production differ from web only by a repository variable's static host.
@@ -2396,6 +2401,280 @@ describe('every checkout (CI-11)', () => {
         }
       }
     }
+  });
+});
+
+/**
+ * A read of this repository from its remote, which a private repository refuses without the job's token (CI-11): git's
+ * fetch, clone, ls-remote, pull, submodule update or archive --remote, with any global options before the command; and
+ * raw.githubusercontent.com, or curl or wget of the API, the server or this repository by any of their names.
+ */
+const REMOTE_READ = new RegExp(
+  [
+    /\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+|--[\w-]+(?:=\S+)?))*\s+(?:fetch|clone|ls-remote|pull|submodule\s+update|archive\s+--remote)\b/.source,
+    /raw\.githubusercontent\.com/.source,
+    /\b(?:curl|wget)\b[^\n]*(?:api\.github\.com|github\.com\/\$|\$\{?GITHUB_(?:API_URL|SERVER_URL|REPOSITORY)\b|\$\{\{\s*github\.(?:repository|api_url|server_url)\b|PureTideWater\/PhysicalTherapy\b)/.source,
+  ].join('|'),
+);
+/** A command line that runs gh. */
+const RUNS_GH = /(?:^|[\s;&|(`$])gh\s+(?:api|issue|pr|release|run|repo|attestation|secret|variable|workflow|cache|label|search)\b/m;
+
+describe('every read of this repository works when it is private (CI-11)', () => {
+  /** Every step of every workflow, with its job, named for a message. */
+  const everyStep = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, job, step }))));
+
+  it('makes no partial clone: a checkout that keeps no token fetches every object once, with the job’s token, so no later git command fetches a blob without credentials', () => {
+    // A blobless or treeless clone (`filter:`) fetches what a later git command reads from its promisor remote, without
+    // credentials once persist-credentials is false: a private repository refuses that ("could not read Username for
+    // 'https://github.com'", screening-capacity run 41765454724, job 126369187941).
+    const filtered = everyStep().filter(({ step }) => usesAction(step, 'actions/checkout') && step.with?.filter !== undefined && step.with?.['persist-credentials'] === false);
+    expect(filtered.map(({ where }) => where)).toEqual([]);
+    for (const { where, step } of everyStep().filter((entry) => usesAction(entry.step, 'actions/checkout'))) expect(step.with?.['sparse-checkout'], where).toBeUndefined();
+  });
+
+  it('knows every form of a read of this repository from its remote: each git form with any global options before its command, and curl or wget of the API, the server or this repository by any of their names', () => {
+    // Each would fail on the private repository without a token; each must be caught (mutation cases: the review's S1).
+    const caught = [
+      'git fetch origin main',
+      'git -C . fetch origin main',
+      'git -C "$dir" --no-pager fetch --depth=1 origin main',
+      'git --no-pager fetch origin main',
+      'git -c protocol.version=2 fetch --depth=1 origin main',
+      'git --git-dir=.git fetch origin',
+      'git clone https://github.com/PureTideWater/PhysicalTherapy',
+      'git ls-remote origin',
+      'git pull --ff-only',
+      'git submodule update --init',
+      'git archive --remote=origin HEAD',
+      'curl -fsSL "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/contents/x"',
+      'curl -fsSL "${GITHUB_API_URL}/repos/x"',
+      'curl -fsSL "${{ github.api_url }}/repos/x"',
+      'curl -fsSL "$GITHUB_SERVER_URL/x/archive/main.tar.gz"',
+      'wget -q "${{ github.server_url }}/x"',
+      'curl -fsSL "https://example.invalid/$GITHUB_REPOSITORY"',
+      'curl -fsSL https://github.com/PureTideWater/PhysicalTherapy/archive/main.tar.gz',
+      'curl -fsSL https://github.com/${{ github.repository }}/archive/main.tar.gz',
+      'curl -fsSL https://api.github.com/repos/x',
+      'curl -fsSL https://raw.githubusercontent.com/x/y/main/z',
+    ];
+    expect(caught.filter((text) => !REMOTE_READ.test(text))).toEqual([]);
+    // What the workflows and their scripts do run, none of it a read of this repository's remote.
+    const local = ['git diff --name-only "$BASE" "$HEAD"', 'git -C "$dir" rev-parse HEAD', 'git --no-pager log --format=%H', 'curl -fsSL --retry 3 -o "$work/$archive" "$base/$archive"', 'git cat-file -e "$BASE^{commit}"'];
+    expect(local.filter((text) => REMOTE_READ.test(text))).toEqual([]);
+    expect(['gh api repos/x', 'out=$(gh pr view 1)', 'x && gh release view'].filter((text) => !RUNS_GH.test(text))).toEqual([]);
+  });
+
+  it('reads this repository with the job’s token alone: no step fetches, clones or lists a remote, or reads raw.githubusercontent.com or the API by curl, and every step that runs gh sets GH_TOKEN', () => {
+    const scripts = everyStep().filter(({ step }) => step.run !== undefined);
+    expect(scripts.length).toBeGreaterThan(50);
+    expect(scripts.filter(({ step }) => REMOTE_READ.test(step.run ?? '')).map(({ where }) => where)).toEqual([]);
+    const gh = scripts.filter(({ step }) => RUNS_GH.test(step.run ?? ''));
+    expect(gh.length).toBeGreaterThan(3);
+    for (const { where, job, step } of gh) expect(step.env?.GH_TOKEN ?? job.env?.GH_TOKEN, where).toBe('${{ github.token }}');
+  });
+
+  it('reads this repository with the job’s token alone in what the steps run: no shell script reads the remote or runs gh, the TypeScript a step runs lists or fetches only other repositories with git, and reads the API only where the step gives it the job’s token', () => {
+    // Read from the repository, never from CI_TREE's copy, which holds only the CI files.
+    const files = (dir: string, pattern: RegExp) =>
+      readdirSync(path.join(repositoryRoot, dir), { recursive: true, encoding: 'utf8' })
+        .map((file) => path.posix.join(dir, file.split(path.sep).join('/')))
+        .filter((file) => pattern.test(file) && !file.split('/').includes('node_modules'))
+        .sort();
+    const read = (file: string) => readFileSync(path.join(repositoryRoot, file), 'utf8');
+    const shell = [...files('tools', /\.sh$/), ...files('.github', /\.sh$/)];
+    expect(shell.length).toBeGreaterThan(5);
+    expect(shell.filter((file) => REMOTE_READ.test(read(file)) || RUNS_GH.test(read(file)))).toEqual([]);
+
+    // The TypeScript entry points the steps run, directly (tsx or node) or through a package.json script, and the files
+    // under tools/ each imports, transitively.
+    const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
+    const ENTRY = /\b(?:tsx|node)\s+(tools\/[\w./-]+\.(?:ts|mjs))/g;
+    const runs = everyStep().filter(({ step }) => step.run !== undefined);
+    const entries = runs.flatMap((entry) => [
+      ...[...(entry.step.run ?? '').matchAll(ENTRY)].map((match) => ({ ...entry, file: match[1] ?? '' })),
+      ...[...(entry.step.run ?? '').matchAll(/\bpnpm\s+(?:run\s+)?([a-z][\w:.-]*)/g)].flatMap((match) => [...(scripts[match[1] ?? ''] ?? '').matchAll(ENTRY)].map((named) => ({ ...entry, file: named[1] ?? '' }))),
+    ]);
+    expect(new Set(entries.map(({ file }) => file)).size).toBeGreaterThan(15);
+    const closure = (entry: string) => {
+      const seen = new Set<string>();
+      const queue = [entry];
+      while (queue.length > 0) {
+        const file = queue.pop() ?? '';
+        if (seen.has(file) || !existsSync(path.join(repositoryRoot, file))) continue;
+        seen.add(file);
+        for (const match of read(file).matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
+          let next = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1] ?? ''));
+          if (next.endsWith('.js')) next = `${next.slice(0, -3)}.ts`;
+          else if (!/\.(?:ts|mjs|json)$/.test(next)) next = `${next}.ts`;
+          if (next.startsWith('tools/') && !next.endsWith('.json')) queue.push(next);
+        }
+      }
+      return [...seen];
+    };
+    // git's remote commands as an argument list, and the API, the server or this repository by any name, or gh.
+    const GIT_REMOTE = /['"`](?:fetch|clone|ls-remote|pull|submodule)['"`]\s*[,\]]/;
+    const API = /api\.github\.com|raw\.githubusercontent\.com|GITHUB_(?:API|SERVER)_URL|GITHUB_REPOSITORY|PureTideWater\/PhysicalTherapy|['"`]gh['"`]/;
+    expect(['git(["-C", dir, "fetch", url])', "run('git', ['ls-remote', url])", "git('clone', url)"].filter((text) => !GIT_REMOTE.test(text))).toEqual([]);
+    const gitReaders = new Set<string>();
+    for (const { where, job, step, file } of entries) {
+      const reached = closure(file);
+      expect(reached.length, where).toBeGreaterThan(0);
+      for (const found of reached.filter((candidate) => GIT_REMOTE.test(read(candidate)))) gitReaders.add(found);
+      if (reached.some((candidate) => API.test(read(candidate)))) {
+        const token = step.env?.GITHUB_TOKEN ?? step.env?.GH_TOKEN ?? job.env?.GITHUB_TOKEN ?? job.env?.GH_TOKEN;
+        expect(token, `${where} runs ${file}, which reads GitHub's API or runs gh`).toBe('${{ github.token }}');
+      }
+    }
+    // check-action-pins alone runs git against a remote: the upstreams of the actions the workflows pin, read by
+    // owner/name, never this repository, which no `uses:` names (no local action, no reusable workflow of its own).
+    expect([...gitReaders].sort()).toEqual(['tools/check-action-pins/network.ts']);
+    const uses = everyStep().map(({ step }) => step.uses ?? '').filter((uses) => uses !== '');
+    expect(uses.filter((uses) => uses.startsWith('./') || uses.toLowerCase().startsWith('puretidewater/'))).toEqual([]);
+    expect(workflowFiles().flatMap((file) => Object.values(workflow(file).jobs)).filter((job) => typeof (job as { uses?: unknown }).uses === 'string')).toEqual([]);
+  });
+
+  it('reads the changed paths of screening-capacity’s pull request from its checkout alone: the script passes on a full clone whose remote is gone, and a blobless clone fails it', () => {
+    const changes = workflow('screening-capacity.yml').jobs.changes;
+    const checkout = changes?.steps[0]?.with ?? {};
+    const script = changes?.steps.find((step) => step.id === 'watched')?.run ?? '';
+    expect(script).toContain('git diff --name-only');
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', ...args], { cwd, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' }).trim();
+    const root = mkdtempSync(path.join(scratch, 'changes-'));
+    const work = path.join(root, 'work');
+    mkdirSync(work);
+    git(work, 'init', '-q');
+    mkdirSync(path.join(work, 'tools/screening-capacity'), { recursive: true });
+    mkdirSync(path.join(work, 'apps/worker/src/screening'), { recursive: true });
+    mkdirSync(path.join(work, 'docs'), { recursive: true });
+    writeFileSync(path.join(work, 'tools/screening-capacity/watched-paths.txt'), '# watched\napps/worker/src/screening/*\n');
+    writeFileSync(path.join(work, 'apps/worker/src/screening/consumer.ts'), 'export const a = 1;\n');
+    // A file the pull request moves: rename detection reads both blobs, as a pull request that renames anything does.
+    writeFileSync(path.join(work, 'docs/old.md'), `${'a line of the document\n'.repeat(40)}`);
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'base');
+    const base = git(work, 'rev-parse', 'HEAD');
+    writeFileSync(path.join(work, 'apps/worker/src/screening/consumer.ts'), 'export const a = 2;\n');
+    // Moved and edited, so the base's blob is one the head's checkout does not bring; the list changes too, so its
+    // base copy is read from the base's own blob.
+    git(work, 'mv', 'docs/old.md', 'docs/new.md');
+    writeFileSync(path.join(work, 'docs/new.md'), `${'a line of the document\n'.repeat(39)}an edited line\n`);
+    writeFileSync(path.join(work, 'tools/screening-capacity/watched-paths.txt'), '# watched\napps/worker/src/screening/*\napps/web/src/screening/*\n');
+    git(work, 'commit', '-q', '-am', 'head');
+    const head = git(work, 'rev-parse', 'HEAD');
+    const origin = path.join(root, 'origin.git');
+    git(root, 'clone', '-q', '--bare', work, origin);
+    git(origin, 'config', 'uploadpack.allowFilter', 'true');
+    // A clone as the job's checkout makes it (actions/checkout's fetch with its filter, if any), then the remote gone,
+    // as a private repository's is to a git that holds no token.
+    const cloneAs = (name: string, options: Record<string, unknown>) => {
+      const target = path.join(root, name);
+      git(root, 'clone', '-q', '--no-checkout', ...(typeof options.filter === 'string' ? [`--filter=${options.filter}`] : []), `file://${origin}`, target);
+      git(target, 'checkout', '-q', head);
+      return target;
+    };
+    const run = (cwd: string) => {
+      const output = path.join(cwd, '..', `${path.basename(cwd)}.output`);
+      writeFileSync(output, '');
+      const result = runScript(script, { EVENT: 'pull_request', BASE: base, HEAD: head, GITHUB_OUTPUT: output, RUNNER_TEMP: mkdtempSync(path.join(root, 'temp-')), GIT_TERMINAL_PROMPT: '0', HOME: root }, cwd);
+      return { ...result, written: readFileSync(output, 'utf8') };
+    };
+    const ours = cloneAs('ours', checkout);
+    const blobless = cloneAs('blobless', { ...checkout, filter: 'blob:none' });
+    rmSync(origin, { recursive: true, force: true });
+    const read = run(ours);
+    expect(read.status, read.output).toBe(0);
+    expect(read.output).toContain('watched: apps/worker/src/screening/consumer.ts');
+    expect(read.written).toBe('measure=true\n');
+    const refused = run(blobless);
+    expect(refused.status, refused.output).not.toBe(0);
+    expect(refused.written).toBe('');
+  });
+});
+
+describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)', () => {
+  /** The step every job with a Trivy step runs first: the pinned release, its archive checked, onto this run's PATH. */
+  const INSTALL: Step = { name: 'The pinned Trivy', run: 'trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"\ndirname "$trivy" >> "$GITHUB_PATH"\necho "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"\n' };
+  /** A file's lines less its whole-line comments. */
+  const uncommented = (text: string) => text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+  const trivyJobs = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).filter(([, job]) => job.steps.some((step) => usesAction(step, 'aquasecurity/trivy-action'))).map(([id, job]) => ({ where: `${file} ${id}`, job })));
+
+  it('installs Trivy from its GitHub release, checked against tools/trivy/release.txt, before the first Trivy step of each job, and never by setup-trivy, whose installer downloads from get.trivy.dev', () => {
+    // ci.yml's images job, release.yml's build and the dry run's build: five Trivy steps in three jobs.
+    expect(trivyJobs().map(({ where }) => where)).toEqual(['ci.yml images', 'release-dry-run.yml build', 'release.yml build']);
+    for (const { where, job } of trivyJobs()) {
+      const install = job.steps.findIndex((step) => step.name === INSTALL.name);
+      expect(install, where).toBeGreaterThanOrEqual(0);
+      expect(job.steps[install], where).toEqual(INSTALL);
+      expect(install, where).toBeLessThan(job.steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action')));
+      // Each Trivy step runs the installed binary by its absolute path (TRIVY_CMD, which trivy-action's entrypoint runs in
+      // place of `trivy` from PATH, where each trivy-action step prepends its own directory), never one setup-trivy
+      // downloads, and no step sets TRIVY_CMD otherwise; nothing names a version for it.
+      for (const step of job.steps.filter((candidate) => usesAction(candidate, 'aquasecurity/trivy-action'))) {
+        expect([step.with?.['skip-setup-trivy'], step.with?.version, step.with?.cache], `${where}: ${step.name ?? ''}`).toEqual([true, undefined, false]);
+        expect([step.env?.TRIVY_CMD, job.env?.TRIVY_CMD], `${where}: ${step.name ?? ''}`).toEqual([undefined, undefined]);
+      }
+    }
+    // No line but a comment names setup-trivy or its installer's host.
+    for (const file of workflowFiles()) {
+      expect(uncommented(readFileSync(path.join(WORKFLOWS, file), 'utf8')), file).not.toMatch(/aquasecurity\/setup-trivy|get\.trivy\.dev|contrib\/install\.sh/);
+    }
+  });
+
+  it('pins one version and a SHA-256 for each Linux archive, and checks the archive before anything in it runs', () => {
+    const release = readFileSync(path.join(repositoryRoot, 'tools/trivy/release.txt'), 'utf8');
+    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+    for (const platform of ['linux_x64', 'linux_arm64']) expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+    const installer = readFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), 'utf8');
+    expect(installer).toContain('https://github.com/aquasecurity/trivy/releases/download/v$version');
+    expect(uncommented(installer)).not.toMatch(/get\.trivy\.dev/);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeGreaterThan(0);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // Both pinned installers download over https alone, and follow a redirect only to https (a file:// mirror is the
+    // tests'); the pinned SHA-256 still decides what runs.
+    for (const tool of ['trivy', 'gitleaks']) {
+      const text = readFileSync(path.join(repositoryRoot, `tools/${tool}/install.sh`), 'utf8');
+      const curls = uncommented(text).split('\n').filter((line) => /\bcurl\b/.test(line));
+      expect(curls.length, tool).toBe(1);
+      expect(curls[0], tool).toContain("curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 ");
+    }
+  });
+
+  const linux = process.platform === 'linux' && (process.arch === 'x64' || process.arch === 'arm64');
+  it.runIf(linux)('installs the archive whose SHA-256 release.txt pins into the directory it is given, and refuses another, leaving nothing installed', () => {
+    const root = mkdtempSync(path.join(scratch, 'trivy-'));
+    const version = '0.70.0';
+    const asset = `trivy_${version}_Linux-${process.arch === 'x64' ? '64bit' : 'ARM64'}.tar.gz`;
+    const archive = (dir: string, body: string) => {
+      mkdirSync(path.join(dir, 'x'), { recursive: true });
+      writeFileSync(path.join(dir, 'x/trivy'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      writeFileSync(path.join(dir, 'x/README.md'), 'not installed\n');
+      execFileSync('tar', ['-czf', path.join(dir, asset), '-C', path.join(dir, 'x'), 'trivy', 'README.md']);
+      return createHash('sha256').update(readFileSync(path.join(dir, asset))).digest('hex');
+    };
+    const good = archive(path.join(root, 'good'), `echo "Version: ${version}"`);
+    archive(path.join(root, 'bad'), `echo "Version: ${version}"; echo planted`);
+    // The repository's installer beside a release.txt that pins the good archive (the script reads the file beside it).
+    const tools = path.join(root, 'tools/trivy');
+    mkdirSync(tools, { recursive: true });
+    copyFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), path.join(tools, 'install.sh'));
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${good}\nlinux_arm64 ${good}\n`);
+    const install = (from: string, into: string) =>
+      spawnSync('bash', [path.join(tools, 'install.sh'), into], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, TRIVY_DOWNLOAD_BASE: `file://${path.join(root, from)}` }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    const ok = install('good', path.join(root, 'bin-good'));
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout.trim()).toBe(path.join(root, 'bin-good/trivy'));
+    expect(readdirSync(path.join(root, 'bin-good'))).toEqual(['trivy']);
+    const refused = install('bad', path.join(root, 'bin-bad'));
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`not the ${good} that`);
+    expect(existsSync(path.join(root, 'bin-bad/trivy'))).toBe(false);
+    // An archive that matches but whose trivy reports another version is refused too, and not left on PATH.
+    const other = archive(path.join(root, 'other'), 'echo "Version: 0.69.4"');
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${other}\nlinux_arm64 ${other}\n`);
+    const wrong = install('other', path.join(root, 'bin-other'));
+    expect(wrong.status).toBe(1);
+    expect(wrong.stderr).toContain('0.69.4');
+    expect(existsSync(path.join(root, 'bin-other/trivy'))).toBe(false);
   });
 });
 

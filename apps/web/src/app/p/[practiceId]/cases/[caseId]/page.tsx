@@ -7,16 +7,16 @@ import { ActionForm } from '../../../../../components/action-form';
 import { CheckboxField, Field, SelectField, TextAreaField } from '../../../../../components/field';
 import { CaseTimeline } from '../../../../../components/cases/timeline';
 import { utc } from '../../../../../components/format';
-import { Fact, Money, Pager } from '../../../../../components/remittances/display';
+import { Counted, Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
-import { CaseStateBadge, Deadline, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
+import { ActionableLinesOn, CaseStateBadge, Deadline, NetExpected, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { PRICING_CAUSE_TEXT } from '../../../../../lib/packets/pricing';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
-import { LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, proofLevelWords, recoveredLabel, showsBillableFact } from '../../../../../components/reconciliation/display';
+import { LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, recoveredCashWords, recoveredLabel, showsBillableFact } from '../../../../../components/reconciliation/display';
 import { STATUS_TONES } from '../../../../../components/remittances/display';
 import { StatusChip } from '../../../../../components/status';
 
@@ -80,10 +80,10 @@ export default async function CasePage(props: Props) {
               <span data-figure="actionable">
                 <Money value={item.actionableNowCents} />
               </span>{' '}
-              ({item.openLines} of {item.lines} lines not written off)
+              on <ActionableLinesOn item={item} />
             </Fact>
             <Fact label="Written off">
-              <Money value={item.writtenOffCents} /> ({item.lines - item.openLines} lines, struck through below)
+              <Money value={item.writtenOffCents} /> (<Counted value={item.lines - item.openLines} one="line" />, struck through below)
             </Fact>
             <Fact label={stageLabel('payer_approved')}>
               <span data-figure="payer-approved">
@@ -95,7 +95,7 @@ export default async function CasePage(props: Props) {
               <span data-figure="recovered">
                 <Money value={ledger.recoveredCents} />
               </span>{' '}
-              (stage five: cash {proofLevelWords(ledger.proofLevel === 'deposited' ? 'deposited' : 'posted')}, net of recoupments and reversals)
+              ({recoveredCashWords(ledger.proofLevel === 'deposited' ? 'deposited' : 'posted')})
             </Fact>
             {showsBillableFact(corrections) ? (
               <Fact label="Billable to the patient">
@@ -112,7 +112,9 @@ export default async function CasePage(props: Props) {
               <Money value={item.materialityCents} />
             </Fact>
             <Fact label="Pursuit cost (estimate)">{item.pursuitCostCents === null ? 'Not estimated (no staff rate and minutes in the practice’s settings)' : <Money value={item.pursuitCostCents} />}</Fact>
-            <Fact label="Net expected value">{item.netExpectedCents === null ? '—' : <Money value={item.netExpectedCents} />}</Fact>
+            <Fact label="Net expected value">
+              <NetExpected item={item} />
+            </Fact>
             <Fact label="Owner">
               <span data-owner={item.ownerUserId ?? 'none'}>{item.owner ?? 'Unassigned'}</span>
             </Fact>

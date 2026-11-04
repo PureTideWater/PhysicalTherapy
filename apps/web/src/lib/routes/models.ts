@@ -15,7 +15,10 @@ import { opaqueId, optionalText } from './schemas';
  * practice's daily budget, which the gateway checks before anything is sent (MOD-05, MOD-06):
  *
  * - the contract specialist asks for a proposal of a draft version's terms, or discards one (the
- *   version's approval records the decision on the rest: src/lib/routes/abstraction.ts);
+ *   version's approval records the decision on the rest: src/lib/routes/abstraction.ts); before the
+ *   contract screen reads the practice's records, the screen's own limits per practice and per person
+ *   (src/lib/models/contract-proposals.ts SCREEN_LIMITS), and a document the server found naming a
+ *   patient is refused again for an hour without a screen (docs/adr/0070, Part 3);
  * - a person who drafts packets asks for the narrative of the packet's next version (sending it for
  *   approval, or approving it, records the decision: src/lib/routes/packets.ts);
  * - a person who works cases asks for the coverage gaps' checklist, and keeps or dismisses it.

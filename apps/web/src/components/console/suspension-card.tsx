@@ -12,7 +12,6 @@ import {
   HISTORY_CAPTION,
   HISTORY_CHANGES,
   HISTORY_COLUMNS,
-  HISTORY_EMPTY,
   REINSTATE_SUBMITS,
   SUSPEND_SUBMIT,
   SUSPENSION_NOTE_HINT,
@@ -20,6 +19,7 @@ import {
   SUSPENSION_REASON_HINT,
   SUSPENSION_REASON_OPTIONS,
   type SuspendableKind,
+  historyEmpty,
   reasonLabel,
   suspendedEffect,
   suspendedLines,
@@ -117,8 +117,8 @@ export function SuspensionCard({
   );
 }
 
-/** C10: the organization's suspensions, reinstatements and changes of reason, newest first. */
-export function SuspensionHistory({ history }: { readonly history: readonly StatusChange[] }) {
+/** C10: the organization's suspensions, reinstatements and changes of reason, newest first; `suspended` while one is in force. */
+export function SuspensionHistory({ history, suspended }: { readonly history: readonly StatusChange[]; readonly suspended: boolean }) {
   return (
     <Card>
       <CardHeader>
@@ -126,7 +126,7 @@ export function SuspensionHistory({ history }: { readonly history: readonly Stat
       </CardHeader>
       <CardContent>
         {history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{HISTORY_EMPTY}</p>
+          <p className="text-sm text-muted-foreground">{historyEmpty(suspended)}</p>
         ) : (
           <ScrollTable label={HISTORY_CAPTION}>
             <table className="w-full min-w-[48rem] text-left text-sm" aria-label={HISTORY_CAPTION}>
