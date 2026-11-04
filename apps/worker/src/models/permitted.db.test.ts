@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { parsePageText, serializePageText } from '@tp/contracts';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, documentPagesKey, openPool, provisionPracticeKey, readDatabaseUrl } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, asOwner, createMigratedDatabase, createTenantWorld, endPool } from '@tp/db/testing';
-import { CORRECTION_FORMAT, CORRECTION_FORMAT_V1, type FieldTally, LocalDeterministicProvider, PROMPTS, ZERO_TALLY, asCounts, permittedRegressions } from '@tp/model-gateway';
+import { CORRECTION_FORMAT, CORRECTION_FORMAT_V1, type FieldTally, LocalDeterministicProvider, PROMPTS, ZERO_TALLY, asCounts, permittedOutcome, permittedRegressions } from '@tp/model-gateway';
 import { SYNTHETIC_CONTRACT_PAGES, capturingLogger, registerOutput, syntheticContractOutput } from '@tp/model-gateway/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -34,6 +34,7 @@ interface Practice {
   readonly practiceId: string;
   readonly documentId: string;
   readonly agreementId: string;
+  readonly cipher: Awaited<ReturnType<typeof provisionPracticeKey>>['cipher'];
 }
 
 // The final records of the synthetic contract as a specialist would approve them; a window ends the day after its last day.
@@ -69,7 +70,7 @@ async function practice(label: string, output: unknown = syntheticContractOutput
   if (output !== null) {
     registerOutput(provider, 'proposeContractTerms', { documentId, documentSha256: sha256, kind: 'contract', pages: parsePageText(bytes), ambiguous: false }, output);
   }
-  return { world, practiceId: world.practiceId, documentId, agreementId };
+  return { world, practiceId: world.practiceId, documentId, agreementId, cipher: key.cipher };
 }
 
 async function example(target: Practice, expected: object): Promise<string> {
@@ -99,7 +100,10 @@ let south: Practice;
 let west: Practice;
 let east: Practice;
 let blank: Practice;
+let misfiled: Practice;
 const ids: Record<string, string> = {};
+/** The misfiled practice's one patient's member ID: SYNTHETIC, in packages/synth's SYNMBR range. */
+const MISFILED_MEMBER = 'SYNMBR90000001';
 
 beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
@@ -127,6 +131,17 @@ beforeAll(async () => {
   // A document whose pages hold no text: the gateway refuses the call before it is made.
   blank = await practice('PERMITTED BLANK', null, ['', '']);
   ids.blank = await example(blank, correction(blank, [record('97110', '3250')]));
+  // A "contract" that is really a remittance note: it names, spaced in groups, the member ID of one of the practice's
+  // own (SYNTHETIC) patients, so the practice records check refuses it before the call (docs/adr/0070, Part 3).
+  misfiled = await practice('PERMITTED MISFILED', syntheticContractOutput(), [
+    ...SYNTHETIC_CONTRACT_PAGES,
+    `SYNTHETIC REMITTANCE NOTE - INVENTED\nMember ID: ${MISFILED_MEMBER.slice(0, 6)} ${MISFILED_MEMBER.slice(6, 10)} ${MISFILED_MEMBER.slice(10)}`,
+  ]);
+  await asOwner(owner, [misfiled.practiceId], () =>
+    owner.query('INSERT INTO patient_ref (practice_id, pseudonym, member_id) VALUES ($1, $2, $3)', [misfiled.practiceId, 'c'.repeat(64), misfiled.cipher.encrypt('patient_ref.member_id', MISFILED_MEMBER)]),
+  );
+  ids.misfiled = await example(misfiled, correction(misfiled, [record('97110', '3250')]));
+  ids.misfiledAgain = await example(misfiled, correction(misfiled, [record('97140', '3025')]));
 }, 120_000);
 
 afterAll(async () => {
@@ -223,6 +238,75 @@ describe('the evaluation on permitted examples inside the PHI boundary', () => {
     // Against an earlier run on the same example in which the call was made, the rise in refusals fails the gate.
     const earlier = { ...report, refused: 0, problems: [], variants: { ...report.variants, default: { ...report.variants.default, refused: 0 } } };
     expect(permittedRegressions(report, earlier)).toEqual(['refused_rose:default']);
+  });
+
+  it('refuses, before the call, an example whose document names a patient of the practice, and counts it as the example’s own outcome', async () => {
+    const runId = randomUUID();
+    const report = await evaluatePermitted(services(), { runId, practiceIds: [misfiled.practiceId] });
+    expect(report).toMatchObject({ examples: 2, refused: 2, measured: 0 });
+    expect(report.problems.map((entry) => entry.problem)).toEqual(['refused:names_patient', 'refused:names_patient']);
+    expect(report.problems.map((entry) => entry.exampleId).sort()).toEqual([ids.misfiled, ids.misfiledAgain].sort());
+    expect(report.total).toEqual(ZERO_TALLY);
+    // The document's own outcome, met again on any rerun (the gateway package's allowlist): kept and counted, outside the
+    // model, and no bar to recording the run, unlike a screen that could not run (refused:screen_unavailable, the run's).
+    expect(permittedOutcome('refused:names_patient')).toBe('outside_model');
+    expect(report.problems.filter((entry) => permittedOutcome(entry.problem) === 'unmeasured')).toEqual([]);
+    expect([permittedOutcome('refused:screen_unavailable'), permittedOutcome('refused:screen_failed')]).toEqual(['unmeasured', 'unmeasured']);
+    // Nothing was sent, so nothing was logged as a call; the report holds no identifier.
+    expect(await asOwner(owner, [misfiled.practiceId], async () => (await owner.query<{ id: string }>('SELECT id FROM model_call WHERE practice_id = $1', [misfiled.practiceId])).rows)).toEqual([]);
+    expect(JSON.stringify(report)).not.toContain(MISFILED_MEMBER.slice(6));
+    // The screen read the practice's records as the run, once for both examples, under the run's request ID.
+    const screened = await asOwner(owner, [misfiled.practiceId], async () =>
+      (
+        await owner.query<{ actor_id: string; actor_kind: string; object_type: string; request_id: string; n: string }>(
+          "SELECT actor_id, actor_kind, object_type, request_id, count(*)::text AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen' GROUP BY 1, 2, 3, 4",
+          [misfiled.practiceId],
+        )
+      ).rows,
+    );
+    expect(screened).toEqual([{ actor_id: runId, actor_kind: 'service', object_type: 'patient_ref', request_id: `evaluate-permitted:${runId}:screen:${runId}`, n: '1' }]);
+    // Still refused calls: against an earlier run on the same examples whose calls were made (before the check shipped),
+    // the rise fails the comparison (kept, fail closed: docs/adr/0070, Part 3); against a run on the current code, which
+    // refuses the same examples, nothing has regressed.
+    const before = { ...report, refused: 0, problems: [], variants: { ...report.variants, default: { ...report.variants.default, refused: 0 } } };
+    expect(permittedRegressions(report, before)).toEqual(['refused_rose:default']);
+    expect(permittedRegressions(await evaluatePermitted(services(), { runId: randomUUID(), practiceIds: [misfiled.practiceId] }), report)).toEqual([]);
+  });
+
+  it('reads none of a practice’s records for examples the gateway refuses without the screen: a spent budget (combined audit item 120’s review, S1)', async () => {
+    const screenReads = async () =>
+      asOwner(owner, [misfiled.practiceId], async () => (await owner.query<{ n: string }>("SELECT count(*)::text AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen'", [misfiled.practiceId])).rows[0]?.n);
+    const before = await screenReads();
+    await owner.query("INSERT INTO feature_flag (key, scope, scope_id, value) VALUES ('model.daily_budget_cents', 'practice', $1, '\"0\"'::jsonb)", [misfiled.practiceId]);
+    try {
+      const report = await evaluatePermitted(services(), { runId: randomUUID(), practiceIds: [misfiled.practiceId] });
+      // Refused by the budget before the screen, though each document names a patient: the run is the budget's, not the documents'.
+      expect(report.problems.map((entry) => entry.problem)).toEqual(['budget_exceeded', 'budget_exceeded']);
+      expect(await screenReads()).toBe(before);
+    } finally {
+      await owner.query("DELETE FROM feature_flag WHERE key = 'model.daily_budget_cents' AND scope = 'practice' AND scope_id = $1", [misfiled.practiceId]);
+    }
+  });
+
+  it('refuses each example as screen_failed when a practice’s stored identifier does not decrypt, reading again for the next, every read kept (combined audit item 120’s review, F3)', async () => {
+    const sealed = await practice('PERMITTED UNREADABLE RECORDS', syntheticContractOutput(), [...SYNTHETIC_CONTRACT_PAGES, 'SYNTHETIC RENEWAL NOTE - INVENTED']);
+    // A member ID sealed for another column (what a write bug, or a restore under the wrong key, leaves): it does not decrypt.
+    await asOwner(owner, [sealed.practiceId], () =>
+      owner.query('INSERT INTO patient_ref (practice_id, pseudonym, member_id) VALUES ($1, $2, $3)', [sealed.practiceId, 'd'.repeat(64), sealed.cipher.encrypt('claim.patient_control_number', 'SYNMBR90000002')]),
+    );
+    await example(sealed, correction(sealed, [record('97110', '3250')]));
+    await example(sealed, correction(sealed, [record('97140', '3025')]));
+    const runId = randomUUID();
+    const report = await evaluatePermitted(services(), { runId, practiceIds: [sealed.practiceId] });
+    // The run's setting, not the examples': unmeasured, so record-permitted refuses the run whole.
+    expect(report.problems.map((entry) => entry.problem)).toEqual(['refused:screen_failed', 'refused:screen_failed']);
+    expect(report.problems.every((entry) => permittedOutcome(entry.problem) === 'unmeasured')).toBe(true);
+    expect(await asOwner(owner, [sealed.practiceId], async () => (await owner.query<{ id: string }>('SELECT id FROM model_call WHERE practice_id = $1', [sealed.practiceId])).rows)).toEqual([]);
+    // The check read again for the second example after the first failed: one audited read of the row per example, both kept.
+    const screened = await asOwner(owner, [sealed.practiceId], async () =>
+      (await owner.query<{ object_type: string; n: string }>("SELECT object_type, count(*)::text AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen' AND actor_id = $2 GROUP BY 1", [sealed.practiceId, runId])).rows,
+    );
+    expect(screened).toEqual([{ object_type: 'patient_ref', n: '2' }]);
   });
 
   it('scores an answer that does not parse as proposing nothing', async () => {

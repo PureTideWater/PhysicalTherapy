@@ -29,7 +29,7 @@
   - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
     read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
     newness is read from the base's workflows, and its digest is aged with every other image).
-- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28; N32 2026-10-28
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
@@ -43,6 +43,8 @@
     co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's Q2 (2026-10-25, about 21:05 UTC) and ruling of
     2026-10-26, about 00:20 UTC (every choice its recommended option, for security the safer one; the baselines'
     inspection by an adversarial visual-inspection agent's private gallery, not blocking the merge).
+    N32 is made under the same ruling of 2026-10-26, for the item Lane A's orchestrator handed Lane B on 2026-10-28 at
+    05:45 UTC (reconciliation-001).
   - **Part 2:** items #112 and #19 of that audit; the founder's rulings on the series' questions F1 (a), F2 (a) and
     (b), F4 and F7, relayed by the co-founder on 2026-10-25 at about 01:10 UTC, F7 applied that day at 21:14 UTC; and
     the co-founder's answers to CQ1, CQ2 and CQ3, each its recommended and safer option (2026-10-26, about 00:20 UTC),
@@ -833,6 +835,46 @@ Alternatives considered for Trivy:
 - **The `aquasec/trivy` image by digest.** It is another artifact to pin and age. It would also need Docker to reach
   each archive and the daemon's image.
 
+### Amendment (`co-001/ci-trivy-install-2026-11-04`, 2026-11-04): no partial clone on a private repository
+
+The repository went private on 2026-11-04 at about 02:51Z. screening-capacity's `changes` job checked out with
+`filter: blob:none` and `persist-credentials: false`, so its `git diff --name-only` (rename detection) and `git show`
+fetched blobs from the promisor remote with no credentials. That failed: "could not read Username for
+'https://github.com'", run 41765454724, job 126369187941, exit 128. The repository was public again from about 07:10Z;
+the rules below stay, so the gate keeps working if it goes private again.
+
+- Its checkout now fetches every object, once, with the job's token (`fetch-depth: 0`, no filter, about 34 MiB packed).
+  `persist-credentials: false` and `contents: read` stay.
+- A blobless clone could also have read an unfetchable list as "the base keeps no watched list", through
+  `git cat-file -e`. A full clone cannot.
+- `workflows.test.ts` holds four rules (CI-11):
+  - no checkout that keeps no token makes a partial clone;
+  - the `changes` script passes on a full clone whose remote is gone and fails on a blobless one;
+  - no step runs git fetch, clone, `ls-remote`, pull, `submodule update` or `archive --remote` (with any global
+    options before the command), reads raw.githubusercontent.com, or curls the API, the server or this repository by
+    any of their names (`$GITHUB_API_URL`, `${{ github.api_url }}`, `$GITHUB_SERVER_URL`, `$GITHUB_REPOSITORY`,
+    owner/name), and every `gh` step sets `GH_TOKEN`; a mutation case per form;
+  - the same scan holds every shell script under `tools/` and `.github/`, and every TypeScript entry point a step
+    runs (directly or through a package.json script) with the `tools/` files it imports: git against a remote only in
+    `check-action-pins` (other owners' upstreams; no `uses:` names this repository), and GitHub's API or `gh` only
+    where the step is given the job's token.
+
+The audit of every workflow and the scripts they run found nothing else that read this repository unauthenticated:
+- Every other checkout is full (`fetch-depth: 0`) or reads only its own commit, and no step fetches after it.
+- Every `gh` step (the content calendar, release-capacity, screening-capacity's `notify`, release.yml's `report`) sets
+  `GH_TOKEN` and `GH_REPO`.
+- approval-of-record reads the API with the job's token.
+- `check-action-pins` and `check-toolchain` read only upstream repositories and registries.
+- gitleaks, fixture-check, check-releases-immutable, engine-freeze and stryker's affected set read the local clone.
+- The launch check's `gh attestation verify` reads only the release's bundle and Sigstore's trusted root, never this
+  repository.
+- Not a read, and the founder's: release.yml's `report` job runs actions/attest-build-provenance, and artifact
+  attestations for a private repository need GitHub Enterprise Cloud, so a release's report goes unattested and
+  production's screening stays closed until that is decided (open item O15, docs/runbooks/screening-capacity.md). Not
+  changed here.
+- Runner sizes, the 4-CPU harness minimum and the larger-runner and GitHub Team decision are the founder's, and are not
+  changed here.
+
 ## Part 3 (`co-001/ci-browser`)
 
 ### Context
@@ -1081,6 +1123,107 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   each with a stand-in docker that accepts those two forms only, a stand-in `sha256sum` that fails on one file, and
   stand-in binaries whose bytes stay equal to the record while they print another version, fail to start or lose their
   execute bit.
+- **N32** (`co-001/ci-images-digest`, 2026-10-28). The images job's two identity steps take only the config digest
+  they compare, `fromJSON(steps.<id>.outputs.metadata || '{}')['containerimage.config.digest']`, never the whole
+  metadata output. The branch's commit messages call it N29, the number it held until the merge of #82, whose Part 5
+  notices, N23 to N31, include an N29 of their own.
+  - **Why.** buildx v0.38.1 copies the whole event into every build record's provenance and, by default, into the
+    metadata output. On #42's description of 95,324 characters, that output reached 132,377 bytes, 132,387 as one
+    environment string (`NAME=value` and its NUL), over Linux's 131,072 (`MAX_ARG_STRLEN`; the whole environment and
+    arguments are held to `ARG_MAX` besides), so bash never started (job 122624309161).
+  - **The guard.** The `|| '{}'` keeps an empty output on the step's own message: the runner evaluates a step's
+    `env` before its `if:`, so no condition could guard it.
+  - **The builds.** Every `docker/build-push-action` step also sets `BUILDX_METADATA_PROVENANCE: disabled`. No step
+    reads the provenance, and the event stops being printed in each build's log.
+    - **The build record.** build-push-action's post step exports each build's record (a `.dockerbuild` file:
+      BuildKit's history, whose provenance carries buildx's `github_actions_context.json`, the whole event: a pull
+      request's description, title and labels, a push's commit messages and its authors' names and e-mails) and
+      uploads it as an artifact. The repository is public, so any signed-in GitHub account can download it, for 90
+      days (no retention is set), after the description is edited. So every build step also sets
+      `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: a pull request's run uploads no record
+      (it is still written on the runner, and the build summary without its link), while every other run (a push's, a
+      scheduled or a dispatched one's, the release's) keeps the default upload, the release's record being the only
+      full provenance of a released image (its images build with `provenance: false`). build-push-action v7.4.0 reads
+      the variable in its post step with actions-toolkit's `parseBool`. A build's env holds these two variables and no
+      other, and no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job (its env or its container's) or
+      workflow (`DOCKER_BUILD_SUMMARY: false` would skip the record on every run): a job container's `options` set no
+      variable (`--env`, `-e`, `--env-file`) and none is given by an expression, and a service's name none. A variable
+      a container image's own config sets is not read; each image is the pin rules'. A workflow that holds a build runs
+      only on `push`, `pull_request`, `schedule` or `workflow_dispatch`: on another event whose payload carries a pull
+      request (`pull_request_target`, a review or a comment on one, `workflow_run`) the expression is true and the
+      record, with the description and title, would be uploaded. Decided for the safer option under the same ruling.
+    - **A proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder, needs
+      #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
+      `image=…@sha256:…`), so it stays with the founder.
+  - **What holds it.** `workflows.test.ts` reads every expression of this repository's workflows that reaches a step's
+    environment, an input or a script, or a key, as the runner reads it, and admits only a closed list; it refuses an
+    expression in any key: GitHub evaluates one in an env name, a step input's name (`INPUT_<key>`), a service's id or
+    a matrix key, and in keys whose own text reaches no process (a container's or a service's own, registry
+    credentials, `strategy`, a matrix's `include` entries, a job's `defaults.run`), and refuses one when it parses the
+    file in the rest (`on:`, the workflow's `defaults.run`, a job's id or outputs, a step's own keys, a reusable
+    workflow's `with:` and `secrets:`). It refuses a key
+    of a workflow, a job or a step outside the closed list it reads (a nested `parallel:` list of steps, say), so no
+    expression in a workflow goes unread. That list holds values GitHub or the workflow bounds, and every step output
+    and value one job hands another, each listed with its bound. It reads this repository's workflows: a pinned
+    action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read by it
+    (`pnpm actions:check` reads a pin's `action.yml` for the pin rules, never to bound a value). The defect this
+    notice fixes came from action code, buildx copying the event into its metadata, which no expression rule can read,
+    so every step output is bounded where a workflow hands it to a process, by the value rule and its list.
+    - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
+      by its job and id (a `uses:` step with its action, whose pin is the pin rules'), a job's output (which must
+      declare one step's or needed job's output alone, whose own row's bound is within the reader's), a matrix key, a
+      job the reader needs, and tool code by the name it declares (`path#symbol`). The steps, needed jobs and job
+      outputs a row names are exactly those its value reads (a `steps.<id>` value its own job's step `<id>`, a
+      `needs.<j>.outputs.<n>` value job `<j>` and its output `<n>`, `toJSON` each job and output it is given), so a
+      row that cites another job's producer, or leaves its own out, fails. A row whose producer is a workflow's `run:`
+      step holds the fingerprint of what the script runs with as parsed: its `run`, its `env` over its job's and the
+      workflow's, its `shell` and `working-directory` or the `defaults.run` its job or the workflow gives, and its
+      job's container, so a changed script or input, its own or inherited, fails until a person re-reads the bound and
+      updates it; a row whose bound is tool code's names instead, by its title, the unit test its owners keep for that
+      bound, since other lanes change that code for their own reasons. The test checks that the title is one test's
+      alone in its file, written to run whenever its file runs: a plain `it()` or `test()` at the file's top level or
+      directly in a plain `describe`'s callback, with no skip, todo, only, fails, each, skipIf or runIf, no if, loop,
+      ternary, function or `return` around it, no `it`, `test` or `describe` of its own scope's (an import from vitest
+      under its own name aside), its context read for its `expect` or `signal` alone, and no skip in its options, in a
+      call named `skip`, or in any hook of its file (each hook a function written there whose context is read the same
+      way). It does not check what that test asserts, nor that a project's include list runs its file.
+    - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
+      `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
+      github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
+      holding what toJSON writes of every output it reads, quoted and escaped, six bytes a byte at most, with their
+      names and indents), and refuses one over 131,072 bytes, or one holding a value with no bound, but for the one
+      value named over the limit, which is exempt from that limit only alone in its string (one expression that reads
+      it and nothing else, at its one place), never from its process's whole below. A mapping given as one expression
+      (an env, a step's `with:`, a container or a service), whose names and strings come from the value at run time,
+      is refused, so each string a workflow sets is one the sum reads. It holds each argument the runner hands a
+      process to the same 131,072 bytes (a container's or a service's image, options, entrypoint or command, a default
+      or a step's shell), and every string a step's process or a container is given from the workflow, together, under
+      `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's own. A value a job passes a called workflow as a secret is
+      held to a secret's 48 KB, the bound that workflow's own sum gives `secrets.<name>` (the pin rules refuse a
+      reusable workflow today, so none is passed). What a script builds from the values it reads, its own commands'
+      arguments, is the script's: no rule reads it.
+    - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`), held to the
+      one place each job reads them, and alone in its string there, so no second use and no other value joins them.
+      Their transport is an item of its own, `ci-findings-transport`, which also owns their job output: up to 933,336
+      characters, 1,866,672 bytes as GitHub counts an output (UTF-16), over its 1 MB limit. Every listed value whose
+      bound passes 131,072 bytes is held to the places it is read in the same way: those findings in both jobs, and
+      publish-content's release numbers, read in one script.
+    - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
+      is one entry of a closed map, its variable's only write: its exact line (so its value's form too) and each file,
+      job and step that makes it, once, with that step's fingerprint (a changed script or input, its own or inherited, fails until a person
+      re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
+      reading the whole file it writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is
+      refused in any env. Nothing else names it: a shell (a step's or a default), an input, or an env's name or value
+      naming `$GITHUB_ENV` or `$GITHUB_PATH` is refused, since a command template or an action could write it unread,
+      and so is anything naming the runner's file command files (`_runner_file_commands`, or a file's own name,
+      `set_env_` or `add_path_`, which a script could reach beside `$GITHUB_OUTPUT`'s), a script line included.
+      `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has a closed map of
+      its own, held the same way: its one entry is the pinned Trivy's directory, written beside its `TRIVY_CMD` by the
+      install step of each job that scans (the amendment of 2026-11-04 to Part 2), and every other line naming it is
+      refused. Every other tracked file naming any of these (a script or tool code a step runs, a
+      package's script) is one of a closed list, each with why it sets nothing. A script that reaches the file without
+      naming it (a name built at run time, another interpreter) and a dependency's or a pinned action's own code are
+      not closed by reading text.
 
 ### Consequences
 
