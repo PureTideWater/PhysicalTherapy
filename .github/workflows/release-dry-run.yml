@@ -28,6 +28,8 @@ on:
       - tools/ci/browser-build.ts
       - apps/web/e2e/browser.json
       - apps/web/e2e/browser-builds/*
+      # The pinned Trivy the build installs for its bill of materials.
+      - tools/trivy/**
   push:
     branches: [claude/build-platform]
     paths:
@@ -41,6 +43,8 @@ on:
       - tools/ci/browser-build.ts
       - apps/web/e2e/browser.json
       - apps/web/e2e/browser-builds/*
+      # The pinned Trivy the build installs for its bill of materials.
+      - tools/trivy/**
 
 permissions:
   contents: read
@@ -78,6 +82,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The pinned Trivy (tools/trivy/release.txt), its release archive checked against the SHA-256 there before it runs,
+      # installed into this run's temporary directory and put on PATH for the Trivy steps below, which skip setup-trivy:
+      # its installer downloads from get.trivy.dev, gone since 2026-11-03 (docs/adr/0066, Part 2).
+      - name: The pinned Trivy
+        run: |
+          trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"
+          dirname "$trivy" >> "$GITHUB_PATH"
 
       # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
       # moby/buildkit:buildx-stable-1 by tag. Its age is held by tools/check-toolchain's image rule, as every image's
@@ -131,6 +143,7 @@ jobs:
       - name: Write the software bill of materials
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           image-ref: ${{ steps.image.outputs.ref }}
           format: spdx-json
           output: sbom-${{ matrix.image }}-dry-run.spdx.json

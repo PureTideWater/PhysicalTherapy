@@ -669,6 +669,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
+      # The pinned Trivy (tools/trivy/release.txt), its release archive checked against the SHA-256 there before it runs,
+      # installed into this run's temporary directory and put on PATH for the Trivy steps below, which skip setup-trivy:
+      # its installer downloads from get.trivy.dev, gone since 2026-11-03 (docs/adr/0066, Part 2).
+      - name: The pinned Trivy
+        run: |
+          trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"
+          dirname "$trivy" >> "$GITHUB_PATH"
       # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
       # moby/buildkit:buildx-stable-1 by tag. Its age is held by tools/check-toolchain's image rule, as every image's
       # is; Dependabot cannot update this string, so tools/check-action-pins warns when a newer release is three days
@@ -694,6 +701,7 @@ jobs:
       - name: Scan the web image (fails on HIGH or CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           input: ${{ runner.temp }}/image/web.tar
           format: table
           severity: HIGH,CRITICAL
@@ -719,6 +727,7 @@ jobs:
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           input: ${{ runner.temp }}/image/worker.tar
           format: table
           severity: HIGH,CRITICAL
