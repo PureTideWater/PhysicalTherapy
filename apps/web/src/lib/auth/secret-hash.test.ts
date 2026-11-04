@@ -34,10 +34,10 @@ describe('the client secret’s wrapper (review security-N5)', () => {
     const secret = new ClientSecret(VALUE);
     expect(JSON.stringify(secret)).toBe('"[redacted]"');
     expect(String(secret)).toBe('[redacted]');
-    expect(`${secret}`).toBe('[redacted]');
+    expect(['shown:', secret].join(' ')).toBe('shown: [redacted]');
     expect(inspect(secret)).toBe('[redacted]');
     const holder = { clientId: CLIENT, clientSecret: secret, nested: { secret } };
-    for (const shown of [JSON.stringify(holder), inspect(holder, { depth: 10, showHidden: true }), String(Object.values(holder))]) {
+    for (const shown of [JSON.stringify(holder), inspect(holder, { depth: 10, showHidden: true }), [holder.clientSecret, holder.nested.secret].join(',')]) {
       expect(shown).not.toContain(VALUE);
     }
     expect(Object.keys(secret)).toEqual([]);
