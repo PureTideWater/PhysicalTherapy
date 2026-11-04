@@ -123,9 +123,13 @@ async function rerender(page: Page, next: Partial<PageKeys>): Promise<void> {
   }, next);
 }
 
-/** Waits until the page's forms have shown `count` responses (the harness counts each summary on body[data-shown]). */
+/**
+ * Waits until the page's forms have shown at least `count` responses (the harness counts each summary on body[data-shown]).
+ * At least, never exactly: the count can move past `count` between two of Playwright's polls, and an exact wait would then
+ * never end. A test that needs exactly `count` asserts it once the page has settled.
+ */
 async function shownCount(page: Page, count: number): Promise<void> {
-  await page.waitForSelector(`body[data-shown="${String(count)}"]`, { state: 'attached' });
+  await page.waitForFunction((n) => Number(document.body.dataset.shown ?? '0') >= n, count, { timeout: 10_000 });
 }
 
 describe.skipIf(!chromiumInstalled())('a sign-in step’s time limit in the browser', { timeout: 30_000 }, () => {
