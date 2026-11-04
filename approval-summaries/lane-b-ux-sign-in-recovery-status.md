@@ -28,6 +28,10 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
   an alarm on password_reset_requested per user per day and on undelivered requests (R-11); branded wording for
   Cognito's code email; a "your password was changed" email; optionally the security_event migration. Next: the build.
 
+- 2026-11-04T07:15:00Z: build workflow wf_a3949540-155 launched (before shots on the base; slices A-E failing-first;
+  integration; adversarial checker; push and draft PR); script archived. Next: two reviews (security; UX and brand with
+  after shots), each finding checked by a skeptic; one fix round with the suite once; verification.
+
 ## Waiting on someone
 - The founder: the 4-CPU runner and organization (#102) before the merge.
 
