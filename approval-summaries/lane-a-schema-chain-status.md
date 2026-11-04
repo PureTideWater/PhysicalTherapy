@@ -158,6 +158,12 @@ its unpushed work is not waited for).
   INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen; the warning names the
   cause it can see." 1b's fix round reads that file and applies it (failing-first on the aborted-load reproduction; ADR
   0083 and reconciliation-001 record it beside the first grant). Interest takes 1b's final head in one merge.
+- **13:58 UTC. 1b PR #110 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/110, head d219e97d (base
+  e084da22 merged; 20261109090000 unchanged; domain model e024cf9f…c4df, provisional; body 35,855). Subscribed. The words
+  scout: no screen or PDF sentence changed; operator-facing text is new (JobHeapLivePeak alarm, two runbook sections, the
+  ci.md guide, the release:load warning, the capacity summary). **Decision:** those are words a person reads, so they get a
+  words review too: wf_78024f0c-4c1 (archived) reviews them with a skeptic per finding and hands confirmed ones to the fix
+  round's record before it starts. Reviews and the two investigations running in wf_a38ce7b6-ec3.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
