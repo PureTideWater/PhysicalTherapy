@@ -258,6 +258,11 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
   if (env.COGNITO_CLIENT_SECRET === CLIENT_SECRET_PLACEHOLDER) {
     throw new ConfigError('COGNITO_CLIENT_SECRET is the stack’s placeholder, not a client secret: the secret was never seeded');
   }
+  // The whole stored secret (its JSON, placeholder or seeded) rather than its clientSecret key: a client secret is never
+  // JSON, so this is refused by name before it could be sent as a hash key (review security-N4).
+  if (env.COGNITO_CLIENT_SECRET !== undefined && (env.COGNITO_CLIENT_SECRET.trimStart().startsWith('{') || env.COGNITO_CLIENT_SECRET.includes('"clientSecret'))) {
+    throw new ConfigError('COGNITO_CLIENT_SECRET holds the whole stored secret, not its clientSecret key: the task definition must inject the key alone');
+  }
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
     const names = [...new Set(parsed.error.issues.map((issue) => issue.path.join('.')))].join(', ');

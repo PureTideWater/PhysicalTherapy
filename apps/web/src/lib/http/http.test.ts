@@ -522,6 +522,7 @@ describe('the web configuration', () => {
   });
 
   it('SEC-20: reads the Cognito client secret when set (optional in release N), and refuses it with the dev provider, as the stack’s placeholder, or malformed, never showing the value (docs/adr/0088, D1)', () => {
+    const WHOLE_SECRET = 'COGNITO_CLIENT_SECRET holds the whole stored secret, not its clientSecret key: the task definition must inject the key alone';
     const cognito = { ...base, TP_AUTH_PROVIDER: 'cognito', COGNITO_USER_POOL_ID: 'us-east-1_Synthetic', COGNITO_CLIENT_ID: 'syntheticclient' };
     const value = 'synthetic0client0secret0value0000000000000000000000';
     const config = readWebConfig({ ...cognito, COGNITO_CLIENT_SECRET: value });
@@ -533,6 +534,10 @@ describe('the web configuration', () => {
       [{ ...cognito, TP_AUTH_PROVIDER: 'dev', COGNITO_CLIENT_SECRET: value }, 'COGNITO_CLIENT_SECRET is refused with TP_AUTH_PROVIDER=dev (the dev provider takes no client secret)'],
       // The literal the stack stores until the custodian seeds it (review infra-auth-IA-5): a task on it fails at start.
       [{ ...cognito, COGNITO_CLIENT_SECRET: 'unset' }, 'COGNITO_CLIENT_SECRET is the stack’s placeholder, not a client secret: the secret was never seeded'],
+      // The whole secret injected instead of its clientSecret key (review security-N4): refused, naming only the setting.
+      [{ ...cognito, COGNITO_CLIENT_SECRET: '{"clientSecret":"unset","clientSecretId":"unset"}' }, WHOLE_SECRET],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: `{"clientSecret":"${value}"}` }, WHOLE_SECRET],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: ` {"clientSecretId":"synthetic-id-0000"} ` }, WHOLE_SECRET],
       [{ ...cognito, COGNITO_CLIENT_SECRET: 'short-secret' }, 'invalid settings: COGNITO_CLIENT_SECRET'],
       [{ ...cognito, COGNITO_CLIENT_SECRET: 'x'.repeat(129) }, 'invalid settings: COGNITO_CLIENT_SECRET'],
     ];
