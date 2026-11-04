@@ -1739,7 +1739,8 @@ read and affecting no package: package.json scripts."db:domain-model" (no mutati
 - **The root manifest.** `packageManager`, `engines`, `type`, `name`, `private`, `pnpm` and every key not listed:
   every package. Scripts: an install script (`pnpm:devPreinstall`, `preinstall`, `install`, `postinstall`,
   `prepublish`, `preprepare`, `prepare`, `postprepare`, `prepublishOnly`) every package, any other none. Dependency
-  entries by the mirror rule: the test tooling (`TEST_TOOLING`) or a name the mutation tooling imports, every package;
+  entries by the mirror rule: the test tooling (`TEST_TOOLING`: vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check,
+  tsx and typescript, N51) or a name the mutation tooling imports, every package;
   a name a closure imports, that closure's package; else none. An entry named `node`, `deno` or `bun`, or whose
   specifier on either side is not a registry version or range, `catalog:` or an `npm:` alias (`runtime:`,
   `workspace:`, `link:`, `file:`, git, a URL), affects every package: it can put a `node` bin first on every step's
@@ -1898,6 +1899,12 @@ since no closure imports `playwright-core`.
   every package.
 - **N50.** `.github/workflows/actions.lock`, `$/` references, `**/package.yaml`, `**/package.json5`, `.pnp.cjs` and
   `.github/actions/**` are global, though none exists.
+- **N51** (the review of #96 at 50029e64). typescript is test tooling. `@stryker-mutator/core` 10.1.1 does not declare
+  it, yet `dist/src/sandbox/ts-config-preprocessor.js` runs `import('typescript')` on every run that is not in place,
+  to parse and rewrite the root tsconfig in the sandbox, and it resolves to the root's own typescript. At 50029e64 a
+  catalog or root move of typescript, with the lockfile moved to match, ran no shard (at the base, all seven), and a
+  stub typescript failed the canary. It is the hoisting limit below, met in the tooling itself: a move of typescript in
+  the catalog, a manifest or the lockfile now runs every shard.
 
 ### Consequences
 

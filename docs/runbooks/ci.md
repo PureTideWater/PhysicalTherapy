@@ -192,7 +192,7 @@ there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres o
 at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
 runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
 mutation only for what a shard reads (docs/adr/0066, Part 7): every shard, about 54 runner-minutes, when it moves the
-test tooling, `packageManager` or an artifact action; a package's shards when the lockfile moves, or a catalog or
+test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves, or a catalog or
 manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an actions pull
 request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports what moved.
 A full Thursday batch is about 550 to 650 runner-minutes and fills GitHub Free's 20 concurrent jobs per account for
@@ -463,8 +463,10 @@ checks above.
   - the `package.json` and `tsconfig.json` of each workspace package in that closure;
   - the data files its tests and code read (`DATA_FILES` in `affected.ts`);
   - the third-party packages it imports, what the mutation tooling itself imports (yaml) and the test tooling
-    (vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check, tsx), as the lockfile resolves them: a lockfile change
-    counts only when it moves one of them, or anything below them.
+    (vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check, tsx, and typescript, which Stryker's core imports
+    undeclared to rewrite every sandbox's tsconfig), as the lockfile resolves them: a lockfile change counts only when
+    it moves one of them, or anything below them. A catalog, root or `tools/package.json` move of typescript runs every
+    shard.
 
   Closures are taken at the head and at the merge base, and a changed path a package's mutate or test set selects
   counts whether or not it still exists, so deleting a money test, renaming one to `*.db.test.ts`, or deleting a

@@ -173,6 +173,20 @@ describe('on this repository', () => {
     }
   });
 
+  it('affects all four for typescript, which Stryker’s core imports undeclared to rewrite every sandbox’s tsconfig: the catalog entry, the root’s and tools/package.json’s, never inert, and never typescript-eslint by the same rule', () => {
+    for (const [what, result] of [
+      ['catalog', judge(changed('pnpm-workspace.yaml', YAML, replaced('  typescript: ^6.0.3\n', '  typescript: ^6.0.4\n')))],
+      ['root devDependencies', judge(changed('package.json', ROOT, edit(ROOT, (manifest) => void (manifest.devDependencies = { ...manifest.devDependencies, typescript: '^6.0.4' }))))],
+      ['tools devDependencies', judge(changed('tools/package.json', TOOLS, edit(TOOLS, (manifest) => void (manifest.devDependencies = { ...manifest.devDependencies, typescript: '^6.0.4' }))))],
+    ] as const) {
+      expect(result.packages, what).toEqual(ALL);
+      expect(Object.values(result.reasons).flat().some((reason) => reason.includes('"typescript"') && reason.includes('the test tooling')), what).toBe(true);
+      expect((result.inert ?? []).filter((line) => line.includes('"typescript"')), what).toEqual([]);
+    }
+    // typescript-eslint is not test tooling: the exact name, not a prefix, is listed.
+    expect(judge(changed('pnpm-workspace.yaml', YAML, replaced('  typescript-eslint: ^8.72.0\n', '  typescript-eslint: ^8.72.1\n'))).packages).toEqual([]);
+  });
+
   it('affects all four for decimal.js in the root manifest: money imports it, and every closure reaches money', () => {
     expect(
       root((manifest) => {

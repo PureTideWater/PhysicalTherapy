@@ -122,11 +122,14 @@ export const DATA_FILES: Readonly<Record<MutationPackage, readonly DataEntry[]>>
 
 /**
  * The tooling every mutation run loads or is decided by, by name pattern: the test runner and Stryker, the property
- * library, and tsx, which runs the changes job, the shard runner, the canary's verdict and the gate. A move in any of
+ * library, tsx, which runs the changes job, the shard runner, the canary's verdict and the gate, and typescript, which
+ * @stryker-mutator/core imports without declaring it (dist/src/sandbox/ts-config-preprocessor.js, `import('typescript')`)
+ * to parse and rewrite the root tsconfig in every sandbox, so it resolves to the root's own typescript. A move in any of
  * them, or below them, affects all four, and so does a move of what the mutation tooling's own files import
- * (GLOBAL_ENTRY_POINTS' closure: yaml, which reads the lockfile here, and vitest/config).
+ * (GLOBAL_ENTRY_POINTS' closure: yaml, which reads the lockfile here, and vitest/config). Each name is exact or a
+ * scope: typescript-eslint is not tooling.
  */
-export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-check', 'tsx'] as const;
+export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-check', 'tsx', 'typescript'] as const;
 
 /**
  * What affects every package, by glob, besides the import closure of GLOBAL_ENTRY_POINTS and GLOBAL_LOADED: the

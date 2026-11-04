@@ -636,6 +636,13 @@ describe('what stops the changes job, and the tooling’s own packages, on this 
     expect(TEST_TOOLING).toContain('tsx');
     expect([...(global.imports.get('tools') ?? [])]).toContain('yaml');
   }, 60_000);
+
+  it('gives all four for a lockfile move of typescript alone, which @stryker-mutator/core imports undeclared on every run', () => {
+    const affects = (after: string) => affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after } }, closures, global).packages;
+    expect(affects(bump(lock, 'typescript', version('typescript'), '6.0.99'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    expect(TEST_TOOLING).toContain('typescript');
+    expect(TEST_TOOLING).not.toContain('typescript-eslint');
+  }, 60_000);
 });
 
 /** A workflow in mutation.yml's shape, each step reference pinned: the cases' base text. */
