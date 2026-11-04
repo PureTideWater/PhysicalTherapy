@@ -12,7 +12,7 @@ import { startLocalWorker } from './worker';
 
 /**
  * Triage to cases in the browser (PRD 5, J8; PRD 7, Cases and Practice dashboard; PRD 12; test matrix
- * CAS-03, CAS-04, CAS-06, CAS-07, CAS-38, CAS-39, PRC-14, FRM-01): in a practice of its own whose case materiality is 100.00, a
+ * CAS-03, CAS-04, CAS-06, CAS-07, CAS-38, CAS-39, CAS-45, PRC-14, FRM-01): in a practice of its own whose case materiality is 100.00, a
  * billing manager uploads two SYNTHETIC remittances of one payer pattern, CAS-08 (paid 2026-04-08,
  * three lines 30.00 short) and CAS-04 (paid 2026-06-04, three lines 20.00 short). The payer's schedule
  * is signed off beside the browser with a dispute window that closed ten days ago for CAS-08's payment
@@ -22,6 +22,7 @@ import { startLocalWorker } from './worker';
  * manager lowers it, told the consequence first, opens the case on the pattern by keyboard with an owner,
  * and the case attaches the three open lines with the deadline of their window. Triage again adds the
  * three lines past their window struck through with WINDOW_PASSED, out of the actionable total. A
+ * write-off's Reason starts unchosen and, the line's window open, offers no "Window passed" and says why (CAS-45). A
  * write-off as "Other" with no reason given is refused and keeps its reason and its tick (FRM-01); given
  * its reason, the line is written off (CAS-06) and reopened with a reason (CAS-07); the dashboard's
  * headline follows each step, its figure the Cases screen's. Synthetic data only.
@@ -136,7 +137,7 @@ test('a pattern below the case materiality waits; lowered, it opens as a case wi
       await expectAccessible(page, 'A case');
     });
 
-    await test.step('a write-off as "Other" with no reason given is refused and keeps its reason and its tick (FRM-01); a line written off with its reason leaves the total and stays visible (CAS-06); reopened with a reason, it returns (CAS-07)', async () => {
+    await test.step('a write-off’s Reason starts unchosen and offers no “Window passed” on a line whose window is open, saying why (CAS-45); a write-off as "Other" with no reason given is refused and keeps its reason and its tick (FRM-01); a line written off with its reason leaves the total and stays visible (CAS-06); reopened with a reason, it returns (CAS-07)', async () => {
       const open = page.getByRole('list', { name: 'Case lines' }).locator('[data-actionable="yes"]').first();
       const lineId = (await open.getAttribute('data-case-line')) ?? '';
       const line = page.locator(`[data-case-line="${lineId}"]`);
@@ -144,11 +145,18 @@ test('a pattern below the case materiality waits; lowered, it opens as a case wi
       const reason = open.getByRole('combobox', { name: 'Reason' });
       const why = open.getByRole('textbox', { name: /^Why/ });
       const confirm = open.getByRole('checkbox');
+      // Nothing is chosen for the person, and the reason the line's records contradict is not offered (its window, CAS-04's,
+      // is open): the hint under Reason says why. The route refuses it too (workbench-routes.db.test.ts, CAS-45).
+      await expect(reason).toHaveValue('');
+      await expect(reason.locator('option:checked')).toHaveText('Choose the reason');
+      await expect(reason.locator('option')).toHaveText(['Choose the reason', 'Payer correct on review', 'Not worth pursuit', 'Duplicate', 'Other']);
+      await expect(reason).toHaveAccessibleDescription('“Window passed” is offered once this line’s dispute window has ended.');
+      await expectAccessible(page, 'A case, writing a line off');
       await reason.selectOption({ label: 'Other' });
       await confirm.check();
       await open.getByRole('button', { name: 'Write off' }).click();
-      // Refused, the form keeps what was chosen: a reset would put back "Window passed" and untick the box, and a second
-      // press would record a reason nobody chose (a11y-practice-1-03). The one refused field is named, marked and focused.
+      // Refused, the form keeps what was chosen: a reset would put back the empty choice, which Reason's required refuses,
+      // and untick the box (a11y-practice-1-03). The one refused field is named, marked and focused.
       const summary = open.locator('[data-slot="refusal-summary"]');
       await expect(summary).toContainText('Not done');
       await expect(summary).toContainText('Why: say why for "other", and only for "other"');

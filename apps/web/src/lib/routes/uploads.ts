@@ -16,7 +16,7 @@ import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
 import { workPause } from '../billing/hold';
-import { uploadsHeld } from '../billing/suspension-words';
+import { type WorkPause, uploadsHeld } from '../billing/suspension-words';
 import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
@@ -72,13 +72,41 @@ export { NO_BAA, baaOnFile };
 
 export interface UploadGate {
   readonly open: boolean;
-  /** The closed gate's title: not open yet (no BAA, or a hold that lifts), or no new uploads (a closure); null while open. */
+  /**
+   * The closed gate's title, true to its state (docs/adr/0080, 0085): not open yet (no BAA), paused (a hold that lifts),
+   * closed (a closure, which promises no restart) or stopped (a hold whose cause these words do not know); null while open.
+   */
   readonly title: string | null;
   readonly reason: string | null;
 }
 
-/** A closed gate's title while the BAA is not on file, or a hold on the person's uploads can lift. */
+/** A closed gate's title while the BAA is not on file: the only state that is "not open yet". */
 const NOT_OPEN_YET = 'Uploads are not open yet';
+
+/**
+ * The closed gate for a hold on the person's uploads (lib/billing/hold.ts workPause with file.upload, the upload
+ * routes' own question; docs/adr/0080), in an upload's words (uploadsHeld): titled for the state, the database's
+ * sentence whole as the body, so the panel never says less than the database nor repeats its title (docs/adr/0085).
+ */
+export function suspendedGate(pause: WorkPause): UploadGate {
+  const held = uploadsHeld(pause);
+  return { open: false, title: held.title, reason: held.reason };
+}
+
+/**
+ * Whether the person may upload here now, and why not: the practice's BAA on file (J1), then no hold on their uploads
+ * (practice_run_refusal_for with file.upload: the owner's hold, or a grantee's when only its grants let this person
+ * upload; docs/adr/0050, 0080). One gate for every page that offers an upload (Uploads, Contracts, Reconciliation, and
+ * the payer's letter on Submissions), so each says so before a file is chosen rather than after, under a title true to
+ * the state. What is on file stays readable.
+ */
+export async function uploadGate(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<UploadGate> {
+  if (!(await baaOnFile(scope, practiceId))) {
+    return { open: false, title: NOT_OPEN_YET, reason: NO_BAA };
+  }
+  const hold = await workPause(scope, practiceId, 'file.upload');
+  return hold === null ? { open: true, title: null, reason: null } : suspendedGate(hold);
+}
 
 /** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */
 export interface EraExportChoice {
@@ -110,17 +138,12 @@ export const uploadsPage = practiceRoute({
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
-    const open = await baaOnFile(scope, practiceId);
-    // While new work is held, uploads pause with the database's reason (docs/adr/0050, 0080): the owner's hold, or a
-    // grantee's when only its grants let this person upload; a closure stops them, promising no restart (BIL-09; SS-01
-    // review UX-SS01-3). What is on file stays readable.
-    const hold = await workPause(scope, practiceId, 'file.upload');
-    const held = hold === null ? null : uploadsHeld(hold);
+    const gate = await uploadGate(scope, practiceId);
     return {
       practiceId,
       canUpload: rolesPermit(access.roles, 'file.upload'),
       roles: access.roles,
-      gate: !open ? { open: false, title: NOT_OPEN_YET, reason: NO_BAA } : held === null ? { open: true, title: null, reason: null } : { open: false, title: held.title, reason: held.reason },
+      gate,
       limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES, contentTypes: CONTENT_TYPES.x12_835 },
       eraExport: { contentTypes: CONTENT_TYPES.era_export, formats: ERA_EXPORT_CHOICES },
     };

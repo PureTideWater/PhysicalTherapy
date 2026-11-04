@@ -10,6 +10,7 @@ import {
   PAYER_APPROVED_HOME_NOTE,
   PAYER_APPROVED_NOTE,
   correctionWords,
+  exportsEmptyNextStep,
   lineEntriesEmptyText,
   outcomeWords,
   proofLevelWords,
@@ -375,6 +376,27 @@ describe('the ledger’s totals', () => {
       expect(recoveredCashWords(level)).toBe(`cash ${proofLevelWords(level)}, net of recoupments and reversals`);
       // A screen sets the cash words in parentheses, so they hold none of their own (ux-r2-03).
       expect(recoveredCashWords(level)).not.toContain('(');
+    }
+  });
+});
+
+describe('the Exports empty state’s next step (an empty state’s next step is one the person can take)', () => {
+  const open = { open: true };
+  const closed = { open: false };
+  it('asks for the exports above only while this person can upload and uploads are open', () => {
+    expect(exportsEmptyNextStep({ canUpload: true, gate: open })).toBe('Upload the practice-management system’s payment-posting export and the bank’s EFT export above.');
+  });
+  it('points to the upload panel’s note, never to an upload, while uploads are not open, paused or closed', () => {
+    const step = exportsEmptyNextStep({ canUpload: true, gate: closed });
+    expect(step).toBe('No export can be uploaded now; the note above says why.');
+    // True of a gate that never opened and of a closed organization alike: it promises no reopening.
+    expect(step).not.toMatch(/again|upload the/i);
+  });
+  it('names who uploads to a person who cannot, as the panel above does, whatever the gate', () => {
+    for (const gate of [open, closed]) {
+      const step = exportsEmptyNextStep({ canUpload: false, gate });
+      expect(step).toBe('Billing managers, analysts and firm principals upload the practice-management system’s payment-posting export and the bank’s EFT export.');
+      expect(step).not.toMatch(/above/);
     }
   });
 });

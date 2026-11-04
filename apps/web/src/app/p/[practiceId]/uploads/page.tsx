@@ -50,7 +50,7 @@ export default async function UploadsPage(props: { readonly params: Promise<{ pr
         roleNames={roleNames(data.roles)}
         gate={data.gate}
         limits={data.limits}
-        heading="Drop 835 files or ERA exports here"
+        heading="Choose 835 files or ERA exports to upload"
         initialKind="x12_835"
         reportFrom="uploads"
         receiptsNotice={<DownloadRefusal refusal={refusal} />}
