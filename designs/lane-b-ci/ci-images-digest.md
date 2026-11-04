@@ -1203,3 +1203,65 @@ in `scratchpad/imgdigest/progress/fold.progress.md` and `fold/`.
   (§2.2).
 - **N9, fixed.** The size is 120,430 bytes, compact UTF-8, with the method named. 121,550 is not reproduced (§2.1).
 - **N10, fixed.** The merge takes an explicit message in #48's form (§6.3). The repository default was not read (P5).
+
+## Fix round (2026-11-01 to 2026-11-04)
+
+Run by `wf_401c564d-6b7` (build, check round 1, repair 1, check round 2 in part), `wf_2970023f-7c8` (check rounds 3 and
+4, repair 3, the integrator). Records: `approval-summaries/lane-b-ci-images-digest-fix-round.md` (the summary),
+`…-wip/progress/fix-*.md` (each step).
+
+**Heads now** (live, `git ls-remote`, 08:37 UTC 2026-11-04): PR branch `co-001/ci-images-digest` 932ea45f… (R3, pushed from
+83167b8f…); WIP ref the same; `claude/build-platform` 881e2bbd…; #96 `co-001/ci-mutation-trigger` 50029e64…, which merges
+after #86 and resolves against it.
+
+**N29 became N32.** #82 merged with Part 5 notices N23 to N31, an N29 of its own among them, so this change's notice is
+ADR 0066 Part 3 **N32** (renumbered in b2a41a00…; ADR, five workflows' comments, ci.md, reconciliation-001, the test).
+The commit messages before b2a41a00… say N29 and stay as they are (no force push).
+
+**Dispositions** (each the reviewers' fix as their skeptics refined it; security the safer):
+- **D1** (CI S1, security S2, critic C2-F2): T6 cites producers structurally (step id, job output, matrix key, needs,
+  path#symbol, test title), no typed line numbers; a `run:` producer carries an 8-hex fingerprint of its parsed script
+  and what it inherits; tool code names the test that proves its bound. Why: line citations went stale silently.
+  8681adb9…; repair 1 ff3793b0…, 646c5bc1…, 66350147…, ca54de5d…, 197686ce…; repair 2 2aaaa3d9…, b133ee52…, 707e436a…,
+  66246ad0…; repair 3 ec5a5046…, 67a7a119…, 6eec71ce….
+- **D2** (security S1): an expression in any mapping key is refused, by a whole-tree walk. Why: GitHub evaluates key
+  expressions into an environment name. 330deea0…; 31735bb7…, 633c2c0e…; 952051d0…, c28832e1…; 3ec9349c….
+- **D3** (CI N4, security N1): a byte sum per environment string and per argument (name, `=`, NUL, literals, a bound
+  per expression), refused over 131,072. Why: the bound was per expression, three vars in one string passed.
+  c1e80912…; c06f3f3e…, 30d05555…, 14a9e6bf…, 81be3473…; 0c95476b…, 10ac5bb1…, 8de91f26…, 944c57b8…, 451759dc…;
+  30929b2e…, efba7d6d…, 9fe834e6…, 328f0a18….
+- **D4** (critic C2-F1): the two findings rows hold exact `sites`; the over value is exempt only alone in its string.
+  9ac28806…; 46e555e9…, 11534e93…; 01855cb4…, e5c17c37….
+- **D5** (CI N1): T5 has no fixed count; builds are counted by parsed `uses:` keys against the text. 6adc518f…; 5e42c2fa…;
+  d6f70cb8…, f507f668…, ae6a566d…; 0b720a92…, 2648ccf0….
+- **D6** (security N2): the `$GITHUB_ENV` writes are a closed map by name, place, exact line and fingerprint, with a
+  behavioural test; `$GITHUB_PATH` and the runner's file-command names likewise; a repository scan closes other files.
+  a7ccead0…; 942a6b02…, 1b8e595a…; bfc19c39…, 9ca2b3d0…; 09351c17…, b3196a08…; base merge 2's 9936688b… (#107's two
+  writes).
+- **D7** (security S3; CI N5 folded in; design P2): `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name !=
+  'pull_request' }}` on the seven builds (premise read at build-push-action c3c9e263…; no fallback). Why: a pull-request
+  record holds the event and is public for 90 days. 19cc7bf5…; ed43d78f…, 3409fb65….
+- **D8** (CI N2): the check row counts the job output as UTF-16 (1,866,672 bytes, over 1 MB) and names
+  ci-findings-transport. 91910da1…; c4de5872…; c0a73c37…; cb77264e….
+- **D9** (CI N3): reconciliation-001 loses the design's C labels, names R1 and R2. d5f987a4…; 0dd58dbf…, b9f9ca4c…;
+  0ad217aa….
+- **D10** (critic C1-F3): the rule's scope is stated (this repository's workflows; a pinned action's own files are not
+  read). f89770ca…; 2fbff79b…; 5c01f150….
+
+**Repairs.** 1 (d257fe6d…..a5bc1170…, 26 commits): two loosenings undone (D4's pin, D3+D4's whole-string exemption)
+and every round-1 issue. 2 (a5bc1170…..5c01f150…, 21 commits, 2026-11-02 08:44–09:18 UTC): round 2's D1 inherited-env,
+D2 key-spelling and D3 matrix-include gaps, and more; its own record was lost, check round 3 reviewed it. 3
+(5c01f150…..2648ccf0…, 13 commits): round 3's two shoulds per area and the nits. Check round 4 (A1–A3 on 2648ccf0…):
+all resolved, nothing loosened, only nits left (recorded open in the summary).
+
+**Refuted.** CI N5 (a retention proposal already recorded): folded into D7. Security N3 (`name:`/`run-name:` reach no
+process): by design.
+
+**Proposals** (outside this change): #82's `parseActionMeta` to keep composite `env`/`run` and apply the value rule
+(D10); `provenance-add-gha=false` on the builder (P2, needs #82's builder rule); the old `.dockerbuild` artifacts of
+past pull-request runs expire by 2027-01-26 or are deleted by the founder (D7-4); length assertions in the tool owners'
+tests (D1-3); round 4's nits.
+
+- §9.1 (#42 at 46974a25) is superseded: #42 merged as 22789493… carrying #86's digest lines.
+- §9.2 (#82 at b574d4e8) is superseded: #82 merged as bce57f16…; N32 follows its N23–N31.
+- Line 15 and §8/C9 (N29) are superseded: the notice is N32.
