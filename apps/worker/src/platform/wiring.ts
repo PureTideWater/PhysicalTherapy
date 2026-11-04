@@ -1,15 +1,18 @@
 import { RDSClient } from '@aws-sdk/client-rds';
 import { S3Client } from '@aws-sdk/client-s3';
+import { SESv2Client } from '@aws-sdk/client-sesv2';
+import { SQSClient } from '@aws-sdk/client-sqs';
 import { type DatabasePool, openPool } from '@tp/db';
 
 import type { NotificationConfig, PlatformConfig } from '../config';
 import type { JobSender } from '../jobs/enqueue';
-import { type PlatformHandlers, createPlatformHandlers } from '../jobs/platform';
-import { LocalMailSender, type MailSender, sesMailSender } from '../mail/mail';
+import { type MailEventsDependencies, type PlatformHandlers, createPlatformHandlers } from '../jobs/platform';
+import { type MailSender, configuredMailSender } from '../mail/mail';
 import { LocalObjectStore } from '../storage/local-object-store';
 import type { ObjectStore } from '../storage/object-store';
 import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
 import { LocalSupportInbox, S3SupportInbox, type SupportInbox } from '../support/inbox';
+import { LocalMailEventSource, MemoryMailControl, SesMailControl, SqsMailEventSource } from './mail-events';
 import { PgDumpRestorer } from './pg-dump-restorer';
 import { RdsSnapshotRestorer } from './rds-restorer';
 import type { SnapshotRestorer } from './restore-drill';
@@ -43,7 +46,24 @@ export function supportInbox(config: Pick<PlatformConfig, 'supportInbox'>): Supp
 
 /** Email as configured; its HTML's header image is served by the CloudFront static host (STATIC_ASSET_ORIGIN), or left out without one. */
 export function mailSender(config: Pick<NotificationConfig, 'mail' | 'staticAssetOrigin'>): MailSender {
-  return config.mail.kind === 'ses' ? sesMailSender(config.mail.from, config.staticAssetOrigin) : new LocalMailSender(config.mail.dir, config.staticAssetOrigin);
+  return configuredMailSender(config.mail, config.staticAssetOrigin);
+}
+
+/**
+ * The mail_events job's sources (docs/adr/0065): the mail-events queue and SES's account and screening set, or, in
+ * development, the local sender's events directory and SES's state in memory (the account healthy, the set sending).
+ */
+export function mailEvents(config: Pick<PlatformConfig, 'mail' | 'mailEvents'>): MailEventsDependencies {
+  const events = config.mailEvents;
+  const { streamPrefix } = config.mail;
+  return events.kind === 'sqs'
+    ? {
+        source: new SqsMailEventSource({ client: new SQSClient({}), queueUrl: events.queueUrl }),
+        control: new SesMailControl({ client: new SESv2Client({}), streamPrefix }),
+        streamPrefix,
+        probes: events.identitiesVerified,
+      }
+    : { source: new LocalMailEventSource(events.dir), control: new MemoryMailControl(), streamPrefix, probes: events.identitiesVerified };
 }
 
 /** The platform handlers and the operator pool they use (closed by the caller on shutdown); the queue takes the monitoring schedule's jobs. */
@@ -57,6 +77,7 @@ export function platformRuntime(config: PlatformConfig, queue?: JobSender): { ha
       restorer: snapshotRestorer(config),
       mail: mailSender(config),
       inbox: supportInbox(config),
+      mailEvents: mailEvents(config),
       appOrigin: config.appOrigin,
       ...(queue === undefined ? {} : { queue }),
     }),

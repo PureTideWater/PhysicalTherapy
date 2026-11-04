@@ -8,6 +8,7 @@ import { roleNames, utc, utcDate } from '../../../../../components/format';
 import { ScrollTable } from '../../../../../components/scroll-table';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { grantHoldState } from '../../../../../lib/billing/suspension-words';
 import { loadPage } from '../../../../../lib/http/next';
 import { AGREEMENT_CHAIN, CHAIN_LABELS, agreementsSettingsPage } from '../../../../../lib/routes/settings';
 import { confirmAgreements } from './actions';
@@ -111,13 +112,13 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
                       </td>
                       <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.startsAt)}</td>
                       <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.endsAt)}</td>
-                      <td className="py-1">
+                      <td className="py-1" data-grantee-status={grant.granteeStatus}>
                         {grant.revokedAt !== null ? (
                           <>
                             revoked <span className="whitespace-nowrap">{utcDate(grant.revokedAt)}</span>
                           </>
                         ) : grant.inForce ? (
-                          'in force'
+                          (grantHoldState(grant.granteeStatus, grant.granteeName) ?? 'in force')
                         ) : (
                           'not in force'
                         )}

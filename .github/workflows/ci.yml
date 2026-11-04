@@ -672,6 +672,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
+      # The pinned Trivy (tools/trivy/release.txt), its release archive checked against the SHA-256 there before it runs,
+      # installed into this run's temporary directory, put on PATH and named by its absolute path (TRIVY_CMD, which
+      # trivy-action runs) for the Trivy steps below, which skip setup-trivy: its installer downloads from get.trivy.dev,
+      # gone since 2026-11-03 (docs/adr/0066, Part 2).
+      - name: The pinned Trivy
+        run: |
+          trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"
+          dirname "$trivy" >> "$GITHUB_PATH"
+          echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"
       # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
       # moby/buildkit:buildx-stable-1 by tag. Its age is held by tools/check-toolchain's image rule, as every image's
       # is; Dependabot cannot update this string, so tools/check-action-pins warns when a newer release is three days
@@ -685,8 +694,8 @@ jobs:
       # holds one manifest for it and the scan reads the bytes the checks read.
       # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
       # whole event in it, and in the log. Its build record, which holds the whole event too, is uploaded as an artifact
-      # anyone can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD; docs/adr/0066,
-      # Part 3, N32).
+      # any signed-in account can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD;
+      # docs/adr/0066, Part 3, N32).
       - name: Build the web image
         id: web
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -702,6 +711,7 @@ jobs:
       - name: Scan the web image (fails on HIGH or CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           input: ${{ runner.temp }}/image/web.tar
           format: table
           severity: HIGH,CRITICAL
@@ -728,6 +738,7 @@ jobs:
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           input: ${{ runner.temp }}/image/worker.tar
           format: table
           severity: HIGH,CRITICAL

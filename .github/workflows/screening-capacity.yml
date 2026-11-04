@@ -80,11 +80,13 @@ jobs:
     outputs:
       measure: ${{ steps.watched.outputs.measure }}
     steps:
+      # Every object, fetched once by the checkout with the job's token, and no partial clone: a blobless one fetched each
+      # blob the diff's rename detection and `git show` read from its remote later, with no credentials, which a private
+      # repository refuses ("could not read Username", run 41765454724).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-          filter: blob:none
       - name: Read the changed paths
         id: watched
         env:
@@ -171,8 +173,9 @@ jobs:
       # checkout before installing, so the install and build layers change with every commit and exporting them each run
       # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review). Each one's metadata
       # output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the whole event in
-      # it, and in the log. Its build record, which holds the whole event too, is uploaded as an artifact anyone can read
-      # for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD; docs/adr/0066, Part 3, N32).
+      # it, and in the log. Its build record, which holds the whole event too, is uploaded as an artifact any signed-in
+      # account can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD; docs/adr/0066,
+      # Part 3, N32).
       - name: The images' directory
         run: mkdir -p "$RUNNER_TEMP/image"
       - name: Build the web image

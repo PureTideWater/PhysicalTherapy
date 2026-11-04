@@ -1,7 +1,8 @@
-import { App, CfnElement } from 'aws-cdk-lib';
+import { App, CfnElement, type Stack } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import type { IConstruct } from 'constructs';
 
+import { type AddressValidationStack, addressValidationStackName } from '../lib/address-validation-stack';
 import { buildApp } from '../lib/app';
 import { ENVIRONMENTS, type EnvironmentName, stackName } from '../lib/environments';
 import type { PlatformStack } from '../lib/platform-stack';
@@ -29,6 +30,8 @@ export interface Synthesized {
   readonly app: App;
   readonly stack: PlatformStack;
   readonly template: Template;
+  /** The environment's address-validation account's stack, synthesized from the same app. */
+  readonly validation: { readonly stack: AddressValidationStack; readonly template: Template };
 }
 
 /**
@@ -43,7 +46,8 @@ export function synthesizeAll(context: Record<string, unknown> = {}, readers?: L
   const result: Partial<Record<EnvironmentName, Synthesized>> = {};
   for (const environment of ENVIRONMENTS) {
     const stack = app.node.findChild(stackName(environment)) as PlatformStack;
-    result[environment] = { app, stack, template: Template.fromStack(stack) };
+    const validation = app.node.findChild(addressValidationStackName(environment)) as AddressValidationStack;
+    result[environment] = { app, stack, template: Template.fromStack(stack), validation: { stack: validation, template: Template.fromStack(validation) } };
   }
   return result as Record<EnvironmentName, Synthesized>;
 }
@@ -130,7 +134,7 @@ export function actionsOf(statement: CfnStatement): string[] {
 }
 
 /** The logical ID of the construct's default CloudFormation resource. */
-export function logicalIdOf(stack: PlatformStack, construct: IConstruct): string {
+export function logicalIdOf(stack: Stack, construct: IConstruct): string {
   const child = construct.node.defaultChild;
   if (!(child instanceof CfnElement)) {
     throw new Error(`${construct.node.path} has no CloudFormation resource`);

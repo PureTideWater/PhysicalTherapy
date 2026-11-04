@@ -2,7 +2,9 @@
 
 - **Status:** accepted, Part 1 (`co-001/ci-speed`, combined audit #109), Part 2 (`co-001/ci-deps`, #112, with #19's
   assert loosening, Dependabot groups and licence fix), Part 3 (`co-001/ci-browser`, #19's upgrade part), Part 4
-  (`co-001/ci-mutation`, #54) and Part 5 (`co-001/ci-pin-age`, the series' follow-up P1). Part 1 amends
+  (`co-001/ci-mutation`, #54), Part 5 (`co-001/ci-pin-age`, the series' follow-up P1) and Part 7
+  (`co-001/ci-mutation-trigger`, the series' follow-up P4; Part 6 is the follow-up P2's, `co-001/ci-trivy-version`,
+  and goes before Part 7 when it merges). Part 1 amends
   [0010](0010-supply-chain-gates-beside-ci.md) (the image and licence gates run as ci.yml jobs under `all green`) and
   [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
   (the required checks, the job that writes the domain model's summary, the per-job timeouts).
@@ -24,14 +26,22 @@
     (the release restores no cache, so the attested capacity report depends only on its own run) and
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
-    SHA at its release).
+    SHA at its release). Amended 2026-11-01 (`co-001/dependabot-group-routing`): each dependency in one Dependabot
+    group (the amendment closing Part 2).
   - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
     read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
     newness is read from the base's workflows, and its digest is aged with every other image).
-- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28; N32 2026-10-28
+  - **Part 7** (`co-001/ci-mutation-trigger`) amends Part 4 (the root manifest, the workspace list, the workflow and
+    each closure's manifest are read field by field, not whole; and the gate holds every shard, not only one scoring
+    Unicode-bound equivalents, to the pinned Node, Unicode, ICU and pnpm and to the tested commit).
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28; N32 2026-10-28; Part 7 2026-11-02
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
+  - **Part 7:** the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended option, for
+    security the safer one), under which the follow-up itself (P4, an engineering item the series' design proposed) is
+    taken and each notice below is made; and his Q3 of 2026-10-25, about 21:05 UTC (engineering-only choices inside an
+    already-ruled design are pre-approved and reversible).
   - **Part 5:** the founder's F2 (b) (the three-day release age, with a dated, exact exclude of at most seven days),
     relayed by the co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's CQ1 (a) (actions and images keep
     Dependabot's seven days); and the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended
@@ -51,6 +61,8 @@
 - **PRD sections:** 16 (dependency and image hygiene), 17 (milestone 0: "CI with every gate from section 18"), 18
   (continuous integration: "one workflow on every pull request"); Change Order 001, CO-02; reconciliation-001's checks;
   test matrix CI-01 to CI-10; ADRs 0010, 0058, 0062, 0063 and 0064
+  - **Part 7:** 18 (the mutation layer and continuous integration); reconciliation-001's record of the co-founder's
+    ruling of 2026-10-26; test matrix CI-27 to CI-29; Part 4 of this record.
   - **Part 5:** 16 (dependency and image hygiene), 18; reconciliation-001's record of the co-founder's ruling of
     2026-10-26; test matrix CI-21 to CI-23; ADR 0063 (a token on one step, as approval-of-record's).
   - **Part 4:** 17 (milestone 6's check), 18 (the mutation layer and continuous integration); reconciliation-001's
@@ -726,9 +738,153 @@ together.
 
 GitHub lists pnpm 11 or later as supported for Dependabot (pnpm 11.3's `trustLockfile` then checks every lockfile entry
 on every install); actionlint accepts `concurrency.queue` and the bot-queue reading shows a lane waiting over 15 minutes
-(O13); a newer trivy is wanted than trivy-action's default (a `version:` pin and its check); the repository goes private
+(O13); a newer Trivy is wanted (`tools/trivy/release.txt`, below, amended 2026-11-04); the repository goes private
 (about 10 bot pull requests a week, about 3,500 to 4,000 billed minutes a month); or the launch switches the default
 branch back to `main`.
+
+### Amendment (`co-001/dependabot-group-routing`, 2026-11-01): each dependency in one group
+
+"In this order" (above) did not route. Dependabot ranks a group with no patterns (500) above a wildcard pattern
+(`@aws-sdk/*` 95, `@next/*` 92) and the empty group never gives a dependency up (dependabot-core 85379652,
+`pattern_specificity_calculator.rb`, `dependency_group_engine.rb`), so npm run 40818560725 assigned the nine
+`@aws-sdk/*` packages and `@next/eslint-plugin-next` to minor-and-patch, and its pull request (#89) carried the nine
+`@aws-sdk/*` with stripe (`@next/eslint-plugin-next` had no update); an exact name was in two groups, kept out of
+minor-and-patch's pull request only by the file's order. GitHub's documentation says the first matching group wins.
+minor-and-patch now excludes every pattern the specific groups name, which routes each dependency to one group under
+both rules; CI-12 ports the assignment and routes every direct dependency. Alternative: `patterns: ["*"]` on
+minor-and-patch (rests on undocumented scores; routes as before under the documented rule). Revisit when: Dependabot
+documents its group precedence; a group is added (the test fails until it is excluded); or dependabot-core changes its
+group assignment, such as how `exclude-patterns` or a group without patterns matches (GitHub picks the updater for
+each run: the weekly triage's step 1 reads each npm run's updater and its log for it).
+
+The same reading corrects a consequence above: the file's `ignore` entries do not hold for security updates. They name
+update types, which dependabot-core applies to version updates only (`ignore_condition.rb` at 85379652: a security job
+keeps only an entry's `versions`), so an advisory fixed only in an ignored major may open a `security` pull request
+that crosses it. The weekly triage reads such a pull request as a deliberate upgrade, and still reads the open alerts
+for a fix no pull request takes.
+
+### Amendment (`co-001/ci-trivy-pin-2026-11-04`, 2026-11-04): Trivy from its pinned release
+
+From 2026-11-03 every Trivy step failed before scanning. trivy-action v0.36.0 (`ed142fd0`) installs Trivy
+through setup-trivy (`3fb12ec1`), whose installer (trivy's `contrib/install.sh` at `75c4dc0f`) downloads the binary
+only from get.trivy.dev, and that name stopped resolving (NXDOMAIN, aquasecurity/setup-trivy#42; curl exit 6 in ci run
+41763423759, job 126356134153, and on PRs #103 and #104, six installs of six). The release assets on GitHub still
+download, so a re-run cannot pass, and no release could scan.
+
+- `tools/trivy/install.sh <dir>` installs Trivy the way `tools/gitleaks/install.sh` installs gitleaks:
+  - it reads `tools/trivy/release.txt`: version 0.70.0, trivy-action v0.36.0's default, so every scan reads as before;
+  - it downloads `trivy_0.70.0_Linux-64bit.tar.gz` (or `Linux-ARM64`) from
+    `github.com/aquasecurity/trivy/releases/download/v0.70.0/`;
+  - it checks the archive against the SHA-256 that `release.txt` pins before anything in it runs;
+  - it extracts `trivy` alone and requires it to report the pinned version;
+  - it installs it into the directory given, with no cache.
+- One step, "The pinned Trivy", word for word the same, installs it into `$RUNNER_TEMP/trivy-bin`, puts that
+  directory on `PATH` and writes `TRIVY_CMD`, its absolute path, which trivy-action's entrypoint runs in place of
+  `trivy` from `PATH` (where each trivy-action step prepends its own directory). It runs in ci.yml's `images` job, in
+  release.yml's `build` and in the dry run's `build`.
+- The installer's curl takes https alone and follows a redirect only to https (`--proto '=https,file'
+  --proto-redir '=https'`, `file:` for the tests' mirror), as `tools/gitleaks/install.sh`'s now does.
+- Each trivy-action step keeps its pin and adds only `skip-setup-trivy: true`. Severity, `ignore-unfixed`,
+  `exit-code`, format, `cache: false`, `cache-dir` under `runner.temp` and the database source are unchanged. The
+  database source is Trivy 0.70.0's default, `mirror.gcr.io/aquasec/trivy-db:2`. That database is trusted by its
+  registry tag and the transport, as it was before; pinning it, or reading `ghcr.io/aquasecurity/trivy-db:2` from
+  aquasecurity's own namespace, is a separate decision, not taken here.
+- So "the release restores no cache" holds for the binary as it did through setup-trivy's `cache: false`: every run
+  installs its own copy.
+- release-dry-run.yml also runs on a change to `tools/trivy/**`.
+- `workflows.test.ts` holds it, red on 4846f043 first (CI-11):
+  - every job with a Trivy step runs the install step before that step;
+  - every Trivy step skips setup-trivy and names no version;
+  - no workflow line but a comment names setup-trivy or its host;
+  - the pins are in their form, and the hash is checked before `tar`;
+  - the installer runs offline from a `file://` mirror: the pinned archive installs, another archive is refused and
+    leaves nothing, and a trivy that reports another version is refused.
+
+The pin, read on 2026-11-04:
+- `trivy_0.70.0_checksums.txt` has SHA-256 `c45281240bb9211ea9e830fc0bf5cf8acf7c0ca830feb64ac8a0aa932c5c92d9`.
+- Both archives' SHA-256s are the file's lines, and the two pinned in `release.txt`.
+- The file's Sigstore bundle (`trivy_0.70.0_checksums.txt.sigstore.json`) holds a certificate for
+  `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v0.70.0`. The certificate
+  names commit `8a3177aedf7ee0864920eb1852eef031cd3742b8`, run 24550601142, a GitHub-hosted runner and a push
+  trigger, and was issued 2026-04-17.
+- That is about six and a half months old, far past the three-day floor (Part 5). It is also after the March 2026
+  trivy-action tag hijack that Part 5 names. The upstream tag `v0.70.0` names that commit (git ls-remote, 2026-11-04).
+- The bundle verifies offline against Sigstore's public-good trusted root as sigstore-python 4.5.1 ships it (no TUF
+  fetch; sigstore-python's own verifier refuses the bundle only for want of its RFC 3161 timestamp authority, which
+  the Rekor entry makes unnecessary): the leaf certificate chains to Fulcio; its ECDSA signature over
+  `trivy_0.70.0_checksums.txt` verifies; the bundle's digest is the file's SHA-256; the Rekor entry's body names that
+  hash, that signature and that certificate; Rekor's signed entry timestamp verifies with rekor.sigstore.dev's key; and
+  its integrated time, 2026-04-17T06:46:08Z, lies inside the certificate's ten minutes.
+- At run time the pinned SHA-256 decides, as it does for gitleaks. It is a stronger check than setup-trivy's: that
+  installer fetched its checksum from the same release at run time.
+- Part 5's age rule reads `release.txt` (`tools/check-action-pins/releases.ts`, `PINNED_RELEASES`, with
+  `tools/gitleaks/release.txt`): a version new against the base resolves its upstream tag `v<version>` (git ls-remote,
+  three tries, then it fails closed), a tag the upstream does not list is refused (the compromised v0.69.4's tag was
+  deleted upstream), and the tag's commit is aged as a new action pin is: on the default branch, a time GitHub
+  recorded, three days by the youngest time read, the same excludes (CI-21). Before this, the version came from
+  trivy-action's pin, which that rule aged; a file no machine read would have loosened it.
+- A new Trivy is a pull request that changes every line of `release.txt`, each SHA-256 copied from the release's
+  checksums file; `pnpm actions:check` holds its age. docs/runbooks/ci.md says so.
+- Follow-up, not in this change: a pin-time check of the checksums file's Sigstore bundle against a pinned trusted
+  root, requiring the identity `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v<version>`,
+  the issuer `https://token.actions.githubusercontent.com` and a GitHub-hosted runner, with the file's SHA-256 recorded
+  in `release.txt`; the same for gitleaks and for the actionlint pin in `tools/setup-container.sh`.
+
+Alternatives considered for Trivy:
+- **Re-run until get.trivy.dev answers.** The name looks removed rather than briefly down: the `trivy.dev` zone was
+  edited on 2026-11-03, and other repositories moved to the release assets.
+- **Run `trivy` directly, without trivy-action.** It would rewrite five steps and their tests next to #86's hunks.
+  setup-trivy no longer runs either way. It would also stop the runner downloading setup-trivy and its nested checkout
+  at "Set up job", which it does for every action a composite nests whatever each step's `if:` says, so an
+  unresolvable setup-trivy would still fail these jobs there; that was weighed against the conflict surface with #86
+  and left for a later change.
+- **A `version:` input.** It still installs through get.trivy.dev.
+- **Verify the checksums file with cosign on every run.** That is another pinned binary, plus Sigstore's TUF and
+  transparency log on every scan. It would be a new network dependency of the kind that just failed, while the pinned
+  hash already fixes the bytes.
+- **Fetch the checksums file at run time.** It adds nothing to a hash committed here.
+- **The `aquasec/trivy` image by digest.** It is another artifact to pin and age. It would also need Docker to reach
+  each archive and the daemon's image.
+
+### Amendment (`co-001/ci-trivy-install-2026-11-04`, 2026-11-04): no partial clone on a private repository
+
+The repository went private on 2026-11-04 at about 02:51Z. screening-capacity's `changes` job checked out with
+`filter: blob:none` and `persist-credentials: false`, so its `git diff --name-only` (rename detection) and `git show`
+fetched blobs from the promisor remote with no credentials. That failed: "could not read Username for
+'https://github.com'", run 41765454724, job 126369187941, exit 128. The repository was public again from about 07:10Z;
+the rules below stay, so the gate keeps working if it goes private again.
+
+- Its checkout now fetches every object, once, with the job's token (`fetch-depth: 0`, no filter, about 34 MiB packed).
+  `persist-credentials: false` and `contents: read` stay.
+- A blobless clone could also have read an unfetchable list as "the base keeps no watched list", through
+  `git cat-file -e`. A full clone cannot.
+- `workflows.test.ts` holds four rules (CI-11):
+  - no checkout that keeps no token makes a partial clone;
+  - the `changes` script passes on a full clone whose remote is gone and fails on a blobless one;
+  - no step runs git fetch, clone, `ls-remote`, pull, `submodule update` or `archive --remote` (with any global
+    options before the command), reads raw.githubusercontent.com, or curls the API, the server or this repository by
+    any of their names (`$GITHUB_API_URL`, `${{ github.api_url }}`, `$GITHUB_SERVER_URL`, `$GITHUB_REPOSITORY`,
+    owner/name), and every `gh` step sets `GH_TOKEN`; a mutation case per form;
+  - the same scan holds every shell script under `tools/` and `.github/`, and every TypeScript entry point a step
+    runs (directly or through a package.json script) with the `tools/` files it imports: git against a remote only in
+    `check-action-pins` (other owners' upstreams; no `uses:` names this repository), and GitHub's API or `gh` only
+    where the step is given the job's token.
+
+The audit of every workflow and the scripts they run found nothing else that read this repository unauthenticated:
+- Every other checkout is full (`fetch-depth: 0`) or reads only its own commit, and no step fetches after it.
+- Every `gh` step (the content calendar, release-capacity, screening-capacity's `notify`, release.yml's `report`) sets
+  `GH_TOKEN` and `GH_REPO`.
+- approval-of-record reads the API with the job's token.
+- `check-action-pins` and `check-toolchain` read only upstream repositories and registries.
+- gitleaks, fixture-check, check-releases-immutable, engine-freeze and stryker's affected set read the local clone.
+- The launch check's `gh attestation verify` reads only the release's bundle and Sigstore's trusted root, never this
+  repository.
+- Not a read, and the founder's: release.yml's `report` job runs actions/attest-build-provenance, and artifact
+  attestations for a private repository need GitHub Enterprise Cloud, so a release's report goes unattested and
+  production's screening stays closed until that is decided (open item O15, docs/runbooks/screening-capacity.md). Not
+  changed here.
+- Runner sizes, the 4-CPU harness minimum and the larger-runner and GitHub Team decision are the founder's, and are not
+  changed here.
 
 ## Part 3 (`co-001/ci-browser`)
 
@@ -996,36 +1152,89 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       uploads it as an artifact. The repository is public, so any signed-in GitHub account can download it, for 90
       days (no retention is set), after the description is edited. So every build step also sets
       `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: a pull request's run uploads no record
-      (it is still written on the runner, and the build summary without its link), while a push's and the release's
-      keep the default upload, the release's record being the only full provenance of a released image (its images
-      build with `provenance: false`). build-push-action v7.4.0 reads the variable in its post step with
-      actions-toolkit's `parseBool`. The security review's S3, decided for the safer option under the same ruling.
-    - **P2, a proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder,
-      needs #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
+      (it is still written on the runner, and the build summary without its link), while every other run (a push's, a
+      scheduled or a dispatched one's, the release's) keeps the default upload, the release's record being the only
+      full provenance of a released image (its images build with `provenance: false`). build-push-action v7.4.0 reads
+      the variable in its post step with actions-toolkit's `parseBool`. A build's env holds these two variables and no
+      other, and no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job (its env or its container's) or
+      workflow (`DOCKER_BUILD_SUMMARY: false` would skip the record on every run): a job container's `options` set no
+      variable (`--env`, `-e`, `--env-file`) and none is given by an expression, and a service's name none. A variable
+      a container image's own config sets is not read; each image is the pin rules'. A workflow that holds a build runs
+      only on `push`, `pull_request`, `schedule` or `workflow_dispatch`: on another event whose payload carries a pull
+      request (`pull_request_target`, a review or a comment on one, `workflow_run`) the expression is true and the
+      record, with the description and title, would be uploaded. Decided for the safer option under the same ruling.
+    - **A proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder, needs
+      #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
       `image=…@sha256:…`), so it stays with the founder.
-  - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
-    script, or a key, as the runner reads it, and admits only a closed list; it refuses any expression in a key, which
-    GitHub would evaluate as a variable's or an input's name. That list holds values GitHub or the workflow bounds,
-    and every step output and value one job hands another, each listed with its bound. It reads this repository's
-    workflows: a pinned action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read.
-    The defect this notice fixes came from action code, buildx copying the event into its metadata, which no
-    expression rule can read, so every step output is bounded where a workflow reads it, by the rule and its list.
+  - **What holds it.** `workflows.test.ts` reads every expression of this repository's workflows that reaches a step's
+    environment, an input or a script, or a key, as the runner reads it, and admits only a closed list; it refuses an
+    expression in any key: GitHub evaluates one in an env name, a step input's name (`INPUT_<key>`), a service's id or
+    a matrix key, and in keys whose own text reaches no process (a container's or a service's own, registry
+    credentials, `strategy`, a matrix's `include` entries, a job's `defaults.run`), and refuses one when it parses the
+    file in the rest (`on:`, the workflow's `defaults.run`, a job's id or outputs, a step's own keys, a reusable
+    workflow's `with:` and `secrets:`). It refuses a key
+    of a workflow, a job or a step outside the closed list it reads (a nested `parallel:` list of steps, say), so no
+    expression in a workflow goes unread. That list holds values GitHub or the workflow bounds, and every step output
+    and value one job hands another, each listed with its bound. It reads this repository's workflows: a pinned
+    action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read by it
+    (`pnpm actions:check` reads a pin's `action.yml` for the pin rules, never to bound a value). The defect this
+    notice fixes came from action code, buildx copying the event into its metadata, which no expression rule can read,
+    so every step output is bounded where a workflow hands it to a process, by the value rule and its list.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
-      by its job and id, a job's output, a matrix key, a job the reader needs, and tool code by the name it declares
-      (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of its script as parsed,
-      so a changed script fails until a person re-reads the bound and updates it; a row whose bound is tool code's
-      names the unit test that proves it instead, since other lanes change that code for their own reasons.
+      by its job and id (a `uses:` step with its action, whose pin is the pin rules'), a job's output (which must
+      declare one step's or needed job's output alone, whose own row's bound is within the reader's), a matrix key, a
+      job the reader needs, and tool code by the name it declares (`path#symbol`). The steps, needed jobs and job
+      outputs a row names are exactly those its value reads (a `steps.<id>` value its own job's step `<id>`, a
+      `needs.<j>.outputs.<n>` value job `<j>` and its output `<n>`, `toJSON` each job and output it is given), so a
+      row that cites another job's producer, or leaves its own out, fails. A row whose producer is a workflow's `run:`
+      step holds the fingerprint of what the script runs with as parsed: its `run`, its `env` over its job's and the
+      workflow's, its `shell` and `working-directory` or the `defaults.run` its job or the workflow gives, and its
+      job's container, so a changed script or input, its own or inherited, fails until a person re-reads the bound and
+      updates it; a row whose bound is tool code's names instead, by its title, the unit test its owners keep for that
+      bound, since other lanes change that code for their own reasons. The test checks that the title is one test's
+      alone in its file, written to run whenever its file runs: a plain `it()` or `test()` at the file's top level or
+      directly in a plain `describe`'s callback, with no skip, todo, only, fails, each, skipIf or runIf, no if, loop,
+      ternary, function or `return` around it, no `it`, `test` or `describe` of its own scope's (an import from vitest
+      under its own name aside), its context read for its `expect` or `signal` alone, and no skip in its options, in a
+      call named `skip`, or in any hook of its file (each hook a function written there whose context is read the same
+      way). It does not check what that test asserts, nor that a project's include list runs its file.
     - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
-      github value its own, `env.X` the bound of X where it is set, each row of the list its bytes), and refuses one
-      over 131,072 bytes, or one holding a value with no bound.
-    - The content calendar's findings, once a job output (up to 933,336 characters, 1,866,672 bytes as GitHub
-      counts an output, UTF-16, over its 1 MB limit) read as one environment variable over the limit
-      (`FINDINGS_B64`), travel as the run's own artifact (docs/adr/0071, Amendment, `co-001/ci-findings-transport`).
-      No listed value is over the limit, and every environment string is summed, with no exception.
-    - A `$GITHUB_ENV` write is one entry of a closed map, its variable's only write: its file, job, step and exact
-      line (so its value's form too), with its bound, which the behavioural test named beside it holds by running the
-      step.
+      github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
+      holding what toJSON writes of every output it reads, quoted and escaped, six bytes a byte at most, with their
+      names and indents), and refuses one over 131,072 bytes, or one holding a value with no bound, but for the one
+      value named over the limit, which is exempt from that limit only alone in its string (one expression that reads
+      it and nothing else, at its one place), never from its process's whole below. A mapping given as one expression
+      (an env, a step's `with:`, a container or a service), whose names and strings come from the value at run time,
+      is refused, so each string a workflow sets is one the sum reads. It holds each argument the runner hands a
+      process to the same 131,072 bytes (a container's or a service's image, options, entrypoint or command, a default
+      or a step's shell), and every string a step's process or a container is given from the workflow, together, under
+      `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's own. A value a job passes a called workflow as a secret is
+      held to a secret's 48 KB, the bound that workflow's own sum gives `secrets.<name>` (the pin rules refuse a
+      reusable workflow today, so none is passed). What a script builds from the values it reads, its own commands'
+      arguments, is the script's: no rule reads it.
+    - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`), held to the
+      one place each job reads them, and alone in its string there, so no second use and no other value joins them.
+      Their transport is an item of its own, `ci-findings-transport`, which also owns their job output: up to 933,336
+      characters, 1,866,672 bytes as GitHub counts an output (UTF-16), over its 1 MB limit. Every listed value whose
+      bound passes 131,072 bytes is held to the places it is read in the same way: those findings in both jobs, and
+      publish-content's release numbers, read in one script.
+    - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
+      is one entry of a closed map, its variable's only write: its exact line (so its value's form too) and each file,
+      job and step that makes it, once, with that step's fingerprint (a changed script or input, its own or inherited, fails until a person
+      re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
+      reading the whole file it writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is
+      refused in any env. Nothing else names it: a shell (a step's or a default), an input, or an env's name or value
+      naming `$GITHUB_ENV` or `$GITHUB_PATH` is refused, since a command template or an action could write it unread,
+      and so is anything naming the runner's file command files (`_runner_file_commands`, or a file's own name,
+      `set_env_` or `add_path_`, which a script could reach beside `$GITHUB_OUTPUT`'s), a script line included.
+      `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has a closed map of
+      its own, held the same way: its one entry is the pinned Trivy's directory, written beside its `TRIVY_CMD` by the
+      install step of each job that scans (the amendment of 2026-11-04 to Part 2), and every other line naming it is
+      refused. Every other tracked file naming any of these (a script or tool code a step runs, a
+      package's script) is one of a closed list, each with why it sets nothing. A script that reaches the file without
+      naming it (a name built at run time, another interpreter) and a dependency's or a pinned action's own code are
+      not closed by reading text.
 
 ### Consequences
 
@@ -1152,8 +1361,9 @@ is fully run when every shard holding it ran. The gate fails when:
 - for a fully-run package, a recorded equivalent lacks its reviewer and date, is reviewed by its proposer or on a date
   after the run, no longer matches a mutant (stale), or matches one a test detects or that breaks a load;
 - for a fully-run package, an equivalent that rests on the engine's Unicode data (`tools/stryker/unicode.json`) was
-  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on, or the listing names an
-  entry no equivalents file records.
+  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on (and every shard is held to
+  the pinned Node, Unicode, ICU and pnpm and to the tested commit by Part 7), or the listing names an entry no
+  equivalents file records.
 
 A package none of whose shards ran is "not affected", and neither score rule judges it. The gate prints per-package
 and per-file scores, and every survivor with its covering tests, to the log and the summary.
@@ -1211,7 +1421,8 @@ on other data, and a test holds the workflow's pin to the Node the listing names
   any changed path a package's mutate or test set selects affects it, so a pull request that deletes a money test,
   renames one into the exclusions, or deletes a helper, manifest or data file only the old side held, is measured. A
   lockfile change counts only when it moves one of those resolved versions. The mutation configuration and tooling,
-  the root manifest, the workspace list, the root tsconfigs and the workflow affect all four.
+  the root manifest, the workspace list, the root tsconfigs and the workflow affect all four (narrowed field by field
+  by Part 7).
 - **Jobs:**
   - `changes` (5 min);
   - `stryker (<shard>)` (30 min; skipped when nothing is affected; reports uploaded with `overwrite: true`);
@@ -1729,3 +1940,319 @@ run 40593100176. Unbounded, as before: the verify loop on a pull request, and ch
 - **A web-flow key rotates.** The push run's warning names it; add the new key to `github-web-flow.asc`.
 - **The advisory read.** Its first live run of an action `security-fix` exclude.
 - **The repository goes private.** The token could then read what an anonymous reader cannot.
+
+## Part 7 (`co-001/ci-mutation-trigger`)
+
+### Context
+
+Part 4 decides what a pull request's mutation run measures from the paths it changes (`tools/stryker/affected.ts`).
+Three files counted whole, for every package: the root `package.json`, `pnpm-workspace.yaml` and
+`.github/workflows/mutation.yml`. A closure's own manifest (`packages/*/package.json`, `tools/package.json`) counted
+whole for the packages whose closure lists it. So a new root or package script, a catalog line no money code imports,
+a release-age exclude or a Dependabot actions bump ran every shard: seven since #52, 52.0 to 57.8 runner-minutes a run
+(mean 54.8 with the changes and gate jobs, push runs 40339580137 to 41330911489), and at least about 94 once #84 splits
+packets further. Replayed over the 58 pull requests into the build branch to #89, 22 ran every shard, and 7 of them
+for nothing a shard reads.
+
+The same rule left gaps the other way:
+- an install lifecycle script in a workspace manifest outside every closure (`apps/*`, `infra`) ran nothing, although
+  every shard's frozen install runs it;
+- `tools/package.json`, the manifest of the mutation tooling's own files (`"type": "module"`), counted for pricing
+  alone, and so did `tools/tsconfig.json`;
+- nothing named `.npmrc`, a pnpmfile, `patches/`, the workflows' action lockfile, a `package.yaml` or `package.json5`
+  manifest, a Plug'n'Play loader or a local action, each of which changes the install or every step unseen;
+- the files a shard loads by path (each package's Stryker configuration, the seed's setup file, the canary's
+  configurations and case tests) were not followed for what they import;
+- `pnpm stryker` ran Stryker through a root script and a bin by name, so a root `prestryker` script or another
+  package's `stryker` bin decided what ran.
+
+### Decision
+
+**Field by field, on both sides, failing closed** (`tools/stryker/manifests.ts`, called by `affected()`). The changes
+job reads the text of the root manifest, `pnpm-workspace.yaml`, `mutation.yml` and every changed `*/package.json` at
+the fork point and at the head (`changeSince`; `git diff --name-status --no-renames` tells an added or deleted file's
+absent side from one git cannot show). Each field affects every package, the packages whose closures read it, or none.
+A field no table lists, a side not read, a file that does not parse, and a key or a path holding a control character
+affect every package. Fields are compared in order, so a reordered `exports` condition or override is a change;
+scripts, dependency maps and catalogs are compared entry by entry, so reordering them alone is none. Each reason names
+its file and field, every key JSON-quoted so that no key a pull request writes can start a workflow command in the log,
+and the fields read and found inert are listed on a line of their own:
+
+```text
+pricing: affected by pnpm-workspace.yaml catalog."zod" (imported by pricing, packets)
+money: affected by .github/workflows/mutation.yml step references only: runner proved on money-ledger
+read and affecting no package: package.json scripts."db:domain-model" (no mutation step runs it)
+```
+
+- **The root manifest.** `packageManager`, `engines`, `type`, `name`, `private`, `pnpm` and every key not listed:
+  every package. Scripts: an install script (`pnpm:devPreinstall`, `preinstall`, `install`, `postinstall`,
+  `prepublish`, `preprepare`, `prepare`, `postprepare`, `prepublishOnly`) every package, any other none. Dependency
+  entries by the mirror rule: the test tooling (`TEST_TOOLING`: vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check,
+  tsx and typescript, N51) or a name the mutation tooling imports, every package;
+  a name a closure imports, that closure's package; else none. An entry named `node`, `deno` or `bun`, or whose
+  specifier on either side is not a registry version or range, `catalog:` or an `npm:` alias (`runtime:`,
+  `workspace:`, `link:`, `file:`, git, a URL), affects every package: it can put a `node` bin first on every step's
+  `PATH`, or install a tree no lockfile package entry records.
+- **A closure's manifest** (its owners are the packages whose closure lists it): install scripts and
+  `dependenciesMeta` every package; other scripts none; dependency entries by the mirror rule against the imports of
+  that package's own files, a `workspace:` specifier its owners; `name`, `exports`, `imports`, `type`, `main` and every
+  unlisted key its owners.
+- **The mutation tooling's own package**, a workspace manifest whose directory holds a file of the global closure,
+  computed, not named (`tools/package.json` today): `type`, `imports`, install scripts and every unlisted key every
+  package, since tsx loads every entry point under them, and so does its directory's `tsconfig.json`; `name` and
+  `exports` its owners', or every package when its name, on either side, is one a global file imports (another
+  manifest taking that name, too); dependency entries as the root's, a `workspace:` entry excepted (its owners).
+- **Every other workspace manifest** (`apps/*`, `infra`, a package in no closure): install scripts, `prepublishOnly`
+  and `dependenciesMeta` every package, since every frozen install runs them in every workspace project; everything
+  else none, because `closureOf` resolves imports by the same reading the aliases use, so a `name` or `exports` edit
+  that captures a closure's import makes it that closure's manifest at the head. An added or deleted one is judged
+  against `{}`. A manifest another global glob holds (`tools/stryker/canary/lib/package.json`, under
+  `tools/stryker/**`) and one a closure or the tooling reads as a file (an import, a data entry) are not classified and
+  count whole, as before.
+- **`pnpm-workspace.yaml`.** `packages` is compared by both readings, the YAML pnpm installs from and the mutation
+  tooling's own (`workspacePatterns`, which a blank line or a column-0 comment inside the list cuts short), and affects
+  every package when either differs. `catalog` and `catalogs` entries follow the mirror rule. `minimumReleaseAge`,
+  `minimumReleaseAgeExclude`, `trustPolicy`, `trustPolicyExclude` and `trustPolicyIgnoreAfter` affect none: a frozen
+  install never resolves, and pnpm 10 reads them only to resolve. `onlyBuiltDependencies`, `overrides`,
+  `patchedDependencies` and every other key affect every package, compared by their scalars' source text as well. An
+  anchor, alias, merge key, explicit tag, directive, byte-order mark, parse error or warning (a duplicate key) on
+  either side affects every package, since pnpm's js-yaml and the `yaml` package can read them differently.
+- **`mutation.yml`**, compared parsed under the same YAML rules, so comments and layout alone run nothing. A change
+  that is equal once each step `uses:` pinned to a full SHA on both sides, of the same owner, repository and path,
+  has its SHA removed (`<owner>/<repo>[/<path>]@<40 hex>`, Part 2's `PIN`, copied) runs `money-ledger` alone
+  (`RUNNER_PROOF_SHARD`), which holds money and ledger whole; a test reads `stryker/shards.json` to hold that no other
+  shard holds either. A move of `actions/upload-artifact` or `actions/download-artifact` is never pin-only, since a
+  one-shard run merges one artifact and cannot prove a merge of several; nor is a job-level `uses:`, a tag or branch
+  ref, `docker://`, `./`, `$/`, a changed path, or any other edit. Each of those affects every package, the reason
+  naming the paths that differ.
+- **Added to the global inputs**, none of which exists: `.npmrc`, `.pnpmfile.*`, `patches/**`,
+  `.github/workflows/actions.lock` (GitHub's workflow dependency lockfile, in preview, under which "the locked commit
+  is what runs"), `**/package.yaml` and `**/package.json5` (manifests pnpm reads and the tooling does not), `.pnp.cjs`
+  (required into every `pnpm exec` step) and `.github/actions/**`; and every `.gitattributes`, root or nested, which
+  the checkout applies to the bytes of every file a shard reads (N56).
+- **What a shard loads by path** (`GLOBAL_LOADED`): each package's `stryker/<package>.config.mjs`, the seed's setup
+  file, and the canary's Stryker and Vitest configurations and five case tests. The global closure follows their
+  imports with Part 4's entry points, tests included: 32 files, `tools/stryker/canary/**` among them, importing
+  `@tp/stryker-canary` and `fast-check` by name. A test holds the list to those loads, reading the canary's
+  configuration from the workflow's canary step.
+- **Any changed path holding a control character** (C0, DEL, C1, U+2028 or U+2029), wherever it lies, affects every
+  package before any glob is read, and every reason prints it JSON-quoted with those characters escaped, so no path a
+  pull request names starts a workflow command in the changes job's log or summary (N52). A glob's trailing `**`
+  also holds a name with a line break. Every `git` the job runs has its stderr captured, never passed through, and
+  what git or Node prints of a failure (git names a path it cannot show, and an error opening a file names that file,
+  as they are) reaches the log only through the same quoting, a line starting `::` or `##[` quoted too.
+- **Every `git` the changes job runs** takes a `PATH` with each `node_modules/.bin` entry and each relative entry
+  removed, so no dependency's bin answers for git.
+
+**Stryker by path** (`tools/stryker/stryker.ts`). Every Stryker run, the canary's and each shard's, is this Node on the
+`bin.stryker` file that `@stryker-mutator/core`'s own manifest names, resolved from the repository's root:
+`pnpm -s exec tsx tools/stryker/stryker.ts run <config>`. The package must be the root's own direct link,
+`node_modules/@stryker-mutator/core`, so one a parent directory supplies, or a copy only hoisted under
+`node_modules/.pnpm/node_modules` that `NODE_PATH` resolves, is refused (N53). No root `stryker`, `prestryker` or
+`poststryker` script, and no other package's `stryker` bin, decides what runs, so those scripts are inert too. The root
+`stryker` script stays, for people.
+
+**Every shard on the pinned runtime and one commit** (`tools/stryker/runtime.ts`, `tools/stryker/canary/verdict.ts`,
+`tools/stryker/gate.ts`). The pins are the Node, Unicode and ICU that `tools/stryker/unicode.json`'s `checkedOn` names
+and the pnpm the root `packageManager` names, read by `^pnpm@(\d+\.\d+\.\d+)(\+sha(?:1|224|256|384|512)\.[0-9a-f]+)?$`;
+any other form fails, naming the value.
+- Each canary verdict records the pnpm that ran it (from the user agent pnpm sets for the step) and the commit its
+  shard checked out (read from `.git` as files, a detached `HEAD`, a loose or packed ref, or a worktree's, with no
+  process), and prints both.
+- The gate fails every shard, not only one scoring Unicode-bound equivalents, whose Node, Unicode, ICU or pnpm is not
+  the pinned one, naming both; and every shard whose commit differs from another shard's or, on Actions, from
+  `GITHUB_SHA`. Off Actions it holds the commits equal to each other and says so. Part 4's message for the
+  Unicode-bound equivalents stays, after those failures, since it alone names the equivalents and their remedy. Each
+  shard's own view prints its runtime and commit first.
+- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"`
+  after its install and before it decides, and the gate job runs the same step after its install and before it reads a
+  report, whenever it runs (N55); each also fails unless the commit it checked out, read from `.git` as a canary
+  verdict reads it, is `GITHUB_SHA`. On a runner (`GITHUB_ACTIONS`) both flags are required, so a run line that drops
+  either fails rather than checking less. Both run through the same pnpm and tsx shims as every later step, so a `node`
+  bin a dependency links, or another pnpm, fails the pull request's `mutation` whatever the classifier decided. Its pnpm
+  has two legs, each held to `packageManager` (N54): the user agent, which an `.npmrc` `user-agent` or a workspace
+  `userAgent` can write (both global inputs, so such a change runs every shard), and what the pnpm on the step's `PATH`
+  prints for `pnpm --version`, run by the step's shell before `pnpm exec` puts any `node_modules/.bin` first. A canary
+  verdict's pnpm is the user agent alone; the setting that could write it is global.
+
+A pin-only change is then proved on the runner, a leg for each step a pin moves: setup-node by Node, Unicode and ICU,
+pnpm/action-setup by pnpm, the checkout by the commit, which on a pull request must be the merge commit GitHub tests.
+
+**Guards that keep the inert rows inert** (`tools/test/workflows.test.ts`).
+- Every `run:` of `mutation.yml` is a whole command on a list: the frozen install, a tooling file run by tsx, and the
+  gate job's shell script, verbatim. No `pnpm <script>`, `pnpm run`, `node --run`, npm, npx or corepack.
+- Over the global closure and the four package closures, no file names `child_process` but `affected.ts` (spawning
+  `git` alone) and `stryker.ts` (`process.execPath` on Stryker's bin alone), each spawn read from the source.
+- No such file names `package.json`, `pnpm-workspace.yaml`, `mutation.yml`, `read-pkg`, `read-package-up`, `pkg-up`,
+  `@npmcli/package-json` or `npm_package_` but those listed with what each reads: `affected.ts`, `manifests.ts`,
+  `workspace.ts`, `stryker.ts`, `runtime.ts`, `tools/screening-capacity/watched.ts`, `vitest.mutation.config.ts`, and
+  the canary's Stryker configuration for a comment.
+- Every entry must still hold its literal, so the lists cannot go stale.
+
+**A correction.** The series' design said Dependabot's `browser-tests` group reaches no money closure. Before Part 3 it
+did: `tools/package.json` was a manifest of pricing's closure, so #38's `playwright-core` line ran pricing's three
+shards. After Part 3 that line is `catalog:`, and the catalog edit ran every shard. Under this part both run none,
+since no closure imports `playwright-core`.
+
+### Measured (2026-11-01 and 2026-11-02)
+
+- **The replay.** Every pull request into the build branch to #95 (64, listed on 2026-11-02 at 01:03 UTC), each judged
+  from its fork point to its head by Part 4's rule (`affected.ts` at 43565235) and by this part's own `affected()`,
+  closures and global inputs taken on both sides:
+  - on the 58 to #89 (37 merged, 12 closed unmerged, 9 open): full runs 22 → 15, partial 8 → 12, none 28 → 31, and
+    no package widened or lost on any;
+  - seven run less: #2 and #4 (a root script) the ledger alone; #3 (`db:domain-model` in the root and `packages/db`)
+    none; #6 (`lint`) pricing and the ledger; #25 and #43 (scripts) none; #31 (`screening:capacity`, and
+    `tools/package.json`'s `exports`) pricing and packets;
+  - saved at their final heads: about 296.9 runner-minutes at the shard means of push runs 40339580137 to
+    41330911489 (294.3 at those of 40316928522 to 40646308297);
+  - none of the pull requests since the series' design runs less (#48 and #49 at their final heads, and #50 to #95):
+    each full run there comes from the mutation tooling, `runs-on`, `packageManager`, the artifact actions, the test
+    tooling's lockfile entries or a lockfile move of vitest's tree, each global here too.
+  - these figures predate the review's fixes (N51 to N56) and are re-measured before the push: #46, whose only global
+    or money-path change is adding the root `.gitattributes` (linguist and eol attributes on
+    `packages/db/functions/*.sql`), now runs every shard (N56), so its "none" becomes a full run.
+- **A shard's time on CI**, the mean over the 12 push runs since `stryker/shards.json` last changed (40324477819 to
+  41348076075, each job from its start to its completion): money-ledger 4.49 minutes, packets-scan 7.23, packets-rest
+  12.59, packets-explain 11.86, pricing-engine 7.41, pricing-recompute 4.15, pricing-rest 5.63; 53.36 for the shards and
+  54.24 with the changes and gate jobs. By package: money and the ledger 4.49, pricing 17.19, packets 31.68.
+- **A week, projected** at the ten runs' means: Dependabot's `actions` group without an artifact-action move 53.88 →
+  4.54 (plus the changes and gate jobs either way); `next` and `browser-tests` 53.88 → 0 each; a release-age or trust
+  exclude alone 53.88 → 0; a catalog `zod` line 53.88 → 49.34. Up to about 157 runner-minutes in a week when
+  `actions`, `next` and `browser-tests` all open. Each "→ 0" holds only while the lockfile move reaches no closure
+  import and no test-tooling snapshot: #87 (`@anthropic-ai/sdk`) ran every shard because it moved an optional peer
+  inside vitest's snapshot key.
+- **Locally**, on Node v24.22.0 and pnpm 10.34.8: the changes job's check prints `runtime: Node v24.22.0 (Unicode
+  17.0, ICU 78.3) and pnpm 10.34.8` and passes. Two shards run by path, pricing-recompute and money-ledger, gave every
+  file the same counts as the base's push run (jobs 124972787739 and 124972787830), with no `> therapy-platform@
+  stryker` line.
+- **This part's own pull request** changes the tooling and `mutation.yml`, so it runs every shard: the live proof of
+  Stryker by path and of the runtime and commit legs, compared per file with the push run of the commit it merges into.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| List the global fields and treat the rest as inert | A field pnpm adds later (it gained `devEngines` and the trust and release-age keys) would be inert until someone noticed. Listing the inert fields fails closed |
+| The test scripts global, as the series' brief listed | No mutation step and no closure file runs a script, and two guards hold that; global would only cost runs (#43's `typecheck` and `lint`). The Stryker script is taken out of the path instead |
+| Specifiers inert, on the frozen install alone | No run is saved: a specifier that moves an imported package moves the lockfile, and the lockfile rule names the same packages. The mirror rule keeps the rule sound if a later pnpm stops checking specifiers on a frozen install |
+| The release-age and trust keys global | A full run for every exclude a person adds or lets expire, for keys pnpm 10.34.8 reads only to resolve; they can fail an install, never change a score |
+| A pin-only change runs nothing, or a canary-only job | Nothing would stop a broken pin merging green and failing the next push run; a canary-only job needs a gate mode of its own. `money-ledger` uses the existing jobs, takes about 4.5 minutes, and keeps "all or none" |
+| A pin-only change also proves transport (`money-ledger` and packets' three shards, four artifacts, about 36 minutes) | It proves a merge of several artifacts but not pricing's upload. An artifact-action move runs every shard instead, a full run only in the weeks those two move |
+| The runtime held only on pin-only runs | One rule with no mode to test; it fails only a runner that ignored the workflow's pins |
+| Closure manifests left whole | #3's only pricing reason was a script in `packages/db/package.json`, and lane pull requests add scripts to `packages/db`, `packages/rules` and `tools` |
+| A glob over `tools/stryker/canary/**` for what a shard loads by path | It would also take `verdict.test.ts`, which no shard loads. A named list held to the loads by a test stays true |
+| Matching reads rather than literals in the guard | A read can be built in ways a pattern misses; a literal scan fails closed, and a short reviewed list stays true |
+| Diff a pull request from the merge's first parent, not its fork point | It changes the rule for every file (proposed separately, P30). From the fork point a pull request is charged for base commits since it forked, a superset of what its merge changes, so this part stays sound |
+| Decide a pull request's mutation with the base's classifier | It changes how every pull request is judged (proposed separately, P43). Today and under this part a pull request runs its own `affected.ts` |
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N43.** The root manifest, `pnpm-workspace.yaml`, `mutation.yml` and every workspace manifest are read field by
+  field on both sides, failing closed: a field neither listed as inert nor read by a closure, a side not read, a file
+  that does not parse, and a key or path holding a control character affect every package.
+- **N44.** Every script but an install script is inert for mutation, in the root and in every workspace manifest, held
+  by the `run:` list and the closure scan; the test scripts are not global, as the series' brief listed them.
+- **N45.** The release-age and trust keys are inert for mutation: the one place this part rests on the frozen install
+  alone.
+- **N46.** A change to `mutation.yml` that moves only step SHAs, each of the same action, runs `money-ledger` alone; a
+  move of either artifact action runs every shard.
+- **N47.** Every shard is held to the pinned Node, Unicode, ICU and pnpm, and every shard to one commit, `GITHUB_SHA` on
+  Actions; the changes job holds its own runtime before it decides.
+- **N48.** Stryker runs by path from the root's own install; the root `stryker` script stays, for people.
+- **N49.** The mutation tooling's own package's module fields, install scripts, unlisted keys and tsconfig, the `name`
+  and `exports` of a manifest whose name a global file imports, and a manifest another global glob holds, count for
+  every package.
+- **N50.** `.github/workflows/actions.lock`, `$/` references, `**/package.yaml`, `**/package.json5`, `.pnp.cjs` and
+  `.github/actions/**` are global, though none exists.
+- **N51** (the review of #96 at 50029e64). typescript is test tooling. `@stryker-mutator/core` 10.1.1 does not declare
+  it, yet `dist/src/sandbox/ts-config-preprocessor.js` runs `import('typescript')` on every run that is not in place,
+  to parse and rewrite the root tsconfig in the sandbox, and it resolves to the root's own typescript. At 50029e64 a
+  catalog or root move of typescript, with the lockfile moved to match, ran no shard (at the base, all seven), and a
+  stub typescript failed the canary. It is the hoisting limit below, met in the tooling itself: a move of typescript in
+  the catalog, a manifest or the lockfile now runs every shard, and a test now fails on any other undeclared import
+  of the installed tooling that resolves outside the tooling's lockfile closure.
+- **N52** (the review of #96). Any changed path holding a control character affects every package and is printed
+  JSON-quoted. At 50029e64 such a path was printed raw, so `packages/money/src/a\n::warning ...` started a workflow
+  command in the log and summary, and one under `tools/stryker/**`, `patches/**` or a data glob such as
+  `fixtures/golden/**` affected no package, since a trailing `**` compiled to a `.` that does not match a line break.
+  Both predate this part; it had quoted manifest paths only. A closure problem's line and a lockfile entry a reason
+  names are JSON-quoted the same way when they hold one. The first repair still passed git's stderr through: a gitlink
+  at `packages/a\n::warning ...` made `git show` print its path raw, and a second line started the command (the
+  verdict was right, all four). Every `git` now runs through `runGit`, its stderr captured, and the command line prints
+  what it throws, its own, git's or Node's, through `printable`; a test runs it as a child process on such a gitlink.
+- **N53** (the review of #96, N1). Stryker's core must be the root's direct link. At 50029e64 the check asked only that
+  the resolved core lie under `<root>/node_modules`, and the tsx and stryker shims set `NODE_PATH` to
+  `<root>/node_modules/.pnpm/node_modules`, which is inside it, so with the root's own `@stryker-mutator/core` removed a
+  hoisted copy would have run. `strykerBin` now also requires `node_modules/@stryker-mutator/core/package.json` to
+  exist and to be the manifest it resolved; a child-process test sets that `NODE_PATH` and is refused.
+- **N54** (the review of #96, N2). The changes job's pnpm leg read only the user agent, which pnpm settings write. It
+  now also holds `pnpm --version`, printed by the step's own shell, to `packageManager`. npm_execpath is no leg, since
+  `pnpm exec` leaves it unset; a test holds the workspace `userAgent` global.
+- **N55** (the review of #96, N3). The gate job checks its own runtime and checkout. At 50029e64 only the changes job
+  checked its runtime, and the shards were held by their canary verdicts, so a pin-only move of the gate job's own
+  setup steps or checkout was "proved" on money-ledger, which never ran that job's setup. Now both jobs run the same
+  check, and it holds the checkout to `GITHUB_SHA` as well (the safer of the review's two severities). N47 reads:
+  every shard, the changes job and the gate job are held to the pinned Node, Unicode, ICU and pnpm, and to one commit.
+  Round 2 of the fix checks: run with neither flag, `runtime.ts` exited 0 and held neither the pnpm on `PATH` nor the
+  checkout, so only the workflows test held the run line; on a runner each missing flag is now an error.
+- **N56** (the completeness critic of #96's reviews, C-G1). `.gitattributes` and `**/.gitattributes` are global
+  inputs. At 50029e64 neither was, so a pull request adding only `packages/pricing/src/*.ts text eol=crlf` or a
+  `docs/product/unpriced-reasons.md` line printed "shards: none", though every later checkout rewrites the bytes the
+  pricing and packets tests and their mutants read. It predates this part, which set out to list what the runner reads
+  on every step. `.gitmodules` stays outside: the checkouts fetch no submodules. Every `.gitattributes` edit counts,
+  a `linguist-*`, `diff`, `merge` or `export-ignore` one included, since the file is not read attribute by attribute:
+  replayed, #46's root `.gitattributes`, which rewrites only `packages/db/functions/*.sql`, now runs every shard.
+
+### Consequences
+
+- A pull request that adds or edits a script no install runs, a dependency or catalog line no closure and none of the
+  tooling imports, or a release-age or trust exclude runs no shard. `mutation` passes in about a minute ("No money path
+  changed"), and the changes job's log lists each such field as read and affecting no package.
+- A Dependabot actions pull request that moves no artifact action runs `money-ledger`, about 4.5 minutes, and proves
+  the new pins on its runner. The first push run after its merge runs every shard on the same pins.
+- A move of `mutation.yml`'s Node or of `packageManager` affects every package, and is now also a change of the pins:
+  `unicode.json`'s `checkedOn` follows the Node, as Part 4 already requires, and `packageManager` is the pnpm pin.
+- Each fail-closed rule of the field rule has a test of its own that turns red when the rule is dropped (the review of
+  #96, S2): each of the nine install scripts, written out in the test, at the root, in packages/db and in a workspace
+  manifest added with it; a key holding U+2028 or U+2029; the root manifest, the workspace file and the workflow
+  added or deleted; a step pin moved with its scalar re-quoted; a runner-proof shard that does not hold its packages
+  whole; a byte-order mark, a `%YAML` directive, a warning and a merge key; and a specifier of 257 characters. Each was
+  shown killing a mutant that drops that rule. So do the completeness critic's seven (C-G2): a catalog `node` entry,
+  `tools/package.json`'s `@tp/stryker-canary` moved between `workspace:` forms, a dependency value that is not a
+  string, a workflow scalar rewritten to the same value (`5` as `0x5`), a key holding U+0085, a workspace manifest a
+  synthetic data entry lists (read whole), and a re-quoted `packages` entry.
+- A new file a shard loads by path fails `GLOBAL_LOADED`'s test until it is listed. A new tooling file that runs a
+  process or names a manifest fails the guard until it is listed with what it reads.
+- A local shard run needs the pinned Node and `packageManager`'s pnpm, and every shard on one commit
+  (`docs/runbooks/ci.md`, "Running it locally").
+- Rollback is a revert: nothing holds state, and there is no migration.
+
+**What it does not bound.**
+- **The lockfile rule's limit, unchanged.** pnpm hoists every package into `node_modules/.pnpm/node_modules`, so a new
+  root dependency can change what an imported package reaches through an undeclared require, which the lockfile rule
+  (declared dependencies only) does not see. Part 4's whole-file root rule happened to cover that. It is now the
+  lockfile rule's limit, as it already was for every other manifest. For the test tooling's own code it is guarded
+  (N51): `tools/stryker/affected.test.ts` walks the installed tooling from the root's and the mutation tooling's
+  manifests (every dependency and installed peer below it, about 200 packages) and fails on a bare import, by literal,
+  that its package does not declare, that resolves, and that neither `TEST_TOOLING` nor the tooling's lockfile closure
+  holds, so a Stryker or Vitest upgrade that adds one fails until it is listed. At 50029e64 it names typescript alone.
+  The import graph reads an import call quoted in a comment as an import, which over-reads (toward more shards), so
+  `TEST_TOOLING`'s own comment names none: one did, which held typescript through the global imports and hid the
+  entry's removal from the guard and the lockfile test. That test now also takes every import of typescript out.
+  The undeclared requires of the third-party packages a money closure imports, and a specifier built at run time,
+  stay outside it.
+- **The pnpm version, not its bytes.** pnpm/action-setup self-updates by version, and no mutation runner checks
+  `packageManager`'s hash (proposed separately, P44).
+- **A pull request still decides its own `mutation`** with its own classifier (P43).
+
+### Revisit when
+
+- pnpm 11, whose frozen install checks the release age and trust policy, or a later pnpm that stops checking
+  specifiers on a frozen install.
+- pnpm reads a new workspace key, manifest form or install-time script.
+- A shards rebalance splits money or the ledger (the `RUNNER_PROOF_SHARD` test fails first).
+- The repository adopts `.github/workflows/actions.lock`: pin-only must then read its entries for `mutation.yml` as it
+  reads step SHAs.
+- A new file a shard loads by path.
+- A phantom require's target moves unseen (the hoisting limit above).

@@ -2,12 +2,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 
 import { type Logger, createLogger } from '@tp/observability';
-import { CONTRACT_LAYOUTS, CONTRACT_TIERS, INJECTION_CANARY, PAGE_TEXT_FIDELITIES, TRUTH_FIELDS, type ContractLayout, type ContractTier, type PageTextFidelity, type TruthField } from '@tp/synth';
+import { CONTRACT_LAYOUTS, CONTRACT_TIERS, INJECTION_CANARY, PAGE_TEXT_FIDELITIES, TRUTH_FIELDS, type ContractLayout, type ContractTier, type PageTextFidelity, type TruthField, screenTwinIdentifiers } from '@tp/synth';
 
 import { CONTRACT_VARIANTS, type ContractVariant } from '../src/baseline-format';
 import { GatewayError, ModelCallFailedError, ModelFeatureOffError } from '../src/errors';
 import { type ContractTermsOutput, contractTermsOutput } from '../src/functions/contract-terms';
 import { ModelGateway } from '../src/gateway';
+import { type PatientRecordsCheck, syntheticRecordsCheck } from '../src/patient-records';
 import { PROMPTS, modelFor } from '../src/prompts';
 import type { ModelProvider, ModelRequest, ModelResponse, CompleteOptions, ProviderKind } from '../src/provider';
 import { MemoryModelCallStore, type ModelCallStore } from '../src/store';
@@ -356,6 +357,7 @@ export function caseMismatches(report: ContractReport, set: LoadedContractSet): 
 }
 
 async function evaluateContracts(gateway: ModelGateway, recorder: Recorder, set: LoadedContractSet, runId: string, variant: ContractVariant, only: ReadonlySet<string> | undefined): Promise<ContractReport> {
+  const records = screenTwinRecords();
   const all = new Map(set.cases.map((item) => [item.id, item]));
   // Every document of the whole set that carries no injection, whatever subset runs, so a subset's rule is the whole set's.
   const clean = set.cases.filter((item) => item.truth.twinOf === null).map((item) => item.input.pages);
@@ -367,7 +369,7 @@ async function evaluateContracts(gateway: ModelGateway, recorder: Recorder, set:
     let key: string | null = null;
     try {
       const result = await running.run({ id: item.id, contract: item, narrative: null }, () =>
-        gateway.proposeContractTerms({ practiceId: null, requestKey: `eval:${runId}:${variant}:${item.id}` }, { ...item.input, ambiguous: variant === 'ambiguous' }),
+        gateway.proposeContractTerms({ practiceId: null, requestKey: `eval:${runId}:${variant}:${item.id}` }, { ...item.input, ambiguous: variant === 'ambiguous', patientRecords: records }),
       );
       output = parsedOutput(recorder.last);
       if (result.proposal === null || output === null) {
@@ -393,6 +395,18 @@ async function evaluateContracts(gateway: ModelGateway, recorder: Recorder, set:
     },
     results,
   );
+}
+
+let twinRecords: PatientRecordsCheck | undefined;
+
+/**
+ * The records check every evaluation call carries (docs/adr/0070, Part 3): packages/synth's large synthetic practice
+ * (screenTwinIdentifiers), so the set is screened as a practice's contracts are, and a contract the screen would
+ * refuse in production is refused here too (`refused:names_patient`, never a recall miss). Built once per process.
+ */
+export function screenTwinRecords(): PatientRecordsCheck {
+  twinRecords ??= syntheticRecordsCheck(screenTwinIdentifiers());
+  return twinRecords;
 }
 
 // ---------------------------------------------------------------------------------------------------

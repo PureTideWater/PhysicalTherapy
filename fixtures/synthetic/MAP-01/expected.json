@@ -2,7 +2,7 @@
   "case": "MAP-01",
   "module": "MAP",
   "title": "Unmapped payer and plan",
-  "assertion": "Pricing refused; coverage shows dollars waiting",
+  "assertion": "No line of the plan is ever priced; a line the resolver reaches is left unpriced as `NO_MAPPING`, one by one; the run prices every other line of its period. Coverage shows dollars waiting",
   "synthetic": true,
   "completesIn": 3,
   "assertedBy": [
@@ -13,7 +13,8 @@
     "apps/web/e2e/mapping.spec.ts",
     "tools/golden-worksheet/engine.golden.test.ts",
     "apps/worker/src/price/price.db.test.ts",
-    "apps/web/src/lib/routes/pricing-routes.db.test.ts"
+    "apps/web/src/lib/routes/pricing-routes.db.test.ts",
+    "apps/web/src/lib/routes/mapping-routes.db.test.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,
@@ -473,7 +474,7 @@
   "uploads": [],
   "scenario": {"mappings":[],"plan":"SYNPLAN-UNMAPPED-01","payer":"SYNTHETIC PAYER M"},
   "outcome": {
-    "pricing": "refused for every line: NO_MAPPING",
+    "pricing": "every line NO_MAPPING; the run prices every other line",
     "coverageWaiting": {"lines":4,"chargeCents":"44800","paidCents":"22917"}
   },
   "notes": []

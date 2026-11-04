@@ -8,7 +8,9 @@ import { AccountStandingSummary } from './account-standing';
  * The organization's one standing on its billing page (test matrix BIL-05; docs/adr/0050; the UX baseline review's
  * UX-004): accountStanding's words for each of a group's nine record status and billing standing pairs, a firm's rows,
  * a closed organization's, the billing hold beside a suspension by PaidWhole and the invoice holding it, and the
- * badge and the alert drawn from them. A suspended or closed organization never reads "In good standing". SYNTHETIC
+ * badge and the alert drawn from them. A suspended or closed organization never reads "In good standing". PaidWhole's
+ * suspension carries its stored date and reason (test matrix BIL-09; docs/adr/0080; design SS-01, section 6.4, B1 to
+ * B10), and a firm suspended or closed by PaidWhole is told its people start no new work through its grants. SYNTHETIC
  * values; no database.
  */
 
@@ -19,6 +21,10 @@ const PAST_DUE = { standing: 'past_due', pastDueSince: new Date('2026-10-10T15:0
 const SUSPENDED = { standing: 'suspended', pastDueSince: new Date('2026-09-01T15:00:00Z'), suspendedSince: new Date('2026-10-01T15:00:00Z'), holdingInvoice: INVOICE, holdingCount: 1 } as const;
 const GOOD = { standing: 'good', pastDueSince: null, suspendedSince: null, holdingInvoice: null, holdingCount: 0 } as const;
 const BILLING = { good: GOOD, past_due: PAST_DUE, suspended: SUSPENDED } as const;
+/** No reason or date stored: a suspension the previous image wrote, or none. */
+const UNRECORDED = { statusReason: null, statusSince: null } as const;
+/** PaidWhole suspended the organization on 2026-10-05 for a security hold. */
+const RECORDED = { statusReason: 'security_hold', statusSince: new Date('2026-10-05T12:00:00Z') } as const;
 
 const TICKET = '/support?from=billing';
 const PAID_WHOLE =
@@ -29,13 +35,16 @@ const PLAN_REFUSAL = 'A closed organization takes no new plan.';
 const ACH = ' below. A card payment restarts runs at once; a bank (ACH) payment restarts them once the bank settles it, usually within a few days.';
 const SETTLES = 'a bank (ACH) payment counts once the bank settles it, usually within a few days';
 const WHY = ' to find out why and what reinstates it.';
+const FIRM_SUSPENDED =
+  "PaidWhole has suspended the organization: your people start no new work through its grants at the practices you are granted until PaidWhole reinstates the organization. Every record stays readable, and the practices' own staff carry on.";
+const FIRM_CLOSED = "Your people start no new work through the organization's grants.";
 const CLOSURE = ' if you have a question about the closure.';
 
 const ticket = (detail: string): NextStep => ({ action: 'Open a support ticket', href: TICKET, detail });
 const pay = (detail: string): NextStep => ({ action: 'Pay SIM-0002', href: `#pay-${INVOICE.id}`, detail });
 
 function standingOf(kind: 'group' | 'firm', status: 'active' | 'suspended' | 'closed', standing: keyof typeof BILLING): AccountStanding {
-  return accountStanding({ kind, status, ...BILLING[standing] });
+  return accountStanding({ kind, status, ...BILLING[standing], ...UNRECORDED });
 }
 
 /** What every non-good standing carries: a notice and a next step. */
@@ -87,18 +96,18 @@ describe('accountStanding, a group (BIL-05)', () => {
   });
 
   it('with several invoices unpaid for 30 days, asks for all of them paid and restarts runs only then', () => {
-    const read = accountStanding({ kind: 'group', status: 'active', ...SUSPENDED, holdingCount: 2 });
+    const read = accountStanding({ kind: 'group', status: 'active', ...UNRECORDED, ...SUSPENDED, holdingCount: 2 });
     expect(read.notice).toBe('New runs have stopped because 2 invoices have been unpaid for 30 days since their payments failed; your data stays readable.');
     expect(read.nextSteps[0]).toEqual(
       pay(' and the other invoice unpaid for 30 days below. Runs restart once all of them are paid: at once by card, or once the bank settles a bank (ACH) payment, usually within a few days.'),
     );
-    expect(accountStanding({ kind: 'group', status: 'active', ...SUSPENDED, holdingCount: 3 }).nextSteps[0]?.detail).toMatch(/^ and the other 2 invoices unpaid for 30 days below\. /);
-    expect(accountStanding({ kind: 'group', status: 'suspended', ...SUSPENDED, holdingCount: 2 }).notice).toBe(
+    expect(accountStanding({ kind: 'group', status: 'active', ...UNRECORDED, ...SUSPENDED, holdingCount: 3 }).nextSteps[0]?.detail).toMatch(/^ and the other 2 invoices unpaid for 30 days below\. /);
+    expect(accountStanding({ kind: 'group', status: 'suspended', ...UNRECORDED, ...SUSPENDED, holdingCount: 2 }).notice).toBe(
       `${PAID_WHOLE} 2 invoices have also been unpaid for 30 days since their payments failed, the oldest since 2026-09-01; new runs stay stopped until all of them are paid as well.`,
     );
   });
 
-  it('reads "Suspended by PaidWhole" whatever billing says, with no date, the ticket as the next step and the note that payment does not reinstate it', () => {
+  it('reads "Suspended by PaidWhole" whatever billing says, with no date when none is stored, the ticket as the next step and the note that payment does not reinstate it', () => {
     const read = standingOf('group', 'suspended', 'good');
     expect(read).toEqual({
       kind: 'suspended_by_paidwhole',
@@ -131,6 +140,39 @@ describe('accountStanding, a group (BIL-05)', () => {
     expect(suspended.billingHold).toEqual({ kind: 'suspended_nonpayment', since: SUSPENDED.pastDueSince, invoice: INVOICE });
     // Paying restarts nothing while PaidWhole's suspension lasts, so the step makes no promise about runs.
     expect(suspended.nextSteps).toEqual([ticket(WHY), pay(' below.')]);
+  });
+
+  it('dates PaidWhole’s suspension from its stored time, gives its reason, and the next step for that reason (B1, B3, B7, B10)', () => {
+    const read = accountStanding({ kind: 'group', status: 'suspended', ...GOOD, ...RECORDED });
+    expect(read).toEqual({
+      kind: 'suspended_by_paidwhole',
+      label: 'Suspended by PaidWhole since 2026-10-05',
+      tone: 'danger',
+      title: 'New runs have stopped',
+      notice:
+        'PaidWhole has suspended the organization while it looks into a security concern: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.',
+      alert: true,
+      nextSteps: [ticket(' to find out what PaidWhole needs from you.')],
+      billingHold: null,
+      formsNote: FORMS_NOTE,
+      planRefusal: null,
+    });
+    const clauses = {
+      customer_request: [' at your request', ' when you want the organization reinstated.'],
+      security_hold: [' while it looks into a security concern', ' to find out what PaidWhole needs from you.'],
+      agreement_ended: [" because the organization's agreement with PaidWhole has ended", ' to discuss a new agreement.'],
+    } as const;
+    for (const [reason, [clause, step]] of Object.entries(clauses)) {
+      const held = accountStanding({ kind: 'group', status: 'suspended', ...SUSPENDED, statusReason: reason as keyof typeof clauses, statusSince: null });
+      expect(held.label, reason).toBe('Suspended by PaidWhole');
+      expect(held.notice, reason).toBe(
+        `PaidWhole has suspended the organization${clause}: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it. An invoice is also unpaid since 2026-09-01; new runs stay stopped until it is paid as well.`,
+      );
+      // Billing's own hold keeps its step after the reason's ticket.
+      expect(held.nextSteps, reason).toEqual([ticket(step), pay(' below.')]);
+    }
+    // Billing's suspendedSince never dates PaidWhole's suspension.
+    expect(accountStanding({ kind: 'group', status: 'suspended', ...SUSPENDED, ...UNRECORDED }).label).toBe('Suspended by PaidWhole');
   });
 
   it('reads a closed organization "Closed" whatever billing says, in the neutral tone with nothing owed: no reopening promised, no new plan, no suspension note', () => {
@@ -174,9 +216,9 @@ describe('accountStanding, a group (BIL-05)', () => {
   });
 
   it('asks for the open invoice paid when no invoice holds the standing in view', () => {
-    const read = accountStanding({ kind: 'group', status: 'active', ...SUSPENDED, holdingInvoice: null });
+    const read = accountStanding({ kind: 'group', status: 'active', ...UNRECORDED, ...SUSPENDED, holdingInvoice: null });
     expect(read.nextSteps[0]).toEqual({ action: 'Pay the open invoice', href: null, detail: ACH });
-    expect(accountStanding({ kind: 'group', status: 'active', ...PAST_DUE, holdingInvoice: { ...INVOICE, number: null } }).nextSteps[1]).toEqual({
+    expect(accountStanding({ kind: 'group', status: 'active', ...UNRECORDED, ...PAST_DUE, holdingInvoice: { ...INVOICE, number: null } }).nextSteps[1]).toEqual({
       action: 'Pay the open invoice',
       href: `#pay-${INVOICE.id}`,
       detail: ' below.',
@@ -185,16 +227,23 @@ describe('accountStanding, a group (BIL-05)', () => {
 });
 
 describe('accountStanding, a firm (BIL-05)', () => {
-  // A firm's suspension refuses no run before milestone 12 (practice_run_refusal reads a practice's owning group only;
-  // docs/adr/0050), so nothing here says runs have stopped or will.
-  it('says PaidWhole suspended the firm and how to find out why, and nothing about runs', () => {
+  // A firm's unpaid invoice refuses no run before milestone 12 (practice_run_refusal never reads a grantee's billing
+  // standing, docs/adr/0080; docs/adr/0050), so nothing here says runs have stopped or will. PaidWhole's suspension or
+  // closure of a firm stops its people's new work through its grants, and says so (B4, B9).
+  it('says PaidWhole suspended the firm, that its people start no new work through its grants, and how to find out why', () => {
     const read = standingOf('firm', 'suspended', 'good');
-    expect(read).toMatchObject({ kind: 'suspended_by_paidwhole', label: 'Suspended by PaidWhole', title: 'The organization is suspended', notice: 'PaidWhole has suspended the organization.', formsNote: FORMS_NOTE });
+    expect(read).toMatchObject({ kind: 'suspended_by_paidwhole', label: 'Suspended by PaidWhole', title: 'The organization is suspended', notice: FIRM_SUSPENDED, formsNote: FORMS_NOTE });
     expect(read.nextSteps).toEqual([ticket(' to find out why.')]);
     expect(standingOf('firm', 'suspended', 'suspended')).toMatchObject({
-      notice: 'PaidWhole has suspended the organization. An invoice is also unpaid since 2026-09-01.',
+      notice: `${FIRM_SUSPENDED} An invoice is also unpaid since 2026-09-01.`,
       nextSteps: [ticket(' to find out why.'), pay(' below.')],
       billingHold: { kind: 'past_due', since: SUSPENDED.pastDueSince },
+    });
+    expect(accountStanding({ kind: 'firm', status: 'suspended', ...GOOD, statusReason: 'customer_request', statusSince: new Date('2026-10-05T12:00:00Z') })).toMatchObject({
+      label: 'Suspended by PaidWhole since 2026-10-05',
+      notice:
+        "PaidWhole has suspended the organization at your request: your people start no new work through its grants at the practices you are granted until PaidWhole reinstates the organization. Every record stays readable, and the practices' own staff carry on.",
+      nextSteps: [ticket(' when you want the organization reinstated.')],
     });
   });
 
@@ -209,12 +258,12 @@ describe('accountStanding, a firm (BIL-05)', () => {
     expect(standingOf('firm', 'active', 'good').kind).toBe('good');
   });
 
-  it('reads a closed firm "Closed" with no claim about runs', () => {
-    expect(standingOf('firm', 'closed', 'good')).toMatchObject({ kind: 'closed', label: 'Closed', notice: 'Its data stays readable.', planRefusal: PLAN_REFUSAL });
-    expect(standingOf('firm', 'closed', 'suspended').notice).toBe('Its data stays readable. An invoice is also unpaid since 2026-09-01; it is still owed.');
+  it('reads a closed firm "Closed": its people start no new work through its grants, with no claim about runs (B9)', () => {
+    expect(standingOf('firm', 'closed', 'good')).toMatchObject({ kind: 'closed', label: 'Closed', notice: FIRM_CLOSED, planRefusal: PLAN_REFUSAL });
+    expect(standingOf('firm', 'closed', 'suspended').notice).toBe(`${FIRM_CLOSED} An invoice is also unpaid since 2026-09-01; it is still owed.`);
     // Several invoices still owed are counted, the oldest dated, still with no clause about runs.
-    expect(accountStanding({ kind: 'firm', status: 'closed', ...SUSPENDED, holdingCount: 2 }).notice).toBe(
-      'Its data stays readable. 2 invoices are also unpaid, the oldest since 2026-09-01; they are still owed.',
+    expect(accountStanding({ kind: 'firm', status: 'closed', ...UNRECORDED, ...SUSPENDED, holdingCount: 2 }).notice).toBe(
+      `${FIRM_CLOSED} 2 invoices are also unpaid, the oldest since 2026-09-01; they are still owed.`,
     );
   });
 
@@ -241,6 +290,8 @@ describe('the standing on the billing page (BIL-05)', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain(PAID_WHOLE);
     expect(html).toContain(`<a class="underline" href="${TICKET}">Open a support ticket</a> to find out why and what reinstates it.`);
+    // With the stored date, the label carries it (B1).
+    expect(markup(accountStanding({ kind: 'group', status: 'suspended', ...GOOD, ...RECORDED }))).toContain('Suspended by PaidWhole since 2026-10-05');
   });
 
   it('prints one date, the label’s, for a suspension for nonpayment, and links the Pay form of the holding invoice', () => {

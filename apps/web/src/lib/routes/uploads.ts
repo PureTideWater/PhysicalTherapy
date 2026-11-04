@@ -12,14 +12,16 @@ import {
   recordAuditEvent,
   rolesPermit,
 } from '@tp/db/runtime';
-import { practiceRunRefusal } from '@tp/worker/billing';
 import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
+import { workPause } from '../billing/hold';
+import { type WorkPause, uploadsHeld } from '../billing/suspension-words';
 import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { declaredTypeProblem } from '../uploads/csv-exports';
+import { NO_BAA, baaOnFile } from '../uploads/gate';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES, allowedContentType } from '../uploads/limits';
 import { REPORT_FROM, type Receipt } from '../uploads/receipt-labels';
 import { type ReceiptPage, listReceipts, receiptOf, receiptReport } from '../uploads/receipts';
@@ -65,17 +67,45 @@ async function uploadedDocument(scope: PracticeScope<ScopeClient>, practiceId: s
   return row;
 }
 
-/** Whether the practice's BAA is on file (PRD 6: "no upload without a BAA"), asked of the database. */
-export async function baaOnFile(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<boolean> {
-  const { rows } = await scope.client.query<{ open: boolean }>('SELECT practice_baa_on_file($1) AS open', [practiceId]);
-  return rows[0]?.open === true;
-}
-
-export const NO_BAA = 'Uploads open once the practice’s business associate agreement is on file. A platform administrator records it when it is signed.';
+// The gate's BAA half (lib/uploads/gate.ts, which the practice home reads too), as Contracts and Reconciliation import it.
+export { NO_BAA, baaOnFile };
 
 export interface UploadGate {
   readonly open: boolean;
+  /**
+   * The closed gate's title, true to its state (docs/adr/0080, 0085): not open yet (no BAA), paused (a hold that lifts),
+   * closed (a closure, which promises no restart) or stopped (a hold whose cause these words do not know); null while open.
+   */
+  readonly title: string | null;
   readonly reason: string | null;
+}
+
+/** A closed gate's title while the BAA is not on file: the only state that is "not open yet". */
+const NOT_OPEN_YET = 'Uploads are not open yet';
+
+/**
+ * The closed gate for a hold on the person's uploads (lib/billing/hold.ts workPause with file.upload, the upload
+ * routes' own question; docs/adr/0080), in an upload's words (uploadsHeld): titled for the state, the database's
+ * sentence whole as the body, so the panel never says less than the database nor repeats its title (docs/adr/0085).
+ */
+export function suspendedGate(pause: WorkPause): UploadGate {
+  const held = uploadsHeld(pause);
+  return { open: false, title: held.title, reason: held.reason };
+}
+
+/**
+ * Whether the person may upload here now, and why not: the practice's BAA on file (J1), then no hold on their uploads
+ * (practice_run_refusal_for with file.upload: the owner's hold, or a grantee's when only its grants let this person
+ * upload; docs/adr/0050, 0080). One gate for every page that offers an upload (Uploads, Contracts, Reconciliation, and
+ * the payer's letter on Submissions), so each says so before a file is chosen rather than after, under a title true to
+ * the state. What is on file stays readable.
+ */
+export async function uploadGate(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<UploadGate> {
+  if (!(await baaOnFile(scope, practiceId))) {
+    return { open: false, title: NOT_OPEN_YET, reason: NO_BAA };
+  }
+  const hold = await workPause(scope, practiceId, 'file.upload');
+  return hold === null ? { open: true, title: null, reason: null } : suspendedGate(hold);
 }
 
 /** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */
@@ -108,14 +138,12 @@ export const uploadsPage = practiceRoute({
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
-    const open = await baaOnFile(scope, practiceId);
-    // A suspended organization's uploads pause with the reason (docs/adr/0050); what is on file stays readable.
-    const suspension = await practiceRunRefusal(scope.client, practiceId);
+    const gate = await uploadGate(scope, practiceId);
     return {
       practiceId,
       canUpload: rolesPermit(access.roles, 'file.upload'),
       roles: access.roles,
-      gate: { open: open && suspension === null, reason: !open ? NO_BAA : suspension === null ? null : `Uploads are paused: ${suspension}.` },
+      gate,
       limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES, contentTypes: CONTENT_TYPES.x12_835 },
       eraExport: { contentTypes: CONTENT_TYPES.era_export, formats: ERA_EXPORT_CHOICES },
     };

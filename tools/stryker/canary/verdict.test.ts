@@ -1,12 +1,15 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../../content-files';
+import { pnpmOfUserAgent } from '../runtime';
 import { reportOf } from '../test-support';
 import { CANARY_TESTS } from './vitest.config';
-import { EXPECTED_FILE, type Expected, canaryPassed, judgeCanary, parseExpected, verdictFile, verdictLines } from './verdict';
+import { EXPECTED_FILE, type Expected, canaryPassed, headCommit, judgeCanary, parseExpected, verdictFile, verdictLines } from './verdict';
 
 /**
  * The mutation canary's verdict (tools/stryker/canary/verdict.ts; test matrix CI-15): every mutant of each case's file
@@ -129,7 +132,67 @@ describe('the verdict', () => {
   });
 
   it('names the runtime its shard ran on, as the gate holds the Unicode-bound equivalents to it', () => {
-    expect(judgeCanary(reportFor(committed), committed, 'money-ledger').runtime).toEqual({ node: process.version, unicode: process.versions.unicode, icu: process.versions.icu });
-    expect(judgeCanary(reportFor(committed), committed, 'money-ledger', { node: 'v24.22.0', unicode: '17.0', icu: '78.3' }).runtime).toEqual({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' });
+    // pnpm as the verdict reads it, from the user agent pnpm sets for the step (none under a bare vitest).
+    expect(judgeCanary(reportFor(committed), committed, 'money-ledger').runtime).toEqual({ node: process.version, unicode: process.versions.unicode, icu: process.versions.icu, pnpm: pnpmOfUserAgent(process.env.npm_config_user_agent) });
+    expect(judgeCanary(reportFor(committed), committed, 'money-ledger', { node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' }).runtime).toEqual({ node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' });
+  });
+});
+
+/**
+ * The pnpm and the commit a shard ran on (docs/adr/0066, Part 7; test matrix CI-29), which its verdict records for the
+ * gate: pnpm from the user agent pnpm sets for the step it runs, the commit from .git, read as files, never by running
+ * git.
+ */
+describe('the pnpm and the commit the verdict records', () => {
+  it('reads pnpm’s version from the user agent pnpm sets for a step it runs', () => {
+    expect(pnpmOfUserAgent('pnpm/10.34.8 npm/? node/v24.22.0 linux x64')).toBe('10.34.8');
+    expect(pnpmOfUserAgent('pnpm/11.0.0-rc.1 npm/? node/v24.22.0 darwin arm64')).toBe('11.0.0-rc.1');
+  });
+
+  it('gives no pnpm when no user agent names one', () => {
+    for (const agent of [undefined, '', 'npm/10.9.2 node/v24.22.0 linux x64 workspaces/false', 'yarn/4.0.0 npm/? node/v24.22.0 linux x64', 'pnpm/10.34.8', ' pnpm/10.34.8 npm/?']) expect(pnpmOfUserAgent(agent), String(agent)).toBe('');
+  });
+
+  it('reads the commit checked out from .git: a detached HEAD, a branch’s loose or packed ref, a worktree’s; none when it cannot', () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'tp-verdict-'));
+    const write = (file: string, text: string) => {
+      mkdirSync(path.dirname(path.join(tmp, file)), { recursive: true });
+      writeFileSync(path.join(tmp, file), text);
+    };
+    const [first, second, third, fourth, fifth] = ['1', '2', '3', '4', '5'].map((digit) => digit.repeat(40)) as [string, string, string, string, string];
+    try {
+      // A pull request's checkout: the merge commit, detached.
+      write('detached/.git/HEAD', `${first}\n`);
+      expect(headCommit(path.join(tmp, 'detached'))).toBe(first);
+      // A push's checkout (checkout -B <branch>): a branch, its ref loose, which wins over a packed one.
+      write('loose/.git/HEAD', 'ref: refs/heads/claude/build-platform\n');
+      write('loose/.git/refs/heads/claude/build-platform', `${second}\n`);
+      write('loose/.git/packed-refs', `# pack-refs with: peeled fully-peeled sorted \n${third} refs/heads/claude/build-platform\n`);
+      expect(headCommit(path.join(tmp, 'loose'))).toBe(second);
+      // A packed ref, a peeled tag's line skipped.
+      write('packed/.git/HEAD', 'ref: refs/heads/main\n');
+      write('packed/.git/packed-refs', `# pack-refs with: peeled fully-peeled sorted \n${fourth} refs/tags/v1\n^${first}\n${third} refs/heads/main\n`);
+      expect(headCommit(path.join(tmp, 'packed'))).toBe(third);
+      // A linked worktree: .git is a file naming its git directory, whose commondir holds the branches.
+      write('main/.git/worktrees/side/HEAD', 'ref: refs/heads/topic\n');
+      write('main/.git/worktrees/side/commondir', '../..\n');
+      write('main/.git/refs/heads/topic', `${fifth}\n`);
+      write('side/.git', `gitdir: ${path.join(tmp, 'main/.git/worktrees/side')}\n`);
+      expect(headCommit(path.join(tmp, 'side'))).toBe(fifth);
+      // None: no .git, a branch with no commit yet, a HEAD that is neither, a ref that leaves refs/.
+      mkdirSync(path.join(tmp, 'none'));
+      expect(headCommit(path.join(tmp, 'none'))).toBe('');
+      write('unborn/.git/HEAD', 'ref: refs/heads/main\n');
+      expect(headCommit(path.join(tmp, 'unborn'))).toBe('');
+      write('garbled/.git/HEAD', `${first.slice(1)}\n`);
+      expect(headCommit(path.join(tmp, 'garbled'))).toBe('');
+      write('escape/.git/HEAD', 'ref: refs/../../outside\n');
+      write('escape/outside', `${first}\n`);
+      expect(headCommit(path.join(tmp, 'escape'))).toBe('');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+    // And this checkout's, as git itself reads it.
+    expect(headCommit(repositoryRoot)).toBe(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim());
   });
 });

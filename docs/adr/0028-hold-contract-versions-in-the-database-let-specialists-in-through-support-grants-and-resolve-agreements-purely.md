@@ -138,3 +138,19 @@ current Medicare year, and an amendment's start.
 The model gateway proposes abstractions (milestone 10: the proposer's actor and its hash), the pricing engine consumes
 `ResolvedRate` (milestone 5), contract-specific adjustments (a percentage or a cap) need parameters, or a customer
 contract names provider types the line facts cannot supply.
+
+## Amendment (`co-001/unmapped-plan`, 2026-11-01): no plan with no mapping refuses a run
+
+Combined audit #32 ("One unmapped plan freezes a whole month"), adopted by the founder with the whole audit on
+2026-10-20, with its milestone 3 exception; built under the founder's standing rule of 2026-10-18 and recorded in
+ADR [0075](0075-price-around-a-plan-with-no-mapping-and-price-its-months-again-from-the-mapping-screens-by-hand.md). The Decision above said `assertPricingAllowed` refuses a
+pricing run over a plan with no mapping at all, or a line with no plan (MAP-01). That guard is gone:
+`PricingRefusedError`, `assertPricingAllowed` and `assertPracticePricingAllowed` are deleted from `@tp/contracts`.
+Resolution itself is unchanged and already says it line by line: a line of a plan with no mapping resolves to
+`NO_MAPPING`, as a mapped plan's line outside its windows does (MAP-02), so a run prices every other line of its period
+and leaves each of that plan's lines unpriced (MAP-01, reworded). `unmappedPlanIds` stays, and
+`practiceUnmappedPlanIds` loads the plans' mappings as the deleted function did and returns the unmapped plans instead of
+throwing; the run's creation refuses only a period none of whose plans has a mapping (MAP-07), and the run's coverage
+records the plans it priced around (`tp-pricing-coverage/2`, PRC-30). The "line with no plan" half never fired:
+`service_line.payer_plan_key` is NOT NULL. The row "Refusing a whole pricing run whenever any line has no mapping on its
+date" in Alternatives considered now holds for a plan with no mapping at all too.

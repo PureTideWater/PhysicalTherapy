@@ -3,10 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, TEXTRACT_ACTIONS, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { ADDRESS_VALIDATION_ACTIONS, MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, TEXTRACT_ACTIONS, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { PARAMETER_NAMES } from '../lib/deploy-parameters';
 import { bedrockModelArns, pinnedBedrockModels } from '../lib/models';
 import { ENVIRONMENTS } from '../lib/environments';
 import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
+
+/** Whether an IAM action pattern (`*` any run, `?` one character, case-insensitive) covers setting or resetting a password. */
+function setsPassword(pattern: string): boolean {
+  const glob = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
+  return ['cognito-idp:AdminSetUserPassword', 'cognito-idp:AdminResetUserPassword'].some((action) => glob.test(action));
+}
+
+/** The AWS managed policies any principal of the stacks holds (review infra-auth-IA-3); neither grants a Cognito write. */
+const MANAGED_POLICIES_ALLOWED: readonly string[] = ['ReadOnlyAccess', 'service-role/AWSLambdaBasicExecutionRole'];
 
 /**
  * PRD 15 and 16: per-practice data keys under the environment key. The application may generate
@@ -18,6 +28,14 @@ describe('the application role\'s Cognito actions match what the web app sends',
     const source = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/auth/cognito-provider.ts'), 'utf8');
     const admin = [...new Set([...source.matchAll(/new (Admin\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))].sort();
     expect(admin).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
+  });
+});
+
+describe('the application role\'s SES actions match what the web and the worker send (docs/adr/0065)', () => {
+  it('covers the one SES command the screening\'s address validation makes, and the digests\' send', () => {
+    const validation = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/screening/validation.ts'), 'utf8');
+    const commands = [...new Set([...validation.matchAll(/new (\w+)Command\(/g)].map((match) => `ses:${match[1] ?? ''}`))].sort();
+    expect(commands).toEqual([...ADDRESS_VALIDATION_ACTIONS]);
   });
 });
 
@@ -128,14 +146,65 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
   });
 
-  it('sends digest email from this account’s SES identities in its region, and nothing else of SES', () => {
+  it('sends digest email only through MailFromAddress\'s identity and the transactional set, from MailFromAddress, and is refused address validation here; nothing else of SES', () => {
     const ses = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('ses:')));
-    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail']);
-    expect(actionsOf(ses[0] as CfnStatement)).toEqual(['ses:SendEmail']);
-    const resource = JSON.stringify(ses[0]?.Resource);
-    expect(resource).toContain(':identity/*');
-    expect(resource).toContain('AWS::AccountId');
-    expect(resource).toContain('AWS::Region');
+    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail', 'NoAddressValidationHere']);
+    const [digest, validation] = ses as [CfnStatement, CfnStatement];
+    expect(actionsOf(digest)).toEqual(['ses:SendEmail']);
+    expect(digest.Condition).toEqual({ StringEquals: { 'ses:FromAddress': { Ref: PARAMETER_NAMES.mailFromAddress } } });
+    const resource = JSON.stringify(digest.Resource);
+    expect(resource).toContain(logicalIdOf(stack, stack.mailStreams.mailIdentity));
+    expect(resource).toContain(`configuration-set/tp-${environment}-transactional`);
+    expect(resource).not.toContain('identity/*');
+    expect(resource).not.toContain(logicalIdOf(stack, stack.mailStreams.screeningIdentity));
+    for (const other of ['notices', 'screening']) {
+      expect(resource).not.toContain(`tp-${environment}-${other}`);
+    }
+    // The validation runs as the address-validation account's role (address-validation.test.ts); here it is refused.
+    expect(validation).toEqual({ Sid: 'NoAddressValidationHere', Effect: 'Deny', Action: 'ses:GetEmailAddressInsights', Resource: '*' });
+    expect([...ADDRESS_VALIDATION_ACTIONS]).toEqual(['ses:GetEmailAddressInsights']);
+  });
+
+  // docs/adr/0088 D4: an invitation links only a Cognito user in FORCE_CHANGE_PASSWORD, which holds only while no
+  // principal of the stack may set or reset a password; so no Allow anywhere in the template names either call.
+  it('lets no principal of the stack set or reset a Cognito password (docs/adr/0088 D4; review infra-auth-IA-3)', () => {
+    expect([...USER_POOL_ADMIN_ACTIONS]).toEqual(['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminUserGlobalSignOut']);
+    // The matcher itself: IAM's globs, case-insensitive, so no spelling of a wildcard slips past.
+    for (const action of ['*', 'cognito-idp:*', 'Cognito-IDP:Admin*', 'cognito-idp:Admin?etUserPassword', 'cognito-idp:AdminS*', 'cognito-idp:*Password', 'cognito-idp:AdminResetUserPassword']) {
+      expect(setsPassword(action), action).toBe(true);
+    }
+    for (const action of [...USER_POOL_ADMIN_ACTIONS, 'cognito-idp:Describe*', 'cognito-idp:AdminGet*', 's3:*']) {
+      expect(setsPassword(action), action).toBe(false);
+    }
+    const allowed: string[] = [];
+    const notActions: unknown[] = [];
+    const managed: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+      } else if (typeof node === 'object' && node !== null) {
+        const record = node as Record<string, unknown>;
+        if (record.Effect === 'Allow' && 'Action' in record) {
+          allowed.push(...[record.Action].flat().filter((action): action is string => typeof action === 'string'));
+        }
+        if (record.Effect === 'Allow' && 'NotAction' in record) {
+          notActions.push(record.NotAction);
+        }
+        if ('ManagedPolicyArns' in record) {
+          managed.push(...[...JSON.stringify(record.ManagedPolicyArns).matchAll(/:policy\/((?:service-role\/)?[\w+=,.@-]+)/g)].map((match) => match[1] ?? ''));
+        }
+        Object.values(record).forEach(walk);
+      }
+    };
+    // This environment's stack and its address-validation account's stack.
+    walk(template.toJSON());
+    walk(synthesized(environment).validation.template.toJSON());
+    expect(allowed.length).toBeGreaterThan(0);
+    expect(allowed.filter(setsPassword)).toEqual([]);
+    // An Allow by NotAction allows every action it does not name, the password calls included.
+    expect(notActions).toEqual([]);
+    // A managed policy is not walked here, so the ones attached are pinned: neither lets a principal set a password.
+    expect(managed.filter((name) => !MANAGED_POLICIES_ALLOWED.includes(name))).toEqual([]);
   });
 
   it('makes the web app\'s administrative Cognito calls on this environment\'s user pool only', () => {
@@ -159,13 +228,17 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
   it('runs Textract’s text detection for scanned pages, and nothing else of Textract', () => {
     const textract = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('textract:')));
     expect(textract).toEqual([{ Sid: 'ScannedPages', Effect: 'Allow', Action: [...TEXTRACT_ACTIONS], Resource: '*' }]);
-    // Every other statement names its resources.
-    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => statement.Sid)).toEqual(['ScannedPages']);
+    // Every other statement it is allowed names its resources; the one refusal of every resource is address validation's.
+    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => [statement.Sid, statement.Effect])).toEqual([
+      ['NoAddressValidationHere', 'Deny'],
+      ['ScannedPages', 'Allow'],
+    ]);
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {
-    const actions = statements.flatMap(actionsOf);
-    expect(actions.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
-    expect(statements.every((statement) => statement.Effect === 'Allow')).toBe(true);
+    const allowed = statements.filter((statement) => statement.Effect === 'Allow').flatMap(actionsOf);
+    expect(allowed.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
+    // Its only refusals: address validation here, and any role of this account (address-validation.test.ts).
+    expect(statements.filter((statement) => statement.Effect !== 'Allow').map((statement) => statement.Sid)).toEqual(['NoAddressValidationHere', 'NoRoleOfThisAccount']);
   });
 });

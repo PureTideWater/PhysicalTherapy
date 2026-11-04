@@ -58,8 +58,19 @@ export const coverageReportSchema = z.strictObject({
   /** Lines with no mapping on their service date, in all and by plan, the most billed first. */
   waiting: totals,
   waiting_plans: z.array(z.strictObject({ plan_id: z.uuid(), payer_name: name, plan_key: name, lines: count, claims: count, charge_cents: nonNegativeCents, paid_cents: centsText })),
-  /** Whether a run over every line would start now (MAP-01), by the run's own guard. */
-  readiness: z.strictObject({ allowed: z.boolean(), unmapped_plans: count }),
+  /**
+   * The plans with lines and no mapping at all (MAP-01): `allowed` when every plan with lines has a
+   * mapping, and how many have none. Since combined audit #32 (docs/adr/0075; PRC-30) no run is refused
+   * for such a plan: its lines are not priced while every other plan's price, and a report also records
+   * their lines and billed cents (the run's own line set, signed cents). The two are absent, together,
+   * in a report generated before then, which keeps the sentence it was generated with.
+   */
+  readiness: z
+    .strictObject({ allowed: z.boolean(), unmapped_plans: count, unmapped_lines: count.optional(), unmapped_charge_cents: centsText.optional() })
+    .refine((readiness) => (readiness.unmapped_lines === undefined) === (readiness.unmapped_charge_cents === undefined), {
+      message: 'the unmapped plans’ lines and billed cents are recorded together',
+      path: ['unmapped_lines'],
+    }),
   pricing_runs: count,
 });
 export type CoverageReportContent = z.infer<typeof coverageReportSchema>;
@@ -292,6 +303,28 @@ function document(kind: ReportDocumentKind, title: string, short: string, covers
   );
 }
 
+/**
+ * The coverage report's sentence on plans with no mapping, in the words of the rule it was generated
+ * under. A report that records the unmapped plans' lines and cents (combined audit #32, docs/adr/0075;
+ * PRC-30) says, in the past tense, that the plans had no mapping and their lines were not priced: the
+ * report is a stored snapshot whose figures are fixed when it is generated, and a plan mapped later
+ * must not make it state something false (UX-5; D8 amended: the screens speak of the practice now, a
+ * stored report of the moment it was made). One generated before keeps both of its own sentences, true
+ * when it was generated, since a stored document is never reworded into a different claim (decision D8;
+ * review R3-9). The same presence check decides both branches.
+ */
+function readinessText(readiness: CoverageReportContent['readiness']): string {
+  if (readiness.unmapped_lines === undefined || readiness.unmapped_charge_cents === undefined) {
+    return readiness.allowed
+      ? 'Every plan with lines has a mapping: a pricing run can start.'
+      : `${plural(readiness.unmapped_plans, 'plan')} had no mapping at all: a pricing run over them is refused until they are mapped.`;
+  }
+  if (readiness.allowed) {
+    return 'Every plan with lines had a mapping.';
+  }
+  return `${plural(readiness.unmapped_plans, 'plan')} had no mapping; ${readiness.unmapped_plans === 1 ? 'its' : 'their'} lines were not priced (${plural(readiness.unmapped_lines, 'line')}, ${usd(readiness.unmapped_charge_cents)} billed).`;
+}
+
 /** The coverage report as one self-contained HTML document: what the Coverage screen showed when it was generated. */
 export function coverageReportHtml(content: CoverageReportContent, pins: DocumentPins): string {
   const run =
@@ -302,9 +335,7 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
       : content.runs_in_effect === undefined || content.runs_in_effect === null
         ? `From the pricing run in effect, service ${content.run.period_from} to ${content.run.period_to}, priced under rule release ${String(content.run.release_no)}.`
         : `Each line at its pricing in effect, across ${plural(content.runs_in_effect.runs, 'pricing run')} in effect (service ${content.runs_in_effect.period_from} to ${content.runs_in_effect.period_to}); the latest to take effect priced service ${content.run.period_from} to ${content.run.period_to} under rule release ${String(content.run.release_no)}.`;
-  const readiness = content.readiness.allowed
-    ? 'Every plan with lines has a mapping: a pricing run can start.'
-    : `${plural(content.readiness.unmapped_plans, 'plan')} had no mapping at all: a pricing run over them is refused until they are mapped.`;
+  const readiness = readinessText(content.readiness);
   return document(
     'coverage',
     `Coverage report, ${content.generated_on}`,
@@ -313,7 +344,7 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
     pins,
     `<p>${escapeHtml(run)} The practice holds ${escapeHtml(plural(content.lines.lines, 'line'))} in ${escapeHtml(plural(content.lines.claims, 'claim'))}, ${escapeWithFigures(usd(content.lines.charge_cents))} billed.</p>
   <h2>Priced: ${escapeWithFigures(`${String(content.priced.lines)} of ${String(content.of.lines)} lines (${shareText(content.priced.lines, content.of.lines)}); ${usd(content.priced.charge_cents)} of ${usd(content.of.charge_cents)} billed (${shareText(content.priced.charge_cents, content.of.charge_cents)})`)}</h2>
-  <p>${escapeHtml(readiness)}</p>
+  <p>${escapeWithFigures(readiness)}</p>
   <h2>Unpriced reasons</h2>
   ${table(
     'Unpriced reasons and their remedies',

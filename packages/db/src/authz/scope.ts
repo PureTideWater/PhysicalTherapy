@@ -1,5 +1,6 @@
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
+import { openedPool } from '../connect';
 import { ScopeError, isUuid, requireUuid } from './ids';
 
 /**
@@ -24,6 +25,9 @@ import { ScopeError, isUuid, requireUuid } from './ids';
  * - withPublicSnapshot: a public page's reads (no actor, no practice in scope) in one snapshot: a
  *   read-only transaction at REPEATABLE READ, oneSnapshot's counterpart for a page nobody signs in to,
  *   which reads only what definer's-rights functions granted to the application role return.
+ *
+ * A request's or a job's scope opened on a pool openPool opened is recorded here while its transaction is open, so
+ * openScopeReaches can tell it from an object of the same shape (combined audit item 120's review, P12).
  *
  * docs/adr/0013 records the model.
  */
@@ -121,6 +125,50 @@ async function transaction<P extends ScopePool<ScopeClient>, S, T>(
   }
 }
 
+/** What a scope this module opened on a pool openPool opened proves: its access as the database answered it. */
+interface OpenedScope {
+  readonly access: (practiceId: string) => PracticeAccess | undefined;
+  open: boolean;
+}
+
+/** The request and job scopes opened on a pool openPool opened: module-private, so only this module adds to it. */
+const openedScopes = new WeakMap<object, OpenedScope>();
+
+/** The scope as its opener returns it, recorded with the access it was built with when the pool is one openPool opened. */
+function opened<S extends object>(pool: object, scope: S, access: OpenedScope['access']): S {
+  if (openedPool(pool) !== undefined) {
+    openedScopes.set(scope, { access, open: false });
+  }
+  return scope;
+}
+
+/** Runs the caller's work on the scope, a recorded scope marked open while the work runs and closed when it ends. */
+async function recorded<S extends object, T>(scope: S, run: (scope: S) => Promise<T>): Promise<T> {
+  const entry = openedScopes.get(scope);
+  if (entry === undefined) {
+    return run(scope);
+  }
+  entry.open = true;
+  try {
+    return await run(scope);
+  } finally {
+    entry.open = false;
+  }
+}
+
+/**
+ * Whether the scope is one withPracticeScope or withJobScope opened on a pool openPool opened, its transaction still
+ * open, that reaches the practice: an access route to it (the scope's practices are exactly those it has a route to),
+ * read from this module's record of what the database answered when the scope opened, never from the object's own
+ * properties. A copy, an object of the same shape, a scope opened on a stub pool and one kept past its transaction all
+ * answer false (combined audit item 120's review, P12: the contract screen's practice check takes the caller's scope
+ * as its proof of reach).
+ */
+export function openScopeReaches(scope: unknown, practiceId: string): boolean {
+  const entry = typeof scope === 'object' && scope !== null ? openedScopes.get(scope) : undefined;
+  return entry?.open === true && entry.access(practiceId) !== undefined;
+}
+
 const VIA_ORDER: readonly AccessVia[] = ['ownership', 'grant', 'support'];
 
 interface AccessRow {
@@ -213,16 +261,18 @@ export function withPracticeScope<P extends ScopePool<ScopeClient>, T>(
       await client.query(SET_ACTOR, [actor]);
       const { rows } = await client.query<AccessRow>('SELECT practice_id, via, grant_id, role FROM open_practice_scope($1::uuid[])', [requested]);
       const access = accessByPractice(rows);
-      return {
+      const reach = (practiceId: string) => access.get(practiceId);
+      const scope: PracticeScope<ClientOf<P>> = {
         kind: 'practice',
         client,
         actorId: actor,
         actorKind: 'user',
         practiceIds: [...access.keys()].sort(),
-        access: (practiceId) => access.get(practiceId),
+        access: reach,
       };
+      return opened(pool, scope, reach);
     },
-    run,
+    (scope) => recorded(scope, run),
     request.oneSnapshot === true ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN',
   );
 }
@@ -270,15 +320,17 @@ export function withJobScope<P extends ScopePool<ScopeClient>, T>(pool: P, reque
       if (rows[0]?.person === true) {
         throw new JobActorIsPersonError('a job ID names no person; a job never acts in a person\'s name');
       }
-      return {
+      const reach = (id: string) => (id === practiceId ? access : undefined);
+      const scope: PracticeScope<ClientOf<P>> = {
         kind: 'job',
         client,
         actorId: jobId,
         actorKind: 'service',
         practiceIds: [practiceId],
-        access: (id) => (id === practiceId ? access : undefined),
+        access: reach,
       };
+      return opened(pool, scope, reach);
     },
-    run,
+    (scope) => recorded(scope, run),
   );
 }

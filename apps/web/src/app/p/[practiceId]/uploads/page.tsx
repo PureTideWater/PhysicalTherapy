@@ -8,6 +8,7 @@ import { Uploader } from '../../../../components/uploads/uploader';
 import { downloadRefusal } from '../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../lib/http/next';
 import { uploadsPage } from '../../../../lib/routes/uploads';
+import { KIND_NAMES } from '../../../../lib/uploads/receipt-labels';
 import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Uploads' };
@@ -18,7 +19,9 @@ export const metadata: Metadata = { title: 'Uploads' };
  * the practice's BAA is on file (J1); the permission state for roles that cannot upload; the receipts'
  * own empty, loading and error states. An 835, or a practice-management system's ERA export with the
  * system it came from chosen first (CO-03; docs/adr/0060): each file of the batch is read with that
- * system's layout, and an unconfirmed layout says so before the upload. A receipt's refused report download comes back
+ * system's layout, and an unconfirmed layout says so before the upload. The kinds are offered by the
+ * names the receipts give them (KIND_NAMES), which show whole in the drop zone at a phone's width; the
+ * system's select and its help say where an ERA export comes from. A receipt's refused report download comes back
  * here, said above the receipts (docs/adr/0079).
  */
 export default async function UploadsPage(props: { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -47,14 +50,15 @@ export default async function UploadsPage(props: { readonly params: Promise<{ pr
         roleNames={roleNames(data.roles)}
         gate={data.gate}
         limits={data.limits}
-        heading="Drop 835 files or ERA exports here"
+        heading="Choose 835 files or ERA exports to upload"
+        initialKind="x12_835"
         reportFrom="uploads"
         receiptsNotice={<DownloadRefusal refusal={refusal} />}
         kinds={[
-          { kind: 'x12_835', label: '835 remittance', contentTypes: data.limits.contentTypes },
+          { kind: 'x12_835', label: KIND_NAMES.x12_835, contentTypes: data.limits.contentTypes },
           {
             kind: 'era_export',
-            label: 'ERA export from a practice-management system',
+            label: KIND_NAMES.era_export,
             contentTypes: data.eraExport.contentTypes,
             formats: data.eraExport.formats.map((format) => ({ id: format.id, label: `${format.vendorName} ERA export`, unconfirmed: format.unconfirmed })),
           },

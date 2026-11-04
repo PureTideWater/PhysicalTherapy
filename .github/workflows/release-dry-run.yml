@@ -28,6 +28,8 @@ on:
       - tools/ci/browser-build.ts
       - apps/web/e2e/browser.json
       - apps/web/e2e/browser-builds/*
+      # The pinned Trivy the build installs for its bill of materials.
+      - tools/trivy/**
   push:
     branches: [claude/build-platform]
     paths:
@@ -41,6 +43,8 @@ on:
       - tools/ci/browser-build.ts
       - apps/web/e2e/browser.json
       - apps/web/e2e/browser-builds/*
+      # The pinned Trivy the build installs for its bill of materials.
+      - tools/trivy/**
 
 permissions:
   contents: read
@@ -79,6 +83,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # The pinned Trivy (tools/trivy/release.txt), its release archive checked against the SHA-256 there before it runs,
+      # installed into this run's temporary directory, put on PATH and named by its absolute path (TRIVY_CMD, which
+      # trivy-action runs) for the Trivy steps below, which skip setup-trivy: its installer downloads from get.trivy.dev,
+      # gone since 2026-11-03 (docs/adr/0066, Part 2).
+      - name: The pinned Trivy
+        run: |
+          trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"
+          dirname "$trivy" >> "$GITHUB_PATH"
+          echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"
+
       # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
       # moby/buildkit:buildx-stable-1 by tag. Its age is held by tools/check-toolchain's image rule, as every image's
       # is; Dependabot cannot update this string, so tools/check-action-pins warns when a newer release is three days
@@ -107,12 +121,20 @@ jobs:
           if [ "$IMAGE" != "web" ] && [ "$IMAGE" != "worker" ] && [ -z "$origin" ]; then
             echo "::warning::$IMAGE is built with no static host: its repository variable is not set yet, so its assets load from the application host"
           fi
+          # One line, so the variable can write no other output (a dockerfile= or ref= line after its own) and no other
+          # build argument; its value is not printed.
+          case "$origin" in
+            *$'\n'* | *$'\r'*)
+              echo "::error title=$IMAGE::its static host's repository variable holds a line break"
+              exit 1
+              ;;
+          esac
           echo "origin=$origin" >> "$GITHUB_OUTPUT"
 
       # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
       # whole event in it, and in the log. Its build record, which holds the whole event too, is uploaded as an artifact
-      # anyone can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD; docs/adr/0066,
-      # Part 3, N32).
+      # any signed-in account can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD;
+      # docs/adr/0066, Part 3, N32).
       - name: Build the image without pushing it
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         env: { BUILDX_METADATA_PROVENANCE: disabled, DOCKER_BUILD_RECORD_UPLOAD: "${{ github.event_name != 'pull_request' }}" }
@@ -136,6 +158,7 @@ jobs:
       - name: Write the software bill of materials
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           image-ref: ${{ steps.image.outputs.ref }}
           format: spdx-json
           output: sbom-${{ matrix.image }}-dry-run.spdx.json

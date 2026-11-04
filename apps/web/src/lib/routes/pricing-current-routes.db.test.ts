@@ -8,7 +8,8 @@ import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/t
 import { createLogger } from '@tp/observability';
 import { WORDS_VERSION } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
-import { approvePacketVersion, attestPacketExport, downloadPacketExport, writePacketVersion } from '@tp/worker/packets';
+import { cents } from '@tp/money';
+import { approvePacketVersion, attestPacketExport, downloadPacketExport, recordPayerResponse, writePacketVersion } from '@tp/worker/packets';
 import { acceptRun, createRerun } from '@tp/worker/pricing';
 import { packetExportHandler } from '@tp/worker/runtime';
 import { type Practice, RELEASE, RERUN_RELEASE } from '@tp/worker/testing';
@@ -30,6 +31,7 @@ import { MemoryQueue } from '../uploads/queue';
 import { attestPacketExportAction, packetReviewPage } from './packets';
 import { practiceHome } from './practice';
 import { attestReportAction, generateReportAction, releaseReportAction, reportPage, reviewChecklistPage } from './reports';
+import { generateRoiAction, roiStatementPage } from './roi';
 import { logSubmissionAction, submissionsPage } from './submissions';
 import { casePage, casesPage } from './triage';
 
@@ -216,19 +218,47 @@ async function acceptedRerun(setup: Exported): Promise<string> {
   return pricingRunId;
 }
 
-/** The actionable figures the Cases screen, the case page and the dashboard show, and the case's stored total. */
+/**
+ * Every live actionable figure of the practice's cases (docs/adr/0082; HOM-01), and the case's stored total: the Cases
+ * screen's header and each row ([figure, stored total, its lines, lines not written off, moved on, stale]), the case
+ * page, the home's tile (its dollars, its lines and the lines out of it by cause) and cases by state, and an ROI
+ * statement generated now through its route by a person who may reconcile.
+ */
 async function figures(setup: Exported) {
   const { practice } = setup;
   const listed = ok(await call(casesPage, practice.manager, P(practice)));
   const page = ok(await call(casePage, practice.manager, { ...P(practice), caseId: setup.caseId }));
   const home = ok(await call(practiceHome, practice.manager, P(practice)));
+  const generated = ok(await call(generateRoiAction, practice.manager, P(practice), { periodFrom: MARCH.from, periodTo: MARCH.to }));
+  const statement = ok(await call(roiStatementPage, practice.manager, { ...P(practice), statementId: generated.objectId ?? '' })).detail;
+  // Each Cases row counts the lines its figure sums (F5): the row's lines are the home tile's, case for case.
+  expect(listed.cases.reduce((total, item) => total + item.actionableNowLines, 0)).toBe(home.dashboard.headline.actionable.lines);
   return {
-    cases: listed.cases.map((item) => [item.actionableNowCents, item.actionableCents]),
+    casesHeader: listed.actionableCents,
+    cases: listed.cases.map((item) => [item.actionableNowCents, item.actionableCents, item.actionableNowLines, item.openLines, item.actionableNowMovedOn, item.actionableNowStale]),
     casePage: page.case.actionableNowCents,
     lines: page.detail.lines.map((line) => line.pricingCheck),
     dashboard: home.dashboard.headline.actionable.cents,
+    tile: home.dashboard.headline.actionable,
+    byState: home.dashboard.casesByState.map((row) => [row.state, row.actionableCents]),
+    statement: [statement.actionableOpenCents, statement.actionableCases],
   };
 }
+
+/** The figures of one case of three 30.00 lines, its stored total 90.00 kept, with `lines` in the figure, `movedOn` moved on and `stale` off their pricing. */
+const expected = (setup: Exported, at: { readonly state: string; readonly lines: number; readonly movedOn: number; readonly stale: number }, checks: readonly string[]) => {
+  const cents = String(at.lines * 3000);
+  return {
+    casesHeader: cents,
+    cases: [[cents, '9000', at.lines, 3, at.movedOn, at.stale]],
+    casePage: cents,
+    lines: checks,
+    dashboard: cents,
+    tile: { cents, lines: at.lines, outOfFigure: { movedOn: at.movedOn, stale: at.stale } },
+    byState: [[at.state, cents]],
+    statement: [cents, [setup.caseId]],
+  };
+};
 
 const confirmations = () => Object.fromEntries(PACKET_CHECKLIST.map((item) => [`confirm_${item.id}`, 'on']));
 const attestThroughRoute = (setup: Exported) =>
@@ -237,14 +267,51 @@ const attestThroughRoute = (setup: Exported) =>
 describe('a re-run accepted since the packet was exported (audit item #4)', () => {
   it('takes the stale lines out of every actionable figure at once, names their cause on the case page, and keeps the case’s stored total', async () => {
     const setup = await exportedCase('pricing routes: actionable');
-    expect(await figures(setup)).toEqual({ cases: [['9000', '9000']], casePage: '9000', lines: ['current', 'current', 'current'], dashboard: '9000' });
+    expect(await figures(setup)).toEqual(expected(setup, { state: 'open', lines: 3, movedOn: 0, stale: 0 }, ['current', 'current', 'current']));
     await acceptedRerun(setup);
-    expect(await figures(setup)).toEqual({
-      cases: [['0', '9000']],
-      casePage: '0',
-      lines: ['PRICING_NOT_IN_EFFECT', 'PRICING_NOT_IN_EFFECT', 'PRICING_NOT_IN_EFFECT'],
-      dashboard: '0',
+    expect(await figures(setup)).toEqual(expected(setup, { state: 'open', lines: 0, movedOn: 0, stale: 3 }, ['PRICING_NOT_IN_EFFECT', 'PRICING_NOT_IN_EFFECT', 'PRICING_NOT_IN_EFFECT']));
+  }, 180_000);
+
+  it('takes a line moved on to payer approved out of every actionable figure, counted apart as moved on (HOM-01)', async () => {
+    const setup = await exportedCase('pricing routes: moved on');
+    const { practice } = setup;
+    ok(await attestThroughRoute(setup));
+    ok(
+      await call(logSubmissionAction, practice.manager, P(practice), { caseId: setup.caseId, versionId: setup.versionId, submittedOn: today(), channel: 'payer_portal', reference: 'SYNTHETIC-PORTAL-REF-MOVED', followUpOn: '' }),
+    );
+    // The payer's letter, as an upload of the practice (a response's evidence).
+    const letter = await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query<{ id: string }>(
+        `INSERT INTO source_document (practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)
+         VALUES ($1, 'payer_letter', $2, 100, 'application/pdf', $3, 'clean', now(), 'stored') RETURNING id`,
+        [practice.practiceId, randomBytes(32).toString('hex'), practice.manager],
+      ),
+    );
+    const submissionId = (await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ id: string }>('SELECT id FROM submission WHERE case_id = $1', [setup.caseId]))).rows[0]?.id ?? '';
+    const { responseId } = await as(practice, practice.manager, (scope) =>
+      recordPayerResponse(scope, w.keys, {
+        practiceId: practice.practiceId,
+        submissionId,
+        kind: 'partial',
+        amountCents: cents(3000n),
+        documentId: letter.rows[0]?.id ?? null,
+        receivedOn: today(),
+        denialCategory: null,
+        notes: 'SYNTHETIC partial acceptance of one line',
+        reopensCase: false,
+        requestId: `test-${randomUUID()}`,
+      }),
+    );
+    // The payer accepts one line's 30.00: its approval, and its stage, as the reconcile writes them (here for one line alone).
+    await asOwner(w.owner, [practice.practiceId], async () => {
+      const line = (await w.owner.query<{ service_line_id: string }>('SELECT service_line_id FROM case_line WHERE case_id = $1 ORDER BY service_line_id LIMIT 1', [setup.caseId])).rows[0]?.service_line_id;
+      await w.owner.query(
+        "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id) VALUES ($1, $2, $3, 'approved', 3000, 'payer_response', $4)",
+        [practice.practiceId, setup.caseId, line, responseId],
+      );
+      await w.owner.query("INSERT INTO line_status (practice_id, service_line_id, stage) VALUES ($1, $2, 'payer_approved')", [practice.practiceId, line]);
     });
+    expect(await figures(setup)).toEqual(expected(setup, { state: 'partially_resolved', lines: 2, movedOn: 1, stale: 0 }, ['current', 'current', 'current']));
   }, 180_000);
 
   it('shows the reviewer the lines with their figures then and now, and refuses the attestation with the reason', async () => {
@@ -317,12 +384,12 @@ describe('a rule release withdrawn since the lines were priced (audit item #4)',
     const ready = await w.requestReport(practice, setup.runId);
     await w.generate(practice, ready);
     const queued = await w.requestReport(practice, setup.runId);
-    expect((await figures(setup)).dashboard).toBe('9000');
+    expect(await figures(setup)).toEqual(expected(setup, { state: 'open', lines: 3, movedOn: 0, stale: 0 }, ['current', 'current', 'current']));
 
     await w.pricing.withdraw(RERUN_RELEASE, 'SYNTHETIC: release 2 content was wrong');
 
     // The lines stay in effect but are not current: out of every actionable figure, the stored total kept.
-    expect(await figures(setup)).toEqual({ cases: [['0', '9000']], casePage: '0', lines: ['RELEASE_WITHDRAWN', 'RELEASE_WITHDRAWN', 'RELEASE_WITHDRAWN'], dashboard: '0' });
+    expect(await figures(setup)).toEqual(expected(setup, { state: 'open', lines: 0, movedOn: 0, stale: 3 }, ['RELEASE_WITHDRAWN', 'RELEASE_WITHDRAWN', 'RELEASE_WITHDRAWN']));
     // Not priced again yet: the review shows no figure now.
     const review = ok(await call(packetReviewPage, setup.reviewer, { ...P(practice), caseId: setup.caseId, versionId: setup.versionId })).review;
     expect(review.pricingNow).toMatchObject({ status: 'RELEASE_WITHDRAWN', totals: { now: null } });

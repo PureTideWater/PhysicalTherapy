@@ -2,7 +2,7 @@ import { identifierForms } from '@tp/packets';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactionSpans } from './redact';
+import { EARLIEST_WRITTEN_YEAR, LATEST_WRITTEN_YEAR, type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactionSpans } from './redact';
 
 /**
  * The letter reader's redaction over generated SYNTHETIC letters (test matrix MOD-13, MOD-14; docs/adr/0054, amendment of
@@ -72,13 +72,19 @@ function writePart(value: string, style: Style, variant: Variant, pick: number):
   }
 }
 
-const NUMBER_JOINERS = [' ', '-', '–', '−', '\u200B', '\u00AD', '\u2060'];
+/**
+ * What a letter may write inside a number (redact.ts NUMBER_JOINERS): since review finding R5-1, grouping apostrophes, "~", middle
+ * dots, bullets, ";", double quotes, U+02D7 and U+2796 too, and since review finding G4 the primes (U+2032, U+2033, U+2035) and the
+ * modifier-letter prime and acute (U+02B9, U+02CA).
+ */
+const NUMBER_JOINERS = [' ', '-', '–', '−', '_', '|', '\\', '\u200B', '\u00AD', '\u2060', "'", '’', '‘', 'ʼ', '`', '~', '～', '·', '‧', '∙', '⋅', '・', '•', ';', '"', '“', '”', '˗', '➖', '\u2032', '\u2033', '\u2035', '\u02B9', '\u02CA'];
 const NEAR_LETTER_JOINERS = ['_', '.', '/', ':'];
 const DATE_DASHES = ['-', '–', '−', '‐'];
 
 /**
- * A member ID or claim number as a letter writes it: its case, and up to two joiners (a period, underscore,
- * slash or colon only next to a letter), digits alone too. Dated, six or eight digits are cut where a date's
+ * A member ID or claim number as a letter writes it: its case, and up to two joiners (a period, slash or
+ * colon only next to a letter; an underscore, a bar, a backslash, an apostrophe, "~", a middle dot, a bullet, ";"
+ * or a double quote anywhere), digits alone too. Dated, six or eight digits are cut where a date's
  * numbers end (2027-03-15, 03–15–2027, 03-15-61), with one dash.
  */
 function writeNumber(value: string, lower: boolean, picks: readonly number[], dated = false): string {
@@ -119,16 +125,17 @@ const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'se
 
 /**
  * The calendar dates written text is, read here on its own and not by the code under test: three numbers
- * with a slash, a period or a dash between each two (year first, or month and day in either order before
+ * with a slash, a backslash, a period, a dash, an underscore or a bar between each two (year first, or month and day in either order before
  * the year), or a month word with a day and a year. Numbers with spaces alone, compact digits, an invisible
- * character and a date no calendar holds read as none.
+ * character, a date no calendar holds and a four-digit year outside 1900 to 2099 read as none.
  */
 function separatedDateReadings(written: string): string[] {
   const valid = (year: number, month: number, day: number) => {
     const date = new Date(Date.UTC(year, month - 1, day));
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date.toISOString().slice(0, 10) : null;
   };
-  const yearsOf = (text: string) => (text.length === 2 ? [1900 + Number.parseInt(text, 10), 2000 + Number.parseInt(text, 10)] : text.length === 4 ? [Number.parseInt(text, 10)] : []);
+  // A four-digit year from 1900 to 2099 only, what a written date's year can be (a claim number written 0023-04-26 is no date).
+  const yearsOf = (text: string) => (text.length === 2 ? [1900 + Number.parseInt(text, 10), 2000 + Number.parseInt(text, 10)] : text.length === 4 && Number.parseInt(text, 10) >= 1900 && Number.parseInt(text, 10) <= 2099 ? [Number.parseInt(text, 10)] : []);
   const read = (orders: readonly (readonly [string, string, string])[]) => [...new Set(orders.flatMap(([year, month, day]) => yearsOf(year).map((y) => valid(y, Number.parseInt(month, 10), Number.parseInt(day, 10)))).filter((date): date is string => date !== null))];
   const word = (written.match(/[a-z]{3,}/gi) ?? []).find((each) => MONTH_NAMES.includes(each.slice(0, 3).toLowerCase()));
   const numbers = written.match(/\d+/g) ?? [];
@@ -137,7 +144,7 @@ function separatedDateReadings(written: string): string[] {
     const [day = '', year = ''] = numbers;
     return month === 0 || numbers.length !== 2 || day.length > 2 ? [] : read([[year, String(month), day]]);
   }
-  const parts = written.trim().split(/\s*[/.\p{Pd}\u2212\u2043]\s*/u);
+  const parts = written.trim().split(/\s*[/\\.\p{Pd}\u2212\u2043_|]\s*/u);
   if (parts.length !== 3 || !parts.every((part) => /^\d{1,4}$/.test(part))) return [];
   const [a = '', b = '', c = ''] = parts;
   return a.length === 4 ? read([[a, b, c]]) : read([[c, a, b], [c, b, a]]);
@@ -184,10 +191,11 @@ const letterCase: fc.Arbitrary<Case> = fc
     const claims: LetterClaim[] = numbers.map((value, i) => ({ claimId: `synthetic-claim-${String(i + 1)}`, patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }));
     const segments: Segment[] = [];
     const kept = (text: string) => segments.push({ text, secret: 'none' });
-    // A digits-only number written as a calendar date with its dashes, and not the date of birth, may stay (a deadline is read so).
-    const numberSegment = (value: string, secret: 'member' | 'claim', written: string, claim?: number): Segment => {
+    // A digits-only number written as a calendar date with its separators, not the date of birth and with no identifier
+    // label before it, may stay (a deadline is read so); after a label ("Claim", "ID:") it is the number (review finding R5-2).
+    const numberSegment = (value: string, secret: 'member' | 'claim', written: string, labeled: boolean, claim?: number): Segment => {
       const readings = separatedDateReadings(written);
-      const keptAsDate = /^\d+$/.test(value) && readings.length > 0 && !readings.includes(dob);
+      const keptAsDate = !labeled && /^\d+$/.test(value) && readings.length > 0 && !readings.includes(dob);
       return { text: written, secret: keptAsDate ? 'none' : secret, ...(claim === undefined ? {} : { claim }) };
     };
     for (const { kind, shape, writing: w, picks, lower, dated, index } of slots) {
@@ -207,15 +215,23 @@ const letterCase: fc.Arbitrary<Case> = fc
         segments.push({ text: written, secret: 'name' });
         kept([', ', '.\n', ' was seen. ', '😀 '][index % 4] ?? '');
       } else if (kind === 'member') {
-        kept(['Member ID ', 'member ', 'ID:', 'Member\u200B'][index % 4] ?? '');
+        // Each prefix with whether it is an identifier label of a member ID (the generator's own record, not the code's IDENTIFIER_LABEL):
+        // a claim's label or a bare "ID" is none for a whole written date (review finding G2).
+        const [prefix, labeled] = ([['Member ID ', true], ['member ', true], ['ID:', true], ['Member\u200B', true], ['seen on ', false], ['Subscriber # ', true], ['**Member:** ', true], ['Claim# ', false], ['ID ', false]] as const)[index % 9] ?? ['', false];
+        kept(prefix);
         const value = members[index % members.length] ?? '';
-        segments.push(numberSegment(value, 'member', writeNumber(value, lower, picks, dated)));
+        segments.push(numberSegment(value, 'member', writeNumber(value, lower, picks, dated), labeled));
         kept([';\n', ' on file. '][index % 2] ?? '');
       } else if (kind === 'claim') {
         const claim = index % numbers.length;
-        kept(['Claim ', 'claim number ', 'Claim#'][index % 3] ?? '');
+        // Since review findings G2 and G3: a label's end may hold "*", one ",", "(" or an opening quote; a member's label, a bare
+        // "number" or "No" without its period is none for a claim's whole written date.
+        const [prefix, labeled] = (
+          [['Claim ', true], ['claim number ', true], ['Claim#', true], ['ICN: ', true], ['Claim No. ', true], ['appeal by ', false], ['ICN (', true], ['**Claim:** ', true], ['Claim, ', true], ['Re: ', true], ['Claim: \u201C', true], ['No. ', true], ['The number ', false], ['No ', false], ['Member: ', false]] as const
+        )[index % 15] ?? ['', false];
+        kept(prefix);
         const value = numbers[claim] ?? '';
-        segments.push(numberSegment(value, 'claim', writeNumber(value, lower, picks, dated), claim + 1));
+        segments.push(numberSegment(value, 'claim', writeNumber(value, lower, picks, dated), labeled, claim + 1));
         kept(['; ', ' was denied. '][index % 2] ?? '');
       } else if (kind === 'birth') {
         const forms = dateForms(dob);
@@ -320,42 +336,513 @@ function keptOnPurpose(normal: string, patient: PatientIdentifiers, claims: read
 // ---------------------------------------------------------------------------------------------------
 // MOD-13
 
+/**
+ * MOD-13's first property: no letter or digit the generator wrote an identifier with is sent, every claim keeps its
+ * placeholder, and only exact placeholders are written.
+ */
+const sendsNoIdentifier = fc.property(letterCase, ({ patient, claims, segments }) => {
+  const { text, secrets } = assemble(segments);
+  expect(text.normalize('NFKC')).toBe(text);
+  const { text: normal, spans } = redactionSpans(text, patient, claims);
+  expect(normal).toBe(text);
+  const redacted = redactLetter(text, patient, claims);
+  // The output is the letter with each span replaced, and nothing else changed.
+  let rebuilt = '';
+  let kept = 0;
+  for (const span of spans) {
+    expect(span.start).toBeGreaterThanOrEqual(kept);
+    rebuilt += text.slice(kept, span.start) + span.placeholder;
+    kept = span.end;
+  }
+  expect(redacted.text).toBe(rebuilt + text.slice(kept));
+  const spanAt = (at: number) => spans.find((span) => span.start <= at && at < span.end);
+  for (const secret of secrets) {
+    const span = spanAt(secret.at);
+    expect(span, `${secret.secret} at ${String(secret.at)} in ${JSON.stringify(text)} -> ${JSON.stringify(redacted.text)}`).toBeDefined();
+    if (secret.secret === 'claim') {
+      // The claim's placeholder, of this claim or of a lower one its number also is.
+      expect(Number.parseInt(/^\[CLAIM_(\d+)\]$/.exec(span?.placeholder ?? '')?.[1] ?? 'none', 10), JSON.stringify(text)).toBeLessThanOrEqual(secret.claim);
+    }
+  }
+  // Every placeholder is exact (the letters hold no bracket of their own) and counted.
+  const brackets = redacted.text.match(/\[[^[\]]*\]/g) ?? [];
+  expect(brackets.every((bracket) => EXACT.test(bracket))).toBe(true);
+  expect(brackets).toHaveLength(redacted.replaced);
+  expect(holdsIdentifier(redacted.text, patient, claims)).toBe(false);
+});
+
+/**
+ * The seed on which a claim number written like a date with a year below 1900 ("0000-01-01", "0023-04-26") was kept as
+ * a date (MOD-13, 2026-11-01). The generator has changed since (review findings F4-1, R5-1, R5-2), so this seed no longer
+ * draws that letter: it now pins only one more fixed run of the property. The original counterexample is pinned on its
+ * own below ("0000-01-01", "0023-04-26", with and without a label), whatever the generator draws.
+ */
+const YEAR_BELOW_1900_SEED = 1162287068;
+
+/**
+ * The seed on which a member ID written as a date after a bare "ID:" was sent (MOD-13, 2026-11-04): a name part "CLAIM"
+ * ended the sentence before it ("Patient: AA CLAIM.\nID:1990-01-01"), and the label was read as one claim's label over
+ * the full stop and the line break, which a member ID written as a date does not count after (G2). It pins one more fixed
+ * run of the property, which draws that letter on this generator; the counterexample and its class (every head word
+ * ending a sentence, before a bare label of the other kind) are pinned on their own below, whatever the generator draws.
+ */
+const LABEL_BOUNDARY_SEED = 460548619;
+
 describe('MOD-13: every placeholder survives and no identifier survives', () => {
   it('sends no letter or digit the generator wrote an identifier with, keeps every claim’s placeholder, and writes only exact placeholders (property)', () => {
-    fc.assert(
-      fc.property(letterCase, ({ patient, claims, segments }) => {
-        const { text, secrets } = assemble(segments);
-        expect(text.normalize('NFKC')).toBe(text);
-        const { text: normal, spans } = redactionSpans(text, patient, claims);
-        expect(normal).toBe(text);
-        const redacted = redactLetter(text, patient, claims);
-        // The output is the letter with each span replaced, and nothing else changed.
-        let rebuilt = '';
-        let kept = 0;
-        for (const span of spans) {
-          expect(span.start).toBeGreaterThanOrEqual(kept);
-          rebuilt += text.slice(kept, span.start) + span.placeholder;
-          kept = span.end;
-        }
-        expect(redacted.text).toBe(rebuilt + text.slice(kept));
-        const spanAt = (at: number) => spans.find((span) => span.start <= at && at < span.end);
-        for (const secret of secrets) {
-          const span = spanAt(secret.at);
-          expect(span, `${secret.secret} at ${String(secret.at)} in ${JSON.stringify(text)} -> ${JSON.stringify(redacted.text)}`).toBeDefined();
-          if (secret.secret === 'claim') {
-            // The claim's placeholder, of this claim or of a lower one its number also is.
-            expect(Number.parseInt(/^\[CLAIM_(\d+)\]$/.exec(span?.placeholder ?? '')?.[1] ?? 'none', 10), JSON.stringify(text)).toBeLessThanOrEqual(secret.claim);
+    fc.assert(sendsNoIdentifier, { numRuns: 400 });
+  }, 60_000);
+
+  it(`holds on seed ${String(YEAR_BELOW_1900_SEED)}, where a claim number written like a date with a year below 1900 was first found (a fixed run of the property)`, () => {
+    fc.assert(sendsNoIdentifier, { numRuns: 400, seed: YEAR_BELOW_1900_SEED });
+  }, 60_000);
+
+  it(`holds on seed ${String(LABEL_BOUNDARY_SEED)}, where a member ID written as a date after a sentence ending in "CLAIM" and a bare "ID:" was sent (a fixed run of the property)`, () => {
+    fc.assert(sendsNoIdentifier, { numRuns: 400, seed: LABEL_BOUNDARY_SEED });
+  }, 60_000);
+
+  it(`ends a label's head at a sentence end, so a member ID after "CLAIM." and a bare "ID:" is replaced (seed ${String(LABEL_BOUNDARY_SEED)}'s counterexample)`, () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['AA CLAIM'], datesOfBirth: ['1955-07-14'], memberIds: ['19900101'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN00000'] }];
+    for (const [written, expected] of [
+      ['Patient: AA CLAIM.\nID:1990-01-01 on file. Dear AA CLAIM, ', 'Patient: [PATIENT_NAME].\nID:[MEMBER_ID] on file. Dear [PATIENT_NAME], '],
+      ['Hi AA CLAIM. ID:1990-01-01 on file.', 'Hi [PATIENT_NAME]. ID:[MEMBER_ID] on file.'],
+      // Already replaced before the fix: another name before the sentence end, and the bare label alone.
+      ['Hi BB SMITH.\nID:1990-01-01', 'Hi BB SMITH.\nID:[MEMBER_ID]'],
+      ['ID:1990-01-01', 'ID:[MEMBER_ID]'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, written).toBe(expected);
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      expect(identifierCandidates(written), written).toContain('19900101');
+    }
+  });
+
+  it('reads the label a sentence or a line begins after any head word, for a member ID, a claim number and a patient control number written as a date (MOD-13, seed 460548619)', () => {
+    const memberPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claimPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    // A claim's head word, then a member's: each ends a sentence or a line before a bare label of the other kind.
+    const claimHeads = ['claim', 'CLAIM', 'ICN', 'pcn', 'dcn', 'tcn', 'control', 'Account', 'account', 'claim number', 'Claim ID'];
+    const memberHeads = ['member', 'MEMBER', 'subscriber', 'Member ID'];
+    // A line break of any kind, a blank line and an indented line too, and a label of more than one word on the next line
+    // (review finding security-rlb-sec-1: "claim\nID No." was read only as the claim's joined label).
+    const ends = ['. ', '.\n', '. \n', '.\r\n', '\n', '\r\n', '\u2028', '\u2029', '\v', '\n\n', '\n  '];
+    const bareLabels = ['ID:', 'ID#', 'No.', 'No: ', 'Number is ', 'ID No. ', 'No. ID: ', 'ID NO. ', 'id no: ', 'ID nbr ', 'ID Number: '];
+    const cases: [PatientIdentifiers, LetterClaim[], string, string, string][] = [];
+    for (const head of claimHeads) {
+      for (const end of ends) {
+        for (const label of bareLabels) {
+          for (const written of ['1990-01-01', '1990.01.01', '1990/01/01']) {
+            cases.push([memberPatient, claimsOf('SYN00000'), `We reviewed the ${head}${end}${label}${written} on file.`, '[MEMBER_ID]', '19900101']);
           }
         }
-        // Every placeholder is exact (the letters hold no bracket of their own) and counted.
-        const brackets = redacted.text.match(/\[[^[\]]*\]/g) ?? [];
-        expect(brackets.every((bracket) => EXACT.test(bracket))).toBe(true);
-        expect(brackets).toHaveLength(redacted.replaced);
-        expect(holdsIdentifier(redacted.text, patient, claims)).toBe(false);
-      }),
-      { numRuns: 400 },
-    );
+      }
+    }
+    for (const head of memberHeads) {
+      for (const end of ends) {
+        for (const label of [...bareLabels, 'Control: ', 'Claim: ', 'ICN: ']) {
+          // A claim number, and a patient control number (a claim's number to the letter), digits alone written as a date.
+          for (const [value, written] of [['20260426', '2026-04-26'], ['04262026', '04.26.2026'], ['20260426', '2026/04/26']] as const) {
+            cases.push([claimPatient, claimsOf(value), `We reviewed the ${head}${end}${label}${written} on file.`, '[CLAIM_1]', value]);
+          }
+        }
+      }
+    }
+    for (const [patient, claims, written, placeholder, value] of cases) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, JSON.stringify(written)).toContain(placeholder);
+      expect(redacted, JSON.stringify(written)).not.toMatch(/\d{2}[-./]\d{2}/);
+      expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(written)).toBe(false);
+      expect(identifierCandidates(written), JSON.stringify(written)).toContain(value);
+    }
+    // "!", "?", ";" and ":" never joined a head to the next label, and still do not.
+    for (const end of ['!\n', '?\n', ';\n', ':\n', '! ', '? ']) {
+      expect(redactLetter(`We reviewed the claim${end}ID:1990-01-01 on file.`, memberPatient, claimsOf('SYN00000')).text, end).toBe(`We reviewed the claim${end}ID:[MEMBER_ID] on file.`);
+    }
+    // About 5,900 letters, each redacted, checked and screened: past vitest's 5 s default under coverage.
   }, 60_000);
+
+  it("keeps a label on one line within one sentence one label: an abbreviation's own full stop, a wrapped head, and G2 for each (MOD-13, seed 460548619)", () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    // One label of a claim: a claim number written as a date after it is the number.
+    for (const label of ['Acct. No. ', 'Claim No. ', 'Ref. # ', 'Pt. Acct. # ', 'Acct.#', 'Claim No. ID: ', 'Claim\nNumber: ', 'Patient control no.: ']) {
+      expect(redactLetter(`${label}2026-04-26`, patient, claimsOf('20260426')).text, label).toBe(`${label}[CLAIM_1]`);
+    }
+    // One label of a member: a member ID written as a date after it is the number, a claim number so written is not (G2).
+    for (const label of ['Member ID No. ', 'Member ID: ', 'Subscriber No. ']) {
+      expect(redactLetter(`${label}1990-01-01`, patient, claimsOf('SYN00000')).text, label).toBe(`${label}[MEMBER_ID]`);
+      expect(redactLetter(`${label}2027-03-15`, { ...patient, memberIds: ['ZZ7654321'] }, claimsOf('20270315')).text, label).toBe(`${label}2027-03-15`);
+    }
+    // One claim's label on one line with no full stop in it is none for a member ID written as a date (G2), as before;
+    // "Acct. ID:" and "Acct. No." are no longer only one: the label after an abbreviation's full stop counts (below).
+    for (const label of ['Claim ID: ', 'Claim No ', 'Claim# ', 'Claim\tID: ']) {
+      expect(redactLetter(`${label}1990-01-01`, patient, claimsOf('SYN00000')).text, label).toBe(`${label}1990-01-01`);
+    }
+    // An abbreviation's full stop at a line's end ends the head: the next line's label is its own.
+    expect(redactLetter('Acct.\nID: 1990-01-01', patient, claimsOf('SYN00000')).text).toBe('Acct.\nID: [MEMBER_ID]');
+  });
+
+  it('reads the label after any full stop as a label of its own, so a member ID after "acct. ID:" or "acct. No." and a claim number after "SUBSCRIBER NBR. No." are replaced, and keeps an abbreviation with its qualifier one label as well (MOD-13, review finding security-rlb-sec-2)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN00000'] }];
+    const claimHeads = ['acct', 'ACCT', 'Acct No', 'Claim No', 'ACCT NO', 'acct no', 'Member ID No', 'Claim Nbr', 'Pt. Acct', 'ref', 'claim', 'CLAIM'];
+    // A space, a tab, several spaces, NBSP, U+3000, U+2003, a soft hyphen, zero-width characters and a fullwidth full stop.
+    const stops = ['. ', '.  ', '.\t', '.\u00A0', '.\u3000', '.\u2003', '.\u00AD ', '.\u200B ', '.\uFEFF ', '.\u2060 ', '\uFF0E', '\uFF0E ', '.'];
+    // Any bare label after the full stop, in capitals or not ("acct. id:", "CLAIM.id:", "Acct. Number is").
+    const memberLabels = ['ID: ', 'ID No. ', 'ID#', 'No. ', 'No: ', 'Number is ', 'id: ', 'id no: ', 'NO. '];
+    for (const head of claimHeads) {
+      for (const stop of stops) {
+        for (const label of memberLabels) {
+          for (const written of ['1990-01-01', '1990/01/01', '1990.01.01']) {
+            const text = `We updated the ${head}${stop}${label}${written} on file.`;
+            const redacted = redactLetter(text, patient, claims).text;
+            expect(redacted, JSON.stringify(text)).toContain('[MEMBER_ID]');
+            expect(redacted, JSON.stringify(text)).not.toContain('1990');
+            expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(text)).toBe(false);
+          }
+        }
+      }
+    }
+    // A member's head with an abbreviation, then a full stop and a bare label or a claim's own, before a claim number
+    // written as a date, in a name too ("Dear AA SUBSCRIBER NBR. No. 2026-04-26": the name is replaced, the number was sent).
+    const claimPatient: PatientIdentifiers = { ...patient, memberIds: ['ZZ7654321'] };
+    const dated: LetterClaim[] = [{ ...claims[0]!, claimNumbers: ['20260426'] }];
+    for (const head of ['SUBSCRIBER NBR', 'Subscriber Nbr', 'MEMBER NUM', 'Member No', 'member no', 'MEMBER ID NO', 'Subscriber Ref', 'member']) {
+      for (const stop of ['. ', '.', '.\t', '\uFF0E ', '.\u00A0']) {
+        for (const label of ['No. ', 'No: ', 'NO. ', 'ID: ', 'id: ', 'Number is ', 'Claim: ', 'ICN: ', 'Acct. No. ']) {
+          for (const written of ['2026-04-26', '2026/04/26', '2026.04.26']) {
+            for (const [text, named] of [
+              [`We updated the ${head}${stop}${label}${written} on file.`, claimPatient],
+              [`Dear AA ${head}${stop}${label}${written} was denied.`, { ...claimPatient, names: [`AA ${head}`] }],
+            ] as const) {
+              const redacted = redactLetter(text, named, dated).text;
+              expect(redacted, JSON.stringify(text)).toContain('[CLAIM_1]');
+              expect(redacted, JSON.stringify(text)).not.toContain('2026');
+              expect(holdsIdentifier(redacted, named, dated), JSON.stringify(text)).toBe(false);
+            }
+          }
+        }
+      }
+    }
+    // The critic's counterexample, exactly, and the whole-word full stop with a lowercase "id" and no space.
+    expect(redactLetter('Dear AA SUBSCRIBER NBR. No. 2026-04-26 was denied.', { ...claimPatient, names: ['AA SUBSCRIBER NBR'] }, dated).text).toBe('Dear [PATIENT_NAME]. No. [CLAIM_1] was denied.');
+    expect(redactLetter('Hi MM CLAIM.id:1990-01-01', { ...patient, names: ['MM CLAIM'] }, claims).text).toBe('Hi [PATIENT_NAME].id:[MEMBER_ID]');
+    // A claim's number so written is still its own after one: "Acct. ID:" and "Acct. No." are a claim's labels as well.
+    for (const label of ['Acct. ID: ', 'Acct. No. ', 'acct. No. ', 'Claim No. Number is ', 'Ref. # ']) {
+      expect(redactLetter(`${label}2026-04-26`, claimPatient, dated).text, label).toBe(`${label}[CLAIM_1]`);
+    }
+    // None of the class stays sent: the four an earlier commit of this fix accepted as a residual are replaced.
+    for (const label of ['acct. No. ', 'Acct. Number is ', 'acct. id: ', 'Claim No. Number is ']) {
+      expect(redactLetter(`We updated the ${label}1990-01-01 on file.`, patient, claims).text, label).toBe(`We updated the ${label}[MEMBER_ID] on file.`);
+    }
+    // About 6,400 letters, each redacted, checked and screened: past vitest's 5 s default.
+  }, 60_000);
+
+  it("reads a head word joined to its qualifier over the head's own full stop as one label, as before the fix, so a member ID or claim number written as a date after it is replaced (MOD-13, review finding correctness-rlb-oracle-1)", () => {
+    const memberPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19900101'] };
+    const claimPatient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    const memberLabels = ['Member.ID', 'MEMBER.ID', 'Subscriber.ID', 'Member. ID', 'Member.No', 'Member.Number', 'Subscriber. No', 'Member No.\nID'];
+    const claimLabels = ['Claim.No', 'Claim.ID', 'Claim.Nbr', 'Claim.Number', 'Claim. No', 'Claim. Number', 'ICN.No', 'Account.Number', 'Control.No', 'Claim No.\nNumber'];
+    for (const [labels, patient, claims, value, placeholder] of [
+      [memberLabels, memberPatient, claimsOf('SYN00000'), '19900101', '[MEMBER_ID]'],
+      [claimLabels, claimPatient, claimsOf('20260426'), '20260426', '[CLAIM_1]'],
+    ] as const) {
+      for (const label of labels) {
+        for (const colon of [' ', ': ']) {
+          for (const written of [`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`, `${value.slice(0, 4)}/${value.slice(4, 6)}/${value.slice(6)}`]) {
+            const text = `Dear Jane Vantree, your ${label}${colon}${written} is on file.`;
+            const redacted = redactLetter(text, patient, claims).text;
+            expect(redacted, JSON.stringify(text)).toBe(`Dear [PATIENT_NAME] [PATIENT_NAME], your ${label}${colon}${placeholder} is on file.`);
+            expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(text)).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it('replaces nothing more after a sentence end that a head word ends: deadlines, dates of service and remittance, amounts, CPT codes and NPIs stay (MOD-13, seed 460548619)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ7654321'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYN12345678'] }];
+    for (const head of ['claim', 'CLAIM', 'member', 'account', 'Acct.', 'Ref.', 'ICN', 'claim number', 'Subscriber Nbr.', 'Member No.']) {
+      for (const end of ['. ', '.\n', '!\n', '?\n', ';\n', ':\n', '\n']) {
+        const written = `We reviewed the ${head}${end}Appeal by 2027-03-15. ID: seen 2026-04-26, paid 2026-05-01. No. 97110 billed $150.00 (NPI 1234567893).`;
+        expect(redactLetter(written, patient, claims).text, JSON.stringify(written)).toBe(written);
+        expect(holdsIdentifier(written, patient, claims), JSON.stringify(written)).toBe(false);
+      }
+    }
+    // A deadline equal to the claim's digits stays after a sentence a head word ends (no label of its kind before it, G2),
+    // and the claim's own number stays the call's own placeholder after one.
+    const dated: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315'] }];
+    expect(redactLetter('We reviewed the member.\nAppeal by 2027-03-15.', patient, dated).text).toBe('We reviewed the member.\nAppeal by 2027-03-15.');
+    // A head word joins its qualifier over its own full stop ("Claim. ID" is a claim's label, as "Member.ID" is a member's),
+    // so a deadline equal to the claim's digits after one is replaced: an over-redaction accepted, as before the fix, since
+    // reading it apart would send a claim number or member ID so written (review finding correctness-rlb-oracle-1).
+    expect(redactLetter('We reviewed the claim. ID 2027-03-15 is the deadline.', patient, dated).text).toBe('We reviewed the claim. ID [CLAIM_1] is the deadline.');
+    expect(redactLetter('We reviewed the member.\nClaim No. 2027-03-15 was denied.', patient, dated).text).toBe('We reviewed the member.\nClaim No. [CLAIM_1] was denied.');
+  });
+
+  it('reads a written date only with a year from 1900 to 2099, so a claim number written like a date is its placeholder and real dates keep their behaviour', () => {
+    expect(EARLIEST_WRITTEN_YEAR).toBe(1900);
+    expect(LATEST_WRITTEN_YEAR).toBe(2099);
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ1234567'] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['00230426'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['00010203'] },
+      { claimId: 'synthetic-claim-3', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['21000426'] },
+    ];
+    for (const written of ['0023-04-26', '0023/04/26', '0023.04.26', '0001/02/03', '2100-04-26']) {
+      expect(datesIn(written).flatMap((span) => span.dates), written).toEqual([]);
+    }
+    expect(redactLetter('Claim 0023-04-26 was denied.', patient, claims).text).toBe('Claim [CLAIM_1] was denied.');
+    // Any dash (a claim's digits join over dashes, never over a slash or a period between digits: docs/adr/0054).
+    expect(redactLetter('Claim 0023–04–26 and claim 0001-02-03; claim 2100\u221204\u221226.', patient, claims).text).toBe('Claim [CLAIM_1] and claim [CLAIM_2]; claim [CLAIM_3].');
+    expect(holdsIdentifier('Claim 0023-04-26 was denied.', patient, claims)).toBe(true);
+    // The seed's own counterexamples, unlabeled too, so the year bound alone (not the identifier label) replaces them.
+    const seedClaims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['00000101'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['00230426'] },
+    ];
+    expect(datesIn('0000-01-01').flatMap((span) => span.dates)).toEqual([]);
+    expect(redactLetter('Claim 0000-01-01 was denied.', patient, seedClaims).text).toBe('Claim [CLAIM_1] was denied.');
+    expect(redactLetter('Seen 0000-01-01; seen 0023-04-26.', patient, seedClaims).text).toBe('Seen [CLAIM_1]; seen [CLAIM_2].');
+    expect(holdsIdentifier('Seen 0000-01-01.', patient, seedClaims)).toBe(true);
+    // A date of service, a deadline and a two-digit year still read as dates and stay.
+    expect(datesIn('2026-04-26').flatMap((span) => span.dates)).toEqual(['2026-04-26']);
+    expect(datesIn('04/26/26').flatMap((span) => span.dates)).toContain('2026-04-26');
+    expect(redactLetter('Seen on 2026-04-26; appeal by April 26, 2027; billed 4/26/26.', patient, claims).text).toBe('Seen on 2026-04-26; appeal by April 26, 2027; billed 4/26/26.');
+    // A 1950s date of birth is replaced in every form, labeled or not, as before.
+    for (const written of [...dateForms('1955-07-14'), '07 14 1955', '19550714', '07141955', '071455']) {
+      expect(redactLetter(`Seen ${written}.`, patient, claims).text, written).toBe('Seen [DATE_OF_BIRTH].');
+    }
+    expect(redactLetter('DOB 0023-04-26.', patient, []).text).toBe('DOB [DATE_OF_BIRTH].');
+  });
+
+  it('joins a digits-only number over an underscore, a bar or a backslash as over a dash, and keeps it only as the date its own written form is (review findings F4-1, F4-2)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['00230426'] };
+    const claimsOf = (...numbers: string[]): LetterClaim[] => numbers.map((value, i) => ({ claimId: `synthetic-claim-${String(i + 1)}`, patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }));
+    // F4-1: digits with "_", "|" or "\\" between them are the number, whether or not they look like a date.
+    for (const [written, numbers] of [
+      ['Claim 0023_04_26 denied', ['00230426']],
+      ['Claim 0023|04|26 denied', ['00230426']],
+      ['Claim 0023\\04\\26 denied', ['00230426']],
+      ['Claim 1234_5678 denied', ['12345678']],
+      ['Claim 1234|5678 denied', ['12345678']],
+      ['Claim 1234\\5678 denied', ['12345678']],
+    ] as const) {
+      expect(redactLetter(written, patient, claimsOf(...numbers)).text, written).toBe('Claim [CLAIM_1] denied');
+      expect(holdsIdentifier(written, patient, claimsOf(...numbers)), written).toBe(true);
+    }
+    for (const written of ['Member 0023_04_26 on file', 'Member 0023|04|26 on file', 'Member 0023\\04\\26 on file', 'Member 0023-04-26 on file']) {
+      expect(redactLetter(written, patient, []).text, written).toBe('Member [MEMBER_ID] on file');
+    }
+    // A real date written with those separators is still a date (a claim number that is itself one, the recorded residual).
+    expect(redactLetter('Seen 2026_01_31, 2026|01|31 and 2026\\01\\31.', patient, claimsOf('20260131')).text).toBe('Seen 2026_01_31, 2026|01|31 and 2026\\01\\31.');
+    expect(redactLetter('Born 1955_07_14 and 14|07|1955.', patient, []).text).toBe('Born [DATE_OF_BIRTH] and [DATE_OF_BIRTH].');
+    // F4-2: a short claim inside a date read with a month word or across an invisible character is not that date.
+    expect(redactLetter('Claim Jan 31-2026 denied', patient, claimsOf('312026')).text).toBe('Claim Jan [CLAIM_1] denied');
+    expect(redactLetter('Claim Jan-31-2026', patient, claimsOf('312026')).text).toBe('Claim Jan-[CLAIM_1]');
+    expect(holdsIdentifier('Claim Jan 31-2026 denied', patient, claimsOf('312026'))).toBe(true);
+    expect(holdsIdentifier('Claim 1999-1\u200B2-31', patient, claimsOf('19991'))).toBe(true);
+    expect(redactLetter('Claim 1999-1\u200B2-31', patient, claimsOf('19991')).text).not.toContain('1999');
+    // The whole date written across the invisible character is still that date.
+    expect(redactLetter('Seen 1999-1\u200B2-31.', patient, claimsOf('19991231')).text).toBe('Seen 1999-1\u200B2-31.');
+  });
+
+  it('joins a number over grouping apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 (review finding R5-1)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ7654321'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['12345678'] }];
+    for (const written of ["12'345'678", '12’345’678', '12‘345‘678', '12ʼ345ʼ678', '12`345`678', '1234~5678', '1234～5678', '1234·5678', '1234‧5678', '1234∙5678', '1234⋅5678', '1234・5678', '1234•5678', '1234;5678', '1234"5678', '1234“5678', '1234˗5678', '1234➖5678', '1234\u20325678', '1234\u20335678', '1234\u2032 5678', '1234\u20355678', '1234\u02B95678', '1234\u02CA5678', "12\u2032345\u2032678"]) {
+      const text = `Claim ${written} denied`;
+      expect(redactLetter(text, patient, claims).text, written).toBe('Claim [CLAIM_1] denied');
+      expect(holdsIdentifier(text, patient, claims), written).toBe(true);
+      expect(identifierCandidates(text), written).toContain('12345678');
+    }
+    for (const written of ['ZZ~7654321', "ZZ'7654321", 'ZZ’7654321', 'ZZ·7654321', 'ZZ•7654321', 'ZZ;7654321', 'ZZ\u20327654321', 'ZZ\u02B97654321']) {
+      expect(redactLetter(`Member ${written} on file`, patient, []).text, written).toBe('Member [MEMBER_ID] on file');
+      expect(identifierCandidates(`Member ${written} on file`), written).toContain('ZZ7654321');
+    }
+    // Still kept apart, as recorded (docs/adr/0054): a comma (an amount's grouping), a period or slash between digits with no label,
+    // and the katakana prolonged sound mark (U+30FC), a letter inside Japanese words and names (review finding G4).
+    expect(redactLetter('Seen 1234,5678 and 1234.5678 and 1234/5678.', patient, claims).text).toBe('Seen 1234,5678 and 1234.5678 and 1234/5678.');
+    expect(redactLetter('Seen 1234\u30FC5678.', patient, claims).text).toBe('Seen 1234\u30FC5678.');
+    // A name keeps matching with or without a modifier-letter prime in it, as with an apostrophe ("Ilʹich").
+    expect(redactLetter('Dear Ilʹich Vantree and Ilich.', { ...patient, names: ['ILICH VANTREE'] }, []).text).toBe('Dear [PATIENT_NAME] and [PATIENT_NAME].');
+  });
+
+  it('replaces a claim number or member ID written as a calendar date when an identifier label introduces it, and keeps an unlabeled date (review finding R5-2)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['03141962'] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['19550714'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['031561'] },
+      { claimId: 'synthetic-claim-3', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315'] },
+    ];
+    for (const [written, expected] of [
+      ['Claim 1955-07-14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955–07–14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955_07_14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955|07|14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955\\07\\14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955 - 07 - 14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955-\n07-14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955-07-1\u200B4 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955/07/14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 1955.07.14 denied', 'Claim [CLAIM_1] denied'],
+      ['Claim 03-15-61', 'Claim [CLAIM_2]'],
+      ['Claim # 1955-07-14', 'Claim # [CLAIM_1]'],
+      ['Claim#1955-07-14', 'Claim#[CLAIM_1]'],
+      ['Claim No. 1955-07-14', 'Claim No. [CLAIM_1]'],
+      ['claim number is 1955-07-14', 'claim number is [CLAIM_1]'],
+      ['ICN: 1955-07-14', 'ICN: [CLAIM_1]'],
+      ['Claim\u200B1955-07-14', 'Claim\u200B[CLAIM_1]'],
+      ['Member ID 03/14/1962', 'Member ID [MEMBER_ID]'],
+      ['ID: 03-14-1962', 'ID: [MEMBER_ID]'],
+    ] as const) {
+      expect(redactLetter(written, patient, claims).text, written).toBe(expected);
+      expect(holdsIdentifier(written, patient, claims), written).toBe(true);
+    }
+    // With no label the date stays, the recorded residual (docs/adr/0054), and a deadline is read as one.
+    for (const written of ['Appeal by 2027-03-15.', 'Seen 1955-07-14 and 03-15-61.', 'Seen 03/14/1962.', 'Appeal by 2027/03/15.']) {
+      expect(redactLetter(written, patient, claims).text, written).toBe(written);
+    }
+    // A label never makes an amount a claim's number, nor reaches a date it does not stand right before.
+    expect(redactLetter('Claim paid $20270315.00 on 2027-03-15.', patient, claims).text).toBe('Claim paid $20270315.00 on 2027-03-15.');
+    expect(redactLetter('Claim reviewed; appeal by 2027-03-15.', patient, claims).text).toBe('Claim reviewed; appeal by 2027-03-15.');
+  });
+
+  it('reads a label only as a head word with what follows it, or "No.", "ID:", "number is" and "Re:", and a member’s label only for a member ID (review finding G2), and reads a label’s end through "*", ",", "(" and an opening quote (review finding G3)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['19550714'] };
+    const claimsOf = (value: string): LetterClaim[] => [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }];
+    // G2: a deadline equal to the claim's digits stays after ordinary words and after a member's label.
+    for (const written of ['The number 2027-03-15 is the deadline', 'No 2027-03-15 appeal accepted', 'Answer: no. 2027-03-15 is late', 'reference: 2027-03-15', 'Reference date #2027-03-15', 'Member: 2027-03-15', 'Member: 2027.03.15', 'Subscriber ID 2027/03/15', 'Number of visits is 2027-03-15', 'ID 2027-03-15']) {
+      expect(redactLetter(written, patient, claimsOf('20270315')).text, written).toBe(written);
+      expect(holdsIdentifier(written, patient, claimsOf('20270315')), written).toBe(false);
+    }
+    // And a claim's label is none for a member ID written as a date; the member's own label is.
+    expect(redactLetter('Claim# 1955-07-14; Member: 1955-07-14', patient, []).text).toBe('Claim# 1955-07-14; Member: [MEMBER_ID]');
+    // "ID" with a qualifier after it introduces a member ID too (review finding security-rlb-sec-3).
+    for (const label of ['ID Number: ', 'ID No. ', 'ID No: ', 'ID nbr ', 'The file. ID Number: ']) {
+      expect(redactLetter(`${label}1955-07-14`, patient, []).text, label).toBe(`${label}[MEMBER_ID]`);
+    }
+    // Still the number: a head word with "no", "number" or "id" after it, "No." and "ID:", "number is", and "Reference number".
+    for (const [written, value, expected] of [
+      ['Claim no 04/26/2026', '04262026', 'Claim no [CLAIM_1]'],
+      ['Claim No.: 2026-04-26', '20260426', 'Claim No.: [CLAIM_1]'],
+      ['CLAIM NUMBER IS 2026-04-26', '20260426', 'CLAIM NUMBER IS [CLAIM_1]'],
+      ['Patient control no.: 2026-04-26', '20260426', 'Patient control no.: [CLAIM_1]'],
+      ['No. 2026-04-26', '20260426', 'No. [CLAIM_1]'],
+      ['ID: 2026-04-26', '20260426', 'ID: [CLAIM_1]'],
+      // "ID" with a qualifier after it, with or without a colon (review finding security-rlb-sec-3).
+      ['ID Number: 2026-04-26', '20260426', 'ID Number: [CLAIM_1]'],
+      ['ID No. 2026-04-26', '20260426', 'ID No. [CLAIM_1]'],
+      ['ID No: 2026-04-26', '20260426', 'ID No: [CLAIM_1]'],
+      ['ID nbr 2026-04-26', '20260426', 'ID nbr [CLAIM_1]'],
+      ['The file. ID Number: 2026-04-26', '20260426', 'The file. ID Number: [CLAIM_1]'],
+      ['The number is 2026-04-26', '20260426', 'The number is [CLAIM_1]'],
+      ['Reference number 2026-04-26', '20260426', 'Reference number [CLAIM_1]'],
+      // G3: the label's end through an opening quote, "(", Markdown bold, a comma, and "Re:".
+      ['Claim: \u201C2026-04-26\u201D', '20260426', 'Claim: \u201C[CLAIM_1]\u201D'],
+      ['ICN (2026-04-26)', '20260426', 'ICN ([CLAIM_1])'],
+      ['**Claim:** 2026-04-26', '20260426', '**Claim:** [CLAIM_1]'],
+      ['Claim, 2026-04-26,', '20260426', 'Claim, [CLAIM_1],'],
+      ['Re: 2026-04-26', '20260426', 'Re: [CLAIM_1]'],
+      ["Claim '2026.04.26'", '20260426', "Claim '[CLAIM_1]'"],
+    ] as const) {
+      expect(redactLetter(written, patient, claimsOf(value)).text, written).toBe(expected);
+      expect(holdsIdentifier(written, patient, claimsOf(value)), written).toBe(true);
+    }
+  });
+
+  it('reads digits joined over "." or "/" that are no whole written date as the number after any label, a word before "ID", "number", "no" or "#" too (review finding phi-G2-regress-1)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['12345678'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['99887766'] }];
+    for (const [written, expected] of [
+      ['Patient ID 1234.5678', 'Patient ID [MEMBER_ID]'],
+      ['Policy number 1234/5678', 'Policy number [MEMBER_ID]'],
+      ["Member's ID 1234.5678", "Member's ID [MEMBER_ID]"],
+      ['Member’s ID 1234.5678', 'Member’s ID [MEMBER_ID]'],
+      ['Insurance ID 1234/5678', 'Insurance ID [MEMBER_ID]'],
+      ['Health plan ID 1234.5678', 'Health plan ID [MEMBER_ID]'],
+      ['Medicaid ID 1234.5678', 'Medicaid ID [MEMBER_ID]'],
+      ['Insured ID number 1234.5678', 'Insured ID number [MEMBER_ID]'],
+      ["Subscriber's ID number 1234.5678", "Subscriber's ID number [MEMBER_ID]"],
+      ['Member Identification Number 1234.5678', 'Member Identification Number [MEMBER_ID]'],
+      ['Policy # 1234.5678', 'Policy # [MEMBER_ID]'],
+      ['ID 1234.5678', 'ID [MEMBER_ID]'],
+      ['The number 9988.7766 was denied', 'The number [CLAIM_1] was denied'],
+      ['reference: 9988/7766', 'reference: [CLAIM_1]'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, written).toBe(expected);
+      expect(holdsIdentifier(written, patient, claims), written).toBe(true);
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      // Another patient's number written so is offered to the one-patient screen (G1's join, after any label).
+      expect(identifierCandidates(written), written).toContain(written.includes('9988') ? '99887766' : '12345678');
+    }
+    // A whole written calendar date still needs G2's label of the number's kind: a deadline after a bare word stays.
+    for (const written of ['ID 2027-03-15', 'ID 2027/03/15', 'Patient ID 2027.03.15', 'Policy # 2027/03/15', 'The number 2027-03-15 is the deadline']) {
+      const theirs: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315'] }];
+      expect(redactLetter(written, patient, theirs).text, written).toBe(written);
+      // Over "." or "/" (over a dash digits alone join anywhere, as before).
+      if (!written.includes('-')) {
+        expect(identifierCandidates(written), written).not.toContain('20270315');
+      }
+    }
+    // And no label, no join: digits with a period between them stay apart.
+    expect(redactLetter('Also 1234.5678 and 9988/7766', patient, claims).text).toBe('Also 1234.5678 and 9988/7766');
+    expect(identifierCandidates('Also 1234.5678')).not.toContain('12345678');
+  });
+
+  it('reads a number glued to its label, "№" (which NFKC writes "No") among them, as after that label (review finding phi-numero-glued)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['ZZ12345678', '12345678'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20270315', '99887766'] }];
+    for (const [written, expected, candidate] of [
+      ['Claim №99887766 denied', 'Claim No[CLAIM_1] denied', '99887766'],
+      ['Member №12345678', 'Member No[MEMBER_ID]', '12345678'],
+      ['Member №ZZ12345678', 'Member No[MEMBER_ID]', 'ZZ12345678'],
+      ['Claim№99887766', 'ClaimNo[CLAIM_1]', '99887766'],
+      ['ICN99887766 denied', 'ICN[CLAIM_1] denied', '99887766'],
+      ['Member ID12345678 on file', 'Member ID[MEMBER_ID] on file', '12345678'],
+      ['CLAIM NO99887766', 'CLAIM NO[CLAIM_1]', '99887766'],
+      ['ICN9988.7766', 'ICN[CLAIM_1]', '99887766'],
+      ['Claim №2027-03-15', 'Claim No[CLAIM_1]', '20270315'],
+      ['Claim № 99887766', 'Claim No [CLAIM_1]', '99887766'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(redacted, written).toBe(expected);
+      expect(holdsIdentifier(written, patient, claims), written).toBe(true);
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      expect(identifierCandidates(written.normalize('NFKC')), written).toContain(candidate);
+    }
+    // Only a label word: the patient's digits glued to another word, or a glued word that is no label, stay.
+    for (const written of ['Room AB99887766', 'Casino 2027-03-15', 'Nov 2027-03-15']) {
+      expect(redactLetter(written, patient, claims).text, written).toBe(written);
+    }
+  });
+
+  it('reads a label’s end through "=", an en or em dash and the minus sign (review finding phi-label-end-dash)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: [], memberIds: ['12345678'] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['20260426'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['99887766'] },
+    ];
+    for (const [written, expected] of [
+      ['Member ID – 1234.5678', 'Member ID – [MEMBER_ID]'],
+      ['Member ID — 1234.5678', 'Member ID — [MEMBER_ID]'],
+      ['Member ID = 1234.5678', 'Member ID = [MEMBER_ID]'],
+      ['Member ID − 1234/5678', 'Member ID − [MEMBER_ID]'],
+      ['Claim # – 9988/7766', 'Claim # – [CLAIM_2]'],
+      ['Claim — 2026-04-26', 'Claim — [CLAIM_1]'],
+      ['The number – is 2026-04-26', 'The number – is [CLAIM_1]'],
+    ] as const) {
+      const redacted = redactLetter(written, patient, claims).text;
+      expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
+      expect(redacted, written).toBe(expected);
+      expect(identifierCandidates(written), written).toContain(written.includes('9988') ? '99887766' : written.includes('1234') ? '12345678' : '20260426');
+    }
+  });
 
   it('still replaces every letter or digit today’s code replaced, but in a date that is not a date of birth or an amount (property and the design’s section 1 rows)', () => {
     const check = (text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
@@ -427,6 +914,34 @@ describe('MOD-14: the one-patient screen sees every written form of another pati
       }),
       { numRuns: 300 },
     );
+  });
+
+  it('offers another patient’s digits-only ID written with "." or "/" between its digits after an identifier label, as the matcher reads it (property; review finding G1)', () => {
+    const LABELED_JOINERS = [...NUMBER_JOINERS, '.', '/', '.', '/'];
+    const label = fc.constantFrom('Claim ', 'ICN ', 'Member ID: ', 'Claim No. ', 'Subscriber # ', 'ICN (', 'Claim: \u201C', '**Claim:** ', 'Claim, ', 'Re: ', 'No. ', 'ID:', 'claim number is ');
+    fc.assert(
+      fc.property(fc.stringMatching(/^[0-9]{5,8}$/), fc.array(fc.nat(1000), { minLength: 1, maxLength: 2 }), label, (digits, picks, before) => {
+        const characters = [...digits];
+        const cuts = new Map(picks.map((pick) => [1 + (pick % (characters.length - 1)), LABELED_JOINERS[pick % LABELED_JOINERS.length] ?? '.']));
+        const written = characters.map((character, i) => `${cuts.get(i) ?? ''}${character}`).join('');
+        const text = `SYNTHETIC: ${before}${written} for Jane Zephyra, DOB 03/14/1980, member SYNMEMBER0042.`;
+        expect(identifierCandidates(text), text).toContain(digits);
+        const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-14', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+        const redacted = redactLetter(text, patient, [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-14', claimNumbers: ['SYNCLAIM0001'] }]).text;
+        expect(identifierCandidates(redacted), redacted).toContain(digits);
+      }),
+      { numRuns: 300 },
+    );
+    // The critic's three examples, and the same digits with no label, which the letter path keeps apart (docs/adr/0054).
+    expect(identifierCandidates('ICN 1234.5678')).toContain('12345678');
+    expect(identifierCandidates('Claim 1955/07/14')).toContain('19550714');
+    expect(identifierCandidates('Claim 1955.07.14')).toContain('19550714');
+    expect(identifierCandidates('Member ID: 7654.321')).toContain('7654321');
+    expect(identifierCandidates('Also 1234.5678 and 1955/07/14')).not.toContain('12345678');
+    expect(identifierCandidates('Also 1234.5678 and 1955/07/14')).not.toContain('19550714');
+    // Only a run of digits alone joins over "." or "/" after a label, as the matcher reads a digits-only number (the N6 property's seed -1651459486).
+    expect(identifierCandidates('see the claim AAAA_8\u200B.2')).not.toContain('AAAA82');
+    expect(identifierCandidates('see the claim 4444_8\u200B.2')).toContain('444482');
   });
 
   it('never offers a placeholder or a part of one, however placeholders are joined (property)', () => {

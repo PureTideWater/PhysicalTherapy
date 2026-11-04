@@ -443,8 +443,13 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
   await test.step('the dashboard tiles: label in Slate, the figure in Plex Mono, recovered named with its proof level', async () => {
     const tiles = page.locator('[data-slot="tile-row"]');
     await expect(tiles.locator('[data-figure="recovered-total"]')).toContainText('Recovered (posted)');
-    await expect(tiles.locator('[data-figure="actionable"] .font-mono')).toHaveCSS('font-family', /mono/i);
-    await expect(tiles.locator('[data-figure="actionable"] .font-mono')).toHaveCSS('font-variant-numeric', 'tabular-nums');
+    // The tile's dollars and its note's line counts, each in the mono face (docs/brand/BRAND.md: every unit count).
+    const monos = await tiles.locator('[data-figure="actionable"] .font-mono').all();
+    expect(monos.length).toBeGreaterThanOrEqual(2);
+    for (const mono of monos) {
+      await expect(mono).toHaveCSS('font-family', /mono/i);
+      await expect(mono).toHaveCSS('font-variant-numeric', 'tabular-nums');
+    }
     await expectAccessible(page, 'The dashboard on brand');
     await page.mouse.move(0, 0);
     await tiles.screenshot({ path: shot('dashboard-tiles.png') });

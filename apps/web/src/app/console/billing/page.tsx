@@ -13,6 +13,7 @@ import { loadPage } from '../../../lib/http/next';
 import { consoleBillingPage } from '../../../lib/routes/billing';
 import { issueAuditInvoice } from './actions';
 import { FormKeys } from '../../../components/form-keys';
+import { suspendedByPaidWhole } from '../../../components/console/suspension-text';
 
 export const metadata: Metadata = { title: 'Billing status' };
 
@@ -29,7 +30,8 @@ const KIND: Readonly<Record<string, string>> = { group: 'Practice group', firm: 
 /**
  * Internal console: billing status per organization (PRD 7, Organizations and practices: "billing status";
  * PRD 3: the platform administrator "manages ... billing"; docs/adr/0050): each group's and firm's one standing (the
- * record's status and billing's, PaidWhole's suspensions first; @tp/billing/standing) with billing's own beside it,
+ * record's status and billing's, PaidWhole's suspensions first, with PaidWhole's reason when one is stored, O1;
+ * @tp/billing/standing; docs/adr/0080) with billing's own beside it,
  * plan, what it owes and the latest nightly usage snapshot (granted and active practices, the seam firm
  * invoicing reads in milestone 12), and an audit invoice issued from here. Organization records and
  * invoices only; no practice's data.
@@ -65,7 +67,9 @@ export default async function ConsoleBillingPage() {
                       {row.name} <span className="text-xs text-muted-foreground">({KIND[row.kind] ?? row.kind})</span>
                     </td>
                     <td className="py-1 pr-3">
-                      <Badge variant={row.standingKind === 'good' || row.standingKind === 'closed' ? 'outline' : 'destructive'}>{STANDING[row.standingKind] ?? row.standingKind}</Badge>
+                      <Badge variant={row.standingKind === 'good' || row.standingKind === 'closed' ? 'outline' : 'destructive'}>
+                        {row.standingKind === 'suspended_by_paidwhole' ? suspendedByPaidWhole(row.statusReason) : (STANDING[row.standingKind] ?? row.standingKind)}
+                      </Badge>
                       {row.standingKind === 'suspended_nonpayment' && row.suspendedSince !== null ? (
                         <span className="ml-2 text-xs">
                           since <span className="whitespace-nowrap">{utcDate(row.suspendedSince)}</span>

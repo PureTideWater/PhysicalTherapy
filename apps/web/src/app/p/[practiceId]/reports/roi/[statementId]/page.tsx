@@ -1,5 +1,5 @@
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
-import { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from '@tp/worker/reports';
+import { ACTIONABLE_OPEN_LABEL, ACTIONABLE_OPEN_NOTE, NO_RECOVERED_CASH, NOTHING_APPROVED_WAITING, RECOVERED_PRINCIPAL_LABELS } from '@tp/worker/reports';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -25,8 +25,9 @@ type Props = { readonly params: Promise<{ practiceId: string; statementId: strin
  * principal and interest, net; approved but not yet posted; actionable in open cases; pursuit hours
  * logged; the ratio of net recovered to fees. Every figure links to its entries"; test matrix LED-11):
  * each figure recomputed here from the entries it links, each entry linking to its case's ledger; the
- * proof level stated; fees as billing records them (none yet, so no ratio); its PDF, once printed, and
- * its CSV. A refused download of either comes back here, said beside them (docs/adr/0079).
+ * proof level stated; fees as billing records them (none yet, so no ratio); the actionable figure as the
+ * practice home and Cases count it when the statement was generated (docs/adr/0082), and the approval
+ * figure's empty line naming the proof level's stage; its PDF, once printed, and its CSV. A refused download of either comes back here, said beside them (docs/adr/0079).
  */
 export default async function RoiStatementPage(props: Props) {
   const page = await loadPage(roiStatementPage, props);
@@ -123,24 +124,25 @@ export default async function RoiStatementPage(props: Props) {
         note="Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage."
         figure={detail.approvedUnposted}
         practiceId={practiceId}
-        empty="Nothing approved is waiting to be posted."
+        empty={NOTHING_APPROVED_WAITING[detail.proofLevel]}
       />
-      <Card role="region" aria-label="Actionable in open cases">
+      <Card role="region" aria-label={ACTIONABLE_OPEN_LABEL}>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-baseline gap-2">
-            Actionable in open cases: <Money value={detail.actionableOpenCents} />
+            {ACTIONABLE_OPEN_LABEL}: <Money value={detail.actionableOpenCents} />
           </CardTitle>
-          <CardDescription>The actionable totals of the cases open when the statement was generated.</CardDescription>
+          <CardDescription>{ACTIONABLE_OPEN_NOTE}</CardDescription>
         </CardHeader>
         <CardContent>
           {detail.actionableCases.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No case was open.</p>
+            <p className="text-sm text-muted-foreground">No case was being worked.</p>
           ) : (
             <ul className="flex flex-wrap gap-3 text-sm">
-              {detail.actionableCases.map((caseId) => (
+              {/* Each link named by its place in the list, as Reconciliation names a case line (WCAG 2.4.4: never "Case, Case"). */}
+              {detail.actionableCases.map((caseId, index) => (
                 <li key={caseId}>
                   <Link className="underline" href={`/p/${practiceId}/cases/${caseId}`}>
-                    Case
+                    {`Case ${String(index + 1)} of ${String(detail.actionableCases.length)}`}
                   </Link>
                 </li>
               ))}

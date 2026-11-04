@@ -18,6 +18,7 @@ import {
   RunLink,
   RunStateBadges,
   RunStatusBadge,
+  UnmappedPlansPriced,
   UnpricedReasons,
   diffRunName,
   nothingMoreToAccept,
@@ -164,7 +165,8 @@ function HeldByText({ practiceId, heldBy }: { readonly practiceId: string; reado
  * causes) and is accepted here, after which it is the run in effect (docs/adr/0037), but only while
  * nothing in effect for overlapping service dates is newer than it: otherwise the page says why it can no
  * longer be accepted, links to the run to use, and offers that run's Re-run button (combined audit #10;
- * docs/adr/0037, amendment of 2026-10-26; PRC-25 to PRC-28).
+ * docs/adr/0037, amendment of 2026-10-26; PRC-25 to PRC-28). Beside the unpriced reasons, the plans that had no mapping
+ * when the run was priced, each linked to its mapping page by its key (combined audit #32; docs/adr/0075; MAP-06, PRC-30).
  */
 export default async function PricingRunPage(props: Props) {
   const page = await loadPage(pricingRunPage, props);
@@ -377,6 +379,7 @@ export default async function PricingRunPage(props: Props) {
             </CardHeader>
             <CardContent>
               <UnpricedReasons coverage={coverage} />
+              <UnmappedPlansPriced practiceId={practiceId} coverage={coverage} names={names} />
             </CardContent>
           </Card>
           <Card role="region" aria-label="Contract versions">

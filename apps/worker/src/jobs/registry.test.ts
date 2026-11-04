@@ -4,7 +4,7 @@ import { ZodError } from 'zod';
 
 import { assertNoPhi } from '@tp/observability';
 
-import { JOB_PAYLOADS, JOB_TYPES, type JobPayload, type JobType, QUEUE_OPTIONS, parsePayload, queueOptions, singletonKey } from './registry';
+import { JOB_PAYLOADS, JOB_TYPES, type JobPayload, type JobType, MONITOR_MONTHS_LIMIT, QUEUE_OPTIONS, parsePayload, queueOptions, singletonKey } from './registry';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const OTHER_PRACTICE = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
@@ -70,6 +70,33 @@ describe('job registry', () => {
     expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: '' })).toThrow(ZodError);
     expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: 'SYNTHETIC TWIN' })).toThrow(ZodError);
     expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: 'x'.repeat(129) })).toThrow(ZodError);
+  });
+
+  it('MAP-07, SEC-08: takes a mapping’s monitoring job with the months it may plan, first days only, 1 to 240, under the request’s one key', () => {
+    const save = { practice_id: PRACTICE, request_id: SUBJECT };
+    const mapping = { ...save, months: ['2026-02-01', '2026-03-01'] };
+    expect(parsePayload('monitor', mapping)).toEqual(mapping);
+    // One request queues one job: the key is the request's, with or without months.
+    expect(singletonKey('monitor', parsePayload('monitor', mapping))).toBe(`monitor:${PRACTICE}:${SUBJECT}`);
+    expect(singletonKey('monitor', mapping)).toBe(singletonKey('monitor', save));
+    // Calendar months only: the job-payload guard admits the list in that one format.
+    expect(() => {
+      assertNoPhi('job_payload', mapping);
+    }).not.toThrow();
+    const twentyYears = Array.from({ length: MONITOR_MONTHS_LIMIT }, (_, index) => `${String(2000 + Math.floor(index / 12))}-${String((index % 12) + 1).padStart(2, '0')}-01`);
+    expect(MONITOR_MONTHS_LIMIT).toBe(240);
+    expect(parsePayload('monitor', { ...save, months: twentyYears })).toEqual({ ...save, months: twentyYears });
+    expect(() => parsePayload('monitor', { ...save, months: [...twentyYears, '2020-01-01'] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...save, months: [] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...save, months: ['2026-02-15'] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...save, months: ['2026-02'] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...save, months: ['2026-13-01'] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...save, months: ['SYNTHETIC TWIN'] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...save, months: '2026-02-01' })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { ...mapping, member_id: 'SYNMEMBER01' })).toThrow(ZodError);
+    // Only the request's job names months: never a document's or a day's.
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, document_id: SUBJECT, months: ['2026-02-01'] })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, day: '2026-10-15', months: ['2026-02-01'] })).toThrow(ZodError);
   });
 
   it('takes a packet export with the words version it was asked under, or without one from before that deploy, under one key (ADR 0072)', () => {

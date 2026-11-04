@@ -28,15 +28,27 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * administrator and a support engineer, each in one test only; and, for the forms journey, a viewer who signs in with a wrong password and code, an
  * invited viewer who chooses a password, a billing manager of the other group, a viewer who signs in from another tab
  * while that billing manager's form is open, and a platform administrator, each alone, because a refusal counts toward
- * the ten-failure lock and the specs run in parallel; and a billing manager and a viewer of the other group for the
- * journey of refused downloads, in a practice of its own).
+ * the ten-failure lock and the specs run in parallel; and, for the journeys of a firm PaidWhole suspended (BIL-09;
+ * docs/adr/0080), the principal of SYNTHETIC SUSPENDED FIRM, which the seed holds suspended with a grant in force on
+ * SYNTHETIC FIRM CLIENT PRACTICE, and the practice administrator of that practice's own group, SYNTHETIC FIRM CLIENT
+ * GROUP; and the platform administrator who suspends and reinstates SYNTHETIC CONSOLE SUSPENSION FIRM in the console, a
+ * firm with no one who signs in; and a billing manager and a viewer of the other group for the journey of refused
+ * downloads, in a practice of its own; and, for the sign-in steps' time limits, a viewer whose code step is warned and
+ * closed, a viewer whose step closes in real time, an invited viewer and an invited support engineer who choose a
+ * password and enrol, each alone; and a viewer who resets a forgotten password, alone).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
  */
 
-/** The seeded organizations: packages/db's synthetic tenancy's four, and the suspended group scripts/seed.ts adds. */
-export type SeedOrganization = 'group' | 'other_group' | 'firm' | 'internal' | 'suspended_group';
+/**
+ * The seeded organizations: packages/db's synthetic tenancy's four, and those scripts/seed.ts adds: the suspended group,
+ * the suspended firm, its client group and the console's suspension firm.
+ */
+export type SeedOrganization = 'group' | 'other_group' | 'firm' | 'internal' | 'suspended_group' | 'suspended_firm' | 'firm_client_group' | 'console_firm';
+
+/** The organizations scripts/seed.ts adds beside packages/db's synthetic tenancy. */
+export const SCRIPT_ORGANIZATIONS: readonly SeedOrganization[] = ['suspended_group', 'suspended_firm', 'firm_client_group', 'console_firm'];
 
 export interface SyntheticPersona {
   readonly key: string;
@@ -152,10 +164,40 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'forms-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'forms-second', organization: 'group', role: 'viewer' },
   { key: 'forms-admin', organization: 'internal', role: 'platform_admin' },
+  // A firm PaidWhole suspended (BIL-09; docs/adr/0080): its principal, who reaches SYNTHETIC FIRM CLIENT PRACTICE only
+  // through the firm's grant, and the administrator of the practice's own group, whose staff carry on.
+  { key: 'suspended-firm-principal', organization: 'suspended_firm', role: 'firm_principal' },
+  { key: 'firm-client-admin', organization: 'firm_client_group', role: 'practice_admin' },
+  // The console's suspension journey (BIL-09): the platform administrator who suspends and reinstates SYNTHETIC CONSOLE
+  // SUSPENSION FIRM, with a hardware key of its own.
+  { key: 'suspension-admin', organization: 'internal', role: 'platform_admin' },
+  // The sign-in steps' time limits (docs/adr/0081; test matrix SGN-01 to SGN-04), each alone, because the steps count
+  // toward the ten-failure lock and the mfa bucket: a viewer whose code step is warned and closed, a viewer whose step
+  // closes in real time, an invited viewer who chooses a password and enrols, and an invited support engineer (so a
+  // hardware key is required) who chooses a password, enrols and registers a key. The invited two choose their password
+  // once per run, each run starting from a fresh seed.
+  { key: 'time-mfa', organization: 'group', role: 'viewer' },
+  { key: 'time-real', organization: 'group', role: 'viewer' },
+  { key: 'time-invited', organization: 'group', role: 'viewer', invited: true },
+  { key: 'time-staff', organization: 'internal', role: 'support', invited: true },
+  // The forgotten password (docs/adr/0081, the forgotten password; test matrix SGN-05 to SGN-07): a viewer who resets
+  // their password by emailed code, alone, because a request spends the sign_in bucket's count for the address and the
+  // reset changes the password (apart from lockout's, which locks).
+  { key: 'reset', organization: 'group', role: 'viewer' },
 ];
 
 /** The group the seed holds suspended by PaidWhole (BIL-06): no practice, one administrator, never reinstated. */
 export const SYNTHETIC_SUSPENDED_GROUP = 'SYNTHETIC SUSPENDED GROUP';
+
+/** The firm the seed holds suspended by PaidWhole for a security hold (BIL-09): a grant in force, never reinstated. */
+export const SYNTHETIC_SUSPENDED_FIRM = 'SYNTHETIC SUSPENDED FIRM';
+
+/** The group that owns the practice the suspended firm is granted, and the practice (BIL-09). */
+export const SYNTHETIC_FIRM_CLIENT_GROUP = 'SYNTHETIC FIRM CLIENT GROUP';
+export const SYNTHETIC_FIRM_CLIENT_PRACTICE = 'SYNTHETIC FIRM CLIENT PRACTICE';
+
+/** The firm the console journey suspends and reinstates (BIL-09): active when seeded, with no one who signs in. */
+export const SYNTHETIC_CONSOLE_SUSPENSION_FIRM = 'SYNTHETIC CONSOLE SUSPENSION FIRM';
 
 export const SYNTHETIC_PRACTICES = {
   north: 'SYNTHETIC PHYSICAL THERAPY NORTH',

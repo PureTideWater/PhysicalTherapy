@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import {
   type AuthenticationResponseJSON,
@@ -13,8 +13,9 @@ import {
 
 import type { DevCredentialStore, DevUserRecord } from './dev-store';
 import { DEFAULT_SCRYPT_COST, type ScryptCost, hashPassword, passwordProblems, verifyPassword } from './password';
-import type { AuthProvider, AuthStep, KeyChallenge, NewPasswordStep, TotpSetup } from './provider';
+import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, TotpSetup } from './provider';
 import type { Sealer } from './seal';
+import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS, PROVIDER_GRANT_SECONDS } from './step-limits';
 import { newTotpSecret, totpUri, verifyTotp } from './totp';
 
 /**
@@ -23,7 +24,9 @@ import { newTotpSecret, totpUri, verifyTotp } from './totp';
  * sign-in with a temporary one, TOTP enrollment before anything else and a TOTP code on every sign-in
  * (each code once), and real WebAuthn verification with user verification required, so a browser's
  * virtual authenticator can exercise the hardware-key path. Challenges last three minutes (the user
- * pool's sign-in session) and grants fifteen (its access tokens).
+ * pool's sign-in session) and grants fifteen (its access tokens), from the constants the sign-in
+ * steps state and infra pins (step-limits.ts). A forgotten password is reset by a mailed six-digit code, as Cognito's
+ * ForgotPassword does it: kept hashed, for the code's hour, used once, five tries, a new request replacing it.
  */
 
 export interface WebAuthnSettings {
@@ -40,12 +43,18 @@ export interface DevAuthOptions {
   readonly webauthn: WebAuthnSettings;
   /** Delivers an invitation's temporary password (the local outbox; Cognito emails it). */
   readonly deliverInvitation: (email: string, temporaryPassword: string) => Promise<void>;
+  /** Delivers a password-reset code (the local reset outbox; Cognito emails it). None: the code goes nowhere. */
+  readonly deliverResetCode?: (email: string, code: string) => Promise<void>;
   readonly now?: () => Date;
   readonly scryptCost?: ScryptCost;
 }
 
-const CHALLENGE_MS = 3 * 60_000;
-const GRANT_MS = 15 * 60_000;
+const CHALLENGE_MS = PROVIDER_CHALLENGE_SECONDS * 1000;
+const GRANT_MS = PROVIDER_GRANT_SECONDS * 1000;
+const RESET_CODE_MS = PASSWORD_RESET_CODE_SECONDS * 1000;
+/** Wrong codes a reset code takes before it stops working (Cognito's own cap is unverified; ADR 0081). */
+export const DEV_RESET_ATTEMPTS = 5;
+const REJECTED: PasswordResetResult = { kind: 'rejected' };
 
 type Step = 'new_password' | 'mfa_setup' | 'mfa' | 'key' | 'register';
 
@@ -69,6 +78,12 @@ function nobody(cost: ScryptCost): string {
 
 function toBytes(base64url: string): Uint8Array<ArrayBuffer> {
   return new Uint8Array(Buffer.from(base64url, 'base64url'));
+}
+
+/** The record without its reset code. */
+function withoutReset(record: DevUserRecord): DevUserRecord {
+  const { reset: _reset, ...rest } = record;
+  return rest;
 }
 
 export function temporaryPassword(): string {
@@ -114,7 +129,8 @@ export class DevAuthProvider implements AuthProvider {
   /** After the password: enroll TOTP first, then a code every time. */
   private secondFactor(record: DevUserRecord): AuthStep {
     return record.totpSecret === null
-      ? { kind: 'mfa_setup_required', challenge: this.challenge({ sub: record.sub, step: 'mfa_setup' }) }
+      ? // The record's subject, as Cognito names its user on MFA_SETUP (docs/adr/0088, D3).
+        { kind: 'mfa_setup_required', challenge: this.challenge({ sub: record.sub, step: 'mfa_setup' }), subject: record.sub }
       : { kind: 'mfa_required', challenge: this.challenge({ sub: record.sub, step: 'mfa' }) };
   }
 
@@ -281,10 +297,11 @@ export class DevAuthProvider implements AuthProvider {
     return Promise.resolve();
   }
 
-  async ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }> {
+  async ensureUser(email: string): Promise<EnsuredUser> {
     const existing = await this.options.store.byEmail(email);
     if (existing !== undefined) {
-      return { sub: existing.sub, created: false };
+      // The twin's FORCE_CHANGE_PASSWORD: the temporary password has not been replaced.
+      return { sub: existing.sub, created: false, neverSignedIn: existing.temporary };
     }
     const sub = randomUUID();
     const password = temporaryPassword();
@@ -298,18 +315,78 @@ export class DevAuthProvider implements AuthProvider {
       credentials: [],
     });
     await this.options.deliverInvitation(email, password);
-    return { sub, created: true };
+    return { sub, created: true, neverSignedIn: true };
   }
 
-  async resendInvitation(email: string): Promise<void> {
+  async resendInvitation(email: string): Promise<boolean> {
     const existing = await this.options.store.byEmail(email);
     if (existing?.temporary !== true) {
-      return;
+      return false;
     }
     const password = temporaryPassword();
     const passwordHash = await hashPassword(password, this.cost);
     await this.options.store.update(existing.sub, (current) => ({ ...current, passwordHash }));
     await this.options.deliverInvitation(email, password);
+    return true;
+  }
+
+  /** The code's keyed hash: what the store keeps instead of the code. */
+  private resetHash(code: string): string {
+    return this.options.sealer.sign('dev-reset', code).toString('base64url');
+  }
+
+  /** Whether a kept hash is the offered one, compared in constant time (SEC-N4); a hash of another length is not. */
+  private static sameHash(kept: string, offered: string): boolean {
+    const a = Buffer.from(kept, 'utf8');
+    const b = Buffer.from(offered, 'utf8');
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    // The same work for every address: a code drawn and hashed. Only a known record with a chosen password keeps
+    // and receives it (Cognito answers an unknown address with a simulated delivery and refuses an invited user).
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const codeHash = this.resetHash(code);
+    const record = await this.options.store.byEmail(email);
+    if (record === undefined || record.temporary) {
+      return;
+    }
+    const reset = { codeHash, expiresAt: this.now().getTime() + RESET_CODE_MS, attempts: 0 };
+    await this.options.store.update(record.sub, (current) => ({ ...current, reset }));
+    await this.options.deliverResetCode?.(email, code);
+  }
+
+  async confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult> {
+    const problems = passwordProblems(password);
+    if (problems.length > 0) {
+      return { kind: 'invalid_password', problems };
+    }
+    const offered = this.resetHash(code);
+    const record = await this.options.store.byEmail(email);
+    const kept = record?.reset;
+    if (record === undefined || kept === undefined) {
+      return REJECTED;
+    }
+    const live = (reset: DevUserRecord['reset']): boolean => reset !== undefined && this.now().getTime() < reset.expiresAt && reset.attempts < DEV_RESET_ATTEMPTS;
+    if (!live(kept) || !DevAuthProvider.sameHash(kept.codeHash, offered)) {
+      // A wrong try counts; at the cap, or once expired, the code is gone.
+      await this.options.store.update(record.sub, (current) => {
+        const reset = current.reset;
+        if (reset === undefined || reset.codeHash !== kept.codeHash) {
+          return current;
+        }
+        const attempts = live(reset) ? reset.attempts + 1 : DEV_RESET_ATTEMPTS;
+        return attempts >= DEV_RESET_ATTEMPTS ? withoutReset(current) : { ...current, reset: { ...reset, attempts } };
+      });
+      return REJECTED;
+    }
+    const passwordHash = await hashPassword(password, this.cost);
+    // The code is taken once: only if it is still the one checked, and still live, is the password set. TOTP, its
+    // last step, the keys and `temporary: false` stay, so the next sign-in still asks for the second factor.
+    const updated = await this.options.store.update(record.sub, (current) =>
+      current.reset?.codeHash === kept.codeHash && live(current.reset) ? { ...withoutReset(current), passwordHash } : current,
+    );
+    return updated?.passwordHash === passwordHash ? { kind: 'reset' } : REJECTED;
   }
 
   globalSignOut(): Promise<void> {

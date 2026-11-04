@@ -21,6 +21,15 @@ export const CHECKER_DIR = 'tools/check-action-pins';
 export const CHECKER_FILE = `${CHECKER_DIR}/index.ts`;
 export const AGE_FILE = `${CHECKER_DIR}/age.ts`;
 export const AGE_EXCEPTIONS = `${CHECKER_DIR}/age-exceptions.json`;
+/**
+ * The release binaries the workflows download by a pinned SHA-256 rather than run as an action: each release.txt's
+ * `version` line, aged as an action pin is (its tag's commit on the upstream; docs/adr/0066, Part 5) when it is new
+ * against the base, so a bump is held to the same three days by a machine, never by its review alone.
+ */
+export const PINNED_RELEASES = [
+  { file: 'tools/trivy/release.txt', repo: 'aquasecurity/trivy' },
+  { file: 'tools/gitleaks/release.txt', repo: 'gitleaks/gitleaks' },
+] as const;
 const WORKFLOWS_DIR = '.github/workflows';
 
 /** A git command in the checkout, run without the job's token, which no local read needs (the security review's N4). */
@@ -39,6 +48,8 @@ export interface BaseState {
   readonly hasAge: boolean;
   /** The merge base's age-exceptions.json (AGE_EXCEPTIONS), or undefined when it has none. */
   readonly ageExceptions: string | undefined;
+  /** The merge base's text of each PINNED_RELEASES file, by its path (absent: the base has none). */
+  readonly releases: Readonly<Record<string, string>>;
 }
 
 /** The merge base of BASE and HEAD, with the base's workflows and the checker's presence and change. */
@@ -69,7 +80,12 @@ export function baseState(root: string, base: string): BaseState {
   const everyPin = !hasChecker ? `the base ${mergeBase.slice(0, 12)} has no ${CHECKER_DIR}` : changed.stdout.trim() !== '' ? `this change edits ${CHECKER_DIR}` : undefined;
   const hasAge = git(root, ['cat-file', '-e', `${mergeBase}:${AGE_FILE}`]).status === 0;
   const exceptions = git(root, ['show', `${mergeBase}:${AGE_EXCEPTIONS}`]);
-  return { mergeBase, workflows, everyPin, hasAge, ageExceptions: exceptions.status === 0 ? exceptions.stdout : undefined };
+  const releases: Record<string, string> = {};
+  for (const { file } of PINNED_RELEASES) {
+    const shown = git(root, ['show', `${mergeBase}:${file}`]);
+    if (shown.status === 0) releases[file] = shown.stdout;
+  }
+  return { mergeBase, workflows, everyPin, hasAge, ageExceptions: exceptions.status === 0 ? exceptions.stdout : undefined, releases };
 }
 
 /** A use's signature: the pin and the inputs its step gives, with release.yml's steps apart (their caches are checked). */
