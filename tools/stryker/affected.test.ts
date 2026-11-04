@@ -664,6 +664,16 @@ describe('what stops the changes job, and the tooling’s own packages, on this 
     expect(TEST_TOOLING).toContain('typescript');
     expect(TEST_TOOLING).not.toContain('typescript-eslint');
   }, 60_000);
+
+  it('prints a lockfile entry holding a control character JSON-quoted in its reason, so no line it holds starts a workflow command', () => {
+    const forged = '99.0.0\n::warning title=forged::x';
+    const result = affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after: bump(lock, 'tsx', version('tsx'), forged) } }, closures, global);
+    expect(result.packages).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    const lines = Object.values(result.reasons).flat();
+    expect(lines.some((line) => line.startsWith('pnpm-lock.yaml moves ') && line.includes(`tsx@${JSON.stringify(forged).slice(1, -1)}`))).toBe(true);
+    // eslint-disable-next-line no-control-regex -- the characters a log could read as a line break are what this looks for
+    expect(lines.filter((line) => /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(line))).toEqual([]);
+  }, 60_000);
 });
 
 /** A workflow in mutation.yml's shape, each step reference pinned: the cases' base text. */

@@ -754,7 +754,7 @@ export function affected(change: Change, closures: readonly Closure[], global: G
       const was = new Set(lockedPackages(before, imports, tooling));
       const now = new Set(lockedPackages(after, imports, tooling));
       const moved = [...new Set([...was, ...now])].filter((key) => was.has(key) !== now.has(key)).sort();
-      if (moved.length > 0) note(closure.pkg, `${lockfile} moves ${moved.slice(0, 3).join(', ')}${moved.length > 3 ? ` and ${String(moved.length - 3)} more` : ''}`);
+      if (moved.length > 0) note(closure.pkg, `${lockfile} moves ${moved.slice(0, 3).map((key) => (hasControlCharacter(key) ? quoted(key) : key)).join(', ')}${moved.length > 3 ? ` and ${String(moved.length - 3)} more` : ''}`);
     }
   }
   return { packages: MUTATION_PACKAGES.filter((pkg) => reasons[pkg] !== undefined), reasons, inert: verdicts.flatMap((verdict) => verdict.inert) };

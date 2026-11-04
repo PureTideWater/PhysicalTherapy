@@ -1922,7 +1922,8 @@ since no closure imports `playwright-core`.
   JSON-quoted. At 50029e64 such a path was printed raw, so `packages/money/src/a\n::warning ...` started a workflow
   command in the log and summary, and one under `tools/stryker/**`, `patches/**` or a data glob such as
   `fixtures/golden/**` affected no package, since a trailing `**` compiled to a `.` that does not match a line break.
-  Both predate this part; it had quoted manifest paths only.
+  Both predate this part; it had quoted manifest paths only. A closure problem's line and a lockfile entry a reason
+  names are JSON-quoted the same way when they hold one.
 - **N53** (the review of #96, N1). Stryker's core must be the root's direct link. At 50029e64 the check asked only that
   the resolved core lie under `<root>/node_modules`, and the tsx and stryker shims set `NODE_PATH` to
   `<root>/node_modules/.pnpm/node_modules`, which is inside it, so with the root's own `@stryker-mutator/core` removed a
