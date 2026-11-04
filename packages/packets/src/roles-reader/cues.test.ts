@@ -127,7 +127,8 @@ describe('"respectively"', () => {
   });
 
   it('maps a list of the kind of the last figure before "respectively", joined by commas, "and" or "or" alone (rule 3)', () => {
-    expect(roles('The payer allowed and paid $1.00 and 5%, respectively.', '$1.00')).toBe('paid');
+    // Figures of two kinds are no list in a plain form: each fails (PE3-3).
+    expect(reading('The payer allowed and paid $1.00 and 5%, respectively.', '$1.00')).toMatchObject({ roles: 'any', unread: true });
     expect(reading('The payer allowed and paid $1.00 and 5%, respectively.', '5%')).toMatchObject({ roles: 'any', unread: true });
     expect(reading('The contract expected and the payer allowed $1.00 and then $9.00, respectively.', '$1.00')).toMatchObject({ roles: 'any', unread: true });
     expect(roles('The contract expected or the payer allowed $1.00 or $9.00, respectively.', '$1.00')).toBe('expected');
@@ -286,5 +287,52 @@ describe('the words around a figure', () => {
   it('read a year alone before a fee schedule’s noun as the schedule’s, never a full date', () => {
     expect(roles('The 2026-01-05 fee schedule applies.', '2026-01-05')).toBe('any');
     expect(roles('The 2026 fee schedule applies.', '2026')).toBe('schedule_year');
+  });
+});
+
+describe('a "respectively" list’s clause and its cues’ own words (CORR3-2, PE3-3, PE3-1)', () => {
+  it('leaves a figure of a clause an edge and a conjunction or an opener start before the list its own, and fails every other one of the list’s clause outside a plain form', () => {
+    for (const text of [
+      'The payer paid $5.00 per line, and the contract expected $1.00 and $2.00, respectively.',
+      'The payer paid $5.00, and the contract expected $1.00 and $2.00, respectively.',
+      'The payer paid $5.00 per line, and $1.00 and $2.00 were expected, respectively.',
+      'The payer paid $5.00 per line, because the contract expected $1.00 and $2.00, respectively.',
+    ]) {
+      expect(reading(text, '$5.00'), text).toMatchObject({ roles: ['paid'], unread: false });
+      expect(reading(text, '$1.00'), text).toMatchObject({ roles: 'any', unread: true });
+      expect(reading(text, '$2.00'), text).toMatchObject({ unread: true });
+    }
+    // Without the edge and the conjunction, one clause: every figure of it fails.
+    expect(reading('The payer paid $5.00 per line and the contract expected $1.00 and $2.00, respectively.', '$5.00').unread).toBe(true);
+    // A clause opened after the list is no list's start: the list fails as a list.
+    expect(reading('$1.00 and $2.00, which were expected and allowed, respectively.', '$1.00').unread).toBe(true);
+    // An Oxford comma joins the list.
+    const oxford = '$1.00, $2.00, and $3.00 were the expected, allowed and paid amounts, respectively.';
+    expect(roles(oxford, '$2.00')).toBe('allowed');
+    expect(reading(oxford, '$3.00')).toMatchObject({ roles: ['paid'], unread: false });
+  });
+
+  it('reads a run of percentages or dates in a plain form by its own family’s cues, so another figure of its clause reads as any other', () => {
+    const percent = 'The payer paid $1.00 per line and the contract and interest are 112.5% and 9%, respectively.';
+    expect(reading(percent, '$1.00')).toMatchObject({ roles: ['paid'], unread: false });
+    expect(roles(percent, '9%')).toBe('interest_rate');
+    const dates = 'The payer allowed $1.00 per line and the services were billed and paid on 2026-01-05 and 2026-01-07, respectively.';
+    expect(reading(dates, '$1.00')).toMatchObject({ roles: ['allowed'], unread: false });
+    expect(roles(dates, '2026-01-07')).toBe('paid_date');
+    const days = 'The payer allowed $1.00 per line and the services were billed and paid on March 5 and March 7, respectively.';
+    expect(reading(days, '$1.00')).toMatchObject({ roles: ['allowed'], unread: false });
+    // A sentence that opens with a conjunction.
+    expect(roles('And the contract expected and the payer allowed $1.00 and $2.00, respectively.', '$2.00')).toBe('allowed');
+  });
+
+  it('gives a cue after the first the words back to the "and", "or" or comma that joins it, never the cue before’s', () => {
+    const scope = (text: string, written: string) => reading(text, written).scope;
+    expect(scope('$1.00 and $2.00 were expected in total, allowed per line, respectively.', '$2.00')).toBe('line');
+    expect(scope('$1.00 and $2.00 were expected in total allowed per line, respectively.', '$2.00')).toBe('line');
+    expect(scope('$1.00 and $2.00 were expected in total allowed per line, respectively.', '$1.00')).toBe('total');
+    // The first cue's words start at it: a scope before it is no cue's.
+    expect(scope('The payer allowed $5.00 per line, the contract expected and the payer paid $1.00 and $2.00, respectively.', '$1.00')).toBeNull();
+    expect(scope('The contract expected and per line the payer paid $1.00 and $2.00, respectively.', '$2.00')).toBe('line');
+    expect(scope('The contract expected and per line the payer paid $1.00 and $2.00, respectively.', '$1.00')).toBeNull();
   });
 });

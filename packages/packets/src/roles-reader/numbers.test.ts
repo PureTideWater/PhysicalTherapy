@@ -198,3 +198,74 @@ describe('a list', () => {
     expect(roles('See version 1, and 2 here.', '2')).toBe('version');
   });
 });
+
+describe('what an amount is stated per, after the review of the converging fix (PE3-1, PE3-2, CORR3-1; docs/adr/0086)', () => {
+  const subordinators = ['when', 'whenever', 'as', 'because', 'since', 'although', 'though', 'if', 'unless', 'lest', 'after', 'before', 'until', 'till', 'once', 'than', 'despite', 'unlike'];
+  const relatives = ['which', 'that', 'who', 'whom', 'whose', 'where', 'wherever', 'whereby'];
+
+  it('ends a figure’s own clause at a subordinator, a relative or "nor", so a trailing clause’s scope is not the figure’s (PE3-1)', () => {
+    for (const word of [...subordinators, ...relatives, 'nor', 'but', 'yet']) {
+      expect(scope(`It allowed $9.00 ${word} each line was reprocessed.`, '$9.00'), word).toBeNull();
+      expect(scope(`It allowed $9.00 in total ${word} each line was reprocessed.`, '$9.00'), word).toBe('total');
+    }
+    // Its own clause's words before the subordinator still count.
+    expect(scope('It allowed $9.00 per line after the coinsurance.', '$9.00')).toBe('line');
+  });
+
+  it('reads none of a figure’s words before it after a subordinator, whose clause may end with no edge (PE3-1)', () => {
+    for (const word of subordinators) {
+      expect(scope(`${word} each line was reprocessed the payer allowed $9.00.`, '$9.00'), word).toBeNull();
+      expect(scope(`${word} each line was reprocessed the payer allowed $9.00 per line.`, '$9.00'), word).toBe('line');
+    }
+    // After a relative, the figure's clause is the relative's own: its words count.
+    expect(scope('The amount, which each line was allowed, $9.00.', '$9.00')).toBeNull();
+    expect(scope('It is the amount which each line was allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('It is the amount because each line was allowed $9.00.', '$9.00')).toBeNull();
+  });
+
+  it('reads every scope a clause states, wherever it stands, and none when two differ (PE3-1)', () => {
+    expect(scope('It allowed $9.00 in total for each line.', '$9.00')).toBeNull();
+    expect(scope('It allowed $9.00 for each line in total.', '$9.00')).toBeNull();
+    expect(scope('It allowed $9.00 per line on each line.', '$9.00')).toBe('line');
+    expect(scope('It allowed $9.00 each per line.', '$9.00')).toBe('line');
+    expect(scope('It allowed $9.00 each in total.', '$9.00')).toBeNull();
+    expect(scope('It allowed $9.00 per a contract in total.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 per unit for each line.', '$9.00')).toBeNull();
+    expect(scope('It allowed $9.00 each.', '$9.00')).toBeNull();
+    expect(scope('On each of the 3 lines the payer allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('For every one of the 3 lines the payer allowed $9.00.', '$9.00')).toBeNull();
+    expect(scope('The 3 lines were allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('The 3 lines were allowed $9.00 per line.', '$9.00')).toBeNull();
+  });
+
+  it('reads one row only by its number, an ordinal or a patient’s or a claim’s, never the row’s noun alone (PE3-2)', () => {
+    for (const row of ['line 1', 'row 2', 'visit 3', 'the 2nd line', 'the second row', 'Patient 2’s line', 'Patient 2’s row', 'the patient’s line', 'the claim’s row', 'the claim line']) {
+      expect(scope(`It allowed $9.00 for ${row}.`, '$9.00'), row).toBe('line');
+    }
+    for (const row of ['the line', 'the row', 'the visit', 'the line schedule', 'the remittance line', 'Patient 2’s visit', 'the patient’s visit', 'the payer’s line', 'the 2 line items']) {
+      expect(scope(`It allowed $9.00 for ${row}.`, '$9.00'), row).toBeNull();
+    }
+    // An opening's total is the figure's where its own words name no row.
+    expect(scope('In total, the payer allowed $9.00 on the remittance line.', '$9.00')).toBe('total');
+    expect(scope('In total, the payer allowed $9.00 on line 2.', '$9.00')).toBe('line');
+  });
+
+  it('reads a total over rows named by their labels or a partitive as no scope: no pattern’s total (CORR3-1)', () => {
+    for (const rows of ['for lines 1 and 2', 'across lines 1 and 2', 'over lines 1 to 2', 'for lines 1–2', 'across claims 1 and 2', 'for rows 1 through 2', 'for 2 of the 3 lines', 'for two of the lines', 'in total for lines 1, 2 and 3']) {
+      expect(scope(`It allowed $9.00 ${rows}.`, '$9.00'), rows).toBeNull();
+    }
+    for (const text of ['2 of the 3 lines were allowed $9.00.', 'On 2 of the 3 lines the payer allowed $9.00.', 'Lines 1 to 2 were allowed $9.00.', 'Lines 1 and 2 were allowed $9.00 in total.', 'Lines 1, 2 and 3 were allowed $9.00 in total.', 'Claims 1 and 2 were allowed $9.00.']) {
+      expect(scope(text, '$9.00'), text).toBeNull();
+    }
+    expect(scope('On claim 2 the payer allowed $9.00 in total.', '$9.00')).toBeNull();
+    // A year or another label before the rows is no part of them.
+    expect(scope('In 2026 the payer allowed $9.00 per line.', '$9.00')).toBe('line');
+    expect(scope('Version 2 for the 3 lines was allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 for the line', '$9.00')).toBeNull();
+    // Per line, a part of the rows is each line's; all of them, or "each of" them, as before.
+    expect(scope('It allowed $9.00 per line for lines 1 and 2.', '$9.00')).toBe('line');
+    expect(scope('All of the 3 lines were allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 for all 3 lines.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 for each of the 3 lines.', '$9.00')).toBe('line');
+  });
+});

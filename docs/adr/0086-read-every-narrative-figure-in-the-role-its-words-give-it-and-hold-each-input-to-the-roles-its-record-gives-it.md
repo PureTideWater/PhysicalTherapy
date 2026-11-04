@@ -128,18 +128,27 @@ noun) is unchanged. How the reader applies the rules (`roles-reader/numbers.ts` 
 `roles-words/prose.ts`):
 
 - **A scope's words.** Each line: "per", "each", "every" or "a" with a line, visit, row or service up to two words on,
-  "apiece", "each of the N lines"; one row named alone is a line's value, never a total ("on line 1", "the claim line",
-  "Patient 2's line", "the third row"). Each unit: "per", "each" or "a" with "unit". In total: "in all", "in total",
+  "apiece", "each of the N lines"; one row named alone is a line's value, never a total, in closed forms only: the row's
+  noun before its number or after an ordinal ("on line 1", "visit 2", "the third row"), or a patient's or a claim's line
+  or row ("Patient 2's line", "the patient's line", "the claim line"); the noun alone is no row ("in line with", "the
+  line schedule", "the bottom line", "the remittance line", "after the visit", "the patient's visit"; PE3-2). Each unit: "per", "each" or "a" with "unit". In total: "in all", "in total",
   "all told", "total" and its forms, "altogether", "combined", "overall", "aggregate", "across", "together"; "for" or
   "over" before the rows in the plural ("for these 3 lines"); "for", "on" or "over" before the claim not followed by a
   line's noun ("for the claim", never "the claim line"); and, before the figure in its own clause, the rows in the
-  plural ("the 3 lines come to"). "per" before a determiner is "according to", no scope ("per the contract"). "each"
+  plural ("the 3 lines come to"). Rows named by their labels or a part of them ("for lines 1 and 2", "across claims 1 to
+  2", "Lines 1 and 2 were allowed", "2 of the 3 lines") are no pattern's rows: they state no total, and with a total's
+  own words ("in total", "across") none (CORR3-1). "per" before a determiner is "according to", no scope ("per the contract"). "each"
   alone, or "each" of anything else ("each claim"), is stated per something but neither a line nor a unit: no scope;
-  with a line's or a unit's words beside it in the clause, that one. Two scopes in one clause that differ state none.
+  with a line's or a unit's words beside it in the clause, that one. Every scope a clause's words state counts, wherever
+  it stands, and two that differ state none ("in total for each line"; PE3-1).
 - **Its own clause.** After the figure, seven tokens at most, past counts (a number or a code), up to an edge, a dash
-  or parenthesis, a conjunction ("and", "but", "or", "while", "whereas", "yet"), a clause's opener ("which", "that",
-  "as", "because", "so" and the like, and "therefore", "thus", "hence") or any other figure; before it, back to the
-  same bounds, past counts, and after an amount there, past the words after it that state that amount's own scope
+  or parenthesis, a conjunction ("and", "but", "or", "nor", "while", "whereas", "yet"), a clause's opener (a relative:
+  "which", "that", "who", "where", "whereby" and the like; a subordinator: "when", "whenever", "as", "because",
+  "since", "although", "if", "unless", "after", "before", "until", "till", "once", "than", and "despite" and "unlike",
+  which open a clause's like; and "so", "therefore", "thus", "hence") or any other figure ("$70.00 in total after each
+  line was reprocessed" states a total; PE3-1); before it, back to the same bounds, past counts, and nothing after a
+  subordinator, whose clause may meet the figure's with no edge ("After each line was reprocessed the payer allowed
+  $70.00" states nothing of $70.00), and after an amount there, past the words after it that state that amount's own scope
   ("$300.00 for these 3 lines against $210.00" states nothing of $210.00).
 - **The opening phrase.** The words from the sentence's start to its first edge, when they are a scope phrase alone (a
   scope's words, determiners and counts): "For each line,", "On each of the 3 lines,", "Per line,", "In total,",
@@ -147,15 +156,20 @@ noun) is unchanged. How the reader applies the rules (`roles-reader/numbers.ts` 
   the sentence ("For each line, the payer allowed $70.00, and the contract expected $300.00" fails at $300.00;
   "..., while across the 3 lines it allowed $210.00" passes). A phrase with other words is no scope phrase ("Under the
   contract for each line," and "Each of the 3 lines was short," state nothing of a later clause).
-- **A "respectively" list.** In a sentence that says "respectively", the figures of the kind of the last amount,
-  percentage or date before it (since the "respectively" before, if any), or, after a "respectively" with none before
-  it ("Respectively, $1.00 and $9.00 were ..."), those after it. They must be two or more, joined by commas, "and" or
-  "or" alone. Its cues before it: the words back from the list that are cues or the list's own (determiners, "were",
+- **A "respectively" list.** In a sentence that says "respectively", among the amounts, percentages and dates before
+  it (since the "respectively" before, if any, and since the last clause an edge and a conjunction or a clause's opener
+  start before the list: "The payer paid $56.00 per line, and the contract expected ..." leaves $56.00 its own; CORR3-2),
+  the run of them joined by commas, "and" or "or" alone that ends at the last; when it is in neither plain form, every
+  one of them fails ("$70.00 and $100.00 per line on 2026-04-08 were ..."; PE3-3), and when it is in one, the others
+  read as any other figure. After a "respectively" with none before it ("Respectively, $1.00 and $9.00 were ..."),
+  those after it fail. The list's figures must be two or more, of one kind, joined by commas, "and" or "or" alone. Its cues before it: the words back from the list that are cues or the list's own (determiners, "were",
   "are", "amounts", a scope's words, "and", "or", "the payer"), with "respectively" right after the list and then an
   edge or the sentence's end. Its cues after it: the words after the list that are cues, the list's own, commas and one
   "respectively", to "respectively" when it follows the cues, else to an edge or the sentence's end, and once every
-  figure has its cue, no further cue, "and", "or" or "the payer". A cue's own scope is the scope words after it, up to
-  the next cue; the words between the list and its cues after it, and those after "amounts" (the noun of every cue),
+  figure has its cue, no further cue, "and", "or" or "the payer". A cue's own scope is its own words, the scope words,
+  determiners and commas right after them, and, for a cue after the first, those right before it back to the "and" or
+  "or" that joins it ("The contract expected in total and per line the payer allowed ...": in total, then per line;
+  PE3-1), never a word of another cue; the words between the list and its cues after it, and those after "amounts" (the noun of every cue),
   are the whole list's; a figure's cue's and the list's that differ state none; with neither, the opening phrase's.
 - **The report.** A figure that fails by rule 2 or 3 is `figure_not_in_input` with its kind, like any other: the
   database's report check lists the codes, and a new code is a migration, Lane A's. The reading carries why (`needs`:
@@ -170,6 +184,11 @@ failure passes where its sentence is in a recognised form (NEW-N2, NF-3, PE-D3, 
 with the plain instruction: rule 2 for a list or figure whose words state no scope by rule 1 (NEW-N1's totals and line
 values before "which", NF-1, N1, the controls of NEW-R2P2-2), the opening phrase's scope for a later clause that
 states none (NF-2's "the claim was allowed" and "so the payer owes"), and rule 3 for a list in neither plain form.
+The review of the converging fix (PE3-1, PE3-2, PE3-3, CORR3-1, CORR3-2) has its own section there, read by the same
+three rules with no reach added: a figure's clause ends at a subordinator or "nor"; a row's noun alone names no row;
+rows named by their labels or a part of them state no total; a list's clause is the list's. "For the claim" stays a
+total whatever the pattern's claims, since rule 1(b) names it; reading it as the total only for a one-claim pattern
+(CORR3-1's last point) is the decision's to make, and is not changed here.
 
 **Facts by role, `facts.ts`.** `NarrativeFacts` holds each value an input holds, by kind, with the roles its record
 gives it (`roles`), through one adder that names a role, so no value enters without one. A date's month, day of the
@@ -310,13 +329,15 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
   templates), the 300 MOD-03 reference narratives, the code-built draft of every generated pattern and the CAS-08
   fixture are each as designed; CAS-43's 87 misstatements each fail at their figure. Every reproduction of the review of
   2026-11-01, of its fix round and of the rounds of fix and recheck after it, and each verifier's variant, is a named
-  example (`role-examples.ts` `REVIEWED`, 260: 173 fail at the figures they misstate, CAS-43, each with what its words
-  must say when that is why; 87 pass, CAS-44), asserted by the verifier, the gateway and the reader's tests. The
+  example (`role-examples.ts` `REVIEWED`, 325: 223 fail at the figures they misstate, CAS-43, each with what its words
+  must say when that is why; 102 pass, CAS-44), asserted by the verifier, the gateway and the reader's tests. The
   properties (`roles.property.test.ts`) add sentences with two cues, the figure held only in the farther one's role;
   quoted figures that fill a list between edges; a year's lead before a count's noun; every date role, the deadline's
   among them; and, with the closed rules, each amount written with and without its scope (rule 2), a "respectively"
   list in both plain forms mapped to its cues and their scopes in order with the swap failing, and a list in neither
-  plain form failing at every figure (rule 3); each ran over 40 seeds with no failure.
+  plain form failing at every figure (rule 3), and, after the review of the converging fix, a stated total or no scope
+  with a trailing "after each line" clause, a row's noun alone ("in line with") and a part of the rows ("for lines 1
+  and 2", "on 1 of the N lines"), each held to its scope or failing by rule 2; each ran over 40 seeds with no failure.
 - The gateway's swap faults (`eval/gate.golden.test.ts`) now fail the packets verifier too
   (`figure_not_in_input` beside `figure_in_wrong_role`).
 - What it does not do: amount, percentage and date roles rest on cue words, so a narrative can still place a cue the

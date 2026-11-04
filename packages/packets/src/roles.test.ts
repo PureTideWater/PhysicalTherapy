@@ -360,9 +360,9 @@ describe('words after a number', () => {
         expect(roles(`It billed 2 units ${each} ${one}.`, '2'), `${each} ${one}`).toBe('line_units');
       }
       expect(roles(`It billed 2 units ${each} billed line.`, '2'), each).toBe('line_units');
-      // Past two words, "each", "every" or "per" states each of something else; "a" states nothing, and the row named
-      // alone after it is one line's (rule 1).
-      expect(roles(`It billed 2 units ${each} badly billed line.`, '2'), each).toBe(each === 'a' ? 'line_units' : 'units');
+      // Past two words, "each", "every" or "per" states each of something else; "a" states nothing, nor the row's noun
+      // alone after it (rule 1; PE3-2).
+      expect(roles(`It billed 2 units ${each} badly billed line.`, '2'), each).toBe('units');
     }
     expect(roles('It billed 2 units apiece.', '2')).toBe('line_units');
     expect(roles('Each line billed 2 units.', '2')).toBe('line_units');
@@ -877,7 +877,6 @@ describe('amounts, percentages and dates', () => {
       '$1.00 and $2.00 were expected, respectively, and allowed.',
       'The contract expected and the payer allowed $1.00 and $2.00 respectively for each line.',
       '$1.00 and $2.00 were expected and allowed (per line), respectively.',
-      'The payer allowed $1.00 per line, and $2.00 and $3.00 were expected and paid, respectively.',
     ]) {
       expect(reading(text, '$1.00'), text).toMatchObject({ roles: 'any', scope: null, unread: true });
       expect(reading(text, '$2.00'), text).toMatchObject({ unread: true });
@@ -887,6 +886,22 @@ describe('amounts, percentages and dates', () => {
     expect(reading('On 2026-01-05, the contract expected and the payer allowed $1.00 and $2.00, respectively.', '2026-01-05').unread).toBe(false);
     expect(reading('The contract expected and the payer allowed $1.00 and $2.00, respectively, and the payer paid $3.00.', '$3.00')).toMatchObject({ roles: ['paid'], unread: false });
     expect(reading('The payer allowed $1.00 per line.', '$1.00').unread).toBe(false);
+    // A figure of the list's kind in a clause an edge and a conjunction or an opener start before the list is no list's
+    // (CORR3-2); every amount, percentage and date of the list's clause is the list's when it is in neither plain form
+    // (PE3-3), and none when it is in one.
+    for (const lead of [', and', ', while', ', because']) {
+      const text = `The payer allowed $1.00 per line${lead} $2.00 and $3.00 were expected and paid, respectively.`;
+      expect(reading(text, '$1.00'), lead).toMatchObject({ roles: ['allowed'], scope: 'line', unread: false });
+      expect(reading(text, '$2.00'), lead).toMatchObject({ roles: ['expected'], unread: false });
+      expect(reading(text, '$3.00'), lead).toMatchObject({ roles: ['paid'], unread: false });
+    }
+    expect(reading('The payer allowed $1.00 per line, the contract expected and the payer paid $2.00 and $3.00, respectively.', '$1.00')).toMatchObject({ roles: ['allowed'], unread: false });
+    expect(reading('The payer allowed $1.00 per line and the contract expected $2.00 and $3.00, respectively.', '$1.00').unread).toBe(true);
+    expect(reading('$1.00, $2.00, and $3.00 were the expected, allowed and paid amounts, respectively.', '$1.00')).toMatchObject({ roles: ['expected'], unread: false });
+    for (const written of ['$1.00', '$2.00', '2026-04-08']) {
+      expect(reading('$1.00 and $2.00 per line on 2026-04-08 were the expected and allowed amounts, respectively.', written), written).toMatchObject({ roles: 'any', unread: true });
+    }
+    expect(reading('$1.00 and 2026-04-08 were the allowed amount and the payment date, respectively.', '$1.00')).toMatchObject({ roles: 'any', unread: true });
   });
 
   it('read what an amount or a count of units is stated per: its own clause’s words, else its sentence’s opening scope phrase (rule 1; CORR-7)', () => {
@@ -904,9 +919,14 @@ describe('amounts, percentages and dates', () => {
       expect(scope(`It allowed $9.00 on each of the 3 ${lines}.`, '$9.00'), lines).toBe('line');
     }
     expect(scope('It allowed $9.00 on each of the 3 claims.', '$9.00')).toBe(null);
-    // One row named alone is a line's value, never a total (N3); "per" before a determiner is "according to" (N4).
-    for (const row of ['on line 1', 'for the claim line', 'on the third row', 'for the visit']) {
+    // One row named alone is a line's value, never a total (N3; PE3-2): by its number, an ordinal, or a patient's or a
+    // claim's; the row's noun alone is none (an idiom, a modifier, a document's part, an event); "per" before a
+    // determiner is "according to" (N4).
+    for (const row of ['on line 1', 'for row 2', 'for visit 2', 'for the claim line', 'on the third row', 'on the claim’s line', 'for the patient’s row', 'on Patient 2’s line']) {
       expect(scope(`It allowed $9.00 ${row}.`, '$9.00'), row).toBe('line');
+    }
+    for (const row of ['for the visit', 'in line with its policy', 'on the remittance line', 'by the line schedule', 'on the bottom line', 'on the patient’s visit', 'on Patient 2’s visit', 'on 3 line items', 'for the row']) {
+      expect(scope(`It allowed $9.00 ${row}.`, '$9.00'), row).toBe(null);
     }
     for (const per of ['per the contract', 'per its contract', 'per the fee schedule', 'per a contract']) {
       expect(scope(`It allowed $9.00 ${per}.`, '$9.00'), per).toBe(null);

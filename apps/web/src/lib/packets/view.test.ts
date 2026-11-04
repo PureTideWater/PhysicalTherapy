@@ -212,7 +212,7 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     const unscoped = 'The payer allowed $210.00 [3]. These were $300.00 and $210.00, respectively [3].';
     const unscopedReport = verifyNarrative(unscoped, narrativeFacts(content), []);
     expect(failsNowRefusal(unscopedReport, checkedFigures(unscoped, narrativeFacts(content)).filter((figure) => !figure.passed))).toBe(
-      'the verifier passed this version when it was written and fails it now (3 mismatches: in sentence 1, an amount whose words must say whether it is per line or in total; in sentence 2, an amount whose words must give it its own words instead of “respectively” (twice)). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved',
+      'the verifier passed this version when it was written and fails it now (3 mismatches: in sentence 1, an amount whose words must say whether it is per line or in total; in sentence 2, an amount that needs its own words instead of “respectively” (twice)). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved',
     );
     // A mismatch the builder marks nothing for: never "Its figures are marked" (NEW-N3).
     const unmarked = verifyNarrative('The payer paid less than the contract requires.', narrativeFacts(content), []);

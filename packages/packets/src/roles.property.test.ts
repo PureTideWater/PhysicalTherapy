@@ -510,6 +510,36 @@ describe('properties of the role reader', () => {
     expect(unstated).toBeGreaterThan(0);
   }, 120_000);
 
+  it('reads no scope from a trailing clause or a row’s noun alone, and none a total could take from rows named by their labels or a part of them (rules 1 and 2; PE3-1, PE3-2, CORR3-1)', () => {
+    let parts = 0;
+    fc.assert(
+      fc.property(generated, ({ content }) => {
+        const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        const count = content.lines.length;
+        for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
+          for (const value of [...(oracle.get(role) ?? [])].filter((item) => !item.startsWith('-'))) {
+            const written = (words: string) => template.replace('{}', `${dollars(value)} ${words}`);
+            const unscoped = unscopedHeld(oracle, scoped, role, value);
+            // A trailing clause's "each line" is not the figure's: its own words alone state its scope (PE3-1).
+            expect(passes(written('in total after each line was reprocessed'), content), role).toBe(heldPer(scoped, role, value, 'total'));
+            expect(passes(written('after each line was reprocessed'), content), role).toBe(unscoped);
+            // A row's noun alone states no row (PE3-2).
+            expect(passes(written('in line with its policy'), content), role).toBe(unscoped);
+            if (count >= 2) {
+              // A part of the rows: the pattern's total is never its total (CORR3-1).
+              parts += 1;
+              expect(passes(written('for lines 1 and 2'), content), role).toBe(unscoped);
+              expect(passes(written(`on 1 of the ${String(count)} lines`), content), role).toBe(unscoped);
+            }
+          }
+        }
+      }),
+      { numRuns: 8 },
+    );
+    expect(parts).toBeGreaterThan(0);
+  }, 120_000);
+
   it('reads a "respectively" list in the scope its own words state, never a clause of its own after it, and a scope with each cue as that cue’s figure’s (NEW-N1, NEW-N2)', () => {
     let failed = 0;
     fc.assert(

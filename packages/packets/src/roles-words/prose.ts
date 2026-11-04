@@ -18,13 +18,20 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   /** Words that join a list: "pages 1 and 2", "lines 1 to 3", "lines 1–3" (a dash between two numbers is read as "–"). */
   const LIST_JOINERS = new Set(['and', 'or', 'to', 'through', 'thru', 'plus', ',', '–']);
   /** Conjunctions: the words after a figure stop at one, which opens the next figure's clause ("$300.00 and the remittances show $210.00"). */
-  const CONJUNCTIONS = new Set(['and', 'but', 'or', 'while', 'whereas', 'yet']);
+  const CONJUNCTIONS = new Set(['and', 'but', 'or', 'nor', 'while', 'whereas', 'yet']);
   /**
    * Words that open a clause of their own: with an edge, a dash, a parenthesis, the conjunctions ("while", "but") and
    * RESULT_LEADS ("so"), they bound a figure's own clause, whose words alone state what it is per (rule 1 of
-   * docs/adr/0086).
+   * docs/adr/0086): the relatives, and the subordinators (SUBORDINATORS).
    */
-  const CLAUSE_OPENERS = new Set(['which', 'that', 'who', 'whom', 'whose', 'where', 'when', 'as', 'because', 'since', 'although', 'though', 'if', 'unless']);
+  const RELATIVES = ['which', 'that', 'who', 'whom', 'whose', 'where', 'wherever', 'whereby'];
+  /**
+   * The subordinators, and the prepositions that open a clause's like ("despite each line being reprocessed", "unlike
+   * each line's"). A clause one opens may end with no edge before the next ("After each line was reprocessed the payer
+   * allowed $70.00"), so a figure's words before it after one state nothing (PE3-1).
+   */
+  const SUBORDINATORS = new Set(['when', 'whenever', 'as', 'because', 'since', 'although', 'though', 'if', 'unless', 'lest', 'after', 'before', 'until', 'till', 'once', 'than', 'despite', 'unlike']);
+  const CLAUSE_OPENERS = new Set([...RELATIVES, ...SUBORDINATORS]);
   /** Words that open a clause that states what follows from the sentence before it ("so the payer owes $90.00"): they bound a clause too. */
   const RESULT_LEADS = new Set(['so', 'therefore', 'thus', 'hence']);
   /** A singular noun that names the lines together after "for", "on" or "over", unless a line's noun follows it ("for the claim", never "the claim line"). */
@@ -75,8 +82,10 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   /** Words that name each line: "each line", "per line", "a visit". */
   const EACH = new Set(['each', 'every', 'per', 'a']);
   const ONE_LINE = new Set(['line', 'visit', 'row', 'service']);
-  /** One row's noun: words that name it state a line's value ("on line 1", "the schedule's third row"). */
+  /** One row's noun: before its number ("on line 1", "visit 2"), or a patient's or a claim's line or row, it states a line's value. */
   const ONE_ROW = new Set(['line', 'row', 'visit']);
+  /** The rows' owners whose possessive names one row: "the patient's line", "the claim's row" (a figure's possessive is one too: "Patient 2's line"). */
+  const ROW_OWNERS = new Set(['patient', 'claim']);
   /** The lines after "each of": "on each of the 3 lines". */
   const LINES = new Set(['line', 'lines', 'visit', 'visits', 'row', 'rows', 'service', 'services']);
   /** A unit after "each", "per" or "a": an amount per unit ("$50.00 per unit", "at $50.00 a unit"). */
@@ -108,6 +117,8 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const LIST_FILLERS = new Set(['the', 'a', 'an', 'these', 'those', 'this', 'its', 'their', 'our', 'were', 'are']);
   const LIST_NOUNS = new Set(['amounts']);
   const LIST_LINKS = new Set(['and', 'or', 'payer']);
+  /** What alone joins a "respectively" list's figures: "$100.00 and $70.00", "$1.00, $2.00 or $3.00". */
+  const LIST_JOINED = new Set([',', 'and', 'or']);
   /** A scope's words, as a "respectively" list may hold them with its cues: "per line", "in total", "on each of the lines", "for the claim". */
   const SCOPE_WORDS = new Set([...EACH, ...LINES, ...ONE_UNIT, ...TOTAL_FOR, ...TOTAL_NOUN_LEADS, ...TOTAL_NOUNS, ...TOTAL_WORDS.flatMap((phrase) => phrase.split(' ')), ...LIST_NOUNS, 'units', 'claims', 'of', 'apiece']);
   /** Words that carry no meaning of their own: a quoted figure is never held by one of them alone. */
@@ -156,6 +167,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     LIST_CONTINUERS,
     CONJUNCTIONS,
     CLAUSE_OPENERS,
+    SUBORDINATORS,
     RESULT_LEADS,
     // Ordinals, and the determiners, pronouns and prepositions around a count or a code.
     ORDINAL_WORDS,
@@ -167,6 +179,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     EACH,
     ONE_LINE,
     ONE_ROW,
+    ROW_OWNERS,
     LINES,
     ONE_UNIT,
     TOTAL_WORDS,
@@ -177,6 +190,7 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     LIST_FILLERS,
     LIST_NOUNS,
     LIST_LINKS,
+    LIST_JOINED,
     SCOPE_WORDS,
     // Prose.
     FUNCTION_WORDS,

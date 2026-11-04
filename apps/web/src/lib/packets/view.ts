@@ -288,7 +288,7 @@ export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>, figu
     const kind = mismatch.kind === null ? null : (FIGURE_KIND_TEXT[mismatch.kind] ?? null);
     const what =
       figure?.needs !== undefined && figure.needs !== null
-        ? `${kind ?? 'a figure'} whose words must ${figure.needs === 'scope' ? 'say whether it is per line or in total' : 'give it its own words instead of “respectively”'}`
+        ? `${kind ?? 'a figure'} ${figure.needs === 'scope' ? 'whose words must say whether it is per line or in total' : 'that needs its own words instead of “respectively”'}`
         : figure !== undefined && figure.roles !== null && figure.roles.length > 0
         ? `${kind ?? 'a figure'} ${readAsText(figure.roles, figure.every)} that ${
             figure.heldAs.length === 0

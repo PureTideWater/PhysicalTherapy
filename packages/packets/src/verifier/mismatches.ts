@@ -72,7 +72,6 @@ export interface NarrativeCheck {
   readonly mismatches: readonly Mismatch[];
 }
 
-/** A figure as the check read it: its kind, the roles its words give it, and whether the inputs hold it so. */
 /**
  * What a failing figure's words must say for it to be read (docs/adr/0086): `scope`, whether it is per line or in
  * total (rule 2: its words state neither, and its role's per-line and total values differ); `own_words`, its own words
@@ -81,6 +80,7 @@ export interface NarrativeCheck {
  */
 export type FigureNeeds = 'scope' | 'own_words' | null;
 
+/** A figure as the check read it: its kind, the roles its words give it, and whether the inputs hold it so. */
 export interface CheckedFigure {
   /** The figure's kind as read (a year, or a five-digit figure read as a number, is a number). */
   readonly kind: FigureKind;
