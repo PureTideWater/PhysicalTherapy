@@ -1,0 +1,17 @@
+{
+  "case": "CI-28",
+  "module": "CI",
+  "title": "A pin-only workflow change proved on the runner",
+  "assertion": "A change to `mutation.yml` that moves only step action SHAs, same action on both sides and neither artifact action, runs every shard of money and ledger and no other; a tag, branch, job-level or artifact-action ref, or any other change to it, runs all four; a comment-only change runs none",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["tools/stryker/affected.test.ts","tools/stryker/gate.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
