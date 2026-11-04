@@ -778,6 +778,14 @@ export function closureProblems(closures: readonly Closure[], global: GlobalInpu
   ]);
 }
 
+/**
+ * The changes job's error for closureProblems' lines, each holding a control character JSON-quoted, so no import or
+ * path literal a closure names starts a workflow command in the job's log.
+ */
+export function closureProblemsMessage(problems: readonly string[]): string {
+  return `what a closure reads that tools/stryker/affected.ts cannot account for:\n${problems.map((problem) => (hasControlCharacter(problem) ? quoted(problem) : problem)).join('\n')}`;
+}
+
 /** Every shard of each affected package, in the file's order. */
 export function shardsFor(packages: readonly MutationPackage[], shards: readonly Shard[] = readShards()): string[] {
   const selected = new Set(packages.flatMap((pkg) => shardsOf(pkg, shards).map((shard) => shard.name)));
@@ -869,7 +877,7 @@ export function affectedSince(base: string, root: string = repositoryRoot, confi
   const headGlobal = globalFiles(root, files, config);
   const lockPath = path.join(root, 'pnpm-lock.yaml');
   const problems = closureProblems(head, headGlobal, existsSync(lockPath) ? parseLockfile(readFileSync(lockPath, 'utf8')) : undefined, config.tooling);
-  if (problems.length > 0) throw new Error(`what a closure reads that tools/stryker/affected.ts cannot account for:\n${problems.map((problem) => (hasControlCharacter(problem) ? quoted(problem) : problem)).join('\n')}`);
+  if (problems.length > 0) throw new Error(closureProblemsMessage(problems));
   const atBase = treeAt(mergeBase, (baseRoot, baseFiles) => ({ closures: repositoryClosures(baseRoot, baseFiles, config), global: globalFiles(baseRoot, baseFiles, config) }), root);
   return { mergeBase, result: affected(changeSince(mergeBase, root), unionClosures(head, atBase.closures), unionGlobal(headGlobal, atBase.global), config.tooling) };
 }

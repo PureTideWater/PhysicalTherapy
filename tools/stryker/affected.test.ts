@@ -27,6 +27,7 @@ import {
   affectedSince,
   closureOf,
   closureProblems,
+  closureProblemsMessage,
   covers,
   dataLiterals,
   gitEnvironment,
@@ -467,6 +468,18 @@ describe('a change that deletes or moves a file: its sets, and its closures on b
       git('add', '-A');
       git('commit', '-q', '-m', 'a test that names data');
       expect(() => affectedSince(baseCommit, repo.root, synthetic)).toThrow('money: packages/money/src/data.test.ts: fixtures/money/rates.json');
+      // An import holding a line break and a workflow command, which resolves to no file, is printed JSON-quoted, so no line of the error starts one.
+      repo.write('packages/money/src/forged.test.ts', "import { it } from 'vitest';\nimport { gone } from './gone\n::warning title=forged::x';\nit('f', () => gone);\n");
+      git('add', '-A');
+      git('commit', '-q', '-m', 'a test that imports a forged path');
+      let message = '';
+      try {
+        affectedSince(baseCommit, repo.root, synthetic);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message.split('\n').some((line) => line.startsWith('"money: ') && line.includes('gone\\n::warning title=forged::x') && line.includes('resolves to no file'))).toBe(true);
+      expect(message.split('\n').filter((line) => line.startsWith('::'))).toEqual([]);
     } finally {
       repo.remove();
     }
@@ -861,6 +874,18 @@ describe('the field rule, the runner proof and what else affects every package, 
     const both = affected({ files: ['docs/product/prd.md', forged] }, closures, global);
     expect(both.packages).toEqual(ALL);
     expect(Object.values(both.reasons).flat().filter((line) => line.split('\n').some((part) => part.startsWith('::')))).toEqual([]);
+  });
+
+  it('prints each closure problem holding a control character JSON-quoted in the changes job’s error, and the others as they are', () => {
+    const message = closureProblemsMessage(['money: packages/money/src/a.ts: fixtures/money/rates.json', 'money: ../x\n::warning::x (an import that resolves to no file)', 'ledger: \u2028::error::y']);
+    expect(message.split('\n')).toEqual([
+      'what a closure reads that tools/stryker/affected.ts cannot account for:',
+      'money: packages/money/src/a.ts: fixtures/money/rates.json',
+      JSON.stringify('money: ../x\n::warning::x (an import that resolves to no file)'),
+      '"ledger: \\u2028::error::y"',
+    ]);
+    // eslint-disable-next-line no-control-regex -- the characters a log could read as a line break are what this looks for
+    expect(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/.test(message)).toBe(false);
   });
 
   it('reads ** in a glob across a line break too, so a data or global glob still holds such a path', () => {
