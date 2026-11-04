@@ -14,7 +14,11 @@
   (`/api/health` also reflects one cached start-up result, D8; 0055's note is written with release N+1)
 - **Date:** 2026-11-04
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the build (Lane A), for the design's choices and its
-  security and infra-auth reviews' findings, each reversible by the founder
+  security and infra-auth reviews' findings, each reversible by the founder; Lane A's orchestrator, 2026-11-04, on the
+  co-founder's standing direction, for the design's rulings 13 (only the founder's break-glass role may start a
+  rotation, D5), 14 (only the founder's break-glass session runs `admin-delete-user` for a stuck invitee, D4) and 15
+  (N+1 reaches production within 7 days of N in production, and before the first customer invitation, Two releases),
+  each as recommended and reversible by the founder. Ruling 16 (an account-level guard, Not covered) is the owner's.
 - **PRD sections:** 6 (Identity and sessions), 7 (Sign-in and MFA); `docs/product/sessions.md`; test matrix SEC-20 to
   SEC-23; ADRs 0012, 0016, 0055 and 0081
 
