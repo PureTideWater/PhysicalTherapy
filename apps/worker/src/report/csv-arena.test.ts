@@ -49,6 +49,14 @@ const streamed = (arena: CsvArena) => collect(arena.rows());
 /** What the report wrote before it streamed: the whole CSV of its lines in the report's order. */
 const expected = (lines: readonly ReportLine[]) => Buffer.from(auditCsv([...lines].sort(reportLineOrder)), 'utf8');
 
+/**
+ * The bytes equal, byte for byte, compared as latin1 text: one code unit per byte, so the strings are equal exactly when the
+ * bytes are. vitest's toEqual walks a Buffer element by element, over a second for a 470 KB CSV; this takes a millisecond.
+ */
+function sameBytes(actual: Buffer, wanted: Buffer): void {
+  expect(actual.toString('latin1')).toBe(wanted.toString('latin1'));
+}
+
 function filled(lines: readonly ReportLine[], options: { readonly chunkBytes?: number } = {}): CsvArena {
   const arena = new CsvArena(options);
   for (const line of lines) {
@@ -100,7 +108,7 @@ describe('the line CSV arena (CAS-41.3)', () => {
   it('streams the header alone for a run with no lines, as auditCsv does', async () => {
     const arena = filled([]);
     expect(arena.lines).toBe(0);
-    expect(await streamed(arena)).toEqual(Buffer.from(auditCsv([]), 'utf8'));
+    sameBytes(await streamed(arena), Buffer.from(auditCsv([]), 'utf8'));
     arena.release();
   });
 
@@ -109,7 +117,7 @@ describe('the line CSV arena (CAS-41.3)', () => {
       fc.asyncProperty(runLines, fc.constantFrom(64, 257, 4096, CSV_ARENA_CHUNK_BYTES), async (lines, chunkBytes) => {
         const arena = filled(lines, { chunkBytes });
         expect(arena.lines).toBe(lines.length);
-        expect(await streamed(arena)).toEqual(expected(lines));
+        sameBytes(await streamed(arena), expected(lines));
         arena.release();
       }),
       { numRuns: 200 },
@@ -125,7 +133,7 @@ describe('the line CSV arena (CAS-41.3)', () => {
     const text = (await streamed(arena)).toString('utf8');
     expect(text.indexOf('\u{1F600}')).toBeLessThan(text.indexOf('～'));
     expect(text.indexOf('PAYER ~')).toBeLessThan(text.indexOf('\u{1F600}'));
-    expect(Buffer.from(text, 'utf8')).toEqual(expected([wide, ascii, astral]));
+    sameBytes(Buffer.from(text, 'utf8'), expected([wide, ascii, astral]));
     arena.release();
   });
 
@@ -144,7 +152,7 @@ describe('the line CSV arena (CAS-41.3)', () => {
     const long = { ...LINE, service_line_id: '66666666-7777-4888-8999-000000000001', payer: `SYNTHETIC PAYER ${'É'.repeat(400)}`, plan: `"${'P'.repeat(300)}"` };
     const short = { ...LINE, service_line_id: '66666666-7777-4888-8999-000000000002' };
     const arena = filled([long, short, { ...short, service_line_id: '66666666-7777-4888-8999-000000000003', line_no: 2 }], { chunkBytes: 256 });
-    expect(await streamed(arena)).toEqual(expected([long, short, { ...short, service_line_id: '66666666-7777-4888-8999-000000000003', line_no: 2 }]));
+    sameBytes(await streamed(arena), expected([long, short, { ...short, service_line_id: '66666666-7777-4888-8999-000000000003', line_no: 2 }]));
     arena.release();
   });
 
@@ -161,7 +169,7 @@ describe('the line CSV arena (CAS-41.3)', () => {
     const rowBytes = Buffer.byteLength(auditCsv(lines), 'utf8') - Buffer.byteLength(auditCsv([]), 'utf8');
     expect(arena.heldBytes).toBeGreaterThanOrEqual(rowBytes);
     expect(arena.heldBytes - rowBytes).toBeLessThan(chunkBytes);
-    expect(await streamed(arena)).toEqual(expected(lines));
+    sameBytes(await streamed(arena), expected(lines));
     arena.release();
     expect(arena.heldBytes).toBe(0);
     expect(() => arena.append(LINE)).toThrow();
