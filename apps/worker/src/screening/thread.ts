@@ -6,6 +6,7 @@ import { createLogger } from '@tp/observability';
 import type { NotificationConfig } from '../config';
 import { configuredMailSender } from '../mail/mail';
 import { priceScreeningRun } from './job';
+import { screeningRunFailureCode } from './failure-code';
 import type { ScreeningThreadReply, ScreeningThreadRequest } from './threads';
 
 /**
@@ -37,16 +38,6 @@ function isSettings(value: unknown): value is ScreeningThreadSettings {
   }
   const settings = value as Partial<ScreeningThreadSettings>;
   return typeof settings.databaseUrl === 'string' && typeof settings.workerId === 'string' && typeof settings.notifications?.appOrigin === 'string';
-}
-
-/**
- * The code a run's failure in its thread is logged by: SCREENING_RUN_FAILED, with the error's own code when it has one
- * shaped like a code (PostgreSQL's SQLSTATE, such as 57014 for a cancelled statement, or Node's, such as ECONNRESET),
- * never its text, which can carry SQL or an address.
- */
-export function screeningRunFailureCode(error: unknown): string {
-  const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : '';
-  return /^[A-Z0-9_]{1,32}$/.test(code) ? `SCREENING_RUN_FAILED_${code}` : 'SCREENING_RUN_FAILED';
 }
 
 /** Starts answering the main thread; called once, as the thread's module loads. */
