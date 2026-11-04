@@ -3997,13 +3997,20 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    * digits), so six bytes for each of its value's, its name, and ten more for the indent, the quotes, ': ', ',' and
    * the newline; and the braces.
    */
+  /**
+   * A job's own lines in toJSON(needs), past its id and its outputs' own: by hand from the runner's indented form,
+   * `  "<id>": {` and its newline (id + 8), `    "result": "cancelled",` and its newline (27, cancelled the longest
+   * result), `    "outputs": {` and its newline (17), its close (6) and the job's own close (5), so id + 63; 96 keeps a
+   * third again over that count, should the runner's form differ by a line ending or a space.
+   */
+  const NEEDS_JOB_BYTES = 96;
   const toJsonBytes = (outputs: Readonly<Record<string, number>>): number => Object.entries(outputs).reduce((sum, [name, bytes]) => sum + name.length + 6 * bytes + 10, '{\n}'.length);
   /**
-   * The same of needs: each job it is given, its id and 64 bytes of its own lines (its result, a word, among them),
-   * and its outputs one level deeper, four more bytes of indent each.
+   * The same of needs: each job it is given, its id and NEEDS_JOB_BYTES of its own lines (its result, a word, among
+   * them), and its outputs one level deeper, four more bytes of indent each.
    */
   const needsJsonBytes = (jobs: Readonly<Record<string, Readonly<Record<string, number>>>>): number =>
-    Object.entries(jobs).reduce((sum, [job, outputs]) => sum + job.length + 64 + toJsonBytes(outputs) - '{\n}'.length + 4 * Object.keys(outputs).length, '{\n}'.length);
+    Object.entries(jobs).reduce((sum, [job, outputs]) => sum + job.length + NEEDS_JOB_BYTES + toJsonBytes(outputs) - '{\n}'.length + 4 * Object.keys(outputs).length, '{\n}'.length);
   /** An image's name in a release matrix, the longest being web-production. */
   const IMAGE_NAME_BYTES = 'web-production'.length;
   const RUNNER_IMAGE = "the runner image step writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS";
@@ -4831,12 +4838,12 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       "fixture.yml use tojson(needs.build.outputs): job build's output digest_web reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row's 70",
       writes(70),
     ]);
-    // toJSON(needs) the same, each job with its id and its own lines: 522 bytes for build and its one output.
+    // toJSON(needs) the same, each job with its id and its own lines: 554 bytes for build and its one output.
     const allNeeds = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ ALL: "${{ toJSON(needs) }}" }');
     const needsRow = (bytes: number) => problems(allNeeds, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs)', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest', bytes }]);
-    expect(needsJsonBytes({ build: { digest_web: 71 } })).toBe(522);
-    expect(needsRow(522)).toEqual([]);
-    expect(needsRow(521)).toEqual(["fixture.yml use tojson(needs): toJSON writes up to 522 bytes of what it reads, each output quoted and escaped, over this row's 521"]);
+    expect(needsJsonBytes({ build: { digest_web: 71 } })).toBe(554);
+    expect(needsRow(554)).toEqual([]);
+    expect(needsRow(553)).toEqual(["fixture.yml use tojson(needs): toJSON writes up to 554 bytes of what it reads, each output quoted and escaped, over this row's 553"]);
     // A job id with a capital letter is one job in every case an expression writes it (a row's value is in lower case):
     // its step's row and the toJSON(needs) that reads it are tied to it as for any other, so a joined output it hands on
     // is still refused.
