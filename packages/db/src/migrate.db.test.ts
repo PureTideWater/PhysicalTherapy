@@ -140,6 +140,7 @@ describe('migrate', () => {
           'mutation_request',
           'notification',
           'organization',
+          'organization_status_change',
           'packet',
           'packet_version',
           'parse_report',
@@ -593,6 +594,30 @@ describe('roles', () => {
       await expect(query(appUrl, 'CREATE TABLE mine (id integer)')).rejects.toMatchObject({ code: '42501' });
       await expect(query(appUrl, 'SELECT * FROM schema_migrations')).rejects.toMatchObject({ code: '42501' });
       await expect(query(appUrl, `SET ROLE ${OWNER_ROLE}`)).rejects.toMatchObject({ code: '42501' });
+    });
+  });
+});
+
+describe('the suspension migration (20261108090000) over an internal organization that is not active', () => {
+  it('refuses to run, naming no organization, and applies once the owner sets it active', async () => {
+    const suspension = '20261108090000_suspension_refusal.sql';
+    const later = readMigrations(dir).filter((migration) => migration.name >= suspension);
+    for (const migration of later) {
+      unlinkSync(path.join(dir, migration.name));
+    }
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      const internal = randomUUID();
+      await query(url, "INSERT INTO organization (id, kind, name, status) VALUES ($1, 'internal', 'SYNTHETIC INTERNAL', 'suspended')", [internal]);
+      for (const migration of later) {
+        copyFileSync(path.join(MIGRATIONS_DIR, migration.name), path.join(dir, migration.name));
+      }
+      const refused = migrate({ databaseUrl: url, migrationsDir: dir });
+      await expect(refused).rejects.toThrow(MigrationError);
+      await expect(refused).rejects.toThrow(/the internal organization must be active before migration 20261108090000; set it active as the owner, then migrate again/);
+      expect(await query(url, 'SELECT 1 FROM schema_migrations WHERE filename = $1', [suspension])).toEqual([]);
+      await query(url, "UPDATE organization SET status = 'active' WHERE id = $1", [internal]);
+      expect((await migrate({ databaseUrl: url, migrationsDir: dir })).applied).toEqual(later.map((migration) => migration.name));
     });
   });
 });

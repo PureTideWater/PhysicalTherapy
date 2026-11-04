@@ -25,8 +25,8 @@ export {
   startPaymentMethodSetup,
   subscribe,
 } from './account';
-export { type DunningOptions, type DunningResult, billingLink, dunningMessage, runDunning } from './dunning';
+export { type DunningEffect, type DunningOptions, type DunningOrganization, type DunningResult, billingLink, dunningEffect, dunningMessage, runDunning } from './dunning';
 export { PAID_INVOICE_FEES } from './fees';
-export { RUN_STARTING_JOBS, SUSPENDED_ERROR_CODE, practiceRunRefusal, startsRun } from './refusal';
+export { RUN_STARTING_JOBS, SUSPENDED_ERROR_CODE, practiceRunRefusal, practiceRunRefusalFor, startsRun } from './refusal';
 export { type BillingClient, type BillingPool, billingRows, withBilling } from './scope';
 export { type UsageSnapshotResult, recordUsageSnapshots } from './usage';

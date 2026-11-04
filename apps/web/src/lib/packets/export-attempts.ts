@@ -1,6 +1,7 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { type ExportReadinessReason, PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS, type PacketExportFailure, type PacketExportRefusal } from '@tp/worker/packets';
 
+import type { WorkPause } from '../billing/suspension-words';
 import { PRICING_BLOCKED_TEXT } from './pricing';
 
 /**
@@ -46,6 +47,9 @@ export const EXPORT_REFUSAL_TEXT: Readonly<Record<PacketExportRefusal, string>> 
     'The payer’s copy names who answers for this dispute, and the practice has no correspondence contact the payer’s copy can print, so nothing is printed. The practice’s administrator sets the correspondence contact under Settings, Correspondence; then export it.',
   verifier_failed:
     'The verifier, run again over what the export prints with the identifiers read from the records now, failed it, so nothing was printed. Write a new version of the packet, which the verifier checks as it is written, and approve it.',
+  // E1 (docs/adr/0080): the export job's gate refused it while the practice's owner was held.
+  organization_suspended:
+    "New work had stopped for the practice's organization, so the export was not made. Ask for it again once the practice's home no longer says that new work has stopped.",
 };
 
 /** A request with no answer from the job by then is shown as failed: the job answers within minutes, and retries within the hour. */
@@ -138,9 +142,16 @@ export interface ExportAttemptWords {
  * The words for an attempt, with times as `time` formats them; null for none and for an exported version (the
  * page shows the export itself). `cleared`: the version is ready to export now, so a refusal for a readiness reason
  * no longer holds and is told as the earlier request's, with no fix to follow (a verifier failure always keeps its
- * fix: the version is written again).
+ * fix: the version is written again). `hold`: what stops the person's exports here now (lib/billing/hold.ts workPause
+ * with phi.export). Readiness never includes the hold, so the gate's refusal for the practice's own hold
+ * (organization_suspended) keeps E1 while the owner's hold lasts, and is told as the earlier request's only once it is
+ * lifted (SS-01 review UX-SS01-1; design SS-01, section 6.3).
  */
-export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) => string, options: { readonly cleared?: boolean; readonly singleUser?: boolean } = {}): ExportAttemptWords | null {
+export function exportAttemptWords(
+  attempt: ExportAttempt,
+  time: (iso: string) => string,
+  options: { readonly cleared?: boolean; readonly singleUser?: boolean; readonly hold?: WorkPause | null } = {},
+): ExportAttemptWords | null {
   switch (attempt.state) {
     case 'none':
     case 'exported':
@@ -164,7 +175,7 @@ export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) =
         live: true,
       };
     case 'refused':
-      if (options.cleared === true && attempt.code !== 'verifier_failed') {
+      if (options.cleared === true && attempt.code !== 'verifier_failed' && !(attempt.code === 'organization_suspended' && options.hold?.source === 'owner')) {
         return {
           state: 'refused',
           code: attempt.code,
@@ -197,6 +208,18 @@ export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) =
   }
 }
 
+/**
+ * Said in place of the Export button while a hold stops the person's exports here (SS-01 review UX-SS01-1): the
+ * database's sentence (R1 to R6), as the mapping screens say theirs. The owner's hold pauses exports until it is lifted,
+ * and a closure restarts none (BIL-09); a grantee's hold stops only this person's exports through its grant.
+ */
+export function exportPausedText(hold: WorkPause): string {
+  if (hold.source === 'grantee') {
+    return `${hold.reason.charAt(0).toUpperCase()}${hold.reason.slice(1)}.`;
+  }
+  return hold.restarts ? `Exports are paused: ${hold.reason}.` : `Exports have stopped: ${hold.reason}.`;
+}
+
 /** not_approved in a single-user practice: no one else approves packets, so the drafter approves alone after the 24-hour delay. */
 export const NOT_APPROVED_ALONE_TEXT =
   'This version is not approved yet. No one else in the practice approves packets, so the person who wrote it approves it alone under Approval above once the 24-hour delay is over (the approval carries the single-user flag); then export it.';
@@ -225,4 +248,5 @@ const REFUSAL_SUMMARY: Readonly<Record<PacketExportRefusal, string>> = {
   inputs_differ: 'the version no longer stated its inputs',
   contact_missing: 'the practice had no correspondence contact the payer’s copy could print',
   verifier_failed: 'the verifier failed what the export printed',
+  organization_suspended: "new work had stopped for the practice's organization",
 };

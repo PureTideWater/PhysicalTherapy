@@ -202,6 +202,8 @@ export interface GrantView {
   readonly endsAt: Date;
   readonly revokedAt: Date | null;
   readonly inForce: boolean;
+  /** The grantee's status: a suspended or closed grantee's people start no new work here through it (docs/adr/0080). Never why. */
+  readonly granteeStatus: string;
 }
 
 export const agreementsSettingsPage = practiceRoute({
@@ -217,7 +219,7 @@ export const agreementsSettingsPage = practiceRoute({
     const administers = rolesPermit(access.roles, 'grant.revoke');
     const grants = administers
       ? (
-          await scope.client.query<{ grant_id: string; grantee_name: string; grantee_kind: string; roles: string[]; starts_at: Date; ends_at: Date; revoked_at: Date | null }>(
+          await scope.client.query<{ grant_id: string; grantee_name: string; grantee_kind: string; roles: string[]; starts_at: Date; ends_at: Date; revoked_at: Date | null; grantee_status: string }>(
             'SELECT * FROM practice_grants($1)',
             [practiceId],
           )
@@ -231,6 +233,7 @@ export const agreementsSettingsPage = practiceRoute({
             endsAt: row.ends_at,
             revokedAt: row.revoked_at,
             inForce: row.revoked_at === null && row.starts_at <= services.now() && services.now() < row.ends_at,
+            granteeStatus: row.grantee_status,
           }),
         )
       : null;

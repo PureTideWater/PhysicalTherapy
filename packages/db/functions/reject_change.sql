@@ -11,6 +11,8 @@
 -- Trigger function of: mail_recipient_key.mail_recipient_key_no_truncate
 -- Trigger function of: marketing_campaign.marketing_campaign_fixed
 -- Trigger function of: marketing_campaign.marketing_campaign_no_truncate
+-- Trigger function of: organization_status_change.organization_status_change_append_only
+-- Trigger function of: organization_status_change.organization_status_change_no_truncate
 -- Trigger function of: place_of_service_split.place_of_service_split_append_only
 -- Trigger function of: place_of_service_split.place_of_service_split_no_truncate
 -- Trigger function of: practice_site.practice_site_no_truncate
