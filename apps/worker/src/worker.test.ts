@@ -5,10 +5,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
-import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
+import { JOB_TYPES, PARSE_CONCURRENCY, PRACTICE_JOB_SLOTS, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
 import { SCREENING_JOB_TYPES, type ScreeningHandlers, type ScreeningJobs } from './jobs/screening';
 import type { JobRunRecorder } from './jobs/runs';
-import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JOB_HEAP_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
+import {
+  CrossPracticeJobError,
+  JOB_ATTEMPT_FAILED_MESSAGE,
+  JOB_FAILED_MESSAGE,
+  JOB_HEAP_MESSAGE,
+  JobPayloadError,
+  type QueueClient,
+  attemptErrorCode,
+  practicePool,
+  startWorker,
+} from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
@@ -237,6 +247,62 @@ describe('startWorker', () => {
     ]);
     expect(QUEUE_OPTIONS.retryLimit + 1).toBe(3);
     await worker.stop();
+  });
+
+  it('logs each failed attempt, the last among them, with its error’s code and never its text (CAS-42.5 on 3ac856d5)', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const timedOut = new Error('timeout exceeded when trying to connect');
+    const worker = await startWorker({ boss: client, pool, logger, handlers: { ...placeholderHandlers, price: () => Promise.reject(timedOut) }, heartbeatMs: 60_000 });
+    for (let retryCount = 0; retryCount <= QUEUE_OPTIONS.retryLimit; retryCount += 1) {
+      await expect(handlers.get('price')?.([{ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toBe(timedOut);
+    }
+    expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE)).toEqual(
+      [0, 1, 2].map((retryCount) => ({ time: expect.any(String), level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, job_id: `job-${String(retryCount)}`, job_type: 'price', error_code: 'DB_POOL_TIMEOUT' })),
+    );
+    // The fixed text, written out for the log lint in worker.ts.
+    expect(JOB_ATTEMPT_FAILED_MESSAGE).toBe('job attempt failed');
+    expect(JSON.stringify(lines)).not.toContain('timeout exceeded');
+    await worker.stop();
+  });
+
+  it('names a failed attempt’s error by a code: the pool’s own failures, a SQLSTATE, a code it carries, its class, never its text', () => {
+    const database = Object.assign(new Error('deadlock detected'), { code: '40P01', severity: 'ERROR', name: 'error' });
+    class PricingRunNotFoundError extends Error {
+      override readonly name = 'PricingRunNotFoundError';
+    }
+    expect(attemptErrorCode(new Error('timeout exceeded when trying to connect'))).toBe('DB_POOL_TIMEOUT');
+    expect(attemptErrorCode(new Error('Connection terminated due to connection timeout', { cause: new Error('x') }))).toBe('DB_CONNECT_TIMEOUT');
+    expect(attemptErrorCode(new Error('Connection terminated unexpectedly'))).toBe('DB_CONNECTION_TERMINATED');
+    expect(attemptErrorCode(database)).toBe('DB_40P01');
+    expect(attemptErrorCode(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toBe('ECONNRESET');
+    expect(attemptErrorCode(Object.assign(new Error('content'), { code: 'CONTENT_NOT_LOADED' }))).toBe('CONTENT_NOT_LOADED');
+    expect(attemptErrorCode(new PricingRunNotFoundError('the pricing run is not recorded yet'))).toBe('PRICING_RUN_NOT_FOUND_ERROR');
+    expect(attemptErrorCode(new TypeError('x is not a function'))).toBe('TYPE_ERROR');
+    expect(attemptErrorCode(new Error('synthetic failure'))).toBe('ERROR');
+    // A name that is not an Error class's, a code in no known form, and no object at all.
+    expect(attemptErrorCode(Object.assign(new Error('x'), { name: 'Pat Doe' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode(Object.assign(new Error('x'), { code: 'member 123', name: 'Smith' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode('timeout exceeded when trying to connect')).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode(null)).toBe('UNCLASSIFIED');
+  });
+
+  it('opens the practice pool with a connection for each practice job it works at once: one from each queue and PARSE_CONCURRENCY parses', async () => {
+    const { boss, client } = fakeBoss();
+    const worker = await startWorker({ boss: client, pool, logger: createLogger({ sink: () => undefined }), handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const slots = boss.work.mock.calls
+      .filter(([name]) => (JOB_TYPES as readonly string[]).includes(name))
+      .reduce((total, [, options]) => total + ((options as { localConcurrency?: number }).localConcurrency ?? 1), 0);
+    await worker.stop();
+    expect(slots).toBe(JOB_TYPES.length - 1 + PARSE_CONCURRENCY);
+    expect(PRACTICE_JOB_SLOTS).toBe(slots);
+    // Opened, not connected: pg's pool connects on first use.
+    const opened = practicePool('postgres://nobody:nothing@127.0.0.1:1/none');
+    try {
+      expect(opened.options.max).toBe(slots);
+    } finally {
+      await opened.end();
+    }
   });
 
   it('logs the live heap once per attempt as it ends, completed or failed, with IDs and numbers only (D19)', async () => {

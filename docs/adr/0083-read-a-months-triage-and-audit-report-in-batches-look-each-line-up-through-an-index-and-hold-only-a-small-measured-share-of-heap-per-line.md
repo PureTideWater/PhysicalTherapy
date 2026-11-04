@@ -599,6 +599,43 @@ runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load
 the warning names the cause it can see." Recorded also in reconciliation-001, "Content pipeline". It changes the same
 files as the first grant, and no other.
 
+#### The practice pool, 2026-11-04
+
+**Why A price and C parse 4 completed on attempt 2 (CAS-42.5 on 3ac856d5, run 41901463895).** The practice worker runs a
+job from each practice queue's loop and four parses at once (`workOptions`): fifteen jobs, each holding one of the
+application login's connections at a time, for its `job_run` writes, its gate and each of its transactions in turn.
+`main.ts` opened that pool with four connections and the ten-second connection timeout (`CONNECTION_TIMEOUT_MS`, ADR
+0055). A month's price job holds its one connection for its whole run, and an audit report for its triage, its reading
+and its print, so the concurrent phase's six jobs (A's price, B's report, C's four parses) left two of them waiting for
+a connection. That run's runner was slower across the board (its seed 62 s against 37 s on run 41848025627, its parses
+13.1 s against 5.0 to 5.6 s), the connections stayed held past ten seconds, and the two waiting attempts failed; pg-boss
+ran them again 30 to 60 seconds later and both completed. An instrumented run of the same tree (run 41913629020, on
+`co-001/wip-sc1b-retry-1`, the harness alone changed) caught it directly. Its large jobs together failed A's second
+report and C's parses 7 and 8 on their first attempts, each with pg-pool's `timeout exceeded when trying to connect`,
+raised in the handler's transaction (`transaction` in `packages/db/src/authz/scope.ts`, awaiting `pool.connect()`) while
+E's price, D's triage and C's parses 5 and 6 held the four connections, the two parses for 11 seconds. In its concurrent
+phase the four parses held all four connections for 7 seconds, and A's price and B's report waited 7 seconds for theirs,
+inside the timeout. Every local run, and the faster runners, waited less than ten seconds, so no attempt failed.
+Production runs the same worker (`WORKER_JOBS=practice`, one task at half a vCPU) with the same pool: a job that needs a
+connection while four longer jobs hold theirs fails its attempt after ten seconds, and three such attempts fail the job
+(a parse marks its document failed).
+
+**The fix: a connection for each job the worker runs at once, and a code for each failed attempt.** `practicePool`
+(`apps/worker/src/worker.ts`, opened by `main.ts` and by the end-to-end worker) holds `PRACTICE_JOB_SLOTS` connections,
+counted from the queues' local concurrency (`jobs/registry.ts`: fifteen), so no job waits for a connection another job
+holds. The ten-second timeout stays, for a database that cannot give a connection at all. Each failed attempt now logs
+`job attempt failed` with the job's ID and type and an `error_code` (`attemptErrorCode`: `DB_POOL_TIMEOUT`,
+`DB_CONNECT_TIMEOUT`, `DB_<SQLSTATE>`, a code the error carries, or its class), never the error's text. The weekly run
+prints those codes beside a job that completed on a later attempt, so the job log says why. The check itself is
+unchanged: a retry still fails the run. The database's share: the worker may hold fifteen application connections where
+it held four, eleven more in the worst case, when every pool of every task is full at once (about 101 connections in
+production with its two web tasks, against `db.t4g.medium`'s default `max_connections` of several hundred; 78 in
+development and staging with one, which leaves `db.t4g.micro`'s smaller default less room). Every pool connects on
+demand and closes a connection idle for thirty seconds. Tests, each failing first: fifteen jobs at once, one from each
+queue and four parses, each holding its transaction past a shortened timeout on the pool `main.ts` opens (on four
+connections 11 of the 15 attempts failed; now all complete); the pool's size against the loops `startWorker` starts (4,
+now 15); each failed attempt's line and code; and the summary's codes beside a retried job.
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |

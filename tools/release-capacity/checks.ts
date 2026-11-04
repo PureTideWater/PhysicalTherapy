@@ -104,6 +104,11 @@ export interface JobOutcome {
   readonly attempts: number | null;
   /** Its `job heap` lines from the worker's log; null when it logged none or the log could not be read. */
   readonly heap: JobHeap | null;
+  /**
+   * The error code each of its failed attempts logged (the worker's `job attempt failed` lines, attemptFailures), in the
+   * log's order; absent when the log could not be read.
+   */
+  readonly failedAttempts?: readonly string[];
 }
 
 /**
@@ -355,6 +360,32 @@ export function errorCodes(lines: Iterable<string>): Record<string, number> {
   return counts;
 }
 
+/**
+ * The worker log's `job attempt failed` lines by job ID (apps/worker/src/worker.ts JOB_ATTEMPT_FAILED_MESSAGE): each
+ * failed attempt's error code, in the log's order, so a job a retry rescued says in the summary, and so in the job log,
+ * why its earlier attempt failed. Codes only: the line carries no error text.
+ */
+export function attemptFailures(lines: Iterable<string>): Map<string, string[]> {
+  const failures = new Map<string, string[]>();
+  for (const line of lines) {
+    const start = line.indexOf('{');
+    if (start === -1 || !line.includes('"job attempt failed"')) {
+      continue;
+    }
+    try {
+      const entry = JSON.parse(line.slice(start)) as { msg?: unknown; job_id?: unknown; error_code?: unknown };
+      if (entry.msg !== 'job attempt failed' || typeof entry.job_id !== 'string') {
+        continue;
+      }
+      const code = typeof entry.error_code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(entry.error_code) ? entry.error_code : 'UNREADABLE';
+      failures.set(entry.job_id, [...(failures.get(entry.job_id) ?? []), code]);
+    } catch {
+      // Not a log line of the worker's.
+    }
+  }
+  return failures;
+}
+
 /** The worker log's `job heap` lines (D19) by job ID: the largest live heap peak of the job's attempts, with its limit. */
 export function jobHeaps(lines: Iterable<string>): Map<string, JobHeap> {
   const heaps = new Map<string, JobHeap>();
@@ -400,7 +431,9 @@ export function verdict(m: CapacityMeasurements): Verdict {
       if (job.attempts === null) {
         reasons.push(`${label} completed, but its attempts could not be read${where}`);
       } else if (job.attempts > 1) {
-        reasons.push(`${label} completed on attempt ${String(job.attempts)}, not its first${where}`);
+        const logged =
+          job.failedAttempts === undefined ? '' : job.failedAttempts.length === 0 ? ' (its failed attempts logged no `job attempt failed` line)' : ` (its failed attempts logged ${job.failedAttempts.join(', ')})`;
+        reasons.push(`${label} completed on attempt ${String(job.attempts)}, not its first${where}${logged}`);
       }
       if (job.heap === null) {
         reasons.push(`${label} logged no \`job heap\` line${where}`);

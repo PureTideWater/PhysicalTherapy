@@ -1,4 +1,4 @@
-import { type PracticeScope, type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
+import { type DatabasePool, type PracticeScope, type ScopeClient, type ScopePool, openPool, withJobScope } from '@tp/db';
 import { recordAuditEvent } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 import type { PgBoss } from 'pg-boss';
@@ -13,6 +13,7 @@ import {
   JOB_TYPES,
   type JobPayload,
   type JobType,
+  PRACTICE_JOB_SLOTS,
   QUEUE_OPTIONS,
   SCREENING_JOB_HEARTBEAT_SECONDS,
   SCREENING_QUEUE_OPTIONS,
@@ -64,6 +65,18 @@ export interface RunningWorker {
   stop(): Promise<void>;
 }
 
+/**
+ * The application login's pool for the practice jobs (main.ts): a connection for each job the worker runs at once
+ * (PRACTICE_JOB_SLOTS, fifteen: a job from each practice queue and four parses), since each attempt holds one at a time.
+ * So no job waits for a connection another job holds: a month's price job or audit report holds its one for minutes, and
+ * on four connections the concurrent phase's six jobs left two waiting until the connection timeout failed their
+ * attempts (CAS-42.5 on 3ac856d5: A price and C parse 4 completed on attempt 2; docs/adr/0083). The timeout stays, for a
+ * database that cannot give a connection at all (CONNECTION_TIMEOUT_MS, docs/adr/0055).
+ */
+export function practicePool(url: string, options: { readonly connectionTimeoutMillis?: number } = {}): DatabasePool {
+  return openPool(url, PRACTICE_JOB_SLOTS, options);
+}
+
 export class JobPayloadError extends Error {
   override readonly name = 'JobPayloadError';
 }
@@ -88,6 +101,49 @@ export const JOB_FAILED_MESSAGE = 'job failed on its last attempt';
  */
 export const JOB_HEAP_MESSAGE = 'job heap';
 
+/**
+ * The line each failed attempt logs, the last among them, with the job's ID and type and its error's code
+ * (attemptErrorCode), never the error's text: an attempt that is retried leaves its cause in the log, which the weekly
+ * real-size run prints beside a job that completed on a later attempt (docs/adr/0083). The last attempt also logs
+ * JOB_FAILED_MESSAGE for the operator alarm.
+ */
+export const JOB_ATTEMPT_FAILED_MESSAGE = 'job attempt failed';
+
+/** pg-pool's own failures, by their fixed texts: a waiter past connectionTimeoutMillis, a new connection slower than it, a dropped one. */
+const POOL_FAILURES: readonly (readonly [string, string])[] = [
+  ['timeout exceeded when trying to connect', 'DB_POOL_TIMEOUT'],
+  ['Connection terminated due to connection timeout', 'DB_CONNECT_TIMEOUT'],
+  ['Connection terminated unexpectedly', 'DB_CONNECTION_TERMINATED'],
+];
+
+/**
+ * The code a failed attempt logs for its error, never its text: the pool's own failures (DB_POOL_TIMEOUT when the job
+ * waited CONNECTION_TIMEOUT_MS for a connection, DB_CONNECT_TIMEOUT, DB_CONNECTION_TERMINATED); PostgreSQL's SQLSTATE as
+ * DB_<state> (DB_40P01 a deadlock, DB_53200 out of shared memory); a code the error carries in this codebase's form or
+ * Node's (ECONNRESET); else the name of its class, an Error by name, in upper snake case (PRICING_RUN_NOT_FOUND_ERROR,
+ * TYPE_ERROR); UNCLASSIFIED for anything else.
+ */
+export function attemptErrorCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null) {
+    return 'UNCLASSIFIED';
+  }
+  const { message, code, severity, name } = error as { readonly message?: unknown; readonly code?: unknown; readonly severity?: unknown; readonly name?: unknown };
+  const pool = POOL_FAILURES.find(([text]) => message === text)?.[1];
+  if (pool !== undefined) {
+    return pool;
+  }
+  if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && typeof severity === 'string') {
+    return `DB_${code}`;
+  }
+  if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,62}$/.test(code)) {
+    return code;
+  }
+  if (typeof name === 'string' && /^(?:[A-Z][A-Za-z0-9]{0,40})?Error$/.test(name)) {
+    return name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
+  }
+  return 'UNCLASSIFIED';
+}
+
 interface QueuedJob {
   readonly id: string;
   readonly data: unknown;
@@ -96,14 +152,21 @@ interface QueuedJob {
 }
 
 /**
- * Runs one attempt, logging the job's final failure (its third attempt) for the operator alarm, and, however it ends,
- * the live heap it saw (JOB_HEAP_MESSAGE).
+ * Runs one attempt, logging a failure's code (JOB_ATTEMPT_FAILED_MESSAGE) and the job's final failure (its third attempt)
+ * for the operator alarm, and, however it ends, the live heap it saw (JOB_HEAP_MESSAGE).
  */
 async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => Promise<void>): Promise<void> {
   const heap = jobHeap();
   try {
     await run();
   } catch (error) {
+    try {
+      // The text is JOB_ATTEMPT_FAILED_MESSAGE, written out for the log lint; worker.test.ts holds them equal. A line
+      // only: it never replaces the job's own error.
+      logger.warn('job attempt failed', { job_id: job.id, job_type: type, error_code: attemptErrorCode(error) });
+    } catch {
+      // Nothing to do: the attempt fails with its own error below.
+    }
     if ((job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit) {
       // The text is JOB_FAILED_MESSAGE, written out for the log lint (fixed text only); worker.test.ts holds them equal.
       logger.error('job failed on its last attempt', { job_id: job.id, job_type: type, error_code: 'JOB_FAILED' });

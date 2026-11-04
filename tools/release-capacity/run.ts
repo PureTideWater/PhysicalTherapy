@@ -35,6 +35,7 @@ import {
   type WindowsQuery,
   type WorkerMemory,
   advisoriesOutput,
+  attemptFailures,
   errorCodes,
   jobHeaps,
   markdown,
@@ -814,7 +815,13 @@ async function main(): Promise<number> {
   }
   // Each job's `job heap` lines, by its ID (D19): none when the log could not be read, which fails closed.
   const heaps = lines === null ? new Map<string, JobHeap>() : jobHeaps(lines);
-  const measuredJobs = jobs.map((job) => ({ ...job, heap: job.jobId === null ? null : (heaps.get(job.jobId) ?? null) }));
+  // Each failed attempt's error code by its job's ID (the worker's `job attempt failed` lines), none when the log could not be read.
+  const failures = lines === null ? null : attemptFailures(lines);
+  const measuredJobs = jobs.map((job) => ({
+    ...job,
+    heap: job.jobId === null ? null : (heaps.get(job.jobId) ?? null),
+    ...(failures === null || job.jobId === null ? {} : { failedAttempts: failures.get(job.jobId) ?? [] }),
+  }));
   const full = report({
     commit,
     runtime: opts.runtime,

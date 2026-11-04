@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { CONNECTION_TIMEOUT_MS, openPool } from '@tp/db';
+import { CONNECTION_TIMEOUT_MS } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import { PgBoss } from 'pg-boss';
 
@@ -41,7 +41,7 @@ import { reportDocumentHandler } from './report/print-document';
 import { startScreeningConsumer } from './screening/consumer';
 import { installShutdownHandlers } from './shutdown';
 import { triageHandler } from './triage/job';
-import { startWorker } from './worker';
+import { practicePool, startWorker } from './worker';
 
 const workerId = randomUUID();
 const logger = createLogger({ base: { worker_id: workerId } });
@@ -135,8 +135,9 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
     if (runtime === undefined) {
       logger.info('platform jobs not configured on this worker');
     }
-    // Practice jobs: the application login, each transaction scoped to the job's one practice.
-    const pool = openPool(config.databaseUrl, 4);
+    // Practice jobs: the application login, each transaction scoped to the job's one practice, a connection for each
+    // job the worker runs at once (practicePool).
+    const pool = practicePool(config.databaseUrl);
     // Intake takes uploads in and queues parse_835 per clean 835, which parses and loads it and queues
     // the monitoring chain: monitor plans the months to price, price executes a pricing run, triage
     // screens a complete run and groups its lines into cases, reconcile is the ledger's step; digest

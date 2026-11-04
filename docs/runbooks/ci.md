@@ -69,11 +69,15 @@ whole run's and each phase's and chain job's working set; a failing check names 
 Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
 2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure.
 - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
-  would have waited on. The worker logs no error for an attempt that is retried, but an attempt that throws logs a
-  `job heap` line with the job's ID as it ends, so the job's first one marks when the failed attempt ended. At that
-  time, look in the Postgres log in the artifact's `logs/` for `out of shared memory` (53200: the lock table is full).
-  A heap out-of-memory ends the worker's process before it logs anything: the summary's restarts count shows it. The
-  run never counts a retry as a pass.
+  would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
+  `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
+  waited `CONNECTION_TIMEOUT_MS` (ten seconds) for one of the practice pool's connections, so the worker ran more jobs
+  at once than the pool holds (`practicePool` holds `PRACTICE_JOB_SLOTS`, one per job: if it fires, look for a job
+  that holds two); `DB_CONNECT_TIMEOUT` a new connection that took longer than that; `DB_<SQLSTATE>` an error from
+  PostgreSQL (`DB_53200` out of shared memory: the lock table is full; `DB_40P01` a deadlock); otherwise the error's own
+  code or its class (`PRICING_RUN_NOT_FOUND_ERROR`). The attempt's `job heap` line, with the same job ID, marks when it
+  ended; read the Postgres log in the artifact's `logs/` at that time. A heap out-of-memory ends the worker's process
+  before it logs anything: the summary's restarts count shows it. The run never counts a retry as a pass.
 - **A backend held more than 64 advisory locks.** The sampler reads, each second, the largest advisory-lock count any
   one backend holds (`pg_locks`, `locktype = 'advisory'`, grouped by `pid`); 64 is the loader's trace bound
   (`TRACE_LOCK_BUCKETS`, equal to the default `max_locks_per_transaction`). A job that takes a lock per line or per row

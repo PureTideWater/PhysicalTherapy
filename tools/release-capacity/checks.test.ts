@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { TRACE_LOCK_BUCKETS } from '../../apps/worker/src/parse/loader';
+import { JOB_ATTEMPT_FAILED_MESSAGE } from '../../apps/worker/src/worker';
 import {
   ADVISORY_LOCKS_PER_TRANSACTION,
   type CapacityMeasurements,
@@ -19,6 +20,7 @@ import {
   WINDOWS_COLD_BUDGET_MS,
   WORKING_SET,
   advisoriesOutput,
+  attemptFailures,
   errorCodes,
   jobHeaps,
   markdown,
@@ -251,6 +253,12 @@ describe('the release capacity verdict', () => {
     failsWith({ jobs: change('A triage', { attempts: 2 }) }, /A triage \(triage [0-9a-f-]{36}\) completed on attempt 2, not its first, in the chain/);
     failsWith({ jobs: change('D triage', { attempts: 3 }) }, /D triage \(triage [0-9a-f-]{36}\) completed on attempt 3, not its first, in the large jobs together/);
     failsWith({ jobs: change('F reconcile', { attempts: null }) }, /F reconcile \(reconcile [0-9a-f-]{36}\) completed, but its attempts could not be read, in F’s reconcile/);
+    // The codes its failed attempts logged, read from the worker's log (CAS-42.5 on 3ac856d5 had none to read).
+    failsWith(
+      { jobs: change('A price', { attempts: 2, failedAttempts: ['DB_POOL_TIMEOUT'] }) },
+      /A price \(price [0-9a-f-]{36}\) completed on attempt 2, not its first, in the concurrent phase \(its failed attempts logged DB_POOL_TIMEOUT\)$/,
+    );
+    failsWith({ jobs: change('A price', { attempts: 3, failedAttempts: [] }) }, /A price .* completed on attempt 3, not its first, in the concurrent phase \(its failed attempts logged no `job attempt failed` line\)$/);
     expect(verdict({ ...PASSING, jobs: change('B triage', { attempts: 2 }) }).pass).toBe(true);
   });
 
@@ -491,5 +499,22 @@ describe('the advisories output (fix round S3)', () => {
     const output = advisoriesOutput([...advisories, 'the windows query was not measured']);
     expect(output).toMatch(/^[A-Za-z0-9+/]+=*$/);
     expect(Buffer.from(output, 'base64').toString('utf8')).toBe('the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\nthe windows query was not measured');
+  });
+});
+
+describe('attemptFailures', () => {
+  it('reads each failed attempt’s code by its job’s ID from the worker’s `job attempt failed` lines, in order, and nothing else', () => {
+    const id = '4227f755-8ec2-4d8f-8bb2-0fb7356a4541';
+    const line = (fields: Record<string, unknown>) => `worker-1  | ${JSON.stringify({ worker_id: 'w', time: '2026-11-04T20:13:12.000Z', level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, ...fields })}`;
+    const failures = attemptFailures([
+      line({ job_id: id, job_type: 'price', error_code: 'DB_POOL_TIMEOUT' }),
+      '[harness] worker started for run',
+      JSON.stringify({ level: 'info', msg: 'job heap', job_id: id, heap_live_peak_mib: 200, heap_limit_mib: 560 }),
+      line({ job_id: id, job_type: 'price', error_code: 'DB_40P01' }),
+      line({ job_id: 'fa81bd58-8481-4296-9332-b85f78530826', job_type: 'parse_835', error_code: 'not a code' }),
+      line({ msg: 'job failed on its last attempt', job_id: id, error_code: 'JOB_FAILED' }),
+      '{ not json "job attempt failed"',
+    ]);
+    expect(Object.fromEntries(failures)).toEqual({ [id]: ['DB_POOL_TIMEOUT', 'DB_40P01'], 'fa81bd58-8481-4296-9332-b85f78530826': ['UNREADABLE'] });
   });
 });
