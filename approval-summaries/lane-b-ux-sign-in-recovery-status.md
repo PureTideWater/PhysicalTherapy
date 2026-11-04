@@ -45,6 +45,15 @@ decision (#102)**; everything up to verification proceeds (orchestrator, 06:28Z)
   Reviews wf_341d1a32-40c launched (security; UX and brand with after shots; skeptics; one fix round: S-3, N-1, findings,
   base merge, full suite once, one push; verification); script archived.
 
+- 2026-11-04T10:50:00Z: fix round (wf_341d1a32-40c) pushed **0bd5721a**: S-3 taken (f2aacae4, ADR A2 27bd7440), N-1 taken
+  (00a7ab21), base 24531dc2 merged; full local suite once, green (unit 7,505/4 skipped; golden 381; db 9,696/1 skipped over
+  4 shards; build; e2e 74 with axe 53; synth clean; Stryker none); 96 after shots. CI green on 0bd5721a, capacity gate on
+  4 CPUs pass (time advisory; O9 S4 53.0 s, the standing ruling). **Both reviews FAILED to report** (the custom agent
+  types ended without output; the UX tour build stopped before any shot). The security notes were salvaged unverified: P-1
+  (Cognito's public client and EMAIL_ONLY recovery let ForgotPassword be called past the app's SEC-B1 gate; infra, Lane A)
+  and P-2 (for UX PR 65), in `lane-b-ux-sign-in-recovery-build/proposals.md`. **Reviews re-run**: wf_1b69883e-023 (both
+  lenses as default agents with their briefs, on the existing shots; skeptics; a fix round only if confirmed; verification).
+
 ## Waiting on someone
 - None blocks the merge (the repository is public again, 07:10Z).
 
