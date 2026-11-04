@@ -1073,8 +1073,10 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       and so is anything naming the runner's file command files (`_runner_file_commands`, or a file's own name,
       `set_env_` or `add_path_`, which a script could reach beside `$GITHUB_OUTPUT`'s), a script line included.
       `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has no map: every
-      line naming it is refused. A script that reaches the file without naming it (a name built at run time, another
-      interpreter) is not closed by reading text.
+      line naming it is refused. Every other tracked file naming any of these (a script or tool code a step runs, a
+      package's script) is one of a closed list, each with why it sets nothing. A script that reaches the file without
+      naming it (a name built at run time, another interpreter) and a dependency's or a pinned action's own code are
+      not closed by reading text.
 
 ### Consequences
 

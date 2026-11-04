@@ -3089,8 +3089,10 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    * beside it holds by running the step and reading the whole file it writes. Each is written once, and every line of
    * every workflow's script that names GITHUB_ENV (a backslash-newline joining two, as bash reads them) is one of them;
    * nothing but a step's run: names GITHUB_ENV (or GITHUB_PATH, whose every line is refused), nothing names the
-   * runner's file command files, and no env sets ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env). A script that reaches
-   * the file without naming it (a name built at run time, another interpreter) is not closed by reading text.
+   * runner's file command files, no env sets ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env), and every other tracked
+   * file naming any of them is in a closed list (NAMES_FILE_COMMANDS). A script that reaches the file without naming
+   * it (a name built at run time, another interpreter), and a dependency's or an action's code, are not closed by
+   * reading text.
    */
   const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly fingerprint: string; readonly bound: string; readonly test: string }>> = {
     ENGINE_FREEZE_BASE: {
@@ -3613,6 +3615,20 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       ).toEqual([write.fingerprint]);
       expect(titles.has(write.test), `${name}: no test named "${write.test}" that always runs`).toBe(true);
     }
+    // A file a step runs (a script, a package's script, tool code) could write $GITHUB_ENV or $GITHUB_PATH, or the
+    // runner's file command files, that no workflow line shows, so every tracked file but a workflow (which the rule
+    // above reads) naming any of them, in any case, is one of this closed list, each with why it sets nothing. A name
+    // built at run time, and a dependency's or a pinned action's own code, are not read.
+    const NAMES_FILE_COMMANDS: Readonly<Record<string, string>> = {
+      'docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md': 'the decision that states this rule; no step runs it',
+      'docs/runbooks/ci.md': 'the runbook that states this rule; no step runs it',
+      'tools/engine-freeze/check.test.ts': "reads ci.yml's one $GITHUB_ENV write as text and writes none",
+      'tools/test/workflows.test.ts': "this rule; it runs that write's step with $GITHUB_ENV a file of its own temporary directory",
+    };
+    const naming = execFileSync('git', ['grep', '-lIi', '-e', 'GITHUB_ENV', '-e', 'GITHUB_PATH', '-e', '_runner_file_commands', '-e', 'set_env_', '-e', 'add_path_', '--', '.', ':!.github/workflows'], { cwd: repositoryRoot, encoding: 'utf8' })
+      .split('\n')
+      .filter((line) => line !== '');
+    expect(naming.sort()).toEqual(Object.keys(NAMES_FILE_COMMANDS).sort());
   });
 
   it('keeps every environment string a workflow sets at 131,072 bytes at most, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound', () => {

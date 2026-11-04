@@ -458,7 +458,9 @@ user that cannot run the binary.
   the test that runs the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let
   a script set a variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` or `$GITHUB_PATH` (a
   shell, a default shell, an input or an env naming it is refused), nor anything the runner's `_runner_file_commands` (or a file of it, `set_env_` or `add_path_`).
-  A `$GITHUB_PATH` write has no map: every script line naming it is refused. Every `docker/build-push-action` step
+  A `$GITHUB_PATH` write has no map: every script line naming it is refused. Any other tracked file that names
+  `$GITHUB_ENV`, `$GITHUB_PATH` or a file command file (a script a step runs, tool code, a package's script) is refused
+  unless it joins the value table test's closed list, with why it sets nothing. Every `docker/build-push-action` step
   sets `BUILDX_METADATA_PROVENANCE: disabled` and
   `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`, and no other variable (no `DOCKER_BUILD_`
   or `BUILDX_` variable is set for a whole job (its env or its container's, and a job container's `options` set no
