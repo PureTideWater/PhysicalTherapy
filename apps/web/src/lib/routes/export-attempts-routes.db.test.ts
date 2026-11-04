@@ -42,7 +42,7 @@ import { reopenLineAction, writeOffLineAction } from './triage';
  * - once asked, the builder shows the export in progress; the job's refusal shows with its reason and fix; asked
  *   again after the fix, a failed try shows as retrying, the last as failed, and the next export as exported;
  * - the worker gate's refusal for the practice's own hold reads E1 while the hold lasts, with the export withheld and
- *   the hold's sentence said, and as the earlier request's once it is lifted (PR #104 review UX-SS01-1; docs/adr/0080).
+ *   the hold's sentence said, and as the earlier request's once it is lifted (SS-01 review UX-SS01-1; docs/adr/0080).
  */
 
 let w: TriageWorld;

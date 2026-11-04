@@ -65,7 +65,7 @@ import { opaqueId, optionalText } from './schemas';
  * corrected_held; PR #95 review security F1): the worker would refuse its monitoring job, so "being priced" would be
  * false. The mapping's own monitoring is the practice's work, in neither of SS-01's lists: a grantee's hold on the
  * person who maps never stops it, since the worker's gate applies the owner's hold alone to the practice's jobs
- * (docs/adr/0080, Known limits; PR #104 review security F1).
+ * (docs/adr/0080, Known limits; SS-01 review security F1).
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -245,7 +245,7 @@ export const planPage = practiceRoute({
  * work (practice_run_hold's owner row, asked in the same transaction: the hold the worker's gate applies to the
  * practice's jobs) the mapping is kept and nothing is queued, since the worker would refuse the job: the notice says so
  * (mapped_held, corrected_held; security F1), and the daily monitor prices the months once the hold lifts. A grantee's
- * hold on the person who maps stops only their own work, so the practice's monitoring is queued as under no hold (PR #104
+ * hold on the person who maps stops only their own work, so the practice's monitoring is queued as under no hold (SS-01
  * review security F1; docs/adr/0080). The same mapping again changes nothing and queues nothing.
  */
 export const mapPlanAction = practiceRoute({

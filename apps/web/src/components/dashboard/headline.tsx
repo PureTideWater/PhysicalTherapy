@@ -103,7 +103,7 @@ export function HeadlineTiles({ practiceId, headline, recoveredQuarter }: { read
 
 /**
  * Whether the person may upload here now, as Uploads decides it: the BAA on file (practice_baa_on_file()), then no hold
- * on their uploads (docs/adr/0080): paused while it can lift, stopped by a closure (PR #104 review UX-SS01-3).
+ * on their uploads (docs/adr/0080): paused while it can lift, stopped by a closure (SS-01 review UX-SS01-3).
  */
 export type UploadGate = 'open' | 'no_baa' | 'paused' | 'stopped';
 

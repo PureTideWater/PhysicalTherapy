@@ -535,7 +535,7 @@ export default async function PacketPage(props: Props) {
               ) : (
                 (() => {
                   // A refusal whose reason no longer holds (the version is ready now) is told as the earlier request's, not with its fix;
-                  // the gate's refusal for the practice's own hold keeps E1 while that hold lasts (PR #104 review UX-SS01-1).
+                  // the gate's refusal for the practice's own hold keeps E1 while that hold lasts (SS-01 review UX-SS01-1).
                   const attempt = exportAttemptWords(version.exportAttempt, utc, { cleared: version.exportReadiness.outcome === 'ready', singleUser: version.singleUser, hold: exportHold });
                   const status = attempt === null ? null : <ExportStatus words={attempt} checkAgainHref={`${casePath}/packet?version=${version.id}`} refreshMs={ATTEMPT_REFRESH_MS} />;
                   if (version.exportReadiness.outcome === 'refused') {

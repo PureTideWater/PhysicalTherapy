@@ -245,7 +245,7 @@ export const MONTHS_NOTICES = {
  * work (PR #95 review security F1; mapped_held, corrected_held): nothing was queued, since the worker would refuse it,
  * and the daily monitoring prices the months once work may start again. With the database's reason while the owner's
  * hold lasts (as Uploads says it), and for a closure no restart (BIL-09); without one once it is lifted. A grantee's hold
- * on the reader never held the practice's monitoring (PR #104 review security F1), so it reads as lifted.
+ * on the reader never held the practice's monitoring (SS-01 review security F1), so it reads as lifted.
  */
 export function heldText(suspension: WorkPause | null): string {
   if (suspension === null || suspension.source === 'grantee') {
@@ -379,7 +379,7 @@ const sentenceStart = (text: string): string => `${text.charAt(0).toUpperCase()}
  * Said in place of a region's form while the person may not start pricing here (security F1): the database's reason,
  * as Uploads says it, and when the months are priced. The press would be refused (RUN_STARTING_ROUTES), so none is
  * offered. The owner's hold pauses the practice's own pricing until it is lifted (`resumes`), and a closure restarts
- * nothing (BIL-09). A grantee's hold stops only this person's work through the grant (PR #104 review security F1;
+ * nothing (BIL-09). A grantee's hold stops only this person's work through the grant (SS-01 review security F1;
  * docs/adr/0080): its sentence alone, and what the practice's own work still does (`carriesOn`), if anything.
  */
 export function PausedText({ suspension, resumes, carriesOn = null }: { readonly suspension: WorkPause; readonly resumes: string; readonly carriesOn?: string | null }) {

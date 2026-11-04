@@ -112,7 +112,7 @@ export const uploadsPage = practiceRoute({
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
     const open = await baaOnFile(scope, practiceId);
     // While new work is held, uploads pause with the database's reason (docs/adr/0050, 0080): the owner's hold, or a
-    // grantee's when only its grants let this person upload; a closure stops them, promising no restart (BIL-09; PR #104
+    // grantee's when only its grants let this person upload; a closure stops them, promising no restart (BIL-09; SS-01
     // review UX-SS01-3). What is on file stays readable.
     const hold = await workPause(scope, practiceId, 'file.upload');
     const held = hold === null ? null : uploadsHeld(hold);

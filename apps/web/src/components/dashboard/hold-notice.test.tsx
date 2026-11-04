@@ -5,7 +5,7 @@ import { JOB_REFUSED_LABEL, type PracticeHold, holdNotice } from '../../lib/bill
 import { HoldAlert, RunOutcomeBadge } from './hold-notice';
 
 /**
- * The practice home's hold notice and the last run's outcome at a phone's width (PR #104 review UX-SS01-2 and
+ * The practice home's hold notice and the last run's outcome at a phone's width (SS-01 review UX-SS01-2 and
  * UX-SS01-6; docs/adr/0056, 0078): the notice's dates stay whole, since a browser breaks a line after a date's hyphen,
  * and J1's badge wraps inside its card, so the page never scrolls sideways at 390 px. The words are holdNotice's and
  * J1's, unchanged.

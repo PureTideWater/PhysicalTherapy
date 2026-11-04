@@ -163,7 +163,7 @@ describe('the practice home’s notice (H1 to H13)', () => {
   });
 });
 
-describe('uploads under a hold on the person’s uploads (PR #104 review UX-SS01-3; HOM-03)', () => {
+describe('uploads under a hold on the person’s uploads (SS-01 review UX-SS01-3; HOM-03)', () => {
   const r1 = 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable';
   const r2 = "the practice's organization is closed, so no new work starts here; everything here stays readable";
   const r5 = 'your organization is closed, so you start no new work here through its grant';

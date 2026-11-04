@@ -254,7 +254,7 @@ export const practiceHome = practiceRoute({
       /**
        * What stops this person's uploads here, asked as Uploads asks it (workPause with file.upload, practice_run_refusal_for's
        * question; test matrix HOM-03), and whether it lifts, or null: the empty home's gate, paused or, for a closure,
-       * stopped (PR #104 review UX-SS01-3). A grantee's hold that leaves this person their uploads leaves it open.
+       * stopped (SS-01 review UX-SS01-3). A grantee's hold that leaves this person their uploads leaves it open.
        */
       uploadsHold: await workPause(scope, practiceId, 'file.upload'),
       dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10)),

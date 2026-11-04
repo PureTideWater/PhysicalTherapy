@@ -145,7 +145,7 @@ export interface ExportAttemptWords {
  * fix: the version is written again). `hold`: what stops the person's exports here now (lib/billing/hold.ts workPause
  * with phi.export). Readiness never includes the hold, so the gate's refusal for the practice's own hold
  * (organization_suspended) keeps E1 while the owner's hold lasts, and is told as the earlier request's only once it is
- * lifted (PR #104 review UX-SS01-1; design SS-01, section 6.3).
+ * lifted (SS-01 review UX-SS01-1; design SS-01, section 6.3).
  */
 export function exportAttemptWords(
   attempt: ExportAttempt,
@@ -209,7 +209,7 @@ export function exportAttemptWords(
 }
 
 /**
- * Said in place of the Export button while a hold stops the person's exports here (PR #104 review UX-SS01-1): the
+ * Said in place of the Export button while a hold stops the person's exports here (SS-01 review UX-SS01-1): the
  * database's sentence (R1 to R6), as the mapping screens say theirs. The owner's hold pauses exports until it is lifted,
  * and a closure restarts none (BIL-09); a grantee's hold stops only this person's exports through its grant.
  */

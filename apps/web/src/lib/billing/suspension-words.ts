@@ -61,7 +61,7 @@ export interface WorkPause {
 
 /**
  * Uploads under a hold on the person's uploads (practice_run_refusal_for with file.upload): Uploads' gate, its title and
- * the database's sentence (R1 to R6), and the empty home's, under the notice that names the hold (HOM-03; PR #104
+ * the database's sentence (R1 to R6), and the empty home's, under the notice that names the hold (HOM-03; SS-01
  * review UX-SS01-3). A hold that lifts pauses them; a closure stops them and promises no restart (BIL-09).
  */
 export function uploadsHeld(pause: WorkPause): { readonly title: string; readonly reason: string; readonly home: { readonly title: string; readonly nextStep: string } } {

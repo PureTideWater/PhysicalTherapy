@@ -45,7 +45,7 @@ export interface Reach {
   readonly grants: number;
 }
 
-/** Counts through counted(): digits grouped by thousands (PR #104 review UX-SS01-8). */
+/** Counts through counted(): digits grouped by thousands (SS-01 review UX-SS01-8). */
 const practicesText = (n: number) => counted(n, 'practice');
 const grantsText = (m: number) => counted(m, 'grant');
 
@@ -98,7 +98,7 @@ export function suspendedLines(suspension: SuspensionRecord): readonly string[] 
   return [first, reason, ...changed];
 }
 
-/** C8: what the suspension in force stops; with nothing to reach, no vacuous count, as C6 says it (PR #104 review UX-SS01-5). */
+/** C8: what the suspension in force stops; with nothing to reach, no vacuous count, as C6 says it (SS-01 review UX-SS01-5). */
 export function suspendedEffect(kind: SuspendableKind, reach: Reach): string {
   if (kind === 'firm') {
     return reach.practices === 0
@@ -126,7 +126,7 @@ export const HISTORY_EMPTY = 'No suspension recorded.';
 
 /**
  * C10's empty history: beside a suspension in force written before changes were recorded (by the owner path or the
- * previous image, D11), which has no row, it says where that suspension shows (PR #104 review UX-SS01-5).
+ * previous image, D11), which has no row, it says where that suspension shows (SS-01 review UX-SS01-5).
  */
 export function historyEmpty(suspended: boolean): string {
   return suspended ? 'No change recorded here yet; a suspension made before changes were recorded shows only on the card above.' : HISTORY_EMPTY;

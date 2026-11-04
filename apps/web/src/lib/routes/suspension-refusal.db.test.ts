@@ -227,7 +227,7 @@ describe('a closed grantee, and the owner’s hold (BIL-07; D6)', () => {
     try {
       const upload = ROUTES.find((route) => route.id === 'practice.uploads.request') as Route;
       expect(await call(upload, principal.userId)).toEqual({ status: 'suspended', reason: R5 });
-      // Uploads and the empty home say the closure as stopped, never paused or opening later (PR #104 review UX-SS01-3).
+      // Uploads and the empty home say the closure as stopped, never paused or opening later (SS-01 review UX-SS01-3).
       expect((await data(uploadsPage, principal.userId)).gate).toEqual({ open: false, title: 'No new uploads start', reason: `Uploads have stopped: ${R5}.` });
       expect((await data(practiceHome, principal.userId)).uploadsHold).toEqual({ reason: R5, source: 'grantee', restarts: false });
       expect((await data(practiceHome, principal.userId)).hold).toEqual({

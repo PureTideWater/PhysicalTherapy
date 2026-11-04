@@ -7,7 +7,7 @@ import { WholeDates } from '../dates';
 /**
  * The practice home's notice of a hold on new work (H1 to H13, with its next step H8 to H12; docs/adr/0080; design
  * SS-01, section 6.2), its words holdNotice's. Each date in the body is kept whole, since a browser breaks a line
- * after a date's hyphen and a phone read "on 2026- / 11-04" (PR #104 review UX-SS01-6; docs/adr/0078 Decision 1).
+ * after a date's hyphen and a phone read "on 2026- / 11-04" (SS-01 review UX-SS01-6; docs/adr/0078 Decision 1).
  */
 export function HoldAlert({ hold }: { readonly hold: HoldNotice }) {
   return (
@@ -46,7 +46,7 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
 /**
  * The last run's outcome on the Data freshness card. The badge wraps inside its card, as ActionForm's wrapSubmit does
  * for a long button: J1 is longer than a phone's line leaves it, and a badge kept on one line made the practice home
- * scroll sideways at 390 px (PR #104 review UX-SS01-2; docs/adr/0056: no page scrolls sideways at a phone's width).
+ * scroll sideways at 390 px (SS-01 review UX-SS01-2; docs/adr/0056: no page scrolls sideways at a phone's width).
  */
 export function RunOutcomeBadge({ outcome }: { readonly outcome: string }) {
   return (

@@ -70,7 +70,7 @@ export interface BuilderPageData {
   /**
    * What stops the person's exports here now (workPause with phi.export, the export route's own question), or null:
    * the Export button is withheld with its sentence while it holds, and the gate's refusal for the practice's own hold
-   * keeps E1 (PR #104 review UX-SS01-1; docs/adr/0080). Readiness never includes the hold.
+   * keeps E1 (SS-01 review UX-SS01-1; docs/adr/0080). Readiness never includes the hold.
    */
   readonly exportHold: WorkPause | null;
   readonly canReadPhi: boolean;
