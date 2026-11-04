@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -2590,6 +2590,52 @@ describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)'
     }
   });
 
+  // The two lines each install step writes, read from the files the runner reads, on any machine: a stand-in uname
+  // names the release's Linux x64 archive, served from a file:// mirror with the SHA-256 a release.txt beside the
+  // repository's installer pins (GITHUB_ENV_WRITES' TRIVY_CMD and GITHUB_PATH_WRITES' trivy-bin; docs/adr/0066, Part 3, N32).
+  it('gives the later steps the pinned Trivy by its absolute path through GITHUB_ENV and its directory through GITHUB_PATH, one line each, and writes neither when the install fails', () => {
+    const root = realpathSync(mkdtempSync(path.join(scratch, 'trivy-step-')));
+    const version = '0.70.0';
+    const mirror = path.join(root, 'mirror');
+    mkdirSync(path.join(mirror, 'x'), { recursive: true });
+    const asset = path.join(mirror, `trivy_${version}_Linux-64bit.tar.gz`);
+    const pack = (body: string) => {
+      writeFileSync(path.join(mirror, 'x/trivy'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      execFileSync('tar', ['-czf', asset, '-C', path.join(mirror, 'x'), 'trivy']);
+      return createHash('sha256').update(readFileSync(asset)).digest('hex');
+    };
+    const good = pack(`echo "Version: ${version}"`);
+    const tools = path.join(root, 'checkout/tools/trivy');
+    mkdirSync(tools, { recursive: true });
+    copyFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), path.join(tools, 'install.sh'));
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${good}\nlinux_arm64 ${good}\n`);
+    const bin = path.join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; *) exit 97 ;; esac\n', { mode: 0o755 });
+    let run = 0;
+    const step = (script: string) => {
+      run += 1;
+      const temp = path.join(root, `runner-temp-${String(run)}`);
+      mkdirSync(temp);
+      const files = { env: path.join(root, `env-${String(run)}`), path: path.join(root, `path-${String(run)}`) };
+      writeFileSync(files.env, '');
+      writeFileSync(files.path, '');
+      const result = runScript(script, { PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}`, HOME: root, RUNNER_TEMP: temp, GITHUB_ENV: files.env, GITHUB_PATH: files.path, TRIVY_DOWNLOAD_BASE: `file://${mirror}` }, path.join(root, 'checkout'));
+      return { status: result.status, temp, env: readFileSync(files.env, 'utf8'), path: readFileSync(files.path, 'utf8') };
+    };
+    for (const { where, job } of trivyJobs()) {
+      const script = job.steps.find((candidate) => candidate.name === INSTALL.name)?.run ?? '';
+      const ok = step(script);
+      // The whole of each file: one line, the binary's absolute path and its directory, so no second variable or directory.
+      expect(ok, where).toMatchObject({ status: 0, env: `TRIVY_CMD=${ok.temp}/trivy-bin/trivy\n`, path: `${ok.temp}/trivy-bin\n` });
+      expect(readdirSync(path.join(ok.temp, 'trivy-bin')), where).toEqual(['trivy']);
+    }
+    // Another archive served: the install fails, so the step stops before either write.
+    pack(`echo "Version: ${version}"; echo planted`);
+    const refused = step(INSTALL.run ?? '');
+    expect(refused).toMatchObject({ status: 1, env: '', path: '' });
+  });
+
   const linux = process.platform === 'linux' && (process.arch === 'x64' || process.arch === 'arm64');
   it.runIf(linux)('installs the archive whose SHA-256 release.txt pins into the directory it is given, and refuses another, leaving nothing installed', () => {
     const root = mkdtempSync(path.join(scratch, 'trivy-'));
@@ -3171,27 +3217,58 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
   /** The one-level values of the runner and job contexts, each with its bound: a path or a name the runner sets, a word, an integer. */
   const RUNNER_BYTES = PATH_BYTES;
   const JOB_BYTES: Readonly<Record<string, number>> = { status: WORD_BYTES, check_run_id: INTEGER_BYTES };
+  /** Where a file command write is made: its file, job and step, and the fingerprint of that step (as a row's run: producer holds one). */
+  interface FileCommandSite {
+    readonly file: string;
+    readonly job: string;
+    readonly step: string;
+    readonly fingerprint: string;
+  }
+  /** One write a script may make to a runner file command: its line exactly (so its value's form too), where, its bound and the test that holds it. */
+  interface FileCommandWrite {
+    readonly line: string;
+    readonly sites: readonly FileCommandSite[];
+    readonly bound: string;
+    readonly test: string;
+  }
   /**
-   * The only writes a script may make to $GITHUB_ENV, by the variable each sets: its file, job and step, its line
-   * exactly (so its value's form too), the fingerprint of its step (as a row's run: producer holds one, so any change to
-   * the script or its inputs fails until a person re-reads the bound), and its bound, which the behavioural test named
-   * beside it holds by running the step and reading the whole file it writes. Each is written once, and every line of
-   * every workflow's script that names GITHUB_ENV (a backslash-newline joining two, as bash reads them) is one of them;
-   * nothing but a step's run: names GITHUB_ENV (or GITHUB_PATH, whose every line is refused), nothing names the
-   * runner's file command files, no env sets ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env), and every other tracked
-   * file naming any of them is in a closed list (NAMES_FILE_COMMANDS). A script that reaches the file without naming
-   * it (a name built at run time, another interpreter), and a dependency's or an action's code, are not closed by
-   * reading text.
+   * The only writes a script may make to $GITHUB_ENV, by the variable each sets, and to $GITHUB_PATH, by the directory
+   * each puts on PATH: its line exactly (so its value's form too), each step that makes it (its file, job and step, and
+   * that step's fingerprint, so any change to the script or its inputs fails until a person re-reads the bound), and
+   * its bound, which the behavioural test named beside it holds by running the step and reading the whole file it
+   * writes. Each is written once in each step it names, and every line of every workflow's script that names
+   * GITHUB_ENV or GITHUB_PATH (a backslash-newline joining two, as bash reads them) is one of them; nothing but a
+   * step's run: names either, nothing names the runner's file command files, no env sets
+   * ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env), and every other tracked file naming any of them is in a closed list
+   * (NAMES_FILE_COMMANDS). A script that reaches the file without naming it (a name built at run time, another
+   * interpreter), and a dependency's or an action's code, are not closed by reading text.
    */
-  const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly fingerprint: string; readonly bound: string; readonly test: string }>> = {
+  const GITHUB_ENV_WRITES: Readonly<Record<string, FileCommandWrite>> = {
     ENGINE_FREEZE_BASE: {
-      file: 'ci.yml',
-      job: 'unit',
-      step: "The engine freeze's base",
       line: 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"',
-      fingerprint: '9be9805d',
+      sites: [{ file: 'ci.yml', job: 'unit', step: "The engine freeze's base", fingerprint: '9be9805d' }],
       bound: "a commit SHA (the pull request's merge base, github.event.before or HEAD's parent), written only once git rev-parse --verify names it a commit, the step exiting 1 otherwise",
       test: 'gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV',
+    },
+    TRIVY_CMD: {
+      line: 'echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"',
+      sites: [
+        { file: 'ci.yml', job: 'images', step: 'The pinned Trivy', fingerprint: '3ad03da4' },
+        { file: 'release-dry-run.yml', job: 'build', step: 'The pinned Trivy', fingerprint: '3ad03da4' },
+        { file: 'release.yml', job: 'build', step: 'The pinned Trivy', fingerprint: '3ad03da4' },
+      ],
+      bound:
+        "the absolute path tools/trivy/install.sh prints, its one line of output: the directory it is given ($RUNNER_TEMP/trivy-bin, the runner's own temporary directory), resolved by pwd -P, then /trivy, so a runner path with no line break, at most PATH_BYTES; a failed install fails the step under bash -e before this line runs",
+      test: 'gives the later steps the pinned Trivy by its absolute path through GITHUB_ENV and its directory through GITHUB_PATH, one line each, and writes neither when the install fails',
+    },
+  };
+  const GITHUB_PATH_WRITES: Readonly<Record<string, FileCommandWrite>> = {
+    'trivy-bin': {
+      line: 'dirname "$trivy" >> "$GITHUB_PATH"',
+      sites: GITHUB_ENV_WRITES.TRIVY_CMD?.sites ?? [],
+      bound:
+        "the directory of TRIVY_CMD's path ($RUNNER_TEMP/trivy-bin resolved), a runner path with no line break, at most PATH_BYTES, which the runner puts before PATH for every later step of the job: PATH is the runner's own environment, inside the RUNNER_MARGIN the whole leaves it",
+      test: 'gives the later steps the pinned Trivy by its absolute path through GITHUB_ENV and its directory through GITHUB_PATH, one line each, and writes neither when the install fails',
     },
   };
   /**
@@ -3367,9 +3444,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       }
     };
     keys(root, '');
-    // Only a step's run: may name $GITHUB_ENV, where every line naming it is an entry of the closed map below, or
-    // $GITHUB_PATH, where every line naming it is refused (no write of PATH, an environment string of every later step,
-    // is listed). A shell (a step's or a default), an input, an env name or value, or any other string naming either,
+    // Only a step's run: may name $GITHUB_ENV or $GITHUB_PATH, where every line naming either is an entry of its closed
+    // map (GITHUB_ENV_WRITES, GITHUB_PATH_WRITES), made in a step the entry names. A shell (a step's or a default), an input, an env name or value, or any other string naming either,
     // and anything naming the runner's file command files themselves, would let a command template or an action set a
     // later step's environment that no line of a script shows, so each is refused.
     // The runner's file command files by their directory or their own names (set_env_<uuid>, add_path_<uuid>), which a
@@ -3411,15 +3487,24 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         // Each line as bash reads it, a backslash-newline joining two, so a write split across lines is still read.
         const lines = (typeof step.run === 'string' ? step.run : '').replace(/\\\n/g, '').split('\n');
         for (const line of lines.filter((text) => RUNNER_FILES.test(text))) problems.push(`${file} ${named} run: names the runner's file commands, which set a later step's environment unread: ${line.trim()}`);
-        for (const line of lines.filter((text) => text.includes('GITHUB_PATH'))) problems.push(`${file} ${named} run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: ${line.trim()}`);
+        const listed = (map: Readonly<Record<string, FileCommandWrite>>, line: string) =>
+          Object.entries(map).find(([, entry]) => entry.line === line.trim() && entry.sites.some((site) => site.file === file && site.job === id && site.step === step.name))?.[0];
+        for (const line of lines.filter((text) => text.includes('GITHUB_PATH'))) {
+          const write = listed(GITHUB_PATH_WRITES, line);
+          if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: ${line.trim()}`);
+          else writes.set(`$GITHUB_PATH\0${write}\0${id}`, (writes.get(`$GITHUB_PATH\0${write}\0${id}`) ?? 0) + 1);
+        }
         for (const line of lines.filter((text) => text.includes('GITHUB_ENV'))) {
-          const write = Object.entries(GITHUB_ENV_WRITES).find(([, entry]) => entry.file === file && entry.job === id && entry.step === step.name && entry.line === line.trim());
+          const write = listed(GITHUB_ENV_WRITES, line);
           if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed map: ${line.trim()}`);
-          else writes.set(write[0], (writes.get(write[0]) ?? 0) + 1);
+          else writes.set(`$GITHUB_ENV\0${write}\0${id}`, (writes.get(`$GITHUB_ENV\0${write}\0${id}`) ?? 0) + 1);
         }
       });
     }
-    for (const [name, count] of writes) if (count > 1) problems.push(`${file}: ${name} is written to $GITHUB_ENV ${String(count)} times, not once`);
+    for (const [key, count] of writes) {
+      const [command = '', name = ''] = key.split('\0');
+      if (count > 1) problems.push(`${file}: ${name} is written to ${command} ${String(count)} times, not once`);
+    }
     return { problems, values };
   }
 
@@ -3694,14 +3779,17 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).problems)).toEqual([]);
     // Each $GITHUB_ENV write of the map is made where it says, exactly once, and the test that holds its bound runs it.
     const titles = testTitles('tools/test/workflows.test.ts', repositorySource('tools/test/workflows.test.ts') ?? '');
-    for (const [name, write] of Object.entries(GITHUB_ENV_WRITES)) {
-      const named = (workflow(write.file).jobs[write.job]?.steps ?? []).filter((step) => step.name === write.step);
-      const lines = named.flatMap((step) => (step.run ?? '').split('\n'));
-      expect(lines.filter((line) => line.trim() === write.line), name).toHaveLength(1);
-      expect(
-        named.map((step) => fingerprint(step, workflow(write.file).jobs[write.job], workflow(write.file))),
-        `${name}: the step that writes it has changed (its script, or its env, shell, working-directory or container, its own or inherited): re-read the bound against it, then write the new fingerprint in the map`,
-      ).toEqual([write.fingerprint]);
+    for (const [name, write] of [...Object.entries(GITHUB_ENV_WRITES), ...Object.entries(GITHUB_PATH_WRITES)]) {
+      expect(write.sites.length, name).toBeGreaterThan(0);
+      for (const site of write.sites) {
+        const named = (workflow(site.file).jobs[site.job]?.steps ?? []).filter((step) => step.name === site.step);
+        const lines = named.flatMap((step) => (step.run ?? '').split('\n'));
+        expect(lines.filter((line) => line.trim() === write.line), `${name} in ${site.file} ${site.job}`).toHaveLength(1);
+        expect(
+          named.map((step) => fingerprint(step, workflow(site.file).jobs[site.job], workflow(site.file))),
+          `${name} in ${site.file} ${site.job}: the step that writes it has changed (its script, or its env, shell, working-directory or container, its own or inherited): re-read the bound against it, then write the new fingerprint in the map`,
+        ).toEqual([site.fingerprint]);
+      }
       expect(titles.has(write.test), `${name}: no test named "${write.test}" that always runs`).toBe(true);
     }
     // A file a step runs (a script, a package's script, tool code) could write $GITHUB_ENV or $GITHUB_PATH, or the
@@ -4001,6 +4089,18 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { path: "$RUNNER_TEMP/_runner_file_commands" } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.path')]);
     expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: $GITHUB_PATH } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
     expect(write(['echo "$V$V$V" >> "$GITHUB_PATH"'])).toEqual(['ci.yml job unit step "The engine freeze\'s base" run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: echo "$V$V$V" >> "$GITHUB_PATH"']);
+    // The pinned Trivy's two writes, each listed for its three steps: admitted there once each, refused in another step,
+    // job or file, in another form, or twice.
+    const trivy = ['trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"', 'dirname "$trivy" >> "$GITHUB_PATH"', 'echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"'];
+    const pathOutside = (line: string, where: string) => `${where} run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: ${line}`;
+    for (const [file, job] of [['ci.yml', 'images'], ['release.yml', 'build'], ['release-dry-run.yml', 'build']] as const) expect(write(trivy, file, job, 'The pinned Trivy'), file).toEqual([]);
+    expect(write(trivy, 'ci.yml', 'unit', 'The pinned Trivy')).toEqual([pathOutside(trivy[1] ?? '', 'ci.yml job unit step "The pinned Trivy"'), outside(trivy[2] ?? '', 'ci.yml job unit step "The pinned Trivy"')]);
+    expect(write(trivy, 'ci.yml', 'images', 'Another step')).toEqual([pathOutside(trivy[1] ?? '', 'ci.yml job images step "Another step"'), outside(trivy[2] ?? '', 'ci.yml job images step "Another step"')]);
+    expect(write([...trivy, trivy[1] ?? ''], 'ci.yml', 'images', 'The pinned Trivy')).toEqual(['ci.yml: trivy-bin is written to $GITHUB_PATH 2 times, not once']);
+    expect(write([trivy[0] ?? '', 'echo "$trivy" >> "$GITHUB_PATH"', 'echo "TRIVY_CMD=$trivy:$V" >> "$GITHUB_ENV"'], 'ci.yml', 'images', 'The pinned Trivy')).toEqual([
+      pathOutside('echo "$trivy" >> "$GITHUB_PATH"', 'ci.yml job images step "The pinned Trivy"'),
+      outside('echo "TRIVY_CMD=$trivy:$V" >> "$GITHUB_ENV"', 'ci.yml job images step "The pinned Trivy"'),
+    ]);
     // Or by a file's own name, beside $GITHUB_OUTPUT's, so a script reaching it without naming $GITHUB_ENV is refused.
     expect(write(['echo "X=$V$V$V" >> "${GITHUB_OUTPUT%/*}"/set_env_${GITHUB_OUTPUT##*set_output_}'])).toEqual([
       'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: echo "X=$V$V$V" >> "${GITHUB_OUTPUT%/*}"/set_env_${GITHUB_OUTPUT##*set_output_}',

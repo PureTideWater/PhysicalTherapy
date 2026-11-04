@@ -1169,16 +1169,18 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       bound passes 131,072 bytes is held to the places it is read in the same way: those findings in both jobs, and
       publish-content's release numbers, read in one script.
     - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
-      is one entry of a closed map, its variable's only write: its file, job, step and exact line (so its value's form
-      too), with its step's fingerprint (a changed script or input, its own or inherited, fails until a person
+      is one entry of a closed map, its variable's only write: its exact line (so its value's form too) and each file,
+      job and step that makes it, once, with that step's fingerprint (a changed script or input, its own or inherited, fails until a person
       re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
       reading the whole file it writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is
       refused in any env. Nothing else names it: a shell (a step's or a default), an input, or an env's name or value
       naming `$GITHUB_ENV` or `$GITHUB_PATH` is refused, since a command template or an action could write it unread,
       and so is anything naming the runner's file command files (`_runner_file_commands`, or a file's own name,
       `set_env_` or `add_path_`, which a script could reach beside `$GITHUB_OUTPUT`'s), a script line included.
-      `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has no map: every
-      line naming it is refused. Every other tracked file naming any of these (a script or tool code a step runs, a
+      `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has a closed map of
+      its own, held the same way: its one entry is the pinned Trivy's directory, written beside its `TRIVY_CMD` by the
+      install step of each job that scans (the amendment of 2026-11-04 to Part 2), and every other line naming it is
+      refused. Every other tracked file naming any of these (a script or tool code a step runs, a
       package's script) is one of a closed list, each with why it sets nothing. A script that reaches the file without
       naming it (a name built at run time, another interpreter) and a dependency's or a pinned action's own code are
       not closed by reading text.

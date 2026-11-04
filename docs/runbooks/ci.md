@@ -459,11 +459,12 @@ user that cannot run the binary.
   test. A row whose producer is a `run:` step holds the fingerprint of its script and what it runs with, its own
   `env`, `shell` and `working-directory` or those its job and the workflow give it, and its job's container: when the
   test prints a new one, re-read the bound against the change, then write the new fingerprint in the row. A new
-  `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its step's fingerprint, its bound, and
-  the test that runs the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let
+  `$GITHUB_ENV` write joins its closed map: its exact line, each file, job and step that makes it with that step's
+  fingerprint, its bound, and the test that runs the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let
   a script set a variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` or `$GITHUB_PATH` (a
   shell, a default shell, an input or an env naming it is refused), nor anything the runner's `_runner_file_commands` (or a file of it, `set_env_` or `add_path_`).
-  A `$GITHUB_PATH` write has no map: every script line naming it is refused. Any other tracked file that names
+  A `$GITHUB_PATH` write joins a closed map of its own, held the same way (today one: the pinned Trivy's directory);
+  every other script line naming it is refused. Any other tracked file that names
   `$GITHUB_ENV`, `$GITHUB_PATH` or a file command file (a script a step runs, tool code, a package's script) is refused
   unless it joins the value table test's closed list, with why it sets nothing. Every `docker/build-push-action` step
   sets `BUILDX_METADATA_PROVENANCE: disabled` and
