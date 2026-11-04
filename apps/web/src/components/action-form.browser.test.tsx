@@ -390,6 +390,20 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
+  it('FRM-01: a count already past the one awaited ends the wait: the stale refusal’s 1 is 2 once the cleared summary replaces it (S-SEC-2)', async () => {
+    const page = await harness.open('keep');
+    await page.fill('#field-zip', '27514');
+    await onRefresh(page, { requestKey: 'synthetic-request-key-2', person: PERSON_B });
+    await script(page, { refuse: STALE });
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    // Settled past 1: an exact wait for 1 can never end now.
+    expect(await shown(page)).toBe(2);
+    expect(await page.locator('body[data-shown="1"]').count()).toBe(0);
+    await shownCount(page, 1);
+    await page.close();
+  });
+
   it('FRM-01: any refresh that shows another person, or no one, clears a form that holds what was typed, and only that form; a dropped press’s key is let go (S-SEC-2)', async () => {
     const page = await harness.open('two');
     await page.fill('#first-title', 'SYNTHETIC first');
