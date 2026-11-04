@@ -328,21 +328,14 @@ this amendment holds.
   label of that word's kind (`GLUED_LABEL`: a head word, `ID`, `Nbr`, `Num`, `Ref`, or `No` with a capital N, a whole
   word or after a small letter): `ICN99887766`, `Member ID12345678`, and `Claim №99887766`, `Member №ZZ12345678` and
   `Claim№99887766`, which NFKC writes `No99887766`, `NoZZ12345678` and `ClaimNo99887766`.
-  Since 2026-11-04 (MOD-13 seed 460548619) the leftmost label at or after each start of a line or a sentence counts
-  beside the leftmost one, of any line break and however many words it is (`labelsBefore`; "claim\nID No." and
-  "claim\n\nNo. ID:" are `No.` and `ID:` as well, review finding security-rlb-sec-1): a head joins its qualifiers
-  over its own full stop and over white space and line breaks, as before (`Member.ID`, `Claim. No`, `Member No.\nID` and a wrapped `Claim\nNumber:` stay one label, review finding
-  correctness-rlb-oracle-1), so where that reading reaches over a sentence end ("AA CLAIM.\nID:1990-01-01", "the claim.
-  ID: 1990-01-01") the next sentence's `ID:` counts as well and the member ID is replaced; only labels are added, never
-  removed. One label on one line keeps G2 (`Claim ID: 1990-01-01` keeps the date for a member ID), and a deadline equal to
-  the claim's digits after "the claim. ID" is replaced, an over-redaction accepted as before. A bare `ID` with a
-  qualifier after it (`ID Number:`, `ID No.`, `ID nbr`) is a label of either kind, as `ID:` is (review finding
-  security-rlb-sec-3); `ID` alone with no colon is none (G2: "ID 2027-03-15" stays).
-  An `ID` written in capitals after a full stop, with or without white space, begins a label of its own too
-  (`STOP_THEN_ID`: "acct. ID: 1990-01-01", "Claim No. ID:", "Acct.ID:", review finding security-rlb-sec-2), so G2's
-  claim-only reading of `Acct. ID:` is given up for a member ID. Accepted residual: an abbreviation's full stop before
-  any other label, or before a lowercase `id`, stays within one claim's label (`acct. No.`, `Claim No. Number is`,
-  `acct. id:`), so a member ID written as a date after it keeps the date (G2).
+  Since 2026-11-04 (MOD-13 seed 460548619) a sentence end breaks a label's head: beside the leftmost label, the
+  leftmost one at or after each line break, each "!" or "?" and white space, and each full stop (an abbreviation's
+  too, with or without white space) counts (`labelsBefore`), so "AA CLAIM.\nID:", "claim\nID No.", "acct. ID:", "acct.
+  No." and "AA SUBSCRIBER NBR. No." are `ID:` or `No.` as well (review findings security-rlb-sec-1 and -sec-2). Only
+  labels are added: a head still joins its qualifiers over its own full stop and line breaks (`Member.ID`, `Acct.
+  No.`, a wrapped `Claim\nNumber:`; correctness-rlb-oracle-1), one label with no full stop keeps G2 (`Claim ID:
+  1990-01-01`), a bare `ID` with a qualifier (`ID Number:`, `ID nbr`) is either's label (security-rlb-sec-3), and a
+  deadline equal to a claim's digits after "the claim. ID" is replaced, an over-redaction accepted as before.
   The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
   digits included (review finding G1, 2026-11-02): a run of digits alone that a label introduces also joins over `.`
   and `/`, after any label when the run is no whole written date and after one of the head-word labels when it is, as

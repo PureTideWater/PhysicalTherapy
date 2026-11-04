@@ -565,8 +565,6 @@ const writtenAsDate = (normal: string, range: Range) =>
  * Digits joined over "." or "/" that are no whole written date are the number after any label (ANY_IDENTIFIER_LABEL).
  */
 const LABEL_SPACE = '[\\s\\u00AD]';
-/** The abbreviations a label writes with a full stop of their own ("Acct. No.", "Ref. #", "Claim No. ID", "Pt. Acct. #"). */
-const LABEL_ABBREVIATION = 'acct|ref|no|nbr|num';
 /**
  * A qualifier after a head word or a bare "ID", with its own full stop. A head word joins its qualifiers over its own
  * full stop and over white space and line breaks ("Member.ID", "Claim. No", "Member No.\nID", a wrapped "Claim\nNumber:"),
@@ -584,17 +582,13 @@ const LABEL_HEAD =
   `|\\bre(?=${LABEL_SPACE}*:)`;
 const IDENTIFIER_LABEL = new RegExp(`(?:${LABEL_HEAD})${LABEL_END}`, 'iu');
 /**
- * Where a line or a sentence begins, at its first letter: after a line break, or after a full stop, "!" or "?" and white
- * space when the full stop is no abbreviation's own (LABEL_ABBREVIATION: "Acct. No." is one label), past any marks
- * before the first letter ("- ID:", "**ID:**").
+ * Where a line or a sentence may begin, at its first letter, past any marks before it ("- ID:", "**ID:**"): after a line
+ * break, after "!" or "?" and white space, and after any full stop, with or without white space. An abbreviation's full
+ * stop may end a sentence as well as a word's ("acct. ID:", "SUBSCRIBER NBR. No.", "acct. No.", "Acct. Number is",
+ * "CLAIM.id:", and "acct．ID:", which NFKC writes "acct.ID:"), so the label after it counts beside the one label it
+ * joins ("Acct. No." is a claim's label, and "No." either's: review finding security-rlb-sec-2, and its member labels).
  */
-const LINE_OR_SENTENCE_START = new RegExp(`(?:[\\n\\r\\v\\f\\u0085\\u2028\\u2029]|(?<!\\b(?:${LABEL_ABBREVIATION}))[.!?]${LABEL_SPACE})[^\\p{L}\\p{N}]*(?=\\p{L})`, 'giu');
-/**
- * An "ID" after a full stop, with or without white space ("acct. ID:", "Claim No. ID:", "Acct.ID:", "CLAIM.ID:", and
- * "acct．ID:", which NFKC writes "acct.ID:"), at its "I": written "ID", it may begin the next sentence after an
- * abbreviation's full stop or a word's, so its own label counts as well (labelsBefore, review finding security-rlb-sec-2).
- */
-const STOP_THEN_ID = new RegExp(`(?<=\\.${LABEL_SPACE}*[^\\p{L}\\p{N}]*)id\\b`, 'giu');
+const LINE_OR_SENTENCE_START = new RegExp(`(?:[\\n\\r\\v\\f\\u0085\\u2028\\u2029]|[!?]${LABEL_SPACE}|\\.)[^\\p{L}\\p{N}]*(?=\\p{L})`, 'gu');
 
 /**
  * Any identifier label: IDENTIFIER_LABEL, or a bare "id", "number", "nbr", "no", "num", "identification", "reference"
@@ -627,10 +621,9 @@ const kindOf = (match: RegExpExecArray): LabelKind => (match.groups?.claim !== u
  * wrapped "Claim\nNumber:", "Member.ID", "Claim. No"), so that reading may reach over a line's or a sentence's end; the
  * label the next line or sentence holds then counts as well, however many words it is and wherever on that line it
  * begins ("CLAIM.\nID:" is "ID:", MOD-13 seed 460548619; "claim\nID No." is "No.", review finding security-rlb-sec-1).
- * So does the label an "ID" written in capitals begins after a full stop (STOP_THEN_ID: "acct. ID:" may end one
- * sentence and begin the next). A label on one line within one sentence is otherwise one label ("Claim ID:", "Acct. No.",
- * "Member ID No."), so G2 holds for it; an abbreviation's full stop before any other label ("acct. No.", "Claim No.
- * Number is", "acct. id:") stays within that one label, a residual accepted (ADR 0054).
+ * So does the label after any full stop, an abbreviation's too ("acct. ID:", "SUBSCRIBER NBR. No.", "acct. No."), which
+ * may end one sentence and begin the next. A label on one line within one sentence and no full stop is otherwise one
+ * label ("Claim ID:", "Claim\tID:", "Member ID No."), so G2 holds for it.
  * `written` gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never
  * "no.").
  */
@@ -647,11 +640,6 @@ function labelsBefore(text: string, at: number, written: (index: number) => stri
   readFrom(0);
   for (const start of before.matchAll(LINE_OR_SENTENCE_START)) {
     readFrom(start.index + start[0].length);
-  }
-  for (const id of before.matchAll(STOP_THEN_ID)) {
-    if (/^\p{Lu}{2}$/u.test(written(from + id.index) + written(from + id.index + 1))) {
-      readFrom(id.index);
-    }
   }
   return [...kinds];
 }
