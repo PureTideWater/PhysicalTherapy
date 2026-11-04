@@ -229,6 +229,11 @@ its unpushed work is not waited for).
   on 4 connections); cost: +11 worst-case connections per worker task; told the orchestrator. **F's reconcile time is
   pre-existing, SUITE-CAP-3's** (same statements, plans and buffer counts on the base; 1b ~25 s faster via
   claim_by_superseded; byPatient ~403 s and the case refresh dominate): a known limit in ADR 0083, handed to Lane B.
+- **22:40 UTC. The orchestrator agreed (~22:27) and added:** a synth-time infra check per environment that the worst-case
+  connections (worker and web tasks x pools + operator, migration, screening pools + reserve) stay under the instance's
+  max_connections less RDS's reserved; if dev/staging (db.t4g.micro) fail it, cap worker tasks or one size up, whichever
+  is cheaper and safe, recorded; a DatabaseConnections alarm at 80% of max_connections; the Known gap line shows F's
+  reconcile margin to its 900 s attempt. wf_caf81379-09e stopped, its fix step edited (archived) and resumed.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
