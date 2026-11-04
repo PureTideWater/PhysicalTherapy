@@ -438,6 +438,12 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   success, release-dry-run 41782516510 success; no screening-capacity run (nothing watched). The build branch is green
   again apart from the capacity gate on watched changes (#102). df4daff7's (#105) push runs are in progress.
 
+- 2026-11-04T07:00:00Z: push runs of **df4daff7** (#105): ci 41785595620 success, mutation 41785595438 success;
+  screening-capacity 41785595511 failure: on a push the changes job measures by design (`EVENT != pull_request` ->
+  measure=true), and the capacity job (126426942936) stops in its measure step on the private 2-CPU runner, as on 4846f043.
+  Not #105's: it is the founder's runner item (#102); every push run of this workflow fails the same way until then. No
+  re-run (a sizing refusal). Issue #102 updated by the notify job.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
