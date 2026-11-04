@@ -170,6 +170,20 @@ its unpushed work is not waited for).
   (check lines carry no job ID; no SQLSTATE in the worker log; the lock check names no job type; the missing-heap-line
   cause); and more), 3 refuted (OPS-9, OPS-11, OPS-17). The hand-over cut off after OPS-3; the session appended the other
   11 and the refuted list to the fix round's record before it started.
+- **18:05 UTC. 1b fix round pushed #110 head 4a8357d9** (WIP f5d3ffa6 first; bases #109 (e04fe922) and #113 (52821641)
+  merged; provenance commits). In it: the confirmed review findings (security-S1 seed typecheck, others: see the PR
+  body); the loader amendment (retry passes VACUUM (FREEZE, INDEX_CLEANUP ON); warning names what pg_class shows; docs:
+  the 180 s bounds when the last pass starts), failing first; the 14 operator-words fixes; the harness now gives A
+  actionable lines so 7b and the 30 s actionable write are exercised (failing first 5 of 42). The 2026-10-27 ledger grant
+  was already in ADR 0083 word for word. **Full suite once, green on ff65a708:** unit 7,610 + 4; golden 381; oracle 689;
+  test:db 9,815 + 1 (CAS-42.1 triage 61.8 s, actionable write 6.0 s; report 75.8 s; CAS-42.2 85.6 + 67.7 s); build; e2e
+  77; Stryker 6 shards + gate; fast checks again on 4a8357d9. Domain model e024cf9f…c4df, line 7459 (unchanged).
+- **CAS-42.5's memory.peak root cause** (investigation, two instrumented CI runs on co-001/wip-sc1b-mem-1): the same tree
+  passed (842.9 MiB) and failed (958.6 MiB); the swing is page cache charged to the worker container (238 vs 335 MiB:
+  node and Chromium binaries faulted cold, report files); the worker's anon + kernel + shmem peaked 595.8 / 622.8 MiB;
+  Chromium flags save <= 12 MiB. **Asked of the founder (18:05, via the orchestrator):** apply the unchanged 90% line to
+  the container's working set (memory.current minus inactive_file), memory.peak and memory by kind reported beside it.
+  Until a ruling 1b does not merge on a failing CAS-42.5.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
