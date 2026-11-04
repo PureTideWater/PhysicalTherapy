@@ -1181,4 +1181,21 @@ describe('every git the changes job runs', () => {
       rmSync(out, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it('runs cli from its entry line, run by path as the changes job runs it: what main throws is printed quoted, exit 1', () => {
+    const out = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-out-'));
+    try {
+      // Node's error opening the output file names its path as it is: a directory that does not exist, holding a command.
+      const run = spawnSync(path.join(repositoryRoot, 'node_modules', '.bin', 'tsx'), ['tools/stryker/affected.ts', '--event', 'push', '--github-output', path.join(out, 'none\n::warning title=forged::x', 'output')], {
+        cwd: repositoryRoot,
+        encoding: 'utf8',
+      });
+      expect(run.status).toBe(1);
+      expect(run.stderr.startsWith('tools/stryker/affected.ts: ENOENT')).toBe(true);
+      expect(run.stderr).toContain('"::warning title=forged::x/output\'"');
+      expect(run.stderr.split(/\r\n|[\n\r\u0085\u2028\u2029]/).filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
