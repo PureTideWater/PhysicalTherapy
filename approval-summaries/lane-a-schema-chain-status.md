@@ -200,6 +200,9 @@ its unpushed work is not waited for).
   4a8357d9): both decisions built with failing-first tests, memory by kind and the OOM-events check, ADR 0083; fast checks,
   tools tests, a --small smoke; push; adversarial review (and its fixes); then the fresh-clone verification reading CI
   beside CAS-42.5 on the final head. Then the suggested line.
+- **18:28 UTC. CAS-42.5 on 4a8357d9 (run 41882546709) failed as expected in step 7b:** "A's reconcile: 30795 actionable
+  lines in 7 reprocessing 835s", then `stopped: REPROCESSING_MONITOR_NOT_CANCELLED`; nothing read back. Evidence for the
+  7b decision; one comment on #110. CI otherwise green on 4a8357d9 but the domain model (blank line).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
