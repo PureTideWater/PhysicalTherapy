@@ -1,7 +1,7 @@
 export const meta = {
   name: 'lane-b-packet-day-counts-delta-rereview-2',
   description: 'PR #84 round 2: the payment-engine review of the delta at d7d587a2 (skeptic-checked), then fix and recheck NEW-N1..N3 and any confirmed finding until a dry recheck (cap 3)',
-  phases: [{ title: 'Round 2' }, { title: 'Converge' }],
+  phases: [{ title: 'Round 2' }, { title: 'Converge' }, { title: 'Converge 2' }],
 }
 const recheck = { newFindings: args.open }
 const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/70ab2f76-1059-5c68-8649-2c2eeea1fb4d/scratchpad'
@@ -144,4 +144,49 @@ For each finding run its reproduction and one variant: fixed or not. Then review
 ${SAVE('pdc5-recheck.md', 'each finding: fixed or not; new defects')}
 ${RULES}`, { label: 'recheck-converge', phase: 'Converge', schema: { type: 'object', required: ['perFinding', 'newFindings'], properties: { perFinding: { type: 'array', items: { type: 'object', required: ['id', 'fixed', 'evidence'], properties: { id: { type: 'string' }, fixed: { type: 'boolean' }, evidence: { type: 'string' } } } }, newFindings: { type: 'array', items: FINDING } } } })
 }
-return { r2: { pe2Confirmed: pe2judged.filter((f) => f.confirmed).map((f) => f.id), reopened: reopened.map((f) => f.id), passes: rounds.map((r) => ({ n: r.n, commit: r.fix?.commit, open: (r.recheck?.newFindings ?? []).map((f) => f.id) })) }, conv, conv2, fixC, recC }
+const c1 = { conf2: conf2.map((f) => f.id), fixCommit: fixC?.commit, recheck: recC }
+// Converge 2 (added 11:00 UTC): clause-bounded scope still lent scopes across clauses and to subsets. Tighten rule 1 to adjacency.
+phase('Converge 2')
+const DECISION2 = `${DECISION}
+AMENDED rule 1 and 2 (2026-11-04 11:00 UTC; supersedes rule 1 above): a scope is granted ONLY by a scope phrase adjacent to the figure, from a closed list: right after it ("$X per line", "$X for each line", "$X on each of the N lines" where N is the pattern's line count, "$X a line", "$X in total", "$X in all", "$X for the claim" only when the pattern has one claim, "$X across the N lines" with N the pattern's count) or right before it ("per line, $X" is NOT adjacent: only "each line's $X"/"a total of $X"/"the total of $X"/"the per-line $X"-style determiner phrases directly before). The sentence-opening phrase rule is DROPPED. Nothing in any other clause, before or after, lends a scope. FAIL-CLOSED triggers: if the figure's sentence names any part of the lines (a count of lines other than the pattern's count, 'remaining', 'other', 'first', 'last', 'some', 'two of', a code, a date of service, a patient, 'line N'), an amount whose per-line and total values differ fails with needs=scope (the editor words already ask to state per line or in total; add "for all N lines" guidance if useful). Where per-line and total are equal, scope is irrelevant and it passes as now. The respectively rule 3 stays; its per-cue and list-wide scopes follow the same adjacency list.`
+const allRepros2 = [...allRepros, ...conv2.flatMap((j) => j.judged.filter((f) => f.confirmed)), ...((recC?.newFindings) ?? [])].map((f) => ({ id: f.id, severity: f.severity, title: f.title, reproduction: f.reproduction }))
+const conv3 = await agent(`${CONTEXT}
+You are the second converging fixer, in ${WT} (HEAD bb65c477 or later; read it). Implement this decision and simplify the scope code to it (remove clause-bounding scope reach that the adjacency rule does not need; keep what rule 3 and the role reading need):
+${DECISION2}
+Every reproduction below becomes (or stays) a named example: every false pass FAILS; every sentence in an adjacency form with the right figure PASSES; the rest FAIL with needs=scope or own_words. Reword older REVIEWED/passing examples, synth narratives (CAS-08, MOD-03, draft.ts wording) so that correct text states scope adjacently; keep the eval set honest: if eval/baseline.json must be re-recorded, explain exactly why in ADR 0086's consequences and never lower its gate. Property tests: adjacency grants scope; a non-adjacent scope phrase anywhere in the sentence never grants it; a subset trigger with per-line != total fails; 40 seeds each, zero failures. ADR 0086 word for word with the amended rule, the matrix and the synth matrix, \`pnpm synth --case\` for each changed case, synth --all no diff. Fast checks and touched tests; every packets Stryker shard the change touches, timed under the lock, 100% or reviewed equivalents, each under ~12 min.
+Reproductions: ${JSON.stringify(allRepros2)}
+Commit (message, blank line, "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "Claude-Session: ${SESSION}"), push only \`${GL} git -C ${WT} push origin HEAD:refs/heads/co-001/wip-packet-day-counts-2\`. In checks, list each reproduction id with its verdict now.
+${SAVE('pdc6-converge2.md', 'rules implemented, each reproduction id and verdict, checks')}
+${RULES}`, { label: 'fixer-converge2', phase: 'Converge 2', schema: FIX })
+const REV3 = [
+  { key: 'pe5', text: 'Adversarial payment-engine review: hunt hard for any false pass (a figure in a wrong role or scope, or a subset total, that passes in the verifier or the gateway); fuzz with sentences that put scope phrases in other clauses and subsets anywhere; the gateway against the base; the eval baseline change (if any) honest and its gate not lowered; the mutation gate.' },
+  { key: 'corr5', text: 'Adversarial correctness review: is the amended rule implemented exactly (adjacency only, closed list, no opening-phrase or cross-clause reach left, subset triggers fail closed, rule 3 consistent); do correct adjacency sentences pass; are the editor words plain; ADR, matrix, synth consistent; property tests sound.' },
+]
+const conv4 = (await pipeline(REV3,
+  (r) => agent(`${CONTEXT}
+Review the reader as it now stands at the worktree HEAD (and \`git log bb65c477..HEAD\`) against this decision: ${DECISION2}
+${CLONE2(SP + '/review-' + r.key)} Check out exactly the worktree HEAD.
+${r.text}
+A false failure in a non-adjacent form is BY DESIGN, not a finding. Report every real defect with an exact reproduction; ids ${r.key.toUpperCase()}-1, ... No findings is valid. Return the structured result even if time runs short.
+${SAVE(`pdc6-review-${r.key}.md`, 'what you checked, each candidate')}
+${RULES}`, { label: `review-${r.key}`, phase: 'Converge 2', schema: REVIEW }),
+  (rev, r) => verify2((rev?.findings ?? []).map((f) => ({ ...f, note: 'judge against the AMENDED rule: ' + DECISION2.slice(DECISION.length) })), r.key).then((v) => ({ reviewer: r.key, verdict: rev?.verdict, checked: rev?.checked, judged: v })),
+)).filter(Boolean)
+const conf4 = conv4.flatMap((j) => j.judged.filter((f) => f.confirmed))
+log(`converge 2 review: confirmed ${conf4.map((f) => f.id + ' ' + f.severity).join(', ') || 'none'}`)
+let fixD = null, recD = null
+if (conf4.length) {
+  fixD = await agent(`${CONTEXT}
+Fixer after converge 2, in ${WT}. Rules in force: ${DECISION2}
+Apply each confirmed finding within these rules, by narrowing (a fail-closed trigger or a shorter adjacency list), never by adding reach. Same duties: named examples, ADR/matrix/synth, fast checks, touched tests, affected Stryker shards timed and gated. Findings: ${JSON.stringify(conf4)}
+Commit (same trailers, Claude-Session: ${SESSION}); push only \`${GL} git -C ${WT} push origin HEAD:refs/heads/co-001/wip-packet-day-counts-2\`.
+${SAVE('pdc6-fix-after.md', 'each finding: done or not, checks')}
+${RULES}`, { label: 'fixer-after-converge2', phase: 'Converge 2', schema: FIX })
+  recD = await agent(`${CONTEXT}
+Recheck, read-only, at the worktree HEAD in your own clone. ${CLONE2(SP + '/recheck4')} Rules in force: ${DECISION2}
+For each finding run its reproduction and one variant: fixed or not. Then hunt the fixer's diff for any false pass it opened (false failures in non-adjacent forms are by design). Findings: ${JSON.stringify(conf4.map((f) => ({ id: f.id, title: f.title, reproduction: f.reproduction })))}; fixer report: ${JSON.stringify(fixD)}.
+${SAVE('pdc6-recheck.md', 'each finding: fixed or not; new defects')}
+${RULES}`, { label: 'recheck-converge2', phase: 'Converge 2', schema: { type: 'object', required: ['perFinding', 'newFindings'], properties: { perFinding: { type: 'array', items: { type: 'object', required: ['id', 'fixed', 'evidence'], properties: { id: { type: 'string' }, fixed: { type: 'boolean' }, evidence: { type: 'string' } } } }, newFindings: { type: 'array', items: FINDING } } } })
+}
+return { c1, conv3, conv4, fixD, recD }
+
