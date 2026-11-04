@@ -66,3 +66,9 @@ The fix goes into SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`). Its ADR and 
 ## Granted 2026-11-04 (~13:15 UTC): an amendment to the release loader's freeze
 Sent in Lane A's orchestrator session in reply to the request for the founder's grant: "Granted: in the release loader's freeze, each retry pass runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen; the warning names the cause it can see."
 It goes into SUITE-CAP-1b with the loader fix (978891a3). Its ADR 0083 and reconciliation-001 record it beside the first grant.
+
+## Brand rulings, 2026-11-04 (~22:50 UTC): adopted by the co-founder ("let's go with these recommendations")
+1. **Sign-in background:** Paper in light mode; the dark ground (`--pw-bg`) in dark mode, as #116 built. The reversed stacked lockup and seal on dark.
+2. **BRAND.md section 4** reads "Paper: report covers, print, and the light-theme sign-in". This settles the section 3/4/7 disagreement ADR 0056 records.
+3. **`--pw-unpriced`** is darkened to at least 4.5:1 on `--pw-unpriced-bg`, so the unpriced status can use its own color for text.
+4. **Dark mode stays off** until a dark-mode pass over every screen, PHI screens first. It then follows `prefers-color-scheme`, with an override in settings.

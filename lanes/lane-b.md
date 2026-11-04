@@ -1559,3 +1559,11 @@ HANDOFF.md; LANES.md rule 10).
   - The UX review's N1 goes to the brand owner (ADR 0056:134): does dark sign-in keep Paper, or take the dark ground as now?
 - test-flakes-6 (threads.test.ts's oom case under a process-wide max-old-space-size) is raised: S2 takes it right after #84, since it costs every session's full local run.
 - Merged today: 16.
+
+### 2026-11-04 22:50 UTC: brand rulings adopted (`approval-summaries/founder-asks-2026-10-27.md`)
+- Sign-in uses Paper in light mode and the dark ground in dark mode (as #116 built). BRAND.md section 4 is amended to match.
+- `--pw-unpriced` is darkened to at least 4.5:1 on its tint.
+- Dark mode ships only after a dark-mode pass over every screen; then it follows the OS preference, with a settings override.
+- Work:
+  - **brand-settle** (`co-001/brand-settle`): the ADR 0056 amendment, BRAND.md section 4, and the `--pw-unpriced` darkening with its contrast test. In S4 after pricing-run-cutoff, before the emails; one UX and brand review with shots.
+  - **dark-mode-ship** (the full pass, then the OS hook and the setting): queued for Lane B.
