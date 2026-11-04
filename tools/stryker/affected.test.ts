@@ -864,8 +864,10 @@ describe('the field rule, the runner proof and what else affects every package, 
     for (const file of ['.gitattributes', 'packages/money/.gitattributes', 'packages/pricing/src/.gitattributes', 'docs/product/.gitattributes']) {
       const result = affected({ files: [file] }, closures, global);
       expect(result.packages, file).toEqual(ALL);
-      expect(result.reasons.money?.some((reason) => reason.startsWith(file)), file).toBe(true);
+      // Labelled a global input, which .npmrc, a patch and the mutation tooling's own files all are, not mutation tooling.
+      expect(result.reasons.money, file).toEqual([`${file} (a global input, every package)`]);
     }
+    expect(affected({ files: ['tools/stryker/affected.ts'] }, closures, global).reasons.money).toEqual(['tools/stryker/affected.ts (a global input, every package)']);
   });
 
   it('gives all four for a changed path holding a control character, wherever it lies, and prints it JSON-quoted, so no line it starts is a workflow command', () => {

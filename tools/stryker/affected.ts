@@ -735,7 +735,7 @@ export function affected(change: Change, closures: readonly Closure[], global: G
     const isGlobal = global.files.has(file) || matchesAny(file, global.globs) || isHoldingTsconfig(file, global);
     for (const closure of closures) {
       const atBase = closure.atBase?.has(file) === true;
-      if (isGlobal) note(closure.pkg, `${file} (mutation tooling, every package)`);
+      if (isGlobal) note(closure.pkg, `${file} (a global input, every package)`);
       else if (closure.files.includes(file)) note(closure.pkg, `${file} (${atBase ? 'in its closure at the merge base' : 'imported'})`);
       else if (closure.manifests.includes(file)) note(closure.pkg, `${file} (a manifest of its closure${atBase ? ' at the merge base' : ''})`);
       else if (matchesAny(file, closure.data.map((entry) => entry.glob))) note(closure.pkg, `${file} (data its run reads)`);
