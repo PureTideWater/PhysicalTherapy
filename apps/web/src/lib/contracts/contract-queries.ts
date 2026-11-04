@@ -343,9 +343,17 @@ const SELECTIONS: Readonly<Record<DocumentSelection, string>> = {
     "NOT EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = d.practice_id AND d.id = ANY (v.source_document_ids) AND v.status IN ('approved', 'signed_off', 'superseded'))",
 };
 
-/** The practice's clean, stored contract, exhibit and payer-letter documents a selection names, newest first. */
+/**
+ * Not a payer's answer to a dispute: no payer response names the document (alias d). A letter a response names is
+ * its case's evidence, never a contract's source (docs/adr/0085, D4): it leaves both selections, and the tagging and
+ * amendment handlers refuse it (lib/contracts/tagging.ts). A payer's terms letter, which no response names, stays.
+ * The response row is the link (payer_response.document_id); no kind or column says why a document was uploaded.
+ */
+export const NOT_A_RESPONSE_LETTER = 'NOT EXISTS (SELECT 1 FROM payer_response r WHERE r.practice_id = d.practice_id AND r.document_id = d.id)';
+
+/** The practice's clean, stored contract, exhibit and payer-letter documents a selection names and no payer response names, newest first. */
 export async function listContractDocuments(scope: Scope, practiceId: string, selection: DocumentSelection, page: number, requestId: string): Promise<Paged<DocumentSummary>> {
-  const where = `WHERE d.practice_id = $1 AND d.kind IN ${CONTRACT_KINDS} AND d.scan_status = 'clean' AND d.status = 'stored' AND ${SELECTIONS[selection]}`;
+  const where = `WHERE d.practice_id = $1 AND d.kind IN ${CONTRACT_KINDS} AND d.scan_status = 'clean' AND d.status = 'stored' AND ${SELECTIONS[selection]} AND ${NOT_A_RESPONSE_LETTER}`;
   const counted = await scope.client.query<{ total: number }>(`SELECT count(*)::int AS total FROM source_document d ${where}`, [practiceId]);
   const total = counted.rows[0]?.total ?? 0;
   const { page: current, pages, offset } = pageOf(total, DOCUMENTS_PER_PAGE, page);

@@ -188,7 +188,8 @@ describe('a person with two paths, held per permission (BIL-07; D1)', () => {
     for (const one of [principal, X, Y, Z, W]) {
       const { gate } = await data(uploadsPage, one.userId);
       if (one.stopped.includes('file.upload')) {
-        expect(gate, one.name).toEqual({ open: false, title: 'Uploads are not open yet', reason: `Uploads are paused: ${R4}.` });
+        // Titled for the state, the database's sentence whole beneath (docs/adr/0085): "not open yet" is the BAA's alone.
+        expect(gate, one.name).toEqual({ open: false, title: 'Uploads are paused', reason: `${R4.charAt(0).toUpperCase()}${R4.slice(1)}.` });
       } else {
         expect(gate, one.name).toEqual({ open: true, title: null, reason: null });
       }
@@ -228,7 +229,8 @@ describe('a closed grantee, and the owner’s hold (BIL-07; D6)', () => {
       const upload = ROUTES.find((route) => route.id === 'practice.uploads.request') as Route;
       expect(await call(upload, principal.userId)).toEqual({ status: 'suspended', reason: R5 });
       // Uploads and the empty home say the closure as stopped, never paused or opening later (SS-01 review UX-SS01-3).
-      expect((await data(uploadsPage, principal.userId)).gate).toEqual({ open: false, title: 'No new uploads start', reason: `Uploads have stopped: ${R5}.` });
+      // Closed, as every upload panel titles a closure (docs/adr/0085), with R5 whole beneath.
+      expect((await data(uploadsPage, principal.userId)).gate).toEqual({ open: false, title: 'Uploads are closed', reason: `${R5.charAt(0).toUpperCase()}${R5.slice(1)}.` });
       expect((await data(practiceHome, principal.userId)).uploadsHold).toEqual({ reason: R5, source: 'grantee', restarts: false });
       expect((await data(practiceHome, principal.userId)).hold).toEqual({
         source: 'grantee',
