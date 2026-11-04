@@ -162,7 +162,8 @@ describe('the start-up credential probe', () => {
       }
       expect(response?.status).toBe(503);
       expect(response?.headers.get('cache-control')).toBe('private, no-store');
-      expect(await response?.json()).toEqual({ status: 'credential_refused' });
+      // A generic body: the public check never says that the client credential is refused (review security-N7).
+      expect(await response?.json()).toEqual({ status: 'unavailable' });
     }
   });
 });

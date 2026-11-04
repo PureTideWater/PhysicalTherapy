@@ -122,10 +122,13 @@ export class CredentialProbe {
   }
 }
 
-/** The health check's answer while the probe holds a refusal (503); undefined otherwise, when the check runs as before. */
+/**
+ * The health check's answer while the probe holds a refusal (503); undefined otherwise, when the check runs as before.
+ * Its body is generic: the check is public, and the process log already names the cause (review security-N7).
+ */
 export function probeRefusal(probe: CredentialProbe): Response | undefined {
   if (!probe.refused()) {
     return undefined;
   }
-  return new Response(JSON.stringify({ status: 'credential_refused' }), { status: 503, headers: { 'content-type': 'application/json', 'cache-control': PRIVATE_NO_STORE } });
+  return new Response(JSON.stringify({ status: 'unavailable' }), { status: 503, headers: { 'content-type': 'application/json', 'cache-control': PRIVATE_NO_STORE } });
 }

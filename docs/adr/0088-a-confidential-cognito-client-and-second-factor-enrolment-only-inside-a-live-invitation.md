@@ -146,8 +146,8 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
   on a positive result: a client-credential refusal, `ResourceNotFoundException`, or a refusal saying the client does
   not exist. Everything else passes: the expected `NotAuthorizedException` or `UserNotFoundException`, a challenge, and,
   logged `cognito probe inconclusive`, throttling, a network error or a 5-second timeout. The outcome is cached, logged
-  once with `{ error_code }` only, and `/api/health` answers 503 (`{ status: 'credential_refused' }`, before the
-  database check) only while it holds a refusal, so the deploy's circuit breaker rolls back while the old client still
+  once with `{ error_code }` only, and `/api/health` answers 503 (a generic `{ status: 'unavailable' }`, so the public
+  check never names the cause, before the database check) only while it holds a refusal, so the deploy's circuit breaker rolls back while the old client still
   exists. It fails open by design: a missed refusal is still caught by the alarm and the smoke sign-in, where a false
   refusal would block every deploy.
 
