@@ -981,10 +981,12 @@ function codeFiles(directory: string): string[] {
  */
 function bareSpecifiers(source: string): string[] {
   const found = new Set<string>();
-  for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)['"]([^'"\s]+)['"]/g)) {
+  for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)(?:['"]([^'"\s]+)['"]|`([^`\s$]+)`)/g)) {
+    // A match on a line comment is skipped, and on a line a block comment begins, or a comment's `*` line, only while
+    // no `*/` before it on that line has closed the comment: `/*! license */ require('x')` is code.
     const line = source.slice(source.lastIndexOf('\n', match.index) + 1, match.index).trimStart();
-    if (line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
-    const specifier = match[1] ?? '';
+    if (line.startsWith('//') || ((line.startsWith('/*') || line.startsWith('*')) && !line.includes('*/'))) continue;
+    const specifier = match[1] ?? match[2] ?? '';
     if (/^[./#]/.test(specifier) || /^[a-z]+:/.test(specifier)) continue;
     const name = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : (specifier.split('/')[0] ?? specifier);
     if (!builtinModules.includes(name)) found.add(name);
@@ -993,6 +995,15 @@ function bareSpecifiers(source: string): string[] {
 }
 
 describe('the test tooling’s own undeclared imports, as installed (docs/adr/0066, Part 7, N51)', () => {
+  it('reads a bare specifier after a comment closed on its line and in a backtick literal, and none inside a comment', () => {
+    expect(bareSpecifiers("/*! license */ const b = require('pg');")).toEqual(['pg']);
+    expect(bareSpecifiers("// header\n/* a */ import 'pg';")).toEqual(['pg']);
+    expect(bareSpecifiers(' */ export * from "react";')).toEqual(['react']);
+    expect(bareSpecifiers('const a = require(`pg`); const b = import(`${name}`);')).toEqual(['pg']);
+    expect(bareSpecifiers("// require('pg')\n/* import('zod') */\n * from 'react'\n/** see require('yaml')")).toEqual([]);
+    expect(bareSpecifiers("import fs from 'node:fs'; import './local.js'; require('path');")).toEqual([]);
+  });
+
   it('finds no bare import in the installed tooling’s code that its package does not declare, that resolves, and that neither TEST_TOOLING nor the tooling’s lockfile closure holds', () => {
     const files = trackedFiles();
     const global = globalFiles(repositoryRoot, files);
