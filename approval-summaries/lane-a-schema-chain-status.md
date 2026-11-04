@@ -203,6 +203,14 @@ its unpushed work is not waited for).
 - **18:28 UTC. CAS-42.5 on 4a8357d9 (run 41882546709) failed as expected in step 7b:** "A's reconcile: 30795 actionable
   lines in 7 reprocessing 835s", then `stopped: REPROCESSING_MONITOR_NOT_CANCELLED`; nothing read back. Evidence for the
   7b decision; one comment on #110. CI otherwise green on 4a8357d9 but the domain model (blank line).
+- **20:40 UTC. 1b #110 head 3ac856d5** (wf_7e937213-93c: 934e5bb5 working set + OOM events + 7b on F; base 17641c88
+  (#114, #85) merged ff11fb28; review found problems, fixed in 3ac856d5: A's chain triage must make exactly the scenario's
+  lines actionable, plus the workflow header and comments). CI green but the domain model (blank line). **CAS-42.5 on
+  3ac856d5 (run 41901463895): memory now PASSES** (working set at most 642.8 MiB over the run vs 921.6; memory.peak 746.4),
+  7b on F (2,000 lines, attempt 1, 615.7 s), A's triage 30,795 of the 30,795 expected actionable, the together phase all
+  completed, the Known gap line printed; **FAIL on two retries:** A price and C parse 4 completed on attempt 2 (concurrent
+  phase; both attempt 1 on ab8c9c27); cause being read (worker log is in the artifact, unreachable here). Also noted:
+  advisory locks at most 22 per backend during F's reconcile (bound 64; 1b's claim is one per backend: to explain).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
