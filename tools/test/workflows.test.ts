@@ -3009,7 +3009,7 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     const install = stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile');
     const canary = stepIndex(steps, (step) => step.name === 'The canary');
     const shard = stepIndex(steps, (step) => step.name === 'The shard');
-    expect(steps[canary]?.run).toBe('pnpm stryker run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n');
+    expect(steps[canary]?.run).toBe('pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n');
     expect(steps[shard]?.run).toBe('pnpm -s exec tsx tools/stryker/shards.ts "$TP_MUTATION_SHARD"');
     // The canary is the first step after the install, and no Stryker run comes before it.
     expect(canary).toBe(install + 1);
@@ -3105,6 +3105,189 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
       expect(mutationJob.steps.some((step) => usesAction(step, 'actions/checkout') && step.with?.['persist-credentials'] === false), name).toBe(true);
       expect(runs(mutationJob.steps).filter((run) => run.startsWith('pnpm install')), name).toEqual(['pnpm install --frozen-lockfile']);
     }
+  });
+
+  /**
+   * docs/adr/0066, Part 7: no step runs a root or package script (so their edits stay inert), Stryker starts by path,
+   * and the changes job checks its own runtime before it decides. Every `run:` of each job, in order, is one of these
+   * whole commands; the mutation job's own shell script is listed verbatim.
+   */
+  const NEEDS_SCRIPT = [
+    'echo "changes: $CHANGES; stryker: $STRYKER; any: ${ANY:-(none)}; packages: ${PACKAGES:-(none)}; shards: ${SHARDS:-(none)}"',
+    'if [ "$CHANGES" != success ]; then',
+    '  echo "::error::The changes job ended $CHANGES, so what this change affects is unknown."',
+    '  exit 1',
+    'fi',
+    '# The outputs exactly as tools/stryker/affected.ts writes them; anything else (none, or garbled) fails closed.',
+    'case "$ANY" in',
+    '  true | false) ;;',
+    '  *)',
+    '    echo "::error::The changes job gave no verdict (any=${ANY:-(none)}), so what this change affects is unknown."',
+    '    exit 1',
+    '    ;;',
+    'esac',
+    "NAMES='^\\[(\"[a-z]+(-[a-z]+)*\"(,\"[a-z]+(-[a-z]+)*\")*)?\\]$'",
+    'if ! printf \'%s\' "$SHARDS" | grep -Eq "$NAMES" || ! printf \'%s\' "$PACKAGES" | grep -Eq "$NAMES"; then',
+    '  echo "::error::The changes job gave shards=${SHARDS:-(none)} and packages=${PACKAGES:-(none)}, not JSON arrays of names."',
+    '  exit 1',
+    'fi',
+    'if [ "$ANY" = false ]; then',
+    '  if [ "$SHARDS" != \'[]\' ] || [ "$PACKAGES" != \'[]\' ]; then',
+    '    echo "::error::The changes job said no package is affected, yet gave shards=$SHARDS and packages=$PACKAGES."',
+    '    exit 1',
+    '  fi',
+    '  if [ "$STRYKER" != skipped ]; then',
+    '    echo "::error::No package was affected, yet the shard jobs ended $STRYKER."',
+    '    exit 1',
+    '  fi',
+    '  echo "No money path changed: no mutation run." | tee -a "$GITHUB_STEP_SUMMARY"',
+    '  echo "run=false" >> "$GITHUB_OUTPUT"',
+    '  exit 0',
+    'fi',
+    'if [ "$SHARDS" = \'[]\' ] || [ "$PACKAGES" = \'[]\' ]; then',
+    '  echo "::error::The changes job said a package is affected, yet gave shards=$SHARDS and packages=$PACKAGES."',
+    '  exit 1',
+    'fi',
+    'if [ "$STRYKER" != success ]; then',
+    '  echo "::error::A shard job ended $STRYKER (skipped, failed or cancelled), so the affected packages are not scored."',
+    '  exit 1',
+    'fi',
+    'echo "run=true" >> "$GITHUB_OUTPUT"',
+    '',
+  ].join('\n');
+  /** Each job's own runtime and checkout check (tools/stryker/runtime.ts), the changes job's and the gate's. */
+  const RUNTIME_CHECK = 'pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"';
+  const RUNS: Readonly<Record<string, readonly string[]>> = {
+    changes: ['pnpm install --frozen-lockfile', RUNTIME_CHECK, 'pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"'],
+    stryker: [
+      'pnpm install --frozen-lockfile',
+      'pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n',
+      'pnpm -s exec tsx tools/stryker/shards.ts "$TP_MUTATION_SHARD"',
+      'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --shard "$TP_MUTATION_SHARD"',
+    ],
+    mutation: [NEEDS_SCRIPT, 'pnpm install --frozen-lockfile', RUNTIME_CHECK, 'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected "$SHARDS" --summary "$GITHUB_STEP_SUMMARY"'],
+  };
+
+  it('runs only whole commands it lists, none of them a script, Stryker by path, and checks the changes and gate jobs’ runtime and checkout before they decide or judge', () => {
+    for (const [name, mutationJob] of Object.entries(parsed.jobs)) {
+      expect(mutationJob.steps.filter((step) => step.run !== undefined).map((step) => step.run), name).toEqual(RUNS[name]);
+    }
+    // Each listed command is the install from the lockfile or a tooling file run by tsx: no `pnpm <script>`, `pnpm run`,
+    // `node --run`, npm, npx, corepack or Stryker's bin by name; the needs step's script runs none of them either.
+    for (const run of Object.values(RUNS).flat()) {
+      if (run === NEEDS_SCRIPT) continue;
+      for (const line of run.split('\n').filter((text) => text !== '')) expect(line).toMatch(/^pnpm (?:install --frozen-lockfile|-s exec tsx tools\/stryker\/[a-z/]+\.ts(?: .*)?)$/);
+    }
+    expect(NEEDS_SCRIPT).not.toMatch(/\b(?:pnpm|npm|npx|node|corepack|tsx|yarn|bun|deno)\b/);
+    // The changes job: install, then its runtime check, then the decision, so a runtime other than the pinned one fails
+    // the job before anything is decided.
+    const changes = job('changes').steps;
+    const install = stepIndex(changes, (step) => step.run === 'pnpm install --frozen-lockfile');
+    const runtime = stepIndex(changes, (step) => step.name === 'The runtime is the pinned one');
+    const affected = stepIndex(changes, (step) => step.id === 'affected');
+    expect(changes[runtime]?.run).toBe(RUNTIME_CHECK);
+    expect(changes[runtime]?.if).toBeUndefined();
+    expect([install, runtime]).toEqual([runtime - 1, affected - 1]);
+    // The review of #96 (N3): the gate job checks its own runtime and checkout too, after its install and before it
+    // reads a report, whenever it runs; the shard jobs are held by their canary verdicts instead.
+    const gate = job('mutation').steps;
+    const gateInstall = stepIndex(gate, (step) => step.run === 'pnpm install --frozen-lockfile');
+    const gateRuntime = stepIndex(gate, (step) => step.name === 'The runtime is the pinned one');
+    const download = stepIndex(gate, (step) => step.uses?.startsWith('actions/download-artifact@') === true);
+    const judge = stepIndex(gate, (step) => step.name === 'The gate');
+    expect(gate[gateRuntime]?.run).toBe(RUNTIME_CHECK);
+    expect(gate[gateRuntime]?.if).toBe("steps.needs.outputs.run == 'true'");
+    expect([gateInstall + 1, gateRuntime + 1]).toEqual([gateRuntime, download]);
+    expect(judge).toBeGreaterThan(download);
+    for (const [name, mutationJob] of Object.entries(parsed.jobs)) {
+      const tsx = mutationJob.steps.findIndex((step) => step.run?.includes('exec tsx tools/stryker/') === true);
+      if (name !== 'stryker') expect(mutationJob.steps[tsx]?.run, name).toBe(RUNTIME_CHECK);
+    }
+  });
+
+  /**
+   * docs/adr/0066, Part 7 (E3): what keeps every root or package script, and every manifest field no shard reads, inert
+   * is that nothing a mutation run loads runs a process or reads a manifest but these, each for what it names. The scan
+   * covers the mutation tooling's own closure (tools/stryker/affected.ts globalFiles, called, so it grows with that
+   * closure) and the four packages' closures. Every entry must be among the scanned files and still hold each literal
+   * it lists, so the lists cannot go stale.
+   */
+  const SPAWNS: Readonly<Record<string, { readonly program: string; readonly runs: string }>> = {
+    'tools/stryker/affected.ts': { program: "'git'", runs: 'git alone: the tracked files, a revision’s tree, the diff and the merge base' },
+    'tools/stryker/stryker.ts': { program: 'process.execPath', runs: 'this Node on @stryker-mutator/core’s bin.stryker, through the spawn it is given (stryker.test.ts holds the bin)' },
+  };
+  const MANIFEST_LITERALS = ['package.json', 'pnpm-workspace.yaml', 'mutation.yml', 'read-pkg', 'read-package-up', 'pkg-up', '@npmcli/package-json', 'npm_package_'] as const;
+  const MANIFEST_READERS: Readonly<Record<string, { readonly literals: readonly (typeof MANIFEST_LITERALS)[number][]; readonly reads: string }>> = {
+    'tools/stryker/affected.ts': { literals: ['package.json', 'pnpm-workspace.yaml', 'mutation.yml'], reads: 'all three as data: the global inputs and each closure’s manifests, diffed, never run' },
+    'tools/stryker/manifests.ts': { literals: ['package.json', 'pnpm-workspace.yaml', 'mutation.yml'], reads: 'all three as data: each side’s text of the root and workspace manifests, the workspace file and this workflow, classified field by field, never run' },
+    'tools/stryker/canary/stryker.config.mjs': { literals: ['mutation.yml'], reads: 'a comment naming the workflow whose shard step runs it' },
+    'tools/stryker/workspace.ts': { literals: ['package.json', 'pnpm-workspace.yaml'], reads: 'the workspace’s packages, and each workspace manifest’s name and exports (the aliases)' },
+    'tools/stryker/stryker.ts': { literals: ['package.json'], reads: '@stryker-mutator/core’s own manifest under node_modules, for its bin' },
+    'tools/stryker/runtime.ts': { literals: ['package.json'], reads: 'the root packageManager, the pinned pnpm' },
+    'tools/screening-capacity/watched.ts': { literals: ['package.json', 'pnpm-workspace.yaml'], reads: 'paths in its watched list, and comments' },
+    'vitest.mutation.config.ts': { literals: ['package.json', 'pnpm-workspace.yaml'], reads: 'comments naming where the aliases come from' },
+  };
+
+  // It reads the repository's tooling, never CI_TREE's copy, so the runs on a copy skip it (as both the simulated
+  // Dependabot rewrite's runs do, each starting its own vitest with CI_TREE set).
+  it.skipIf(process.env.CI_TREE !== undefined)('lets no file a mutation run loads run a process but git and Stryker by path, or name a manifest or this workflow but those listed with what they read', async () => {
+    const { globalFiles, repositoryClosures, trackedFiles } = await import('../stryker/affected');
+    // TypeScript's parser, loaded here so collecting this file stays light.
+    const ts = (await import('typescript')).default;
+    type Node = Parameters<typeof ts.forEachChild>[0];
+    /** Each use of a child_process binding in a file, other than a call whose first argument is `program`. */
+    const spawnProblems = (file: string, text: string, program: string): string[] => {
+      const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+      const at = (node: Node) => `${file}:${String(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)}`;
+      const problems: string[] = [];
+      const bindings = new Set<string>();
+      const visit = (node: Node): void => {
+        if (ts.isStringLiteralLike(node) && /^(?:node:)?child_process$/.test(node.text)) {
+          const declaration = node.parent;
+          const clause = ts.isImportDeclaration(declaration) ? declaration.importClause : undefined;
+          const named = clause?.namedBindings;
+          if (clause === undefined || clause.name !== undefined || named === undefined || !ts.isNamedImports(named)) problems.push(`${at(node)}: child_process reached other than by named imports, so its spawns cannot be read`);
+          else if (!clause.isTypeOnly) for (const element of named.elements) if (!element.isTypeOnly) bindings.add(element.name.text);
+        } else if (ts.isIdentifier(node) && bindings.has(node.text)) {
+          const parent = node.parent;
+          const declares = (ts.isImportSpecifier(parent) || ts.isParameter(parent)) && parent.name === node;
+          const member = (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)) && parent.name === node;
+          if (declares || member || ts.isTypeQueryNode(parent)) {
+            // Its declaration, a property of the same name, or its type.
+          } else if (ts.isCallExpression(parent) && parent.expression === node) {
+            const first = parent.arguments[0]?.getText(source) ?? '(nothing)';
+            if (first !== program) problems.push(`${at(node)}: ${node.text} runs ${first}, not ${program}`);
+          } else if (ts.isParameter(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+            // The default of a parameter (the injected spawn): the parameter is held to the same program.
+            bindings.add(parent.name.text);
+          } else problems.push(`${at(node)}: ${node.text} is used other than to run ${program}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+      return problems;
+    };
+    const files = trackedFiles(repositoryRoot);
+    const scanned = [...new Set([...globalFiles(repositoryRoot, files).files, ...repositoryClosures(repositoryRoot, files).flatMap((closure) => closure.files)])].sort();
+    expect(scanned).toContain('tools/stryker/gate.ts');
+    expect(scanned).toContain('packages/money/src/index.ts');
+    const problems: string[] = [];
+    for (const file of [...new Set([...Object.keys(SPAWNS), ...Object.keys(MANIFEST_READERS)])]) if (!scanned.includes(file)) problems.push(`${file} is listed, but no mutation run loads it`);
+    for (const file of scanned) {
+      const text = readFileSync(path.join(repositoryRoot, file), 'utf8');
+      const spawn = SPAWNS[file];
+      if (spawn === undefined) {
+        if (text.includes('child_process')) problems.push(`${file} names child_process: no file a mutation run loads may run a process but those SPAWNS lists`);
+      } else {
+        if (!text.includes('child_process')) problems.push(`${file} no longer names child_process: remove its SPAWNS entry`);
+        problems.push(...spawnProblems(file, text, spawn.program));
+      }
+      const held = MANIFEST_LITERALS.filter((literal) => text.includes(literal));
+      const listed = MANIFEST_READERS[file]?.literals ?? [];
+      for (const literal of held) if (!listed.includes(literal)) problems.push(`${file} names ${literal}: no file a mutation run loads may name a manifest or this workflow but those MANIFEST_READERS lists, with what each reads`);
+      for (const literal of listed) if (!held.includes(literal)) problems.push(`${file} no longer names ${literal}: remove it from its MANIFEST_READERS entry`);
+    }
+    expect(problems).toEqual([]);
   });
 
   it('scores each package with the mutate and test sets its configuration names', async () => {

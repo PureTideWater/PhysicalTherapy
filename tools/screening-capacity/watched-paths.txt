@@ -175,6 +175,7 @@ apps/worker/src/packets/readiness.ts
 apps/worker/src/packets/records.ts
 apps/worker/src/packets/services.ts
 apps/worker/src/packets/submission-kinds.ts
+apps/worker/src/packets/verifier-now.ts
 apps/worker/src/packets/words.ts
 apps/worker/src/parse/code-lists.ts
 apps/worker/src/parse/era/formats.ts
@@ -441,6 +442,17 @@ packages/packets/src/payer.ts
 packages/packets/src/placeholders.ts
 packages/packets/src/readable.ts
 packages/packets/src/reference.ts
+packages/packets/src/roles-reader/cues.ts
+packages/packets/src/roles-reader/kinds.ts
+packages/packets/src/roles-reader/numbers.ts
+packages/packets/src/roles-reader/walk.ts
+packages/packets/src/roles-words/amounts.ts
+packages/packets/src/roles-words/dates.ts
+packages/packets/src/roles-words/days.ts
+packages/packets/src/roles-words/index.ts
+packages/packets/src/roles-words/labels.ts
+packages/packets/src/roles-words/prose.ts
+packages/packets/src/roles.ts
 packages/packets/src/scan.ts
 packages/packets/src/verifier/index.ts
 packages/packets/src/verifier/mismatches.ts

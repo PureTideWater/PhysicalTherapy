@@ -152,6 +152,11 @@ describe('scanText', () => {
       ['amount', '1234567', '12,345.67'],
       ['amount', '123456789', '1,234,567.89'],
     ]);
+    // An amount with no dollar sign ends at its sentence's period too, with more text after it.
+    expect(figures('Allowed 70.00. Then 12.50 was paid.')).toEqual([
+      ['amount', '7000', '70.00'],
+      ['amount', '1250', '12.50'],
+    ]);
     expect(figures('Units 12,345 and 1,234,567 and 2.125, then 3. Billed x2.')).toEqual([
       ['number', '12345', '12,345'],
       ['number', '1234567', '1,234,567'],

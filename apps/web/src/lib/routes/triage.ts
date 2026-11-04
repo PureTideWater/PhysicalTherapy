@@ -2,7 +2,7 @@ import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit
 import { type Cents, centsToString, sumCents } from '@tp/money';
 import { CASE_STATES, WRITE_OFF_REASONS, writeOffSchema } from '@tp/triage';
 import { lineCorrections, practiceLedgerTotals } from '@tp/worker/ledger';
-import { packetOfCase } from '@tp/worker/packets';
+import { type VerifierNow, type VerifierStanding, caseVerifiersNow, packetOfCase } from '@tp/worker/packets';
 import { waitingPatterns } from '@tp/worker/triage';
 import { z } from 'zod';
 
@@ -301,7 +301,8 @@ export const casesPage = practiceRoute({
 
 /** A case's packet and dispute, as its page summarizes them (the builder and the submissions screen hold the rest). */
 export interface CaseDispute {
-  readonly packet: { readonly versionNo: number; readonly verifierPassed: boolean; readonly approved: boolean; readonly exported: boolean } | null;
+  /** The current version: its number, what the verifier says of it now (docs/adr/0086, CORR-5), its approval and export. */
+  readonly packet: { readonly versionNo: number; readonly verifier: VerifierStanding; readonly approved: boolean; readonly exported: boolean } | null;
   readonly latestSubmission: { readonly submittedOn: string; readonly followUpOn: string; readonly answered: boolean; readonly followUpDue: boolean } | null;
 }
 
@@ -369,10 +370,10 @@ export interface CasePageData {
   readonly canReadPhi: boolean;
 }
 
-async function caseDispute(scope: PracticeScope<ScopeClient>, practiceId: string, caseId: string, asOf: string): Promise<CaseDispute> {
+async function caseDispute(scope: PracticeScope<ScopeClient>, practiceId: string, caseId: string, asOf: string, verifiers: ReadonlyMap<string, VerifierNow>): Promise<CaseDispute> {
   const found = await packetOfCase(scope, { practiceId, caseId });
-  const { rows: versions } = await scope.client.query<{ version_no: number; verifier_passed: boolean; approved: boolean; exported: boolean }>(
-    `SELECT v.version_no, v.verifier_passed, v.approved_by IS NOT NULL AS approved, v.exported_at IS NOT NULL AS exported FROM packet_version v WHERE v.id = $1 AND v.practice_id = $2`,
+  const { rows: versions } = await scope.client.query<{ id: string; version_no: number; verifier_passed: boolean; approved: boolean; exported: boolean }>(
+    `SELECT v.id, v.version_no, v.verifier_passed, v.approved_by IS NOT NULL AS approved, v.exported_at IS NOT NULL AS exported FROM packet_version v WHERE v.id = $1 AND v.practice_id = $2`,
     [found?.currentVersionId ?? null, practiceId],
   );
   const { rows: submissions } = await scope.client.query<{ submitted_on: string; follow_up_on: string; answered: boolean }>(
@@ -383,7 +384,10 @@ async function caseDispute(scope: PracticeScope<ScopeClient>, practiceId: string
   const version = versions[0];
   const latest = submissions[0];
   return {
-    packet: version === undefined ? null : { versionNo: version.version_no, verifierPassed: version.verifier_passed, approved: version.approved, exported: version.exported },
+    packet:
+      version === undefined
+        ? null
+        : { versionNo: version.version_no, verifier: verifiers.get(version.id)?.standing ?? (version.verifier_passed ? 'fails_now' : 'failed'), approved: version.approved, exported: version.exported },
     latestSubmission: latest === undefined ? null : { submittedOn: latest.submitted_on, followUpOn: latest.follow_up_on, answered: latest.answered, followUpDue: !latest.answered && latest.follow_up_on <= asOf },
   };
 }
@@ -409,15 +413,17 @@ export const casePage = practiceRoute({
     const detail = await caseDetail(scope, practiceId, params.caseId, cipher, request.requestId, params.page);
     const activity = await caseActivity(scope, practiceId, params.caseId, cipher, request.requestId);
     const totals = await practiceLedgerTotals(scope, practiceId, { caseIds: [params.caseId] });
+    // What the verifier says of each packet version now, run again over its stored narrative (docs/adr/0086, CORR-5).
+    const verifiers = await caseVerifiersNow(scope, services.keys, { practiceId, caseId: params.caseId, requestId: request.requestId });
     return {
       practiceId,
       asOf,
       case: found,
       detail,
       activity,
-      timeline: await caseTimeline(scope, { practiceId, caseId: params.caseId, openedAt: found.openedAt, lineEvents: detail.events, activity }),
+      timeline: await caseTimeline(scope, { practiceId, caseId: params.caseId, openedAt: found.openedAt, lineEvents: detail.events, activity, verifiers }),
       workers: canWork ? await caseWorkers(scope, practiceId) : [],
-      dispute: await caseDispute(scope, practiceId, params.caseId, asOf),
+      dispute: await caseDispute(scope, practiceId, params.caseId, asOf, verifiers),
       ledger: { approvedCents: centsToString(totals.payerApprovedCents), recoveredCents: centsToString(totals.recoveredCents), proofLevel: totals.proofLevel },
       corrections: await caseCorrections(scope, practiceId, params.caseId, canReadPhi, request.requestId),
       canWork,

@@ -1,5 +1,5 @@
 import { type LineStage, STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
-import { SUBMISSION_UNATTESTED_WORDS, type SubmissionUnattestedReason } from '@tp/worker/packets';
+import { SUBMISSION_UNATTESTED_WORDS, type SubmissionUnattestedReason, type VerifierStanding } from '@tp/worker/packets';
 
 /**
  * A case's timeline (PRD 7, Cases: "detail with ... notes, timeline"): every recorded step of the case
@@ -26,6 +26,18 @@ export const CHANNEL_TEXT = {
   provider_relations_email: 'Provider-relations email',
 } as const;
 
+/**
+ * What a version written says of the verifier: what it said then and, for a version it passed then and fails now (the
+ * verifier runs again over the stored narrative; docs/adr/0086, CORR-5), that too. A failed version cannot be
+ * approved; one that fails now may have been approved or exported under the earlier reading, so its words say only
+ * what the verifier says (UX-D1).
+ */
+export const WRITTEN_VERIFIER_TEXT: Readonly<Record<VerifierStanding, string>> = {
+  passed: 'the verifier passed it',
+  failed: 'the verifier failed it, so it cannot be approved',
+  fails_now: 'the verifier passed it then and fails it now',
+};
+
 export type TimelineEvent =
   | { readonly kind: 'opened'; readonly at: string; readonly by: string | null }
   | { readonly kind: 'stage'; readonly at: string; readonly by: string | null; readonly position: number; readonly stage: LineStage }
@@ -35,7 +47,8 @@ export type TimelineEvent =
   | { readonly kind: 'note'; readonly at: string; readonly by: string | null; readonly text: string | null }
   | { readonly kind: 'assigned'; readonly at: string; readonly by: string | null; readonly owner: string | null }
   | { readonly kind: 'approval_requested'; readonly at: string; readonly by: string | null; readonly versionNo: number }
-  | { readonly kind: 'version_written'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly verifierPassed: boolean }
+  /** A version written, with what the verifier says of it now: passed, failed when written, or passed then and fails now (docs/adr/0086). */
+  | { readonly kind: 'version_written'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly verifier: VerifierStanding }
   | { readonly kind: 'version_approved'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly approvedAlone: boolean }
   | { readonly kind: 'version_exported'; readonly at: string; readonly by: null; readonly versionNo: number; readonly sha256: string }
   /** The reimbursement reviewer's attestation over the export (D16): never a person of the practice. */
@@ -66,7 +79,7 @@ export function eventText(event: TimelineEvent): string {
     case 'approval_requested':
       return `Approval requested for packet version ${String(event.versionNo)}`;
     case 'version_written':
-      return `Packet version ${String(event.versionNo)} written; ${event.verifierPassed ? 'the verifier passed it' : 'the verifier failed it, so it cannot be approved'}`;
+      return `Packet version ${String(event.versionNo)} written; ${WRITTEN_VERIFIER_TEXT[event.verifier]}`;
     case 'version_approved':
       return `Packet version ${String(event.versionNo)} approved${event.approvedAlone ? ' alone after the 24-hour delay (single-user practice, audit flag)' : ' by a second person'}`;
     case 'version_exported':

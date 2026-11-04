@@ -1,3 +1,4 @@
+import type { PacketContent } from '@tp/packets';
 import { AppRouterContext, type AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { Component, type ReactNode, StrictMode, startTransition, use, useEffect, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -11,6 +12,7 @@ import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from 
 import type { RefusalState } from '../form-issues';
 import { HardwareKeySignIn } from '../hardware-key';
 import { ExportRequestForm } from '../packets/export-status';
+import { NarrativeEditor } from '../packets/narrative-editor';
 import { ResponseCardDescription } from '../packets/response-card';
 import { type ResponseLetterFieldProps, type ResponseLetters, ResponseLetterField } from '../packets/response-letter';
 import { VersionForm } from '../packets/version-form';
@@ -457,6 +459,14 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       model={{ heading: 'Draft with the model', description: 'A synthetic draft.', submit: { intent: 'model_draft', label: 'Draft with the model', variant: 'outline' }, unavailable: null }}
     />
   ),
+  /** The packet builder's narrative editor over the SYNTHETIC content and narrative the test hands the page (window.harnessInit). */
+  narrative: () => {
+    const init = (window as unknown as { harnessInit?: { readonly content: PacketContent; readonly initial: string } }).harnessInit;
+    if (init === undefined) {
+      throw new Error('the narrative editor needs its content');
+    }
+    return <NarrativeEditor name="narrative" initial={init.initial} content={init.content} maxLength={20_000} />;
+  },
   /** The packet's Export button, a form of hidden fields with its own useActionState (design 4.2). */
   export: (page) => (
     <ExportRequestForm action={action} refusalCodes={['no_approved_version']}>

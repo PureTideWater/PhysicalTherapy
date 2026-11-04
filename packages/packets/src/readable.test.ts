@@ -39,6 +39,25 @@ describe('readableText', () => {
     expect(readableText('a\tb\nc\r\nd')).toMatchObject({ text: 'a\tb\nc\r\nd', hidden: [] });
   });
 
+  it('finds a letter of another script inside a word of Latin letters where it stands, past an apostrophe too, and none in a word of another script alone (CORR-16)', () => {
+    const apostrophe = cp(0x2019);
+    const dze = cp(0x0455); // Cyrillic, prints as "s"
+    // Where it stands in the narrative, in a word that starts after other words.
+    expect(readableText(`The allowe${cp(0x0501)} amount`).hidden).toEqual([{ start: 10, end: 11 }]);
+    // A word of Latin letters goes on past an apostrophe, one letter or more after it.
+    const joined = `allowed${apostrophe}${dze}`;
+    expect(at(joined, readableText(joined).hidden)).toEqual([dze]);
+    const later = `allowed${apostrophe}s${dze}`;
+    expect(at(later, readableText(later).hidden)).toEqual([dze]);
+    // A word of another script's letters alone is no Latin word with a confusable in it.
+    expect(readableText(`See ${cp(0x043f, 0x0440, 0x0438)} here`).hidden).toEqual([]);
+    // In the narrative's order with the hidden characters around it.
+    expect(readableText(`T${cp(0x04bb)}e a${cp(0x200b)}b`).hidden).toEqual([
+      { start: 1, end: 2 },
+      { start: 5, end: 6 },
+    ]);
+  });
+
   it('treats a mark on a digit or a symbol as hidden, and a mark on a letter as the letter', () => {
     const underlined = `1${cp(0x0332)}1${cp(0x0332)} claims`;
     expect(readableText(underlined)).toMatchObject({ text: '11 claims', hidden: [{ start: 0, end: 4 }] });

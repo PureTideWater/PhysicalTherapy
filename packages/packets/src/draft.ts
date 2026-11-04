@@ -6,8 +6,10 @@ import { interestStated } from './interest';
  * A deterministic draft of the pattern statement, built by code from the version's own facts (PRD 12:
  * what the contract requires, what the remittances show, the delta and the count). In v1, before the
  * model gateway (milestone 10), a person writes or edits the narrative; this draft is where they start.
- * Every figure it writes is one of the facts and every sentence carries its citation marker, so it
- * passes the verifier by construction (a property test holds it to that). No model is involved.
+ * Every figure it writes is one of the facts, each amount with the scope phrase right after it (docs/adr/0086, rule 1)
+ * in a sentence that names no code or date of service, and every sentence carries its citation marker, so it passes the
+ * verifier by construction (a property test holds it to that).
+ * No model is involved.
  *
  * It is written for the payer (audit item #37 part 1; docs/adr/0061): it names no internal term, says nothing of
  * interest that could not be computed, and states the Medicare fee schedule a regulation's amount comes from by its
@@ -34,7 +36,9 @@ function requirement(content: PacketContent): string[] {
       );
     case 'PER_VISIT': {
       const amount = pattern.codes[0]?.contract_amount_cents ?? null;
-      return [amount === null ? `${version} pays a visit at the rate cited on page ${String(citation.page)} [1].` : `${version} pays ${dollars(amount)} per visit for ${codes.join(', ')} [1].`];
+      // The codes in a sentence of their own: a sentence that names a code names a part of the lines, so an amount in
+      // it keeps no scope (docs/adr/0086, rule 1).
+      return amount === null ? [`${version} pays a visit at the rate cited on page ${String(citation.page)} [1].`] : [`${version} pays ${dollars(amount)} per visit [1].`, `That rate is for ${codes.join(', ')} [1].`];
     }
     case 'PERCENT_OF_MEDICARE': {
       const percent = pattern.contract_percentages[0];
@@ -53,16 +57,18 @@ export function draftNarrative(content: PacketContent): string {
     pattern.first_service_date === pattern.last_service_date ? `on ${pattern.first_service_date}` : `from ${pattern.first_service_date} to ${pattern.last_service_date}`;
   const sentences = [
     ...requirement(content),
-    `The remittances allowed ${dollars(pattern.observed_cents)} for ${plural(pattern.lines, 'line', 'lines')} on ${plural(pattern.claims, 'claim', 'claims')} with service dates ${span} [3].`,
+    // The service dates in a sentence with no amount: a sentence that names a date of service names a part of the lines.
+    `The pattern is ${plural(pattern.lines, 'line', 'lines')} on ${plural(pattern.claims, 'claim', 'claims')} with service dates ${span} [3].`,
+    `The remittances allowed ${dollars(pattern.observed_cents)} in total for those lines [3].`,
     content.citation.kind === 'contract'
-      ? `Under the contract those lines come to ${dollars(pattern.expected_cents)}, a shortfall of ${dollars(pattern.variance_cents)} [3].`
-      : `At the Original Medicare amount those lines come to ${dollars(pattern.expected_cents)}, a shortfall of ${dollars(pattern.variance_cents)} [3].`,
+      ? `Under the contract those lines come to ${dollars(pattern.expected_cents)} in total, a shortfall of ${dollars(pattern.variance_cents)} in total [3].`
+      : `At the Original Medicare amount those lines come to ${dollars(pattern.expected_cents)} in total, a shortfall of ${dollars(pattern.variance_cents)} in total [3].`,
   ];
   // Interest only where code computed it above zero (audit item #37 part 1, D9; the founder's ruling of 2026-10-20,
   // Q4 (a); interestStated()): nothing is said of interest no line computed, or of $0.00, so the letter never reads as
   // giving it up.
   if (interest !== null && interest.total_cents !== null && interestStated(interest)) {
-    sentences.push(`Prompt-pay interest of ${dollars(interest.total_cents)} is stated as its own line and is not part of the shortfall [4].`);
+    sentences.push(`Prompt-pay interest of ${dollars(interest.total_cents)} in total is stated as its own line and is not part of the shortfall [4].`);
   }
   return sentences.join(' ');
 }

@@ -458,3 +458,8 @@ export function derivedFeeScheduleValues(trace: PricingTrace): string[] {
   const held = sourceNumbers(trace);
   return [...new Set(derived)].filter((value) => !held.has(value));
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Narratives that state a figure in another role, and in its own (test matrix CAS-43 and CAS-44; docs/adr/0086)
+
+export { HAND_WRITTEN, MISSTATED, type MisstatedExample, REVIEWED, ROLE_CONTENTS, type ReviewedExample, type ReviewedMismatch, type RoleContent, STATED, type StatedExample, roleContents, roleOracle, scopedOracle } from './role-examples';

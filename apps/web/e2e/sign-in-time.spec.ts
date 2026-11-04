@@ -1,9 +1,10 @@
+import { brandName } from '@paidwhole/brand/name';
 import { type Browser, type Locator, type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { totpCode } from '../src/lib/auth/totp';
-import { atPhoneWidth, expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible, expectAccessibleInDark } from './a11y';
 import { addVirtualKey, enterPassword, refusal, withDatabase } from './helpers';
 
 /**
@@ -24,6 +25,14 @@ import { addVirtualKey, enterPassword, refusal, withDatabase } from './helpers';
 
 const KEEPS = 'If you need more time, start again: your email is kept, and you type your password again.';
 const CLOSED = 'Start again: your email is kept, and you type your password again.';
+
+/**
+ * A sign-in page's title (the root layout's template). A step's restart, a server action's redirect, is a client-side
+ * navigation whose new title reaches the head after its body: axe waits for this one, not the step before's.
+ */
+function titled(name: string): string {
+  return `${name} | ${brandName}`;
+}
 
 /** The status below a step's form, which speaks at the warning and when the step has closed. */
 function regionOf(page: Page): Locator {
@@ -231,6 +240,8 @@ test('the code step states its limit, warns once, closes, and starts again with 
   await test.step('below the card, the lost-authenticator line names the support address, and the step passes axe with it at 1280 and 390 px (SGN-08)', async () => {
     await expectLostFactorLine(page, 'Lost your authenticator app? Write to ', ' from the address you sign in with.');
     await expectAccessible(page, 'Code step, open, lost-authenticator line');
+    // In dark too: the frame's muted line and its link, on the frame's own ground (review UXD-N1).
+    await expectAccessibleInDark(page, 'Code step, open, lost-authenticator line');
     await atPhoneWidth(page, 'Code step, open, lost-authenticator line');
   });
 
@@ -268,7 +279,7 @@ test('the code step states its limit, warns once, closes, and starts again with 
     await page.context().clearCookies({ name: 'tp_sign_in' });
     await pressCode(page, personaTotpCode(key), 'Sign in');
     await expectKept(page, 'step_expired', email, ['Sign-in step closed', 'That sign-in step closed. Your email is filled in: type your password to start again.']);
-    await expectAccessible(page, 'Sign in, email kept');
+    await expectAccessible(page, 'Sign in, email kept', { title: titled('Sign in') });
   });
 
   await test.step('the kept email is a sealed, HttpOnly, SameSite=Lax cookie that ends within 18 minutes', async () => {
@@ -381,6 +392,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expect(page.locator('[data-slot="step-marker"]')).toHaveText(/^Step 1 of 2:?\s*$/);
     await expect(phraseOf(page)).toHaveText('This step stays open for 3 minutes.');
     await expectOpen(page);
+    // In dark: the new-password card, its fields and its limit, on the frame's ground (review UXD116-N2).
+    await expectAccessibleInDark(page, 'New password, open');
   });
 
   await test.step('during the warning the sentence stays in view beside the second password field, and after a refusal too', async () => {
@@ -431,6 +444,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expect(region).toContainText('This step closes within a minute');
     await expect(region).toContainText('Starting again gives you a new setup key: replace this one in your authenticator app.');
     await expectAccessible(page, 'Enrolment, warning shown');
+    // In dark too: the setup key's box on the raised ground, and the warning beside it (review UXD116-N2).
+    await expectAccessibleInDark(page, 'Enrolment, warning shown');
     await atPhoneWidth(page, 'Enrolment, warning shown');
     await expectCueInView(page, codeOf(page), 'Enrolment, warning shown');
   });
@@ -522,6 +537,8 @@ test('an invited support engineer’s three steps are numbered, and key registra
     await expectStartAgain(region);
     await expect(phraseOf(page)).toHaveText('This step closes within 2 minutes.');
     await expectAccessible(page, 'Key registration, warning shown');
+    // In dark too: the key step's card and its warning (review UXD116-N2).
+    await expectAccessibleInDark(page, 'Key registration, warning shown');
   });
 
   await test.step('closed, key registration says starting again also asks for a code, and Start again keeps the email', async () => {
@@ -623,8 +640,8 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     await page.getByRole('link', { name: 'Forgot your password?' }).click();
     await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Reset your password', exact: true })).toBeVisible();
-    await expectAccessible(page, 'Forgot password, request');
-    await atPhoneWidth(page, 'Forgot password, request');
+    await expectAccessible(page, 'Forgot password, request', { title: titled('Reset your password') });
+    await atPhoneWidth(page, 'Forgot password, request', { title: titled('Reset your password') });
     // The browser takes an address with no dot in its domain; the server's schema refuses it.
     const field = page.getByLabel('Email', { exact: true });
     await field.fill('reset-no-dot@synthetic');
@@ -652,8 +669,10 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     // The "No email?" list names the support address last, with no subject and no body (review UXB-S1, UX-066).
     await expect(page.locator('[data-slot="no-email"] li').last()).toContainText('Still nothing after a new code: write to');
     await expect(page.locator('[data-slot="no-email"] a')).toHaveAttribute('href', /^mailto:[^?&]+@[^?&]+$/);
-    await expectAccessible(page, 'Forgot password, code step');
-    await atPhoneWidth(page, 'Forgot password, code step');
+    await expectAccessible(page, 'Forgot password, code step', { title: titled('Reset your password') });
+    // In dark too: Back to sign in (the link button) and the No email? list on the frame's own ground (review UXD-N1).
+    await expectAccessibleInDark(page, 'Forgot password, code step', { title: titled('Reset your password') });
+    await atPhoneWidth(page, 'Forgot password, code step', { title: titled('Reset your password') });
     const before = page.viewportSize();
     await page.setViewportSize({ width: 390, height: 844 });
     try {
