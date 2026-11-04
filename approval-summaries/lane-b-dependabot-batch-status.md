@@ -414,6 +414,15 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   check, draft PR, verification on CI; #106's reviews stand for the subset). It merges on green; #106 keeps the fetch fix and
   waits on the founder. Orchestrator told.
 
+- 2026-11-04T06:02:00Z: **#107 MERGED as 7bf7b252** (`co-001/ci-trivy-pin-2026-11-04`; expectedHeadSha 41818ac4). Split from
+  #106 (wf_328041c8-16e: build, delta check clean, verification VERIFIED; record `lane-b-ci-trivy-pin-verification.md`). CI on
+  41818ac4: all 29 runs green, changes job 126410414130 success without the fetch fix, gate 126410470025 success (nothing
+  watched), images 126410414857 scanned both images with the pinned Trivy, 0 HIGH/CRITICAL; release-dry-run green. Head and
+  diff range sent to S1, S2, S3 and the schema chain before the merge (S3 acknowledged). Ready 05:57Z; approval-of-record
+  success 05:57:27Z; the only other ready PR was Dependabot's #103. **#106** keeps the fetch fix and waits on the founder
+  (#102); at its base merge it resolves ADR 0066, workflows.test.ts and ci.md (check N1). Next: D's merge prep
+  wf_1a0a2372-8e0 (base 7bf7b252 once, re-check, push, verification), then ready and merge; read 7bf7b252's push runs.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
