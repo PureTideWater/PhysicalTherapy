@@ -73,6 +73,22 @@ its unpushed work is not waited for).
   SS-01's fix round: all seven confirmed findings fixed (failing-first tests); base 7bf7b252 (#107) merged (84ec0093);
   head 3b796604 locally: unit 7,376 + 4 skipped (two failures from this round fixed and re-run), golden, oracle, test:db
   4 shards 9,720 + 1 skipped, build, e2e 73 passed; Stryker running; then one push and the PR body.
+- **08:40 UTC. SS-01 fix round done: #104 head 3b796604 pushed** (wf_4c65fb5f-eab). Fixed, each failing first: SEC-F1
+  (8b85a7ef: mapping holds monitoring only for the owner's hold), UX-SS01-1 (2d4ae8b1: E1 kept and Export disabled while
+  held), UX-SS01-2/-6 (5a526016), UX-SS01-3 (86cc892d), UX-SS01-5/-8 (28a88558); BIL-07/BIL-09 amended (79315a09,
+  3b796604); base 7bf7b252 (#107) merged. Refuted: SEC-F2, SEC-F3, UX-SS01-4, UX-SS01-7. **Full local suite once, green on
+  3b796604:** unit 7,378 + 4 skipped; golden 376; oracle 688; test:db 9,720 + 1 skipped; build; e2e 73 (0 flaky); Stryker
+  6 shards + gate (pricing 98.67%, packets 97.75%); typecheck, lint 1,762, lint:copy 562, lint:logs 1,121, fixtures,
+  synth, verify-content, actions:check, toolchain:check. Domain model 08c1ba47…6142, line 7414. PR body 57,946.
+  Verification: blocked: the base moved to 881e2bbd (#105, #75, #106; no migration) and conflicts in
+  `apps/web/src/components/uploads/uploader.tsx`, so no CI run starts.
+  **Running: wf_b656bc57-787** (archived): merge 881e2bbd (fast + touched checks; push; body), then the re-shoot of the
+  fixed states (the review saw them only broken) beside the fresh-clone verification reading CI. Then the suggested line.
+  Next after it: `workflow-scripts/lane-a-chain-forward-1b-interest.js` (SS-01 into 1b, CAS-42.5 dispatch, 1b into
+  interest, verifiers, CAS-42.6 local). CAS-42's assertedBy already holds reconcile.large (91efb58a, 2026-11-02).
+- **The orchestrator's merge step (07:48):** before any merge, if origin/claude/build-platform is no longer an ancestor of
+  the head: merge it again, fast checks and generators, push, CI green, then merge; check `--check --require-approval`
+  after each base merge (a delta with no migration keeps the hash, so the founder's line stays valid).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
