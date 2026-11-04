@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse, stringify } from 'yaml';
 
 import { MUTATION_PACKAGES, type MutationPackage, type Shard, readShards } from '../../stryker/base.mjs';
@@ -1119,6 +1119,28 @@ describe('every git the changes job runs', () => {
       expect(message.split('\n')).toContain('"::error title=forged::x"');
       expect(message.split('\n').filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes what git prints to stderr on success through printable', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-git-'));
+    const written: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      execFileSync('git', ['init', '-q', dir]);
+      // GIT_TRACE makes git print its own arguments to stderr, as they are, and exit 0.
+      const out = runGit(['rev-parse', '--sq-quote', 'a\n::warning title=forged::b'], dir, gitEnvironment({ ...process.env, GIT_TRACE: '1' }));
+      write.mockRestore();
+      expect(out).toContain('::warning title=forged::b');
+      const text = written.join('');
+      expect(text).toContain('"::warning title=forged::b\'"');
+      expect(text.split(/\r\n|[\n\r\u0085\u2028\u2029]/).filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
+    } finally {
+      write.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });
