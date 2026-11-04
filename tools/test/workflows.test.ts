@@ -1355,7 +1355,6 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     return { status: result.status, output: result.stdout + result.stderr, stdout: result.stdout, stderr: result.stderr, env, log: gh.log(), bodies: gh.bodies() };
   }
   const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
-  /** A run's download tries and pauses in order, each try as "run download". */
   /** A one-finding list of exactly `bytes` bytes, its body padding it, for a MAX_FILE_BYTES of 100 in a case. */
   const listOf = (bytes: number) => {
     const list = JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(bytes - JSON.stringify([{ title: 'Finding 1', body: '' }]).length) }]);
@@ -1364,6 +1363,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   };
   /** Two files past a MAX_FILE_BYTES of 100: a valid list padded with whitespace, and a closed list followed by other bytes. */
   const PAST_BOUND = [JSON.stringify([{ title: 'Finding 1', body: 'b' }]) + ' '.repeat(200), JSON.stringify([{ title: 'Finding 1', body: 'b' }]) + 'x'.repeat(200)];
+  /** A run's download tries and pauses in order, each try as "run download". */
   const paced = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ') || line.startsWith('sleep ')).map((line) => (line.startsWith('run download ') ? 'run download' : line));
 
   it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
