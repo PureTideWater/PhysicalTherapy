@@ -6,6 +6,8 @@ import {
   type AuthenticationResultType,
   CompleteWebAuthnRegistrationCommand,
   type CognitoIdentityProviderClient,
+  ConfirmForgotPasswordCommand,
+  ForgotPasswordCommand,
   InitiateAuthCommand,
   ListWebAuthnCredentialsCommand,
   RespondToAuthChallengeCommand,
@@ -13,6 +15,7 @@ import {
   StartWebAuthnRegistrationCommand,
   VerifySoftwareTokenCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
+import { type Logger, createLogger } from '@tp/observability';
 
 import { passwordProblems } from './password';
 import type {
@@ -23,6 +26,7 @@ import type {
   KeyChallenge,
   MfaMethod,
   NewPasswordStep,
+  PasswordResetResult,
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
@@ -56,6 +60,8 @@ export interface CognitoProviderOptions {
   readonly userPoolId: string;
   readonly clientId: string;
   readonly verifier: IdTokenVerifier;
+  /** Where a swallowed reset refusal is logged, by its error code and the request alone; standard output by default. */
+  readonly logger?: Logger;
 }
 
 interface Challenge {
@@ -90,6 +96,21 @@ const WRONG_CODE = new Set(['CodeMismatchException', 'ExpiredCodeException', 'En
 /** A step whose session expired: Cognito answers NotAuthorizedException for a stale session. */
 const STALE = new Set(['NotAuthorizedException', 'ExpiredCodeException']);
 
+/**
+ * ForgotPassword refusals that only a real account (invited or disabled in Cognito, no verified email) or a quota can
+ * cause: showing any would tell that the address has an account, so they are answered as success (ADR 0081, A2).
+ */
+const RESET_NOT_DELIVERED = new Set([
+  'UserNotFoundException',
+  'NotAuthorizedException',
+  'InvalidParameterException',
+  'LimitExceededException',
+  'CodeDeliveryFailureException',
+  'TooManyRequestsException',
+]);
+/** ConfirmForgotPassword's code problems and an unknown user: one refusal, never split by cause. */
+const RESET_REJECTED = new Set(['CodeMismatchException', 'ExpiredCodeException', 'LimitExceededException', 'TooManyFailedAttemptsException', 'UserNotFoundException', 'NotAuthorizedException']);
+
 /** The challenges this application answers, and the step each is. */
 const NEXT_STEPS: Readonly<Record<string, 'new_password_required' | 'mfa_setup_required' | 'mfa_required'>> = {
   NEW_PASSWORD_REQUIRED: 'new_password_required',
@@ -117,7 +138,11 @@ function parseGrant(grant: string): Grant {
 export class CognitoAuthProvider implements AuthProvider {
   readonly name = 'cognito';
 
-  constructor(private readonly options: CognitoProviderOptions) {}
+  private readonly logger: Logger;
+
+  constructor(private readonly options: CognitoProviderOptions) {
+    this.logger = options.logger ?? createLogger();
+  }
 
   private async identity(result: AuthenticationResultType, method: MfaMethod | null): Promise<AuthStep> {
     if (method === null) {
@@ -353,6 +378,43 @@ export class CognitoAuthProvider implements AuthProvider {
       if (errorName(error) !== 'UnsupportedUserStateException') {
         throw error;
       }
+    }
+  }
+
+  async requestPasswordReset(email: string, requestId?: string): Promise<void> {
+    // The client has no secret (no SecretHash), and UserContextData does nothing on the Essentials plan. The masked
+    // CodeDeliveryDetails.Destination is never read, shown or logged.
+    try {
+      await this.options.client.send(new ForgotPasswordCommand({ ClientId: this.options.clientId, Username: email }));
+    } catch (error) {
+      const code = errorName(error);
+      if (!RESET_NOT_DELIVERED.has(code)) {
+        // Our failure (the provider, the network): it can happen for any address, so it tells nothing.
+        throw error;
+      }
+      this.logger.warn('password reset request not delivered', { error_code: code, request_id: requestId ?? null });
+    }
+  }
+
+  async confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult> {
+    const problems = passwordProblems(password);
+    if (problems.length > 0) {
+      return { kind: 'invalid_password', problems };
+    }
+    try {
+      // It returns no tokens and opens no session: the next sign-in asks for the second factor.
+      await this.options.client.send(new ConfirmForgotPasswordCommand({ ClientId: this.options.clientId, Username: email, ConfirmationCode: code, Password: password }));
+      return { kind: 'reset' };
+    } catch (error) {
+      const name = errorName(error);
+      if (RESET_REJECTED.has(name)) {
+        return { kind: 'rejected' };
+      }
+      if (name === 'InvalidPasswordException') {
+        // Unreachable while the pool's policy matches passwordProblems: no rule to name, as setNewPassword says it.
+        return { kind: 'invalid_password', problems: [] };
+      }
+      throw error;
     }
   }
 
