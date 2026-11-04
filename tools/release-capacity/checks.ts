@@ -1,3 +1,4 @@
+import { queueOptions } from '../../apps/worker/src/jobs/registry';
 import { TRACE_LOCK_BUCKETS } from '../../apps/worker/src/parse/loader';
 
 /**
@@ -30,12 +31,27 @@ export const MEMORY_PEAK_PERCENT = 90;
 /** How a failing check and the summary name the working set and how it is computed. */
 export const WORKING_SET = 'working set (memory.current less inactive_file, sampled each second)';
 
+/** The Known gap line's fixed words before this run's own figure: SUITE-CAP-3's item and its last figure at size. */
+const KNOWN_GAP_FIGURE =
+  'Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F, a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s 15-minute attempt.';
+
+/** The Known gap line's fixed words after this run's own figure: the revisit condition. */
+const KNOWN_GAP_REVISIT = 'Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step (docs/adr/0083).';
+
 /**
- * The fixed line every summary prints (Lane A's orchestrator, 2026-11-04; test scope, not a founder ruling): step 7b
- * reconciles F, a practice of its own, until SUITE-CAP-3 lands and moves it back to A as its acceptance step.
+ * The fixed words of the line every summary prints (Lane A's orchestrator, 2026-11-04; test scope, not a founder
+ * ruling): step 7b reconciles F, a practice of its own, until SUITE-CAP-3 lands and moves it back to A as its acceptance
+ * step. The summary prints them with this run's F reconcile time against its attempt between the two sentences
+ * (knownGap; the orchestrator's addition of 2026-11-04, ~22:27 UTC).
  */
-export const KNOWN_GAP =
-  'Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F, a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s 15-minute attempt. Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step (docs/adr/0083).';
+export const KNOWN_GAP = `${KNOWN_GAP_FIGURE} ${KNOWN_GAP_REVISIT}`;
+
+/**
+ * pg-boss's own expiry of an attempt, fifteen minutes, which the reconcile queue keeps (apps/worker/src/jobs/registry.ts
+ * queueOptions sets one for intake alone): F's reconcile has this long to complete on its first attempt.
+ */
+export const PG_BOSS_EXPIRE_SECONDS = 900;
+export const RECONCILE_ATTEMPT_SECONDS = queueOptions('reconcile').expireInSeconds ?? PG_BOSS_EXPIRE_SECONDS;
 
 /** The worker log's error codes that fail the run: a read outside the keyed fetch, and a job's last failed attempt. */
 export const FAILING_ERROR_CODES = ['RELEASE_READ_OUTSIDE_FETCH', 'JOB_FAILED'] as const;
@@ -603,6 +619,26 @@ function eventsLine(memory: WorkerMemory): string {
   return `memory.events oom ${start.oom === null || end.oom === null ? 'not counted (cgroup v1)' : `+${String(end.oom - start.oom)}`}, oom_kill +${String(end.oomKill - start.oomKill)} between the worker’s start and the end`;
 }
 
+/**
+ * The Known gap line as the summary prints it: the fixed words, with this run's F reconcile time against its attempt (the
+ * margin SUITE-CAP-3's item leaves step 7b) beside the full-size figure; or that this run did not time it.
+ */
+export function knownGap(m: CapacityMeasurements): string {
+  const reconcile = m.jobs.find((job) => job.what === 'F reconcile');
+  const attempt = RECONCILE_ATTEMPT_SECONDS * 1000;
+  const lines = m.expected.reconcileLines.toLocaleString('en-US');
+  let figure: string;
+  if (reconcile === undefined || reconcile.elapsedMs === null) {
+    figure = `This run did not time F’s reconcile against its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt.`;
+  } else if (reconcile.elapsedMs > attempt) {
+    figure = `This run’s step 7b reconciled F’s ${lines} lines in ${seconds(reconcile.elapsedMs)}, past its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt.`;
+  } else {
+    const share = Math.round((reconcile.elapsedMs / attempt) * 100);
+    figure = `This run’s step 7b reconciled F’s ${lines} lines in ${seconds(reconcile.elapsedMs)} of its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt (${String(share)}%, ${seconds(attempt - reconcile.elapsedMs)} to spare).`;
+  }
+  return `${KNOWN_GAP_FIGURE} ${figure} ${KNOWN_GAP_REVISIT}`;
+}
+
 /** summary.md: the verdict, the jobs, the counts, memory and the advisory times. */
 export function markdown(full: ReturnType<typeof report>): string {
   const { verdict: result, memory } = full;
@@ -614,7 +650,7 @@ export function markdown(full: ReturnType<typeof report>): string {
     ...(result.reasons.length === 0 ? ['Every check passed.'] : ['Failing checks:', '', ...result.reasons.map((reason) => `- ${reason}`)]),
     ...(result.advisories.length === 0 ? [] : ['', 'Advisory:', '', ...result.advisories.map((advisory) => `- ${advisory}`)]),
     '',
-    KNOWN_GAP,
+    knownGap(full),
     '',
     '| Job | Phase | State | Attempts | Live heap | Time |',
     '| --- | --- | --- | --- | --- | --- |',

@@ -10,6 +10,7 @@ import {
   type JobOutcome,
   type JobPhase,
   KNOWN_GAP,
+  RECONCILE_ATTEMPT_SECONDS,
   MEMORY_PEAK_PERCENT,
   type MemoryKinds,
   type MemorySample,
@@ -482,11 +483,38 @@ describe('the Known gap line (Lane A’s orchestrator, 2026-11-04: step 7b on a 
     expect(KNOWN_GAP).toBe(GAP);
   });
 
+  // The fixed words around the run's own figure: the full-size figure, then this run's margin, then the revisit condition.
+  const FIGURE = GAP.slice(0, GAP.indexOf(' Revisit when'));
+  const REVISIT = GAP.slice(GAP.indexOf('Revisit when'));
+  const printed = (full: ReturnType<typeof report>) => markdown(full).split('\n').filter((text) => text.startsWith('Known gap:'));
+
   it('prints on every run: a pass, a fail, a smoke run and a run that stopped before it was read back', () => {
     for (const changes of [{}, { pricedLines: 3 }, { small: true }, { aborted: 'WORKER_NOT_READY' }] as Partial<CapacityMeasurements>[]) {
       const full = report({ ...PASSING, ...changes });
       expect(full.verdict.pass).toBe(Object.keys(changes).length === 0 || 'small' in changes);
-      expect(markdown(full).split('\n')).toContain(GAP);
+      const [line, ...more] = printed(full);
+      expect(more).toEqual([]);
+      expect(line?.startsWith(`${FIGURE} `)).toBe(true);
+      expect(line?.endsWith(` ${REVISIT}`)).toBe(true);
+    }
+  });
+
+  it('shows F’s reconcile time against its attempt, the margin, beside the full-size figure (Lane A’s orchestrator, 2026-11-04, ~22:27 UTC)', () => {
+    // pg-boss's fifteen minutes, which the reconcile queue keeps (apps/worker/src/jobs/registry.ts queueOptions).
+    expect(RECONCILE_ATTEMPT_SECONDS).toBe(900);
+    // CAS-42.5 on 3ac856d5 (run 41901463895): 615.7 s at 2,000 lines.
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 615_700 }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines in 615.7 s of its 900 s attempt (68%, 284.3 s to spare). ${REVISIT}`,
+    ]);
+    expect(printed(report({ ...PASSING, small: true, expected: { ...PASSING.expected, reconcileLines: 600, postedLines: 600 }, jobs: change('F reconcile', { elapsedMs: 31_000 }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 600 lines in 31.0 s of its 900 s attempt (3%, 869.0 s to spare). ${REVISIT}`,
+    ]);
+    // Past the attempt: only a later attempt can have completed it, which the run fails on.
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 930_000, attempts: 2 }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines in 930.0 s, past its 900 s attempt. ${REVISIT}`,
+    ]);
+    for (const jobs of [change('F reconcile', { elapsedMs: null, state: 'active' }), JOBS.filter((entry) => entry.what !== 'F reconcile')]) {
+      expect(printed(report({ ...PASSING, jobs }))).toEqual([`${FIGURE} This run did not time F’s reconcile against its 900 s attempt. ${REVISIT}`]);
     }
   });
 });

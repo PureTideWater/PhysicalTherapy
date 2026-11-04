@@ -67,7 +67,11 @@ Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's tab
 whole run's and each phase's and chain job's working set; a failing check names the job by its label in the run
 (`A triage`), its type and its pg-boss ID (also in release-capacity.json, `jobs[].jobId`), and the phase it ran in.
 Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
-2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure.
+2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure. Beside the
+full-size figure it gives this run's F reconcile time against the job's 900 s attempt, with its share and the seconds to
+spare: that margin is what SUITE-CAP-3's item leaves step 7b (CI measured 526.3 and 615.7 s on 3ac856d5). A margin that
+shrinks run over run points at the runner or at SUITE-CAP-3's code, never at a longer attempt; past 900 s pg-boss
+expires the attempt, and the run fails on the job's later attempt.
 - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
   would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
   `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
