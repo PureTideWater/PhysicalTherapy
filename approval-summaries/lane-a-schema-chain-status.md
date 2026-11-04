@@ -139,6 +139,12 @@ its unpushed work is not waited for).
   (#108) merged (c802cd8b, 45893ebb; provenance commits 3589ff03, c0e15544); no migration, functions, domain model or
   approvers.json in either delta; the founder's line 7414 byte-identical; `--check` and `--check --require-approval` exit 0,
   hash 08c1ba47…6142. Fresh-clone verification waiting for CI on c0e15544. Then: ready, approval-of-record re-run, merge.
+- **13:08 UTC. SS-01 MERGED: #104 → claude/build-platform e084da22** (method merge, expectedHeadSha c0e15544). On
+  c0e15544: all 27 check runs green but notify (skipped), domain model included (`--check --strict --require-approval`
+  "carries an approval for this text", 08c1ba47…6142); required checks all green, mutation, screening-capacity gate
+  (no time advisory this run), approval-of-record (re-run after ready: 41834628129 success); base 45d7d0c1 an ancestor;
+  mergeable clean; fresh-clone verification passed. Unsubscribed from #104. Reported to the orchestrator.
+  **Next: SUITE-CAP-1b's PR stage** (base e084da22 into 1b 978891a3).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
@@ -405,7 +411,7 @@ its unpushed work is not waited for).
 ## Items
 | # | Item | Branch | State |
 | --- | --- | --- | --- |
-| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Built; full suite passed at d763ba78; head f897a282 (base 56ed6279 merged; unchecked); needs base 83d71fd6 and #42's step-1 head; PR waits on #42's merge |
+| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (**merged as #104, e084da22, 2026-11-04 13:08 UTC**; older text follows) | Built; full suite passed at d763ba78; head f897a282 (base 56ed6279 merged; unchecked); needs base 83d71fd6 and #42's step-1 head; PR waits on #42's merge |
 | 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); 1a merged (#81); needs SS-01 f897a282+ merged in, deferred parts, full suite; real-size runs wait on an 8-CPU runner |
 | 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Partial at e0646746: slices 1, 2, 3, 5 pushed; slice 4 (screens) and the integrator not done; exception granted; PR opens after 1b merges |
 
