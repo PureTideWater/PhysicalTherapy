@@ -343,6 +343,19 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   with a comment (unless Dependabot closes them first), #88 and #89 get a comment; #101 is the next weekly triage's. Push runs
   of 21fa10df all green (ci, mutation, screening-capacity): the build branch is green again.
 
+- 2026-11-04T02:45:00Z (acting S4, session_019i9ifAfByN2caCea4jgSdu, Lane A's account; login PureTideWater): setup OK.
+  Live: #94 head e3fc02e4 (draft; B(6) e6823f5b and base 21fa10df merged; pushed 2026-11-02T10:25Z), base still 21fa10df,
+  CI green on e3fc02e4 (30 runs: 29 success, 1 skipped; the four required checks), description already names #99-#101.
+  WIP -b f463f486 is an ancestor of the head. `co-001/test-flakes-2` at 88708069, no commits; D's earlier run
+  wf_79d9ea3e-347 left nothing on origin. Decisions: no new base merge or push for #94 (the base has not moved); the
+  full local suite stands (ran once at f463f486; e3fc02e4's targeted re-check and CI on the exact head; speed rule 1).
+  Launched: #94 fresh-clone verification wf_ea2961e5-096 (verifier + skeptic); PR D wf_b49ddbb6-964 (design, failing-first
+  build, check, draft PR, one adversarial review with a skeptic per B/S finding (test-only: speed rule 3), one fix round
+  with the base merged once, the full suite once, one push, fresh-clone verification). Scripts archived. subscribe_pr_activity
+  on #94 refused (held elsewhere): polling with pull_request_read; check-in trig_01H1GrZ47MonPvEYdBwPN79v at 07:53Z.
+  Next: on VERIFIED, mark #94 ready, approval-of-record's re-run, merge (expectedHeadSha e3fc02e4); close #99/#100 with a
+  comment, comment on #88/#89; #101 left to the next weekly triage.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
