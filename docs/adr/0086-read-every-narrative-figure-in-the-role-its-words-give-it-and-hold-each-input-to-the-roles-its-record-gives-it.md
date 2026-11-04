@@ -422,7 +422,7 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
   The base reading passed every one of these too (its facts were sets by kind), so this is a gap this decision narrows,
   not one it opens; the person who approves a packet reads its narrative, and the export job reads it again. The
   review rounds of 2026-11-04 added triggers pass after pass and each found more, so the list is not grown further
-  here. Closing the class needs a reading that does not depend on English at all (Revisit when, below).
+  here. Closing the class needs a narrative whose figures are not read from English at all (Revisit when, below).
 - A request for approval, an approval and the builder and case screens run the verifier again over a stored version
   that passed (CORR-5): a few milliseconds of reading per version shown, an audited read of each version read again, and
   at a step an audited read of its claims' identifiers. A version an older reading passed says "fails now" and is
@@ -436,7 +436,7 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
 - A real model's drafts (ADR 0051's evaluation) or people's narratives show a role form the reader does not know: add
   its words to the reader and a named example to CAS-44, never a looser rule.
 - The verifier format moves to `/3` (Lane A's migration).
-- The founder decides how a narrative carries its figures. A narrative whose figures are placeholders bound to the
-  facts by code (written and checked by role and scope as data, rendered to text only at export), with any free-text
-  number refused, would close the known limit above without reading English, and would keep every figure computed by
-  code (CLAUDE.md rule 1). Proposed 2026-11-04; not this decision.
+- The narrative's figures become placeholders bound to the facts by code (written and checked by role and scope as
+  data, rendered to text only at export), with any free-text number in a model's narrative refused. This closes the
+  known limit above without reading English, and keeps every figure computed by code (CLAUDE.md rule 1). Decided
+  2026-11-04 as its own item (`co-001/packet-figure-placeholders`, after this one); not this decision.
