@@ -383,6 +383,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expect(page.locator('[data-slot="step-marker"]')).toHaveText(/^Step 1 of 2:?\s*$/);
     await expect(phraseOf(page)).toHaveText('This step stays open for 3 minutes.');
     await expectOpen(page);
+    // In dark: the new-password card, its fields and its limit, on the frame's ground (review UXD116-N2).
+    await expectAccessibleInDark(page, 'New password, open');
   });
 
   await test.step('during the warning the sentence stays in view beside the second password field, and after a refusal too', async () => {
@@ -433,6 +435,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expect(region).toContainText('This step closes within a minute');
     await expect(region).toContainText('Starting again gives you a new setup key: replace this one in your authenticator app.');
     await expectAccessible(page, 'Enrolment, warning shown');
+    // In dark too: the setup key's box on the raised ground, and the warning beside it (review UXD116-N2).
+    await expectAccessibleInDark(page, 'Enrolment, warning shown');
     await atPhoneWidth(page, 'Enrolment, warning shown');
     await expectCueInView(page, codeOf(page), 'Enrolment, warning shown');
   });
@@ -524,6 +528,8 @@ test('an invited support engineer’s three steps are numbered, and key registra
     await expectStartAgain(region);
     await expect(phraseOf(page)).toHaveText('This step closes within 2 minutes.');
     await expectAccessible(page, 'Key registration, warning shown');
+    // In dark too: the key step's card and its warning (review UXD116-N2).
+    await expectAccessibleInDark(page, 'Key registration, warning shown');
   });
 
   await test.step('closed, key registration says starting again also asks for a code, and Start again keeps the email', async () => {
