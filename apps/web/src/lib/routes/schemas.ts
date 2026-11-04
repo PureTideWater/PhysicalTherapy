@@ -19,7 +19,8 @@ export function blankOptional<T extends z.ZodType>(schema: T) {
 /** A form's required text field. Its two messages are instructions, read after the field's name ("Your name: fill this in"). */
 export const requiredText = (max: number) => z.string().trim().min(1, 'fill this in').max(max, `enter at most ${String(max)} characters`);
 
-export const emailAddress = z.string().trim().toLowerCase().pipe(z.email('an email address'));
+/** An email field; its message is an instruction like requiredText's ("Email: enter an email address"). */
+export const emailAddress = z.string().trim().toLowerCase().pipe(z.email('enter an email address'));
 
 /** A code as an authenticator app shows or copies it ("123 456", "123-456"): spaces and hyphens are dropped. */
 export const sixDigitCode = z

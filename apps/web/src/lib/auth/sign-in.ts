@@ -10,7 +10,7 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from './provider';
-import { type OpenedSession, openSession } from './sessions';
+import { type OpenedSession, openSession, revokeUserSessions } from './sessions';
 
 /**
  * Sign-in, step by step (PRD 7, Sign-in and MFA; docs/product/sessions.md; docs/adr/0016). The
@@ -24,6 +24,10 @@ import { type OpenedSession, openSession } from './sessions';
  *   first sign-in enrolls TOTP before anything else.
  * - Internal roles must use a hardware key: a TOTP sign-in by such a user only registers a key (when
  *   they have none) and never opens a session; they then sign in with the key.
+ *
+ * - A forgotten password is reset by a code mailed to the address (docs/adr/0081, the forgotten password): the
+ *   request answers alike for every address, at a floor, and a code goes only to an active account that already has a
+ *   second factor; a reset ends every session of the account and still asks for the second factor next time.
  *
  * The flow carries no state of its own. Between steps the browser holds a Pending value, which the
  * web layer seals into a short-lived HttpOnly cookie.
@@ -47,7 +51,9 @@ export type Pending =
   | { readonly step: 'mfa'; readonly email: string; readonly challenge: string }
   | { readonly step: 'key'; readonly email: string; readonly challenge: string }
   /** An internal user proved password and TOTP but has no hardware key yet: they may register one. */
-  | { readonly step: 'register_key'; readonly email: string; readonly userId: string; readonly grant: string; readonly challenge?: string };
+  | { readonly step: 'register_key'; readonly email: string; readonly userId: string; readonly grant: string; readonly challenge?: string }
+  /** A reset code was asked for the typed address: unproven until the code is, so it holds no challenge and opens nothing. */
+  | { readonly step: 'reset'; readonly email: string };
 
 export type RefusalReason = 'credentials' | 'locked' | 'expired' | 'hardware_key_required' | 'no_account' | 'key_not_registered' | 'invitation_expired';
 
@@ -69,16 +75,51 @@ interface Account {
   readonly hardware_key_required: boolean;
 }
 
+/**
+ * A forgotten password's confirmation, as the web layer settles it: reset (`locked`: the lock stays, and its notice says
+ * how to lift it; `keepEmail`: the address may now be kept, being proven, but never for a locked or disabled account),
+ * one refusal for every code problem, the policy's refusal, or the sessions that could not be ended (review R-3).
+ */
+export type ResetResult =
+  | { readonly kind: 'reset'; readonly locked: boolean; readonly keepEmail: boolean }
+  | { readonly kind: 'rejected' }
+  | { readonly kind: 'invalid_password'; readonly problems: readonly string[] }
+  | { readonly kind: 'sessions_not_ended' };
+
 export interface SignInDependencies {
   readonly pool: ScopePool<ScopeClient>;
   readonly provider: AuthProvider;
   readonly logger: Logger;
+  /** The clock the reset request's floor is measured on, epoch ms (default Date.now). */
+  readonly now?: () => number;
+  /** How the reset request waits out its floor (default a timer). */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
+
+/**
+ * The least time a reset request takes, on every path (review SEC-N2): it covers the lookup, the audit write and the
+ * skipped or real send, so the answer's timing does not tell an account from none. Its log shows when it is too low.
+ */
+export const RESET_REQUEST_FLOOR_MS = 1500;
 
 const refused = (reason: RefusalReason): FlowResult => ({ kind: 'refused', reason });
 
+/** An error's name for a log (`error_code`): never its message, which can carry what was sent. */
+const errorCode = (error: unknown): string => (error instanceof Error ? error.name : 'unknown');
+
+const timer = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 export class SignInFlow {
-  constructor(private readonly deps: SignInDependencies) {}
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
+
+  constructor(private readonly deps: SignInDependencies) {
+    this.now = deps.now ?? Date.now;
+    this.sleep = deps.sleep ?? timer;
+  }
 
   private async query<R>(text: string, values: unknown[]): Promise<R[]> {
     const client = await this.deps.pool.connect();
@@ -266,13 +307,111 @@ export class SignInFlow {
   }
 
   /**
+   * A forgotten password: asks the provider to mail a code, and answers with the reset step for the typed address, alike
+   * for every address (docs/adr/0081, the forgotten password; review SEC-B1, SEC-N2). The code is asked for only for an
+   * active account with a second factor: an account with none would be offered enrolment after a reset, so a mailbox
+   * would be enough to take it. A locked account still gets one: the lock stays after the reset. The request is
+   * recorded for every account, the actor being the account named, not a proven person (`unverified_request`); an
+   * unknown address has no actor and records nothing. A failed send or audit write is logged at error with IDs only and
+   * answered like every other path: only an account reaches either, so a different answer would mark the accounts
+   * whenever the provider fails (review S-3; ADR 0081 A2). Every path, a thrown one included, takes at least the floor,
+   * and the wait comes after every connection is given back.
+   */
+  async requestPasswordReset(email: string, context: SignInContext): Promise<Extract<Pending, { step: 'reset' }>> {
+    const started = this.now();
+    try {
+      const account = await this.account({ email });
+      if (account?.status === 'active' && account.mfa_enrolled) {
+        await this.unlessFailed(context, () => this.deps.provider.requestPasswordReset(email, context.requestId));
+      }
+      if (account !== undefined) {
+        const userId = account.user_id;
+        await this.unlessFailed(context, () => this.audit(userId, 'password_reset_requested', context.requestId, 'unverified_request'));
+      }
+      return { step: 'reset', email };
+    } finally {
+      const elapsed = this.now() - started;
+      this.deps.logger.info('password reset request timed', { request_id: context.requestId, elapsed_ms: elapsed });
+      if (elapsed > RESET_REQUEST_FLOOR_MS) {
+        this.deps.logger.warn('password reset request over floor', { request_id: context.requestId, elapsed_ms: elapsed });
+      } else if (elapsed < RESET_REQUEST_FLOOR_MS) {
+        await this.sleep(RESET_REQUEST_FLOOR_MS - elapsed);
+      }
+    }
+  }
+
+  /** A reset request's send or audit write: a failure is logged with IDs only and not rethrown (review S-3). */
+  private async unlessFailed(context: SignInContext, work: () => Promise<void>): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      this.deps.logger.error('password reset request failed', { request_id: context.requestId, error_code: errorCode(error) });
+    }
+  }
+
+  /**
+   * Sets a new password with the mailed code (docs/adr/0081, the forgotten password). The code is the authorization: a
+   * refused one is one answer, counts no failure and writes nothing (a count would mark real accounts by timing and let
+   * anyone lock one). On a reset, one transaction as the account ends every session and records the reset, retried once;
+   * then the provider signs the user out everywhere, its failure logged and not failing the reset (review SEC-N1). The
+   * lock and the second factor stay: a reset proves the mailbox, nothing more.
+   */
+  async confirmPasswordReset(email: string, code: string, password: string, context: SignInContext): Promise<ResetResult> {
+    const result = await this.deps.provider.confirmPasswordReset(email, code, password);
+    if (result.kind === 'rejected') {
+      this.deps.logger.warn('password reset code refused', { request_id: context.requestId, error_code: 'rejected' });
+      return result;
+    }
+    if (result.kind === 'invalid_password') {
+      return result;
+    }
+    const account = await this.account({ email });
+    if (account === undefined) {
+      return { kind: 'reset', locked: false, keepEmail: false };
+    }
+    let ended = false;
+    for (let attempt = 0; attempt < 2 && !ended; attempt += 1) {
+      try {
+        await withActor(this.deps.pool, account.user_id, async (scope) => {
+          await revokeUserSessions(scope, account.user_id);
+          await recordAuditEvent(scope, { action: 'password_reset_completed', objectType: 'user', objectId: account.user_id, purpose: 'email_code', requestId: context.requestId });
+        });
+        ended = true;
+      } catch {
+        // Retried once; a second failure is logged below (review R-3).
+      }
+    }
+    if (!ended) {
+      this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId });
+    }
+    try {
+      await this.deps.provider.globalSignOut(account.cognito_sub);
+    } catch (error) {
+      this.deps.logger.error('security event: password reset provider sign-out failed', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });
+    }
+    if (!ended) {
+      return { kind: 'sessions_not_ended' };
+    }
+    this.deps.logger.warn('security event: password reset completed', { user_id: account.user_id, request_id: context.requestId });
+    return { kind: 'reset', locked: account.locked, keepEmail: !account.locked && account.status !== 'disabled' };
+  }
+
+  /**
    * The person left the step (Start again, docs/adr/0081): key registration's grant is given back, as every other way
    * out of that step gives it back. The other steps hold only a challenge, which the provider ends at its own limit and
-   * which nothing can answer once the cookie that seals it is gone.
+   * which nothing can answer once the cookie that seals it is gone; the reset step holds not even that.
    */
   async abandon(pending: Pending): Promise<void> {
-    if (pending.step === 'register_key') {
-      await this.deps.provider.release(pending.grant);
+    switch (pending.step) {
+      case 'register_key':
+        await this.deps.provider.release(pending.grant);
+        return;
+      case 'new_password':
+      case 'mfa_setup':
+      case 'mfa':
+      case 'key':
+      case 'reset':
+        return;
     }
   }
 }

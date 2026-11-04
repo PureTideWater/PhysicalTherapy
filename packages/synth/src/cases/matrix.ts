@@ -688,6 +688,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "An invited customer's headings read \"Step 1 of 2: Choose a password\" and \"Step 2 of 2: Set up two-step verification\", the number shown over the step's name, and an invited staff member's run from \"Step 1 of 3\" to \"Step 3 of 3: Register a hardware key\", counted by the server from the provider's answer and the account; an everyday sign-in, and a restart with one step left, show no number; the code and enrolment steps pass axe (WCAG 2.1 A and AA) with the warning shown, at 1280 and 390 px, and when closed, as do key registration with its warning and the sign-in page with the email kept",
   },
   {
+    id: 'SGN-05',
+    title: 'A reset is asked for alike for every address',
+    assertion:
+      "`/sign-in/forgot-password` sends a known, an unknown, an invited, a not-enrolled (password set, no second factor), a disabled and a locked address to the same \"Check your email\" with the same status, cookies, words and help text; a code is sent only to an active account with an enrolled second factor (locked included), and the provider's refusals for real accounts are answered as success; the request takes at least its 1,500 ms floor on every path, a thrown one included; it counts in the `sign_in` bucket by the typed address, shared with password attempts, and its refusal reads alike; `password_reset_requested` is recorded for an account and nothing for an unknown address; the address is in no URL, notice, error or log, and the code's masked destination is never shown",
+  },
+  {
+    id: 'SGN-06',
+    title: 'The code and the new password',
+    assertion:
+      'The code step is a sealed sign-in step that states 15 minutes, warns at two in its own words and closes at its limit; the policy is checked before the provider; a wrong, expired, used, replaced or over-tried code and an unknown address get one refusal on the code field, with the code and both passwords emptied; a wrong code counts no failure and locks nothing; the confirm counts in `sign_in` by the sealed address and a changed address is refused without the provider; Send a new code opens the step again without typing and shows its own refusals, and Use a different email ends it at any time, with the address not kept; the dev twin holds the code hashed, for an hour, single use, five tries',
+  },
+  {
+    id: 'SGN-07',
+    title: 'After a reset the second factor is still asked',
+    assertion:
+      'A reset ends every session of the account and signs it out at the provider (a provider sign-out failure is logged and does not fail the reset), records `password_reset_completed`, keeps the lock, the authenticator and the keys, and lands on the sign-in page with the email filled and a notice focused once, written only now (never for a locked or disabled account, whose notice names the support address); the next sign-in with the new password asks for the code, and the old password is refused',
+  },
+  {
+    id: 'SGN-08',
+    title: 'Every sign-in step has a way forward',
+    assertion:
+      'The sign-in page lists help as a list with a reset link that names itself, the code and key steps say where to write about a lost factor from the address one signs in with, the locked words name the support address in the refusal, the key page and the notice, and a closed hardware-key step returns to the key page; the reset page in both phases, the sign-in page, the code step and the key step pass axe (WCAG 2.1 A and AA) at 1280 and 390 px',
+  },
+  {
     id: 'HOM-01',
     title: 'One actionable figure everywhere',
     assertion:
