@@ -20,6 +20,12 @@ its unpushed work is not waited for).
   full local suite once and one push (WIP ref `co-001/wip-ss01-chain` before the suite); fresh-clone verification reading
   CI. Beside it, read-only: the flaky `tools/release/load.db.test.ts` root cause (fix as a patch, for 1b). Check-in
   scheduled 07:46 UTC (trig_01G5HLTy6TevngHswpbJDA2S).
+- **03:28 UTC. SS-01 PR #104 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/104, head
+  e4a6d2fc (base 21fa10df merged, then #94 4846f043, no conflict). Re-read: no body SS-01 recreates moved since
+  6c28d6a2; 20261108090000 unchanged, no marker. Two semantic conflicts fixed (abbf3052; one is #95's
+  mapping-routes.db.test.ts asserting the pre-SS-01 refusal sentence, now SS-01's R1); ADR 0080 count-free (776b6a15).
+  Fast checks, touched db tests (7,097 passed), actions:check, toolchain:check green. Domain model 08c1ba47…6142, line
+  7414 (provisional). Body 40,568 characters, read back equal. Subscribed. Reviews running.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
