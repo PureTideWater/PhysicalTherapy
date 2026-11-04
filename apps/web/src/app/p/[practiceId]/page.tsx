@@ -6,6 +6,7 @@ import Link from 'next/link';
 
 import { Figure, PricedShare } from '../../../components/coverage/share';
 import { FirstUpload, HeadlineTiles, uploadGate } from '../../../components/dashboard/headline';
+import { HoldAlert, RunOutcomeBadge } from '../../../components/dashboard/hold-notice';
 import { roleNames, utc, utcDate } from '../../../components/format';
 import { MappedNotPricedAlert, UnmappedPlansAlert } from '../../../components/mapping/months';
 import { NotificationText } from '../../../components/monitoring/display';
@@ -15,7 +16,6 @@ import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { DEADLINE_WINDOW_DAYS, type Queues } from '../../../lib/dashboard/queries';
 import { stageLinesHref } from '../../../lib/reports/links';
-import { JOB_REFUSED_LABEL } from '../../../lib/billing/suspension-words';
 import { practiceHome } from '../../../lib/routes/practice';
 
 export const metadata: Metadata = { title: 'Practice' };
@@ -124,14 +124,6 @@ function queueLinks(practiceId: string, queues: Queues, followUpsDue: number): r
   ];
 }
 
-const OUTCOME_NAMES: Readonly<Record<string, string>> = {
-  running: 'Running',
-  retrying: 'Failed; retrying',
-  succeeded: 'Succeeded',
-  failed: 'Failed three times',
-  refused: JOB_REFUSED_LABEL,
-};
-
 /**
  * The practice dashboard (PRD 7, Practice dashboard; PRD 12, What a customer sees as the headline; a
  * PHI route: MFA, the 30-minute idle limit, private no-store, the practice record read through
@@ -161,26 +153,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
-      {hold === null ? null : (
-        <Alert variant="destructive" data-notice="suspended" data-hold-source={hold.source} role="alert">
-          <AlertTitle>{hold.title}</AlertTitle>
-          <AlertDescription>
-            <p>{hold.body}</p>
-            {hold.nextStep === null ? null : (
-              <p data-next-step>
-                {hold.nextStep.link === null ? null : hold.nextStep.href === null ? (
-                  hold.nextStep.link
-                ) : (
-                  <Link className="underline" href={hold.nextStep.href}>
-                    {hold.nextStep.link}
-                  </Link>
-                )}
-                {hold.nextStep.text}
-              </p>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      {hold === null ? null : <HoldAlert hold={hold} />}
       {freshness.failedRun === null ? null : (
         <Alert variant="destructive" data-job={freshness.failedRun.jobId}>
           <AlertTitle>Last run failed</AlertTitle>
@@ -242,9 +215,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                   ) : (
                     <>
                       {JOB_NAMES[freshness.lastRun.jobType] ?? freshness.lastRun.jobType}, {utc(freshness.lastRun.finishedAt ?? freshness.lastRun.startedAt)}:{' '}
-                      <Badge variant={freshness.lastRun.outcome === 'failed' ? 'destructive' : freshness.lastRun.outcome === 'succeeded' ? 'default' : 'secondary'} data-outcome={freshness.lastRun.outcome}>
-                        {OUTCOME_NAMES[freshness.lastRun.outcome] ?? freshness.lastRun.outcome}
-                      </Badge>
+                      <RunOutcomeBadge outcome={freshness.lastRun.outcome} />
                     </>
                   )}
                 </dd>
