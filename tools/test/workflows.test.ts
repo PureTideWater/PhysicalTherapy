@@ -2593,7 +2593,7 @@ describe('every read of this repository works when it is private (CI-11)', () =>
 
 describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)', () => {
   /** The step every job with a Trivy step runs first: the pinned release, its archive checked, onto this run's PATH. */
-  const INSTALL: Step = { name: 'The pinned Trivy', run: 'trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"\ndirname "$trivy" >> "$GITHUB_PATH"\n' };
+  const INSTALL: Step = { name: 'The pinned Trivy', run: 'trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"\ndirname "$trivy" >> "$GITHUB_PATH"\necho "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"\n' };
   /** A file's lines less its whole-line comments. */
   const uncommented = (text: string) => text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
   const trivyJobs = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).filter(([, job]) => job.steps.some((step) => usesAction(step, 'aquasecurity/trivy-action'))).map(([id, job]) => ({ where: `${file} ${id}`, job })));
@@ -2606,9 +2606,12 @@ describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)'
       expect(install, where).toBeGreaterThanOrEqual(0);
       expect(job.steps[install], where).toEqual(INSTALL);
       expect(install, where).toBeLessThan(job.steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action')));
-      // Each Trivy step runs the binary on PATH, never one its setup-trivy downloads; nothing names a version for it.
+      // Each Trivy step runs the installed binary by its absolute path (TRIVY_CMD, which trivy-action's entrypoint runs in
+      // place of `trivy` from PATH, where each trivy-action step prepends its own directory), never one setup-trivy
+      // downloads, and no step sets TRIVY_CMD otherwise; nothing names a version for it.
       for (const step of job.steps.filter((candidate) => usesAction(candidate, 'aquasecurity/trivy-action'))) {
         expect([step.with?.['skip-setup-trivy'], step.with?.version, step.with?.cache], `${where}: ${step.name ?? ''}`).toEqual([true, undefined, false]);
+        expect([step.env?.TRIVY_CMD, job.env?.TRIVY_CMD], `${where}: ${step.name ?? ''}`).toEqual([undefined, undefined]);
       }
     }
     // No line but a comment names setup-trivy or its installer's host.
@@ -2626,6 +2629,14 @@ describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)'
     expect(uncommented(installer)).not.toMatch(/get\.trivy\.dev/);
     expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeGreaterThan(0);
     expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // Both pinned installers download over https alone, and follow a redirect only to https (a file:// mirror is the
+    // tests'); the pinned SHA-256 still decides what runs.
+    for (const tool of ['trivy', 'gitleaks']) {
+      const text = readFileSync(path.join(repositoryRoot, `tools/${tool}/install.sh`), 'utf8');
+      const curls = uncommented(text).split('\n').filter((line) => /\bcurl\b/.test(line));
+      expect(curls.length, tool).toBe(1);
+      expect(curls[0], tool).toContain("curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 ");
+    }
   });
 
   const linux = process.platform === 'linux' && (process.arch === 'x64' || process.arch === 'arm64');

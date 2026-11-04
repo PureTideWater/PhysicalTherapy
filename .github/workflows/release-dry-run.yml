@@ -84,12 +84,14 @@ jobs:
           persist-credentials: false
 
       # The pinned Trivy (tools/trivy/release.txt), its release archive checked against the SHA-256 there before it runs,
-      # installed into this run's temporary directory and put on PATH for the Trivy steps below, which skip setup-trivy:
-      # its installer downloads from get.trivy.dev, gone since 2026-11-03 (docs/adr/0066, Part 2).
+      # installed into this run's temporary directory, put on PATH and named by its absolute path (TRIVY_CMD, which
+      # trivy-action runs) for the Trivy steps below, which skip setup-trivy: its installer downloads from get.trivy.dev,
+      # gone since 2026-11-03 (docs/adr/0066, Part 2).
       - name: The pinned Trivy
         run: |
           trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"
           dirname "$trivy" >> "$GITHUB_PATH"
+          echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"
 
       # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
       # moby/buildkit:buildx-stable-1 by tag. Its age is held by tools/check-toolchain's image rule, as every image's

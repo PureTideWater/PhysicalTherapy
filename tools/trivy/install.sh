@@ -41,7 +41,7 @@ archive="trivy_${version}_${asset}.tar.gz"
 base="${TRIVY_DOWNLOAD_BASE:-https://github.com/aquasecurity/trivy/releases/download/v$version}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-if ! curl -fsSL --retry 3 -o "$work/$archive" "$base/$archive"; then
+if ! curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 -o "$work/$archive" "$base/$archive"; then
   echo "trivy: could not download $base/$archive." >&2
   exit 1
 fi
