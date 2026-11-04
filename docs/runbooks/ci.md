@@ -160,10 +160,9 @@ differential test, which prices the base's engine and this commit's.
      long" on any step means an environment string (`NAME=value` and its NUL) or one argument over 131,072 bytes, or
      the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string and argument
      a workflow sets, and each step's and container's whole, and refuses a string or argument over 131,072 bytes, or
-     one holding a value it does not list with its bound (but for the content calendar's `FINDINGS_B64`, recorded over
-     the limit and `ci-findings-transport`'s to fix, which it holds alone in its string at its one place), and a whole
-     over `ARG_MAX` less 256 KiB, that value counted in it (docs/adr/0066, Part 3, N32). A pull request's run uploads
-     no build record (`.dockerbuild`) by design; a push's run on the build branch does.
+     one holding a value it does not list with its bound, with no exception, and a whole over `ARG_MAX` less 256 KiB
+     (docs/adr/0066, Part 3, N32). A pull request's run uploads no build record (`.dockerbuild`) by design; a push's
+     run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -451,9 +450,9 @@ user that cannot run the binary.
   ruleset, which only the founder sets.
 - A step takes only the value it uses (one environment string, `NAME=value` and its NUL, is at most 131,072 bytes; the
   test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
-  value's bound in bytes, and holds each to 131,072 bytes but `FINDINGS_B64`, recorded over the limit and held alone
-  in its string at its one place; an env, a `with:`, a container or a service given as one expression is refused,
-  since no sum can read its strings). `workflows.test.ts` reads every expression of a workflow in an env, an input, a
+  value's bound in bytes, and holds each to 131,072 bytes, with no exception; an env, a `with:`, a container or a
+  service given as one expression is refused, since no sum can read its strings).
+  `workflows.test.ts` reads every expression of a workflow in an env, an input, a
   script, a job's outputs, a matrix or a key as the runner does, and admits only bounded values, none in any key
   (GitHub evaluates one as an env name, an input's name, a service id or a matrix key), and refuses a workflow's, a
   job's or a step's key it does not read (a new GitHub key joins its list once the rule reads it). It reads this
