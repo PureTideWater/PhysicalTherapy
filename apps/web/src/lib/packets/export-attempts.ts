@@ -1,6 +1,7 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { type ExportReadinessReason, PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS, type PacketExportFailure, type PacketExportRefusal } from '@tp/worker/packets';
 
+import type { WorkPause } from '../billing/suspension-words';
 import { PRICING_BLOCKED_TEXT } from './pricing';
 
 /**
@@ -141,9 +142,16 @@ export interface ExportAttemptWords {
  * The words for an attempt, with times as `time` formats them; null for none and for an exported version (the
  * page shows the export itself). `cleared`: the version is ready to export now, so a refusal for a readiness reason
  * no longer holds and is told as the earlier request's, with no fix to follow (a verifier failure always keeps its
- * fix: the version is written again).
+ * fix: the version is written again). `hold`: what stops the person's exports here now (lib/billing/hold.ts workPause
+ * with phi.export). Readiness never includes the hold, so the gate's refusal for the practice's own hold
+ * (organization_suspended) keeps E1 while the owner's hold lasts, and is told as the earlier request's only once it is
+ * lifted (PR #104 review UX-SS01-1; design SS-01, section 6.3).
  */
-export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) => string, options: { readonly cleared?: boolean; readonly singleUser?: boolean } = {}): ExportAttemptWords | null {
+export function exportAttemptWords(
+  attempt: ExportAttempt,
+  time: (iso: string) => string,
+  options: { readonly cleared?: boolean; readonly singleUser?: boolean; readonly hold?: WorkPause | null } = {},
+): ExportAttemptWords | null {
   switch (attempt.state) {
     case 'none':
     case 'exported':
@@ -167,7 +175,7 @@ export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) =
         live: true,
       };
     case 'refused':
-      if (options.cleared === true && attempt.code !== 'verifier_failed') {
+      if (options.cleared === true && attempt.code !== 'verifier_failed' && !(attempt.code === 'organization_suspended' && options.hold?.source === 'owner')) {
         return {
           state: 'refused',
           code: attempt.code,
@@ -198,6 +206,18 @@ export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) =
         live: false,
       };
   }
+}
+
+/**
+ * Said in place of the Export button while a hold stops the person's exports here (PR #104 review UX-SS01-1): the
+ * database's sentence (R1 to R6), as the mapping screens say theirs. The owner's hold pauses exports until it is lifted,
+ * and a closure restarts none (BIL-09); a grantee's hold stops only this person's exports through its grant.
+ */
+export function exportPausedText(hold: WorkPause): string {
+  if (hold.source === 'grantee') {
+    return `${hold.reason.charAt(0).toUpperCase()}${hold.reason.slice(1)}.`;
+  }
+  return hold.restarts ? `Exports are paused: ${hold.reason}.` : `Exports have stopped: ${hold.reason}.`;
 }
 
 /** not_approved in a single-user practice: no one else approves packets, so the drafter approves alone after the 24-hour delay. */

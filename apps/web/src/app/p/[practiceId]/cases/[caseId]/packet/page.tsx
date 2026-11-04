@@ -26,7 +26,7 @@ import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { waitText } from '../../../../../../lib/packets/approval';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
-import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
+import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportPausedText, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
 import { everyLineStale, staleExportBuilder } from '../../../../../../lib/packets/unattested';
@@ -198,7 +198,7 @@ export default async function PacketPage(props: Props) {
       </>
     );
   }
-  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice, canSetContact, canOpenLines, wordsVersion } = page.data;
+  const { practiceId, case: item, builder, notice, canApprove, canExport, exportHold, asOf, canDraftWithModel, drafts, modelNotice, canSetContact, canOpenLines, wordsVersion } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const version = builder.version;
   const approval = builder.approval;
@@ -534,8 +534,9 @@ export default async function PacketPage(props: Props) {
                 </>
               ) : (
                 (() => {
-                  // A refusal whose reason no longer holds (the version is ready now) is told as the earlier request's, not with its fix.
-                  const attempt = exportAttemptWords(version.exportAttempt, utc, { cleared: version.exportReadiness.outcome === 'ready', singleUser: version.singleUser });
+                  // A refusal whose reason no longer holds (the version is ready now) is told as the earlier request's, not with its fix;
+                  // the gate's refusal for the practice's own hold keeps E1 while that hold lasts (PR #104 review UX-SS01-1).
+                  const attempt = exportAttemptWords(version.exportAttempt, utc, { cleared: version.exportReadiness.outcome === 'ready', singleUser: version.singleUser, hold: exportHold });
                   const status = attempt === null ? null : <ExportStatus words={attempt} checkAgainHref={`${casePath}/packet?version=${version.id}`} refreshMs={ATTEMPT_REFRESH_MS} />;
                   if (version.exportReadiness.outcome === 'refused') {
                     const { reasons } = version.exportReadiness;
@@ -565,7 +566,17 @@ export default async function PacketPage(props: Props) {
                   return (
                     <>
                       {status}
-                      {canExport ? (
+                      {canExport && exportHold !== null ? (
+                        // A hold stops this person's exports: the press would be refused, so the button is there, disabled, with why.
+                        <div>
+                          <Button type="button" disabled aria-describedby="export-held">
+                            Export PDF and CSV
+                          </Button>
+                          <p id="export-held" className="pt-1 text-sm text-muted-foreground" data-export="held" data-hold-source={exportHold.source}>
+                            {exportPausedText(exportHold)}
+                          </p>
+                        </div>
+                      ) : canExport ? (
                         <ExportRequestForm action={exportFormAction} refusalCodes={PACKET_EXPORT_REFUSALS}>
                           <FormKeys />
                           <input type="hidden" name="practiceId" value={practiceId} />
@@ -574,7 +585,14 @@ export default async function PacketPage(props: Props) {
                           <input type="hidden" name="wordsVersion" value={wordsVersion} />
                         </ExportRequestForm>
                       ) : (
-                        <p data-export="ready">Ready to export. A billing manager or firm principal exports the packet: the export holds line-level PHI.</p>
+                        <>
+                          <p data-export="ready">Ready to export. A billing manager or firm principal exports the packet: the export holds line-level PHI.</p>
+                          {exportHold === null ? null : (
+                            <p data-export="held" data-hold-source={exportHold.source}>
+                              {exportPausedText(exportHold)}
+                            </p>
+                          )}
+                        </>
                       )}
                     </>
                   );

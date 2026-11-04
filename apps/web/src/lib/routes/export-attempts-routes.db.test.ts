@@ -9,7 +9,7 @@ import { createLogger } from '@tp/observability';
 import { WORDS_VERSION } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { EXPORT_REQUEST_REFUSALS, PacketRuleError, requestPacketExport } from '@tp/worker/packets';
-import { packetExportHandler } from '@tp/worker/runtime';
+import { packetExportHandler, refusedByHold } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
 import { TriageWorld } from '@tp/worker/testing/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -20,7 +20,7 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Outcome, Route } from '../http/route';
-import { EXPORT_REFUSAL_TEXT, type ExportAttempt, exportAttemptWords } from '../packets/export-attempts';
+import { EXPORT_REFUSAL_TEXT, type ExportAttempt, exportAttemptWords, exportPausedText } from '../packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT } from '../packets/queries';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
@@ -40,7 +40,9 @@ import { reopenLineAction, writeOffLineAction } from './triage';
  *   fix, nothing queued and nothing recorded as asked; the web's request, the worker's and the job agree on the
  *   reason;
  * - once asked, the builder shows the export in progress; the job's refusal shows with its reason and fix; asked
- *   again after the fix, a failed try shows as retrying, the last as failed, and the next export as exported.
+ *   again after the fix, a failed try shows as retrying, the last as failed, and the next export as exported;
+ * - the worker gate's refusal for the practice's own hold reads E1 while the hold lasts, with the export withheld and
+ *   the hold's sentence said, and as the earlier request's once it is lifted (PR #104 review UX-SS01-1; docs/adr/0080).
  */
 
 let w: TriageWorld;
@@ -289,5 +291,49 @@ describe('the builder, through its routes', () => {
     await addMembership(w.owner, setup.practice.world.organizationId, analyst, 'analyst');
     expect((await builder(setup, analyst)).version?.exportAttempt.state).toBe('exported');
     expect(ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=exported$/);
+  });
+  // SS-01 UX review 1 (design 6.3 E1; BIL-07, BIL-09): readiness never holds the hold, so the page asks the person's own
+  // question with phi.export (the export route's) and keeps the gate's refusal as E1 while the practice's hold lasts.
+  it('reads the worker gate’s refusal for the practice’s hold as E1 with no export offered while it lasts, and as the earlier request’s once lifted (SS-01 UX review 1)', async () => {
+    const setup = await cas08('ATTEMPTS HELD');
+    ok(await call(writeVersionAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, basedOnVersionId: '', useDraft: 'on' }));
+    const written = (await builder(setup)).version;
+    const versionId = written?.id ?? '';
+    ok(await call(approvePacketVersionAction, setup.second, P(setup.practice), { caseId: setup.caseId, versionId, versionSha256: written?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
+    ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION }));
+    const { organizationId } = setup.practice.world;
+    const page = async () => ok(await call(packetPage, setup.practice.manager, { ...P(setup.practice), caseId: setup.caseId }));
+    const time = (iso: string) => iso;
+    expect((await page()).exportHold).toBeNull();
+    // The practice's owning group suspended by PaidWhole, as the owner writes it; the worker's gate refuses the queued export.
+    await asOwner(w.owner, [], () => w.owner.query("UPDATE organization SET status = 'suspended', status_reason = 'security_hold' WHERE id = $1", [organizationId]));
+    try {
+      const jobId = randomUUID();
+      const payload = { practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION };
+      expect(await withJobScope(w.pricing.worker, { jobId, practiceId: setup.practice.practiceId }, (scope) => refusedByHold(scope, 'packet_export', payload, jobId))).toBe(true);
+      const held = await page();
+      const r1 = 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable';
+      expect(held.exportHold).toEqual({ reason: r1, source: 'owner', restarts: true });
+      expect(held.builder.version?.exportReadiness).toEqual({ outcome: 'ready' });
+      const attempt = held.builder.version?.exportAttempt ?? { state: 'none' };
+      expect(stateOf(attempt)).toEqual({ state: 'refused', code: 'organization_suspended' });
+      // As the page words it: E1, never "That no longer holds", and the hold's sentence in place of the Export button.
+      expect(exportAttemptWords(attempt, time, { cleared: true, hold: held.exportHold })).toMatchObject({ title: 'Export refused', tone: 'danger' });
+      expect(exportAttemptWords(attempt, time, { cleared: true, hold: held.exportHold })?.text).toContain(EXPORT_REFUSAL_TEXT.organization_suspended);
+      expect(exportPausedText(held.exportHold ?? { reason: '', source: 'owner', restarts: true })).toBe(`Exports are paused: ${r1}.`);
+      // The press it withholds would be refused before anything is queued.
+      const queued = queue.jobs.length;
+      expect(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION })).toMatchObject({ status: 'suspended' });
+      expect(queue.jobs.length).toBe(queued);
+    } finally {
+      await asOwner(w.owner, [], () => w.owner.query("UPDATE organization SET status = 'active', status_reason = NULL WHERE id = $1", [organizationId]));
+    }
+    // Reinstated: the earlier request's refusal, and the export is offered again.
+    const lifted = await page();
+    expect(lifted.exportHold).toBeNull();
+    expect(exportAttemptWords(lifted.builder.version?.exportAttempt ?? { state: 'none' }, time, { cleared: true, hold: lifted.exportHold })).toMatchObject({
+      title: 'An earlier request was refused',
+      text: expect.stringContaining('That no longer holds, so this version can be exported: export it again.') as unknown,
+    });
   });
 });
