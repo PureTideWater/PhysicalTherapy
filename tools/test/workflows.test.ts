@@ -3660,6 +3660,10 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(sum(step('env: { E: x }', `    defaults: { run: { shell: "bash -c '${vars3}' {0}" } }\n`))).toEqual([argumentOver('job images defaults.run.shell', "bash -c '' {0}".length + 3 * 49_152 + 1)]);
     expect(sum(`defaults: { run: { shell: "${vars3}" } }\n${step('env: { E: x }')}`)).toEqual([argumentOver('defaults.run.shell', 3 * 49_152 + 1)]);
     expect(sum(step(`shell: "${vars3}"\n        env: { E: x }`))).toEqual([argumentOver('job images step "The step" shell', 3 * 49_152 + 1)]);
+    // An argument's own count: its bytes and the NUL make 131,072 at most.
+    const argumentFits = 'x'.repeat(131_072 - 1);
+    expect(sum(step(`shell: "${argumentFits}"\n        env: { E: x }`))).toEqual([]);
+    expect(sum(step(`shell: "${argumentFits}x"\n        env: { E: x }`))).toEqual([argumentOver('job images step "The step" shell', 131_073)]);
     expect(sum(step('env: { E: x }', `    container: { image: x, options: "\${{ inputs.note }}" }\n`))).toEqual(['fixture.yml job images container.options: no bound for inputs.note']);
     // And a process's environment and arguments together are held under ARG_MAX, less the runner's own: fifty
     // variables of 48 KB, each one string under the limit, are 2,457,840 bytes.
