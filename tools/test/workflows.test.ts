@@ -1254,7 +1254,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
    * writing a cut findings.json first, as a try killed while it extracts leaves one), failing as many as fake/fail holds
    * and failing as many as fake/partial holds after writing a cut findings.json (a zip checksum error), and answers as
    * gh does when there is no artifact. As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
-   * and never overwrites one.
+   * and never overwrites one. A `sleep` beside it logs each pause ("sleep <seconds>") and returns at once; the stall
+   * waits with /bin/sleep, which it does not log.
    */
   function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
     const dir = mkdtempSync(path.join(scratch, 'notify-'));
@@ -1272,7 +1273,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
         'if [ "$1 $2" = "run download" ]; then',
         '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0)',
-        '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec sleep 30; fi',
+        '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec /bin/sleep 30; fi',
         '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "HTTP 502: Bad Gateway" >&2; exit 1; fi',
         '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
         '  if [ -e "$dest/findings.json" ]; then echo "error downloading findings: error extracting \\"findings.json\\": open $dest/findings.json: file exists" >&2; exit 1; fi',
@@ -1283,6 +1284,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       ].join('\n'),
       { mode: 0o755 },
     );
+    writeFileSync(path.join(dir, 'bin/sleep'), ['#!/usr/bin/env bash', 'printf "sleep %s\\n" "$*" >> "$FAKE_DIR/log"'].join('\n'), { mode: 0o755 });
     const lines = (name: string) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), 'utf8') : '');
     return { dir, log: () => lines('log').split('\n').filter((line) => line !== ''), bodies: () => lines('bodies').split('\n---\n').filter((body) => body !== '') };
   }
@@ -1319,7 +1321,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
 
   /**
    * Runs a notify job's step as the runner starts it (a file, bash --noprofile --norc -e -o pipefail), with notifyEnv's
-   * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, no pause between download tries, `findings`, when not null,
+   * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, the fake's sleep logging each pause, `findings`, when not null,
    * staged as the run's findings artifact, and the fake's download stalling its first `stalls` tries (a sleep past any
    * DOWNLOAD_LIMIT a case gives), then failing its next `failures` tries, then its next `partials` after writing a cut
    * findings.json.
@@ -1336,7 +1338,6 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       ...notifyEnv(name, step, values, findings),
       RUNNER_TEMP: mkdtempSync(path.join(scratch, 'runner-temp-')),
       GITHUB_RUN_ID: '1',
-      DOWNLOAD_PAUSE: '0',
       GITHUB_REF_NAME: 'claude/build-platform',
       GITHUB_SHA: 'abc123',
       FAKE_DIR: gh.dir,
@@ -1350,6 +1351,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     return { status: result.status, output: result.stdout + result.stderr, stdout: result.stdout, stderr: result.stderr, env, log: gh.log(), bodies: gh.bodies() };
   }
   const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
+  /** A run's download tries and pauses in order, each try as "run download". */
+  const paced = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ') || line.startsWith('sleep ')).map((line) => (line.startsWith('run download ') ? 'run download' : line));
 
   it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
     expectQuietNotify('content-calendar.yml', 'check', "always() && github.event_name != 'pull_request'", { actions: 'read', issues: 'write' });
@@ -1418,27 +1421,36 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
     const issues = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('issue '));
     const tries = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ')).length;
+    // The tries and the pauses in order: DOWNLOAD_PAUSE's 10 seconds between two tries, never after the last.
+    const t = 'run download';
+    const p = 'sleep 10';
     // A file over the bound, as the check would never write it.
     const over = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }]));
     expect([over.status, issues(over), tries(over)], over.output).toEqual([0, [failing], 1]);
+    expect(paced(over)).toEqual([t]);
     // Two failed tries, then the artifact: filed, each failure's message in the log.
     const late = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 2);
     expect([late.status, issues(late), tries(late)], late.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 3]);
     expect(late.output.split('HTTP 502: Bad Gateway')).toHaveLength(3);
+    expect(paced(late)).toEqual([t, p, t, p, t]);
     // Three failed tries: "check failing".
     const down = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 3);
     expect([down.status, issues(down), tries(down)], down.output).toEqual([0, [failing], 3]);
+    expect(paced(down)).toEqual([t, p, t, p, t]);
     // Each try is stopped after DOWNLOAD_LIMIT seconds (1 here, 60 in the workflow): a stalled try is retried, and three
     // end in "check failing" rather than at the job's timeout with no issue.
     const slow = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 1);
     expect([slow.status, issues(slow), tries(slow)], slow.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    expect(paced(slow)).toEqual([t, p, t]);
     const stalled = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 3);
     expect([stalled.status, issues(stalled), tries(stalled)], stalled.output).toEqual([0, [failing], 3]);
+    expect(paced(stalled)).toEqual([t, p, t, p, t]);
     // A try that leaves a cut findings.json behind (a zip checksum error) is retried into an emptied directory, as gh
     // refuses to extract over a file already there: filed on the second try, never "file exists".
     const partial = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 1);
     expect([partial.status, issues(partial), tries(partial)], partial.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
     expect(partial.output).not.toContain('file exists');
+    expect(paced(partial)).toEqual([t, p, t]);
   });
 
   it('content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)', () => {
@@ -1510,12 +1522,14 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(reads.status, reads.output).toBe(0);
     expect(reads.stdout).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes, SHA-256 ${createHash('sha256').update(list).digest('hex')}\n`);
     expect(reads.log.filter((line) => !line.startsWith('run download '))).toEqual([]);
+    expect(paced(reads)).toEqual(['run download']);
     // A try that leaves a cut findings.json behind, or is stopped while it extracts, is retried into an emptied directory.
     for (const [at, stalls, partials] of [['partial', 0, 1], ['stalled', 1, 0]] as const) {
       const retried = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], list, 'handoff', 0, stalls, partials);
       expect([retried.status, retried.log.filter((line) => line.startsWith('run download ')).length], `${at} ${retried.output}`).toEqual([0, 2]);
       expect(retried.stdout, at).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes`);
       expect(retried.output, at).not.toContain('file exists');
+      expect(paced(retried), at).toEqual(['run download', 'sleep 10', 'run download']);
     }
     for (const [at, values, findings] of [
       ['no artifact', { CHECK_RESULT: 'success' }, null],
@@ -1525,7 +1539,8 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       const failed = runNotify('content-calendar.yml', values, [], findings, 'handoff');
       expect(failed.status, `${at} ${failed.output}`).toBe(1);
       expect(failed.stderr, at).toContain("content-calendar: the notify job could not read this run's findings (the check: success)\n");
-      expect(failed.log.filter((line) => !line.startsWith('run download ')), at).toEqual([]);
+      expect(failed.log.filter((line) => !line.startsWith('run download ') && !line.startsWith('sleep ')), at).toEqual([]);
+      expect(paced(failed), at).toEqual(findings === null ? ['run download', 'sleep 10', 'run download', 'sleep 10', 'run download'] : ['run download']);
     }
   });
 
