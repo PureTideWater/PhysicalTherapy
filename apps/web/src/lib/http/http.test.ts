@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { ClientSecret, clientSecretValue } from '../auth/secret-hash';
 import { ConfigError, defaultDevAuthDirectory, defaultDocumentsDirectory, developmentMasterKey, readWebConfig } from '../server/config';
 import { type Services, devOutbox, devResetOutbox } from '../server/services';
 import { MAX_JSON_BODY_BYTES, PRIVATE_NO_STORE, ResponseCookies, boundedText, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
@@ -518,6 +519,34 @@ describe('the web configuration', () => {
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
+  });
+
+  it('SEC-20: reads the Cognito client secret when set (optional in release N), and refuses it with the dev provider, as the stack’s placeholder, or malformed, never showing the value (docs/adr/0088, D1)', () => {
+    const cognito = { ...base, TP_AUTH_PROVIDER: 'cognito', COGNITO_USER_POOL_ID: 'us-east-1_Synthetic', COGNITO_CLIENT_ID: 'syntheticclient' };
+    const value = 'synthetic0client0secret0value0000000000000000000000';
+    const config = readWebConfig({ ...cognito, COGNITO_CLIENT_SECRET: value });
+    expect(config.auth.kind === 'cognito' && config.auth.clientSecret instanceof ClientSecret && clientSecretValue(config.auth.clientSecret)).toBe(value);
+    // Release N runs the public client: no secret, and no hash is sent.
+    expect(readWebConfig(cognito).auth).toEqual({ kind: 'cognito', userPoolId: 'us-east-1_Synthetic', clientId: 'syntheticclient', region: 'us-east-1', clientSecret: null });
+    const refusals: [Record<string, string>, string][] = [
+      [{ ...base, COGNITO_CLIENT_SECRET: value }, 'COGNITO_CLIENT_SECRET is refused with TP_AUTH_PROVIDER=dev (the dev provider takes no client secret)'],
+      [{ ...cognito, TP_AUTH_PROVIDER: 'dev', COGNITO_CLIENT_SECRET: value }, 'COGNITO_CLIENT_SECRET is refused with TP_AUTH_PROVIDER=dev (the dev provider takes no client secret)'],
+      // The literal the stack stores until the custodian seeds it (review infra-auth-IA-5): a task on it fails at start.
+      [{ ...cognito, COGNITO_CLIENT_SECRET: 'unset' }, 'COGNITO_CLIENT_SECRET is the stack’s placeholder, not a client secret: the secret was never seeded'],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: 'short-secret' }, 'invalid settings: COGNITO_CLIENT_SECRET'],
+      [{ ...cognito, COGNITO_CLIENT_SECRET: 'x'.repeat(129) }, 'invalid settings: COGNITO_CLIENT_SECRET'],
+    ];
+    for (const [env, message] of refusals) {
+      let thrown: unknown;
+      try {
+        readWebConfig(env);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, message).toEqual(new ConfigError(message));
+      const shown = thrown instanceof Error ? `${thrown.message} ${thrown.stack ?? ''}` : '';
+      expect(shown, message).not.toContain(env.COGNITO_CLIENT_SECRET === 'unset' ? '"unset"' : (env.COGNITO_CLIENT_SECRET ?? '<none>'));
+    }
   });
 
   it('lands uploads in a local directory in development, in the documents bucket in production, and queues on the database login by default', () => {

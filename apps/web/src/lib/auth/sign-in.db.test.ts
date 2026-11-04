@@ -6,10 +6,12 @@ import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, 
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { type CognitoClient, CognitoAuthProvider } from './cognito-provider';
 import { DevAuthProvider } from './dev-provider';
 import { MemoryDevStore } from './dev-store';
 import { hashPassword } from './password';
 import { Sealer } from './seal';
+import { ClientSecret } from './secret-hash';
 import { listDevices, resolveSession } from './sessions';
 import { type FlowResult, type Pending, RESET_REQUEST_FLOOR_MS, SignInFlow } from './sign-in';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
@@ -792,5 +794,94 @@ describe('SEC-22: a second factor is enrolled only inside a live invitation (doc
     expect(done.kind).toBe('signed_in');
     expect((await owner.query('SELECT status, mfa_enrolled FROM "user" WHERE id = $1', [invited.id])).rows).toEqual([{ status: 'active', mfa_enrolled: true }]);
     expect(await factorOf(invited.sub)).toEqual(expect.any(String));
+  });
+});
+
+/** A Cognito provider whose every call is refused for the client's credential, as Cognito refuses a wrong secret hash. */
+function credentialRefused(): { readonly flow: SignInFlow; readonly pace: Pace; readonly lines: string[]; readonly sent: string[] } {
+  const sent: string[] = [];
+  const client = {
+    send: (command: { constructor: { name: string } }) => {
+      sent.push(command.constructor.name);
+      const error = new Error('Unable to verify secret hash for client syntheticclient');
+      error.name = command.constructor.name === 'RevokeTokenCommand' ? 'UnauthorizedException' : 'NotAuthorizedException';
+      return Promise.reject(error);
+    },
+  } as unknown as CognitoClient;
+  const refusing = new CognitoAuthProvider({
+    client,
+    userPoolId: 'us-east-1_Synthetic',
+    clientId: 'syntheticclient',
+    verifier: { verify: () => Promise.reject(new Error('unreached')) },
+    clientSecret: new ClientSecret('synthetic-client-secret-0000000000000000000000000000'),
+    logger: createLogger({ sink: () => undefined }),
+  });
+  const pace: Pace = { at: 0, slept: [] };
+  current = pace;
+  const lines: string[] = [];
+  const sleep = (ms: number): Promise<void> => {
+    pace.slept.push(ms);
+    pace.at += ms;
+    return Promise.resolve();
+  };
+  return { flow: new SignInFlow({ pool: app, provider: refusing, logger: createLogger({ sink: (line) => lines.push(line) }), now: () => pace.at, sleep }), pace, lines, sent };
+}
+
+const CREDENTIAL_REFUSED = 'security event: client credential refused';
+const UNAVAILABLE: FlowResult = { kind: 'refused', reason: 'client_credential' };
+
+describe('SEC-20: a refused client credential is the platform’s failure, never the person’s (docs/adr/0088, D2)', () => {
+  it('SEC-20: a sign-in refused for the credential counts no failure, locks nothing even past ten, and logs a security event of its name alone', async () => {
+    const user = await person();
+    const { flow: refusing, lines } = credentialRefused();
+    const request = context();
+    expect(await refusing.start(user.email, PASSWORD, request)).toEqual(UNAVAILABLE);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      expect(await refusing.start(user.email, PASSWORD, context())).toEqual(UNAVAILABLE);
+    }
+    expect((await owner.query('SELECT failed_sign_ins, locked_at FROM "user" WHERE id = $1', [user.id])).rows).toEqual([{ failed_sign_ins: 0, locked_at: null }]);
+    expect(await events(user.id)).toEqual([]);
+    const refusals = logged(lines, CREDENTIAL_REFUSED);
+    expect(refusals).toHaveLength(11);
+    expect(refusals[0]).toEqual({ level: 'error', msg: CREDENTIAL_REFUSED, time: expect.any(String), request_id: request.requestId, error_code: 'NotAuthorizedException' });
+    expect(lines.join('\n')).not.toMatch(new RegExp(`${user.email}|syntheticclient|secret hash`, 'i'));
+    // The person can still sign in once the credential is right.
+    expect((await flow.start(user.email, PASSWORD, context())).kind).toBe('pending');
+  });
+
+  it('SEC-20: a code step refused for the credential is neither a wrong code nor an expired step, and counts nothing', async () => {
+    const user = await person();
+    const { flow: refusing, lines } = credentialRefused();
+    const challenge = JSON.stringify({ s: 'session', u: user.sub, email: user.email });
+    expect(await refusing.answerTotp({ step: 'mfa', email: user.email, challenge }, '123456', context())).toEqual(UNAVAILABLE);
+    expect(await refusing.newPassword({ step: 'new_password', email: user.email, challenge }, CHOSEN, context())).toEqual(UNAVAILABLE);
+    expect(await refusing.completeKey({ step: 'key', email: user.email, challenge }, {} as never, context())).toEqual(UNAVAILABLE);
+    expect(await refusing.beginKey(user.email)).toEqual(UNAVAILABLE);
+    expect((await owner.query('SELECT failed_sign_ins FROM "user" WHERE id = $1', [user.id])).rows).toEqual([{ failed_sign_ins: 0 }]);
+    expect(await events(user.id)).toEqual([]);
+    expect(logged(lines, CREDENTIAL_REFUSED).map((entry) => entry.error_code)).toEqual(['NotAuthorizedException', 'NotAuthorizedException', 'NotAuthorizedException', 'NotAuthorizedException']);
+  });
+
+  it('SEC-20: a reset request refused for the credential answers alike at the floor and logs the failure by its name, and a confirmation refused for it is no code refusal', async () => {
+    const user = await person();
+    const { flow: refusing, pace, lines, sent } = credentialRefused();
+    const request = context();
+    expect(await refusing.requestPasswordReset(user.email, request)).toEqual({ step: 'reset', email: user.email });
+    expect(pace.at).toBe(RESET_REQUEST_FLOOR_MS);
+    expect(sent).toEqual(['ForgotPasswordCommand']);
+    expect(logged(lines, 'password reset request not delivered')).toEqual([]);
+    expect(logged(lines, 'password reset request failed')).toEqual([{ level: 'error', msg: 'password reset request failed', time: expect.any(String), request_id: request.requestId, error_code: 'ClientCredentialError' }]);
+    expect(await refusing.confirmPasswordReset(user.email, '123456', 'Chosen-Reset-Pass-2026', context())).toEqual({ kind: 'client_credential' });
+    expect(logged(lines, 'password reset code refused')).toEqual([]);
+    expect(logged(lines, CREDENTIAL_REFUSED).map((entry) => entry.error_code)).toEqual(['NotAuthorizedException']);
+    expect(await events(user.id)).toEqual(['password_reset_requested:unverified_request']);
+  });
+
+  it('SEC-20: leaving a key-registration step whose grant the provider refuses for the credential still leaves, and logs the event', async () => {
+    const user = await person();
+    const { flow: refusing, lines } = credentialRefused();
+    const request = context();
+    await expect(refusing.abandon({ step: 'register_key', email: user.email, userId: user.id, grant: JSON.stringify({ a: 'access', r: 'refresh' }) }, request)).resolves.toBeUndefined();
+    expect(logged(lines, CREDENTIAL_REFUSED)).toEqual([expect.objectContaining({ level: 'error', error_code: 'UnauthorizedException', request_id: request.requestId })]);
   });
 });
