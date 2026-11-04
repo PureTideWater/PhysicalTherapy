@@ -392,6 +392,8 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     const invited = await person({ status: 'invited', mfa: false, temporary: true, totp: false });
     // A person who chose a password at the invitation and stopped before enrolling: no second factor (SEC-B1).
     const notEnrolled = await person({ status: 'invited', mfa: false, temporary: false, totp: false });
+    // An active account with no second factor, as a console factor reset (UX PR 65) leaves one: no code (SEC-B1).
+    const activeNotEnrolled = await person({ mfa: false, totp: false });
     const disabled = await person({ status: 'disabled' });
     const unknown = `${randomUUID()}@synthetic.test`;
     const ask = provider.requestPasswordReset.bind(provider);
@@ -402,7 +404,16 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     const before = await requested();
     const sent = mailed.length;
     const paces: Record<string, Pace> = {};
-    for (const [name, email] of Object.entries({ active: active.email, locked: locked.email, invited: invited.email, notEnrolled: notEnrolled.email, disabled: disabled.email, unknown })) {
+    const addresses = {
+      active: active.email,
+      locked: locked.email,
+      invited: invited.email,
+      notEnrolled: notEnrolled.email,
+      activeNotEnrolled: activeNotEnrolled.email,
+      disabled: disabled.email,
+      unknown,
+    };
+    for (const [name, email] of Object.entries(addresses)) {
       const { flow: asking, pace, lines } = paced();
       const request = context();
       expect(await asking.requestPasswordReset(email, request)).toEqual({ step: 'reset', email });
@@ -419,14 +430,15 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(paces.active?.slept).toEqual([RESET_REQUEST_FLOOR_MS - 600]);
     expect(paces.unknown?.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
     expect(paces.notEnrolled?.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
+    expect(paces.activeNotEnrolled?.slept).toEqual([RESET_REQUEST_FLOOR_MS]);
     expect(calls.map(([email]) => email)).toEqual([active.email, locked.email]);
     // The flow passes the request ID (the dev twin's own signature does not name it, so the call is read as sent).
     expect(calls.map((call) => (call as unknown[])[1])).toEqual([expect.stringMatching(/^test-/), expect.stringMatching(/^test-/)]);
     expect(mailed.slice(sent).map((entry) => entry.email)).toEqual([active.email, locked.email]);
-    for (const account of [active, locked, invited, notEnrolled, disabled]) {
+    for (const account of [active, locked, invited, notEnrolled, activeNotEnrolled, disabled]) {
       expect(await events(account.id)).toEqual(['password_reset_requested:unverified_request']);
     }
-    expect(await requested()).toBe(before + 5);
+    expect(await requested()).toBe(before + 6);
   });
 
   it('SGN-05: answers at the floor when the audit write or the provider throws, and warns of a run over it', async () => {

@@ -791,8 +791,19 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [locked.id]);
     const invited = await person({ status: 'invited', temporary: true, totp: false });
     const notEnrolled = await person({ status: 'invited', totp: false });
+    // Active with no second factor, as a console factor reset (UX PR 65) leaves an account: no code (review SEC-B1).
+    const activeNotEnrolled = await person({ totp: false });
     const disabled = await person({ status: 'disabled' });
-    const addresses = { active: active.email, locked: locked.email, invited: invited.email, notEnrolled: notEnrolled.email, disabled: disabled.email, unknown: `${randomUUID()}@synthetic.test` };
+    const addresses = {
+      active: active.email,
+      locked: locked.email,
+      invited: invited.email,
+      notEnrolled: notEnrolled.email,
+      activeNotEnrolled: activeNotEnrolled.email,
+      disabled: disabled.email,
+      unknown: `${randomUUID()}@synthetic.test`,
+    };
+    const asked = vi.spyOn(services.provider, 'requestPasswordReset');
     const sent = mailed.length;
     const seen: unknown[] = [];
     for (const [name, email] of Object.entries(addresses)) {
@@ -817,6 +828,8 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
       expect(await page(signInPage, browser, { reason: 'password_reset' }), name).toMatchObject({ data: { email: null } });
     }
     expect(new Set(seen).size).toBe(1);
+    expect(asked.mock.calls.map(([email]) => email)).toEqual([active.email, locked.email]);
+    asked.mockRestore();
     expect(mailed.slice(sent).map((entry) => entry.email)).toEqual([active.email, locked.email]);
   });
 
