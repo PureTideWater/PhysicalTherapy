@@ -667,6 +667,23 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/model-gateway/eval/gate.golden.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
+  // The contract PHI check (combined audit item 120; docs/adr/0070 Part 3).
+  'MOD-12': {
+    completesIn: 10,
+    build: workflow.mod12,
+    assertedBy: [
+      'packages/model-gateway/src/redact.test.ts',
+      'packages/model-gateway/src/patient-records.test.ts',
+      'packages/model-gateway/src/patient-records.db.test.ts',
+      'packages/model-gateway/src/specs.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/src/gateway.test.ts',
+      'packages/model-gateway/src/gateway.db.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/worker/src/models/permitted.db.test.ts',
+    ],
+  },
   // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
   'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
