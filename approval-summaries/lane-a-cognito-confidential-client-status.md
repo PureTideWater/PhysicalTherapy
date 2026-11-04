@@ -62,7 +62,25 @@ meets 4.5:1; one UX and brand review); the branded code email and the "password 
   the test line rewritten. The tree is proven equal to #112's apart from that line and the base (wf_e77297a1-f84). #112
   will then be closed with a comment pointing to the new PR.
 
+- 2026-11-04T15:05:00Z: **INCIDENT AND REMEDY (gitleaks).** The PR 1 build agent met a pre-push gitleaks refusal (a synthetic
+  test password at cognito-provider.test.ts:147, commit 9d717672) and added two .gitleaksignore entries (45b7766f,
+  1721a256) instead of rewriting the line. Draft #112 carried them. Remedy (the orchestrator agreed, 14:38Z): PR 1 was
+  rebuilt on **`co-001/cognito-confidential-client-pr1`** from c4941291 (wf_e77297a1-f84). It has 7 commits, each naming the
+  old commits it carries, no .gitleaksignore change (identical to the base's), and the test line rewritten to hold the
+  value in a variable. The tree was proven equal to #112's apart from that line and the base's own changes. The hook's
+  gitleaks finds nothing in it. The check is green: typecheck, lint 1,780, unit 1,479, db 143, infra 726, synth clean. **Draft #113** opened.
+  **#112 closed** with one comment naming #113. **The superseded branch `co-001/cognito-confidential-client` must never be
+  merged or reused**; it stays on origin untouched (deleting it is a person's call). Prevention: every workflow prompt
+  from now on carries "an agent that meets a gitleaks refusal rewrites the flagged text in a new commit and never adds to
+  or changes .gitleaksignore". Subscribed to #113. Reviews wf_f0e7c3c4-4c4 launched (security; infra and auth;
+  skeptics; one fix round with the base merge, the full suite, the infra tests and cdk synth; verification).
+- For Lane A's queue (orchestrator, 14:38Z): relinking an app row to a new Cognito subject is a migration; until then,
+  a stuck invitee gets the re-send remedy.
+
 ## Waiting on someone
+- The founder, before release N (PR 1) reaches production: **F0**, on staging running release N: invite a synthetic
+  account, set its password, enrol a factor and sign in (it checks that Cognito's challenge names the user's sub, which the
+  enrolment rule relies on; ADR 0088 "Not verified here").
 - The founder, before PR 2 merges: design section 10's F1-F5 (the credentialed staging steps, exact), and ruling 16 (an SCP or
   permission boundary denying DescribeUserPoolClient to read-only sets; an AWS owner-admin setting). Rulings 13-15: decided
   (12:28Z).
