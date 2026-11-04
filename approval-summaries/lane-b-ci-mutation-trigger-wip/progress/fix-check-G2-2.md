@@ -19,3 +19,11 @@ Logs: scratchpad p4/logs/fix/G2-2/; adversarial scripts in scratchpad p4/g2adv2/
   - Clone back at 05d3291b…, clean, temp branches deleted.
 - Mutant re-run starting (mut.py: S2 M01–M05, M08–M16; C-G2 C01, C02, C04–C07, C13; own X1–X13).
 - Mutants M01, M02, M03 killed. Per-mutant lock waits (other sessions' runs) were ~7 min each, which would overrun the 2-hour background limit; stopped the runner by PID, restored tools/stryker with git checkout (clean), and rerun M04 onward with one heavy lock held for the batch.
+- M04, M05, M08–M15 killed (G2-2/mutants.txt, mut-*.log).
+- M16, C01, C02, C04, C05, C06, C07, C13, X1, X2 killed.
+- X3, X3b, X4, X4b, X6 (now killed: 2 tests), X7, X8, X9 killed; X5 survives, equivalent (**/ compiles to (?:[^/]+/)*, which holds the root file).
+- X10 (lockfile moved key unquoted), X11 (old label), X12 (classifyManifests' control-path rule dropped), X13 (TAB to CR exempted from hasControlCharacter) killed.
+- Mutant summary: all S2 (M01–M05, M08–M16) and C-G2 (C01, C02, C04–C07, C13) mutants killed; own X1–X4b, X6–X13 killed; X5 equivalent.
+- Docs: ADR Part 7 bullet, N52, N56, ci.md and CI-27 (test-matrix, matrix.ts, CI-27/expected.json) match the code, except N52/Part 7's "no path ... starts a workflow command in the changes job's log", which the gitlink case's git stderr breaks.
+- Result: 1 should (git stderr carries a raw control-character path into the log), 1 nit (uncaught Node open errors print a joined path raw; same fix). S1 verdict, C-G1, S2 and C-G2 hold. Nothing loosened.
+- Clone /home/user/fx-p4-G2-2 removed (clean at 05d3291b… beforehand). Done.

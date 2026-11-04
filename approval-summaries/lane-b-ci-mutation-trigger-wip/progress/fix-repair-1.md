@@ -22,3 +22,8 @@ Logs: /tmp/claude-0/-home-user-PhysicalTherapy/84980be8-4825-5e0c-971b-13455480b
 
 ## Final at 05d3291b…
 tools/stryker + tools/test 35 files 495/495 (final-suite.log); typecheck 0; eslint tools/stryker 0; lint:logs 0; watched.ts --write no diff. Pushed WIP ref fast-forward 30efef6d..05d3291b through the hook (push.log).
+
+## Correction (repair 2, G3 round-2 nit)
+The G3-c figures above (17 and 32) were counted in bytes on non-table lines, and the ADR's was off by one. Counted in
+characters: all lines over 120 are ci.md 42 and the ADR 110; non-table lines over 120 are ci.md 14 and the ADR 28;
+the same at 50029e64… and at 05d3291b…. In bytes, non-table: 17 and 31. No line the fixes added is over 120.
