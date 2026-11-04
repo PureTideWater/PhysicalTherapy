@@ -773,7 +773,7 @@ export function Uploader(props: UploaderProps) {
           onDrop={onDrop}
           className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-4 sm:p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
         >
-          <Heading id={headingId} className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</Heading>
+          <Heading id={headingId} className="text-base font-semibold">{props.heading ?? 'Choose 835 files to upload'}</Heading>
           <p className="max-w-prose text-sm text-muted-foreground">
             {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`}{' '}
             {single === undefined ? 'Each file is' : 'The file is'} scanned for malware before anything reads it.

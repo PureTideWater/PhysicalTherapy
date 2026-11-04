@@ -323,3 +323,11 @@ describe('leaving the Uploads screen', () => {
     expect(leaveAsks([{ phase: 'sent' }, { phase: 'failed' }], 0)).toBe(false);
   });
 });
+
+describe('the drop zone’s heading', () => {
+  it('says to choose files, never "Drop", when the page names none, and names its region by it', () => {
+    const html = rendered({ kinds: [ANSI] });
+    expect(html).toMatch(/<h2 id="[^"]+" class="[^"]*">Choose 835 files to upload<\/h2>/);
+    expect(html).not.toContain('Drop ');
+  });
+});
