@@ -126,6 +126,15 @@ its unpushed work is not waited for).
     loosen the 90% line. Also open: the harness's step 7b posts 0 of 0 (A has no actionable lines), so section 8.4's 30 s
     actionable-write budget is never exercised.
   - Merge verifiers for 1b ab8c9c27 and interest adf0f5d2: ok.
+- **12:55 UTC. Loader fix in 1b: 978891a3** (wf_71702c03-7e6; the 4 files + ADR 0083 subsection + reconciliation-001
+  content-pipeline bullet quoting the grant; failing first 7 of 18; 10/10 alone, 1 beside a held xid; 108 touched db files,
+  8,264 tests; fast checks; dm --check unchanged; SCR-08 already covers the file). No in-repo flake listing existed.
+  **Checker's should-fix (reproduced on PG 18.4):** after an aborted load, < 2% of pages with dead tuples make VACUUM
+  bypass index cleanup, those pages never turn all-visible, so every later load waits 180 s, returns frozen:false and
+  warns about the wrong cause. Fix (`INDEX_CLEANUP ON` on the retry passes) is outside the grant's words: **amendment asked
+  of the founder via the orchestrator (12:55)**. Within the grant, to do in 1b's fix round: the warning's wording and the
+  documents' "180 s bounds when the last pass starts". Interest's merge of 978891a3 stopped early (staged, not
+  committed): aborted, interest stays at adf0f5d2 until the loader settles (one merge).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
