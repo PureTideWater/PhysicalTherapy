@@ -14,7 +14,7 @@ import { SoftAuthenticator } from '../auth/test-support/soft-authenticator';
 import { totpCode } from '../auth/totp';
 import { routeHandler } from '../http/handler';
 import { RATE_LIMITS, takeRateLimit } from '../http/rate-limit';
-import type { TotpSetup } from '../auth/provider';
+import type { AuthStep, TotpSetup } from '../auth/provider';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { homePage } from './index';
@@ -46,6 +46,12 @@ const ORIGIN = 'http://localhost:3100';
 const CHEAP = { n: 1024, r: 8, p: 1 };
 const PASSWORD = 'Synthetic-Pass-2026';
 const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+/** The services' default support address (synthetic), which the locked words name (UX-066). */
+const SUPPORT = 'support@synthetic.test';
+/** The refusal of a locked account, on the password step and the key step (UX-066). */
+const LOCKED = `This account was locked after ten failed attempts. Write to ${SUPPORT} from this address to have it unlocked.`;
+/** Where a closed hardware-key step goes: back to the key surface, never the password page (UXS-01). */
+const KEY_RESTART = { redirect: '/sign-in/hardware-key?reason=step_expired' };
 
 let database: MigratedDatabase;
 let owner: DatabaseClient;
@@ -230,7 +236,7 @@ describe('the password and TOTP steps', () => {
     expect(await step(enrollTotp, new Browser(), { code: '123456' })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
   });
 
-  it('shows the lockout state after ten failures', async () => {
+  it('shows the lockout state after ten failures, naming the support address to write to (UX-066)', async () => {
     const user = await person();
     const browser = new Browser();
     for (let attempt = 0; attempt < 9; attempt += 1) {
@@ -242,9 +248,9 @@ describe('the password and TOTP steps', () => {
     }
     expect(await step(signInWithPassword, browser, { email: user.email, password: 'Wrong-Pass-2026!' })).toEqual({
       status: 'ok',
-      data: { error: expect.stringContaining('locked after ten failed attempts'), locked: true },
+      data: { error: LOCKED, locked: true },
     });
-    expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toMatchObject({ status: 'ok', data: { locked: true } });
+    expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: LOCKED, locked: true } });
   });
 
   it('sends a step that expired back to the start', async () => {
@@ -285,10 +291,11 @@ describe('the hardware-key route handlers', () => {
     expect(await json(verifyHardwareKey, signIn, { response: JSON.stringify(key.get(begun.body.options as never)) })).toEqual({ status: 200, body: { redirect: '/' } });
     expect(signIn.get(SESSION_COOKIE)).toBeDefined();
     expect(await step(registerKeyPage, new Browser())).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
-    expect(await json(verifyHardwareKey, new Browser(), { response: JSON.stringify(key.get(begun.body.options as never)) })).toEqual({ status: 200, body: { redirect: '/sign-in?reason=step_expired' } });
+    // UXS-01: a key step that is no longer there goes back to the key surface, not the password page.
+    expect(await json(verifyHardwareKey, new Browser(), { response: JSON.stringify(key.get(begun.body.options as never)) })).toEqual({ status: 200, body: KEY_RESTART });
   });
 
-  it('refuses a TOTP-only session for an internal user who has a key, and a locked account its options', async () => {
+  it('refuses a TOTP-only session for an internal user who has a key, and a locked account its options, naming the support address (UX-066)', async () => {
     const staff = await person({ internal: true });
     const key = new SoftAuthenticator(ORIGIN);
     const browser = new Browser();
@@ -300,8 +307,27 @@ describe('the hardware-key route handlers', () => {
     await step(signInWithPassword, again, { email: staff.email, password: PASSWORD });
     expect(await step(answerMfa, again, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/sign-in/hardware-key?reason=hardware_key_required' } });
     await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [staff.id]);
-    expect(await json(hardwareKeyOptions, new Browser(), { email: staff.email })).toEqual({ status: 200, body: { error: expect.stringContaining('locked'), locked: true } });
+    expect(await json(hardwareKeyOptions, new Browser(), { email: staff.email })).toEqual({ status: 200, body: { error: LOCKED, locked: true } });
     expect(await json(hardwareKeyOptions, new Browser(), { email: 'not an email' })).toMatchObject({ status: 400 });
+  });
+
+  it('UXS-01: sends a key step that closed, at its limit or at the provider, back to the key surface, keeping no email', async () => {
+    const staff = await person({ internal: true });
+    const answer = JSON.stringify({ id: 'synthetic-credential', rawId: 'synthetic-credential', type: 'public-key', response: {}, clientExtensionResults: {} });
+
+    const stale = new Browser();
+    expect(await step(hardwareKeyOptions, stale, { email: staff.email })).toMatchObject({ status: 'ok', data: { options: expect.any(Object) } });
+    clock = new Date(clock.getTime() + 3 * 60_000);
+    expect(await step(verifyHardwareKey, stale, { response: answer })).toEqual({ status: 'ok', data: KEY_RESTART });
+
+    const closed = new Browser();
+    const expiring = servicesWith(ExpiringKey);
+    expect(await step(hardwareKeyOptions, closed, { email: staff.email }, expiring)).toMatchObject({ status: 'ok', data: { options: expect.any(Object) } });
+    closed.forget();
+    expect(await step(verifyHardwareKey, closed, { response: answer }, expiring)).toEqual({ status: 'ok', data: KEY_RESTART });
+    expect(closed.deleted).toEqual([SIGN_IN_COOKIE]);
+    expect(closed.written).toEqual([]);
+    expect(closed.get(KEPT_EMAIL_COOKIE)).toBeUndefined();
   });
 
   it('answers a body that is not JSON as invalid', async () => {
@@ -330,6 +356,13 @@ async function failures(userId: string): Promise<{ readonly count: number; reado
 /** The dev provider, except that enrolment's setup key is asked for after its sign-in session ended. */
 class ExpiringSetup extends DevAuthProvider {
   override beginTotpSetup(): Promise<TotpSetup | { readonly kind: 'expired' }> {
+    return Promise.resolve({ kind: 'expired' });
+  }
+}
+
+/** The dev provider, except that a key's assertion arrives after the provider's challenge lapsed. */
+class ExpiringKey extends DevAuthProvider {
+  override completeKeySignIn(): Promise<AuthStep> {
     return Promise.resolve({ kind: 'expired' });
   }
 }
@@ -409,27 +442,27 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
   it('SGN-03: keeps the email only once the password is proven, and fills it only after a step closed or a restart', async () => {
     const user = await person();
     const browser = new Browser();
-    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null } });
+    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null, supportEmail: SUPPORT } });
     await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
     expect(browser.maxAge.get(KEPT_EMAIL_COOKIE)).toBe(1080);
     const kept = browser.get(KEPT_EMAIL_COOKIE) ?? '';
     expect(kept).toMatch(/^v1\./);
     expect(kept).not.toContain(user.email);
     expect(kept).not.toContain(Buffer.from(user.email).toString('base64url'));
-    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: user.email, use: null } });
-    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null } });
-    expect(await page(signInPage, browser, {})).toEqual({ status: 'ok', data: { reason: null, email: null, use: null } });
-    expect(await page(signInPage, browser, { reason: 'signed_out' })).toEqual({ status: 'ok', data: { reason: 'signed_out', email: null, use: null } });
+    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: user.email, use: null, supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null, supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, {})).toEqual({ status: 'ok', data: { reason: null, email: null, use: null, supportEmail: SUPPORT } });
+    expect(await page(signInPage, browser, { reason: 'signed_out' })).toEqual({ status: 'ok', data: { reason: 'signed_out', email: null, use: null, supportEmail: SUPPORT } });
     // An email in the URL fills nothing: the parameters are stripped to the reason.
-    expect(await page(signInPage, new Browser(), { reason: 'restarted', email: 'someone@synthetic.test' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null } });
+    expect(await page(signInPage, new Browser(), { reason: 'restarted', email: 'someone@synthetic.test' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null, supportEmail: SUPPORT } });
     const tampered = new Browser();
     tampered.set(KEPT_EMAIL_COOKIE, `${kept.slice(0, -4)}${kept.endsWith('AAAA') ? 'BBBB' : 'AAAA'}`);
-    expect(await page(signInPage, tampered, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null } });
+    expect(await page(signInPage, tampered, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null, supportEmail: SUPPORT } });
     const copied = new Browser();
     copied.set(KEPT_EMAIL_COOKIE, browser.get(SIGN_IN_COOKIE) ?? '');
-    expect(await page(signInPage, copied, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null } });
+    expect(await page(signInPage, copied, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: null, use: null, supportEmail: SUPPORT } });
     // The hardware-key page's data is unchanged: no kept email is ever read there.
-    expect(await page(hardwareKeyPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired' } });
+    expect(await page(hardwareKeyPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', supportEmail: SUPPORT } });
   });
 
   it('SGN-03: says which password a restart takes: the temporary one until a new one is saved, then the chosen one', async () => {
@@ -444,7 +477,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     expect(await step(signInWithPassword, restart, { email: invited.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
     expect(await step(signInWithPassword, restart, { email: invited.email, password: 'Chosen-Pass-2026' })).toEqual({ status: 'ok', data: { redirect: '/sign-in/enroll' } });
     expect(await step(enrollPage, restart)).toMatchObject({ status: 'ok', data: { setup: null } });
-    expect(await page(signInPage, restart, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: null } });
+    expect(await page(signInPage, restart, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: null, supportEmail: SUPPORT } });
   });
 
   it('SGN-03: says the chosen password when the setup key is asked for after the new password was saved and the step closed (review R-01)', async () => {
@@ -453,7 +486,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     await step(signInWithPassword, browser, { email: invited.email, password: PASSWORD });
     expect(await step(chooseNewPassword, browser, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2026' }, servicesWith(ExpiringSetup))).toEqual(RESTARTED);
     expect(browser.get(SIGN_IN_COOKIE)).toBeUndefined();
-    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: 'chosen' } });
+    expect(await page(signInPage, browser, { reason: 'step_expired' })).toEqual({ status: 'ok', data: { reason: 'step_expired', email: invited.email, use: 'chosen', supportEmail: SUPPORT } });
     expect(await step(signInWithPassword, browser, { email: invited.email, password: 'Chosen-Pass-2026' })).toEqual({ status: 'ok', data: { redirect: '/sign-in/enroll' } });
   });
 
@@ -539,7 +572,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     await owner.query('UPDATE "user" SET status = \'disabled\' WHERE id = $1', [user.id]);
     expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
     expect([browser.get(SIGN_IN_COOKIE), browser.get(KEPT_EMAIL_COOKIE)]).toEqual([undefined, undefined]);
-    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null } });
+    expect(await page(signInPage, browser, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: null, use: null, supportEmail: SUPPORT } });
   });
 
   it('SGN-03: Start again ends the step it leaves, before the sign-in page, and keeps the email (review SEC-01)', async () => {
@@ -553,7 +586,7 @@ describe('the sign-in steps’ limits, the kept email and the setup steps’ num
     expect(coded.written).toEqual([]);
     expect(await step(mfaPage, coded)).toEqual(RESTARTED);
     expect(await step(answerMfa, coded, { code: nextCode() })).toEqual(RESTARTED);
-    expect(await page(signInPage, coded, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null } });
+    expect(await page(signInPage, coded, { reason: 'restarted' })).toEqual({ status: 'ok', data: { reason: 'restarted', email: user.email, use: null, supportEmail: SUPPORT } });
     expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
 
     // An invited person's new password, then enrolment: the setup key's page and its code are closed too.

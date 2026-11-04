@@ -15,8 +15,11 @@ import { StepHeading } from './step-heading';
 
 const RESTARTS = ['step_expired', 'restarted'] as const;
 
+/** PaidWhole's support address as the page passes it (synthetic): not the person's, so it may sit in the words. */
+const SUPPORT = 'support@synthetic.test';
+
 function notice(props: { readonly reason: SignInReason | null; readonly kept?: { readonly use: PasswordToUse | null }; readonly surface?: 'password' | 'key' }): string {
-  return renderToStaticMarkup(<SignInNotice {...props} />);
+  return renderToStaticMarkup(<SignInNotice supportEmail={SUPPORT} {...props} />);
 }
 
 /** The notice's text, its title and words run together as a screen reader reads them. */
@@ -87,6 +90,19 @@ describe('the sign-in notice after a step', () => {
         expect(markup).not.toMatch(/data-(?!slot|reason)[a-z-]+=/);
       }
     }
+  });
+});
+
+describe('the locked notice (UX-066)', () => {
+  it('SGN-08: names the support address to write to from the address the person signs in with, on either page, and never offers a reset as the way out', () => {
+    for (const surface of ['password', 'key'] as const) {
+      const markup = notice({ reason: 'locked', surface });
+      expect(text(markup)).toBe(`Account locked This account was locked after ten failed attempts. Write to ${SUPPORT} from the address you sign in with to have it unlocked.`);
+      expect(markup).toMatch(/^<div[^>]*role="status"/);
+      expect(text(markup)).not.toMatch(/reset|forgot|platform administrator/i);
+    }
+    // The address is the one the page is given, never a fixed one.
+    expect(renderToStaticMarkup(<SignInNotice reason="locked" supportEmail="help@synthetic.test" />)).toContain('Write to help@synthetic.test from');
   });
 });
 
