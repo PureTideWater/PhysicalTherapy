@@ -645,6 +645,9 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     await expect(page.getByRole('heading', { level: 1, name: 'Choose a new password', exact: true })).toBeVisible();
     await expect(phraseOf(page)).toHaveText('This step stays open for 15 minutes.');
     await expectOpen(page);
+    // Back to sign in is a POST here and a link in phase 1, with one look: the link's colour (review UXB-N1).
+    const colour = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).color);
+    expect(await colour(page.getByRole('button', { name: 'Back to sign in' }))).toBe(await colour(page.locator('[data-slot="no-email"] a')));
     await expectAccessible(page, 'Forgot password, code step');
     await atPhoneWidth(page, 'Forgot password, code step');
     const before = page.viewportSize();

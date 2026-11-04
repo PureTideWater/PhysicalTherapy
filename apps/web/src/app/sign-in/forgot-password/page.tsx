@@ -98,9 +98,9 @@ export default async function ForgotPasswordPage(props: { readonly searchParams:
           </div>
         </CardContent>
       </Card>
-      {/* A POST, not a link: a link would leave the step live, and "Forgot your password?" would open this phase again (review UXR-01). */}
+      {/* A POST, not a link: a link would leave the step live, and "Forgot your password?" would open this phase again (review UXR-01). It looks as phase 1's link does (review UXB-N1). */}
       <form action={backToSignInStep}>
-        <button type="submit" className="text-sm underline">
+        <button type="submit" className="pw-link-button text-sm underline">
           Back to sign in
         </button>
       </form>
