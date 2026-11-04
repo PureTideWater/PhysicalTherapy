@@ -681,6 +681,10 @@ async function main(): Promise<number> {
   // Each job's `job heap` lines, by its ID (D19): none when the log could not be read, which fails closed.
   const heaps = lines === null ? new Map<string, JobHeap>() : jobHeaps(lines);
   const measuredJobs = jobs.map((job) => ({ ...job, heap: job.jobId === null ? null : (heaps.get(job.jobId) ?? null) }));
+  // WIP instrumentation (co-001/wip-sc1b-mem-1): each job's live heap and time in the log, beside the probe's lines.
+  for (const job of measuredJobs) {
+    say(`[memprobe] job ${job.what} (${job.phase}) ${job.state ?? 'unread'} attempts ${String(job.attempts)} live heap ${job.heap === null ? 'none' : `${String(job.heap.peakMib)} of ${String(job.heap.limitMib)} MiB`} time ${job.elapsedMs === null ? '-' : `${(job.elapsedMs / 1000).toFixed(1)} s`}`);
+  }
   const full = report({
     commit,
     runtime: opts.runtime,
@@ -707,6 +711,8 @@ async function main(): Promise<number> {
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   }
+  // WIP instrumentation: the summary in the log too (the artifact host is refused by the session's proxy).
+  process.stdout.write(`${summary}\n`);
   say(`verdict: ${full.verdict.pass ? 'pass' : 'fail'}`);
   for (const reason of full.verdict.reasons) {
     say(`  ${reason}`);
