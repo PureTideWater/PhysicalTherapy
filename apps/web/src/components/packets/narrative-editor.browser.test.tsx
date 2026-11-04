@@ -56,7 +56,7 @@ describe.skipIf(!chromiumInstalled())('the narrative editor in a browser', () =>
     const textarea = page.getByRole('textbox', { name: 'Narrative' });
     await expect.poll(async () => (await counts(page)).readings).toBeGreaterThan(0);
     const mounted = await counts(page);
-    await textarea.press('End');
+    await textarea.press('Control+End');
     await textarea.pressSequentially(' ');
     await expect.poll(async () => (await counts(page)).readings).toBeGreaterThan(mounted.readings);
     const first = await counts(page);
@@ -80,7 +80,7 @@ describe.skipIf(!chromiumInstalled())('the narrative editor in a browser', () =>
     // The textarea is described by the summary line, not by the whole list.
     expect(await textarea.getAttribute('aria-describedby')).toBe('narrative-check-summary');
     await recordAnnouncements(page);
-    await textarea.press('End');
+    await textarea.press('Control+End');
     await textarea.pressSequentially(added, { delay: 20 });
     // While the person types, the badge follows each keystroke and the status line stays as it was.
     expect(await page.locator('[data-live-check]').getAttribute('data-live-check')).toBe('fails');
