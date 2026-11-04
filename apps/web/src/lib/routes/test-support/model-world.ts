@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabasePool, type KeyProvider, withPracticeScope } from '@tp/db';
 import { ModelGateway, type ModelProvider, PostgresModelCallStore } from '@tp/model-gateway';
 import { createLogger } from '@tp/observability';
 import type { DocumentStore } from '@tp/worker/documents';
 
+import { Sealer } from '../../auth/seal';
 import { proposeTerms } from '../../models/contract-proposals';
 import { CHECKLIST_FORMAT } from '../../models/evidence-checklist';
 import { type ModelServices, assignModelPath } from '../../models/path';
@@ -64,8 +65,10 @@ const CHECKLIST_ITEM = { reason: 'NO_RATE_FOR_CODE', document: 'SYNTHETIC: the f
 
 export async function seedModelProposals(options: ModelWorldOptions): Promise<ModelWorldRefs> {
   const logger = createLogger({ sink: () => undefined });
-  const services = (output: unknown): ModelServices & { readonly keys: KeyProvider; readonly documents: DocumentStore } => {
-    const own = { modelPool: options.app, logger, now: () => new Date(), keys: options.keys, documents: options.documents };
+  // The seeder's own key for the contract screen's limits (contract-proposals.ts SCREEN_LIMITS): its one screen counts under it alone.
+  const sealer = new Sealer(randomBytes(32));
+  const services = (output: unknown): ModelServices & { readonly keys: KeyProvider; readonly documents: DocumentStore; readonly sealer: Sealer } => {
+    const own = { modelPool: options.app, logger, now: () => new Date(), keys: options.keys, documents: options.documents, sealer };
     assignModelPath(own, { kind: 'available', production: false, provider: () => answering(output) });
     return own;
   };

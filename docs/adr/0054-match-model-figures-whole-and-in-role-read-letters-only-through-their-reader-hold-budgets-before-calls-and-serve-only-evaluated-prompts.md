@@ -3,7 +3,9 @@
 - **Status:** accepted; the real-model gate still waits on model access (see Consequences); amended 2026-10-26 by
   [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: the permitted run's report and comparison, and Part 2: production serves each model feature
   on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27: the letter
-  reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below)
+  reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below);
+  amended 2026-10-27 by 0070, Part 3: a contract or exhibit is checked against the practice's records before the
+  model ("Amendment (`co-001/contract-phi-check`, 2026-10-27)", below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes and their verifiers; PHI minimization; Provider and data path; Operational limits;
@@ -290,16 +292,66 @@ this amendment holds.
   characters dropped and read as spaces, and the readings united. Every form (names, member IDs, claim numbers) is
   compacted from the same fold of its stored value.
 - **Numbers** (member IDs, claim numbers; two letters or digits or more) match with any white space, dash (with U+2212
-  MINUS SIGN and U+2043 HYPHEN BULLET) or invisible character between their characters, and `_`, `.`, `/`, `:`, `#` or
-  `(` only next to a letter (`SYN.555001`, `ZZ/1234567`, `ZZ#1234567`, never `150.00`). Digits alone are kept in two
+  MINUS SIGN and U+2043 HYPHEN BULLET), `_`, `|`, `\` or invisible character between their characters (`_`, `|` and
+  `\` between two digits since review finding F4-1, 2026-11-01: `1234_5678`, `0023|04|26`), and `.`, `/`, `:`, `#` or
+  `(` only next to a letter (`SYN.555001`, `ZZ/1234567`, `ZZ#1234567`, never `150.00`). Since review finding R5-1
+  (2026-11-01) a number joins anywhere over the apostrophes of digit grouping (`'`, U+2018, U+2019, U+02BC and the
+  backtick: `12'345'678`, `12’345’678`), `~` (NFKC writes U+FF5E as it), the middle dots (U+00B7, U+2027, U+2219,
+  U+22C5, U+30FB), the bullet U+2022, `;`, the double quotes (`"`, U+201C, U+201D), U+02D7 MODIFIER LETTER MINUS SIGN
+  and U+2796 HEAVY MINUS SIGN (`1234~5678`, `1234·5678`, `ZZ~7654321`), and since review finding G4 (2026-11-02) over
+  the primes OCR writes for a grouping apostrophe (U+2032, U+2035, and U+2033, which NFKC writes as two U+2032) and the
+  modifier-letter prime and acute (U+02B9, U+02CA), which, like U+02BC, are letters by class read as apostrophes, in a
+  name too (`Ilʹich` is ILICH). None is a date separator or an amount's punctuation, so no date or amount reads
+  differently. A comma between digits still joins nothing (an amount's grouping). Since review finding R5-2
+  (2026-11-01), after an identifier label a digits-only number joins over `.` and `/` between digits too
+  (`Claim 1955/07/14`, `ICN 1234.5678`), never as an amount (`isAmount` still applies). The label
+  (`IDENTIFIER_LABEL`, as review finding G2 narrowed it on 2026-11-02) is a head word (`Claim`, `ICN`, `PCN`, `DCN`,
+  `TCN`, `Control`, `Account`, `Acct`, `Member`, `Subscriber`, `Ref`) with any of `number`, `nbr`, `no`, `id`,
+  `control` and `#` after it (`Claim #`, `Claim No.`, `Member ID`, `Patient control no.`, `CLAIM NUMBER IS`);
+  `Reference` only with one of those after it; `No.`, `No:` or `No#` with a capital N; `ID:` or `ID#`; `number is`;
+  or `Re:`. Its end may hold white space, invisible characters, `*` (Markdown bold), one `:`, `#` or `-` or one `,`,
+  `is`, and then `(` or an opening quote (`"`, `'`, U+201C, U+2018) right before the number (review finding G3:
+  `**Claim:** 2026-04-26`, `Claim, 2026-04-26,`, `ICN (2026-04-26)`, `Claim: “2026-04-26”`, `Re: 2026-04-26`); since
+  review finding phi-label-end-dash (2026-11-04) its `:`, `#` or `-` may be `=`, any dash or the minus sign too
+  (`Member ID – 1234.5678`, `Member ID — 1234.5678`, `Member ID = 1234.5678`, `Claim # – 9988/7766`). A bare
+  `no`, `number`, `id`, `#` or `reference` is no label, so "The number 2027-03-15", "No 2027-03-15 appeal",
+  "Answer: no. 2027-03-15", "reference: 2027-03-15" and "Reference date #2027-03-15" keep their deadline when it equals
+  a claim's digits. A member's label (`Member`, `Subscriber`) makes a whole written date a member ID only, a claim's
+  label a claim's number only (`Member: 2027-03-15` keeps a deadline equal to a claim's digits), and the others
+  either. Digits joined over `.` or `/` that are not a whole written date are the number after any label: one of
+  these, or a bare `ID`, `number`, `nbr`, `no`, `num`, `identification`, `reference` or `#` with any qualifiers after
+  it, so after any word before one (`Patient ID 1234.5678`, `Policy number 1234/5678`, `Member's ID 1234.5678`,
+  `Member Identification Number 1234.5678`, `Policy # 1234.5678`, `ID 1234.5678`; `ANY_IDENTIFIER_LABEL`). Review
+  finding phi-G2-regress-1 (2026-11-04) found that G2's narrowing had sent these, the patient's own number among
+  them: the narrowing keeps a deadline, a whole written date, so it applies to whole written dates alone. Since review
+  finding phi-numero-glued (2026-11-04) a number glued to a label word with no space before it is read as after a
+  label of that word's kind (`GLUED_LABEL`: a head word, `ID`, `Nbr`, `Num`, `Ref`, or `No` with a capital N, a whole
+  word or after a small letter): `ICN99887766`, `Member ID12345678`, and `Claim №99887766`, `Member №ZZ12345678` and
+  `Claim№99887766`, which NFKC writes `No99887766`, `NoZZ12345678` and `ClaimNo99887766`.
+  The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
+  digits included (review finding G1, 2026-11-02): a run of digits alone that a label introduces also joins over `.`
+  and `/`, after any label when the run is no whole written date and after one of the head-word labels when it is, as
+  the matcher reads them (`ICN 1234.5678` offers 12345678, `Claim 1955/07/14` 19550714, `Member ID: 7654.321` 7654321,
+  and since phi-G2-regress-1 `Patient ID 1234.5678` 12345678, never `ID 2027/03/15` 20270315), and they read the
+  text with each label word glued to a number set apart too (`unglued`, since phi-numero-glued: `ICN99887766` and
+  `Claim №99887766` offer 99887766, `Member №ZZ12345678` ZZ12345678), so `more_than_one_patient` sees another patient's
+  number written so. Digits alone are kept in two
   cases only. A claim's digits written as an amount, after a currency sign and with cents (`$15000.00` for claim
   15000), are kept: with their cents they are never the claim's own written form; `$555001`, `555001.01` and
   `555001,12` are the claim's. A member ID is never read as an amount (`$12345678` for member 12345678 is replaced).
-  And digits inside a date that is not a date of birth are kept only when the match itself holds a dash and the date
-  is separated (written with a slash, a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar
-  reading ("Appeal by 2027-03-15" keeps its deadline). An invisible character or a space is no date separator, and
+  And digits inside a date that is not a date of birth are kept only when the date is separated (written with a slash,
+  a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar reading, and the match's own written form,
+  read alone, is a whole such date ("Appeal by 2027-03-15" keeps its deadline), and, since review finding R5-2, no
+  identifier label stands right before it: "Claim 1955-07-14" for claim 19550714 is `Claim [CLAIM_1]`, as a birth label
+  makes any date a date of birth (a label of the number's kind, or of either: G2 above). Since review finding F4-2 (2026-11-01) a
+  match that is only part of the date is replaced: claim 312026 in `Jan 31-2026`, claim 19991 in `1999-1<ZWSP>2-31`.
+  An invisible character or a space is no date separator, and
   numbers shaped like a date no calendar holds are no date, so `1234<ZWSP>5678`, `12-34-56`, `1234-56-78`, `03 15 61`
-  and "Claim 20270315" are replaced.
+  and "Claim 20270315" are replaced. A calendar reading needs a plausible year (2026-11-01, MOD-13 seed 1162287068):
+  a four-digit year from 1900 to 2099 (`EARLIEST_WRITTEN_YEAR`, `LATEST_WRITTEN_YEAR`, what a date of birth, a date of
+  service or a remittance date can be, and the range a two-digit year reads in), so a claim number 00230426 written
+  `0023-04-26`, or 21000426 written `2100-04-26`, is no date and is replaced; the contract screen's
+  `isCompactCalendarDate` uses the same bound (docs/adr/0070 Part 3).
 - **Names**: each whole name, each word and each part (the words split on white space, `,`, `;`, `/`; the parts on
   dashes, apostrophes, `.` and `_`), two letters or digits or more. Dashes, apostrophes, `_` and invisible characters
   join anywhere; between the parts the records hold apart, white space, `.` and `,` too; inside a part, a space or `.`
@@ -343,8 +395,11 @@ this amendment holds.
   accepts what lies between. `identifierCandidates` masks the exact placeholders' words (only those, so `[QQ_7654321]`
   is read, and a claim placeholder keeps its digits: `[CLAIM_7654321]` offers 7654321, while a redacted letter's
   `[CLAIM_n]` never reaches five characters) and joins up to three tokens across white space, dashes, invisible
-  characters, and `_`, `.`, `/`, `:`, `#` or `(` next to a letter, so `ID:ZZ7654321`, `ZZ_7654321`, `ZZ/7654321`,
-  `ZZ#7654321`, `YY<ZWSP>7654321`, `REF<ZWSP>ZZ7654321` and a digits-only `765 4321` are offered.
+  characters, `_`, `|`, `\` and the joiners of review findings R5-1 and G4 anywhere (`1234|5678`, `12'345'678`,
+  `1234′5678`; U+02BC, U+02B9 and U+02CA read as apostrophes), `.`, `/`, `:`, `#` or `(` next to a letter, and, in a
+  run of digits alone right after an identifier label, `.` and `/` (review finding G1: `ICN 1234.5678`), so
+  `ID:ZZ7654321`, `ZZ_7654321`, `ZZ/7654321`, `ZZ#7654321`, `YY<ZWSP>7654321`, `REF<ZWSP>ZZ7654321`, a digits-only
+  `765 4321` and `Claim 1955/07/14` are offered.
 - **The narrative drafter's check** (`mentionsIdentifier`, before a `draftPacketNarrative` call) uses the same
   matcher, names as names and member IDs and claim numbers as numbers (`NarrativeInput.names`, which the worker's
   `packetDraftInputs` now passes), so a fact text that writes an identifier another way is refused. Every number there
@@ -370,9 +425,59 @@ not limited to three); another patient's identifier the screen sees only with a 
 while the stored side keeps values from two; another patient's name, which the screen does not look for; and addresses,
 phone numbers and Social Security numbers, which PRD 14 does not list for redaction. Recorded with the review round
 (each the cost of keeping what the task reads, or not new): a digits-only member ID or claim number that is itself a
-real calendar date written with dashes reads as that date and is sent (member 031561 written `03-15-61`); a claim's
+real calendar date written with dashes, `_`, `|` or `\` (a year from 1900 to 2099) reads as that date and is sent
+when no identifier label stands right before it (member 031561 written `Seen 03-15-61`; since review finding R5-2,
+`Claim 03-15-61` and `Member ID 03-15-61` are replaced); a claim's
 digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
-or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written; and a
-part written in lower case with a space inside it (`jo ann`) is not a name. Recorded with the second review round: a
+or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written, unless
+an identifier label stands right before them (R5-2), and then the candidates join them too (G1); a comma between digits
+(`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name.
+Recorded with review findings G2 to G4 (2026-11-02), each the cost of keeping a deadline or a word: a bare `ID`,
+`number`, `no` (lower case, or with no `.`, `:` or `#`), `#` or `reference` before a claim number or member ID written as
+a whole calendar date is no label, so that date is kept as an ordinary letter's would be (`ID 03-14-1962`,
+`#1955/07/14`; the head words, `No.`, `ID:` and `Re:` are labels; digits with `.` or `/` between them that are no whole
+date are the number after any label since review finding phi-G2-regress-1); a
+claim's label before a member ID written as a whole calendar date, or a member's label before a claim's number written
+so, keeps the date (`Claim# 1955-07-14` for member 19550714); a label more than 40 characters before its number, or
+with other words between them (`Claim number for this service: 2026-04-26`), is none; a number glued to a word that
+is no label word (`Room AB99887766`), or to `NO` after a capital letter (`CLAIMNO99887766`, which cannot be told from a
+word ending in "NO"), is not read as labeled (review finding phi-numero-glued); and the katakana prolonged sound mark
+U+30FC, a letter inside Japanese words and names, joins no number (`1234ー5678`). Recorded with the second review round: a
 date of birth with its day or month spelled out as a word (`MARCH THIRD 1961`), which `datesIn` does not read; and the
 `)` after a member ID written `ZZ(1234567)`, which is sent after the placeholder (`[MEMBER_ID])`) and holds no digit.
+
+## Amendment (`co-001/contract-phi-check`, 2026-10-27): the contract screen
+
+Combined audit #120, adopted by the founder with the whole audit on 2026-10-20, adds a step to "Terms are proposed
+from a contract or an exhibit only" and gives the contract terms reader the screen this ADR gave the letter reader
+(docs/adr/0070, Part 3, gives it in full). The text above stays as it was decided; where it differs, this amendment
+holds.
+
+- The kind check stays as it is (`document_kind`, in the specialist's proposal and in `contractTermsSpec.prepare`).
+  It trusts the kind the person chose at upload, so a payer letter or an EOB filed as a contract, or inside a zip
+  filed as one, passed it. A third check now runs after it: `contractTermsSpec.screen`.
+- `screen` takes the call's context (`screen?(input, prepared, context)`), so a screen can bind what it reads to the
+  call's own practice. The screen runs last of the gateway's refusals before the budget's hold and the call: serving,
+  the kill switch and flags, the PHI boundary, `prepare` (the kind check, the request's cap in bytes and the
+  framing), the variant's serving check, a completed call under the idempotency key, a read of the day's spend against
+  the budget and the caller's step before the screen, then `screen`; after it, the budget's hold, which can still
+  refuse a screened call when calls in flight take the day's spend to the budget, and the call. No audited read runs
+  for a call the gateway refuses before the hold (ADR 0070, Part 3; its pull request review's S1, which found the
+  screen running before the idempotency key and the budget).
+- The contract screen asks the practice's records (`PatientRecordsCheck`, `src/patient-records.ts`) whether any run
+  of the pages is a member ID, a payer claim control number or a patient control number the practice holds. On a
+  yes the call is refused (`names_patient`). As with the letter's check, the answer is a code, never which
+  identifier, its kind or how many.
+- Unlike the letter's check, the caller cannot supply the records. `ContractPagesInput.patientRecords` is required,
+  the gateway accepts only a check its own factories issued for the call's practice (`screen_invalid` otherwise), and
+  that check opens its own job scope for the practice and reads as the service screen actor (purpose
+  `contract_screen`), not in the caller's scope as `otherPatientRecords` does. A practice holding more than 50,000
+  identifiers is refused (`screen_unavailable`) without a read (and one whose rows pass the bound while the screen
+  reads, with at most one row read past it), and a read that fails is refused (`screen_failed`), with every read it
+  made audited.
+- A screen's refusal is now logged by the gateway, one line with `practice_id` and an `error_code`, for the letter's
+  `more_than_one_patient` as for the contract's codes; the screen's own message is never logged.
+- The letter reader's check, `otherPatientRecords`, is unchanged. Moving it onto the issued, practice-bound check is a
+  follow-up (0070, P9). The contract screen does not tokenize through `identifierTokenRuns` (amendment of
+  `co-001/redact-placeholders`, above): it streams its own runs (`someIdentifierRun`), which join differently, each path
+  for its task (0070, Part 3, N6).

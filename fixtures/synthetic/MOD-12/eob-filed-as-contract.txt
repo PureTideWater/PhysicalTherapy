@@ -1,0 +1,5 @@
+SYNTHETIC EXPLANATION OF BENEFITS
+SYNTHETIC PAYER G   Claims Department
+Patient: SYNTHLASTMODTWELVE   Member ID:ZZ 712 0034
+CPT 97110   billed $128.00   allowed $86.20   paid $68.96
+This statement is not a bill.

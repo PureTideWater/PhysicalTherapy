@@ -200,7 +200,7 @@ export function verifyDenialLetter(input: DenialLetterInput, output: DenialLette
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput, DenialLetterProposal, LetterContext> = {
+export const denialLetterSpec = Object.freeze<PurposeSpec<DenialLetterInput, DenialLetterOutput, DenialLetterProposal, LetterContext>>({
   purpose: 'readDenialLetter',
   prompt: PROMPTS.readDenialLetter,
   output: denialLetterOutput,
@@ -236,4 +236,4 @@ export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput
     }
   },
   verify: verifyDenialLetter,
-};
+});
