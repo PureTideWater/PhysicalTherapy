@@ -13,7 +13,7 @@ Open questions: none.
 
 <!-- RESUME-BLOCK -->
 ## ACTING S3 (2026-11-04 02:45 UTC): repair 2 under check; then base, suite once, push R3
-- Live at 02:35 UTC: PR branch 83167b8f; WIP 5c01f150 (repair 2: 41 commits a5bc1170..5c01f150, 2026-11-02 08:44-09:18 UTC, after check round 2; its progress file and the round-2 verdicts other than D1-D3 were lost). Base 21fa10df (#42 22789493, #95, #91); merge-tree with 5c01f150 clean. Subscribed to #86.
+- Live at 02:35 UTC: PR branch 83167b8f; WIP 5c01f150 (repair 2: 21 commits a5bc1170..5c01f150 (git log; earlier "41" was wrong), 2026-11-02 08:44-09:18 UTC, after check round 2; its progress file and the round-2 verdicts other than D1-D3 were lost). Base 21fa10df (#42 22789493, #95, #91); merge-tree with 5c01f150 clean. Subscribed to #86.
 - Workflow wf_2970023f-7c8 (`workflow-scripts/lane-b-ci-images-digest-finish-wf_2970023f-7c8.js`), run from this session: check round 3 over the repair-2 delta (A1 D1/D4/D8, A2 D2/D3, A3 D5-D7/D9/D10, whole diff), repair loop (round 4 at most), then the integrator: base merge once, generators, trial merges (#96), full local suite once, records, the §6.3 read (ruler 5bb5e558…), one push (R3). Progress `…-wip/progress/fix-check-A*-3.md`, `fix-integrate.md`.
 - Next: read R3's CI (images log §6.4, capacity); fresh-clone verification; one body edit (corrections, R3, cut of the ruler); ready; approval-of-record; merge with `expectedHeadSha`.
 

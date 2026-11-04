@@ -1,0 +1,20 @@
+# Progress: #96 review, CI tooling and security lens
+- [x] clone at 50029e64… (confirmed = origin/co-001/ci-mutation-trigger)
+- [x] install --frozen-lockfile done (log scratchpad/p4/logs/install-sec.log)
+- [x] read manifests.ts, affected.ts diff, stryker.ts, runtime.ts, verdict.ts/gate.ts diffs, mutation.yml
+- [ ] experiments: end-to-end commits in clone + affected.ts; code mutations vs tests
+- FINDING candidate S-TS: catalog/root `typescript` change judged inert (end-to-end affected.ts on an exp commit: "shards: none"), yet Stryker core's TSConfigPreprocessor does `import('typescript')`, resolving to root node_modules/typescript (6.0.3). Proving load with a planted module next.
+- S-TS PROVEN: planted node_modules/typescript (throws) -> canary Stryker run via stryker.ts fails "PLANTED typescript loaded by Stryker core" (log sec/x-planted-ts.txt). Only undeclared dynamic import that resolves among tooling dists (phantom.cjs scan).
+- FINDING candidate S-PATH: non-manifest changed path with newline printed raw in reasons (packages/money/src/a\n::error::forged.ts -> raw newline) ; globToRegExp '.*' does not match newline so tools/stryker/a\n.ts is affected by nothing (pre-existing in base; P4 only quotes manifest paths).
+- mutants running (sec/runmut.sh, results sec/mut-results.txt)
+- design §2 "Soundness, and its limit" + R4 name the phantom-require limit generally; typescript is a concrete instance read by a step (Stryker core), so it breaks the design's own rule (b). Design :652 lists eslint/typescript-eslint/playwright-core inert, not typescript.
+- note: M07 etc. survivors must be re-run with affected.test.ts (workflow tests live there)
+- mutants so far (manifests/stryker/runtime/gate/verdict tests only): M01-M05 (lifecycle names pnpm:devPreinstall, preprepare, postprepare, prepublish, install removed) SURVIVE; M06 killed; M07 (transport exclusion), M08 (BOM), M09 (directive), M10 (U+2028/9), M11 (MAX_SPECIFIER), M12 (pin-only sources compare), M13 (!whole), M14 (warnings), M15 (merge key), M16 (named add/delete) survive pending rerun with affected.test.ts + workflows.test.ts; M17-M19 killed
+- first pass: M20-M29 killed; M30 (runtime empty-value guard) survives; M31 noapply. Rerunning M07,M12,M13,M01,M10,M16 with affected+workflows+shards tests (sec/mut2-results.txt).
+- stryker.ts resolution sound: parent dir refused (test), symlink outside refused (realpath); NODE_PATH from tsx shim points inside root/node_modules/.pnpm so "root's own install" is enforced as "under root/node_modules" only (harmless: removing the root dep is tooling-global).
+- gitEnvironment: pnpm exec PATH has ./node_modules/.bin (relative) and abs root .bin - both stripped; test covers.
+- mutation.yml: run lines use env vars only, permissions contents:read, persist-credentials false; gate validates outputs. Sound.
+- rerun: M07 killed by affected.test.ts; M12, M13, M01, M10, M16 survive full suite. M32 survives (fails toward global).
+- newline e2e: "::warning title=forged::..." printed at line start; tools/stryker/z\n.json affected nothing (x-newline.txt)
+- REVIEW WRITTEN: approval-summaries/lane-b-ci-mutation-trigger-review-ci-tooling-security.md (B1 typescript, S1 control-char paths, S2 test gaps, N1-N3)
+- [x] clone removed
