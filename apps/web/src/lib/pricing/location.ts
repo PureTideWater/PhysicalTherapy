@@ -28,8 +28,6 @@ export const LOCATION_CHANGED = 'The billing ZIP changed since this page loaded.
 export interface PracticeLocation {
   readonly zip: string;
   readonly zipPlusFour: string | null;
-  /** When it last changed (the setters stamp it), which a confirmation must be at or after. */
-  readonly updatedAt: Date;
 }
 
 export interface LocationReading {
@@ -45,8 +43,9 @@ export interface LocationReading {
 
 /** The practice's location, or null when it has none (a practice created before PR 6b with no ZIP). */
 export async function practiceLocation(client: ScopeClient, practiceId: string): Promise<PracticeLocation | null> {
-  const row = (await client.query<{ zip: string; zip_plus_four: string | null; updated_at: Date }>('SELECT zip, zip_plus_four, updated_at FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0];
-  return row === undefined ? null : { zip: row.zip, zipPlusFour: row.zip_plus_four, updatedAt: row.updated_at };
+  // Never its updated_at as a JS Date: the times it is compared with are compared in Postgres, to the microsecond (PRC-32).
+  const row = (await client.query<{ zip: string; zip_plus_four: string | null }>('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0];
+  return row === undefined ? null : { zip: row.zip, zipPlusFour: row.zip_plus_four };
 }
 
 /** The rule release in force, or null. */
