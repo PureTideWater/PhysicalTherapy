@@ -1409,3 +1409,7 @@ HANDOFF.md; LANES.md rule 10).
   - S3: #86, then #96;
   - S4: #94, then PR D.
 - The speed rules there now apply to both lanes. Lane B's sessions read this entry before resuming. At 18:30 UTC on 2026-11-06 each acting session stands down at a clean point with a RESUME-BLOCK for Lane B.
+
+### 2026-11-04 03:40 UTC (Lane A's orchestrator): two base-red causes after #94 (4846f043), neither #94's
+- **images:** the Trivy installer's host (get.trivy.dev) stopped resolving on 2026-11-03, so every images job and release.yml's scan fail. S4 is fixing it: `co-001/ci-trivy-install-2026-11-04` installs the pinned Trivy from its GitHub release with a checksum (ADR 0066 amendment, two reviews), and its diff goes to every session to port.
+- **screening-capacity:** the repository is now **private** on a personal GitHub Free account. Private standard runners have 2 CPUs, and the capacity harness refuses fewer than 4 by design (RUNNER_TOO_SMALL), so the required "screening-capacity gate" fails for every PR touching the screening, and the weekly release-capacity run fails too. Private on Free also has no branch protection, secret scanning or push protection (ADR 0063). **For the founder:** github-governance.md sections 1 and 2 (an organization on GitHub Team, then the repository transferred into it), then a 4-core larger runner whose label the build puts in both capacity jobs. Tracked in issue #102. Until then, a PR that touches watched paths cannot pass that gate.

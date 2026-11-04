@@ -343,7 +343,79 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   with a comment (unless Dependabot closes them first), #88 and #89 get a comment; #101 is the next weekly triage's. Push runs
   of 21fa10df all green (ci, mutation, screening-capacity): the build branch is green again.
 
+- 2026-11-04T02:45:00Z (acting S4, session_019i9ifAfByN2caCea4jgSdu, Lane A's account; login PureTideWater): setup OK.
+  Live: #94 head e3fc02e4 (draft; B(6) e6823f5b and base 21fa10df merged; pushed 2026-11-02T10:25Z), base still 21fa10df,
+  CI green on e3fc02e4 (30 runs: 29 success, 1 skipped; the four required checks), description already names #99-#101.
+  WIP -b f463f486 is an ancestor of the head. `co-001/test-flakes-2` at 88708069, no commits; D's earlier run
+  wf_79d9ea3e-347 left nothing on origin. Decisions: no new base merge or push for #94 (the base has not moved); the
+  full local suite stands (ran once at f463f486; e3fc02e4's targeted re-check and CI on the exact head; speed rule 1).
+  Launched: #94 fresh-clone verification wf_ea2961e5-096 (verifier + skeptic); PR D wf_b49ddbb6-964 (design, failing-first
+  build, check, draft PR, one adversarial review with a skeptic per B/S finding (test-only: speed rule 3), one fix round
+  with the base merged once, the full suite once, one push, fresh-clone verification). Scripts archived. subscribe_pr_activity
+  on #94 refused (held elsewhere): polling with pull_request_read; check-in trig_01H1GrZ47MonPvEYdBwPN79v at 07:53Z.
+  Next: on VERIFIED, mark #94 ready, approval-of-record's re-run, merge (expectedHeadSha e3fc02e4); close #99/#100 with a
+  comment, comment on #88/#89; #101 left to the next weekly triage.
+
+- 2026-11-04T02:55:00Z: **PR B MERGED: #94 as 4846f043** (merge commit; expectedHeadSha e3fc02e4). Fresh-clone
+  verification wf_ea2961e5-096 **VERIFIED**, its skeptic UPHELD (record `B-verification.md`; fix round `B-fix-round.md`):
+  heads unchanged (base 21fa10df); frozen install, lockfile regeneration no change, typecheck, lint:logs, verify-content,
+  check:fixtures, synth/watched clean, cli-settings + recorded-textract 14/14, infra 710, toolchain 0 errors; CI 30 runs (29
+  success, 1 skipped; unit 7,305/1 skipped; mutation gate passed); merge-tree vs every open head: only Dependabot #99
+  conflicts because of #94 (lockfile); no ready PR jumped. The verifier's five description corrections were timestamp
+  refreshes of dated, still-true claims: not applied (no change to the outcome). Marked ready 02:49Z; approval-of-record
+  re-ran on ready (success 02:50:04Z). **#99 and #100 closed** with a comment naming #94 and 4846f043; **#88 and #89**
+  commented. #101 left to the next weekly triage. Not subscribed (refused), so nothing to unsubscribe. Next: PR D
+  (wf_b49ddbb6-964 running); read 4846f043's push runs.
+
+- 2026-11-04T03:25:00Z: **push runs of 4846f043: ci and screening-capacity RED**, mutation green. ci 41763423759: only the
+  images job (126356134153) failed, on both Trivy scans (HIGH/CRITICAL); unit, db, e2e, static, lint, build, domain model
+  green. screening-capacity 41763423983: the measure step failed after 9 s (capacity job 126356184270, the scale release
+  restored from cache); gate red; notify updated the capacity issue. #94's own head passed both on 2026-11-02. No re-run.
+  Read-only investigation with a skeptic: wf_62f83f6d-b18 (whose, root cause, fix, owner). Orchestrator told.
+
+- 2026-11-04T03:40:00Z: **4846f043's red push runs: neither is #94's** (wf_62f83f6d-b18; skeptic upheld with one correction;
+  notes in `lane-b-dependabot-batch-red-push/`). (1) **images:** Trivy never scanned: setup-trivy's installer gets the binary
+  from get.trivy.dev, now NXDOMAIN (curl exit 6; 6 of 6 installs since 02:54Z, PRs #103 and #104 too; third-party reports
+  date it to the trivy.dev zone edit of 2026-11-03), so a re-run cannot pass. (2) **screening-capacity: the repository is
+  now private** (API `private: true`, still the personal account): the 2-CPU private runner gets RUNNER_TOO_SMALL by design
+  (screening-capacity.md:128, :353; ci.md:240-247): the founder's (organization on Team, then a 4-core larger runner for
+  both capacity jobs and the weekly release-capacity run; O15; ADR 0063:280 on private Free). Issue #102. No re-run.
+  Orchestrator's direction (03:23Z): the red base first, then D. **New PR `co-001/ci-trivy-install-2026-11-04`** (from
+  4846f043; worktree /home/user/ci-trivy): Trivy from its pinned GitHub release asset, hash-checked, skip-setup-trivy, in
+  ci.yml, release.yml, release-dry-run.yml; ADR 0066 amended; two reviews (supply chain). Workflow wf_87464ad4-ed6 (build,
+  check, draft PR, two reviews + skeptics, fix round with the suite once, verification); script archived. Before its merge,
+  its diff and head go to S1, S2, S3 and the schema chain session. D (wf_b49ddbb6-964) still running, draft only.
+
+- 2026-11-04T03:40:00Z: orchestrator (03:32Z): fold the private-repository fetch failure into the Trivy PR (screening-capacity's
+  changes job, a blobless fetch without credentials, "could not read Username", PR #104 run 41765454689), with the workflow
+  token, contents: read, a test, and an audit of every workflow for other public-repository assumptions; runner size stays
+  the founder's. wf_87464ad4-ed6 stopped in its build stage; relaunched with the wider scope as **wf_3717f39c-6bd** (the builder
+  continues from its progress file); script archived.
+
+- 2026-11-04T05:05:00Z: **PR D opened: draft #105** (`co-001/test-flakes-2`; wf_b49ddbb6-964 done, 8 agents). Head **7c97f9c0**
+  (base 4846f043 merged in the fix round). Design `designs/lane-b-dependabot-batch-test-flakes-2.md`: FRM-01's `shownCount`
+  waits `data-shown >= N` (10 s own timeout) with exact counts asserted once settled (S-SEC-2 2 then 3, FRM-03 3); the same
+  helper in `step-timer.browser.test.tsx` (SGN-02) fixed alike, with exact counts; a failing-first case proves the exact
+  wait hangs (30 s timeout on the old helper). **CAS-41.3: no timeout** (the ruling's "or the reason why not"): 95% of its
+  time was vitest's toEqual on a 470 KB Buffer (CI 1.8-4.4 s of 5 s); an exact `sameBytes` comparison takes it to 30-67 ms.
+  One review (speed rule 3, test-only; supersedes the 06:22Z ruling's two): 3 findings (S1 = CI images red, the base's
+  Trivy failure, not D's; N1, N2 fixed). Full suite once at 7c97f9c0: unit 7,303 passed/4 skipped (root-only and engine-
+  freeze skips), golden 376, loops 30/30 each, synth clean, Stryker none. Verifier returned before CI finished (not
+  verified). Subscribed to #105. **D waits for the Trivy PR (#106):** then the base merged once more, one push, CI, the
+  fresh-clone verification, ready, merge. **Trivy PR: draft #106**, fix round pushed 78cd55d2; its verifier reads CI.
+
+- 2026-11-04T05:40:00Z: **#106 VERIFIED, cannot merge: its screening-capacity gate is red.** wf_3717f39c-6bd done (9 agents; two
+  reviews: 10 findings, 2 S + 8 N confirmed, all fixed or recorded; suite once green; records `lane-b-ci-trivy-install-
+  {review,fix-round,verification}.md`). CI on 78cd55d2: all green, mutation and approval-of-record pass; images installs
+  pinned Trivy 0.70.0 (hash-checked, setup-trivy skipped) and scans both images, 0 HIGH/CRITICAL. The gate fails because
+  #106 touches two watched paths (screening-capacity.yml for the fetch fix; matrix.ts for the CI-11/CI-21 rows), and the
+  private 2-CPU runner stops with RUNNER_TOO_SMALL (the founder's, #102). **Decision: split.** New PR
+  `co-001/ci-trivy-pin-2026-11-04` with only the Trivy part, no watched path and no row text (wf_328041c8-16e: build, delta
+  check, draft PR, verification on CI; #106's reviews stand for the subset). It merges on green; #106 keeps the fetch fix and
+  waits on the founder. Orchestrator told.
+
 ## Waiting on someone
+- **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
@@ -411,4 +483,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).
+Next (2026-11-04T02:55Z): #94 merged; PR D (wf_b49ddbb6-964) to its merge; then stop at a clean point. Before: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).

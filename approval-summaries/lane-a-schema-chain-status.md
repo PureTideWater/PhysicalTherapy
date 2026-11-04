@@ -20,6 +20,42 @@ its unpushed work is not waited for).
   full local suite once and one push (WIP ref `co-001/wip-ss01-chain` before the suite); fresh-clone verification reading
   CI. Beside it, read-only: the flaky `tools/release/load.db.test.ts` root cause (fix as a patch, for 1b). Check-in
   scheduled 07:46 UTC (trig_01G5HLTy6TevngHswpbJDA2S).
+- **03:28 UTC. SS-01 PR #104 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/104, head
+  e4a6d2fc (base 21fa10df merged, then #94 4846f043, no conflict). Re-read: no body SS-01 recreates moved since
+  6c28d6a2; 20261108090000 unchanged, no marker. Two semantic conflicts fixed (abbf3052; one is #95's
+  mapping-routes.db.test.ts asserting the pre-SS-01 refusal sentence, now SS-01's R1); ADR 0080 count-free (776b6a15).
+  Fast checks, touched db tests (7,097 passed), actions:check, toolchain:check green. Domain model 08c1ba47…6142, line
+  7414 (provisional). Body 40,568 characters, read back equal. Subscribed. Reviews running.
+- **03:31 UTC (corrected from 03:50). CI red, not SS-01's: the repository is now private** (`private: true`; repo updated 02:51:33 UTC). The
+  base 4846f043 is red too (ci run 41763423759: images; screening-capacity 41763423983). (1) images: the Trivy install
+  exits 6 (trivy-action v0.36.0 -> setup-trivy v0.2.6 -> install.sh @75c4dc0 fetches get.trivy.dev; the runner cannot
+  resolve it). (2) screening-capacity: RUNNER_TOO_SMALL, 2 CPUs (a private repository's runner); on #104 its `changes`
+  job's blobless clone cannot fetch blobs without credentials. (3) This voids 1b's CAS-42.5 route (free 4-CPU runner
+  while public). The domain model job fails only for the approval line, as expected. Failed jobs re-run once.
+  Reported to the orchestrator for the founder/co-founder. No merge in the chain until required checks can go green.
+- **03:33 UTC. The orchestrator's ruling on the CI breakage:** S4 (session_019i9ifAfByN2caCea4jgSdu) owns the CI fixes
+  (Trivy from its GitHub release with a pinned SHA-256, `co-001/ci-trivy-install-2026-11-04`; the gate's `changes` fetch
+  with the workflow token; any other public-repository assumption) and sends the diff, which goes into #104 (one comment) or
+  at its base merge. The founder decides on the private repository (GitHub Team organization with a 4-core larger runner,
+  or public again); the harness's CPU requirement is not lowered. **CAS-42.5 is blocked on that decision**; CAS-42.6
+  (local process route) still runs. SS-01 continues; its suggested line goes up on the final head once every check that
+  can pass has passed.
+- **04:25 UTC. wf_c5833de7-aa6 stopped; its reviews had not run.** Both reviewer agents (agentType security-reviewer,
+  ux-brand-reviewer) hit their frontmatter `maxTurns` (20, 30) before returning, so the fix round started with no findings.
+  Stopped before it could write "no findings" into #104's body. Its partial full suite on e4a6d2fc is kept as a record
+  (chain1 green; test:db 4 shards 9,718 + 1 skipped; build). Lesson: run the reviews as default workflow agents (LANES
+  rule 1) with the agent file as their brief.
+  **Running: wf_4c65fb5f-eab** (`workflow-scripts/lane-a-ss01-reviews-fix-verify-wf_4c65fb5f-eab.js`): both reviews
+  again as default agents, a skeptic per finding, fix round (full suite once, counting e4a6d2fc's parts if the tree is
+  unchanged), one push, verification reading CI; beside it, the flaky fix finished as a patch.
+- **Flaky `tools/release/load.db.test.ts`: root cause found** (progress record, to be archived): the loader's one
+  `VACUUM (FREEZE, ANALYZE) rule_record` freezes only rows older than its database's horizon; an autovacuum ANALYZE (or
+  catalog scan) in the scratch database holds a snapshot whose xmin precedes the load's xid when it predates the commit,
+  or when any older xid runs anywhere in the shared cluster (a snapshot's xmin is cluster-wide), so every page stays
+  unfrozen (relallvisible 0 of 7). Reproduced deterministically (a same-database snapshot before the load: 0/3 frozen) and
+  in the wild (private cluster beside a held xid: 1 of 20 fails with the CI symptom; none without). The proposed fix is
+  in `packages/rules/src/loader.ts` (re-VACUUM until frozen, bounded wait, `LoadResult.frozen`): no schema file, but it
+  is being checked against Change Order 001's content-pipeline freeze before it goes into 1b.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
