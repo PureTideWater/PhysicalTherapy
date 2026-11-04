@@ -1583,8 +1583,9 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(atBound.status, atBound.output).toBe(0);
     expect(atBound.stdout).toContain(`content-calendar: the notify job reads 1 findings, 100 bytes, SHA-256 ${createHash('sha256').update(listOf(100)).digest('hex')}\n`);
     // A try that leaves a cut findings.json behind, or is stopped while it extracts, is retried into an emptied directory.
-    for (const [at, stalls, partials] of [['partial', 0, 1], ['stalled', 1, 0]] as const) {
-      const retried = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], list, 'handoff', 0, stalls, partials);
+    // Only the stall needs a short DOWNLOAD_LIMIT; the cut file's row keeps the step's own, so its good try has time.
+    for (const [at, values, stalls, partials] of [['partial', { CHECK_RESULT: 'success' }, 0, 1], ['stalled', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, 1, 0]] as const) {
+      const retried = runNotify('content-calendar.yml', values, [], list, 'handoff', 0, stalls, partials);
       expect([retried.status, retried.log.filter((line) => line.startsWith('run download ')).length], `${at} ${retried.output}`).toEqual([0, 2]);
       expect(retried.stdout, at).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes`);
       expect(retried.output, at).not.toContain('file exists');
