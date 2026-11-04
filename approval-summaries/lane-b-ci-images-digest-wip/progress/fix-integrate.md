@@ -31,3 +31,9 @@ Next: step 2b (wait for #107).
 - Fix commit (see git log after 2e880412): GITHUB_ENV_WRITES entries take sites; TRIVY_CMD at ci.yml images, release-dry-run.yml build, release.yml build, fingerprint 3ad03da4 each; new GITHUB_PATH_WRITES 'trivy-bin', same sites; bound re-read (install.sh prints one line, $RUNNER_TEMP/trivy-bin/trivy via pwd -P; bash -e stops before writes on failure); new behavioural test reads both files whole; 6 fixtures. ADR N32 + ci.md. Red: int2-m-installer2lines.log, int2-m-secondvar.log; green int2-fix-green.log 128/128; eslint 0, tsc -p tools 0.
 - Trivy order (node probe): ci images, release build, release-dry-run build: checkout 0, The pinned Trivy 1, trivy-action at 5,7 / 5,6 / 5, all skip-setup-trivy true, no version.
 - WIP pushed b8837f47..9936688b (hook ok). Next: re-run trial merge for ci-mutation-trigger.
+- 2b trial re-run start 2026-11-04T06:24:17Z: ci-mutation-trigger 50029e64 vs HEAD 9936688b
+- 2b trial re-run, ci-mutation-trigger 50029e64… vs 9936688b…: conflicted (ADR 0066, reconciliation-001; doc only, union for trial), tree 3b0ec668…; merged file 130/130; head file with CI_TREE 1 failed / 126 passed / 1 skipped: the same #96 canary-command row as before (its own change). Logs T-ci-mutation-trigger-*.
+## Step 2b done
+Next: step 3, full suite on 9936688b…, logs/suite/.
+- step 3 start 2026-11-04T06:29:02Z on 9936688b…: scratchpad/imgdigest/suite.sh, logs/suite/summary.txt
+- suite so far (9936688b…): typecheck 22 projects pass; lint 1,749 files 0/0; lint:copy 557 files; lint:logs 1,116 files; check:fixtures 334 guarded / 4,032 searched; verify-content pass; pnpm test (coverage) 432 files, 7,317 passed, 4 skipped, 0 failed, exit 0. Skips: 3 differential.test.ts (ENGINE_FREEZE_BASE unset locally; CI sets it), 1 content.test.ts "throws when content/outgoing is unreadable" (root uid).
