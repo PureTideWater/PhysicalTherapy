@@ -17,8 +17,9 @@
   section 4.5, as written." Recorded also in reconciliation-001, "Ledger semantics". SUITE-CAP-1b stays inside that
   text: section 4.5 changes the lock line of the two `ledger_entry` triggers and nothing else.
 - **SUITE-CAP-1b's content-pipeline freeze exception (the release loader's freeze):** granted by the founder, Tyler
-  Williams, relayed by Lane A's orchestrator, on 2026-11-04 at about 09:55 UTC; quoted below ("The release loader's
-  freeze, 2026-11-04") and recorded also in reconciliation-001, "Content pipeline".
+  Williams, relayed by Lane A's orchestrator, on 2026-11-04 at about 09:55 UTC, and amended by him on 2026-11-04 at about
+  13:15 UTC (each retry pass cleans the indexes; the warning names the cause it can see); both quoted below ("The release
+  loader's freeze, 2026-11-04") and recorded also in reconciliation-001, "Content pipeline".
 - **PRD sections:** 6 (Reports and exports), 8 (`line_status` and the status machine), 12 (triage and cases), 15 (the
   worker), 18 (testing and release); test matrix CAS-40, CAS-41 and CAS-42; ADRs
   [0038](0038-triage-runs-into-anomalies-and-cases-keep-five-stages-and-release-an-audit-report-only-once-a-reviewer-signs.md)
@@ -420,9 +421,11 @@ one passed 20 of 20 (the investigation, on `22177731`, whose four files are this
 release analyzed and frozen). After the commit `loadRelease` (`analyzeAndFreeze` in `packages/rules/src/loader.ts`) runs
 `VACUUM (FREEZE, ANALYZE) rule_record` and reads `pg_class`, which the pass has just written from the visibility map;
 while `relallfrozen` is short of `relpages` it pauses (50 ms doubling to 2 s, and from the second pass at least four
-times the last pass's time) and runs `VACUUM (FREEZE) rule_record` again, which skips the pages already frozen (the
-first pass's statistics already count every committed record), for up to `FREEZE_WAIT_MS`, 180 seconds
-(`LoadOptions.freezeWaitMs`). The result gains `frozen`, false only when the wait runs out; the release is published at
+times the last pass's time) and runs `VACUUM (FREEZE) rule_record` again (`VACUUM (FREEZE, INDEX_CLEANUP ON)` since
+the amendment below), which skips the pages already frozen (the first pass's statistics already count every committed
+record), for up to `FREEZE_WAIT_MS`, 180 seconds (`LoadOptions.freezeWaitMs`). The 180 seconds bound when the last pass
+starts: no pass starts once they have run out, and a pass that has started runs to its end, so a load can return a
+pass's length after them. The result gains `frozen`, false only when the wait runs out; the release is published at
 its commit either way. Loading a release already loaded writes nothing and runs the same freeze, always by a VACUUM (a
 load stopped between its commit and its VACUUM leaves `pg_class` at the counts from before it). `pnpm release:load`
 warns on stderr when the release is not yet frozen; `pnpm release:rollback` loads the previous release with
@@ -457,6 +460,28 @@ else in the pipeline stays frozen. It also covers PR 6b-3's original VACUUM." Re
 "Content pipeline", with the four files it covers (`packages/rules/src/loader.ts`, `tools/release/index.ts`,
 `tools/release/rollback.ts` and `tools/release/load.db.test.ts`). No schema file, no `content/releases` file and no rule
 table's DDL changes, and the domain model is unchanged.
+
+**The amendment, 2026-11-04: each retry pass cleans the indexes, and the warning names what it can see.** The fix's
+checker reproduced a second way to wait out the 180 seconds, on PostgreSQL 18.4: a load that fails before its commit
+leaves its records dead, and when they lie on fewer than 2% of `rule_record`'s pages, a VACUUM left to choose
+(`INDEX_CLEANUP AUTO`, the default) skips index vacuuming. The dead records' line pointers then stay, their pages never
+turn all-visible, and every later load, with nothing older than it running, waited the whole 180 seconds, returned
+`frozen: false` and warned that an older transaction held the horizon back, a cause it had not seen. Each retry pass now
+runs `VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record`, which vacuums the indexes whatever the share, so the second pass
+frees those line pointers and freezes their pages; the first pass is unchanged. `pnpm release:load`'s warning now names
+what the loader saw, `pg_class`'s count of all-frozen pages when the wait ran out (`notFrozenWarning` and
+`ruleRecordFreezeCounts` in `loader.ts`), and only points to where the rest is found (`pg_stat_activity`'s
+`backend_xmin`, `pg_prepared_xacts` and `pg_replication_slots`), since what held the pages back ran outside the load.
+Two tests show it, each failing first: a 1,500-record release (more than 100 pages), a load of a second release whose
+`COMMIT` is lost, then that release loaded again: with the old loader it returned `frozen: false` after its 30-second
+wait, with nothing holding the horizon back; now the second pass, with `INDEX_CLEANUP ON`, freezes every page. And the
+wait-runs-out test checks the warning's words against the counts. With the old `loader.ts` both failed; with the fix the
+file's 19 tests pass. **Granted by the founder, Tyler Williams, on 2026-11-04 at about 13:15 UTC, relayed by Lane A's
+orchestrator, and recorded in `approval-summaries/founder-asks-2026-10-27.md` under "Granted 2026-11-04 (~13:15 UTC): an
+amendment to the release loader's freeze"**, word for word: "Granted: in the release loader's freeze, each retry pass
+runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen;
+the warning names the cause it can see." Recorded also in reconciliation-001, "Content pipeline". It changes the same
+files as the first grant, and no other.
 
 ## Alternatives considered
 

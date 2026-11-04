@@ -6,7 +6,7 @@ import { OWNER_ROLE, appDevLoginUrl, migrate, readDatabaseUrl } from '@tp/db';
 import { withScratchDatabase } from '@tp/db/testing';
 import { MANIFEST_FILE, buildManifest, recordSha256, serializeManifest, serializeRecords, sha256 } from '@tp/rules';
 import { fileSha256, listContentFiles, readRelease } from '@tp/rules/content';
-import { ReleaseLoadError, type SqlClient, loadRelease } from '@tp/rules/loader';
+import { ReleaseLoadError, type SqlClient, loadRelease, notFrozenWarning, ruleRecordFreezeCounts } from '@tp/rules/loader';
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -70,6 +70,27 @@ function realLookingRelease(dir: string, release: number, level: 'L1' | 'L2', sy
     }));
   mkdirSync(path.join(dir, 'therapy_threshold/2026'), { recursive: true });
   writeFileSync(path.join(dir, 'therapy_threshold/2026/records.json'), serializeRecords(records));
+  writeFileSync(path.join(dir, 'RELEASE.md'), `# release ${String(release)}\n`);
+  reseal(dir, release);
+}
+
+/**
+ * A release in `dir` of `count` real-looking denial categories at L2, numbered `release`, one per reason code: enough
+ * records to fill many pages of rule_record.
+ */
+function manyRecordRelease(dir: string, release: number, count: number): void {
+  const template = fixtureRecords.find((record) => record.record_type === 'denial_category');
+  if (template === undefined) {
+    throw new Error('the synthetic release holds no denial category');
+  }
+  const records = Array.from({ length: count }, (_, index) => ({
+    ...template,
+    key: { group_code: 'CO' as const, carc: `Z${String(index).padStart(5, '0')}`, rarc: null },
+    source: { ...template.source, title: 'A real-looking source', url: 'https://example.invalid/source', path: 'content/sources/denial_category/x.md', synthetic: false },
+    verification: { level: 'L2' as const, by: 'A. Reviewer', on: '2026-10-20', questions: [] },
+  }));
+  mkdirSync(path.join(dir, 'denial_category/2026'), { recursive: true });
+  writeFileSync(path.join(dir, 'denial_category/2026/records.json'), serializeRecords(records));
   writeFileSync(path.join(dir, 'RELEASE.md'), `# release ${String(release)}\n`);
   reseal(dir, release);
 }
@@ -278,6 +299,16 @@ describe('loading the synthetic release', () => {
         await holdSnapshot(older);
         expect(await loadRelease(owner, fixture, { ...FIXTURE, freezeWaitMs: 300 })).toMatchObject({ status: 'loaded', frozen: false });
         expect(await rulePages(admin)).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
+        // The warning release:load writes names what the loader saw, pg_class's counts, and only points to the rest.
+        const pages = (await rulePages(admin))?.relpages ?? 0;
+        expect(await ruleRecordFreezeCounts(owner)).toEqual({ pages, allFrozen: 0 });
+        expect(notFrozenWarning(SYNTHETIC_RELEASE_NUMBER, await ruleRecordFreezeCounts(owner), 300)).toBe(
+          `release:load: release ${String(SYNTHETIC_RELEASE_NUMBER)} is published, but rule_record is not yet frozen: when the 0.3 s wait ran out, ` +
+            `pg_class counted 0 of its ${String(pages)} pages all-frozen. Something outside the load still kept the rest from freezing, such as ` +
+            `a transaction or snapshot older than the load (look in pg_stat_activity's backend_xmin, pg_prepared_xacts and pg_replication_slots). ` +
+            'Run the same release:load again once it has ended; it writes nothing and finishes the freeze.\n',
+        );
+        expect(notFrozenWarning(1, { pages: 9, allFrozen: 8 })).toContain('when the 180 s wait ran out, pg_class counted 8 of its 9 pages all-frozen.');
         // Published, and read whole by any snapshot taken since: only the freeze waits.
         expect((await admin.query('SELECT published_at IS NOT NULL AS published FROM rule_release')).rows).toEqual([{ published: true }]);
         expect((await admin.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
@@ -325,6 +356,61 @@ describe('loading the synthetic release', () => {
       }
     });
   });
+
+  it('freezes a release loaded after a failed load left dead records on under 2% of the pages, which a VACUUM left to choose skips', async () => {
+    // A load that fails before its commit leaves its records dead. On fewer than 2% of rule_record's pages, a VACUUM left
+    // to choose (INDEX_CLEANUP AUTO) skips the indexes, so the dead records' line pointers stay and their pages never turn
+    // all-visible, with nothing older than the load running: every later load waited out its wait and returned unfrozen.
+    // Each retry pass cleans the indexes (INDEX_CLEANUP ON, the founder's amendment of 2026-11-04), so the second frees them.
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      const owner = await connect(url, OWNER_ROLE);
+      const admin = await connect(url);
+      try {
+        const large = path.join(scratch, 'large');
+        manyRecordRelease(large, 1, 1_500);
+        expect(await loadRelease(owner, large, { release: 1 })).toMatchObject({ status: 'loaded', frozen: true });
+        expect((await rulePages(admin))?.relpages).toBeGreaterThan(100);
+        const small = path.join(scratch, 'small');
+        realLookingRelease(small, 2, 'L2');
+        const lost: SqlClient = {
+          query: async (text, values) => {
+            if (text === 'COMMIT') {
+              throw new Error('the connection was lost before the commit');
+            }
+            return owner.query(text, values);
+          },
+        };
+        await expect(loadRelease(lost, small, { release: 2 })).rejects.toThrow('the connection was lost before the commit');
+        expect(await releaseCount(admin)).toBe(1);
+
+        const vacuums: string[] = [];
+        let afterFirst: RulePages | undefined;
+        const client: SqlClient = {
+          query: async (text, values) => {
+            if (text.startsWith('VACUUM')) {
+              if (vacuums.length === 1) {
+                afterFirst = await rulePages(admin);
+              }
+              vacuums.push(text);
+            }
+            return owner.query(text, values);
+          },
+        };
+        expect(await loadRelease(client, small, { release: 2, freezeWaitMs: 30_000 })).toMatchObject({ status: 'loaded', frozen: true });
+        // The first pass left the failed load's page short of all-visible, and each pass after it cleaned the indexes.
+        expect(afterFirst?.relallvisible).toBeLessThan(afterFirst?.relpages ?? 0);
+        expect(vacuums[0]).toBe('VACUUM (FREEZE, ANALYZE) rule_record');
+        expect(vacuums.length).toBeGreaterThan(1);
+        expect(new Set(vacuums.slice(1))).toEqual(new Set(['VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record']));
+        await expectEveryPageFrozen(admin);
+        expect((await admin.query('SELECT 1 FROM rule_record')).rowCount).toBe(1_500 + 2);
+      } finally {
+        await owner.end();
+        await admin.end();
+      }
+    });
+  }, 90_000);
 
   it('loads the same release again as a no-op', async () => {
     await withLoadedRelease(async (url) => {
