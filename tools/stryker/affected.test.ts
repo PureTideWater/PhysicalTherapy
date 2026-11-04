@@ -790,6 +790,31 @@ describe('the field rule, the runner proof and what else affects every package, 
     }
   });
 
+  it('gives all four for a changed path holding a control character, wherever it lies, and prints it JSON-quoted, so no line it starts is a workflow command', () => {
+    const forged = 'packages/money/src/a\n::warning title=forged::injected by a path.ts';
+    // JSON-quoted, and each character JSON leaves bare that a log could read as a line break escaped too.
+    const quoted = (text: string) => JSON.stringify(text).replace(/[\u007f-\u009f\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    for (const file of ['tools/stryker/z\n.json', 'fixtures/golden/claims/G99\n.json', 'patches/a\r.patch', 'docs/a\u2028b.md', 'docs/a\u0085b.md', 'packages/packets/src/explain/__golden__/x\n.txt', forged]) {
+      const result = affected({ files: [file] }, closures, global);
+      expect(result.packages, JSON.stringify(file)).toEqual(ALL);
+      const lines = [...Object.values(result.reasons).flat(), ...(result.inert ?? [])];
+      expect(lines.some((line) => line.startsWith(quoted(file)) && line.includes('a path holding a control character')), JSON.stringify(file)).toBe(true);
+      // eslint-disable-next-line no-control-regex -- the characters a log could read as a line break are what this looks for
+      expect(lines.filter((line) => /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(line)), JSON.stringify(file)).toEqual([]);
+    }
+    // Beside other changes, the path is still every package's, and the other paths keep their own reasons.
+    const both = affected({ files: ['docs/product/prd.md', forged] }, closures, global);
+    expect(both.packages).toEqual(ALL);
+    expect(Object.values(both.reasons).flat().filter((line) => line.split('\n').some((part) => part.startsWith('::')))).toEqual([]);
+  });
+
+  it('reads ** in a glob across a line break too, so a data or global glob still holds such a path', () => {
+    expect(globToRegExp('tools/stryker/**').test('tools/stryker/z\n.json')).toBe(true);
+    expect(globToRegExp('fixtures/golden/**').test('fixtures/golden/claims/G99\n.json')).toBe(true);
+    expect(globToRegExp('patches/**').test('patches/a\r.patch')).toBe(true);
+    expect(globToRegExp('packages/*/src/**/*.ts').test('packages/money/src/a\nb.ts')).toBe(true);
+  });
+
   it('gives all four for the tsconfig.json of a package that holds the mutation tooling (tools/tsconfig.json)', () => {
     expect(affected({ files: ['tools/tsconfig.json'] }, closures, global).packages).toEqual(ALL);
   });

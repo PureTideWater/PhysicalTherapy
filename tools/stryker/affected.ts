@@ -11,7 +11,7 @@ import { EXCLUDED, SEED_SETUP_FILE, TEST_SETS } from '../../vitest.mutation.conf
 import { repositoryRoot } from '../content-files';
 import { importGraph } from '../screening-capacity/watched';
 import { CANARY_TESTS } from './canary/vitest.config';
-import { DEPENDENCY_FIELDS, NAMED_FILES, classifyManifests, workspaceManifestGlobs } from './manifests';
+import { DEPENDENCY_FIELDS, NAMED_FILES, classifyManifests, hasControlCharacter, quoted, workspaceManifestGlobs } from './manifests';
 import { shardsOf } from './shards';
 import { workspaceDirectories } from './workspace';
 
@@ -275,7 +275,10 @@ export const REPOSITORY_CONFIG: AffectedConfig = {
   tooling: TEST_TOOLING,
 };
 
-/** A glob as a regular expression over repository paths: `**` any depth, `*` and `?` within one segment. */
+/**
+ * A glob as a regular expression over repository paths: `**` any depth, `*` and `?` within one segment. Compiled with
+ * the `s` flag, so a trailing `**` also holds a path whose name holds a line break.
+ */
 export function globToRegExp(glob: string): RegExp {
   let pattern = '';
   for (let at = 0; at < glob.length; at += 1) {
@@ -288,7 +291,7 @@ export function globToRegExp(glob: string): RegExp {
     else if (char === '?') pattern += '[^/]';
     else pattern += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   }
-  return new RegExp(`^${pattern}$`);
+  return new RegExp(`^${pattern}$`, 's');
 }
 
 /** The files of `files` a glob list selects: any positive glob, less any `!` glob. */
@@ -720,6 +723,12 @@ export function affected(change: Change, closures: readonly Closure[], global: G
   }
   for (const file of change.files) {
     if (file === lockfile || classified.has(file)) continue;
+    // Fail closed before any glob: such a path affects every package, and is printed JSON-quoted, so no line it holds
+    // starts a workflow command in the job's log or summary (a manifest's path is classifyManifests', the same way).
+    if (hasControlCharacter(file)) {
+      for (const pkg of MUTATION_PACKAGES) note(pkg, `${quoted(file)} (a path holding a control character, every package)`);
+      continue;
+    }
     const isGlobal = global.files.has(file) || matchesAny(file, global.globs) || isHoldingTsconfig(file, global);
     for (const closure of closures) {
       const atBase = closure.atBase?.has(file) === true;
@@ -857,7 +866,7 @@ export function affectedSince(base: string, root: string = repositoryRoot, confi
   const headGlobal = globalFiles(root, files, config);
   const lockPath = path.join(root, 'pnpm-lock.yaml');
   const problems = closureProblems(head, headGlobal, existsSync(lockPath) ? parseLockfile(readFileSync(lockPath, 'utf8')) : undefined, config.tooling);
-  if (problems.length > 0) throw new Error(`what a closure reads that tools/stryker/affected.ts cannot account for:\n${problems.join('\n')}`);
+  if (problems.length > 0) throw new Error(`what a closure reads that tools/stryker/affected.ts cannot account for:\n${problems.map((problem) => (hasControlCharacter(problem) ? quoted(problem) : problem)).join('\n')}`);
   const atBase = treeAt(mergeBase, (baseRoot, baseFiles) => ({ closures: repositoryClosures(baseRoot, baseFiles, config), global: globalFiles(baseRoot, baseFiles, config) }), root);
   return { mergeBase, result: affected(changeSince(mergeBase, root), unionClosures(head, atBase.closures), unionGlobal(headGlobal, atBase.global), config.tooling) };
 }

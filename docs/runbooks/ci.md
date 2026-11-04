@@ -476,7 +476,8 @@ checks above.
   shard loads by path (`GLOBAL_LOADED` in `affected.ts`) and everything they import, the root tsconfigs,
   `tools/tsconfig.json`, and what pnpm or the runner reads on every step (`.npmrc`, `.pnpmfile.*`, `patches/**`,
   `**/package.yaml`, `**/package.json5`, `.pnp.cjs`, `.github/workflows/actions.lock`, `.github/actions/**`) affect
-  all four.
+  all four, and so does any changed path whose name holds a control character or a line break, which the log prints
+  JSON-quoted.
 
   The root `package.json`, `pnpm-workspace.yaml`, this workflow and every workspace `package.json` are read field by
   field, on both sides of the change (`tools/stryker/manifests.ts`; docs/adr/0066, Part 7):

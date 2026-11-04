@@ -102,9 +102,9 @@ export function hasControlCharacter(key: string): boolean {
   return false;
 }
 
-/** A key the change holds, JSON-quoted (the two separators JSON leaves bare escaped too). */
-function quoted(key: string): string {
-  return JSON.stringify(key).replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
+/** A key or path the change holds, JSON-quoted, and each character JSON leaves bare that hasControlCharacter names (DEL, C1, the two separators) escaped too. */
+export function quoted(key: string): string {
+  return JSON.stringify(key).replace(/[\u007f-\u009f\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
 }
 
 /** The keys this file's tables name: printed as they are, every other key JSON-quoted. */

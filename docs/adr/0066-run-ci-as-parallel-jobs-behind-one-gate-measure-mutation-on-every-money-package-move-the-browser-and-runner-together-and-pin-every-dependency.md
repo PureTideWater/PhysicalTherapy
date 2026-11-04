@@ -1786,6 +1786,10 @@ read and affecting no package: package.json scripts."db:domain-model" (no mutati
   imports with Part 4's entry points, tests included: 32 files, `tools/stryker/canary/**` among them, importing
   `@tp/stryker-canary` and `fast-check` by name. A test holds the list to those loads, reading the canary's
   configuration from the workflow's canary step.
+- **Any changed path holding a control character** (C0, DEL, C1, U+2028 or U+2029), wherever it lies, affects every
+  package before any glob is read, and every reason prints it JSON-quoted with those characters escaped, so no path a
+  pull request names starts a workflow command in the changes job's log or summary (N52). A glob's trailing `**`
+  also holds a name with a line break.
 - **Every `git` the changes job runs** takes a `PATH` with each `node_modules/.bin` entry and each relative entry
   removed, so no dependency's bin answers for git.
 
@@ -1906,6 +1910,11 @@ since no closure imports `playwright-core`.
   stub typescript failed the canary. It is the hoisting limit below, met in the tooling itself: a move of typescript in
   the catalog, a manifest or the lockfile now runs every shard, and a test now fails on any other undeclared import
   of the installed tooling that resolves outside the tooling's lockfile closure.
+- **N52** (the review of #96). Any changed path holding a control character affects every package and is printed
+  JSON-quoted. At 50029e64 such a path was printed raw, so `packages/money/src/a\n::warning ...` started a workflow
+  command in the log and summary, and one under `tools/stryker/**`, `patches/**` or a data glob such as
+  `fixtures/golden/**` affected no package, since a trailing `**` compiled to a `.` that does not match a line break.
+  Both predate this part; it had quoted manifest paths only.
 
 ### Consequences
 
