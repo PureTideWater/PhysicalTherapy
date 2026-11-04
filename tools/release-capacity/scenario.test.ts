@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { windowRuleComputed } from '@tp/contracts';
+import { parseRateTerms, windowRuleComputed } from '@tp/contracts';
 import { cents } from '@tp/money';
-import { disputeWindow, indexRelease } from '@tp/pricing';
+import { type PricedLine, disputeWindow, indexRelease, price } from '@tp/pricing';
+import { contractAgreement, lineFacts, pricingInput, syntheticRelease } from '@tp/pricing/testing';
 import { readRecordFile } from '@tp/rules/content';
-import { SCALE_RELEASE_SHAPE, SCALE_THERAPY_CODES, scaleCodes, scaleZips } from '@tp/synth';
-import { type DeadlineStatus, type TriageFacts, contractWindowRuleComputed, deadlineVerification, judgeLine } from '@tp/triage';
+import { SCALE_RELEASE_SHAPE, SCALE_THERAPY_CODES, dollars, scaleCodes, scaleZips } from '@tp/synth';
+import { DEFAULT_TRIAGE_SETTINGS, type DeadlineStatus, type TriageFacts, contractWindowRuleComputed, deadlineVerification, judgeLine } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import { COMMANDS, WORKER_JOBS } from '../../infra/lib/constructs/compute';
@@ -19,8 +20,13 @@ import {
   CAPACITY_CODES,
   CAPACITY_ZIP,
   CONTRACT_DISPUTE_WINDOW,
+  FIXED_RATE,
+  FIXED_UNIT_CENTS,
   FULL_SIZE,
+  MEDICARE_RATE,
+  ORIGINAL_LINE,
   PERIOD,
+  RECONCILE_PRACTICE,
   REPROCESSING_CHECK_CLAIMS,
   REPROCESSING_CHECKS_PER_FILE,
   REPROCESSING_PAID_ON,
@@ -32,6 +38,7 @@ import {
   lineKey,
   practiceClaims,
   practiceNames,
+  reconcileClaims,
   reprocessing,
   windowQuote,
   withHeapFlag,
@@ -80,10 +87,10 @@ describe('the worker the test runs', () => {
 
 describe('the practices', () => {
   it('sizes the full test as the design names it, and the smoke run smaller in every part', () => {
-    expect(FULL_SIZE).toEqual({ measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000 });
+    expect(FULL_SIZE).toEqual({ measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000, reconcileLines: 2_000 });
     expect(SMALL_SIZE.remittances).toBe(4);
     expect(SMALL_SIZE.largeTogetherLines).toBe(2_000);
-    for (const key of ['measuredLines', 'reportLines', 'claimsPerRemittance', 'largeTogetherLines'] as const) {
+    for (const key of ['measuredLines', 'reportLines', 'claimsPerRemittance', 'largeTogetherLines', 'reconcileLines'] as const) {
       expect(SMALL_SIZE[key]).toBeLessThan(FULL_SIZE[key]);
     }
     expect(PERIOD).toEqual({ from: '2026-01-01', to: '2026-12-31' });
@@ -166,12 +173,12 @@ describe('the practices', () => {
     expect(new Set([...first, ...second].map(isa13)).size).toBe(8);
   });
 
-  it('gives every practice the ledger settings A’s reconcile reads: a posted entry proves recovery, posting exports in the SYNTHETIC template', () => {
+  it('gives every practice the ledger settings F’s reconcile reads: a posted entry proves recovery, posting exports in the SYNTHETIC template', () => {
     expect(SETTINGS).toMatchObject({ place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, proof_level: 'posted', posting_export_template: { template: 'synthetic_pm_export_v1' } });
   });
 
   it('names every row SYNTHETIC', () => {
-    for (const label of ['A', 'B', 'C', 'D', 'E']) {
+    for (const label of ['A', 'B', 'C', 'D', 'E', 'F']) {
       const names = practiceNames(label);
       expect(names.payer).toMatch(/^SYNTHETIC /);
       for (const value of [names.payerId, names.medicareAdvantagePlan, names.contractPlan, names.claimPrefix, names.trace]) {
@@ -181,7 +188,7 @@ describe('the practices', () => {
   });
 });
 
-describe('the SYNTHETIC contract’s dispute window, which makes A’s contract lines actionable (step 7b)', () => {
+describe('the SYNTHETIC contract’s dispute window, which makes the practices’ contract lines actionable (step 7b’s on F)', () => {
   // The dispute-window records release 900110 carries (tools/release/scale.ts, HAND_TYPED): release 900001's, Medicare's only.
   const carried = readRecordFile(path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR, 'dispute_window', '2026', 'records.json'), 'dispute_window/2026/records.json').records.map((located) => located.record);
   const release = indexRelease({ releaseNo: 900_110, manifestSha256: 'a'.repeat(64), records: carried });
@@ -257,7 +264,7 @@ describe('the SYNTHETIC contract’s dispute window, which makes A’s contract 
   });
 });
 
-describe('A’s reprocessing (step 7b, CAS-42.4)', () => {
+describe('the reprocessing step 7b loads and posts, over a month of both plans (CAS-42.4)', () => {
   const claims = practiceClaims(300, 'A');
   // Every third line actionable at an expected amount of its own, one above the original charge.
   const expected = new Map<string, bigint>();
@@ -322,7 +329,7 @@ describe('A’s reprocessing (step 7b, CAS-42.4)', () => {
     expect(posted.map((row) => `${row[3] ?? ''} ${row[4] ?? ''} ${row[5] ?? ''} ${row[6] ?? ''}`)).toEqual(wanted);
   });
 
-  it('names its payer and plans as A’s rows do, writes SYNTHETIC files only, and is the same every time', () => {
+  it('names its payer and plans as the practice’s rows do, writes SYNTHETIC files only, and is the same every time', () => {
     expect(segments).toContain(`N1*PR*${practiceNames('A').payer}`);
     expect(segments).toContain('REF*2U*SYNCAPA');
     expect(segments.some((segment) => segment === 'REF*CE*SYNPLAN-CAPACITY-A-MA')).toBe(true);
@@ -330,5 +337,91 @@ describe('A’s reprocessing (step 7b, CAS-42.4)', () => {
     expect(texts.every((text) => text.includes('SYNTHETIC'))).toBe(true);
     expect(reprocessing('A', claims, expected).files.map((file) => file.toString('latin1'))).toEqual(texts);
     expect(reprocessing('A', claims, new Map())).toMatchObject({ files: [], lines: 0 });
+  });
+});
+
+describe('step 7b’s practice, F (Lane A’s orchestrator, 2026-11-04: a practice of its own until SUITE-CAP-3 moves step 7b back to A)', () => {
+  // Built in each test, so a scenario without F fails each test rather than the file.
+  const seeded = () => {
+    const claims = reconcileClaims(FULL_SIZE.reconcileLines);
+    return { claims, lines: claims.flatMap((entry) => entry.lines.map((item) => ({ ...item, claimNo: entry.claimNo }))) };
+  };
+
+  it('seeds F, not A, at CAS-42.3’s 2,000 lines, every claim under its contract, while A keeps its full month', () => {
+    const { claims, lines } = seeded();
+    expect(RECONCILE_PRACTICE).toBe('F');
+    expect(FULL_SIZE.measuredLines).toBe(100_000);
+    // CAS-42.3's own default (apps/worker/src/reconcile/reconcile.large.db.test.ts), so the two cannot drift apart.
+    const large = readFileSync(path.join(repositoryRoot, 'apps/worker/src/reconcile/reconcile.large.db.test.ts'), 'utf8');
+    expect(FULL_SIZE.reconcileLines).toBe(Number.parseInt(/TP_LARGE_RECONCILE_LINES \?\? '(\d+)'/.exec(large)?.[1] ?? '0', 10));
+    expect(FULL_SIZE.reconcileLines).toBe(2_000);
+    expect(lines).toHaveLength(2_000);
+    expect(reconcileClaims(SMALL_SIZE.reconcileLines).flatMap((entry) => entry.lines)).toHaveLength(SMALL_SIZE.reconcileLines);
+    expect(claims.every((entry) => !entry.medicareAdvantage)).toBe(true);
+    // A's shape, under F's own seed: F's month is not A's.
+    expect(claims.map((entry) => entry.lines)).toEqual(practiceClaims(2_000, 'F').map((entry) => entry.lines));
+    expect(claims.map((entry) => entry.lines)).not.toEqual(practiceClaims(2_000, 'A').map((entry) => entry.lines));
+    // Its reprocessing, every line paid its expected amount, names F's claims and plan alone.
+    const built = reprocessing(RECONCILE_PRACTICE, claims, new Map(lines.map((item) => [lineKey(item.claimNo, item.lineNo), BigInt(item.units * FIXED_UNIT_CENTS)])));
+    expect(built.lines).toBe(2_000);
+    const text = built.files.map((file) => file.toString('latin1')).join('');
+    expect(text).toContain(`CLP*SYNPCN${claimNumber('F', 1)}*22*`);
+    expect(text).not.toContain('SYNCAPA');
+    expect(text).not.toContain('SYNPLAN-CAPACITY-F-MA');
+    expect(built.postingExport).toContain(`SYNPCN${claimNumber('F', 1)},`);
+  });
+
+  it('prices each of F’s lines at a fixed $100.00 a unit, at least the line materiality above what its original remittance allowed, so its triage makes every one actionable', () => {
+    const { claims, lines } = seeded();
+    expect(FIXED_UNIT_CENTS).toBe(Number(dollars('100.00')));
+    expect(FIXED_RATE.quote).toBe('Every covered service is paid $100.00 per unit');
+    expect(contractPages(FIXED_RATE)[1]).toEqual(['SYNTHETIC EXHIBIT A FEE SCHEDULE', FIXED_RATE.quote]);
+    expect(contractPages()[1]).toEqual(['SYNTHETIC EXHIBIT A FEE SCHEDULE', MEDICARE_RATE.quote]);
+    const terms = parseRateTerms(FIXED_RATE.terms, true);
+    expect(terms).toMatchObject({ method: 'FIXED_SCHEDULE', parameters: { amount_cents: BigInt(FIXED_UNIT_CENTS) } });
+    // The engine on each of F's claims under F's own terms: a fixed amount reads no fee-schedule value, so any release prices it alike.
+    const agreement = contractAgreement({ terms });
+    const release = syntheticRelease(900001);
+    const priced = claims.flatMap((entry) =>
+      price(
+        pricingInput(
+          release,
+          entry.lines.map((item) =>
+            lineFacts({ lineNo: item.lineNo, procedureCode: item.code, modifiers: [...item.modifiers], units: String(item.units), serviceDate: item.serviceDate, chargeCents: ORIGINAL_LINE.charge, observedAllowedCents: ORIGINAL_LINE.allowed, agreement }),
+          ),
+          { asOf: '2026-11-04' },
+        ),
+      ),
+    );
+    expect(priced).toHaveLength(2_000);
+    expect(priced.filter((result) => result.outcome !== 'priced')).toEqual([]);
+    const materiality = DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents;
+    for (const [index, result] of (priced as PricedLine[]).entries()) {
+      const item = lines[index];
+      expect(result.expectedAllowedCents).toBe(BigInt((item?.units ?? 0) * FIXED_UNIT_CENTS));
+      expect(result.varianceCents).toBe(result.expectedAllowedCents - ORIGINAL_LINE.allowed);
+      expect(result.varianceCents >= materiality).toBe(true);
+    }
+    // At the smallest variance, judged as triage judges it with the contract's verified window: actionable, no reason.
+    const least = (priced as PricedLine[]).reduce((low, result) => (result.varianceCents < low ? result.varianceCents : low), BigInt(Number.MAX_SAFE_INTEGER));
+    expect(least).toBe(5_000n);
+    const facts: TriageFacts = {
+      varianceCents: cents(least),
+      windowEndsOn: '2036-12-28',
+      deadlineStatus: 'verified',
+      windowRuleComputed: true,
+      claimReversed: false,
+      claimSuperseded: false,
+      mappingKind: 'contract',
+      mappingInForce: true,
+      contractVersionStatus: 'signed_off',
+      contractVersionCoversService: true,
+      releaseWithdrawn: false,
+      contentNotLoaded: false,
+      writtenOff: false,
+      visitVarianceCents: null,
+      reviewFlags: [],
+    };
+    expect(judgeLine(facts, materiality, '2026-11-04')).toMatchObject({ validated: true, actionable: true, reasons: [] });
   });
 });

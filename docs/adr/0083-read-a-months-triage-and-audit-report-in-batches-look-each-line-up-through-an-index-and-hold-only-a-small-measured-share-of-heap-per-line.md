@@ -293,7 +293,7 @@ It changes no writer's code and no sentence a person reads.
 | D7 | No writer's code changes for locking: triage, the report, opening a case, reconcile, manual ledger work and the reopen keep their transactions, their outer locks (`triage:`, `ledger:`) and their statements. | ADR 0038's "an advisory lock per practice" stays true (its dated note of 2026-10-28). |
 | D8 | Under the founder's grant (Deciders, above): `ledger_entry_within_evidence()` and `ledger_entry_within_line()` take `pg_advisory_xact_lock(hashtextextended('ledger:' \|\| NEW.practice_id::text, 0))`, the key `lockLedger` already holds, instead of one key per posting or EFT row and one per line. Nothing else in either body changes; CAS-40.8 diffs each body against `20261027090000`'s. | Every `ledger_entry` writer runs after `lockLedger`, so the triggers re-take a lock the transaction holds: no new lock-table entry and no deadlock. |
 | D9 | `max_locks_per_transaction` stays 64 everywhere. | The tests prove a bound that does not depend on it. |
-| D10, D20 | The weekly run reads the new checks (first attempt; at most `TRACE_LOCK_BUCKETS` = 64 advisory locks per backend; the live heap at most `HEAP_LIVE_PERCENT` = 75% of its `job heap` line's limit; memory per phase) and runs the phases "reconcile" (step 7b) and "the large jobs together" (step 7c). | The review's F1 and F2. |
+| D10, D20 | The weekly run reads the new checks (first attempt; at most `TRACE_LOCK_BUCKETS` = 64 advisory locks per backend; the live heap at most `HEAP_LIVE_PERCENT` = 75% of its `job heap` line's limit; memory per phase, the working set since 2026-11-04) and runs the phases "reconcile" (step 7b, on F since 2026-11-04) and "the large jobs together" (step 7c). | The review's F1 and F2; "The weekly run's memory line and step 7b, 2026-11-04", below. |
 | D11 | The stored per-content windows stay with #8. | Unchanged. |
 | D15 | `claim_by_superseded ON claim (superseded_by_claim_id) WHERE superseded_by_claim_id IS NOT NULL`, built under the lock loop's `SHARE` lock. | The report's patient balance and `claimLines` look claims up by the claim they supersede (Context, defect 4). |
 | D19 | The heap line: `apps/worker/src/heap.ts` keeps one process-wide `PerformanceObserver` on major collections and the heap in use just after the latest one. `attempt()` in `apps/worker/src/worker.ts` opens a handle before every attempt of every job kind the worker runs (the practice jobs, the platform jobs and the screening jobs) and logs, in a `finally`, whether the attempt completed, failed or was refused, `job heap` with `job_id`, `job_type`, `heap_live_peak_mib` and `heap_limit_mib`. The peak is the largest live heap seen while the attempt ran (a job with no major collection reports the latest value from before it began), rounded **up** to a whole MiB, so a peak just over a line never reads under it; the limit is V8's `heap_size_limit`, rounded **down**. IDs and numbers only. | The quantity that crashes the worker is the live heap, not a sampled `heapUsed`. |
@@ -411,7 +411,102 @@ went on. Four readings of the numbers:
   twin lines (one code, date and amount) cannot be told apart by a line-level posting row, so one of them may be
   posted from two rows. The monitoring chain each reprocessing parse queues is cancelled before it starts, so step 7b
   and the large jobs together run only their own jobs. Small runs: 607 actionable lines posted in full, A's reconcile
-  on attempt 1 in 37.6 to 66.1 s; 6,600 lines: 2,084 posted, 333.2 s.
+  on attempt 1 in 37.6 to 66.1 s; 6,600 lines: 2,084 posted, 333.2 s. Since 2026-11-04 step 7b reconciles F, a
+  practice of its own, and the checks count F's lines ("The weekly run's memory line and step 7b", below).
+
+#### The weekly run's memory line and step 7b, 2026-11-04
+
+*Added 2026-11-04.* Two decisions of Lane A's orchestrator change how the weekly run (CAS-42.5,
+`tools/release-capacity`) measures; neither is a founder ruling, and neither moves a line: the 90% line, the 64 locks,
+the 75% heap and section 8.4's budgets stay as they were.
+
+**The 90% line judges the worker's working set.** Decided, word for word: "Lane A's orchestrator, 2026-11-04 (~18:10
+UTC), on the co-founder's standing direction: CAS-42.5's 90% memory line (921.6 of 1,024 MiB) applies to the worker
+container's working set, memory.current minus inactive_file, sampled as now (the measure the kubelet and cAdvisor use
+for eviction, and the one that predicts an OOM kill, because the kernel reclaims inactive page cache first).
+memory.peak and the memory-by-kind table (anon, file, shmem, kernel) stay in the summary beside the working set. The run
+also fails on any OOM kill or any memory.events oom or oom_kill increment. Not a founder ruling: no founder ruling chose
+memory.peak (the line comes from the design and ADR 0062, whose own screening check already judges anonymous memory);
+it corrects how the line is measured and neither reverses a ruling nor loosens the line."
+
+The evidence. CAS-42.5's run 41810890284 (on `ab8c9c27`) failed on memory alone: `memory.peak` 980.4 MiB over the run
+and 936.6 MiB over the large jobs together, against the line's 921.6. Two instrumented runs on one tree (`d219e97d` and
+a probe, on `co-001/wip-sc1b-mem-1`) then split the container's memory by kind every 250 ms: run 41842486076 passed
+with `memory.peak` 842.9 MiB and run 41848025627 failed with 958.6 MiB, the same code. The page cache charged to the
+worker container was 238.2 and 335.0 MiB (node and its bundle about 65 MiB at the start, Chromium's headless shell
+130 to 225 MiB more at the first PDF print, the report files the harness's local store writes about 46 MiB), while
+anonymous, kernel and shared memory peaked at 595.8 and 622.8 MiB: the pass and the fail differ by page cache. At
+run 2's peak the working set was about 812 MiB; V8's live heap was at most 312 MiB; Chromium's process flags save at
+most 12 MiB. A local run on the process route sees almost none of that cache (the binaries are already resident,
+charged elsewhere), which is why it read 721.6 MiB where CI read 980.4.
+
+As built (`tools/release-capacity/checks.ts`, `run.ts`):
+- From the worker's start to the read-back a sampler reads, each second, `memory.current` and `memory.stat` together
+  (cgroup v2's `anon`, `file`, `inactive_file`, `shmem` and `kernel`; on a v1 host `memory.usage_in_bytes` and the
+  `total_rss`, `total_cache`, `total_inactive_file` and `total_shmem` lines, with no kernel figure); each sampled period
+  (the concurrent phase, A's triage, A's audit report, F's reconcile and the large jobs together) reads the same files
+  at its own ticks, which join the whole run's samples. A sample whose working set cannot be computed is not counted,
+  so the sample-count check (at least one each 2 seconds) shows the gap.
+- The check holds the working set, `memory.current` less `inactive_file` and its highest over the samples, to 90% of
+  the task over the whole run and in each period; its failing line reads "the worker’s working set (memory.current less
+  inactive_file, sampled each second) over <period> is …, above 90% of its 1024 MiB (921.6 MiB)", and a working set
+  that could not be read fails closed.
+- `memory.peak` is read at the end and at each period's end (the run so far, page cache included; the harness cannot
+  reset it) and reported, never judged; the highest `memory.current` of each period stays in `release-capacity.json`
+  (`peakBytes`) for comparison with earlier runs.
+- The run reads `memory.events` (v1: `memory.oom_control`) once the worker has started and at the end, and fails on any
+  increase of `oom` (the limit reached with an allocation about to fail) or `oom_kill`, beside the OOM-kill check it had;
+  either reading unread fails closed.
+- The summary (also printed to the job's log) states the line and what it judges, the working set over the whole run,
+  `memory.peak`, the `memory.events` increments, and a "Memory by kind" table: for the whole run and each period, the
+  working set, `memory.current`, anonymous memory, page cache, its inactive part, shared memory and kernel memory at the
+  sample the working set peaked at, `memory.peak` at its end and its sample count. Section 8's text (the design, on the
+  ops repository) still says `memory.peak`; this section records the measure as built.
+- Failing first: the new tests over synthetic samples (a working set over 921.6 MiB fails; run 41848025627's shape,
+  page cache carrying `memory.current` and `memory.peak` past the line with the working set at 812 MiB, passes; an
+  `oom` or `oom_kill` increase fails; an unread `memory.events` fails closed; the summary prints the working set and
+  memory by kind) fail on the old `checks.ts`, 20 of the file's 34 tests, and pass with the new.
+
+**Step 7b reconciles a practice of its own until SUITE-CAP-3.** Decided, word for word: "Lane A's orchestrator,
+2026-11-04 (~18:25 UTC), on the co-founder's standing direction (test scope, not a founder ruling): CAS-42.5's step 7b
+runs on a practice of its own at CAS-42.3's 2,000 lines; A keeps its full month for triage and reports. The capacity
+summary prints a fixed "Known gap" line on every run naming that full-size reconcile is SUITE-CAP-3's tracked item,
+its last measured figure (10,000 lines in 3,412 s) and the revisit condition. ADR 0083 records it as temporary until
+SUITE-CAP-3 lands, with the move back to A as SUITE-CAP-3's acceptance step."
+
+Why: once A's contract cited its window (above), about 31% of A's 100,000 lines are actionable, and the reconcile pass
+walks every open case line; SUITE-CAP-3's profile, with this pull request's migration, took 3,412.1 s for 10,000 lines,
+so A's month cannot reconcile in a 15-minute attempt and the run would fail on SUITE-CAP-3's item rather than measure
+this one's.
+
+As built (`tools/release-capacity/scenario.ts`, `run.ts`, `checks.ts`):
+- F, step 7b's practice (`RECONCILE_PRACTICE`), holds `reconcileLines` lines of A's shape under its own seed: 2,000 at
+  full size, CAS-42.3's default (`TP_LARGE_RECONCILE_LINES`, which a unit test reads so the two cannot drift), and 600
+  at the smoke size. Every claim is under a SYNTHETIC contract that pays a fixed $100.00 a unit (`FIXED_RATE`, a
+  `FIXED_SCHEDULE` record cited on the agreement's page 2), with the same cited and verified ten-year window as the
+  other practices'. Each line's original remittance allowed 50.00, so every line's shortfall is at least $50, far above
+  the $5 line materiality, whatever the release's values: F's triage makes each line actionable, in one case. A unit
+  test prices all 2,000 lines with the engine under F's own terms and judges the smallest shortfall actionable.
+- F's month is priced and triaged during setup (not measured). Step 7b then stages F's reprocessing 835s and posting
+  export, parses them and runs the reconcile job, measured as before: each job on its first attempt, its `job heap`
+  line under 420 MiB, the locks at most 64 at every sample, the phase's working set under the line, and each actionable
+  line posted in full. A new check fails a run in which F's triage made other than each of its lines actionable, so
+  step 7b always reconciles the size it was seeded at. The 30 s actionable write budget is CAS-42.1's, on A's triage of
+  its full month (`triage.large.db.test.ts`), unchanged; the weekly run's times stay advisory.
+- A keeps its full month: priced in the concurrent phase, triaged and reported in the chain, reported again in the
+  large jobs together. Its actionable lines are not reconciled until SUITE-CAP-3.
+- Every summary, on a pass, a failure, a smoke run or a run that stopped early, prints the fixed line
+  (`KNOWN_GAP`), word for word: "Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F,
+  a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage
+  and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s
+  15-minute attempt. Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step
+  (docs/adr/0083)."
+- **Temporary until SUITE-CAP-3 lands.** SUITE-CAP-3's acceptance step moves step 7b back to A's full month (F and its
+  fixed rate go, the `F’s reconcile` period becomes A's again, and the Known gap line is removed), and its pull request
+  passes the weekly run that way.
+- Failing first: the new scenario tests (F seeded at CAS-42.3's 2,000 lines, not A; each of F's lines priced and judged
+  actionable) fail on the old `scenario.ts`, 3 of the file's 22 tests; the new checks (F's posted lines, F's triage
+  making each line actionable, the Known gap line on a pass and on a failure) are among the 20 above.
 
 #### The release loader's freeze, 2026-11-04
 
@@ -536,5 +631,6 @@ files as the first grant, and no other.
   than the lines. SUITE-CAP-3 measures reconcile at real size.
 - The weekly run's step 7b at full size: about 31% of A's 100,000 lines are now actionable, and the reconcile pass
   walks every open case line (2,084 lines took 333.2 s at 0.5 vCPU), so A's reconcile cannot finish in an attempt until
-  SUITE-CAP-3. Whether step 7b runs on its own practice at CAS-42.3's 2,000 lines until then, or stays on A with that
-  failure read as SUITE-CAP-3's, is asked of the founder (SUITE-CAP-1b's pull request).
+  SUITE-CAP-3. Decided by Lane A's orchestrator on 2026-11-04 ("The weekly run's memory line and step 7b", above):
+  step 7b reconciles F, a practice of its own at CAS-42.3's 2,000 lines, and every summary prints the Known gap line,
+  until SUITE-CAP-3 lands; moving step 7b back to A's full month is SUITE-CAP-3's acceptance step.

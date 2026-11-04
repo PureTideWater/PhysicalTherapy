@@ -59,13 +59,15 @@ request. Each issue they open holds only public references: page addresses, file
 | --- | --- | --- |
 | `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
 | `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
-| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then A's reconcile of a SYNTHETIC posting export, then the large jobs together (A's second report, D's triage, E's price job and C's second four parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 420 MiB (75% of the worker's 560 MiB `--max-old-space-size`) or a measured job with no `job heap` line, a phase's or a chain job's memory above 90% of the task, any job not completed, or A's reconcile posting other than each of A's actionable lines in full, or with none to post (A's contract states its dispute window, cited and verified, so its material lines are actionable; the monitoring chain the reprocessing parses queue is cancelled before it starts); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then F's reconcile of a SYNTHETIC posting export (step 7b, on a practice of its own at CAS-42.3's 2,000 lines until SUITE-CAP-3; the summary's "Known gap" line), then the large jobs together (A's second report, D's triage, E's price job and C's second four parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 420 MiB (75% of the worker's 560 MiB `--max-old-space-size`) or a measured job with no `job heap` line, the worker's working set (`memory.current` less `inactive_file`) above 90% of the task over the run or in a phase or chain job, any `memory.events` oom or oom_kill during the run, any job not completed, F's triage making other than each of its lines actionable, or F's reconcile posting other than each of them in full (its contract pays a fixed rate a unit and states its dispute window, cited and verified; the monitoring chain the reprocessing parses queue is cancelled before it starts); its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
 
 Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's table names each job with its phase,
-"Attempts" and "Live heap" (the peak beside the limit the check holds it to), and the memory line names each phase's and
-each chain job's peak; a failing check names the job by its label in the run (`A triage`), its type and its pg-boss ID
-(also in release-capacity.json, `jobs[].jobId`), and the phase it ran in.
+"Attempts" and "Live heap" (the peak beside the limit the check holds it to), and the "Memory by kind" table gives the
+whole run's and each phase's and chain job's working set; a failing check names the job by its label in the run
+(`A triage`), its type and its pg-boss ID (also in release-capacity.json, `jobs[].jobId`), and the phase it ran in.
+Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
+2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure.
 - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
   would have waited on. The worker logs no error for an attempt that is retried, but an attempt that throws logs a
   `job heap` line with the job's ID as it ends, so the job's first one marks when the failed attempt ended. At that
@@ -89,9 +91,23 @@ each chain job's peak; a failing check names the job by its label in the run (`A
   image does not log it (an image before SUITE-CAP-1b), or the worker's log could not be read (the summary then also
   says so, and every measured job reports the same): read the worker's log in the artifact for the job's ID. Production
   alarms at the same line (docs/runbooks/incident-response.md).
-- **A phase's or a chain job's memory above 90%.** The task's `memory.current`, sampled each second, passed 921.6 MiB;
-  the line names the phase and the chain job. The large jobs together share one worker process, so read their live
-  heaps beside the peak.
+- **The worker's working set above 90%, or an OOM event.** The line, 921.6 of the task's 1,024 MiB, judges the
+  working set: `memory.current` less `memory.stat`'s `inactive_file` (the page cache the kernel reclaims first),
+  sampled each second, its highest over the whole run and in each phase and chain job, the measure the kubelet and
+  cAdvisor evict on and the one that predicts an OOM kill (Lane A's orchestrator, 2026-11-04; ADR 0083). The failing
+  line names the period. Read the summary's "Memory by kind" table (also in the job's log) at that period's row, the
+  sample its working set peaked at: "Anonymous" is the worker's heap and native memory and Chromium's, which only the
+  code can shrink, so read the live heaps of the jobs that ran then beside it (the large jobs together share one worker
+  process); "Page cache" is the image's binaries the container faulted in (node and its bundle at the start, Chromium's
+  headless shell at the first PDF print) and the files the harness's local store writes, which production sends to S3,
+  and it counts "Shared memory"; "Inactive page cache" is the part the working set leaves out; "Kernel" is the kernel's
+  own memory for the container (no figure on cgroup v1). A working set near the line with anonymous memory near it
+  means the code outgrew the task; one carried by active page cache means files the container keeps reading. "memory.peak
+  at its end" is the container's highest so far, page cache included, which the harness cannot reset: it is reported,
+  never judged, and can pass 921.6 MiB on a green run (CAS-42.5's run 41848025627 read 958.6 MiB with a working set of
+  about 812 MiB). The run also fails on any `oom` (the limit reached with an allocation about to fail) or `oom_kill`
+  that `memory.events` counts between the worker's start and the end, killed or not, and when `memory.events` or the
+  working set cannot be read.
 
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier

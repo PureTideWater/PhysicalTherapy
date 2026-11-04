@@ -65,12 +65,19 @@ import { createPricingRun } from '@tp/worker/pricing';
  *   jobs run in the concurrent phase, and a second set of four in the large jobs together.
  * - D and E, periods of A's shape (largeTogetherLines each; docs/adr/0083, D20): D's priced during setup and triaged in
  *   the large jobs together, E's priced there.
- * - A's reprocessing (step 7b; the ledger freeze exception granted 2026-10-27): once A is triaged, SYNTHETIC 835s that
+ * - F, step 7b's practice (Lane A's orchestrator, 2026-11-04; test scope, until SUITE-CAP-3 lands and moves step 7b
+ *   back to A as its acceptance step): CAS-42.3's 2,000 lines (reconcileLines; fewer at the smoke size) of A's shape,
+ *   every claim under a SYNTHETIC contract that pays a fixed FIXED_UNIT_CENTS a unit (FIXED_RATE), at least the line
+ *   materiality above what the original remittance allowed, its dispute window cited and verified, so its triage
+ *   during setup makes every line actionable, in one case. A keeps its full month for triage and reports: the reconcile
+ *   pass walks every open case line, and A's month (about 31% actionable) cannot reconcile in one attempt until
+ *   SUITE-CAP-3 (docs/adr/0083).
+ * - F's reprocessing (step 7b; the ledger freeze exception granted 2026-10-27): once F is triaged, SYNTHETIC 835s that
  *   reverse each claim holding an actionable line and pay its correction, every actionable line at its expected amount
  *   (checks of REPROCESSING_CHECK_CLAIMS claims), and a SYNTHETIC posting export with one line-level row per
- *   actionable line, so A's reconcile approves and posts every one of them in one pass.
+ *   actionable line, so F's reconcile approves and posts every one of them in one pass.
  *
- * A's and B's lines are bulk-inserted as the owner, in the shape of apps/worker/src/price/price.large.db.test.ts, with
+ * A's, B's, D's, E's and F's lines are bulk-inserted as the owner, in the shape of apps/worker/src/price/price.large.db.test.ts, with
  * the claim numbers sealed under the practice's own key as the parser seals them (the audit report opens them). Every
  * other row is written through the code the web writes it with: the practice's location through
  * practice_set_location() as the billing manager, the contract through @tp/contracts' services by the people the plan
@@ -89,10 +96,15 @@ export interface ScenarioSize {
   readonly claimsPerRemittance: number;
   /** Practices D's and E's lines each (the large jobs together, D20). */
   readonly largeTogetherLines: number;
+  /** Practice F's lines, each actionable once triaged (step 7b's reconcile; CAS-42.3's size at full size). */
+  readonly reconcileLines: number;
 }
 
-export const FULL_SIZE: ScenarioSize = { measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000 };
-export const SMALL_SIZE: ScenarioSize = { measuredLines: 2_000, reportLines: 500, remittances: 4, claimsPerRemittance: 50, largeTogetherLines: 2_000 };
+export const FULL_SIZE: ScenarioSize = { measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000, reconcileLines: 2_000 };
+export const SMALL_SIZE: ScenarioSize = { measuredLines: 2_000, reportLines: 500, remittances: 4, claimsPerRemittance: 50, largeTogetherLines: 2_000, reconcileLines: 600 };
+
+/** The practice step 7b reconciles (its own, not A: docs/adr/0083). */
+export const RECONCILE_PRACTICE = 'F';
 
 /** The period A and B are priced for: every quarter of 2026. */
 export const PERIOD = { from: '2026-01-01', to: '2026-12-31' } as const;
@@ -169,6 +181,14 @@ export function practiceClaims(lines: number, seed: string): CapacityClaim[] {
   return claims;
 }
 
+/**
+ * Practice F's claims (step 7b): `lines` lines of A's shape (practiceClaims, seeded by F's own label, so none is A's),
+ * every claim under the contract's plan, whose fixed rate (FIXED_RATE) makes each line actionable.
+ */
+export function reconcileClaims(lines: number): CapacityClaim[] {
+  return practiceClaims(lines, RECONCILE_PRACTICE).map((entry) => ({ ...entry, medicareAdvantage: false }));
+}
+
 /** The names a practice's rows carry, every one SYNTHETIC. */
 export function practiceNames(label: string): { readonly payer: string; readonly payerId: string; readonly medicareAdvantagePlan: string; readonly contractPlan: string; readonly claimPrefix: string; readonly trace: string } {
   return {
@@ -211,7 +231,7 @@ export function capacity835(index: number, claims: number): Buffer {
 export const REPROCESSING_CHECK_CLAIMS = 20;
 /** Checks per reprocessing 835: each file one interchange of this many transactions, one parse_835 job. */
 export const REPROCESSING_CHECKS_PER_FILE = 100;
-/** The date A's reprocessing pays and posts: the original remittance's (insertClaims), the reprocessing loaded after it. */
+/** The date F's reprocessing pays and posts: the original remittance's (insertClaims), the reprocessing loaded after it. */
 export const REPROCESSING_PAID_ON = '2026-12-31';
 
 /** An actionable line's key in `expected`: its claim's number and its line number. */
@@ -221,7 +241,7 @@ export const lineKey = (claimNo: number, lineNo: number): string => `${String(cl
 export const claimNumber = (label: string, claimNo: number): string => `${practiceNames(label).claimPrefix}${String(claimNo).padStart(7, '0')}`;
 
 /** A line as insertClaims wrote it: charged 100.00, allowed 50.00, the patient's 10.00 (PR 2), paid 40.00. */
-const ORIGINAL_LINE = { charge: dollars('100.00'), allowed: dollars('50.00'), patientShare: dollars('10.00') } as const;
+export const ORIGINAL_LINE = { charge: dollars('100.00'), allowed: dollars('50.00'), patientShare: dollars('10.00') } as const;
 
 export interface Reprocessing {
   /** The 835s, each one interchange of up to REPROCESSING_CHECKS_PER_FILE checks. */
@@ -233,7 +253,7 @@ export interface Reprocessing {
 }
 
 /**
- * A's reprocessing (step 7b), deterministic from the claims insertClaims wrote: for each claim holding an actionable
+ * A practice's reprocessing (F's, step 7b), deterministic from the claims insertClaims wrote: for each claim holding an actionable
  * line (`expected`, by lineKey, its expected allowed amount in cents), its reversal (status 22, every amount negated) and
  * its correction (frequency 7, naming it in REF F8, the same patient control number), whose actionable lines are allowed
  * and paid their expected amount and whose other lines are as the original paid them. Checks of
@@ -429,48 +449,62 @@ export async function insertClaims(seeding: Seeding, practice: SeededPractice, c
   await owner.query('ANALYZE claim, service_line, adjustment, plan, payer');
 }
 
-/** A term at a percentage of the current Medicare fee schedule, the flags left to the contract's defaults (off). */
-const termsAt = (percentage: string) => ({
-  scope: {},
-  method: 'PERCENT_OF_MEDICARE',
-  parameters: { percentage, year_basis: 'CURRENT', locality_basis: { kind: 'PRACTICE' }, conversion_factor: 'non_qualifying_apm' },
-  flags: { timed_units_rule: 'PER_CODE' },
-});
-const quoteAt = (percentage: string) => `Every covered service is paid at ${percentage}% of the Medicare fee schedule`;
+/** A contract's one rate: its terms, as the specialist abstracts them, and the words of its fee schedule's page, which the record cites. */
+export interface ContractRate {
+  readonly terms: { readonly scope: Record<string, never>; readonly method: string; readonly parameters: Readonly<Record<string, unknown>>; readonly flags: { readonly timed_units_rule: 'PER_CODE' } };
+  readonly quote: string;
+}
+
+/** A, B, D and E: every covered service at 110% of the current Medicare fee schedule, the flags left to the contract's defaults (off). */
+export const MEDICARE_RATE: ContractRate = {
+  terms: { scope: {}, method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110', year_basis: 'CURRENT', locality_basis: { kind: 'PRACTICE' }, conversion_factor: 'non_qualifying_apm' }, flags: { timed_units_rule: 'PER_CODE' } },
+  quote: 'Every covered service is paid at 110% of the Medicare fee schedule',
+};
+
+/** F's fixed amount a unit, in cents: twice what the original remittance allowed a line, whatever its units, so far above the $5 line materiality. */
+export const FIXED_UNIT_CENTS = 10_000;
+
+/** F (step 7b): every covered service at a fixed FIXED_UNIT_CENTS a unit, so each line's expected amount is known whatever the release's values. */
+export const FIXED_RATE: ContractRate = {
+  terms: { scope: {}, method: 'FIXED_SCHEDULE', parameters: { amount_cents: String(FIXED_UNIT_CENTS) }, flags: { timed_units_rule: 'PER_CODE' } },
+  quote: 'Every covered service is paid $100.00 per unit',
+};
 
 /**
  * The SYNTHETIC contract's own dispute window (D17 a): its days counted as calendar days after the payment date (BPR16),
  * the rule the product computes, so the specialist can verify it and its lines' deadlines are verified, as the large
  * triage test's contract's are (CAS-42.1). Without it the contract is silent, its lines take the release's
- * commercial_default, which release 900110 does not carry (NO_WINDOW) and which is never verified, and no line of A is
- * actionable, so A's reconcile (step 7b) would post nothing. Ten years, the most a version's window may state: the
- * weekly run triages on the day it runs and A's remittance is paid on REPROCESSING_PAID_ON (2026-12-31), so its windows
- * stay open on every run until 2036-12-28 (a passed window strikes a line through and leaves it nothing to reconcile).
+ * commercial_default, which release 900110 does not carry (NO_WINDOW) and which is never verified, and no contract line
+ * is actionable, so F's reconcile (step 7b) would post nothing and A's and D's triage would write no actionable line.
+ * Ten years, the most a version's window may state: the weekly run triages on the day it runs and each practice's
+ * remittance is paid on REPROCESSING_PAID_ON (2026-12-31), so its windows stay open on every run until 2036-12-28 (a
+ * passed window strikes a line through and leaves it nothing to reconcile).
  */
 export const CONTRACT_DISPUTE_WINDOW = { days: 3_650, rule: { unit: 'calendar_days', measuredFrom: 'payment_date' } } as const;
 /** The words the agreement's page 1 states its dispute window in, which the specialist cites. */
 export const windowQuote = (days: number) => `Disputes are raised within ${String(days)} days of the payment date.`;
 
 /** The SYNTHETIC agreement's pages: its dispute window on page 1 (cited by the window), its fee schedule on page 2 (cited by the rate record). */
-export function contractPages(): string[][] {
+export function contractPages(rate: ContractRate = MEDICARE_RATE): string[][] {
   return [
     ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', windowQuote(CONTRACT_DISPUTE_WINDOW.days)],
-    ['SYNTHETIC EXHIBIT A FEE SCHEDULE', quoteAt('110')],
+    ['SYNTHETIC EXHIBIT A FEE SCHEDULE', rate.quote],
   ];
 }
 
 /**
- * A practice's plans mapped: the Medicare Advantage plan non-contracted, the other to a SYNTHETIC contract at 110% of
- * Medicare with its own dispute window (CONTRACT_DISPUTE_WINDOW), drafted and signed off by the billing manager, and
+ * A practice's plans mapped: the Medicare Advantage plan non-contracted, the other to a SYNTHETIC contract at `rate`
+ * (110% of Medicare, MEDICARE_RATE, but for F's fixed rate) with its own dispute window (CONTRACT_DISPUTE_WINDOW),
+ * drafted and signed off by the billing manager, and
  * abstracted, its window cited and verified, and approved by the specialist, through @tp/contracts' services, each
  * quote on a SYNTHETIC PDF's page.
  */
-export async function mapPlans(seeding: Seeding, practice: SeededPractice, specialistId: string): Promise<void> {
+export async function mapPlans(seeding: Seeding, practice: SeededPractice, specialistId: string, rate: ContractRate = MEDICARE_RATE): Promise<void> {
   const { owner } = seeding;
   const names = practiceNames(practice.label);
   const { practiceId } = practice;
   const documentId = randomUUID();
-  const pdf = syntheticPdf(contractPages());
+  const pdf = syntheticPdf(contractPages(rate));
   const ids = await asOwner(owner, [practiceId], async () => {
     await owner.query(
       `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)
@@ -499,7 +533,7 @@ export async function mapPlans(seeding: Seeding, practice: SeededPractice, speci
     ).versionId;
   });
   await as(specialistId, async (context) => {
-    const { rateRecordId } = await addRateRecord(context, { practiceId, versionId, terms: termsAt('110'), citation: { documentId, page: 2, quote: quoteAt('110') } });
+    const { rateRecordId } = await addRateRecord(context, { practiceId, versionId, terms: rate.terms, citation: { documentId, page: 2, quote: rate.quote } });
     for (const field of RATE_RECORD_FIELDS) {
       await approveRateRecordField(context, { practiceId, rateRecordId, field });
     }
@@ -557,7 +591,7 @@ export async function requestReport(seeding: Seeding, practice: SeededPractice, 
   return id;
 }
 
-/** A's actionable lines after its triage, by lineKey (claim number and line number), each with its expected allowed amount (step 7b). */
+/** A practice's actionable lines after its triage (F's, step 7b), by lineKey (claim number and line number), each with its expected allowed amount. */
 export async function actionableLines(seeding: Seeding, practice: SeededPractice, runId: string): Promise<Map<string, bigint>> {
   const { owner } = seeding;
   const { rows } = await asOwner(owner, [practice.practiceId], () =>
