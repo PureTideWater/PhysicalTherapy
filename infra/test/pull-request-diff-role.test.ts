@@ -59,4 +59,22 @@ describe('the pull-request diff role', () => {
     const denied = roleStatements(template, roleId).filter((statement) => statement.Effect === 'Deny');
     expect(denied).toEqual([{ Sid: 'NoContentReads', Effect: 'Deny', Action: DENIED_CONTENT_READS, Resource: '*' }]);
   });
+
+  // A literal, not the imported constant, so an edit to the constant cannot pass by changing both sides.
+  // DescribeUserPoolClient returns a confidential client's secret in plaintext, and ListUserPoolClientSecrets
+  // may return its value; ReadOnlyAccess grants both through cognito-idp:Describe*/List* (ADR 0088 D1, SEC-21).
+  it("is refused the Cognito reads that return the web client's secret", () => {
+    const denied = roleStatements(template, roleId).filter((statement) => statement.Effect === 'Deny');
+    expect(denied.map((statement) => statement.Action)).toEqual([
+      [
+        's3:GetObject*',
+        'secretsmanager:GetSecretValue',
+        'kms:Decrypt',
+        'ssm:GetParameter*',
+        'cognito-idp:DescribeUserPoolClient',
+        'cognito-idp:ListUserPoolClientSecrets',
+      ],
+    ]);
+    expect(denied.map((statement) => statement.Resource)).toEqual(['*']);
+  });
 });

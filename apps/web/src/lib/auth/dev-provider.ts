@@ -13,7 +13,7 @@ import {
 
 import type { DevCredentialStore, DevUserRecord } from './dev-store';
 import { DEFAULT_SCRYPT_COST, type ScryptCost, hashPassword, passwordProblems, verifyPassword } from './password';
-import type { AuthProvider, AuthStep, KeyChallenge, NewPasswordStep, PasswordResetResult, TotpSetup } from './provider';
+import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, TotpSetup } from './provider';
 import type { Sealer } from './seal';
 import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS, PROVIDER_GRANT_SECONDS } from './step-limits';
 import { newTotpSecret, totpUri, verifyTotp } from './totp';
@@ -129,7 +129,8 @@ export class DevAuthProvider implements AuthProvider {
   /** After the password: enroll TOTP first, then a code every time. */
   private secondFactor(record: DevUserRecord): AuthStep {
     return record.totpSecret === null
-      ? { kind: 'mfa_setup_required', challenge: this.challenge({ sub: record.sub, step: 'mfa_setup' }) }
+      ? // The record's subject, as Cognito names its user on MFA_SETUP (docs/adr/0088, D3).
+        { kind: 'mfa_setup_required', challenge: this.challenge({ sub: record.sub, step: 'mfa_setup' }), subject: record.sub }
       : { kind: 'mfa_required', challenge: this.challenge({ sub: record.sub, step: 'mfa' }) };
   }
 
@@ -296,10 +297,11 @@ export class DevAuthProvider implements AuthProvider {
     return Promise.resolve();
   }
 
-  async ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }> {
+  async ensureUser(email: string): Promise<EnsuredUser> {
     const existing = await this.options.store.byEmail(email);
     if (existing !== undefined) {
-      return { sub: existing.sub, created: false };
+      // The twin's FORCE_CHANGE_PASSWORD: the temporary password has not been replaced.
+      return { sub: existing.sub, created: false, neverSignedIn: existing.temporary };
     }
     const sub = randomUUID();
     const password = temporaryPassword();
@@ -313,18 +315,19 @@ export class DevAuthProvider implements AuthProvider {
       credentials: [],
     });
     await this.options.deliverInvitation(email, password);
-    return { sub, created: true };
+    return { sub, created: true, neverSignedIn: true };
   }
 
-  async resendInvitation(email: string): Promise<void> {
+  async resendInvitation(email: string): Promise<boolean> {
     const existing = await this.options.store.byEmail(email);
     if (existing?.temporary !== true) {
-      return;
+      return false;
     }
     const password = temporaryPassword();
     const passwordHash = await hashPassword(password, this.cost);
     await this.options.store.update(existing.sub, (current) => ({ ...current, passwordHash }));
     await this.options.deliverInvitation(email, password);
+    return true;
   }
 
   /** The code's keyed hash: what the store keeps instead of the code. */
