@@ -1012,6 +1012,7 @@ describe('the test tooling’s own undeclared imports, as installed (docs/adr/00
     const held = new Set(lockedPackages(lock, global.imports, TEST_TOOLING).map((key) => key.replace(/\(.*$/, '')));
     const tooling = TEST_TOOLING.map(globToRegExp);
     // The installed tooling: each tooling entry of the root's and the mutation tooling's own manifests, as each resolves it, and every dependency and installed peer below it.
+    // It is the install on this platform: optional platform packages (esbuild's, rollup's) differ off Linux, so the set CI judges is the Linux one its unit job installs.
     const installed = new Map<string, InstalledManifest>();
     const stack: (readonly [string, string])[] = [];
     for (const importer of new Set(['.', ...global.imports.keys()])) {
