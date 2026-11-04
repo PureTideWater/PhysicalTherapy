@@ -8,8 +8,9 @@ a real file, a key or a token into the incident record, a ticket, a chat or a se
 ## 0. Triggers
 
 A security event alarm (failed-MFA burst, sign-in burst, WAF block surge, GuardDuty finding, a bulk export, a grant
-change or role escalation outside a ticket), a customer's or a vendor's report, a lost device, a leaked credential, or
-anything that suggests PHI reached someone it should not.
+change or role escalation outside a ticket, a refused second-factor enrolment, a refused client credential, one
+account's reset requests reaching five in an hour), a finding of the weekly sign-in review below, a customer's or a
+vendor's report, a lost device, a leaked credential, or anything that suggests PHI reached someone it should not.
 
 ## 1. Open the record (within one hour)
 
@@ -83,6 +84,34 @@ the practice approves again, turn maintenance off, and resolve the status incide
 
 Write the post-incident review: timeline, cause, what was affected, what is changed (code, configuration, policy), and
 who owns each change. Update the risk analysis. If a control failed, add the test that would have caught it.
+
+## Weekly sign-in review
+
+The reset and enrolment alarms (docs/adr/0088, D7; test matrix SEC-23) tell the operator within the hour; this review
+keeps the daily figure ADR 0081 A4 asked for, from the audit log, which records every reset request for an account
+(`password_reset_requested`, the actor being the account named). Run it each Monday for each environment with
+accounts, in a session as the operator role (`tp_operator`), which reads `audit_event` and can change nothing in it.
+
+1. The accounts with more than ten reset requests in a day over the last seven days:
+
+   ```sql
+   SELECT object_id AS user_id, date_trunc('day', at) AS day, count(*)
+   FROM audit_event WHERE action = 'password_reset_requested' AND at > now() - interval '7 days'
+   GROUP BY 1, 2 HAVING count(*) > 10 ORDER BY 3 DESC;
+   ```
+
+2. For each row, read that account's other events in the window (`audit_event` by `object_id`: failed sign-ins, a lock,
+   `password_changed`), and the per-user alarm's history. The alarm names no user; while it is raised, the rule's top
+   contributors name them: `aws cloudwatch get-insight-rule-report --rule-name tp-<env>-password-reset-requests-per-user
+   --start-time <start> --end-time <end> --period 3600 --metrics MaxContributorValue --max-contributor-count 10`.
+3. Ask the organization's administrator whether the person asked for the codes. If not, or if the requests ended in a
+   changed password nobody asked for, it is a security event: open the record (section 1) and contain the account
+   (section 2).
+4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
+   `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
+   `ClientCredentialRefused`): each one raised that no ticket or incident record already explains gets one.
+5. Record the review in its ticket: the date, the environment, the number of rows, and the user IDs, never an address
+   or a name.
 
 ## The yearly tabletop
 

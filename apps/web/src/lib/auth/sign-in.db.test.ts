@@ -885,3 +885,37 @@ describe('SEC-20: a refused client credential is the platform’s failure, never
     expect(logged(lines, CREDENTIAL_REFUSED)).toEqual([expect.objectContaining({ level: 'error', error_code: 'UnauthorizedException', request_id: request.requestId })]);
   });
 });
+
+const RESET_REQUESTED = 'password reset requested';
+
+describe('SEC-23: each reset request for an account is logged by its user ID alone, for the per-user alarm (docs/adr/0088, D7)', () => {
+  it('SEC-23: logs one line at info with the user ID and the request ID for every account, a code sent or not, and none for an unknown address', async () => {
+    const active = await person();
+    const locked = await person();
+    await owner.query('UPDATE "user" SET locked_at = now() WHERE id = $1', [locked.id]);
+    const notEnrolled = await person({ status: 'invited', mfa: false, temporary: false, totp: false });
+    const disabled = await person({ status: 'disabled' });
+    for (const account of [active, locked, notEnrolled, disabled]) {
+      const { flow: asking, pace, lines } = paced();
+      const request = context();
+      expect(await asking.requestPasswordReset(account.email, request)).toEqual({ step: 'reset', email: account.email });
+      expect(pace.at).toBe(RESET_REQUEST_FLOOR_MS);
+      expect(logged(lines, RESET_REQUESTED), account.id).toEqual([{ level: 'info', msg: RESET_REQUESTED, time: expect.any(String), user_id: account.id, request_id: request.requestId }]);
+      expect(lines.join('\n'), account.id).not.toContain(account.email);
+    }
+    const unknown = `${randomUUID()}@synthetic.test`;
+    const { flow: nobody, lines } = paced();
+    await nobody.requestPasswordReset(unknown, context());
+    expect(logged(lines, RESET_REQUESTED)).toEqual([]);
+    expect(lines.join('\n')).not.toContain(unknown);
+  });
+
+  it('SEC-23: logs the request even when its audit write fails, so the per-user count does not hang on the write', async () => {
+    const user = await person();
+    const { flow: failed, lines } = paced(failing(/INSERT INTO audit_event/, 1));
+    const request = context();
+    expect(await failed.requestPasswordReset(user.email, request)).toEqual({ step: 'reset', email: user.email });
+    expect(logged(lines, 'password reset request failed')).toHaveLength(1);
+    expect(logged(lines, RESET_REQUESTED)).toEqual([{ level: 'info', msg: RESET_REQUESTED, time: expect.any(String), user_id: user.id, request_id: request.requestId }]);
+  });
+});

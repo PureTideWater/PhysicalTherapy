@@ -57,7 +57,16 @@ import {
   UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS,
   UPLOAD_SENT_TO_WAIT_MESSAGE,
 } from '../screening';
-import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../security-events';
+import {
+  PASSWORD_RESET_REQUESTED_MESSAGE,
+  RESET_AND_ENROLMENT_COUNTS,
+  RESET_REQUESTS_PER_USER,
+  type ResetAndEnrolmentMetricName,
+  SECURITY_ALARM_PERIOD_SECONDS,
+  SIGN_IN_BURST_MESSAGES,
+  SIGN_IN_BURST_METRIC,
+  resetRequestsRuleName,
+} from '../security-events';
 
 /** Where operator alerts are delivered; both optional, set at deploy time (never in the repository). */
 export interface OperatorEndpoints {
@@ -122,6 +131,13 @@ export interface MonitoringProps {
  * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
  * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
  * the reputation and queue alarms.
+ *
+ * Reset and enrolment (R-11; docs/adr/0088, D7; test matrix SEC-23) add five metric filters on the web's group, each
+ * with its alarm (infra/lib/security-events.ts, RESET_AND_ENROLMENT_COUNTS): a reset request not delivered for a code
+ * that means the app and Cognito disagree or mail is broken, one not delivered for a throttle code, a failed reset
+ * request, a refused second-factor enrolment and a refused client credential. Reset requests per user are counted by a
+ * Contributor Insights rule keyed on the user ID, never by a metric with a user dimension, and alarm at five in an
+ * hour; the alarm names no user.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -148,6 +164,12 @@ export class Monitoring extends Construct {
   /** An address validation AWS refused (MAIL_VALIDATION_REFUSED_CODE). */
   readonly mailValidationRefusedAlarm: cloudwatch.Alarm;
   readonly mailValidationCapAlarm: cloudwatch.Alarm;
+  /** One alarm per reset or enrolment line counted (RESET_AND_ENROLMENT_COUNTS). */
+  readonly resetAndEnrolmentAlarms: Readonly<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>>;
+  /** Counts each account's reset requests by its user ID (PASSWORD_RESET_REQUESTED_MESSAGE). */
+  readonly resetRequestsPerUserRule: cloudwatch.CfnInsightRule;
+  /** One user's reset requests reached RESET_REQUESTS_PER_USER in its period. */
+  readonly resetRequestsPerUserAlarm: cloudwatch.Alarm;
   /** Notifies the operator topic; every alarm in the stack uses it. */
   readonly notify: cloudwatchActions.SnsAction;
 
@@ -482,5 +504,60 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.mailValidationCapAlarm.addAlarmAction(notify);
+
+    const resetAndEnrolmentDescriptions: Readonly<Record<ResetAndEnrolmentMetricName, string>> = {
+      PasswordResetNotDeliveredConfig: `A ${props.environmentName} reset code was not sent to an active, enrolled account for a reason the app and Cognito should never disagree on, or because mail is broken: compare the account in the app and in Cognito, and check Cognito's email setting.`,
+      PasswordResetNotDeliveredThrottled: `Cognito throttled ${props.environmentName} reset requests three times in an hour: read the per-user rule's top contributors for a flood against one account, or check the pool's quota.`,
+      PasswordResetRequestFailed: `A ${props.environmentName} reset request failed at the provider or the audit write, and the person was answered as if a code was sent: read the line's error code (ClientCredentialError is the client secret).`,
+      SecondFactorEnrolmentRefused: `A ${props.environmentName} sign-in that passed the password was refused second-factor enrolment outside a live invitation (docs/adr/0088, D3): read the user ID, and treat it as an attempted takeover until the person is confirmed.`,
+      ClientCredentialRefused: `Cognito refused the ${props.environmentName} web client's credential, so sign-in fails for everyone: check the client secret and the client ID the web task was given (docs/adr/0088, D2).`,
+    };
+    const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
+    for (const count of RESET_AND_ENROLMENT_COUNTS) {
+      const message = logs.FilterPattern.stringValue('$.msg', '=', count.message);
+      const codes: readonly string[] = count.errorCodes;
+      const pattern =
+        codes.length === 0 ? message : logs.FilterPattern.all(message, logs.FilterPattern.any(...codes.map((code) => logs.FilterPattern.stringValue('$.error_code', '=', code))));
+      const filter = counted(this.webLogGroup, count.metricName, { namespace: SIGN_IN_BURST_METRIC.namespace, metricName: count.metricName }, pattern);
+      const alarm = new cloudwatch.Alarm(this, count.metricName, {
+        alarmDescription: resetAndEnrolmentDescriptions[count.metricName],
+        metric: filter.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(count.periodSeconds) }),
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        threshold: count.threshold,
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      alarm.addAlarmAction(notify);
+      resetAndEnrolmentAlarms[count.metricName] = alarm;
+    }
+    this.resetAndEnrolmentAlarms = resetAndEnrolmentAlarms as Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>;
+
+    // The rule reads the web group by its fixed name (a plain string in the body), so it is created after the group.
+    const ruleName = resetRequestsRuleName(props.environmentName);
+    this.resetRequestsPerUserRule = new cloudwatch.CfnInsightRule(this, 'ResetRequestsPerUser', {
+      ruleName,
+      ruleState: 'ENABLED',
+      ruleBody: JSON.stringify({
+        Schema: { Name: 'CloudWatchLogRule', Version: 1 },
+        LogGroupNames: [logGroupName(props.environmentName, 'web')],
+        LogFormat: 'JSON',
+        Contribution: { Keys: ['$.user_id'], Filters: [{ Match: '$.msg', In: [PASSWORD_RESET_REQUESTED_MESSAGE] }] },
+        AggregateOn: 'Count',
+      }),
+    });
+    this.resetRequestsPerUserRule.node.addDependency(this.webLogGroup);
+    this.resetRequestsPerUserAlarm = new cloudwatch.Alarm(this, 'ResetRequestsPerUserAlarm', {
+      alarmDescription: `One ${props.environmentName} account had ${String(RESET_REQUESTS_PER_USER.threshold)} or more reset requests in an hour: read the user ID from the per-user rule's top contributors, and check the account's audit events.`,
+      metric: new cloudwatch.MathExpression({
+        expression: `INSIGHT_RULE_METRIC('${ruleName}', 'MaxContributorValue')`,
+        usingMetrics: {},
+        period: Duration.seconds(RESET_REQUESTS_PER_USER.periodSeconds),
+      }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: RESET_REQUESTS_PER_USER.threshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.resetRequestsPerUserAlarm.addAlarmAction(notify);
   }
 }
