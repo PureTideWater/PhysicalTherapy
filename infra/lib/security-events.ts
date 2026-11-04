@@ -31,6 +31,12 @@ export const PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES = ['LimitExceededExcept
 export const PASSWORD_RESET_FAILED_MESSAGE = 'password reset request failed';
 export const ENROLMENT_REFUSED_MESSAGE = 'security event: second-factor enrolment refused';
 export const CLIENT_CREDENTIAL_REFUSED_MESSAGE = 'security event: client credential refused';
+/**
+ * The start-up probe's refusal (apps/web/src/lib/auth/credential-probe.ts; docs/adr/0088, D8; review infra-auth-IA-2):
+ * a deploy whose probe refuses is rolled back before any user reaches it, so the flow's line above is never written,
+ * and this is the one line that names the cause.
+ */
+export const CREDENTIAL_PROBE_REFUSED_MESSAGE = 'cognito probe refused';
 
 /** One counted line: its metric (in SIGN_IN_BURST_METRIC's namespace), its message, the codes it is narrowed to (none: every one), and its alarm. */
 export interface SecurityEventCount {
@@ -47,6 +53,7 @@ export const RESET_AND_ENROLMENT_COUNTS = [
   { metricName: 'PasswordResetRequestFailed', message: PASSWORD_RESET_FAILED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'SecondFactorEnrolmentRefused', message: ENROLMENT_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'ClientCredentialRefused', message: CLIENT_CREDENTIAL_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
+  { metricName: 'ClientCredentialProbeRefused', message: CREDENTIAL_PROBE_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
 ] as const satisfies readonly SecurityEventCount[];
 
 export type ResetAndEnrolmentMetricName = (typeof RESET_AND_ENROLMENT_COUNTS)[number]['metricName'];

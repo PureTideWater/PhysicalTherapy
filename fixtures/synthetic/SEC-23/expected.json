@@ -2,7 +2,7 @@
   "case": "SEC-23",
   "module": "SEC",
   "title": "Reset and enrolment signals reach the operator (R-11)",
-  "assertion": "Undelivered reset requests (configuration and throttle codes), failed requests, refused enrolments and refused client credentials each have a filter and an alarm on the operator topic; reset requests per user over 5 in an hour alarm through a contributor rule keyed on the user ID, with no per-user metric; the messages are read from the app's source",
+  "assertion": "Undelivered reset requests (configuration and throttle codes), failed requests, refused enrolments, refused client credentials and the start-up probe's refusal each have a filter and an alarm on the operator topic; reset requests per user over 5 in an hour alarm through a contributor rule keyed on the user ID, with no per-user metric; the messages are read from the app's source",
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": ["infra/test/monitoring.test.ts","apps/web/src/lib/auth/sign-in.db.test.ts"],

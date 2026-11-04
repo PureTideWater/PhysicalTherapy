@@ -304,7 +304,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SEC-23',
     title: 'Reset and enrolment signals reach the operator (R-11)',
     assertion:
-      "Undelivered reset requests (configuration and throttle codes), failed requests, refused enrolments and refused client credentials each have a filter and an alarm on the operator topic; reset requests per user over 5 in an hour alarm through a contributor rule keyed on the user ID, with no per-user metric; the messages are read from the app's source",
+      "Undelivered reset requests (configuration and throttle codes), failed requests, refused enrolments, refused client credentials and the start-up probe's refusal each have a filter and an alarm on the operator topic; reset requests per user over 5 in an hour alarm through a contributor rule keyed on the user ID, with no per-user metric; the messages are read from the app's source",
   },
   {
     id: 'SCR-01',

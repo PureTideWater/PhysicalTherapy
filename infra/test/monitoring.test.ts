@@ -29,6 +29,7 @@ import {
 } from '../lib/screening';
 import {
   CLIENT_CREDENTIAL_REFUSED_MESSAGE,
+  CREDENTIAL_PROBE_REFUSED_MESSAGE,
   ENROLMENT_REFUSED_MESSAGE,
   PASSWORD_RESET_FAILED_MESSAGE,
   PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES,
@@ -77,7 +78,7 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
 describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
   const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
 
-  it('pins the five counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+  it('pins the six counted lines, their codes and thresholds, and the per-user line, as literals', () => {
     // Literals, so an edit to the constants cannot pass by changing both sides.
     expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
       {
@@ -91,19 +92,22 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'PasswordResetRequestFailed', message: 'password reset request failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
       { metricName: 'SecondFactorEnrolmentRefused', message: 'security event: second-factor enrolment refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
       { metricName: 'ClientCredentialRefused', message: 'security event: client credential refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // The start-up probe's refusal (review infra-auth-IA-2): a deploy it rolls back reaches no user, so no other line is written.
+      { metricName: 'ClientCredentialProbeRefused', message: 'cognito probe refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
     ]);
     expect(PASSWORD_RESET_REQUESTED_MESSAGE).toBe('password reset requested');
     expect(RESET_REQUESTS_PER_USER).toEqual({ threshold: 5, periodSeconds: 3600 });
     expect(SECURITY_ALARM_PERIOD_SECONDS).toBe(300);
   });
 
-  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential and each account\'s request', () => {
+  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal and each account\'s request', () => {
     const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
     const flow = source('apps/web/src/lib/auth/sign-in.ts');
     expect(provider).toContain(`this.logger.warn('${PASSWORD_RESET_NOT_DELIVERED_MESSAGE}', { error_code: code, request_id: requestId ?? null });`);
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_FAILED_MESSAGE}', { request_id: context.requestId, error_code: errorCode(error) });`);
     expect(flow).toContain(`this.deps.logger.warn('${ENROLMENT_REFUSED_MESSAGE}', {`);
     expect(flow).toContain(`this.deps.logger.error('${CLIENT_CREDENTIAL_REFUSED_MESSAGE}', {`);
+    expect(source('apps/web/src/lib/auth/credential-probe.ts')).toContain(`logger?.error('${CREDENTIAL_PROBE_REFUSED_MESSAGE}', { error_code: code });`);
     // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
     expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
   });
@@ -209,8 +213,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
     // the platform's five codes, an unsent probe, and the web's refused validation and validation cap. Reset and
     // enrolment (R-11; docs/adr/0088, D7): the web's undelivered requests (configuration, throttle), failed requests,
-    // refused enrolments and refused client credentials.
-    expect(filters).toHaveLength(27);
+    // refused enrolments, refused client credentials and the start-up probe's refusal.
+    expect(filters).toHaveLength(28);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -423,7 +427,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
     const web = stack.monitoring.webLogGroup;
 
-    it('counts each of the five lines on the web log group alone, by message and, for undelivered requests, by code, and alarms at its threshold', () => {
+    it('counts each of the six lines on the web log group alone, by message and, for undelivered requests, by code, and alarms at its threshold', () => {
       for (const count of RESET_AND_ENROLMENT_COUNTS) {
         const codes = count.errorCodes as readonly string[];
         const pattern =

@@ -511,6 +511,7 @@ export class Monitoring extends Construct {
       PasswordResetRequestFailed: `A ${props.environmentName} reset request failed at the provider or the audit write, and the person was answered as if a code was sent: read the line's error code (ClientCredentialError is the client secret).`,
       SecondFactorEnrolmentRefused: `A ${props.environmentName} sign-in that passed the password was refused second-factor enrolment outside a live invitation (docs/adr/0088, D3): read the user ID, and treat it as an attempted takeover until the person is confirmed.`,
       ClientCredentialRefused: `Cognito refused the ${props.environmentName} web client's credential, so sign-in fails for everyone: check the client secret and the client ID the web task was given (docs/adr/0088, D2).`,
+      ClientCredentialProbeRefused: `A ${props.environmentName} web task's start-up probe found its Cognito client credential refused, so its health check fails and the deploy rolls back: check the client secret and the client ID the new task definition was given (docs/adr/0088, D8).`,
     };
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
     for (const count of RESET_AND_ENROLMENT_COUNTS) {

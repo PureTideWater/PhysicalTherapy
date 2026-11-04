@@ -134,6 +134,7 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
   | `PasswordResetRequestFailed` | ≥ 1 in 300 s |
   | `SecondFactorEnrolmentRefused` | ≥ 1 in 300 s |
   | `ClientCredentialRefused` | ≥ 1 in 300 s |
+  | `ClientCredentialProbeRefused` (the start-up probe's `cognito probe refused`) | ≥ 1 in 300 s |
 
   Per account: `requestPasswordReset` logs `password reset requested` at info with `{ user_id, request_id }` for an
   account only (sent or not, inside the floor), and a Contributor Insights rule keyed on `$.user_id` alarms at a
