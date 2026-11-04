@@ -126,7 +126,7 @@ describe('the notice after a forgotten password was reset (docs/adr/0081, A5)', 
 
   it('SGN-07: for a locked account keeps no email, says the lock stays and names the support address, never a reset', () => {
     const markup = notice({ reason: 'password_reset_locked' });
-    expect(text(markup)).toBe(`Password changed ${ENDED} This account is locked after ten failed attempts: write to ${SUPPORT} from the address you sign in with to have it unlocked.`);
+    expect(text(markup)).toBe(`Password changed, account still locked ${ENDED} This account is still locked after ten failed attempts: write to ${SUPPORT} from the address you sign in with to have it unlocked.`);
     expect(notice({ reason: 'password_reset_locked', kept: { use: 'chosen' } })).toBe(markup);
     expect(text(markup)).not.toMatch(/filled in|forgot/i);
   });

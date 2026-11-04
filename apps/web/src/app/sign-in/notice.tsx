@@ -34,11 +34,14 @@ function locked(supportEmail: string): { readonly title: string; readonly text: 
   return { title: 'Account locked', text: `This account was locked after ten failed attempts. Write to ${supportEmail} from the address you sign in with to have it unlocked.` };
 }
 
-/** A locked account's reset (docs/adr/0081, the forgotten password): the lock stays, and the words say how to lift it. */
+/**
+ * A locked account's reset (docs/adr/0081, the forgotten password): the lock stays, and the title and words say so, as
+ * the account's state, and how to lift it (review UXB-N4).
+ */
 function resetLocked(supportEmail: string): { readonly title: string; readonly text: string } {
   return {
-    title: 'Password changed',
-    text: `Your password is changed, and every session of this account has ended. This account is locked after ten failed attempts: write to ${supportEmail} from the address you sign in with to have it unlocked.`,
+    title: 'Password changed, account still locked',
+    text: `Your password is changed, and every session of this account has ended. This account is still locked after ten failed attempts: write to ${supportEmail} from the address you sign in with to have it unlocked.`,
   };
 }
 
