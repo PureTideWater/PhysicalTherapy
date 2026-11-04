@@ -27,7 +27,8 @@ import { type OpenedSession, openSession, revokeUserSessions } from './sessions'
  * - A second factor is enrolled only inside a live invitation (docs/adr/0088, D3): the account the provider's
  *   enrolling subject names, with the same email, invited, not enrolled, not locked and holding a live invitation (an
  *   unaccepted, unexpired one whose membership has not ended). It is checked when the provider asks for enrolment and
- *   again before each enrolment call, so the provider stores no factor for anyone else; a cleared or missing factor is re-enrolled only through support.
+ *   again before each enrolment call, so the provider stores no factor for anyone else; a cleared or missing TOTP
+ *   factor is re-enrolled only through support (a cleared hardware key is not yet: docs/adr/0088, Not covered).
  * - Internal roles must use a hardware key: a TOTP sign-in by such a user only registers a key (when
  *   they have none) and never opens a session; they then sign in with the key.
  *

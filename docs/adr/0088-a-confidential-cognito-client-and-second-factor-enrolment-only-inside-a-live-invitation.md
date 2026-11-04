@@ -103,8 +103,9 @@ and D1. This was so on base 24531dc2, before UX PR 7; 0081's Not covered recorde
   the Cognito session dropped, both sign-in cookies cleared, the words "This account can’t set up a second factor
   here. Ask your organization’s administrator, or write to <support address>.", and `security event: second-factor
   enrolment refused` at warn with `{ user_id | null, request_id }`. The words are shown only to someone who passed
-  Cognito's password check, so they disclose nothing to an outsider. A cleared or lost factor is re-enrolled only
-  through a support-issued right (UX PR 65), never by password.
+  Cognito's password check, so they disclose nothing to an outsider. A cleared or lost TOTP factor is re-enrolled
+  only through a support-issued right (UX PR 65), never by password. This rule covers the TOTP factor that `MFA_SETUP`
+  enrols; an internal user's hardware key is registered after a password-and-TOTP sign-in, under Not covered.
 - **D4. An invitation links only a Cognito user in `FORCE_CHANGE_PASSWORD`, which this platform never sets on a user
   that has signed in.** No role holds `AdminSetUserPassword` or `AdminResetUserPassword`, and both linking paths run
   only when no app row exists for the email. `ensureUser` returns `{ sub, created, neverSignedIn }` from the
@@ -251,6 +252,11 @@ Choices the design left open, or where the build differed from it, each with its
   founder's list.
 - Moving an app account to a new Cognito subject: `tp_app` may insert `"user".cognito_sub` but never update it, so
   deleting a stuck invitee's Cognito user and inviting them again cannot complete; the runbook does not use that remedy.
+- **Re-registering a cleared hardware key** (review security-N6): an internal user whose key was cleared in Cognito
+  (route D1) and who still has a TOTP factor reaches key registration after a password-and-TOTP sign-in, with no
+  invitation and no support right, so whoever holds that password and TOTP code registers their own key. This predates
+  ADR 0088 and is unchanged by it; UX PR 65's server-recorded re-enrolment right is to cover it (a key registered only
+  while the account is invited, or under that right, once it has signed in with a key before).
 - How a person opens a session as the operator role (`tp_operator`) for the weekly sign-in review is not written down
   (`tp_operator_login` is the platform jobs' login); the founder names the access path.
 
@@ -278,7 +284,7 @@ and Contributor Insights on a KMS-encrypted log group.
 - The release-N staging check of the enrolment subject reports (it gates release N in production).
 - The staging checks report (the check of the runtime SDK and the action names gates release N+1 in production; the
   account-level guard is the owner's ruling).
-- UX PR 65 lands: its server-recorded re-enrolment right, and narrowing `record_sign_in_with_mfa` to `invited` in its
+- UX PR 65 lands: its server-recorded re-enrolment right (for a cleared hardware key too), and narrowing `record_sign_in_with_mfa` to `invited` in its
   migration.
 - A support case needs an app account moved to a new Cognito subject: that needs a migration.
 - Contributor Insights proves not to work on the KMS log group: the per-user alarm becomes a scheduled query over
