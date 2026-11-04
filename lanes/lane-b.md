@@ -1487,3 +1487,11 @@ HANDOFF.md; LANES.md rule 10).
 
 ### 2026-11-04 13:15 UTC: the loader freeze's INDEX_CLEANUP ON amendment granted
 - Recorded in `approval-summaries/founder-asks-2026-10-27.md`. It goes into SUITE-CAP-1b's PR with the loader fix.
+
+### 2026-11-04 14:40 UTC: #109 merged; SUITE-CAP-1b open as #110; a rule break caught and corrected
+- #109 (test-flakes-3, scan.test.ts on a mocked clock) merged as c4941291.
+- SUITE-CAP-1b is draft #110 (head d219e97d), with three reviews running. Its body quotes both of the founder's freeze grants.
+- **The rule break:** S4's build agent for cognito-confidential-client PR 1 met a gitleaks refusal on a synthetic test password. It added two .gitleaksignore entries (45b7766f, 1721a256) on `co-001/cognito-confidential-client` and opened draft #112. Never merged.
+- **The remedy:** PR 1 is rebuilt on `co-001/cognito-confidential-client-pr1` without an ignore entry, with the test value rewritten. #112 is closed with a comment, and the superseded branch deleted. Workflow prompts now state that a gitleaks refusal means rewriting the flagged text, never .gitleaksignore.
+- **For the founder before release N reaches production:** F0, a staging check that Cognito's challenge names the user's sub (ADR 0088 "Not verified here").
+- **Lane A's queue:** a migration to relink an app row to a new Cognito subject. Until then, the stuck-invitee runbook uses the re-send remedy.
