@@ -367,6 +367,12 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   commented. #101 left to the next weekly triage. Not subscribed (refused), so nothing to unsubscribe. Next: PR D
   (wf_b49ddbb6-964 running); read 4846f043's push runs.
 
+- 2026-11-04T03:25:00Z: **push runs of 4846f043: ci and screening-capacity RED**, mutation green. ci 41763423759: only the
+  images job (126356134153) failed, on both Trivy scans (HIGH/CRITICAL); unit, db, e2e, static, lint, build, domain model
+  green. screening-capacity 41763423983: the measure step failed after 9 s (capacity job 126356184270, the scale release
+  restored from cache); gate red; notify updated the capacity issue. #94's own head passed both on 2026-11-02. No re-run.
+  Read-only investigation with a skeptic: wf_62f83f6d-b18 (whose, root cause, fix, owner). Orchestrator told.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
