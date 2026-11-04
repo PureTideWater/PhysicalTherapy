@@ -380,7 +380,7 @@ test('the sign-in page is the stacked lockup on Paper, and nothing else decorati
   await page.screenshot({ path: shot('sign-in.png'), fullPage: true });
 });
 
-/** The dark ground, `--pw-bg` (#0B1626), rgb() as the browser computes it. */
+/** The dark ground, `--pw-bg` in the dark tokens, rgb() as the browser computes it. */
 const DARK_GROUND = 'rgb(11, 22, 38)';
 
 /**
