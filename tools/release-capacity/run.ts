@@ -69,6 +69,7 @@ import {
   stagePostingExport,
   withHeapFlag,
 } from './scenario';
+import { retryProbe } from './retry-probe';
 
 /**
  * The weekly real-size test (audit #31; docs/adr/0071; .github/workflows/release-capacity.yml): the worker image's
@@ -538,6 +539,8 @@ async function main(): Promise<number> {
   let codes: Record<string, number> | null = null;
   let lines: string[] | null = null;
   let locks: { readonly stop: () => Promise<AdvisoryLockSamples | null> } | null = null;
+  // WIP instrumentation (co-001/wip-sc1b-retry-1): failed attempts, the worker login's backends, warn and error lines.
+  let probe: { readonly stop: () => Promise<void> } | null = null;
   let advisoryLocks: AdvisoryLockSamples | null = null;
   let windows: WindowsQuery | null = null;
   let aborted: string | null = null;
@@ -634,6 +637,14 @@ async function main(): Promise<number> {
     // From here to the read-back: the whole run's memory, and memory.events at its start (an oom counted later fails the run).
     wholeRun = memorySampler(runtime);
     startEvents = await readOomEvents(runtime);
+    probe = retryProbe(() => ownerClient(ownerHarness), {
+      logins: { worker: logins.worker.username, queue: logins.queue.username },
+      queues: ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export', 'roi_statement', 'report_document'],
+      during: () => openPeriod,
+      everySecond: ['the concurrent phase', 'the large jobs together'],
+      workerLog: () => runtime.logs('worker'),
+      say,
+    });
     queue = new PgBossQueue(loginUrl(ownerHarness, logins.queue), createLogger());
     const queued = async (what: string, name: 'price' | 'triage' | 'audit_report' | 'parse_835' | 'reconcile', phase: JobPhase, send: (q: PgBossQueue) => Promise<string | null>): Promise<Queued> => ({
       what,
@@ -771,6 +782,8 @@ async function main(): Promise<number> {
     });
     advisoryLocks = await locks.stop();
     locks = null;
+    await probe.stop();
+    probe = null;
     const sampledRun = await wholeRun.stop();
     wholeRun = null;
     memory = await readMemory(runtime, workerLimit.memoryMiB * MIB, sampledRun, periods, startEvents);
@@ -796,6 +809,7 @@ async function main(): Promise<number> {
     if (locks !== null) {
       advisoryLocks = await locks.stop();
     }
+    await probe?.stop();
     if (wholeRun !== null) {
       memory = { ...memory, run: await wholeRun.stop(), oomEvents: { start: startEvents, end: null } };
     }
