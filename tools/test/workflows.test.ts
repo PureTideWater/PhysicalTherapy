@@ -1,20 +1,22 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { parse } from 'yaml';
+import ts from 'typescript';
+import { LineCounter, isMap, isPair, isScalar, isSeq, parse, parseDocument } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
 import { readDockerfile } from '../check-toolchain/images';
-import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
+import { MAX_FILE_BYTES, MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
+import { CONFIG, attestedArchive } from '../screening-capacity/test-support/image-archive';
 
 /**
  * Many of these tests run a workflow step's script, git or a fake gh as GitHub would, hundreds of processes for the
@@ -275,6 +277,22 @@ function runScript(script: string, env: Record<string, string>, cwd: string): { 
   const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
   expect(result.error).toBeUndefined();
   return { status: result.status, output: result.stdout + result.stderr };
+}
+
+/**
+ * A stand-in docker in <dir>/bin, for the scripts that load an image and read its ID (release.yml's push check, ci.yml's
+ * worker identity step): `info` names the containerd snapshotter on that store alone, `load` succeeds, `image inspect`
+ * prints <dir>/id-<the image's name>, any other command exits 97, and every call is appended to <dir>/calls.
+ */
+function standInDocker(dir: string, store: 'classic' | 'containerd'): string {
+  const bin = path.join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(
+    path.join(bin, 'docker'),
+    `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${dir}/calls'\ncase "$1" in\n  info) [ '${store}' = containerd ] && echo io.containerd.snapshotter.v1; exit 0 ;;\n  load) exit 0 ;;\n  image) ref="\${@: -1}"; name="\${ref##*/}"; cat '${dir}/id-'"\${name%%:*}" ;;\n  *) exit 97 ;;\nesac\n`,
+    { mode: 0o755 },
+  );
+  return bin;
 }
 
 /**
@@ -637,6 +655,27 @@ describe('workflows', () => {
       expect(naming.env).toMatchObject({ STAGING_ORIGIN: '${{ vars.STAGING_STATIC_ASSET_ORIGIN }}', PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
       expect(naming.run).toContain('web-production) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="$PRODUCTION_ORIGIN" ;;');
       expect(naming.run).toContain('worker) echo "dockerfile=apps/worker/Dockerfile" >> "$GITHUB_OUTPUT"; origin="" ;;');
+      // Run: each image's three outputs, one line each, and a variable with a line break refused before it is written,
+      // so it can add no other output or build argument (the value table's bounds, docs/adr/0066, Part 3, N32).
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'release-image-'));
+      try {
+        const named = (image: string, origin: string) => {
+          const file = path.join(dir, `output-${String(Math.random()).slice(2)}`);
+          writeFileSync(file, '');
+          const result = runScript(naming.run ?? '', { IMAGE: image, STAGING_ORIGIN: origin, PRODUCTION_ORIGIN: 'https://d222.cloudfront.net', GITHUB_OUTPUT: file, GITHUB_REPOSITORY: 'PureTideWater/PhysicalTherapy', GITHUB_REF_NAME: 'v1.2.3' }, dir);
+          return { status: result.status, written: readFileSync(file, 'utf8'), output: result.output };
+        };
+        expect(named('web-staging', 'https://d111.cloudfront.net')).toMatchObject({ status: 0, written: 'ref=ghcr.io/puretidewater/physicaltherapy/web-staging:v1.2.3\ndockerfile=apps/web/Dockerfile\norigin=https://d111.cloudfront.net\n' });
+        expect(named('worker', '')).toMatchObject({ status: 0, written: 'ref=ghcr.io/puretidewater/physicaltherapy/worker:v1.2.3\ndockerfile=apps/worker/Dockerfile\norigin=\n' });
+        for (const origin of ['https://d111.cloudfront.net\ndockerfile=apps/worker/Dockerfile', 'https://d111.cloudfront.net\r\nref=evil']) {
+          const refused = named('web-staging', origin);
+          expect(refused, JSON.stringify(origin)).toMatchObject({ status: 1, written: 'ref=ghcr.io/puretidewater/physicaltherapy/web-staging:v1.2.3\ndockerfile=apps/web/Dockerfile\n' });
+          expect(refused.output).toContain("::error title=web-staging::its static host's repository variable holds a line break");
+          expect(refused.output).not.toContain('d111');
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
       const scan = stepIndex(steps, isScan);
       const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
       const saved = stepIndex(steps, (step) => step.run?.includes('docker save') === true);
@@ -825,9 +864,7 @@ describe('workflows', () => {
       function check(setup: { store: 'classic' | 'containerd'; tamper?: string; ids: (identity: { config: string; target: string }) => string }) {
         const dir = mkdtempSync(path.join(scratch, 'release-check-'));
         const temp = path.join(dir, 'runner-temp');
-        const bin = path.join(dir, 'bin');
         mkdirSync(path.join(temp, 'image'), { recursive: true });
-        mkdirSync(bin);
         const outputs: Record<string, string> = {};
         for (const image of ['web', 'web-staging', 'web-production', 'worker']) {
           const archive = path.join(temp, 'image', `${image}.tar.gz`);
@@ -839,11 +876,7 @@ describe('workflows', () => {
           writeFileSync(path.join(dir, `id-${image}`), `${setup.ids(identity)}\n`);
           if (setup.tamper === image) writeFileSync(archive, `another archive of ${image}`);
         }
-        writeFileSync(
-          path.join(bin, 'docker'),
-          `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${dir}/calls'\ncase "$1" in\n  info) [ '${setup.store}' = containerd ] && echo io.containerd.snapshotter.v1; exit 0 ;;\n  load) exit 0 ;;\n  image) ref="\${@: -1}"; name="\${ref##*/}"; cat '${dir}/id-'"\${name%%:*}" ;;\n  *) exit 97 ;;\nesac\n`,
-          { mode: 0o755 },
-        );
+        const bin = standInDocker(dir, setup.store);
         const script = job('push').steps.find((step) => /\bdocker load\b/.test(step.run ?? ''))?.run ?? '';
         const result = runScript(script, { ...SCRIPT_ENV, PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}`, RUNNER_TEMP: temp, BUILD: JSON.stringify(outputs) }, dir);
         const calls = existsSync(path.join(dir, 'calls')) ? readFileSync(path.join(dir, 'calls'), 'utf8').trim().split('\n') : [];
@@ -990,7 +1023,10 @@ describe('workflows', () => {
     expect(changes?.['runs-on']).toBe(RUNNER);
     expect(changes?.permissions).toBeUndefined();
     expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
-    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    // Every object fetched by the checkout, with the job's token: a blobless clone fetches each blob it reads later from
+    // its promisor remote with no credentials, which a private repository refuses (run 41765454724, "could not read
+    // Username"); the script's run on a clone without its remote is below.
+    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0 } });
     const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
     const script = watched?.run ?? '';
     expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
@@ -1577,12 +1613,13 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         const file = path.join(repo.dir, `env-${String(Math.random()).slice(2)}`);
         writeFileSync(file, '');
         const result = runScript(step.run ?? '', { ...repo.env, GITHUB_ENV: file, ...env }, repo.dir);
-        return { ...result, base: /^ENGINE_FREEZE_BASE=(.*)$/m.exec(readFileSync(file, 'utf8'))?.[1] };
+        // The whole file the step writes, so a second line (a newline in the value) is caught as the first is.
+        return { ...result, written: readFileSync(file, 'utf8') };
       };
-      expect(run({ EVENT: 'pull_request', BASE_REF: 'main', BEFORE: '' })).toMatchObject({ status: 0, base: repo.first });
-      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: repo.second })).toMatchObject({ status: 0, base: repo.second });
-      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: '0000000000000000000000000000000000000000' })).toMatchObject({ status: 0, base: repo.second });
-      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: 'e'.repeat(40) })).toMatchObject({ status: 1, base: undefined });
+      expect(run({ EVENT: 'pull_request', BASE_REF: 'main', BEFORE: '' })).toMatchObject({ status: 0, written: `ENGINE_FREEZE_BASE=${repo.first}\n` });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: repo.second })).toMatchObject({ status: 0, written: `ENGINE_FREEZE_BASE=${repo.second}\n` });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: '0000000000000000000000000000000000000000' })).toMatchObject({ status: 0, written: `ENGINE_FREEZE_BASE=${repo.second}\n` });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: 'e'.repeat(40) })).toMatchObject({ status: 1, written: '' });
     });
   });
 
@@ -1853,8 +1890,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     // Each archive's config digest, read from its bytes, is the one buildx reports for its build.
     const web = stepNamed(steps, 'The web archive holds the image buildx built');
     expect(web.if).toBe("${{ !cancelled() && steps.web.outcome == 'success' }}");
-    expect(web.env).toEqual({ METADATA: '${{ steps.web.outputs.metadata }}' });
-    expect(web.run).toContain(`built="$(jq -r '."containerimage.config.digest" // empty' <<< "$METADATA")"`);
+    expect(web.env).toEqual({ BUILT: "${{ fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(web.run).toContain('built="$BUILT"');
     expect(web.run).toContain(`read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"`);
     expect(web.run).toContain('if [ -z "$built" ] || [ "$read" != "$built" ]; then');
     // The worker's too, then it loads as the archive's top-level descriptor on the containerd store (its config digest
@@ -1862,7 +1899,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
     expect(worker.id).toBe('worker-identity');
     expect(worker.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
-    expect(worker.env).toEqual({ METADATA: '${{ steps.worker.outputs.metadata }}' });
+    expect(worker.env).toEqual({ BUILT: "${{ fromJSON(steps.worker.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(worker.run).toContain('built="$BUILT"');
     const script = worker.run ?? '';
     expect(script).toContain('identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"');
     expect(script).toContain('docker load --input "$RUNNER_TEMP/image/worker.tar"');
@@ -1875,6 +1913,113 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     expect(browser.if).toBe("${{ !cancelled() && steps.worker-identity.outcome == 'success' }}");
     const scans = steps.filter(isScan).map((step) => steps.indexOf(step));
     expect([Math.max(...scans) < node, node < steps.indexOf(web), steps.indexOf(web) < steps.indexOf(worker), steps.indexOf(worker) < steps.indexOf(browser)]).toEqual([true, true, true, true]);
+  });
+
+  /**
+   * buildx's metadata output as build-push-action sets it (`JSON.stringify(metadata, null, 2)`, its src/main.ts:139 at
+   * v7.4.0), keyed as buildx v0.38.1 writes it on a pull request (#42's job 122624309161): its provenance holds the whole
+   * event, whose description here is a synthetic ruler, cut so the output is exactly `bytes` bytes of UTF-8.
+   */
+  function buildxMetadata(digest: string | undefined, bytes: number): string {
+    let ruler = '| Row | Characters so far | What it is |\n| --- | --- | --- |\n';
+    for (let row = 1; row <= 1_400; row += 1) {
+      const prefix = `| ${String(row).padStart(4, '0')} | `;
+      ruler += `${prefix}${String(ruler.length + 100).padStart(7, '0')}${' | synthetic length-test row, no data |\n'.padStart(100 - prefix.length - 7)}`;
+    }
+    const text = (body: string) =>
+      JSON.stringify(
+        {
+          'buildx.build.provenance': {
+            buildType: 'https://mobyproject.org/buildkit@v1',
+            invocation: { environment: { github_event_name: 'pull_request', github_event_payload: { action: 'synchronize', number: 1, pull_request: { number: 1, title: 'Synthetic length test', body } } } },
+          },
+          'buildx.build.ref': 'builder-synthetic/builder-synthetic0/synthetic',
+          ...(digest === undefined ? {} : { 'containerimage.config.digest': digest }),
+          'containerimage.digest': `sha256:${'0'.repeat(64)}`,
+          'image.name': 'docker.io/library/tp-synthetic:scan',
+        },
+        null,
+        2,
+      );
+    // Each character cut is at least one byte (a newline two, as \n), so the cut leaves at most `bytes`; dots fill the rest.
+    let body = ruler.slice(0, ruler.length - (Buffer.byteLength(text(ruler)) - bytes));
+    while (Buffer.byteLength(text(body)) < bytes) body += '.';
+    return text(body);
+  }
+
+  /**
+   * A step's env as the runner evaluates it from the builds' metadata outputs, in the two forms an identity step has
+   * had: the whole output, or `fromJSON(output || '{}')[key]`, whose missing key (or a non-object) is null and so ''
+   * (docs/adr/0066, Part 3, N32). Any other form fails the test.
+   */
+  function identityEnv(step: Step, metadata: Readonly<Record<string, string>>): Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(step.env ?? {}).map(([name, value]): [string, string] => {
+        const whole = /^\$\{\{ steps\.([\w-]+)\.outputs\.metadata \}\}$/.exec(value);
+        if (whole !== null) return [name, metadata[whole[1] ?? ''] ?? ''];
+        const keyed = /^\$\{\{ fromJSON\(steps\.([\w-]+)\.outputs\.metadata \|\| '\{\}'\)\['([^']+)'\] \}\}$/.exec(value);
+        if (keyed === null) throw new Error(`${name}: ${value} is a form this emulator does not know`);
+        const parsed: unknown = JSON.parse(metadata[keyed[1] ?? ''] || '{}');
+        const found = isRecord(parsed) ? parsed[keyed[2] ?? ''] : undefined;
+        if (typeof found === 'string') return [name, found];
+        if (found === undefined || found === null) return [name, ''];
+        throw new Error(`${name}: ${value} is a ${typeof found}, a value this emulator does not know`);
+      }),
+    );
+  }
+
+  it('starts and passes both identity steps when buildx’s metadata is 132,377 bytes, and names a missing or other digest (run 40630123457)', () => {
+    const steps = ciJob('images').steps;
+    const web = stepNamed(steps, 'The web archive holds the image buildx built');
+    const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
+    const dir = mkdtempSync(path.join(scratch, 'identity-'));
+    const temp = path.join(dir, 'runner-temp');
+    mkdirSync(path.join(temp, 'image'), { recursive: true });
+    // A synthetic archive of each image, as image-id.ts reads buildx's type=docker export.
+    const images = { web: attestedArchive(), worker: attestedArchive(CONFIG.replace('"User":"node"', '"User":"worker"')) };
+    expect(images.worker.config).not.toBe(images.web.config);
+    writeFileSync(path.join(temp, 'image/web.tar'), images.web.archive);
+    writeFileSync(path.join(temp, 'image/worker.tar'), images.worker.archive);
+    // docker on either image store: tp-worker:scan loads as the archive's top-level descriptor on the containerd store,
+    // as its config digest on the classic one.
+    const dockerOn = (store: 'classic' | 'containerd') => {
+      const home = mkdtempSync(path.join(dir, `docker-${store}-`));
+      writeFileSync(path.join(home, 'id-tp-worker'), `${store === 'containerd' ? images.worker.target : images.worker.config}\n`);
+      return standInDocker(home, store);
+    };
+    const bins = { containerd: dockerOn('containerd'), classic: dockerOn('classic') };
+    /** The step's script as the runner starts it (a file, bash --noprofile --norc -e -o pipefail), with this environment alone. */
+    const run = (step: Step, metadata: Readonly<Record<string, string>>, store: 'classic' | 'containerd' = 'containerd') => {
+      const env = { PATH: `${bins[store]}:${process.env.PATH ?? '/usr/bin:/bin'}`, RUNNER_TEMP: temp, ...identityEnv(step, metadata) };
+      const file = path.join(dir, 'step.sh');
+      writeFileSync(file, step.run ?? '');
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', file], { cwd: repositoryRoot, encoding: 'utf8', env, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+      // First, as #42's job met it: one environment string over 131,072 bytes stops bash before it starts (E2BIG), and
+      // there is no output to read.
+      expect(result.error?.message, `${step.name ?? ''}: bash did not start`).toBeUndefined();
+      // Every string of the step's environment, each with its name, its = and its NUL.
+      expect(Object.entries(env).reduce((bytes, [name, value]) => bytes + Buffer.byteLength(`${name}=${value}`) + 1, 0)).toBeLessThan(131_072);
+      return [result.status, result.stdout + result.stderr] as const;
+    };
+    const outputs = (webDigest: string | undefined, workerDigest: string | undefined) => ({ web: buildxMetadata(webDigest, 132_377), worker: buildxMetadata(workerDigest, 132_377) });
+
+    // #42's size: the web metadata whole, as METADATA= and its NUL, was 132,387 bytes.
+    const built = outputs(images.web.config, images.worker.config);
+    expect([Buffer.byteLength(built.web), Buffer.byteLength(`METADATA=${built.web}`) + 1]).toEqual([132_377, 132_387]);
+    expect(run(web, built)).toEqual([0, expect.stringContaining(`web: config ${images.web.config}\n`)]);
+    for (const store of ['containerd', 'classic'] as const) {
+      const id = store === 'containerd' ? images.worker.target : images.worker.config;
+      expect(run(worker, built, store), store).toEqual([0, expect.stringContaining(`worker: config ${images.worker.config}, target ${images.worker.target}, loaded as ${id} on the ${store} image store\n`)]);
+    }
+    // An empty output (its build failed or was cancelled) and a metadata without the key each stop on the step's own message.
+    for (const [why, nothing] of Object.entries({ 'an empty output': { web: '', worker: '' }, 'no config digest': outputs(undefined, undefined) })) {
+      expect(run(web, nothing), why).toEqual([1, expect.stringContaining(`::error title=The web archive::its config digest is ${images.web.config}, and buildx built nothing it reported`)]);
+      expect(run(worker, nothing), why).toEqual([1, expect.stringContaining(`::error title=The worker archive::its config digest is ${images.worker.config}, and buildx built nothing it reported`)]);
+    }
+    // Another digest names both.
+    const other = `sha256:${'1'.repeat(64)}`;
+    expect(run(web, outputs(other, other))).toEqual([1, expect.stringContaining(`its config digest is ${images.web.config}, and buildx built ${other}`)]);
+    expect(run(worker, outputs(other, other))).toEqual([1, expect.stringContaining(`its config digest is ${images.worker.config}, and buildx built ${other}`)]);
   });
 
   it('checks production licenses against the allowlist on every pull request', () => {
@@ -2265,6 +2410,8 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
     'tools/ci/browser-build.ts',
     'apps/web/e2e/browser.json',
     'apps/web/e2e/browser-builds/*',
+    // The pinned Trivy every build leg installs (tools/trivy/install.sh and its release.txt).
+    'tools/trivy/**',
   ];
   // Two of the release build's four legs: the web image (which stands for the capacity job's production web image) and
   // the worker image. web-staging and web-production differ from web only by a repository variable's static host.
@@ -2395,6 +2542,326 @@ describe('every checkout (CI-11)', () => {
         }
       }
     }
+  });
+});
+
+/**
+ * A read of this repository from its remote, which a private repository refuses without the job's token (CI-11): git's
+ * fetch, clone, ls-remote, pull, submodule update or archive --remote, with any global options before the command; and
+ * raw.githubusercontent.com, or curl or wget of the API, the server or this repository by any of their names.
+ */
+const REMOTE_READ = new RegExp(
+  [
+    /\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+|--[\w-]+(?:=\S+)?))*\s+(?:fetch|clone|ls-remote|pull|submodule\s+update|archive\s+--remote)\b/.source,
+    /raw\.githubusercontent\.com/.source,
+    /\b(?:curl|wget)\b[^\n]*(?:api\.github\.com|github\.com\/\$|\$\{?GITHUB_(?:API_URL|SERVER_URL|REPOSITORY)\b|\$\{\{\s*github\.(?:repository|api_url|server_url)\b|PureTideWater\/PhysicalTherapy\b)/.source,
+  ].join('|'),
+);
+/** A command line that runs gh. */
+const RUNS_GH = /(?:^|[\s;&|(`$])gh\s+(?:api|issue|pr|release|run|repo|attestation|secret|variable|workflow|cache|label|search)\b/m;
+
+describe('every read of this repository works when it is private (CI-11)', () => {
+  /** Every step of every workflow, with its job, named for a message. */
+  const everyStep = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, job, step }))));
+
+  it('makes no partial clone: a checkout that keeps no token fetches every object once, with the job’s token, so no later git command fetches a blob without credentials', () => {
+    // A blobless or treeless clone (`filter:`) fetches what a later git command reads from its promisor remote, without
+    // credentials once persist-credentials is false: a private repository refuses that ("could not read Username for
+    // 'https://github.com'", screening-capacity run 41765454724, job 126369187941).
+    const filtered = everyStep().filter(({ step }) => usesAction(step, 'actions/checkout') && step.with?.filter !== undefined && step.with?.['persist-credentials'] === false);
+    expect(filtered.map(({ where }) => where)).toEqual([]);
+    for (const { where, step } of everyStep().filter((entry) => usesAction(entry.step, 'actions/checkout'))) expect(step.with?.['sparse-checkout'], where).toBeUndefined();
+  });
+
+  it('knows every form of a read of this repository from its remote: each git form with any global options before its command, and curl or wget of the API, the server or this repository by any of their names', () => {
+    // Each would fail on the private repository without a token; each must be caught (mutation cases: the review's S1).
+    const caught = [
+      'git fetch origin main',
+      'git -C . fetch origin main',
+      'git -C "$dir" --no-pager fetch --depth=1 origin main',
+      'git --no-pager fetch origin main',
+      'git -c protocol.version=2 fetch --depth=1 origin main',
+      'git --git-dir=.git fetch origin',
+      'git clone https://github.com/PureTideWater/PhysicalTherapy',
+      'git ls-remote origin',
+      'git pull --ff-only',
+      'git submodule update --init',
+      'git archive --remote=origin HEAD',
+      'curl -fsSL "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/contents/x"',
+      'curl -fsSL "${GITHUB_API_URL}/repos/x"',
+      'curl -fsSL "${{ github.api_url }}/repos/x"',
+      'curl -fsSL "$GITHUB_SERVER_URL/x/archive/main.tar.gz"',
+      'wget -q "${{ github.server_url }}/x"',
+      'curl -fsSL "https://example.invalid/$GITHUB_REPOSITORY"',
+      'curl -fsSL https://github.com/PureTideWater/PhysicalTherapy/archive/main.tar.gz',
+      'curl -fsSL https://github.com/${{ github.repository }}/archive/main.tar.gz',
+      'curl -fsSL https://api.github.com/repos/x',
+      'curl -fsSL https://raw.githubusercontent.com/x/y/main/z',
+    ];
+    expect(caught.filter((text) => !REMOTE_READ.test(text))).toEqual([]);
+    // What the workflows and their scripts do run, none of it a read of this repository's remote.
+    const local = ['git diff --name-only "$BASE" "$HEAD"', 'git -C "$dir" rev-parse HEAD', 'git --no-pager log --format=%H', 'curl -fsSL --retry 3 -o "$work/$archive" "$base/$archive"', 'git cat-file -e "$BASE^{commit}"'];
+    expect(local.filter((text) => REMOTE_READ.test(text))).toEqual([]);
+    expect(['gh api repos/x', 'out=$(gh pr view 1)', 'x && gh release view'].filter((text) => !RUNS_GH.test(text))).toEqual([]);
+  });
+
+  it('reads this repository with the job’s token alone: no step fetches, clones or lists a remote, or reads raw.githubusercontent.com or the API by curl, and every step that runs gh sets GH_TOKEN', () => {
+    const scripts = everyStep().filter(({ step }) => step.run !== undefined);
+    expect(scripts.length).toBeGreaterThan(50);
+    expect(scripts.filter(({ step }) => REMOTE_READ.test(step.run ?? '')).map(({ where }) => where)).toEqual([]);
+    const gh = scripts.filter(({ step }) => RUNS_GH.test(step.run ?? ''));
+    expect(gh.length).toBeGreaterThan(3);
+    for (const { where, job, step } of gh) expect(step.env?.GH_TOKEN ?? job.env?.GH_TOKEN, where).toBe('${{ github.token }}');
+  });
+
+  it('reads this repository with the job’s token alone in what the steps run: no shell script reads the remote or runs gh, the TypeScript a step runs lists or fetches only other repositories with git, and reads the API only where the step gives it the job’s token', () => {
+    // Read from the repository, never from CI_TREE's copy, which holds only the CI files.
+    const files = (dir: string, pattern: RegExp) =>
+      readdirSync(path.join(repositoryRoot, dir), { recursive: true, encoding: 'utf8' })
+        .map((file) => path.posix.join(dir, file.split(path.sep).join('/')))
+        .filter((file) => pattern.test(file) && !file.split('/').includes('node_modules'))
+        .sort();
+    const read = (file: string) => readFileSync(path.join(repositoryRoot, file), 'utf8');
+    const shell = [...files('tools', /\.sh$/), ...files('.github', /\.sh$/)];
+    expect(shell.length).toBeGreaterThan(5);
+    expect(shell.filter((file) => REMOTE_READ.test(read(file)) || RUNS_GH.test(read(file)))).toEqual([]);
+
+    // The TypeScript entry points the steps run, directly (tsx or node) or through a package.json script, and the files
+    // under tools/ each imports, transitively.
+    const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
+    const ENTRY = /\b(?:tsx|node)\s+(tools\/[\w./-]+\.(?:ts|mjs))/g;
+    const runs = everyStep().filter(({ step }) => step.run !== undefined);
+    const entries = runs.flatMap((entry) => [
+      ...[...(entry.step.run ?? '').matchAll(ENTRY)].map((match) => ({ ...entry, file: match[1] ?? '' })),
+      ...[...(entry.step.run ?? '').matchAll(/\bpnpm\s+(?:run\s+)?([a-z][\w:.-]*)/g)].flatMap((match) => [...(scripts[match[1] ?? ''] ?? '').matchAll(ENTRY)].map((named) => ({ ...entry, file: named[1] ?? '' }))),
+    ]);
+    expect(new Set(entries.map(({ file }) => file)).size).toBeGreaterThan(15);
+    const closure = (entry: string) => {
+      const seen = new Set<string>();
+      const queue = [entry];
+      while (queue.length > 0) {
+        const file = queue.pop() ?? '';
+        if (seen.has(file) || !existsSync(path.join(repositoryRoot, file))) continue;
+        seen.add(file);
+        for (const match of read(file).matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
+          let next = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1] ?? ''));
+          if (next.endsWith('.js')) next = `${next.slice(0, -3)}.ts`;
+          else if (!/\.(?:ts|mjs|json)$/.test(next)) next = `${next}.ts`;
+          if (next.startsWith('tools/') && !next.endsWith('.json')) queue.push(next);
+        }
+      }
+      return [...seen];
+    };
+    // git's remote commands as an argument list, and the API, the server or this repository by any name, or gh.
+    const GIT_REMOTE = /['"`](?:fetch|clone|ls-remote|pull|submodule)['"`]\s*[,\]]/;
+    const API = /api\.github\.com|raw\.githubusercontent\.com|GITHUB_(?:API|SERVER)_URL|GITHUB_REPOSITORY|PureTideWater\/PhysicalTherapy|['"`]gh['"`]/;
+    expect(['git(["-C", dir, "fetch", url])', "run('git', ['ls-remote', url])", "git('clone', url)"].filter((text) => !GIT_REMOTE.test(text))).toEqual([]);
+    const gitReaders = new Set<string>();
+    for (const { where, job, step, file } of entries) {
+      const reached = closure(file);
+      expect(reached.length, where).toBeGreaterThan(0);
+      for (const found of reached.filter((candidate) => GIT_REMOTE.test(read(candidate)))) gitReaders.add(found);
+      if (reached.some((candidate) => API.test(read(candidate)))) {
+        const token = step.env?.GITHUB_TOKEN ?? step.env?.GH_TOKEN ?? job.env?.GITHUB_TOKEN ?? job.env?.GH_TOKEN;
+        expect(token, `${where} runs ${file}, which reads GitHub's API or runs gh`).toBe('${{ github.token }}');
+      }
+    }
+    // check-action-pins alone runs git against a remote: the upstreams of the actions the workflows pin, read by
+    // owner/name, never this repository, which no `uses:` names (no local action, no reusable workflow of its own).
+    expect([...gitReaders].sort()).toEqual(['tools/check-action-pins/network.ts']);
+    const uses = everyStep().map(({ step }) => step.uses ?? '').filter((uses) => uses !== '');
+    expect(uses.filter((uses) => uses.startsWith('./') || uses.toLowerCase().startsWith('puretidewater/'))).toEqual([]);
+    expect(workflowFiles().flatMap((file) => Object.values(workflow(file).jobs)).filter((job) => typeof (job as { uses?: unknown }).uses === 'string')).toEqual([]);
+  });
+
+  it('reads the changed paths of screening-capacity’s pull request from its checkout alone: the script passes on a full clone whose remote is gone, and a blobless clone fails it', () => {
+    const changes = workflow('screening-capacity.yml').jobs.changes;
+    const checkout = changes?.steps[0]?.with ?? {};
+    const script = changes?.steps.find((step) => step.id === 'watched')?.run ?? '';
+    expect(script).toContain('git diff --name-only');
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', ...args], { cwd, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' }).trim();
+    const root = mkdtempSync(path.join(scratch, 'changes-'));
+    const work = path.join(root, 'work');
+    mkdirSync(work);
+    git(work, 'init', '-q');
+    mkdirSync(path.join(work, 'tools/screening-capacity'), { recursive: true });
+    mkdirSync(path.join(work, 'apps/worker/src/screening'), { recursive: true });
+    mkdirSync(path.join(work, 'docs'), { recursive: true });
+    writeFileSync(path.join(work, 'tools/screening-capacity/watched-paths.txt'), '# watched\napps/worker/src/screening/*\n');
+    writeFileSync(path.join(work, 'apps/worker/src/screening/consumer.ts'), 'export const a = 1;\n');
+    // A file the pull request moves: rename detection reads both blobs, as a pull request that renames anything does.
+    writeFileSync(path.join(work, 'docs/old.md'), `${'a line of the document\n'.repeat(40)}`);
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'base');
+    const base = git(work, 'rev-parse', 'HEAD');
+    writeFileSync(path.join(work, 'apps/worker/src/screening/consumer.ts'), 'export const a = 2;\n');
+    // Moved and edited, so the base's blob is one the head's checkout does not bring; the list changes too, so its
+    // base copy is read from the base's own blob.
+    git(work, 'mv', 'docs/old.md', 'docs/new.md');
+    writeFileSync(path.join(work, 'docs/new.md'), `${'a line of the document\n'.repeat(39)}an edited line\n`);
+    writeFileSync(path.join(work, 'tools/screening-capacity/watched-paths.txt'), '# watched\napps/worker/src/screening/*\napps/web/src/screening/*\n');
+    git(work, 'commit', '-q', '-am', 'head');
+    const head = git(work, 'rev-parse', 'HEAD');
+    const origin = path.join(root, 'origin.git');
+    git(root, 'clone', '-q', '--bare', work, origin);
+    git(origin, 'config', 'uploadpack.allowFilter', 'true');
+    // A clone as the job's checkout makes it (actions/checkout's fetch with its filter, if any), then the remote gone,
+    // as a private repository's is to a git that holds no token.
+    const cloneAs = (name: string, options: Record<string, unknown>) => {
+      const target = path.join(root, name);
+      git(root, 'clone', '-q', '--no-checkout', ...(typeof options.filter === 'string' ? [`--filter=${options.filter}`] : []), `file://${origin}`, target);
+      git(target, 'checkout', '-q', head);
+      return target;
+    };
+    const run = (cwd: string) => {
+      const output = path.join(cwd, '..', `${path.basename(cwd)}.output`);
+      writeFileSync(output, '');
+      const result = runScript(script, { EVENT: 'pull_request', BASE: base, HEAD: head, GITHUB_OUTPUT: output, RUNNER_TEMP: mkdtempSync(path.join(root, 'temp-')), GIT_TERMINAL_PROMPT: '0', HOME: root }, cwd);
+      return { ...result, written: readFileSync(output, 'utf8') };
+    };
+    const ours = cloneAs('ours', checkout);
+    const blobless = cloneAs('blobless', { ...checkout, filter: 'blob:none' });
+    rmSync(origin, { recursive: true, force: true });
+    const read = run(ours);
+    expect(read.status, read.output).toBe(0);
+    expect(read.output).toContain('watched: apps/worker/src/screening/consumer.ts');
+    expect(read.written).toBe('measure=true\n');
+    const refused = run(blobless);
+    expect(refused.status, refused.output).not.toBe(0);
+    expect(refused.written).toBe('');
+  });
+});
+
+describe('every Trivy step runs the pinned Trivy (CI-11; docs/adr/0066, Part 2)', () => {
+  /** The step every job with a Trivy step runs first: the pinned release, its archive checked, onto this run's PATH. */
+  const INSTALL: Step = { name: 'The pinned Trivy', run: 'trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"\ndirname "$trivy" >> "$GITHUB_PATH"\necho "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"\n' };
+  /** A file's lines less its whole-line comments. */
+  const uncommented = (text: string) => text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+  const trivyJobs = () => workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).filter(([, job]) => job.steps.some((step) => usesAction(step, 'aquasecurity/trivy-action'))).map(([id, job]) => ({ where: `${file} ${id}`, job })));
+
+  it('installs Trivy from its GitHub release, checked against tools/trivy/release.txt, before the first Trivy step of each job, and never by setup-trivy, whose installer downloads from get.trivy.dev', () => {
+    // ci.yml's images job, release.yml's build and the dry run's build: five Trivy steps in three jobs.
+    expect(trivyJobs().map(({ where }) => where)).toEqual(['ci.yml images', 'release-dry-run.yml build', 'release.yml build']);
+    for (const { where, job } of trivyJobs()) {
+      const install = job.steps.findIndex((step) => step.name === INSTALL.name);
+      expect(install, where).toBeGreaterThanOrEqual(0);
+      expect(job.steps[install], where).toEqual(INSTALL);
+      expect(install, where).toBeLessThan(job.steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action')));
+      // Each Trivy step runs the installed binary by its absolute path (TRIVY_CMD, which trivy-action's entrypoint runs in
+      // place of `trivy` from PATH, where each trivy-action step prepends its own directory), never one setup-trivy
+      // downloads, and no step sets TRIVY_CMD otherwise; nothing names a version for it.
+      for (const step of job.steps.filter((candidate) => usesAction(candidate, 'aquasecurity/trivy-action'))) {
+        expect([step.with?.['skip-setup-trivy'], step.with?.version, step.with?.cache], `${where}: ${step.name ?? ''}`).toEqual([true, undefined, false]);
+        expect([step.env?.TRIVY_CMD, job.env?.TRIVY_CMD], `${where}: ${step.name ?? ''}`).toEqual([undefined, undefined]);
+      }
+    }
+    // No line but a comment names setup-trivy or its installer's host.
+    for (const file of workflowFiles()) {
+      expect(uncommented(readFileSync(path.join(WORKFLOWS, file), 'utf8')), file).not.toMatch(/aquasecurity\/setup-trivy|get\.trivy\.dev|contrib\/install\.sh/);
+    }
+  });
+
+  it('pins one version and a SHA-256 for each Linux archive, and checks the archive before anything in it runs', () => {
+    const release = readFileSync(path.join(repositoryRoot, 'tools/trivy/release.txt'), 'utf8');
+    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+    for (const platform of ['linux_x64', 'linux_arm64']) expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+    const installer = readFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), 'utf8');
+    expect(installer).toContain('https://github.com/aquasecurity/trivy/releases/download/v$version');
+    expect(uncommented(installer)).not.toMatch(/get\.trivy\.dev/);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeGreaterThan(0);
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // Both pinned installers download over https alone, and follow a redirect only to https (a file:// mirror is the
+    // tests'); the pinned SHA-256 still decides what runs.
+    for (const tool of ['trivy', 'gitleaks']) {
+      const text = readFileSync(path.join(repositoryRoot, `tools/${tool}/install.sh`), 'utf8');
+      const curls = uncommented(text).split('\n').filter((line) => /\bcurl\b/.test(line));
+      expect(curls.length, tool).toBe(1);
+      expect(curls[0], tool).toContain("curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 ");
+    }
+  });
+
+  // The two lines each install step writes, read from the files the runner reads, on any machine: a stand-in uname
+  // names the release's Linux x64 archive, served from a file:// mirror with the SHA-256 a release.txt beside the
+  // repository's installer pins (GITHUB_ENV_WRITES' TRIVY_CMD and GITHUB_PATH_WRITES' trivy-bin; docs/adr/0066, Part 3, N32).
+  it('gives the later steps the pinned Trivy by its absolute path through GITHUB_ENV and its directory through GITHUB_PATH, one line each, and writes neither when the install fails', () => {
+    const root = realpathSync(mkdtempSync(path.join(scratch, 'trivy-step-')));
+    const version = '0.70.0';
+    const mirror = path.join(root, 'mirror');
+    mkdirSync(path.join(mirror, 'x'), { recursive: true });
+    const asset = path.join(mirror, `trivy_${version}_Linux-64bit.tar.gz`);
+    const pack = (body: string) => {
+      writeFileSync(path.join(mirror, 'x/trivy'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      execFileSync('tar', ['-czf', asset, '-C', path.join(mirror, 'x'), 'trivy']);
+      return createHash('sha256').update(readFileSync(asset)).digest('hex');
+    };
+    const good = pack(`echo "Version: ${version}"`);
+    const tools = path.join(root, 'checkout/tools/trivy');
+    mkdirSync(tools, { recursive: true });
+    copyFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), path.join(tools, 'install.sh'));
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${good}\nlinux_arm64 ${good}\n`);
+    const bin = path.join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; *) exit 97 ;; esac\n', { mode: 0o755 });
+    let run = 0;
+    const step = (script: string) => {
+      run += 1;
+      const temp = path.join(root, `runner-temp-${String(run)}`);
+      mkdirSync(temp);
+      const files = { env: path.join(root, `env-${String(run)}`), path: path.join(root, `path-${String(run)}`) };
+      writeFileSync(files.env, '');
+      writeFileSync(files.path, '');
+      const result = runScript(script, { PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}`, HOME: root, RUNNER_TEMP: temp, GITHUB_ENV: files.env, GITHUB_PATH: files.path, TRIVY_DOWNLOAD_BASE: `file://${mirror}` }, path.join(root, 'checkout'));
+      return { status: result.status, temp, env: readFileSync(files.env, 'utf8'), path: readFileSync(files.path, 'utf8') };
+    };
+    for (const { where, job } of trivyJobs()) {
+      const script = job.steps.find((candidate) => candidate.name === INSTALL.name)?.run ?? '';
+      const ok = step(script);
+      // The whole of each file: one line, the binary's absolute path and its directory, so no second variable or directory.
+      expect(ok, where).toMatchObject({ status: 0, env: `TRIVY_CMD=${ok.temp}/trivy-bin/trivy\n`, path: `${ok.temp}/trivy-bin\n` });
+      expect(readdirSync(path.join(ok.temp, 'trivy-bin')), where).toEqual(['trivy']);
+    }
+    // Another archive served: the install fails, so the step stops before either write.
+    pack(`echo "Version: ${version}"; echo planted`);
+    const refused = step(INSTALL.run ?? '');
+    expect(refused).toMatchObject({ status: 1, env: '', path: '' });
+  });
+
+  const linux = process.platform === 'linux' && (process.arch === 'x64' || process.arch === 'arm64');
+  it.runIf(linux)('installs the archive whose SHA-256 release.txt pins into the directory it is given, and refuses another, leaving nothing installed', () => {
+    const root = mkdtempSync(path.join(scratch, 'trivy-'));
+    const version = '0.70.0';
+    const asset = `trivy_${version}_Linux-${process.arch === 'x64' ? '64bit' : 'ARM64'}.tar.gz`;
+    const archive = (dir: string, body: string) => {
+      mkdirSync(path.join(dir, 'x'), { recursive: true });
+      writeFileSync(path.join(dir, 'x/trivy'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      writeFileSync(path.join(dir, 'x/README.md'), 'not installed\n');
+      execFileSync('tar', ['-czf', path.join(dir, asset), '-C', path.join(dir, 'x'), 'trivy', 'README.md']);
+      return createHash('sha256').update(readFileSync(path.join(dir, asset))).digest('hex');
+    };
+    const good = archive(path.join(root, 'good'), `echo "Version: ${version}"`);
+    archive(path.join(root, 'bad'), `echo "Version: ${version}"; echo planted`);
+    // The repository's installer beside a release.txt that pins the good archive (the script reads the file beside it).
+    const tools = path.join(root, 'tools/trivy');
+    mkdirSync(tools, { recursive: true });
+    copyFileSync(path.join(repositoryRoot, 'tools/trivy/install.sh'), path.join(tools, 'install.sh'));
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${good}\nlinux_arm64 ${good}\n`);
+    const install = (from: string, into: string) =>
+      spawnSync('bash', [path.join(tools, 'install.sh'), into], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: root, TRIVY_DOWNLOAD_BASE: `file://${path.join(root, from)}` }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    const ok = install('good', path.join(root, 'bin-good'));
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout.trim()).toBe(path.join(root, 'bin-good/trivy'));
+    expect(readdirSync(path.join(root, 'bin-good'))).toEqual(['trivy']);
+    const refused = install('bad', path.join(root, 'bin-bad'));
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`not the ${good} that`);
+    expect(existsSync(path.join(root, 'bin-bad/trivy'))).toBe(false);
+    // An archive that matches but whose trivy reports another version is refused too, and not left on PATH.
+    const other = archive(path.join(root, 'other'), 'echo "Version: 0.69.4"');
+    writeFileSync(path.join(tools, 'release.txt'), `version ${version}\nlinux_x64 ${other}\nlinux_arm64 ${other}\n`);
+    const wrong = install('other', path.join(root, 'bin-other'));
+    expect(wrong.status).toBe(1);
+    expect(wrong.stderr).toContain('0.69.4');
+    expect(existsSync(path.join(root, 'bin-other/trivy'))).toBe(false);
   });
 });
 
@@ -2893,6 +3360,2168 @@ describe('concurrency groups', () => {
     expect(problems(`name: mutation\nconcurrency: { cancel-in-progress: true }\n${job}`)).toEqual(['fixture.yml the workflow: a concurrency with no group']);
     expect(problems("name: ci\njobs: { a: { runs-on: ubuntu-24.04, concurrency: 'deploy', steps: [] } }")).toEqual(['fixture.yml job a: the group deploy starts with neither ${{ github.workflow }}- nor ci-']);
     expect(problems("name: ci\njobs: { a: { runs-on: ubuntu-24.04, concurrency: { group: '${{ github.workflow }}${{ github.ref }}' }, steps: [] } }")).toHaveLength(1);
+  });
+});
+
+/**
+ * One environment string stops at 131,072 bytes, its name, its = and its NUL included (Linux's MAX_ARG_STRLEN): one
+ * longer and bash never starts ("Argument list too long", #42's job 122624309161, where a build's whole metadata, with
+ * the pull request's description in it, reached 132,387). So nothing that can grow past it may reach a step's
+ * environment, an action's input (an INPUT_* variable) or a script. Every expression there is read as the runner reads
+ * it (actions/runner's LexicalAnalyzer: whitespace skipped before every token, a name before "(" a function, names and
+ * keys without case) and admitted only from a closed list: values GitHub or the workflow bounds, and each step output
+ * or value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32). A workflow's, a job's or a step's
+ * key the rule does not read is refused, no key holds an expression, and each environment string a workflow sets is
+ * summed from its name, its literal bytes and each value's bound in bytes. These read this repository's workflows: a
+ * pinned action's own action.yml and code are not read by them (actions:check reads a pin's action.yml for the pin
+ * rules, never to bound a value), and the defect itself came from action code (buildx copying the event into its
+ * metadata), which no expression rule can read, so every step output is bounded where a workflow hands it to a process.
+ */
+describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
+  type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
+  type Expression =
+    | { readonly t: 'literal'; readonly kind: 'string' | 'number' | 'keyword'; readonly value: string }
+    | { readonly t: 'not'; readonly operand: Expression }
+    | { readonly t: 'binary'; readonly operator: string; readonly left: Expression; readonly right: Expression }
+    | { readonly t: 'call'; readonly name: string; readonly args: readonly Expression[] }
+    | { readonly t: 'reference'; readonly name: string }
+    | { readonly t: 'access'; readonly target: Expression; readonly path: readonly Access[] };
+  type Access = { readonly name: string } | { readonly star: true } | { readonly computed: Expression };
+
+  /** An expression's tokens, after the runner's lexer: names, functions and keywords in lower case, '' one quote in a string. */
+  function lexExpression(text: string): Token[] {
+    const tokens: Token[] = [];
+    let at = 0;
+    while (at < text.length) {
+      const rest = text.slice(at);
+      const char = text.charAt(at);
+      if (/\s/.test(char)) {
+        at += 1;
+      } else if (char === "'") {
+        let value = '';
+        let end = at + 1;
+        for (;;) {
+          if (end >= text.length) throw new SyntaxError('a string with no closing quote');
+          if (text.charAt(end) === "'") {
+            if (text.charAt(end + 1) !== "'") break;
+            value += "'";
+            end += 2;
+          } else {
+            value += text.charAt(end);
+            end += 1;
+          }
+        }
+        tokens.push({ kind: 'string', text: value });
+        at = end + 1;
+      } else if (/^(?:&&|\|\||==|!=|<=|>=)/.test(rest)) {
+        tokens.push({ kind: 'operator', text: rest.slice(0, 2) });
+        at += 2;
+      } else if (char === '<' || char === '>') {
+        tokens.push({ kind: 'operator', text: char });
+        at += 1;
+      } else if ('()[],.!'.includes(char)) {
+        tokens.push({ kind: 'punctuation', text: char });
+        at += 1;
+      } else if (char === '*') {
+        tokens.push({ kind: 'star', text: char });
+        at += 1;
+      } else {
+        const word = /^[A-Za-z_][A-Za-z0-9_-]*/.exec(rest)?.[0];
+        const number = /^[-+]?(?:0x[0-9a-fA-F]+|[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)/.exec(rest)?.[0];
+        if (word !== undefined) {
+          const name = word.toLowerCase();
+          const call = /^\s*\(/.test(text.slice(at + word.length));
+          tokens.push({ kind: ['true', 'false', 'null'].includes(name) ? 'keyword' : call ? 'function' : 'name', text: name });
+          at += word.length;
+        } else if (number !== undefined) {
+          tokens.push({ kind: 'number', text: number });
+          at += number.length;
+        } else {
+          throw new SyntaxError(`an unexpected ${char}`);
+        }
+      }
+    }
+    return tokens;
+  }
+
+  /** The tree of an expression's tokens: references with their property path, calls and operators (each left to right). */
+  function parseExpression(tokens: readonly Token[]): Expression {
+    let at = 0;
+    const peek = (): Token | undefined => tokens[at];
+    const take = (): Token => {
+      const token = tokens[at];
+      if (token === undefined) throw new SyntaxError('an expression that stops short');
+      at += 1;
+      return token;
+    };
+    const punctuation = (token: Token | undefined, text: string) => token?.kind === 'punctuation' && token.text === text;
+    const close = (text: string) => {
+      if (!punctuation(take(), text)) throw new SyntaxError(`no ${text}`);
+    };
+    const primary = (): Expression => {
+      const token = take();
+      let node: Expression;
+      if (token.kind === 'string' || token.kind === 'number' || token.kind === 'keyword') {
+        node = { t: 'literal', kind: token.kind, value: token.text };
+      } else if (token.kind === 'function') {
+        close('(');
+        const args: Expression[] = [];
+        if (!punctuation(peek(), ')')) {
+          args.push(expression());
+          while (punctuation(peek(), ',')) {
+            take();
+            args.push(expression());
+          }
+        }
+        close(')');
+        node = { t: 'call', name: token.text, args };
+      } else if (token.kind === 'name') {
+        node = { t: 'reference', name: token.text };
+      } else if (punctuation(token, '(')) {
+        node = expression();
+        close(')');
+      } else if (punctuation(token, '!')) {
+        return { t: 'not', operand: primary() };
+      } else {
+        throw new SyntaxError(`an unexpected ${token.text}`);
+      }
+      const path: Access[] = [];
+      for (;;) {
+        if (punctuation(peek(), '.')) {
+          take();
+          const property = take();
+          if (property.kind === 'star') path.push({ star: true });
+          else if (property.kind === 'name' || property.kind === 'function' || property.kind === 'keyword' || property.kind === 'number') path.push({ name: property.text });
+          else throw new SyntaxError(`a property named ${property.text}`);
+        } else if (punctuation(peek(), '[')) {
+          take();
+          if (peek()?.kind === 'star') {
+            take();
+            path.push({ star: true });
+          } else {
+            const index = expression();
+            path.push(index.t === 'literal' && index.kind !== 'keyword' ? { name: index.kind === 'string' ? index.value.toLowerCase() : index.value } : { computed: index });
+          }
+          close(']');
+        } else {
+          break;
+        }
+      }
+      return path.length === 0 ? node : { t: 'access', target: node, path };
+    };
+    const expression = (): Expression => {
+      let left = primary();
+      for (let next = peek(); next?.kind === 'operator'; next = peek()) {
+        take();
+        left = { t: 'binary', operator: next.text, left, right: primary() };
+      }
+      return left;
+    };
+    const tree = expression();
+    if (at !== tokens.length) throw new SyntaxError(`${tokens[at]?.text ?? ''} after the expression`);
+    return tree;
+  }
+
+  /** A reference and its literal property names, or undefined where the path holds a * or a computed index. */
+  function namesOf(node: Expression): string[] | undefined {
+    if (node.t === 'reference') return [node.name];
+    if (node.t !== 'access' || node.target.t !== 'reference') return undefined;
+    const names = [node.target.name];
+    for (const access of node.path) {
+      if (!('name' in access)) return undefined;
+      names.push(access.name);
+    }
+    return names;
+  }
+
+  /** Linux's limit on one environment string, NAME=value and its NUL, or one argument (MAX_ARG_STRLEN, 32 pages of 4 KiB). */
+  const MAX_ARG_STRLEN = 131_072;
+  /**
+   * Linux's limit on a process's environment and arguments together (ARG_MAX: a quarter of the 8 MiB stack limit
+   * the runner's images set), and what is kept back of it for the runner's own: the image's variables, GITHUB_* and
+   * RUNNER_*, and a pointer for each string. 256 KiB is a round figure with headroom, not a measured one.
+   */
+  const ARG_MAX = 2_097_152;
+  const RUNNER_MARGIN = 262_144;
+  /** A repository variable's or a secret's bound, 48 KB (GitHub's documentation). */
+  const VARIABLE_BYTES = 49_152;
+  /** A path the runner or git keeps (Linux's PATH_MAX). */
+  const PATH_BYTES = 4_096;
+  /** A 64-bit integer's decimal digits. */
+  const INTEGER_BYTES = 20;
+  /** A commit SHA: 40 hexadecimal digits, or 64 in a SHA-256 repository. */
+  const SHA_BYTES = 64;
+  /** A result, an outcome or a conclusion, of which cancelled is the longest; and true or false. */
+  const WORD_BYTES = 9;
+  const BOOLEAN_BYTES = 5;
+  /**
+   * The github context's paths admitted whole, each with its bound in bytes: scalars GitHub bounds, the ones in use. A
+   * login is at most 39 characters (a bot's is its app's name, at most 34, and [bot]); a branch or a ref is a path git
+   * keeps; a trigger's name is a word (the longest, pull_request_review_comment, has 27 characters); a repository is an
+   * owner of at most 39 characters, a slash and a name of at most 100; the server's URL is https:// and a host name of
+   * at most 253 bytes, with a port; the token is held as a secret is.
+   */
+  const BOUNDED_GITHUB: ReadonlyMap<string, number> = new Map([
+    ['actor', 64],
+    ['base_ref', PATH_BYTES],
+    ['event_name', 64],
+    ['ref', PATH_BYTES],
+    ['ref_name', PATH_BYTES],
+    ['repository', 140],
+    ['run_id', INTEGER_BYTES],
+    ['server_url', 'https://'.length + 253 + ':65535'.length],
+    ['sha', SHA_BYTES],
+    ['token', VARIABLE_BYTES],
+    ['event.before', SHA_BYTES],
+    ['event.pull_request.number', INTEGER_BYTES],
+    ['event.pull_request.base.sha', SHA_BYTES],
+    ['event.pull_request.head.sha', SHA_BYTES],
+    ['event.repository.private', BOOLEAN_BYTES],
+  ]);
+  /**
+   * Contexts admitted one level down: a runner, strategy, matrix or job value, a variable the workflow sets (each held
+   * here where it is set), and a repository variable or a secret, each at most 48 KB (GitHub's documentation).
+   */
+  const ONE_LEVEL = new Set(['runner', 'strategy', 'matrix', 'job', 'env', 'vars', 'secrets']);
+  /** The input types that bound an input; a string input has no bound GitHub documents. */
+  const BOUNDED_INPUT_TYPES = new Set(['choice', 'boolean', 'number']);
+  /** A number as the runner writes one (a double's shortest form, its exponent included), or a number input's value. */
+  const NUMBER_BYTES = 24;
+  /** The one-level values of the runner and job contexts, each with its bound: a path or a name the runner sets, a word, an integer. */
+  const RUNNER_BYTES = PATH_BYTES;
+  const JOB_BYTES: Readonly<Record<string, number>> = { status: WORD_BYTES, check_run_id: INTEGER_BYTES };
+  /** Where a file command write is made: its file, job and step, and the fingerprint of that step (as a row's run: producer holds one). */
+  interface FileCommandSite {
+    readonly file: string;
+    readonly job: string;
+    readonly step: string;
+    readonly fingerprint: string;
+  }
+  /** One write a script may make to a runner file command: its line exactly (so its value's form too), where, its bound and the test that holds it. */
+  interface FileCommandWrite {
+    readonly line: string;
+    readonly sites: readonly FileCommandSite[];
+    readonly bound: string;
+    readonly test: string;
+  }
+  /**
+   * The only writes a script may make to $GITHUB_ENV, by the variable each sets, and to $GITHUB_PATH, by the directory
+   * each puts on PATH: its line exactly (so its value's form too), each step that makes it (its file, job and step, and
+   * that step's fingerprint, so any change to the script or its inputs fails until a person re-reads the bound), and
+   * its bound, which the behavioural test named beside it holds by running the step and reading the whole file it
+   * writes. Each is written once in each step it names, and every line of every workflow's script that names
+   * GITHUB_ENV or GITHUB_PATH (a backslash-newline joining two, as bash reads them) is one of them; nothing but a
+   * step's run: names either, nothing names the runner's file command files, no env sets
+   * ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env), and every other tracked file naming any of them is in a closed list
+   * (NAMES_FILE_COMMANDS). A script that reaches the file without naming it (a name built at run time, another
+   * interpreter), and a dependency's or an action's code, are not closed by reading text.
+   */
+  const GITHUB_ENV_WRITES: Readonly<Record<string, FileCommandWrite>> = {
+    ENGINE_FREEZE_BASE: {
+      line: 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"',
+      sites: [{ file: 'ci.yml', job: 'unit', step: "The engine freeze's base", fingerprint: '9be9805d' }],
+      bound: "a commit SHA (the pull request's merge base, github.event.before or HEAD's parent), written only once git rev-parse --verify names it a commit, the step exiting 1 otherwise",
+      test: 'gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV',
+    },
+    TRIVY_CMD: {
+      line: 'echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"',
+      sites: [
+        { file: 'ci.yml', job: 'images', step: 'The pinned Trivy', fingerprint: '3ad03da4' },
+        { file: 'release-dry-run.yml', job: 'build', step: 'The pinned Trivy', fingerprint: '3ad03da4' },
+        { file: 'release.yml', job: 'build', step: 'The pinned Trivy', fingerprint: '3ad03da4' },
+      ],
+      bound:
+        "the absolute path tools/trivy/install.sh prints, its one line of output: the directory it is given ($RUNNER_TEMP/trivy-bin, the runner's own temporary directory), resolved by pwd -P, then /trivy, so a runner path with no line break, at most PATH_BYTES; a failed install fails the step under bash -e before this line runs",
+      test: 'gives the later steps the pinned Trivy by its absolute path through GITHUB_ENV and its directory through GITHUB_PATH, one line each, and writes neither when the install fails',
+    },
+  };
+  const GITHUB_PATH_WRITES: Readonly<Record<string, FileCommandWrite>> = {
+    'trivy-bin': {
+      line: 'dirname "$trivy" >> "$GITHUB_PATH"',
+      sites: GITHUB_ENV_WRITES.TRIVY_CMD?.sites ?? [],
+      bound:
+        "the directory of TRIVY_CMD's path ($RUNNER_TEMP/trivy-bin resolved), a runner path with no line break, at most PATH_BYTES, which the runner puts before PATH for every later step of the job: PATH is the runner's own environment, inside the RUNNER_MARGIN the whole leaves it",
+      test: 'gives the later steps the pinned Trivy by its absolute path through GITHUB_ENV and its directory through GITHUB_PATH, one line each, and writes neither when the install fails',
+    },
+  };
+  /**
+   * The keys a workflow, a job and a step may have, each read by the rule below or reaching no process (a name, a
+   * condition, a timeout, permissions, a concurrency group, runs-on's labels, an environment's name and URL).
+   */
+  const WORKFLOW_KEYS: ReadonlySet<string> = new Set(['name', 'run-name', 'on', 'permissions', 'env', 'defaults', 'concurrency', 'jobs']);
+  const JOB_KEYS: ReadonlySet<string> = new Set(['name', 'needs', 'if', 'runs-on', 'timeout-minutes', 'continue-on-error', 'container', 'services', 'env', 'environment', 'permissions', 'concurrency', 'outputs', 'defaults', 'steps', 'strategy', 'uses', 'with', 'secrets']);
+  const STEP_KEYS: ReadonlySet<string> = new Set(['name', 'id', 'if', 'uses', 'run', 'with', 'env', 'working-directory', 'shell', 'continue-on-error', 'timeout-minutes']);
+  /** The one form a build's metadata output may take: its config digest, '' for an empty output (fromJSON('') fails a step). */
+  const DIGEST_KEY = 'containerimage.config.digest';
+
+  /** Why this expression is not admitted (none when it is), and the step outputs and cross-job values it reads, for BOUNDED_VALUES. */
+  function expressionProblems(tree: Expression, inputs: Readonly<Record<string, unknown>>, values: string[]): string[] {
+    const problems: string[] = [];
+    const reference = (names: readonly string[] | undefined, inToJson = false): void => {
+      if (names === undefined) {
+        problems.push('a wildcard or a computed index');
+        return;
+      }
+      const [base = '', ...rest] = names;
+      const dotted = names.join('.');
+      if (base === 'github') {
+        if (!BOUNDED_GITHUB.has(rest.join('.'))) problems.push(`${dotted}, not a bounded github value`);
+      } else if (ONE_LEVEL.has(base)) {
+        if (rest.length !== 1) problems.push(`${dotted}, not one level of ${base}`);
+      } else if (base === 'inputs') {
+        if (rest.length !== 1 || !BOUNDED_INPUT_TYPES.has(String(inputs[rest[0] ?? '']))) problems.push(`${dotted}, an input whose type does not bound it`);
+      } else if ((base === 'needs' && rest.length === 2 && rest[1] === 'result') || (base === 'steps' && rest.length === 2 && (rest[1] === 'outcome' || rest[1] === 'conclusion'))) {
+        // A result, an outcome or a conclusion: one word.
+      } else if (base === 'steps' && rest.length === 3 && rest[1] === 'outputs' && rest[2] === 'metadata') {
+        problems.push(`${dotted} whole`);
+      } else if ((base === 'steps' || base === 'needs') && rest.length === 3 && rest[1] === 'outputs') {
+        values.push(dotted);
+      } else if (inToJson && base === 'needs' && (rest.length === 0 || (rest.length === 2 && rest[1] === 'outputs'))) {
+        values.push(`tojson(${dotted})`);
+      } else {
+        problems.push(dotted);
+      }
+    };
+    const walk = (node: Expression): void => {
+      switch (node.t) {
+        case 'literal':
+          return;
+        case 'not':
+          walk(node.operand);
+          return;
+        case 'binary':
+          walk(node.left);
+          walk(node.right);
+          return;
+        case 'reference':
+          reference([node.name]);
+          return;
+        case 'access': {
+          const target = node.target;
+          if (target.t !== 'call') {
+            reference(namesOf(node));
+            return;
+          }
+          const [argument] = target.args;
+          const [key] = node.path;
+          if (target.name === 'fromjson' && target.args.length === 1 && argument?.t === 'binary' && argument.operator === '||' && argument.right.t === 'literal' && argument.right.kind === 'string' && argument.right.value === '{}' && node.path.length === 1 && key !== undefined && 'name' in key && key.name === DIGEST_KEY) {
+            const names = namesOf(argument.left);
+            if (names?.length === 4 && names[0] === 'steps' && names[2] === 'outputs' && names[3] === 'metadata') {
+              values.push(`fromjson(${names.join('.')} || '{}')['${DIGEST_KEY}']`);
+              return;
+            }
+          }
+          // fromJSON of an admitted value, then literal keys alone (the matrices).
+          if (target.name === 'fromjson' && node.path.every((access) => 'name' in access)) {
+            walk(target);
+            return;
+          }
+          problems.push(`an index or a wildcard on ${target.name}()`);
+          return;
+        }
+        case 'call': {
+          if (['success', 'failure', 'always', 'cancelled'].includes(node.name) && node.args.length === 0) return;
+          if (node.name === 'tojson') {
+            // toJSON of needs or of one job's outputs, each a row; of one value it would quote and escape the value, up
+            // to six bytes for each of its bytes, which no row's bound counts, so it is refused.
+            const [argument] = node.args;
+            const names = node.args.length === 1 && argument !== undefined ? namesOf(argument) : undefined;
+            if (names?.[0] === 'needs' && (names.length === 1 || (names.length === 3 && names[2] === 'outputs'))) reference(names, true);
+            else problems.push(`toJSON of ${names?.join('.') ?? 'an expression'}`);
+            return;
+          }
+          if (node.name === 'fromjson' && node.args.length === 1) {
+            node.args.forEach(walk);
+            return;
+          }
+          // hashFiles and any other function of literals alone.
+          if (!node.args.every((argument) => argument.t === 'literal')) problems.push(`${node.name}() of a context`);
+          return;
+        }
+      }
+    };
+    walk(tree);
+    return problems;
+  }
+
+  interface ValueKey {
+    readonly file: string;
+    readonly job: string;
+    readonly value: string;
+  }
+
+  interface FoundValue extends ValueKey {
+    /** Where it is read, as the rule's messages name a place: its job, its step and its key. */
+    readonly where: string;
+    /** The index of the step that reads it, when a step does (a job's own keys are read before or after its steps). */
+    readonly step?: number;
+  }
+
+  /**
+   * Every expression of a workflow that reaches a process, read as the runner reads it: the workflow's env and defaults;
+   * each job's env, outputs, strategy, container, services, with, secrets and defaults (its run's shell is the command
+   * the runner starts); each step's env, with, run, working-directory and shell (`if:` and `name:` reach none). A key
+   * outside the closed lists of a workflow's, a job's and a step's keys is refused, so none goes unread. GitHub's contexts table
+   * names every key that takes a context. A mapping's keys are read too, anywhere in the file: GitHub evaluates an
+   * expression in an env name, an input's name (INPUT_<key>), a service's id or a matrix key, and in keys whose own
+   * text reaches no process (a container's or a service's own, registry credentials, strategy, a matrix's include
+   * entries, a job's defaults.run), and refuses one when it parses the file in the rest (on:, the workflow's
+   * defaults.run, a job's id or outputs, a step's own keys, a reusable workflow's with: and secrets:); none may hold one. What it refuses, each naming its file, job, step and
+   * key, and the values it found for BOUNDED_VALUES.
+   */
+  function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
+    const problems: string[] = [];
+    const values: FoundValue[] = [];
+    const writes = new Map<string, number>();
+    const root = isRecord(parsed) ? parsed : {};
+    const inputs: Record<string, unknown> = {};
+    for (const trigger of ['workflow_dispatch', 'workflow_call']) {
+      const on = isRecord(root.on) ? root.on[trigger] : undefined;
+      const declared = isRecord(on) && isRecord(on.inputs) ? on.inputs : {};
+      for (const [name, declaration] of Object.entries(declared)) inputs[name.toLowerCase()] = isRecord(declaration) ? declaration.type : undefined;
+    }
+    const visit = (value: unknown, where: string, job: string, step?: number): void => {
+      if (typeof value === 'string') {
+        for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+          const text = match[1] ?? '';
+          const found: string[] = [];
+          let refused: string[];
+          try {
+            refused = expressionProblems(parseExpression(lexExpression(text)), inputs, found);
+          } catch (error) {
+            refused = [`does not parse (${error instanceof Error ? error.message : 'unknown'})`];
+          }
+          problems.push(...refused.map((problem) => `${file} ${where}: ${problem}, in \${{${text}}}`));
+          values.push(...found.map((entry) => ({ file, job, value: entry.toLowerCase(), where, ...(step === undefined ? {} : { step }) })));
+        }
+      } else if (isList(value)) {
+        value.forEach((item, index) => visit(item, `${where}[${String(index)}]`, job, step));
+      } else if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) visit(item, `${where}.${key}`, job, step);
+      }
+    };
+    // Every key of the whole file, independent of the places visit reads: an expression in a key is refused wherever it
+    // stands.
+    const keys = (value: unknown, where: string): void => {
+      if (isList(value)) {
+        value.forEach((item, index) => keys(item, `${where}[${String(index)}]`));
+      } else if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) {
+          const at = where === '' ? key : `${where}.${key}`;
+          if (key.includes('${{')) problems.push(`${file} ${at}: an expression in a key`);
+          // The runner's switch for ::set-env and ::add-path, which let any script set a variable for every later step
+          // without $GITHUB_ENV; actionlint, which flags them, does not run on CI.
+          if (key.toUpperCase() === 'ACTIONS_ALLOW_UNSECURE_COMMANDS') problems.push(`${file} ${at}: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map`);
+          keys(item, at);
+        }
+      }
+    };
+    keys(root, '');
+    // Only a step's run: may name $GITHUB_ENV or $GITHUB_PATH, where every line naming either is an entry of its closed
+    // map (GITHUB_ENV_WRITES, GITHUB_PATH_WRITES), made in a step the entry names. A shell (a step's or a default), an input, an env name or value, or any other string naming either,
+    // and anything naming the runner's file command files themselves, would let a command template or an action set a
+    // later step's environment that no line of a script shows, so each is refused.
+    // The runner's file command files by their directory or their own names (set_env_<uuid>, add_path_<uuid>), which a
+    // script could reach beside $GITHUB_OUTPUT's file without naming $GITHUB_ENV.
+    const RUNNER_FILES = /_runner_file_commands|set_env_|add_path_/i;
+    const fileCommand = (text: string): boolean => text.includes('GITHUB_ENV') || text.includes('GITHUB_PATH') || RUNNER_FILES.test(text);
+    const outsideRun = (where: string) => `${file} ${where}: names $GITHUB_ENV, $GITHUB_PATH or the runner's file commands outside a step's run:, where a shell, an input or an action could set a later step's environment unread`;
+    const commands = (value: unknown, where: string): void => {
+      if (typeof value === 'string') {
+        if (fileCommand(value) && !/^jobs\.[^.]+\.steps\[\d+\]\.run$/.test(where)) problems.push(outsideRun(where));
+      } else if (isList(value)) {
+        value.forEach((item, index) => commands(item, `${where}[${String(index)}]`));
+      } else if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) {
+          const at = where === '' ? key : `${where}.${key}`;
+          if (fileCommand(key)) problems.push(outsideRun(at));
+          commands(item, at);
+        }
+      }
+    };
+    commands(root, '');
+    // A key this rule does not know, at the top, in a job or in a step (a nested parallel: step list, say), would hold
+    // expressions nothing reads, so each is refused until the rule reads it.
+    const unread = (value: Record<string, unknown>, known: ReadonlySet<string>, where: string): void => {
+      for (const key of Object.keys(value)) if (!known.has(key)) problems.push(`${file} ${where}: ${key}, a key the value rule does not read`);
+    };
+    unread(root, WORKFLOW_KEYS, 'the workflow');
+    visit(root.env, 'env', '-');
+    visit(root.defaults, 'defaults', '-');
+    for (const [id, job] of Object.entries(isRecord(root.jobs) ? root.jobs : {})) {
+      if (!isRecord(job)) continue;
+      unread(job, JOB_KEYS, `job ${id}`);
+      for (const key of ['env', 'outputs', 'strategy', 'container', 'services', 'with', 'secrets', 'defaults']) visit(job[key], `job ${id} ${key}`, id);
+      (isList(job.steps) ? job.steps : []).forEach((step, index) => {
+        if (!isRecord(step)) return;
+        const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
+        unread(step, STEP_KEYS, named);
+        for (const key of ['env', 'with', 'run', 'working-directory', 'shell']) visit(step[key], `${named} ${key}`, id, index);
+        // Each line as bash reads it, a backslash-newline joining two, so a write split across lines is still read.
+        const lines = (typeof step.run === 'string' ? step.run : '').replace(/\\\n/g, '').split('\n');
+        for (const line of lines.filter((text) => RUNNER_FILES.test(text))) problems.push(`${file} ${named} run: names the runner's file commands, which set a later step's environment unread: ${line.trim()}`);
+        const listed = (map: Readonly<Record<string, FileCommandWrite>>, line: string) =>
+          Object.entries(map).find(([, entry]) => entry.line === line.trim() && entry.sites.some((site) => site.file === file && site.job === id && site.step === step.name))?.[0];
+        for (const line of lines.filter((text) => text.includes('GITHUB_PATH'))) {
+          const write = listed(GITHUB_PATH_WRITES, line);
+          if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: ${line.trim()}`);
+          else writes.set(`$GITHUB_PATH\0${write}\0${id}`, (writes.get(`$GITHUB_PATH\0${write}\0${id}`) ?? 0) + 1);
+        }
+        for (const line of lines.filter((text) => text.includes('GITHUB_ENV'))) {
+          const write = listed(GITHUB_ENV_WRITES, line);
+          if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed map: ${line.trim()}`);
+          else writes.set(`$GITHUB_ENV\0${write}\0${id}`, (writes.get(`$GITHUB_ENV\0${write}\0${id}`) ?? 0) + 1);
+        }
+      });
+    }
+    for (const [key, count] of writes) {
+      const [command = '', name = ''] = key.split('\0');
+      if (count > 1) problems.push(`${file}: ${name} is written to ${command} ${String(count)} times, not once`);
+    }
+    return { problems, values };
+  }
+
+  /** Where an expression is read, for its bound: its job, the env mappings env.X reads (innermost first), and what the sum found. */
+  interface Reading {
+    readonly job: string | undefined;
+    readonly scopes: readonly Readonly<Record<string, unknown>>[];
+    /** What has no bound, each in words. */
+    readonly unbounded: string[];
+    /** Whether it reads the one value known to be over the limit directly (alone, the table holds it by its sites). */
+    over: boolean;
+  }
+
+  /**
+   * Every environment string a workflow sets, NAME=value and its NUL as Linux counts it against MAX_ARG_STRLEN: the
+   * workflow's, each job's, each job container's and service's, and each step's env, and each step input as
+   * INPUT_<NAME>. Its bytes are the name's, '=' and the NUL, the value's literal bytes outside ${{ }}, and each
+   * expression's bound: a github value BOUNDED_GITHUB's, a variable or a secret 48 KB, a bounded input its type's, a
+   * matrix key its longest value's (its include entries' among them), env.X the bound of X where it is set (the
+   * step's env, the job's, the workflow's), and a table row its bytes. What refuses one: a sum over 131,072, or a value
+   * with no bound, each naming its file, place and name. The one value marked over is exempt from that 131,072 only
+   * alone in its string, one expression that reads it and nothing else, and is still counted in its process's whole;
+   * beside anything else it is refused, and its sites (below) hold where it is read.
+   */
+  function environmentProblems(file: string, parsed: unknown, rows: readonly BoundedValue[] = BOUNDED_VALUES): string[] {
+    const problems: string[] = [];
+    const record = (value: unknown): Readonly<Record<string, unknown>> => (isRecord(value) ? value : {});
+    const root = record(parsed);
+    const jobs = record(root.jobs);
+    const inputs = new Map<string, number>();
+    for (const trigger of ['workflow_dispatch', 'workflow_call']) {
+      for (const [name, declaration] of Object.entries(record(record(record(root.on)[trigger]).inputs))) {
+        const { type, options } = record(declaration);
+        const bytes = type === 'boolean' ? BOOLEAN_BYTES : type === 'number' ? NUMBER_BYTES : type === 'choice' && isList(options) ? Math.max(0, ...options.map((option) => Buffer.byteLength(String(option)))) : Infinity;
+        inputs.set(name.toLowerCase(), Math.max(inputs.get(name.toLowerCase()) ?? 0, bytes));
+      }
+    }
+    const row = (job: string | undefined, value: string, at: Reading): number => {
+      const found = rows.find((entry) => entry.file === file && entry.job === job && entry.value === value);
+      if (found === undefined) {
+        at.unbounded.push(`${value}, which no row of the table bounds`);
+        return Infinity;
+      }
+      if (found.over !== undefined) at.over = true;
+      return found.bytes;
+    };
+    /** The value an admitted expression reads, as the table keys it, when it reads exactly one. */
+    const readValue = (node: Expression): string | undefined => {
+      const values: string[] = [];
+      return expressionProblems(node, {}, values).length === 0 && values.length === 1 ? values[0]?.toLowerCase() : undefined;
+    };
+    const scalar = (value: unknown, at: Reading): number => {
+      if (typeof value === 'number' || typeof value === 'boolean') return Buffer.byteLength(String(value));
+      if (typeof value !== 'string') {
+        if (value !== null && value !== undefined) at.unbounded.push('a list or a mapping');
+        return value === null || value === undefined ? 0 : Infinity;
+      }
+      let bytes = Buffer.byteLength(value.replace(/\$\{\{[\s\S]*?\}\}/g, ''));
+      for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+        try {
+          bytes += expression(parseExpression(lexExpression(match[1] ?? '')), at);
+        } catch {
+          at.unbounded.push(`\${{${match[1] ?? ''}}}, which does not parse`);
+          bytes = Infinity;
+        }
+      }
+      return bytes;
+    };
+    const matrix = (key: string, at: Reading): number => {
+      const strategy = record(record(jobs[at.job ?? '']).strategy);
+      const given = strategy.matrix;
+      // A matrix from an expression, or a key's list from one: each value is part of what it gives, and so is each
+      // include entry's value for the key (GitHub makes an entry that would change it a job of its own), or the whole
+      // include where an expression gives it.
+      const include = isRecord(given) ? given.include : undefined;
+      const beside = include === undefined ? [] : isList(include) ? include.map((entry) => (isRecord(entry) ? entry[key] : entry)) : [include];
+      const values = typeof given === 'string' ? [given] : (matrixValues(given, key) ?? (isRecord(given) && typeof given[key] === 'string' ? [given[key], ...beside] : undefined));
+      if (values === undefined) {
+        at.unbounded.push(`matrix.${key}, which job ${at.job ?? '-'}'s matrix does not give`);
+        return Infinity;
+      }
+      // A matrix is read with no env context, and only a value read directly is the one marked over.
+      const job = { ...at, scopes: [] };
+      return Math.max(
+        0,
+        ...values.map((value) => {
+          if (!isRecord(value) && !isList(value)) return scalar(value, job);
+          at.unbounded.push(`matrix.${key}, a list or a mapping`);
+          return Infinity;
+        }),
+      );
+    };
+    const env = (name: string, at: Reading): number => {
+      if (Object.hasOwn(GITHUB_ENV_WRITES, name.toUpperCase())) {
+        at.unbounded.push(`env.${name}, which a script writes to $GITHUB_ENV`);
+        return Infinity;
+      }
+      // The most of any env in scope that sets it (a step's own, its job's, the workflow's), so never less than what GitHub
+      // reads there: a step's env reads its job's (the job's over the workflow's), and GitHub's schema gives a job's or
+      // the workflow's env no env context at all, so an env.X there is a parse error, which this still bounds.
+      const set = at.scopes.flatMap((scope, index) =>
+        Object.entries(scope)
+          .filter(([key]) => key.toLowerCase() === name)
+          .map(([, value]) => scalar(value, { ...at, scopes: at.scopes.slice(index + 1) })),
+      );
+      if (set.length === 0) {
+        at.unbounded.push(`env.${name}, which no env in scope sets`);
+        return Infinity;
+      }
+      return Math.max(...set);
+    };
+    const reference = (names: readonly string[] | undefined, at: Reading): number => {
+      const [base = '', ...rest] = names ?? [];
+      const [first = '', second] = rest;
+      const dotted = (names ?? []).join('.');
+      let bytes: number | undefined;
+      if (base === 'github') bytes = BOUNDED_GITHUB.get(rest.join('.'));
+      else if (base === 'vars' || base === 'secrets') bytes = rest.length === 1 ? VARIABLE_BYTES : undefined;
+      else if (base === 'runner') bytes = rest.length === 1 ? RUNNER_BYTES : undefined;
+      else if (base === 'strategy') bytes = rest.length === 1 ? INTEGER_BYTES : undefined;
+      else if (base === 'job') bytes = rest.length === 1 ? JOB_BYTES[first] : undefined;
+      else if (base === 'inputs') bytes = rest.length === 1 ? inputs.get(first) : undefined;
+      else if (base === 'matrix' && rest.length === 1) return matrix(first, at);
+      else if (base === 'env' && rest.length === 1) return env(first, at);
+      else if ((base === 'needs' && rest.length === 2 && second === 'result') || (base === 'steps' && rest.length === 2 && (second === 'outcome' || second === 'conclusion'))) bytes = WORD_BYTES;
+      else if ((base === 'steps' || base === 'needs') && rest.length === 3 && second === 'outputs') return row(at.job, dotted.toLowerCase(), at);
+      if (bytes === undefined || bytes === Infinity) {
+        at.unbounded.push(names === undefined ? 'a wildcard or a computed index' : dotted);
+        return Infinity;
+      }
+      return bytes;
+    };
+    const expression = (node: Expression, at: Reading): number => {
+      switch (node.t) {
+        case 'literal':
+          return node.kind === 'string' ? Buffer.byteLength(node.value) : node.kind === 'number' ? NUMBER_BYTES : node.value === 'null' ? 0 : node.value.length;
+        case 'not':
+          return BOOLEAN_BYTES;
+        case 'binary':
+          // && and || give one of their operands, a comparison true or false; but parseExpression folds operators left to
+          // right, not by precedence, so an operand this tree puts under a comparison may be what an || gives: each counts.
+          return Math.max(BOOLEAN_BYTES, expression(node.left, at), expression(node.right, at));
+        case 'reference':
+          return reference([node.name], at);
+        case 'access': {
+          if (node.target.t !== 'call') return reference(namesOf(node), at);
+          const value = readValue(node);
+          if (value?.startsWith('fromjson(') === true) return row(at.job, value, at);
+          // fromJSON of an admitted value, then literal keys: no longer than the value's text, or than a number written out.
+          if (node.target.name === 'fromjson' && node.path.every((access) => 'name' in access)) return Math.max(expression(node.target, at), NUMBER_BYTES);
+          at.unbounded.push(`an index on ${node.target.name}()`);
+          return Infinity;
+        }
+        case 'call': {
+          if (['success', 'failure', 'always', 'cancelled', 'contains', 'startswith', 'endswith'].includes(node.name)) return BOOLEAN_BYTES;
+          if (node.name === 'hashfiles') return 64;
+          if (node.name === 'tojson') {
+            const value = readValue(node);
+            if (value !== undefined) return row(at.job, value, at);
+          }
+          if (node.name === 'fromjson' && node.args.length === 1 && node.args[0] !== undefined) return Math.max(expression(node.args[0], at), NUMBER_BYTES);
+          at.unbounded.push(`${node.name}()`);
+          return Infinity;
+        }
+      }
+    };
+    /** Whether a string is one expression that reads the value marked over and nothing else: no literal, operator or call beside it. */
+    const overAlone = (value: unknown, job: string | undefined): boolean => {
+      const whole = typeof value === 'string' ? /^\$\{\{((?:(?!\}\})[\s\S])*)\}\}$/.exec(value) : null;
+      if (whole === null) return false;
+      try {
+        const read = namesOf(parseExpression(lexExpression(whole[1] ?? '')))?.join('.').toLowerCase();
+        return rows.some((entry) => entry.over !== undefined && entry.file === file && entry.job === job && entry.value === read);
+      } catch {
+        return false;
+      }
+    };
+    /** Each string of a mapping, refused over the limit or unbounded; their bytes together, for the totals below (Infinity where one is already refused). */
+    const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): number => {
+      // GitHub takes one expression in place of a mapping wherever the mapping takes a context (its schema's step env
+      // and with, job and workflow env, a container and its env): its names and strings come from the value at run
+      // time, so neither this sum nor the key rule could read them.
+      if (typeof mapping === 'string' && mapping.includes('${{')) {
+        problems.push(`${file} ${where}: a mapping from an expression, whose names and strings no sum can read`);
+        return Infinity;
+      }
+      let total = 0;
+      for (const [name, value] of Object.entries(record(mapping))) {
+        const reading: Reading = { ...at, unbounded: [], over: false };
+        const variable = input ? `INPUT_${name.replace(/ /g, '_').toUpperCase()}` : name;
+        const bytes = Buffer.byteLength(`${variable}=`) + scalar(value, reading) + 1;
+        total += bytes;
+        if (reading.over) {
+          // Exempt from its own string's 131,072-byte limit only alone in its string, so nothing joins the value over
+          // the limit where it is read; its bytes are still in the total above, its process's whole.
+          if (!overAlone(value, at.job)) problems.push(`${file} ${where}.${name}: holds the value over the limit with more beside it`);
+          continue;
+        }
+        if (reading.unbounded.length > 0) problems.push(`${file} ${where}.${name}: no bound for ${reading.unbounded.join('; ')}`);
+        else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}.${name}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
+      }
+      return total;
+    };
+    /** One argument the runner hands a process (an image, a container's options, a shell), held to the same 131,072 bytes. */
+    const argument = (value: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>): number => {
+      if (value === undefined || value === null) return 0;
+      const reading: Reading = { ...at, unbounded: [], over: false };
+      const bytes = scalar(value, reading) + 1;
+      if (reading.unbounded.length > 0) problems.push(`${file} ${where}: no bound for ${reading.unbounded.join('; ')}`);
+      else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}: an argument of up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
+      return bytes;
+    };
+    /** A process's environment and arguments together, under ARG_MAX less what the runner adds. */
+    const total = (bytes: number, where: string): void => {
+      if (Number.isFinite(bytes) && bytes > ARG_MAX - RUNNER_MARGIN) problems.push(`${file} ${where}: its environment and arguments are up to ${String(bytes)} bytes, over ${String(ARG_MAX - RUNNER_MARGIN)} (ARG_MAX, less ${String(RUNNER_MARGIN)} for the runner's own)`);
+    };
+    const shellOf = (defaults: unknown): unknown => record(record(defaults).run).shell;
+    const workflowEnv = strings(root.env, 'env', { job: undefined, scopes: [] });
+    const workflowShell = argument(shellOf(root.defaults), 'defaults.run.shell', { job: undefined, scopes: [record(root.env)] });
+    for (const [id, job] of Object.entries(jobs)) {
+      if (!isRecord(job)) continue;
+      const jobEnv = strings(job.env, `job ${id} env`, { job: id, scopes: [record(root.env)] });
+      const jobShell = shellOf(job.defaults) === undefined ? workflowShell : argument(shellOf(job.defaults), `job ${id} defaults.run.shell`, { job: id, scopes: [record(job.env), record(root.env)] });
+      // A container or a service: its env, and each other value an argument of docker's (an image, options, an
+      // entrypoint, a command, a volume, a port, credentials). One named by a string is its image, an expression in it
+      // read as any other (node:${{ matrix.node }}); one given as one expression alone may be a mapping, so it is
+      // refused, its strings unread.
+      const container = (definition: unknown, where: string): void => {
+        const at = { job: id, scopes: [] };
+        if (typeof definition === 'string') {
+          if (/^\$\{\{(?:(?!\}\})[\s\S])*\}\}$/.test(definition)) strings(definition, where, at);
+          else argument(definition, `${where} image`, at);
+          return;
+        }
+        let bytes = strings(record(definition).env, `${where}.env`, at);
+        for (const [key, value] of Object.entries(record(definition))) {
+          if (key === 'env') continue;
+          const items: [string, unknown][] = isList(value) ? value.map((item, index) => [`${key}[${String(index)}]`, item]) : isRecord(value) ? Object.entries(value).map(([name, item]) => [`${key}.${name}`, item]) : [[key, value]];
+          for (const [name, item] of items) bytes += argument(item, `${where}.${name}`, at);
+        }
+        total(bytes, where);
+      };
+      if (job.container !== undefined) container(job.container, `job ${id} container`);
+      // A value a job passes a called workflow as a secret: that workflow's own sum bounds secrets.<name> at a secret's
+      // 48 KB, so the value is held to it where it is made (three secrets joined in one are refused here). `inherit`
+      // passes each secret as it is.
+      if (job.secrets !== 'inherit') strings(typeof job.secrets === 'string' ? job.secrets : {}, `job ${id} secrets`, { job: id, scopes: [] });
+      for (const [name, value] of Object.entries(record(job.secrets))) {
+        const reading: Reading = { job: id, scopes: [], unbounded: [], over: false };
+        const bytes = scalar(value, reading);
+        if (reading.unbounded.length > 0) problems.push(`${file} job ${id} secrets.${name}: no bound for ${reading.unbounded.join('; ')}`);
+        else if (bytes > VARIABLE_BYTES) problems.push(`${file} job ${id} secrets.${name}: up to ${String(bytes)} bytes, over the ${String(VARIABLE_BYTES)} a called workflow bounds secrets.${name} at`);
+      }
+      if (typeof job.services === 'string') strings(job.services, `job ${id} services`, { job: id, scopes: [] });
+      for (const [service, definition] of Object.entries(record(job.services))) container(definition, `job ${id} services.${service}`);
+      (isList(job.steps) ? job.steps : []).forEach((step, index) => {
+        if (!isRecord(step)) return;
+        const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
+        const scopes = [record(step.env), record(job.env), record(root.env)];
+        const stepEnv = strings(step.env, `${named} env`, { job: id, scopes });
+        const inputs = strings(step.with, `${named} with`, { job: id, scopes }, true);
+        const shell = step.shell === undefined ? (step.run === undefined ? 0 : jobShell) : argument(step.shell, `${named} shell`, { job: id, scopes });
+        // Every string the step's process is given from the workflow: the workflow's, the job's and its own env, its
+        // inputs, and its shell (a name set twice counted twice, more than the runner passes).
+        total(workflowEnv + jobEnv + stepEnv + inputs + shell, named);
+      });
+    }
+    return problems;
+  }
+
+  it('admits into a step’s environment, an input or a script only values GitHub, the workflow or the table bounds, read as the runner reads an expression, in every workflow', () => {
+    expect(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).problems)).toEqual([]);
+    // Each $GITHUB_ENV write of the map is made where it says, exactly once, and the test that holds its bound runs it.
+    const titles = testTitles('tools/test/workflows.test.ts', repositorySource('tools/test/workflows.test.ts') ?? '');
+    for (const [name, write] of [...Object.entries(GITHUB_ENV_WRITES), ...Object.entries(GITHUB_PATH_WRITES)]) {
+      expect(write.sites.length, name).toBeGreaterThan(0);
+      for (const site of write.sites) {
+        const named = (workflow(site.file).jobs[site.job]?.steps ?? []).filter((step) => step.name === site.step);
+        const lines = named.flatMap((step) => (step.run ?? '').split('\n'));
+        expect(lines.filter((line) => line.trim() === write.line), `${name} in ${site.file} ${site.job}`).toHaveLength(1);
+        expect(
+          named.map((step) => fingerprint(step, workflow(site.file).jobs[site.job], workflow(site.file))),
+          `${name} in ${site.file} ${site.job}: the step that writes it has changed (its script, or its env, shell, working-directory or container, its own or inherited): re-read the bound against it, then write the new fingerprint in the map`,
+        ).toEqual([site.fingerprint]);
+      }
+      expect(titles.has(write.test), `${name}: no test named "${write.test}" that always runs`).toBe(true);
+    }
+    // A file a step runs (a script, a package's script, tool code) could write $GITHUB_ENV or $GITHUB_PATH, or the
+    // runner's file command files, that no workflow line shows, so every tracked file but a workflow (which the rule
+    // above reads) naming any of them, in any case, is one of this closed list, each with why it sets nothing. A name
+    // built at run time, and a dependency's or a pinned action's own code, are not read.
+    const NAMES_FILE_COMMANDS: Readonly<Record<string, string>> = {
+      'docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md': 'the decision that states this rule; no step runs it',
+      'docs/runbooks/ci.md': 'the runbook that states this rule; no step runs it',
+      'tools/engine-freeze/check.test.ts': "reads ci.yml's one $GITHUB_ENV write as text and writes none",
+      'tools/test/workflows.test.ts': "this rule; it runs that write's step with $GITHUB_ENV a file of its own temporary directory",
+    };
+    const naming = execFileSync('git', ['grep', '-lIi', '-e', 'GITHUB_ENV', '-e', 'GITHUB_PATH', '-e', '_runner_file_commands', '-e', 'set_env_', '-e', 'add_path_', '--', '.', ':!.github/workflows'], { cwd: repositoryRoot, encoding: 'utf8' })
+      .split('\n')
+      .filter((line) => line !== '');
+    expect(naming.sort()).toEqual(Object.keys(NAMES_FILE_COMMANDS).sort());
+  });
+
+  it('keeps every environment string a workflow sets at 131,072 bytes at most, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound', () => {
+    expect(workflowFiles().flatMap((file) => environmentProblems(file, workflow(file)))).toEqual([]);
+    const huge: BoundedValue = { file: 'fixture.yml', job: 'images', value: 'steps.web.outputs.size', bytes: 100_000, refs: [], bound: 'a fixture' };
+    const sum = (jobs: string, rows: readonly BoundedValue[] = [huge]) =>
+      environmentProblems('fixture.yml', parse(`name: fixture\non:\n  workflow_dispatch:\n    inputs:\n      runner: { type: choice, options: [ubuntu-24.04, ubuntu-26.04] }\n      note: { type: string }\n${jobs}\n`), rows);
+    const step = (env: string, more = '') => `jobs:\n  images:\n    runs-on: ubuntu-26.04\n${more}    steps:\n      - name: The step\n        ${env}\n        run: echo`;
+    const over = (where: string, variable: string, bytes: number) => `fixture.yml job images step "The step" ${where}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over 131072`;
+    // Three repository variables, or secrets, in one value: each admitted, together up to 147,456 bytes. Two fit.
+    expect(sum(step('env: { NOTES: "${{ vars.A }}${{ vars.B }}${{ vars.C }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { NOTES: "${{ secrets.A }}-${{ secrets.B }}-${{ vars.C }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 2 + 1)]);
+    expect(sum(step('env: { NOTES: "${{ vars.A }}${{ vars.B }}" }'))).toEqual([]);
+    // An input is INPUT_ and its name in capitals; a table row adds its bytes.
+    expect(sum(step('uses: actions/fixture@v1\n        with: { notes: "${{ steps.web.outputs.size }}${{ vars.A }}" }'))).toEqual([over('with.notes', 'INPUT_NOTES', 12 + 100_000 + 49_152 + 1)]);
+    // env.X is the bound of X where it is set, the step's env, the job's or the workflow's, each read as GitHub reads it.
+    expect(sum(step('env: { B: "${{ env.A }}${{ vars.C }}" }', '    env: { A: "${{ vars.A }}${{ vars.B }}" }\n'))).toEqual([over('env.B', 'B', 2 + 3 * 49_152 + 1)]);
+    expect(sum(`env: { X: "\${{ vars.X }}" }\n${step('env: { Z: "${{ env.Y }}${{ vars.Z }}" }', '    env: { Y: "${{ env.X }}${{ env.X }}" }\n')}`)).toEqual([over('env.Z', 'Z', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('uses: actions/fixture@v1\n        env: { A: "${{ vars.A }}${{ vars.B }}" }\n        with: { notes: "${{ env.A }}${{ vars.C }}" }'))).toEqual([over('with.notes', 'INPUT_NOTES', 12 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { B: "${{ env.MISSING }}" }'))).toEqual(['fixture.yml job images step "The step" env.B: no bound for env.missing, which no env in scope sets']);
+    expect(sum(step('env: { B: "${{ env.ENGINE_FREEZE_BASE }}" }', '    env: { ENGINE_FREEZE_BASE: x }\n'))).toEqual(['fixture.yml job images step "The step" env.B: no bound for env.engine_freeze_base, which a script writes to $GITHUB_ENV']);
+    // The limit's own count: the name, = and the NUL with the value make 131,072 bytes at most.
+    const fits = 'x'.repeat(131_072 - 'VALUE='.length - 1);
+    expect(sum(step(`env: { VALUE: "${fits}" }`))).toEqual([]);
+    expect(sum(step(`env: { VALUE: "${fits}x" }`))).toEqual([over('env.VALUE', 'VALUE', 131_073)]);
+    // A matrix key is its longest value; a value no row bounds, a string input and an unknown function have no bound.
+    expect(sum(step('env: { M: "${{ matrix.note }}${{ vars.A }}${{ vars.B }}" }', `    strategy: { matrix: { note: [a, ${'y'.repeat(40_000)}] } }\n`))).toEqual([over('env.M', 'M', 2 + 40_000 + 2 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}" }'), [])).toEqual(['fixture.yml job images step "The step" env.S: no bound for steps.web.outputs.size, which no row of the table bounds']);
+    expect(sum(step('env: { S: "${{ inputs.note }}" }'))).toEqual(['fixture.yml job images step "The step" env.S: no bound for inputs.note']);
+    expect(sum(step("env: { S: \"${{ format('{0}', vars.A) }}\" }"))).toEqual(['fixture.yml job images step "The step" env.S: no bound for format()']);
+    // A comparison's operand counts too (the parser does not read precedence), and a choice input is its longest option.
+    expect(sum(step('env: { S: "${{ vars.A || vars.B == vars.C }}${{ vars.D }}${{ vars.E }}" }'))).toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ inputs.runner }}" }'))).toEqual([]);
+    // Each level's own strings are summed: the workflow's env, a job's, its container's and each service's.
+    const three = '"${{ vars.A }}${{ vars.B }}${{ vars.C }}"';
+    const notes = (where: string) => `fixture.yml ${where}.NOTES: NOTES=… is up to ${String(6 + 3 * 49_152 + 1)} bytes with its NUL, over 131072`;
+    expect(sum(`env: { NOTES: ${three} }\n${step('env: { E: x }')}`)).toEqual([notes('env')]);
+    expect(sum(step('env: { E: x }', `    env: { NOTES: ${three} }\n`))).toEqual([notes('job images env')]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, env: { NOTES: ${three} } }\n`))).toEqual([notes('job images container.env')]);
+    expect(sum(step('env: { E: x }', `    services:\n      db: { image: x, env: { NOTES: ${three} } }\n`))).toEqual([notes('job images services.db.env')]);
+    // One argument the runner hands a process is held to the same limit: a container's or a service's options, image,
+    // entrypoint or command, a job's or the workflow's default shell, a step's shell.
+    const argumentOver = (where: string, bytes: number) => `fixture.yml ${where}: an argument of up to ${String(bytes)} bytes with its NUL, over 131072`;
+    const vars3 = '${{ vars.A }}${{ vars.B }}${{ vars.C }}';
+    expect(sum(step('env: { E: x }', `    container: { image: x, options: "--label=${vars3}" }\n`))).toEqual([argumentOver('job images container.options', '--label='.length + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    services: { db: { image: x, entrypoint: "${vars3}" } }\n`))).toEqual([argumentOver('job images services.db.entrypoint', 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    services: { db: { image: "${vars3}" } }\n`))).toEqual([argumentOver('job images services.db.image', 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    defaults: { run: { shell: "bash -c '${vars3}' {0}" } }\n`))).toEqual([argumentOver('job images defaults.run.shell', "bash -c '' {0}".length + 3 * 49_152 + 1)]);
+    expect(sum(`defaults: { run: { shell: "${vars3}" } }\n${step('env: { E: x }')}`)).toEqual([argumentOver('defaults.run.shell', 3 * 49_152 + 1)]);
+    expect(sum(step(`shell: "${vars3}"\n        env: { E: x }`))).toEqual([argumentOver('job images step "The step" shell', 3 * 49_152 + 1)]);
+    // An argument's own count: its bytes and the NUL make 131,072 at most.
+    const argumentFits = 'x'.repeat(131_072 - 1);
+    expect(sum(step(`shell: "${argumentFits}"\n        env: { E: x }`))).toEqual([]);
+    expect(sum(step(`shell: "${argumentFits}x"\n        env: { E: x }`))).toEqual([argumentOver('job images step "The step" shell', 131_073)]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, options: "\${{ inputs.note }}" }\n`))).toEqual(['fixture.yml job images container.options: no bound for inputs.note']);
+    // And a process's environment and arguments together are held under ARG_MAX, less the runner's own: fifty
+    // variables of 48 KB, each one string under the limit, are 2,457,840 bytes.
+    const many = (count: number) => Array.from({ length: count }, (_, index) => `V${String(index)}: "\${{ vars.A${String(index)} }}"`).join(', ');
+    const allOf = (count: number) => Array.from({ length: count }, (_, index) => `V${String(index)}=`.length + 49_152 + 1).reduce((all, bytes) => all + bytes, 0);
+    const totalOver = (where: string, bytes: number) => `fixture.yml ${where}: its environment and arguments are up to ${String(bytes)} bytes, over 1835008 (ARG_MAX, less 262144 for the runner's own)`;
+    expect(sum(step(`env: { ${many(50)} }`))).toEqual([totalOver('job images step "The step"', allOf(50))]);
+    expect(sum(step(`env: { ${many(30)} }`))).toEqual([]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, env: { ${many(40)} } }\n`))).toEqual([totalOver('job images container', allOf(40) + 'x'.length + 1)]);
+    // A key's list from an expression, with include entries beside it: each entry's value counts, and an include from
+    // an expression its whole bound. The key's expression alone fits.
+    const keyed = (include: string, env = 'env: { M: "${{ matrix.note }}${{ vars.A }}" }') => step(env, `    strategy: { matrix: { note: "\${{ fromJSON(steps.web.outputs.size) }}"${include} } }\n`);
+    const tiny = [{ ...huge, bytes: 10 }, { ...huge, value: 'steps.web.outputs.whole' }];
+    expect(sum(keyed(''), tiny)).toEqual([]);
+    expect(sum(keyed(`, include: [ { note: "${'y'.repeat(90_000)}" } ]`), tiny)).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
+    expect(sum(keyed(', include: [ { note: "${{ vars.A }}${{ vars.B }}${{ vars.C }}" } ]', 'env: { M: "${{ matrix.note }}" }'), tiny)).toEqual([over('env.M', 'M', 2 + 3 * 49_152 + 1)]);
+    expect(sum(keyed(', include: "${{ fromJSON(steps.web.outputs.whole) }}"'), tiny)).toEqual([over('env.M', 'M', 2 + 100_000 + 49_152 + 1)]);
+    expect(sum(keyed(', include: [ "${{ fromJSON(steps.web.outputs.whole) }}" ]'), tiny), 'an include entry from an expression').toEqual([over('env.M', 'M', 2 + 100_000 + 49_152 + 1)]);
+    expect(sum(keyed(', include: [ { other: x }, { note: short } ]'), tiny)).toEqual([]);
+    // And beside a key's list, as matrixValues reads one: an include entry's value counts there too.
+    expect(sum(step('env: { M: "${{ matrix.note }}${{ vars.A }}" }', `    strategy: { matrix: { note: [a], include: [ { note: "${'y'.repeat(90_000)}" } ] } }\n`))).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
+    // Each part of an expression at its own bound: fromJSON's value and an access on it, the right of && or ||, and
+    // bytes counted as UTF-8, not as UTF-16 units, outside an expression and in its string literals.
+    expect(sum(step('env: { S: "${{ fromJSON(vars.A) }}${{ vars.B }}${{ vars.C }}" }')), 'fromJSON(x)').toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ fromJSON(vars.A).x }}${{ vars.B }}${{ vars.C }}" }')), 'fromJSON(x).y').toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ true && vars.A }}${{ vars.B }}${{ vars.C }}" }')), 'the right of &&').toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step(`env: { VALUE: "${'é'.repeat(65_533)}" }`)), 'a literal in UTF-8').toEqual([over('env.VALUE', 'VALUE', 6 + 2 * 65_533 + 1)]);
+    expect(sum(step(`env: { S: "\${{ '${'é'.repeat(65_535)}' }}" }`)), 'a string literal in UTF-8').toEqual([over('env.S', 'S', 2 + 2 * 65_535 + 1)]);
+    // The token is held as a secret is, 48 KB.
+    expect(sum(step('env: { NOTES: "${{ github.token }}${{ secrets.A }}${{ vars.B }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
+    // A mapping given as one expression, wherever GitHub accepts one, names its own strings: refused, where a container
+    // or a service named by an image alone sets none.
+    const mapping = '"${{ fromJSON(steps.web.outputs.size) }}"';
+    const fromExpression = (where: string) => `fixture.yml ${where}: a mapping from an expression, whose names and strings no sum can read`;
+    expect(sum(step(`env: ${mapping}`))).toEqual([fromExpression('job images step "The step" env')]);
+    expect(sum(step(`uses: actions/fixture@v1\n        with: ${mapping}`))).toEqual([fromExpression('job images step "The step" with')]);
+    expect(sum(step('env: { E: x }', `    env: ${mapping}\n`))).toEqual([fromExpression('job images env')]);
+    expect(sum(`env: "\${{ fromJSON(vars.A) }}"\n${step('env: { E: x }')}`)).toEqual([fromExpression('env')]);
+    expect(sum(step('env: { E: x }', `    container: ${mapping}\n`))).toEqual([fromExpression('job images container')]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, env: ${mapping} }\n`))).toEqual([fromExpression('job images container.env')]);
+    expect(sum(step('env: { E: x }', `    services: ${mapping}\n`))).toEqual([fromExpression('job images services')]);
+    expect(sum(step('env: { E: x }', `    services: { db: ${mapping} }\n`))).toEqual([fromExpression('job images services.db')]);
+    expect(sum(step('env: { E: x }', `    services: { db: { image: x, env: ${mapping} } }\n`))).toEqual([fromExpression('job images services.db.env')]);
+    expect(sum(step('env: { E: x }', '    container: node:24\n    services: { db: postgres:18 }\n'))).toEqual([]);
+    // A container or a service named by a string with an expression in it is its image, an argument held to the limit.
+    expect(sum(step('env: { E: x }', '    strategy: { matrix: { node: [22, 24] } }\n    container: "node:${{ matrix.node }}"\n    services: { db: "postgres:${{ matrix.node }}" }\n'))).toEqual([]);
+    // One that starts with an expression and goes on is an image too, not a mapping.
+    expect(sum(step('env: { E: x }', '    strategy: { matrix: { node: [22, 24] } }\n    container: "${{ matrix.node }}-slim"\n    services: { db: "${{ matrix.node }}-postgres" }\n'))).toEqual([]);
+    expect(sum(step('env: { E: x }', `    container: "node:${vars3}"\n`))).toEqual([argumentOver('job images container image', 'node:'.length + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    services: { db: "postgres:${vars3}" }\n`))).toEqual([argumentOver('job images services.db image', 'postgres:'.length + 3 * 49_152 + 1)]);
+    // A value a job passes a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's own sum
+    // gives secrets.<name>: one secret passes; two joined, under an environment string's 131,072 bytes but over a
+    // secret's, and three are refused.
+    const call = (secrets: string) => sum(`jobs:\n  images:\n    uses: ./.github/workflows/called.yml\n    secrets: ${secrets}\n`);
+    expect(call('{ TOKEN: "${{ secrets.A }}" }')).toEqual([]);
+    expect(call('inherit')).toEqual([]);
+    expect(call('{ TOKEN: "${{ secrets.A }}${{ secrets.B }}" }')).toEqual([`fixture.yml job images secrets.TOKEN: up to ${String(2 * 49_152)} bytes, over the 49152 a called workflow bounds secrets.TOKEN at`]);
+    expect(call('{ TOKEN: "${{ secrets.A }}${{ secrets.B }}${{ secrets.C }}" }')).toEqual([`fixture.yml job images secrets.TOKEN: up to ${String(3 * 49_152)} bytes, over the 49152 a called workflow bounds secrets.TOKEN at`]);
+    expect(call('{ TOKEN: "${{ inputs.note }}" }')).toEqual(['fixture.yml job images secrets.TOKEN: no bound for inputs.note']);
+    expect(call('"${{ fromJSON(vars.A) }}"')).toEqual([fromExpression('job images secrets')]);
+    // The one value marked over is the table's to hold, by its sites, and only alone in its string: one expression
+    // reading it, in any spelling the runner reads alike. Anything beside it, bounded or not, is refused.
+    const marked = [{ ...huge, over: 'ci-findings-transport' as const }];
+    const beside = 'fixture.yml job images step "The step" env.S: holds the value over the limit with more beside it';
+    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}" }'), marked)).toEqual([]);
+    expect(sum(step('env: { S: "${{STEPS.web.outputs.SIZE}}" }'), marked)).toEqual([]);
+    // Alone it is exempt from its own string's limit, never from its process's whole: with 36 variables of 48 KB beside it
+    // (each string under the limit, 1,769,642 bytes together) the step passes ARG_MAX less the runner's own.
+    expect(sum(step(`env: { S: "\${{ steps.web.outputs.size }}", ${many(36)} }`), marked)).toEqual([totalOver('job images step "The step"', 'S='.length + 100_000 + 1 + allOf(36))]);
+    expect(sum(step(`env: { ${many(36)} }`), marked)).toEqual([]);
+    for (const value of ['${{ steps.web.outputs.size }}${{ vars.A }}', 'x${{ steps.web.outputs.size }}', '${{ steps.web.outputs.size }} ', '${{ steps.web.outputs.size || vars.A }}', '${{ steps.web.outputs.size }}${{ env.UNSET }}', "${{ steps.web.outputs.size }}${{ format('{0}', 'x') }}"]) {
+      expect(sum(step(`env: { S: ${JSON.stringify(value)} }`), marked), value).toEqual([beside]);
+    }
+  });
+
+  it('refuses each route a value could take whole', () => {
+    const fixture = (expression: string) =>
+      unboundedValueProblems(
+        'fixture.yml',
+        parse(
+          `name: fixture\non:\n  workflow_dispatch:\n    inputs:\n      runner: { type: choice, options: [ubuntu-24.04, ubuntu-26.04] }\n      note: { type: string }\njobs:\n  images:\n    runs-on: ubuntu-26.04\n    steps:\n      - name: The step\n        env:\n          VALUE: "\${{ ${expression} }}"\n        run: echo "$VALUE"\n`,
+        ),
+      );
+    const refused = [
+      'steps.web.outputs.metadata',
+      'steps.web.outputs.METADATA',
+      'steps.*.outputs.metadata',
+      'toJSON(github)',
+      'toJSON(github.event)',
+      'ToJson(GitHub.Event)',
+      'toJSON (github.event)',
+      'toJSON(steps)',
+      'github.event',
+      'github.event.pull_request.body',
+      'github . event . pull_request . body',
+      "github.event.pull_request['body']",
+      'github.event.pull_request.title',
+      'github.event.head_commit.message',
+      "github['event']",
+      "github['event']['pull_request']['body']",
+      "join(steps.web.outputs.*, '')",
+      "steps.web.outputs[format('meta{0}', 'data')]",
+      "fromJSON(steps.web.outputs.metadata || '{}')['buildx.build.provenance']",
+      // The hand-over's form: fromJSON('') of a build's empty output fails a step its if: would skip.
+      "fromJSON(steps.web.outputs.metadata)['containerimage.config.digest']",
+      "toJSON(fromJSON(steps.web.outputs.metadata || '{}'))",
+      "format('{0}', github.event.pull_request.body)",
+      'inputs.note',
+      'toJSON(needs.build)',
+      'toJSON(needs.build.outputs.digest)',
+      'toJSON(needs.build.result)',
+      'needs.build.outputs[github.ref]',
+    ];
+    for (const expression of refused) {
+      expect(fixture(expression).problems, expression).toEqual([expect.stringMatching(/^fixture\.yml job images step "The step" env\.VALUE: .+, in \$\{\{ .+ \}\}$/)]);
+    }
+    const accepted: readonly (readonly [string, readonly string[]])[] = [
+      ["fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest']", ["fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']"]],
+      ["FromJSON( steps.web.outputs.metadata || '{}' )[ 'containerimage.config.digest' ]", ["fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']"]],
+      ['github.event.pull_request.number', []],
+      ["github['sha']", []],
+      ['toJSON(needs)', ['tojson(needs)']],
+      ['toJSON(needs.build.outputs)', ['tojson(needs.build.outputs)']],
+      ['runner.temp', []],
+      ["hashFiles('pnpm-lock.yaml')", []],
+      ['inputs.runner', []],
+    ];
+    for (const [expression, values] of accepted) {
+      expect(fixture(expression), expression).toEqual({ problems: [], values: values.map((value) => ({ file: 'fixture.yml', job: 'images', value, where: 'job images step "The step" env.VALUE', step: 0 })) });
+    }
+
+    // The whole metadata is refused in every place a value reaches a process.
+    const whole = '"${{ steps.web.outputs.metadata }}"';
+    const places: (readonly [string, string])[] = [
+      [`env: { VALUE: ${whole} }\njobs: { images: { runs-on: ubuntu-26.04, steps: [] } }`, 'env.VALUE'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, env: { VALUE: ${whole} }, steps: [] } }`, 'job images env.VALUE'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, outputs: { value: ${whole} }, steps: [] } }`, 'job images outputs.value'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, strategy: { matrix: { value: [${whole}] } }, steps: [] } }`, 'job images strategy.matrix.value[0]'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, container: { image: 'node:24', env: { VALUE: ${whole} } }, steps: [] } }`, 'job images container.env.VALUE'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, services: { db: { image: 'postgres:18', env: { VALUE: ${whole} } } }, steps: [] } }`, 'job images services.db.env.VALUE'],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, with: { value: ${whole} } } }`, 'job images with.value'],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, secrets: { value: ${whole} } } }`, 'job images secrets.value'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, uses: actions/fixture@v1, with: { value: ${whole} } }] } }`, 'job images step "The step" with.value'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: ${whole} }] } }`, 'job images step "The step" run'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, defaults: { run: { shell: ${whole} } }, steps: [] } }`, 'job images defaults.run.shell'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: echo, working-directory: ${whole} }] } }`, 'job images step "The step" working-directory'],
+    ];
+    for (const [jobs, where] of places) {
+      expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: steps.web.outputs.metadata whole, in \${{ steps.web.outputs.metadata }}`]);
+    }
+
+    // An expression in a key, wherever GitHub evaluates one: an env name (the workflow's, a job's, a step's, a job
+    // container's or a service's), a step input's name (INPUT_<key>), a service's id or a matrix key, so the
+    // description would be an environment string's name, a container's or a matrix value's; anywhere in a key, not only
+    // at its start. GitHub refuses one in a job's outputs, a reusable workflow's with: and secrets:, a step's own keys
+    // or a job's id when it parses the file, and the rule refuses those too.
+    const body = '${{ github.event.pull_request.body }}';
+    const packed = '${{github.event.pull_request.body}}';
+    // Each with the rule's message and any other the fixture earns (a step's own key is also one the rule does not read).
+    const keyed: (readonly [string, string, ...string[]])[] = [
+      [`env: { "${body}": '1' }\njobs: { images: { runs-on: ubuntu-26.04, steps: [] } }`, `env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, env: { "${body}": '1' }, steps: [] } }`, `jobs.images.env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "${body}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, container: { image: 'node:24', env: { "${body}": '1' } }, steps: [] } }`, `jobs.images.container.env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, services: { db: { image: 'postgres:18', env: { "${body}": '1' } } }, steps: [] } }`, `jobs.images.services.db.env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, uses: actions/fixture@v1, with: { "${body}": '1' } }] } }`, `jobs.images.steps[0].with.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, outputs: { "${body}": '1' }, steps: [] } }`, `jobs.images.outputs.${body}`],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, with: { "${body}": '1' } } }`, `jobs.images.with.${body}`],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, secrets: { "${body}": '1' } } }`, `jobs.images.secrets.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, services: { "${body}": { image: 'postgres:18' } }, steps: [] } }`, `jobs.images.services.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, strategy: { matrix: { "${body}": [a] } }, steps: [] } }`, `jobs.images.strategy.matrix.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: echo, "${body}": '1' }] } }`, `jobs.images.steps[0].${body}`, `fixture.yml job images step "The step": ${body}, a key the value rule does not read`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "X_${body}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.X_${body}`],
+      // GitHub evaluates the spelling with no spaces too; and a job's id is refused at parse time.
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "${packed}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.${packed}`],
+      [`jobs: { "${body}": { runs-on: ubuntu-26.04, steps: [] } }`, `jobs.${body}`],
+    ];
+    for (const [jobs, where, ...also] of keyed) {
+      expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`, ...also]);
+    }
+    // And an input's name under on:, which GitHub refuses at parse time.
+    expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non:\n  workflow_dispatch:\n    inputs:\n      "${body}": { type: string }\njobs: {}\n`)).problems).toEqual([`fixture.yml on.workflow_dispatch.inputs.${body}: an expression in a key`]);
+
+    // A key the rule does not read, whatever it holds: a nested parallel: list of steps (GitHub's parser has one), a
+    // job's or the workflow's key it does not know.
+    const unreadKey = (yaml: string) => unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${yaml}\n`)).problems;
+    expect(unreadKey('jobs: { images: { runs-on: ubuntu-26.04, steps: [{ parallel: [{ name: Leak, env: { B: "${{ github.event.pull_request.body }}" }, run: echo }] }] } }')).toEqual(['fixture.yml job images step 0: parallel, a key the value rule does not read']);
+    expect(unreadKey('jobs: { images: { runs-on: ubuntu-26.04, snapshot: image, steps: [] } }')).toEqual(['fixture.yml job images: snapshot, a key the value rule does not read']);
+    expect(unreadKey('extra: { env: { B: "${{ github.event.pull_request.body }}" } }\njobs: {}')).toEqual(['fixture.yml the workflow: extra, a key the value rule does not read']);
+    expect(unreadKey("defaults: { run: { shell: '${{ github.event.pull_request.body }}' } }\njobs: {}")).toEqual(['fixture.yml defaults.run.shell: github.event.pull_request.body, not a bounded github value, in ${{ github.event.pull_request.body }}']);
+
+    // $GITHUB_ENV: each write one entry of a closed map, its file, job, step and line exactly, written once.
+    const write = (lines: readonly string[], file = 'ci.yml', job = 'unit', step = "The engine freeze's base") =>
+      unboundedValueProblems(file, parse(`name: fixture\non: push\njobs:\n  ${job}:\n    runs-on: ubuntu-26.04\n    steps:\n      - name: ${JSON.stringify(step)}\n        run: |\n${lines.map((line) => `          ${line}\n`).join('')}`)).problems;
+    const freeze = 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"';
+    const outside = (line: string, where = 'ci.yml job unit step "The engine freeze\'s base"') => `${where} run: a $GITHUB_ENV write outside its closed map: ${line}`;
+    expect(write(['base="$(git rev-parse HEAD^1)"', freeze])).toEqual([]);
+    // A changed value form, a second write, and the write in another step, job or file.
+    expect(write(['echo "ENGINE_FREEZE_BASE=$(git log -1 --format=%B)" >> "$GITHUB_ENV"'])).toEqual([outside('echo "ENGINE_FREEZE_BASE=$(git log -1 --format=%B)" >> "$GITHUB_ENV"')]);
+    expect(write([freeze, freeze])).toEqual(['ci.yml: ENGINE_FREEZE_BASE is written to $GITHUB_ENV 2 times, not once']);
+    expect(write([freeze], 'ci.yml', 'unit', 'Another step')).toEqual([outside(freeze, 'ci.yml job unit step "Another step"')]);
+    expect(write([freeze], 'ci.yml', 'db')).toEqual([outside(freeze, 'ci.yml job db step "The engine freeze\'s base"')]);
+    expect(write([freeze], 'fixture.yml')).toEqual([outside(freeze, 'fixture.yml job unit step "The engine freeze\'s base"')]);
+    // Any other variable, or any other form.
+    expect(write(['echo "BODY=$x" >> "$GITHUB_ENV"'])).toEqual([outside('echo "BODY=$x" >> "$GITHUB_ENV"')]);
+    expect(write(['cat file >> $GITHUB_ENV'])).toEqual([outside('cat file >> $GITHUB_ENV')]);
+    // A write split by a backslash-newline is the line bash reads; the switch for ::set-env is refused anywhere.
+    expect(write([freeze, 'echo "BODY=$x" >> "$GITHUB_\\', 'ENV"'])).toEqual([outside('echo "BODY=$x" >> "$GITHUB_ENV"')]);
+    expect(unboundedValueProblems('fixture.yml', parse("name: fixture\non: push\njobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' }, run: echo }] } }\n")).problems).toEqual([
+      "fixture.yml jobs.images.steps[0].env.ACTIONS_ALLOW_UNSECURE_COMMANDS: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map",
+    ]);
+    expect(unboundedValueProblems('fixture.yml', parse("name: fixture\non: push\nenv: { actions_allow_unsecure_commands: 'true' }\njobs: {}\n")).problems).toEqual([
+      "fixture.yml env.actions_allow_unsecure_commands: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map",
+    ]);
+    // $GITHUB_ENV or $GITHUB_PATH named anywhere but a step's run: (a step's shell, a job's or the workflow's default
+    // shell, an input, an env value or name), the runner's file command files named anywhere, a script line included,
+    // and any line of a script naming $GITHUB_PATH, of which none is listed.
+    const commandsIn = (yaml: string) => unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${yaml}\n`)).problems;
+    const outsideRun = (where: string) => `fixture.yml ${where}: names $GITHUB_ENV, $GITHUB_PATH or the runner's file commands outside a step's run:, where a shell, an input or an action could set a later step's environment unread`;
+    const shell = `'bash -c "git log -1 --format=BODY=%s >> $GITHUB_ENV; bash --noprofile --norc -eo pipefail {0}"'`;
+    expect(commandsIn(`jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, shell: ${shell}, run: echo probe }] } }`)).toEqual([outsideRun('jobs.check.steps[0].shell')]);
+    expect(commandsIn(`jobs: { check: { runs-on: ubuntu-26.04, defaults: { run: { shell: ${shell} } }, steps: [{ name: Probe, run: echo probe }] } }`)).toEqual([outsideRun('jobs.check.defaults.run.shell')]);
+    expect(commandsIn(`defaults: { run: { shell: ${shell} } }\njobs: {}`)).toEqual([outsideRun('defaults.run.shell')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: $GITHUB_ENV } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, env: { TARGET: $GITHUB_ENV }, steps: [] } }')).toEqual([outsideRun('jobs.check.env.TARGET')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, env: { GITHUB_ENV: /tmp/env }, run: echo }] } }')).toEqual([outsideRun('jobs.check.steps[0].env.GITHUB_ENV')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { path: "$RUNNER_TEMP/_runner_file_commands" } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.path')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: $GITHUB_PATH } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
+    expect(write(['echo "$V$V$V" >> "$GITHUB_PATH"'])).toEqual(['ci.yml job unit step "The engine freeze\'s base" run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: echo "$V$V$V" >> "$GITHUB_PATH"']);
+    // The pinned Trivy's two writes, each listed for its three steps: admitted there once each, refused in another step,
+    // job or file, in another form, or twice.
+    const trivy = ['trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"', 'dirname "$trivy" >> "$GITHUB_PATH"', 'echo "TRIVY_CMD=$trivy" >> "$GITHUB_ENV"'];
+    const pathOutside = (line: string, where: string) => `${where} run: a $GITHUB_PATH write, which sets PATH for every later step and no row bounds: ${line}`;
+    for (const [file, job] of [['ci.yml', 'images'], ['release.yml', 'build'], ['release-dry-run.yml', 'build']] as const) expect(write(trivy, file, job, 'The pinned Trivy'), file).toEqual([]);
+    expect(write(trivy, 'ci.yml', 'unit', 'The pinned Trivy')).toEqual([pathOutside(trivy[1] ?? '', 'ci.yml job unit step "The pinned Trivy"'), outside(trivy[2] ?? '', 'ci.yml job unit step "The pinned Trivy"')]);
+    expect(write(trivy, 'ci.yml', 'images', 'Another step')).toEqual([pathOutside(trivy[1] ?? '', 'ci.yml job images step "Another step"'), outside(trivy[2] ?? '', 'ci.yml job images step "Another step"')]);
+    expect(write([...trivy, trivy[1] ?? ''], 'ci.yml', 'images', 'The pinned Trivy')).toEqual(['ci.yml: trivy-bin is written to $GITHUB_PATH 2 times, not once']);
+    expect(write([trivy[0] ?? '', 'echo "$trivy" >> "$GITHUB_PATH"', 'echo "TRIVY_CMD=$trivy:$V" >> "$GITHUB_ENV"'], 'ci.yml', 'images', 'The pinned Trivy')).toEqual([
+      pathOutside('echo "$trivy" >> "$GITHUB_PATH"', 'ci.yml job images step "The pinned Trivy"'),
+      outside('echo "TRIVY_CMD=$trivy:$V" >> "$GITHUB_ENV"', 'ci.yml job images step "The pinned Trivy"'),
+    ]);
+    // Or by a file's own name, beside $GITHUB_OUTPUT's, so a script reaching it without naming $GITHUB_ENV is refused.
+    expect(write(['echo "X=$V$V$V" >> "${GITHUB_OUTPUT%/*}"/set_env_${GITHUB_OUTPUT##*set_output_}'])).toEqual([
+      'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: echo "X=$V$V$V" >> "${GITHUB_OUTPUT%/*}"/set_env_${GITHUB_OUTPUT##*set_output_}',
+    ]);
+    expect(write(['echo /tmp/bin >> "$(dirname "$GITHUB_OUTPUT")"/ADD_PATH_x'])).toEqual([
+      'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: echo /tmp/bin >> "$(dirname "$GITHUB_OUTPUT")"/ADD_PATH_x',
+    ]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: set_env_x } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
+    expect(write(['cat file >> "$RUNNER_TEMP"/_runner_file_commands/set_env_*'])).toEqual([
+      'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: cat file >> "$RUNNER_TEMP"/_runner_file_commands/set_env_*',
+    ]);
+  });
+
+  /**
+   * Where a row's value comes from, each named by what it is, never by a line, so an edit elsewhere in a file moves
+   * none and a renamed, moved or removed producer turns the table red:
+   * - a step of a job, by its id: a `run:` step with the fingerprint of what its script runs with as parsed, its run,
+   *   its env over its job's and the workflow's, its shell and working-directory or the defaults it takes, and its
+   *   job's container (fingerprint, below), so a changed script or input, its own or inherited, fails until a person
+   *   re-reads the bound and writes the new one; a `uses:` step with its action (its pin is the pin rules', CI-11);
+   * - an output a job declares, a key of a job's matrix, and a job the reading job needs (the steps, needed jobs and
+   *   outputs a row names being exactly those its value reads, producersOf);
+   * - tool code by the name it declares (path#symbol, read with TypeScript's parser), never fingerprinted: other lanes
+   *   own it and change it for their own reasons, so the row names instead the unit test its owners keep for the
+   *   bound, by its title, one test's alone that always runs as written (testTitles); what it asserts is not read.
+   */
+  type Ref =
+    | { readonly kind: 'step'; readonly job: string; readonly step: string; readonly run: string }
+    | { readonly kind: 'step'; readonly job: string; readonly step: string; readonly uses: string }
+    | { readonly kind: 'output'; readonly job: string; readonly name: string }
+    | { readonly kind: 'matrix'; readonly job: string; readonly key: string }
+    | { readonly kind: 'needs'; readonly job: string }
+    | { readonly kind: 'symbol'; readonly path: string; readonly symbol: string }
+    | { readonly kind: 'test'; readonly path: string; readonly name: string };
+
+  interface BoundedValue extends ValueKey {
+    /** What writes it, resolved by name in the test below. */
+    readonly refs: readonly Ref[];
+    /** Its bound, in words: what the producers write, and why no more. */
+    readonly bound: string;
+    /** Its bound in bytes, which every environment string that holds it adds (the sum, below). */
+    readonly bytes: number;
+    /**
+     * The one value known to be over Linux's 131,072 bytes as one environment string, and the item that owns its
+     * transport: exempt from its own string's 131,072-byte limit only alone in its string (still counted in its
+     * process's whole), and held to its sites.
+     */
+    readonly over?: 'ci-findings-transport';
+    /**
+     * Where it may be read, exactly (a place as FoundValue's where names it): every use of a row whose bytes pass
+     * MAX_ARG_STRLEN is pinned, so such a value reaches no environment string or input it was not reviewed for.
+     */
+    readonly sites?: readonly string[];
+  }
+
+  const script = (job: string, step: string, run: string): Ref => ({ kind: 'step', job, step, run });
+  const action = (job: string, step: string, uses: string): Ref => ({ kind: 'step', job, step, uses });
+  const output = (job: string, name: string): Ref => ({ kind: 'output', job, name });
+  const needs = (job: string): Ref => ({ kind: 'needs', job });
+  const symbol = (reference: string): Ref => {
+    const [file = '', name = ''] = reference.split('#');
+    return { kind: 'symbol', path: file, symbol: name };
+  };
+  const unitTest = (file: string, name: string): Ref => ({ kind: 'test', path: file, name });
+
+  /** The runner image's two names, which the image sets (ubuntu26-20261019.27.1 is 22 bytes). */
+  const RUNNER_IMAGE_BYTES = 256;
+  /** A cache key: actions/cache refuses one over 512 characters, each at most 4 bytes. */
+  const CACHE_KEY_BYTES = 4 * 512;
+  /** A digest: sha256: and 64 hexadecimal digits. */
+  const DIGEST_BYTES = 'sha256:'.length + 64;
+  /** The findings' base64: four characters for each three bytes of MAX_FILE_BYTES. */
+  const FINDINGS_BYTES = 4 * Math.ceil(MAX_FILE_BYTES / 3);
+  /**
+   * affected.ts's lists as JSON: the mutation packages' names (38 bytes for today's four) and their shards' names from
+   * stryker/shards.json (116 bytes for today's seven; 1,024 holds some fifty more of their length).
+   */
+  const PACKAGES_BYTES = 256;
+  const SHARDS_BYTES = 1_024;
+  /**
+   * The most toJSON writes of one job's outputs, given each output's bound, as the runner writes JSON: two-space
+   * indents, each value quoted and escaped (a quote or a backslash two bytes, a control character six, \u and four
+   * digits), so six bytes for each of its value's, its name, and ten more for the indent, the quotes, ': ', ',' and
+   * the newline; and the braces.
+   */
+  /**
+   * A job's own lines in toJSON(needs), past its id and its outputs' own: by hand from the runner's indented form,
+   * `  "<id>": {` and its newline (id + 8), `    "result": "cancelled",` and its newline (27, cancelled the longest
+   * result), `    "outputs": {` and its newline (17), its close (6) and the job's own close (5), so id + 63; 96 keeps a
+   * third again over that count, should the runner's form differ by a line ending or a space.
+   */
+  const NEEDS_JOB_BYTES = 96;
+  const toJsonBytes = (outputs: Readonly<Record<string, number>>): number => Object.entries(outputs).reduce((sum, [name, bytes]) => sum + name.length + 6 * bytes + 10, '{\n}'.length);
+  /**
+   * The same of needs: each job it is given, its id and NEEDS_JOB_BYTES of its own lines (its result, a word, among
+   * them), and its outputs one level deeper, four more bytes of indent each.
+   */
+  const needsJsonBytes = (jobs: Readonly<Record<string, Readonly<Record<string, number>>>>): number =>
+    Object.entries(jobs).reduce((sum, [job, outputs]) => sum + job.length + NEEDS_JOB_BYTES + toJsonBytes(outputs) - '{\n}'.length + 4 * Object.keys(outputs).length, '{\n}'.length);
+  /** An image's name in a release matrix, the longest being web-production. */
+  const IMAGE_NAME_BYTES = 'web-production'.length;
+  const RUNNER_IMAGE = "the runner image step writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS";
+  /** The runner image step's row: the same script everywhere, fingerprinted with what its job and workflow give it. */
+  const runnerImage = (job: string, run: string): Ref[] => [script(job, 'runner-image', run)];
+  const cacheKey = (parts: string) => `actions/cache/restore echoes the key it was given, made of ${parts}`;
+  const RUNNER_HASH = 'runner.os and a hashFiles digest';
+  const APT_KEY = "the runner image's key and a hashFiles digest";
+  const IDENTITY = "the identity step writes, for its matrix's image, the archive's SHA-256 (64 hexadecimal digits) and the config and top-level digests image-id.ts reads from the archive's bytes (sha256: and 64 hexadecimal digits, the top-level one '' for an archive without an index)";
+  const IMAGE_ID = [symbol('tools/screening-capacity/image-id.ts#identityOf'), unitTest('tools/screening-capacity/image-id.test.ts', 'refuses a config whose bytes do not hash to the digest that names it, and a missing config')];
+  const identity = (run: string): Ref[] => [script('build', 'identity', run), { kind: 'matrix', job: 'build', key: 'image' }, ...IMAGE_ID];
+  const AFFECTED = 'tools/stryker/affected.ts writes any (true or false), packages and shards (JSON lists of the mutation packages, MUTATION_PACKAGES, and their shards, shardsFor)';
+  const AFFECTED_CODE = [symbol('stryker/base.mjs#MUTATION_PACKAGES'), symbol('tools/stryker/affected.ts#shardsFor'), unitTest('tools/stryker/affected.test.ts', 'selects every shard of each affected package')];
+  const AFFECTED_STEP = script('changes', 'affected', '4d1e744c');
+  const RELEASE_BUILD = (digests: string) => `the build job's outputs, ${digests} digests of 64 hexadecimal digits (sha256: before the config and top-level ones), by the identity step`;
+  const releaseBuild = (images: readonly string[]): Ref[] => [needs('build'), ...images.flatMap((image) => ['sha256', 'config', 'target'].map((kind) => output('build', `${kind}_${image}`)))];
+  /** What toJSON writes of the build job's outputs: each image's archive SHA-256 and its config and top-level digests. */
+  const releaseJson = (images: readonly string[]): number => toJsonBytes(Object.fromEntries(images.flatMap((image) => [[`sha256_${image}`, 64], [`config_${image}`, DIGEST_BYTES], [`target_${image}`, DIGEST_BYTES]])));
+  /** The jobs ci.yml's gate needs, none of which declares outputs (asserted below). */
+  const ALL_GREEN_NEEDS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images'];
+  const ADVISORIES = [
+    symbol('tools/release-capacity/checks.ts#verdict'),
+    symbol('tools/release-capacity/checks.ts#advisoriesOutput'),
+    unitTest('tools/release-capacity/checks.test.ts', 'records times as advisory: a slow windows query, or none, fails nothing'),
+    unitTest('tools/release-capacity/checks.test.ts', 'is empty with no advisory, and otherwise one line of base64 holding each advisory on a line of its own'),
+  ];
+  // The tests that hold the sentence's text exactly: the job's sizing output, and sizingQuestion's longest form.
+  const SIZING = [
+    symbol('tools/screening-capacity/report.ts#sizingQuestion'),
+    unitTest('tools/screening-capacity/report.test.ts', 'passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate'),
+    unitTest('tools/screening-capacity/report.test.ts', 'raises the sizing question when the middle run is between 44 and 48 s, and passes'),
+  ];
+  const TIME_WARNINGS = [symbol('tools/screening-capacity/report.ts#verdict'), unitTest('tools/screening-capacity/report.test.ts', 'passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate')];
+  const MEASURE_OUTPUTS = [script('capacity', 'measure', '73daec9d'), symbol('tools/screening-capacity/report.ts#jobResult'), symbol('tools/screening-capacity/run.ts#main')];
+  const FINDINGS = [symbol('tools/content-calendar/render.ts#MAX_FILE_BYTES'), symbol('tools/content-calendar/render.ts#findingsJson'), unitTest('tools/content-calendar/content-calendar.test.ts', 'refuses a findings file past its bound, so the check fails rather than hand on a cut list')];
+
+  /**
+   * Every step output and every value one job hands another that reaches a process, each with its bound: a new one fails
+   * the test below until a reviewed row names its producers and its bound (docs/adr/0066, Part 3, N32).
+   */
+  const BOUNDED_VALUES: readonly BoundedValue[] = [
+    {
+      file: 'ci.yml',
+      job: 'all-green',
+      value: 'tojson(needs)',
+      bytes: needsJsonBytes(Object.fromEntries(ALL_GREEN_NEEDS.map((job) => [job, {}]))),
+      refs: ALL_GREEN_NEEDS.map(needs),
+      bound: 'the eight jobs it needs, each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)',
+    },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db', 'e2fd2a82'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db', 'e2fd2a82'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('db', 'vitest-cache', 'actions/cache/restore')], bound: cacheKey('runner.os, strategy.job-total, matrix.shard and github.sha') },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e', 'e2fd2a82'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e', 'e2fd2a82'), bound: RUNNER_IMAGE },
+    {
+      file: 'ci.yml',
+      job: 'images',
+      value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']",
+      bytes: DIGEST_BYTES,
+      refs: [action('images', 'web', 'docker/build-push-action')],
+      bound: "buildx's config digest of the web build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
+    },
+    {
+      file: 'ci.yml',
+      job: 'images',
+      value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']",
+      bytes: DIGEST_BYTES,
+      refs: [action('images', 'worker', 'docker/build-push-action')],
+      bound: "buildx's config digest of the worker build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
+    },
+    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bytes: 'origin/'.length + PATH_BYTES, refs: [script('static', 'range', '93428fc5')], bound: 'the commits step writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
+    { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('static', 'tsc-cache', 'actions/cache/restore')], bound: cacheKey(`${RUNNER_HASH} and github.sha`) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'browsers', 'actions/cache/restore')], bound: cacheKey(RUNNER_HASH) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit', '1b44a36b'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit', '1b44a36b'), bound: RUNNER_IMAGE },
+    {
+      file: 'content-calendar.yml',
+      job: 'check',
+      value: 'steps.calendar.outputs.findings',
+      bytes: FINDINGS_BYTES,
+      refs: [script('check', 'calendar', '9b98fed0'), ...FINDINGS],
+      sites: ['job check outputs.findings'],
+      bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so up to 933,336 characters, 1,866,672 bytes counted as UTF-16, over GitHub’s 1 MB job-output limit (ci-findings-transport’s to fix), which reaches no process in this job',
+    },
+    {
+      file: 'content-calendar.yml',
+      job: 'notify',
+      value: 'needs.check.outputs.findings',
+      bytes: FINDINGS_BYTES,
+      refs: [needs('check'), output('check', 'findings'), ...FINDINGS],
+      sites: ['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64'],
+      bound: 'FINDINGS_B64, the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
+      over: 'ci-findings-transport',
+    },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip', '1b44a36b'), bound: RUNNER_IMAGE },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip', '1b44a36b'), bound: RUNNER_IMAGE },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', bytes: BOOLEAN_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', bytes: PACKAGES_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', bytes: SHARDS_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.any', bytes: BOOLEAN_BYTES, refs: [needs('changes'), output('changes', 'any'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.packages', bytes: PACKAGES_BYTES, refs: [needs('changes'), output('changes', 'packages'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.shards', bytes: SHARDS_BYTES, refs: [needs('changes'), output('changes', 'shards'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    {
+      file: 'mutation.yml',
+      job: 'stryker',
+      value: 'needs.changes.outputs.shards',
+      bytes: SHARDS_BYTES,
+      refs: [needs('changes'), output('changes', 'shards'), { kind: 'matrix', job: 'stryker', key: 'shard' }, ...AFFECTED_CODE],
+      bound: `the shards' matrix: ${AFFECTED}`,
+    },
+    {
+      file: 'publish-content.yml',
+      job: 'publish',
+      value: 'steps.publish.outputs.releases',
+      bytes: 899_999 * 7,
+      refs: [script('publish', 'publish', '03b3bf3e'), unitTest('tools/test/publish-content.test.ts', 'refuses a directory that is not a release number'), unitTest('tools/test/publish-content.test.ts', 'refuses a number reserved for SYNTHETIC fixture releases')],
+      sites: ['job publish step "Push the release commits and tags" run'],
+      bound: 'the release numbers tools/publish-content.sh publishes, each a number below 900,000, separated by spaces, and read in a script, which the runner writes to a file (the file is frozen to its copy)',
+    },
+    {
+      file: 'release-capacity.yml',
+      job: 'capacity',
+      value: 'steps.measure.outputs.advisories',
+      bytes: 256,
+      refs: [script('capacity', 'measure', 'a3c1a1ff'), symbol('tools/release-capacity/run.ts#main'), ...ADVISORIES],
+      bound: 'base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts), written by tools/release-capacity/run.ts',
+    },
+    { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', bytes: 256, refs: [needs('capacity'), output('capacity', 'advisories'), ...ADVISORIES], bound: 'ADVISORIES_B64: base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts)' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', '604272e1')], bound: 'one of two Dockerfile paths' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', '604272e1')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', '604272e1')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
+    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'worker']), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'worker']), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('854bf72c'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'c5ff17fd')], bound: 'one of two Dockerfile paths' },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'c5ff17fd')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', 'c5ff17fd')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
+    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'web-staging', 'web-production', 'worker']), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: releaseJson(['web', 'web-staging', 'web-production', 'worker']), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bytes: PATH_BYTES, refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('capacity', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', bytes: 512, refs: [...MEASURE_OUTPUTS, ...SIZING], bound: "one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts), written by run.ts" },
+    {
+      file: 'screening-capacity.yml',
+      job: 'capacity',
+      value: 'steps.measure.outputs.time-warnings',
+      bytes: 16_384,
+      refs: [...MEASURE_OUTPUTS, ...TIME_WARNINGS],
+      bound: 'one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts), joined (jobResult)',
+    },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity', 'bb8bd5e3'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity', 'bb8bd5e3'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('capacity', 'scale-release', 'actions/cache/restore')], bound: cacheKey('one hashFiles digest') },
+    { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', bytes: BOOLEAN_BYTES, refs: [script('changes', 'watched', 'ba482ece')], bound: 'true or false' },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', bytes: 512, refs: [needs('capacity'), output('capacity', 'sizing'), ...SIZING], bound: "SIZING: one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts)" },
+    {
+      file: 'screening-capacity.yml',
+      job: 'gate',
+      value: 'needs.capacity.outputs.time-warnings',
+      bytes: 16_384,
+      refs: [needs('capacity'), output('capacity', 'time-warnings'), ...TIME_WARNINGS],
+      bound: 'TIME_WARNINGS: one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts)',
+    },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.changes.outputs.measure', bytes: BOOLEAN_BYTES, refs: [needs('changes'), output('changes', 'measure')], bound: 'MEASURE: true or false, by the changed paths step' },
+  ];
+
+  /** A repository file's text, for a symbol or a test a row names (tool code is read from the repository, never CI_TREE's copy of the CI files), or undefined. */
+  function repositorySource(file: string): string | undefined {
+    const full = path.join(repositoryRoot, file);
+    return existsSync(full) ? readFileSync(full, 'utf8') : undefined;
+  }
+
+  /** The names a module declares at its top level (a function, class, variable, type, interface or enum, exported or not), read with TypeScript's parser. */
+  function declaredNames(file: string, text: string): Set<string> {
+    const names = new Set<string>();
+    for (const statement of ts.createSourceFile(file, text, ts.ScriptTarget.Latest).statements) {
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+      } else if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name !== undefined) {
+        names.add(statement.name.text);
+      }
+    }
+    return names;
+  }
+
+  /**
+   * The titles of a test file's tests written to run whenever their file runs, each title one test's alone in the file:
+   * an it() or test() call with a literal title, standing as a statement at the file's top level or directly in the
+   * callback of a describe() counted the same way, each with no modifier but concurrent or sequential, no options but a
+   * timeout, retry, repeats, concurrent or sequential, and a context, where it takes one, read only for its expect or
+   * signal (so no skip through it: context.skip(), a skip it takes apart or renames, context['skip'], a skip it hands on
+   * or keeps), and no call named skip. A test inside an if, a loop, a ternary or a function; one written it.skip, .todo,
+   * .only, .fails, .skipIf(…)(…), .runIf(…)(…) or .each(…)(…), or given { skip: true }; one inside a describe written
+   * so, or in one whose callback holds a return (it may stop before the test is declared); every test of a file with a
+   * hook (beforeEach, beforeAll, afterEach, afterAll, aroundEach, aroundAll) whose context is read for anything else,
+   * or that declares a name it, test or describe of its own (an import from vitest under its own name aside), whose it()
+   * may be no test; and a title two tests share (the one that runs may not be the one that holds the bound) hold no
+   * bound. What a test asserts, or whether it returns early, is not read: its owners keep it for the bound, and review
+   * holds that. Nor is whether the file runs at all (the projects' include lists): review holds that too.
+   */
+  function testTitles(file: string, text: string): Set<string> {
+    const RUNS = new Set(['concurrent', 'sequential']);
+    const OPTIONS = new Set(['timeout', 'retry', 'repeats', 'concurrent', 'sequential']);
+    /** A callee's base name, and whether it runs as written: every modifier on the way one that runs, and no call. */
+    const chain = (node: ts.Expression): { readonly base: string | undefined; readonly runs: boolean } => {
+      if (ts.isIdentifier(node)) return { base: node.text, runs: true };
+      if (ts.isPropertyAccessExpression(node)) {
+        const inner = chain(node.expression);
+        return { base: inner.base, runs: inner.runs && RUNS.has(node.name.text) };
+      }
+      return { base: ts.isCallExpression(node) ? chain(node.expression).base : undefined, runs: false };
+    };
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    // Every it() or test() with a literal title, wherever and however it is written.
+    const written = new Map<string, number>();
+    const count = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const [title] = node.arguments;
+        const { base } = chain(node.expression);
+        if ((base === 'it' || base === 'test') && title !== undefined && ts.isStringLiteralLike(title)) written.set(title.text, (written.get(title.text) ?? 0) + 1);
+      }
+      ts.forEachChild(node, count);
+    };
+    count(source);
+    /** Whether a test's or a describe's other arguments let it run as written: its callback, a timeout, plain options. */
+    const plain = (rest: readonly ts.Expression[]): boolean =>
+      rest.every((argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument) || ts.isNumericLiteral(argument) || (ts.isObjectLiteralExpression(argument) && argument.properties.every((property) => ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && OPTIONS.has(property.name.text))));
+    /** What a test's or a hook's context may be read for: nothing of it that skips or marks the test. */
+    const CONTEXT = new Set(['expect', 'signal']);
+    /** Whether a callback calls anything named skip, or reads its context for anything but CONTEXT, or takes more than it. */
+    const skips = (callback: ts.ArrowFunction | ts.FunctionExpression): boolean => {
+      let found = false;
+      const look = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ((ts.isIdentifier(node.expression) && node.expression.text === 'skip') || (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'skip'))) found = true;
+        ts.forEachChild(node, look);
+      };
+      look(callback.body);
+      const [context, ...more] = callback.parameters;
+      if (context === undefined) return found;
+      if (more.length > 0 || context.dotDotDotToken !== undefined) return true;
+      const name = context.name;
+      // Taken apart: each element one of CONTEXT by name, under any local name, and no rest.
+      if (ts.isObjectBindingPattern(name)) return found || !name.elements.every((element) => element.dotDotDotToken === undefined && ts.isIdentifier(element.propertyName ?? element.name) && CONTEXT.has((element.propertyName ?? element.name).getText(source)));
+      if (!ts.isIdentifier(name)) return true;
+      // Kept whole: every use of its name in the body is context.<one of CONTEXT>; any other (handed on, indexed, kept,
+      // a shorthand property) is refused. A property's own name (x.context, { context: 1 }) is no use.
+      const uses = (node: ts.Node): void => {
+        if (ts.isIdentifier(node) && node.text === name.text) {
+          const parent = node.parent;
+          const ownName = (ts.isPropertyAccessExpression(parent) && parent.name === node) || ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent)) && parent.name === node);
+          if (!ownName && !(ts.isPropertyAccessExpression(parent) && parent.expression === node && CONTEXT.has(parent.name.text))) found = true;
+        }
+        ts.forEachChild(node, uses);
+      };
+      uses(callback.body);
+      return found;
+    };
+    const HOOKS = new Set(['beforeEach', 'beforeAll', 'afterEach', 'afterAll', 'aroundEach', 'aroundAll']);
+    const OWN = new Set(['it', 'test', 'describe']);
+    // A file with a hook that may skip, whose context is read for anything else or which is no function written there,
+    // holds no bound in any test.
+    let tainted = false;
+    const taint = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression;
+        const last = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined;
+        if (last !== undefined && HOOKS.has(last) && node.arguments.some((argument) => ((ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) && skips(argument)) || !(ts.isArrowFunction(argument) || ts.isFunctionExpression(argument) || ts.isNumericLiteral(argument)))) tainted = true;
+      }
+      ts.forEachChild(node, taint);
+    };
+    /** The names a binding (a name, or one taken apart) declares. */
+    const bound = (name: ts.BindingName): string[] => (ts.isIdentifier(name) ? [name.text] : name.elements.flatMap((element) => (ts.isOmittedExpression(element) ? [] : bound(element.name))));
+    /**
+     * Whether the scope these statements open (the file's, or a describe callback's) declares an it, test or describe of
+     * its own, which every call of that name in it and below would read: a let, const, function, class, enum or
+     * namespace there, a var anywhere in it outside a function, or an import of one but from vitest under its own name.
+     */
+    const shadows = (list: readonly ts.Statement[]): boolean => {
+      for (const statement of list) {
+        if (ts.isImportDeclaration(statement)) {
+          const clause = statement.importClause;
+          const vitest = ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === 'vitest';
+          if (clause?.name !== undefined && OWN.has(clause.name.text)) return true;
+          const named = clause?.namedBindings;
+          if (named !== undefined && ts.isNamespaceImport(named) && OWN.has(named.name.text)) return true;
+          if (named !== undefined && ts.isNamedImports(named) && named.elements.some((element) => OWN.has(element.name.text) && (!vitest || (element.propertyName !== undefined && element.propertyName.getText(source) !== element.name.text)))) return true;
+        } else if (ts.isImportEqualsDeclaration(statement) || ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement) || ts.isModuleDeclaration(statement)) {
+          if (statement.name !== undefined && ts.isIdentifier(statement.name) && OWN.has(statement.name.text)) return true;
+        } else if (ts.isVariableStatement(statement) && statement.declarationList.declarations.some((declaration) => bound(declaration.name).some((name) => OWN.has(name)))) {
+          return true;
+        }
+      }
+      let found = false;
+      const look = (node: ts.Node): void => {
+        if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.BlockScoped) === 0 && node.declarations.some((declaration) => bound(declaration.name).some((name) => OWN.has(name)))) found = true;
+        if (!ts.isFunctionLike(node) && !ts.isClassLike(node)) ts.forEachChild(node, look);
+      };
+      for (const statement of list) look(statement);
+      return found;
+    };
+    /** Whether a function's own body holds a return (one in a function inside it is that function's). */
+    const returns = (body: ts.Node): boolean => {
+      let found = false;
+      const look = (node: ts.Node): void => {
+        if (ts.isReturnStatement(node)) found = true;
+        if (!ts.isFunctionLike(node)) ts.forEachChild(node, look);
+      };
+      ts.forEachChild(body, look);
+      return found;
+    };
+    const titles = new Set<string>();
+    const statements = (list: readonly ts.Statement[]): void => {
+      if (shadows(list)) return;
+      for (const statement of list) {
+        if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) continue;
+        const call = statement.expression;
+        const { base, runs } = chain(call.expression);
+        const [title, ...rest] = call.arguments;
+        if (!runs || title === undefined || !ts.isStringLiteralLike(title) || !plain(rest)) continue;
+        const callback = rest.find((argument): argument is ts.ArrowFunction | ts.FunctionExpression => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
+        if ((base === 'it' || base === 'test') && callback !== undefined && !skips(callback)) titles.add(title.text);
+        if (base === 'describe' && callback !== undefined && ts.isBlock(callback.body) && !returns(callback.body) && callback.parameters.length === 0) statements(callback.body.statements);
+      }
+    };
+    statements(source.statements);
+    taint(source);
+    return tainted ? new Set() : new Set([...titles].filter((title) => written.get(title) === 1));
+  }
+
+  /** A value as JSON with every mapping's keys sorted, so a reordered or restyled mapping reads the same. */
+  const canonical = (value: unknown): string =>
+    isList(value) ? `[${value.map(canonical).join(',')}]` : isRecord(value) ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}` : JSON.stringify(value ?? null);
+  /**
+   * The fingerprint a row holds for a `run:` step: the first 8 hexadecimal digits of the SHA-256 of what its script runs
+   * with, as parsed: its run; its env over its job's over the workflow's (each mapping's keys in any order); its shell
+   * and working-directory, or the defaults.run its job or else the workflow gives; and its job's container, where it
+   * runs in one. So a changed script, or a changed input to it at any level, such as an env that names another
+   * variable or a default shell, fails until a person re-reads the bound. A step that inherits nothing hashes its own
+   * run, env, shell and working-directory alone.
+   */
+  const fingerprint = (step: { readonly run?: unknown; readonly env?: unknown; readonly shell?: unknown; readonly 'working-directory'?: unknown }, job?: unknown, root?: unknown): string => {
+    const mapping = (value: unknown): Readonly<Record<string, unknown>> => (isRecord(value) ? value : {});
+    const [inJob, inRoot] = [mapping(job), mapping(root)];
+    const env = inJob.env === undefined && inRoot.env === undefined ? step.env : { ...mapping(inRoot.env), ...mapping(inJob.env), ...mapping(step.env) };
+    const given = (key: 'shell' | 'working-directory'): unknown => step[key] ?? mapping(mapping(inJob.defaults).run)[key] ?? mapping(mapping(inRoot.defaults).run)[key];
+    const inputs = { run: step.run, env, shell: given('shell'), 'working-directory': given('working-directory'), ...(inJob.container === undefined ? {} : { container: inJob.container }) };
+    return createHash('sha256').update(canonical(inputs)).digest('hex').slice(0, 8);
+  };
+
+  /** A step's line in its workflow's text, for a message alone: no row holds a line. */
+  function stepLine(text: string, job: string, id: string): number | undefined {
+    const counter = new LineCounter();
+    const steps = parseDocument(text, { lineCounter: counter }).getIn(['jobs', job, 'steps']);
+    const item = isSeq(steps) ? steps.items.find((entry) => isMap(entry) && entry.get('id') === id) : undefined;
+    return isMap(item) && item.range !== undefined && item.range !== null ? counter.linePos(item.range[0]).line : undefined;
+  }
+
+  /** A line of a script's own that writes an output, echo "name=…", its name a template of literals and $VARs. */
+  const OWN_OUTPUT_LINE = /\becho "((?:[\w-]|\$\{?[A-Za-z_]\w*\}?)+)=/;
+
+  /**
+   * The output names a `run:` step's own script writes to $GITHUB_OUTPUT (echo "name=…"), each $VAR whose env is one
+   * matrix value spelled out by every value of that key: sha256_$IMAGE= from matrix.image gives sha256_web, … . Only a
+   * key the row names is spelled out.
+   */
+  function writtenOutputs(step: Step, job: Job, keys: readonly string[]): Set<string> {
+    const names = new Set<string>();
+    const run = step.run ?? '';
+    if (!run.includes('GITHUB_OUTPUT')) return names;
+    for (const [, template = ''] of run.matchAll(new RegExp(OWN_OUTPUT_LINE.source, 'g'))) {
+      let spelled = [''];
+      for (const [, literal, variable] of template.matchAll(/([\w-]+)|\$\{?([A-Za-z_]\w*)\}?/g)) {
+        if (literal !== undefined) {
+          spelled = spelled.map((name) => name + literal);
+          continue;
+        }
+        const key = MATRIX_REFERENCE.exec(String(step.env?.[variable ?? ''] ?? ''))?.[1];
+        const values = key !== undefined && keys.includes(key) ? matrixValues(job.strategy?.matrix, key) : undefined;
+        spelled = values === undefined ? [] : spelled.flatMap((name) => values.map((value) => name + String(value)));
+      }
+      for (const name of spelled) names.add(name.toLowerCase());
+    }
+    return names;
+  }
+
+  /** A job's needs as a list. */
+  const needsOf = (job: Job | undefined): string[] => (job?.needs === undefined ? [] : [job.needs].flat().map(String));
+  /** A job's declared output names. */
+  const outputsOf = (job: Job | undefined): string[] => {
+    const declared = (job as { readonly outputs?: unknown } | undefined)?.outputs;
+    return isRecord(declared) ? Object.keys(declared) : [];
+  };
+  /** What a job's output declares, as written. */
+  const jobOutput = (job: Job | undefined, name: string): unknown => {
+    const declared = (job as { readonly outputs?: unknown } | undefined)?.outputs;
+    return isRecord(declared) ? declared[name] : undefined;
+  };
+  /** The value a job's output hands on when it is exactly one ${{ }} reading a step's or a needed job's output, as the table keys it. */
+  function handedValue(declared: unknown): string | undefined {
+    const whole = typeof declared === 'string' ? /^\$\{\{((?:(?!\}\})[\s\S])*)\}\}$/.exec(declared) : null;
+    if (whole === null) return undefined;
+    try {
+      const names = namesOf(parseExpression(lexExpression(whole[1] ?? '')));
+      return names?.length === 4 && (names[0] === 'steps' || names[0] === 'needs') && names[2] === 'outputs' ? names.join('.').toLowerCase() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The steps, needed jobs and job outputs a row's value reads, as refProblems names them: a steps.<id> value (or a
+   * build's digest from one) its own job's step <id>; a needs.<j>.outputs.<n> value job <j> and its output <n>; toJSON
+   * each job it is given and every output of each. What the row must cite, and all of those kinds it may.
+   */
+  function producersOf(row: BoundedValue, jobs: Readonly<Record<string, Job>>): string[] {
+    const step = /^(?:fromjson\()?steps\.([^.]+)\.outputs\./.exec(row.value);
+    if (step !== null) return [`step ${step[1] ?? ''} of job ${row.job.toLowerCase()}`];
+    const handed = /^needs\.([^.]+)\.outputs\.([^.]+)$/.exec(row.value);
+    if (handed !== null) return [`needed job ${handed[1] ?? ''}`, `output ${handed[2] ?? ''} of job ${handed[1] ?? ''}`];
+    const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
+    const given = whole === null ? [] : whole[1] === undefined ? needsOf(jobs[row.job]).map((job) => job.toLowerCase()) : [whole[1]];
+    return given.flatMap((job) => [`needed job ${job}`, ...outputsOf(jobNamed(jobs, job)).map((name) => `output ${name.toLowerCase()} of job ${job}`)]);
+  }
+
+  /**
+   * The job an id names as an expression reads it, in any case (needs.Build and needs.build are one job): a row's value
+   * is in lower case, its jobs as written, so every lookup from a value goes through this.
+   */
+  const jobNamed = (jobs: Readonly<Record<string, Job>>, id: string): Job | undefined => Object.entries(jobs).find(([key]) => key.toLowerCase() === id.toLowerCase())?.[1];
+
+  /**
+   * What does not resolve of each row's references on these workflows (text gives a file's) and this repository's
+   * tool code (source gives a file's): each named for its row, with a line where one helps.
+   */
+  function refProblems(rows: readonly BoundedValue[], found: readonly FoundValue[], text: (file: string) => string, source: (file: string) => string | undefined = repositorySource): string[] {
+    const problems: string[] = [];
+    // Each file read and parsed once, each module's names and each test file's titles read once, for every row.
+    const once = <T>(cache: Map<string, T>, key: string, make: () => T): T => {
+      if (!cache.has(key)) cache.set(key, make());
+      return cache.get(key) as T;
+    };
+    const texts = new Map<string, string>();
+    const parsed = new Map<string, Workflow>();
+    const names = new Map<string, Set<string>>();
+    const titled = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const say = (problem: string) => problems.push(`${row.file} ${row.job} ${row.value}: ${problem}`);
+      const workflowText = once(texts, row.file, () => text(row.file));
+      const root = once(parsed, row.file, () => parse(workflowText) as Workflow);
+      const jobs = root.jobs;
+      const reader = jobs[row.job];
+      if (row.refs.length === 0) say('names no producer');
+      const read = found.filter((entry) => entry.file === row.file && entry.job === row.job && entry.value === row.value);
+      const keys = row.refs.flatMap((ref) => (ref.kind === 'matrix' ? [ref.key] : []));
+      for (const ref of row.refs) {
+        switch (ref.kind) {
+          case 'step': {
+            const steps = jobs[ref.job]?.steps ?? [];
+            const index = steps.findIndex((step) => step.id === ref.step);
+            const step = steps[index];
+            if (step === undefined) {
+              say(`job ${ref.job} has no step ${ref.step}`);
+              break;
+            }
+            // Its line, for a message alone, found only when one is written.
+            const where = (): string => `step ${ref.step} of job ${ref.job} (${row.file}:${String(stepLine(workflowText, ref.job, ref.step) ?? '?')})`;
+            if ('run' in ref) {
+              const now = step.run === undefined ? undefined : fingerprint(step, jobs[ref.job], root);
+              if (now === undefined) say(`${where()} runs no script to fingerprint`);
+              else if (now !== ref.run) say(`${where()} has a changed script, env, shell, working-directory or container, its own or inherited, fingerprint ${now}, not ${ref.run}: re-check the bound against it, then write ${now} in this row`);
+            } else if (actionOf(step) !== ref.uses) {
+              say(`${where()} uses ${actionOf(step) ?? 'no action'}, not ${ref.uses}`);
+            }
+            if (ref.job === row.job) {
+              for (const entry of read) if (entry.step !== undefined && entry.step <= index) say(`${where()} does not come before the step that reads it`);
+              const name = new RegExp(`^steps\\.${escaped(ref.step.toLowerCase())}\\.outputs\\.([^.]+)$`).exec(row.value)?.[1];
+              const written = 'run' in ref ? writtenOutputs(step, jobs[ref.job] ?? { steps: [] }, keys) : undefined;
+              // A script that writes NAME= lines of its own must spell this one out (a $VAR from the cited matrix key);
+              // a tool the row names excuses only a script that writes none, the tool writing $GITHUB_OUTPUT itself.
+              if (name !== undefined && written !== undefined && !written.has(name)) {
+                if (OWN_OUTPUT_LINE.test(step.run ?? '')) say(`${where()} writes no ${name}= to $GITHUB_OUTPUT: its own lines spell ${[...written].sort().join(', ') || 'none'}`);
+                else if (!row.refs.some((other) => other.kind === 'symbol')) say(`${where()} writes no ${name}= to $GITHUB_OUTPUT, and the row names no tool that does`);
+              }
+            }
+            break;
+          }
+          case 'output': {
+            if (!outputsOf(jobs[ref.job]).includes(ref.name)) {
+              say(`job ${ref.job} declares no output ${ref.name}`);
+              break;
+            }
+            // What the output declares is one step's or needed job's output alone, with its own row in that job, whose
+            // bound this row's holds: a repointed or joined output turns the row red, so no reader's sum undercounts.
+            const declared = jobOutput(jobs[ref.job], ref.name);
+            const given = handedValue(declared);
+            const producer = rows.find((entry) => entry.file === row.file && entry.job === ref.job && entry.value === given);
+            if (given === undefined) say(`job ${ref.job}'s output ${ref.name} is ${JSON.stringify(declared)}, not one step's or needed job's output alone`);
+            else if (producer === undefined) say(`job ${ref.job}'s output ${ref.name} reads ${given}, which has no row in job ${ref.job}`);
+            else if (producer.bytes > row.bytes) say(`job ${ref.job}'s output ${ref.name} reads ${given}, bounded at ${String(producer.bytes)} bytes, over this row's ${String(row.bytes)}`);
+            break;
+          }
+          case 'matrix': {
+            const matrix = jobs[ref.job]?.strategy?.matrix;
+            const include = isRecord(matrix) && isList(matrix.include) ? matrix.include : [];
+            if (!isRecord(matrix) || !(Object.hasOwn(matrix, ref.key) || include.some((entry) => isRecord(entry) && Object.hasOwn(entry, ref.key)))) say(`job ${ref.job}'s matrix has no key ${ref.key}`);
+            break;
+          }
+          case 'needs':
+            if (jobs[ref.job] === undefined || !needsOf(reader).includes(ref.job)) say(`job ${row.job} does not need a job ${ref.job}`);
+            break;
+          case 'symbol': {
+            const code = source(ref.path);
+            if (code === undefined) say(`no file ${ref.path}`);
+            else if (!once(names, ref.path, () => declaredNames(ref.path, code)).has(ref.symbol)) say(`${ref.path} declares no ${ref.symbol}`);
+            break;
+          }
+          case 'test': {
+            const code = source(ref.path);
+            if (code === undefined) say(`no file ${ref.path}`);
+            else if (!once(titled, ref.path, () => testTitles(ref.path, code)).has(ref.name)) say(`${ref.path} has no test named "${ref.name}" that always runs`);
+            break;
+          }
+        }
+      }
+      // The producers it cites are the ones its value reads, and no other step, needed job or output: each kind above
+      // resolves wherever it points, so only this ties a row to its own producer, and the output check above (one
+      // value alone, within this row's bytes) runs for every value one job hands another.
+      const wanted = producersOf(row, jobs);
+      const cited = row.refs.flatMap((ref) => (ref.kind === 'step' ? [`step ${ref.step.toLowerCase()} of job ${ref.job.toLowerCase()}`] : ref.kind === 'needs' ? [`needed job ${ref.job.toLowerCase()}`] : ref.kind === 'output' ? [`output ${ref.name.toLowerCase()} of job ${ref.job.toLowerCase()}`] : []));
+      for (const producer of wanted) if (!cited.includes(producer)) say(`names no ${producer}`);
+      for (const producer of cited) if (!wanted.includes(producer)) say(`names ${producer}, which its value does not read`);
+      // A row with sites is read there and nowhere else, so a second use of the value, under any name, is refused.
+      const places = read.map((entry) => entry.where).sort();
+      if (row.sites !== undefined && places.join('\n') !== [...row.sites].sort().join('\n')) say(`read at ${places.join(', ')}, not exactly at its sites, ${row.sites.join(', ')}`);
+      // Tool code is never fingerprinted, so the row names the test that holds its bound.
+      if (row.refs.some((ref) => ref.kind === 'symbol') && !row.refs.some((ref) => ref.kind === 'test')) say('names tool code but no test that proves its bound');
+      // toJSON reads every job it is given and every output of each (the row names them all, and no other, above),
+      // and holds what it writes of them: each output quoted and escaped, up to six bytes for each of its bound's,
+      // with its name and indent (toJsonBytes), and for needs each job's own lines.
+      const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
+      if (whole !== null) {
+        // An output with no row counts nothing here: the row must cite it (above), and the cited output's check refuses one
+        // with no row or not one value alone.
+        const bounds = (job: string): Record<string, number> => Object.fromEntries(outputsOf(jobNamed(jobs, job)).map((name) => [name, rows.find((entry) => entry.file === row.file && entry.job.toLowerCase() === job.toLowerCase() && entry.value === handedValue(jobOutput(jobNamed(jobs, job), name)))?.bytes ?? 0]));
+        const most = whole[1] === undefined ? needsJsonBytes(Object.fromEntries(needsOf(reader).map((job) => [job, bounds(job)]))) : toJsonBytes(bounds(whole[1]));
+        if (most > row.bytes) say(`toJSON writes up to ${String(most)} bytes of what it reads, each output quoted and escaped, over this row's ${String(row.bytes)}`);
+      }
+    }
+    return problems;
+  }
+
+  it('hands a step another step’s or job’s output only from the list below, each with its bound', () => {
+    const key = ({ file, job, value }: ValueKey) => `${file} ${job} ${value}`;
+    const values = workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).values);
+    const found = new Set(values.map(key));
+    expect([...found].sort()).toEqual(BOUNDED_VALUES.map(key).sort());
+    // Each row names its producers by what they are, never by a line (a line goes stale with any edit above it), and
+    // each resolves on this tree.
+    for (const row of BOUNDED_VALUES) expect(row.bound, key(row)).not.toMatch(/\.(?:ya?ml|ts|mjs|sh):\d+/);
+    // Each with its bound in bytes, which the environment strings that hold it add.
+    expect(BOUNDED_VALUES.filter((row) => !Number.isSafeInteger(row.bytes) || row.bytes <= 0).map(key)).toEqual([]);
+    expect(refProblems(BOUNDED_VALUES, values, (file) => readFileSync(path.join(WORKFLOWS, file), 'utf8'))).toEqual([]);
+    // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
+    expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
+    // One row is over the limit, and says so: the content calendar's findings as FINDINGS_B64, base64 of a file bounded
+    // at MAX_FILE_BYTES, held to its one site (refProblems), so no second use reads it under another name, and alone in
+    // its string there (the sum), so nothing joins it. When
+    // ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
+    expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
+    expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map((row) => row.sites)).toEqual([['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64']]);
+    // Every row that could pass the limit is held to its sites, whether it is read in a script, a job output or an
+    // environment string, so a second use of any of them, under any name, is refused by refProblems above.
+    expect(BOUNDED_VALUES.filter((row) => row.bytes > MAX_ARG_STRLEN && row.sites === undefined).map(key)).toEqual([]);
+    expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
+    // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too, read as 1,000,000 or
+    // 1,048,576 bytes. Check's row gives these figures, computed here from MAX_FILE_BYTES, and says over, never under,
+    // not over, isn't over, within, below or fits, in any case; notify's row gives the characters, over 131,072 bytes.
+    // So a changed bound or a row turned back to "under GitHub's 1 MB", or worded to say so another way, fails here.
+    expect(2 * FINDINGS_BYTES).toBe(1_866_672);
+    expect(2 * FINDINGS_BYTES).toBeGreaterThan(1_048_576);
+    const figure = (bytes: number) => bytes.toLocaleString('en-US');
+    const boundOf = (wanted: string) => BOUNDED_VALUES.find((row) => key(row) === wanted)?.bound ?? '';
+    const check = boundOf('content-calendar.yml check steps.calendar.outputs.findings');
+    for (const words of [`${figure(MAX_FILE_BYTES)} bytes`, `${figure(FINDINGS_BYTES)} characters`, `${figure(2 * FINDINGS_BYTES)} bytes`, 'UTF-16']) expect(check, words).toContain(words);
+    expect(check).toMatch(/\bover\b[^,;]*\b1 MB\b/);
+    expect(check).not.toMatch(/\bunder\b/i);
+    expect(check).not.toMatch(/\b(?:not|never|no|nor)\s+(?:\w+\s+)?over\b|n['’]t\s+(?:\w+\s+)?over\b|\b(?:within|below|fits?|inside|less than)\b/i);
+    expect(boundOf('content-calendar.yml notify needs.check.outputs.findings')).toContain(`${figure(FINDINGS_BYTES)} characters: over 131,072 bytes`);
+  });
+
+  it('holds a row with sites to exactly those places, so a second use of the value over the limit, under any name or key, turns the table red', () => {
+    const text = (more: string) =>
+      `name: fixture\non: push\njobs:\n  check:\n    runs-on: ubuntu-26.04\n    outputs:\n      findings: \${{ steps.calendar.outputs.findings }}\n    steps:\n      - name: Read the calendar\n        id: calendar\n        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n  notify:\n    needs: check\n    runs-on: ubuntu-26.04\n    steps:\n      - name: Open an issue\n        env: { FINDINGS_B64: "\${{ needs.check.outputs.findings }}" }\n        run: echo\n${more}`;
+    const rows: BoundedValue[] = [
+      { file: 'fixture.yml', job: 'check', value: 'steps.calendar.outputs.findings', refs: [script('check', 'calendar', fingerprint({ run: 'echo "findings=x" >> "$GITHUB_OUTPUT"' }))], bound: 'a fixture', bytes: 933_336, sites: ['job check outputs.findings'] },
+      { file: 'fixture.yml', job: 'notify', value: 'needs.check.outputs.findings', refs: [needs('check'), output('check', 'findings')], bound: 'a fixture', bytes: 933_336, over: 'ci-findings-transport', sites: ['job notify step "Open an issue" env.FINDINGS_B64'] },
+    ];
+    const problems = (yaml: string) => refProblems(rows, unboundedValueProblems('fixture.yml', parse(yaml)).values, () => yaml);
+    expect(problems(text(''))).toEqual([]);
+    expect(problems(text('      - name: Copy them\n        env: { FINDINGS_COPY: "${{ needs.check.outputs.findings }}" }\n        run: echo\n'))).toEqual([
+      'fixture.yml notify needs.check.outputs.findings: read at job notify step "Copy them" env.FINDINGS_COPY, job notify step "Open an issue" env.FINDINGS_B64, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
+    ]);
+    expect(problems(text('      - name: Upload them\n        uses: actions/fixture@v1\n        with: { path: "${{ needs.check.outputs.findings }}" }\n'))).toEqual([
+      'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Upload them" with.path, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
+    ]);
+    // A second step of the same name reading it under the same key: the same place twice, so each read is counted.
+    expect(problems(text('      - name: Open an issue\n        env: { FINDINGS_B64: "${{ needs.check.outputs.findings }}" }\n        run: echo again\n'))).toEqual([
+      'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Open an issue" env.FINDINGS_B64, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
+    ]);
+    // A row with sites that is not the one over the limit is held the same way: a second read of check's findings.
+    const second = text('').replace('        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n', '        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n      - name: Copy them\n        env: { COPY: "${{ steps.calendar.outputs.findings }}" }\n        run: echo\n');
+    expect(problems(second)).toEqual(['fixture.yml check steps.calendar.outputs.findings: read at job check outputs.findings, job check step "Copy them" env.COPY, not exactly at its sites, job check outputs.findings']);
+  });
+
+  it('resolves each row’s producers by name, so a renamed step, a changed script, a removed output or a deleted symbol or test turns the table red, and an edit elsewhere in a file does not', () => {
+    const workflowText = [
+      'name: fixture',
+      'on: push',
+      'jobs:',
+      '  build:',
+      '    runs-on: ubuntu-26.04',
+      '    strategy: { matrix: { image: [web, worker] } }',
+      '    outputs:',
+      '      digest_web: ${{ steps.identity.outputs.digest_web }}',
+      '    steps:',
+      '      - name: Record the identity',
+      '        id: identity',
+      '        env: { IMAGE: "${{ matrix.image }}" }',
+      '        run: echo "digest_$IMAGE=$(node tools/fixture.ts)" >> "$GITHUB_OUTPUT"',
+      '      - name: Read it',
+      '        env: { DIGEST: "${{ steps.identity.outputs.digest_web }}" }',
+      '        run: echo "$DIGEST"',
+      '      - name: Restore the cache',
+      '        id: cache',
+      '        uses: actions/cache/restore@v5',
+      '        with: { path: cache, key: "${{ runner.os }}" }',
+      '      - name: Name its key',
+      '        env: { KEY: "${{ steps.cache.outputs.cache-primary-key }}" }',
+      '        run: echo "$KEY"',
+      '  use:',
+      '    needs: build',
+      '    runs-on: ubuntu-26.04',
+      '    steps:',
+      '      - env: { DIGEST: "${{ needs.build.outputs.digest_web }}" }',
+      '        run: echo "$DIGEST"',
+      '',
+    ].join('\n');
+    const run = 'echo "digest_$IMAGE=$(node tools/fixture.ts)" >> "$GITHUB_OUTPUT"';
+    const tool = 'export function digest(): string {\n  return "";\n}\n';
+    const tests = "it('proves the digest', () => {});\n";
+    const rows: BoundedValue[] = [
+      {
+        file: 'fixture.yml',
+        job: 'build',
+        value: 'steps.identity.outputs.digest_web',
+        refs: [script('build', 'identity', fingerprint({ run, env: { IMAGE: '${{ matrix.image }}' } })), { kind: 'matrix', job: 'build', key: 'image' }, symbol('tools/fixture.ts#digest'), unitTest('tools/fixture.test.ts', 'proves the digest')],
+        bound: 'a digest',
+        bytes: 71,
+      },
+      { file: 'fixture.yml', job: 'use', value: 'needs.build.outputs.digest_web', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest', bytes: 71 },
+      { file: 'fixture.yml', job: 'build', value: 'steps.cache.outputs.cache-primary-key', refs: [action('build', 'cache', 'actions/cache/restore')], bound: 'a key', bytes: 2_048 },
+    ];
+    const problems = (text: string, files: Readonly<Record<string, string>> = { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': tests }, table: readonly BoundedValue[] = rows) =>
+      refProblems(table, unboundedValueProblems('fixture.yml', parse(text)).values, () => text, (file) => files[file]);
+    expect(problems(workflowText)).toEqual([]);
+    // An edit elsewhere in the file, a comment above the producer, moves no reference, and the producer's env restyled
+    // reads the same.
+    expect(problems(workflowText.replace('      - name: Record the identity', '      # A comment above the producer.\n      - name: Record the identity'))).toEqual([]);
+    expect(problems(workflowText.replace('        env: { IMAGE: "${{ matrix.image }}" }\n        run: echo "digest', '        env:\n          IMAGE: ${{ matrix.image }}\n        run: echo "digest'))).toEqual([]);
+    // Another job's env or defaults are no input of the producer's.
+    expect(problems(workflowText.replace('    needs: build\n', '    needs: build\n    env: { BASE: x }\n    defaults: { run: { shell: sh } }\n'))).toEqual([]);
+    const [produced, handed] = rows;
+    if (produced === undefined || handed === undefined) throw new Error('two rows');
+    // A uses: producer is its action: another action, or a script in its place, turns its row red.
+    const restore = 'fixture.yml build steps.cache.outputs.cache-primary-key: step cache of job build (fixture.yml:17)';
+    expect(problems(workflowText.replace('uses: actions/cache/restore@v5', 'uses: actions/cache@v5'))).toEqual([`${restore} uses actions/cache, not actions/cache/restore`]);
+    expect(problems(workflowText.replace('        uses: actions/cache/restore@v5\n        with: { path: cache, key: "${{ runner.os }}" }', '        run: echo "cache-primary-key=x" >> "$GITHUB_OUTPUT"'))).toEqual([`${restore} uses no action, not actions/cache/restore`]);
+    expect(problems(workflowText.replace('uses: actions/cache/restore@v5', 'uses: actions/cache/restore@v5.0.1'))).toEqual([]);
+    // A name the script does not write: its own lines spell it or it fails, so the last case fails with or without the
+    // row's tool (both below).
+    const scriptOnly = [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'symbol') }, handed];
+    const CHANGED = /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) has a changed script, env, shell, working-directory or container, its own or inherited, fingerprint [0-9a-f]{8}, not [0-9a-f]{8}: re-check the bound against it, then write [0-9a-f]{8} in this row$/;
+    const RED: readonly (readonly [string, string, RegExp])[] = [
+      ['a renamed step id', workflowText.replace('id: identity', 'id: identities'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: job build has no step identity$/],
+      ['a changed script', workflowText.replace('$(node tools/fixture.ts)', '$(git log -1 --format=%B)'), CHANGED],
+      ['a changed env', workflowText.replace('env: { IMAGE: "${{ matrix.image }}" }', 'env: { IMAGE: "${{ matrix.image }}", BASE: "${{ github.sha }}" }'), CHANGED],
+      ['a shell', workflowText.replace('        id: identity\n', '        id: identity\n        shell: python {0}\n'), CHANGED],
+      ['a working directory', workflowText.replace('        id: identity\n', '        id: identity\n        working-directory: apps/web\n'), CHANGED],
+      // What the step inherits is its input too: its job's or the workflow's env, a default shell or directory, a container.
+      ['a job env', workflowText.replace('  use:\n', '    env: { BASE: "${{ github.sha }}" }\n  use:\n'), CHANGED],
+      ['a workflow env', `${workflowText}env: { BASE: "\${{ github.sha }}" }\n`, CHANGED],
+      ['a job default shell', workflowText.replace('  use:\n', '    defaults: { run: { shell: sh } }\n  use:\n'), CHANGED],
+      ['a workflow default working directory', `${workflowText}defaults: { run: { working-directory: apps/web } }\n`, CHANGED],
+      ['a job container', workflowText.replace('  use:\n', '    container: node:24\n  use:\n'), CHANGED],
+      ['a removed job output', workflowText.replace('    outputs:\n      digest_web: ${{ steps.identity.outputs.digest_web }}\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job build declares no output digest_web$/],
+      ['a need removed', workflowText.replace('    needs: build\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job use does not need a job build$/],
+      ['the producer after its reader', workflowText.replace(/( {6}- name: Record the identity\n(?: {8}.*\n){3})( {6}- name: Read it\n(?: {8}.*\n){2})/, '$2$1'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:13\) does not come before the step that reads it$/],
+      ['a template its matrix does not spell', workflowText.replace('[web, worker]', '[api, worker]'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) writes no digest_web= to \$GITHUB_OUTPUT: its own lines spell digest_api, digest_worker$/],
+    ];
+    for (const [what, text, message] of RED) expect(problems(text, undefined, scriptOnly), what).toEqual([expect.stringMatching(message)]);
+    // A script that writes its own NAME= lines is held to them even when the row names a tool: its template, its matrix
+    // and its env must spell the name. A tool excuses only a script that writes none (the tool writes the output).
+    const spelled = (names: string) => `fixture.yml build steps.identity.outputs.digest_web: step identity of job build (fixture.yml:10) writes no digest_web= to $GITHUB_OUTPUT: its own lines spell ${names}`;
+    expect(problems(workflowText.replace('[web, worker]', '[api, worker]'))).toEqual([spelled('digest_api, digest_worker')]);
+    // Its env no longer the matrix key alone: a changed input (the fingerprint) and a name no line spells.
+    expect(problems(workflowText.replace('IMAGE: "${{ matrix.image }}"', 'IMAGE: "${{ matrix.image }}-x"'))).toEqual([expect.stringMatching(CHANGED), spelled('none')]);
+    const viaTool = workflowText.replace(run, 'node tools/fixture.ts >> "$GITHUB_OUTPUT"');
+    const toolStep = script('build', 'identity', fingerprint({ run: 'node tools/fixture.ts >> "$GITHUB_OUTPUT"', env: { IMAGE: '${{ matrix.image }}' } }));
+    expect(problems(viaTool, undefined, [{ ...produced, refs: [toolStep, ...produced.refs.slice(1)] }])).toEqual([]);
+    expect(problems(viaTool, undefined, [{ ...produced, refs: [toolStep] }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: step identity of job build (fixture.yml:10) writes no digest_web= to $GITHUB_OUTPUT, and the row names no tool that does']);
+    // Tool code: a deleted symbol, a deleted or renamed test, and a symbol without a test.
+    expect(problems(workflowText, { 'tools/fixture.ts': 'export function digests(): string {\n  return "";\n}\n', 'tools/fixture.test.ts': tests })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.ts declares no digest']);
+    expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest" that always runs']);
+    expect(problems(workflowText, { 'tools/fixture.ts': tool })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: no file tools/fixture.test.ts']);
+    // A test that may not run holds no bound: skipped, to do, conditional, inverted or inside a describe written so;
+    // under an if, in a loop, a ternary or a function; skipped through its context or its options; or one of two tests
+    // with its title, the other the one that runs.
+    const notRun = 'fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest" that always runs';
+    for (const written of [
+      "it.skip('proves the digest', () => {});\n",
+      "it.todo('proves the digest');\n",
+      "test.skipIf(process.env.CI !== undefined)('proves the digest', () => {});\n",
+      "it.runIf(false)('proves the digest', () => {});\n",
+      "it.fails('proves the digest', () => {});\n",
+      "describe.skip('the digest', () => {\n  it('proves the digest', () => {});\n});\n",
+      "describe.skipIf(true)('the digest', () => {\n  describe('inside', () => {\n    it('proves the digest', () => {});\n  });\n});\n",
+      "if (process.env.CI === undefined) {\n  it('proves the digest', () => {});\n}\n",
+      "describe('the digest', () => {\n  if (Math.random() > 2) it('proves the digest', () => {});\n});\n",
+      "if (process.env.NEVER) {\n  describe('the digest', () => {\n    it('proves the digest', () => {});\n  });\n}\n",
+      "for (const _ of []) it('proves the digest', () => {});\n",
+      "process.env.CI ? it('proves the digest', () => {}) : undefined;\n",
+      "function never(): void {\n  it('proves the digest', () => {});\n}\n",
+      "it('proves the digest', (context) => {\n  context.skip();\n});\n",
+      "it('proves the digest', ({ skip }) => {\n  skip();\n});\n",
+      "it('proves the digest', { skip: true }, () => {});\n",
+      "describe('the digest', { skip: true }, () => {\n  it('proves the digest', () => {});\n});\n",
+      "describe('one', () => {\n  it.skip('proves the digest', () => {});\n});\ndescribe('two', () => {\n  it('proves the digest', () => {});\n});\n",
+      // A hook that skips, in the describe or at the top; a describe that may return before the test is declared.
+      "describe('the digest', () => {\n  beforeEach((context) => {\n    context.skip();\n  });\n  it('proves the digest', () => {});\n});\n",
+      "beforeEach((context) => {\n  context.skip();\n});\nit('proves the digest', () => {});\n",
+      "if (process.env.CI) beforeEach(({ skip }) => skip());\nit('proves the digest', () => {});\n",
+      "beforeAll((suite) => {\n  suite.mode = 'skip';\n});\nit('proves the digest', () => {});\n",
+      "beforeEach(skipAll);\nit('proves the digest', () => {});\n",
+      "describe('the digest', () => {\n  return;\n  it('proves the digest', () => {});\n});\n",
+      "describe('the digest', () => {\n  if (process.env.CI === undefined) return;\n  it('proves the digest', () => {});\n});\n",
+      // A skip through its context under another name, indexed, kept, handed on or taken with the rest.
+      "it('proves the digest', ({ skip: s }) => {\n  s();\n});\n",
+      "it('proves the digest', (c) => {\n  c['skip']();\n});\n",
+      "it('proves the digest', (c) => {\n  const s = c.skip;\n  s();\n});\n",
+      "it('proves the digest', (c) => {\n  stop(c);\n});\n",
+      "it('proves the digest', ({ ...c }) => {\n  c.skip();\n});\n",
+      "it('proves the digest', ({ task }) => {\n  task.mode = 'skip';\n});\n",
+      // An it of the file's own, which may be no test.
+      "const it = (..._a: unknown[]): void => undefined;\nit('proves the digest', () => {});\n",
+      "import { it } from './not-vitest';\nit('proves the digest', () => {});\n",
+      "import { test as it } from 'vitest';\nit('proves the digest', () => {});\n",
+      "import { test } from 'vitest';\nconst it = test.skip;\nit('proves the digest', () => {});\n",
+    ]) {
+      expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([notRun]);
+    }
+    for (const written of [
+      "describe('the digest', () => {\n  it.concurrent('proves the digest', () => {});\n});\n",
+      "test('proves the digest', () => {});\n",
+      "describe('the digest', () => {\n  describe.sequential('inside', () => {\n    it('proves the digest', async () => {}, 30_000);\n  });\n});\n",
+      "it('proves the digest', { timeout: 30_000, retry: 0 }, ({ expect: check }) => {\n  check(1).toBe(1);\n});\n",
+      // A context read for its expect alone, hooks that take none, an import from vitest, a return inside the test.
+      "import { afterAll, beforeAll, describe, it } from 'vitest';\nbeforeAll(() => {});\nafterAll(() => {}, 10_000);\ndescribe('the digest', () => {\n  it('proves the digest', (context) => {\n    context.expect(1).toBe(1);\n    if (Date.now() < 0) return;\n  });\n});\n",
+    ]) {
+      expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([]);
+    }
+    expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'test') }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: names tool code but no test that proves its bound']);
+    // A job's output is one step's output alone, which has its row in that job, its bound within the reader's: a joined
+    // or a repointed output, or a reader that claims less, turns the reading row red.
+    const declared = '      digest_web: ${{ steps.identity.outputs.digest_web }}\n';
+    const handedProblem = (problem: string) => `fixture.yml use needs.build.outputs.digest_web: job build's output digest_web ${problem}`;
+    expect(problems(workflowText.replace(declared, '      digest_web: ${{ steps.identity.outputs.digest_web }}${{ steps.identity.outputs.digest_web }}\n'))).toEqual([
+      handedProblem('is "${{ steps.identity.outputs.digest_web }}${{ steps.identity.outputs.digest_web }}", not one step\'s or needed job\'s output alone'),
+    ]);
+    expect(problems(workflowText.replace(declared, "      digest_web: ${{ steps.identity.outputs.digest_web || 'none' }}\n"))).toEqual([handedProblem('is "${{ steps.identity.outputs.digest_web || \'none\' }}", not one step\'s or needed job\'s output alone')]);
+    expect(problems(workflowText.replace(declared, '      digest_web: ${{ steps.other.outputs.digest_web }}\n'))).toEqual([handedProblem('reads steps.other.outputs.digest_web, which has no row in job build')]);
+    expect(problems(workflowText, undefined, [produced, { ...handed, bytes: 64 }])).toEqual([handedProblem('reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row\'s 64')]);
+    expect(problems(workflowText.replace(declared, '      digest_web: ${{steps.identity.outputs.DIGEST_WEB}}\n'))).toEqual([]);
+    // Each row cites the producers its value reads and no other, so a row that cites a step of another job, another of
+    // the job's outputs, only its tool code, or leaves its producer out, turns red even where what it cites resolves.
+    const tie = (row: BoundedValue, problem: string) => `fixture.yml ${row.job} ${row.value}: ${problem}`;
+    const otherJob = workflowText.replace('      - env: { DIGEST: "${{ needs.build.outputs.digest_web }}" }\n', '      - id: identity\n        env: { DIGEST: "${{ needs.build.outputs.digest_web }}" }\n');
+    const otherStep = script('use', 'identity', fingerprint({ run: 'echo "$DIGEST"', env: { DIGEST: '${{ needs.build.outputs.digest_web }}' } }));
+    expect(problems(otherJob, undefined, [{ ...produced, refs: [otherStep, ...produced.refs.slice(1)] }, handed])).toEqual([tie(produced, 'names no step identity of job build'), tie(produced, 'names step identity of job use, which its value does not read')]);
+    expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'step') }, handed])).toEqual([tie(produced, 'names no step identity of job build')]);
+    const twoOutputs = workflowText.replace(declared, `${declared}      small: \${{ steps.identity.outputs.digest_web }}\n`);
+    expect(problems(twoOutputs, undefined, [produced, { ...handed, refs: [needs('build'), output('build', 'small')] }])).toEqual([tie(handed, 'names no output digest_web of job build'), tie(handed, 'names output small of job build, which its value does not read')]);
+    expect(problems(workflowText, undefined, [produced, { ...handed, refs: produced.refs.filter((ref) => ref.kind === 'symbol' || ref.kind === 'test') }])).toEqual([tie(handed, 'names no needed job build'), tie(handed, 'names no output digest_web of job build')]);
+    // toJSON of a job's outputs names every output, and no other, and holds them all.
+    const whole = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ BUILD: "${{ toJSON(needs.build.outputs) }}" }');
+    // It holds what toJSON writes, each output quoted and escaped: digest_web's 71 bytes up to 426, with its name,
+    // indent and the braces 449 bytes, not the 94 it writes unescaped.
+    const escapedJson = toJsonBytes({ digest_web: 71 });
+    expect(escapedJson).toBe(449);
+    const json = (refs: readonly Ref[], bytes = escapedJson) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes }]);
+    expect(json([needs('build'), output('build', 'digest_web')])).toEqual([]);
+    expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): names no output digest_web of job build']);
+    expect(json([output('build', 'digest_web')])).toEqual(['fixture.yml use tojson(needs.build.outputs): names no needed job build']);
+    const writes = (bytes: number) => `fixture.yml use tojson(needs.build.outputs): toJSON writes up to 449 bytes of what it reads, each output quoted and escaped, over this row's ${String(bytes)}`;
+    expect(json([needs('build'), output('build', 'digest_web')], 448)).toEqual([writes(448)]);
+    expect(json([needs('build'), output('build', 'digest_web')], '{\n  "digest_web": "",\n}'.length + 71)).toEqual([writes(94)]);
+    expect(json([needs('build'), output('build', 'digest_web')], 70)).toEqual([
+      "fixture.yml use tojson(needs.build.outputs): job build's output digest_web reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row's 70",
+      writes(70),
+    ]);
+    // toJSON(needs) the same, each job with its id and its own lines: 554 bytes for build and its one output.
+    const allNeeds = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ ALL: "${{ toJSON(needs) }}" }');
+    const needsRow = (bytes: number) => problems(allNeeds, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs)', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest', bytes }]);
+    expect(needsJsonBytes({ build: { digest_web: 71 } })).toBe(554);
+    expect(needsRow(554)).toEqual([]);
+    expect(needsRow(553)).toEqual(["fixture.yml use tojson(needs): toJSON writes up to 554 bytes of what it reads, each output quoted and escaped, over this row's 553"]);
+    // A job id with a capital letter is one job in every case an expression writes it (a row's value is in lower case):
+    // its step's row and the toJSON(needs) that reads it are tied to it as for any other, so a joined output it hands on
+    // is still refused.
+    const capital = [
+      'name: fixture', 'on: push', 'jobs:',
+      '  up:', '    runs-on: ubuntu-26.04', '    outputs:', '      a: ${{ steps.s.outputs.a }}', '    steps:', '      - id: s', '        run: echo "a=x" >> "$GITHUB_OUTPUT"',
+      '  Build:', '    needs: up', '    runs-on: ubuntu-26.04', '    outputs:', '      big: ${{ needs.up.outputs.a }}${{ needs.up.outputs.a }}', '    steps:',
+      '      - id: identity', '        run: echo "digest=x" >> "$GITHUB_OUTPUT"', '      - env: { DIGEST: "${{ steps.identity.outputs.digest }}" }', '        run: echo "$DIGEST"',
+      '  use:', '    needs: Build', '    runs-on: ubuntu-26.04', '    steps:', '      - env: { ALL: "${{ toJSON(needs) }}" }', '        run: echo "$ALL"', '',
+    ].join('\n');
+    const capitalRows: BoundedValue[] = [
+      { file: 'fixture.yml', job: 'up', value: 'steps.s.outputs.a', refs: [script('up', 's', fingerprint({ run: 'echo "a=x" >> "$GITHUB_OUTPUT"' }))], bound: 'x', bytes: 60_000 },
+      { file: 'fixture.yml', job: 'Build', value: 'needs.up.outputs.a', refs: [needs('up'), output('up', 'a')], bound: 'x', bytes: 60_000 },
+      { file: 'fixture.yml', job: 'Build', value: 'steps.identity.outputs.digest', refs: [script('Build', 'identity', fingerprint({ run: 'echo "digest=x" >> "$GITHUB_OUTPUT"' }))], bound: 'x', bytes: 71 },
+      { file: 'fixture.yml', job: 'use', value: 'tojson(needs)', refs: [needs('Build')], bound: 'x', bytes: 200 },
+    ];
+    const capitalProblems = (table: readonly BoundedValue[]) => refProblems(table, unboundedValueProblems('fixture.yml', parse(capital)).values, () => capital);
+    expect(capitalProblems(capitalRows)).toEqual(['fixture.yml use tojson(needs): names no output big of job build']);
+    expect(capitalProblems([...capitalRows.slice(0, 3), { ...(capitalRows[3] as BoundedValue), refs: [needs('Build'), output('Build', 'big')] }]).filter((problem) => problem.startsWith('fixture.yml use'))).toEqual([
+      'fixture.yml use tojson(needs): job Build\'s output big is "${{ needs.up.outputs.a }}${{ needs.up.outputs.a }}", not one step\'s or needed job\'s output alone',
+    ]);
+  });
+
+  it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, with no other variable, and nothing else writes or reads buildx’s metadata provenance', () => {
+    // buildx v0.38.1 copies the whole event into every build record's provenance and, in its default mode (min), into
+    // the metadata file build-push-action prints and outputs; disabled leaves the key out, and buildx reads the word
+    // exactly (Disabled would be min). Matched in lower case: usesAction's prefix is case-sensitive.
+    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ file, where: `${file} ${id} ${step.name ?? step.id ?? ''}`, step }))));
+    // An action as the runner resolves a `uses:` (actions/runner's PipelineTemplateConverter: split at '@', then on '/'
+    // and '\', empty segments dropped, the first two the repository), in lower case, so docker/build-push-action/.@<sha>
+    // and Docker/Build-Push-Action@<sha> are builds too.
+    const repository = (uses: string): string =>
+      (uses.split('@')[0] ?? '')
+        .split(/[/\\]/)
+        .filter((part) => part !== '')
+        .slice(0, 2)
+        .join('/')
+        .toLowerCase();
+    const isBuild = (uses: string | undefined) => uses !== undefined && repository(uses) === 'docker/build-push-action';
+    const builds = steps.filter(({ step }) => isBuild(step.uses));
+    // Each build that does not set it is named; a new build that does passes, with no fixed count of them. The parsed
+    // builds of each file are as many as its document's own uses: keys name (a key in a block scalar is no key), so a
+    // build the parse missed, or one an alias repeats, fails, naming the file and the lines.
+    expect(builds.filter(({ step }) => step.env?.BUILDX_METADATA_PROVENANCE !== 'disabled').map(({ where }) => where)).toEqual([]);
+    // Each build's record (BuildKit's history, its provenance holding the whole event: a pull request's description,
+    // title and labels, a push's commit messages and authors' e-mails) is an artifact any signed-in account can read in
+    // this public repository for 90 days, so a pull request's run uploads none; every other run (a push's, a scheduled
+    // or a dispatched one's, the release's) keeps the default, the release's record being the only full provenance of a
+    // released image. build-push-action v7.4.0 reads the variable in its post step with actions-toolkit's parseBool
+    // (true or false; anything else is a warning).
+    expect(builds.filter(({ step }) => step.env?.DOCKER_BUILD_RECORD_UPLOAD !== "${{ github.event_name != 'pull_request' }}").map(({ where }) => where)).toEqual([]);
+    // And nothing else: another of build-push-action's variables (DOCKER_BUILD_SUMMARY: false skips the record's export
+    // and upload on every run) set on a build, or any DOCKER_BUILD_ or BUILDX_ variable set for a whole job (its env or
+    // its container's env or options, which the runner gives every step it runs there) or workflow, where every step
+    // of it would read it, is named.
+    const BUILD_ENV = { BUILDX_METADATA_PROVENANCE: 'disabled', DOCKER_BUILD_RECORD_UPLOAD: "${{ github.event_name != 'pull_request' }}" };
+    expect(builds.filter(({ step }) => !isDeepStrictEqual(step.env, BUILD_ENV)).map(({ where }) => where)).toEqual([]);
+    const shared = workflowFiles().flatMap((file) => {
+      const parsed = workflow(file) as unknown as { readonly env?: unknown; readonly jobs: Record<string, { readonly env?: unknown; readonly container?: unknown }> };
+      const scopes: (readonly [string, unknown])[] = [
+        [`${file} env`, parsed.env],
+        ...Object.entries(parsed.jobs).flatMap(([id, job]) => [[`${file} job ${id} env`, job.env] as const, [`${file} job ${id} container.env`, isRecord(job.container) ? job.container.env : undefined] as const]),
+      ];
+      return scopes.flatMap(([where, env]) => Object.keys(isRecord(env) ? env : {}).filter((name) => /^(?:DOCKER_BUILD_|BUILDX_)/i.test(name)).map((name) => `${where}.${name}`));
+    });
+    expect(shared).toEqual([]);
+    // Docker's own options set a container's env too (--env, -e, also among short flags joined, --env-file, whose file
+    // no rule reads), and an options string from an expression could hold one, so a job container's options set none
+    // and name no such variable; a service's, which no step runs in, name none and read no env file. A variable an
+    // image's own config sets is not read: each container image is the pin rules'.
+    const SETS_ENV = /(?:^|\s)(?:--env(?:-file)?(?=[=\s]|$)|-[A-Za-z]*e)|\$\{\{/;
+    const NAMES_BUILD = /DOCKER_BUILD_|BUILDX_|(?:^|\s)--env-file(?=[=\s]|$)/i;
+    const options = workflowFiles().flatMap((file) =>
+      Object.entries(workflow(file).jobs as Record<string, { readonly container?: unknown; readonly services?: unknown }>).flatMap(([id, job]) => {
+        const found: string[] = [];
+        const container = isRecord(job.container) ? job.container.options : undefined;
+        if (container !== undefined && (typeof container !== 'string' || SETS_ENV.test(container) || NAMES_BUILD.test(container))) found.push(`${file} job ${id} container.options: ${JSON.stringify(container)}`);
+        for (const [name, service] of Object.entries(isRecord(job.services) ? job.services : {})) {
+          const given = isRecord(service) ? service.options : undefined;
+          if (given !== undefined && (typeof given !== 'string' || NAMES_BUILD.test(given))) found.push(`${file} job ${id} services.${name}.options: ${JSON.stringify(given)}`);
+        }
+        return found;
+      }),
+    );
+    expect(options).toEqual([]);
+    // The record stays home only on an event named pull_request; another whose payload carries a pull request
+    // (pull_request_target, a review or a comment on one, workflow_run) would upload its description and title. So a
+    // workflow that holds a build runs on a closed list of events: a push's, a pull request's, a schedule's, a dispatch's.
+    const BUILD_EVENTS: ReadonlySet<string> = new Set(['push', 'pull_request', 'schedule', 'workflow_dispatch']);
+    const events = (on: unknown): string[] => (typeof on === 'string' ? [on] : isList(on) ? on.map(String) : isRecord(on) ? Object.keys(on) : []);
+    expect([...new Set(builds.map(({ file }) => file))].flatMap((file) => events(workflow(file).on).filter((event) => !BUILD_EVENTS.has(event)).map((event) => `${file}: holds a build and runs on ${event}`))).toEqual([]);
+    expect(builds.length).toBeGreaterThan(0);
+    const usesLines = (file: string): number[] => {
+      const counter = new LineCounter();
+      const lines: number[] = [];
+      const walk = (node: unknown): void => {
+        if (isMap(node) || isSeq(node)) for (const item of node.items) walk(item);
+        else if (isPair(node)) {
+          if (isScalar(node.key) && node.key.value === 'uses' && isScalar(node.value) && typeof node.value.value === 'string' && isBuild(node.value.value) && node.value.range) lines.push(counter.linePos(node.value.range[0]).line);
+          walk(node.value);
+        }
+      };
+      walk(parseDocument(readFileSync(path.join(WORKFLOWS, file), 'utf8'), { lineCounter: counter }).contents);
+      return lines;
+    };
+    const unmatched = workflowFiles().flatMap((file) => {
+      const parsed = builds.filter((build) => build.file === file).map(({ where }) => where);
+      const lines = usesLines(file);
+      const counted = (count: number, one: string, many: string) => `${String(count)} ${count === 1 ? one : many}`;
+      return parsed.length === lines.length ? [] : [`${file}: ${counted(parsed.length, 'build', 'builds')} parsed (${parsed.join('; ')}), ${counted(lines.length, 'uses: key', 'uses: keys')} at ${lines.length === 1 ? 'line' : 'lines'} ${lines.join(', ')} (an alias repeats a step, or a build sits where the parse does not list it)`];
+    });
+    expect(unmatched).toEqual([]);
+    // Nothing writes buildx's metadata another way, and nothing reads its provenance.
+    expect(steps.filter(({ step }) => step.uses !== undefined && repository(step.uses) === 'docker/bake-action').map(({ where }) => where)).toEqual([]);
+    expect(steps.filter(({ step }) => step.run?.includes('--metadata-file') === true).map(({ where }) => where)).toEqual([]);
+    expect(workflowFiles().filter((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').includes('buildx.build.provenance'))).toEqual([]);
   });
 });
 

@@ -20,7 +20,9 @@ import {
   earlierPermittedReportSchema,
   permittedReport,
   permittedRequestKey,
+  type PatientRecordsCheck,
   permittedResult,
+  practiceRecordsCheck,
 } from '@tp/model-gateway';
 import type { Logger } from '@tp/observability';
 
@@ -54,6 +56,27 @@ import { type DocumentStore, collect } from '../storage/documents';
  * measured the model is the gateway package's allowlist (permittedOutcome): record-permitted refuses a run
  * with any other, so a run that never reached the model (outside production, every call refused
  * phi_boundary) serves nothing.
+ *
+ * The worker re-sends a practice's contracts with no web code involved, so it checks them against the
+ * practice's records as the web does (docs/adr/0070, Part 3): one practice records check per practice per
+ * run, built in the run's job scope for that practice (its proof that the run reaches the practice) on the
+ * run's pool, with the run's ID as the screen's, so the screen's reads are the run's own, audited with purpose
+ * contract_screen under the run's request ID and the screen's (`evaluate-permitted:<run>:screen:<run>`,
+ * screenAuditRequestId). The check loads the practice's identifiers once and the run
+ * reuses them for every example of that practice (one job, one request ID), never across practices or runs.
+ * An example whose document names a patient of the practice is refused before the call (refused:names_patient)
+ * and is an outcome the example itself causes: a rerun meets it again, and the specialist's correction was of
+ * a document that should not have been filed as a contract. The gateway package's allowlist therefore counts
+ * it as outside the model (OUTSIDE_MODEL_PROBLEMS: counted, kept, and no bar to recording the run), as it
+ * counts refused:document_kind, while refused:screen_unavailable and refused:screen_failed (the practice holds
+ * more identifiers than the check reads, or the check's read failed) are the run's setting, not the example's,
+ * and stay unmeasured: such a run is refused whole by record-permitted, as a run refused by the kill switch is.
+ * A refused:names_patient example still counts among the variant's refused calls, so the first run after the
+ * check ships, on a practice with an example whose document names a patient, refuses more calls than the run it
+ * is compared with and fails the comparison (`refused_rose:<variant>`, permittedRegressions). That is kept, and
+ * is the safer reading (docs/adr/0070, Part 3): the gate never decides on its own that a newly refused example
+ * was the document's fault and not a change of what the run measures; the comparison is made again against a run
+ * on the current code, which refuses the same examples, as after any change of what a run can send.
  */
 
 export interface PermittedEvaluationServices {
@@ -159,9 +182,10 @@ async function propose(
   documentId: string,
   pages: Extract<Pages, { ok: true }>,
   ambiguous: boolean,
+  patientRecords: PatientRecordsCheck,
 ): Promise<{ readonly proposal: ContractTermsProposal | null; readonly problem: string | null }> {
   try {
-    const { proposal } = await gateway.proposeContractTerms(context, { documentId, documentSha256: pages.sha256, kind: pages.kind, pages: pages.pages, ambiguous });
+    const { proposal } = await gateway.proposeContractTerms(context, { documentId, documentSha256: pages.sha256, kind: pages.kind, pages: pages.pages, ambiguous, patientRecords });
     return { proposal, problem: proposal === null ? 'invalid_output' : null };
   } catch (error) {
     return { proposal: null, problem: problemOf(error) };
@@ -177,6 +201,17 @@ export async function evaluatePracticeExamples(services: PermittedEvaluationServ
   const inScope = <T>(work: (scope: PracticeScope<ScopeClient>) => Promise<T>) => withJobScope(services.pool, { jobId: runId, practiceId }, work);
   const requestId = `evaluate-permitted:${runId}`;
   const rows = await inScope((scope) => examples(scope, practiceId, requestId));
+  // The practice records check (docs/adr/0070, Part 3), one per practice per run: built in the run's own job scope
+  // for the practice (its proof of reach, never read through), it reads in a job scope of its own on the run's
+  // pool, as the run, once, and is reused for every example of the practice. Built at the first document to send,
+  // so a practice with none is not read; and it reads only when the gateway first screens, after every refusal the
+  // gateway makes without a screen (the kill switch, a spent budget, a retried job's completed calls), so a run
+  // whose calls are all refused that way reads none of the practice's records (combined audit item 120's review, S1).
+  let built: PatientRecordsCheck | undefined;
+  const patientRecords = async (): Promise<PatientRecordsCheck> =>
+    (built ??= await inScope(async (scope) =>
+      practiceRecordsCheck({ authorizedBy: scope, pool: services.pool, cipher: await loadPracticeCipher(scope, services.keys, practiceId), practiceId, screenId: runId, requestId }),
+    ));
   // The run may call the model for a key waiting only on this run (docs/adr/0070, Part 2; F5 (a)): the gateway
   // serves its evaluable set to this job's store, and to no other actor, for this run's own calls only (each
   // under permittedRequestKey; the PR review's N1).
@@ -199,7 +234,9 @@ export async function evaluatePracticeExamples(services: PermittedEvaluationServ
     const correction = parsed.data;
     // The page text is read in its own transaction, which ends before the call is made.
     const pages = await inScope((scope) => documentPages(scope, services, practiceId, correction.document_id, requestId));
-    const outcome = pages.ok ? await propose(gateway, { practiceId, requestKey: permittedRequestKey(runId, row.id) }, correction.document_id, pages, row.ambiguous) : { proposal: null, problem: 'document_unavailable' };
+    const outcome = pages.ok
+      ? await propose(gateway, { practiceId, requestKey: permittedRequestKey(runId, row.id) }, correction.document_id, pages, row.ambiguous, await patientRecords())
+      : { proposal: null, problem: 'document_unavailable' };
     results.push(permittedResult(row.id, correction, outcome, variantOf(row)));
   }
   services.logger.info('permitted examples evaluated', { practice_id: practiceId, job_id: runId });

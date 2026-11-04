@@ -10,6 +10,7 @@
 -- Called by policy: invitation.invitation_administrators_and_invitee
 -- Called by policy: invoice.invoice_owners_read
 -- Called by policy: membership.membership_administrators_insert
+-- Called by policy: organization_status_change.organization_status_change_platform_read
 -- Called by policy: prospect_request.prospect_request_platform_read
 -- Called by policy: prospect_request.prospect_request_platform_review
 -- Called by policy: status_component.status_component_managed

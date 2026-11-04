@@ -33,6 +33,13 @@ export const E2E_DOCUMENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-documents`);
 export const E2E_MODEL_OUTPUTS_DIR = path.join(tmpdir(), `${DIRECTORY}-model-outputs`);
 /** Where the in-test worker's digests are emailed (the local mail sender's outbox: one JSON file per message). */
 export const E2E_MAIL_OUTBOX_DIR = path.join(tmpdir(), `${DIRECTORY}-mail`);
+/**
+ * Where the local mail sender writes the simulator-shaped SES events of each message it sends (MAIL_EVENTS_DIR), which
+ * the platform's mail_events job reads in place of the queue (docs/adr/0065): the mail journeys' bounces and suppressions.
+ */
+export const E2E_MAIL_EVENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-mail-events`);
+/** The configuration sets' prefix the local sender names in its events (the worker's development prefix). */
+export const E2E_MAIL_STREAM_PREFIX = 'tp-dev';
 /** The local billing simulator's state for this run (BILLING_LOCAL_DIR): its customers, invoices and events (docs/adr/0050). */
 export const E2E_BILLING_DIR = path.join(tmpdir(), `${DIRECTORY}-billing`);
 

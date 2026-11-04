@@ -9,7 +9,8 @@ import { type Cents, parseCents } from '@tp/money';
  * status 22) is the payer's undo of a claim, not a service, so it is not a line to price; a claim a
  * correction supersedes is priced through its correction; a claim reversed and not corrected stays and
  * comes out REVERSED_CLAIM. Only lines loaded by the time the run was created belong to it, so a run's
- * lines are fixed when it is created and the guard at creation saw the same plans.
+ * lines are fixed when it is created, and the run's coverage names the plans that had no mapping among
+ * those same lines (tp-pricing-coverage/2; combined audit #32, docs/adr/0075).
  */
 
 export interface RunScope {
@@ -24,25 +25,41 @@ export interface RunScope {
   readonly loadedBy: Date | string;
 }
 
+/**
+ * The condition a service line `l` of claim `c` meets to be priced by some run, apart from the run's
+ * period and cut-off: not a reversal, not a claim a correction superseded, and a service date (the
+ * line's own, else its claim's first). Every count of "a plan's lines" outside a run (the screens'
+ * plans with no mapping, the months awaiting mappings) reads this same set, so the screens, the run's
+ * coverage and the reports agree on a plan and a month (combined audit #32, finding 10; MAP-06).
+ * Exported to the web through @tp/worker/pricing; the aliases `c` and `l` are the caller's.
+ */
+export const PRICEABLE_LINE = `c.claim_status_code <> '22' AND c.superseded_by_claim_id IS NULL AND coalesce(l.service_date, c.service_from) IS NOT NULL`;
+
+// The IS NOT NULL of PRICEABLE_LINE is implied by the BETWEEN: the run's SQL is the same as before it.
 const RUN_LINES = `
   FROM claim c
   JOIN service_line l ON l.claim_id = c.id
  WHERE c.practice_id = $1
-   AND c.claim_status_code <> '22' AND c.superseded_by_claim_id IS NULL
+   AND ${PRICEABLE_LINE}
    AND coalesce(l.service_date, c.service_from) BETWEEN $2::date AND $3::date
    AND l.created_at <= $4`;
 
 /**
- * One line per plan of the run's lines (its earliest service date): what the creator's guard checks
- * (MAP-01: pricing is refused while any plan has no mapping at all). Plans are opaque IDs.
+ * One line per plan and service date of the run's lines (the line's own date, else its claim's first),
+ * by plan, then date. It serves the creator's "nothing mapped" check (MAP-07: a period none of whose
+ * lines has a mapping in force on its date gets no run) and the coverage's unmapped plans (PRC-30):
+ * `unmappedPlanIds` decides each plan on these dates, the resolver's own rule, never on whether some
+ * mapping of it exists (PR #95 review R3N-1, security F2). A plan with no mapping in force leaves its
+ * own lines NO_MAPPING while every other line prices (MAP-01, MAP-06). Plans are opaque IDs; at most
+ * one row per plan per day of the period.
  */
 export async function runPlans(client: ScopeClient, run: RunScope): Promise<MappedLine[]> {
-  const { rows } = await client.query<{ plan_id: string; first_date: string }>(
-    `SELECT l.payer_plan_key AS plan_id, min(coalesce(l.service_date, c.service_from))::text AS first_date ${RUN_LINES}
-      GROUP BY l.payer_plan_key ORDER BY l.payer_plan_key`,
+  const { rows } = await client.query<{ plan_id: string; service_date: string }>(
+    `SELECT DISTINCT l.payer_plan_key AS plan_id, coalesce(l.service_date, c.service_from)::text AS service_date ${RUN_LINES}
+      ORDER BY 1, 2`,
     [run.practiceId, run.periodFrom, run.periodTo, run.loadedBy],
   );
-  return rows.map((row) => ({ planId: row.plan_id, serviceDate: row.first_date }));
+  return rows.map((row) => ({ planId: row.plan_id, serviceDate: row.service_date }));
 }
 
 /** A line's patient-responsibility adjustment (CAS PR at line level). */

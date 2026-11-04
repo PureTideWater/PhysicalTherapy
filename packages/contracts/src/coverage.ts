@@ -5,14 +5,20 @@ import type { PlanMappingRecord } from './records';
 import { mappingInForce } from './resolver';
 
 /**
- * Pricing never runs on an unmapped combination (PRD 5, J6; PRD 6, Payer and plan mapping; test
- * matrix MAP-01, MAP-02), and the Coverage screen shows the dollars waiting on mappings.
+ * A plan with no mapping is never priced, and the Coverage screen shows the dollars waiting on
+ * mappings (PRD 5, J6; PRD 6, Payer and plan mapping; test matrix MAP-01, MAP-02, MAP-06; combined
+ * audit #32, docs/adr/0075).
  *
- * - `assertPricingAllowed` is the guard a pricing run's creator calls with the run's lines: it
- *   refuses the run while any line has no plan, or names a plan with no mapping at all (an unmapped
- *   plan). A plan with mappings prices: its lines outside every mapping's window resolve to
- *   NO_MAPPING one by one (MAP-02), and resolution gives NO_MAPPING for every line of an unmapped
- *   plan too.
+ * - `unmappedPlanIds` names the plans among a set of lines (a run's, a period's) none of whose lines
+ *   has a mapping in force on its service date (mappingInForce, the resolver's own rule): a plan with
+ *   no mapping at all, and a plan mapped only for other dates (PR #95 review R3N-1, security F2; a
+ *   mapping is decided per line on the line's date, never by its mere existence). Nothing refuses a
+ *   run for them: resolution gives NO_MAPPING for every line of such a plan that reaches the
+ *   resolver, one by one, and the run prices every other line of its period; a mapped plan's line
+ *   outside every mapping's window is NO_MAPPING the same way (MAP-02). The worker refuses only a
+ *   period none of whose lines has a mapping in force (MAP-07, it would price nothing), and records
+ *   the plans named here, with their lines and billed cents, in the run's coverage
+ *   (tp-pricing-coverage/2, PRC-30).
  * - `waitingOnMapping` totals, per plan, the lines with no mapping in force on their service date:
  *   lines, claims, billed and paid cents. load.ts runs the same question as one query.
  */
@@ -23,37 +29,30 @@ export interface MappedLine {
   readonly serviceDate: IsoDate;
 }
 
-/** Why a pricing run is refused before it starts. Counts and opaque plan IDs only. */
-export class PricingRefusedError extends Error {
-  override readonly name = 'PricingRefusedError';
-
-  constructor(
-    /** Plans of the run's lines that have no mapping at all. */
-    readonly unmappedPlanIds: readonly string[],
-    /** Lines of the run that name no plan. */
-    readonly linesWithoutPlan: number,
-  ) {
-    const parts = [
-      unmappedPlanIds.length > 0 ? `${String(unmappedPlanIds.length)} plan(s) have no mapping` : null,
-      linesWithoutPlan > 0 ? `${String(linesWithoutPlan)} line(s) name no plan` : null,
-    ].filter((part): part is string => part !== null);
-    super(`pricing is refused until every plan is mapped: ${parts.join('; ')}`);
-  }
-}
-
-/** The plans among the lines' that have no mapping at all, sorted. */
+/**
+ * The plans among the lines' none of whose lines has a mapping in force on its service date, sorted:
+ * over a run's lines, the plans it never prices (each of their lines the resolver reaches is
+ * NO_MAPPING) and its coverage records (MAP-01, PRC-30). A plan with a mapping in force on any one of
+ * its lines' dates is not named; its other lines resolve one by one (MAP-02). A line that names no plan
+ * is not a plan's; it resolves to NO_MAPPING too. The lines may repeat a plan, one per service date.
+ */
 export function unmappedPlanIds(lines: readonly MappedLine[], mappings: readonly PlanMappingRecord[]): string[] {
-  const mapped = new Set(mappings.map((mapping) => mapping.planId));
-  return [...new Set(lines.flatMap((line) => (line.planId === null || mapped.has(line.planId) ? [] : [line.planId])))].sort();
-}
-
-/** Refuses a pricing run over lines of an unmapped plan, or of no plan (MAP-01). */
-export function assertPricingAllowed(lines: readonly MappedLine[], mappings: readonly PlanMappingRecord[]): void {
-  const unmapped = unmappedPlanIds(lines, mappings);
-  const withoutPlan = lines.filter((line) => line.planId === null).length;
-  if (unmapped.length > 0 || withoutPlan > 0) {
-    throw new PricingRefusedError(unmapped, withoutPlan);
+  const byPlan = new Map<string, PlanMappingRecord[]>();
+  for (const mapping of mappings) {
+    byPlan.set(mapping.planId, [...(byPlan.get(mapping.planId) ?? []), mapping]);
   }
+  const seen = new Set<string>();
+  const mapped = new Set<string>();
+  for (const line of lines) {
+    if (line.planId === null) {
+      continue;
+    }
+    seen.add(line.planId);
+    if (!mapped.has(line.planId) && mappingInForce(byPlan.get(line.planId) ?? [], line.planId, line.serviceDate) !== null) {
+      mapped.add(line.planId);
+    }
+  }
+  return [...seen].filter((planId) => !mapped.has(planId)).sort();
 }
 
 export interface CoverageLine extends MappedLine {

@@ -157,7 +157,8 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
    console's words (`surface="console"`). Every other download link stays plain: its page holds nothing a reload would
    lose (Alternatives considered). Once Report never navigates on a plain click, `Uploader` asks before the page unloads
    (`beforeunload`, the browser's own question) while any file of the batch is still being asked for, sent or reported
-   complete (`stillSending`); a move inside the app does not unload the page and does not ask.
+   complete (`stillSending`), and, since the merge of #75, while any file chosen waits to upload (`leaveAsks`, ADR 0070
+   Part 3); a move inside the app does not unload the page and does not ask.
 5. **How a page says it.** Each page parses `props.searchParams` with `downloadRefusal()`, whose zod fragment
    (`downloadRefusalParams`) takes each key `.optional().catch(undefined)`, so an unknown code, a repeated key, a field
    that is not a name or a wait out of range is ignored, never a refusal of the page (R14). It is parsed in the page,
@@ -320,8 +321,8 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
 - The in-place refusal under the real limit: the end-to-end test's refused report on Uploads is the route's own 429
   outcome stood in by `page.route`, so the `export` limit the run's downloads share stays whole; the fetch, the save
   and the words are held by unit tests against that outcome.
-- The `beforeunload` question: it is the browser's own; a unit test holds when the guard is on (`stillSending`), and
-  no end-to-end test answers it. CI saves a fetched file in Chromium only.
+- The `beforeunload` question: it is the browser's own; unit tests hold when the guard is on (`stillSending`, and
+  `leaveAsks` for files waiting to upload), and no end-to-end test answers it. CI saves a fetched file in Chromium only.
 - Every in-place link and every return page in a browser: the end-to-end tests click the receipts' Report, the export
   review's files and the reviewer checklist's line CSV (its ticks kept); the packet page's export history and the
   console's evidence export are the same `DownloadLink`, held by its unit tests and the type check. The status is read

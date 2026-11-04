@@ -59,8 +59,8 @@ test('a correction on a coinsurance line approves what the payer pays more, the 
     await expect(line.locator('[data-billable="600"]')).toHaveText(
       'Billable to the patient: $6.00 (coinsurance +$6.00). The payer raised the allowed amount by $30.00 and pays $24.00 of it; the rest is the patient’s share, counted in no total.',
     );
-    await expect(page.locator('[data-figure="approved"]')).toContainText('what payers agreed to pay, never the patient’s share; recovered only once posted or deposited');
-    await expect(page.locator('[data-help="payer-approved"]')).toHaveText('Payer approved is net of reversals and of what was taken back before it posted.');
+    await expect(page.locator('[data-figure="approved"]')).toContainText('what payers agreed to pay to date, never the patient’s share; only deposited cash counts as recovered');
+    await expect(page.locator('[data-help="payer-approved"]')).toHaveText('Payer approved is net of reversals and of what was taken back before it was deposited.');
   });
 
   await test.step('the 24.00 deposit recovers the line', async () => {
@@ -88,8 +88,10 @@ test('a correction on a coinsurance line approves what the payer pays more, the 
   await test.step('the dashboard’s three headline numbers never hold the patient’s share', async () => {
     await page.goto(`/p/${practiceId}`);
     await expect(page.locator('[data-figure="payer-approved"]')).toContainText('$24.00');
-    await expect(page.locator('[data-figure="payer-approved"]')).toContainText('what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts');
-    await expect(page.locator('[data-figure="recovered-total"]')).toContainText('$24.00');
+    await expect(page.locator('[data-figure="payer-approved"]')).toContainText(
+      'what payers agreed to pay to date on the lines they corrected, deposited or not, never the patient’s share; only deposited cash counts as recovered',
+    );
+    await expect(page.locator('[data-figure="recovered-to-date"]')).toHaveText('$24.00');
     for (const figure of ['actionable', 'payer-approved', 'recovered-total']) {
       await expect(page.locator(`[data-figure="${figure}"]`)).not.toContainText('$6.00');
     }

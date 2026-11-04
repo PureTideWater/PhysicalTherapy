@@ -1,5 +1,5 @@
 import { quarterNameOf } from '@tp/rules';
-import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -11,6 +11,7 @@ import { Figure } from '../../../../components/coverage/share';
 import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
+import { EveryPlanMappedAlert, MappedNotPricedAlert, UnmappedPlansAlert } from '../../../../components/mapping/months';
 import { MonthsWaitingOnContent } from '../../../../components/pricing/content';
 import { MonthsWaitingOnLocation } from '../../../../components/pricing/location';
 import { Money, Pager } from '../../../../components/remittances/display';
@@ -101,7 +102,10 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
  * that took effect last named beside them; until a run takes effect, they are zero. Lines read from an
  * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03). The months waiting on
  * Medicare content PaidWhole has not loaded have their own card, and each fee-schedule period not loaded its sentence
- * below the reasons, whose remedies stay as they are (audit #7 and #59; docs/adr/0071).
+ * below the reasons, whose remedies stay as they are (audit #7 and #59; docs/adr/0071). Under the shares, the plans
+ * with no mapping, whose lines no run prices while every other plan's price, and the lines of mapped plans still
+ * NO_MAPPING in the pricing in effect, each a default Alert, never the destructive one (combined audit #32;
+ * docs/adr/0075; MAP-06, PRC-31).
  */
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
@@ -129,7 +133,9 @@ export default async function CoveragePage(props: Props) {
     waitingOnContent,
     contentHeadline,
     feeScheduleNotLoaded,
-    readiness,
+    unmappedPlans,
+    mappedNotPriced,
+    canMap,
     unconfirmedFormats,
     obtain,
     payers,
@@ -186,24 +192,13 @@ export default async function CoveragePage(props: Props) {
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {readiness.allowed ? (
-            <Alert data-state="ready">
-              <AlertTitle>Pricing can run</AlertTitle>
-              <AlertDescription>Every plan with lines has a mapping. Lines outside every mapping’s dates are left unpriced with NO_MAPPING, one by one.</AlertDescription>
-            </Alert>
+        <CardContent className="flex flex-col gap-3">
+          {unmappedPlans.plans === 0 ? (
+            <EveryPlanMappedAlert />
           ) : (
-            <Alert variant="destructive" data-state="refused">
-              <AlertTitle>Pricing is refused until every plan is mapped</AlertTitle>
-              <AlertDescription>
-                {readiness.unmappedPlans} {readiness.unmappedPlans === 1 ? 'plan has' : 'plans have'} no mapping at all. A pricing run over them would be refused;{' '}
-                <Link className="underline" href={`/p/${practiceId}/mapping`}>
-                  map them
-                </Link>{' '}
-                first.
-              </AlertDescription>
-            </Alert>
+            <UnmappedPlansAlert practiceId={practiceId} totals={unmappedPlans} canMap={canMap} place="coverage" />
           )}
+          <MappedNotPricedAlert practiceId={practiceId} totals={mappedNotPriced} canMap={canMap} />
         </CardContent>
       </Card>
       <UnconfirmedFormats practiceId={practiceId} sources={unconfirmedFormats} />

@@ -2,7 +2,8 @@ import { PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS } from '@tp/worker/packe
 import { describe, expect, it } from 'vitest';
 
 import { type ApprovalFacts, type ApprovalViewer, BLOCKED_REASONS, SINGLE_USER_DELAY_MS, approvalState, waitText } from './approval';
-import { EXPORT_FAILURE_TEXT, EXPORT_REFUSAL_TEXT, type ExportAttempt, NOT_APPROVED_ALONE_TEXT, exportAttemptWords, exportRefusalText } from './export-attempts';
+import type { WorkPause } from '../billing/suspension-words';
+import { EXPORT_FAILURE_TEXT, EXPORT_REFUSAL_TEXT, type ExportAttempt, NOT_APPROVED_ALONE_TEXT, exportAttemptWords, exportPausedText, exportRefusalText } from './export-attempts';
 import { PRICING_BLOCKED_TEXT } from './pricing';
 import { BLOCKED_TEXT, DEADLINE_NOT_EXPORTABLE, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT } from './queries';
 
@@ -131,6 +132,21 @@ describe('the export’s words (audit item #26)', () => {
     }
   });
 
+  // SS-01 UX review 1: while the person may not start an export, the page withholds the Export button and says why.
+  it('says why no export starts while a hold stops the person’s exports, a closure promising no restart (BIL-09)', () => {
+    const r1 = 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable';
+    expect(exportPausedText({ reason: r1, source: 'owner', restarts: true })).toBe(`Exports are paused: ${r1}.`);
+    const r2 = "the practice's organization is closed, so no new work starts here; everything here stays readable";
+    expect(exportPausedText({ reason: r2, source: 'owner', restarts: false })).toBe(`Exports have stopped: ${r2}.`);
+    const r4 = "PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records";
+    expect(exportPausedText({ reason: r4, source: 'grantee', restarts: true })).toBe(`${r4}.`);
+    const r5 = 'your organization is closed, so you start no new work here through its grant';
+    expect(exportPausedText({ reason: r5, source: 'grantee', restarts: false })).toBe('Your organization is closed, so you start no new work here through its grant.');
+    for (const closed of [{ reason: r2, source: 'owner' }, { reason: r5, source: 'grantee' }] as const) {
+      expect(exportPausedText({ ...closed, restarts: false })).not.toMatch(/until|again|reinstat|restart|resolved/i);
+    }
+  });
+
   it('says nothing for no request and for an export made (the page shows the export itself)', () => {
     expect(exportAttemptWords({ state: 'none' }, time)).toBeNull();
     expect(exportAttemptWords({ state: 'exported', at: ANSWERED }, time)).toBeNull();
@@ -169,6 +185,24 @@ describe('the export’s words (audit item #26)', () => {
     });
     // A verifier failure keeps its fix: the version is written again whatever readiness says.
     expect(exportAttemptWords({ ...refused, code: 'verifier_failed' }, time, { cleared: true })).toMatchObject({ tone: 'danger', title: 'Export refused' });
+    // SS-01 UX review 1 (design 6.3 E1; BIL-09): the gate's refusal for the practice's own hold keeps E1 while that hold
+    // lasts, ready as the version is, and is told as the earlier request's only once it is lifted.
+    const held: ExportAttempt = { ...refused, code: 'organization_suspended' };
+    const owner: WorkPause = { reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable', source: 'owner', restarts: true };
+    const grantee: WorkPause = { reason: 'your organization is closed, so you start no new work here through its grant', source: 'grantee', restarts: false };
+    expect(exportAttemptWords(held, time, { cleared: true, hold: owner })).toEqual({
+      state: 'refused',
+      code: 'organization_suspended',
+      tone: 'danger',
+      title: 'Export refused',
+      text: `The export job refused this version at [${ANSWERED}] and printed nothing. ${EXPORT_REFUSAL_TEXT.organization_suspended}`,
+      live: false,
+    });
+    expect(exportAttemptWords(held, time, { cleared: true, hold: owner })?.text).not.toContain('no longer holds');
+    // The practice's hold lifted: the earlier request's, as for any other reason; a hold of the reader's own grant is not the gate's.
+    for (const hold of [null, grantee]) {
+      expect(exportAttemptWords(held, time, { cleared: true, hold })).toMatchObject({ tone: 'info', title: 'An earlier request was refused' });
+    }
     expect(exportAttemptWords({ state: 'failed', requestedAt: REQUESTED, at: ANSWERED, code: 'store_failed' }, time)).toMatchObject({
       title: 'Export failed',
       live: false,

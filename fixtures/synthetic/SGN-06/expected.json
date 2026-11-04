@@ -1,0 +1,26 @@
+{
+  "case": "SGN-06",
+  "module": "SGN",
+  "title": "The code and the new password",
+  "assertion": "The code step is a sealed sign-in step that states 15 minutes, warns at two in its own words and closes at its limit; the policy is checked before the provider; a wrong, expired, used, replaced or over-tried code and an unknown address get one refusal on the code field, with the code and both passwords emptied; a wrong code counts no failure and locks nothing; the confirm counts in `sign_in` by the sealed address and a changed address is refused without the provider; Send a new code opens the step again without typing and shows its own refusals, and Use a different email ends it at any time, with the address not kept; the dev twin holds the code hashed, for an hour, single use, five tries",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/step-limits.test.ts",
+    "apps/web/src/lib/auth/dev-provider.test.ts",
+    "apps/web/src/lib/auth/cognito-provider.test.ts",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/components/step-timer.test.tsx",
+    "apps/web/src/components/step-timer.browser.test.tsx",
+    "apps/web/e2e/sign-in.spec.ts",
+    "apps/web/e2e/sign-in-time.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The local identity provider mails its reset codes to a synthetic outbox the tests read, and the step timer runs on a clock the test moves; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

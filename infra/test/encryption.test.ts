@@ -22,6 +22,8 @@ const KEY_PROPERTY: Record<string, (properties: Record<string, unknown>) => unkn
   'AWS::Logs::LogGroup': (p) => p.KmsKeyId,
   'AWS::CloudTrail::Trail': (p) => p.KMSKeyId,
   'AWS::ECR::Repository': (p) => (p.EncryptionConfiguration as { EncryptionType: string; KmsKey: unknown }).KmsKey,
+  // The mail events queue and its dead-letter queue hold recipient addresses for at most 4 and 14 days (docs/adr/0065).
+  'AWS::SQS::Queue': (p) => p.KmsMasterKeyId,
 };
 
 /** Cognito encrypts user pools at rest with keys it manages; there is no customer key to choose. */
@@ -72,8 +74,8 @@ describe.each(ENVIRONMENTS)('%s: encryption at rest', (environment) => {
     // Six buckets (documents, packets, audit copies, trail, canary artifacts, support inbox), one database, nine
     // secrets (owner, application, worker, operator, queue, billing and screening logins, the cookie-sealing key,
     // Stripe's keys), one topic, seven log groups (web, worker, platform, screening, migration, migration runner, the
-    // network lookup), one trail, two image repositories.
-    expect(checked).toBe(27);
+    // network lookup), one trail, two image repositories, and the mail events queue and its dead-letter queue.
+    expect(checked).toBe(29);
   });
 
   it('has no data store outside that list', () => {
