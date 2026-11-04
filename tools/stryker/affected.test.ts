@@ -1107,13 +1107,16 @@ describe('every git the changes job runs', () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-git-'));
     try {
       execFileSync('git', ['init', '-q', dir]);
+      execFileSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'base'], { cwd: dir });
       let message = '';
       try {
-        runGit(['rev-parse', '--verify', 'HEAD\n::warning title=forged::x'], dir);
+        // merge-base repeats the name it cannot read in its own message, so the error itself must go through printable.
+        runGit(['merge-base', 'nowhere\n::error title=forged::x', 'HEAD'], dir);
       } catch (error) {
         message = (error as Error).message;
       }
-      expect(message.startsWith('git rev-parse --verify "HEAD\\n::warning title=forged::x" failed (exit 128)')).toBe(true);
+      expect(message.startsWith('git merge-base "nowhere\\n::error title=forged::x" HEAD failed (exit 128):\n')).toBe(true);
+      expect(message.split('\n')).toContain('"::error title=forged::x"');
       expect(message.split('\n').filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
