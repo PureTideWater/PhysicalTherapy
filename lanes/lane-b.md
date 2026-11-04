@@ -1446,3 +1446,10 @@ HANDOFF.md; LANES.md rule 10).
 - #86 (ci-images-digest): description cut to 33,954 characters.
 - New merge step, in force from 08:00: GitHub now enforces the up-to-date rule, so a PR whose base moved since its last CI merges the base again and re-runs CI first (`lanes/acting-lane-b-2026-11-04.md`, 2a).
 - S3: #96, then ci-findings-transport. S1: #85, then redact-ssn-phone. S4: UX PR 7.
+
+### 2026-11-04 09:30 UTC: UX PR 7 (sign-in recovery) is draft #108
+- Head 6b25ed60, built red-first; integration green, e2e and axe included.
+- S-3 ruled the safer way (ADR 0081 A2 amended): a Cognito or audit failure on a real account answers like a non-account and is logged by IDs only.
+- The wording departures D-1 to D-4 from the UX review's ruled words are listed in the PR body. Taken under the co-founder's "decide without asking" direction; none is legal text.
+- Two reviews are running.
+- Handed to Lane A (not blocking): alarms on password-reset requests per user and on undelivered requests (R-11); branded wording for Cognito's code email; a "your password was changed" email.
