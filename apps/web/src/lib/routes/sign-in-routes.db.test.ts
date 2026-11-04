@@ -901,6 +901,24 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     expect(browser.written).not.toContain(KEPT_EMAIL_COOKIE);
   });
 
+  it('SGN-06: counts the confirm in `sign_in` by the sealed address: with that count spent, the right code is refused before the provider and the password is unchanged', async () => {
+    const user = await person();
+    const browser = new Browser();
+    expect(await step(resetRequest, browser, { email: user.email })).toEqual(CODE_SENT);
+    const code = codeFor(user.email);
+    const before = (await store.byEmail(user.email))?.passwordHash;
+    // Password attempts and reset requests spend this count; a fresh step's cookie does not reset it (4.3).
+    await spendSignIn(user.email);
+    const from = logLines.length;
+    const asked = vi.spyOn(services.provider, 'confirmPasswordReset');
+    expect(await step(resetConfirm, browser, { email: user.email, code, password: CHOSEN, confirm: CHOSEN })).toEqual({ status: 'rate_limited', retryAfterSeconds: expect.any(Number) });
+    expect(asked).not.toHaveBeenCalled();
+    asked.mockRestore();
+    expect((await store.byEmail(user.email))?.passwordHash).toBe(before);
+    expect(loggedSince(from, 'password reset rate limited')).toHaveLength(1);
+    expect(await step(forgotPasswordPage, browser)).toMatchObject({ status: 'ok', data: { phase: 'confirm', email: user.email } });
+  });
+
   it('SGN-07: a reset ends every session, lands on the sign-in page with the email kept, and the next sign-in asks for the code; the old password is refused', async () => {
     const user = await person();
     const signedIn = new Browser();
