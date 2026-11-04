@@ -1,0 +1,14 @@
+queued 2026-11-04T11:21:13Z
+lock taken 2026-11-04T11:21:13Z
+[release-capacity 2026-11-04T11:21:16.251Z] runner 4 CPUs, 16091 MiB; runtime process; worker 0.5 vCPU and 1024 MiB on CPUs 3: node --max-old-space-size=560 --enable-source-maps dist/main.js
+[release-capacity 2026-11-04T11:21:16.255Z] release 900110: 4172393 records
+[release-capacity 2026-11-04T11:31:38.508Z] loaded: {"status":"loaded","releaseNo":900110,"manifestSha256":"0b700554145bed94b54f75bc1304d9979e9666f6fa57673abec69c3766178723","records":4172393,"seconds":618.1}
+[release-capacity 2026-11-04T11:32:44.934Z] seeded A (100000 lines), B (20000), C (two sets of 4 835s of 2000 claims), D and E (100000 each)
+(node:25202) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[release-capacity 2026-11-04T11:36:14.626Z] concurrent phase: A price completed, B audit report completed, C parse 1 completed, C parse 2 completed, C parse 3 completed, C parse 4 completed
+[release-capacity 2026-11-04T11:38:37.003Z] A's reconcile: 0 actionable lines in 0 reprocessing 835s
+[release-capacity 2026-11-04T11:41:00.946Z] large jobs together: A audit report 2 completed, D triage completed, E price completed, C parse 5 completed, C parse 6 completed, C parse 7 completed, C parse 8 completed
+[release-capacity 2026-11-04T11:42:06.236Z] verdict: pass
+::warning title=Release capacity (advisory)::the windows query took 11061 ms cold, above its 5000 ms budget (advisory)
+exit=0 2026-11-04T11:42:11Z

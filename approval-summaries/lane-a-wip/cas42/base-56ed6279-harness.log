@@ -1,0 +1,33 @@
+queued 2026-11-04T10:44:01Z
+lock taken 2026-11-04T10:50:09Z
+[release-capacity 2026-11-04T10:50:12.065Z] runner 4 CPUs, 16091 MiB; runtime process; worker 0.5 vCPU and 1024 MiB on CPUs 3: node --max-old-space-size=560 --enable-source-maps dist/main.js
+[release-capacity 2026-11-04T10:50:12.067Z] release 900110: 4172393 records
+[release-capacity 2026-11-04T11:00:18.856Z] loaded: {"status":"loaded","releaseNo":900110,"manifestSha256":"0b700554145bed94b54f75bc1304d9979e9666f6fa57673abec69c3766178723","records":4172393,"seconds":603.3}
+[release-capacity 2026-11-04T11:01:24.955Z] seeded A (100000 lines), B (20000), C (two sets of 4 835s of 2000 claims), D and E (100000 each)
+(node:23449) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[release-capacity 2026-11-04T11:05:19.255Z] concurrent phase: A price completed, B audit report completed, C parse 1 completed, C parse 2 completed, C parse 3 completed, C parse 4 completed
+[release-capacity 2026-11-04T11:14:26.363Z] A's reconcile: 0 actionable lines in 0 reprocessing 835s
+[release-capacity 2026-11-04T11:20:02.325Z] large jobs together: A audit report 2 failed, D triage failed, E price completed, C parse 5 completed, C parse 6 completed, C parse 7 completed, C parse 8 completed
+{"error_code":"QUEUE_ERROR","time":"2026-11-04T11:21:02.806Z","level":"error","msg":"queue error"}
+[release-capacity 2026-11-04T11:21:07.991Z] verdict: fail
+[release-capacity 2026-11-04T11:21:07.991Z]   A price (price) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T11:21:07.991Z]   B audit report (audit_report) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 1 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 2 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 3 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 4 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T11:21:07.991Z]   A triage (triage) ended failed, not completed (the chain)
+[release-capacity 2026-11-04T11:21:07.991Z]   A audit report (audit_report) ended failed, not completed (the chain)
+[release-capacity 2026-11-04T11:21:07.991Z]   A reconcile (reconcile) logged no job heap line (A’s reconcile)
+[release-capacity 2026-11-04T11:21:07.991Z]   A audit report 2 (audit_report) ended failed, not completed (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   D triage (triage) ended failed, not completed (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   E price (price) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 5 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 6 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 7 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   C parse 8 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T11:21:07.991Z]   a backend held 13703 advisory locks at once, above 64 (a lock per line or per row is back)
+[release-capacity 2026-11-04T11:21:07.991Z]   the worker logged JOB_FAILED 4 times
+::warning title=Release capacity (advisory)::the windows query took 10407 ms cold, above its 5000 ms budget (advisory)
+exit=1 2026-11-04T11:21:13Z

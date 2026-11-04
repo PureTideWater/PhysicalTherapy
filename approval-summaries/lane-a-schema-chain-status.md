@@ -113,6 +113,19 @@ its unpushed work is not waited for).
   08c1ba47…6142`. Next, once CAS-42.6's head run ends (~12:00): merge base 24531dc2 (#86; no migration), fast checks and
   generators, `--check --require-approval`, push, CI green, ready, approval-of-record's re-run, merge (method merge,
   expectedHeadSha).
+- **11:55 UTC. CAS-42.6 PASSED; CAS-42.5 FAILED (memory.peak).** Results and logs: `approval-summaries/lane-a-wip/cas42/`.
+  - CAS-42.6 (local process route, one release dir 900110, same harness and server; only the worker differs): **before**
+    56ed6279 (#81) FAIL: A triage, A report x2, D triage 53200 after 3 attempts, one backend at 13,703 advisory locks;
+    **after** ab8c9c27 PASS: 19 jobs on attempt 1, locks max 1, live heap max 339 MiB (line 420), A triage 43.6 s (120),
+    A report 95.4 s (180), together A report 2 139.6 s and D triage 79.9 s; memory peak 721.6 MiB (cgroup v1, local).
+  - CAS-42.5 (release-capacity.yml run 41810890284 on ab8c9c27, ubuntu-26.04 4 CPUs, worker 0.5 vCPU / 1,024 MiB):
+    **fail on two checks only:** the worker's memory.peak 980.4 MiB over the run and 936.6 MiB in the together phase, above
+    921.6 (90%). Everything else passed (attempt 1, live heaps <= 420, locks <= 64, no OOM/restart). Commented on #73 by
+    the workflow. Artifact unreadable here (blob host refused by the egress proxy). **Open for 1b's PR stage:** root-cause
+    the container peak (live heap is 339 MiB; the rest is native memory, Chromium or page cache), fix or measure, never
+    loosen the 90% line. Also open: the harness's step 7b posts 0 of 0 (A has no actionable lines), so section 8.4's 30 s
+    actionable-write budget is never exercised.
+  - Merge verifiers for 1b ab8c9c27 and interest adf0f5d2: ok.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
