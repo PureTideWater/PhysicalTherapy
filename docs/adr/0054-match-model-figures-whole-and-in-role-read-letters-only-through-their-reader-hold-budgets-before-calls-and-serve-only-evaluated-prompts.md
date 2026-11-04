@@ -393,4 +393,7 @@ The reader takes one cue's role per figure, the nearest by the order ADR 0086 se
 the union of every cue in its clause; so the check before a model's draft is written is at least as strict as this
 check was. `functions/narrative-roles.test.ts` proves it on every build: the check as it stood at 83d71fd6, vendored
 unchanged as a fixture only (`narrative-roles.base.fixture.ts`), runs over 246 generated amount swaps and every
-misstated example of the review of 2026-11-01, and each one it caught must fail the gateway (PE-2).
+misstated example of the review of 2026-11-01, and each one it caught must fail the gateway (PE-2). A figure that
+fails for want of a scope, or of its own words instead of "respectively" (ADR 0086's closed rules 2 and 3, 2026-11-04),
+is in its role and is no `figure_in_wrong_role`: the verifier's report alone fails the draft, and the editor says what
+to add.

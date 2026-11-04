@@ -14,7 +14,7 @@ import { type NarrativeCheck, type NarrativeReading, findMismatches, readNarrati
  * The editor builds the version's facts once (narrativeFacts, memoised on its content) and reads the narrative once per
  * keystroke (checkReading: the check and every figure as read, from one reading; the review of 2026-11-01, PE-9).
  */
-export { type CheckedFigure, MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, type NarrativeReading } from './verifier/mismatches';
+export { type CheckedFigure, type FigureNeeds, MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, type NarrativeReading } from './verifier/mismatches';
 export { type NarrativeFacts, narrativeFacts } from './facts';
 export { FIGURE_ROLES, type FigureRole } from './roles';
 

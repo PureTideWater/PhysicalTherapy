@@ -1,12 +1,19 @@
 import type { Cues } from '../roles-words';
-import type { Figure } from '../scan';
 import type { FigureRole, ReadKind, Token } from './kinds';
 import { ANY, type Cued, type Entry, type Family, type Match, Walk, cueAt, nearest, notWord, one, ordered } from './walk';
 
-/** A "respectively" list's cue: its roles and the token its words start at. */
+/** A "respectively" list's cue: its roles, the token its words start at, and the tokens that state its own scope. */
 export interface ListCue {
   readonly roles: readonly FigureRole[];
   readonly start: number;
+  readonly scope: readonly [number, number];
+}
+
+/** A "respectively" list in one of its two plain forms: its cues, in order, and the tokens that state a scope for each of its figures. */
+export interface ListForm {
+  readonly list: readonly number[];
+  readonly cues: readonly ListCue[];
+  readonly wide: readonly (readonly [number, number])[];
 }
 
 /**
@@ -123,148 +130,170 @@ export class CueReader extends Walk {
   }
 
   /**
-   * The "respectively" list token `index` is in: the figures of its kind around it in its sentence, each joined to the
-   * next by commas, "and" or "or" alone, when the sentence says "respectively" and the list has two or more (else null).
+   * The "respectively" list token `index` is in (rule 3 of docs/adr/0086): in a sentence that says "respectively", the
+   * figures of the kind of the last amount, percentage or date before it, each before it (since the "respectively"
+   * before, if any), or, after a "respectively" with no such figure before it ("Respectively, $1.00 and $9.00 were
+   * ..."), none: each figure after it fails (`unread`); null when the figure is in no list. A list of one, or of figures
+   * not joined by commas, "and" or "or" alone, is a list too, in neither plain form (listForm()), so each figure fails.
    */
   protected respectivelyList(index: number): readonly number[] | null {
     const start = this.sentenceStart(index);
-    const sentence = this.tokens.slice(start, this.sentenceEnd(index));
-    if (!sentence.some((token) => token.text === 'respectively')) {
+    const end = this.sentenceEnd(index);
+    const family = (at: number) => {
+      const kind = this.tokens[at]?.figure?.kind;
+      return kind === 'amount' || kind === 'percent' || kind === 'date' || kind === 'month' || kind === 'month_day' ? kind : null;
+    };
+    // The figures of a family between two tokens, the list's kind the last one's.
+    const listed = (from: number, to: number) => {
+      const figures = this.tokens.slice(from + 1, to).flatMap((_, at) => (family(from + 1 + at) === null ? [] : [from + 1 + at]));
+      const kind = family(figures.at(-1) as number);
+      return figures.filter((at) => family(at) === kind);
+    };
+    const said = (token: Token) => token.text === 'respectively';
+    const after = this.tokens.slice(index + 1, end).findIndex(said);
+    const before = this.tokens.slice(start, index).flatMap((token, at) => (said(token) ? [start + at] : []));
+    const from = before.at(-1) ?? start - 1;
+    if (after !== -1) {
+      const list = listed(from, index + 1 + after);
+      return list.includes(index) ? list : null;
+    }
+    // After every "respectively": in no plain form after one with none before it ("Respectively, $1.00 and $9.00 ..."),
+    // so the figure fails; else it reads as any other.
+    if (before.length > 0 && listed(before.at(-2) ?? start - 1, from).length === 0) {
+      this.unread.add(index);
+    }
+    return null;
+  }
+
+  /** Whether token `at` is one of a "respectively" list's own words besides its cues: a determiner, "were", "amounts", a scope's word, "and" or "the payer". */
+  protected listWord(at: number): boolean {
+    const text = (this.tokens[at] as Token).text;
+    return this.vocab.LIST_FILLERS.has(text) || this.vocab.LIST_LINKS.has(text) || this.vocab.SCOPE_WORDS.has(text);
+  }
+
+  /**
+   * A list's cues in tokens [from, to), as they count (entries()), one for each run of the same roles, each with the
+   * tokens that state its own scope: from its first word to the next cue's, or to `to`. When the last cue's words hold
+   * "amounts", the noun of every cue ("the expected and allowed amounts per line"), they state the whole list's (`wide`).
+   */
+  protected listCues(from: number, to: number, family: Family, cues: Cues): { readonly cues: ListCue[]; readonly wide: (readonly [number, number])[] } {
+    const starts: { roles: readonly FigureRole[]; start: number }[] = [];
+    for (const entry of this.entries(this.cues(from, to, cues), family)) {
+      if (starts.at(-1)?.roles.join() !== entry.roles.join()) {
+        starts.push({ roles: entry.roles, start: entry.match.start });
+      }
+    }
+    const found = starts.map((cue, at): ListCue => ({ roles: cue.roles, start: cue.start, scope: [cue.start, starts[at + 1]?.start ?? to] }));
+    const last = found.at(-1);
+    const noun = last !== undefined && this.tokens.slice(...last.scope).some((token) => this.vocab.LIST_NOUNS.has(token.text));
+    return { cues: found, wide: noun ? [last.scope] : [] };
+  }
+
+  /**
+   * A "respectively" list read in one of its two plain forms (rule 3 of docs/adr/0086), else null: its figures joined
+   * by commas, "and" or "or" alone, two or more, and either
+   *
+   * - its cues right before it, and "respectively" right after it, then an edge or the sentence's end ("The contract
+   *   expected and the payer allowed $100.00 and $70.00, respectively"): the words back from the list that are cues or
+   *   the list's own (listWord()), from the first cue; or
+   * - its cues right after it ("$100.00 and $70.00 were the expected and allowed amounts, respectively", "$100.00 and
+   *   $70.00, respectively, were the expected and allowed amounts"): the words after the list that are cues, the list's
+   *   own, commas and one "respectively", to "respectively" when it follows the cues, else up to an edge or the
+   *   sentence's end; once every figure has its cue, no "and", "or" or "the payer".
+   *
+   * Either way there are as many cues as figures. The words between the list and its first cue after it state the
+   * whole list's scope, as the last cue's words with "amounts" do (listCues()).
+   */
+  protected listForm(list: readonly number[], family: Family, cues: Cues): ListForm | null {
+    const first = list[0] as number;
+    const last = list.at(-1) as number;
+    const joined = list.every((at, place) => place === 0 || this.tokens.slice((list[place - 1] as number) + 1, at).every((token) => token.text === ',' || token.text === 'and' || token.text === 'or'));
+    if (list.length < 2 || !joined) {
       return null;
     }
-    const figures = sentence.flatMap((token, at) => (token.figure === undefined ? [] : [start + at]));
-    const kindOf = (at: number) => ((this.tokens[at] as Token).figure as Figure).kind;
-    const joined = (from: number, to: number) => kindOf(from) === kindOf(to) && this.tokens.slice(from + 1, to).every((token) => token.text === ',' || token.text === 'and' || token.text === 'or');
-    let first = figures.indexOf(index);
-    let last = first;
-    while (first > 0 && joined(figures[first - 1] as number, figures[first] as number)) {
-      first -= 1;
-    }
-    while (last < figures.length - 1 && joined(figures[last] as number, figures[last + 1] as number)) {
-      last += 1;
-    }
-    const list = figures.slice(first, last + 1);
-    return list.length < 2 ? null : list;
-  }
-
-  /**
-   * Whether tokens [from, to) are a scope phrase alone, the words of one ("in total", "per line", "on each of the
-   * lines"; R1-NF-3): no verb and no other word.
-   */
-  protected scopeOnly(from: number, to: number): boolean {
-    const words = new Set([...this.vocab.EACH, ...this.vocab.ONE_LINE, ...this.vocab.ONE_UNIT, ...this.vocab.LINES, ...this.vocab.PLURAL_ROWS, ...this.vocab.PARTITIVE_DETERMINERS, ...this.vocab.TOTAL_FOR, ...this.vocab.SCOPE_LEADS, ...this.vocab.TOTAL_WORDS.flatMap((phrase) => phrase.split(' '))]);
-    const range = this.tokens.slice(from, to);
-    // A figure ends the list's words before it (afterList()), so none is here.
-    return range.length > 0 && range.every((token) => words.has(token.text));
-  }
-
-  /**
-   * Whether token `at` (from `from` up to `to`) opens a clause of its own after a "respectively" list: a clause's opener
-   * ("which", "as", "so"), or, first after "respectively" or after an edge, a conjunction, "with" or a participle that
-   * is no total's word nor a cue ("respectively, and each line is short", "leaving each line short"; NEW-N1, R1-NF-1),
-   * before words of their own besides a scope: before a scope phrase alone up to the next edge, it is the list's
-   * ("respectively, being per line", "applying to each line", "with each line", "and for each line"; R2-NEW-R2P2-2).
-   */
-  protected opensClause(at: number, from: number, to: number, cues: Cues): boolean {
-    const text = (this.tokens[at] as Token).text;
-    if (this.vocab.CLAUSE_OPENERS.has(text)) {
-      return true;
-    }
-    if (at !== from && (this.tokens[at - 1] as Token).kind !== 'edge') {
-      return false;
-    }
-    const participle = this.vocab.ING_WORD.test(text) && !this.vocab.TOTAL_WORDS.includes(text) && !this.cues(at, to, cues).some((match) => match.start === at);
-    if (!(this.vocab.CONJUNCTIONS.has(text) || this.vocab.CLAUSE_LEADS.has(text) || participle)) {
-      return false;
-    }
-    const edge = this.tokens.slice(at + 1, to).findIndex((token) => token.kind === 'edge');
-    return !this.scopeOnly(at + 1, edge === -1 ? to : at + 1 + edge);
-  }
-
-  /**
-   * Where the words of a "respectively" list from token `from` (before `to`) end: at the first edge the clause after
-   * which (to the next edge) has no cue ("were expected, allowed and paid" goes on), unless that clause is a scope
-   * phrase alone right after a cue ("expected, in total, and allowed, per line"; R1-NF-3), and, with `openers`, at a
-   * word that opens a clause of its own (opensClause(): "which the payer allowed for each line", "as", ", and").
-   */
-  protected listWordsEnd(from: number, to: number, openers: boolean, cues: Cues): number {
-    const opener = openers ? this.tokens.slice(from, to).findIndex((_, at) => this.opensClause(from + at, from, to, cues)) : -1;
-    const end = opener === -1 ? to : from + opener;
-    const words = this.tokens.slice(from, end);
-    const cueEnds = new Set(this.cues(from, end, cues).map((match) => match.end));
-    const edge = words.findIndex((token, at) => {
-      if (token.kind !== 'edge') {
-        return false;
-      }
-      const next = words.findIndex((other, after) => after > at && other.kind === 'edge');
-      const clause = [from + at + 1, next === -1 ? end : from + next] as const;
-      return this.cues(...clause, cues).length === 0 && !(cueEnds.has(from + at - 1) && this.scopeOnly(...clause));
-    });
-    return edge === -1 ? end : from + edge;
-  }
-
-  /**
-   * The words after a "respectively" list that are the list's own (docs/adr/0086, NEW-N1): `before`, those after its
-   * last figure up to "respectively", or to the next figure or the sentence's end when it is not after the list; and
-   * `after`, past "respectively" and the commas after it, those up to the next figure or the sentence's end (none when
-   * "respectively" is not after the list). Each ends at an edge the clause after which has no cue, and `after` at a
-   * word that opens a clause of its own ("which the payer explained for each line").
-   */
-  protected afterList(list: readonly number[], cues: Cues): { readonly before: readonly [number, number]; readonly after: readonly [number, number] } {
-    const last = list.at(-1) as number;
+    const start = this.sentenceStart(first);
     const end = this.sentenceEnd(last);
-    const figure = this.tokens.slice(last + 1, end).findIndex((token) => token.figure !== undefined);
-    const next = figure === -1 ? end : last + 1 + figure;
-    const word = this.tokens.slice(last + 1, next).findIndex((token) => token.text === 'respectively');
-    const until = word === -1 ? next : last + 1 + word;
-    const from = until + 1 + this.run(until, 1, (token) => token.text !== ',').length;
-    const start = last + 1;
-    return { before: [start, this.listWordsEnd(start, until, false, cues)], after: [from, this.listWordsEnd(from, next, true, cues)] };
-  }
-
-  /**
-   * A "respectively" list's cues, in order, one for each run of the same roles, each with the token its words start
-   * at, and the token the stretch they are read from ends at: the cues before the list (since the figure before it),
-   * else those after it up to "respectively" or its clause's edge, else those after "respectively" (afterList()).
-   */
-  protected listCues(list: readonly number[], family: Family, cues: Cues): { readonly cues: readonly ListCue[]; readonly end: number } {
-    const order = (from: number, to: number) => {
-      const found: ListCue[] = [];
-      for (const entry of this.entries(this.cues(from, to, cues), family)) {
-        const previous = found.at(-1);
-        if (previous === undefined || previous.roles.join() !== entry.roles.join()) {
-          found.push({ roles: entry.roles, start: entry.match.start });
-        }
+    const edgeOrEnd = (at: number) => at >= end || (this.tokens[at] as Token).kind === 'edge';
+    // The cues' words, and the cues as they count (entries(): a participle after its noun is the noun's).
+    const words = this.cues(start, end, cues);
+    const counted = this.entries(words, family);
+    const matchAt = (at: number) => words.find((match) => match.start <= at && at <= match.end);
+    // Its cues before it ("respectively" is after the list in its sentence, so the tokens after the list exist).
+    const comma = (this.tokens[last + 1] as Token).text === ',' ? 1 : 0;
+    if ((this.tokens[last + 1 + comma] as Token).text === 'respectively' && edgeOrEnd(last + 2 + comma)) {
+      let from = first;
+      while (from > start && !this.breakBefore(from) && ((this.tokens[from - 1] as Token).text === ',' || matchAt(from - 1) !== undefined || this.listWord(from - 1))) {
+        from -= 1;
       }
-      return { cues: found, end: to };
-    };
-    const first = list[0] as number;
-    const opening = order(this.since(first), first);
-    if (opening.cues.length > 0) {
-      return opening;
+      const before = this.listCues(from, first, family, cues);
+      if (before.cues.length === list.length) {
+        return { list, ...before };
+      }
     }
-    const { before, after } = this.afterList(list, cues);
-    const inner = order(...before);
-    return inner.cues.length > 0 ? inner : order(...after);
+    // Its cues after it.
+    let count = 0;
+    let roles: string | undefined;
+    let said = false;
+    let at = last + 1;
+    for (; at < end; at += 1) {
+      const token = this.tokens[at] as Token;
+      if (this.breakBefore(at)) {
+        break;
+      }
+      if (token.text === 'respectively') {
+        if (said) {
+          break;
+        }
+        said = true;
+        if (count > 0) {
+          at += 1;
+          break;
+        }
+        continue;
+      }
+      if (token.kind === 'edge') {
+        if (token.text !== ',') {
+          break;
+        }
+        continue;
+      }
+      if (matchAt(at) !== undefined) {
+        const entry = counted.find((cue) => cue.match.start === at);
+        if (entry !== undefined && entry.roles.join() !== roles) {
+          count += 1;
+          roles = entry.roles.join();
+        }
+        continue;
+      }
+      if (!this.listWord(at) || (count === list.length && this.vocab.LIST_LINKS.has(token.text))) {
+        break;
+      }
+    }
+    while ((this.tokens[at - 1] as Token).text === ',') {
+      at -= 1;
+    }
+    if (!said || !edgeOrEnd(at)) {
+      return null;
+    }
+    const after = this.listCues(last, at, family, cues);
+    return after.cues.length === list.length ? { list, cues: after.cues, wide: [[last, (after.cues[0] as ListCue).start], ...after.wide] } : null;
   }
 
   /**
-   * Step 1: a list's figures mapped, in order, to the cues before it, or, with none before it, to the cues after it
-   * ("$100.00 and $70.00 were expected and allowed, respectively"): up to "respectively" or the first edge, else past
-   * "respectively" up to the next edge or a word that opens a clause of its own (listCues()). When the cues do not
-   * match the list one for one, every figure is held in all of them. With no cue on either side, the steps after read
-   * each figure.
+   * Step 1: a "respectively" list's figure takes its cue's roles, in order, when the list is in one of its two plain
+   * forms (listForm()); in neither, it fails, whatever it is (`unread`): never a guess at each figure, nor any role.
    */
   protected respectively(index: number, family: Family, cues: Cues): Cued | null {
     const list = this.respectivelyList(index);
     if (list === null) {
       return null;
     }
-    const mapped = this.listCues(list, family, cues).cues.map((cue) => cue.roles);
-    if (mapped.length === 0) {
-      return null;
+    const form = this.listForm(list, family, cues);
+    if (form === null) {
+      this.unread.add(index);
+      return ANY;
     }
-    return mapped.length === list.length ? one(mapped[list.indexOf(index)] as readonly FigureRole[]) : { roles: ordered(mapped.flat()), every: true };
+    return one((form.cues[list.indexOf(index)] as ListCue).roles);
   }
 
   /**

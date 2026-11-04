@@ -10,6 +10,7 @@ import {
   FIGURE_KIND_TEXT,
   HISTORY_VERIFIER_TEXT,
   MISMATCH_TEXT,
+  NEEDS_TEXT,
   ROLE_TEXT,
   SAY_WHAT_IT_COUNTS,
   VERIFIER_STANDING_TEXT,
@@ -120,6 +121,27 @@ describe('the words for a figure in the wrong role', () => {
     expect(mismatchText('figure_not_in_input', mismatch?.kind ?? null, figure ?? null)).toBe('read as a count of claims; the records hold it as the dispute window’s days');
     expect(mismatchShown('figure_not_in_input', narrative.slice(mismatch?.start, mismatch?.end))).toBe('3650');
   });
+
+  it('ask a figure whose words must say more for it, plainly, beside the figure marked (docs/adr/0086, rules 2 and 3; CAS-43)', () => {
+    expect(NEEDS_TEXT).toEqual({ scope: 'state whether this figure is per line or in total', own_words: 'give each figure its own words instead of “respectively”' });
+    const content = assemblePacket(assemblyInput());
+    for (const [narrative, needs, figure] of [
+      ['The payer allowed $210.00 [3].', 'scope', '$210.00'],
+      ['$70.00 and $100.00 on each of the 3 lines were expected and allowed, respectively [3].', 'own_words', '$70.00'],
+    ] as const) {
+      const { check, figures } = checkReading(narrative, narrativeFacts(content));
+      const [mismatch] = check.mismatches;
+      const read = figures.find((item) => item.start === mismatch?.start && item.end === mismatch.end);
+      expect(mismatch?.code, narrative).toBe('figure_not_in_input');
+      expect(read?.needs, narrative).toBe(needs);
+      // The editor marks the figure as written and says, beside it, what to state.
+      expect(mismatchShown('figure_not_in_input', narrative.slice(mismatch?.start, mismatch?.end))).toBe(figure);
+      expect(mismatchText('figure_not_in_input', mismatch?.kind ?? null, read ?? null)).toBe(NEEDS_TEXT[needs]);
+    }
+    // A figure read with no need says what it was read as, as before; a stored report's figure, by its kind.
+    expect(mismatchText('figure_not_in_input', 'amount', { roles: ['paid'], every: false, heldAs: ['expected'], needs: null })).toBe('read as what the payer paid; the records hold it as what the contract requires');
+    expect(mismatchText('figure_not_in_input', 'amount', null)).toBe('an amount that does not match this version’s records');
+  });
 });
 
 describe('the words for what the verifier says of a stored version now (docs/adr/0086; the review of 2026-11-01, CORR-5)', () => {
@@ -186,6 +208,12 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(worded).not.toContain('100.00');
     expect(worded).not.toContain('3650');
     expect(worded.split(':').length).toBe(2);
+    // A figure whose words must say more is refused with what to say, never the narrative's words (rules 2 and 3).
+    const unscoped = 'The payer allowed $210.00 [3]. These were $300.00 and $210.00, respectively [3].';
+    const unscopedReport = verifyNarrative(unscoped, narrativeFacts(content), []);
+    expect(failsNowRefusal(unscopedReport, checkedFigures(unscoped, narrativeFacts(content)).filter((figure) => !figure.passed))).toBe(
+      'the verifier passed this version when it was written and fails it now (3 mismatches: in sentence 1, an amount whose words must say whether it is per line or in total; in sentence 2, an amount whose words must give it its own words instead of “respectively” (twice)). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved',
+    );
     // A mismatch the builder marks nothing for: never "Its figures are marked" (NEW-N3).
     const unmarked = verifyNarrative('The payer paid less than the contract requires.', narrativeFacts(content), []);
     expect(unmarked.mismatches.map((mismatch) => mismatch.code)).toEqual(['sentence_without_citation']);

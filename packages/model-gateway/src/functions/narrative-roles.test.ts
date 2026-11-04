@@ -31,11 +31,13 @@ describe('a narrative whose figures fill their roles', () => {
   it('passes: the code-built draft, and the ways a person or a model states the same facts', () => {
     for (const narrative of [
       draftNarrative(content),
-      'Across 3 lines for 3 patients, the payer allowed $210.00 [3]. The contract requires $300.00 for the same lines [3]. The difference owed is $90.00 [3].',
-      'Expected payment for the 3 lines in the schedule is $300.00 and the remittances show $210.00 [3]. The payer underpaid 3 claims by $90.00 in all [3].',
-      'The 6 units on 3 service lines fell short by $90.00 [3]. Original Medicare would have paid $300.00 [3].',
+      // Each amount with what it is stated per, where per line and in total differ (docs/adr/0086, rule 2).
+      'Across the 3 lines, the payer allowed $210.00 [3]. The contract requires $300.00 for these lines [3]. The difference owed is $90.00 in total [3].',
+      'Expected payment for the 3 lines in the schedule is $300.00 and the remittances show $210.00 in all [3]. The payer underpaid 3 claims by $90.00 in all [3].',
+      'The 6 units in all on 3 service lines fell short by $90.00 [3]. Original Medicare would have paid $300.00 in total [3].',
+      'For each line, the contract expected and the payer allowed $100.00 and $70.00, respectively [3].',
       // Words that name no role leave a figure to any role of its kind.
-      'The schedule lists $300.00 against $210.00 over 3 visits [3].',
+      'The schedule lists $300.00 in total against $210.00 over 3 visits [3].',
     ]) {
       expect(roles(narrative), narrative).toEqual([]);
       expect(verify(narrative).proposal.report.passed, narrative).toBe(true);
@@ -46,7 +48,7 @@ describe('a narrative whose figures fill their roles', () => {
 
 describe('a narrative that swaps figures between roles (every figure an input, the dispute stated backwards)', () => {
   it('fails each amount in the wrong role', () => {
-    expect(roles('The payer allowed $300.00 [3]. The contract requires $210.00 for the same lines [3].')).toEqual([
+    expect(roles('The payer allowed $300.00 [3]. The contract requires $210.00 for these lines [3].')).toEqual([
       ['allowed', '$300.00'],
       ['expected', '$210.00'],
     ]);
@@ -163,6 +165,32 @@ describe('the gateway’s check against the base’s (PE-2)', () => {
     expect(caught.map((example) => example.id)).toEqual(expect.arrayContaining(['PE-2 the allowed amount as expected', 'PE-2 the shortfall as interest owed', 'PE-2, PE-8 a service year as claims after "these"', 'PE-2, PE-3 the window clause’s section as units']));
     for (const { id, narrative, content } of misstated) {
       expect(gate(narrative, contents[content]), id).toBe(false);
+    }
+  });
+});
+
+describe('a figure in its role whose words must say more (docs/adr/0086, rules 2 and 3; CAS-43)', () => {
+  it('fails the draft and names no wrong role: a scope stated nowhere, or a "respectively" list in neither plain form', () => {
+    for (const [narrative, needs] of [
+      ['The payer allowed $210.00 [3].', ['scope']],
+      ['$300.00 and $210.00 were expected and allowed, respectively, and for each line, the payer owes $30.00 [3].', ['scope', 'scope', 'scope']],
+      ['$70.00 and $100.00 on each of the 3 lines were expected and allowed, respectively [3].', ['own_words', 'own_words']],
+      ['$70.00 and $100.00 for 97110 were the expected and allowed amounts, respectively [3].', ['own_words', 'own_words']],
+    ] as const) {
+      const result = verify(narrative);
+      expect(result.passed, narrative).toBe(false);
+      expect(result.proposal.roles, narrative).toEqual([]);
+      expect(result.proposal.report.mismatches.filter((mismatch) => mismatch.code === 'figure_not_in_input'), narrative).toHaveLength(needs.length);
+    }
+  });
+
+  it('passes each in a plain form with its scope stated (CAS-44)', () => {
+    for (const narrative of [
+      '$100.00 and $70.00, respectively, were the expected and allowed amounts per line, so the payer paid less [3].',
+      '$300.00 and $70.00 were expected in total and allowed per line, respectively [3].',
+      'For each line, the payer allowed $70.00, and it allowed $210.00 for the claim [3].',
+    ]) {
+      expect(verify(narrative).passed, narrative).toBe(true);
     }
   });
 });

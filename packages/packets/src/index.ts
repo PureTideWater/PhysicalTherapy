@@ -147,6 +147,6 @@ export { type ReadableText, type TextSpan, readableText } from './readable';
 export { FIGURE_ROLES, type FigureReading, type FigureRole, type ReadKind, readFigures } from './roles';
 export { PACKET_REFERENCE_PATTERN, exportFileName, normalizePacketReference, packetReference, packetReferencePrefix, withPacketReference } from './reference';
 export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
-export { type CheckedFigure, MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, checkedFigures, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
+export { type CheckedFigure, type FigureNeeds, MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, checkedFigures, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
 export { wordsVersionOf } from './words-version';
 export { type AppealLevel, type NextWindow, type NextWindowBasis, type WindowLength, nextDisputeWindow } from './windows';

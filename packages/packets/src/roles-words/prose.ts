@@ -19,27 +19,17 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   const LIST_JOINERS = new Set(['and', 'or', 'to', 'through', 'thru', 'plus', ',', '–']);
   /** Conjunctions: the words after a figure stop at one, which opens the next figure's clause ("$300.00 and the remittances show $210.00"). */
   const CONJUNCTIONS = new Set(['and', 'but', 'or', 'while', 'whereas', 'yet']);
-  /** Words that open a clause of their own after a "respectively" list ("which the payer explained for each line"): its words are not the list's. */
-  const CLAUSE_OPENERS = new Set(['which', 'that', 'who', 'whom', 'whose', 'where', 'when', 'as', 'because', 'since', 'although', 'though', 'while', 'whereas', 'but', 'yet', 'so', 'if', 'unless']);
   /**
-   * Words that, first after "respectively" and its commas or after an edge past it, open a clause of their own besides
-   * CLAUSE_OPENERS and the conjunctions ("respectively, with each line short"; R1-NF-1), and a participle's ending
-   * ("respectively, leaving each line short"; a total's word or a cue, "totaling" or "owing", is the list's own).
+   * Words that open a clause of their own: with an edge, a dash, a parenthesis, the conjunctions ("while", "but") and
+   * RESULT_LEADS ("so"), they bound a figure's own clause, whose words alone state what it is per (rule 1 of
+   * docs/adr/0086).
    */
-  const CLAUSE_LEADS = new Set(['with', 'without']);
-  const ING_WORD = /^\p{L}{2,}ing$/u;
-  /**
-   * Words that open a clause that states what follows from the sentence before it ("For each line, the payer allowed
-   * $70.00, so the payer owes $90.00"; R1-NF-2): an opening "each" does not reach into it.
-   */
+  const CLAUSE_OPENERS = new Set(['which', 'that', 'who', 'whom', 'whose', 'where', 'when', 'as', 'because', 'since', 'although', 'though', 'if', 'unless']);
+  /** Words that open a clause that states what follows from the sentence before it ("so the payer owes $90.00"): they bound a clause too. */
   const RESULT_LEADS = new Set(['so', 'therefore', 'thus', 'hence']);
-  /** A singular noun that names the lines together: a clause whose subject it is states a total ("..., and the claim was allowed $210.00"; R1-NF-2). */
+  /** A singular noun that names the lines together after "for", "on" or "over", unless a line's noun follows it ("for the claim", never "the claim line"). */
   const TOTAL_NOUNS = new Set(['claim']);
-  /**
-   * The words a scope phrase holds besides those of each line, a unit and a total ("in" is a total's: "in all"): "on
-   * each of the lines", "apiece" (R1-NF-3), "applying to each line" (R2-NEW-R2P2-2).
-   */
-  const SCOPE_LEADS = new Set(['on', 'of', 'to', 'apiece']);
+  const TOTAL_NOUN_LEADS = new Set(['for', 'on', 'over']);
   /** Words that join a list across a comma: "rows 1, 2 and 3". */
   const LIST_CONTINUERS = new Set([',', 'and', 'or', 'to', 'through', 'thru', '–']);
   /** Determiners before an ordinal that make it prose before a noun that is no row's ("the sixth unit", "a second appeal"). */
@@ -85,14 +75,15 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
   /** Words that name each line: "each line", "per line", "a visit". */
   const EACH = new Set(['each', 'every', 'per', 'a']);
   const ONE_LINE = new Set(['line', 'visit', 'row', 'service']);
+  /** One row's noun: words that name it state a line's value ("on line 1", "the schedule's third row"). */
+  const ONE_ROW = new Set(['line', 'row', 'visit']);
   /** The lines after "each of": "on each of the 3 lines". */
   const LINES = new Set(['line', 'lines', 'visit', 'visits', 'row', 'rows', 'service', 'services']);
   /** A unit after "each", "per" or "a": an amount per unit ("$50.00 per unit", "at $50.00 a unit"). */
   const ONE_UNIT = new Set(['unit']);
-  /** Words that state an amount or a count of units for the lines in total: "in all", "in total", "altogether", "across the 3 lines". */
+  /** Words that state an amount or a count of units for the lines in total: "in all", "total" (so "in total"), "altogether", "across the 3 lines". */
   const TOTAL_WORDS: readonly string[] = [
     'in all',
-    'in total',
     'all told',
     'total',
     'totals',
@@ -105,9 +96,20 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     'overall',
     'aggregate',
     'across',
+    'together',
   ];
   /** Words before a plural row's noun after a figure that make the figure the rows' total: "$300.00 for these 3 lines" ("across" is a total's word wherever it is). */
   const TOTAL_FOR = new Set(['for', 'over']);
+  /**
+   * A "respectively" list's own words besides its cues and a scope's (rule 3 of docs/adr/0086): determiners, "were"
+   * and "are", and "amounts", the noun of every cue, after which a scope is the whole list's; and "and", "or" and "the
+   * payer" (LIST_LINKS), which join one cue to the next.
+   */
+  const LIST_FILLERS = new Set(['the', 'a', 'an', 'these', 'those', 'this', 'its', 'their', 'our', 'were', 'are']);
+  const LIST_NOUNS = new Set(['amounts']);
+  const LIST_LINKS = new Set(['and', 'or', 'payer']);
+  /** A scope's words, as a "respectively" list may hold them with its cues: "per line", "in total", "on each of the lines", "for the claim". */
+  const SCOPE_WORDS = new Set([...EACH, ...LINES, ...ONE_UNIT, ...TOTAL_FOR, ...TOTAL_NOUN_LEADS, ...TOTAL_NOUNS, ...TOTAL_WORDS.flatMap((phrase) => phrase.split(' ')), ...LIST_NOUNS, 'units', 'claims', 'of', 'apiece']);
   /** Words that carry no meaning of their own: a quoted figure is never held by one of them alone. */
   const FUNCTION_WORDS = new Set([
     ...notTheCount,
@@ -154,8 +156,6 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     LIST_CONTINUERS,
     CONJUNCTIONS,
     CLAUSE_OPENERS,
-    CLAUSE_LEADS,
-    ING_WORD,
     RESULT_LEADS,
     // Ordinals, and the determiners, pronouns and prepositions around a count or a code.
     ORDINAL_WORDS,
@@ -166,12 +166,18 @@ export function proseWords(notTheCount: ReadonlySet<string>) {
     // What an amount or a count of units is stated per.
     EACH,
     ONE_LINE,
+    ONE_ROW,
     LINES,
     ONE_UNIT,
     TOTAL_WORDS,
     TOTAL_FOR,
     TOTAL_NOUNS,
-    SCOPE_LEADS,
+    TOTAL_NOUN_LEADS,
+    // A "respectively" list's own words.
+    LIST_FILLERS,
+    LIST_NOUNS,
+    LIST_LINKS,
+    SCOPE_WORDS,
     // Prose.
     FUNCTION_WORDS,
   } as const;

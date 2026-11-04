@@ -93,7 +93,7 @@ export function cas08(b: CaseBuilder): void {
   const draft = [
     'SYNTHETIC packet narrative draft (no real patient, payer or claim).',
     `The contract pays 97110 at 50.00 per unit. Three claims billed 97110 x 2 and were allowed ${observed} in total,`,
-    'against an expected 300.00 under the fee schedule, a shortfall of 90.00.',
+    'against an expected 300.00 in total under the fee schedule, a shortfall of 90.00 in total.',
     'The payer also withheld 1234.56 on these claims.',
     '',
   ].join('\n');

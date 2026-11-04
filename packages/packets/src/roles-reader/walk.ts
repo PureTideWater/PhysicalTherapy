@@ -154,6 +154,8 @@ export class Walk {
   protected readonly cued = new Map<number, Cued>();
   /** The token after the words a figure keeps for itself ("3650 days after payment", "3 claims"). */
   protected readonly ends = new Map<number, number>();
+  /** Each figure of a "respectively" list in neither of its two plain forms (rule 3 of docs/adr/0086): it fails. */
+  protected readonly unread = new Set<number>();
 
   constructor(
     protected readonly text: string,
@@ -182,6 +184,16 @@ export class Walk {
   protected stop(index: number): boolean {
     const token = this.tokens[index];
     return token?.kind === 'edge' && token.text !== ',' && token.text !== ':';
+  }
+
+  /**
+   * Whether a dash or a parenthesis stands between token `at` and the token before it: an edge of a clause, as a comma
+   * is, for what an amount is stated per (rule 1 of docs/adr/0086). A hyphen inside a word ("prompt-pay") and a range's
+   * dash between two numbers ("lines 1–3") are none. Its callers ask only between two tokens (a clause's walk stops at
+   * the text's start and end first: bounds()).
+   */
+  protected breakBefore(at: number): boolean {
+    return /[()]|—|\s[–-]|[–-]\s/.test(this.text.slice((this.tokens[at - 1] as Token).end, (this.tokens[at] as Token).start));
   }
 
   /** The first token of token `index`'s sentence (after a period, "!", "?", ";" or a blank line). */

@@ -126,31 +126,123 @@ describe('"respectively"', () => {
     expect(roles('These are paid respectively. The payer allowed $1.00 and $9.00.', '$1.00')).toBe('allowed');
   });
 
-  it('maps a list of one kind joined by commas, "and" or "or" alone', () => {
+  it('maps a list of the kind of the last figure before "respectively", joined by commas, "and" or "or" alone (rule 3)', () => {
     expect(roles('The payer allowed and paid $1.00 and 5%, respectively.', '$1.00')).toBe('paid');
-    expect(roles('The contract expected and the payer allowed $1.00 and then $9.00, respectively.', '$1.00')).toBe('allowed');
+    expect(reading('The payer allowed and paid $1.00 and 5%, respectively.', '5%')).toMatchObject({ roles: 'any', unread: true });
+    expect(reading('The contract expected and the payer allowed $1.00 and then $9.00, respectively.', '$1.00')).toMatchObject({ roles: 'any', unread: true });
     expect(roles('The contract expected or the payer allowed $1.00 or $9.00, respectively.', '$1.00')).toBe('expected');
     expect(roles('On 2026-01-05 the contract expected and the payer allowed $1.00 and $9.00, respectively.', '$1.00')).toBe('expected');
   });
 
-  it('maps no figure alone, nor a list with no cue before it or after it', () => {
-    expect(reading('The contract expected and the payer allowed $9.00, respectively.', '$9.00')).toMatchObject({ roles: ['allowed'], every: false });
-    expect(reading('These were $1.00 and $9.00, respectively.', '$1.00')).toMatchObject({ roles: 'any', every: false });
+  it('maps no figure alone, nor a list with no cue before it or after it: each fails', () => {
+    expect(reading('The contract expected and the payer allowed $9.00, respectively.', '$9.00')).toMatchObject({ roles: 'any', unread: true });
+    expect(reading('These were $1.00 and $9.00, respectively.', '$1.00')).toMatchObject({ roles: 'any', unread: true });
   });
 
-  it('maps a list with no cue before it to the cues after it, in order (CORR-D1)', () => {
-    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$1.00')).toMatchObject({ roles: ['allowed'], every: false });
-    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
-    // The cues after it up to the next figure, when "respectively" comes first.
+  it('maps a list with no cue before it to the cues right after it, in order (CORR-D1)', () => {
+    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$1.00')).toMatchObject({ roles: ['allowed'], every: false, unread: false });
+    expect(reading('$1.00 and $9.00 were allowed and paid, respectively.', '$9.00')).toMatchObject({ roles: ['paid'], every: false, unread: false });
+    // Past "respectively" when it comes first, up to an edge once each figure has its cue.
     expect(reading('$1.00 and $9.00 were, respectively, allowed and paid, and 5% is owed.', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
-    // Up to the next figure, when "respectively" comes before the list.
-    expect(reading('Respectively, $1.00 and $9.00 were allowed and paid on 2026-01-05.', '$1.00')).toMatchObject({ roles: ['allowed'], every: false });
-    expect(reading('Respectively, $1.00 and $9.00 were allowed and paid on 2026-01-05.', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
-    expect(reading('Respectively, $1.00 and $9.00 were allowed and paid', '$9.00')).toMatchObject({ roles: ['paid'], every: false });
-    // Up to "respectively" in its own sentence, never past it by where the text puts the list.
+    expect(reading('$1.00 and $9.00, respectively, were the allowed and paid amounts, so 5% is owed.', '$1.00')).toMatchObject({ roles: ['allowed'], every: false });
+    // To "respectively" when it comes after the cues, whatever follows its edge.
     expect(reading('So. $1.00 and $9.00 were expected and allowed, respectively, paid late.', '$1.00')).toMatchObject({ roles: ['expected'], every: false });
-    // Not one for one: every figure held in all of them.
-    expect(reading('$1.00 and $9.00 were allowed, respectively.', '$1.00')).toMatchObject({ roles: ['allowed'], every: true });
+    // "respectively" before the list, or not one cue for each figure: every figure fails, held to no role.
+    for (const text of ['$1.00 and $9.00 were allowed, respectively.', 'These were $1.00 and $9.00, respectively.']) {
+      expect(reading(text, '$1.00'), text).toMatchObject({ roles: 'any', unread: true });
+      expect(reading(text, '$9.00'), text).toMatchObject({ roles: 'any', unread: true });
+    }
+    // After a "respectively" with no list before it, each figure fails, whatever its own words read.
+    for (const text of ['Respectively, $1.00 and $9.00 were allowed and paid on 2026-01-05.', 'Respectively, $1.00 and $9.00 were allowed and paid']) {
+      expect(reading(text, '$1.00'), text).toMatchObject({ unread: true });
+      expect(reading(text, '$9.00'), text).toMatchObject({ unread: true });
+    }
+  });
+});
+
+describe('a "respectively" list’s two plain forms, word by word (rule 3)', () => {
+  const unread = (text: string, written: string) => reading(text, written).unread;
+  const scope = (text: string, written: string) => reading(text, written).scope;
+
+  it('finds its "respectively" in the figure’s own sentence, after the list, and none before the list of the same sentence', () => {
+    // Another sentence's "respectively" is no list's; one in the figure's sentence before its list leaves it unread.
+    expect(unread('The payer paid respectively. The contract expected and the payer allowed $1.00 and $9.00.', '$1.00')).toBe(false);
+    expect(unread('The contract expected and the payer allowed $1.00 and $9.00. These were paid respectively.', '$1.00')).toBe(false);
+    expect(unread('So. Respectively, $1.00 and $9.00 were allowed and paid.', '$1.00')).toBe(true);
+    expect(unread('So. Respectively, $1.00 and $9.00 were allowed and paid.', '$9.00')).toBe(true);
+    expect(unread('So. The payer allowed respectively $1.00 and $9.00.', '$9.00')).toBe(true);
+    // A list before a second "respectively": its own; a figure after a "respectively" that has its list reads as any other.
+    expect(roles('$1.00 and $9.00 were allowed and paid, respectively, and $2.00 and $3.00 were expected and owed, respectively.', '$3.00')).toBe('variance');
+    expect(roles('$1.00 and $9.00 were allowed and paid, respectively, and the payer paid $2.00.', '$2.00')).toBe('paid');
+  });
+
+  it('is of the kind of the last amount, percentage or date before "respectively"', () => {
+    for (const [text, written] of [
+      ['These were 2026-02-10 and 2026-04-08, respectively.', '2026-02-10'],
+      ['These were March 2026 and April 2026, respectively.', 'March 2026'],
+      ['These were March 5 and April 8, respectively.', 'March 5'],
+      ['These were 5% and 9%, respectively.', '5%'],
+    ] as const) {
+      expect(unread(text, written), text).toBe(true);
+    }
+    expect(roles('The claims were received and paid on 2026-02-10 and 2026-04-08, respectively.', '2026-04-08')).toBe('paid_date');
+    // A count before "respectively" is no list's kind: the amounts before it are the list.
+    expect(unread('$1.00 and $9.00 for 3 lines were allowed and paid, respectively.', '$1.00')).toBe(true);
+  });
+
+  it('leaves a figure after "respectively" to its own words only when a list stood before that "respectively"', () => {
+    expect(unread('$1.00 and $9.00, respectively, respectively $2.00 was paid.', '$2.00')).toBe(true);
+    expect(unread('$2.00 respectively, $1.00 is allowed.', '$1.00')).toBe(false);
+    expect(unread('$2.00 respectively, $1.00 is allowed.', '$2.00')).toBe(true);
+    expect(unread('The payer paid $2.00.', '$2.00')).toBe(false);
+  });
+
+  it('joins its figures by commas, "and" or "or" alone', () => {
+    expect(roles('$1.00, $2.00 and $9.00 were expected, allowed and paid, respectively.', '$2.00')).toBe('allowed');
+    expect(roles('$1.00 or $9.00 were allowed or paid, respectively.', '$9.00')).toBe('paid');
+    expect(unread('$1.00 then $9.00 were allowed and paid, respectively.', '$1.00')).toBe(true);
+  });
+
+  it('reads its cues before it back over commas, cues and its own words, from the first cue, never past another word', () => {
+    expect(roles('The contract expected, and the payer allowed, $1.00 and $9.00, respectively.', '$9.00')).toBe('allowed');
+    expect(roles('Under the contract we see the payer allowed and paid $1.00 and $9.00, respectively.', '$1.00')).toBe('allowed');
+    expect(roles('Under the contract we see the payer allowed and paid $1.00 and $9.00, respectively.', '$9.00')).toBe('paid');
+    expect(unread('The contract expected – and the payer allowed $1.00 and $9.00, respectively.', '$1.00')).toBe(true);
+    // "respectively" right after the list, with or without its comma, then an edge or the text's end.
+    expect(roles('The contract expected and the payer allowed $1.00 and $9.00 respectively.', '$1.00')).toBe('expected');
+    expect(roles('The contract expected and the payer allowed $1.00 and $9.00, respectively', '$9.00')).toBe('allowed');
+    expect(unread('The contract expected and the payer allowed $1.00 and $9.00 more, respectively.', '$1.00')).toBe(true);
+    expect(unread('The contract expected and the payer allowed $1.00 and $9.00, respectively for each line.', '$1.00')).toBe(true);
+  });
+
+  it('reads its cues after it to "respectively", or past it to an edge, one cue for each run of the same roles', () => {
+    expect(roles('$1.00 and $9.00 were expected and allowed respectively.', '$9.00')).toBe('allowed');
+    expect(roles('$1.00 and $9.00 were expected and allowed, respectively', '$1.00')).toBe('expected');
+    expect(roles('$1.00 and $9.00 were the contract expected and allowed amounts, respectively.', '$9.00')).toBe('allowed');
+    expect(roles('$1.00 and $9.00, respectively, were expected and allowed, and the payer paid less.', '$9.00')).toBe('allowed');
+    // A second "respectively", a colon or a dash among them, or a word of its own after the list ends them.
+    expect(unread('$1.00 and $9.00 respectively were respectively expected and allowed.', '$1.00')).toBe(true);
+    expect(unread('$1.00 and $9.00 were: expected and allowed, respectively.', '$1.00')).toBe(true);
+    expect(unread('$1.00 and $9.00 were – expected and allowed, respectively.', '$1.00')).toBe(true);
+    expect(unread('$1.00 and $9.00 were then expected and allowed, respectively.', '$1.00')).toBe(true);
+    expect(unread('$1.00 and $9.00, respectively, were the expected and allowed amounts for 3 claims.', '$1.00')).toBe(true);
+    expect(roles('$1.00 and $9.00, respectively, were allowed and paid', '$9.00')).toBe('paid');
+  });
+
+  it('gives each figure its cue’s scope, from the cue to the next, and the whole list the scope after "amounts" with the last cue or before its first', () => {
+    // "amounts" with the last cue states the whole list's scope, so a cue's own that differs states none (rule 3, strict).
+    expect(scope('$1.00 and $9.00 were the expected amounts in total and the allowed amounts per line, respectively.', '$1.00')).toBe(null);
+    expect(scope('$1.00 and $9.00 were the expected amounts per line and the allowed amounts per line, respectively.', '$1.00')).toBe('line');
+    expect(scope('$1.00 and $9.00 were the expected amounts in total and the allowed amounts per line, respectively.', '$9.00')).toBe('line');
+    expect(scope('$1.00 and $9.00 were expected in total and allowed amounts per line, respectively.', '$1.00')).toBe(null);
+    expect(scope('$1.00 and $9.00 in total were expected and allowed, respectively.', '$1.00')).toBe('total');
+    expect(scope('The expected amounts in total and allowed amounts per line were $1.00 and $9.00, respectively.', '$1.00')).toBe(null);
+    expect(scope('The contract per line expected and the payer allowed in total $1.00 and $9.00, respectively.', '$1.00')).toBe('line');
+    // "amounts" in the last cue's own words alone, never another cue's or another sentence's.
+    expect(scope('The amounts were short. The contract per line expected and the payer allowed in total $1.00 and $9.00, respectively.', '$1.00')).toBe('line');
+    expect(scope('$1.00, $2.00 and $9.00 were the expected, allowed and paid amounts per line, respectively.', '$1.00')).toBe('line');
+    // A participle after its noun is the noun's, so the next cue starts at the shortfall (an amount's cues, as they count).
+    expect(scope('$1.00 and $9.00 were the interest owed in total and the shortfall per line, respectively.', '$1.00')).toBe('total');
   });
 });
 

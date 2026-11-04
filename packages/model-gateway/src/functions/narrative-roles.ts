@@ -9,7 +9,9 @@ import { FIGURE_ROLES, type FigureKind, type FigureRole, type PacketContent, che
  * lines" when 4 is the claim count, "under the contract, the payer allowed" the contract's amount) fails it
  * (figure_not_in_input). This is the same reading of the same facts, for the gateway's notice: of the figures the
  * verifier failed, those whose value the inputs hold in another role, so the person sees that the figure is misstated
- * rather than missing. A figure the verifier passes is never one; a figure in no input at all is the verifier's alone.
+ * rather than missing. A figure the verifier passes is never one; a figure in no input at all is the verifier's alone,
+ * and so is one whose words state no scope where its role's per-line and total values differ, or one of a
+ * "respectively" list in neither plain form (`needs`).
  * The gateway's check before a model's draft is written is the verifier's, so it is at least as strict as the gateway's
  * own reading was before the verifier read roles (./narrative-roles.test.ts runs that reading,
  * ./narrative-roles.base.fixture.ts, over the review's swaps and requires each it caught to fail). Mismatches carry
@@ -38,7 +40,9 @@ export function roleMismatches(narrative: string, content: PacketContent): RoleM
   return checkedFigures(narrative, narrativeFacts(content)).flatMap((figure) => {
     const roles = figure.roles ?? [];
     const [role] = roles;
-    return figure.passed || role === undefined || figure.heldAs.length === 0
+    // A figure that fails for want of a scope or of its own words instead of "respectively" (docs/adr/0086, rules 2 and
+    // 3) is in its role: the verifier's report and the editor's words say what to add, never a role.
+    return figure.passed || role === undefined || figure.heldAs.length === 0 || figure.needs !== null
       ? []
       : [{ code: 'figure_in_wrong_role' as const, role, roles, every: figure.every, kind: figure.kind, sentence: figure.sentence, start: figure.start, end: figure.end }];
   });

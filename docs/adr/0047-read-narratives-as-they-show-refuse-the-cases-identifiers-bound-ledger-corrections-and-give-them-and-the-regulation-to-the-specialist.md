@@ -157,7 +157,9 @@ it, not to its kind alone ([0086](0086-read-every-narrative-figure-in-the-role-i
 claim count, "the payer allowed $70.00" the allowed amount, and a value the inputs hold in another role fails
 (`figure_not_in_input`, with the figure's kind). Each figure takes one cue's role, never the union of every cue in its
 clause, so "Under the contract, the payer allowed $100.00" fails where the payer allowed $70.00; a total stated per
-line fails, and a line's value stated as a total. A quoted text's figure is repeated only with its own words, in the
+line fails, and a line's value stated as a total; an amount whose words state no scope fails where its role's per-line
+and total values differ, and a "respectively" list outside its two plain forms fails at every figure (ADR 0086's closed
+rules, 2026-11-04). A quoted text's figure is repeated only with its own words, in the
 role the quote's own words give it, its clause ending where the quote's does; never in a role of the record's. A
 letter of another script inside a Latin word is a `hidden_character` (it would hide a cue). The report's format, codes
 and kinds are unchanged (`tp-packet-verifier/2`); the export's re-verification refuses a stored version an older

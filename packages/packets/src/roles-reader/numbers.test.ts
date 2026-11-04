@@ -50,18 +50,68 @@ describe('what an amount is stated per', () => {
     expect(scope('The payer paid $5.00', '$5.00')).toBeNull();
   });
 
-  it('reads "each", "every", "per" or "apiece" anywhere before it in its sentence as stated per something, never in total', () => {
-    expect(scope('Apiece, 3 lines were paid $5.00.', '$5.00')).toBeNull();
-    expect(scope('Per claim, 3 lines were paid $5.00.', '$5.00')).toBeNull();
-    expect(scope('Every visit, 3 lines were paid $5.00.', '$5.00')).toBeNull();
-    expect(scope('Each visit, 3 lines were paid $5.00.', '$5.00')).toBeNull();
+  it('reads its own clause before its sentence’s opening scope phrase, which states a scope only where its clause states none (rule 1)', () => {
+    expect(scope('Apiece, 3 lines were paid $5.00.', '$5.00')).toBe('total');
+    expect(scope('Per claim, 3 lines were paid $5.00.', '$5.00')).toBe('total');
+    expect(scope('Every visit, the lines were paid $5.00.', '$5.00')).toBe('total');
+    expect(scope('Each visit, the payer paid $5.00.', '$5.00')).toBe('line');
+    expect(scope('Per claim, the payer paid $5.00.', '$5.00')).toBeNull();
     expect(scope('Then 3 lines were paid $5.00.', '$5.00')).toBe('total');
+  });
+});
+
+describe('what an amount is stated per, by the closed rules (rule 1 of docs/adr/0086)', () => {
+  it('reads a total’s words past other words in its own clause, after it and before it', () => {
+    expect(scope('It allowed $9.00 in fact for these lines.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 in fact for the claim.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 in fact for the claim line.', '$9.00')).toBe('line');
+    expect(scope('It allowed $9.00 in fact for the', '$9.00')).toBeNull();
+    expect(scope('Note. It allowed $9.00 in fact for these lines.', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 for the claim', '$9.00')).toBe('total');
+    expect(scope('It allowed $9.00 on these lines.', '$9.00')).toBeNull();
+    expect(scope('It allowed $9.00 for the 3 claim lines.', '$9.00')).toBeNull();
+  });
+
+  it('reads "per" before a determiner as no scope, and any other word after "each" as a scope of something else', () => {
+    expect(scope('Each the 3 lines were allowed $9.00.', '$9.00')).toBeNull();
+    expect(scope('The 3 lines were allowed $9.00 per the contract.', '$9.00')).toBe('total');
+    expect(scope('The 3 lines were allowed $9.00 per these terms.', '$9.00')).toBe('total');
+  });
+
+  it('takes "each" beside a line’s or a unit’s scope as that one, whichever side of the figure each is on', () => {
+    expect(scope('Per line the payer paid $9.00 each.', '$9.00')).toBe('line');
+    expect(scope('Each claim was paid $9.00 per unit.', '$9.00')).toBe('unit');
+    expect(scope('Each claim was paid $9.00 in total.', '$9.00')).toBeNull();
+    expect(scope('In total the payer paid $9.00 each.', '$9.00')).toBeNull();
+  });
+
+  it('leaves the words right after an amount to it, whatever they state, and reads its own before them', () => {
+    expect(scope('The payer allowed $1.00 to the 3 lines against $9.00.', '$9.00')).toBeNull();
+    expect(scope('The payer allowed $1.00 to the 3 lines against $9.00.', '$1.00')).toBeNull();
+    expect(scope('The 3 lines were allowed $1.00 against the contract’s $9.00.', '$9.00')).toBeNull();
+    expect(scope('$1.00 – for these 3 lines $9.00.', '$9.00')).toBe('total');
+    // A dash with a space on either side bounds a clause, as a parenthesis or an em dash does; a hyphen in a word never.
+    for (const dash of [' –for', '– for', ' -for', '- for', '—for', ' (for', ') for']) {
+      expect(scope(`The payer allowed $9.00${dash} each line.`, '$9.00'), dash).toBeNull();
+    }
+    expect(scope('For each line the prompt-pay payer allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('The payer allowed $9.00 for each line-item.', '$9.00')).toBe('line');
+  });
+
+  it('reads an opening phrase of a scope’s words, determiners and counts alone, from the sentence’s own start', () => {
+    expect(scope('Note. For each line, the payer allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('For each line. The payer allowed $9.00.', '$9.00')).toBeNull();
+    expect(scope('For each line on 2026-01-05, the payer allowed $9.00.', '$9.00')).toBeNull();
+    expect(scope('On each of the 3 lines, the payer allowed $9.00.', '$9.00')).toBe('line');
+    expect(scope('For each line the payer allowed $1.00 and it paid $9.00.', '$9.00')).toBeNull();
   });
 });
 
 describe('an amount’s own words', () => {
   it('end after a total’s words right after it, so the amount after reads its own', () => {
-    expect(reading('Each line was paid $90.00 in total and $30.00.', '$90.00').scope).toBe('total');
+    // Two scopes in one clause that differ: none (each line, in total).
+    expect(reading('Each line was paid $90.00 in total and $30.00.', '$90.00').scope).toBeNull();
+    expect(reading('The lines were paid $90.00 in total and $30.00.', '$90.00').scope).toBe('total');
     expect(scope('Each line was paid $90.00 in total and $30.00.', '$30.00')).toBeNull();
     expect(scope('Each line was paid $90.00 total and $30.00.', '$30.00')).toBeNull();
     expect(scope('Each line was paid $90.00 in total and a line $30.00.', '$30.00')).toBe('line');
@@ -76,6 +126,8 @@ describe('an amount’s own words', () => {
     expect(roles('The payer paid $30.00 a service on 2026-01-05.', '2026-01-05')).toBe('paid_date');
     expect(roles('The payer paid $30.00 for service on 2026-01-05.', '2026-01-05')).toBe('service_date');
     expect(roles('The payer paid $30.00 per receipt on 2026-01-05.', '2026-01-05')).toBe('received_date');
+    expect(roles('The payer paid $30.00 each service on 2026-01-05.', '2026-01-05')).toBe('paid_date');
+    expect(roles('The payer paid $30.00 every visit for service on 2026-01-05.', '2026-01-05')).toBe('service_date');
   });
 });
 

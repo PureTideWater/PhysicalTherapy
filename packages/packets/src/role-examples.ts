@@ -2,6 +2,7 @@ import { decimal } from '@tp/money';
 
 import { assemblePacket } from './assemble';
 import type { FigureKind } from './scan';
+import type { FigureNeeds } from './verifier/mismatches';
 import type { PacketContentV2 } from './format';
 import { IDS, REGULATION, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord } from './test-support';
 
@@ -46,6 +47,8 @@ export const ROLE_CONTENTS = [
   'medicareInterest',
   'medicareNoYear',
   'locked2025',
+  // The converging fix (rule 2): one line, whose value per line is its total.
+  'oneLine',
 ] as const;
 export type RoleContent = (typeof ROLE_CONTENTS)[number];
 
@@ -100,6 +103,7 @@ export function roleContents(): Readonly<Record<RoleContent, PacketContentV2>> {
     medicareNoYear: packet({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percent: '112.5', year_basis: 'LOCKED:2025' }, quote: 'Payer pays 112.5% of the Medicare fee schedule' }) }),
     // A fixed schedule locked to the 2025 fee schedule.
     locked2025: packet({ citation: contractCitation({ parameters: { amount_cents: '5000', year_basis: 'LOCKED:2025' } }) }),
+    oneLine: packet({ lines: [line(1)] }),
   };
 }
 
@@ -258,8 +262,8 @@ export const STATED: readonly StatedExample[] = [
   // Counts, units and rows.
   stated('D1 each line’s units', 'base', 'Each line billed 2 units [3].'),
   stated('D2 each line’s units in words', 'base', 'Each line billed two units [3].'),
-  stated('D3 units and claims', 'base', '2 units were billed on 3 claims [3].'),
-  stated('D4 the pattern’s units', 'base', 'The 6 units billed were short [3].'),
+  stated('D3 units and claims', 'base', '2 units per line were billed on 3 claims [3].'),
+  stated('D4 the pattern’s units', 'base', 'The 6 units billed in all were short [3].'),
   stated('D5 units on each of the lines', 'base', 'The payer paid 2 units on each of 3 lines [3].'),
   stated('D6 the units in total', 'base', 'In total, 6 units were billed [3].'),
   stated('D7 a hyphenated unit', 'base', 'Each 2-unit line was short [3].'),
@@ -273,7 +277,7 @@ export const STATED: readonly StatedExample[] = [
   stated('D14 a partitive with no determiner', 'base', 'The payer paid 3 of 3 lines short [3].'),
   stated('D15 all of a count', 'base', 'All 3 lines were short [3].'),
   stated('D16 all of the claims', 'base', 'All three of the claims were short [3].'),
-  stated('D17 each of the claims', 'base', 'Each of the three claims was underpaid by $30.00 [3].'),
+  stated('D17 each of the claims', 'base', 'Each of the three claims was underpaid by $30.00 per line [3].'),
   stated('D18 three of each', 'base', 'Three claims, three patients and three lines are affected [3].'),
   stated('D19 each of the lines', 'base', 'Each of the 3 lines was paid at $56.00 [3].'),
   stated('D20 a row', 'base', 'Line 2 was short [3].'),
@@ -286,9 +290,9 @@ export const STATED: readonly StatedExample[] = [
   stated('D28 a partitive’s part, at most its whole', 'base', 'Two of the 3 claims were short [3].'),
   stated('D29 an ordinal before a noun, as prose', 'base', 'This is the fifth dispute [3].'),
   // Amounts, percentages and dates.
-  stated('E1 a patient’s share after what was paid', 'base', 'The payer paid $56.00 after a $14.00 patient share [3].'),
-  stated('E2 the noun after an amount', 'base', 'The payer paid nothing toward the $30.00 difference [3].'),
-  stated('E3 allowed and paid', 'base', 'The payer allowed $70.00 and paid $56.00 per line [3].'),
+  stated('E1 a patient’s share after what was paid', 'base', 'On each line, the payer paid $56.00 after a $14.00 patient share [3].'),
+  stated('E2 the noun after an amount', 'base', 'The payer paid nothing toward the $30.00 difference on each line [3].'),
+  stated('E3 allowed and paid', 'base', 'On each line, the payer allowed $70.00 and paid $56.00 [3].'),
   stated('E4 a remittance’s date and what it paid', 'base', 'The payer’s remittance of April 8, 2026 paid $56.00 per line [3].'),
   stated('E5 what the contract pays', 'base', 'The contract pays $50.00 per unit for 97110 [1].'),
   stated('E6 the date and what was paid', 'base', 'On April 8, 2026, the payer paid $56.00 for each 97110 line [3].'),
@@ -319,14 +323,14 @@ export const STATED: readonly StatedExample[] = [
 export const HAND_WRITTEN: readonly StatedExample[] = (
   [
     ['base', 'The payer underpaid three claims for 97110 [3].'],
-    ['base', 'Each of the 3 claims was paid $30.00 short [3].'],
+    ['base', 'Each of the 3 claims was paid $30.00 short per line [3].'],
     ['base', 'Our contract sets $50.00 per unit for 97110 [1].'],
-    ['base', 'At $50.00 a unit, 2 units come to $100.00 per line [1, 3].'],
+    ['base', 'At $50.00 a unit, 2 units per line come to $100.00 per line [1, 3].'],
     ['base', 'The payer allowed only $70.00 on each line [3].'],
-    ['base', 'It paid $56.00 on each line, after a $14.00 patient share [3].'],
+    ['base', 'It paid $56.00 on each line, after a $14.00 patient share per line [3].'],
     ['base', 'The patient’s share was $14.00 per line [3].'],
     ['base', 'The schedule lists 3 lines, all billed as 97110 [3].'],
-    ['base', 'Line 1, line 2 and line 3 were each short by $30.00 [3].'],
+    ['base', 'Line 1, line 2 and line 3 were each short by $30.00 per line [3].'],
     ['base', 'Lines 1 through 3 are the affected lines [3].'],
     ['base', 'Claims 1 to 3 were all underpaid [3].'],
     ['base', 'Rows 1, 2 and 3 of the schedule show the shortfall [3].'],
@@ -340,8 +344,8 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['base', 'In total the remittances allowed $210.00 [3].'],
     ['base', 'Under the contract the three lines should have been paid $300.00 [3].'],
     ['base', 'That leaves a shortfall of $90.00 across the 3 lines [3].'],
-    ['base', 'The difference is $90.00 [3].'],
-    ['base', 'The payer owes the $90.00 difference [3].'],
+    ['base', 'The difference is $90.00 in total [3].'],
+    ['base', 'The payer owes the $90.00 difference in total [3].'],
     ['base', 'Each line billed 2 units of 97110 [3].'],
     ['base', 'The lines carry 6 units in all [3].'],
     ['base', 'Units billed: 2 per line [3].'],
@@ -379,15 +383,15 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['base', 'For calendar year 2026 the contract governs [1].'],
     ['base', 'Services in March 2026 were paid in April 2026 [3].'],
     ['base', 'On April 8, 2026 the payer paid $56.00 for each 97110 line [3].'],
-    ['base', 'The payer allowed $70.00 and paid $56.00 per line [3].'],
-    ['base', 'Each claim was allowed $70.00 [3].'],
+    ['base', 'On each line, the payer allowed $70.00 and paid $56.00 [3].'],
+    ['base', 'Each claim line was allowed $70.00 [3].'],
     ['base', 'The contract amount is $100.00 per line [1].'],
     ['base', 'Expected payment was $100.00 a line [3].'],
     ['base', 'The payer paid 3 of 3 lines short [3].'],
     ['base', 'Of the 3 claims, all were short [3].'],
     ['base', 'The payer underpaid by $30.00 on each of the three lines [3].'],
     ['base', 'Altogether the shortfall comes to $90.00 [3].'],
-    ['base', 'We ask the payer to pay the $90.00 balance [3].'],
+    ['base', 'We ask the payer to pay the $90.00 balance in total [3].'],
     ['base', 'Please reprocess claims 1 through 3 [3].'],
     ['base', 'Patient 2’s line was short by $30.00 [3].'],
     ['base', 'The schedule’s third row shows $30.00 short [3].'],
@@ -395,8 +399,8 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['base', 'Each visit was billed as 97110 x 2 [3].'],
     ['base', 'The payer remitted $56.00 per line [3].'],
     ['base', 'The remittance shows $70.00 allowed per line [3].'],
-    ['base', 'The 6 units were billed at $50.00 each [1, 3].'],
-    ['base', 'That is $100.00 expected against $70.00 allowed [3].'],
+    ['base', 'The 6 units in all were billed at $50.00 each [1, 3].'],
+    ['base', 'Per line, that is $100.00 expected against $70.00 allowed [3].'],
     ['base', 'The line schedule lists the three 97110 lines [3].'],
     ['base', 'Two units were billed on each line [3].'],
     ['base', 'The payer’s remittance of April 8, 2026 covers 3 claims [3].'],
@@ -413,13 +417,13 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['base', 'Each patient had one claim [3].'],
     ['base', 'The payer paid each line once, on April 8, 2026 [3].'],
     ['base', 'None of the 3 lines was paid in full [3].'],
-    ['base', 'A total of 3 lines and 6 units are in dispute [3].'],
+    ['base', 'A total of 3 lines and 6 units in all are in dispute [3].'],
     ['base', 'The 3 lines total $300.00 expected [3].'],
-    ['base', 'Expected allowed per line: $100.00 [3].'],
-    ['base', 'Allowed per line: $70.00 [3].'],
-    ['base', 'Paid per line: $56.00 [3].'],
-    ['base', 'Shortfall per line: $30.00 [3].'],
-    ['base', 'Shortfall in all: $90.00 [3].'],
+    ['base', 'Expected allowed per line is $100.00 [3].'],
+    ['base', 'Allowed per line is $70.00 [3].'],
+    ['base', 'Paid per line is $56.00 [3].'],
+    ['base', 'Shortfall per line is $30.00 [3].'],
+    ['base', 'Shortfall in all is $90.00 [3].'],
     ['base', 'The contract (version 1, page 2) sets the rate [1].'],
     ['base', 'Its rate for 97110 is $50.00 per unit [1].'],
     ['base', 'The three lines were serviced March 5 through March 7 [3].'],
@@ -427,9 +431,9 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['base', 'The lines on rows 2 and 3 were billed on March 6 and March 7 [3].'],
     ['base', 'Claim 3 was billed on 2026-03-07 [3].'],
     ['base', 'The payer should have allowed $100.00 on line 1 [3].'],
-    ['base', 'The contract requires $100.00 per line, but the payer allowed $70.00 [1, 3].'],
-    ['base', 'It allowed $70.00 where $100.00 was due [3].'],
-    ['base', 'The payer paid $56.00, and the patient owes $14.00 [3].'],
+    ['base', 'The contract requires $100.00 per line, but the payer allowed $70.00 per line [1, 3].'],
+    ['base', 'On each line, it allowed $70.00 where $100.00 was due [3].'],
+    ['base', 'On each line, the payer paid $56.00, and the patient owes $14.00 [3].'],
     ['base', 'The window ends 2036-04-05 [1].'],
     ['base', 'The payer processed the claims on April 8, 2026 [3].'],
     ['base', 'SYNTHETIC THERAPY GROUP 01 billed the 3 lines [3].'],
@@ -438,7 +442,7 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
     ['interest', 'The payer paid 24 days late [4].'],
     ['interest', 'Interest has accrued for 215 days [4].'],
     ['interest', 'Interest runs at 9% a year [4].'],
-    ['interest', 'Interest of $5.76 is owed on these lines [4].'],
+    ['interest', 'Interest of $5.76 in all is owed on these lines [4].'],
     ['interest', 'Each line accrues $1.92 in interest [4].'],
     ['interest', 'The payer received the claims on February 10, 2026 [4].'],
     ['interest', 'Clean claims must be paid within 33 days [4].'],
@@ -456,20 +460,31 @@ export const HAND_WRITTEN: readonly StatedExample[] = (
 ).map(([content, narrative], index) => stated(`H${String(index + 1)}`, content, narrative));
 
 /** A mismatch a reviewed example expects, as the verifier reports it: its code, its kind and what it marks, as written. */
-export type ReviewedMismatch = readonly ['figure_not_in_input', FigureKind, string] | readonly ['hidden_character', null, string];
+export type ReviewedMismatch =
+  | readonly ['figure_not_in_input', FigureKind, string]
+  | readonly ['figure_not_in_input', FigureKind, string, Exclude<FigureNeeds, null>]
+  | readonly ['hidden_character', null, string];
 
 export interface ReviewedExample {
   /** The finding's id (docs/adr/0086; the review of 2026-11-01) and what the example states. */
   readonly id: string;
   readonly content: RoleContent;
   readonly narrative: string;
-  /** Every mismatch, in text order: none for a narrative that passes (CAS-44), the figures it misstates for one that fails (CAS-43). */
+  /**
+   * Every mismatch, in text order: none for a narrative that passes (CAS-44), the figures it misstates for one that
+   * fails (CAS-43), each with what its words must say when that is why it fails (FigureNeeds: `scope`, whether it is
+   * per line or in total; `own_words`, its own words instead of "respectively"), else nothing more.
+   */
   readonly fails: readonly ReviewedMismatch[];
 }
 
 const at = (figure: string, kind: FigureKind = 'number'): ReviewedMismatch => ['figure_not_in_input', kind, figure];
 const amount = (figure: string) => at(figure, 'amount');
 const date = (figure: string) => at(figure, 'date');
+/** An amount whose words say neither per line nor in total, where its role's two differ (rule 2 of docs/adr/0086). */
+const unscoped = (figure: string, kind: FigureKind = 'amount'): ReviewedMismatch => ['figure_not_in_input', kind, figure, 'scope'];
+/** A figure of a "respectively" list in neither plain form (rule 3 of docs/adr/0086). */
+const unread = (figure: string): ReviewedMismatch => ['figure_not_in_input', 'amount', figure, 'own_words'];
 const reviewed = (id: string, content: RoleContent, narrative: string, ...fails: ReviewedMismatch[]): ReviewedExample => ({ id, content, narrative, fails });
 
 /**
@@ -486,7 +501,8 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('PE-1 the paid amount as the contract’s rate', 'base', 'The remittance shows the contract rate of $56.00 per line [3].', amount('$56.00')),
   reviewed('PE-1 the patient’s share as the shortfall', 'base', 'After the coinsurance, the payer underpaid $14.00 per line [3].', amount('$14.00')),
   reviewed('PE-1 the expected total after two cues and a colon', 'base', 'The contract expected more than the payer allowed: $300.00 in all [3].', amount('$300.00')),
-  reviewed('PE-1 respectively, in the wrong order', 'base', 'The payer allowed and the contract expected $100.00 and $70.00 per line respectively [3].', amount('$100.00'), amount('$70.00')),
+  reviewed('PE-1 respectively, in the wrong order, a scope between the list and "respectively"', 'base', 'The payer allowed and the contract expected $100.00 and $70.00 per line respectively [3].', unread('$100.00'), unread('$70.00')),
+  reviewed('PE-1 respectively, in the wrong order', 'base', 'For each line, the payer allowed and the contract expected $100.00 and $70.00, respectively [3].', amount('$100.00'), amount('$70.00')),
   reviewed('PE-1 the shortfall as interest', 'interest', 'The payer owes $90.00 in interest [4].', amount('$90.00')),
   reviewed('PE-1 control: one cue', 'base', 'The payer allowed $100.00 per line [3].', amount('$100.00')),
   reviewed('PE-1 (Verifier B) the expected amount as paid, because the contract requires more', 'base', 'Because the contract requires more, the payer paid $100.00 per line [3].', amount('$100.00')),
@@ -542,10 +558,10 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-4 two day counts swapped, with the days late held', 'interest', 'The payer paid 3650 days late and we dispute within 24 days [1].', at('3650'), at('24')),
   reviewed('CORR-4 two day counts each in its own role', 'interest', 'The payer paid 24 days late and we dispute within 3650 days [1].'),
   reviewed('CORR-4 the days to pay after "paid within"', 'promptPay', 'Interest accrues on claims not paid within 33 days [1].'),
-  reviewed('CRIT-3 a service date after an amount', 'base', 'The payer paid $56.00 on 2026-03-05 [3].', date('2026-03-05')),
+  reviewed('CRIT-3 a service date after an amount', 'base', 'The payer paid $56.00 per line on 2026-03-05 [3].', date('2026-03-05')),
   reviewed('CRIT-3 the deadline opening the sentence', 'base', 'On 2036-04-05 the payer paid $56.00 per line [3].', date('2036-04-05')),
   reviewed('CRIT-3 the deadline after a count', 'base', 'The payer paid 3 lines on 2036-04-05 [3].', date('2036-04-05')),
-  reviewed('CRIT-3 a service date as the deadline after an amount', 'base', 'We dispute $90.00 by 2026-03-05 [1].', date('2026-03-05')),
+  reviewed('CRIT-3 a service date as the deadline after an amount', 'base', 'We dispute $90.00 in total by 2026-03-05 [1].', date('2026-03-05')),
   reviewed('CRIT-3 control: one cue', 'base', 'The payer paid on 2026-03-05 [3].', date('2026-03-05')),
   reviewed('CRIT-3 (variant) a service date opening the sentence before a comma', 'base', 'On 2026-03-05, the payer paid $56.00 per line [3].', date('2026-03-05')),
   reviewed('CRIT-3 (variant) the deadline after what was allowed', 'base', 'The payer allowed $70.00 per line on 2036-04-05 [3].', date('2036-04-05')),
@@ -574,26 +590,30 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-5 what the contract requires as paid, for each line', 'base', 'The payer paid $100.00 for each line [1].', amount('$100.00')),
   // CORR-6, CORR-7, CORR-20, CRIT-2: respectively, per line and in total, and a copula's subject.
   reviewed('CORR-6 respectively, in the wrong order', 'base', 'The contract expected and the payer allowed $70.00 and $100.00, respectively [1].', amount('$70.00'), amount('$100.00')),
-  reviewed('CORR-6 respectively, in order', 'base', 'The contract expected and the payer allowed $100.00 and $70.00, respectively [1].'),
+  reviewed('CORR-6 respectively, in order', 'base', 'For each line, the contract expected and the payer allowed $100.00 and $70.00, respectively [1].'),
+  reviewed('CORR-6 respectively, in order, no scope stated', 'base', 'The contract expected and the payer allowed $100.00 and $70.00, respectively [1].', unscoped('$100.00'), unscoped('$70.00')),
   // CORR-D1, CORR-D2 (the review of the fix round): the cues after a "respectively" list, and one scope for the list.
   reviewed('CORR-D1 respectively, the cues after the list, in the wrong order', 'base', '$70.00 and $100.00 were expected and allowed per line, respectively [1].', amount('$70.00'), amount('$100.00')),
-  reviewed('CORR-D1 respectively, the cues after the list, in order', 'base', '$100.00 and $70.00 were expected and allowed per line, respectively [1].'),
+  reviewed('CORR-D1 respectively, the cues after the list, in order, "per line" with the second cue alone', 'base', '$100.00 and $70.00 were expected and allowed per line, respectively [1].', unscoped('$100.00')),
+  reviewed('CORR-D1 respectively, the cues after the list, in order, a scope with each cue', 'base', '$100.00 and $70.00 were expected per line and allowed per line, respectively [1].'),
   reviewed('CORR-D1 respectively, "the expected and allowed amounts" after the list, in the wrong order', 'base', 'Per line, $70.00 and $100.00 were the expected and allowed amounts, respectively [1].', amount('$70.00'), amount('$100.00')),
   reviewed('CORR-D1 respectively, "the expected and allowed amounts" after the list, in order', 'base', 'Per line, $100.00 and $70.00 were the expected and allowed amounts, respectively [1].'),
   reviewed('CORR-D1 (variant) respectively, the contracted and paid amounts after the list, swapped', 'base', '$56.00 and $100.00 were the contracted and paid amounts per line, respectively [1].', amount('$56.00'), amount('$100.00')),
   reviewed('CORR-D1 (variant) respectively, the contracted and paid amounts after the list, in order', 'base', '$100.00 and $56.00 were the contracted and paid amounts per line, respectively [1].'),
-  reviewed('CORR-D2 respectively, a total stated per line after the list', 'base', 'The contract expected and the payer allowed $300.00 and $70.00 per line, respectively [1].', amount('$300.00')),
+  reviewed('CORR-D2 respectively, a total stated per line after the list', 'base', 'The contract expected and the payer allowed $300.00 and $70.00 per line, respectively [1].', unread('$300.00'), unread('$70.00')),
   reviewed('CORR-D2 respectively, a total stated per line before the list', 'base', 'Per line, the contract expected and the payer allowed $100.00 and $210.00, respectively [1].', amount('$210.00')),
-  reviewed('CORR-D2 respectively, a line’s value stated in total after the list', 'base', 'The expected and allowed amounts were $100.00 and $210.00 in total, respectively [1].', amount('$100.00')),
-  reviewed('CORR-D2 respectively, each line’s values per line', 'base', 'The contract expected and the payer allowed $100.00 and $70.00 per line, respectively [1].'),
-  reviewed('CORR-D2 respectively, the totals in total', 'base', 'The contract expected and the payer allowed $300.00 and $210.00 in total, respectively [1].'),
+  reviewed('CORR-D2 respectively, a line’s value stated in total after the list', 'base', 'The expected and allowed amounts were $100.00 and $210.00 in total, respectively [1].', unread('$100.00'), unread('$210.00')),
+  reviewed('CORR-D2 respectively, each line’s values, "per line" between the list and "respectively"', 'base', 'The contract expected and the payer allowed $100.00 and $70.00 per line, respectively [1].', unread('$100.00'), unread('$70.00')),
+  reviewed('CORR-D2 respectively, the totals, "in total" between the list and "respectively"', 'base', 'The contract expected and the payer allowed $300.00 and $210.00 in total, respectively [1].', unread('$300.00'), unread('$210.00')),
+  reviewed('CORR-D2 respectively, each line’s values, "amounts per line" before the list', 'base', 'The expected and allowed amounts per line were $100.00 and $70.00, respectively [1].'),
+  reviewed('CORR-D2 respectively, the totals after an opening "In total"', 'base', 'In total, the contract expected and the payer allowed $300.00 and $210.00, respectively [1].'),
   // NEW-N1, NEW-N2, PE-D2 (round 2 of the review of the fix round): a clause of its own after a "respectively" list states
   // nothing of the list; a scope with each cue is that cue's figure's; an opening "each of the 3 lines" is each line's.
   reviewed('NEW-N1 respectively, a line’s value in a list stated in total, before a clause of its own', 'base', 'In total, the contract expected and the payer allowed $300.00 and $70.00, respectively, which the payer explained for each line [1].', amount('$70.00')),
-  reviewed('NEW-N1 respectively, the totals, before a clause of its own', 'base', 'The contract expected and the payer allowed $300.00 and $210.00, respectively, which the payer explained for each line [1].'),
+  reviewed('NEW-N1 respectively, the totals, before a clause of its own', 'base', 'The contract expected and the payer allowed $300.00 and $210.00, respectively, which the payer explained for each line [1].', unscoped('$300.00'), unscoped('$210.00')),
   reviewed('NEW-N1 respectively, the totals stated in total, before a clause of its own', 'base', 'In total, the contract expected and the payer allowed $300.00 and $210.00, respectively, which the payer explained for each line [1].'),
-  reviewed('NEW-N1 respectively, each line’s values, before a clause of its own', 'base', 'The contract expected and the payer allowed $100.00 and $70.00, respectively, which the payer explained for each line [1].'),
-  reviewed('NEW-N1 control: one figure before a clause of its own', 'base', 'The payer allowed $210.00, which the payer explained for each line [1].'),
+  reviewed('NEW-N1 respectively, each line’s values, before a clause of its own', 'base', 'The contract expected and the payer allowed $100.00 and $70.00, respectively, which the payer explained for each line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('NEW-N1 control: one figure before a clause of its own', 'base', 'The payer allowed $210.00, which the payer explained for each line [1].', unscoped('$210.00')),
   reviewed('NEW-N2 respectively, a scope with each cue after the list', 'base', '$300.00 and $70.00 were expected in total and allowed per line, respectively [1].'),
   reviewed('NEW-N2 respectively, a scope with each cue after "respectively"', 'base', '$300.00 and $70.00 were, respectively, expected in total and allowed per line [1].'),
   reviewed('NEW-N2 respectively, per line, then in total, with each cue', 'base', '$100.00 and $210.00 were expected per line and allowed in total, respectively [1].'),
@@ -610,18 +630,18 @@ export const REVIEWED: readonly ReviewedExample[] = [
   // "respectively" that opens with "and", a participle or "with" is no list's; a scope between commas with each cue is its cue's.
   reviewed('R1-NF-2 an opening "For each line", then a total in a clause after "while"', 'base', 'For each line, the payer allowed $70.00, while across the 3 lines it allowed $210.00 [1].'),
   reviewed('R1-NF-2 an opening "For each line", then "the 3 lines together"', 'base', 'For each line, the payer allowed $70.00, while the 3 lines together were allowed $210.00 [1].'),
-  reviewed('R1-NF-2 an opening "For each line", then the claim’s total after "and"', 'base', 'For each line, the payer allowed $70.00, and the claim was allowed $210.00 [1].'),
-  reviewed('R1-NF-2 an opening "On each of the 3 lines", then the total owed after "so"', 'base', 'On each of the 3 lines, the payer allowed $70.00, so the payer owes $90.00 [1].'),
+  reviewed('R1-NF-2 an opening "For each line", then the claim’s total after "and"', 'base', 'For each line, the payer allowed $70.00, and the claim was allowed $210.00 [1].', amount('$210.00')),
+  reviewed('R1-NF-2 an opening "On each of the 3 lines", then the total owed after "so"', 'base', 'On each of the 3 lines, the payer allowed $70.00, so the payer owes $90.00 [1].', amount('$90.00')),
   reviewed('R1-NF-2 an opening "For each line", then a total stated per line in a clause after "while"', 'base', 'For each line, the payer allowed $70.00, while for each line it allowed $210.00 [1].', amount('$210.00')),
   reviewed('R1-NF-2 an opening "For each line", a total in its own clause', 'base', 'For each line, the payer allowed $70.00 and the contract expected $300.00 [1].', amount('$300.00')),
   reviewed('R1-NF-2 a total after "Each of the 3 lines", its subject', 'base', 'Each of the 3 lines was expected at $300.00 [1].', amount('$300.00')),
   reviewed('R1-NF-2 the lines’ units after "Each of the 3 lines", its subject', 'base', 'Each of the 3 lines billed 6 units [1].', at('6')),
   reviewed('R1-NF-2 control: each line’s value after "Each of the 3 lines"', 'base', 'Each of the 3 lines was expected at $100.00 [1].'),
-  reviewed('R1-NF-1 respectively, the totals, before a clause after "and"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and each line is short [1].'),
-  reviewed('R1-NF-1 respectively, the totals, before a participle’s clause', 'base', '$300.00 and $210.00 were expected and allowed, respectively, leaving each line short [1].'),
-  reviewed('R1-NF-1 respectively, the totals, before a clause after "with"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, with each line short [1].'),
-  reviewed('R1-NF-1 control: "respectively, per line" is the list’s own', 'base', '$300.00 and $210.00 were expected and allowed, respectively, per line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R1-NF-1 control: "respectively, for each line" is the list’s own', 'base', '$100.00 and $70.00 were expected and allowed, respectively, for each line [1].'),
+  reviewed('R1-NF-1 respectively, the totals, before a clause after "and"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and each line is short [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R1-NF-1 respectively, the totals, before a participle’s clause', 'base', '$300.00 and $210.00 were expected and allowed, respectively, leaving each line short [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R1-NF-1 respectively, the totals, before a clause after "with"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, with each line short [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R1-NF-1 control: "respectively, per line" is the list’s own', 'base', '$300.00 and $210.00 were expected and allowed, respectively, per line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R1-NF-1 control: "respectively, for each line" is the list’s own', 'base', '$100.00 and $70.00 were expected and allowed, respectively, for each line [1].', unscoped('$100.00'), unscoped('$70.00')),
   reviewed('R1-NF-3 respectively, a scope between commas with each cue', 'base', '$300.00 and $70.00 were expected, in total, and allowed, per line, respectively [1].'),
   reviewed('R1-NF-3 respectively, a scope between commas with each cue, swapped', 'base', '$300.00 and $70.00 were expected, per line, and allowed, in total, respectively [1].', amount('$300.00'), amount('$70.00')),
   // R2-NEW-R2P2-1, R2-NEW-R2P2-2 (pass 3 of round 2): an opening "each" reaches the clauses coordinated after it unless
@@ -631,26 +651,26 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('R2-NEW-R2P2-1 an opening "For each line", then a total after ", and it"', 'base', 'For each line, the payer allowed $70.00, and it expected $300.00 [1].', amount('$300.00')),
   reviewed('R2-NEW-R2P2-1 an opening "On each of the 3 lines", then a total after ", and"', 'base', 'On each of the 3 lines, the payer allowed $70.00, and the contract expected $300.00 [1].', amount('$300.00')),
   reviewed('R2-NEW-R2P2-1 an opening "On each of the 3 lines", then a total after ", while"', 'base', 'On each of the 3 lines, the payer allowed $70.00, while the contract expected $300.00 [1].', amount('$300.00')),
-  reviewed('R2-NEW-R2P2-1 an opening "For each line" with no comma, then a total after ", and"', 'base', 'For each line the payer allowed $70.00, and the contract expected $300.00 [1].', amount('$300.00')),
+  reviewed('R2-NEW-R2P2-1 an opening "For each line" with no comma, then a total after ", and"', 'base', 'For each line the payer allowed $70.00, and the contract expected $300.00 [1].', unscoped('$300.00')),
   reviewed('R2-NEW-R2P2-1 an opening "Per line", then a total after ", and"', 'base', 'Per line, the payer allowed $70.00, and the contract expected $300.00 [1].', amount('$300.00')),
   reviewed('R2-NEW-R2P2-1 control: each line’s value after ", and"', 'base', 'For each line, the payer allowed $70.00, and the contract expected $100.00 [1].'),
-  reviewed('R2-NEW-R2P2-1 control: "Per line", then the total owed after "so"', 'base', 'Per line, the payer allowed $70.00, so the payer owes $90.00 [1].'),
-  reviewed('R2-NEW-R2P2-1 control: the total owed after a semicolon', 'base', 'Per line, the payer allowed $70.00; the payer owes $90.00 [1].'),
-  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "being per line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, being per line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "applying to each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, applying to each line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "counting each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, counting each line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "with each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, with each line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "and for each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and for each line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "nothing per line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, nothing per line [1].', amount('$300.00'), amount('$210.00')),
-  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "being per line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, being per line [1].'),
-  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "applying to each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, applying to each line [1].'),
-  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "counting each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, counting each line [1].'),
-  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "with each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, with each line [1].'),
-  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "and for each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, and for each line [1].'),
-  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "nothing per line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, nothing per line [1].'),
+  reviewed('R2-NEW-R2P2-1 control: "Per line", then the total owed after "so"', 'base', 'Per line, the payer allowed $70.00, so the payer owes $90.00 [1].', amount('$90.00')),
+  reviewed('R2-NEW-R2P2-1 control: the total owed after a semicolon', 'base', 'Per line, the payer allowed $70.00; the payer owes $90.00 [1].', unscoped('$90.00')),
+  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "being per line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, being per line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "applying to each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, applying to each line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "counting each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, counting each line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "with each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, with each line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "and for each line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and for each line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 respectively, the totals, then "nothing per line"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, nothing per line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "being per line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, being per line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "applying to each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, applying to each line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "counting each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, counting each line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "with each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, with each line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "and for each line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, and for each line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('R2-NEW-R2P2-2 control: each line’s values, then "nothing per line"', 'base', '$100.00 and $70.00 were expected and allowed, respectively, nothing per line [1].', unscoped('$100.00'), unscoped('$70.00')),
   reviewed('CORR-6 a line’s amount, then the same role in total', 'base', 'The payer allowed $70.00 per line and $100.00 in total [1].', amount('$100.00')),
   reviewed('CORR-6 a line’s amount, then the allowed total', 'base', 'The payer allowed $70.00 per line and $210.00 in total [1].'),
-  reviewed('CORR-6 the expected amount after "not the contract amount of"', 'base', 'The payer allowed, not the contract amount of $70.00, only $100.00 [1].', amount('$70.00')),
+  reviewed('CORR-6 the expected amount after "not the contract amount of"', 'base', 'The payer allowed, not the contract amount of $70.00, only $100.00 per line [1].', amount('$70.00')),
   reviewed('CORR-7 a total as each line’s', 'base', 'Each line was expected at $300.00 [1].', amount('$300.00')),
   reviewed('CORR-7 the shortfall in total as each line’s', 'base', 'The shortfall on each line is $90.00 [1].', amount('$90.00')),
   reviewed('CORR-7 each line’s units as the lines’ total', 'base', 'The 3 lines billed 2 units [1].', at('2')),
@@ -660,7 +680,8 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-20 what the patients owe in total', 'base', 'The patients owe $42.00 in coinsurance across the 3 lines [1].'),
   reviewed('CRIT-2 the expected total as the shortfall’s', 'base', 'The shortfall of $30.00 per line comes to $300.00 [3].', amount('$300.00')),
   reviewed('CRIT-2 the expected total as the allowance’s', 'base', 'The payer’s allowance of $70.00 per line comes to $300.00 [3].', amount('$300.00')),
-  reviewed('CRIT-2 the shortfall per line and in total', 'base', 'The shortfall of $30.00 per line comes to $90.00 [3].'),
+  reviewed('CRIT-2 the shortfall per line and in total', 'base', 'The shortfall of $30.00 per line comes to $90.00 in all [3].'),
+  reviewed('CRIT-2 the shortfall per line, then its total with no scope', 'base', 'The shortfall of $30.00 per line comes to $90.00 [3].', unscoped('$90.00')),
   // PE-6, CORR-8 to CORR-13, CORR-15: correct sentences pass.
   reviewed('PE-6, CORR-9 the first 3 claims', 'base', 'The first 3 claims were underpaid [3].'),
   reviewed('PE-6 a locked fee schedule’s year after "paid"', 'medicareNoYear', 'The payer paid less than the 2025 Medicare fee schedule requires [1].'),
@@ -669,12 +690,12 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-8 (Verifier B) the fifth unit', 'base', 'The fifth unit was not paid [1].'),
   reviewed('CORR-8 the first unit', 'base', 'The first unit was paid at the contract rate [1].'),
   reviewed('CORR-8 the second appeal', 'base', 'This is the second appeal on these lines [1].'),
-  reviewed('CORR-9 the first 3 claims and each one’s shortfall', 'base', 'The first 3 claims were each underpaid by $30.00 [1].'),
+  reviewed('CORR-9 the first 3 claims and each one’s shortfall', 'base', 'The first 3 claims were each underpaid by $30.00 per line [1].'),
   reviewed('CORR-9 a partitive’s part', 'base', '2 of the 3 claims were short [1].'),
   reviewed('CORR-9 a partitive’s part after its whole', 'base', 'Of the 3 claims, 2 were paid on 2026-04-08 [1].'),
   reviewed('CORR-9 a partitive’s part larger than its whole', 'base', '4 of the 3 claims were short [1].', at('4')),
-  reviewed('CORR-9 what the patient paid', 'base', 'The patient paid $14.00 of the $70.00 allowed [1].'),
-  reviewed('CORR-9 payment of the balance', 'base', 'We request payment of the $90.00 balance within 30 days [1].', at('30')),
+  reviewed('CORR-9 what the patient paid', 'base', 'On each line, the patient paid $14.00 of the $70.00 allowed [1].'),
+  reviewed('CORR-9 payment of the balance', 'base', 'We request payment of the total $90.00 balance within 30 days [1].', at('30')),
   reviewed('CORR-10 a locked year after "paid"', 'locked2025', 'The payer paid under the 2025 fee schedule [1].'),
   reviewed('CORR-10 a locked year after services and "paid"', 'locked2025', 'These services were paid at 2025 rates [1].'),
   reviewed('CORR-10 control: a locked year', 'locked2025', 'The 2025 fee schedule applies [1].'),
@@ -683,7 +704,7 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-11 business days to pay, after "requires payment"', 'businessDays', 'The statute requires payment within 15 business days [1].'),
   reviewed('CORR-11 business days to pay, after "must pay"', 'businessDays', 'The payer must pay within 15 business days [1].'),
   reviewed('CORR-12 "appeal" as a verb before claims', 'base', 'We appeal 3 claims that were paid short [1].'),
-  reviewed('CORR-12 "appeal" as a verb before units', 'base', 'We appeal 6 units billed under 97110 [1].'),
+  reviewed('CORR-12 "appeal" as a verb before units', 'base', 'We appeal 6 units billed under 97110 in all [1].'),
   reviewed('CORR-13 a comma that starts a clause', 'base', 'Under version 1, 2 of them were short [1].'),
   reviewed('CORR-15 rows in an en-dash range', 'base', 'Lines 1–3 were short [1].'),
   reviewed('CORR-15 rows in a range in words', 'base', 'Lines 1 to 3 were short [1].'),
@@ -691,13 +712,14 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('CORR-16 a Cyrillic letter in "allowed"', 'base', 'The payer аllowed $100.00 per line [1].', ['hidden_character', null, 'а']),
   reviewed('CORR-16 control: the Latin letter', 'base', 'The payer allowed $100.00 per line [1].', amount('$100.00')),
   // The payment-engine reviewer's own legitimate probes.
-  reviewed('PE probe L4 paid, then allowed', 'base', 'The payer paid $56.00 and allowed $70.00 per line [3].'),
-  reviewed('PE probe L5 allowed against what the contract requires', 'base', 'The payer allowed $70.00 against the $100.00 the contract requires [3].'),
+  reviewed('PE probe L4 paid, then allowed', 'base', 'The payer paid $56.00 per line and allowed $70.00 per line [3].'),
+  reviewed('PE probe L5 allowed against what the contract requires', 'base', 'On each line, the payer allowed $70.00 against the $100.00 the contract requires [3].'),
   reviewed('PE probe L6 due, then days late', 'interest', 'Payment was due on 2026-03-15, and the payer paid 24 days late [4].'),
   reviewed('PE probe L8 required to pay within', 'interest', 'The payer was required to pay within 33 days [4].'),
-  reviewed('PE probe L11 allowed but paid', 'base', 'The payer allowed $70.00 but paid only $56.00 per line [3].'),
-  reviewed('PE probe L12 paid, less than allowed', 'base', 'The payer paid $56.00, less than the $70.00 it allowed [3].'),
-  reviewed('PE probe L13 expected and allowed totals', 'base', 'The contract expected $300.00 and the payer allowed $210.00 [3].'),
+  reviewed('PE probe L11 allowed but paid', 'base', 'The payer allowed $70.00 per line but paid only $56.00 per line [3].'),
+  reviewed('PE probe L12 paid, less than allowed', 'base', 'On each line, the payer paid $56.00, less than the $70.00 it allowed [3].'),
+  reviewed('PE probe L13 expected and allowed totals', 'base', 'In total, the contract expected $300.00 and the payer allowed $210.00 [3].'),
+  reviewed('PE probe L13 expected and allowed totals, no scope stated', 'base', 'The contract expected $300.00 and the payer allowed $210.00 [3].', unscoped('$300.00'), unscoped('$210.00')),
   reviewed('PE probe L15 each of the lines’ units', 'base', 'Each of the 3 lines billed 2 units of 97110 [3].'),
   reviewed('PE probe L16 serviced, then paid', 'base', 'The lines, serviced from 2026-03-05 to 2026-03-07, were paid on 2026-04-08 [3].'),
   reviewed('PE probe U6 the allowed amount as paid, after the remittance', 'base', 'The remittance shows the payer paid $70.00 per line [3].', amount('$70.00')),
@@ -706,7 +728,107 @@ export const REVIEWED: readonly ReviewedExample[] = [
   reviewed('PE probe V4 the days to pay as the window', 'interest', 'The payer had to pay, and disputes are raised, within 33 days [1].', at('33')),
   reviewed('PE probe R3 business days to pay a clean claim', 'businessDays', 'The payer has 15 business days to pay a clean claim [4].'),
   reviewed('PE probe R5 all claims paid on a date, under the year’s contract', 'base', 'The payer paid all 3 claims on April 8, 2026, under the 2026 contract [3].'),
+  // The converging fix (docs/adr/0086, the closed rules): a figure's scope is read from its own clause or one opening
+  // phrase alone (rule 1); a figure whose words state no scope fails where its role's per-line and total values differ
+  // (rule 2, `scope`); "respectively" is read in two plain forms alone, and any other list fails (rule 3, `own_words`).
+  // Every reproduction of the rounds of fix and recheck is here: a false pass fails; a false failure passes when its
+  // sentence is in a recognised form, else fails with the plain instruction.
+  reviewed('PE-D1 respectively, a count between the list and its cues after it ("on each of the 3 lines")', 'base', '$70.00 and $100.00 on each of the 3 lines were expected and allowed, respectively [1].', unread('$70.00'), unread('$100.00')),
+  reviewed('PE-D1 respectively, a count between the list and its cues after it ("for the 3 lines")', 'base', '$210.00 and $300.00 for the 3 lines were expected and allowed, respectively [1].', unread('$210.00'), unread('$300.00')),
+  reviewed('PE-D1 respectively, a code between the list and its cues after it', 'base', '$70.00 and $100.00 for 97110 were the expected and allowed amounts, respectively [1].', unread('$70.00'), unread('$100.00')),
+  reviewed('PE-D1 control: the count after "respectively", swapped', 'base', '$210.00 and $300.00 were expected and allowed, respectively, for the 3 lines [1].', amount('$210.00'), amount('$300.00')),
+  reviewed('PE-D1 respectively, a scope between the list and its cues after it, the whole list’s', 'base', '$100.00 and $70.00 per line were expected and allowed, respectively [1].'),
+  reviewed('PE-D3 respectively, "amounts per line" after it, then a clause after a comma', 'base', '$100.00 and $70.00, respectively, were the expected and allowed amounts per line, so the payer paid less [1].'),
+  reviewed('PE-D3 control: "amounts per line" after "respectively"', 'base', '$100.00 and $70.00, respectively, were the expected and allowed amounts per line [1].'),
+  reviewed('PE-D3 control: "amounts per line", then a semicolon', 'base', '$100.00 and $70.00, respectively, were the expected and allowed amounts per line; the payer paid less [1].'),
+  reviewed('R1-NF-3 control: a scope with each cue, a comma after the first', 'base', '$300.00 and $70.00 were expected in total, and allowed per line, respectively [1].'),
+  reviewed('R2-NEW-R2P2-2 control: the totals, then "for each line" after "respectively"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, for each line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('R2-NEW-R2P2-2 control: the totals, then "each line" after "respectively"', 'base', '$300.00 and $210.00 were expected and allowed, respectively, each line [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('N1 respectively, the totals, then ", and for each line," and the shortfall', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and for each line, the payer owes $30.00 [1].', unscoped('$300.00'), unscoped('$210.00'), unscoped('$30.00')),
+  reviewed('N1 respectively, the totals, then ", with each line," and the shortfall', 'base', '$300.00 and $210.00 were expected and allowed, respectively, with each line, the payer owing $30.00 [1].', unscoped('$300.00'), unscoped('$210.00'), unscoped('$30.00')),
+  reviewed('N1 respectively, the totals, then ", and per line," and the shortfall', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and per line, the payer owes $30.00 [1].', unscoped('$300.00'), unscoped('$210.00'), unscoped('$30.00')),
+  reviewed('N1 respectively, the totals, then ", and for each line," and what is owed', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and for each line, $30.00 is owed [1].', unscoped('$300.00'), unscoped('$210.00'), unscoped('$30.00')),
+  reviewed('N1 control: "and for each line" in the shortfall’s own clause', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and for each line the payer owes $30.00 [1].', unscoped('$300.00'), unscoped('$210.00')),
+  reviewed('N1 control: ", and, for each line," before the shortfall', 'base', '$300.00 and $210.00 were expected and allowed, respectively, and, for each line, the payer owes $30.00 [1].', unscoped('$300.00'), unscoped('$210.00'), unscoped('$30.00')),
+  reviewed('N1 the totals in total, then the shortfall in its own clause per line', 'base', 'In total, $300.00 and $210.00 were the expected and allowed amounts, respectively, and for each line the payer owes $30.00 [1].'),
+  reviewed('N2 an opening "For each line", then a total with "for the claim" after it', 'base', 'For each line, the payer allowed $70.00, and $210.00 for the claim [1].'),
+  reviewed('N2 an opening "For each line", then "it allowed" a total "for the claim"', 'base', 'For each line, the payer allowed $70.00, and it allowed $210.00 for the claim [1].'),
+  reviewed('N2 an opening "For each line", then a total "on the claim" after "while"', 'base', 'For each line, the payer allowed $70.00, while it allowed $210.00 on the claim [1].'),
+  reviewed('N2 control: "for the claim" before the total', 'base', 'For each line, the payer allowed $70.00, and for the claim $210.00 [1].'),
+  reviewed('N3 "the claim line" is one line: its value', 'base', 'For each line, the payer allowed $70.00, and the claim line was expected $100.00 [1].'),
+  reviewed('N3 "the claim line" is one line: a total stated per line', 'base', 'For each line, the payer allowed $70.00, and the claim line was expected $300.00 [1].', amount('$300.00')),
+  reviewed('N3 "the claim line expected amount": a total stated per line', 'base', 'For each line, the payer allowed $70.00, and the claim line expected amount was $300.00 [1].', amount('$300.00')),
+  reviewed('N3 control: "each claim line", a total stated per line', 'base', 'For each line, the payer allowed $70.00, and each claim line was expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 "per the contract" is no scope: a total under an opening "For each line"', 'base', 'For each line, the payer allowed $70.00, and per the contract it expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 "as per the contract" is no scope', 'base', 'For each line, the payer allowed $70.00, and as per the contract it expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 "per the fee schedule" is no scope', 'base', 'For each line, the payer allowed $70.00, and per the fee schedule it expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 "per its contract" is no scope', 'base', 'For each line, the payer allowed $70.00, but per its contract the payer expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 control: "under the contract"', 'base', 'For each line, the payer allowed $70.00, and under the contract it expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 control: "per the contract" between commas after the opening', 'base', 'For each line, per the contract, the payer expected $300.00 [1].', amount('$300.00')),
+  reviewed('N4 "each was expected", stated per something but not a line nor in total', 'base', 'For each line, the payer allowed $70.00, and each was expected $300.00 [1].', unscoped('$300.00')),
+  reviewed('rule 3 respectively after figures each with its own cue, not a list', 'base', 'The contract expected $100.00 and the payer allowed $70.00, respectively [1].', unread('$100.00'), unread('$70.00')),
+  reviewed('rule 3 respectively with more cues than figures', 'base', '$100.00 and $70.00 were expected, allowed and paid, respectively [1].', unread('$100.00'), unread('$70.00')),
+  reviewed('rule 3 respectively after one figure', 'base', 'The payer allowed $70.00, respectively [1].', unread('$70.00')),
+  reviewed('rule 3 a scope after "respectively" is no list’s', 'base', 'The contract expected and the payer allowed $100.00 and $70.00, respectively, for each line [1].', unscoped('$100.00'), unscoped('$70.00')),
+  reviewed('rule 3 the opening scope and "respectively" with its cues before it, swapped', 'base', 'For each line, the contract expected and the payer allowed $70.00 and $100.00, respectively [1].', amount('$70.00'), amount('$100.00')),
+  reviewed('rule 3 "amounts in total" after the list’s cues', 'base', '$300.00 and $210.00 were the expected and allowed amounts in total, respectively [1].'),
+  reviewed('rule 2 an amount with no scope where per line and in total differ', 'base', 'The payer allowed $210.00 [1].', unscoped('$210.00')),
+  reviewed('rule 2 the same amount in total', 'base', 'The payer allowed $210.00 in total [1].'),
+  reviewed('rule 2 units with no scope where each line’s and the total differ', 'base', 'The payer underpaid 6 units [1].', unscoped('6', 'number')),
+  reviewed('rule 2 an amount with no scope where per line and in total are one', 'oneLine', 'The payer allowed $70.00 [1].'),
 ];
+
+/**
+ * What each amount role's values are stated per, read from the content's fields (a test's oracle, written apart from
+ * ./facts.ts, as roleOracle() is): `line|<role>` each line's values, `total|<role>` the pattern's, each code's and the
+ * lines' sums, `unit|expected` the contract's rate. A narrative states an amount with its scope where its role's
+ * per-line and total values differ (rule 2 of docs/adr/0086).
+ */
+export function scopedOracle(content: PacketContentV2): ReadonlyMap<string, ReadonlySet<string>> {
+  const held = new Map<string, Set<string>>();
+  const add = (scope: 'line' | 'total' | 'unit', role: string, value: string | null | undefined) => {
+    if (value === null || value === undefined || !/^-?\d+$/.test(value)) {
+      return;
+    }
+    const values = held.get(`${scope}|${role}`) ?? new Set<string>();
+    values.add(value);
+    held.set(`${scope}|${role}`, values);
+  };
+  const { pattern, citation } = content;
+  add('total', 'expected', pattern.expected_cents);
+  add('total', 'allowed', pattern.observed_cents);
+  add('total', 'variance', pattern.variance_cents);
+  for (const code of pattern.codes) {
+    add('total', 'expected', code.expected_cents);
+    add('total', 'allowed', code.observed_cents);
+    add('total', 'variance', code.variance_cents);
+    add('unit', 'expected', code.contract_amount_cents);
+  }
+  for (const item of content.lines) {
+    add('line', 'expected', item.expected_cents);
+    add('line', 'allowed', item.observed_cents);
+    add('line', 'variance', item.variance_cents);
+    add('line', 'paid', item.paid_cents);
+    add('line', 'patient_share', item.calculation.patient_share_cents);
+    for (const amount of [...item.calculation.steps.map((step) => step.amount_cents), item.calculation.rounding?.unrounded_cents, item.calculation.rounding?.rounded_cents]) {
+      add('line', 'calculation', amount);
+    }
+  }
+  const total = (amounts: readonly (string | null)[]) => (amounts.every((item) => item !== null) ? amounts.reduce((sum, item) => sum + BigInt(item ?? '0'), 0n).toString() : null);
+  add('total', 'paid', total(content.lines.map((item) => item.paid_cents)));
+  add('total', 'patient_share', total(content.lines.map((item) => item.calculation.patient_share_cents)));
+  if (citation.kind === 'contract') {
+    const { amount_cents: amount } = citation.parameters as { amount_cents?: unknown };
+    add('unit', 'expected', typeof amount === 'string' ? amount : null);
+  }
+  // Interest where code computed it above zero, as roleOracle() holds it.
+  for (const item of content.interest?.lines ?? []) {
+    add('line', 'interest', item.interest_cents !== null && BigInt(item.interest_cents) > 0n ? item.interest_cents : null);
+  }
+  const interestTotal = content.interest?.total_cents ?? null;
+  add('total', 'interest', interestTotal !== null && BigInt(interestTotal) > 0n ? interestTotal : null);
+  return held;
+}
 
 /**
  * The values each role's inputs hold, read from the content's fields by role (a test's oracle, written apart from

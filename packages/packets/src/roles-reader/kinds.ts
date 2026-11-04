@@ -82,6 +82,8 @@ export interface FigureReading {
   readonly prose: boolean;
   /** Where the figure is among the text's tokens (quotedHolds() compares the words around it). */
   readonly token: number;
+  /** A figure of a "respectively" list in neither of its two plain forms (rule 3 of docs/adr/0086): it fails, whatever it is. */
+  readonly unread: boolean;
 }
 
 /** A text read: its figures with their roles, and its tokens as quotedHolds() compares them (an edge is "|"). */

@@ -1,4 +1,4 @@
-import type { EvidenceGapCode, EvidenceKind, FigureRole, MismatchCode, SourceKind, VerifierReport } from '@tp/packets';
+import type { EvidenceGapCode, EvidenceKind, FigureNeeds, FigureRole, MismatchCode, SourceKind, VerifierReport } from '@tp/packets';
 import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
 import type { VerifierStanding } from '@tp/worker/packets';
 
@@ -36,6 +36,16 @@ export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
 
 /** What a number with no word for what it counts is asked for, with examples a person writes (the UX review of 2026-10-28). */
 export const SAY_WHAT_IT_COUNTS = 'say what it counts or names: 3 claims, 6 units, page 2, 3650 days';
+
+/**
+ * What a figure in its role is asked for when its words must say more (docs/adr/0086): rule 2, an amount or a count of
+ * units whose words state neither per line nor in total where the two differ; rule 3, a figure of a "respectively"
+ * list in neither of its two plain forms. Said beside the figure marked, so "this figure" is the one marked.
+ */
+export const NEEDS_TEXT: Readonly<Record<Exclude<FigureNeeds, null>, string>> = {
+  scope: 'state whether this figure is per line or in total',
+  own_words: 'give each figure its own words instead of “respectively”',
+};
 
 /**
  * What a mismatch's list item shows beside its words: the figure, placeholder or marker as written, a
@@ -126,17 +136,23 @@ export interface FigureAsRead {
   /** Its words name several roles and none is its own: it must be held as each of them. */
   readonly every: boolean;
   readonly heldAs: readonly FigureRole[];
+  /** What its words must say more, when that is why it fails (@tp/packets FigureNeeds); a stored report's figure has none. */
+  readonly needs?: FigureNeeds;
 }
 
 /**
  * A mismatch in words, short enough for a phone's width beside the figure it is about (the UX review of 2026-10-28). A
- * figure the check read is said as what its words give it and what the records hold it as ("read as what the payer
- * paid; the records hold it as what the contract requires"); a number with no word for what it counts is asked to
- * say it; a figure without its reading (a stored report, a refusal) is said by its kind.
+ * figure whose words must say more is asked for it (NEEDS_TEXT: per line or in total, or its own words instead of
+ * "respectively"); any other figure the check read is said as what its words give it and what the records hold it as
+ * ("read as what the payer paid; the records hold it as what the contract requires"); a number with no word for what it
+ * counts is asked to say it; a figure without its reading (a stored report, a refusal) is said by its kind.
  */
 export function mismatchText(code: MismatchCode, kind: string | null, figure: FigureAsRead | null = null): string {
   if (code !== 'figure_not_in_input') {
     return MISMATCH_TEXT[code];
+  }
+  if (figure?.needs !== undefined && figure.needs !== null) {
+    return NEEDS_TEXT[figure.needs];
   }
   const kindText = kind === null ? null : (FIGURE_KIND_TEXT[kind] ?? null);
   if (figure === null) {
@@ -271,7 +287,9 @@ export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>, figu
     const figure = mismatch.code === 'figure_not_in_input' ? figures.find((item) => item.start === mismatch.start && item.end === mismatch.end) : undefined;
     const kind = mismatch.kind === null ? null : (FIGURE_KIND_TEXT[mismatch.kind] ?? null);
     const what =
-      figure !== undefined && figure.roles !== null && figure.roles.length > 0
+      figure?.needs !== undefined && figure.needs !== null
+        ? `${kind ?? 'a figure'} whose words must ${figure.needs === 'scope' ? 'say whether it is per line or in total' : 'give it its own words instead of “respectively”'}`
+        : figure !== undefined && figure.roles !== null && figure.roles.length > 0
         ? `${kind ?? 'a figure'} ${readAsText(figure.roles, figure.every)} that ${
             figure.heldAs.length === 0
               ? 'no record holds as that'

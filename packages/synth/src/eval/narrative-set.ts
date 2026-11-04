@@ -183,19 +183,19 @@ function referenceNarrative(terms: Terms, sums: Totals, payer: string, interest:
     case 0:
       body = [
         `The remittances allowed ${money(sums.observed, grouped)} for ${plural(sums.lines, 'line', 'lines')} on ${plural(sums.claims, 'claim', 'claims')} with service dates ${span} [3].`,
-        `${basis} those lines come to ${money(sums.expected, grouped)}, a shortfall of ${money(sums.variance, grouped)} [3].`,
+        `${basis} those lines come to ${money(sums.expected, grouped)}, a shortfall of ${money(sums.variance, grouped)} in total [3].`,
       ];
       break;
     case 1:
       body = [
-        `Across ${plural(sums.lines, 'line', 'lines')} for ${plural(sums.patients, 'patient', 'patients')}, with services ${span}, ${payer} allowed ${money(sums.observed, grouped)} [3].`,
-        `${regulation ? 'Original Medicare would have paid' : 'The contract requires'} ${money(sums.expected, grouped)} for the same lines [3].`,
-        `The difference owed is ${money(sums.variance, grouped)} [3].`,
+        `Across ${plural(sums.lines, 'line', 'lines')} for ${plural(sums.patients, 'patient', 'patients')}, with services ${span}, ${payer} allowed ${money(sums.observed, grouped)} in total [3].`,
+        `${regulation ? 'Original Medicare would have paid' : 'The contract requires'} ${money(sums.expected, grouped)} for these lines [3].`,
+        `The difference owed is ${money(sums.variance, grouped)} in total [3].`,
       ];
       break;
     default:
       body = [
-        `Expected payment for the ${plural(sums.lines, 'line', 'lines')} in the schedule is ${money(sums.expected, grouped)} and the remittances show ${money(sums.observed, grouped)} [3].`,
+        `Expected payment for the ${plural(sums.lines, 'line', 'lines')} in the schedule is ${money(sums.expected, grouped)} and the remittances show ${money(sums.observed, grouped)} in all [3].`,
         `The payer underpaid ${plural(sums.claims, 'claim', 'claims')} by ${money(sums.variance, grouped)} in all [3].`,
       ];
   }

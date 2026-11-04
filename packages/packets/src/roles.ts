@@ -48,10 +48,10 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * An amount, a percentage, a date (a month, a day of a month, a year), a day count and a page each take one cue's
  * roles, never the union of every cue around them (docs/adr/0086, the fix round of 2026-11-01):
  *
- * 1. "respectively" maps a list's figures to the cues before it, in order ("the contract expected and the payer
- *    allowed $100.00 and $70.00, respectively"), or with none before it to the cues after it ("$100.00 and $70.00
- *    were expected and allowed, respectively"); every one of them when they do not match the list one for one; with
- *    no cue on either side, the steps after read each figure;
+ * 1. "respectively" maps a list's figures to its cues, in order, in one of its two plain forms alone: the cues right
+ *    before the list ("the contract expected and the payer allowed $100.00 and $70.00, respectively"), or right after
+ *    it ("$100.00 and $70.00 were the expected and allowed amounts, respectively"); a list in neither form fails at
+ *    every figure (`unread`), never read by the steps after nor in any role (rule 3 of docs/adr/0086);
  * 2. the cue right after the figure ("the $30.00 difference", "$5.76 in interest", "9% a year", "112.5% of
  *    Medicare", "2025 rates"), or the noun it completes with "of" ("a shortfall of $90.00", "the contract rate of
  *    $56.00");
@@ -75,12 +75,13 @@ import { type Cued, type Family, type NumberRole, tokenize } from './roles-reade
  * A percentage takes every role its own clause and the words after it name, and is held in all of them when they
  * name both ("Interest runs at 112.5% of Medicare" fails). A page takes the dispute window's or the clause's from the
  * words around it; a clause, a quote, a section or what is cited may be either. An amount and a count of units also
- * say what they are stated per (`scope`): each line ("per line", "each line", "apiece", "on each of the 3 lines"),
- * each unit ("per unit", "a unit"), or the lines in total ("in total", "in all", "across the 3 lines", "for these 3
- * lines", an opening "On each of the 3 lines", or a sentence about the lines in the plural that says nothing of
- * each); a "respectively" list's figures each in its cue's scope when each cue states one, else in the one scope the
- * list's own words state for it, never a clause of its own after it (amountScope()). "first" with no role is prose, as
- * "one" and "zero" are.
+ * say what they are stated per (`scope`): each line ("per line", "each line", "apiece", "on each of the 3 lines", "on
+ * line 1"), each unit ("per unit", "a unit"), or the lines in total ("in total", "in all", "across the 3 lines", "for
+ * these 3 lines", "for the claim"), read only from the words of its own clause, or from its sentence's opening scope
+ * phrase ("For each line,", "In total,") when its clause states none (rule 1 of docs/adr/0086; scope()); a
+ * "respectively" list's figures each in its cue's scope, else the whole list's, else the opening phrase's
+ * (amountScope()). A figure with no scope where its role's per-line and total values differ fails (rule 2; the
+ * verifier's). "first" with no role is prose, as "one" and "zero" are.
  *
  * Pure, deterministic and browser-safe: no Node module, clock or network.
  */
@@ -104,6 +105,7 @@ class Reader extends NumberReader {
       business: extra.business ?? false,
       prose: extra.prose ?? false,
       token: index,
+      unread: this.unread.has(index),
     });
     const cued = (family: Family, found: Cued) => {
       this.families.set(index, family);

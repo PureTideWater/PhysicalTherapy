@@ -77,6 +77,21 @@ export function heldRoles(facts: NarrativeFacts, kind: ReadKind, value: string, 
   return (scope === null ? facts.roles.get(`${kind}:${value}`) : facts.scoped.get(`${scope}|${kind}:${value}`)) ?? new Set();
 }
 
+/**
+ * Whether a value of a kind stated with no scope is held in a role only per line or only in total, while that role
+ * holds another value in the other (rule 2 of docs/adr/0086): its words must say which. A role that holds the value
+ * both ways, or holds values in one way only, needs no scope.
+ */
+export function scopeUnstated(facts: NarrativeFacts, kind: ReadKind, value: string, role: FigureRole): boolean {
+  const line = facts.scoped.get(`line|${kind}:${value}`)?.has(role) === true;
+  const total = facts.scoped.get(`total|${kind}:${value}`)?.has(role) === true;
+  if (line === total) {
+    return false;
+  }
+  const other = `${line ? 'total' : 'line'}|${kind}:`;
+  return [...facts.scoped].some(([key, roles]) => key.startsWith(other) && roles.has(role));
+}
+
 /** The largest value of a kind the inputs hold in any of the roles (a partitive's part is at most it), or null for none. */
 export function largestHeld(facts: NarrativeFacts, kind: ReadKind, roles: readonly FigureRole[]): Decimal | null {
   let largest: Decimal | null = null;

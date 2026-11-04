@@ -153,8 +153,8 @@
         "pairs": 3,
         "differing": 0
       },
-      "report_sha256": "0b130094635a448d3c559b4736efd76929e6c95a8d4333fb2afe862b71961c2c",
-      "recorded_on": "2026-10-26"
+      "report_sha256": "5b9a20ebd20cf2ec99e9f65743e6d5fd2d83393d2d5ad31826a5242f3c15b8e7",
+      "recorded_on": "2026-11-04"
     },
     {
       "purpose": "draftPacketNarrative",
@@ -162,11 +162,11 @@
       "prompt_sha256": "9064b789374e1eaf709f0d7c593adfc221eff4258ea370c06b6694a9eae4ff36",
       "provider": "local",
       "model_id": "local-deterministic",
-      "set_sha256": "cf41b7c2b8584dc886271f9aa810c24b73bc52221a1e4be5d45f216d9e4101d1",
+      "set_sha256": "bbef4e2b12f579160138022655f15fe15a9062c21965ac21f80d129e560753c2",
       "cases": 300,
       "failures": 0,
-      "report_sha256": "0b130094635a448d3c559b4736efd76929e6c95a8d4333fb2afe862b71961c2c",
-      "recorded_on": "2026-10-26"
+      "report_sha256": "5b9a20ebd20cf2ec99e9f65743e6d5fd2d83393d2d5ad31826a5242f3c15b8e7",
+      "recorded_on": "2026-11-04"
     }
   ]
 }

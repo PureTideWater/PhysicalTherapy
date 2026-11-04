@@ -1,7 +1,7 @@
 import type { Figure } from '../scan';
 import type { FigureRole, Scope, Token } from './kinds';
-import { CueReader } from './cues';
-import { type Counted, type NumberRole, cueAt, isOrdinal, notWord, numeral, phraseAt } from './walk';
+import { CueReader, type ListCue } from './cues';
+import { type Counted, type NumberRole, cueAt, isOrdinal, numeral, phraseAt } from './walk';
 
 /**
  * The role reader's third layer (../roles.ts; docs/adr/0086): what a number's words make it (a label's role, a day
@@ -11,14 +11,15 @@ import { type Counted, type NumberRole, cueAt, isOrdinal, notWord, numeral, phra
 export class NumberReader extends CueReader {
   /**
    * The scope the words at token `at` state, or 'each' for each of something not a line or a unit ("$50.00 each",
-   * "each claim"): stated per something, never in total.
+   * "each claim"): stated per something, never in total. "per" before a determiner is "according to" ("per the
+   * contract"): no scope.
    */
   protected scopeAt(at: number): Scope | 'each' | null {
     const word = this.word(at, 0);
     if (word === 'apiece') {
       return 'line';
     }
-    if (!this.vocab.EACH.has(word)) {
+    if (!this.vocab.EACH.has(word) || (word === 'per' && this.vocab.LIST_FILLERS.has(this.word(at, 1)))) {
       return null;
     }
     if (this.word(at, 1) === 'of') {
@@ -31,7 +32,10 @@ export class NumberReader extends CueReader {
     return ahead.some((next) => this.vocab.ONE_LINE.has(next)) ? 'line' : ahead.some((next) => this.vocab.ONE_UNIT.has(next)) ? 'unit' : word === 'a' ? null : 'each';
   }
 
-  /** Whether tokens [start, to) state a total. */
+  /**
+   * Whether tokens [start, to) state a total: a total's word ("in total", "across"), "for" or "over" before the rows in
+   * the plural ("for these 3 lines"), or "for", "on" or "over" before the claim, not a claim line ("for the claim").
+   */
   protected statesTotal(start: number, to: number): boolean {
     const range = this.tokens.slice(start, to);
     // A total's words anywhere there (a figure's or an edge's text is no word of one).
@@ -40,141 +44,134 @@ export class NumberReader extends CueReader {
       return true;
     }
     return range.some((token, at) => {
-      if (!this.vocab.TOTAL_FOR.has(token.text)) {
-        return false;
-      }
-      const noun = this.tokens.slice(start + at + 1, start + at + 5).find((next) => next.kind === 'word' && !this.vocab.PARTITIVE_DETERMINERS.has(next.text));
-      return noun !== undefined && this.vocab.PLURAL_ROWS.has(noun.text);
+      // The noun after it, past determiners and figures, and the word after that.
+      const [noun, after] = this.tokens.slice(start + at + 1, start + at + 6).filter((next) => next.kind === 'word' && !this.vocab.PARTITIVE_DETERMINERS.has(next.text));
+      const rows = this.vocab.TOTAL_FOR.has(token.text) && noun !== undefined && this.vocab.PLURAL_ROWS.has(noun.text);
+      const claim = this.vocab.TOTAL_NOUN_LEADS.has(token.text) && noun !== undefined && this.vocab.TOTAL_NOUNS.has(noun.text) && !(after !== undefined && this.vocab.LINES.has(after.text));
+      return rows || claim;
     });
   }
 
-  /** The first scope tokens [start, to) state (each, from start up), else a total when they state one, else null. */
-  protected stated(start: number, to: number): Scope | 'each' | null {
+  /**
+   * The first scope tokens [start, to) state (each, from start up), else a total when they state one, or, with
+   * `plural`, when they name the rows in the plural ("the 3 lines"), else each line when they name one row ("on line
+   * 1", "Patient 2's line": a line's value, never a total), else null.
+   */
+  protected stated(start: number, to: number, plural = false): Scope | 'each' | null {
     for (let at = start; at < to; at += 1) {
       const found = this.scopeAt(at);
       if (found !== null) {
         return found;
       }
     }
-    return this.statesTotal(start, to) ? 'total' : null;
+    const range = this.tokens.slice(start, to);
+    if (this.statesTotal(start, to) || (plural && range.some((token) => this.vocab.PLURAL_ROWS.has(token.text)))) {
+      return 'total';
+    }
+    return range.some((token) => this.vocab.ONE_ROW.has(token.text)) ? 'line' : null;
   }
 
-  /**
-   * The scope a sentence's opening phrase states ("On each of the 3 lines, ...", "For every line, ...", "Per line, ...")
-   * for every figure after it, past the figures between ("the 3" of "each of the 3 lines"; PE-D2), and into the clauses
-   * coordinated after it ("For each line, the payer allowed $70.00, and the contract expected $300.00" fails;
-   * R2-NEW-R2P2-1), unless the words of the clause a figure is in, from the conjunction or clause's opener that starts
-   * it to its first amount, state a scope of their own or name the lines together ("while across the 3 lines it allowed
-   * $210.00", "while the 3 lines together were allowed", "and the claim was allowed"; R1-NF-2). A clause that states
-   * what follows from the sentence before it ("so the payer owes $90.00") is outside the opening's reach. A sentence
-   * that opens with "Each" is about its subject (its scope is that subject's words, statedBefore()).
-   */
-  protected openingEach(index: number): Scope | 'each' | null {
-    const start = this.sentenceStart(index);
-    const lead = this.word(start, 0) === 'per' ? start : start + 1;
-    const opening = this.scopeAt(lead);
-    if (opening === null) {
-      return null;
+  /** Two scopes a figure's words state as one: "each" with each line or unit is that; any other two that differ, none ('each'). */
+  protected agreed(first: Scope | 'each' | null, second: Scope | 'each' | null): Scope | 'each' | null {
+    if (first === null || second === null || first === second) {
+      return first ?? second;
     }
-    const opens = (token: Token) => this.vocab.CONJUNCTIONS.has(token.text) || this.vocab.CLAUSE_OPENERS.has(token.text) || this.vocab.RESULT_LEADS.has(token.text);
-    const from = this.tokens.slice(lead + 1, index).findLastIndex(opens) + lead + 1;
-    if (from === lead) {
-      return opening;
+    if (first === 'each' && second !== 'total') {
+      return second;
     }
-    if (this.vocab.RESULT_LEADS.has((this.tokens[from] as Token).text)) {
-      return null;
-    }
-    // Its own words: to its first amount (a count's noun is its subject's: "the 3 lines").
-    const amount = this.tokens.slice(from, index).findIndex((token) => token.figure?.kind === 'amount');
-    const to = amount === -1 ? index : from + amount;
-    const together = this.tokens.slice(from, to).some((token) => this.vocab.PLURAL_ROWS.has(token.text) || this.vocab.TOTAL_NOUNS.has(token.text));
-    return this.stated(from + 1, to) ?? (together ? 'total' : opening);
+    return second === 'each' && first !== 'total' ? first : 'each';
   }
 
-  /**
-   * Where the words before token `index` that state what it is per start: since the figure before it (since()), or,
-   * when that figure keeps words for itself (a count's noun, "across the 3 lines"; an amount never does), since the
-   * amount before it or the last edge, whichever is later, so that the count's words still state the scope (R1-NF-2).
-   */
-  protected statedFrom(index: number): number {
-    const since = this.since(index);
-    if (!this.ends.has(this.previousFigure(index))) {
-      return since;
+  /** Whether token `at` bounds a figure's own clause for its scope: an edge, a conjunction or a word that opens a clause, or a figure but a count. */
+  protected bounds(at: number): boolean {
+    const token = this.tokens[at];
+    if (token === undefined || token.kind === 'edge') {
+      return true;
     }
-    const start = this.sentenceStart(index);
-    const bound = this.tokens.slice(start, index).findLastIndex((token) => token.kind === 'edge' || token.figure?.kind === 'amount');
-    // After the edge, or after the amount's own words (an edge keeps none); with neither, after the stop before the
-    // sentence, which keeps none either: its start.
-    return Math.min(since, this.end(start + bound));
+    if (token.kind === 'figure') {
+      const { kind } = token.figure as Figure;
+      return kind !== 'number' && kind !== 'code';
+    }
+    return this.vocab.CONJUNCTIONS.has(token.text) || this.vocab.CLAUSE_OPENERS.has(token.text) || this.vocab.RESULT_LEADS.has(token.text);
   }
 
-  /** What the words before token `index` state it per: since statedFrom(), else its sentence's opening "each" (openingEach()). */
-  protected statedBefore(index: number): Scope | 'each' | null {
-    return this.stated(this.statedFrom(index), index) ?? this.openingEach(index);
-  }
-
-  /** What an amount or a count of units is stated per (`from` the token its words after start at). */
-  protected scope(index: number, from: number): Scope | null {
-    // After it, up to the next amount or edge (past counts: "for these 3 lines"); then before it, since the figure before.
+  /** The token after token `index`'s own clause, from token `from` (seven tokens at most). */
+  protected clauseTo(from: number): number {
     let to = from;
-    while (to < from + 7 && this.tokens[to]?.kind !== 'edge' && this.tokens[to]?.figure?.kind !== 'amount') {
+    while (to < from + 7 && !this.bounds(to) && !this.breakBefore(to)) {
       to += 1;
     }
-    const near = this.stated(from, to) ?? this.statedBefore(index);
-    if (near !== null) {
-      return near === 'each' ? null : near;
-    }
-    return this.sentenceScope(index);
-  }
-
-  /** A figure's scope from its sentence before it: nothing of each, and a total's word or the rows in the plural, states a total. */
-  protected sentenceScope(index: number): Scope | null {
-    const start = this.sentenceStart(index);
-    const words = this.tokens.slice(start, index).map((token) => token.text);
-    if (words.some((word) => word === 'each' || word === 'every' || word === 'per' || word === 'apiece')) {
-      return null;
-    }
-    return this.statesTotal(start, index) || words.some((word) => this.vocab.PLURAL_ROWS.has(word)) ? 'total' : null;
+    return to;
   }
 
   /**
-   * What an amount is stated per, a "respectively" list's figure as its words state it (docs/adr/0086, CORR-D2, NEW-N1,
-   * NEW-N2). When the list's cues each state a scope of their own, one for each figure ("expected in total and allowed
-   * per line"), each figure takes its cue's, in order. Else the list is stated per one scope: the list's own words after
-   * its last figure (afterList(): up to "respectively"; else past it, through its cues when the list's are there, else
-   * seven tokens at most: "$100.00 and $70.00, respectively, per line"; never past a clause with no cue or a word that
-   * opens a clause of its own), else those before its first since the figure before it, or its sentence's opening
-   * "each" ("Per line, the contract expected and the payer allowed $100.00 and $70.00, respectively"). When both state
-   * one and they differ, or neither does, every figure takes its sentence's.
+   * The first token of token `index`'s own clause before it: back to its bound (bounds(), or a dash or a parenthesis;
+   * the text's start is one), and after an amount there, past the words after it, up to seven, which are that amount's
+   * own ("$300.00 for these 3 lines against $210.00": "for these 3 lines" is $300.00's; clauseTo() ends at this figure).
+   */
+  protected clauseFrom(index: number): number {
+    let from = index;
+    while (!this.bounds(from - 1) && !this.breakBefore(from)) {
+      from -= 1;
+    }
+    return this.tokens[from - 1]?.figure?.kind === 'amount' && !this.breakBefore(from) ? this.clauseTo(from) : from;
+  }
+
+  /**
+   * The scope a sentence's opening phrase states for every figure of the sentence whose own clause states none (rule 1
+   * (b) of docs/adr/0086): the words from its start to its first edge, when they are a scope phrase alone, a scope's
+   * words, determiners and counts ("For each line,", "On each of the 3 lines,", "In total,", "For the claim,").
+   */
+  protected opening(index: number): Scope | 'each' | null {
+    const start = this.sentenceStart(index);
+    // With no edge before the figure, no phrase (findIndex's -1 takes none of it).
+    const edge = this.tokens.slice(start, index).findIndex((token) => token.kind === 'edge');
+    const phrase = this.tokens.slice(start, start + edge);
+    const alone = phrase.every((token) => (token.kind === 'figure' ? (token.figure as Figure).kind === 'number' : this.vocab.SCOPE_WORDS.has(token.text) || this.vocab.LIST_FILLERS.has(token.text)));
+    return alone ? this.stated(start, start + edge) : null;
+  }
+
+  /**
+   * What an amount or a count of units is stated per (rule 1 of docs/adr/0086; `from` the token its words after start
+   * at): the words of its own clause, after it (seven tokens at most) and before it (where the rows in the plural state
+   * a total: "the 3 lines come to"), which, when they state two scopes that differ, state none (agreed()); else its
+   * sentence's opening phrase. Nothing from another clause, and nothing across a figure but a count.
+   */
+  protected scope(index: number, from: number): Scope | null {
+    const own = this.agreed(this.stated(from, this.clauseTo(from)), this.stated(this.clauseFrom(index), index, true));
+    const found = own ?? this.opening(index);
+    return found === 'each' ? null : found;
+  }
+
+  /**
+   * What an amount is stated per; a "respectively" list's figure (rule 3 of docs/adr/0086), its cue's own scope, else
+   * the scope stated for the whole list (the words between the list and its cues after it, or after "amounts"), else
+   * its sentence's opening phrase; when its cue's and the list's differ, none. A list in neither plain form: none (it
+   * fails, `unread`).
    */
   protected amountScope(index: number): Scope | null {
     const list = this.respectivelyList(index);
     if (list === null) {
       return this.scope(index, index + 1);
     }
-    const listed = this.listCues(list, 'amount', this.vocab.AMOUNT_CUES);
-    const each = listed.cues.map((cue, at) => this.stated(cue.start, listed.cues[at + 1]?.start ?? listed.end));
-    const own = each.length === list.length && each.every((found) => found !== null) ? (each[list.indexOf(index)] as Scope | 'each') : null;
-    const { before, after } = this.afterList(list, this.vocab.AMOUNT_CUES);
-    // After "respectively", through its cues when the list's cues are there; else seven tokens at most, as after any
-    // figure (scope()).
-    const trailing = this.stated(...before) ?? this.stated(after[0], listed.end === after[1] ? after[1] : Math.min(after[1], after[0] + 7));
-    const opening = this.statedBefore(list[0] as number);
-    const found = own ?? (trailing !== null && opening !== null && trailing !== opening ? null : (trailing ?? opening));
-    return found === null ? this.sentenceScope(index) : found === 'each' ? null : found;
+    const form = this.listForm(list, 'amount', this.vocab.AMOUNT_CUES);
+    if (form === null) {
+      return null;
+    }
+    const cue = form.cues[list.indexOf(index)] as ListCue;
+    const own = this.stated(...cue.scope);
+    const wide = form.wide.map((range) => this.stated(...range)).find((found) => found !== null) ?? null;
+    const found = this.agreed(own, wide) ?? this.opening(index);
+    return found === 'each' ? null : found;
   }
 
-  /** The token after an amount's own words of what it is stated per, right after it ("$30.00 per line", "$90.00 in all", "$50.00 each"). */
+  /**
+   * The token after an amount's own words of what it is stated per that a later figure's cues would read otherwise:
+   * "each", "per" or "a" with a line's noun right after it ("$30.00 a service on 2026-01-05" is a payment date, never
+   * a service date). Any other scope's words after it hold no cue.
+   */
   protected scopeEnd(index: number): number {
-    const words = this.run(index, 1, notWord);
-    const total = this.vocab.TOTAL_WORDS.find((phrase) => phraseAt(words, 0, phrase));
-    if (total !== undefined) {
-      return index + 1 + total.split(' ').length;
-    }
-    if (words[0] === 'apiece' || words[0] === 'each') {
-      return index + 2;
-    }
-    return this.vocab.EACH.has(this.word(index, 1)) && (this.vocab.ONE_LINE.has(this.word(index, 2)) || this.vocab.ONE_UNIT.has(this.word(index, 2))) ? index + 3 : index + 1;
+    return this.vocab.EACH.has(this.word(index, 1)) && this.vocab.ONE_LINE.has(this.word(index, 2)) ? index + 3 : index + 1;
   }
 
   /** Units, each line's when "each line", "per line" or "apiece" is beside them, and what they are stated per. */

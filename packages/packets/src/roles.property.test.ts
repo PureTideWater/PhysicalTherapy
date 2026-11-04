@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { assemblePacket } from './assemble';
 import { narrativeFacts } from './facts';
 import type { PacketContentV2 } from './format';
-import { IDS, REGULATION, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord, roleOracle } from './test-support';
-import { verifyNarrative } from './verifier';
+import { IDS, REGULATION, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord, roleOracle, scopedOracle } from './test-support';
+import { checkedFigures, verifyNarrative } from './verifier';
 
 /**
  * Properties of the role reader through the verifier (docs/adr/0086; test matrix CAS-43 and CAS-44). The oracle reads
@@ -26,6 +26,11 @@ import { verifyNarrative } from './verifier';
  * figure, never the union); a quoted clause whose figures fill a list between edges ("Payment terms: 30, 45, 60 days":
  * each passes in a role only where the record holds it so); a year's lead before a count's noun ("the 2026 claims": a
  * count, never a year); and every date role in the oracle, the deadline's among them.
+ *
+ * The converging fix (docs/adr/0086, the closed rules) writes each amount with what it is stated per, read from the
+ * content's fields too (./role-examples.ts scopedOracle()): an amount with no scope fails where its role's per-line and
+ * total values differ (rule 2), a "respectively" list in either plain form maps its figures to its cues and their
+ * scopes in order and the swap fails, and a list in neither plain form fails at every figure (rule 3).
  */
 
 const CODES = ['97110', '97112', '97140', '97530', 'G0283'] as const;
@@ -196,9 +201,52 @@ const DATE_CUES: Readonly<Record<string, string>> = {
   deadline: 'the window closes',
   effective_date: 'the contract took effect',
 };
-/** A "respectively" list's cues, one word each, and its sentences: the cues before the list and after it. */
+/** A "respectively" list's cues, one word each. */
 const LIST_CUES: Readonly<Record<string, string>> = { expected: 'expected', allowed: 'allowed', paid: 'paid' };
-const RESPECTIVELY = ['The {A} and {B} amounts were {x} and {y}, respectively [3].', '{x} and {y} were {A} and {B}, respectively [3].', '{x} and {y} were the {A} and {B} amounts, respectively [3].'] as const;
+/**
+ * Its two plain forms (rule 3 of docs/adr/0086), each with the scopes it states: the cues before the list, with an
+ * opening scope phrase or a scope after "amounts" ({S}, the whole list's); the cues after it, a scope with each cue
+ * ({Sx}, {Sy}) or after "amounts"; and "respectively" right after the list, its cues after it.
+ */
+const RESPECTIVELY = [
+  '{O}, {A} and {B} were {x} and {y}, respectively [3].',
+  'The {A} and {B} amounts {S} were {x} and {y}, respectively [3].',
+  '{x} and {y} were {A} {Sx} and {B} {Sy}, respectively [3].',
+  '{x} and {y} were, respectively, {A} {Sx} and {B} {Sy} [3].',
+  '{x} and {y} were the {A} and {B} amounts {S}, respectively [3].',
+  '{x} and {y}, respectively, were the {A} and {B} amounts {S}, so the payer paid less [3].',
+] as const;
+/** A "respectively" list in neither plain form: a count, a code or a scope where only cues may be, a cue too many, none, or none before. */
+const NOT_PLAIN = [
+  '{x} and {y} on each of the 3 lines were {A} and {B}, respectively [3].',
+  '{x} and {y} for 97110 were the {A} and {B} amounts, respectively [3].',
+  'The {A} and {B} amounts were {x} and {y} per line, respectively [3].',
+  '{x} and {y} were {A}, {B} and owed, respectively [3].',
+  'These were {x} and {y}, respectively [3].',
+  'The contract {A} {x} and the payer {B} {y}, respectively [3].',
+  'Respectively, {x} and {y} were {A} and {B} per line [3].',
+] as const;
+/** The scope words an amount is written with, and its opening phrase. */
+const SCOPE_TEXT = { line: 'per line', total: 'in total' } as const;
+const OPENING_TEXT = { line: 'Per line', total: 'In total' } as const;
+type Stated = keyof typeof SCOPE_TEXT;
+const STATED: readonly Stated[] = ['line', 'total'];
+
+/** Whether the scope oracle holds `value` in `role` as stated per `scope`. */
+const heldPer = (scoped: ReadonlyMap<string, ReadonlySet<string>>, role: string, value: string, scope: Stated) => scoped.get(`${scope}|${role}`)?.has(value) === true;
+
+/**
+ * Rule 2 as the oracles read it: a value stated with no scope passes in a role that holds it, unless the role holds it
+ * only per line or only in total and holds another value the other way.
+ */
+function unscopedHeld(oracle: ReadonlyMap<string, ReadonlySet<string>>, scoped: ReadonlyMap<string, ReadonlySet<string>>, role: string, value: string): boolean {
+  if (oracle.get(role)?.has(value) !== true) {
+    return false;
+  }
+  const line = heldPer(scoped, role, value, 'line');
+  const total = heldPer(scoped, role, value, 'total');
+  return line === total || (scoped.get(`${line ? 'total' : 'line'}|${role}`)?.size ?? 0) === 0;
+}
 /** Two clauses joined so that the second's cue is the figure's nearest and the first's the farther. */
 const TWO_CUES = ['Although {A}, {B} {v} [3].', '{A} less, so {B} {v} [3].', 'Since {A}: {B} {v} [3].', '{A} and {B} {v} [3].'] as const;
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -278,8 +326,20 @@ describe('properties of the role reader', () => {
     fc.assert(
       fc.property(generated, ({ content }) => {
         const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        // An amount with no scope (rule 2), per line and in total.
+        for (const value of [...valuesIn(oracle, Object.keys(AMOUNT_TEMPLATES))].filter((item) => !item.startsWith('-'))) {
+          for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
+            for (const [narrative, held] of [
+              [template.replace('{}', dollars(value)), unscopedHeld(oracle, scoped, role, value)],
+              ...STATED.map((scope) => [template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]}`), heldPer(scoped, role, value, scope)] as const),
+            ] as const) {
+              reached.add(`${role}:${String(held)}`);
+              expect(passes(narrative, content), narrative).toBe(held);
+            }
+          }
+        }
         for (const [templates, write] of [
-          [AMOUNT_TEMPLATES, dollars],
           [DATE_TEMPLATES, (value: string) => value],
           [PERCENT_TEMPLATES, (value: string) => value],
         ] as const) {
@@ -318,10 +378,12 @@ describe('properties of the role reader', () => {
     fc.assert(
       fc.property(generated, fc.constantFrom(...TWO_CUES), ({ content }, template) => {
         const oracle = roleOracle(content);
-        for (const [cues, write] of [
-          [AMOUNT_CUES, dollars],
-          [Object.fromEntries(Object.entries(DATE_CUES).map(([role, cue]) => [role, [cue]])), (value: string) => `on ${value}`],
-        ] as const) {
+        const scoped = scopedOracle(content);
+        // An amount per line or in total (rule 2), the template's own, and a date.
+        const scope = STATED[TWO_CUES.indexOf(template) % STATED.length] as Stated;
+        const amounts = [AMOUNT_CUES, (value: string) => `${dollars(value)} ${SCOPE_TEXT[scope]}`, (role: string, value: string) => heldPer(scoped, role, value, scope)] as const;
+        const dates = [Object.fromEntries(Object.entries(DATE_CUES).map(([role, cue]) => [role, [cue]])), (value: string) => `on ${value}`, (role: string, value: string) => oracle.get(role)?.has(value) === true] as const;
+        for (const [cues, write, holds] of [amounts, dates]) {
           for (const value of [...valuesIn(oracle, Object.keys(cues))].filter((item) => !item.startsWith('-'))) {
             for (const [far, farCues] of Object.entries(cues)) {
               for (const [near, nearCues] of Object.entries(cues)) {
@@ -329,8 +391,8 @@ describe('properties of the role reader', () => {
                   continue;
                 }
                 for (const [a, b] of farCues.flatMap((one) => nearCues.map((other) => [one, other] as const))) {
-                  const held = oracle.get(near)?.has(value) === true;
-                  farther += !held && oracle.get(far)?.has(value) === true ? 1 : 0;
+                  const held = holds(near, value);
+                  farther += !held && holds(far, value) ? 1 : 0;
                   const narrative = twoCues(template, a, b, write(value));
                   expect(passes(narrative, content), narrative).toBe(held);
                 }
@@ -353,23 +415,38 @@ describe('properties of the role reader', () => {
     expect(farther).toBeGreaterThan(0);
   }, 120_000);
 
-  it('maps a "respectively" list to its cues in order, before the list or after it: a swapped pair fails (CORR-6, CORR-D1)', () => {
+  it('maps a "respectively" list in either plain form to its cues and their scopes in order: a swapped pair fails (rule 3; CORR-6, CORR-D1)', () => {
     let swapped = 0;
     fc.assert(
       fc.property(generated, fc.constantFrom(...RESPECTIVELY), ({ content }, template) => {
         const oracle = roleOracle(content);
-        const values = [...valuesIn(oracle, Object.keys(LIST_CUES))].filter((item) => !item.startsWith('-'));
+        const scoped = scopedOracle(content);
+        // Six values at most, each line's and the totals among them, so each run stays within the mutation job's time.
+        const values = [...valuesIn(oracle, Object.keys(LIST_CUES))].filter((item) => !item.startsWith('-')).slice(0, 6);
+        // One scope for the list, or one with each cue where the form states one with each.
+        const each = template.includes('{Sx}');
+        const scopes = each ? STATED.flatMap((sx) => STATED.map((sy) => [sx, sy] as const)) : STATED.map((scope) => [scope, scope] as const);
         for (const [a, cueA] of Object.entries(LIST_CUES)) {
           for (const [b, cueB] of Object.entries(LIST_CUES)) {
             if (a === b) {
               continue;
             }
-            for (const x of values) {
-              for (const y of values.filter((item) => item !== x)) {
-                const held = oracle.get(a)?.has(x) === true && oracle.get(b)?.has(y) === true;
-                swapped += !held && oracle.get(a)?.has(y) === true && oracle.get(b)?.has(x) === true ? 1 : 0;
-                const narrative = template.replace('{A}', cueA).replace('{B}', cueB).replace('{x}', dollars(x)).replace('{y}', dollars(y));
-                expect(passes(narrative, content), narrative).toBe(held);
+            for (const [sx, sy] of scopes) {
+              for (const x of values) {
+                for (const y of values.filter((item) => item !== x)) {
+                  const held = heldPer(scoped, a, x, sx) && heldPer(scoped, b, y, sy);
+                  swapped += !held && heldPer(scoped, a, y, sx) && heldPer(scoped, b, x, sy) ? 1 : 0;
+                  const narrative = template
+                    .replace('{O}', OPENING_TEXT[sx])
+                    .replace('{S}', SCOPE_TEXT[sx])
+                    .replace('{Sx}', SCOPE_TEXT[sx])
+                    .replace('{Sy}', SCOPE_TEXT[sy])
+                    .replace('{A}', cueA)
+                    .replace('{B}', cueB)
+                    .replace('{x}', dollars(x))
+                    .replace('{y}', dollars(y));
+                  expect(passes(narrative, content), narrative).toBe(held);
+                }
               }
             }
           }
@@ -379,6 +456,58 @@ describe('properties of the role reader', () => {
     );
     // Some pair was held only in the other order, and so failed.
     expect(swapped).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('fails every figure of a "respectively" list in neither plain form, whatever its values, with its own words to give (rule 3)', () => {
+    fc.assert(
+      fc.property(generated, fc.constantFrom(...NOT_PLAIN), ({ content }, template) => {
+        const oracle = roleOracle(content);
+        const facts = narrativeFacts(content);
+        const values = [...valuesIn(oracle, Object.keys(LIST_CUES))].filter((item) => !item.startsWith('-'));
+        for (const [a, cueA] of Object.entries(LIST_CUES)) {
+          for (const [b, cueB] of Object.entries(LIST_CUES).filter(([role]) => role !== a)) {
+            for (const x of values) {
+              const y = [...(oracle.get(b) ?? [])].find((item) => !item.startsWith('-')) ?? x;
+              const narrative = template.replace('{A}', cueA).replace('{B}', cueB).replace('{x}', dollars(x)).replace('{y}', dollars(y));
+              const figures = checkedFigures(narrative, facts).filter((figure) => figure.kind === 'amount');
+              expect(figures.map((figure) => figure.needs), narrative).toEqual(['own_words', 'own_words']);
+              expect(passes(narrative, content), narrative).toBe(false);
+            }
+          }
+        }
+      }),
+      { numRuns: 8 },
+    );
+  }, 120_000);
+
+  it('fails an amount whose words state no scope where its role’s per-line and total values differ, and passes it where they are one (rule 2)', () => {
+    let unstated = 0;
+    fc.assert(
+      fc.property(generated, ({ content }) => {
+        const oracle = roleOracle(content);
+        const scoped = scopedOracle(content);
+        const facts = narrativeFacts(content);
+        for (const [role, template] of Object.entries(AMOUNT_TEMPLATES)) {
+          for (const value of [...(oracle.get(role) ?? [])].filter((item) => !item.startsWith('-'))) {
+            const narrative = template.replace('{}', dollars(value));
+            const held = unscopedHeld(oracle, scoped, role, value);
+            unstated += held ? 0 : 1;
+            expect(passes(narrative, content), narrative).toBe(held);
+            // A figure held in its role but not as its words state it fails for want of a scope, and says so.
+            const [figure] = checkedFigures(narrative, facts);
+            expect(figure?.needs ?? null, narrative).toBe(held ? null : 'scope');
+            // Stated per line or in total, it passes exactly where its role holds it so.
+            for (const scope of STATED) {
+              const stated = template.replace('{}', `${dollars(value)} ${SCOPE_TEXT[scope]}`);
+              expect(passes(stated, content), stated).toBe(heldPer(scoped, role, value, scope));
+            }
+          }
+        }
+      }),
+      { numRuns: 12 },
+    );
+    // Some value was held one way only while its role's other values differed, and so failed with no scope.
+    expect(unstated).toBeGreaterThan(0);
   }, 120_000);
 
   it('reads a "respectively" list in the scope its own words state, never a clause of its own after it, and a scope with each cue as that cue’s figure’s (NEW-N1, NEW-N2)', () => {
