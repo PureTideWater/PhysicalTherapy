@@ -68,6 +68,13 @@ describe('seedSyntheticTenancy', () => {
     );
     expect(users.rows).toContainEqual({ email: 'invited@synthetic.test', status: 'invited', mfa_enrolled: false, hardware_key_required: false });
     expect(users.rows).toContainEqual({ email: 'platform-admin@synthetic.test', status: 'active', mfa_enrolled: true, hardware_key_required: true });
+    // An invited person holds a live invitation from the organization's administrator, on the membership seeded for them:
+    // only inside one may they enrol a second factor (docs/adr/0088, D3; review security-S1). Nobody else holds one.
+    const invitations = await owner.query<{ user_id: string; invited_by: string; organization_id: string; live: boolean }>(
+      `SELECT i.user_id, i.invited_by, i.organization_id, (i.accepted_at IS NULL AND i.expires_at > now()) AS live
+         FROM invitation i JOIN membership m ON m.id = i.membership_id AND m.user_id = i.user_id`,
+    );
+    expect(invitations.rows).toEqual([{ user_id: at('invited'), invited_by: at('practice-admin'), organization_id: seeded.organizations.group, live: true }]);
   });
 
   it('refuses to seed the same database twice', async () => {

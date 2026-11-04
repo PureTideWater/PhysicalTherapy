@@ -15,7 +15,7 @@ import { SoftAuthenticator } from '../auth/test-support/soft-authenticator';
 import { totpCode } from '../auth/totp';
 import { routeHandler } from '../http/handler';
 import { RATE_LIMITS, takeRateLimit } from '../http/rate-limit';
-import type { AuthStep, TotpSetup } from '../auth/provider';
+import { type AuthStep, ClientCredentialError, type TotpSetup } from '../auth/provider';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { homePage } from './index';
@@ -54,6 +54,8 @@ const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 const SUPPORT = 'support@synthetic.test';
 /** The refusal of a locked account, on the password step and the key step (UX-066). */
 const LOCKED = `This account was locked after ten failed attempts. Write to ${SUPPORT} from this address to have it unlocked.`;
+/** The refusal of an enrolment outside a live invitation (docs/adr/0088, D3): the way out, by the support address. */
+const NOT_OPEN = `This account can’t set up a second factor here. Ask your organization’s administrator, or write to ${SUPPORT}.`;
 /** Where a closed hardware-key step goes: back to the key surface, never the password page (UXS-01). */
 const KEY_RESTART = { redirect: '/sign-in/hardware-key?reason=step_expired' };
 
@@ -216,13 +218,40 @@ async function person(options: { readonly temporary?: boolean; readonly totp?: b
       email,
       options.totp !== false,
       options.internal ?? false,
-      options.status ?? 'active',
+      // A person with no second factor is an invitee (docs/adr/0088, D3: only an invitation enrols one).
+      options.status ?? (options.totp === false ? 'invited' : 'active'),
     ]),
   );
-  if (options.internal === true) {
-    await addMembership(owner, await createOrganization(owner, 'internal'), id, 'platform_admin');
+  // An invitee's invitation is on the membership the console created for it: an internal user's, or a group's.
+  const invited = (options.status ?? (options.totp === false ? 'invited' : 'active')) === 'invited';
+  if (options.internal === true || invited) {
+    const organization = await createOrganization(owner, options.internal === true ? 'internal' : 'group');
+    const membership = await addMembership(owner, organization, id, options.internal === true ? 'platform_admin' : 'viewer');
+    if (invited) {
+      await liveInvitation(organization, membership, id);
+    }
   }
   return { id, email };
+}
+
+/** A live invitation of the person, sent a minute ago, as the console writes one: only inside one may a factor be enrolled (docs/adr/0088, D3). */
+async function liveInvitation(organization: string, membership: string, userId: string): Promise<void> {
+  const inviter = randomUUID();
+  await asOwner(owner, [], () =>
+    owner.query('INSERT INTO "user" (id, cognito_sub, email, mfa_enrolled, hardware_key_required, status) VALUES ($1, $2, $3, true, false, $4)', [
+      inviter,
+      randomUUID(),
+      `${inviter}@synthetic.test`,
+      'active',
+    ]),
+  );
+  await asOwner(owner, [], () =>
+    owner.query(
+      `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
+       VALUES ($1, $2, $3, $4, now() - interval '1 minute', now() + interval '7 days' - interval '1 minute', $4)`,
+      [organization, membership, userId, inviter],
+    ),
+  );
 }
 
 function nextCode(secret = SECRET): string {
@@ -306,6 +335,17 @@ describe('the password and TOTP steps', () => {
       data: { error: LOCKED, locked: true },
     });
     expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: LOCKED, locked: true } });
+  });
+
+  it('SEC-22: refuses enrolment outside a live invitation with words that name the way out, ending the attempt (docs/adr/0088, D3)', async () => {
+    const active = await person({ status: 'active', totp: false });
+    const browser = new Browser();
+    expect(await step(signInWithPassword, browser, { email: active.email, password: PASSWORD })).toEqual({ status: 'ok', data: { error: NOT_OPEN, final: true } });
+    expect([browser.get(SIGN_IN_COOKIE), browser.get(KEPT_EMAIL_COOKIE)]).toEqual([undefined, undefined]);
+    expect(logLines.map((line) => JSON.parse(line) as Record<string, unknown>).filter((entry) => entry.msg === 'security event: second-factor enrolment refused').at(-1)).toMatchObject({
+      level: 'warn',
+      user_id: active.id,
+    });
   });
 
   it('sends a step that expired back to the start', async () => {
@@ -818,7 +858,7 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     const invited = await person({ status: 'invited', temporary: true, totp: false });
     const notEnrolled = await person({ status: 'invited', totp: false });
     // Active with no second factor, as a console factor reset (UX PR 65) leaves an account: no code (review SEC-B1).
-    const activeNotEnrolled = await person({ totp: false });
+    const activeNotEnrolled = await person({ status: 'active', totp: false });
     const disabled = await person({ status: 'disabled' });
     const addresses = {
       active: active.email,
@@ -1057,5 +1097,34 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
     expect(await step(forgotPasswordPage, closing)).toEqual(PHASE_ONE);
     expect(await step(resetConfirm, closing, { email: other.email, code: codeFor(other.email), password: CHOSEN, confirm: CHOSEN })).toEqual(RESET_CLOSED);
     expect(closing.written).not.toContain(KEPT_EMAIL_COOKIE);
+  });
+});
+
+describe('SEC-20: a refused client credential (docs/adr/0088, D2)', () => {
+  const COULD_NOT_CONTINUE = { status: 'ok', data: { error: 'Sign-in could not continue. Start again.', final: true } };
+
+  it('SEC-20: ends a sign-in, a code step and a reset confirmation with the generic words, counting no failure and keeping no step', async () => {
+    const user = await person();
+    const browser = new Browser();
+    const refused = vi.spyOn(services.provider, 'signIn').mockRejectedValueOnce(new ClientCredentialError('NotAuthorizedException'));
+    expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual(COULD_NOT_CONTINUE);
+    refused.mockRestore();
+    expect(browser.get(SIGN_IN_COOKIE)).toBeUndefined();
+    // A code step: the step ends, and nothing is counted.
+    const coded = new Browser();
+    await step(signInWithPassword, coded, { email: user.email, password: PASSWORD });
+    const answer = vi.spyOn(services.provider, 'answerTotp').mockRejectedValueOnce(new ClientCredentialError('NotAuthorizedException'));
+    expect(await step(answerMfa, coded, { code: nextCode() })).toEqual(COULD_NOT_CONTINUE);
+    answer.mockRestore();
+    expect(coded.get(SIGN_IN_COOKIE)).toBeUndefined();
+    expect(coded.get(KEPT_EMAIL_COOKIE)).toBeUndefined();
+    expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
+    // A reset confirmation: no code refusal, and the step ends.
+    const resetting = new Browser();
+    expect(await step(resetRequest, resetting, { email: user.email })).toEqual(CODE_SENT);
+    const confirm = vi.spyOn(services.provider, 'confirmPasswordReset').mockRejectedValueOnce(new ClientCredentialError('NotAuthorizedException'));
+    expect(await step(resetConfirm, resetting, { email: user.email, code: codeFor(user.email), password: CHOSEN, confirm: CHOSEN })).toEqual(COULD_NOT_CONTINUE);
+    confirm.mockRestore();
+    expect(resetting.get(SIGN_IN_COOKIE)).toBeUndefined();
   });
 });

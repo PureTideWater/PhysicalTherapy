@@ -1,0 +1,24 @@
+{
+  "case": "SEC-22",
+  "module": "SEC",
+  "title": "A second factor enrolled outside a live invitation (ADR 0088 D3, D4)",
+  "assertion": "An unknown, active, enrolled, locked, disabled or lapsed-invitation account, or an invited account with no invitation at all, answered `MFA_SETUP` is refused before any enrolment call, at the challenge and again before associate and verify, Cognito stores nothing, and a security event is logged; the account is the one matched by both the enrolling Cognito subject and the email, so a row whose `cognito_sub` differs from the subject, a challenge with no subject, or email and sub rows that are different users are refused; an invited, unenrolled account enrols only while it holds an unaccepted, unexpired invitation whose membership has not ended; an invitation onto a Cognito user that has signed in is refused, and onto one that never has re-sends its temporary password",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/src/lib/auth/cognito-provider.test.ts",
+    "apps/web/src/lib/auth/dev-provider.test.ts",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/src/lib/routes/onboarding-routes.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic invited, active, enrolled, locked and orphan personas answer the enrolment challenge through the local identity provider and the Cognito twin; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
