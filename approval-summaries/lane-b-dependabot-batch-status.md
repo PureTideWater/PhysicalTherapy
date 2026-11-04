@@ -423,6 +423,17 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   (#102); at its base merge it resolves ADR 0066, workflows.test.ts and ci.md (check N1). Next: D's merge prep
   wf_1a0a2372-8e0 (base 7bf7b252 once, re-check, push, verification), then ready and merge; read 7bf7b252's push runs.
 
+- 2026-11-04T06:28:00Z: **PR D MERGED: #105 as df4daff7** (merge commit; expectedHeadSha dc54ca58). Merge prep wf_1a0a2372-8e0: base
+  7bf7b252 (#107) merged once (no conflict, lockfile unchanged), targeted re-check green (typecheck, lint, check:fixtures,
+  the three test files 58/58, workflows 119/119, check-action-pins 202/202), one push, description updated. Fresh-clone
+  verification **VERIFIED** (record `D-verification.md`): CI on dc54ca58, 25 runs, 22 success and 3 skipped by design; unit
+  7,312 passed/1 skipped (FRM-01 file 38 tests, SGN-02 14, CAS-41.3's file 6 in 199 ms); images scanned both images clean;
+  diff three test files only. The verifier's six description refinements were left out, since none changes a result
+  (items 4-6 went stale only when CI finished). Ready 06:25Z; approval-of-record success 06:25:52Z. Unsubscribed from
+  #105. **Both S4 items done (#94, D).** Still open and mine: **#106** (the private-repository fetch fix, the CI-11 guard
+  and the rows) waits on the founder's runner and organization decision (#102); its next step is a base merge of df4daff7
+  that keeps #107's Trivy text (check N1), then CI, once the gate can pass.
+
 ## Waiting on someone
 - **The founder (2026-11-04): the repository is private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
@@ -492,4 +503,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next (2026-11-04T02:55Z): #94 merged; PR D (wf_b49ddbb6-964) to its merge; then stop at a clean point. Before: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).
+Next (2026-11-04T06:28Z): #94 and D merged; the session stops at a clean point. Open: #106 waits on the founder (#102), then a base merge, CI, ready and merge. Earlier: Next (2026-11-04T02:55Z): #94 merged; PR D (wf_b49ddbb6-964) to its merge; then stop at a clean point. Before: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).
