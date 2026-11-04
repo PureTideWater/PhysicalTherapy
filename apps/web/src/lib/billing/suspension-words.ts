@@ -59,6 +59,23 @@ export interface WorkPause {
   readonly restarts: boolean;
 }
 
+/**
+ * Uploads under a hold on the person's uploads (practice_run_refusal_for with file.upload): Uploads' gate, its title and
+ * the database's sentence (R1 to R6), and the empty home's, under the notice that names the hold (HOM-03; PR #104
+ * review UX-SS01-3). A hold that lifts pauses them; a closure stops them and promises no restart (BIL-09).
+ */
+export function uploadsHeld(pause: WorkPause): { readonly title: string; readonly reason: string; readonly home: { readonly title: string; readonly nextStep: string } } {
+  return pause.restarts
+    ? { title: 'Uploads are not open yet', reason: `Uploads are paused: ${pause.reason}.`, home: FIRST_UPLOAD_HELD.paused }
+    : { title: 'No new uploads start', reason: `Uploads have stopped: ${pause.reason}.`, home: FIRST_UPLOAD_HELD.stopped };
+}
+
+/** The empty home's gate under a hold on the person's uploads, below the notice that names the hold (uploadsHeld). */
+export const FIRST_UPLOAD_HELD = {
+  paused: { title: 'Uploads are paused', nextStep: 'They start again once the hold above is lifted.' },
+  stopped: { title: 'No new uploads start', nextStep: 'The closure above stops them here.' },
+} as const;
+
 /** The line under the notice: a link and the words after it, or words alone. */
 export interface HoldNextStep {
   readonly link: string | null;

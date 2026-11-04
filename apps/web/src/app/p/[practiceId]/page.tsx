@@ -144,7 +144,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold, uploadsPaused } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold, uploadsHold } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -166,7 +166,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
       {freshness.lastFileAt === null ? (
         <FirstUpload
           practiceId={practice.id}
-          gate={uploadGate(dashboard.uploads, uploadsPaused)}
+          gate={uploadGate(dashboard.uploads, uploadsHold)}
           // The agreement chain is the next step for the roles that work the practice; a viewer only reads it (UX-119).
           agreements={access.roles.some((role) => role !== 'viewer')}
         />

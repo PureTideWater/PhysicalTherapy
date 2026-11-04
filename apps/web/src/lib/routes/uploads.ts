@@ -12,10 +12,11 @@ import {
   recordAuditEvent,
   rolesPermit,
 } from '@tp/db/runtime';
-import { practiceRunRefusalFor } from '@tp/worker/billing';
 import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
+import { workPause } from '../billing/hold';
+import { uploadsHeld } from '../billing/suspension-words';
 import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
@@ -71,8 +72,13 @@ export { NO_BAA, baaOnFile };
 
 export interface UploadGate {
   readonly open: boolean;
+  /** The closed gate's title: not open yet (no BAA, or a hold that lifts), or no new uploads (a closure); null while open. */
+  readonly title: string | null;
   readonly reason: string | null;
 }
+
+/** A closed gate's title while the BAA is not on file, or a hold on the person's uploads can lift. */
+const NOT_OPEN_YET = 'Uploads are not open yet';
 
 /** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */
 export interface EraExportChoice {
@@ -106,13 +112,15 @@ export const uploadsPage = practiceRoute({
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
     const open = await baaOnFile(scope, practiceId);
     // While new work is held, uploads pause with the database's reason (docs/adr/0050, 0080): the owner's hold, or a
-    // grantee's when only its grants let this person upload. What is on file stays readable.
-    const suspension = await practiceRunRefusalFor(scope.client, practiceId, 'file.upload');
+    // grantee's when only its grants let this person upload; a closure stops them, promising no restart (BIL-09; PR #104
+    // review UX-SS01-3). What is on file stays readable.
+    const hold = await workPause(scope, practiceId, 'file.upload');
+    const held = hold === null ? null : uploadsHeld(hold);
     return {
       practiceId,
       canUpload: rolesPermit(access.roles, 'file.upload'),
       roles: access.roles,
-      gate: { open: open && suspension === null, reason: !open ? NO_BAA : suspension === null ? null : `Uploads are paused: ${suspension}.` },
+      gate: !open ? { open: false, title: NOT_OPEN_YET, reason: NO_BAA } : held === null ? { open: true, title: null, reason: null } : { open: false, title: held.title, reason: held.reason },
       limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES, contentTypes: CONTENT_TYPES.x12_835 },
       eraExport: { contentTypes: CONTENT_TYPES.era_export, formats: ERA_EXPORT_CHOICES },
     };

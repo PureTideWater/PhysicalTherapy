@@ -62,7 +62,8 @@ export interface UploaderProps {
   /** The session's CSRF token, sent with every request this form makes (docs/adr/0053). */
   readonly csrfToken: string;
   readonly roleNames: string;
-  readonly gate: { readonly open: boolean; readonly reason: string | null };
+  /** Closed with its reason; its title says whether it opens later (Uploads' own gate names a closure's: lib/routes/uploads.ts). */
+  readonly gate: { readonly open: boolean; readonly title?: string | null; readonly reason: string | null };
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
   /** The kinds a person chooses between (contracts, exhibits, payer letters); 835s when absent. */
   readonly kinds?: readonly UploadKind[];
@@ -333,7 +334,7 @@ export function Uploader(props: UploaderProps) {
         <PermissionState role={props.roleNames} cannot="upload files" nextStep={props.uploaders ?? 'Billing managers, analysts and firm principals upload; you can read the receipts below.'} />
       ) : !gate.open ? (
         <Alert data-state="disabled" role="note">
-          <AlertTitle>Uploads are not open yet</AlertTitle>
+          <AlertTitle>{gate.title ?? 'Uploads are not open yet'}</AlertTitle>
           <AlertDescription>{gate.reason}</AlertDescription>
         </Alert>
       ) : (

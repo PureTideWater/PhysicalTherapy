@@ -227,6 +227,6 @@ describe('the empty home names the gate Uploads uses (HOM-03, D9)', () => {
     const home = ok(await call(practiceHome, admin, { practiceId }));
     const uploads = ok(await call(uploadsPage, admin, { practiceId }));
     // Nothing holds new work here; a hold pausing the home's uploads is BIL-07's (routes/suspension-refusal.db.test.ts).
-    expect([home.dashboard.uploads.baaOnFile, uploads.gate.open, home.uploadsPaused]).toEqual([open, open, false]);
+    expect([home.dashboard.uploads.baaOnFile, uploads.gate.open, home.uploadsHold]).toEqual([open, open, null]);
   }, 60_000);
 });
