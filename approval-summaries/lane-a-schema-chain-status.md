@@ -234,6 +234,18 @@ its unpushed work is not waited for).
   max_connections less RDS's reserved; if dev/staging (db.t4g.micro) fail it, cap worker tasks or one size up, whichever
   is cheaper and safe, recorded; a DatabaseConnections alarm at 80% of max_connections; the Known gap line shows F's
   reconcile margin to its 900 s attempt. wf_caf81379-09e stopped, its fix step edited (archived) and resumed.
+- **01:20 UTC (2026-11-05). 1b #110 head c2626113: CAS-42.5 PASSES** (run 41940882156: every check passed, all 22 jobs
+  on attempt 1; one advisory, the windows query 52.0 s cold); **CAS-42.6 after side PASSES** locally on c2626113 (F's
+  reconcile 657.3 s of 900, 73%; working set 712.8 MiB; locks 22). CI green but the domain model (blank line). The fix
+  round (wf_caf81379-09e): acad05cd the practice pool (15 slots, 10 s timeout kept, failed attempts logged by code; failing
+  first); 5b7f5f83 the connection budget checked at synthesis (infra/lib/connections.ts: production 205 of 389; dev and
+  staging over budget on their classes), **dev db.t4g.micro and staging db.t4g.small moved to db.t4g.medium** (capping the
+  single worker task rejected as unsafe; staging ~+$23/month, dev $0 until deployed; ADR 0083 + an ADR 0012 note), a
+  DatabaseConnections alarm at 80%, its runbook section; F's reconcile a known limit, the Known gap line prints its margin;
+  hand-off to Lane B: `approval-summaries/lane-a-to-lane-b-sc1b-reconcile-time-2026-11-05.md`; base 7fb3e102 merged.
+  Domain model unchanged e024cf9f…c4df, line 7459. **Open before the suggested line:** the base moved to 370b8973 (#119,
+  test-only); this round's new infra and worker code has had no adversarial review; the class change is a cost decision
+  beyond "one size up" (asked of the orchestrator 01:20).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
