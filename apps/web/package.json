@@ -22,6 +22,7 @@
     "@simplewebauthn/server": "^14.0.3",
     "@stripe/react-stripe-js": "^7.0.0",
     "@stripe/stripe-js": "^10.0.0",
+    "@tp/auth-mail": "workspace:*",
     "@tp/billing": "workspace:*",
     "@tp/compliance": "workspace:*",
     "@tp/contracts": "workspace:*",
