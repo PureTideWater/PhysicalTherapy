@@ -70,8 +70,8 @@ td.code { font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; 
 tr.total td { font-family: var(--pw-font-mono); font-weight: 500; border-top: 1px solid var(--pw-ink); border-bottom: none; }
 .whole { color: var(--pw-whole); }
 .short { color: var(--pw-short); }
-/* Unpriced's own gray is 3.7:1 on white, below the text minimum: its text is Slate, as the web chip's is */
-.unpriced { color: var(--pw-slate); }
+/* Unpriced is its own color, 5.1:1 on white (docs/adr/0056, the brand owner's ruling 3), as the web chip's text is */
+.unpriced { color: var(--pw-unpriced); }
 .mono { font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; }
 /* A dollar amount inside running text or a heading (escapeWithFigures): the mono face, kept on one line */
 .figure-amount { font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
