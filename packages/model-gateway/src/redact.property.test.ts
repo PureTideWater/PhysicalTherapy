@@ -2,7 +2,8 @@ import { identifierForms } from '@tp/packets';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { EARLIEST_WRITTEN_YEAR, LATEST_WRITTEN_YEAR, type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactionSpans } from './redact';
+import { verifyDenialLetter } from './functions/denial-letter';
+import { EARLIEST_WRITTEN_YEAR, LATEST_WRITTEN_YEAR, type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionSpans } from './redact';
 
 /**
  * The letter reader's redaction over generated SYNTHETIC letters (test matrix MOD-13, MOD-14; docs/adr/0054, amendment of
@@ -27,7 +28,7 @@ import { EARLIEST_WRITTEN_YEAR, LATEST_WRITTEN_YEAR, type LetterClaim, type Pati
 
 const DESERET = String.fromCodePoint(0x10414, 0x10407, 0x1041d, 0x10400, 0x10421, 0x10407, 0x10413);
 /** Name parts that broke the earlier redaction or that a letter writes another way: placeholder words, months, marks, ß, apostrophes, hyphens, an astral script. */
-const PARTS = ['CLAIM', 'DATE', 'OF', 'BIRTH', 'MEMBER', 'ID', 'PATIENT', 'NAME', 'JUNE', 'MAY', 'MARCH', 'AUGUST', 'VANTREE', 'ZEPHYRA', 'ORLA', 'JOANN', 'STRAUSS', 'JOSÉ', 'GARCÍA', "O'BRIEN", 'SMITH-JONES', 'INA', 'IVY', 'ANA', DESERET];
+const PARTS = ['CLAIM', 'DATE', 'OF', 'BIRTH', 'MEMBER', 'ID', 'PATIENT', 'NAME', 'SSN', 'PHONE', 'JUNE', 'MAY', 'MARCH', 'AUGUST', 'VANTREE', 'ZEPHYRA', 'ORLA', 'JOANN', 'STRAUSS', 'JOSÉ', 'GARCÍA', "O'BRIEN", 'SMITH-JONES', 'INA', 'IVY', 'ANA', DESERET];
 const part = fc.oneof(fc.constantFrom(...PARTS), fc.stringMatching(/^[A-Z]{2,8}$/));
 const middle = fc.option(fc.oneof(fc.constantFrom('Q', 'J', 'A', 'I'), part), { nil: undefined });
 
@@ -263,7 +264,7 @@ function assemble(segments: readonly Segment[]): { readonly text: string; readon
   return { text, secrets };
 }
 
-const EXACT = /^\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|CLAIM_[1-9]\d*)\]$/;
+const EXACT = /^\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\]$/;
 
 // ---------------------------------------------------------------------------------------------------
 // Today's redaction, frozen as an oracle (packages/model-gateway/src/redact.ts at 085299b), with each replaced
@@ -895,7 +896,7 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
 // ---------------------------------------------------------------------------------------------------
 // MOD-14
 
-const PLACEHOLDERS = fc.oneof(fc.constantFrom('[PATIENT_NAME]', '[DATE_OF_BIRTH]', '[MEMBER_ID]'), fc.integer({ min: 1, max: 20 }).map((n) => `[CLAIM_${String(n)}]`));
+const PLACEHOLDERS = fc.oneof(fc.constantFrom('[PATIENT_NAME]', '[DATE_OF_BIRTH]', '[MEMBER_ID]', '[SSN]', '[PHONE]'), fc.integer({ min: 1, max: 20 }).map((n) => `[CLAIM_${String(n)}]`));
 
 describe('MOD-14: the one-patient screen sees every written form of another patient’s identifier, never a placeholder', () => {
   it('offers another patient’s ID however a letter writes it, in a redacted letter too (property)', () => {
@@ -909,8 +910,11 @@ describe('MOD-14: the one-patient screen sees every written form of another pati
         const text = `SYNTHETIC: ${before}${written}${after} for Jane Zephyra, DOB 03/14/1980, member SYNMEMBER0042.`;
         expect(identifierCandidates(text), written).toContain(compactIdentifier(id));
         const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-14', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
-        const redacted = redactLetter(text, patient, [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-14', claimNumbers: ['SYNCLAIM0001'] }]).text;
+        const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-14', claimNumbers: ['SYNCLAIM0001'] }];
+        const redacted = redactLetter(text, patient, claims).text;
         expect(identifierCandidates(redacted), redacted).toContain(compactIdentifier(id));
+        // What the screen is really asked (the redactor's candidates: docs/adr/0054, amendment of 2026-11-04).
+        expect(redactLetterForScreen(text, patient, claims).candidates, redacted).toContain(compactIdentifier(id));
       }),
       { numRuns: 300 },
     );
@@ -927,8 +931,10 @@ describe('MOD-14: the one-patient screen sees every written form of another pati
         const text = `SYNTHETIC: ${before}${written} for Jane Zephyra, DOB 03/14/1980, member SYNMEMBER0042.`;
         expect(identifierCandidates(text), text).toContain(digits);
         const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-14', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
-        const redacted = redactLetter(text, patient, [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-14', claimNumbers: ['SYNCLAIM0001'] }]).text;
+        const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-14', claimNumbers: ['SYNCLAIM0001'] }];
+        const redacted = redactLetter(text, patient, claims).text;
         expect(identifierCandidates(redacted), redacted).toContain(digits);
+        expect(redactLetterForScreen(text, patient, claims).candidates, redacted).toContain(digits);
       }),
       { numRuns: 300 },
     );
@@ -952,4 +958,533 @@ describe('MOD-14: the one-patient screen sees every written form of another pati
       { numRuns: 300 },
     );
   });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// MOD-15 and MOD-16: Social Security and phone numbers by pattern (the founder's ruling of 2026-11-01; docs/adr/0054,
+// amendment of 2026-11-04). SYNTHETIC twins only: SSNs in the 9xx area (never issued), phones NPA-555-01xx. The oracle
+// is the generator, which records where it wrote each number and what it wrote to stay; the label, keep-noun and
+// separator lists below are the generator's own copies, never the matcher's (risk 14.6).
+
+/** Gaps a shape is written with: dashes and invisible characters go with anything; a period or a joiner never with white space (R1a). */
+const ANY_GAPS = ['-', '–', '—', '‐', '−', '--', '\u200B', '\u00AD', '-\u200B', '\u2060'];
+const TIGHT_GAPS = ['.', '_', '·', '•', '|', '~', "'", '’'];
+const SPACED_GAPS = [' ', '  ', '\t', ' - ', '\n', '\n    ', '-\n', '\r\n  ', ' -\r\n    ', '\u0085', '   '];
+/** What a PDF writes inside a group: an invisible character, a line break (after a dash, with indentation). */
+const IN_GROUP = ['\u200B', '\u00AD', '\uFEFF', '\n', '-\n', '\n    ', '\r\n  '];
+/** Digits of other scripts (R3): full width (NFKC folds them), Arabic-Indic, Devanagari. */
+const SCRIPTS = [0x30, 0xff10, 0x660, 0x966];
+const SSN_LABELS = ['SSN ', 'SSN: ', 'S.S.N. ', 'SS#', 'SS No. ', 'Social Security ', 'Social Security No. ', 'Soc Sec ', 'HICN ', 'Medicare ', 'Subscriber SSN: '];
+const PHONE_LABELS = ['Phone ', 'Phone: ', 'Tel. ', 'Fax ', 'Call ', 'TTY ', 'Toll-free ', 'Cell ', 'Mobile: ', 'Contact ', 'Telephone ', 'Phone (toll-free): ', 'Call regarding claim ', 'Phone on file for claim: '];
+/** What may follow a label before the number: no digit, no keep-noun. */
+const LABEL_FILLERS = ['', ' ', 'on record: ', '(on file) ', '\n', 'number '];
+/** Before an unlabeled bare number: a digit ends any word's reach, so no keep-noun of an earlier segment names it. */
+const UNLABELED_BEFORE = ['Seen 11/01/2026, subscriber ', 'Visit 2: patient ', 'Line 3, number ', 'Item 4 reachable at ', 'Page 2 '];
+/** Before and after a shaped number. */
+const SHAPED_BEFORE = ['SSN ', 'Call ', '(', 'ID:', 'Tel', 'SSN', '\n', '12345\u200B', 'Subscriber ', 'Reference ', 'Claim ', ''];
+/**
+ * A digit and an invisible run before the number is read on the space reading (R4), where an invisible run inside the
+ * number is a space too: such a number is read on neither reading and refused by the survivor scan (a recorded residual),
+ * so the generator writes that context only before a number with no invisible run in it.
+ */
+const plainAfterDigit = (written: Written): Written => (/\d\u200B$/u.test(written.before) && /[\u200B\u00AD\uFEFF\u2060]/u.test(written.text) ? { ...written, before: 'Seen ' } : written);
+const SHAPED_AFTER = ['.', ';', ' on file.', '', ' A', ')'];
+const MASKS = ['XXX-XX-', 'xxx-xx-', '***-**-', '###-##-', '___-__-', '•••-••-', 'XXX XX '];
+
+interface Written {
+  readonly text: string;
+  /** What lies around the number: kept text the generator wrote (a label, a context word). */
+  readonly before: string;
+  readonly after: string;
+}
+
+/** A value's digits in a script (R3). */
+const inScript = (digits: string, script: number) => [...digits].map((digit) => (/\d/.test(digit) ? String.fromCodePoint(script + Number.parseInt(digit, 10)) : digit)).join('');
+
+/** A group with what a PDF writes inside it (an invisible character only, unless it may wrap), or as it is. */
+function groupOf(digits: string, pick: number, wrap = true): string {
+  if (pick % 5 !== 0 || digits.length < 2) return digits;
+  const at = 1 + (pick % (digits.length - 1));
+  const inside = wrap ? IN_GROUP : IN_GROUP.filter((each) => !/\s/u.test(each));
+  return `${digits.slice(0, at)}${inside[pick % inside.length] ?? ''}${digits.slice(at)}`;
+}
+
+/** Groups joined by gaps of one mode: tight (dashes, a period, a joiner) or spaced (dashes, white space, a wrapped line). */
+function joinGroups(groups: readonly string[], picks: readonly number[], spaced: boolean): string {
+  const gaps = spaced ? [...ANY_GAPS, ...SPACED_GAPS] : [...ANY_GAPS, ...TIGHT_GAPS];
+  return groups.map((group, i) => `${i === 0 ? '' : (gaps[(picks[i] ?? 0) % gaps.length] ?? '-')}${groupOf(group, picks[i + 3] ?? 0)}`).join('');
+}
+
+/** A Social Security number written as a letter writes one: shaped, masked, labeled bare, unlabeled bare, with a HICN suffix. */
+function writeSsn(value: string, form: number, picks: readonly number[], script: number): Written {
+  const groups = [value.slice(0, 3), value.slice(3, 5), value.slice(5)];
+  const spaced = (picks[0] ?? 0) % 2 === 0;
+  const context = <T>(list: readonly T[], at: number) => list[(picks[at] ?? 0) % list.length] as T;
+  switch (form % 6) {
+    case 0:
+      return { before: context(SHAPED_BEFORE, 6), text: inScript(joinGroups(groups, picks, spaced), script), after: context(SHAPED_AFTER, 7) };
+    case 1:
+      return { before: context(['SSN ', 'on file ', '(', 'SSN', ': '], 6), text: `${context(MASKS, 8)}${value.slice(5)}`, after: context(['.', ';', ' on file.', ''], 7) };
+    case 2:
+      return { before: `${context(SSN_LABELS, 6)}${(picks[9] ?? 0) % 4 === 0 ? '' : context(LABEL_FILLERS, 8)}`, text: inScript((picks[9] ?? 0) % 4 === 0 ? `${value.slice(0, 5)}${context(['\n', '\n    ', '-\n'], 10)}${value.slice(5)}` : groupOf(value, picks[9] ?? 0, false), script), after: context(['.', ';', ' on file.', ''], 7) };
+    case 3:
+      return { before: context(UNLABELED_BEFORE, 6), text: inScript(value, script), after: context(['.', ';', ' on file.', ''], 7) };
+    case 4:
+      return { before: context(['HICN ', 'Medicare no. ', 'Subscriber ', ''], 6), text: (picks[8] ?? 0) % 2 === 0 ? `${value}A` : `${groups.join('-')}-B1`, after: context(['.', ' on file.', ''], 7) };
+    default:
+      return { before: 'SSN ', text: `${(picks[8] ?? 0) % 2 === 0 ? '*****' : 'XXXXX'}${value.slice(5)}`, after: '.' };
+  }
+}
+
+const EXTENSIONS = [' x123', ' ext. 45', ' extension 6789', ' #12', ', ext: 12', 'x7'];
+const PREFIXES = ['+1 ', '+1', '1-', '1 ', '+ 1 ', '1 (', '+1('];
+
+/** A phone number written as a letter writes one: (AAA) EEE-LLLL, shaped, with a prefix or an extension, "+" and ten, labeled bare, a labeled local number, unlabeled bare. */
+function writePhone(value: string, form: number, picks: readonly number[], script: number): Written {
+  const [area, exchange, line] = [value.slice(0, 3), value.slice(3, 6), value.slice(6)];
+  const spaced = (picks[0] ?? 0) % 2 === 0;
+  const context = <T>(list: readonly T[], at: number) => list[(picks[at] ?? 0) % list.length] as T;
+  const extension = (picks[11] ?? 0) % 3 === 0 ? context(EXTENSIONS, 12) : '';
+  switch (form % 8) {
+    case 0: {
+      const between = context([' ', '', '-', ' -', '\n    '], 8);
+      return { before: context(SHAPED_BEFORE.filter((each) => each !== '('), 6), text: inScript(`(${area})${between}${exchange}${context(['-', '', ' ', '.', '–'], 9)}${line}`, script) + extension, after: context(SHAPED_AFTER, 7) };
+    }
+    case 1:
+      return { before: context(SHAPED_BEFORE, 6), text: inScript(joinGroups([area, exchange, line], picks, spaced), script) + extension, after: context(SHAPED_AFTER, 7) };
+    case 2: {
+      const prefix = context(PREFIXES, 8);
+      const rest = prefix.endsWith('(') ? `${area}) ${exchange}-${line}` : joinGroups([area, exchange, line], picks, prefix.includes(' ') || spaced);
+      return { before: context(['Call ', 'Tel: ', 'Phone ', 'at ', ''], 6), text: `${prefix}${rest}${extension}`, after: context(['.', ';', ' today.', ''], 7) };
+    }
+    case 3:
+      return { before: context(['Call ', 'at ', ''], 6), text: `+${(picks[8] ?? 0) % 2 === 0 ? '1' : ''}${value}`, after: context(['.', ' today.', ''], 7) };
+    case 4: {
+      // "1" and ten, or ten wrapped across a line, are read only after a label within reach: no filler then.
+      const plain = (picks[9] ?? 0) % 3 === 2;
+      // A label of several words ends its word further from the number: no filler after it, so it stays within reach.
+      const label = context(PHONE_LABELS, 6);
+      return { before: `${label}${plain && label.length <= 12 ? context(LABEL_FILLERS, 8) : ''}`, text: inScript((picks[9] ?? 0) % 3 === 0 ? `1${value}` : !plain ? `${value.slice(0, 6)}${context(['\n', '\n    '], 10)}${value.slice(6)}` : value, script), after: context(['.', ';', ' today.', ''], 7) };
+    }
+    case 5:
+      return { before: context(['Call ', 'Phone: ', 'Fax ', 'TTY: ', 'Tel '], 6), text: `${exchange}${context(['-', ' ', '.', '–'], 8)}${line}`, after: context(['.', ' today.', ''], 7) };
+    case 6:
+      return { before: context(UNLABELED_BEFORE, 6), text: inScript(value, script), after: context(['.', ';', ' today.', ''], 7) };
+    default:
+      // A label of the other kind, a keep-noun beside a label, a keep-noun that does not name the number (C6).
+      return { before: context(['SSN ', 'Call about claim ', 'Case manager reachable at ', 'Claim number is ', 'Group subscriber '], 6), text: value, after: '.' };
+  }
+}
+
+/** What survives every pattern and the survivor scan must refuse (R7, step 0's A2 and A3), written after a neutral word. */
+const SURVIVORS = ['900-12-34 56', '202/555-0123', '202)555-0123', '900;12;3456', '900-12-03-56', '900.12.03.56', '202.555 0123', '900 551 234', '900-12-34.56'];
+
+interface PatternSegment {
+  readonly text: string;
+  readonly secret: 'none' | 'pattern' | 'member' | 'claim';
+}
+
+interface PatternCase {
+  readonly patient: PatientIdentifiers;
+  readonly claims: readonly LetterClaim[];
+  readonly segments: readonly PatternSegment[];
+  /** Whether the generator wrote a survivor or glued the patient's name to a number: the self-check must refuse the letter. */
+  readonly refused: boolean;
+}
+
+const ssnValue = fc.stringMatching(/^9[0-9]{8}$/);
+const phoneValue = fc.tuple(fc.integer({ min: 200, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
+/** An unlabeled bare ten is a phone only with an area code 3-9, or 2 and no valid NPI: the generator writes 3-9. */
+const unlabeledPhone = fc.tuple(fc.integer({ min: 300, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
+const patternSlot = fc.record({
+  kind: fc.constantFrom('ssn', 'ssn', 'phone', 'phone', 'member', 'claim', 'filler', 'survivor', 'glued'),
+  form: fc.nat(1000),
+  picks: fc.array(fc.nat(1000), { minLength: 13, maxLength: 13 }),
+  script: fc.constantFrom(...SCRIPTS, 0x30, 0x30),
+  ssn: ssnValue,
+  phone: phoneValue,
+  unlabeled: unlabeledPhone,
+  index: fc.nat(1000),
+});
+
+const ssnPhoneCase: fc.Arbitrary<PatternCase> = fc
+  .record({ member: ssnValue, claim: phoneValue, slots: fc.array(patternSlot, { minLength: 1, maxLength: 8 }) })
+  .map(({ member, claim, slots }): PatternCase => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042', member] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-15', claimNumbers: [claim] },
+    ];
+    const segments: PatternSegment[] = [];
+    let refused = false;
+    const write = (written: Written, secret: PatternSegment['secret']) => {
+      // Each number ends with a word after it, so two numbers wrapped inside a group never stand on lines next to each
+      // other with nothing but the break between them (a column of digits R2c leaves to the survivor scan).
+      segments.push({ text: written.before, secret: 'none' }, { text: written.text, secret }, { text: `${written.after} Noted. `, secret: 'none' });
+    };
+    for (const { kind, form, picks, script, ssn, phone, unlabeled, index } of slots) {
+      // Another number than the call's own (a twin drawn equal to it is moved by one).
+      const other = (value: string, own: string) => (value === own ? `${value.slice(0, -1)}${String((Number.parseInt(value.at(-1) ?? '0', 10) + 1) % 10)}` : value);
+      if (kind === 'ssn') {
+        write(plainAfterDigit(writeSsn(other(ssn, member), form, picks, script)), 'pattern');
+      } else if (kind === 'phone') {
+        // An unlabeled ten (and one after a word that does not name it) with an area code 3-9: one starting 2 that passes
+        // the NPI check is kept on purpose (15.8).
+        write(plainAfterDigit(writePhone(other(form % 8 >= 6 ? unlabeled : phone, claim), form, picks, script)), 'pattern');
+      } else if (kind === 'member') {
+        // The call's own nine-digit member ID in an SSN shape, never masked (no digit of it would be written).
+        const own = plainAfterDigit(writeSsn(member, form % 6 === 1 || form % 6 === 5 ? 0 : form, picks, script));
+        write(own, 'member');
+      } else if (kind === 'claim') {
+        // The call's own ten-digit claim in a phone shape (with a label, a gap or "+" before a "1", never glued to one alone).
+        const own = plainAfterDigit(writePhone(claim, form % 8 === 6 || form % 8 === 7 || form % 8 === 5 ? 1 : form, picks, script));
+        write({ ...own, text: own.text.replace(/^1(?=\d{10})/u, '1 ') }, 'claim');
+      } else if (kind === 'survivor') {
+        refused = true;
+        segments.push({ text: `Ref ${SURVIVORS[index % SURVIVORS.length] ?? ''} on file. `, secret: 'none' });
+      } else if (kind === 'glued') {
+        refused = true;
+        segments.push({ text: `RE: Zephyra${['900-12-3456', '202-555-0123'][index % 2] ?? ''}. `, secret: 'none' });
+      } else {
+        segments.push({ text: FILLER[index % FILLER.length] ?? '', secret: 'none' });
+      }
+    }
+    return { patient, claims, segments: segments.map((segment) => ({ ...segment, text: segment.text.normalize('NFKC') })), refused };
+  });
+
+const PATTERN_EXACT = /^\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\]$/;
+
+/** MOD-15's property: no letter or digit of a Social Security or phone number the generator wrote is sent. */
+const sendsNoSsnOrPhone = fc.property(ssnPhoneCase, ({ patient, claims, segments, refused }) => {
+  let text = '';
+  const secrets: { at: number; secret: PatternSegment['secret'] }[] = [];
+  for (const segment of segments) {
+    if (segment.secret !== 'none') {
+      for (const match of segment.text.matchAll(/[\p{L}\p{N}]/gu)) secrets.push({ at: text.length + match.index, secret: segment.secret });
+    }
+    text += segment.text;
+  }
+  const { text: normal, spans } = redactionSpans(text, patient, claims);
+  expect(normal).toBe(text);
+  const screened = redactLetterForScreen(text, patient, claims);
+  let rebuilt = '';
+  let kept = 0;
+  for (const span of spans) {
+    rebuilt += text.slice(kept, span.start) + span.placeholder;
+    kept = span.end;
+  }
+  expect(screened.text).toBe(rebuilt + text.slice(kept));
+  expect(redactLetter(text, patient, claims).text).toBe(screened.text);
+  for (const { at, secret } of secrets) {
+    const span = spans.find((each) => each.start <= at && at < each.end);
+    const expected = secret === 'member' ? ['[MEMBER_ID]'] : secret === 'claim' ? ['[CLAIM_2]'] : ['[SSN]', '[PHONE]'];
+    expect(expected, `${secret} at ${String(at)} in ${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toContain(span?.placeholder);
+  }
+  const brackets = screened.text.match(/\[[^[\]]*\]/g) ?? [];
+  expect(brackets.every((bracket) => PATTERN_EXACT.test(bracket))).toBe(true);
+  expect(brackets).toHaveLength(screened.replaced);
+  expect(holdsIdentifier(screened.text, patient, claims), `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(refused);
+  // The call's own identifiers are never offered to the screen.
+  const own = [...patient.memberIds, ...claims.flatMap((claim) => claim.claimNumbers)].map(compactIdentifier);
+  expect(screened.candidates.filter((candidate) => own.includes(candidate))).toEqual([]);
+});
+
+describe('MOD-15: every Social Security and phone number is redacted, and a letter in which one survives is refused', () => {
+  it('sends no letter or digit of a Social Security or phone number the generator wrote, keeps the call’s own placeholders, writes only exact placeholders, and refuses exactly the letters with a survivor (property)', () => {
+    fc.assert(sendsNoSsnOrPhone, { numRuns: 400 });
+  }, 60_000);
+
+  it('redacts each writer’s forms on their own: every gap kind, other scripts, masks, labels of either kind, and a digit and an invisible character before the number', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+    for (const gap of [...ANY_GAPS, ...TIGHT_GAPS, ...SPACED_GAPS]) {
+      for (const [written, placeholder] of [
+        [`900${gap}12${gap}3456`, '[SSN]'],
+        [`202${gap}555${gap}0123`, '[PHONE]'],
+      ] as const) {
+        const redacted = redactLetter(`On file: ${written} today.`, patient, claims).text;
+        expect(redacted, JSON.stringify(written)).toBe(`On file: ${placeholder} today.`);
+        expect(holdsIdentifier(redacted, patient, claims), JSON.stringify(written)).toBe(false);
+      }
+    }
+    for (const script of SCRIPTS) {
+      expect(redactLetter(`Call ${inScript('202-555-0123', script)}.`, patient, claims).text, String(script)).toBe('Call [PHONE].');
+      expect(redactLetter(`SSN ${inScript('900123456', script)}.`, patient, claims).text, String(script)).toBe('SSN [SSN].');
+    }
+    for (const mask of MASKS) {
+      expect(redactLetter(`SSN ${mask}3456.`, patient, claims).text, mask).toBe('SSN [SSN].');
+    }
+    for (const label of SSN_LABELS) {
+      expect(redactLetter(`${label}900123456.`, patient, claims).text, label).toBe(`${label}[SSN].`);
+      expect(redactLetter(`${label}2025550123.`, patient, claims).text, label).toBe(label.startsWith('Medicare') ? `${label}[PHONE].` : `${label}[SSN].`);
+    }
+    for (const label of PHONE_LABELS) {
+      expect(redactLetter(`${label}1234567890.`, patient, claims).text, label).toBe(`${label}[PHONE].`);
+      expect(redactLetter(`${label}900123456.`, patient, claims).text, label).toBe(`${label}[SSN].`);
+      expect(redactLetter(`${label}555-0100.`, patient, claims).text, label).toBe(`${label}[PHONE].`);
+    }
+    expect(redactLetter('Seen 11/01/2026\u200B202-555-0123 and 12345\u200B900123456.', patient, claims).text).toBe('Seen 11/01/2026\u200B[PHONE] and 12345\u200B[SSN].');
+    // A labeled nine wrapped across a line, before a shaped number on the next line (60-seed run's counterexample): both are read.
+    expect(redactLetter('SSN 90000\n0001 \n900-00-0001.', patient, claims).text).toBe('SSN [SSN] \n[SSN].');
+    // On the join reading only: on the space reading the invisible run after "2" would end a wrapped ten there.
+    expect(redactLetter('SSN 90000\n0001 \n2\u200B02-555-0123.', patient, claims).text).toBe('SSN [SSN] \n[PHONE].');
+    // Two numbers each wrapped inside a group on lines next to each other read as one column of digits on either side of
+    // a break (R2c): neither is taken, and the survivor scan refuses the letter rather than send it.
+    const column = redactLetter('SSN 90000\n0001 \n2\r\n  02-555-0123.', patient, claims).text;
+    expect(holdsIdentifier(column, patient, claims), column).toBe(true);
+    // A shaped number's group wrapped across a break never reaches the next line's number (60-seed run's counterexample).
+    expect(redactLetter('SSN 202-555-01\uFEFF01 \n20\n    2-555-0123.', patient, claims).text).toBe('SSN [PHONE] \n[PHONE].');
+    expect(redactLetter('SSN 900-12-34\n56 and 900-12-34-\n56.', patient, claims).text).toBe('SSN [SSN] and [SSN].');
+    // And a wrapped nine inside a column of digits is still never cut out of it (R2c).
+    expect(redactLetter('SSN 12345\n6789\n0123', patient, claims).text).toBe('SSN 12345\n6789\n0123');
+  });
+
+  it('refuses each survivor of the patterns, with the fixed refusal and no number in it (R7)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+    for (const survivor of SURVIVORS) {
+      const redacted = redactLetter(`Ref ${survivor} on file.`, patient, claims).text;
+      expect(redacted, survivor).toBe(`Ref ${survivor} on file.`);
+      expect(holdsIdentifier(redacted, patient, claims), survivor).toBe(true);
+    }
+  });
+
+  it('reads a date-shaped number with an implausible year as digits, never as a date the survivor scan lets through, and offers another patient’s to the screen (R14)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['00230426'] }];
+    expect(redactLetter('Claim 0023-04-26 was denied.', patient, claims).text).toBe('Claim [CLAIM_1] was denied.');
+    // Another patient's, written like a date with an implausible year: sent (eight digits, no shape), offered to the screen.
+    const other = redactLetterForScreen('Also claim 0099-04-26 on file.', patient, claims);
+    expect(other.text).toBe('Also claim 0099-04-26 on file.');
+    expect(other.candidates).toContain('00990426');
+    // With a ninth digit after it, no date barrier hides the chain: refused (survivorIn reads dates with a reading only).
+    expect(holdsIdentifier('SSN 0099-04-26 1 on file.', patient, claims)).toBe(true);
+    expect(holdsIdentifier('Seen 2026-04-26 1 on file.', patient, claims)).toBe(false);
+  });
+});
+
+/** An NPI with its check digit (Luhn over 80840 and the first nine). */
+function withCheckDigit(nine: string): string {
+  const payload = `80840${nine}`;
+  let sum = 0;
+  for (let i = 0; i < payload.length; i += 1) {
+    let digit = Number.parseInt(payload[payload.length - 1 - i] ?? '0', 10);
+    if (i % 2 === 0) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+  }
+  return `${nine}${String((10 - (sum % 10)) % 10)}`;
+}
+
+const MONTH_WORDS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** A date in every form datesIn reads, with whether readDate reads it (a deadline the verifier can check). */
+function writeDate(iso: string, form: number): { readonly text: string; readonly readable: boolean } {
+  const [year = '', month = '', day = ''] = iso.split('-');
+  const m = String(Number.parseInt(month, 10));
+  const d = String(Number.parseInt(day, 10));
+  const word = MONTH_WORDS[Number.parseInt(month, 10) - 1] ?? 'May';
+  const forms: [string, boolean][] = [
+    [iso, true],
+    [`${m}/${d}/${year}`, true],
+    [`${month}/${day}/${year}`, true],
+    [`${word} ${d}, ${year}`, true],
+    [`${d} ${word} ${year}`, true],
+    [`${month}-${day}-${year}`, false],
+    [`${day}.${month}.${year}`, false],
+    [`${year}.${month}.${day}`, false],
+    [`${year}/${month}/${day}`, false],
+    [`${month}/${day}/${year.slice(2)}`, false],
+    [`${year} ${month} ${day}`, false],
+    [`${month} ${day} ${year}`, false],
+    [`${year}${month}${day}`, false],
+    [`${month}${day}${year.slice(2)}`, false],
+    [`${word.slice(0, 3)} ${d}th '${year.slice(2)}`, false],
+    [`${day}-${word.slice(0, 3).toUpperCase()}-${year.slice(2)}`, false],
+    [`${word.slice(0, 3)}. ${d}, ${year}`, false],
+    [`${month}–${day}–${year}`, false],
+  ];
+  const [text, readable] = forms[form % forms.length] ?? [iso, true];
+  return { text, readable };
+}
+
+interface KeptSegment {
+  readonly text: string;
+  /** A deadline readDate reads, or a reference the verifier keeps: quoted from this segment. */
+  readonly deadline?: string;
+  readonly reference?: string;
+}
+
+const NEUTRAL = ['Paid ', 'Seen ', 'Billed ', 'Row ', 'Amount ', 'Date ', 'Item ', 'Total ', 'Noted '];
+const KEPT_JOINS = ['; ', '. ', ' ', '\n', '\r\n  ', ''];
+
+/** What must stay, after a neutral word (MOD-16, 10.2 and R9): amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, numbers a keep-noun names, service-line rows. */
+const keptSegment: fc.Arbitrary<KeptSegment> = fc
+  .record({
+    kind: fc.nat(17),
+    pick: fc.nat(100_000),
+    nine: fc.stringMatching(/^[0-9]{9}$/),
+    ten: fc.stringMatching(/^[2-9][0-9]{9}$/),
+    icn: fc.stringMatching(/^[0-9]{11,14}$/),
+    date: fc.date({ min: new Date('2020-01-01T00:00:00Z'), max: new Date('2030-12-31T00:00:00Z'), noInvalidDate: true }),
+    neutral: fc.constantFrom(...NEUTRAL),
+  })
+  .map(({ kind, pick, nine, ten, icn, date, neutral }): KeptSegment => {
+    const n = (digits: number, at = 0) => String(Math.floor(pick / 10 ** at) % 10 ** digits).padStart(digits, '0');
+    const cpt = `9${n(4)}`;
+    const amount = [`$${n(1)},${n(3, 1)}.${n(2, 2)}`, `${n(1)},${n(3)},${n(3, 1)}.${n(2)}`, `$${n(3)}-${n(2, 1)}`, `$${n(3)}.${n(2, 3)}`, `${n(4)}.${n(2, 1)}`][pick % 5] ?? '$150.00';
+    const iso = date.toISOString().slice(0, 10);
+    switch (kind) {
+      case 0:
+        return { text: `${neutral}${amount}` };
+      case 1: {
+        const written = writeDate(iso, pick);
+        return written.readable ? { text: `Appeal by ${written.text}`, deadline: written.text } : { text: `${neutral}${written.text}` };
+      }
+      case 2:
+        return { text: `${['NPI ', 'Rendering NPI ', 'Provider '][pick % 3] ?? 'NPI '}${withCheckDigit(`${['1', '2'][pick % 2] ?? '1'}${nine.slice(1, 9)}`)}` };
+      case 3:
+        return { text: `${neutral}${[cpt, `G${n(4)}`, `CO-${String(1 + (pick % 300))}`, `N${String(1 + (pick % 900))}`, `M${n(2)}.${n(2, 2)}`, `${cpt}-GP-59`, `${cpt}-9${n(4, 1)}`][pick % 7] ?? cpt}` };
+      case 4:
+        return { text: `${['CA ', 'ZIP ', 'Los Synth, CA '][pick % 3] ?? 'CA '}${[`9${n(4)}`, `9${n(4)}-${n(4, 1)}`][pick % 2] ?? '90001'}` };
+      case 5:
+        return { text: [`TIN ${n(2)}-${n(7, 1)}`, `TIN ${nine}`, `EIN ${nine}`, `Tax ID number ${nine}`, `Medicare Advantage TIN ${nine}`][pick % 5] ?? `TIN ${nine}` };
+      case 6:
+        return { text: `${['ICN ', 'Control ', 'DCN '][pick % 3] ?? 'ICN '}${icn}` };
+      case 7:
+        return { text: `${['EFT ', 'trace ', 'EFT trace '][pick % 3] ?? 'EFT '}1${nine}` };
+      case 8:
+        return { text: `check ${[nine, ten][pick % 2] ?? nine}` };
+      case 9: {
+        const reference = [`SYN-APL-${n(3)}-${n(4, 1)}`, `REF-SYN-${String(1 + (pick % 999))}`, `${n(4)}-${n(4, 1)}-${n(4, 2)}`][pick % 3] ?? 'REF-SYN-77';
+        return { text: `Our reference is ${reference}`, reference };
+      }
+      case 10: {
+        // A keep-noun that names a bare nine or ten, with connectors between (R5a, A7, A8).
+        const noun = ['Reference no.: ', 'Claim #: ', 'Claim number ', 'ICN ', 'Appeal ', 'Case no. ', 'Ref. No. ', '**Claim:** ', 'Claim, ', 'Claim = ', 'Claim\nNumber: ', 'Claim: “', 'Authorization ', 'Invoice # ', 'Group '][pick % 15] ?? 'Claim ';
+        const reference = [nine, ten][pick % 2] ?? nine;
+        return { text: `${noun}${reference}`, reference };
+      }
+      case 11:
+        // Service-line rows: codes, units and amounts in columns.
+        return { text: [`${cpt}   ${String(1 + (pick % 9))}   ${n(4, 1)}.${n(2)}`, `Page ${String(1 + (pick % 3))} of ${String(3 + (pick % 4))}   ${cpt} ${String(1 + (pick % 9))}   ${n(3, 1)}.00`, `Codes ${cpt} 97140 97530 G0283`][pick % 3] ?? cpt };
+      case 12:
+        // A slashed date before a code, and number columns joined by a line break.
+        return { text: [`DOS ${iso.slice(5, 7)}/${iso.slice(8)}/${iso.slice(0, 4)} ${cpt} GP ${String(1 + (pick % 9))}`, `Billed ${iso.replace(/-/g, '')}\n${String(1 + (pick % 9))}`, `${cpt}\n${n(4, 1)} units`][pick % 3] ?? cpt };
+      case 13:
+        // An amount right before a date, a four-digit number and another amount (R1).
+        return { text: [`Billed ${amount} ${iso}`, `Paid ${n(3)}.${n(2, 1)} ${iso.slice(0, 4)}`, `Paid ${n(3)}.${n(2)} ${n(4, 1)}.${n(2, 2)}`, `Paid ${n(3)}.00\n${iso}`, `Total ${n(1)},${n(3)}.00 ${iso.slice(0, 4)}`][pick % 5] ?? amount };
+      case 14:
+        // An NPI or TIN after "Medicare" or "Contact" (R5b, R5d).
+        return { text: [`Medicare provider NPI ${withCheckDigit(`1${nine.slice(1)}`)}`, `Contact your provider, NPI ${withCheckDigit(`2${nine.slice(1)}`)}`, `Medicare Advantage TIN ${nine}`, `Medicare Advantage claim 1${nine}`][pick % 4] ?? 'NPI 1234567893' };
+      case 15:
+        // One row per survivor-scan barrier and exception, each asserted not refused.
+        return { text: [`${iso} ${iso}`, `Lines 101; 102; 103`, `${cpt}-9${n(4)}`, `${cpt}/9${n(4)}`, `CA 9${n(4)}-${n(4, 1)}`, `TIN ${n(2)}-${n(7, 1)}`, `${neutral}${iso.replace(/-/g, '')}\n${String(1 + (pick % 9))}`][pick % 7] ?? iso };
+      case 16:
+        return { text: `${neutral}${withCheckDigit(`2${nine.slice(1)}`)}` };
+      default:
+        return { text: 'Hours 8:00-5:00, 555-0100 local' };
+    }
+  });
+
+describe('MOD-16: what must stay is sent unchanged; the call’s identifiers keep their placeholders; another patient’s are screened', () => {
+  const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-16', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+  const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['SYNCLAIM0001'] }];
+
+  it('sends amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, named numbers and service-line rows unchanged, refuses none, and still verifies their deadlines and references (property)', () => {
+    fc.assert(
+      fc.property(fc.array(fc.tuple(keptSegment, fc.constantFrom(...KEPT_JOINS)), { minLength: 1, maxLength: 8 }), (pieces) => {
+        // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
+        // to another and no number to another.
+        const glues = (i: number) => !/\p{L}$/u.test(pieces[i]?.[0].text ?? '') && /^\p{L}/u.test(pieces[i + 1]?.[0].text ?? '');
+        const text = pieces.map(([segment, join], i) => `${segment.text}${i === pieces.length - 1 ? '' : join === '' && !glues(i) ? ' ' : join}`).join('');
+        const screened = redactLetterForScreen(text, patient, claims);
+        expect(screened, JSON.stringify(text)).toMatchObject({ text: text.normalize('NFKC'), replaced: 0 });
+        expect(holdsIdentifier(screened.text, patient, claims), JSON.stringify(text)).toBe(false);
+        const input = { documentId: '00000000-0000-4000-8000-000000000016', documentSha256: '0'.repeat(64), text, patient, claims, otherPatients: { holdsOtherPatient: () => Promise.resolve(false) } };
+        for (const [segment] of pieces) {
+          const output = {
+            payer: null,
+            claim_references: segment.reference === undefined ? [] : [{ written: segment.reference, quote: segment.text.split('\n').at(-1) ?? segment.text }],
+            reason_category: 'authorization',
+            reason_quote: segment.text.split('\n').at(-1) ?? segment.text,
+            deadline: segment.deadline === undefined ? null : { written: segment.deadline, quote: segment.text },
+            requested_documents: [],
+          };
+          const reviewed = verifyDenialLetter(input, output, { text: screened.text, claims: screened.claims, candidates: screened.candidates });
+          const fields = reviewed.proposal.fields.filter((field) => field.field !== 'reason_category');
+          expect(fields.every((field) => field.verified), `${JSON.stringify(segment)} ${JSON.stringify(fields)}`).toBe(true);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  }, 60_000);
+
+  it('keeps the call’s nine-digit member ID and ten-digit claim number their placeholders in every SSN and phone shape, never [SSN] or [PHONE], and never offers them (property)', () => {
+    fc.assert(
+      fc.property(ssnValue, phoneValue, fc.nat(1000), fc.array(fc.nat(1000), { minLength: 13, maxLength: 13 }), fc.constantFrom(...SCRIPTS), (member, claim, form, picks, script) => {
+        const who: PatientIdentifiers = { ...patient, memberIds: [member] };
+        const theirs: LetterClaim[] = [{ ...claims[0]!, claimNumbers: [claim] }];
+        for (const [written, placeholder] of [
+          [plainAfterDigit(writeSsn(member, form % 6 === 1 || form % 6 === 5 ? 0 : form, picks, script)), '[MEMBER_ID]'],
+          [plainAfterDigit(writePhone(claim, form % 8 >= 5 ? 1 : form, picks, script)), '[CLAIM_1]'],
+        ] as const) {
+          const number = written.text.replace(/^1(?=\d{10})/u, '1 ');
+          const text = `${written.before}${number}${written.after} on file.`.normalize('NFKC');
+          const screened = redactLetterForScreen(text, who, theirs);
+          expect(screened.text, JSON.stringify(text)).toContain(placeholder);
+          expect(screened.text, JSON.stringify(text)).not.toMatch(/\[SSN\]|\[PHONE\]/u);
+          expect(holdsIdentifier(screened.text, who, theirs), JSON.stringify(text)).toBe(false);
+          expect(screened.candidates.filter((candidate) => candidate === member || candidate === claim)).toEqual([]);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  }, 60_000);
+
+  it('offers another patient’s nine- or ten-digit member ID or claim number, written in any SSN or phone shape and with a prefix against it, whole to the one-patient screen, and sends none of its digits (property)', () => {
+    fc.assert(
+      fc.property(fc.oneof(ssnValue, phoneValue), fc.constantFrom('', 'SYN', 'ZZ-'), fc.nat(1000), fc.array(fc.nat(1000), { minLength: 13, maxLength: 13 }), fc.constantFrom(...SCRIPTS), (id, prefix, form, picks, script) => {
+        // Every shape that writes all its digits: no mask, no seven-digit local number, and unlabeled only with an area code 3-9.
+        const written = id.length === 9 ? writeSsn(id, form % 6 === 1 || form % 6 === 5 ? 0 : form, picks, script) : writePhone(id, form % 8 === 7 || form % 8 === 5 || (form % 8 === 6 && id.startsWith('2')) ? 1 : form, picks, script);
+        const number = written.text.replace(/^1(?=\d{10})/u, '1 ');
+        // A prefix written against the number (glued or with a dash) in place of the words before it, so only where the
+        // number needs no label (no labeled bare form).
+        const labeled = id.length === 9 ? form % 6 === 2 : form % 8 === 4;
+        const glued = prefix !== '' && !labeled && /^[2-9(]/u.test(number);
+        // A digit and an invisible character right before the number may be read with it (R4): that context is left out here.
+        const before = glued || /\d\u200B$/u.test(written.before) ? 'Also ' : written.before;
+        const head = `SYNTHETIC: Dear Jane Zephyra. ${before}${glued ? prefix : ''}`.normalize('NFKC');
+        const tail = `${written.after} on file.`.normalize('NFKC');
+        const text = `${head}${number.normalize('NFKC')}${tail}`;
+        const screened = redactLetterForScreen(text, patient, claims);
+        expect(screened.candidates, JSON.stringify(text)).toContain(id);
+        if (glued) {
+          expect(screened.candidates, JSON.stringify(text)).toContain(`${compactIdentifier(prefix)}${id}`);
+        }
+        // None of its digits is sent: between what was written before and after it, only placeholders.
+        const sentHead = head.replace('Jane Zephyra', '[PATIENT_NAME] [PATIENT_NAME]');
+        expect(screened.text.startsWith(sentHead) && screened.text.endsWith(tail), JSON.stringify(screened.text)).toBe(true);
+        expect(screened.text.slice(sentHead.length, screened.text.length - tail.length), JSON.stringify(text)).not.toMatch(/\p{Nd}/u);
+      }),
+      { numRuns: 300 },
+    );
+  }, 60_000);
+
+  it('redacts an unlabeled bare nine, and a bare ten with an area code 3-9, after a neutral word; sends either after a keep-noun that names it, and a ten that passes the NPI check', () => {
+    fc.assert(
+      fc.property(ssnValue, unlabeledPhone, fc.constantFrom(...UNLABELED_BEFORE), fc.constantFrom('Reference ', 'Claim #: ', 'ICN ', 'check ', 'Case no. '), (nine, ten, neutral, noun) => {
+        expect(redactLetter(`${neutral}${nine}.`, patient, claims).text).toBe(`${neutral}[SSN].`);
+        expect(redactLetter(`${neutral}${ten}.`, patient, claims).text).toBe(`${neutral}[PHONE].`);
+        expect(redactLetter(`Noted. ${noun}${nine}.`, patient, claims).text).toBe(`Noted. ${noun}${nine}.`);
+        expect(redactLetter(`Noted. ${noun}${ten}.`, patient, claims).text).toBe(`Noted. ${noun}${ten}.`);
+        const npi = withCheckDigit(`2${nine.slice(1)}`);
+        expect(redactLetter(`${neutral}${npi}.`, patient, claims).text).toBe(`${neutral}${npi}.`);
+        expect(holdsIdentifier(`Noted. ${noun}${nine}. ${neutral}${npi}.`, patient, claims)).toBe(false);
+      }),
+      { numRuns: 200 },
+    );
+  }, 60_000);
 });
