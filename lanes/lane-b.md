@@ -1629,3 +1629,14 @@ HANDOFF.md; LANES.md rule 10).
 - **Lane A, schema, queued after #126:** `co-001/password-changed-notice` (ADR 0091, SGN-16). It adds a password_notice table filled by an AFTER INSERT trigger on audit_event, tp_operator claim functions and a password_changed kind on the transactional stream. S4 builds it to verification on its branch; its PR opens when #126 merges, and then it needs the founder's approval line.
 - The interest fix is draft #126 (head c49367c5), in four reviews.
 - Next free: ADR 0092, SGN-17.
+
+### 2026-11-05 07:40 UTC: redact-ssn-phone merged as #127 (23b25ad0); #128 open
+- #127, the founder's ruling of 2026-11-01, is built:
+  - a payer letter's SSNs and phone numbers are redacted by pattern ([SSN], [PHONE]);
+  - an independent survivor scan refuses a letter in which one survives;
+  - PRD 14, ADR 0054, ADR 0070 N6 and reconciliation-001 record the ruling;
+  - MOD-15 and MOD-16 are used.
+- #128 is open (packet-figure-placeholders slice 1, opened by the orchestrator for S2).
+- S1 next: `co-001/packets-verifier-identifier-fold` (MOD-19, MOD-20). The packets verifier's identifierSpans gets the gateway's fold, with a differential property test against the gateway matcher. Then SUITE-CAP-3's worker-side fixes if time allows.
+- Merged since 2026-11-05 00:00 UTC: #84, #119, #118, #120, #121, #110, #125, #127.
+- Next free: MOD-21, CAS-56, SEC-25, SGN-17, ADR 0092.
