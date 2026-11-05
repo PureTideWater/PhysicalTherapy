@@ -451,6 +451,17 @@ describe('CognitoAuthProvider: administration', () => {
     await expect(provider.resendInvitation('x@synthetic.test')).rejects.toThrow('InternalErrorException');
   });
 
+  it('SGN-14: an invitation the message trigger could not write fails to the administrator, never as created or as not sent', async () => {
+    const lambdaErrors = ['UnexpectedLambdaException', 'UserLambdaValidationException', 'InvalidLambdaResponseException'];
+    const { provider } = make({ AdminCreateUserCommand: [...lambdaErrors, ...lambdaErrors].map((name) => named(name)) });
+    for (const name of lambdaErrors) {
+      await expect(provider.ensureUser('new@synthetic.test')).rejects.toThrow(name);
+    }
+    for (const name of lambdaErrors) {
+      await expect(provider.resendInvitation('invited@synthetic.test')).rejects.toThrow(name);
+    }
+  });
+
   it('signs a user out everywhere by subject', async () => {
     const { provider, sent } = make({ AdminUserGlobalSignOutCommand: {} });
     await provider.globalSignOut('sub-1');
@@ -499,6 +510,15 @@ describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
     await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('InternalErrorException');
     await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('ResourceNotFoundException');
     await expect(provider.requestPasswordReset(EMAIL)).rejects.toThrow('socket hang up');
+  });
+
+  it('SGN-14: a code the message trigger could not write is our failure: it is thrown, never answered as not delivered', async () => {
+    const lambdaErrors = ['UnexpectedLambdaException', 'UserLambdaValidationException', 'InvalidLambdaResponseException'];
+    const { provider, lines } = resetting({ ForgotPasswordCommand: lambdaErrors.map((name) => named(name)) });
+    for (const name of lambdaErrors) {
+      await expect(provider.requestPasswordReset(EMAIL, 'request-3')).rejects.toThrow(name);
+    }
+    expect(lines.join('\n')).not.toContain('not delivered');
   });
 
   it('sets the new password with the mailed code, with the client and the hash over the typed address', async () => {
