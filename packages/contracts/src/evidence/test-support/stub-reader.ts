@@ -66,7 +66,7 @@ if (behaviour === 'exit-3') {
   }
 } else if (behaviour.startsWith('header ')) {
   // One page frame whose header claims the length named, then up to 4 MiB of its body, a mebibyte at a time.
-  const length = Number(behaviour.slice('header '.length));
+  const length = Number.parseInt(behaviour.slice('header '.length), 10);
   const header = Buffer.alloc(5);
   header.writeUInt8(1, 0);
   header.writeUInt32BE(length, 1);
@@ -88,7 +88,7 @@ if (behaviour === 'exit-3') {
 } else if (behaviour.startsWith('many ')) {
   // That many page frames and done in one write, then an exit as soon as the kernel has them: the last frames are still
   // in the pipe when the process has exited, so only a parent that waits for close has them all.
-  const count = Number(behaviour.slice('many '.length));
+  const count = Number.parseInt(behaviour.slice('many '.length), 10);
   const frames: Buffer[] = [];
   for (let page = 0; page < count; page += 1) {
     frames.push(frame(1, `SYNTHETIC PAGE ${String(page)} ${'x'.repeat(1000)}`));

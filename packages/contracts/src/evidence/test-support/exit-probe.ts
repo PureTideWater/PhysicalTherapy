@@ -11,7 +11,7 @@ function readerChild(): number | undefined {
   for (const task of readdirSync(`/proc/${String(process.pid)}/task`)) {
     for (const pid of readFileSync(`/proc/${String(process.pid)}/task/${task}/children`, 'utf8').split(' ').filter((word) => word !== '')) {
       if (readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\u0000').some((word) => word.endsWith('stub-silent.ts'))) {
-        return Number(pid);
+        return Number.parseInt(pid, 10);
       }
     }
   }

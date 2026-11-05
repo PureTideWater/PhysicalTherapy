@@ -374,7 +374,7 @@ describe('the page reader in its own process (ADR 0033)', () => {
   it('kills a running reader when the worker exits mid-read', async () => {
     const probe = spawnSync(process.execPath, ['--import', 'tsx', EXIT_PROBE], { cwd: REPO, encoding: 'utf8', timeout: 30_000 });
     expect(probe.status, probe.stderr).toBe(0);
-    const pid = Number(probe.stdout.trim());
+    const pid = Number.parseInt(probe.stdout.trim(), 10);
     expect(Number.isSafeInteger(pid), probe.stdout).toBe(true);
     try {
       // The stand-in has no orphan check of its own: only the exit handler stops it, before the worker is gone.
@@ -399,7 +399,7 @@ describe('the page reader in its own process (ADR 0033)', () => {
       ready = true;
     });
     expect(await until(() => ready && /^\d+\n/.test(stderr), 20_000), 'the reader said it was ready').toBe(true);
-    const pid = Number(/^(\d+)\n/.exec(stderr)?.[1]);
+    const pid = Number.parseInt(/^(\d+)\n/.exec(stderr)?.[1] ?? '', 10);
     try {
       expect(dead(pid)).toBe(false);
       shell.kill('SIGKILL');
