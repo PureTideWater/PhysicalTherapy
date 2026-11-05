@@ -1377,7 +1377,7 @@ const KEPT_JOINS = ['; ', '. ', ' ', '\n', '\r\n  ', ''];
 /** What must stay, after a neutral word (MOD-16, 10.2 and R9): amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, numbers a keep-noun names, service-line rows. */
 const keptSegment: fc.Arbitrary<KeptSegment> = fc
   .record({
-    kind: fc.nat(17),
+    kind: fc.nat(18),
     pick: fc.nat(100_000),
     nine: fc.stringMatching(/^[0-9]{9}$/),
     ten: fc.stringMatching(/^[2-9][0-9]{9}$/),
@@ -1439,6 +1439,27 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
         return { text: [`${iso} ${iso}`, `Lines 101; 102; 103`, `${cpt}-9${n(4)}`, `${cpt}/9${n(4)}`, `CA 9${n(4)}-${n(4, 1)}`, `TIN ${n(2)}-${n(7, 1)}`, `${neutral}${iso.replace(/-/g, '')}\n${String(1 + (pick % 9))}`][pick % 7] ?? iso };
       case 16:
         return { text: `${neutral}${withCheckDigit(`2${nine.slice(1)}`)}` };
+      case 17: {
+        // A service or coverage period, and a range of amounts, joined by a hyphen or an en dash with no space (review round 2,
+        // finding 2): each date and each amount is one datesIn or the scan reads, so the range is a barrier, never a chain.
+        const later = new Date(date.getTime() + (1 + (pick % 400)) * 86_400_000).toISOString().slice(0, 10);
+        const [y1, m1, d1] = iso.split('-');
+        const [y2, m2, d2] = later.split('-');
+        const dash = ['-', '-', '\u2013'][pick % 3] ?? '-';
+        const unpadded = (part = '') => String(Number.parseInt(part, 10));
+        const range = [
+          `${m1}/${d1}/${y1}${dash}${m2}/${d2}/${y2}`,
+          `${unpadded(m1)}/${unpadded(d1)}/${y1}${dash}${unpadded(m2)}/${unpadded(d2)}/${y2}`,
+          `${iso}${dash}${later}`,
+          `${m1}-${d1}-${y1}${dash}${m2}-${d2}-${y2}`,
+          `${m1}/${d1}/${y1?.slice(2)}${dash}${m2}/${d2}/${y2?.slice(2)}`,
+          `${m1}.${d1}.${y1}${dash}${m2}.${d2}.${y2}`,
+          `${n(3)}.${n(2, 1)}${dash}${n(3, 2)}.${n(2, 3)}`,
+          `${n(1)},${n(3)}.${n(2, 1)}${dash}${n(3, 2)}.${n(2, 3)}`,
+          `${n(3)},${n(2, 1)}${dash}${n(2, 2)},${n(2, 3)}`,
+        ][pick % 9] ?? iso;
+        return { text: `${['Service ', 'DOS ', 'Coverage ', 'Eligibility ', 'Service period: ', 'From ', 'Billed ', 'Range '][pick % 8] ?? 'Service '}${range}` };
+      }
       default:
         return { text: 'Hours 8:00-5:00, 555-0100 local' };
     }

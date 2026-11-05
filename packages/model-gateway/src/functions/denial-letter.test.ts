@@ -617,6 +617,19 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['D12', 'A', 'Appeal by 11/30/26.', 'Appeal by 11/30/26.', []],
     ['D13', 'A', 'Remitted 2026-10-28, serviced 10/01/2026, appeal by 12/31/2026.', 'Remitted 2026-10-28, serviced 10/01/2026, appeal by 12/31/2026.', []],
     ['D14 the date of birth, by its own rule', 'A', 'DOB 03/03/1961.', 'DOB [DATE_OF_BIRTH].', []],
+    ['D15 a service period joined by a hyphen (review round 2, finding 2)', 'A', 'Service 10/01/2026-10/15/2026.', 'Service 10/01/2026-10/15/2026.', []],
+    ['D16', 'A', 'DOS 10/01/2026-10/15/2026 97110', 'DOS 10/01/2026-10/15/2026 97110', []],
+    ['D17', 'A', 'Coverage 01/01/2026-12/31/2026.', 'Coverage 01/01/2026-12/31/2026.', []],
+    ['D18', 'A', 'Eligibility 1/1/2026-12/31/2026 confirmed.', 'Eligibility 1/1/2026-12/31/2026 confirmed.', []],
+    ['D19', 'A', 'Service period: 11/1/2026-11/15/2026.', 'Service period: 11/1/2026-11/15/2026.', []],
+    ['D20', 'A', 'DOS 11/01/2026-11/01/2026', 'DOS 11/01/2026-11/01/2026', []],
+    ['D21 ISO dates', 'A', 'From 2026-10-01-2026-10-15.', 'From 2026-10-01-2026-10-15.', []],
+    ['D22 dashed dates', 'A', 'Service 10-01-2026-10-15-2026.', 'Service 10-01-2026-10-15-2026.', []],
+    ['D23 an en dash', 'A', 'Service 10/01/2026–10/15/2026.', 'Service 10/01/2026–10/15/2026.', []],
+    ['D24 two-digit years', 'A', 'Service 11/01/26-11/15/26.', 'Service 11/01/26-11/15/26.', []],
+    ['K5 amounts joined by a hyphen (review round 2, finding 2)', 'A', 'Billed 150.00-120.00 allowed.', 'Billed 150.00-120.00 allowed.', []],
+    ['K6', 'A', 'Range 123.45-67.89.', 'Range 123.45-67.89.', []],
+    ['K7 comma thousands', 'A', 'Billed 1,250.00-980.00 allowed.', 'Billed 1,250.00-980.00 allowed.', []],
     ['N1', 'A', 'NPI 1234567893.', 'NPI 1234567893.', []],
     ['N2', 'A', 'Rendering NPI 2340178906.', 'Rendering NPI 2340178906.', []],
     ['N3', 'A', 'Provider 1234567893.', 'Provider 1234567893.', []],
@@ -803,6 +816,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['katakana prolonged sound marks (SEC-6)', 'SSN 900\u30FC12\u30FC3456'],
     ['division slashes (SEC-6)', 'SSN 900\u221512\u22153456'],
     ['ideographic commas (SEC-6)', 'Tel 202\u3001555\u30010123'],
+    // Review round 2, finding 2: dates or amounts joined by a hyphen are a range only when the range is joined to nothing else.
+    ['a date range joined to a further group', 'Seen 10/01/2026-10/15/2026-0123'],
+    ['an amount range joined to a further group', 'Ref 12.34-56.78-901'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -838,6 +854,12 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a column-aligned service-line row (SEC-2)', '97110        1        1200.00'],
     ['a column-aligned ZIP+4 (SEC-2)', 'CA 90001        1234'],
     ['a date glued to the next word after an amount (MOD-16 seed 20276943)', 'Billed $500-50 2020-01-01Paid $0,000.00'],
+    ['a service period joined by a hyphen (review round 2, finding 2)', 'Service 10/01/2026-10/15/2026.'],
+    ['a coverage period, unpadded', 'Eligibility 1/1/2026-12/31/2026 confirmed.'],
+    ['ISO dates joined by a hyphen', 'From 2026-10-01-2026-10-15.'],
+    ['dashed dates joined by a hyphen', 'Service 10-01-2026-10-15-2026.'],
+    ['amounts joined by a hyphen', 'Billed 150.00-120.00 allowed.'],
+    ['amounts joined by a hyphen, no word after', 'Range 123.45-67.89.'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);

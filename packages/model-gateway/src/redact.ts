@@ -1453,11 +1453,58 @@ function joinedRight(text: string, at: number): boolean {
   return SCAN_DIGIT.test(text[index + 1] ?? '');
 }
 
+/** One or two dashes and nothing else: what joins the two ends of a range ("10/01/2026-10/15/2026", "150.00-120.00"). */
+const RANGE_DASH = /^[\p{Pd}\u2212]{1,2}$/u;
+
+/**
+ * The spans (dates or unsigned amounts, in text order) that stand whole: joined by no non-white joiner to a digit group on
+ * either side (A3), or joined only by a dash to another such span, the range as a whole joined to nothing else (a service
+ * period "10/01/2026-10/15/2026", "2026-10-01-2026-10-15", amounts "150.00-120.00": review round 2, finding 2). A range
+ * whose end is joined to a further group ("10/01/2026-10/15/2026-0123") stands as no barrier, nor does any span in it.
+ */
+function wholeRanges<T extends { readonly start: number; readonly end: number }>(text: string, spans: readonly T[]): T[] {
+  const startingAt = new Map<number, number>();
+  const endingAt = new Map<number, number>();
+  spans.forEach((span, index) => {
+    if (!startingAt.has(span.start)) startingAt.set(span.start, index);
+    if (!endingAt.has(span.end)) endingAt.set(span.end, index);
+  });
+  /** The span a range dash joins this one to on a side, if any: the dash's end is the other's start (or its start the other's end). */
+  const partner = (span: T, side: 'left' | 'right'): number | undefined => {
+    for (const width of [1, 2]) {
+      const gap = side === 'right' ? text.slice(span.end, span.end + width) : text.slice(span.start - width, span.start);
+      if (!RANGE_DASH.test(gap)) return undefined;
+      const other = side === 'right' ? startingAt.get(span.end + width) : endingAt.get(span.start - width);
+      if (other !== undefined) return other;
+    }
+    return undefined;
+  };
+  // Whether each side stands free: no joiner, or a range dash to a partner whose own side further out stands free. A partner
+  // on the left starts before the span, so the left sides are settled in order of start and the right sides in reverse.
+  const order = spans.map((_, index) => index).sort((a, b) => (spans[a]?.start ?? 0) - (spans[b]?.start ?? 0));
+  const leftFree = new Array<boolean>(spans.length).fill(false);
+  const rightFree = new Array<boolean>(spans.length).fill(false);
+  for (const index of order) {
+    const span = spans[index];
+    if (span === undefined) continue;
+    const other = joinedLeft(text, span.start) ? partner(span, 'left') : -1;
+    leftFree[index] = other === -1 || (other !== undefined && (spans[other]?.start ?? span.start) < span.start && leftFree[other] === true);
+  }
+  for (const index of [...spans.keys()].sort((a, b) => (spans[b]?.end ?? 0) - (spans[a]?.end ?? 0))) {
+    const span = spans[index];
+    if (span === undefined) continue;
+    const other = joinedRight(text, span.end) ? partner(span, 'right') : -1;
+    rightFree[index] = other === -1 || (other !== undefined && (spans[other]?.end ?? span.end) > span.end && rightFree[other] === true);
+  }
+  return spans.filter((_, index) => leftFree[index] === true && rightFree[index] === true);
+}
+
 /**
  * Whether a chain of digit groups that could be a Social Security or phone number survives in a view of masked text:
  * 1. barriers first: every placeholder (the BARRIER), every whole separated date with a reading (not joined on either
- *    side to another group by a joiner: A3; a date glued to a word read with its letters as blanks), every amount (a currency sign and its number; an unsigned amount, comma
- *    thousands or one or two decimals, not joined to a group on either side), and every bare nine or ten a keep-noun
+ *    side to another group by a joiner: A3; a date glued to a word read with its letters as blanks; two such dates joined
+ *    by a dash, a range, are whole: wholeRanges), every amount (a currency sign and its number; an unsigned amount, comma
+ *    thousands or one or two decimals, not joined to a group on either side, or a range of two), and every bare nine or ten a keep-noun
  *    names, or that R5 keeps (an NPI, a TIN);
  * 2. chains: digit groups joined by SCAN_GAP;
  * 3. a survivor: one to four consecutive groups of a chain holding 9 or 10 digits, or 11 starting with 1 across two or
@@ -1486,18 +1533,17 @@ function survivorIn(text: string): boolean {
   // datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16, check round 1).
   const unglued = /[0-9]\p{L}|\p{L}[0-9]/u.test(text) ? [text, text.replace(/\p{L}/gu, (letter) => ' '.repeat(letter.length))] : [text];
   for (const reading of unglued) {
-    for (const span of datesIn(reading)) {
-      if (span.separated && span.dates.length > 0 && !joinedLeft(text, span.start) && !joinedRight(text, span.end)) {
-        mark(span.start, span.end);
-      }
+    for (const span of wholeRanges(text, datesIn(reading).filter((span) => span.separated && span.dates.length > 0))) {
+      mark(span.start, span.end);
     }
   }
   for (const match of text.matchAll(CURRENCY_AMOUNT)) {
     mark(match.index, match.index + match[0].length);
   }
-  for (const match of text.matchAll(UNSIGNED_AMOUNT)) {
-    if (!joinedLeft(text, match.index) && !joinedRight(text, match.index + match[0].length) && labeledAt(match.index) !== 'person') {
-      mark(match.index, match.index + match[0].length);
+  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
+  for (const span of wholeRanges(text, amounts)) {
+    if (labeledAt(span.start) !== 'person') {
+      mark(span.start, span.end);
     }
   }
   const groups: { readonly start: number; readonly end: number; readonly digits: string; readonly blocked: boolean }[] = [];
