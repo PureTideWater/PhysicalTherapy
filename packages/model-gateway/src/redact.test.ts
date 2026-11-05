@@ -604,7 +604,7 @@ describe('Social Security and phone numbers by pattern: the placeholders, the na
     };
     const once = runsOf(plain);
     const twice = runsOf(`${plain}\u200B`);
-    // About 0.83 with one reading; about 0.98 when the plain letter is read twice as well (the code before corr-ssn-2's fix).
-    expect(once / twice, `${String(once)} runs against ${String(twice)}`).toBeLessThan(0.9);
+    // About 83 in 100 with one reading; about 98 in 100 when the plain letter is read twice as well (before corr-ssn-2's fix).
+    expect(once * 100, `${String(once)} runs against ${String(twice)}`).toBeLessThan(twice * 90);
   });
 });
