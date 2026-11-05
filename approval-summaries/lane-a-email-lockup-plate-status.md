@@ -1,3 +1,43 @@
+<!-- RESUME-BLOCK (2026-11-05T08:00Z, acting S4 stood down: Lane A's account at 99% weekly usage; Lane B resumes from 2026-11-06 19:00 UTC) -->
+## RESUME-BLOCK
+- **Branch:** `co-001/email-lockup-plate`. Local head f62265dc, NOT on the PR branch: the PR branch is still 231da9c4.
+- **WIP ref:** `co-001/wip/email-lockup-plate-s4` = f62265dc, everything.
+- **PR:** #129, a draft, head 231da9c4, base claude/build-platform. CI on 231da9c4 was RED: `unit` failed in
+  packages/synth fixtures.test.ts "holds every row of test-matrix.md word for word" (SGN-13's synth copy). That is
+  fixed at f62265dc. Unsubscribed; no check-in is pending.
+- **Commits after 231da9c4:**
+  - 40eae422: the plated PNGs and the generator, UX-S1 and UX-N4;
+  - 01f67609: docs, UX-N1 and UX-S1;
+  - 9dc0f976: ADR 0081 rewrapped, UX-N3;
+  - 1fcd3115: synth SGN-13 and its fixture;
+  - 3d3664b0: the base merge of 23b25ad0 (#127), clean;
+  - dceba1a5: the SHA-256 pins;
+  - f62265dc: the BRAND.md section 7 line.
+- **Findings:**
+  - Fixed: UX-S1, N1, N2 (the design note in /home/user/ops/designs/lane-a-auth-emails.md, "Ruled 2026-11-05"
+    lines; check that it reached claude/build-ops), N3 and N4.
+  - None open.
+  - The orchestrator, as the brand owner's delegate, CONFIRMED the derived art (07:43Z) with four conditions; all
+    four hold at f62265dc.
+- **Not done:** the full suite on f62265dc. It was started twice and stopped for the stand-down; only typecheck
+  passed.
+- **The exact next step:**
+  1. Run setup if needed.
+  2. In a worktree at the WIP ref, `git fetch origin claude/build-platform`; if it moved past 23b25ad0, merge it
+     once.
+  3. Run the full local suite once. The script is scratchpad plate/suite2.sh, which may be gone; it is the
+     standard list plus `pnpm --filter ./infra test`.
+  4. `git push origin HEAD:co-001/email-lockup-plate`.
+  5. Update #129's description. The fix agent's round-2 draft is in scratchpad plate/pr-body.r2.draft.md, which
+     may be gone. It needs:
+     - `{{SUITE}}` replaced with the suite results;
+     - the SGN-13 synth fix, the #127 merge, the SHA-256 pins and the BRAND.md line added;
+     - the last "Pending" review row changed to done;
+     - the UX-S1 row's "needs confirmation" changed to "confirmed by Lane A's orchestrator, 2026-11-05 07:43Z".
+  6. On green CI: ready, approval-of-record re-run, merge with expectedHeadSha.
+- **Counters used:** none new (no ADR number, no test-matrix case).
+<!-- /RESUME-BLOCK -->
+
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-05T06:50Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) at 06:40Z.
 
 # Item: email-lockup-plate (`co-001/email-lockup-plate`), a small UX and brand PR
