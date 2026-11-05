@@ -23,6 +23,7 @@ const CORE_PROBE = path.join(import.meta.dirname, 'test-support/core-probe.ts');
 const STUB = new URL('./test-support/stub-reader.ts', import.meta.url);
 const SILENT = new URL('./test-support/stub-silent.ts', import.meta.url);
 const FAT = new URL('./test-support/stub-fat.ts', import.meta.url);
+const FAT_UNREADY = new URL('./test-support/stub-fat-unready.ts', import.meta.url);
 const EXIT_PROBE = path.join(import.meta.dirname, 'test-support/exit-probe.ts');
 const READER = new URL('./page-reader.ts', import.meta.url);
 const PDF = 'application/pdf';
@@ -441,6 +442,26 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
     );
     expect(fat.result).toEqual(new PageReadError('the page reader started too large'));
     inItsOwnProcess(fat.seen);
+    // Each of the two checks alone. With no poll before the deadline, the ready frame's own measure fails it at once.
+    const started = Date.now();
+    const atReady = await watched(() =>
+      readInChild(stubRequest('never read'), { ...PAGE_READ_LIMITS, pollMs: 30_000, timeoutMs: 10_000 }, FAT).then(
+        (reply) => reply,
+        (error: unknown) => error,
+      ),
+    );
+    expect(atReady.result, 'measured at its ready frame').toEqual(new PageReadError('the page reader started too large'));
+    expect(Date.now() - started, 'well before the deadline').toBeLessThan(5_000);
+    inItsOwnProcess(atReady.seen);
+    // One that never says it is ready is failed by the poll, before the deadline would refuse it.
+    const unready = await watched(() =>
+      readInChild(stubRequest('never read'), { ...PAGE_READ_LIMITS, timeoutMs: 10_000 }, FAT_UNREADY).then(
+        (reply) => reply,
+        (error: unknown) => error,
+      ),
+    );
+    expect(unready.result, 'measured by the poll before any ready frame').toEqual(new PageReadError('the page reader started too large'));
+    inItsOwnProcess(unready.seen);
   }, 60_000);
 
   it('gives every frame a reader wrote before it exited: the result waits for close, not exit', async () => {
