@@ -1393,8 +1393,9 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
 
 /** The scan's joiners (one between two groups): one or two dashes, ".", "(", ")", "/", every non-white number joiner (mirrors NUMBER_JOINERS, written here on its own), and ";" with no white space after it. */
 const SCAN_JOINER = "[\\p{Pd}\\u2212\\u2043\\u02D7\\u2796]{1,2}|[./()_|\\\\'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022\"\\u201C\\u201D]|;(?![\\s\\u0085])";
-const SCAN_SPACE = `(?:[ \\t]{0,3}|[ \\t]{0,16}(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])[ \\t]{0,16})`;
-/** What joins two digit groups into one chain: white space (three spaces or tabs at most, or one line break with indentation), with at most one joiner. */
+/** White space in a chain's gap: up to sixteen spaces or tabs (a justified or column-aligned PDF line: SEC-2), or one line break with up to sixteen on each side. */
+const SCAN_SPACE = `[ \\t]{0,16}(?:(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])[ \\t]{0,16})?`;
+/** What joins two digit groups into one chain: white space (SCAN_SPACE), with at most one joiner. */
 const SCAN_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER})${SCAN_SPACE})?$`, 'u');
 /** Under an SSN or phone label a comma joins two groups too ("SSN 900,12 3456"); elsewhere it is an amount's or a list's. */
 const SCAN_LABELED_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');

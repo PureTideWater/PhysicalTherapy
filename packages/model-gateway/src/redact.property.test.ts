@@ -1077,7 +1077,11 @@ function writePhone(value: string, form: number, picks: readonly number[], scrip
 }
 
 /** What survives every pattern and the survivor scan must refuse (R7, step 0's A2 and A3), written after a neutral word. */
-const SURVIVORS = ['900-12-34 56', '202/555-0123', '202)555-0123', '900;12;3456', '900-12-03-56', '900.12.03.56', '202.555 0123', '900 551 234', '900-12-34.56'];
+const SURVIVORS = [
+  '900-12-34 56', '202/555-0123', '202)555-0123', '900;12;3456', '900-12-03-56', '900.12.03.56', '202.555 0123', '900 551 234', '900-12-34.56',
+  // Review round 1, SEC-2: four to sixteen spaces or tabs between groups (justified or column-aligned PDF text).
+  '900    12    3456', '202    555    0123', '900\t\t\t\t12 3456', '900        12        3456', '202\t\t\t\t\t\t\t\t555 0123',
+];
 
 interface PatternSegment {
   readonly text: string;

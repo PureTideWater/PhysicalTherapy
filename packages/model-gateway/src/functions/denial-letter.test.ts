@@ -772,6 +772,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a labeled SSN digit by digit (SEC-4)', 'SSN 9 0 0 1 2 3 4 5 6'],
     ['a labeled phone in five pairs (SEC-4)', 'phone 20 25 55 01 23'],
     ['a labeled SSN with a period and a space (SEC-5)', 'SSN 900.12 3456'],
+    ['four spaces between groups (SEC-2)', 'SSN 900    12    3456'],
+    ['eight spaces between groups (SEC-2)', 'Tel 202        555        0123'],
+    ['tabs between groups (SEC-2)', 'SSN 900\t\t\t\t12 3456'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -804,6 +807,8 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['an ICN', 'ICN 12345678901'],
     ['an EFT trace', 'EFT 1900123456'],
     ['an NPI', 'NPI 2345678900'],
+    ['a column-aligned service-line row (SEC-2)', '97110        1        1200.00'],
+    ['a column-aligned ZIP+4 (SEC-2)', 'CA 90001        1234'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);
