@@ -7,7 +7,8 @@
   [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
   (its one exception: the sign-in email, rendered back after a step closes); reverses none of their rulings. UX PR 7
   (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08, whose A4 and Not covered
-  [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends
+  [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends.
+  `co-001/auth-emails` adds the code-email amendment, with SGN-13 to SGN-15.
 - **Date:** 2026-11-01
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking (UX-128's marker
@@ -305,12 +306,88 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   email" notice heard once (and again after Send a new code), the "Password changed" notice heard once, the help list
   read as a list.
 
+## Amendment: the code email and every Cognito message (co-001/auth-emails, 2026-11-05)
+
+Closes the forgotten-password amendment's "Not covered" item on the branded code email (the "password changed" email
+it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the code email".
+
+- **B1. A CustomMessage trigger sets every message.** Without one, Cognito's forgot-password email shares the pool's
+  verification template with every other code. The pool's CustomMessage trigger (`infra/lib/constructs/cognito-messages.ts`,
+  made by `Identity`) now sets each source's subject and message. It runs the inline source that `@tp/auth-mail`
+  (`packages/auth-mail`) renders from the same words the dev twin and the copy lint read, so the words exist once:
+  Node 22 on arm64, 128 MB, 3 seconds (under Cognito's 5-second wait), no VPC, no SDK, no network, one environment
+  variable (`APP_SIGN_IN_URL`), a role of its own that may write only its own log group (`/tp/<env>/cognito-messages`,
+  no managed policy), invoked only by `cognito-idp.amazonaws.com` for this pool and this account. It refuses nothing,
+  so it tells nothing about an account (unlike ADR 0088's rejected P-1 (a)). Infra takes its first workspace
+  dependency for it; the alternative, a copy of the words in infra held equal by a test, would be two copies.
+  - Rejected: a CustomEmailSender trigger. It would allow a multipart text and HTML body with SES tags, but it needs a
+    KMS key and a KMS and an SES call per message inside Cognito's 5 seconds: a network dependency on the path of
+    every code.
+- **B2. The words of every source** (`packages/auth-mail/src/words.ts`; house voice, BRAND.md 1; none is legal text):
+  the reset code's are the recovery design's section 2.5 word for word ("Your PaidWhole code"; "Your code to choose a
+  new PaidWhole password is {####}. Enter it on the page that sent it within 15 minutes. If you did not ask for it,
+  ignore this email: your password is unchanged."). The invitation and its resend ("Your PaidWhole invitation") name
+  the address, the temporary password on its own line, the sign-in page as plain text and its 7 days
+  (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification, sign-up,
+  resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The footer of
+  every message: "PaidWhole never asks for your password or a code by email, phone or chat." The 7 days, 15 minutes
+  (the reset step, A1) and 3 minutes (the sign-in session) are held to `identity.ts` and `step-limits.ts` by tests.
+  - The pool's own verification and invitation templates are the same frame's generic fallback ("Your PaidWhole code
+    is {####}. Enter it on the page that sent it. If you did not ask for it, ignore this email: nothing on your
+    account changes."), since every code source shares the verification template: reset-specific words never go
+    there.
+- **B3. The frame.** The worker's mail frame without its header: text-first (each paragraph a `<p>`, so the HTML reads
+  as the text does with its tags stripped), no remote asset (no image, font, stylesheet or `url(`), so no header art
+  and, by BRAND.md 7, no wordmark typed in its place; the brand's colors from `tokens.ts`; every code in Plex Mono,
+  whole on one line. No message has a link: the invitation names `https://<AppDomainName>/sign-in` as plain text, with
+  no query and no fragment, and no code or address is ever in a URL. Phase 2's sender reads "PaidWhole
+  <MailFromAddress>", as the worker's does. Nothing about the SES stream changes: Cognito's mail still goes through the
+  transactional set untagged, under its suppression, bounce and probe rules (ADR 0065).
+- **B4. Failure.** The handler writes Cognito's own `{####}` (and `{username}`) once each, through a replacer function.
+  On any doubt (an unknown source, no request or response, a parameter that is not a placeholder, an invitation whose
+  sign-in page is not `https://<host>/sign-in`, any thrown error) it returns the event unchanged, so Cognito sends the
+  pool's branded fallback, and logs one line, `COGNITO_MESSAGE_FALLBACK` with a closed reason and the source only when
+  it is a CustomMessage name. It never reads `request.userAttributes` and never logs the event. If the function cannot
+  run, Cognito fails the call (`UnexpectedLambdaException`, `UserLambdaValidationException`,
+  `InvalidLambdaResponseException`): the provider rethrows it, so a reset request answers "Check your email" at its
+  floor and logs the failure, and an invitation fails in front of its administrator. The function's errors and
+  throttles, and each fallback, alarm the operator (docs/runbooks/deliverability.md, 3.9). On the first deploy the
+  invoke permission is created just after the pool names the function (it names the pool's ARN), a window of seconds
+  in which a code email fails as above.
+- **B5. The dev twin delivers what Cognito delivers.** The development provider's invitation and reset outboxes write
+  each message's subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the
+  reset code from the message's own words. SGN-13 to SGN-15.
+- **Not covered:**
+  - the "password changed" email. Its words (`passwordChangedLines`: when, in UTC words, that every device was signed
+    out and the second factor still holds, and "write to <support address> from this address now"; no link and no
+    "from where") and the worker template's `account` variant are built and tested here, and nothing sends them. Its
+    kind is refused by `mail_send`'s CHECK constraints and no mail-sending role may read a user's address, so it needs
+    a migration: an outbox row the database writes in the reset's own transaction (a trigger on `audit_event` for
+    `password_reset_completed`), sent by a platform job on the transactional stream as kind `password_changed`.
+    ADR 0091 records it, with SGN-16, in the follow-on pull request, after the founder approves the domain model
+    (CO-02). Not for the invitation's first password;
+  - dark rules in email (the brand owner's call: the worker's lockup PNG is close to unreadable in a client that
+    inverts colors);
+  - restricting the client's attribute writes and `keepOriginal: { email: true }` (a user holding an access token can
+    change their own email in Cognito today, unverified at once; the app never does);
+  - the organization's name in the invitation.
+- **Not verified here** (no user pool in this lane; the founder's pool smoke check, phase 2 on staging, with a
+  synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that
+  it accepts the display-name `From`; that a resend fires `CustomMessage_AdminCreateUser`; that it substitutes the
+  parameters once and sends the pool's template when the response is unchanged; a real reset's cold start against the
+  1,500 ms floor; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
+  the trigger returns); and Cognito's subject (140) and message (20,000) limits and CloudFormation's limit on an inline
+  `ZipFile` (the source is 13.5 KB; the tests cap it at 16 KiB), which are quoted from memory: AWS's documentation
+  was not reachable from this session. If the inline limit binds, the source goes as `Code.fromAsset` of the same text.
+
 ## Revisit when
 
 - UX PR 66 lands: the constants, and the code step kept at 5 minutes by the app once Cognito allows 15.
 - Cognito offers a way to refresh a sign-in session: then Extend, and 2.2.1 in full.
 - UX PR 65 lands (the mfa line's second sentence).
-- Lane A brands the code email or adds a security_event function.
+- Lane A adds a security_event function. (The code email is branded: the code-email amendment.)
+- ADR 0091's pull request lands: the password-changed email is sent.
+- Cognito adds a CustomMessage source, or AWS changes the trigger's event: its words, or the fallback's reason codes.
 - The floor's log shows runs over it, or the `password reset request timed` p99 nears the floor: raise it.
 - ADR 0088's second release (the confidential client) reaches production: the Not covered bullet on the app's path
   goes.
