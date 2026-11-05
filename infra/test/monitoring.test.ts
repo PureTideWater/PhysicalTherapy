@@ -213,8 +213,9 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
     // the platform's five codes, an unsent probe, and the web's refused validation and validation cap. Reset and
     // enrolment (R-11; docs/adr/0088, D7): the web's undelivered requests (configuration, throttle), failed requests,
-    // refused enrolments, refused client credentials and the start-up probe's refusal.
-    expect(filters).toHaveLength(28);
+    // refused enrolments, refused client credentials and the start-up probe's refusal. The user pool's message trigger
+    // (docs/adr/0081, the code-email amendment): a message left to the pool's template.
+    expect(filters).toHaveLength(29);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -246,6 +247,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.mailStreams.transactionalBounceAlarm,
       stack.mailStreams.deadLetterAlarm,
       stack.mailStreams.queueAgeAlarm,
+      stack.identity.messages.failureAlarm,
+      stack.identity.messages.fallbackAlarm,
     ].map((alarm) => logicalIdOf(stack, alarm));
     expect(resourcesOf(template, 'AWS::CloudWatch::Alarm').map(([id]) => id).sort()).toEqual(alarms.sort());
   });
