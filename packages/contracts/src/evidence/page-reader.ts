@@ -9,8 +9,8 @@ import yauzl from 'yauzl';
 /**
  * The page reader (docs/adr/0033): the text of each page of one untrusted document, read in a process of its own that
  * the caller starts with this file as its entry and bounds (pages.ts readInChild: its own heap flags, a memory bound on
- * the whole process, a deadline, an empty environment, Node's permission model, and the caps below, which the caller
- * applies again to the reply). Nothing else in the worker decompresses or parses a contract, an exhibit or a payer
+ * the whole process, a deadline, an empty environment, Node's permission model (which cannot deny it a network
+ * connection on Node 24; docs/adr/0033), and the caps below, which the caller applies again to the reply). Nothing else in the worker decompresses or parses a contract, an exhibit or a payer
  * letter.
  *
  * - A text PDF: pdf.js (Mozilla's reader) with no worker, scripts, fonts or canvas; only the text layer

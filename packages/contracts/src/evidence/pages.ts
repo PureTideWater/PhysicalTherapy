@@ -21,7 +21,8 @@ import { normalizePageText } from './page-text';
  *   deadline, and caps on the pages, the page text and a workbook's inflated parts, which this process
  *   applies again to the reply. The child gets an empty environment, an argv of its flags and entry
  *   only, the document's bytes on stdin, no core file (readerCommand), and Node's permission model (it reads its own
- *   code and writes, spawns and loads nothing). A document past any limit is unsupported_document, never read in part;
+ *   code and writes, spawns and loads nothing; it can still open a network connection, which Node 24's permission
+ *   model cannot deny: docs/adr/0033, "Not bounded: the network"). A document past any limit is unsupported_document, never read in part;
  *   one the reader cannot parse is document_unreadable; the reader's own failure is PageReadError;
  * - an image, and the pages of a PDF with no text layer, go to the scan reader (Textract) when one is
  *   configured.
