@@ -1,19 +1,34 @@
+import { DBInstanceNotFoundFault } from '@aws-sdk/client-rds';
+import { NoSuchKey, S3ServiceException } from '@aws-sdk/client-s3';
 import type { ScopeClient, ScopePool } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { DigestSendFailed } from './digest/job';
 import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
-import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
+import { JOB_TYPES, PARSE_CONCURRENCY, PRACTICE_JOB_SLOTS, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
 import { SCREENING_JOB_TYPES, type ScreeningHandlers, type ScreeningJobs } from './jobs/screening';
 import type { JobRunRecorder } from './jobs/runs';
-import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
+import { ReleaseTypeNotRead } from './price/release';
+import { ExportLoadFailed } from './reconcile/job';
+import {
+  CrossPracticeJobError,
+  JOB_ATTEMPT_FAILED_MESSAGE,
+  JOB_FAILED_MESSAGE,
+  JOB_HEAP_MESSAGE,
+  JobPayloadError,
+  type QueueClient,
+  attemptErrorCode,
+  practicePool,
+  startWorker,
+} from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
 
-type Handler = (jobs: { id: string; data: unknown; retryCount?: number }[]) => Promise<unknown>;
+type Handler = (jobs: { id: string; data: unknown; retryCount?: number; signal?: AbortSignal }[]) => Promise<unknown>;
 
 function fakeBoss() {
   const handlers = new Map<string, Handler>();
@@ -236,6 +251,225 @@ describe('startWorker', () => {
       expect.objectContaining({ level: 'error', job_id: 'job-drill', job_type: 'restore_drill', error_code: 'JOB_FAILED' }),
     ]);
     expect(QUEUE_OPTIONS.retryLimit + 1).toBe(3);
+    await worker.stop();
+  });
+
+  it('logs each failed attempt, the last among them, with its error’s code and never its text (CAS-42.5 on 3ac856d5)', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const timedOut = new Error('timeout exceeded when trying to connect');
+    const worker = await startWorker({ boss: client, pool, logger, handlers: { ...placeholderHandlers, price: () => Promise.reject(timedOut) }, heartbeatMs: 60_000 });
+    for (let retryCount = 0; retryCount <= QUEUE_OPTIONS.retryLimit; retryCount += 1) {
+      await expect(handlers.get('price')?.([{ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toBe(timedOut);
+    }
+    expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE)).toEqual(
+      [0, 1, 2].map((retryCount) => ({ time: expect.any(String), level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, job_id: `job-${String(retryCount)}`, job_type: 'price', error_code: 'DB_POOL_TIMEOUT' })),
+    );
+    // The fixed text, written out for the log lint in worker.ts.
+    expect(JOB_ATTEMPT_FAILED_MESSAGE).toBe('job attempt failed');
+    expect(JSON.stringify(lines)).not.toContain('timeout exceeded');
+    await worker.stop();
+  });
+
+  it('names a failed attempt’s error by a code: the pool’s own failures, a SQLSTATE, a code it carries, its class, never its text', () => {
+    const database = Object.assign(new Error('deadlock detected'), { code: '40P01', severity: 'ERROR', name: 'error' });
+    class PricingRunNotFoundError extends Error {
+      override readonly name = 'PricingRunNotFoundError';
+    }
+    expect(attemptErrorCode(new Error('timeout exceeded when trying to connect'))).toBe('DB_POOL_TIMEOUT');
+    expect(attemptErrorCode(new Error('Connection terminated due to connection timeout', { cause: new Error('x') }))).toBe('DB_CONNECT_TIMEOUT');
+    expect(attemptErrorCode(new Error('Connection terminated unexpectedly'))).toBe('DB_CONNECTION_TERMINATED');
+    expect(attemptErrorCode(database)).toBe('DB_40P01');
+    expect(attemptErrorCode(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toBe('ECONNRESET');
+    expect(attemptErrorCode(Object.assign(new Error('content'), { code: 'CONTENT_NOT_LOADED' }))).toBe('CONTENT_NOT_LOADED');
+    expect(attemptErrorCode(new PricingRunNotFoundError('the pricing run is not recorded yet'))).toBe('PRICING_RUN_NOT_FOUND_ERROR');
+    expect(attemptErrorCode(new TypeError('x is not a function'))).toBe('TYPE_ERROR');
+    expect(attemptErrorCode(new Error('synthetic failure'))).toBe('ERROR');
+    // A name that is not an Error class's, a code in no known form, and no object at all.
+    expect(attemptErrorCode(Object.assign(new Error('x'), { name: 'Pat Doe' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode(Object.assign(new Error('x'), { code: 'member 123', name: 'Smith' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode('timeout exceeded when trying to connect')).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode(null)).toBe('UNCLASSIFIED');
+  });
+
+  it('names this codebase’s own retryable failures and AWS’s exceptions by their class, never UNCLASSIFIED (round-3 review WR-1)', () => {
+    class PricedOutOfOrder extends Error {
+      override readonly name = 'PricedOutOfOrder';
+    }
+    // The failures handlers throw so pg-boss retries the attempt (reconcile/job.ts, digest/job.ts, price/execute.ts, price/release.ts).
+    expect(attemptErrorCode(new ExportLoadFailed('an export could not be loaded; it stays stored for the next attempt'))).toBe('EXPORT_LOAD_FAILED');
+    expect(attemptErrorCode(new DigestSendFailed('MessageRejected'))).toBe('DIGEST_SEND_FAILED');
+    expect(attemptErrorCode(new PricedOutOfOrder('a later run finished first'))).toBe('PRICED_OUT_OF_ORDER');
+    expect(attemptErrorCode(new ReleaseTypeNotRead('pfs' as never))).toBe('RELEASE_TYPE_NOT_READ');
+    // AWS SDK v3: a modelled exception, one the service named with no class of its own (S3's SlowDown), and an acronym.
+    expect(attemptErrorCode(new NoSuchKey({ message: 'The specified key does not exist.', $metadata: {} }))).toBe('NO_SUCH_KEY');
+    expect(attemptErrorCode(new S3ServiceException({ name: 'SlowDown', $fault: 'server', message: 'Please reduce your request rate.', $metadata: {} }))).toBe('SLOW_DOWN');
+    expect(attemptErrorCode(new DBInstanceNotFoundFault({ message: 'not found', $metadata: {} }))).toBe('DB_INSTANCE_NOT_FOUND_FAULT');
+    // A name set on an error by data is not its class's, and an AWS exception carries its fault and its metadata both.
+    expect(attemptErrorCode(Object.assign(new Error('x'), { name: 'Smith' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode(Object.assign(new Error('x'), { name: 'Smith', $fault: 'client' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode(Object.assign(new ExportLoadFailed('x'), { name: 'Smith' }))).toBe('UNCLASSIFIED');
+    expect(attemptErrorCode({ name: 'Smith', $fault: 'client', $metadata: {} })).toBe('UNCLASSIFIED');
+  });
+
+  it('logs an attempt pg-boss failed before its handler returned, and records it retrying, never succeeded (round-3 review WR-2)', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const events: unknown[] = [];
+    const runs: JobRunRecorder = {
+      started: () => Promise.resolve(),
+      finished: (run) => {
+        events.push(run);
+        return Promise.resolve();
+      },
+    };
+    // pg-boss aborts the job's signal when it gives up on the attempt while the handler still runs: at the attempt's
+    // expireInSeconds (an AbortError), or when the heartbeat finds the claim gone (its own Error); on an ordinary
+    // completion only after the handler returned.
+    let giveUp: () => void = () => undefined;
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger,
+      runs,
+      handlers: {
+        ...placeholderHandlers,
+        price: () => {
+          giveUp();
+          return Promise.resolve();
+        },
+      },
+      heartbeatMs: 60_000,
+    });
+    const job = (id: string, retryCount: number, reason?: Error) => {
+      const controller = new AbortController();
+      giveUp = () => {
+        controller.abort(reason);
+      };
+      return { id, retryCount, signal: controller.signal, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } };
+    };
+    await handlers.get('price')?.([job('job-expired', 0)]);
+    await handlers.get('price')?.([job('job-claim', 1, new Error("job job-claim is no longer active under this worker's claim"))]);
+    await handlers.get('price')?.([job('job-last', QUEUE_OPTIONS.retryLimit)]);
+    // A completion pg-boss settles: the signal aborts only after the handler returned.
+    const settled = job('job-done', 0);
+    giveUp = () => undefined;
+    await handlers.get('price')?.([settled]);
+    expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE)).toEqual([
+      expect.objectContaining({ level: 'warn', job_id: 'job-expired', job_type: 'price', error_code: 'JOB_EXPIRED' }),
+      expect.objectContaining({ level: 'warn', job_id: 'job-claim', job_type: 'price', error_code: 'JOB_CLAIM_LOST' }),
+      expect.objectContaining({ level: 'warn', job_id: 'job-last', job_type: 'price', error_code: 'JOB_EXPIRED' }),
+    ]);
+    // Its last attempt raises the operator alarm, as a thrown failure's does.
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([expect.objectContaining({ level: 'error', job_id: 'job-last', error_code: 'JOB_FAILED' })]);
+    expect(events).toEqual([
+      { jobId: 'job-expired', practiceId: PRACTICE, outcome: 'retrying', errorCode: 'JOB_EXPIRED' },
+      { jobId: 'job-claim', practiceId: PRACTICE, outcome: 'retrying', errorCode: 'JOB_CLAIM_LOST' },
+      { jobId: 'job-last', practiceId: PRACTICE, outcome: 'failed', errorCode: 'JOB_EXPIRED' },
+      { jobId: 'job-done', practiceId: PRACTICE, outcome: 'succeeded', errorCode: null },
+    ]);
+    // Every attempt still logs its heap line.
+    expect(lines.filter((line) => line.msg === JOB_HEAP_MESSAGE).map((line) => line.job_id)).toEqual(['job-expired', 'job-claim', 'job-last', 'job-done']);
+    // A stop past its grace: pg-boss fails the active attempt and aborts it, and the handler returns after.
+    await worker.stop();
+    await handlers.get('price')?.([job('job-stopped', 0)]);
+    expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE).at(-1)).toMatchObject({ job_id: 'job-stopped', error_code: 'JOB_STOPPED' });
+    expect(events.at(-1)).toEqual({ jobId: 'job-stopped', practiceId: PRACTICE, outcome: 'retrying', errorCode: 'JOB_STOPPED' });
+  });
+
+  it('opens the practice pool with a connection for each practice job it works at once: one from each queue and PARSE_CONCURRENCY parses', async () => {
+    const { boss, client } = fakeBoss();
+    const worker = await startWorker({ boss: client, pool, logger: createLogger({ sink: () => undefined }), handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const slots = boss.work.mock.calls
+      .filter(([name]) => (JOB_TYPES as readonly string[]).includes(name))
+      .reduce((total, [, options]) => total + ((options as { localConcurrency?: number }).localConcurrency ?? 1), 0);
+    await worker.stop();
+    expect(slots).toBe(JOB_TYPES.length - 1 + PARSE_CONCURRENCY);
+    expect(PRACTICE_JOB_SLOTS).toBe(slots);
+    // Opened, not connected: pg's pool connects on first use.
+    const opened = practicePool('postgres://nobody:nothing@127.0.0.1:1/none');
+    try {
+      expect(opened.options.max).toBe(slots);
+    } finally {
+      await opened.end();
+    }
+  });
+
+  it('logs the live heap once per attempt as it ends, completed or failed, with IDs and numbers only (D19)', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const failing = () => Promise.reject(new Error('synthetic failure'));
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger,
+      handlers: { ...placeholderHandlers, price: failing, parse_835: () => Promise.resolve() },
+      platform: {
+        audit_copy: () => Promise.resolve(),
+        restore_drill: failing,
+        support_grant_notices: failing,
+        monitoring_schedule: failing,
+        billing_dunning: failing,
+        usage_snapshot: failing,
+        support_mail: failing,
+        screening_expiry: failing,
+        mail_events: failing,
+        mail_expiry: failing,
+        dunning_notices: failing,
+      },
+      heartbeatMs: 60_000,
+    });
+    expect(JOB_HEAP_MESSAGE).toBe('job heap');
+    await handlers.get('parse_835')?.([{ id: 'job-parse', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    for (const retryCount of [0, 1, 2]) {
+      await expect(handlers.get('price')?.([{ id: 'job-price', retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toThrow('synthetic failure');
+    }
+    await handlers.get('audit_copy')?.([{ id: 'job-copy', data: {} }]);
+    // A payload the worker rejects is an attempt too: it still logs its heap.
+    await expect(handlers.get('parse_835')?.([{ id: 'job-bad', data: { practice_id: 'not a uuid' } }])).rejects.toThrow(JobPayloadError);
+    const heapLines = lines.filter((line) => line.msg === JOB_HEAP_MESSAGE);
+    expect(heapLines.map((line) => [line.job_id, line.job_type])).toEqual([
+      ['job-parse', 'parse_835'],
+      ['job-price', 'price'],
+      ['job-price', 'price'],
+      ['job-price', 'price'],
+      ['job-copy', 'audit_copy'],
+      ['job-bad', 'parse_835'],
+    ]);
+    for (const line of heapLines) {
+      expect(Object.keys(line).sort()).toEqual(['heap_limit_mib', 'heap_live_peak_mib', 'job_id', 'job_type', 'level', 'msg', 'time']);
+      expect(line.level).toBe('info');
+      for (const field of ['heap_live_peak_mib', 'heap_limit_mib'] as const) {
+        expect(Number.isInteger(line[field]), field).toBe(true);
+        expect(line[field] as number, field).toBeGreaterThan(0);
+      }
+      expect(line.heap_live_peak_mib as number).toBeLessThanOrEqual(line.heap_limit_mib as number);
+    }
+    await worker.stop();
+  });
+
+  it('never lets the heap line change how an attempt ends: a sink that throws on it neither fails a completed job nor replaces a failure (D19)', async () => {
+    const { handlers, client } = fakeBoss();
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({
+      sink: (line) => {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (parsed.msg === JOB_HEAP_MESSAGE) {
+          throw new Error('synthetic sink failure');
+        }
+        lines.push(parsed);
+      },
+    });
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger,
+      handlers: { ...placeholderHandlers, price: () => Promise.reject(new Error('synthetic failure')), parse_835: () => Promise.resolve() },
+      heartbeatMs: 60_000,
+    });
+    await expect(handlers.get('parse_835')?.([{ id: 'job-parse', data: { practice_id: PRACTICE, document_id: DOCUMENT } }])).resolves.toBeUndefined();
+    await expect(handlers.get('price')?.([{ id: 'job-price', retryCount: 2, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toThrow('synthetic failure');
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE).map((line) => line.job_id)).toEqual(['job-price']);
     await worker.stop();
   });
 

@@ -1687,6 +1687,14 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(JSON.stringify(job?.steps ?? [])).not.toContain('secrets.');
   });
 
+  it('release-capacity: its header names the memory line as tools/release-capacity/checks.ts judges it, the worker’s working set, with memory.peak reported beside it (Lane A’s orchestrator, 2026-11-04; docs/adr/0083)', () => {
+    // The comment above `on:`, its lines joined.
+    const header = (readFileSync(path.join(WORKFLOWS, 'release-capacity.yml'), 'utf8').split('\non:')[0] ?? '').replace(/\n# ?/g, ' ');
+    expect(header).not.toMatch(/memory\.peak above/);
+    expect(header).toContain("the worker's working set (memory.current less inactive_file) above 90% of the task, memory.peak reported beside it and never judged");
+    expect(header).toContain('any memory.events oom or oom_kill');
+  });
+
   it('release-capacity: its notify job alone writes issues, on a failure, a cancel or an advisory that is not a pull request’s (fix round S3, SB-7)', () => {
     expectQuietNotify(
       'release-capacity.yml',

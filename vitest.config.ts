@@ -32,7 +32,9 @@ const CHROMIUM_ON_CI = ['tools/test/ci-chromium.ts'];
  * Database files whose run is long and whose source is short, root-relative: the generated route tests (two lines
  * each), SCR-19's lease wait (about 190 s on CI) and CAS-41's bounded readers (triage's and the report's, each building
  * months of 10,000 and 20,000 generated lines and measuring their readers on both: 5.5 and 8 minutes locally;
- * SUITE-CAP-1a, docs/adr/0083). Each shard starts its slowest files first, by the durations in the results cache
+ * SUITE-CAP-1a, docs/adr/0083) and CAS-42's real-size jobs (triage's and the report's at 100,000 lines, and the
+ * reconcile pass at size: about 11 minutes and about 5 minutes locally; SUITE-CAP-1b, docs/adr/0083). Each shard
+ * starts its slowest files first, by the durations in the results cache
  * (node_modules/.vite/vitest, which CI restores per shard); a file with no recorded duration falls back to its size,
  * which would start these last. So, without a recorded duration, these start first.
  */
@@ -41,6 +43,8 @@ export const SLOW_FIRST: readonly RegExp[] = [
   /^apps\/worker\/src\/screening\/consumer-lease\.db\.test\.ts$/,
   /^apps\/worker\/src\/triage\/batched\.db\.test\.ts$/,
   /^apps\/worker\/src\/report\/streamed\.db\.test\.ts$/,
+  /^apps\/worker\/src\/triage\/triage\.large\.db\.test\.ts$/,
+  /^apps\/worker\/src\/reconcile\/reconcile\.large\.db\.test\.ts$/,
 ];
 
 /**

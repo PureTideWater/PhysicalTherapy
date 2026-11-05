@@ -44,7 +44,9 @@ export async function rollbackRelease(client: SqlClient, request: RollbackReques
   if (previous !== null) {
     const dir = path.join(request.root, 'content/releases', String(previous));
     if (existsSync(dir)) {
-      const result = await loadRelease(client, dir, { release: previous });
+      // The withdrawal waits for no freeze (freezeWaitMs 0: the loader's one pass, then on): the release loaded here is
+      // published at its commit, and a later `pnpm release:load` of it finishes a freeze an older transaction held back.
+      const result = await loadRelease(client, dir, { release: previous, freezeWaitMs: 0 });
       loaded = result.status === 'loaded' ? previous : null;
     }
   }

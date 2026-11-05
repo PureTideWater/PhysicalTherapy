@@ -208,7 +208,9 @@ built outside the repository. A 100,000-line month prices while another practice
 parse, as one worker runs every job type's loop at once; then triage and a report. It fails on any job not complete,
 a count off, an OOM kill or restart, `memory.peak` above 90% of the task, a concurrent phase whose memory was sampled
 fewer than once each 2 seconds, or a read outside the fetch; times are recorded and advisory, as the founder ruled for
-the screening's test. A failure, a cancel (the 180-minute timeout among them) or an advisory (the windows query over its
+the screening's test. *Since 2026-11-04 the 90% line judges the worker's working set (`memory.current` less
+`inactive_file`), `memory.peak` reported beside it, and the run also fails on any `memory.events` oom or oom_kill
+increase (docs/adr/0083, "The weekly run's memory line and step 7b").* A failure, a cancel (the 180-minute timeout among them) or an advisory (the windows query over its
 5 s budget, handed on as the job's `advisories` output) opens or comments on an issue, the advisory lines in its body;
 an advisory on a pass goes to its own issue, "Release capacity advisory". **It leaves the five 50,000-row screenings to
 screening-capacity's weekly S1 to S5:** the screenings run in their own task with its own limits, so running them again

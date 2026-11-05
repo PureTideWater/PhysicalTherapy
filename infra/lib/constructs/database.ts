@@ -70,6 +70,17 @@ export const DATABASE_NAME = 'tp';
 
 export const DATABASE_PORT = 5432;
 
+/**
+ * The parameter group's settings (TLS 1.2 or later on every connection; no bind value in the database's log). It sets
+ * no max_connections, so RDS's default for the instance class holds (infra/lib/connections.ts reads it from here).
+ */
+export const DATABASE_PARAMETERS: Readonly<Record<string, string>> = {
+  'rds.force_ssl': '1',
+  ssl_min_protocol_version: 'TLSv1.2',
+  log_parameter_max_length: '0',
+  log_parameter_max_length_on_error: '0',
+};
+
 export interface DatabaseProps {
   readonly network: Network;
   readonly key: kms.IKey;
@@ -131,7 +142,7 @@ export class Database extends Construct {
     const parameterGroup = new rds.ParameterGroup(this, 'Parameters', {
       engine,
       description: 'TLS 1.2 or later on every connection',
-      parameters: { 'rds.force_ssl': '1', ssl_min_protocol_version: 'TLSv1.2', log_parameter_max_length: '0', log_parameter_max_length_on_error: '0' },
+      parameters: { ...DATABASE_PARAMETERS },
     });
 
     this.instance = new rds.DatabaseInstance(this, 'Instance', {
