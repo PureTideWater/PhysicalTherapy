@@ -56,20 +56,33 @@ function readerProcesses(): number[] {
 }
 
 /** Runs a read while watching for reader processes: every one seen, and the most seen at once. */
-async function watched<T>(read: () => Promise<T>): Promise<{ readonly result: T; readonly seen: readonly number[]; readonly most: number }> {
+/** A process's peak resident set so far (VmHWM), or undefined once it is gone. */
+function peakBytes(pid: number): number | undefined {
+  try {
+    const found = /^VmHWM:\s+(\d+) kB$/m.exec(readFileSync(`/proc/${String(pid)}/status`, 'utf8'));
+    return found === null ? undefined : Number.parseInt(found[1] ?? '', 10) * 1024;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Runs a read while watching for reader processes: every one seen, the most seen at once, and the highest peak resident set any reached. */
+async function watched<T>(read: () => Promise<T>): Promise<{ readonly result: T; readonly seen: readonly number[]; readonly most: number; readonly peak: number }> {
   const seen = new Set<number>();
   let most = 0;
+  let peak = 0;
   const look = (): void => {
     const now = readerProcesses();
     most = Math.max(most, now.length);
     for (const pid of now) {
       seen.add(pid);
+      peak = Math.max(peak, peakBytes(pid) ?? 0);
     }
   };
   const timer = setInterval(look, 2);
   try {
     const result = await read();
-    return { result, seen: [...seen], most };
+    return { result, seen: [...seen], most, peak };
   } finally {
     clearInterval(timer);
   }
@@ -182,13 +195,20 @@ describe('the page reader in its own process (ADR 0033)', () => {
     inItsOwnProcess(seen);
   }, 60_000);
 
-  it('refuses a 1 GiB bomb under the default limits well within the deadline', async () => {
+  it('refuses a 1 GiB bomb under the default limits well within the deadline, its growth held to the cap', async () => {
+    // The reader's peak reading a small SYNTHETIC PDF: about its ready footprint.
+    const small = await watched(() => readDocumentPages({ bytes: syntheticPdf([['SYNTHETIC PROVIDER AGREEMENT']]), contentType: PDF }));
+    expect(small.peak).toBeGreaterThan(0);
     const bomb = await deflateBombPdf(1024);
     const started = Date.now();
-    const { result, seen } = await watched(() => readDocumentPages({ bytes: bomb, contentType: PDF }));
+    const { result, seen, peak } = await watched(() => readDocumentPages({ bytes: bomb, contentType: PDF }));
     expect(result).toEqual({ ok: false, problem: 'unsupported_document' });
     expect(Date.now() - started).toBeLessThan(PAGE_READ_LIMITS.timeoutMs / 4);
     inItsOwnProcess(seen);
+    // Killed within one poll of passing the cap: its growth over that footprint stays under the cap plus what one poll
+    // can add, and the small read's peak sits up to about 36 MiB under the ready baseline the cap counts from (370 MiB
+    // over 109 measured; 96 allowed). A child with no cap took the same bomb to 2,357 MiB.
+    expect(peak - small.peak, `peak ${String(Math.round(peak / MIB))} MiB over ${String(Math.round(small.peak / MIB))}`).toBeLessThan(PAGE_READ_LIMITS.maxMemoryBytes + 96 * MIB);
   }, 120_000);
 
   it('kills the reader at the deadline, counted from its start', async () => {
