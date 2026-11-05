@@ -35,6 +35,9 @@ relative to the repository root. All data named here is synthetic.
 **Syntax.**
 - The token is `{{fact:<id>}}`. Its pattern is `FACT_PLACEHOLDER_PATTERN = /\{\{fact:([a-z][a-z0-9_.+]{0,95})\}\}/g`,
   in `packages/packets/src/placeholders.ts`, beside `PLACEHOLDER_PATTERN` (:12).
+- An id is at most 96 characters (the grammar's `{0,95}` after its first letter). A set of rows whose canonical
+  `lines.*` id would pass that has no id (`canonicalFactId` returns none; slice 1's review, MONEY-B-1): the narrative
+  names such a set by its code or claim, or states its figures line by line.
 - An id always starts with a letter. The identifier pattern `\{\{([a-z_]+):(\d{1,6})\}\}` therefore never matches a
   fact token, and the two renderers never take each other's tokens.
 - The builder is `factPlaceholder(id)`.
