@@ -227,22 +227,30 @@ describe('the password-changed email (sent from the follow-on pull request, ADR 
   });
 });
 
+/**
+ * The HTML with each brand color written as its token's name (`{palette.ink}`): the record shows which token each
+ * color is, and brand hex stays in the token files and the mail template alone (tools/brand-colors).
+ */
+function tokenNamed(html: string): string {
+  return Object.entries(palette).reduce((text, [name, hex]) => text.replaceAll(hex, `{palette.${name}}`), html);
+}
+
 describe('the record of the exact words (each message’s HTML and text, for the review)', () => {
   it.each(RENDERS)('%s', async (name, source) => {
     const message = cognitoMessage(source, PLACEHOLDERS);
-    await expect(message.html).toMatchFileSnapshot(`./__snapshots__/${name}.html`);
+    await expect(tokenNamed(message.html)).toMatchFileSnapshot(`./__snapshots__/${name}.html`);
     await expect(`Subject: ${message.subject}\n\n${message.text}\n`).toMatchFileSnapshot(`./__snapshots__/${name}.txt`);
   });
 
   it('fallback-code', async () => {
     const message = fallbackCodeMessage();
-    await expect(message.html).toMatchFileSnapshot('./__snapshots__/fallback-code.html');
+    await expect(tokenNamed(message.html)).toMatchFileSnapshot('./__snapshots__/fallback-code.html');
     await expect(`Subject: ${message.subject}\n\n${message.text}\n`).toMatchFileSnapshot('./__snapshots__/fallback-code.txt');
   });
 
   it('password-changed', async () => {
     const lines = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example');
-    await expect(authMailHtml(PASSWORD_CHANGED_SUBJECT, lines)).toMatchFileSnapshot('./__snapshots__/password-changed.html');
+    await expect(tokenNamed(authMailHtml(PASSWORD_CHANGED_SUBJECT, lines))).toMatchFileSnapshot('./__snapshots__/password-changed.html');
     await expect(`Subject: ${PASSWORD_CHANGED_SUBJECT}\n\n${[...lines, AUTH_MAIL_FOOTER].join('\n\n')}\n`).toMatchFileSnapshot('./__snapshots__/password-changed.txt');
   });
 });
