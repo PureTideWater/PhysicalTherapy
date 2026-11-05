@@ -3,7 +3,7 @@
 - **Status:** accepted (`co-001/release-content-checks`, combined audit #7, #30, #31 and #59). Amends
   [0008](0008-rule-records-and-releases.md) (a release's coverage is refused when it
   shrinks; below). A later pull request, after #42 merges, appends the alarms, the heap flags and the daily content job
-  ("The split", below). Amended <merge date, UTC> (`co-001/ci-findings-transport`): the findings reach the notify job
+  ("The split", below). Amended 2026-11-05 (`co-001/ci-findings-transport`): the findings reach the notify job
   as the run's own artifact (Amendment, below).
 - **Date:** 2026-10-26
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (about
@@ -288,7 +288,7 @@ only, returning the release in force and, per content, the date multirange of it
 "Database: no" holds for this pull request and not for the daily job; the function is handed to Lane A (LANES.md). This
 pull request has no migration.
 
-## Amendment (<merge date, UTC>): the findings travel as the run's own artifact
+## Amendment (2026-11-05): the findings travel as the run's own artifact
 
 The check job handed the findings on as a job output, and the notify job read them as one environment variable.
 Linux refuses an environment string over 131,072 bytes, so any findings file over 98,292 bytes stopped the notify
