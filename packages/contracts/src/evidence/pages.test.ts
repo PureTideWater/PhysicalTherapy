@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
-import type { ThreadReply, ThreadRequest } from './page-reader';
+import { READER_REQUEST_HEADER_MAX_BYTES, type ReaderReply, type ReaderRequest, readerRequestHeader } from './page-reader';
 import * as pages from './pages';
 import { PAGE_READ_LIMITS, type PageReadLimits, readDocumentPages } from './pages';
 import { deflateBombPdf, syntheticLine } from './test-support/documents';
@@ -25,7 +25,7 @@ const PDF = 'application/pdf';
 
 /** What the change adds to pages.ts, read through the module so this file runs against the reader before it. */
 interface ChildReader {
-  readonly readInChild?: (request: ThreadRequest, limits: PageReadLimits, entry?: URL) => Promise<ThreadReply>;
+  readonly readInChild?: (request: ReaderRequest, limits: PageReadLimits, entry?: URL) => Promise<ReaderReply>;
   readonly readerArgv?: (limits: PageReadLimits, entry?: URL) => readonly string[];
   readonly PageReadError: new (message: string) => Error;
 }
@@ -107,7 +107,7 @@ function pdfOf(pageCount: number, lines: number): Uint8Array {
 }
 
 /** A request for the stand-in reader: its text names what it does. */
-function stubRequest(behaviour: string): ThreadRequest {
+function stubRequest(behaviour: string): ReaderRequest {
   return { format: 'csv', bytes: new TextEncoder().encode(behaviour), maxPages: 10, maxTextCharacters: 100_000, maxInflatedBytes: 1024 };
 }
 
@@ -218,4 +218,19 @@ describe('the page reader in its own process (ADR 0033)', () => {
     expect(most).toBe(1);
     inItsOwnProcess(seen);
   }, 60_000);
+});
+
+describe("the reader's request header", () => {
+  it('is the format and the caps, numbers and an enum only, within its bound', () => {
+    const header = { format: 'pdf', byteLength: 10, maxBytes: 64 * MIB, maxPages: 2_000, maxTextCharacters: 16 * MIB, maxInflatedBytes: 64 * MIB, deadlineMs: 60_000 };
+    expect(readerRequestHeader(JSON.stringify(header))).toEqual(header);
+    expect(JSON.stringify(header).length).toBeLessThan(READER_REQUEST_HEADER_MAX_BYTES);
+    expect(readerRequestHeader(JSON.stringify({ ...header, format: 'xls' }))).toBeNull();
+    expect(readerRequestHeader(JSON.stringify({ ...header, byteLength: 64 * MIB + 1 }))).toBeNull();
+    expect(readerRequestHeader(JSON.stringify({ ...header, maxPages: -1 }))).toBeNull();
+    expect(readerRequestHeader(JSON.stringify({ ...header, deadlineMs: '60000' }))).toBeNull();
+    expect(readerRequestHeader(JSON.stringify({ ...header, maxTextCharacters: 1.5 }))).toBeNull();
+    expect(readerRequestHeader('not json')).toBeNull();
+    expect(readerRequestHeader('null')).toBeNull();
+  });
 });

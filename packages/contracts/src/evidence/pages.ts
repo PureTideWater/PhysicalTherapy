@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads';
 
-import type { DocumentFormat, ThreadReply, ThreadRequest } from './page-reader';
+import type { DocumentFormat, ReaderReply, ReaderRequest } from './page-reader';
 import type { DocumentSource, PageSource, Pages } from './resolve';
 import type { ScannedPageReader } from './scan';
 import { normalizePageText } from './page-text';
@@ -98,10 +98,10 @@ export function documentFormat(bytes: Uint8Array, contentType: string): Document
 /** The thread's module beside this one: TypeScript in the source tree, the bundle's own file in the worker image. */
 const THREAD = new URL(import.meta.url.endsWith('.ts') ? './page-reader.ts' : './page-reader.js', import.meta.url);
 
-const REFUSED: ThreadReply = { kind: 'refused', problem: 'unsupported_document' };
+const REFUSED: ReaderReply = { kind: 'refused', problem: 'unsupported_document' };
 
 /** Reads one document in its own thread, stopping the thread at the first limit it passes. */
-export function readInThread(request: ThreadRequest, limits: PageReadLimits): Promise<ThreadReply> {
+export function readInThread(request: ReaderRequest, limits: PageReadLimits): Promise<ReaderReply> {
   return new Promise((resolve, reject) => {
     // No inherited loader flags: Node runs the thread's module itself. Its output is drained, never
     // logged: pdf.js's warnings can carry text from the document.
@@ -136,7 +136,7 @@ export function readInThread(request: ThreadRequest, limits: PageReadLimits): Pr
         () => undefined,
       );
     }, limits.pollMs);
-    worker.once('message', (reply: ThreadReply) => {
+    worker.once('message', (reply: ReaderReply) => {
       finish(() => {
         resolve(reply);
       });

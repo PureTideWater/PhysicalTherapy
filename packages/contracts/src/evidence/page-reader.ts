@@ -1,3 +1,4 @@
+import { getHeapStatistics } from 'node:v8';
 import { isMainThread, parentPort } from 'node:worker_threads';
 
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -7,10 +8,11 @@ import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 import yauzl from 'yauzl';
 
 /**
- * The page reader's own thread (docs/adr/0033): the text of each page of one untrusted document, read
- * in a worker thread that the caller bounds (pages.ts: a memory cap on the thread's heap and the
- * buffers it holds, a deadline, and the caps below). Nothing else in the process decompresses or
- * parses a contract, an exhibit or a payer letter.
+ * The page reader (docs/adr/0033): the text of each page of one untrusted document, read in a process of its own that
+ * the caller starts with this file as its entry and bounds (pages.ts readInChild: its own heap flags, a memory bound on
+ * the whole process, a deadline, an empty environment, Node's permission model, and the caps below, which the caller
+ * applies again to the reply). Nothing else in the worker decompresses or parses a contract, an exhibit or a payer
+ * letter.
  *
  * - A text PDF: pdf.js (Mozilla's reader) with no worker, scripts, fonts or canvas; only the text layer
  *   is read, page by page. A page with no text layer comes back empty (the caller may scan it).
@@ -20,15 +22,15 @@ import yauzl from 'yauzl';
  *
  * The module imports nothing of the repository, so Node runs it as it is, TypeScript included
  * (type stripping: erasable syntax only, no parameter properties or enums), and the worker's bundle
- * builds it as its own file. Importing it elsewhere starts nothing; the functions are exported for
- * the tests.
+ * builds it as its own file. Importing it elsewhere starts nothing (the process's loop runs only when this file is the
+ * process's entry); the functions are exported for the tests.
  */
 
 export const DOCUMENT_FORMATS = ['pdf', 'xlsx', 'csv'] as const;
 export type DocumentFormat = (typeof DOCUMENT_FORMATS)[number];
 
-/** What the thread is asked to read, with the caps it applies itself. */
-export interface ThreadRequest {
+/** What the reader is asked to read, with the caps it applies itself. */
+export interface ReaderRequest {
   readonly format: DocumentFormat;
   readonly bytes: Uint8Array;
   /** At most this many pages (sheets, row blocks); more is refused. */
@@ -42,7 +44,7 @@ export interface ThreadRequest {
 /** A document the reader will not or cannot read: too large or of no supported kind, or damaged. */
 export type ReadRefusal = 'unsupported_document' | 'document_unreadable';
 
-export type ThreadReply = { readonly kind: 'pages'; readonly pages: string[] } | { readonly kind: 'refused'; readonly problem: ReadRefusal };
+export type ReaderReply = { readonly kind: 'pages'; readonly pages: string[] } | { readonly kind: 'refused'; readonly problem: ReadRefusal };
 
 /** CSV rows per page: a fixed block, so a quote's page never moves. */
 export const CSV_ROWS_PER_PAGE = 50;
@@ -56,15 +58,15 @@ class Unreadable extends Error {
   override readonly name = 'Unreadable';
 }
 
-const refused = (problem: ReadRefusal): ThreadReply => ({ kind: 'refused', problem });
+const refused = (problem: ReadRefusal): ReaderReply => ({ kind: 'refused', problem });
 
 /** Text gathered page by page, refused once it passes its cap. */
 class PageText {
   readonly pages: string[] = [];
   private characters = 0;
-  private readonly request: ThreadRequest;
+  private readonly request: ReaderRequest;
 
-  constructor(request: ThreadRequest) {
+  constructor(request: ReaderRequest) {
     this.request = request;
   }
 
@@ -85,7 +87,7 @@ interface TextItem {
   readonly hasEOL?: boolean;
 }
 
-async function pdfPages(request: ThreadRequest, out: PageText): Promise<void> {
+async function pdfPages(request: ReaderRequest, out: PageText): Promise<void> {
   const task = getDocument({ data: request.bytes, disableFontFace: true, useSystemFonts: false, stopAtErrors: true, verbosity: 0 });
   try {
     const document = await task.promise.catch(() => {
@@ -267,7 +269,7 @@ class Inflation {
   }
 }
 
-async function xlsxPages(request: ThreadRequest, out: PageText): Promise<void> {
+async function xlsxPages(request: ReaderRequest, out: PageText): Promise<void> {
   const zip = await openZip(request.bytes);
   try {
     const entries = await directory(zip, 10_000);
@@ -347,7 +349,7 @@ export function csvRows(text: string): string[][] {
   return rows;
 }
 
-function csvPages(request: ThreadRequest, out: PageText): void {
+function csvPages(request: ReaderRequest, out: PageText): void {
   const lines = csvRows(csvText(request.bytes)).map((fields) => fields.filter((text) => text.trim() !== '').join('\t'));
   for (let start = 0; start < lines.length; start += CSV_ROWS_PER_PAGE) {
     out.add(
@@ -361,8 +363,8 @@ function csvPages(request: ThreadRequest, out: PageText): void {
 
 // ---------------------------------------------------------------------------------------------------
 
-/** Reads the request's pages here, in this thread, under its caps. */
-export async function readPagesHere(request: ThreadRequest): Promise<ThreadReply> {
+/** Reads the request's pages here, in this process, under its caps. */
+export async function readPagesHere(request: ReaderRequest): Promise<ReaderReply> {
   const out = new PageText(request);
   try {
     if (request.format === 'pdf') {
@@ -378,9 +380,159 @@ export async function readPagesHere(request: ThreadRequest): Promise<ThreadReply
   }
 }
 
+// ---------------------------------------------------------------------------------------------------
+// The reader's process: one request on stdin, the reply on stdout as frames (pages.ts readInChild).
+
+/** A frame on the reader's stdout: a type byte, a 4-byte big-endian length, then that many bytes of UTF-8. */
+export const READER_FRAME = { ready: 0, page: 1, done: 2, refused: 3 } as const;
+export const READER_FRAME_HEADER_BYTES = 5;
+/** The request's header (its JSON, before the document's bytes) is at most this long. */
+export const READER_REQUEST_HEADER_MAX_BYTES = 1024;
+/** The reader's own exits: a request that breaks the protocol (2); a reader that outlived its parent or its deadline (3). */
+export const READER_EXIT = { protocol: 2, orphan: 3 } as const;
+/** How long past the request's deadline the reader stops itself if its parent has not (a backstop for an orphan). */
+const ORPHAN_GRACE_MS = 5_000;
+
+/** The request's header: the format and the caps (an enum and numbers; nothing of the document), then `byteLength` bytes follow. */
+export interface ReaderRequestHeader {
+  readonly format: DocumentFormat;
+  readonly byteLength: number;
+  readonly maxBytes: number;
+  readonly maxPages: number;
+  readonly maxTextCharacters: number;
+  readonly maxInflatedBytes: number;
+  readonly deadlineMs: number;
+}
+
+const HEADER_NUMBERS = ['byteLength', 'maxBytes', 'maxPages', 'maxTextCharacters', 'maxInflatedBytes', 'deadlineMs'] as const;
+
+/** The header the parent wrote, or null for anything else. */
+export function readerRequestHeader(json: string): ReaderRequestHeader | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const header = value as Record<string, unknown>;
+  if (!(DOCUMENT_FORMATS as readonly unknown[]).includes(header.format) || !HEADER_NUMBERS.every((name) => Number.isSafeInteger(header[name]) && (header[name] as number) >= 0)) {
+    return null;
+  }
+  const parsed = header as unknown as ReaderRequestHeader;
+  return parsed.byteLength <= parsed.maxBytes ? parsed : null;
+}
+
+function exitProtocol(): never {
+  process.exit(READER_EXIT.protocol);
+}
+
+function writeFrame(type: number, body: string): Promise<void> {
+  const text = Buffer.from(body, 'utf8');
+  const header = Buffer.allocUnsafe(READER_FRAME_HEADER_BYTES);
+  header.writeUInt8(type, 0);
+  header.writeUInt32BE(text.length, 1);
+  return new Promise((resolve, reject) => {
+    process.stdout.write(header);
+    process.stdout.write(text, (error) => {
+      if (error === null || error === undefined) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
+/**
+ * The request from stdin: a 4-byte big-endian header length, the header, then exactly its byteLength bytes, copied as
+ * they arrive into one buffer sized from the header (one copy of the document, as the thread's message made). A header
+ * past READER_REQUEST_HEADER_MAX_BYTES, a header that does not parse, more bytes than declared or fewer exit 2.
+ */
+function readRequest(): Promise<{ readonly header: ReaderRequestHeader; readonly bytes: Uint8Array }> {
+  return new Promise((resolve) => {
+    let head = Buffer.alloc(0);
+    let header: ReaderRequestHeader | null = null;
+    let bytes = Buffer.alloc(0);
+    let filled = 0;
+    process.stdin.on('data', (chunk: Buffer) => {
+      let rest = chunk;
+      if (header === null) {
+        head = Buffer.concat([head, chunk]);
+        if (head.length < 4) {
+          return;
+        }
+        const length = head.readUInt32BE(0);
+        if (length > READER_REQUEST_HEADER_MAX_BYTES) {
+          exitProtocol();
+        }
+        if (head.length < 4 + length) {
+          return;
+        }
+        header = readerRequestHeader(head.subarray(4, 4 + length).toString('utf8')) ?? exitProtocol();
+        bytes = Buffer.allocUnsafe(header.byteLength);
+        rest = head.subarray(4 + length);
+        head = Buffer.alloc(0);
+      }
+      if (filled + rest.length > bytes.length) {
+        exitProtocol();
+      }
+      rest.copy(bytes, filled);
+      filled += rest.length;
+    });
+    process.stdin.once('end', () => {
+      if (header === null || filled !== bytes.length) {
+        exitProtocol();
+      }
+      // A plain Uint8Array view: pdf.js refuses a Buffer.
+      resolve({ header, bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) });
+    });
+  });
+}
+
+/**
+ * The process's loop: silence every console and warning before any document byte is read (pdf.js's warnings can quote
+ * a document's text, so fd 2 carries only the runtime's own fatal lines), say ready, read the one request, reply page
+ * by page (each write flushed before the next), then exit. The parent's SIGKILL is the bound; the two backstops for an
+ * orphan (the parent gone, or the deadline long past) run only when the loop is free.
+ */
+async function serve(): Promise<void> {
+  for (const name of ['log', 'info', 'warn', 'error', 'debug', 'trace', 'dir'] as const) {
+    console[name] = () => undefined;
+  }
+  process.emitWarning = () => undefined;
+  const parent = process.ppid;
+  setInterval(() => {
+    if (process.ppid !== parent) {
+      process.exit(READER_EXIT.orphan);
+    }
+  }, 1_000).unref();
+  await writeFrame(READER_FRAME.ready, '');
+  const { header, bytes } = await readRequest();
+  setTimeout(() => {
+    process.exit(READER_EXIT.orphan);
+  }, header.deadlineMs + ORPHAN_GRACE_MS).unref();
+  const reply = await readPagesHere({ format: header.format, bytes, maxPages: header.maxPages, maxTextCharacters: header.maxTextCharacters, maxInflatedBytes: header.maxInflatedBytes });
+  if (reply.kind === 'pages') {
+    for (const page of reply.pages) {
+      await writeFrame(READER_FRAME.page, page);
+    }
+    await writeFrame(READER_FRAME.done, String(getHeapStatistics().heap_size_limit));
+  } else {
+    await writeFrame(READER_FRAME.refused, reply.problem);
+  }
+  process.exit(0);
+}
+
+if (import.meta.main && isMainThread) {
+  void serve();
+}
+
 if (!isMainThread && parentPort !== null) {
   const port = parentPort;
-  port.once('message', (request: ThreadRequest) => {
+  port.once('message', (request: ReaderRequest) => {
     void readPagesHere(request).then((reply) => {
       port.postMessage(reply);
     });
