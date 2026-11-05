@@ -163,14 +163,24 @@ export async function interestAttribution(scope: Scope, cipher: PracticeCipher, 
   const hashes = [...new Set([...candidates.values()].flatMap(({ whole, tokens }) => (whole === null ? tokens : [whole, ...tokens])))];
   const { rows } = await scope.client.query<ClaimRow>(ATTRIBUTION_CLAIMS, [practiceId, [...moment.remittances.keys()], holding, hashes]);
   const chainOf = new Map(rows.map((row) => [row.id, row.root]));
+  // The rows by remittance, by hash and by chain, each in the statement's order, so no PLB L6 reads every row (review INT-REL-2).
+  const grouped = (key: (row: ClaimRow) => string) => {
+    const groups = new Map<string, ClaimRow[]>();
+    for (const row of rows) {
+      groups.set(key(row), [...(groups.get(key(row)) ?? []), row]);
+    }
+    return groups;
+  };
+  const [byRemittance, byHash, byChain] = [grouped((row) => row.remittance_id), grouped((row) => row.hash), grouped((row) => row.root)];
   const remittances: InterestRemittance[] = holding.map((id) => ({
     id,
-    claims: rows.filter((row) => row.remittance_id === id).map((row) => ({ id: row.id, chain: row.root, interestCents: parseCents(row.interest_cents) })),
+    claims: (byRemittance.get(id) ?? []).map((row) => ({ id: row.id, chain: row.root, interestCents: parseCents(row.interest_cents) })),
   }));
   const adjustments: InterestAdjustment[] = l6s.map((row) => {
     const { whole, tokens } = candidates.get(row.id) as { readonly whole: string | null; readonly tokens: readonly string[] };
     const payer = moment.remittances.get(row.remittance_id);
-    const ofPayer = (wanted: readonly string[]) => rows.filter((claim) => claim.payer_id === payer && wanted.includes(claim.hash));
+    // A claim has one hash, so no claim is reached twice.
+    const ofPayer = (wanted: readonly string[]) => [...new Set(wanted)].flatMap((hash) => (byHash.get(hash) ?? []).filter((claim) => claim.payer_id === payer));
     const byWhole = whole === null ? [] : ofPayer([whole]);
     const reached = byWhole.length > 0 ? byWhole : ofPayer(tokens);
     const chains = [...new Set(reached.map((claim) => claim.root))];
@@ -181,7 +191,7 @@ export async function interestAttribution(scope: Scope, cipher: PracticeCipher, 
       position: row.position,
       cashCents: negateCents(parseCents(row.amount_cents)),
       namedChain,
-      namedClaimIds: namedChain === null ? [] : [...new Set(rows.filter((claim) => claim.root === namedChain).map((claim) => claim.id))],
+      namedClaimIds: namedChain === null ? [] : [...new Set((byChain.get(namedChain) ?? []).map((claim) => claim.id))],
     };
   });
   const attribution = attributeInterest({ remittances, adjustments });

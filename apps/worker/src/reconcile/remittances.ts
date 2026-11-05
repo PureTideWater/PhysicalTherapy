@@ -878,7 +878,7 @@ async function providerAdjustments(
     return;
   }
   const reading = await interestAttribution(scope, cipher, practiceId, moment);
-  const interest = await interestState(scope, practiceId, matches);
+  const interest = await interestState(scope, practiceId, lines, matches, reading);
   const claimHashes = await hashesOf(scope, matches);
   for (const adjustment of moment.adjustments) {
     if (adjustment.category === 'recoupment') {
@@ -919,7 +919,7 @@ async function providerAdjustments(
       }
       continue;
     }
-    await recordInterest(scope, practiceId, adjustment, reading, { lines, ledgers, matches, counts, interest });
+    await recordInterest(scope, practiceId, adjustment, reading, { ledgers, counts, interest });
   }
 }
 
@@ -934,20 +934,77 @@ interface InterestMatch {
 /**
  * What the interest path carries through one pass: the practice's interest matches and the entries of the interest
  * they hold (every interest entry with its corrections, gross), read at the start and added to as the pass writes, so a
- * later PLB L6 of the same pass counts what an earlier one wrote.
+ * later PLB L6 of the same pass counts what an earlier one wrote; and the lookups each PLB L6 reads them through, built
+ * once a pass and kept current as it writes (review INT-REL-2), so a draw reads only its own claims' lines and an L6's
+ * own entries, never every case line against every match:
+ * - claimMatches: each claim's standing claim matches on a case line, with their place in the pass's ledger order;
+ * - caseLines and lineOrder: each case line by its service line, and its place among the case lines;
+ * - entriesOf: each PLB L6's interest entries (its own, not their corrections), in ledger order;
+ * - chainOfMatch: each interest match's chain, by its claim (a match naming no claim is in none);
+ * - latestOf: each line's latest standing interest match of each chain.
  */
 interface InterestState {
   readonly matches: InterestMatch[];
   readonly entries: StoredEntry[];
+  readonly claimMatches: ReadonlyMap<string, readonly { readonly at: number; readonly match: StoredMatch }[]>;
+  readonly caseLines: ReadonlyMap<string, CaseLine>;
+  readonly lineOrder: ReadonlyMap<string, number>;
+  readonly entriesOf: Map<string, StoredEntry[]>;
+  readonly chainOfMatch: Map<string, string>;
+  readonly latestOf: Map<string, InterestMatch>;
 }
 
-async function interestState(scope: Scope, practiceId: string, matches: readonly StoredMatch[]): Promise<InterestState> {
+/** The key of a line's holding of a chain in InterestState.latestOf. */
+const lineAndChain = (serviceLineId: string, chain: string) => `${serviceLineId}|${chain}`;
+
+async function interestState(scope: Scope, practiceId: string, lines: readonly CaseLine[], matches: readonly StoredMatch[], reading: InterestReading): Promise<InterestState> {
   const entries = await ledgerEntries(scope, practiceId);
   const byId = entriesById(entries);
-  return {
-    matches: matches.filter((match) => match.kind === 'interest').map((match) => ({ id: match.id, claimId: match.claimId, serviceLineId: match.serviceLineId, standing: match.standing })),
+  const state: InterestState = {
+    matches: [],
     entries: entries.filter((entry) => correctedEntry(entry, byId).stage === 'interest'),
+    claimMatches: new Map(),
+    caseLines: new Map(lines.map((line) => [line.serviceLineId, line])),
+    lineOrder: new Map(lines.map((line, index) => [line.serviceLineId, index])),
+    entriesOf: new Map(),
+    chainOfMatch: new Map(),
+    latestOf: new Map(),
   };
+  const claimMatches = state.claimMatches as Map<string, { readonly at: number; readonly match: StoredMatch }[]>;
+  for (const [at, match] of matches.entries()) {
+    if (match.kind === 'claim' && match.standing && match.serviceLineId !== null && state.lineOrder.has(match.serviceLineId)) {
+      claimMatches.set(match.claimId as string, [...(claimMatches.get(match.claimId as string) ?? []), { at, match }]);
+    }
+  }
+  for (const match of matches) {
+    if (match.kind === 'interest') {
+      addInterestMatch(state, reading, { id: match.id, claimId: match.claimId, serviceLineId: match.serviceLineId, standing: match.standing });
+    }
+  }
+  for (const entry of state.entries) {
+    addInterestEntry(state, entry);
+  }
+  return state;
+}
+
+/** An interest match read or written: kept in the pass's list and lookups. */
+function addInterestMatch(state: InterestState, reading: InterestReading, match: InterestMatch): void {
+  state.matches.push(match);
+  const chain = match.claimId === null ? undefined : reading.chainOf.get(match.claimId);
+  if (chain === undefined) {
+    return;
+  }
+  state.chainOfMatch.set(match.id, chain);
+  if (match.standing && match.serviceLineId !== null) {
+    state.latestOf.set(lineAndChain(match.serviceLineId, chain), match);
+  }
+}
+
+/** An entry of the interest the pass holds, read or written: a PLB L6's own interest entry is kept under it too. */
+function addInterestEntry(state: InterestState, entry: StoredEntry): void {
+  if (entry.stage === 'interest' && entry.serviceLineId !== null) {
+    state.entriesOf.set(entry.evidenceId, [...(state.entriesOf.get(entry.evidenceId) ?? []), entry]);
+  }
 }
 
 /**
@@ -958,56 +1015,54 @@ async function interestState(scope: Scope, practiceId: string, matches: readonly
  * to a claim the draw is for (for the chain a PLB L6 names, any claim of it; the latest such match, an approving one
  * first), weighted by approvals remaining; the lines a take-back may reach are those holding the chain's interest
  * (@tp/ledger interestHeld), each through its latest standing interest match of the chain, holding no more than the
- * line's interest as a whole.
+ * line's interest as a whole. Each is read through the pass's lookups (InterestState).
  */
 async function recordInterest(
   scope: Scope,
   practiceId: string,
   adjustment: AdjustmentRow,
   reading: InterestReading,
-  pass: { readonly lines: readonly CaseLine[]; readonly ledgers: ReadonlyMap<string, LineLedger>; readonly matches: readonly StoredMatch[]; readonly counts: Counts; readonly interest: InterestState },
+  pass: { readonly ledgers: ReadonlyMap<string, LineLedger>; readonly counts: Counts; readonly interest: InterestState },
 ): Promise<void> {
   const draws = reading.draws.get(adjustment.id) ?? [];
   if (draws.length === 0) {
     return;
   }
-  const { lines, ledgers, matches, counts, interest } = pass;
-  const chainOfMatch = new Map(
-    interest.matches.flatMap((match) => {
-      const chain = match.claimId === null ? undefined : reading.chainOf.get(match.claimId);
-      return chain === undefined ? [] : [[match.id, chain] as const];
-    }),
-  );
-  const written: InterestWritten[] = interest.entries
-    .filter((entry) => entry.stage === 'interest' && entry.evidenceId === adjustment.id && entry.serviceLineId !== null)
-    .map((entry) => ({ chain: entry.matchId === null ? null : (chainOfMatch.get(entry.matchId) ?? null), serviceLineId: entry.serviceLineId as string, cents: entry.amountCents }));
-  // A correction's own match is never read: interestHeld counts it under the entry it corrects.
-  const matched = interest.entries.map((entry) => ({ ...entry, matchId: entry.matchId ?? '' }));
-  const held = interestHeld(matched, chainOfMatch);
-  // Each line's interest as a whole, every chain's (and a match's that names none) together, net of corrections and
-  // take-backs: Postgres's line floor (ledger_entry_within_interest). A chain can hold more on a line than the line holds
-  // when a specialist lowered another chain's entry there, so a take-back is cut to both and never meets the floor (D8).
-  const lineHeld = new Map(interestHeld(matched, new Map(interest.matches.map((match) => [match.id, '']))).map((holding) => [holding.serviceLineId, holding.heldCents]));
-  const caseLineOf = new Map(lines.map((line) => [line.serviceLineId, line]));
+  const { ledgers, counts, interest } = pass;
+  const written: InterestWritten[] = (interest.entriesOf.get(adjustment.id) ?? []).map((entry) => ({
+    chain: entry.matchId === null ? null : (interest.chainOfMatch.get(entry.matchId) ?? null),
+    serviceLineId: entry.serviceLineId as string,
+    cents: entry.amountCents,
+  }));
+  // What each line holds, of each chain and as a whole, read only for a take-back.
+  const holdings = draws.some((draw) => draw.cents < ZERO_CENTS) ? heldInterest(interest) : null;
   const chainLines = new Map<string, ChainInterestLines>();
   for (const draw of draws) {
-    const paid = lines.flatMap((line) => {
-      const standing = matches.filter((match) => match.kind === 'claim' && match.standing && match.serviceLineId === line.serviceLineId && draw.claimIds.includes(match.claimId as string));
-      const match = standing.filter((item) => item.outcome === 'approved').at(-1) ?? standing.at(-1);
-      return match === undefined
-        ? []
-        : [{ serviceLineId: line.serviceLineId, claimId: match.claimId as string, approved: match.outcome === 'approved', weightCents: approvedRemaining(ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER) }];
-    });
-    const takenBack = held
-      .filter((holding) => holding.chain === draw.chain && caseLineOf.has(holding.serviceLineId))
+    // The draw's claims' standing claim matches, by line, in ledger order; the lines in case-line order.
+    const byLine = new Map<string, { readonly at: number; readonly match: StoredMatch }[]>();
+    for (const claimId of new Set(draw.claimIds)) {
+      for (const item of interest.claimMatches.get(claimId) ?? []) {
+        const line = item.match.serviceLineId as string;
+        byLine.set(line, [...(byLine.get(line) ?? []), item]);
+      }
+    }
+    const paid = [...byLine]
+      .sort(([a], [b]) => (interest.lineOrder.get(a) as number) - (interest.lineOrder.get(b) as number))
+      .map(([serviceLineId, items]) => {
+        const standing = [...items].sort((a, b) => a.at - b.at).map((item) => item.match);
+        const match = (standing.filter((item) => item.outcome === 'approved').at(-1) ?? standing.at(-1)) as StoredMatch;
+        return { serviceLineId, claimId: match.claimId as string, approved: match.outcome === 'approved', weightCents: approvedRemaining(ledgers.get(serviceLineId) ?? EMPTY_LINE_LEDGER) };
+      });
+    const takenBack = (holdings?.held ?? [])
+      .filter((holding) => holding.chain === draw.chain && interest.caseLines.has(holding.serviceLineId))
       .flatMap((holding) => {
-        const match = interest.matches.filter((item) => item.standing && item.serviceLineId === holding.serviceLineId && chainOfMatch.get(item.id) === draw.chain).at(-1);
-        return match === undefined ? [] : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: minCents(holding.heldCents, lineHeld.get(holding.serviceLineId) ?? ZERO_CENTS) }];
+        const match = interest.latestOf.get(lineAndChain(holding.serviceLineId, draw.chain));
+        return match === undefined ? [] : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: minCents(holding.heldCents, holdings?.lineHeld.get(holding.serviceLineId) ?? ZERO_CENTS) }];
       });
     chainLines.set(draw.chain, { paid, takenBack });
   }
   for (const part of interestWrites({ draws, written, lines: chainLines })) {
-    const line = caseLineOf.get(part.serviceLineId) as CaseLine;
+    const line = interest.caseLines.get(part.serviceLineId) as CaseLine;
     const matchId = await insertMatch(scope, practiceId, {
       kind: 'interest',
       claimId: part.claimId,
@@ -1032,9 +1087,9 @@ async function recordInterest(
       effectiveOn: adjustment.paid_on,
       createdBy: null,
     });
-    interest.matches.push({ id: matchId, claimId: part.claimId, serviceLineId: part.serviceLineId, standing: true });
+    addInterestMatch(interest, reading, { id: matchId, claimId: part.claimId, serviceLineId: part.serviceLineId, standing: true });
     if (entryId !== null) {
-      interest.entries.push({
+      const entry: StoredEntry = {
         id: entryId,
         caseId: line.caseId,
         serviceLineId: part.serviceLineId,
@@ -1045,7 +1100,9 @@ async function recordInterest(
         matchId,
         allocated: part.allocated,
         effectiveOn: adjustment.paid_on,
-      });
+      };
+      interest.entries.push(entry);
+      addInterestEntry(interest, entry);
     }
     if (part.cents > ZERO_CENTS) {
       counts.interest += 1;
@@ -1053,6 +1110,21 @@ async function recordInterest(
       counts.interestTakenBack += 1;
     }
   }
+}
+
+/**
+ * What each line holds of each chain's interest (@tp/ledger interestHeld), and each line's interest as a whole, every
+ * chain's (and a match's that names none) together, net of corrections and take-backs: Postgres's line floor
+ * (ledger_entry_within_interest). A chain can hold more on a line than the line holds when a specialist lowered another
+ * chain's entry there, so a take-back is cut to both and never meets the floor (D8). A correction's own match is never
+ * read: interestHeld counts it under the entry it corrects.
+ */
+function heldInterest(interest: InterestState): { readonly held: ReturnType<typeof interestHeld>; readonly lineHeld: ReadonlyMap<string, Cents> } {
+  const matched = interest.entries.map((entry) => ({ ...entry, matchId: entry.matchId ?? '' }));
+  return {
+    held: interestHeld(matched, interest.chainOfMatch),
+    lineHeld: new Map(interestHeld(matched, new Map(interest.matches.map((match) => [match.id, '']))).map((holding) => [holding.serviceLineId, holding.heldCents])),
+  };
 }
 
 /** Whether the evidence was ever matched to the line, standing or since reversed: a match a person reversed is never made again automatically. */
