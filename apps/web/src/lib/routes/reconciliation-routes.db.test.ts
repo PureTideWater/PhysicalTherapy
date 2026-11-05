@@ -616,8 +616,12 @@ describe('interest from the PLB L6 that pays or takes it back, beside the intere
     const match = line?.interest[0] as MatchView;
     expect(interestWords(match)).toBe(': interest paid in this check (PLB L6)');
     expect(words(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toBe(
-      'Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.',
+      'Reported on the claim (AMT I), not counted' +
+        'Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
+        'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.',
     );
+    // The reported rows are a list of their own, named as its label is, apart from the Interest list (WCAG 1.3.1).
+    expect(renderToStaticMarkup(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toContain('<ul aria-label="Reported on the claim (AMT I), not counted"');
     // A paid entry a contract specialist adjusted down still reads as paid: the match's own interest entry is above zero.
     const entry = line?.entries.find((item) => item.stage === 'interest');
     ok(await call(adjustEntryAction, w.pricing.specialist, at, { entryId: entry?.id, amount: '-0.01', reason: 'SYNTHETIC specialist review of the interest', confirm: 'on' }));
@@ -645,9 +649,10 @@ describe('interest from the PLB L6 that pays or takes it back, beside the intere
     const [line] = page.linkage.items;
     expect(interestWords(line?.interest[1] as MatchView)).toBe(': interest taken back in this check (PLB L6)');
     expect(words(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toBe(
-      'Remittance SYNEFTLED24002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
+      'Reported on the claim (AMT I), not counted' +
+        'Remittance SYNEFTLED24002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
         'Remittance SYNEFTLED24005, SYNTHETIC PAYER L, paid 2026-08-03: the claim reports $5.40 of interest taken back (AMT I).' +
-        'Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.',
+        'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.',
     );
     // The line holds no interest now: lowering its paid entry would take it below zero, refused on the amount field.
     const paid = line?.entries.find((item) => item.stage === 'interest' && BigInt(item.amountCents) > 0n);

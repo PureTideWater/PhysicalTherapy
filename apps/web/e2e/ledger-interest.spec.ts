@@ -37,7 +37,10 @@ async function interestCase(page: Page): Promise<string> {
   return practiceId;
 }
 
-const COUNTED_NOTE = 'Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.';
+const COUNTED_NOTE = 'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.';
+
+/** The reported rows' own list, named as its visible label is, apart from the Interest list. */
+const REPORTED = 'Reported on the claim (AMT I), not counted';
 
 test('interest a claim reports and its check pays in a PLB L6 is counted once, from the PLB L6, beside the claim’s reported AMT I (LED-23 paired.835)', async ({ page }) => {
   test.setTimeout(360_000);
@@ -59,7 +62,8 @@ test('interest a claim reports and its check pays in a PLB L6 is counted once, f
       const matches = line.getByRole('list', { name: 'Interest' }).getByRole('listitem');
       await expect(matches).toHaveCount(1);
       await expect(matches.first()).toContainText('Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: interest paid in this check (PLB L6); matched by the reconcile job');
-      await expect(line.locator('[data-reported]')).toHaveText(['Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).']);
+      await expect(line.getByText(REPORTED, { exact: true })).toBeVisible();
+      await expect(line.getByRole('list', { name: REPORTED, exact: true }).getByRole('listitem')).toHaveText(['Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).']);
       await expect(line.locator('[data-reported-note]')).toHaveText(COUNTED_NOTE);
       await expect(line.locator('[data-stage="interest"]')).toHaveCount(1);
     }
@@ -99,7 +103,8 @@ test('interest a claim reports with no PLB L6 in its check is shown as reported 
   await expect(lines).toHaveCount(2);
   for (const line of await lines.all()) {
     await expect(line.getByText('No interest paid.')).toBeVisible();
-    await expect(line.locator('[data-reported]')).toHaveText(['Remittance SYNEFTLED23006, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).']);
+    await expect(line.getByText(REPORTED, { exact: true })).toBeVisible();
+    await expect(line.getByRole('list', { name: REPORTED, exact: true }).getByRole('listitem')).toHaveText(['Remittance SYNEFTLED23006, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).']);
     await expect(line.locator('[data-reported-note]')).toHaveText(COUNTED_NOTE);
     await expect(line.locator('[data-stage="interest"]')).toHaveCount(0);
   }
