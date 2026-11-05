@@ -1,0 +1,20 @@
+{
+  "case": "MOD-16",
+  "module": "MOD",
+  "title": "A payer letter with amounts, dates in every form datesIn reads, NPIs, procedure, adjustment and diagnosis codes, ZIPs and ZIP+4s, TINs, ICNs, EFT traces, checks and references, nine- and ten-digit numbers after a word that names them (claim, NPI, TIN, check, reference ...), an NPI or TIN after Medicare or contact, service-line rows (codes, units and amounts in columns, a slashed date before a code) and amounts directly before dates and numbers, the call's member ID and claim numbers written SSN- or phone-shaped, and another patient's nine- or ten-digit member ID or claim number written SSN- or phone-shaped",
+  "assertion": "The first are sent unchanged (after NFKC), the self-check refuses none of them, and the verifier still reads their dates and references; the call's identifiers keep their placeholders ([MEMBER_ID], [CLAIM_n], the lowest of equal claims), never [SSN] or [PHONE], and are never offered to the screen; another patient's is offered to the one-patient screen whole and with a prefix written against it, so the letter is refused (more_than_one_patient) with nothing of it logged or in the refusal",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.property.test.ts",
+    "packages/model-gateway/src/functions/denial-letter.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Letters are generated in memory by the property test, which records what it wrote to stay; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
