@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
+import { palette } from '@paidwhole/brand';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 import { type LedgerEntry, type ReportReconciliation, entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
@@ -355,7 +356,7 @@ test('the email header is the outlined lockup with its tagline at 160 px on its 
     // The fixed White plate (O-5): the art and the cell it sits in are White of their own, by style and by attribute.
     await expect(lockup).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     const plate = lockup.locator('xpath=..');
-    await expect(plate).toHaveAttribute('bgcolor', '#FFFFFF');
+    await expect(plate).toHaveAttribute('bgcolor', palette.white);
     await expect(plate).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await expect(plate).toHaveCSS('border-radius', '6px');
     await page.screenshot({ path: shot('email.png'), fullPage: true });
