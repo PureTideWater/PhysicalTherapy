@@ -7,3 +7,4 @@
 - Mutation bound = Number.MAX_SAFE_INTEGER (both guards): pages.test.ts 12/12 green (mutant survives); bigframe crashes the parent with unhandled ERR_STRING_TOO_LONG at pages.ts:410 (body.toString in onFrame), from the stdout data handler, i.e. an uncaught exception that would take down the worker process.
 - Logs: /tmp/claude-0/-home-user-PhysicalTherapy/84980be8-4825-5e0c-971b-13455480b76c/scratchpad/pcp/logs/sk-s1-2-*.log. Clone removed.
 - VERDICT: not refuted; severity should. Fix: bigframe stand-in case end to end (PageReadError, reader gone) plus a direct FrameReader unit case (header length bound+1 -> onMalformed, push false, no body allocated), since Buffer.allocUnsafe is off-heap and a heapUsed assertion would not catch a frame-only widening.
+- Resumed run: head still c369bc77, logs re-checked (asis 13/13, mutant 12/12, bigframe ERR_STRING_TOO_LONG). Verdict stands.

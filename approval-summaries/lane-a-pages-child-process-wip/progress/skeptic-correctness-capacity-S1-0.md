@@ -6,3 +6,4 @@
   - Bound set to Number.MAX_SAFE_INTEGER (removes both the total and the per-frame check), suite as committed: every stand-in case (exit, segv, malformed, oom, flood, inspect) still green. (6 real-reader cases fail in this clone only: node_modules symlinked from the worktree, outside the reader's allowed paths; same in all three runs, unrelated.)
   - Same mutation with the case: red. Uncaught ERR_STRING_TOO_LONG at pages.ts:410 (in the worker that is a process crash), and worse, the read then RESOLVES { kind: 'pages', pages: [] } because the done frame still parses after the throw: a silent empty document, not a refusal.
 - Verdict: NOT refuted. Real test gap; severity should. Clone removed.
+- Resumed run (2026-11-05): ref still c369bc77; logs re-read (committed 7 passed incl. stand-ins; mutated suite 6 stand-ins green; mutated + case red). Verdict stands.

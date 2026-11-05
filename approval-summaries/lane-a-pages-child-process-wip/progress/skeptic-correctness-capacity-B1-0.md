@@ -26,3 +26,8 @@ Fix: on a valid done/refused frame, keep the reply and SIGKILL the child at once
 leave the deadline armed until 'close'; on close resolve with the stored reply regardless of the SIGKILL signal (a
 `replied` flag rather than requiring code 0). Tests via a stand-in: done-then-hang, refused-then-hang, done-then-allocate:
 each settles within the deadline with its reply, the pid is gone, and a queued second read runs.
+
+## Resumed run (2026-11-05)
+Re-checked origin/co-001/wip-pages-child-process, still c369bc77...: pages.ts L416-421 (done/refused set `reply`, stop()),
+L343 (poll skips once `reply` is set), L464 (`reply` honoured only on close with code 0). The probe log still shows all three
+cases pending past the deadline with the second read queued. Clone already removed. Verdict unchanged: not refuted, blocking.

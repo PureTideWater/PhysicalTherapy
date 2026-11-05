@@ -18,3 +18,5 @@ milestone 11 ("The intake concurrency times the reader's process bound must fit 
 
 Optional nit: record in ADR 0033's amendment the measured sum (anon about 925 MiB, about 990 with shared pages, at a
 455 MiB main heap) as an input for milestone 11's sizing; no code change and no budget assertion in this branch.
+
+Resumed run (2026-11-05): progress file and log re-checked against origin head c369bc77...; ADR 0033 lines 106-107 still defer the task-level sum to milestone 11. Clone already removed. Verdict unchanged: refuted, nit.

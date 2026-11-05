@@ -19,3 +19,6 @@ The real page-reader.ts calls process.exit(0) right after the last frame, so a l
 ## Verdict
 Not refuted. Severity: blocking (breaks the item's own bound: killed and refused on overrun or timeout; regresses the thread code's terminate-on-reply).
 Fix: keep the deadline and the memory poll armed after a done or refused frame (drop stop() there and the poll's reply early-return); give a short exit grace after the reply (the remaining deadline, at most 2 s), then SIGKILL and settle as the reader's own failure (PageReadError, or refused if the memory cap fired); resolve the stored reply only on close with code 0. Tests: done-then-hang, refused-then-hang, done-then-grow: each settles within the deadline, the child is gone, a queued second read runs.
+
+## Resumed run (2026-11-05)
+Ref unchanged (c369bc77...). Clone already removed. Re-read pages.ts at that ref: lines 416-421 still call stop() on done/refused with no kill; poll returns early on reply; close handler is the only settle. Verdict stands: not refuted, blocking.

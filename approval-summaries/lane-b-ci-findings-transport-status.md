@@ -16,7 +16,7 @@ Open questions: none.
 <!-- RESUME-BLOCK -->
 ## MERGED 2026-11-05 ~02:25 UTC as af3e79f3 (acting S3)
 - #120 merged with method merge, `expectedHeadSha` 94f4b95f…, title "Merge pull request #120: CI: the content calendar's findings travel as the run's own artifact, so a busy day's findings no longer stop notify before it starts (ci-findings-transport)", the message the title. Parents 54d061fd… (base, an ancestor of the head) and 94f4b95f….
-- CI on 94f4b95f…, every run success: ci 41953120818, mutation 41953120754, screening-capacity 41953120827, content-calendar 41953120745 (check, handoff; notify skipped), approval-of-record 41953120744. The first run of record: content-calendar 41947893029 on 3655e5c9… (handoff read 16 findings, 12,080 bytes, first try). The second: the merge's push run (to read).
+- CI on 94f4b95f…, every run success: ci 41953120818, mutation 41953120754, screening-capacity 41953120827, content-calendar 41953120745 (check, handoff; notify skipped), approval-of-record 41953120744. The first run of record: content-calendar 41947893029 on 3655e5c9… (handoff read 16 findings, 12,080 bytes, first try). The second: the merge's push run, **content-calendar 41954903936 (push, af3e79f3…, success)**. Push runs at af3e79f3…, all success (read 03:02 UTC): ci 41954903734, mutation 41954903671, screening-capacity 41954903766, content-calendar 41954903936. #120 is done.
 - The description updated after the merge for the merged head (28,259 characters; sent byte-checked). Worktree removed; unsubscribed automatically at the merge.
 - Open nit: ADR 0071 Amendment line 308 not re-wrapped. Proposals P1 to P5 in the description.
 - Next for S3: pages-child-process.

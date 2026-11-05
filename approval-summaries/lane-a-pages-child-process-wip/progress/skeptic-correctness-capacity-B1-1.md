@@ -12,3 +12,6 @@ Clone: /home/user/sk-pcp-correctness-capacity-B1-1 at origin/co-001/wip-pages-ch
 ## Verdict
 Not refuted. Severity: blocking (a hole in the bound the change exists to give; regression from the thread code, which terminated on the reply; single-slot queue makes intake stop for the worker process).
 Fix: on a well-formed done/refused, store the reply and SIGKILL the child at once (do not clear the deadline; leave it as the backstop); on close, resolve the stored reply when no verdict was set, whatever the exit code or signal; any frame after the reply still fails. Stand-in tests 'done then hang' and 'refused then hang': settle within the deadline, child gone, a queued second read runs.
+
+## Resumed run (2026-11-05)
+Head still c369bc77...; code re-checked at that ref: done/refused branches (pages.ts ~416-421) set reply and call stop() with no kill; close handler resolves the reply only when code === 0, so a fix that SIGKILLs must also change that branch (signal SIGKILL with reply set means resolve the reply). Verdict unchanged: not refuted, blocking. Clone already removed.
