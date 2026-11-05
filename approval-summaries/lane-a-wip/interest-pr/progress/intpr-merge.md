@@ -1,0 +1,22 @@
+# intpr-merge (base merger, interest fix)
+- start: worktree /home/user/interest head 650a3108 clean; base origin/claude/build-platform = f7d609cc (#110 merged)
+- delta 650efb9b..f7d609cc: 12 files (brand #121: packages/brand contrast.ts/tokens*, apps/web status.tsx, e2e/a11y.ts, worker report/brand.css, ADR 0056/0058, BRAND.md; domain-model approval line 61fc4e6c + provenance)
+- migrations/functions delta 650efb9b..base: EMPTY (0 lines) -> confirmed
+- merge --no-ff --no-commit: one conflict docs/product/domain-model.md (provenance + approval line); auto-merged rest
+- next: take base side of domain-model, regenerate on fresh db, pnpm install, watched --write, synth --all
+- domain-model.md: took base's side (git checkout --theirs), to regenerate. Files changed on both sides since merge-base 650efb9b: ONLY domain-model.md. Delta touches a manifest (packages/brand/package.json exports) -> actions:check + toolchain:check required; no workflow, no lockfile.
+- RE-READ: 20261110090000 recreates ledger_match_evidence (CHECK), ledger_entry_sign (CHECK), ledger_match_rules(); creates ledger_entry_within_interest() + trigger, seq + ledger_match_by_seq. Predecessors only in 20261023120000 (unchanged base vs 650efb9b), functions dir diff 650efb9b..base empty, ledger_match_rules.sql identical; base head migration 20261109090000 (47). => no body moved; migration unchanged; no marker route.
+- REGEN (scratchpad/intpr-merge/regen.sh): pnpm install exit 0 (lockfile up to date, no diff); watched.ts --write 573 lines, no diff; fresh tp_intpr_merger_1: db:migrate 48 applied (head 20261110090000, preflight passed); db:domain-model --out --strict exit 0: 100 tables, 1 view, 48 registered, 230 divergence rows (23 to approve), 0 explanation problems; 382 function files, 0 written, 0 removed. Document = 650a3108's except the provenance line (approval line blank again). synth --all: 315 cases 0 written 743 unchanged 0 removed; 8 EMR 0 written 16 unchanged. Staged.
+- next: fast checks + actions/toolchain (bg), unit + db tests (bg), dm --check, commit, push.
+- COMMITTED (local, not pushed) c49367c5a52862560c5d2eecf511c6969495e8b3 (parents 650a3108, f7d609cc; msg intpr-merge/msg.txt). Tree clean.
+- CHECKS on c49367c5 (committed tree):
+  - typecheck exit 0 (22 projects, 57.9 s); lint exit 0 (1,840 files in 3 groups, 0 errors, 0 warnings); lint:copy exit 0 (585 files); lint:logs exit 0 (1,160 files); check:fixtures exit 0 (369 guarded + 4,202 searched); verify-content exit 0 (every content set passes); synth --all 0 written (regen).
+  - actions:check exit 0; BASE=origin/claude/build-platform toolchain:check exit 0 (0 errors, 1 warning).
+  - unit (vitest --project unit --maxWorkers=2, intpr-merge/unit-files.txt: domain-model unit x7, packages/ledger, packages/brand, report/brand.test.ts, reconcile unit, watched.test.ts): 28 files, 473 passed.
+  - db (vitest --project db --maxWorkers=2, intpr-merge/db-files.txt: 12 reconcile db incl. interest/ledger/ledger-oracle/chain(.large)/reconcile.large, reconciliation-routes, streamed, domain-model db x4, catalog, cross-tenant): 20 files, 1,443 passed (402 s).
+  - db:domain-model on tp_intpr_merger_1: --check exit 0; --check --strict exit 0 (382 function names); --check --require-approval exit 1 only for the blank approval line (expected; never written). SHA-256 47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef, approval line 7469. File sha256 917fc4c3...467e.
+- next: push.
+- Pre-push re-fetch: base still f7d609cc; origin interest still 650a3108.
+- PUSHED co-001/ledger-interest-once 650a3108..c49367c5 (pre-push: 1 commit checked, 0 fixture-guard files, 1 text file searched, gitleaks (pinned 8.24.3) no secret; no --no-verify). ls-remote confirms c49367c5a52862560c5d2eecf511c6969495e8b3. Remote note: Dependabot 1 moderate on the default branch (pre-existing).
+- No open PR for the branch yet (the session opens it); no workflow run on c49367c5 at push time.
+- DBs: tp_intpr_merger_1 dropped; no tp_intpr_* left. Tree clean. DONE.

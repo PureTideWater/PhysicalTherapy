@@ -1,5 +1,69 @@
 # Lane A schema chain: build status (SS-01, SUITE-CAP-1b, the interest fix)
 
+## RESUME-BLOCK (Lane A stood down 2026-11-05 07:58 UTC: this account is at 99% of its weekly usage)
+On the orchestrator's word (session_01TrKDxeLbxVo7t7zwRXFzrg, ~07:50 UTC), Lane B's account runs Lane A's chain as acting Lane A
+from 2026-11-06 19:00 UTC until this account's reset (`lanes/lane-a-handoff-to-lane-b-2026-11-05.md`, the orchestrator's).
+Nothing of this session runs: wf_b04ba66e-7ff (`workflow-scripts/lane-a-interest-pr-stage-wf_b04ba66e-7ff.js`) was stopped at a
+save point (its fixes committed and pushed), its background suite killed, #126 unsubscribed, its check-in deleted. Done so far:
+SS-01 merged (#104, e084da22); SUITE-CAP-1b merged (#110, f7d609cc).
+
+**Interest fix, PR #126** (https://github.com/PureTideWater/PhysicalTherapy/pull/126, draft, `co-001/ledger-interest-once`):
+- **Heads.** The PR branch is c49367c5 (unchanged since 06:00 UTC). Everything since is on the WIP ref
+  **`co-001/wip-interest-fix` = 23369ae6**: the fix round's 16 commits and base 23b25ad0 (#127) merged (23369ae6; before it,
+  0f4a5ed5 (#125) in 15f3359d; both with no conflict, regenerated: provenance only). c49367c5 is an ancestor of 23369ae6, so
+  the PR branch takes it as a fast-forward.
+- **CI on c49367c5** (ci 41974228505): red domain model (the blank approval line: expected), e2e (1/2) (INT-REL-1: LED-14/15
+  hang at `helpers.ts:50`, job 127069715493) and all green (follows them). Green: mutation 41974228567, screening-capacity
+  41974228564, approval-of-record 41974228593 and 41974429678. No CI has run on 23369ae6 (a WIP ref has no PR).
+- **Domain model, provisional:** on 23369ae6 **f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7, line 7469**
+  (`Approved by: ________  Date: ________  Document SHA-256: ...`). On c49367c5 it was 47887070...eb8ef: INT-REL-3 changed the
+  branch's own migration 20261110090000 (marker route, marker removed), so the hash moved. A base change to a migration or a
+  function file moves it again.
+- **Checks on 23369ae6** (local, 07:50 to 07:54 UTC): typecheck, lint, lint:copy, lint:logs, check:fixtures, synth (no diff),
+  verify-content, actions:check, toolchain:check, `db:domain-model --check` and `--check --strict` green; `--require-approval`
+  red only for the blank line. Each fix's red and green tests are in the findings table. **Not yet run on 23369ae6: the full
+  suite** (unit, db, golden, e2e, build, Stryker's 17 shards). Its run 2 was stopped at unit by the stand-down; run 1 (on
+  15f3359d) was superseded when INT-REL-1..3 were found.
+- **Reviews** (four, on c49367c5, each in its own clone, a skeptic per finding). **Seven confirmed, all fixed on the WIP ref:**
+  LED-R1 (red 5859c722, fix 84534029), LED-R2 (red 3d92d329, fix 6ca6b8c8), LED-R3 (ADR 0084 D5, a8b4a088), UX-INT-1 (red
+  3d5cf8d1, fix 9b46c740), INT-REL-1 blocking (feb91645: the journey's own `interest-manager` persona), INT-REL-2 (red 5074ce3e:
+  CAS-42.3's pass 171.2 s over its 150 s; fix f7e2c5de: 46.1 s), INT-REL-3 (red 37a2b994, fix 99579d0c: the NOWAIT lock loop;
+  ADR 0084 D16 77653d10; regenerated 35e7762a). ADR 0084 D5's line-whole cap sentence: a8b4a088. **Refuted (not defects of this
+  PR):** UX-INT-2 (the design's behaviour; a follow-up on the copy of every ledger refusal on the adjustment form), UX-INT-3
+  (UX-153; UX PR 29, `co-001/ux-dates`), UX-INT-4 (a follow-up for the ROI pages' owner). Security and tenancy: none.
+  **The PR body's findings table, written and ready:** `approval-summaries/lane-a-wip/interest-pr/findings-table.md` (with
+  `body-build.py`, the suite script `suite.sh` + `common.sh`, and the stage's progress notes under `progress/`).
+  The brief handed to the fix agent listed only four of the seven; the agent found the other three in the skeptics' output.
+- **Open, outside the PR** (claude/build-ops, for the design's owner): `designs/ledger-interest-once.md` D5, section 7 and
+  risk 8 amended for LED-R1, LED-R2, LED-R3 and UX-INT-1's words.
+
+**Exact next step (acting Lane A), one schema PR at a time:**
+1. Check out `co-001/wip-interest-fix` (23369ae6) in the interest worktree. `git fetch origin claude/build-platform`; if it
+   moved past 23b25ad0, merge it by LANES.md rule 6 (merge commit; pnpm install; watched.ts --write; db:domain-model --out
+   --strict on a freshly migrated database; synth --all; shared documents keep both sides).
+2. Run the full local suite once on that tree (`suite.sh`; set `L` in `common.sh` to a log directory of your own).
+3. Push it to `co-001/ledger-interest-once` (a fast-forward of c49367c5; never force, never --no-verify).
+4. Update #126's body (read it first): the summary block regenerated whole (`pnpm -s db:domain-model --summary-since
+   origin/claude/build-platform --function-diffs list`); the findings table above; the Checks rows; the new hash; under
+   65,536 characters; update_pull_request; read back.
+5. A fresh-clone verification reading CI (expected red: the domain model's blank line only, and all green after it); CAS-42.5
+   on the final head (dispatch release-capacity.yml: required, since INT-REL-2 changed the reconcile); re-shoot UX-INT-1's
+   screens (`p.reconciliation.int-paid`, `p.reconciliation.int-reported-only` at 1280, 390 and 1280 dark).
+6. Post the suggested approval line as ONE pull-request comment on domain-model.md's approval line at the final head
+   (`gh api repos/PureTideWater/PhysicalTherapy/pulls/126/comments` with commit_id, path, side RIGHT, line; the body a
+   `suggestion` block of the line with the final hash), then send_message the orchestrator the PR link, the SHA-256 and the
+   comment link.
+7. After the founder commits the line: merge the base if it moved (`--check --require-approval` exit 0, hash unchanged), CI
+   green, mark ready, wait for approval-of-record's re-run, merge (method merge, expectedHeadSha). Then send S4
+   (session_019i9ifAfByN2caCea4jgSdu) the merge commit: the schema slot passes to it.
+
+**The chain's queue after #126:** (1) `co-001/password-changed-notice` (S4's design; ADR 0091, SGN-16), opening only after #126
+merges; (2) the verifier /3 migration; (3) LANES.md "Handed to Lane A", ordered with the orchestrator.
+
+**This session's WIP refs:** `co-001/wip-interest-fix` 23369ae6 (live: the next step above). Superseded by merged PRs:
+`co-001/wip-ss01-chain`, `co-001/wip-ss01-fix2` (SS-01), `co-001/wip-sc1b-fix`, `co-001/wip-sc1b-mem-1`,
+`co-001/wip-sc1b-retry-1` (1b; their content reached #110 as patches).
+
 Session: https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW, **acting Lane A on Lane B's account** (GitHub login
 PureTideWater), started 2026-11-01 ~16:58 UTC by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW, until Lane A
 returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-brief.md`, `lanes/acting-lane-a-brief.md`
@@ -318,6 +382,9 @@ its unpushed work is not waited for).
   only). The brief handed to the fix agent listed only four findings (truncated); the agent found INT-REL-1..3 confirmed in the
   skeptic transcripts, stopped the suite's first run at unit (the fast checks and domain-model checks had passed), and is
   fixing them before the suite runs once. Open, not writable from the PR: design D5 / section 7 / risk 8 amendments (ops).
+- **07:58 UTC. Stood down** on the orchestrator's word (this account at 99% of its weekly usage): INT-REL-1..3 fixed
+  (feb91645 to 35e7762a) and base 23b25ad0 (#127) merged (23369ae6), fast checks green on it; pushed to
+  `co-001/wip-interest-fix`; wf_b04ba66e-7ff and its suite stopped; #126 unsubscribed; check-in deleted. See the RESUME-BLOCK.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
