@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PAGE_READER_ISOLATION, PAGE_READ_LIMITS, READER_SEMI_SPACE_MB, readerArgv } from '../../packages/contracts/src/evidence/pages';
 import { ENVIRONMENTS, type EnvironmentName, environmentSettings } from '../lib/environments';
-import { HEAP_MIB, heapFlag } from '../lib/heap';
+import { HEAP_MIB, heapFlag, withHeapFlag } from '../lib/heap';
 import { SYNTH_TIMEOUT_MS, logicalIdOf, propertiesOf, resourcesOf, synthesized } from './synth';
 
 /** Audit #31's explicit heap limit (docs/adr/0071): every value leaves the task's other memory its room. */
@@ -102,9 +102,12 @@ describe('the page reader against the heap flags', () => {
     const exec = worker?.command.split('\n').find((line) => line.startsWith('exec node '));
     expect(exec, "the worker container's launch script ends by exec'ing node").toBeDefined();
     const words = (exec ?? '').split(' ').slice(1);
-    // The flag after `node`, as the weekly real-size test runs it (tools/release-capacity/scenario.ts withHeapFlag).
-    expect(heapFlagsIn(words.join(' '))).toEqual([]);
-    const command = [words[0] ?? '', heapFlag('worker'), ...words.slice(1)];
+    // The command as it ships: once it carries the worker's heap flag (ADR 0071's later pull request), that flag and no
+    // other, as it is; until then, the flag after `node`, as the weekly real-size test runs it (withHeapFlag).
+    const present = heapFlagsIn(words.join(' '));
+    expect(present.length, 'at most one heap flag').toBeLessThanOrEqual(1);
+    expect(present.filter((flag) => flag !== heapFlag('worker')), "the worker container's heap flag is heapFlag('worker')").toEqual([]);
+    const command = present.length > 0 ? words : withHeapFlag(words, heapFlag('worker'));
     const nodeFlags = command.slice(1).filter((word) => word.startsWith('--'));
     expect(nodeFlags).toEqual([heapFlag('worker'), '--enable-source-maps']);
     const probe = spawnSync(process.execPath, [...nodeFlags, '--import', 'tsx', PROBE], { cwd: REPO, encoding: 'utf8', timeout: 120_000 });

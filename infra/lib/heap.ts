@@ -16,3 +16,17 @@ export const HEAP_MIB = { worker: 560, platform: 259, web: 560 } as const;
 export function heapFlag(service: keyof typeof HEAP_MIB): string {
   return `--max-old-space-size=${String(HEAP_MIB[service])}`;
 }
+
+/**
+ * A node command with a heap flag after `node`, the one spelling the weekly real-size test (tools/release-capacity) and
+ * infra/test/heap.test.ts's measurement use; a command that already carries a heap flag, or does not run node, is refused.
+ */
+export function withHeapFlag(command: readonly string[], flag: string): string[] {
+  if (command[0] !== 'node') {
+    throw new RangeError('the command runs node');
+  }
+  if (!/^--max-old-space-size=\d+$/.test(flag) || command.some((word) => word.startsWith('--max-old-space-size'))) {
+    throw new RangeError('one heap flag, --max-old-space-size=<MiB>');
+  }
+  return [command[0], flag, ...command.slice(1)];
+}
