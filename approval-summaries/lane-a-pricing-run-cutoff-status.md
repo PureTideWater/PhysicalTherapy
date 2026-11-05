@@ -48,8 +48,15 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   - The base moved to 7fb3e102 (#84). Merged once, cleanly, as 7e2c5539.
   - The full suite is running once on 7e2c5539, with db on 5433.
 
+- 2026-11-05T01:57Z: MERGED. The full suite passed every step on 7e2c5539.
+  - The base moved to 370b8973 (#119, test-only). Merged in baff8ce0; its one changed test file passed there (9/9).
+  - The description was updated with the console fix, the suite results and every review finding with its disposition.
+  - CI on baff8ce0 was green: all green, mutation, screening-capacity gate and approval-of-record (after ready).
+  - Merged as 54d061fd (method merge, expectedHeadSha baff8ce0). Unsubscribed.
+  - The WIP refs co-001/wip-pricing-run-cutoff and co-001/wip/pricing-run-cutoff-s4 are no longer needed.
+
 ## Waiting on someone
 - None.
 
 ## Next step
-The suite on 7e2c5539, then the push, the description, fresh-clone verification on CI, and the merge.
+None: done.
