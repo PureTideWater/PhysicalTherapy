@@ -670,7 +670,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['R1-8 dash then period', 'A', 'Call 202-555.0123', 'Call [PHONE]', ['2025550123']],
     ['R1-9 a comma list of SSNs', 'A', '900-12-3456,900-55-1234', '[SSN],[SSN]', ['900123456', '900551234']],
     ['R1-10 a comma list of phones', 'A', '202-555-0123,202-555-0198', '[PHONE],[PHONE]', ['2025550123', '2025550198']],
-    ['R1-11 a table row of small numbers (15.10)', 'A', 'Line 001 02 1500', 'Line [SSN]', []],
+    ['R1-11 a table row of small numbers (15.10)', 'A', 'Line 000 02 1500', 'Line [SSN]', []],
     // R2: a line break, with indentation, inside or between groups
     ['R2-1', 'A', 'SSN 900-12-34\n56', 'SSN [SSN]', ['900123456']],
     ['R2-2', 'A', 'SSN 900-12-34-\n56', 'SSN [SSN]', ['900123456']],
