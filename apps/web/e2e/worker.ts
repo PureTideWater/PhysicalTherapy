@@ -1,6 +1,6 @@
 import { setTimeout } from 'node:timers/promises';
 
-import { databaseClient, developmentMasterKey, openPool, workerDevLoginUrl } from '@tp/db';
+import { databaseClient, developmentMasterKey, workerDevLoginUrl } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import {
   ChromiumPdfRenderer,
@@ -17,6 +17,7 @@ import {
   packetExportHandler,
   parseHandler,
   placeholderHandlers,
+  practicePool,
   priceHandler,
   reconcileHandler,
   reportDocumentHandler,
@@ -141,8 +142,8 @@ export async function holdExports(practiceId: string): Promise<{ release: () => 
  * so every worker takes them.
  */
 export async function startLocalWorker(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
-  // The worker's own login, as in development and production (docs/adr/0061).
-  const pool = openPool(workerDevLoginUrl(e2eDatabaseUrl()), 4);
+  // The worker's own login, as in development and production (docs/adr/0061), on the pool main.ts opens.
+  const pool = practicePool(workerDevLoginUrl(e2eDatabaseUrl()));
   const boss = new PgBoss(e2eDatabaseUrl());
   boss.on('error', () => undefined);
   let stopping = false;

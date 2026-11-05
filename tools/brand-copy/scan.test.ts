@@ -273,6 +273,7 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/report/html.ts',
       'apps/worker/src/screening/message.ts',
       'apps/worker/src/support/support-mail.ts',
+      'packages/auth-mail/src/words.ts',
       'packages/contracts/src/calendar.ts',
       'packages/contracts/src/location.ts',
       'packages/packets/src/draft.ts',
@@ -293,6 +294,7 @@ describe('the copy lint: what it reads', () => {
     write('apps/web/src/types.d.ts', forbidden);
     write('apps/worker/src/reconcile/ledger.ts', forbidden);
     write('packages/pricing/src/engine.ts', forbidden);
+    write('packages/auth-mail/src/words.test.ts', forbidden);
     write('packages/brand/src/tokens.ts', forbidden);
     expect(copyFiles(fixture)).toEqual(read);
     expect(copyViolations(fixture).map((finding) => `${finding.file} ${finding.rule}`)).toEqual(read.flatMap((file) => [`${file} proof-pack`, `${file} ai`]));
@@ -325,6 +327,10 @@ describe('the copy lint: what it reads', () => {
       'packages/packets/src/draft.ts',
       'packages/contracts/src/calendar.ts',
       'packages/contracts/src/location.ts',
+      // Every email the user pool sends, and the password-changed email's words (docs/adr/0081, the code-email amendment).
+      'packages/auth-mail/src/words.ts',
+      'packages/auth-mail/src/render.ts',
+      'packages/auth-mail/src/lambda.ts',
       // The worker's release reader and the content calendar's family titles (docs/adr/0071).
       'apps/worker/src/price/release.ts',
       'packages/rules/src/calendar.ts',

@@ -146,6 +146,9 @@ importers:
       '@stripe/stripe-js':
         specifier: ^10.0.0
         version: 10.1.0
+      '@tp/auth-mail':
+        specifier: workspace:*
+        version: link:../../packages/auth-mail
       '@tp/billing':
         specifier: workspace:*
         version: link:../../packages/billing
@@ -261,6 +264,9 @@ importers:
       '@paidwhole/brand':
         specifier: workspace:*
         version: link:../../packages/brand
+      '@tp/auth-mail':
+        specifier: workspace:*
+        version: link:../../packages/auth-mail
       '@tp/billing':
         specifier: workspace:*
         version: link:../../packages/billing
@@ -343,6 +349,9 @@ importers:
 
   infra:
     dependencies:
+      '@tp/auth-mail':
+        specifier: workspace:*
+        version: link:../packages/auth-mail
       aws-cdk-lib:
         specifier: ^2.275.0
         version: 2.275.0(constructs@10.8.1)
@@ -362,6 +371,22 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/coverage-v8@5.0.5)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/auth-mail:
+    dependencies:
+      '@paidwhole/brand':
+        specifier: workspace:*
+        version: link:../brand
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

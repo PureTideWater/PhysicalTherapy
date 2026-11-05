@@ -224,6 +224,11 @@ async function screenedLines(scope: PracticeScope<ScopeClient>, practiceId: stri
  * The candidates' query: the lines that may be validated and in no case yet, each from its pricing in effect with
  * positive variance, in service line order. $1 is the practice, $2 the pricing run (null for none). candidateRows
  * runs it whole and judgedCandidates through a cursor, so the two read the same rows in the same order.
+ *
+ * A line in a case is found by its own lookup through case_line_once (the correlated subquery, which the planner keeps
+ * per row), never by an anti-join: right after a triage the statistics predate its case lines, and the cursor's plan
+ * then answered NOT EXISTS with a nested loop over every case line of the practice (83,332 loops of 31,250 rows, a
+ * report's candidate read past 120 s at 100,000 lines against 4.4 s this way; docs/adr/0083, SUITE-CAP-1b).
  */
 const CANDIDATE_QUERY = `WITH current_stage AS (
      SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage
@@ -253,7 +258,7 @@ const CANDIDATE_QUERY = `WITH current_stage AS (
      LEFT JOIN payer_plan_mapping m ON m.id = p.mapping_id
      LEFT JOIN contract_version v ON v.id = p.contract_version_id
     WHERE p.variance_cents > 0
-      AND NOT EXISTS (SELECT 1 FROM case_line cl WHERE cl.service_line_id = p.service_line_id)
+      AND NOT coalesce((SELECT true FROM case_line cl WHERE cl.service_line_id = p.service_line_id), false)
     ORDER BY p.service_line_id`;
 
 /**

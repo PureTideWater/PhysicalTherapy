@@ -24,11 +24,13 @@ import { CONFIG, attestedArchive } from '../screening-capacity/test-support/imag
  * the unit project runs, so their time grows with the runner's load. The content-calendar notify test took 0.9 s on an
  * idle 4-CPU container, 1.0 to 2.2 s in that nested run beside the full unit project, 1.8 s in CI's own run (job
  * 122241596089) and over 5 s in that job's nested run, which failed it at vitest's five-second default; on one CPU
- * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. Thirty seconds holds four times the
- * worst of those. A test's timeout cannot interrupt a synchronous child process, so each one the file starts is bounded
- * by the same thirty seconds and killed after it: a hung script, git or actionlint fails its test rather than holding it.
+ * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. The worst one is now the 41-finding
+ * notify test (ci-findings-transport): 1.3 to 1.5 s idle and 10.2 to 10.7 s on that loaded CPU. Forty-five seconds
+ * holds four times the worst of those. A test's timeout cannot interrupt a synchronous child process, so each one the
+ * file starts is bounded by the same forty-five seconds and killed after it: a hung script, git or actionlint fails its
+ * test rather than holding it.
  */
-const TEST_TIMEOUT_MS = 30_000;
+const TEST_TIMEOUT_MS = 45_000;
 vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
 
 /**
@@ -517,10 +519,11 @@ describe('workflows', () => {
     expect(runners['screening-capacity.yml capacity']).toEqual([RELEASE_RUNNER.label, RUNNER]);
     expect(workflow('screening-capacity.yml').jobs.capacity?.['runs-on']).toBe(`\${{ inputs.runner || '${RELEASE_RUNNER.label}' }}`);
     expect(Object.entries(runners).filter(([job, labels]) => !RELEASE_CHAIN.includes(job) && !isDeepStrictEqual(labels, [RUNNER]))).toEqual([]);
-    // Twenty-two on ubuntu-26.04: approval-of-record's one, ci.yml's nine, content-calendar's check and notify,
-    // large-zip's one, mutation's three, publish-content's one, release-capacity's capacity and notify (its report is
-    // advisory and never attested, so F5's chain does not hold it), and screening-capacity's changes, gate and notify.
-    expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(22);
+    // Twenty-three on ubuntu-26.04: approval-of-record's one, ci.yml's nine, content-calendar's check, handoff and
+    // notify, large-zip's one, mutation's three, publish-content's one, release-capacity's capacity and notify (its
+    // report is advisory and never attested, so F5's chain does not hold it), and screening-capacity's changes, gate and
+    // notify.
+    expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(23);
     // GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and PureTideWater is a
     // personal account: actionlint's configuration, which named the 8-core runner's label, is gone with it, and none
     // names ubuntu-26.04 as a self-hosted label (the actionlint test ignores that one message instead).
@@ -1153,11 +1156,11 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   const runs = (job: ContentJob | undefined) => (job?.steps ?? []).map((step) => step.run ?? '');
 
   /** A notify job writes issues alone, with the job's own token: it checks nothing out, runs no action and puts no expression in its shell. */
-  function expectQuietNotify(name: string, needs: string, condition: string) {
+  function expectQuietNotify(name: string, needs: string, condition: string, permissions: Readonly<Record<string, string>> = { issues: 'write' }) {
     const notify = read(name).jobs.notify;
     expect(notify?.needs, name).toBe(needs);
     expect(notify?.if, name).toBe(condition);
-    expect(notify?.permissions, name).toEqual({ issues: 'write' });
+    expect(notify?.permissions, name).toEqual(permissions);
     expect(notify?.steps.filter((step) => step.uses !== undefined), name).toEqual([]);
     expect(runs(notify).filter((run) => run.includes('${{')), name).toEqual([]);
     for (const step of notify?.steps ?? []) expect(Object.keys(step.env ?? {}).filter((key) => /SECRET|PASSWORD|KEY/.test(key)), name).toEqual([]);
@@ -1176,10 +1179,14 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(pull.paths).toEqual(push.paths);
     expect(calendar.permissions).toEqual({ contents: 'read' });
     expect(calendar.concurrency).toEqual({ group: '${{ github.workflow }}-${{ github.ref }}', 'cancel-in-progress': "${{ github.event_name == 'pull_request' }}" });
-    expect(Object.keys(calendar.jobs)).toEqual(['check', 'notify']);
+    expect(Object.keys(calendar.jobs)).toEqual(['check', 'handoff', 'notify']);
+    // The header names every public output, the one-day findings artifact among them (docs/adr/0071, Amendment).
+    const lines = readFileSync(path.join(WORKFLOWS, 'content-calendar.yml'), 'utf8').split('\n');
+    const header = lines.slice(1, lines.findIndex((line) => line.startsWith('on:'))).map((line) => line.replace(/^# ?/, '')).join(' ');
+    expect(header).toContain("Issues, the check's summary and its one-day findings artifact hold only calendar data");
   });
 
-  it('content-calendar: its check job only reads, with no permissions of its own and no secret, and hands the findings on as an output', () => {
+  it("content-calendar: its check job only reads, with no permissions of its own and no secret, and uploads its findings as the run's own artifact", () => {
     const check = read('content-calendar.yml').jobs.check;
     expect(check?.permissions).toBeUndefined();
     expect(check?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
@@ -1189,12 +1196,70 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     const script = runs(check).find((run) => run.includes('tools/content-calendar/index.ts')) ?? '';
     expect(script).toContain('--today "$(date -u +%F)" --out "$RUNNER_TEMP/findings.json" --summary "$RUNNER_TEMP/summary.md"');
     expect(script).toContain('>> "$GITHUB_STEP_SUMMARY"');
-    expect(check?.outputs).toEqual({ findings: '${{ steps.calendar.outputs.findings }}' });
+    expect(check?.outputs).toBeUndefined();
+    // The findings, every one whole, as this run's own artifact, kept one day and replaced on a re-run, uploaded right
+    // after the step that writes them.
+    const steps = check?.steps ?? [];
+    expect(steps.at(-1)).toEqual({
+      uses: pinOf('actions/upload-artifact'),
+      with: { name: 'findings', path: '${{ runner.temp }}/findings.json', 'if-no-files-found': 'error', 'retention-days': 1, overwrite: true },
+    });
+    expect(steps.at(-2)?.run).toBe(script);
+  });
+
+  it("content-calendar: its check step, as the runner runs it, appends the summary also when the check stops, exits with the check's status, and logs the findings file's size and SHA-256 (ci-findings-transport)", () => {
+    const step = read('content-calendar.yml').jobs.check?.steps.find((one) => one.run?.includes('tools/content-calendar/index.ts') === true);
+    const dir = mkdtempSync(path.join(scratch, 'calendar-check-'));
+    // A stand-in pnpm: the check refused at a bound (its summary written, exit 1), stopped before one (exit 2), or passed.
+    mkdirSync(path.join(dir, 'bin'));
+    writeFileSync(
+      path.join(dir, 'bin/pnpm'),
+      [
+        '#!/usr/bin/env bash',
+        'while [ "$#" -gt 0 ]; do case "$1" in --out) out=$2; shift ;; --summary) summary=$2; shift ;; esac; shift; done',
+        'case "$PNPM_CASE" in',
+        `  refused) printf '## Content calendar, 2026-11-01\\n\\n- Finding 1\\n' > "$summary"; echo 'content-calendar: the findings file holds 101 bytes, over 100' >&2; exit 1 ;;`,
+        '  usage) exit 2 ;;',
+        `  passed) printf '## Content calendar, 2026-11-01\\n\\nNothing is due.\\n' > "$summary"; printf '[]\\n' > "$out"; exit 0 ;;`,
+        'esac',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const run = (which: string) => {
+      const temp = mkdtempSync(path.join(dir, `${which}-`));
+      const summary = path.join(temp, 'step-summary.md');
+      writeFileSync(summary, '');
+      writeFileSync(path.join(temp, 'output'), '');
+      const file = path.join(temp, 'step.sh');
+      writeFileSync(file, step?.run ?? '');
+      const env = { PATH: `${path.join(dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`, RUNNER_TEMP: temp, GITHUB_STEP_SUMMARY: summary, GITHUB_OUTPUT: path.join(temp, 'output'), PNPM_CASE: which };
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', file], { cwd: temp, encoding: 'utf8', env, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+      expect(result.error?.message, `${which}: bash did not start`).toBeUndefined();
+      return { status: result.status, output: result.stdout + result.stderr, summary: readFileSync(summary, 'utf8') };
+    };
+    const refused = run('refused');
+    expect([refused.status, refused.summary], refused.output).toEqual([1, '## Content calendar, 2026-11-01\n\n- Finding 1\n']);
+    const usage = run('usage');
+    expect([usage.status, usage.summary], usage.output).toEqual([2, '']);
+    expect(usage.output).not.toContain('No such file');
+    const passed = run('passed');
+    expect([passed.status, passed.summary], passed.output).toEqual([0, '## Content calendar, 2026-11-01\n\nNothing is due.\n']);
+    expect(passed.output).toContain(`content-calendar: the findings file holds 3 bytes, SHA-256 ${createHash('sha256').update('[]\n').digest('hex')}\n`);
   });
 
   /**
    * A fake gh on PATH for a notify script: `gh api` answers with the open issues (as its --jq would print them, one
-   * object a line), `gh issue list` with them as one JSON array, and every call is logged one line each.
+   * object a line), `gh issue list` with them as one JSON array, and every call is logged one line each. `gh run
+   * download` copies fake/findings.json into its -D directory, after stalling as many tries as fake/stall holds (each
+   * writing a cut findings.json first, as a try killed while it extracts leaves one), failing as many as fake/fail holds
+   * and failing as many as fake/partial holds after writing a cut findings.json (a zip checksum error), and answers as
+   * gh does when there is no artifact, after dying of SIGKILL on as many tries as fake/kill holds first (timeout then
+   * dies of it too, as it does when it kills a try that ignored the stop 10 seconds earlier, so bash reports the try
+   * "Killed" with its command line and the try exits 137, with no 11-second wait). The artifact's file is named as fake/name holds (findings.json unless a case
+   * names another). As gh 2.89 and 2.103 extract (O_EXCL), it refuses a findings.json already in -D
+   * and never overwrites one. Its download prints a signed blob address, as gh does on a blob error, on stdout and in
+   * every error. A `sleep` beside it logs each pause ("sleep <seconds>") and returns at once; the stall
+   * waits with /bin/sleep, which it does not log.
    */
   function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
     const dir = mkdtempSync(path.join(scratch, 'notify-'));
@@ -1210,29 +1275,103 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
         'printf "%s\\n" "$*" >> "$FAKE_DIR/log"',
         'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
         'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
+        'if [ "$1 $2" = "run download" ]; then',
+        '  SIGNED_URL="https://blob.example.invalid/findings.zip?se=2026-11-04T21%3A40%3A56Z&sig=synthetic-signature"; echo "downloading from $SIGNED_URL"',
+        '  kills=$(cat "$FAKE_DIR/fake/kill" 2>/dev/null || echo 0); if [ "$kills" -gt 0 ]; then echo $((kills - 1)) > "$FAKE_DIR/fake/kill"; kill -9 $$; fi',
+        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0); stalls=$(cat "$FAKE_DIR/fake/stall" 2>/dev/null || echo 0); partials=$(cat "$FAKE_DIR/fake/partial" 2>/dev/null || echo 0); name=$(cat "$FAKE_DIR/fake/name" 2>/dev/null || echo findings.json)',
+        '  if [ "$stalls" -gt 0 ]; then echo $((stalls - 1)) > "$FAKE_DIR/fake/stall"; if [ -f "$FAKE_DIR/fake/findings.json" ] && [ ! -e "$dest/findings.json" ]; then mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; fi; exec /bin/sleep 30; fi',
+        '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "error downloading findings: Get \\"$SIGNED_URL\\": HTTP 502: Bad Gateway" >&2; exit 1; fi',
+        '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
+        '  if [ -e "$dest/findings.json" ]; then echo "error downloading findings: error extracting \\"findings.json\\": open $dest/findings.json: file exists" >&2; exit 1; fi',
+        '  if [ "$partials" -gt 0 ]; then echo $((partials - 1)) > "$FAKE_DIR/fake/partial"; mkdir -p "$dest"; head -c 5 "$FAKE_DIR/fake/findings.json" > "$dest/findings.json"; echo "error downloading findings: $SIGNED_URL: zip: checksum error" >&2; exit 1; fi',
+        '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/$name"; exit 0',
+        'fi',
         'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
       ].join('\n'),
       { mode: 0o755 },
     );
+    writeFileSync(path.join(dir, 'bin/sleep'), ['#!/usr/bin/env bash', 'printf "sleep %s\\n" "$*" >> "$FAKE_DIR/log"'].join('\n'), { mode: 0o755 });
     const lines = (name: string) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), 'utf8') : '');
     return { dir, log: () => lines('log').split('\n').filter((line) => line !== ''), bodies: () => lines('bodies').split('\n---\n').filter((body) => body !== '') };
   }
 
-  const notifyStep = (name: string) => read(name).jobs.notify?.steps[0];
+  const notifyStep = (name: string, job = 'notify') => read(name).jobs[job]?.steps[0];
 
-  /** Runs a notify step as GitHub runs it, with its env's literals and these values for its expressions. */
-  function runNotify(name: string, values: Record<string, string>, open: readonly { number: number; title: string }[]) {
-    const step = notifyStep(name);
-    const gh = fakeGh(open);
-    const literals = Object.fromEntries(Object.entries(step?.env ?? {}).filter(([, value]) => !value.includes('${{')));
-    const result = runScript(step?.run ?? '', { ...literals, GH_REPO: 'owner/repo', GH_TOKEN: 'token', RUN_URL: 'https://github.com/owner/repo/actions/runs/1', GITHUB_REF_NAME: 'claude/build-platform', GITHUB_SHA: 'abc123', FAKE_DIR: gh.dir, PATH: `${path.join(gh.dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`, ...values }, gh.dir);
-    return { ...result, log: gh.log(), bodies: gh.bodies() };
+  /**
+   * A notify step's env as the runner evaluates it, in identityEnv's form: a value the case gives (a literal lowered, or
+   * an expression's value), each literal as written, and the expression forms these jobs use. The check's findings
+   * output, while a workflow still had one, is the base64 of the staged file. Any other form fails the test, so a value
+   * this emulator does not know (a large one among them) cannot pass unnoticed, and so does a value the case gives for a
+   * name the step does not set.
+   */
+  function notifyEnv(name: string, step: Step, values: Readonly<Record<string, string>>, findings: string | null): Record<string, string> {
+    const env = step.env ?? {};
+    for (const key of Object.keys(values)) if (!Object.hasOwn(env, key)) throw new Error(`${name}: ${key} is not in the step's env`);
+    const forms: Readonly<Record<string, string>> = {
+      '${{ github.token }}': 'token',
+      '${{ github.repository }}': 'owner/repo',
+      '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}': 'https://github.com/owner/repo/actions/runs/1',
+      '${{ needs.check.outputs.findings }}': Buffer.from(findings ?? '').toString('base64'),
+    };
+    return Object.fromEntries(
+      Object.entries(env).map(([key, value]): [string, string] => {
+        const given = values[key];
+        if (given !== undefined) return [key, given];
+        if (!value.includes('${{')) return [key, value];
+        const known = forms[value];
+        if (known === undefined) throw new Error(`${name}: ${value} is a form this emulator does not know`);
+        return [key, known];
+      }),
+    );
   }
-  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64');
+
+  /**
+   * Runs a notify job's step as the runner starts it (a file, bash --noprofile --norc -e -o pipefail), with notifyEnv's
+   * values, the runner's own RUNNER_TEMP and GITHUB_RUN_ID, the fake's sleep logging each pause, `findings`, when not null,
+   * staged as the run's findings artifact, and the fake's download stalling its first `stalls` tries (a sleep past any
+   * DOWNLOAD_LIMIT a case gives), then failing its next `failures` tries, then its next `partials` after writing a cut
+   * findings.json, and the artifact's file named `artifactFile`; before all of these, its first `kills` tries die of SIGKILL.
+   */
+  function runNotify(name: string, values: Readonly<Record<string, string>>, open: readonly { number: number; title: string }[], findings: string | null = null, job = 'notify', failures = 0, stalls = 0, partials = 0, artifactFile = 'findings.json', kills = 0) {
+    const step = notifyStep(name, job);
+    if (step === undefined) throw new Error(`${name}: no job ${job}`);
+    const gh = fakeGh(open);
+    if (findings !== null) writeFileSync(path.join(gh.dir, 'fake/findings.json'), findings);
+    if (failures > 0) writeFileSync(path.join(gh.dir, 'fake/fail'), String(failures));
+    if (stalls > 0) writeFileSync(path.join(gh.dir, 'fake/stall'), String(stalls));
+    if (partials > 0) writeFileSync(path.join(gh.dir, 'fake/partial'), String(partials));
+    if (artifactFile !== 'findings.json') writeFileSync(path.join(gh.dir, 'fake/name'), artifactFile);
+    if (kills > 0) writeFileSync(path.join(gh.dir, 'fake/kill'), String(kills));
+    const env = {
+      ...notifyEnv(name, step, values, findings),
+      RUNNER_TEMP: mkdtempSync(path.join(scratch, 'runner-temp-')),
+      GITHUB_RUN_ID: '1',
+      GITHUB_REF_NAME: 'claude/build-platform',
+      GITHUB_SHA: 'abc123',
+      FAKE_DIR: gh.dir,
+      PATH: `${path.join(gh.dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`,
+    };
+    const file = path.join(scratch, `${path.basename(gh.dir)}.sh`);
+    writeFileSync(file, step.run ?? '');
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', file], { cwd: gh.dir, encoding: 'utf8', env, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    // As #42's job met it: one environment string over 131,072 bytes stops bash before it starts (E2BIG).
+    expect(result.error?.message, `${name} ${job}: bash did not start`).toBeUndefined();
+    return { status: result.status, output: result.stdout + result.stderr, stdout: result.stdout, stderr: result.stderr, env, log: gh.log(), bodies: gh.bodies() };
+  }
   const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
+  /** A one-finding list of exactly `bytes` bytes, its body padding it, for a MAX_FILE_BYTES of 100 in a case. */
+  const listOf = (bytes: number) => {
+    const list = JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(bytes - JSON.stringify([{ title: 'Finding 1', body: '' }]).length) }]);
+    expect(Buffer.byteLength(list)).toBe(bytes);
+    return list;
+  };
+  /** Two files past a MAX_FILE_BYTES of 100: a valid list padded with whitespace, and a closed list followed by other bytes. */
+  const PAST_BOUND = [JSON.stringify([{ title: 'Finding 1', body: 'b' }]) + ' '.repeat(200), JSON.stringify([{ title: 'Finding 1', body: 'b' }]) + 'x'.repeat(200)];
+  /** A run's download tries and pauses in order, each try as "run download". */
+  const paced = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ') || line.startsWith('sleep ')).map((line) => (line.startsWith('run download ') ? 'run download' : line));
 
   it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
-    expectQuietNotify('content-calendar.yml', 'check', "always() && github.event_name != 'pull_request'");
+    expectQuietNotify('content-calendar.yml', 'check', "always() && github.event_name != 'pull_request'", { actions: 'read', issues: 'write' });
     const step = notifyStep('content-calendar.yml');
     expect(step?.env?.MAX_OPENED).toBe(String(MAX_OPENED_PER_RUN));
     const script = step?.run ?? '';
@@ -1245,7 +1384,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   it('content-calendar: notify files the findings not open, at most 20 a run, and lists the rest in one issue it closes once every finding is filed (fix round SB-5)', () => {
     const all = Array.from({ length: 25 }, (_, index) => finding(index));
     const open = [0, 1, 2].map((index) => ({ number: 100 + index, title: `Finding ${String(index)}` }));
-    const first = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, open);
+    const first = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, open, JSON.stringify(all));
     expect(first.status, first.output).toBe(0);
     const creates = first.log.filter((line) => line.startsWith('issue create'));
     expect(creates).toEqual([
@@ -1256,7 +1395,7 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(first.bodies.at(-1)).toBe('A run opens at most 20 new issues. These 2 findings were not filed by https://github.com/owner/repo/actions/runs/1; a later run files them:\n\n- Finding 23\n- Finding 24\n');
     // The next day, with those open: findings 23 and 24 are filed, and the list of findings not filed is closed.
     const nowOpen = [...open, ...Array.from({ length: 20 }, (_, index) => ({ number: 200 + index, title: `Finding ${String(index + 3)}` })), { number: 300, title: 'Content calendar: findings not filed' }];
-    const second = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, nowOpen);
+    const second = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, nowOpen, JSON.stringify(all));
     expect(second.status, second.output).toBe(0);
     expect(second.log.filter((line) => line.startsWith('issue '))).toEqual([
       'issue create --title Finding 23 --label content-due --body-file body.md',
@@ -1264,31 +1403,265 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
       'issue close 300 --comment Every finding is filed: https://github.com/owner/repo/actions/runs/1',
     ]);
     // Twenty-five more the day after, while the list is open: it is commented on, not opened twice.
-    const third = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(Array.from({ length: 21 }, (_, index) => finding(index + 50))) }, [{ number: 300, title: 'Content calendar: findings not filed' }]);
+    const third = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [{ number: 300, title: 'Content calendar: findings not filed' }], JSON.stringify(Array.from({ length: 21 }, (_, index) => finding(index + 50))));
     expect(third.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 300 --body-file body.md');
     expect(third.log.filter((line) => line.startsWith('issue create'))).toHaveLength(20);
   });
 
   it('content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2)', () => {
     const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
-    for (const values of [
-      { CHECK_RESULT: 'failure', FINDINGS_B64: '' },
-      { CHECK_RESULT: 'cancelled', FINDINGS_B64: b64([finding(1)]) },
-      { CHECK_RESULT: 'success', FINDINGS_B64: '' },
-      { CHECK_RESULT: 'success', FINDINGS_B64: '!!not base64!!' },
-      { CHECK_RESULT: 'success', FINDINGS_B64: b64({ title: 'x' }) },
-      { CHECK_RESULT: 'success', FINDINGS_B64: b64([{ title: 'x' }]) },
-    ]) {
-      const result = runNotify('content-calendar.yml', values, []);
-      expect(result.status, `${JSON.stringify(values)} ${result.output}`).toBe(0);
-      expect(result.log.filter((line) => line.startsWith('issue ')), JSON.stringify(values)).toEqual([failing]);
-      expect(result.bodies[0], JSON.stringify(values)).toBe(`The content calendar check did not hand on its findings (the check: ${values.CHECK_RESULT}) on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1\n`);
+    for (const [result, findings] of [
+      ['failure', null],
+      ['cancelled', JSON.stringify([finding(1)])],
+      ['success', null],
+      ['success', '!!not json!!'],
+      ['success', JSON.stringify({ title: 'x' })],
+      ['success', JSON.stringify([{ title: 'x' }])],
+    ] as const) {
+      const at = `${result} ${String(findings)}`;
+      const ran = runNotify('content-calendar.yml', { CHECK_RESULT: result }, [], findings);
+      expect(ran.status, `${at} ${ran.output}`).toBe(0);
+      expect(ran.log.filter((line) => line.startsWith('issue ')), at).toEqual([failing]);
+      expect(ran.bodies[0], at).toBe(`The content calendar check did not hand on its findings (the check: ${result}) on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1\n`);
+      // The download is tried only when the check succeeded, three times when there is no artifact.
+      expect(ran.log.filter((line) => line.startsWith('run download ')), at).toHaveLength(result !== 'success' ? 0 : findings === null ? 3 : 1);
     }
     // Each later failing run comments on the open issue, so a long failure shows in its history.
-    const again = runNotify('content-calendar.yml', { CHECK_RESULT: 'failure', FINDINGS_B64: '' }, [{ number: 7, title: 'Content calendar check failing' }]);
+    const again = runNotify('content-calendar.yml', { CHECK_RESULT: 'failure' }, [{ number: 7, title: 'Content calendar check failing' }]);
     expect(again.log.filter((line) => line.startsWith('issue '))).toEqual(['issue comment 7 --body-file body.md']);
     // An empty list on a passing check files nothing.
-    expect(runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64([]) }, []).log.filter((line) => line.startsWith('issue '))).toEqual([]);
+    expect(runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([])).log.filter((line) => line.startsWith('issue '))).toEqual([]);
+  });
+
+  it('content-calendar: notify downloads the findings in three tries, each stopped after DOWNLOAD_LIMIT seconds, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport)', () => {
+    const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
+    const issues = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('issue '));
+    const tries = (ran: { log: string[] }) => ran.log.filter((line) => line.startsWith('run download ')).length;
+    // The tries and the pauses in order: DOWNLOAD_PAUSE's 10 seconds between two tries, never after the last.
+    const t = 'run download';
+    const p = 'sleep 10';
+    // A file over the bound, as the check would never write it.
+    const over = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }]));
+    expect([over.status, issues(over), tries(over)], over.output).toEqual([0, [failing], 1]);
+    expect(paced(over)).toEqual([t]);
+    // The bound itself: a file of exactly MAX_FILE_BYTES is read and filed, one byte more is refused.
+    const atBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(100));
+    expect([atBound.status, issues(atBound), tries(atBound)], atBound.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 1]);
+    const pastBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(101));
+    expect([pastBound.status, issues(pastBound), tries(pastBound)], pastBound.output).toEqual([0, [failing], 1]);
+    // Past the bound, a file the first MAX_FILE_BYTES + 1 bytes of which still read as a list is refused too: a list
+    // padded with whitespace, and a list followed by other bytes.
+    for (const past of PAST_BOUND) {
+      const ran = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], past);
+      expect([ran.status, issues(ran), tries(ran)], `${JSON.stringify(past.slice(0, 40))} ${ran.output}`).toEqual([0, [failing], 1]);
+    }
+    // Two failed tries, then the artifact: filed, each failure's message in the log.
+    const late = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 2);
+    expect([late.status, issues(late), tries(late)], late.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 3]);
+    // Each failed try logs one fixed line with its exit status; gh's own output, which names the artifact's signed
+    // address, stays out of the public log.
+    expect(late.output.split('\n').filter((line) => line.startsWith('content-calendar: try '))).toEqual(['content-calendar: try 1 of 3 to download the findings failed (exit 1)', 'content-calendar: try 2 of 3 to download the findings failed (exit 1)']);
+    expect(late.output).not.toContain('blob.example.invalid');
+    expect(paced(late)).toEqual([t, p, t, p, t]);
+    // Three failed tries: "check failing".
+    const down = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 3);
+    expect([down.status, issues(down), tries(down)], down.output).toEqual([0, [failing], 3]);
+    expect(paced(down)).toEqual([t, p, t, p, t]);
+    // Each try is stopped after DOWNLOAD_LIMIT seconds (1 here, 60 in the workflow): a stalled try is retried, and three
+    // end in "check failing" rather than at the job's timeout with no issue.
+    const slow = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 1);
+    expect([slow.status, issues(slow), tries(slow)], slow.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    expect(paced(slow)).toEqual([t, p, t]);
+    const stalled = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, [], JSON.stringify([finding(1)]), 'notify', 0, 3);
+    expect([stalled.status, issues(stalled), tries(stalled)], stalled.output).toEqual([0, [failing], 3]);
+    expect(paced(stalled)).toEqual([t, p, t, p, t]);
+    expect(stalled.output.split('\n').filter((line) => line.startsWith('content-calendar: try '))).toEqual([1, 2, 3].map((n) => `content-calendar: try ${String(n)} of 3 to download the findings failed (exit 124)`));
+    // A try killed by a signal (as timeout kills one that ignored the stop 10 seconds earlier) logs the fixed line with
+    // exit 137 and nothing else: bash's own report of the kill, its line number and the try's command line, goes nowhere.
+    const killed = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 0, 'findings.json', 1);
+    expect([killed.status, issues(killed), tries(killed)], killed.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    expect(paced(killed)).toEqual([t, p, t]);
+    expect(killed.stderr.split('\n').filter((line) => line !== ''), killed.output).toEqual(['content-calendar: try 1 of 3 to download the findings failed (exit 137)']);
+    for (const ran of [over, down, slow, stalled, late, killed]) expect(ran.output).not.toMatch(/blob\.example\.invalid|sig=|Killed|gh run download/);
+    // A try that leaves a cut findings.json behind (a zip checksum error) is retried into an emptied directory, as gh
+    // refuses to extract over a file already there: filed on the second try, never "file exists".
+    const partial = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 1);
+    expect([partial.status, issues(partial), tries(partial)], partial.output).toEqual([0, ['issue create --title Finding 1 --label content-due --body-file body.md'], 2]);
+    expect(partial.output).not.toContain('file exists');
+    expect(paced(partial)).toEqual([t, p, t]);
+    expect(partial.output).not.toMatch(/blob\.example\.invalid|sig=/);
+    // An artifact that downloads but holds no findings.json: "check failing", not a red job with no issue.
+    const nameless = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], JSON.stringify([finding(1)]), 'notify', 0, 0, 0, 'other.txt');
+    expect([nameless.status, issues(nameless), tries(nameless)], nameless.output).toEqual([0, [failing], 1]);
+    // A file holding two JSON documents, the last a list: read whole, it is not one findings list, so "check failing"
+    // rather than a green job that files nothing.
+    const two = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], `${JSON.stringify([finding(1)])}\n[]`);
+    expect([two.status, issues(two), tries(two)], two.output).toEqual([0, [failing], 1]);
+  });
+
+  it('content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)', () => {
+    // MAX_LISTED is lowered to 5 to keep the case fast: 26 findings took 0.5 to 0.6 s on an idle 4-CPU container and 3.6
+    // to 4.3 s on one CPU beside eight busy loops (2026-11-02), where 400 at the real 200 took 32.7 s there, over
+    // TEST_TIMEOUT_MS. The real 200 is pinned below and its body's bound proved in content-calendar.test.ts.
+    const all = Array.from({ length: 26 }, (_, index) => finding(index));
+    const ran = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_LISTED: '5' }, [], JSON.stringify(all));
+    expect(ran.status, ran.output).toBe(0);
+    expect(ran.log.filter((line) => line.startsWith('issue create'))).toHaveLength(21);
+    expect(ran.bodies.at(-1)).toBe(
+      "A run opens at most 20 new issues. These 6 findings were not filed by https://github.com/owner/repo/actions/runs/1; a later run files them:\n\n- Finding 20\n- Finding 21\n- Finding 22\n- Finding 23\n- Finding 24\n- and 1 more, each named in the run's summary\n",
+    );
+  });
+
+  /** A script's gh commands, comment lines left out. */
+  const ghCommands = (script: string) =>
+    script
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .flatMap((line) => [...line.matchAll(/\bgh [^;\n]*/g)].map((match) => match[0].trim()));
+  /** The download block, from its first marker line to its last, each of which stands once in the script. */
+  const downloadBlock = (script: string) => {
+    const lines = script.split('\n');
+    expect(lines.filter((line) => line.startsWith('# The download, word for word'))).toHaveLength(1);
+    expect(lines.filter((line) => line === '# End of the download.')).toHaveLength(1);
+    return lines.slice(
+      lines.findIndex((line) => line.startsWith('# The download, word for word')),
+      lines.indexOf('# End of the download.') + 1,
+    );
+  };
+  const DOWNLOAD = 'gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"';
+  /** The read check, inside the download block: what notify files from and what handoff proves notify can read. */
+  const SHAPE_CHECK = `if jq -e -s 'length == 1 and (.[0] | type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string"))' findings.json > /dev/null 2>&1; then readable=true; fi`;
+  const BOUNDED_READ = 'head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json';
+
+  it("content-calendar: notify makes one Actions call, the download of this run's findings artifact, and reads no findings from its env (ci-findings-transport)", () => {
+    const step = notifyStep('content-calendar.yml');
+    expect(ghCommands(step?.run ?? '').filter((command) => !/^gh (?:api --paginate "repos\/\$GH_REPO\/issues\?|label |issue )/.test(command))).toEqual([DOWNLOAD]);
+    expect(step?.env?.MAX_FILE_BYTES).toBe(String(MAX_FILE_BYTES));
+    expect(step?.env?.DOWNLOAD_PAUSE).toBe('10');
+    expect(step?.env?.DOWNLOAD_LIMIT).toBe('60');
+    // Every try is stopped and killed 10 seconds later, so three tries and two pauses end inside the job's timeout.
+    // gh's output and errors, which can name the artifact's signed address, go nowhere, and so does bash's report of a
+    // killed try, the group's own stderr going nowhere; a failed try logs a fixed line.
+    expect(step?.run).toContain(`{ timeout -k 10 "$DOWNLOAD_LIMIT" ${DOWNLOAD}; } > /dev/null 2>&1 || code=$?\n`);
+    expect(step?.run).toContain(`printf 'content-calendar: try %s of 3 to download the findings failed (exit %s)\\n' "$try" "$code" >&2\n`);
+    expect(3 * (Number(step?.env?.DOWNLOAD_LIMIT) + 10) + 2 * Number(step?.env?.DOWNLOAD_PAUSE)).toBeLessThan(5 * 60);
+    // The downloaded file is read once, at most MAX_FILE_BYTES + 1 bytes of it, and what was read is refused past the
+    // bound (downloadBlock holds handoff's lines equal to these).
+    const block = downloadBlock(step?.run ?? '').map((line) => line.trim());
+    expect(block.filter((line) => line.includes('$RUNNER_TEMP/findings/findings.json'))).toEqual([BOUNDED_READ]);
+    expect(block[block.indexOf(BOUNDED_READ) + 1]).toBe('[ "$(wc -c < findings.json)" -le "$MAX_FILE_BYTES" ] || : > findings.json');
+    expect(read('content-calendar.yml').jobs.notify?.['timeout-minutes']).toBe(5);
+    expect(step?.env?.MAX_LISTED).toBe('200');
+    expect(step?.env).not.toHaveProperty('FINDINGS_B64');
+  });
+
+  it("content-calendar: on a pull request, its handoff job downloads the findings with the notify job's own lines, holds actions: read alone and writes nothing (ci-findings-transport)", () => {
+    const handoff = read('content-calendar.yml').jobs.handoff;
+    expect(handoff?.needs).toBe('check');
+    expect(handoff?.if).toBe("github.event_name == 'pull_request'");
+    expect(handoff?.permissions).toEqual({ actions: 'read' });
+    expect(handoff?.['timeout-minutes']).toBe(5);
+    expect(handoff?.steps).toHaveLength(1);
+    expect(handoff?.steps.filter((step) => step.uses !== undefined)).toEqual([]);
+    expect(runs(handoff).filter((run) => run.includes('${{'))).toEqual([]);
+    expect(JSON.stringify(handoff?.steps ?? [])).not.toContain('secrets.');
+    const step = handoff?.steps[0];
+    const keys = ['GH_TOKEN', 'GH_REPO', 'CHECK_RESULT', 'MAX_FILE_BYTES', 'DOWNLOAD_PAUSE', 'DOWNLOAD_LIMIT'];
+    expect(Object.keys(step?.env ?? {})).toEqual(keys);
+    const notify = notifyStep('content-calendar.yml');
+    for (const key of keys) expect(step?.env?.[key], key).toBe(notify?.env?.[key]);
+    // The download, word for word in both jobs, and its one gh line the only one in handoff's script.
+    expect(downloadBlock(step?.run ?? '')).toEqual(downloadBlock(notify?.run ?? ''));
+    // The read check is in that block, so handoff cannot pass a file notify would refuse; after the block, each job
+    // only branches on its result.
+    expect(downloadBlock(notify?.run ?? '').map((line) => line.trim())).toContain(SHAPE_CHECK);
+    for (const [job, script] of [['handoff', step?.run ?? ''], ['notify', notify?.run ?? '']] as const) {
+      const after = script.split('\n').slice(script.split('\n').indexOf('# End of the download.') + 1);
+      expect(after.filter((line) => line.includes('jq -e') || line.includes('readable=')), job).toEqual([]);
+      expect(after[0], job).toBe('if [ "$readable" != true ]; then');
+    }
+    expect(ghCommands(step?.run ?? '')).toEqual([DOWNLOAD]);
+    // As the runner runs it: a findings list reads, with its count, size and SHA-256 logged; anything else exits 1.
+    const list = JSON.stringify([finding(1), finding(2)]);
+    const reads = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], list, 'handoff');
+    expect(reads.status, reads.output).toBe(0);
+    expect(reads.stdout).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes, SHA-256 ${createHash('sha256').update(list).digest('hex')}\n`);
+    expect(reads.log.filter((line) => !line.startsWith('run download '))).toEqual([]);
+    expect(reads.output).not.toMatch(/blob\.example\.invalid|sig=/);
+    expect(paced(reads)).toEqual(['run download']);
+    // A file of exactly MAX_FILE_BYTES reads; one byte more is a failure row below.
+    const atBound = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, [], listOf(100), 'handoff');
+    expect(atBound.status, atBound.output).toBe(0);
+    expect(atBound.stdout).toContain(`content-calendar: the notify job reads 1 findings, 100 bytes, SHA-256 ${createHash('sha256').update(listOf(100)).digest('hex')}\n`);
+    // A try that leaves a cut findings.json behind, or is stopped while it extracts, is retried into an emptied directory.
+    // Only the stall needs a short DOWNLOAD_LIMIT; the cut file's row keeps the step's own, so its good try has time.
+    for (const [at, values, stalls, partials] of [['partial', { CHECK_RESULT: 'success' }, 0, 1], ['stalled', { CHECK_RESULT: 'success', DOWNLOAD_LIMIT: '1' }, 1, 0]] as const) {
+      const retried = runNotify('content-calendar.yml', values, [], list, 'handoff', 0, stalls, partials);
+      expect([retried.status, retried.log.filter((line) => line.startsWith('run download ')).length], `${at} ${retried.output}`).toEqual([0, 2]);
+      expect(retried.stdout, at).toContain(`content-calendar: the notify job reads 2 findings, ${String(Buffer.byteLength(list))} bytes`);
+      expect(retried.output, at).not.toContain('file exists');
+      expect(retried.output, at).not.toMatch(/blob\.example\.invalid|sig=/);
+      expect(paced(retried), at).toEqual(['run download', 'sleep 10', 'run download']);
+    }
+    // A try killed by a signal logs the fixed line with exit 137 alone, never bash's report of the kill.
+    const killed = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], list, 'handoff', 0, 0, 0, 'findings.json', 1);
+    expect([killed.status, killed.log.filter((line) => line.startsWith('run download ')).length], killed.output).toEqual([0, 2]);
+    expect(killed.stderr.split('\n').filter((line) => line !== ''), killed.output).toEqual(['content-calendar: try 1 of 3 to download the findings failed (exit 137)']);
+    expect(killed.output).not.toMatch(/blob\.example\.invalid|sig=|Killed|gh run download/);
+    for (const [at, values, findings] of [
+      ['no artifact', { CHECK_RESULT: 'success' }, null],
+      ['over MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(200) }])],
+      ['one byte over MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, listOf(101)],
+      ['a list padded past MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, PAST_BOUND[0] ?? ''],
+      ['a list followed by other bytes past MAX_FILE_BYTES', { CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }, PAST_BOUND[1] ?? ''],
+      ['not a list', { CHECK_RESULT: 'success' }, JSON.stringify({ title: 'x' })],
+      ['an entry with no body', { CHECK_RESULT: 'success' }, JSON.stringify([{ title: 'x' }])],
+      ['an entry whose title is not a string', { CHECK_RESULT: 'success' }, JSON.stringify([{ title: 1, body: 'b' }])],
+      ['two lists in one file', { CHECK_RESULT: 'success' }, `${JSON.stringify([{ title: 1 }])} []`],
+    ] as const) {
+      const failed = runNotify('content-calendar.yml', values, [], findings, 'handoff');
+      expect(failed.status, `${at} ${failed.output}`).toBe(1);
+      expect(failed.stderr, at).toContain("content-calendar: the notify job could not read this run's findings (the check: success)\n");
+      expect(failed.output, at).not.toMatch(/blob\.example\.invalid|sig=/);
+      expect(failed.log.filter((line) => !line.startsWith('run download ') && !line.startsWith('sleep ')), at).toEqual([]);
+      expect(paced(failed), at).toEqual(findings === null ? ['run download', 'sleep 10', 'run download', 'sleep 10', 'run download'] : ['run download']);
+    }
+    // An artifact that downloads but holds no findings.json exits 1 with the same message.
+    const nameless = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], list, 'handoff', 0, 0, 0, 'other.txt');
+    expect([nameless.status, paced(nameless)], nameless.output).toEqual([1, ['run download']]);
+    expect(nameless.stderr).toBe("content-calendar: the notify job could not read this run's findings (the check: success)\n");
+  });
+
+  /**
+   * Runs notify on a findings file the old transport could not carry and asserts bash started (runNotify), the step's
+   * environment, every string with its name, its = and its NUL, is under 131,072 bytes, and the findings are filed.
+   */
+  function expectCarried(findings: string, filed: number, unfiled: number) {
+    const ran = runNotify('content-calendar.yml', { CHECK_RESULT: 'success' }, [], findings);
+    expect(ran.status, ran.output).toBe(0);
+    expect(Object.entries(ran.env).reduce((bytes, [name, value]) => bytes + Buffer.byteLength(`${name}=${value}`) + 1, 0)).toBeLessThan(131_072);
+    const creates = ran.log.filter((line) => line.startsWith('issue create'));
+    expect(creates.filter((line) => !line.includes('findings not filed'))).toHaveLength(filed);
+    expect(creates.filter((line) => line.includes('findings not filed'))).toHaveLength(unfiled > 0 ? 1 : 0);
+    if (unfiled > 0) expect(ran.bodies.at(-1)?.split('\n').filter((line) => line.startsWith('- '))).toHaveLength(unfiled);
+  }
+
+  it("content-calendar: notify starts bash and files the finding from a file one byte past the 98,292 bytes FINDINGS_B64 could carry, the over row #86's T6 held (ci-findings-transport)", () => {
+    const edge = JSON.stringify([{ title: 'Finding 1', body: 'x'.repeat(98_293 - JSON.stringify([{ title: 'Finding 1', body: '' }]).length) }]);
+    expect(Buffer.byteLength(edge)).toBe(98_293);
+    expectCarried(edge, 1, 0);
+  });
+
+  it('content-calendar: notify starts bash, opens 20 and lists the other 21 titles from the worst 41-finding file, 1,540,660 bytes (ci-findings-transport)', () => {
+    // About 62 jq reads of the whole file: 1.3 to 1.5 s on an idle 4-CPU container, 10.2 to 10.7 s on one CPU beside
+    // eight busy loops (2026-11-02), so a test of its own, under TEST_TIMEOUT_MS.
+    const worst = `${JSON.stringify(
+      Array.from({ length: 41 }, () => ({ title: '\u0001'.repeat(256), body: '\u0001'.repeat(6_000) })),
+      null,
+      2,
+    )}\n`;
+    expect(Buffer.byteLength(worst)).toBe(1_540_660);
+    expectCarried(worst, 20, 21);
   });
 
   it('release-capacity: runs weekly and on request with a read-only token, builds release 900110 outside the repository and measures the production worker image under the worker task’s limits', () => {
@@ -1312,6 +1685,14 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(steps[measure]).toContain('--worker-image tp-worker:capacity');
     expect(steps.filter((run) => run.startsWith('pnpm install'))).toEqual(['pnpm install --frozen-lockfile']);
     expect(JSON.stringify(job?.steps ?? [])).not.toContain('secrets.');
+  });
+
+  it('release-capacity: its header names the memory line as tools/release-capacity/checks.ts judges it, the worker’s working set, with memory.peak reported beside it (Lane A’s orchestrator, 2026-11-04; docs/adr/0083)', () => {
+    // The comment above `on:`, its lines joined.
+    const header = (readFileSync(path.join(WORKFLOWS, 'release-capacity.yml'), 'utf8').split('\non:')[0] ?? '').replace(/\n# ?/g, ' ');
+    expect(header).not.toMatch(/memory\.peak above/);
+    expect(header).toContain("the worker's working set (memory.current less inactive_file) above 90% of the task, memory.peak reported beside it and never judged");
+    expect(header).toContain('any memory.events oom or oom_kill');
   });
 
   it('release-capacity: its notify job alone writes issues, on a failure, a cancel or an advisory that is not a pull request’s (fix round S3, SB-7)', () => {
@@ -3315,8 +3696,8 @@ describe('job timeouts (CI-10)', () => {
       'approval-of-record.yml': { 'approval-of-record': 5 },
       // Each about three times its expected time (docs/adr/0066, Part 1); the gate's 5 for a job that only reads results.
       'ci.yml': { static: 15, lint: 15, unit: 20, db: 20, 'domain-model': 10, build: 15, e2e: 25, images: 20, 'all-green': 5 },
-      // The daily calendar check and its one issues call (docs/adr/0071).
-      'content-calendar.yml': { check: 15, notify: 5 },
+      // The daily calendar check, its one issues call, and on a pull request the hand-over proof (docs/adr/0071).
+      'content-calendar.yml': { check: 15, handoff: 5, notify: 5 },
       // The 2 GiB intake run, weekly and on request.
       'large-zip.yml': { 'large-zip': 45 },
       'mutation.yml': { changes: 5, stryker: 30, mutation: 10 },
@@ -3887,8 +4268,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     readonly scopes: readonly Readonly<Record<string, unknown>>[];
     /** What has no bound, each in words. */
     readonly unbounded: string[];
-    /** Whether it reads the one value known to be over the limit directly (alone, the table holds it by its sites). */
-    over: boolean;
   }
 
   /**
@@ -3898,9 +4277,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    * expression's bound: a github value BOUNDED_GITHUB's, a variable or a secret 48 KB, a bounded input its type's, a
    * matrix key its longest value's (its include entries' among them), env.X the bound of X where it is set (the
    * step's env, the job's, the workflow's), and a table row its bytes. What refuses one: a sum over 131,072, or a value
-   * with no bound, each naming its file, place and name. The one value marked over is exempt from that 131,072 only
-   * alone in its string, one expression that reads it and nothing else, and is still counted in its process's whole;
-   * beside anything else it is refused, and its sites (below) hold where it is read.
+   * with no bound, each naming its file, place and name.
    */
   function environmentProblems(file: string, parsed: unknown, rows: readonly BoundedValue[] = BOUNDED_VALUES): string[] {
     const problems: string[] = [];
@@ -3921,7 +4298,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         at.unbounded.push(`${value}, which no row of the table bounds`);
         return Infinity;
       }
-      if (found.over !== undefined) at.over = true;
       return found.bytes;
     };
     /** The value an admitted expression reads, as the table keys it, when it reads exactly one. */
@@ -3959,7 +4335,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         at.unbounded.push(`matrix.${key}, which job ${at.job ?? '-'}'s matrix does not give`);
         return Infinity;
       }
-      // A matrix is read with no env context, and only a value read directly is the one marked over.
+      // A matrix is read with no env context.
       const job = { ...at, scopes: [] };
       return Math.max(
         0,
@@ -4044,19 +4420,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         }
       }
     };
-    /** Whether a string is one expression that reads the value marked over and nothing else: no literal, operator or call beside it. */
-    const overAlone = (value: unknown, job: string | undefined): boolean => {
-      const whole = typeof value === 'string' ? /^\$\{\{((?:(?!\}\})[\s\S])*)\}\}$/.exec(value) : null;
-      if (whole === null) return false;
-      try {
-        const read = namesOf(parseExpression(lexExpression(whole[1] ?? '')))?.join('.').toLowerCase();
-        return rows.some((entry) => entry.over !== undefined && entry.file === file && entry.job === job && entry.value === read);
-      } catch {
-        return false;
-      }
-    };
     /** Each string of a mapping, refused over the limit or unbounded; their bytes together, for the totals below (Infinity where one is already refused). */
-    const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): number => {
+    const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded'>, input = false): number => {
       // GitHub takes one expression in place of a mapping wherever the mapping takes a context (its schema's step env
       // and with, job and workflow env, a container and its env): its names and strings come from the value at run
       // time, so neither this sum nor the key rule could read them.
@@ -4066,25 +4431,19 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       }
       let total = 0;
       for (const [name, value] of Object.entries(record(mapping))) {
-        const reading: Reading = { ...at, unbounded: [], over: false };
+        const reading: Reading = { ...at, unbounded: [] };
         const variable = input ? `INPUT_${name.replace(/ /g, '_').toUpperCase()}` : name;
         const bytes = Buffer.byteLength(`${variable}=`) + scalar(value, reading) + 1;
         total += bytes;
-        if (reading.over) {
-          // Exempt from its own string's 131,072-byte limit only alone in its string, so nothing joins the value over
-          // the limit where it is read; its bytes are still in the total above, its process's whole.
-          if (!overAlone(value, at.job)) problems.push(`${file} ${where}.${name}: holds the value over the limit with more beside it`);
-          continue;
-        }
         if (reading.unbounded.length > 0) problems.push(`${file} ${where}.${name}: no bound for ${reading.unbounded.join('; ')}`);
         else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}.${name}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
       }
       return total;
     };
     /** One argument the runner hands a process (an image, a container's options, a shell), held to the same 131,072 bytes. */
-    const argument = (value: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>): number => {
+    const argument = (value: unknown, where: string, at: Omit<Reading, 'unbounded'>): number => {
       if (value === undefined || value === null) return 0;
-      const reading: Reading = { ...at, unbounded: [], over: false };
+      const reading: Reading = { ...at, unbounded: [] };
       const bytes = scalar(value, reading) + 1;
       if (reading.unbounded.length > 0) problems.push(`${file} ${where}: no bound for ${reading.unbounded.join('; ')}`);
       else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}: an argument of up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
@@ -4126,7 +4485,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       // passes each secret as it is.
       if (job.secrets !== 'inherit') strings(typeof job.secrets === 'string' ? job.secrets : {}, `job ${id} secrets`, { job: id, scopes: [] });
       for (const [name, value] of Object.entries(record(job.secrets))) {
-        const reading: Reading = { job: id, scopes: [], unbounded: [], over: false };
+        const reading: Reading = { job: id, scopes: [], unbounded: [] };
         const bytes = scalar(value, reading);
         if (reading.unbounded.length > 0) problems.push(`${file} job ${id} secrets.${name}: no bound for ${reading.unbounded.join('; ')}`);
         else if (bytes > VARIABLE_BYTES) problems.push(`${file} job ${id} secrets.${name}: up to ${String(bytes)} bytes, over the ${String(VARIABLE_BYTES)} a called workflow bounds secrets.${name} at`);
@@ -4293,19 +4652,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(call('{ TOKEN: "${{ secrets.A }}${{ secrets.B }}${{ secrets.C }}" }')).toEqual([`fixture.yml job images secrets.TOKEN: up to ${String(3 * 49_152)} bytes, over the 49152 a called workflow bounds secrets.TOKEN at`]);
     expect(call('{ TOKEN: "${{ inputs.note }}" }')).toEqual(['fixture.yml job images secrets.TOKEN: no bound for inputs.note']);
     expect(call('"${{ fromJSON(vars.A) }}"')).toEqual([fromExpression('job images secrets')]);
-    // The one value marked over is the table's to hold, by its sites, and only alone in its string: one expression
-    // reading it, in any spelling the runner reads alike. Anything beside it, bounded or not, is refused.
-    const marked = [{ ...huge, over: 'ci-findings-transport' as const }];
-    const beside = 'fixture.yml job images step "The step" env.S: holds the value over the limit with more beside it';
-    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}" }'), marked)).toEqual([]);
-    expect(sum(step('env: { S: "${{STEPS.web.outputs.SIZE}}" }'), marked)).toEqual([]);
-    // Alone it is exempt from its own string's limit, never from its process's whole: with 36 variables of 48 KB beside it
-    // (each string under the limit, 1,769,642 bytes together) the step passes ARG_MAX less the runner's own.
-    expect(sum(step(`env: { S: "\${{ steps.web.outputs.size }}", ${many(36)} }`), marked)).toEqual([totalOver('job images step "The step"', 'S='.length + 100_000 + 1 + allOf(36))]);
-    expect(sum(step(`env: { ${many(36)} }`), marked)).toEqual([]);
-    for (const value of ['${{ steps.web.outputs.size }}${{ vars.A }}', 'x${{ steps.web.outputs.size }}', '${{ steps.web.outputs.size }} ', '${{ steps.web.outputs.size || vars.A }}', '${{ steps.web.outputs.size }}${{ env.UNSET }}', "${{ steps.web.outputs.size }}${{ format('{0}', 'x') }}"]) {
-      expect(sum(step(`env: { S: ${JSON.stringify(value)} }`), marked), value).toEqual([beside]);
-    }
   });
 
   it('refuses each route a value could take whole', () => {
@@ -4517,12 +4863,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     /** Its bound in bytes, which every environment string that holds it adds (the sum, below). */
     readonly bytes: number;
     /**
-     * The one value known to be over Linux's 131,072 bytes as one environment string, and the item that owns its
-     * transport: exempt from its own string's 131,072-byte limit only alone in its string (still counted in its
-     * process's whole), and held to its sites.
-     */
-    readonly over?: 'ci-findings-transport';
-    /**
      * Where it may be read, exactly (a place as FoundValue's where names it): every use of a row whose bytes pass
      * MAX_ARG_STRLEN is pinned, so such a value reaches no environment string or input it was not reviewed for.
      */
@@ -4545,8 +4885,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
   const CACHE_KEY_BYTES = 4 * 512;
   /** A digest: sha256: and 64 hexadecimal digits. */
   const DIGEST_BYTES = 'sha256:'.length + 64;
-  /** The findings' base64: four characters for each three bytes of MAX_FILE_BYTES. */
-  const FINDINGS_BYTES = 4 * Math.ceil(MAX_FILE_BYTES / 3);
   /**
    * affected.ts's lists as JSON: the mutation packages' names (38 bytes for today's four) and their shards' names from
    * stryker/shards.json (116 bytes for today's seven; 1,024 holds some fifty more of their length).
@@ -4607,7 +4945,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
   ];
   const TIME_WARNINGS = [symbol('tools/screening-capacity/report.ts#verdict'), unitTest('tools/screening-capacity/report.test.ts', 'passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate')];
   const MEASURE_OUTPUTS = [script('capacity', 'measure', '73daec9d'), symbol('tools/screening-capacity/report.ts#jobResult'), symbol('tools/screening-capacity/run.ts#main')];
-  const FINDINGS = [symbol('tools/content-calendar/render.ts#MAX_FILE_BYTES'), symbol('tools/content-calendar/render.ts#findingsJson'), unitTest('tools/content-calendar/content-calendar.test.ts', 'refuses a findings file past its bound, so the check fails rather than hand on a cut list')];
 
   /**
    * Every step output and every value one job hands another that reaches a process, each with its bound: a new one fails
@@ -4649,25 +4986,6 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'browsers', 'actions/cache/restore')], bound: cacheKey(RUNNER_HASH) },
     { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit', '1b44a36b'), bound: RUNNER_IMAGE },
     { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit', '1b44a36b'), bound: RUNNER_IMAGE },
-    {
-      file: 'content-calendar.yml',
-      job: 'check',
-      value: 'steps.calendar.outputs.findings',
-      bytes: FINDINGS_BYTES,
-      refs: [script('check', 'calendar', '9b98fed0'), ...FINDINGS],
-      sites: ['job check outputs.findings'],
-      bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so up to 933,336 characters, 1,866,672 bytes counted as UTF-16, over GitHub’s 1 MB job-output limit (ci-findings-transport’s to fix), which reaches no process in this job',
-    },
-    {
-      file: 'content-calendar.yml',
-      job: 'notify',
-      value: 'needs.check.outputs.findings',
-      bytes: FINDINGS_BYTES,
-      refs: [needs('check'), output('check', 'findings'), ...FINDINGS],
-      sites: ['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64'],
-      bound: 'FINDINGS_B64, the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
-      over: 'ci-findings-transport',
-    },
     { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip', '1b44a36b'), bound: RUNNER_IMAGE },
     { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip', '1b44a36b'), bound: RUNNER_IMAGE },
     { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', bytes: BOOLEAN_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
@@ -5155,38 +5473,21 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(refProblems(BOUNDED_VALUES, values, (file) => readFileSync(path.join(WORKFLOWS, file), 'utf8'))).toEqual([]);
     // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
     expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
-    // One row is over the limit, and says so: the content calendar's findings as FINDINGS_B64, base64 of a file bounded
-    // at MAX_FILE_BYTES, held to its one site (refProblems), so no second use reads it under another name, and alone in
-    // its string there (the sum), so nothing joins it. When
-    // ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
-    expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
-    expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map((row) => row.sites)).toEqual([['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64']]);
+    // No row is over the limit: the content calendar hands its findings on as the run's own artifact, so its jobs
+    // declare no outputs and no workflow reads FINDINGS_B64 (ci-findings-transport, docs/adr/0071, Amendment).
+    expect(Object.entries(workflow('content-calendar.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
+    expect(workflowFiles().filter((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').includes('FINDINGS_B64'))).toEqual([]);
     // Every row that could pass the limit is held to its sites, whether it is read in a script, a job output or an
     // environment string, so a second use of any of them, under any name, is refused by refProblems above.
     expect(BOUNDED_VALUES.filter((row) => row.bytes > MAX_ARG_STRLEN && row.sites === undefined).map(key)).toEqual([]);
-    expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
-    // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too, read as 1,000,000 or
-    // 1,048,576 bytes. Check's row gives these figures, computed here from MAX_FILE_BYTES, and says over, never under,
-    // not over, isn't over, within, below or fits, in any case; notify's row gives the characters, over 131,072 bytes.
-    // So a changed bound or a row turned back to "under GitHub's 1 MB", or worded to say so another way, fails here.
-    expect(2 * FINDINGS_BYTES).toBe(1_866_672);
-    expect(2 * FINDINGS_BYTES).toBeGreaterThan(1_048_576);
-    const figure = (bytes: number) => bytes.toLocaleString('en-US');
-    const boundOf = (wanted: string) => BOUNDED_VALUES.find((row) => key(row) === wanted)?.bound ?? '';
-    const check = boundOf('content-calendar.yml check steps.calendar.outputs.findings');
-    for (const words of [`${figure(MAX_FILE_BYTES)} bytes`, `${figure(FINDINGS_BYTES)} characters`, `${figure(2 * FINDINGS_BYTES)} bytes`, 'UTF-16']) expect(check, words).toContain(words);
-    expect(check).toMatch(/\bover\b[^,;]*\b1 MB\b/);
-    expect(check).not.toMatch(/\bunder\b/i);
-    expect(check).not.toMatch(/\b(?:not|never|no|nor)\s+(?:\w+\s+)?over\b|n['’]t\s+(?:\w+\s+)?over\b|\b(?:within|below|fits?|inside|less than)\b/i);
-    expect(boundOf('content-calendar.yml notify needs.check.outputs.findings')).toContain(`${figure(FINDINGS_BYTES)} characters: over 131,072 bytes`);
   });
 
-  it('holds a row with sites to exactly those places, so a second use of the value over the limit, under any name or key, turns the table red', () => {
+  it('holds a row with sites to exactly those places, so a second use of a value that could pass the limit, under any name or key, turns the table red', () => {
     const text = (more: string) =>
       `name: fixture\non: push\njobs:\n  check:\n    runs-on: ubuntu-26.04\n    outputs:\n      findings: \${{ steps.calendar.outputs.findings }}\n    steps:\n      - name: Read the calendar\n        id: calendar\n        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n  notify:\n    needs: check\n    runs-on: ubuntu-26.04\n    steps:\n      - name: Open an issue\n        env: { FINDINGS_B64: "\${{ needs.check.outputs.findings }}" }\n        run: echo\n${more}`;
     const rows: BoundedValue[] = [
       { file: 'fixture.yml', job: 'check', value: 'steps.calendar.outputs.findings', refs: [script('check', 'calendar', fingerprint({ run: 'echo "findings=x" >> "$GITHUB_OUTPUT"' }))], bound: 'a fixture', bytes: 933_336, sites: ['job check outputs.findings'] },
-      { file: 'fixture.yml', job: 'notify', value: 'needs.check.outputs.findings', refs: [needs('check'), output('check', 'findings')], bound: 'a fixture', bytes: 933_336, over: 'ci-findings-transport', sites: ['job notify step "Open an issue" env.FINDINGS_B64'] },
+      { file: 'fixture.yml', job: 'notify', value: 'needs.check.outputs.findings', refs: [needs('check'), output('check', 'findings')], bound: 'a fixture', bytes: 933_336, sites: ['job notify step "Open an issue" env.FINDINGS_B64'] },
     ];
     const problems = (yaml: string) => refProblems(rows, unboundedValueProblems('fixture.yml', parse(yaml)).values, () => yaml);
     expect(problems(text(''))).toEqual([]);
@@ -5200,7 +5501,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(problems(text('      - name: Open an issue\n        env: { FINDINGS_B64: "${{ needs.check.outputs.findings }}" }\n        run: echo again\n'))).toEqual([
       'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Open an issue" env.FINDINGS_B64, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
     ]);
-    // A row with sites that is not the one over the limit is held the same way: a second read of check's findings.
+    // Every row with sites is held the same way, in its own job too: a second read of check's findings.
     const second = text('').replace('        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n', '        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n      - name: Copy them\n        env: { COPY: "${{ steps.calendar.outputs.findings }}" }\n        run: echo\n');
     expect(problems(second)).toEqual(['fixture.yml check steps.calendar.outputs.findings: read at job check outputs.findings, job check step "Copy them" env.COPY, not exactly at its sites, job check outputs.findings']);
   });

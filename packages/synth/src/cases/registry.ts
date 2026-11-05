@@ -214,6 +214,11 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/mapping-routes.db.test.ts',
     'apps/web/e2e/mapping.spec.ts',
   ]),
+  // co-001/pricing-run-cutoff: a run's cut-off and creation compared to the microsecond, at creation and after.
+  'PRC-32': none(3, "No file of its own: PRC-19's file, with lines and times the tests set.", [
+    'apps/worker/src/price/cut-off.db.test.ts',
+    'apps/web/src/lib/pricing/location.db.test.ts',
+  ]),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
@@ -302,6 +307,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/report/streamed.db.test.ts',
     'apps/worker/src/report/csv-arena.test.ts',
     'apps/worker/src/reconcile/patient-share.test.ts',
+  ]),
+  // SUITE-CAP-1b (co-001/suite-cap-1-triage-locks, ADR 0083): a line's stage lock is its head row, so a real-size month triages and reports.
+  'CAS-40': none(8, 'Concurrent stage events on generated lines: no file.', ['packages/db/src/line-status.db.test.ts', 'apps/worker/src/reconcile/stage-head.db.test.ts']),
+  'CAS-42': none(8, 'Generated at size by the test, and release 900110 built outside the repository by the weekly run: no file.', [
+    'apps/worker/src/triage/triage.large.db.test.ts',
+    'apps/worker/src/reconcile/reconcile.large.db.test.ts',
+    'tools/release-capacity/checks.test.ts',
+    'tools/release-capacity/scenario.test.ts',
   ]),
   // Lane B (co-001/packet-day-counts; docs/adr/0086): every narrative figure in the role its words give it.
   'CAS-43': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
@@ -1027,6 +1040,24 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/app/sign-in/notice.test.tsx',
     'apps/web/e2e/sign-in.spec.ts',
     'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  // The code email and every message the user pool sends (co-001/auth-emails; docs/adr/0081, the code-email amendment).
+  'SGN-13': none(1, 'The words are rendered in memory with Cognito’s placeholders and synthetic values, and the pool is read from the synthesized template; no file.', [
+    'packages/auth-mail/src/render.test.ts',
+    'infra/test/cognito-messages.test.ts',
+    'infra/test/identity.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'SGN-14': none(1, 'The handler runs in a fresh vm context on synthetic Cognito events, and the function is read from the synthesized template; no file.', [
+    'packages/auth-mail/src/lambda.test.ts',
+    'infra/test/cognito-messages.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-15': none(1, 'The local identity provider writes its invitations and reset codes to a synthetic outbox the tests read; no file.', [
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+    'apps/web/e2e/sign-in.spec.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).

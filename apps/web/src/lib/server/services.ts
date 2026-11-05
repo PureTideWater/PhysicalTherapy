@@ -5,12 +5,12 @@ import path from 'node:path';
 
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { SESv2Client } from '@aws-sdk/client-sesv2';
+import { cognitoMessage } from '@tp/auth-mail';
 import type { BillingProvider } from '@tp/billing';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
 import { type CompliancePlatform, FileCompliancePlatform } from '@tp/compliance';
-import { DEFAULT_CALL_LIMITS } from '@tp/model-gateway';
 import { type Logger, createLogger } from '@tp/observability';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
@@ -31,6 +31,7 @@ import { assumedRoleCredentials } from '../screening/validation-credentials';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { type AuthProviderSettings, DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+import { WEB_POOL_CONNECTIONS } from './pools';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -106,32 +107,34 @@ export interface Services {
   readonly credentialProbe: CredentialProbe;
 }
 
-/** The local outbox where the development provider "sends" an invitation's temporary password. */
-export function devOutbox(directory: string): (email: string, temporaryPassword: string) => Promise<void> {
+/**
+ * The local outbox where the development provider "sends" an invitation: the subject, text and HTML Cognito's
+ * CustomMessage trigger sends (@tp/auth-mail, SGN-15), naming this server's sign-in page, so the e2e reads the
+ * temporary password from the message's own words. The email and the password fields stay for filtering and the http
+ * test. Synthetic accounts only.
+ */
+export function devOutbox(directory: string, signInUrl: string): (email: string, temporaryPassword: string) => Promise<void> {
   return async (email, temporaryPassword) => {
     const outbox = path.join(directory, 'outbox');
     await mkdir(outbox, { recursive: true });
-    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ email, temporaryPassword })}\n`, { mode: 0o600 });
-  };
-}
-
-/** The words of the reset code's email, as proposed for Cognito's template (Lane A), so the e2e reads the code as it will arrive. */
-function resetCodeEmail(code: string): { readonly subject: string; readonly body: string } {
-  return {
-    subject: 'Your PaidWhole code',
-    body: `Your code to choose a new PaidWhole password is ${code}. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.`,
+    const message = cognitoMessage('CustomMessage_AdminCreateUser', { code: temporaryPassword, username: email, signInUrl });
+    const record = { email, temporaryPassword, subject: message.subject, body: message.text, html: message.html };
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify(record)}\n`, { mode: 0o600 });
   };
 }
 
 /**
  * The local outbox where the development provider "sends" a password-reset code: a sibling of the invitations' outbox,
- * which e2e/onboarding.spec.ts reads whole as invitations. Synthetic accounts only.
+ * which e2e/onboarding.spec.ts reads whole as invitations, in the words and frame Cognito's trigger sends (section 2.5's,
+ * from @tp/auth-mail). Synthetic accounts only.
  */
 export function devResetOutbox(directory: string): (email: string, code: string) => Promise<void> {
   return async (email, code) => {
     const outbox = path.join(directory, 'reset-outbox');
     await mkdir(outbox, { recursive: true });
-    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ email, code, ...resetCodeEmail(code) })}\n`, { mode: 0o600 });
+    const message = cognitoMessage('CustomMessage_ForgotPassword', { code });
+    const record = { email, code, subject: message.subject, body: message.text, html: message.html };
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify(record)}\n`, { mode: 0o600 });
   };
 }
 
@@ -150,7 +153,7 @@ function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvid
     store: new FileDevStore(path.join(config.auth.directory, 'store.json')),
     sealer: sealer.derive('dev-provider'),
     webauthn: { rpId: config.rpId, rpName: 'Therapy Platform', origin: config.origin },
-    deliverInvitation: devOutbox(config.auth.directory),
+    deliverInvitation: devOutbox(config.auth.directory, `${config.origin}/sign-in`),
     deliverResetCode: devResetOutbox(config.auth.directory),
   });
 }
@@ -258,17 +261,17 @@ export function servicesFromConfig(config: WebConfig): Services {
   const sealer = new Sealer(config.cookieSecret);
   const logger = createLogger();
   const documents = config.documents;
-  const pool = openPool(config.databaseUrl, 10);
-  const billingPool = openPool(config.billingDatabaseUrl, 4);
+  const pool = openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.application);
+  const billingPool = openPool(config.billingDatabaseUrl, WEB_POOL_CONNECTIONS.billing);
   const auth = provider(config, sealer, logger);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
     pool,
     billingPool,
-    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, 2),
-    // One connection for each call the process lets be in flight at once, and one to spare.
-    modelPool: openPool(config.databaseUrl, DEFAULT_CALL_LIMITS.perProcess + 1),
+    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),
+    // One connection for each call the process lets be in flight at once, and one to spare (pools.ts).
+    modelPool: openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.model),
     provider: auth,
     credentialProbe: credentialProbeOf(config.auth, auth, logger),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),

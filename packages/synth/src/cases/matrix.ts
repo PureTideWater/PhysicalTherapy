@@ -165,6 +165,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'Coverage, Pricing runs, the home page and the mapping list count the lines whose pricing in effect is `NO_MAPPING` while a mapping is now in force on their date, in lines, billed cents and priced months only; the count falls to zero once the re-runs pricing them are accepted, and never counts a line of a plan with no mapping',
   },
+  {
+    id: 'PRC-32',
+    title: "A run's cut-off and creation, to the microsecond",
+    assertion:
+      "A service line whose created_at equals the run's own created_at (loaded at the instant of the transaction that creates the run) is the run's at creation and in the price job alike: its period is not refused as holding no service line, nor as nothing mapped (MAP-07), and creation judges exactly the plans and dates the job prices. Every time a run is judged against is compared in Postgres, to the microsecond, never as a millisecond JS Date: a mapping made at the run's own instant is not a reason to re-run it, while one made after is, and a complete run with no line created before the location's last save, within the same millisecond, is listed as priced before the location changed",
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },
@@ -231,6 +237,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: "A month's triage and report read in bounded memory",
     assertion:
       "Triage's candidates and the audit report are read in batches; the judged candidates, the report's content, its CSV's bytes and its PDF's HTML equal the whole read's; what the report holds grows by at most 400 bytes per line, its CSV rows kept outside the heap",
+  },
+  {
+    id: 'CAS-40',
+    title: "Concurrent writers of one line's stages",
+    assertion:
+      "The second of two forward events is refused; a reopen naming a stage that has since moved is refused; a line's events sort by commit order, so a duplicate forward event is refused; no new deadlock; every line's head row equals its latest event, through the ledger's stages too; 30,000 stage events in one transaction hold no advisory lock per line, and another practice's events commit meanwhile; an empty table's statistics add no sequential scan per event",
+  },
+  {
+    id: 'CAS-42',
+    title: 'A real-size month triages and reports',
+    assertion:
+      "A 100,000-line run triages and reports in one transaction each under 75% of the worker's heap, holding at most its practice's one advisory lock, within the time budget; a 100,000-line report and another practice's 100,000-line triage complete together under the worker's heap; the weekly run under release 900110 completes every measured job on its first attempt, with no backend above 64 advisory locks, no job's live heap above 75% of the limit and the worker's memory at or under 90%",
   },
   {
     id: 'CAS-43',
@@ -639,7 +657,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'RCC-05', title: 'The month waits, then prices', assertion: "The monitor starts no daily run while the release in force covers no more of the month and the practice's terms are unchanged, and plans it once either changes; Coverage's route returns the month, its quarter, families, lines and billed dollars, a headline of lines and dollars, and each fee-schedule quarter or locked year not loaded; a complete run with lines stopped by unloaded content logs one content alert" },
   { id: 'RCC-06', title: 'A line priced before its content loaded', assertion: "Triage holds a priced line whose trace read MPPR or MUE outside its release's spans as CONTENT_NOT_LOADED, never actionable; the audit report names the reason" },
   { id: 'RCC-07', title: 'A run reads only the keys it prices', assertion: "The price job, the release impact check and the dry run read each key of their claims once a run and the shared types once per release; every stored row equals the whole-release read's; a lookup outside the fetch fails the run as release_read_outside_fetch before its batch is stored; triage and reports read two types only; the keyed read uses rule_record_identity; weekly, under the quarterly scale release 900110, a 100,000-line month prices while another practice's audit report prints and four 835s parse, then triages and reports, within the worker task's memory" },
-  { id: 'RCC-08', title: 'Content due', assertion: "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see every family of the release in force, loaded through a date, open, loaded only from a later date, partly loaded or not loaded; the source watch finds a new matching file whatever its name, shows plain names as they are and others percent-encoded, reports a page that lists no matching file any more, and reads pages over https from the calendar's hosts only, at most 5 MiB; the workflow's check job only reads and its notify job alone writes issues, once per title and at most 20 new ones a run, listing the rest in one issue" },
+  { id: 'RCC-08', title: 'Content due', assertion: "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see every family of the release in force, loaded through a date, open, loaded only from a later date, partly loaded or not loaded; the source watch finds a new matching file whatever its name, shows plain names as they are and others percent-encoded, reports a page that lists no matching file any more, and reads pages over https from the calendar's hosts only, at most 5 MiB; the workflow's check job only reads and its notify job alone writes issues, once per title and at most 20 new ones a run, listing the rest in one issue; every finding reaches it whole, as the run's own artifact" },
   { id: 'FRM-01', title: 'A refused form keeps what was typed', assertion: 'Text, a select, a text area, a checkbox, a checkbox group, a radio, a date and a month keep the person\'s values after a refusal, and a valid default never replaces a refused value; a password and a one-time code are emptied, and a note under each says so, asking a locked account for nothing; the action\'s state carries no value the person typed; a dropped connection keeps every value but the secrets, says the save is not confirmed and which values to type again, and every later press sends the request key of the dropped press until one is saved, even after the page is read again, so nothing is saved twice; a request key used before reads "Already sent", never "Not done", in the neutral notice\'s look, never the failure colour; a page whose CSRF token or request key is out of date is read again in place, and a second press saves with the values intact; a page read again that shows another person signed in, or no one, clears a form that holds what was typed, says so and invites no press' },
   { id: 'FRM-02', title: 'A saved form starts fresh', assertion: 'After a success that redirects to the same page, to the same address or to another page, the form shows its defaults, shows no refusal and carries a new request key' },
   { id: 'FRM-03', title: 'A press while the form is working', assertion: 'Two presses in one frame, a second click and Enter in a field each send one request; the button keeps focus, is aria-disabled and keeps its words; a polite status beside it says "Working…"' },
@@ -767,6 +785,24 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'Every sign-in step has a way forward',
     assertion:
       'The sign-in page lists help as a list with a reset link that names itself, the code and key steps say where to write about a lost factor from the address one signs in with, the locked words name the support address in the refusal, the key page and the notice, and a closed hardware-key step returns to the key page; the reset page in both phases, the sign-in page, the code step and the key step pass axe (WCAG 2.1 A and AA) at 1280 and 390 px',
+  },
+  {
+    id: 'SGN-13',
+    title: 'Every message the user pool sends is the brand’s',
+    assertion:
+      'Each CustomMessage source (forgot password, invitation and its resend, attribute update, attribute verification, sign-up, resend code and authentication) has its own subject and words from `@tp/auth-mail`: the reset code’s are section 2.5’s word for word, the invitation names the sign-in page as plain text with no query and states 7 days from `INVITATION_DAYS`; each message holds Cognito’s code parameter once (the invitation its username parameter once), stays within Cognito’s subject and message lengths, reads the same with its tags stripped, and holds no image, font, stylesheet or link (but the invitation’s sign-in address); the pool’s own verification and invitation templates are the branded generic fallback, never reset-specific words; the copy lint reads the package',
+  },
+  {
+    id: 'SGN-14',
+    title: 'The message trigger is small and contained',
+    assertion:
+      'The trigger is an inline Node 22 function with no dependency, network or VPC, 128 MB and a 3-second timeout, one environment variable, a role with only its own log group’s two write actions and no managed policy, invoked only by Cognito for this pool and account; an unknown source, a missing parameter or a thrown error returns the event unchanged (Cognito sends the fallback template) and logs one line of codes with no address; the function’s errors, throttles and fallbacks alarm the operator; a reset request whose code Cognito could not send for the trigger answers alike at its floor, and an invitation it could not send fails visibly',
+  },
+  {
+    id: 'SGN-15',
+    title: 'The local identity provider delivers what Cognito delivers',
+    assertion:
+      'The development provider’s invitation and reset outboxes hold each message’s subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the reset code from the message’s own text, with no remote asset and no link but the sign-in address; the text is the HTML’s with its tags stripped, since Cognito sends the HTML alone, with no text part',
   },
   {
     id: 'HOM-01',

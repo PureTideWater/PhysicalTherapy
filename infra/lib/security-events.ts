@@ -29,6 +29,12 @@ export const PASSWORD_RESET_NOT_DELIVERED_MESSAGE = 'password reset request not 
 export const PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES = ['UserNotFoundException', 'NotAuthorizedException', 'InvalidParameterException', 'CodeDeliveryFailureException'] as const;
 export const PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES = ['LimitExceededException', 'TooManyRequestsException'] as const;
 export const PASSWORD_RESET_FAILED_MESSAGE = 'password reset request failed';
+/**
+ * A reset request answered after its floor (RESET_REQUEST_FLOOR_MS, apps/web/src/lib/auth/sign-in.ts; docs/adr/0081;
+ * review security-N-1): only an active, enrolled account reaches Cognito and the message trigger, so runs over the floor
+ * could tell an account from none by timing. Three in an hour alarm: raise the floor, or find the slow call.
+ */
+export const PASSWORD_RESET_OVER_FLOOR_MESSAGE = 'password reset request over floor';
 export const ENROLMENT_REFUSED_MESSAGE = 'security event: second-factor enrolment refused';
 export const CLIENT_CREDENTIAL_REFUSED_MESSAGE = 'security event: client credential refused';
 /**
@@ -54,6 +60,7 @@ export const RESET_AND_ENROLMENT_COUNTS = [
   { metricName: 'SecondFactorEnrolmentRefused', message: ENROLMENT_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'ClientCredentialRefused', message: CLIENT_CREDENTIAL_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'ClientCredentialProbeRefused', message: CREDENTIAL_PROBE_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
+  { metricName: 'PasswordResetRequestOverFloor', message: PASSWORD_RESET_OVER_FLOOR_MESSAGE, errorCodes: [], threshold: 3, periodSeconds: 3600 },
 ] as const satisfies readonly SecurityEventCount[];
 
 export type ResetAndEnrolmentMetricName = (typeof RESET_AND_ENROLMENT_COUNTS)[number]['metricName'];

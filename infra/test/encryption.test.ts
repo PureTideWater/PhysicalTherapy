@@ -73,9 +73,9 @@ describe.each(ENVIRONMENTS)('%s: encryption at rest', (environment) => {
     }
     // Six buckets (documents, packets, audit copies, trail, canary artifacts, support inbox), one database, nine
     // secrets (owner, application, worker, operator, queue, billing and screening logins, the cookie-sealing key,
-    // Stripe's keys), one topic, seven log groups (web, worker, platform, screening, migration, migration runner, the
-    // network lookup), one trail, two image repositories, and the mail events queue and its dead-letter queue.
-    expect(checked).toBe(29);
+    // Stripe's keys), one topic, eight log groups (web, worker, platform, screening, migration, migration runner, the
+    // network lookup, the user pool's message trigger), one trail, two image repositories, and the mail events queue and its dead-letter queue.
+    expect(checked).toBe(30);
   });
 
   it('has no data store outside that list', () => {
