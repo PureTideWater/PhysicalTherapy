@@ -1291,6 +1291,8 @@ export function led23(b: CaseBuilder): void {
  * interest back from the lines holding it. short.835 shares a short pool by AMT I. The out-of-order files name a claim
  * Z, correcting a second patient's case line, that is uploaded last: the first patient's lines keep their 5.40 and the
  * second patient's line gets nothing (triage groups both patients' lines into one case, by payer pattern).
+ * two-chains.835 nets an unlinked chain's interest paid against C's taken back, on the same two lines, in one PLB L6:
+ * the take-back is written and the payment is not, so the figure errs low, never above the cash.
  */
 export function led24(b: CaseBuilder): void {
   const { base, original, correction, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
@@ -1352,6 +1354,14 @@ export function led24(b: CaseBuilder): void {
     ledRemittance(b, base, 12, calendarDate(2026, 6, 22), [reversalOf(secondPatient), z]).file,
     `Uploaded last, dated earlier: the second patient's claim reversed (paid -56.00) and Z (${z.payerClaimControlNumber}, REF F8 naming it), allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, with no AMT I: BPR02 24.00.`,
   );
+  // B corrects the case's claim under its own control number with no REF F8 and comes before C's reversal, so the loader
+  // links it to nothing: a chain of its own, matched to both case lines, beside C's chain, which holds their interest.
+  const unlinked: Claim = { ...withInterest(correctionOf(b, 16, correction, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]), dollars('6.00')), refs: [] };
+  b.add835(
+    'two-chains.835',
+    ledRemittance(b, base, 13, laterOn, [unlinked, reversalOf(correction)], pool(dollars('-0.60'))).file,
+    `After paired.835: B (${unlinked.payerClaimControlNumber}), a correction with no REF F8 that comes before the reversal, so the loader links it to nothing, paying as C (paid 160.00) with AMT I 6.00, then C reversed (paid -160.00, AMT I -5.40), and one PLB L6 of -0.60 naming nothing, netting B's 6.00 paid against C's 5.40 taken back on the same two lines: BPR02 0.60.`,
+  );
   recoveryScenario(b);
   b.scenario({
     caseLines: [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line })),
@@ -1362,6 +1372,7 @@ export function led24(b: CaseBuilder): void {
       bothWays: ['paired.835', 'both-ways.835'],
       short: ['short.835'],
       outOfOrder: { original: 'out-of-order-original.835', files: ['out-of-order-2.835', 'out-of-order-1.835'] },
+      twoChains: ['paired.835', 'two-chains.835'],
     },
   });
   const takenBack = [ledEntry('interest', negateCents(firstInterest), 'taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'taken-back.835 PLB L6')];
@@ -1390,6 +1401,11 @@ export function led24(b: CaseBuilder): void {
         afterSecond: [ledEntry('interest', firstInterest, 'out-of-order-2.835 PLB L6'), ledEntry('interest', secondInterest, 'out-of-order-2.835 PLB L6')],
         afterFirst: { firstPatientCents: centsToString(LED_INTEREST), secondPatientCents: '0', supersededBy: z.payerClaimControlNumber },
         reconciles: 3,
+      },
+      twoChains: {
+        interest: [ledEntry('interest', negateCents(firstInterest), 'two-chains.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'two-chains.835 PLB L6')],
+        interestTotalCents: '0',
+        note: "the take-back is written first on the lines holding C's interest; B's 6.00 would land on the same lines, which hold one entry of each PLB L6, so it is not written: the figure errs low, never above the cash",
       },
     },
   });

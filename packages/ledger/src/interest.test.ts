@@ -467,6 +467,37 @@ describe('interestWrites (D5, D6, D10)', () => {
     expect(interestWrites({ draws: [drawOf('A', 'c', 300n, ['C']), drawOf('A', 'k', 200n, ['K'])], written: [], lines })).toEqual([part('c', 'L1', 'C', 300n, false)]);
   });
 
+  it('writes a PLB L6’s take-backs before its payments, so a payment reaches the lines they left and two chains meeting on a line err low (LED-24 two-chains.835)', () => {
+    // b's payment could reach both lines; a's take-back only the lines holding a's interest.
+    const lines = (held: ChainInterestLines['takenBack']) =>
+      new Map<string, ChainInterestLines>([
+        ['a', { paid: [], takenBack: held }],
+        ['b', paid('B', [2400n, 3000n], false)],
+      ]);
+    for (const draws of [
+      [drawOf('A', 'b', 600n, ['B']), drawOf('A', 'a', -540n, ['V'])],
+      [drawOf('A', 'a', -540n, ['V']), drawOf('A', 'b', 600n, ['B'])],
+    ]) {
+      // Both lines hold a's interest: its take-back is written there, and b's payment, which only they could take, is not.
+      expect(interestWrites({ draws, written: [], lines: lines(holding(240n, 300n).takenBack) })).toEqual([part('a', 'L1', 'C', -240n, true), part('a', 'L2', 'C', -300n, true)]);
+      // Only line 1 holds it: b's whole payment goes to line 2.
+      expect(interestWrites({ draws, written: [], lines: lines(holding(540n, 0n).takenBack.slice(0, 1)) })).toEqual([part('a', 'L1', 'C', -540n, false), part('b', 'L2', 'B', 600n, false)]);
+    }
+    // Two take-backs, then two payments, each sign in draw order.
+    const four = new Map<string, ChainInterestLines>([
+      ['a', { paid: [], takenBack: holding(100n, 0n).takenBack.slice(0, 1) }],
+      ['c', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'K', heldCents: cents(50n) }] }],
+      ['b', { paid: [{ serviceLineId: 'L4', claimId: 'B', approved: true, weightCents: cents(1n) }], takenBack: [] }],
+      ['k', { paid: [{ serviceLineId: 'L5', claimId: 'K', approved: true, weightCents: cents(1n) }], takenBack: [] }],
+    ]);
+    expect(interestWrites({ draws: [drawOf('A', 'b', 70n, ['B']), drawOf('A', 'a', -100n, ['V']), drawOf('A', 'k', 30n, ['K']), drawOf('A', 'c', -50n, ['K'])], written: [], lines: four })).toEqual([
+      part('a', 'L1', 'C', -100n, false),
+      part('c', 'L3', 'K', -50n, false),
+      part('b', 'L4', 'B', 70n, false),
+      part('k', 'L5', 'K', 30n, false),
+    ]);
+  });
+
   it('flags a part allocated when its draw was a share of a short pool or two or more lines took a part', () => {
     expect(interestWrites({ draws: [drawOf('A', 'c', 365n, ['C'], true)], written: [], lines: new Map([['c', paid('C', [2400n, 0n])]]) })).toEqual([part('c', 'L1', 'C', 365n, true)]);
     expect(interestWrites({ draws: [drawOf('A', 'c', 1n, ['C'])], written: [], lines: new Map([['c', paid()]]) })).toEqual([part('c', 'L2', 'C', 1n, false)]);
