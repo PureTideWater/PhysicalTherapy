@@ -387,11 +387,13 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that
   it accepts the display-name `From`; that a resend fires `CustomMessage_AdminCreateUser`; that it substitutes the
   parameters once and sends the pool's template when the response is unchanged; a real reset's cold start against the
-  1,500 ms floor; what the invitation's `{username}` becomes (the
+  1,500 ms floor; that a forced fallback raises `CognitoMessageFallback` and its alarm; that
+  CloudFormation accepts the client's empty `WriteAttributes` and a first sign-in (`NEW_PASSWORD_REQUIRED`) still
+  completes with it (if it is refused, the list names every attribute but `email`); what the invitation's `{username}` becomes (the
   address or the pool's internal name; the words hold either way), in the trigger's message and the pool's own
   invitation template; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
   the trigger returns); and Cognito's subject (140) and message (20,000) limits and CloudFormation's limit on an inline
-  `ZipFile` (the source is 13.5 KB; the tests cap it at 16 KiB), which are quoted from memory: AWS's documentation
+  `ZipFile` (the source is 14.1 KB; the tests cap it at 16 KiB), which are quoted from memory: AWS's documentation
   was not reachable from this session. If the inline limit binds, the source goes as `Code.fromAsset` of the same text.
 
 ## Revisit when
