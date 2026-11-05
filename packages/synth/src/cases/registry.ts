@@ -214,6 +214,11 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/mapping-routes.db.test.ts',
     'apps/web/e2e/mapping.spec.ts',
   ]),
+  // co-001/pricing-run-cutoff: a run's cut-off and creation compared to the microsecond, at creation and after.
+  'PRC-32': none(3, "No file of its own: PRC-19's file, with lines and times the tests set.", [
+    'apps/worker/src/price/cut-off.db.test.ts',
+    'apps/web/src/lib/pricing/location.db.test.ts',
+  ]),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
@@ -302,6 +307,26 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/report/streamed.db.test.ts',
     'apps/worker/src/report/csv-arena.test.ts',
     'apps/worker/src/reconcile/patient-share.test.ts',
+  ]),
+  // Lane B (co-001/packet-day-counts; docs/adr/0086): every narrative figure in the role its words give it.
+  'CAS-43': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+    'apps/worker/src/packets/packets.db.test.ts',
+    'apps/worker/src/packets/verifier-now.test.ts',
+    'apps/web/src/lib/packets/view.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/stored-narrative.test.tsx',
+    'apps/web/src/components/packets/narrative-editor.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-44': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
   ]),
   // Lane B (co-001/ux-payer-response): a choice that records a fact starts unchosen, and the payer’s letter is uploaded with its response, apart from the contract documents.
   'CAS-45': none(8, 'A case line on a synthetic practice the test creates, written off: no file.', [
@@ -808,12 +833,16 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
   // The browser and the runners (docs/adr/0066, Part 3).
   'CI-18': none(0, "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.", ['tools/test/browser-version.test.ts', 'tools/ci/browser-build.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/test/workflows.test.ts']),
-  'CI-19': none(0, "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.", ['apps/web/e2e/brand.spec.ts', 'apps/web/e2e/a11y.ts']),
+  'CI-19': none(0, "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.", ['apps/web/e2e/brand.spec.ts', 'apps/web/e2e/a11y.ts', 'apps/web/e2e/a11y-title.spec.ts']),
   'CI-20': none(0, "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.", ['tools/test/workflows.test.ts', 'tools/ci/apt-archives.test.ts', 'tools/screening-capacity/image-id.test.ts', 'tools/screening-capacity/measure.test.ts']),
   // The release age of pins and images (docs/adr/0066, Part 5).
   'CI-21': none(0, "The workflows are read; GitHub's answers are synthetic and recorded, and the signed commits and tag are the synthetic ones tools/check-action-pins/testdata/age/make.sh made; no file.", ['tools/check-action-pins/age.test.ts', 'tools/check-action-pins/check.test.ts', 'tools/check-action-pins/buildkit.test.ts', 'tools/check-action-pins/verify.test.ts', 'tools/check-action-pins/workflows.test.ts', 'tools/test/workflows.test.ts']),
   'CI-22': none(0, "The Dockerfiles, docker-compose.yml and the workflows are read, at the head and in synthetic base trees; Docker Hub's answers are synthetic and recorded; no file.", ['tools/check-toolchain/images.test.ts', 'tools/check-toolchain/tree.test.ts', 'tools/check-toolchain/registry.test.ts', 'tools/check-toolchain/check.test.ts', 'tools/check-toolchain/exclude-window.test.ts']),
   'CI-23': none(0, "The exception lists are written in synthetic trees; GitHub's and Docker Hub's answers are synthetic and recorded; no file.", ['tools/check-action-pins/age.test.ts', 'tools/check-toolchain/images.test.ts', 'tools/check-toolchain/exclude-window.test.ts', 'tools/check-toolchain/check.test.ts']),
+  // The mutation trigger, field by field (docs/adr/0066, Part 7).
+  'CI-27': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/manifests.test.ts', 'tools/stryker/affected.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-28': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/affected.test.ts', 'tools/stryker/gate.test.ts']),
+  'CI-29': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/runtime.test.ts', 'tools/stryker/gate.test.ts', 'tools/stryker/canary/verdict.test.ts', 'tools/stryker/stryker.test.ts', 'tools/stryker/shards.test.ts', 'tools/test/workflows.test.ts']),
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
   'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),

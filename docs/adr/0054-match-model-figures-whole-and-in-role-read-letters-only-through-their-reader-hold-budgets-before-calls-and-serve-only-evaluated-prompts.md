@@ -5,7 +5,9 @@
   on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27: the letter
   reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below);
   amended 2026-10-27 by 0070, Part 3: a contract or exhibit is checked against the practice's records before the
-  model ("Amendment (`co-001/contract-phi-check`, 2026-10-27)", below); amended 2026-11-04: a payer letter's Social
+  model ("Amendment (`co-001/contract-phi-check`, 2026-10-27)", below);
+  amended 2026-10-28 by [0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md): the role check's grammar moves into `@tp/packets` ("Amendment (`co-001/packet-day-counts`,
+  2026-10-28)", below); amended 2026-11-04: a payer letter's Social
   Security and phone numbers redacted by pattern, as the founder ruled on 2026-11-01 ("Amendment
   (`co-001/redact-ssn-phone`, 2026-11-04)", below)
 - **Date:** 2026-10-17
@@ -491,6 +493,25 @@ holds.
   follow-up (0070, P9). The contract screen does not tokenize through `identifierTokenRuns` (amendment of
   `co-001/redact-placeholders`, above): it streams its own runs (`someIdentifierRun`), which join differently, each path
   for its task (0070, Part 3, N6).
+
+## Amendment (`co-001/packet-day-counts`, 2026-10-28): the packets verifier holds figures to their roles
+
+"A narrative's figures are held to their roles" (Decision) is now the packets verifier's own rule ([0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md)): one reader,
+`packages/packets/src/roles.ts`, reads every figure's role, and the verifier fails a figure its inputs do not hold in
+that role, on a person's narrative, in the editor, when a version is written and at export, not only on a model's
+draft. `roleMismatches()` (`functions/narrative-roles.ts`) keeps its API and reads the same facts: of the figures the
+packets verifier failed, those whose value the inputs hold in another role are `figure_in_wrong_role`, so the person
+sees a figure misstated rather than missing. Its roles are `@tp/packets`' `FIGURE_ROLES`, which split what the
+remittances show into what the payer allowed and what it paid; a mismatch names the role its nearest cue gives the
+figure (`role`) and every role its words give it (`roles`, `every`). The harness's swap faults now fail with both codes.
+The reader takes one cue's role per figure, the nearest by the order ADR 0086 sets, as this check's reading did, never
+the union of every cue in its clause; so the check before a model's draft is written is at least as strict as this
+check was. `functions/narrative-roles.test.ts` proves it on every build: the check as it stood at 83d71fd6, vendored
+unchanged as a fixture only (`narrative-roles.base.fixture.ts`), runs over 246 generated amount swaps and every
+misstated example of the review of 2026-11-01, and each one it caught must fail the gateway (PE-2). A figure that
+fails for want of a scope, or of its own words instead of "respectively" (ADR 0086's closed rules 2 and 3, 2026-11-04),
+is in its role and is no `figure_in_wrong_role`: the verifier's report alone fails the draft, and the editor says what
+to add.
 
 ## Amendment (`co-001/redact-ssn-phone`, 2026-11-04): Social Security and phone numbers by pattern
 

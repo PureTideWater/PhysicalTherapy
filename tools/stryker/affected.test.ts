@@ -1,33 +1,45 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse, stringify } from 'yaml';
 
-import { MUTATION_PACKAGES, type MutationPackage } from '../../stryker/base.mjs';
+import { MUTATION_PACKAGES, type MutationPackage, type Shard, readShards } from '../../stryker/base.mjs';
+import { SEED_SETUP_FILE, mutationTestConfig } from '../../vitest.mutation.config';
 import { repositoryRoot } from '../content-files';
 import {
   type AffectedConfig,
+  type Change,
   type Closure,
+  type GlobalInputs,
   DATA_FILES,
   DIRECTORY_READS,
   GLOBAL_INPUTS,
+  GLOBAL_LOADED,
+  RUNNER_PROOF_SHARD,
   TEST_TOOLING,
   UNCALLED_READS,
   affected,
   affectedSince,
   closureOf,
   closureProblems,
+  closureProblemsMessage,
+  errorText,
   covers,
   dataLiterals,
+  gitEnvironment,
   globToRegExp,
   globalFiles,
   lockedPackages,
   packageName,
   parseLockfile,
+  printable,
   repositoryClosures,
+  runGit,
   selectFiles,
   shardsFor,
   specifiers,
@@ -36,6 +48,8 @@ import {
   unionClosures,
   unionGlobal,
 } from './affected';
+import { CANARY_TESTS } from './canary/vitest.config';
+import { packagesOf, shardNamed, shardsOf } from './shards';
 
 /**
  * What a change affects, for the mutation workflow (tools/stryker/affected.ts; docs/adr/0066, Part 4; test matrix
@@ -189,7 +203,7 @@ snapshots:
 describe('on a synthetic repository', () => {
   const repo = new SyntheticRepository();
   let closures: Closure[];
-  const affects = (files: string[], lockfile?: { before: string; after: string }) => affected({ files, lockfile }, closures, globalFiles(repo.root, repo.files, synthetic), synthetic.tooling).packages;
+  const affects = (files: string[], lockfile?: { before: string; after: string }, texts?: Change['texts']) => affected({ files, lockfile, texts }, closures, globalFiles(repo.root, repo.files, synthetic), synthetic.tooling).packages;
 
   beforeAll(() => {
     repo.write('pnpm-workspace.yaml', 'packages:\n  - apps/*\n  - packages/*\n').write('package.json', '{"name":"root"}').write('pnpm-lock.yaml', LOCK);
@@ -234,8 +248,15 @@ describe('on a synthetic repository', () => {
 
   it('affects a package through the manifests of its closure, its data files and the global inputs', () => {
     expect(affects(['packages/money/package.json'])).toEqual(['money', 'pricing', 'ledger', 'packets']);
-    expect(affects(['packages/pricing/package.json'])).toEqual(['pricing', 'packets']);
-    expect(affects(['packages/helper/package.json', 'apps/site/package.json'])).toEqual([]);
+    const pricing = JSON.stringify({ name: '@tp/pricing', exports: { '.': './src/index.ts' } });
+    expect(affects(['packages/pricing/package.json'], undefined, { 'packages/pricing/package.json': { before: pricing, after: JSON.stringify({ name: '@tp/pricing', exports: { '.': './src/index.ts', './engine': './src/engine.ts' } }) } })).toEqual(['pricing', 'packets']);
+    const dev = (name: string, command: string) => JSON.stringify({ name, scripts: { dev: command } });
+    expect(
+      affects(['packages/helper/package.json', 'apps/site/package.json'], undefined, {
+        'packages/helper/package.json': { before: dev('@tp/helper', 'tsx watch src/index.ts'), after: dev('@tp/helper', 'tsx watch src') },
+        'apps/site/package.json': { before: dev('@tp/site', 'next dev'), after: dev('@tp/site', 'next dev --port 3001') },
+      }),
+    ).toEqual([]);
     expect(affects(['fixtures/golden/claims/G1.json'])).toEqual(['pricing']);
     expect(affects(['fixtures/other/x.json'])).toEqual([]);
     expect(affects(['stryker/base.mjs'])).toEqual(['money', 'pricing', 'ledger', 'packets']);
@@ -361,8 +382,8 @@ describe('on this repository', () => {
 
   it('selects every shard of each affected package', () => {
     expect(shardsFor(['money'])).toEqual(['money-ledger']);
-    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(7);
+    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-roles', 'packets-roles-cues', 'packets-roles-numbers', 'packets-words-labels', 'packets-words-amounts', 'packets-words-days', 'packets-words-dates', 'packets-words-prose', 'packets-verifier', 'packets-facts', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(17);
     expect(shardsFor([] as MutationPackage[])).toEqual([]);
   });
 });
@@ -450,6 +471,18 @@ describe('a change that deletes or moves a file: its sets, and its closures on b
       git('add', '-A');
       git('commit', '-q', '-m', 'a test that names data');
       expect(() => affectedSince(baseCommit, repo.root, synthetic)).toThrow('money: packages/money/src/data.test.ts: fixtures/money/rates.json');
+      // An import holding a line break and a workflow command, which resolves to no file, is printed JSON-quoted, so no line of the error starts one.
+      repo.write('packages/money/src/forged.test.ts', "import { it } from 'vitest';\nimport { gone } from './gone\n::warning title=forged::x';\nit('f', () => gone);\n");
+      git('add', '-A');
+      git('commit', '-q', '-m', 'a test that imports a forged path');
+      let message = '';
+      try {
+        affectedSince(baseCommit, repo.root, synthetic);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message.split('\n').some((line) => line.startsWith('"money: ') && line.includes('gone\\n::warning title=forged::x') && line.includes('resolves to no file'))).toBe(true);
+      expect(message.split('\n').filter((line) => line.startsWith('::'))).toEqual([]);
     } finally {
       repo.remove();
     }
@@ -621,4 +654,548 @@ describe('what stops the changes job, and the tooling’s own packages, on this 
     expect(TEST_TOOLING).toContain('tsx');
     expect([...(global.imports.get('tools') ?? [])]).toContain('yaml');
   }, 60_000);
+
+  it('gives all four for a lockfile move of typescript alone, which @stryker-mutator/core imports undeclared on every run', () => {
+    const affects = (after: string) => affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after } }, closures, global).packages;
+    expect(affects(bump(lock, 'typescript', version('typescript'), '6.0.99'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    // Held by TEST_TOOLING alone: no file of the mutation tooling imports typescript (the import graph reads a comment's
+    // import call as an import, so none may quote one), and with every import of it taken out the move still affects all four.
+    expect([...global.imports].filter(([, names]) => names.has('typescript')).map(([owner]) => owner)).toEqual([]);
+    const unimported: GlobalInputs = { ...global, imports: new Map([...global.imports].map(([owner, names]) => [owner, new Set([...names].filter((name) => name !== 'typescript'))])) };
+    const moved = bump(lock, 'typescript', version('typescript'), '6.0.99');
+    expect(affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after: moved } }, closures, unimported).packages).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    expect(TEST_TOOLING).toContain('typescript');
+    expect(TEST_TOOLING).not.toContain('typescript-eslint');
+  }, 60_000);
+
+  it('prints a lockfile entry holding a control character JSON-quoted in its reason, so no line it holds starts a workflow command', () => {
+    const forged = '99.0.0\n::warning title=forged::x';
+    const result = affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after: bump(lock, 'tsx', version('tsx'), forged) } }, closures, global);
+    expect(result.packages).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    const lines = Object.values(result.reasons).flat();
+    expect(lines.some((line) => line.startsWith('pnpm-lock.yaml moves ') && line.includes(`tsx@${JSON.stringify(forged).slice(1, -1)}`))).toBe(true);
+    // eslint-disable-next-line no-control-regex -- the characters a log could read as a line break are what this looks for
+    expect(lines.filter((line) => /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(line))).toEqual([]);
+  }, 60_000);
+});
+
+/** A workflow in mutation.yml's shape, each step reference pinned: the cases' base text. */
+const PINS = { checkout: 'a'.repeat(40), setup: 'b'.repeat(40), node: 'c'.repeat(40), upload: 'd'.repeat(40), download: 'e'.repeat(40) } as const;
+const SETUP_STEP = `      - uses: pnpm/action-setup@${PINS.setup} # v6.1.0\n`;
+const NODE_STEP = `      - uses: actions/setup-node@${PINS.node} # v7.1.0\n        with:\n          node-version: 24.22.0\n`;
+const FLOW = [
+  'name: mutation',
+  'on: [pull_request]',
+  'jobs:',
+  '  changes:',
+  '    runs-on: ubuntu-26.04',
+  '    steps:',
+  `      - uses: actions/checkout@${PINS.checkout} # v7.0.1`,
+  '        with:',
+  '          persist-credentials: false',
+  `${SETUP_STEP}${NODE_STEP}      - run: pnpm install --frozen-lockfile`,
+  '  stryker:',
+  '    runs-on: ubuntu-26.04',
+  '    steps:',
+  `      - uses: actions/checkout@${PINS.checkout} # v7.0.1`,
+  `      - uses: actions/upload-artifact@${PINS.upload} # v7.0.2`,
+  '  mutation:',
+  '    runs-on: ubuntu-26.04',
+  '    steps:',
+  `      - uses: actions/download-artifact@${PINS.download} # v8.0.2`,
+  '',
+].join('\n');
+
+/** A 40-hex commit other than `sha`. */
+const other = (sha: string) => [...sha].map((char) => '0123456789abcdef'[('0123456789abcdef'.indexOf(char) + 1) % 16]).join('');
+
+/** #40's mutation.yml at its base, every step kept in its place and only its reference or its name (the PR moved nothing else). */
+const PR40_BASE = `jobs:
+  changes:
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: What the change affects
+  stryker:
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: The canary
+      - name: The shard
+      - name: The shard's scores and survivors
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+  mutation:
+    steps:
+      - name: The jobs it needs
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: The gate
+`;
+
+/** #40's moves, every one a SHA to a SHA of the same action, the artifact actions among them. */
+const PR40_MOVES = [
+  ['actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0', 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'],
+  ['pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0', 'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10'],
+  ['actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0', 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0'],
+  ['actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2', 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2'],
+  ['actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0', 'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2'],
+] as const;
+
+const scripts = (entries: Record<string, string>) => JSON.stringify({ scripts: entries }, null, 2);
+
+describe('the field rule, the runner proof and what else affects every package, on this repository (docs/adr/0066, Part 7)', () => {
+  const files = trackedFiles();
+  const closures = repositoryClosures(repositoryRoot, files);
+  const global = globalFiles(repositoryRoot, files);
+  const judge = (texts: NonNullable<Change['texts']>) => affected({ files: Object.keys(texts), texts }, closures, global);
+  const workflow = (before: string, after: string) => judge({ '.github/workflows/mutation.yml': { before, after } });
+  const WORKFLOW = readFileSync(path.join(repositoryRoot, '.github/workflows/mutation.yml'), 'utf8');
+  const ALL = [...MUTATION_PACKAGES];
+  const proof = packagesOf(shardNamed(RUNNER_PROOF_SHARD));
+
+  it('gives the runner-proof shard’s packages alone when only step references move from one SHA to another, with their comments', () => {
+    let moved = 0;
+    const bumped = WORKFLOW.replace(/(uses: ([^@\s]+)@)([0-9a-f]{40}) # v[\d.]+/g, (all: string, prefix: string, ref: string, sha: string) => {
+      if (ref === 'actions/upload-artifact' || ref === 'actions/download-artifact') return all;
+      moved += 1;
+      return `${prefix}${other(sha)} # v99.0.0`;
+    });
+    expect(moved).toBeGreaterThan(0);
+    const reason = `.github/workflows/mutation.yml step references only: runner proved on ${RUNNER_PROOF_SHARD}`;
+    for (const [before, after] of [
+      [WORKFLOW, bumped],
+      [FLOW, FLOW.replaceAll(PINS.checkout, other(PINS.checkout)).replace(PINS.setup, other(PINS.setup)).replace('# v6.1.0', '# v6.2.0')],
+    ] as const) {
+      const result = workflow(before, after);
+      expect(result.packages).toEqual(proof);
+      for (const pkg of proof) expect(result.reasons[pkg]).toEqual([reason]);
+    }
+  });
+
+  it('gives none for a change to mutation.yml’s comments alone', () => {
+    expect(workflow(WORKFLOW, `# A comment.\n${WORKFLOW.replace('# v7.0.1', '# v7.0.1, checked')}`).packages).toEqual([]);
+    expect(workflow(FLOW, FLOW.replace('jobs:\n', 'jobs:\n  # The jobs.\n')).packages).toEqual([]);
+  });
+
+  it('gives all four for any other change to mutation.yml: a tag or branch ref, a job-level ref, docker://, ./ and $/ refs, another action or path, an artifact action, runs-on, with:, run:, a new step, a step-order change', () => {
+    const tagged = FLOW.replaceAll(`actions/checkout@${PINS.checkout}`, 'actions/checkout@v7');
+    const reusable = (sha: string) => `${FLOW}  reusable:\n    uses: octo/flows/.github/workflows/w.yml@${sha}\n`;
+    const checkoutTo = (ref: string) => FLOW.replace(`actions/checkout@${PINS.checkout}`, ref);
+    for (const [what, before, after] of [
+      ['a SHA to @v7', FLOW, tagged],
+      ['@v7 to a SHA', tagged, FLOW],
+      ['@main', FLOW, FLOW.replaceAll(`actions/checkout@${PINS.checkout}`, 'actions/checkout@main')],
+      ['a job-level ref', reusable(PINS.checkout), reusable(other(PINS.checkout))],
+      ['docker://', FLOW, checkoutTo('docker://alpine:3.20')],
+      ['./local', FLOW, checkoutTo('./.github/actions/checkout')],
+      ['$/', FLOW, checkoutTo('$/.github/actions/checkout')],
+      ['another action', FLOW, checkoutTo(`foo/checkout@${other(PINS.checkout)}`)],
+      ['another path', FLOW, checkoutTo(`actions/checkout/sub@${other(PINS.checkout)}`)],
+      ['upload-artifact', FLOW, FLOW.replace(PINS.upload, other(PINS.upload))],
+      ['download-artifact', FLOW, FLOW.replace(PINS.download, other(PINS.download))],
+      ['upload-artifact, its name in capitals', FLOW.replace('actions/upload-artifact', 'Actions/Upload-Artifact'), FLOW.replace('actions/upload-artifact', 'Actions/Upload-Artifact').replace(PINS.upload, other(PINS.upload))],
+      ['runs-on', FLOW, FLOW.replace('ubuntu-26.04', 'ubuntu-24.04')],
+      ['with:', FLOW, FLOW.replace('persist-credentials: false', 'persist-credentials: true')],
+      ['run:', FLOW, FLOW.replace('pnpm install --frozen-lockfile', 'pnpm install --frozen-lockfile --prefer-offline')],
+      ['a new step', FLOW, FLOW.replace('      - run: pnpm install', '      - run: echo x\n      - run: pnpm install')],
+      ['a step-order change', FLOW, FLOW.replace(`${SETUP_STEP}${NODE_STEP}`, `${NODE_STEP}${SETUP_STEP}`)],
+    ] as const) {
+      expect(before === after, what).toBe(false);
+      expect(workflow(before, after).packages, what).toEqual(ALL);
+    }
+  });
+
+  // The review of #96 (S2): the pin-only rule's fail-closed parts, each with a case that turns red when it is removed.
+  it('gives all four when a step pin moves and the same step’s scalar is re-quoted to the same value, so the source text differs', () => {
+    const moved = FLOW.replace(PINS.node, other(PINS.node));
+    const requoted = moved.replace('node-version: 24.22.0', 'node-version: "24.22.0"');
+    expect(workflow(FLOW, moved).packages).toEqual(proof);
+    expect(workflow(FLOW, requoted).packages).toEqual(ALL);
+    expect(workflow(FLOW, moved.replace(`actions/setup-node@${other(PINS.node)}`, `"actions/setup-node@${other(PINS.node)}"`)).packages).toEqual(ALL);
+  });
+
+  it('gives all four when a scalar of mutation.yml is rewritten to the same parsed value (timeout-minutes 5 as 0x5), which the comments-only rule must not take for layout', () => {
+    expect(WORKFLOW).toContain('timeout-minutes: 5\n');
+    const rewritten = WORKFLOW.replace('timeout-minutes: 5\n', 'timeout-minutes: 0x5\n');
+    expect(parse(rewritten)).toEqual(parse(WORKFLOW));
+    expect(workflow(WORKFLOW, rewritten).packages).toEqual(ALL);
+  });
+
+  it('gives all four for a pin-only change when the runner-proof shard does not hold its packages whole', () => {
+    const shards = readShards();
+    const shared = proof[0];
+    expect(shared).toBeDefined();
+    const split = [...shards, { name: 'synthetic-other', mutate: { [shared ?? 'money']: ['packages/money/src/cents.ts'] } } as Shard];
+    const result = affected({ files: ['.github/workflows/mutation.yml'], texts: { '.github/workflows/mutation.yml': { before: FLOW, after: FLOW.replace(PINS.setup, other(PINS.setup)) } } }, closures, global, TEST_TOOLING, split);
+    expect(result.packages).toEqual(ALL);
+    expect(result.reasons.money).toEqual([`.github/workflows/mutation.yml (step references only, but ${RUNNER_PROOF_SHARD} does not hold its packages whole, every package)`]);
+  });
+
+  it('gives all four for a pin-only change to a workflow holding a byte-order mark, a %YAML directive or a merge key on both sides, naming the rule', () => {
+    const pinned = (text: string) => text.replace(PINS.setup, other(PINS.setup));
+    for (const [what, text, why] of [
+      ['a byte-order mark', `\uFEFF${FLOW}`, 'a YAML byte-order-mark before'],
+      ['a %YAML directive', `%YAML 1.2\n---\n${FLOW}`, 'a YAML directive-line before'],
+      ['a merge key', `${FLOW}x-defaults:\n  <<: { a: 1 }\n`, 'a YAML merge key before'],
+    ] as const) {
+      const result = workflow(text, pinned(text));
+      expect(result.packages, what).toEqual(ALL);
+      expect(result.reasons.money, what).toEqual([`.github/workflows/mutation.yml (${why}, every package)`]);
+    }
+  });
+
+  it('holds the runner-proof shard to packages no other shard holds, read from stryker/shards.json', () => {
+    expect(proof.length).toBeGreaterThan(0);
+    for (const pkg of proof) expect(shardsOf(pkg).map((shard) => shard.name), pkg).toEqual([RUNNER_PROOF_SHARD]);
+  });
+
+  it('gives all four for .npmrc, a pnpmfile, a patch, the workflows’ action lockfile, a package.yaml or package.json5, .pnp.cjs and a local action', () => {
+    for (const file of ['.npmrc', '.pnpmfile.cjs', 'patches/x.patch', '.github/workflows/actions.lock', 'apps/foo/package.yaml', 'apps/foo/package.json5', '.pnp.cjs', '.github/actions/x/action.yml']) {
+      expect(affected({ files: [file] }, closures, global).packages, file).toEqual(ALL);
+    }
+  });
+
+  // The completeness critic of #96's reviews (C-G1): the checkout applies every .gitattributes to the bytes a shard reads.
+  it('gives all four for a root or nested .gitattributes, which the checkout applies to every file a shard reads', () => {
+    for (const file of ['.gitattributes', 'packages/money/.gitattributes', 'packages/pricing/src/.gitattributes', 'docs/product/.gitattributes']) {
+      const result = affected({ files: [file] }, closures, global);
+      expect(result.packages, file).toEqual(ALL);
+      // Labelled a global input, which .npmrc, a patch and the mutation tooling's own files all are, not mutation tooling.
+      expect(result.reasons.money, file).toEqual([`${file} (a global input, every package)`]);
+    }
+    expect(affected({ files: ['tools/stryker/affected.ts'] }, closures, global).reasons.money).toEqual(['tools/stryker/affected.ts (a global input, every package)']);
+  });
+
+  it('gives all four for a changed path holding a control character, wherever it lies, and prints it JSON-quoted, so no line it starts is a workflow command', () => {
+    const forged = 'packages/money/src/a\n::warning title=forged::injected by a path.ts';
+    // JSON-quoted, and each character JSON leaves bare that a log could read as a line break escaped too.
+    const quoted = (text: string) => JSON.stringify(text).replace(/[\u007f-\u009f\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    for (const file of ['tools/stryker/z\n.json', 'fixtures/golden/claims/G99\n.json', 'patches/a\r.patch', 'docs/a\u2028b.md', 'docs/a\u0085b.md', 'packages/packets/src/explain/__golden__/x\n.txt', forged]) {
+      const result = affected({ files: [file] }, closures, global);
+      expect(result.packages, JSON.stringify(file)).toEqual(ALL);
+      const lines = [...Object.values(result.reasons).flat(), ...(result.inert ?? [])];
+      expect(lines.some((line) => line.startsWith(quoted(file)) && line.includes('a path holding a control character')), JSON.stringify(file)).toBe(true);
+      // eslint-disable-next-line no-control-regex -- the characters a log could read as a line break are what this looks for
+      expect(lines.filter((line) => /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(line)), JSON.stringify(file)).toEqual([]);
+    }
+    // Beside other changes, the path is still every package's, and the other paths keep their own reasons.
+    const both = affected({ files: ['docs/product/prd.md', forged] }, closures, global);
+    expect(both.packages).toEqual(ALL);
+    expect(Object.values(both.reasons).flat().filter((line) => line.split('\n').some((part) => part.startsWith('::')))).toEqual([]);
+  });
+
+  it('prints each closure problem holding a control character JSON-quoted in the changes job’s error, and the others as they are', () => {
+    const message = closureProblemsMessage(['money: packages/money/src/a.ts: fixtures/money/rates.json', 'money: ../x\n::warning::x (an import that resolves to no file)', 'ledger: \u2028::error::y']);
+    expect(message.split('\n')).toEqual([
+      'what a closure reads that tools/stryker/affected.ts cannot account for:',
+      'money: packages/money/src/a.ts: fixtures/money/rates.json',
+      JSON.stringify('money: ../x\n::warning::x (an import that resolves to no file)'),
+      '"ledger: \\u2028::error::y"',
+    ]);
+    // eslint-disable-next-line no-control-regex -- the characters a log could read as a line break are what this looks for
+    expect(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/.test(message)).toBe(false);
+  });
+
+  it('reads ** in a glob across a line break too, so a data or global glob still holds such a path', () => {
+    expect(globToRegExp('tools/stryker/**').test('tools/stryker/z\n.json')).toBe(true);
+    expect(globToRegExp('fixtures/golden/**').test('fixtures/golden/claims/G99\n.json')).toBe(true);
+    expect(globToRegExp('patches/**').test('patches/a\r.patch')).toBe(true);
+    expect(globToRegExp('packages/*/src/**/*.ts').test('packages/money/src/a\nb.ts')).toBe(true);
+  });
+
+  it('gives all four for the tsconfig.json of a package that holds the mutation tooling (tools/tsconfig.json)', () => {
+    expect(affected({ files: ['tools/tsconfig.json'] }, closures, global).packages).toEqual(ALL);
+  });
+
+  it('holds GLOBAL_LOADED to every file a shard loads by path, and only those, and follows their imports, tests included', async () => {
+    const steps = (parse(WORKFLOW) as { jobs: Record<string, { steps: { name?: string; run?: string }[] }> }).jobs.stryker?.steps ?? [];
+    const configs = (steps.find((step) => step.name === 'The canary')?.run ?? '').split(/\s+/).filter((token) => token.endsWith('.config.mjs'));
+    expect(configs).toHaveLength(1);
+    const canary = configs[0] ?? '';
+    const module = (await import(pathToFileURL(path.join(repositoryRoot, canary)).href)) as { default: { vitest?: { configFile?: string } } };
+    const vitestConfig = module.default.vitest?.configFile ?? '';
+    // Each shard runs stryker/<package>.config.mjs by path (tools/stryker/shards.ts), with the seed's setup file.
+    expect(readFileSync(path.join(repositoryRoot, 'tools/stryker/shards.ts'), 'utf8')).toContain('stryker/${pkg}.config.mjs');
+    expect(mutationTestConfig([]).test?.setupFiles).toEqual([path.join(repositoryRoot, SEED_SETUP_FILE)]);
+    const loaded = [...MUTATION_PACKAGES.map((pkg) => `stryker/${pkg}.config.mjs`), SEED_SETUP_FILE, canary, vitestConfig, ...CANARY_TESTS];
+    expect([...GLOBAL_LOADED].sort()).toEqual([...loaded].sort());
+    for (const file of GLOBAL_LOADED) expect(files, file).toContain(file);
+    expect([...global.files]).toContain('tools/stryker/canary/lib/index.ts');
+    expect([...(global.imports.get('tools') ?? [])]).toContain('@tp/stryker-canary');
+  });
+
+  it('gives none for #3’s manifests: a db:domain-model script in the root and in packages/db', () => {
+    expect(
+      judge({
+        'package.json': { before: scripts({ 'db:migrate': 'tsx packages/db/src/cli/migrate.ts' }), after: scripts({ 'db:migrate': 'tsx packages/db/src/cli/migrate.ts', 'db:domain-model': 'tsx packages/db/src/cli/domain-model.ts' }) },
+        'packages/db/package.json': { before: scripts({ typecheck: 'tsc --noEmit' }), after: scripts({ typecheck: 'tsc --noEmit', 'db:domain-model': 'tsx src/cli/domain-model.ts' }) },
+      }).packages,
+    ).toEqual([]);
+  });
+
+  it('gives the owners of tools/package.json for #31’s manifests: its exports, besides scripts, an unread dependency and an app’s exports', () => {
+    const tools = (more: boolean) =>
+      JSON.stringify({
+        exports: { './workspace': './release/workspace.ts', ...(more ? { './screening-capacity/uploads': './screening-capacity/uploads.ts' } : {}) },
+        scripts: { typecheck: 'tsc --noEmit', ...(more ? { 'screening:capacity': 'tsx screening-capacity/run.ts' } : {}) },
+        devDependencies: { 'fast-check': 'catalog:', ...(more ? { 'playwright-core': '1.56.1' } : {}) },
+      });
+    const worker = (more: boolean) =>
+      JSON.stringify({
+        exports: {
+          './era-formats': './src/parse/era/formats.ts',
+          ...(more ? { './screening': './src/screening/public.ts', './screening-format': './src/screening/format.ts', './screening-wording': './src/screening/wording.ts', './screening-oracle': './src/screening/test-support/legacy-release.ts' } : {}),
+        },
+      });
+    const owners = closures.filter((closure) => closure.manifests.includes('tools/package.json')).map((closure) => closure.pkg);
+    expect(owners.length).toBeGreaterThan(0);
+    expect(
+      judge({
+        'package.json': { before: scripts({ 'release:rollback': 'tsx tools/release/index.ts rollback' }), after: scripts({ 'release:rollback': 'tsx tools/release/index.ts rollback', 'screening:capacity': 'tsx tools/screening-capacity/run.ts' }) },
+        'tools/package.json': { before: tools(false), after: tools(true) },
+        'apps/worker/package.json': { before: worker(false), after: worker(true) },
+      }).packages,
+    ).toEqual(owners);
+  });
+
+  it('gives all four for #40’s mutation.yml: it moves the artifact actions with the other pins', () => {
+    const head = PR40_MOVES.reduce((text, [from, to]) => text.replaceAll(from, to), PR40_BASE);
+    expect(workflow(PR40_BASE, head).packages).toEqual(ALL);
+  });
+
+  it('gives none for #43’s root manifest: the typecheck and lint scripts', () => {
+    expect(
+      judge({
+        'package.json': {
+          before: scripts({ typecheck: 'tsc --noEmit -p tsconfig.json && pnpm -r --workspace-concurrency=4 typecheck', lint: 'node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js . --max-warnings=0' }),
+          after: scripts({ typecheck: 'tsx tools/typecheck/run.ts', lint: 'tsx tools/lint/run.ts' }),
+        },
+      }).packages,
+    ).toEqual([]);
+  });
+});
+
+/** A directory's own package manifest: its name, version and the three fields that declare what it may import. */
+interface InstalledManifest {
+  readonly name?: string;
+  readonly version?: string;
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+}
+
+/** The directory Node's resolution finds for a bare name from `from`: each ancestor's node_modules, nearest first (pnpm's hoisted node_modules/.pnpm/node_modules among them), realpath'd. */
+function installedFrom(from: string, name: string): string | undefined {
+  for (let directory = from; ; directory = path.dirname(directory)) {
+    if (path.basename(directory) !== 'node_modules') {
+      const candidate = path.join(directory, 'node_modules', name);
+      if (existsSync(path.join(candidate, 'package.json'))) return realpathSync(candidate);
+    }
+    if (path.dirname(directory) === directory) return undefined;
+  }
+}
+
+/** Directories of an installed package that hold no code it loads at run time (its own tests, benchmarks and examples). */
+const NOT_LOADED = new Set(['node_modules', 'test', 'tests', '__tests__', 'benchmark', 'benchmarks', 'bench', 'example', 'examples']);
+
+function codeFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) return NOT_LOADED.has(entry.name) ? [] : codeFiles(file);
+    return /\.(?:m|c)?js$/.test(entry.name) ? [file] : [];
+  });
+}
+
+/**
+ * Every bare specifier a built file imports, re-exports or requires by a string literal (a package's own `#` imports,
+ * URLs and Node's built-ins left out), except on a line that is a comment's own (`//`, `/*` or a doc comment's `*`):
+ * a bundle carries the doc comments of what it inlined (vite's `require('braces')` examples). Only a literal is
+ * read; a specifier built at run time is not.
+ */
+function bareSpecifiers(source: string): string[] {
+  const found = new Set<string>();
+  for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)(?:['"]([^'"\s]+)['"]|`([^`\s$]+)`)/g)) {
+    // A match on a line comment is skipped, and on a line a block comment begins, or a comment's `*` line, only while
+    // no `*/` before it on that line has closed the comment: `/*! license */ require('x')` is code.
+    const line = source.slice(source.lastIndexOf('\n', match.index) + 1, match.index).trimStart();
+    if (line.startsWith('//') || ((line.startsWith('/*') || line.startsWith('*')) && !line.includes('*/'))) continue;
+    const specifier = match[1] ?? match[2] ?? '';
+    if (/^[./#]/.test(specifier) || /^[a-z]+:/.test(specifier)) continue;
+    const name = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : (specifier.split('/')[0] ?? specifier);
+    if (!builtinModules.includes(name)) found.add(name);
+  }
+  return [...found];
+}
+
+describe('the test tooling’s own undeclared imports, as installed (docs/adr/0066, Part 7, N51)', () => {
+  it('reads a bare specifier after a comment closed on its line and in a backtick literal, and none inside a comment', () => {
+    expect(bareSpecifiers("/*! license */ const b = require('pg');")).toEqual(['pg']);
+    expect(bareSpecifiers("// header\n/* a */ import 'pg';")).toEqual(['pg']);
+    expect(bareSpecifiers(' */ export * from "react";')).toEqual(['react']);
+    expect(bareSpecifiers('const a = require(`pg`); const b = import(`${name}`);')).toEqual(['pg']);
+    expect(bareSpecifiers("// require('pg')\n/* import('zod') */\n * from 'react'\n/** see require('yaml')")).toEqual([]);
+    expect(bareSpecifiers("import fs from 'node:fs'; import './local.js'; require('path');")).toEqual([]);
+  });
+
+  it('finds no bare import in the installed tooling’s code that its package does not declare, that resolves, and that neither TEST_TOOLING nor the tooling’s lockfile closure holds', () => {
+    const files = trackedFiles();
+    const global = globalFiles(repositoryRoot, files);
+    const lock = parseLockfile(readFileSync(path.join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8'));
+    // What the lockfile rule already follows for every package: the tooling and what the mutation tooling imports, each name@version.
+    const held = new Set(lockedPackages(lock, global.imports, TEST_TOOLING).map((key) => key.replace(/\(.*$/, '')));
+    const tooling = TEST_TOOLING.map(globToRegExp);
+    // The installed tooling: each tooling entry of the root's and the mutation tooling's own manifests, as each resolves it, and every dependency and installed peer below it.
+    // It is the install on this platform: optional platform packages (esbuild's, rollup's) differ off Linux, so the set CI judges is the Linux one its unit job installs.
+    const installed = new Map<string, InstalledManifest>();
+    const stack: (readonly [string, string])[] = [];
+    for (const importer of new Set(['.', ...global.imports.keys()])) {
+      const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, importer, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
+      for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+        for (const name of Object.keys(manifest[field] ?? {})) if (tooling.some((pattern) => pattern.test(name))) stack.push([path.join(repositoryRoot, importer), name]);
+      }
+    }
+    expect(stack.length).toBeGreaterThan(0);
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      const directory = installedFrom(next[0], next[1]);
+      if (directory === undefined || installed.has(directory)) continue;
+      const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as InstalledManifest;
+      installed.set(directory, manifest);
+      // A peer it finds installed (vite, below vitest) loads as its dependencies do.
+      for (const name of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.peerDependencies })) stack.push([directory, name]);
+    }
+    expect([...installed.values()].map((manifest) => manifest.name)).toEqual(expect.arrayContaining(['@stryker-mutator/core', '@stryker-mutator/instrumenter', 'vitest', 'vite', 'tsx', 'fast-check']));
+    const found: string[] = [];
+    for (const [directory, manifest] of installed) {
+      const declared = new Set([manifest.name, ...Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies, ...manifest.optionalDependencies })]);
+      for (const file of codeFiles(directory)) {
+        for (const name of bareSpecifiers(readFileSync(file, 'utf8'))) {
+          if (declared.has(name) || tooling.some((pattern) => pattern.test(name))) continue;
+          const target = installedFrom(path.dirname(file), name);
+          if (target === undefined) continue;
+          const { version } = JSON.parse(readFileSync(path.join(target, 'package.json'), 'utf8')) as InstalledManifest;
+          if (!held.has(`${name}@${version ?? ''}`)) found.push(`${manifest.name ?? directory}: ${path.relative(directory, file)} imports ${name}, undeclared, which resolves to ${path.relative(repositoryRoot, target)}`);
+        }
+      }
+    }
+    expect([...new Set(found)].sort()).toEqual([]);
+  }, 120_000);
+});
+
+describe('every git the changes job runs', () => {
+  it('runs with no node_modules/.bin directory, and no relative one, on its PATH, every other entry and variable kept', () => {
+    const env = { PATH: ['/repo/node_modules/.bin', '/usr/local/bin', '/repo/tools/node_modules/.bin/', '/opt/pnpm/node_modules/.pnpm/node_modules/.bin', '', '.', 'node_modules/.bin', 'bin', '/usr/bin', '/bin'].join(path.delimiter), HOME: '/home/x', GIT_DIR: '/repo/.git' };
+    expect(gitEnvironment(env)).toEqual({ PATH: ['/usr/local/bin', '/usr/bin', '/bin'].join(path.delimiter), HOME: '/home/x', GIT_DIR: '/repo/.git' });
+    expect(env.PATH.startsWith('/repo/node_modules/.bin')).toBe(true);
+  });
+
+  it('prints a line holding a control character, or starting a workflow command, JSON-quoted, and every other line as it is', () => {
+    expect(printable('fatal: bad object HEAD:packages/a\n::warning title=forged::x\n  ##[group]y\nz\r\nplain ::notice:: inside')).toBe(['fatal: bad object HEAD:packages/a', '"::warning title=forged::x"', '"  ##[group]y"', '"z\\r"', 'plain ::notice:: inside'].join('\n'));
+    expect(printable('a\u2028::error::b')).toBe('"a\\u2028::error::b"');
+    // An error Node raises opening a file names the path as it is; the command prints it quoted.
+    expect(errorText(new Error("ENOENT: no such file or directory, open '/r/a\n::warning::x.ts'"))).toBe(['tools/stryker/affected.ts: ENOENT: no such file or directory, open \'/r/a', '"::warning::x.ts\'"'].join('\n'));
+    expect(errorText('not an Error')).toBe('tools/stryker/affected.ts: not an Error');
+  });
+
+  it('captures git’s stderr: a failure throws it through printable, never passing it through', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-git-'));
+    try {
+      execFileSync('git', ['init', '-q', dir]);
+      execFileSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'base'], { cwd: dir });
+      let message = '';
+      try {
+        // merge-base repeats the name it cannot read in its own message, so the error itself must go through printable.
+        runGit(['merge-base', 'nowhere\n::error title=forged::x', 'HEAD'], dir);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message.startsWith('git merge-base "nowhere\\n::error title=forged::x" HEAD failed (exit 128):\n')).toBe(true);
+      expect(message.split('\n')).toContain('"::error title=forged::x"');
+      expect(message.split('\n').filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes what git prints to stderr on success through printable', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-git-'));
+    const written: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      execFileSync('git', ['init', '-q', dir]);
+      // GIT_TRACE makes git print its own arguments to stderr, as they are, and exit 0.
+      const out = runGit(['rev-parse', '--sq-quote', 'a\n::warning title=forged::b'], dir, gitEnvironment({ ...process.env, GIT_TRACE: '1' }));
+      write.mockRestore();
+      expect(out).toContain('::warning title=forged::b');
+      const text = written.join('');
+      expect(text).toContain('"::warning title=forged::b\'"');
+      expect(text.split(/\r\n|[\n\r\u0085\u2028\u2029]/).filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
+    } finally {
+      write.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts no workflow command in the job’s log from a path git cannot show, run as the changes job runs it', () => {
+    const repo = syntheticWorld(new SyntheticRepository());
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', ...args], { cwd: repo.root, encoding: 'utf8' }).trim();
+    const out = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-out-'));
+    // The command line as a child process, so git's stderr, if it were passed through, would land in what is read.
+    const command = (args: string[]) =>
+      spawnSync(path.join(repositoryRoot, 'node_modules', '.bin', 'tsx'), ['--eval', `import(${JSON.stringify(path.join(repositoryRoot, 'tools/stryker/affected.ts'))}).then((m) => m.cli(JSON.parse(process.env.TP_ARGS), process.env.TP_ROOT, JSON.parse(process.env.TP_CONFIG)))`], {
+        cwd: repositoryRoot,
+        env: { ...process.env, TP_ARGS: JSON.stringify(args), TP_ROOT: repo.root, TP_CONFIG: JSON.stringify(synthetic) },
+        encoding: 'utf8',
+      });
+    const commandLines = (text: string) => text.split(/\r\n|[\n\r\u0085\u2028\u2029]/).filter((line) => /^\s*(?:::|##\[)/.test(line));
+    try {
+      git('init', '-q', '-b', 'main');
+      git('add', '-A');
+      git('commit', '-q', '-m', 'base');
+      // A gitlink (a submodule's commit, which git cannot show) at a package.json path holding a line break and a command.
+      git('update-index', '--add', '--cacheinfo', `160000,${'1'.repeat(40)},packages/a\n::warning title=forged::gitlink/package.json`);
+      git('commit', '-q', '-m', 'a gitlink at a forged path');
+      const verdict = command(['--event', 'pull_request', '--base', 'HEAD~', '--github-output', path.join(out, 'output')]);
+      expect(verdict.status).toBe(0);
+      expect(verdict.stdout).toContain('"packages/a\\n::warning title=forged::gitlink/package.json" (a path holding a control character, every package)');
+      expect(readFileSync(path.join(out, 'output'), 'utf8')).toBe(`any=true\npackages=${JSON.stringify(MUTATION_PACKAGES)}\nshards=${JSON.stringify(shardsFor([...MUTATION_PACKAGES]))}\n`);
+      expect(commandLines(verdict.stdout)).toEqual([]);
+      expect(commandLines(verdict.stderr)).toEqual([]);
+      // What the command cannot decide (here git cannot read the base it names) fails, git's words quoted.
+      const failure = command(['--event', 'pull_request', '--base', 'nowhere\n::error title=forged::x', '--github-output', path.join(out, 'output')]);
+      expect(failure.status).toBe(1);
+      expect(failure.stderr).toContain('tools/stryker/affected.ts: git merge-base "nowhere\\n::error title=forged::x" HEAD failed (exit');
+      expect(commandLines(failure.stdout)).toEqual([]);
+      expect(commandLines(failure.stderr)).toEqual([]);
+    } finally {
+      repo.remove();
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it('runs cli from its entry line, run by path as the changes job runs it: what main throws is printed quoted, exit 1', () => {
+    const out = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-out-'));
+    try {
+      // Node's error opening the output file names its path as it is: a directory that does not exist, holding a command.
+      const run = spawnSync(path.join(repositoryRoot, 'node_modules', '.bin', 'tsx'), ['tools/stryker/affected.ts', '--event', 'push', '--github-output', path.join(out, 'none\n::warning title=forged::x', 'output')], {
+        cwd: repositoryRoot,
+        encoding: 'utf8',
+      });
+      expect(run.status).toBe(1);
+      expect(run.stderr.startsWith('tools/stryker/affected.ts: ENOENT')).toBe(true);
+      expect(run.stderr).toContain('"::warning title=forged::x/output\'"');
+      expect(run.stderr.split(/\r\n|[\n\r\u0085\u2028\u2029]/).filter((line) => /^\s*(?:::|##\[)/.test(line))).toEqual([]);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

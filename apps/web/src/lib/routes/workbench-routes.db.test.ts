@@ -8,7 +8,7 @@ import { type DatabaseClient, databaseClient, loadPracticeCipher, readDatabaseUr
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
-import { WORDS_VERSION, packetReference } from '@tp/packets';
+import { WORDS_VERSION, dollars, narrativeSha256, packetReference } from '@tp/packets';
 import { EXPORT_NOT_DOWNLOADED } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
@@ -40,6 +40,7 @@ import {
 import { abstractionPage, amendVersionAction, startAbstraction, supersedeVersionAction } from './abstraction';
 import { contractsPage, tagContractDocument } from './contracts';
 import { REFUSED_FIELD, refusalState } from '../cases/refusals';
+import { eventText } from '../cases/timeline';
 import { writeOffReasonsFor } from '../cases/write-off';
 import { listContractDocuments } from '../contracts/contract-queries';
 import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
@@ -803,6 +804,68 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(approved.versions[0]).toMatchObject({ approvedAlone: true });
     const timeline = ok(await call(casePage, practice.manager, { ...P, caseId })).timeline;
     expect(timeline.find((event) => event.kind === 'version_approved')).toMatchObject({ approvedAlone: true });
+  });
+
+  it('says a version the verifier passed when written and fails now is so on every screen, and refuses its request and approval with each mismatch (docs/adr/0086, CORR-5)', async () => {
+    const { practice, caseId } = await cas08Case('BUILDER FAILS NOW');
+    const second = await person(practice, 'billing_manager');
+    const P = { practiceId: practice.practiceId };
+    const builder = async (userId: string) => ok(await call(packetPage, userId, { ...P, caseId })).builder;
+    ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: '', useDraft: 'on' }));
+    const first = (await builder(practice.manager)).version;
+    if (first === null) {
+      throw new Error('no version written');
+    }
+    // The review's reproduction: what the contract requires for each line, stated as paid, as a version written under a
+    // reading that held figures to no role stores it (the narrative and its report's SHA-256 set as only a superuser can).
+    const amount = dollars(first.content.lines[0]?.expected_cents ?? '0');
+    const older = `The payer paid ${amount} for each line [1].`;
+    await superuser(`UPDATE packet_version SET narrative = $2, verifier_report = jsonb_set(verifier_report, '{narrative_sha256}', to_jsonb($3::text)) WHERE id = $1`, [
+      first.id,
+      practice.cipher.encrypt('packet_version.narrative', older),
+      narrativeSha256(older),
+    ]);
+
+    // The builder: the stored report passed, and the verifier fails the narrative now; the approval is blocked ahead.
+    const shown = await builder(second);
+    expect(shown.version?.verifier.passed).toBe(true);
+    expect(shown.version?.verifierNow.standing).toBe('fails_now');
+    expect(shown.version?.verifierNow.report.mismatches.map((item) => [item.code, item.kind, older.slice(item.start, item.end)])).toEqual([['figure_not_in_input', 'amount', amount]]);
+    expect(shown.version?.figures.map((figure) => [older.slice(figure.start, figure.end), figure.roles, figure.heldAs.includes('expected')])).toEqual([[amount, ['paid'], true]]);
+    expect(shown.approval).toEqual({ status: 'blocked', reason: 'verifier_now' });
+    expect(shown.versions.map((version) => [version.versionNo, version.verifierPassed, version.verifierStanding])).toEqual([[1, true, 'fails_now']]);
+
+    // The request and the approval are refused with the plain words and the mismatch in the role's words (UX-D3), and
+    // nothing is written.
+    const words =
+      'the verifier passed this version when it was written and fails it now (1 mismatch: in sentence 1, an amount read as what the payer paid that the records hold as what the contract requires and a step of a line’s calculation). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved';
+    expect(refused(await call(requestApprovalAction, practice.manager, P, { caseId, versionId: first.id, message: '' }))).toBe(words);
+    expect(refused(await call(approvePacketVersionAction, second, P, { caseId, versionId: first.id, versionSha256: first.contentSha256, wordsVersion: WORDS_VERSION }))).toBe(words);
+    // The form keeps the person's place (a server action that refuses returns its state, never a redirect) and says it so.
+    const refusal = await call(approvePacketVersionAction, second, P, { caseId, versionId: first.id, versionSha256: first.contentSha256, wordsVersion: WORDS_VERSION });
+    expect(refusalState(refusal.status === 'invalid' ? { issues: refusal.issues } : {})).toEqual({ error: `Refused: ${words}.` });
+    const after = await builder(second);
+    expect(after.approval).toEqual({ status: 'blocked', reason: 'verifier_now' });
+    expect(after.approvalRequest).toBeNull();
+
+    // The case's page says it of its packet and in its timeline.
+    const page = ok(await call(casePage, practice.manager, { ...P, caseId }));
+    expect(page.dispute.packet).toMatchObject({ versionNo: 1, verifier: 'fails_now', approved: false });
+    const written = page.timeline.filter((event) => event.kind === 'version_written');
+    expect(written.map((event) => eventText(event))).toEqual(['Packet version 1 written; the verifier passed it then and fails it now']);
+
+    // A new version the verifier passes now is requested and approved as ever.
+    ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: first.id, useDraft: 'on' }));
+    const next = (await builder(second)).version;
+    expect(next?.verifierNow.standing).toBe('passed');
+    ok(await call(requestApprovalAction, practice.manager, P, { caseId, versionId: next?.id ?? '', message: '' }));
+    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: next?.id ?? '', versionSha256: next?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
+    const done = await builder(second);
+    expect(done.approval).toMatchObject({ status: 'approved' });
+    expect(done.versions.map((version) => [version.versionNo, version.verifierStanding])).toEqual([
+      [2, 'passed'],
+      [1, 'fails_now'],
+    ]);
   });
 });
 

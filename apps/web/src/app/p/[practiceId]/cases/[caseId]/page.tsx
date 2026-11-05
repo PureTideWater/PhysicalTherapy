@@ -12,6 +12,7 @@ import { ActionableLinesOn, CaseStateBadge, Deadline, NetExpected, lineName, sta
 import { loadPage } from '../../../../../lib/http/next';
 import { WRITE_OFF_REASON_WORDS, withheldReasonHint, writeOffReasonsFor } from '../../../../../lib/cases/write-off';
 import { PRICING_CAUSE_TEXT } from '../../../../../lib/packets/pricing';
+import { CASE_VERIFIER_TEXT } from '../../../../../lib/packets/view';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
@@ -144,10 +145,10 @@ export default async function CasePage(props: Props) {
           <CardDescription>The packet presents the pattern once and the lines as a schedule; the practice submits it through the payer’s own channel and logs the submission and the payer’s response.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
-          <p data-packet={dispute.packet === null ? 'none' : dispute.packet.approved ? 'approved' : 'draft'}>
+          <p data-packet={dispute.packet === null ? 'none' : dispute.packet.approved ? 'approved' : 'draft'} data-packet-verifier={dispute.packet?.verifier}>
             {dispute.packet === null
               ? 'No packet yet.'
-              : `Packet version ${String(dispute.packet.versionNo)}: ${dispute.packet.verifierPassed ? 'the verifier passed it' : 'the verifier failed it'}; ${dispute.packet.approved ? 'approved' : 'not approved'}; ${dispute.packet.exported ? 'exported' : 'not exported'}.`}
+              : `Packet version ${String(dispute.packet.versionNo)}: ${CASE_VERIFIER_TEXT[dispute.packet.verifier]}; ${dispute.packet.approved ? 'approved' : 'not approved'}; ${dispute.packet.exported ? 'exported' : 'not exported'}.`}
           </p>
           <p>
             {dispute.latestSubmission === null

@@ -1,4 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright';
+import { contrastRatio } from '@paidwhole/brand/contrast';
 import { type Locator, type Page, expect } from '@playwright/test';
 
 /**
@@ -6,10 +7,119 @@ import { type Locator, type Page, expect } from '@playwright/test';
  * (keyboard navigation, labels, contrast) on every screen"; docs/adr/0045): axe-core's WCAG 2.1 A and
  * AA rules (labels, names, contrast, landmarks, headings, ARIA) on the page as it stands, every
  * violation reported with the rule and the elements. The page itself never loads anything from another
- * origin: axe is injected by Playwright for the test alone.
+ * origin: axe is injected by Playwright for the test alone. The page's title is waited for first (`expectTitled`), so a
+ * page a client-side navigation has just committed is not checked before its <title> is in the head.
  */
-export async function expectAccessible(page: Page, what: string): Promise<void> {
-  expect(await axeViolations(page), `${what}: axe-core WCAG 2.1 AA violations`).toEqual([]);
+export async function expectAccessible(page: Page, what: string, options: AccessibleOptions = {}): Promise<void> {
+  const check = options.soft === true ? expect.configure({ soft: true }) : expect;
+  await expectTitled(page, what, check, options.title);
+  check(await axeViolations(page), `${what}: axe-core WCAG 2.1 AA violations`).toEqual([]);
+}
+
+export interface AccessibleOptions extends TitleOptions {
+  /** Each check reports its failure and the call goes on (expect.soft), so one test reports every screen that fails. */
+  readonly soft?: boolean;
+}
+
+export interface TitleOptions {
+  /**
+   * The title the page should have, exact or a pattern, where the caller knows it: after a client-side navigation the
+   * page before's title can still be in the head, and a title that is there is not yet this page's. Without it, any
+   * title that is not empty, the page before's included: that wait guards axe's document-title rule, which a title
+   * still in the head satisfies, so it closes the window with no title and not the one with the page before's. A step
+   * that must scan the new page's own head names its title.
+   */
+  readonly title?: string | RegExp;
+}
+
+/**
+ * How long a check waits for the page's title: well under a test's own 30 s, so a page that never gets one fails here,
+ * by its name and the title wanted, rather than at the test's timeout.
+ */
+const TITLE_WAIT_MS = 10_000;
+
+/**
+ * Waits until the page has a title, or the one given, before axe runs. A server action's redirect, a link the router
+ * follows and a restarted step are client-side navigations: the router commits the new page's body, its address, its
+ * fields and its focus, and its <title> reaches the head after them (Next's metadata is streamed beside the page), so a
+ * check that waits only for what the page shows can run axe on a document with no title, and axe reports
+ * document-title (serious; the sign-in-time flake of run 41885977909). document.title is trimmed, as axe reads it.
+ */
+async function expectTitled(page: Page, what: string, check: typeof expect, title: string | RegExp | undefined): Promise<void> {
+  if (title === undefined) {
+    await check.poll(() => page.title(), { message: `${what}: the page has a title before axe runs`, timeout: TITLE_WAIT_MS }).not.toBe('');
+  } else {
+    await check(page, `${what}: the page’s title before axe runs`).toHaveTitle(title, { timeout: TITLE_WAIT_MS });
+  }
+}
+
+/**
+ * The same check on the dark tokens (docs/adr/0056: dark is the tokens' own, under `[data-theme="dark"]`): the
+ * attribute is set on the document, the page's transitions are let finish, `expectAccessible` runs (the page's title,
+ * `title` or any, waited for first; then axe-core, its color-contrast rule among the rest), and the attribute is
+ * cleared again whatever the result, so the steps after it see the light page. With `soft`, a violation is reported
+ * and the test goes on (expect.soft), so one test reports every screen that fails.
+ */
+export async function expectAccessibleInDark(page: Page, what: string, options: AccessibleOptions = {}): Promise<void> {
+  await setDark(page, true);
+  try {
+    await expectAccessible(page, `${what}, dark`, options);
+  } finally {
+    await setDark(page, false);
+  }
+}
+
+/**
+ * Sets or clears `data-theme="dark"` on the document, then waits for the frame after it and for any transition it
+ * started, so what is measured next is the theme's own colours, never a colour on its way there.
+ */
+export async function setDark(page: Page, dark: boolean): Promise<void> {
+  await page.evaluate(async (on) => {
+    if (on) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  }, dark);
+}
+
+/**
+ * The contrast of the focused element's outline against what it is drawn on (WCAG 1.4.11 asks 3:1 of a focus
+ * indicator): the outline's colour against the background colour of the nearest element, from the focused one up,
+ * that paints an opaque one (White, the browser's canvas, when none does). The page reports the two computed colours;
+ * the ratio is WCAG's, computed here by `contrastRatio` from @paidwhole/brand (the repository's one copy of the
+ * formula), to two places. A focus that draws no outline (a box-shadow ring) throws, so it is never counted as passing.
+ */
+export async function focusContrast(page: Page): Promise<{ readonly outline: string; readonly ground: string; readonly ratio: number }> {
+  const { outline, ground } = await page.evaluate(() => {
+    const element = document.activeElement;
+    if (element === null || element === document.body) {
+      throw new Error('focusContrast: nothing is focused');
+    }
+    const opaque = (colour: string): boolean => {
+      const match = /^rgba?\((\d+(?:\.\d+)?),?\s*(\d+(?:\.\d+)?),?\s*(\d+(?:\.\d+)?)(?:\s*[,/]\s*(\d+(?:\.\d+)?))?\)$/.exec(colour);
+      if (match === null) {
+        throw new Error(`focusContrast: a colour it cannot read: ${colour}`);
+      }
+      return match[4] === undefined || Number(match[4]) === 1;
+    };
+    const style = getComputedStyle(element);
+    if (style.outlineStyle === 'none' || Number.parseFloat(style.outlineWidth) === 0) {
+      throw new Error(`focusContrast: the focus on ${element.tagName.toLowerCase()} draws no outline (box-shadow ${style.boxShadow})`);
+    }
+    let behind = 'rgb(255, 255, 255)';
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      const background = getComputedStyle(node).backgroundColor;
+      if (opaque(background)) {
+        behind = background;
+        break;
+      }
+    }
+    return { outline: style.outlineColor, ground: behind };
+  });
+  return { outline, ground, ratio: Math.round(contrastRatio(outline, ground) * 100) / 100 };
 }
 
 /**
@@ -74,7 +184,7 @@ export async function tabTo(page: Page, target: { readonly role: 'link' | 'butto
   throw new Error(`Tab never reached the ${target.role} ${String(target.name)}`);
 }
 
-export interface PhoneWidthOptions {
+export interface PhoneWidthOptions extends TitleOptions {
   /** False to leave axe-core out (a page whose accessibility another check covers). */
   readonly axe?: boolean;
   /**
@@ -103,7 +213,8 @@ export interface PhoneWidthOptions {
  * landmarks of a role share a name (its best-practice rule landmark-unique: at this width every wide table is a region
  * named after it, so a table repeated in each row of a list would repeat one name). The scrollers are waited for before
  * axe because a scroller that fitted at the width before becomes a region only once its ResizeObserver has fired and
- * React has committed. The viewport is put back as it was.
+ * React has committed, and the page's title (`title`, or any) as `expectAccessible` waits for it. The viewport is put
+ * back as it was.
  */
 export async function atPhoneWidth(page: Page, what: string, options: PhoneWidthOptions = {}): Promise<void> {
   const check = options.soft === true ? expect.configure({ soft: true }) : expect;
@@ -120,6 +231,7 @@ export async function atPhoneWidth(page: Page, what: string, options: PhoneWidth
     }
     await expectScrollersAgree(page, `${what}, at 390 px`, options);
     if (options.axe !== false) {
+      await expectTitled(page, `${what}, at 390 px`, check, options.title);
       check(await axeViolations(page, true), `${what}, at 390 px: axe-core WCAG 2.1 AA violations and landmarks of one role and name`).toEqual([]);
     }
   } finally {
