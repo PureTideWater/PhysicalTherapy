@@ -95,7 +95,7 @@ is not repeated down a page and a screen reader does not hear "PaidWhole" for ea
 | Deadline passed | unpriced | nothing left to pursue |
 | Deadline later, none | neutral | |
 
-Whole, short and unpriced are their colors on their tints (4.6:1 and better); an unpriced chip's border is its color
+Whole, short and unpriced are their colors on their tints (4.7:1 and better); an unpriced chip's border is its color
 too, which sets it apart from the neutral chip on a near-identical tint. *(Amended 2026-11-04: until the brand owner's
 ruling 3 below, unpriced's gray was 3.7:1 on White, so its chip's text and the report stylesheet's `.unpriced` were
 Slate.)* A system state that is not a payment status (succeeded, ready, released, open) is a
@@ -141,11 +141,13 @@ them. It answers ADR 0058's D9 question (2). The co-founder, as brand owner, set
 2. **BRAND.md section 4** reads "Paper: report covers, print, and the light-theme sign-in". This settles the
    disagreement among sections 3, 4 and 7, which now say the same: the stacked lockup on Paper in the light theme.
 3. **`--pw-unpriced` is darkened to at least 4.5:1 on `--pw-unpriced-bg`**, so the unpriced status uses its own
-   color for text. The value moves from #7A8594 (3.3:1 on its tint, 3.7:1 on White) to #646E7C: the same hue and
-   saturation (HSL 215 degrees, 11%) at 43.9% lightness, 4.6:1 on its tint, 5.1:1 on White and 4.6:1 on Paper.
+   color for text. The value moves from #7A8594 (3.3:1 on its tint, 3.7:1 on White) to #5F6A79, the brand owner's
+   F3 value: the same hue (HSL 215 degrees) at 12% saturation and 42.4% lightness, 4.8:1 on its tint, 5.4:1 on White
+   and 4.9:1 on Paper. It keeps a margin above 4.5:1 that anti-aliasing and display variance on small chip text
+   cannot eat; `packages/brand/src/tokens.test.ts` holds it at 4.8:1 or more on its tint.
    The unpriced tone's chip (Unpriced, Flagged, Deadline passed, and the free screening's unpriced dispositions and
    stacked anomaly standings) and the report stylesheet's `.unpriced` take `--pw-unpriced` in place of Slate. The
-   chip's border, the same token, is 4.6:1 on its tint and 3.5:1 against the neutral chip's Line border. The dark
+   chip's border, the same token, is 4.8:1 on its tint and 3.8:1 against the neutral chip's Line border. The dark
    pair (#9AA5B5 on #1A2537, 6.1:1) already met the minimum and is unchanged. `packages/brand/src/tokens.test.ts` holds every status color at 4.5:1 or more on its tint, in both
    themes.
 4. **Dark mode's ship rule.** Dark mode stays off until a dark-mode pass has checked every screen, PHI screens

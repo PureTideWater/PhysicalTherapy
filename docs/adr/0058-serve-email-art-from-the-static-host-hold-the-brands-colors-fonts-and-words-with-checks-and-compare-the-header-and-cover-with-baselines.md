@@ -64,7 +64,7 @@ who alone changes the palette, and are sent to the brand owner as these question
 - (2) `--pw-unpriced` (#7A8594) is 3.7:1 on white and 3.3:1 on `--pw-unpriced-bg`, under the brand's 4.5:1 text minimum
   (BRAND.md section 9). Will the brand darken it to at least 4.5:1 on its tint? Until then unpriced text stays Slate.
   *Answered 2026-11-04 by the brand owner's ruling 3 (ADR 0056, "The brand owner's rulings"): `--pw-unpriced` is
-  #646E7C, 4.6:1 on its tint, and unpriced text takes it.*
+  #5F6A79, 4.8:1 on its tint, and unpriced text takes it.*
 - (6) BRAND.md section 4 does not list `--pw-input-border` or `--pw-danger-bg`. Does the brand adopt them, or give
   others? Until then they stay as the branch set them; nothing in this pull request changes the palette.
 
