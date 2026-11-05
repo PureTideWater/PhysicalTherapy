@@ -1,3 +1,20 @@
+<!-- RESUME-BLOCK (2026-11-05T08:00Z, acting S4 stood down) -->
+## RESUME-BLOCK
+- **Part 1** is MERGED (#125, 0f4a5ed5). Nothing of this item is unpushed. The worktree /home/user/auth-emails is
+  disposable.
+- **The follow-on `co-001/password-changed-notice` is NOT STARTED:** no branch, no WIP ref.
+  - Assigned by Lane A's orchestrator (06:40Z) as a Lane A item; designed in designs/lane-a-auth-emails.md
+    ("JOB DESIGN").
+  - Counters reserved: ADR 0091 and SGN-16. Migration timestamp after 20261110090000 (#126's).
+  - Build and verify on its branch through the new-migration skill's marker route. Open no PR until #126 merges;
+    the schema chain session session_019i9ifEG147aKfNHEAsoS7h messages the holder.
+  - #126 touches no mail_send CHECK, audit_event trigger or tp_operator grant; regenerate domain-model.md on top
+    after it merges.
+  - Never write the approval line or approvers.json.
+- **Staging smoke checks owed** (ADR 0081): the empty writeAttributes and NEW_PASSWORD_REQUIRED; {username}; a forced
+  fallback; the cold start; whether two reset codes both work; Gmail iOS and Outlook.com dark renders (with #129).
+<!-- /RESUME-BLOCK -->
+
 PART 1 DONE: #125 merged as 0f4a5ed5 at 2026-11-05T06:45Z. PART 2's send path is NOT BUILT: it needs a migration (CO-02), see below.
 
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-05T04:10Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg), the last item of the queue after brand-settle (#121, merged).
