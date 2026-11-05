@@ -16,6 +16,16 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   Workflow wf_a7821f86-a18; script archived as workflow-scripts/lane-a-auth-emails.js.
   two reviews with skeptics, one fix round with the full suite, and verification.
 
+- 2026-11-05T04:12Z: the orchestrator's scope (04:03Z) was put into the script.
+  - A CustomMessage trigger for every code email: text-first, no remote assets, no link carrying a code or an
+    address.
+  - "Password changed" goes through #42's transactional stream and outbox, with a support route and an audit by ID.
+  - Read first: ADR 0065, deliverability.md, ADR 0081 and 0088.
+  - Counters: ADR 0091 or an amendment; SGN-13 to SGN-16.
+  - Reviews: security (takeover, enumeration, phishing look-alikes), then UX and brand with light and dark client shots.
+  The first run (wf_a7821f86-a18, before the scope) was stopped before writing anything. It was relaunched as
+  wf_a29a90cd-d6b.
+
 ## Waiting on someone
 - None.
 
