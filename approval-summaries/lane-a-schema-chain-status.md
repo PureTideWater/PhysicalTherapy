@@ -280,6 +280,13 @@ its unpushed work is not waited for).
   attempt-failed lines). **Domain model SHA-256 e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df, line
   7459. Suggested line (one PR comment):** https://github.com/PureTideWater/PhysicalTherapy/pull/110#discussion_r4476277082 .
   Reported to the orchestrator. Next: interest takes 650efb9b in one merge (no PR) while the founder decides.
+- **04:20 UTC. Interest carried forward: 650a3108** (wf_f41d1b09-cc0; 1b 650efb9b merged; conflicts reconciliation/page.tsx
+  (import union) and the domain model (regenerated); 20261110090000 unchanged (no body it recreates moved: 1b's delta since
+  ab8c9c27 touches no migration or function file)). Checks: fast checks, actions, toolchain; unit 1,879 + infra 759; db 26
+  files 1,483 (incl. chain.large, reconcile.large); build, e2e ledger-interest + reconciliation 3; --small capacity smoke
+  pass (F 600 of 600 posted in full, 22 jobs on attempt 1). Adversarial verifier: ok, no problems. Domain model
+  47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef, line 7469 (provisional). Open for interest's PR: ADR
+  0084 D5's line-whole cap sentence; its UX/brand review; a full-size CAS-42.5 on its own head (its reconcile changes).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
