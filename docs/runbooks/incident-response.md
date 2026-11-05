@@ -170,7 +170,7 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
    (section 2).
 4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
-   `ClientCredentialRefused`, `ClientCredentialProbeRefused`): each one raised that no ticket or incident record already explains gets one.
+   `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`): each one raised that no ticket or incident record already explains gets one.
 5. Record the review in its ticket: the date, the environment, the number of rows, and the user IDs, never an address
    or a name.
 

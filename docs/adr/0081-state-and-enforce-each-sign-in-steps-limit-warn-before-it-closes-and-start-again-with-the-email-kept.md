@@ -355,7 +355,11 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   run, Cognito fails the call (`UnexpectedLambdaException`, `UserLambdaValidationException`,
   `InvalidLambdaResponseException`): the provider rethrows it, so a reset request answers "Check your email" at its
   floor and logs the failure, and an invitation fails in front of its administrator. The function's errors and
-  throttles, and each fallback, alarm the operator (docs/runbooks/deliverability.md, 3.9). On the first deploy the
+  throttles, and each fallback, alarm the operator (docs/runbooks/deliverability.md, 3.9). The fallback
+  filter is a term (`"COGNITO_MESSAGE_FALLBACK"`), not a JSON selector: the runtime writes the line as text with a
+  prefix. Only an active, enrolled account reaches Cognito and the trigger, so a reset request answered after its floor
+  could tell an account from none by its timing: `password reset request over floor` is counted on the web log group
+  (`PasswordResetRequestOverFloor`, beside ADR 0088 D7's filters) and alarms at 3 in 3600 s. On the first deploy the
   invoke permission is created just after the pool names the function (it names the pool's ARN), a window of seconds
   in which a code email fails as above.
 - **B4a. The address cannot be swapped with a token.** The pool keeps the verified address in force until a new one is
