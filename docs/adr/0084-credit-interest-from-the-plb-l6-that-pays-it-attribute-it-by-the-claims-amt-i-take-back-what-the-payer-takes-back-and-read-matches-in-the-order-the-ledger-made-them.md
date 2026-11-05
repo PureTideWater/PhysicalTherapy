@@ -168,7 +168,12 @@ valid under the relaxed CHECK.
 **The deploy window and a rollback (D16).** Migrations run before traffic moves (ADR 0049). The previous image's
 reconcile writes a one-record interest match; `ledger_match_rules()` skips it (no row, no error) when the job writes
 it, so that reconcile runs whole without interest, and the current image then credits the interest once. A person's
-one-record interest match is refused.
+one-record interest match is refused. The migration takes `ledger_entry`'s and `ledger_match`'s ACCESS EXCLUSIVE locks
+together with NOWAIT, once a second, up to five minutes, as SUITE-CAP-1b's migration takes its own (ADR 0083): a
+refused try holds and queues nothing, so a reconcile caught between its read of `ledger_entry` and its read of
+`ledger_match`, or a page reading them the other way round, goes on and is never deadlocked (40P01) or queued behind
+it; if the tables stay in use for five minutes the migration fails before any service moves and the deploy is run
+again.
 
 **One moment's rows (D17).** One statement reads the practice's loaded remittances with their WO and nonzero L6 rows;
 every later read of the attribution keeps only claims of those remittances and links between them, and an L6 whose
@@ -251,6 +256,11 @@ check by reading it.
   written there and the payment, which only those lines could take, is not: an understatement by up to the payment,
   never an overstatement, and a later take-back of the unlinked chain finds nothing to take. LED-24 `two-chains.835`
   pins it; a loader that links such a correction lets the payment reach the lines.
+- **At size.** The reconcile walks every PLB L6 of the practice's history on every pass, so its interest path reads
+  each claim's standing claim matches, each PLB L6's entries and each line's holdings through lookups built once a pass
+  and kept current as it writes, never every case line against every match for each draw. CAS-42.3's 2,000-line pass
+  carries the implementation guide's interest shape (AMT I on every correction, one PLB L6 per check) and stays within
+  its 150 s budget.
 - **Lock alignment.** The new trigger takes the practice's `ledger:` key, the key SUITE-CAP-1b moved the other two
   ledger triggers to, so a writer holding `lockLedger` takes no new lock slot.
 
