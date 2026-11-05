@@ -3,7 +3,8 @@
 - **Status:** accepted (`co-001/release-content-checks`, combined audit #7, #30, #31 and #59). Amends
   [0008](0008-rule-records-and-releases.md) (a release's coverage is refused when it
   shrinks; below). A later pull request, after #42 merges, appends the alarms, the heap flags and the daily content job
-  ("The split", below).
+  ("The split", below). Amended 2026-11-05 (`co-001/pages-child-process`): the worker task's heap flag lands only after
+  the page reader runs in its own process ("The heap limits" and "The split", below; ADR 0033's amendment).
 - **Date:** 2026-10-26
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (about
   15:10 UTC; items #7, #30, #31 and #59 among it, each placed in the release-operations pull request before PR 7, and
@@ -198,7 +199,16 @@ release-impact check and the dry run read both releases through it, the dry run 
 `diff.ts` joins `rule_record` on its identity columns, not on `sha256`, which no index covers.
 
 **The heap limits** are today's automatic sizes made explicit (`infra/lib/heap.ts`: worker 560 MiB, platform 259, web
-560), so wiring them changes no behaviour.
+560), so wiring them changes no behaviour *for the main threads*. *(Amended 2026-11-05.)* It would change the page
+reader's: a process-wide V8 heap flag overrides a worker thread's `resourceLimits` on Node 24, so under
+`--max-old-space-size=560` the page thread, asking 192 MiB (240 with its young generation), measured 608 MiB and read a
+SYNTHETIC 1,500-page document today's reader refuses. **So the worker task's heap flag must not ship before the page
+reader runs in a process of its own** (ADR 0033's amendment, `co-001/pages-child-process`), whose own flags hold it at
+240 MiB under any parent (measured under the planned command). `infra/test/heap.test.ts` enforces the order at synth
+time: it refuses a V8 heap flag in the command or `NODE_OPTIONS` of any container of the worker image unless
+`PAGE_READER_ISOLATION` (`packages/contracts/src/evidence/pages.ts`) is `'process'`, and runs the worker container's real
+command with `heapFlag('worker')` to measure the reader. The screening consumer's flag passes the same check: its
+pricing threads read no document and are sized for the override (ADR 0062).
 
 **The weekly real-size test** (`tools/release-capacity/`, `.github/workflows/release-capacity.yml`) runs the
 production worker image at the worker task's limits, with production's command and the heap flag, under the SYNTHETIC
@@ -271,7 +281,8 @@ branch (the founder's ruling F1 (a)).
 What needs a #42 file waits for a later pull request after #42 merges: the content alerts' metric filters and alarms
 (`CONTENT_NOT_LOADED`, `WAITING_ON_CONTENT`, `RELEASE_READ_OUTSIDE_FETCH` paging the operator, and the daily job's
 stages), after which content-gap lines leave the
-engine-error page; the heap flags in the task commands (`infra/lib/constructs/compute.ts`); the daily `content_due`
+engine-error page; the heap flags in the task commands (`infra/lib/constructs/compute.ts`), the worker's only after
+`co-001/pages-child-process` (amended 2026-11-05; "The heap limits", above); the daily `content_due`
 platform job (`apps/worker/src/jobs/platform.ts`) with `tools/screening-capacity/watched-paths.txt` regenerated for
 it; the monthly digest's and Pricing settings' waiting months; screening-capacity's S1 to S5 moved onto 900110; and
 whether NCCI PTP becomes a fourth span content or a triage hold, since a PTP quarter not loaded drops `NCCI_REVIEW`
