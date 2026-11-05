@@ -21,14 +21,18 @@ import { CODES } from './words';
  * - `integer`: a quantity the trace holds as a whole number (a dispute window's length), its digits grouped by
  *   thousands as the practice's US English reads them ("3650" is "3,650").
  * - `count`: how many items an array of the trace holds, grouped as `integer` is.
+ * - `units`: a count of units as its exact decimal, never truncated ("4.5"; a packet narrative's fact, ../render.ts).
  */
 
-export const FIGURE_FORMS = ['dollars', 'exact_dollars', 'percent', 'per_rvu', 'verbatim', 'integer', 'count'] as const;
+export const FIGURE_FORMS = ['dollars', 'exact_dollars', 'percent', 'per_rvu', 'verbatim', 'integer', 'count', 'units'] as const;
 export type FigureForm = (typeof FIGURE_FORMS)[number];
 
-/** The value a figure prints: where it is (the trace or the citation, and its path there), its slot and its form. */
+/**
+ * The value a figure prints: where it is (the trace or the citation, and its path there; or, for a packet narrative's
+ * fact, the version's content), its slot and its form.
+ */
 export interface FigureSource {
-  readonly from: 'trace' | 'citation';
+  readonly from: 'trace' | 'citation' | 'content';
   /** The JSON path to the value, e.g. ['steps', 'fee_schedule', 'gpci', 'work_gpci']. */
   readonly path: readonly (string | number)[];
   readonly form: FigureForm;
@@ -36,6 +40,11 @@ export interface FigureSource {
   readonly slot: string;
   /** In a worksheet, the row (the line, on a line's page) whose trace the path is read in; the line's own otherwise. */
   readonly row?: number;
+  /**
+   * For a packet narrative's fact read in each of a set of schedule rows (../render.ts; its path's `#` the row), those
+   * rows, ascending: a sum code computed over them, or the one value each of them holds.
+   */
+  readonly rows?: readonly number[];
 }
 
 /**
@@ -102,6 +111,11 @@ export function formatFigure(value: unknown, form: FigureForm): string {
     case 'per_rvu':
       return `$${value} per RVU`;
     case 'verbatim':
+      return value;
+    case 'units':
+      if (!/^(?:0|[1-9]\d*)(?:\.\d*[1-9])?$/.test(value)) {
+        throw new ExplainShapeError('a count of units is an exact decimal');
+      }
       return value;
   }
 }

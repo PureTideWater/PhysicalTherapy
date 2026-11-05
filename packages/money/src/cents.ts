@@ -69,6 +69,24 @@ export function formatUsd(amount: Cents, locale = 'en-US'): string {
   return formatter.format(formatCents(amount) as Intl.StringNumericLiteral);
 }
 
+/** Whole dollars' digits grouped by thousands ("1234567" is "1,234,567"): a comma before each run of three digits that ends them. */
+const groupedDollars = (digits: string) => digits.replace(/\B(?=(\d{3})+$)/g, ',');
+
+/**
+ * Formats cents as US dollars in code alone, with no locale data (a packet narrative's figures, whose rendered text is
+ * hashed and compared across time and processes, so no ICU or runtime change may move it): the sign, "$", the whole
+ * dollars grouped by commas, "." and the two digits of the cents, from formatCents ("-$1,234.05", "$0.00"). Its golden
+ * test holds it equal to formatUsd(amount, 'en-US') on a fixed set of amounts, so a change in the runtime's locale
+ * data fails that test rather than any stored figure. Never through a float.
+ */
+export function formatUsdPlain(amount: Cents): string {
+  const plain = formatCents(amount);
+  const negative = plain.startsWith('-');
+  const digits = negative ? plain.slice(1) : plain;
+  const point = digits.indexOf('.');
+  return `${negative ? '-' : ''}$${groupedDollars(digits.slice(0, point))}${digits.slice(point)}`;
+}
+
 // Unrounded cents as decimal text: an optional minus sign, integer digits and an optional fraction of a cent.
 const UNROUNDED_CENTS_TEXT = /^(-?)(\d+)(?:\.(\d+))?$/;
 

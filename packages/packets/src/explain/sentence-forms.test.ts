@@ -10,8 +10,11 @@ import { RENDERER_REVISION } from './version';
  * The sentence forms move the words version (review finding: WORDS_VERSION bypassed by a sentence edit; docs/adr/0072).
  * WORDS_VERSION hashes the word tables, the slot table and RENDERER_REVISION, not the sentences ./line.ts,
  * ./worksheet.ts and ./figures.ts build around them, so an edit to one of those files changes no table and could leave
- * the version, and the guards that hold the reviewer's words to the payer's, where they were. This pins the SHA-256 of
- * the three files' text beside the revision it was written under: any edit to them fails here until RENDERER_REVISION
+ * the version, and the guards that hold the reviewer's words to the payer's, where they were. The same holds for a
+ * packet narrative's facts' catalog and renderer (../fact-catalog.ts, ../render.ts; design
+ * lane-b-packet-figure-placeholders, section 5), whose words are tables but whose values and phrases are built in
+ * code. This pins the SHA-256 of the five files' text beside the revision it was written under: any edit to them fails
+ * here until RENDERER_REVISION
  * is raised (which moves WORDS_VERSION, so version.test.ts asks for the literal again) and both values below are
  * written again. An edit that changes no sentence (a comment) is written again the same way: the reviewer of the
  * change reads the golden pins to see that no word moved.
@@ -19,11 +22,11 @@ import { RENDERER_REVISION } from './version';
  * Mutation runs leave this file out (vitest.mutation.config.ts): Stryker's instrumentation rewrites the files it reads.
  */
 const PINNED = {
-  revision: 4,
-  sha256: '948d313deb6d400b5a8f0eee9a92c1b68dd5de886ef89a7f6da3f2708a453d0b',
+  revision: 5,
+  sha256: 'c24edc673e3262d882b7360459e06da219ab091036aa9a4df78bb359e03e1ecb',
 } as const;
 
-const FILES = ['line.ts', 'worksheet.ts', 'figures.ts'] as const;
+const FILES = ['line.ts', 'worksheet.ts', 'figures.ts', '../fact-catalog.ts', '../render.ts'] as const;
 
 /** The SHA-256 of the sentence forms' files, each its name and its text (line endings as LF), in a fixed order. */
 function sentenceFormsSha256(): string {

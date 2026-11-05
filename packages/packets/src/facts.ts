@@ -1,5 +1,6 @@
-import { type Decimal, centsToString, decimal, parseCents, sumCents } from '@tp/money';
+import { type Decimal, decimal } from '@tp/money';
 
+import { type DateSpan, type FactCatalog, type FactEntry, factCatalog, rowFacts } from './fact-catalog';
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
 import { interestStated, lineInterestStated } from './interest';
 import { planText } from './payer';
@@ -124,7 +125,8 @@ class Facts {
   readonly identifiers = new Set<string>();
   readonly quotes: QuotedText[] = [];
 
-  private add(kind: ReadKind, value: string, role: FigureRole, scopes: readonly Held[] = []): void {
+  /** A value of a kind in a role, held so (with no scope, and per each of `scopes`). */
+  held(kind: ReadKind, value: string, role: FigureRole, scopes: readonly Held[] = []): void {
     // What is held per line is some line's too.
     const all = scopes.includes('line') ? [...scopes, 'row'] : scopes;
     for (const key of [`${kind}:${value}`, ...all.map((scope) => `${scope}|${kind}:${value}`)]) {
@@ -138,7 +140,7 @@ class Facts {
   /** A count, a page, a version, a release, a level, a day count or a row (a count of units stated per its scopes). */
   number(role: FigureRole, value: Fact, scopes: readonly Scope[] = []): void {
     if (value !== null && value !== undefined) {
-      this.add('number', canonicalNumber(String(value)), role, scopes);
+      this.held('number', canonicalNumber(String(value)), role, scopes);
     }
   }
 
@@ -149,7 +151,7 @@ class Facts {
    */
   private lines(kind: ReadKind, role: FigureRole, values: readonly ReadonlySet<string>[]): void {
     for (const value of values.flatMap((items) => [...items])) {
-      this.add(kind, value, role, values.every((items) => items.has(value)) ? ['line'] : ['row']);
+      this.held(kind, value, role, values.every((items) => items.has(value)) ? ['line'] : ['row']);
     }
   }
 
@@ -158,14 +160,9 @@ class Facts {
     this.lines('amount', role, values.map((items) => new Set(items.filter(whole))));
   }
 
-  /** Each line's count of units, as a plain decimal. */
-  lineUnits(role: FigureRole, values: readonly string[]): void {
-    this.lines('number', role, values.map((value) => new Set([canonicalNumber(value)])));
-  }
-
   /** A page a record always states. */
   page(role: FigureRole, page: number): void {
-    this.add('number', canonicalNumber(String(page)), role);
+    this.held('number', canonicalNumber(String(page)), role);
   }
 
   /** The rows 1 to `count`. */
@@ -176,29 +173,29 @@ class Facts {
   }
 
   /** An amount in cents, stated per its scopes, when it is whole cents (the trace writes unrounded amounts with their fraction; null is none). */
-  amount(role: FigureRole, value: string | null | undefined, scopes: readonly Scope[]): void {
+  amount(role: FigureRole, value: string | null | undefined, scopes: readonly Held[]): void {
     const text = String(value);
     if (/^-?\d+$/.test(text)) {
-      this.add('amount', text, role, scopes);
+      this.held('amount', text, role, scopes);
     }
   }
 
   percent(role: FigureRole, value: string): void {
-    this.add('percent', canonicalNumber(value), role);
+    this.held('percent', canonicalNumber(value), role);
   }
 
-  /** A date, with its month, its day of the month and its year in the same role. */
+  /** A date, with its month, its day of the month and its year in the same role (null is none). */
   date(role: FigureRole, value: string | null | undefined): void {
     if (value !== null && value !== undefined) {
-      this.add('date', value, role);
-      this.add('month', value.slice(0, 7), role);
-      this.add('month_day', value.slice(5), role);
-      this.add('year', value.slice(0, 4), role);
+      this.held('date', value, role);
+      this.held('month', value.slice(0, 7), role);
+      this.held('month_day', value.slice(5), role);
+      this.held('year', value.slice(0, 4), role);
     }
   }
 
   year(role: FigureRole, value: string): void {
-    this.add('year', value, role);
+    this.held('year', value, role);
   }
 
   /**
@@ -247,34 +244,84 @@ function parameterFigures(value: unknown, facts: Facts, scopes: readonly Scope[]
   }
 }
 
-/** The sum of amounts in cents, or null when any is not whole cents or none is given. */
-function sum(amounts: readonly (string | null | undefined)[]): string | null {
-  // Whole cents only: null and undefined are no digits ("null", "undefined").
-  const whole = amounts.filter((amount): amount is string => /^(?:0|-?[1-9]\d*)$/.test(String(amount)));
-  return whole.length === 0 || whole.length !== amounts.length ? null : centsToString(sumCents(whole.map(parseCents)));
+/**
+ * What a catalog fact is held as (docs/adr/0086): its value in its role, by what it is stated per. The pattern's totals
+ * are held in total, its one value every line holds alike per line; each row's own value is some line's (`row`), and
+ * each line's in a one-line pattern (the catalog's line facts, and rowFacts() for a row whose value the catalog names
+ * by the pattern or a code); a count of units a line holds is held as a line's units too. The facts of the packet, its
+ * citation, contract, releases and deadline are held in their roles. A code's, a claim's and interest's facts are not
+ * read here: ADR 0086's reader holds a code's totals as its summary states them and interest as its section does
+ * (narrativeFacts()), and no claim's sum, so a free-text figure is not held to one; once a narrative's figures are
+ * tokens, those are only rendered.
+ */
+function catalogFacts(facts: Facts, catalog: FactCatalog, rows: number): void {
+  const held = new Set<FactEntry['subject']>(['pattern', 'line', 'citation', 'contract', 'release', 'packet', 'deadline']);
+  for (const entry of [...catalog.entries.filter((item) => held.has(item.subject)), ...rowFacts(catalog)]) {
+    const { role, value, kind, subject } = entry;
+    if (role === null) {
+      continue;
+    }
+    if (kind === 'amount') {
+      facts.amount(role, value as string, heldScopes(entry, rows));
+    } else if (kind === 'units') {
+      // What some line holds, or each line, is held as a line's units too.
+      const scopes = heldScopes(entry, rows);
+      facts.held('number', canonicalNumber(value as string), 'units', scopes);
+      if (subject === 'line' || entry.scope === 'line') {
+        facts.held('number', canonicalNumber(value as string), 'line_units', scopes);
+      }
+    } else if (kind === 'date') {
+      facts.date(role, value as string);
+    } else if (kind === 'date_span') {
+      facts.date(role, (value as DateSpan).from);
+      facts.date(role, (value as DateSpan).to);
+    } else if (kind === 'percent') {
+      facts.percent(role, value as string);
+    } else if (kind === 'year') {
+      facts.year(role, (value as number).toString());
+    } else {
+      // A count, a page, a version, a release, a level or a day count.
+      facts.number(role, value as number);
+    }
+  }
 }
 
+/**
+ * The scopes an amount's or units' fact is held in, as catalogFacts() says: the pattern's totals in total, its value
+ * per line per line, a line's own value as some line's (each line's in a one-line pattern). The contract's rate is in
+ * none here: the contract's parameters hold it per unit or per visit (parameterFigures()).
+ */
+function heldScopes(entry: FactEntry, rows: number): Held[] {
+  if (entry.subject === 'line') {
+    return [rows === 1 ? 'line' : 'row'];
+  }
+  return entry.scope === 'total' ? ['total'] : entry.scope === 'line' ? ['line'] : [];
+}
+
+/**
+ * The facts a narrative is held to, rebuilt from the version's catalog of facts (./fact-catalog.ts), so the facts a
+ * free-text figure is held to and the facts a token renders cannot drift apart: every value the catalog holds goes in
+ * from its catalog entry, in its role and scope (catalogFacts()). What the catalog does not hold goes in beside it, as
+ * before: the schedule's row numbers, the contract's parameters and quoted texts (their figures, codes, modifiers and
+ * identifiers), the payer's and practice's names, the service dates' years where the contract locks none, codes and
+ * modifiers of another shape, each line's own deadline and calculation, every contract window's day count and page (the
+ * catalog holds one only where every clause states the same), prompt-pay interest's rule where no interest is stated,
+ * and each interest line's dates, days and amount.
+ */
 export function narrativeFacts(content: PacketContent): NarrativeFacts {
   const facts = new Facts();
   const { pattern, citation, interest } = content;
   const nextLevel = content.format === 'tp-packet/2' && content.deadline.basis === 'next_level_window';
 
-  facts.date('as_of_date', content.as_of);
-  facts.number('level', content.dispute_level);
+  const catalog = factCatalog(content);
+  catalogFacts(facts, catalog, content.lines.length);
+
   facts.number('lines', content.lines.length);
   facts.rows('row', content.lines.length);
-
-  for (const release of content.rule_releases) {
-    facts.number('release', release.release_no);
-  }
 
   // A contract's rate is per unit, or per visit (a line) for a per-visit rate (a regulation's method is MA_NONCONTRACTED).
   const rate: readonly Scope[] = citation.method === 'PER_VISIT' ? ['unit', 'line'] : ['unit'];
   if (citation.kind === 'contract') {
-    facts.number('version', citation.version_no);
-    facts.page('citation_page', citation.page);
-    facts.date('effective_date', citation.effective_from);
-    facts.date('effective_date', citation.effective_to);
     parameterFigures(citation.parameters, facts, rate);
     facts.quoted(citation.quote, true);
     facts.quoted(citation.contract_title);
@@ -294,55 +341,29 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
   // holds one, so a narrative stating a key fails.
   facts.quoted(planText(content.payer));
 
-  for (const percent of pattern.contract_percentages) {
-    facts.percent('contract_percent', percent);
+  // The fee schedule's year where the contract locks none: the service dates' (the schedule in effect for them).
+  if (pattern.contract_years.length === 0) {
+    for (const line of content.lines) {
+      facts.year('schedule_year', line.service_date.slice(0, 4));
+    }
   }
-  // The fee schedule's year: the contract's locked year, or the service dates' (the schedule in effect for them).
-  const scheduleYears = pattern.contract_years.length > 0 ? pattern.contract_years.map(String) : content.lines.map((line) => line.service_date.slice(0, 4));
-  for (const year of scheduleYears) {
-    facts.year('schedule_year', year);
-  }
-  facts.number('lines', pattern.lines);
-  facts.number('claims', pattern.claims);
-  facts.number('patients', pattern.patients);
-  facts.number('units', pattern.units, ['total']);
   facts.rows('claim_row', pattern.claims);
   facts.rows('patient_row', pattern.patients);
-  facts.amount('expected', pattern.expected_cents, ['total']);
-  facts.amount('allowed', pattern.observed_cents, ['total']);
-  facts.amount('variance', pattern.variance_cents, ['total']);
-  facts.amount('paid', sum(content.lines.map((line) => line.paid_cents)), ['total']);
-  facts.date('service_date', pattern.first_service_date);
-  facts.date('service_date', pattern.last_service_date);
+  // The codes and modifiers the schedule prints, of any shape (the catalog names only those of the CPT and HCPCS shape).
+  for (const code of [...pattern.codes.map((summary) => summary.procedure_code), ...content.lines.map((line) => line.procedure_code)]) {
+    facts.codes.add(code);
+  }
+  // Each code's totals, as its summary states them (a code of any shape: the catalog names only the CPT and HCPCS shape).
   for (const code of pattern.codes) {
-    facts.codes.add(code.procedure_code);
     facts.number('lines', code.lines);
     facts.number('units', code.units, ['total']);
     facts.amount('expected', code.expected_cents, ['total']);
-    facts.amount('expected', code.contract_amount_cents, rate);
     facts.amount('allowed', code.observed_cents, ['total']);
     facts.amount('variance', code.variance_cents, ['total']);
   }
-
-  // Each line's units and amounts: some line's, and per line where every line holds it (Facts.lines()).
-  const each = (read: (line: (typeof content.lines)[number]) => string | null) => content.lines.map((line) => [read(line)]);
-  facts.lineUnits('units', content.lines.map((line) => line.units));
-  facts.lineUnits('line_units', content.lines.map((line) => line.units));
-  facts.lineAmounts('expected', each((line) => line.expected_cents));
-  facts.lineAmounts('allowed', each((line) => line.observed_cents));
-  facts.lineAmounts('variance', each((line) => line.variance_cents));
-  facts.lineAmounts('paid', each((line) => line.paid_cents));
   for (const line of content.lines) {
-    facts.codes.add(line.procedure_code);
     for (const modifier of line.modifiers) {
       facts.modifiers.add(modifier);
-    }
-    facts.date('service_date', line.service_date);
-    facts.date('paid_date', line.paid_on);
-    facts.date('received_date', line.received_on);
-    // A line's first-level window, which the payer's copy states at the first level only.
-    if (!nextLevel) {
-      facts.date('deadline', line.window_ends_on);
     }
   }
 
@@ -352,18 +373,11 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
         facts.date('deadline', line.deadline.ends_on);
       }
     }
-    // Each line's calculation, its steps and rounding, and its patient's share: per line where every line holds it.
+    // Each line's calculation, its steps and rounding: per line where every line holds it.
     facts.lineAmounts(
       'calculation',
       content.lines.map(({ calculation }) => [...calculation.steps.map((step) => step.amount_cents), calculation.rounding?.unrounded_cents, calculation.rounding?.rounded_cents]),
     );
-    facts.lineAmounts(
-      'patient_share',
-      content.lines.map(({ calculation }) => [calculation.patient_share_cents]),
-    );
-    // What the patients owe across the lines.
-    facts.amount('patient_share', sum(content.lines.map((line) => line.calculation.patient_share_cents)), ['total']);
-    facts.date('deadline', content.deadline.ends_on);
     // Above the first level the payer's copy states the level's own window alone: the lines' first-level windows and
     // the clauses behind them are not this level's deadline, are not printed, and so are no figure a narrative states.
     for (const source of nextLevel ? [] : content.deadline.sources) {
