@@ -96,12 +96,15 @@ if (behaviour === 'exit-3') {
   frames.push(frame(2, '0'));
   await write(Buffer.concat(frames));
   process.exit(0);
-} else if (behaviour.startsWith('late-done-hang ')) {
-  // A page and done that many milliseconds after the request, then a hang: a reader that replies close to its deadline
-  // and lingers.
+} else if (behaviour.startsWith('late-done-hang ') || behaviour.startsWith('late-done-exit ')) {
+  // A page and done that many milliseconds after the request, then a hang (a reader that replies close to its deadline
+  // and lingers) or an exit at once (one whose reply and exit come while the parent's loop is held).
   const delay = Number.parseInt(behaviour.slice(behaviour.lastIndexOf(' ') + 1), 10);
   await new Promise((resolve) => setTimeout(resolve, delay));
   await write(Buffer.concat([frame(1, 'SYNTHETIC LATE PAGE'), frame(2, '0')]));
+  if (behaviour.startsWith('late-done-exit ')) {
+    process.exit(0);
+  }
   setInterval(() => undefined, 1000);
 } else if (behaviour === 'silent') {
   setInterval(() => undefined, 1000);

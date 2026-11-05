@@ -347,6 +347,28 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
     expect(await queued).toEqual({ ok: true, pages: ['SYNTHETIC\tQUEUED'] });
   }, 30_000);
 
+  it('gives the pages of a reader that replied and exited before its deadline while this process was held past it', async () => {
+    // Done and an exit 2.5 s into a 3 s deadline, with this process held from 2.4 s to 3.3 s: the reply, the exit and
+    // the end of output are all waiting when the deadline is due, and were in before it.
+    const timeoutMs = 3_000;
+    const started = Date.now();
+    const hold = setTimeout(() => {
+      while (Date.now() < started + timeoutMs + 300) {
+        // Held.
+      }
+    }, timeoutMs - 600);
+    const reply = await readInChild(stubRequest('late-done-exit 2500'), { ...PAGE_READ_LIMITS, timeoutMs }, STUB)
+      .then(
+        (result) => result,
+        (error: unknown) => (error as Error).message,
+      )
+      .finally(() => {
+        clearTimeout(hold);
+      });
+    expect(Date.now() - started, 'this process was held past the deadline').toBeGreaterThanOrEqual(timeoutMs + 300);
+    expect(reply).toEqual({ kind: 'pages', pages: ['SYNTHETIC LATE PAGE'], heapSizeLimit: 0 });
+  }, 30_000);
+
   it('gives the pages of a reader that exited at once while this process was held past the exit grace', async () => {
     // The worker's loop held 1.2 s at a time (past READER_EXIT_GRACE_MS) from the check phase, right after the poll that
     // took the reader's frames: its exit and its end of stdout are then still waiting when the grace timer is due.

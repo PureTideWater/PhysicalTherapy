@@ -126,7 +126,8 @@ const READER_STDERR_TAIL_BYTES = 1024;
  * milliseconds). Past it a reader still running is killed and its read fails as its own (PageReadError); the deadline
  * and the memory bound stay armed until it has closed, so a reader a document compromised can neither linger nor grow.
  * The grace and the deadline run on this process's clock: a loop held past either has the reader's exit and its end of
- * output still waiting when the timer is due, so each decides only a turn later (afterPendingInput), once they are in.
+ * output still waiting when the timer is due, so each decides only a turn later (afterPendingInput), once they are in;
+ * the deadline gives a reader that has exited one turn more, for its pipes to close (they close after that turn).
  */
 export const READER_EXIT_GRACE_MS = 1_000;
 /** Where /proc is missing (a developer's Mac), the reader's memory is read with ps at most this often. */
@@ -383,9 +384,20 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
 
     const deadline = setTimeout(
       afterPendingInput(() => {
-        if (!settled) {
-          refuse();
+        if (settled) {
+          return;
         }
+        if (!exited) {
+          refuse();
+          return;
+        }
+        // It exited before the deadline and only its pipes are left: they close in the loop's close phase, after this
+        // turn, and its frames and exit code then decide.
+        setImmediate(() => {
+          if (!settled) {
+            refuse();
+          }
+        });
       }),
       limits.timeoutMs,
     );

@@ -165,7 +165,9 @@ binding no longer loads into the worker).
   a reader a document compromised can neither hold the one reader slot nor grow after replying (review fix round,
   2026-11-05). Both timers run on the worker's clock, so each decides a turn after it is due, once the input waiting
   then is in: a worker loop held past the grace by other work would otherwise fail a reader that had exited at once
-  (14 of 15 reads under a 1.2 s hold, measured; none after).
+  (14 of 15 reads under a 1.2 s hold, measured; none after). The deadline gives a reader that has exited one turn more,
+  for its pipes to close: a loop held past the deadline would otherwise refuse a reader that had replied and exited
+  before it (its exit was in, its close not yet; second fix round, 2026-11-05).
 - **One at a time:** at most one reader per worker process, one child per document, never reused; its slot is freed
   once it has closed, and every running child is killed when the worker exits normally (or on a thrown error). A
   worker killed by a signal or aborted runs no exit handler: the task's init process (`initProcessEnabled`) then exits
