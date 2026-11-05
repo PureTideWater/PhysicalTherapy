@@ -320,14 +320,34 @@ describe('a remittance’s interest reported on its claims and paid by a PLB L6,
     await replayed(practice);
   });
 
-  it('counts AMT I with no PLB L6 in its check nowhere, and credits a later PLB L6 naming the claim once, dated by its remittance', async () => {
+  it('names the chain by the original’s control number, which its reversal carries too, and credits the lines its correction is matched to (named-original.835)', async () => {
+    const { practice, lines } = await opened('LED-23');
+    await upload(practice, 'LED-23', 'named-original.835');
+    const [l1, l2] = lines as [Line, Line];
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0]]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1]]);
+    // Neither the original nor its reversal has a claim match: each interest match names the line's, the correction C.
+    const [l6] = await l6sOf(practice, 'SYNEFTLED23012');
+    const correction = await claimOf(practice, 'SYNEFTLED23012', 2);
+    expect(await w.rows(practice, "SELECT claim_id, provider_adjustment_id FROM ledger_match WHERE kind = 'interest' ORDER BY seq")).toEqual([
+      { claim_id: correction.id, provider_adjustment_id: l6 },
+      { claim_id: correction.id, provider_adjustment_id: l6 },
+    ]);
+    await expectInterestFromItsL6(practice);
+    await replayed(practice);
+  });
+
+  it.each([
+    ['later-l6.835', 'naming the claim'],
+    ['later-l6-original.835', 'naming the original, whose chain the claim corrects'],
+  ])('counts AMT I with no PLB L6 in its check nowhere, and credits a later PLB L6 once, dated by its remittance (%s, %s)', async (file) => {
     const { practice, lines } = await opened('LED-23');
     const [l1, l2] = lines as [Line, Line];
     await upload(practice, 'LED-23', 'reported-only.835');
     expect(await stageOf(practice, l1.serviceLineId, 'approved')).toEqual(['2400']);
     expect(await interestOf(practice, l1.serviceLineId)).toEqual([]);
     expect(await interestOf(practice, l2.serviceLineId)).toEqual([]);
-    await upload(practice, 'LED-23', 'later-l6.835');
+    await upload(practice, 'LED-23', file);
     expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0]]);
     expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1]]);
     expect(await w.rows(practice, "SELECT DISTINCT effective_on::text AS on FROM ledger_entry WHERE stage = 'interest'")).toEqual([{ on: '2026-08-03' }]);
@@ -405,6 +425,32 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     }
     const totals = (await w.reconcile(practice)).remittances;
     expect(totals).toMatchObject({ interest: 0, interestTakenBack: 0 });
+    await expectInterestFromItsL6(practice);
+    await replayed(practice);
+    await expectWithinFirst(practice, first);
+  });
+
+  it('writes a take-back before a payment when one PLB L6 nets two chains on the same lines, so the figure errs low, never above the cash (two-chains.835)', async () => {
+    const { practice, lines } = await opened('LED-24');
+    const [l1, l2] = lines as [Line, Line];
+    await upload(practice, 'LED-24', 'paired.835');
+    await w.load(practice, 'LED-24/two-chains.835');
+    // B, before C's reversal and with no REF F8, is linked to nothing: a chain of its own beside C's.
+    const b = await claimOf(practice, 'SYNEFTLED24013', 1);
+    expect([b.reversal_of_claim_id, b.superseded_by_claim_id]).toEqual([null, null]);
+    expect((await claimOf(practice, 'SYNEFTLED24013', 2)).reversal_of_claim_id).toBe((await claimOf(practice, 'SYNEFTLED24002', 2)).id);
+    await w.reconcile(practice);
+    const first = await attributionNow(practice);
+    const [l6] = await l6sOf(practice, 'SYNEFTLED24013');
+    // The exact pool: B draws its 6.00 paid and C's chain its 5.40 taken back, from one PLB L6 of 0.60.
+    expect((first.draws.get(l6 as string) ?? []).map((draw) => draw.cents)).toEqual([600n, -540n]);
+    // B is matched to both lines, each already holding 5.40 of C's chain between them; one PLB L6 writes one entry per line.
+    expect(await w.rows(practice, "SELECT service_line_id FROM ledger_match WHERE kind = 'claim' AND claim_id = $1 AND reversed_at IS NULL ORDER BY seq", [b.id])).toHaveLength(2);
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0], { amountCents: '-240', allocated: true }]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1], { amountCents: '-300', allocated: true }]);
+    const interest = await w.sum(practice, "SELECT coalesce(sum(amount_cents), 0)::text AS total FROM ledger_entry WHERE stage = 'interest'");
+    const cash = await w.sum(practice, "SELECT coalesce(-sum(amount_cents), 0)::text AS total FROM provider_adjustment WHERE category = 'interest'");
+    expect([interest, cash]).toEqual([0n, 600n]);
     await expectInterestFromItsL6(practice);
     await replayed(practice);
     await expectWithinFirst(practice, first);

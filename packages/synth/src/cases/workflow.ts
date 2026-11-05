@@ -1213,6 +1213,19 @@ export function led23(b: CaseBuilder): void {
     ledRemittance(b, base, 11, restatedOn, [renumbered, renumberedCorrection, other], pool(negateCents(OTHER_INTEREST))).file,
     `After paired.835, a known gap pinned: C reversed under its own new CLP07 (${renumbered.payerClaimControlNumber}) with REF F8 naming C (paid -160.00, AMT I -5.40), which the loader leaves unlinked; its correction (${renumberedCorrection.payerClaimControlNumber}, REF F8 naming C) paying 97110 2.00 more on an allowed 102.00, AMT I 5.40; K paying 150.00 with AMT I 2.00; one PLB L6 of -2.00 naming nothing: BPR02 154.00.`,
   );
+  // The original's control number, which its reversal carries too: no claim match names either claim, so the PLB L6
+  // reaches the case lines through the claim match of C, the chain's correction.
+  const occn = original.payerClaimControlNumber;
+  b.add835(
+    'named-original.835',
+    ledRemittance(b, base, 12, adjustedOn, [reversal, correction], interestPlb(base, [{ reference: occn, amount: negateCents(LED_INTEREST) }])).file,
+    `As paired.835, the PLB L6 of -5.40 naming the original (${occn}), whose control number its reversal carries too, not C: BPR02 59.40.`,
+  );
+  b.add835(
+    'later-l6-original.835',
+    ledRemittance(b, base, 13, calendarDate(2026, 8, 3), [otherClaim(b, 8)], interestPlb(base, [{ reference: occn, amount: negateCents(LED_INTEREST) }])).file,
+    `After reported-only.835: a later remittance whose PLB L6 of -5.40 names the original (${occn}), not C, beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.`,
+  );
   recoveryScenario(b);
   const caseLines = [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line }));
   b.scenario({
@@ -1228,6 +1241,8 @@ export function led23(b: CaseBuilder): void {
       laterL6: ['reported-only.835', 'later-l6.835'],
       zeroL6: ['zero-l6.835'],
       renumberedReversal: ['paired.835', 'renumbered-reversal.835'],
+      namedOriginal: ['named-original.835'],
+      laterL6Original: ['reported-only.835', 'later-l6-original.835'],
     },
   });
   const interest = [ledEntry('interest', firstInterest, 'paired.835 PLB L6'), ledEntry('interest', secondInterest, 'paired.835 PLB L6')];
@@ -1257,6 +1272,12 @@ export function led23(b: CaseBuilder): void {
         interest: [ledEntry('interest', LED_INTEREST, 'renumbered-reversal.835 PLB L6')],
         links: { reversalOfClaim: null, supersededBy: renumberedCorrection.payerClaimControlNumber },
         note: "a known gap: the unlinked reversal's -5.40 reaches no line, so the correction's 5.40 counts again; the pull request that links a renumbered reversal changes this to no new interest",
+      },
+      namedOriginal: { interest, note: "named by the original's control number: credited to the lines a claim of its chain (C) is matched to" },
+      laterL6Original: {
+        interest: [ledEntry('interest', firstInterest, 'later-l6-original.835 PLB L6'), ledEntry('interest', secondInterest, 'later-l6-original.835 PLB L6')],
+        effectiveOn: '2026-08-03',
+        note: "named by the original's control number in a later check: credited to the lines a claim of its chain (C) is matched to",
       },
     },
   });
