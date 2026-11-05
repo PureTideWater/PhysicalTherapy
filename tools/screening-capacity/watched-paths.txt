@@ -430,6 +430,8 @@ packages/packets/src/explain/slots.ts
 packages/packets/src/explain/version.ts
 packages/packets/src/explain/words.ts
 packages/packets/src/explain/worksheet.ts
+packages/packets/src/fact-catalog.ts
+packages/packets/src/fact-words.ts
 packages/packets/src/facts.ts
 packages/packets/src/format.ts
 packages/packets/src/hash.ts
@@ -439,6 +441,7 @@ packages/packets/src/payer.ts
 packages/packets/src/placeholders.ts
 packages/packets/src/readable.ts
 packages/packets/src/reference.ts
+packages/packets/src/render.ts
 packages/packets/src/roles-reader/cues.ts
 packages/packets/src/roles-reader/kinds.ts
 packages/packets/src/roles-reader/numbers.ts

@@ -603,6 +603,7 @@ checks above.
 | `packets-facts` | the facts a narrative is held to (`facts.ts`), the payer's names (`payer.ts`) and the placeholders | 6 min 38 s (local, 2026-11-04) |
 | `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | 6 min 7 s (local, 2026-11-04) |
 | `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | 8 min 40 s (local, 2026-11-04) |
+| `packets-figures` | a narrative's facts' catalog and renderer (`fact-catalog.ts`, `fact-words.ts`, `render.ts`) | 5 min 9 s (local, 2026-11-05) |
 | `pricing-engine` | pricing's `engine.ts` | 7 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 4 min 9 s |
 | `pricing-rest` | the rest of pricing | 5 min 38 s |
@@ -611,7 +612,7 @@ The times of `money-ledger` and pricing's three shards are each shard job's, set
 `stryker/shards.json` last changed before #84 (#51's merge, 2026-10-26); those seven shards took 53.4 runner-minutes,
 54.2 with `changes` and `mutation`. #84 split packets' three shards into thirteen (docs/adr/0086), so the packets rows
 are Stryker's own times in #84's one full local suite (4 shared CPUs, 2026-11-04) until push runs measure them, and
-the seventeen-shard total is re-measured on the push runs after #84's merge.
+the seventeen-shard total is re-measured on the push runs after #84's merge. `packets-figures` (the eighteenth) is its Stryker time in its own local run, on the same machine, until push runs measure it.
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads

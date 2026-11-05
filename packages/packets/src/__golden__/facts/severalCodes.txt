@@ -1,0 +1,222 @@
+packet.as_of | date | as_of_date | - | - | model | stored
+  the packet date 2026-10-16
+packet.level | level | level | - | - | model | stored
+  dispute level 1
+citation.version | version | version | - | - | model | stored
+  version 1 of the contract
+citation.page | page | citation_page | - | - | model | stored
+  page 2 of the contract
+citation.effective | date_span | effective_date | - | - | model | stored
+  the contract version in effect from 2026-01-01
+citation.quote | quote | - | - | - | model | stored
+  “97110 is paid 50.00 per unit”
+contract.rate | amount | expected | unit | - | model | stored
+  the contract’s fee-schedule amount of $50.00 per unit
+release.no.1 | release | release | - | - | model | stored
+  rule release 900001
+pattern.lines | count | lines | - | 1,2,3,4,5,6 | model | stored
+  the 6 lines of the schedule
+pattern.claims | count | claims | - | 1,2,3,4,5,6 | model | stored
+  the 3 claims of the schedule
+pattern.patients | count | patients | - | 1,2,3,4,5,6 | model | stored
+  the 3 patients of the schedule
+pattern.units | units | units | total | 1,2,3,4,5,6 | model | stored
+  11.5 units in total for the 6 lines
+pattern.expected | amount | expected | total | 1,2,3,4,5,6 | model | stored
+  the contract amount of $590.00 in total for the 6 lines
+pattern.allowed | amount | allowed | total | 1,2,3,4,5,6 | model | stored
+  the allowed amount of $387.50 in total for the 6 lines
+pattern.paid | amount | paid | total | 1,2,3,4,5,6 | model | summed
+  payment of $310.00 in total for the 6 lines
+pattern.variance | amount | variance | total | 1,2,3,4,5,6 | model | stored
+  a shortfall of $202.50 in total for the 6 lines
+pattern.patient_share | amount | patient_share | total | 1,2,3,4,5,6 | model | summed
+  the patient share of $77.50 in total for the 6 lines
+pattern.service_dates | date_span | service_date | - | 1,2,3,4,5,6 | model | stored
+  service dates from 2026-03-02 to 2026-03-10
+code.97110 | code | - | part | 1,2,4 | model | stored
+  97110
+code.97110.lines | count | lines | - | 1,2,4 | model | stored
+  the 3 lines of 97110
+code.97110.units | units | units | part | 1,2,4 | model | stored
+  6.5 units in total for the 3 lines of 97110
+code.97110.expected | amount | expected | part | 1,2,4 | model | stored
+  the contract amount of $325.00 in total for the 3 lines of 97110
+code.97110.allowed | amount | allowed | part | 1,2,4 | model | stored
+  the allowed amount of $227.50 in total for the 3 lines of 97110
+code.97110.paid | amount | paid | part | 1,2,4 | model | summed
+  payment of $182.00 in total for the 3 lines of 97110
+code.97110.variance | amount | variance | part | 1,2,4 | model | stored
+  a shortfall of $97.50 in total for the 3 lines of 97110
+code.97110.patient_share | amount | patient_share | part | 1,2,4 | model | summed
+  the patient share of $45.50 in total for the 3 lines of 97110
+code.97110.service_dates | date_span | service_date | - | 1,2,4 | model | summed
+  service dates from 2026-03-02 to 2026-03-05 for the 3 lines of 97110
+code.g0283 | code | - | part | 3 | model | stored
+  G0283
+code.g0283.modifiers | modifiers | - | part | 3 | model | stored
+  modifiers GP and KX
+code.g0283.lines | count | lines | - | 3 | model | stored
+  the 1 line of G0283
+code.g0283.units | units | units | part | 3 | model | stored
+  1 unit in total for the 1 line of G0283
+code.g0283.expected | amount | expected | part | 3 | model | stored
+  the contract amount of $25.00 in total for the 1 line of G0283
+code.g0283.allowed | amount | allowed | part | 3 | model | stored
+  the allowed amount of $10.00 in total for the 1 line of G0283
+code.g0283.paid | amount | paid | part | 3 | model | summed
+  payment of $8.00 in total for the 1 line of G0283
+code.g0283.variance | amount | variance | part | 3 | model | stored
+  a shortfall of $15.00 in total for the 1 line of G0283
+code.g0283.patient_share | amount | patient_share | part | 3 | model | summed
+  the patient share of $2.00 in total for the 1 line of G0283
+code.g0283.service_dates | date_span | service_date | - | 3 | model | summed
+  the service date 2026-03-04 for the 1 line of G0283
+code.0275t | code | - | part | 5 | model | stored
+  0275T
+code.0275t.modifiers | modifiers | - | part | 5 | model | stored
+  modifier 59
+code.0275t.lines | count | lines | - | 5 | model | stored
+  the 1 line of 0275T
+code.0275t.units | units | units | part | 5 | model | stored
+  2 units in total for the 1 line of 0275T
+code.0275t.expected | amount | expected | part | 5 | model | stored
+  the contract amount of $200.00 in total for the 1 line of 0275T
+code.0275t.allowed | amount | allowed | part | 5 | model | stored
+  the allowed amount of $120.00 in total for the 1 line of 0275T
+code.0275t.paid | amount | paid | part | 5 | model | summed
+  payment of $120.00 in total for the 1 line of 0275T
+code.0275t.variance | amount | variance | part | 5 | model | stored
+  a shortfall of $80.00 in total for the 1 line of 0275T
+code.0275t.patient_share | amount | patient_share | part | 5 | model | summed
+  the patient share of $0.00 in total for the 1 line of 0275T
+code.0275t.service_dates | date_span | service_date | - | 5 | model | summed
+  the service date 2026-03-06 for the 1 line of 0275T
+claim.5.lines | count | lines | - | 5,6 | person | summed
+  the 2 lines of claim {{claim_control_number:5}}
+claim.5.units | units | units | part | 5,6 | person | summed
+  4 units in total for the 2 lines of claim {{claim_control_number:5}}
+claim.5.expected | amount | expected | part | 5,6 | person | summed
+  the contract amount of $240.00 in total for the 2 lines of claim {{claim_control_number:5}}
+claim.5.allowed | amount | allowed | part | 5,6 | person | summed
+  the allowed amount of $150.00 in total for the 2 lines of claim {{claim_control_number:5}}
+claim.5.paid | amount | paid | part | 5,6 | person | summed
+  payment of $120.00 in total for the 2 lines of claim {{claim_control_number:5}}
+claim.5.variance | amount | variance | part | 5,6 | person | summed
+  a shortfall of $90.00 in total for the 2 lines of claim {{claim_control_number:5}}
+claim.5.patient_share | amount | patient_share | part | 5,6 | person | summed
+  the patient share of $30.00 in total for the 2 lines of claim {{claim_control_number:5}}
+claim.5.service_dates | date_span | service_date | - | 5,6 | person | summed
+  service dates from 2026-03-06 to 2026-03-10 for the 2 lines of claim {{claim_control_number:5}}
+line.1.units | units | units | part | 1 | person | stored
+  2 units for line 1
+line.1.expected | amount | expected | part | 1 | person | stored
+  the contract amount of $100.00 for line 1
+line.1.allowed | amount | allowed | part | 1 | person | stored
+  the allowed amount of $70.00 for line 1
+line.1.paid | amount | paid | part | 1 | person | stored
+  payment of $56.00 for line 1
+line.1.variance | amount | variance | part | 1 | person | stored
+  a shortfall of $30.00 for line 1
+line.1.patient_share | amount | patient_share | part | 1 | person | stored
+  the patient share of $14.00 for line 1
+line.1.service_date | date | service_date | - | 1 | person | stored
+  the service date 2026-03-02 of line 1
+line.1.paid_on | date | paid_date | - | 1 | person | stored
+  the payment date 2026-04-08 of line 1
+line.1.received_on | date | received_date | - | 1 | person | stored
+  the date 2026-02-10 the payer received the claim of line 1
+line.1.window_ends_on | date | deadline | - | 1 | person | stored
+  the dispute window ending 2036-04-05 for line 1
+line.1.code | code | - | part | 1 | person | stored
+  97110
+line.2.units | units | units | part | 2 | person | stored
+  1.5 units for line 2
+line.2.expected | amount | expected | part | 2 | person | stored
+  the contract amount of $75.00 for line 2
+line.2.allowed | amount | allowed | part | 2 | person | stored
+  the allowed amount of $52.50 for line 2
+line.2.paid | amount | paid | part | 2 | person | stored
+  payment of $42.00 for line 2
+line.2.variance | amount | variance | part | 2 | person | stored
+  a shortfall of $22.50 for line 2
+line.2.patient_share | amount | patient_share | part | 2 | person | stored
+  the patient share of $10.50 for line 2
+line.2.service_date | date | service_date | - | 2 | person | stored
+  the service date 2026-03-03 of line 2
+line.2.paid_on | date | paid_date | - | 2 | person | stored
+  the payment date 2026-04-08 of line 2
+line.2.received_on | date | received_date | - | 2 | person | stored
+  the date 2026-02-10 the payer received the claim of line 2
+line.2.window_ends_on | date | deadline | - | 2 | person | stored
+  the dispute window ending 2036-04-05 for line 2
+line.2.code | code | - | part | 2 | person | stored
+  97110
+line.3.paid_on | date | paid_date | - | 3 | person | stored
+  the payment date 2026-04-08 of line 3
+line.3.received_on | date | received_date | - | 3 | person | stored
+  the date 2026-02-10 the payer received the claim of line 3
+line.3.window_ends_on | date | deadline | - | 3 | person | stored
+  the dispute window ending 2036-04-05 for line 3
+line.4.units | units | units | part | 4 | person | stored
+  3 units for line 4
+line.4.expected | amount | expected | part | 4 | person | stored
+  the contract amount of $150.00 for line 4
+line.4.allowed | amount | allowed | part | 4 | person | stored
+  the allowed amount of $105.00 for line 4
+line.4.paid | amount | paid | part | 4 | person | stored
+  payment of $84.00 for line 4
+line.4.variance | amount | variance | part | 4 | person | stored
+  a shortfall of $45.00 for line 4
+line.4.patient_share | amount | patient_share | part | 4 | person | stored
+  the patient share of $21.00 for line 4
+line.4.service_date | date | service_date | - | 4 | person | stored
+  the service date 2026-03-05 of line 4
+line.4.paid_on | date | paid_date | - | 4 | person | stored
+  the payment date 2026-04-08 of line 4
+line.4.received_on | date | received_date | - | 4 | person | stored
+  the date 2026-02-10 the payer received the claim of line 4
+line.4.window_ends_on | date | deadline | - | 4 | person | stored
+  the dispute window ending 2036-04-05 for line 4
+line.4.code | code | - | part | 4 | person | stored
+  97110
+line.5.paid_on | date | paid_date | - | 5 | person | stored
+  the payment date 2026-04-08 of line 5
+line.5.received_on | date | received_date | - | 5 | person | stored
+  the date 2026-02-10 the payer received the claim of line 5
+line.5.window_ends_on | date | deadline | - | 5 | person | stored
+  the dispute window ending 2036-04-05 for line 5
+line.6.units | units | units | part | 6 | person | stored
+  2 units for line 6
+line.6.expected | amount | expected | part | 6 | person | stored
+  the contract amount of $40.00 for line 6
+line.6.allowed | amount | allowed | part | 6 | person | stored
+  the allowed amount of $30.00 for line 6
+line.6.paid | amount | paid | part | 6 | person | stored
+  payment of $0.00 for line 6
+line.6.variance | amount | variance | part | 6 | person | stored
+  a shortfall of $10.00 for line 6
+line.6.patient_share | amount | patient_share | part | 6 | person | stored
+  the patient share of $30.00 for line 6
+line.6.service_date | date | service_date | - | 6 | person | stored
+  the service date 2026-03-10 of line 6
+line.6.paid_on | date | paid_date | - | 6 | person | stored
+  the payment date 2026-04-08 of line 6
+line.6.received_on | date | received_date | - | 6 | person | stored
+  the date 2026-02-10 the payer received the claim of line 6
+line.6.window_ends_on | date | deadline | - | 6 | person | stored
+  the dispute window ending 2036-04-05 for line 6
+deadline.ends_on | date | deadline | - | - | model | stored
+  the dispute deadline 2036-04-05
+deadline.window_days | days | window_days | - | - | model | stored
+  the contract’s dispute window of 3,650 days
+deadline.window_page | page | window_page | - | - | model | stored
+  page 1 of the contract’s dispute window clause
+interest.total | amount | interest | total | 1,2,3,4,5,6 | model | stored
+  prompt-pay interest of $12.56 in total for the 6 lines it is stated on
+interest.rate | percent | interest_rate | - | - | model | stored
+  the prompt-pay interest rate of 9 percent a year
+interest.days_to_pay | days | days_to_pay | - | - | model | stored
+  the prompt-pay rule’s 33 days to pay
+interest.release | release | release | - | - | model | stored
+  the prompt-pay rule of rule release 900001

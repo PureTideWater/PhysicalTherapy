@@ -101,8 +101,12 @@ export interface AssemblyInput {
   readonly deadlineSources: readonly DeadlineSource[];
 }
 
-/** The pattern's fixed amount per unit (or per visit) for a code, when the contract states one. */
-function contractAmount(citation: PacketCitation): string | null {
+/**
+ * The contract's fixed amount per unit (or per visit), when it states one: a fixed schedule's or a per-visit rate's
+ * amount, or a lesser-of rule's fixed-schedule side. Every code's `contract_amount_cents` is this one amount (exported
+ * for the facts' catalog, ./fact-catalog.ts, whose one `contract.rate` it is: no code has a rate of its own).
+ */
+export function contractAmount(citation: PacketCitation): string | null {
   if (citation.kind !== 'contract') {
     return null;
   }
@@ -144,7 +148,8 @@ function contractPercentages(citation: PacketCitation): { readonly percentages: 
   return { percentages: [...new Set(percentages)].sort(), years: [...new Set(years)].sort((a, b) => a - b) };
 }
 
-const sumUnits = (units: readonly string[]) => units.reduce((total, item) => total.plus(decimal(item)), decimal(0n)).toString();
+/** The sum of counts of units, an exact decimal (exported for the facts' catalog, which sums a set of rows' units the same way). */
+export const sumUnits = (units: readonly string[]): string => units.reduce((total, item) => total.plus(decimal(item)), decimal(0n)).toString();
 const text = (amounts: readonly Cents[]) => centsToString(sumCents(amounts));
 
 function patternFacts(input: AssemblyInput, lines: readonly AssemblyLine[]): PatternFacts {

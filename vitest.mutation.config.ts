@@ -60,6 +60,10 @@ export const EXCLUDED: readonly { readonly glob: string; readonly reason: string
     reason: "reads the calculation words' source text for its imports and arithmetic, which Stryker's instrumentation rewrites, so it fails on every run",
   },
   {
+    glob: 'packages/packets/src/render-purity.test.ts',
+    reason: "reads the facts' catalog and renderer's source text for what they name and import, which Stryker's instrumentation rewrites, so it fails on every run",
+  },
+  {
     glob: 'packages/packets/src/explain/sentence-forms.test.ts',
     reason: "pins the SHA-256 of the calculation words' source text, which Stryker's instrumentation rewrites, so it fails on every run",
   },

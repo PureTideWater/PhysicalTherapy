@@ -1,0 +1,50 @@
+packet.as_of | date | as_of_date | - | - | model | stored
+  the packet date 2026-10-16
+packet.level | level | level | - | - | model | stored
+  dispute level 1
+citation.version | version | version | - | - | model | stored
+  version 1 of the contract
+citation.page | page | citation_page | - | - | model | stored
+  page 2 of the contract
+citation.effective | date_span | effective_date | - | - | model | stored
+  the contract version in effect from 2026-01-01
+citation.quote | quote | - | - | - | model | stored
+  “97110 is paid 50.00 per unit”
+contract.rate | amount | expected | unit | - | model | stored
+  the contract’s fee-schedule amount of $50.00 per unit
+release.no.1 | release | release | - | - | model | stored
+  rule release 900001
+pattern.lines | count | lines | - | 1 | model | stored
+  the 1 line of the schedule
+pattern.claims | count | claims | - | 1 | model | stored
+  the 1 claim of the schedule
+pattern.patients | count | patients | - | 1 | model | stored
+  the 1 patient of the schedule
+pattern.units | units | units | total | 1 | model | stored
+  2 units in total for the 1 line
+pattern.expected | amount | expected | total | 1 | model | stored
+  the contract amount of $100.00 in total for the 1 line
+pattern.allowed | amount | allowed | total | 1 | model | stored
+  the allowed amount of $70.00 in total for the 1 line
+pattern.paid | amount | paid | total | 1 | model | summed
+  payment of $56.00 in total for the 1 line
+pattern.variance | amount | variance | total | 1 | model | stored
+  a shortfall of $30.00 in total for the 1 line
+pattern.patient_share | amount | patient_share | total | 1 | model | summed
+  the patient share of $14.00 in total for the 1 line
+pattern.service_dates | date_span | service_date | - | 1 | model | stored
+  the service date 2026-03-05
+code.97110 | code | - | part | 1 | model | stored
+  97110
+code.97110.modifiers | modifiers | - | part | 1 | model | stored
+  modifier GP
+line.1.paid_on | date | paid_date | - | 1 | person | stored
+  the payment date 2026-04-08 of line 1
+line.1.window_ends_on | date | deadline | - | 1 | person | stored
+  the dispute window ending 2036-04-05 for line 1
+deadline.ends_on | date | deadline | - | - | model | stored
+  the dispute deadline 2036-04-05
+deadline.window_days | days | window_days | - | - | model | stored
+  the contract’s dispute window of 3,650 days
+deadline.window_page | page | window_page | - | - | model | stored
+  page 1 of the contract’s dispute window clause
