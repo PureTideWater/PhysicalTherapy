@@ -311,6 +311,13 @@ its unpushed work is not waited for).
 - **06:45 UTC. The orchestrator:** the next schema PR after #126 is S4's `co-001/password-changed-notice` (ADR 0091; S4 =
   session_019i9ifAfByN2caCea4jgSdu), opening only after #126 merges. **When #126 merges: send S4 the merge commit** (the
   schema slot passes to it). Lane A's queue after that comes from LANES.md "Handed to Lane A", ordered with the orchestrator.
+- **07:35 UTC. Interest PR #126 fix round (wf_b04ba66e-7ff):** reviews and skeptics done. Confirmed: LED-R1, LED-R2, LED-R3,
+  UX-INT-1, INT-REL-1 (blocking: e2e persona), INT-REL-2 (interest pass at size), INT-REL-3 (nit: migration header lock order);
+  refuted: UX-INT-2, UX-INT-3, UX-INT-4. LED-R1/R2/R3 and UX-INT-1 fixed failing-first (WIP `co-001/wip-interest-fix` a8b4a088,
+  with ADR 0084 D5's line-whole cap sentence); base 0f4a5ed5 (#125) merged (15f3359d, no conflict, regenerated: provenance
+  only). The brief handed to the fix agent listed only four findings (truncated); the agent found INT-REL-1..3 confirmed in the
+  skeptic transcripts, stopped the suite's first run at unit (the fast checks and domain-model checks had passed), and is
+  fixing them before the suite runs once. Open, not writable from the PR: design D5 / section 7 / risk 8 amendments (ops).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
