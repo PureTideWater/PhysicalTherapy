@@ -1583,3 +1583,9 @@ HANDOFF.md; LANES.md rule 10).
   - **Decided:** extraction runs in a child process with its own heap flag, with a test of its heap limit under the real command and a synth-time guard.
   - **Order:** heap.ts's flag must not ship before it.
   - Item `co-001/pages-child-process`, in S3 after ci-findings-transport.
+
+### 2026-11-05 01:25 UTC: #119 merged (370b8973); SUITE-CAP-1b's CAS-42.5 passes; RDS classes decided
+- #119 (test-flakes-6): the screening pool's oom case runs in a child node without the heap flag.
+- #110 (SUITE-CAP-1b) head c2626113: CAS-42.5 passed on attempt 1, run 41940882156. Then come an adversarial review of the round's infra and worker code, the base merge, the body, and the suggested line.
+- **Decided:** staging RDS goes to db.t4g.medium (production's class; about +$23 a month). Dev goes to db.t4g.small with stop-first worker deploys in dev only (about +$11 a month when deployed), its heartbeat alarm quiet during deploys. Recorded in ADR 0083. PRD section 19's cost line stays the founder's.
+- **For Lane B (SUITE-CAP-3):** `approval-summaries/lane-a-to-lane-b-sc1b-reconcile-time-2026-11-05.md`, with 7b's 2,000-line reconcile at 526 to 657 s of 900, and the profile.
