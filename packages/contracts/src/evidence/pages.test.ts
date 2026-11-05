@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -371,7 +371,7 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
       const before = new Set(coresNow());
       const probe = spawnSync('/bin/sh', ['-c', 'ulimit -c unlimited && exec "$@"', 'probe', process.execPath, '--import', 'tsx', CORE_PROBE], { cwd: REPO, encoding: 'utf8', timeout: 60_000 });
       expect(probe.status, probe.stderr).toBe(0);
-      expect(JSON.parse(probe.stdout)).toEqual({ segv: 'the page reader stopped with signal SIGSEGV', abort: 'the page reader stopped with signal SIGABRT' });
+      expect(JSON.parse(probe.stdout)).toEqual({ segv: 'the page reader stopped with signal SIGSEGV', abort: 'the page reader stopped with signal SIGABRT', oom: 'refused' });
       const written = coresNow().filter((file) => !before.has(file));
       for (const file of written) {
         rmSync(file, { force: true });
@@ -381,6 +381,34 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
       rmSync(scratch, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it('starts every reader unable to write a core file on any host: a core limit of 0, soft and hard, and its directory /', async () => {
+    // The crash test above runs only where the host writes cores as files; these are the guard itself, read from /proc
+    // while a stand-in reader waits.
+    const read = readInChild(stubRequest('silent'), { ...PAGE_READ_LIMITS, timeoutMs: 20_000 }, STUB).then(
+      (reply) => reply,
+      (error: unknown) => error,
+    );
+    let pid: number | undefined;
+    const isNode = (candidate: number): boolean => {
+      try {
+        // After the shell's exec: the reader's own node, not the shell that started it.
+        return readFileSync(`/proc/${String(candidate)}/cmdline`, 'utf8').split('\u0000')[0] === process.execPath;
+      } catch {
+        return false;
+      }
+    };
+    expect(await until(() => (pid = readerProcesses().find(isNode)) !== undefined, 15_000), 'the reader is running').toBe(true);
+    const reader = pid ?? 0;
+    try {
+      const limit = /^Max core file size\s+(\S+)\s+(\S+)\s+bytes\s*$/m.exec(readFileSync(`/proc/${String(reader)}/limits`, 'utf8'));
+      expect(limit?.slice(1), 'the core limit, soft and hard').toEqual(['0', '0']);
+      expect(readlinkSync(`/proc/${String(reader)}/cwd`), 'the working directory').toBe('/');
+    } finally {
+      process.kill(reader, 'SIGKILL');
+    }
+    expect(await read).toEqual(new PageReadError('the page reader stopped with signal SIGKILL'));
+  }, 60_000);
 
   it("fails the read as the reader's own when it exits non-zero after its reply, sends a frame after it, or aborts", async () => {
     const read = readInChild;

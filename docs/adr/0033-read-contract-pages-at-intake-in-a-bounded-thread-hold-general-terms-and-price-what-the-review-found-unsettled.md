@@ -139,7 +139,11 @@ heap out of memory aborts the reader, and a core of its memory holds the documen
 left an 858 MB core in the reader's directory under `ulimit -c unlimited`, review fix round), so the reader is started
 through `/bin/sh` setting `ulimit -c 0` (soft and hard, which it cannot raise) before it execs node in its place, its
 working directory is `/` (not writable by the image's user), and every container pins `core` at 0 in its task
-definition (`infra/lib/constructs/compute.ts`). Measured: it cannot
+definition (`infra/lib/constructs/compute.ts`); `pages.test.ts` reads the reader's core limit (0, soft and hard) and
+working directory from `/proc` on every Linux host, and crashes it (SIGSEGV, SIGABRT, a V8 heap out of memory) where the
+host writes cores as files. These bound a core written as a file: a host whose `core_pattern` pipes to a program hands
+that program the dump whatever the limit (core(5); the limit reaches it only as `%c`), and on Fargate that is the
+host's handler, outside the task and its disk. Measured: it cannot
 write a file, read `/etc` or `/proc/*/environ`, spawn a process, start a thread or load an addon (pdf.js's native canvas
 binding no longer loads into the worker).
 

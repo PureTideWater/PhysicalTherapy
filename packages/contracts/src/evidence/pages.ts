@@ -186,7 +186,9 @@ export function readerArgv(limits: PageReadLimits, entry: URL = READER): string[
  * (a routine refusal) aborts it. Node cannot set a resource limit, so the reader is started through /bin/sh, which sets
  * RLIMIT_CORE to 0, soft and hard (the reader cannot raise it), drops the PWD it would export and execs node in its
  * place (same pid, the same argv and an empty environment). Its working directory is `/`, which the worker image's user
- * cannot write, and the worker image's containers pin the core limit at 0 too (infra/lib/constructs/compute.ts).
+ * cannot write, and the worker image's containers pin the core limit at 0 too (infra/lib/constructs/compute.ts). These
+ * bound a core written as a file; a host whose core_pattern pipes to a program hands that program the dump whatever
+ * the limit (core(5): the limit reaches it only as %c), and on Fargate that is the host's handler, outside the task.
  */
 export const READER_SHELL = '/bin/sh';
 export const READER_SHELL_SCRIPT = 'ulimit -c 0 && unset PWD && exec "$@"';
