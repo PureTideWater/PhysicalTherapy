@@ -230,11 +230,52 @@ class FrameReader {
 }
 
 /**
- * Reads one document in a child process of its own, stopping it at the first limit it passes. Resolves only once the
- * child has closed (exited, every pipe drained: on `exit` the last frames can still be unread), never on the decision.
- * `entry` is the reader's file (tests start stand-ins from test-support/).
+ * At most this many readers run at once in a worker process (intake reads one document at a time; the queue makes it a
+ * property of the reader, so another caller waits rather than doubling the task's worst case). One child per document,
+ * never reused: a reader a document compromised never sees the next one.
  */
-export function readInChild(request: ReaderRequest, limits: PageReadLimits, entry: URL = READER): Promise<ChildReply> {
+export const MAX_READERS = 1;
+let running = 0;
+const waiting: (() => void)[] = [];
+
+function acquireReader(): Promise<void> {
+  if (running < MAX_READERS) {
+    running += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    waiting.push(resolve);
+  });
+}
+
+function releaseReader(): void {
+  const next = waiting.shift();
+  if (next === undefined) {
+    running -= 1;
+  } else {
+    next();
+  }
+}
+
+/**
+ * Reads one document in a child process of its own, stopping it at the first limit it passes; one at a time
+ * (MAX_READERS), its slot freed only once the child has closed. The deadline counts from the child's start, not while
+ * it waits. `entry` is the reader's file (tests start stand-ins from test-support/).
+ */
+export async function readInChild(request: ReaderRequest, limits: PageReadLimits, entry: URL = READER): Promise<ChildReply> {
+  await acquireReader();
+  try {
+    return await runReader(request, limits, entry);
+  } finally {
+    releaseReader();
+  }
+}
+
+/**
+ * One child, start to close. Resolves only once the child has closed (exited, every pipe drained: on `exit` the last
+ * frames can still be unread), never on the decision.
+ */
+function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): Promise<ChildReply> {
   if (request.bytes.byteLength > limits.maxBytes) {
     return Promise.resolve(REFUSED);
   }
