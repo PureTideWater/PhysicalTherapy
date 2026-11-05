@@ -579,7 +579,7 @@ describe('Social Security and phone numbers by pattern: the placeholders, the na
     expect(holdsIdentifier(redactLetter('On file: 202.555 0123.', who, claims).text, who, claims)).toBe(true);
     // The other way, not redacted by the letter: 11 to 14 digits in one run (an ICN), sent; and an area code starting 1
     // (no phone, no SSN), which no pattern reads and the survivor scan refuses as a ten-digit chain of short groups (R7).
-    for (const written of ['12345678901', '12345678901234', '123-456-7890']) {
+    for (const written of ['10012345678', '12345678901234', '123-456-7890']) {
       expect(textPhiFindings(written), written).not.toEqual([]);
       expect(redactLetter(`Reference ${written}.`, who, claims).text, written).toBe(`Reference ${written}.`);
       expect(holdsIdentifier(`Reference ${written}.`, who, claims), written).toBe(written.includes('-'));
