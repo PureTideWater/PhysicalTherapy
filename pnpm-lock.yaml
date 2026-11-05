@@ -146,6 +146,9 @@ importers:
       '@stripe/stripe-js':
         specifier: ^10.0.0
         version: 10.1.0
+      '@tp/auth-mail':
+        specifier: workspace:*
+        version: link:../../packages/auth-mail
       '@tp/billing':
         specifier: workspace:*
         version: link:../../packages/billing
