@@ -1,5 +1,4 @@
 import { getHeapStatistics } from 'node:v8';
-import { isMainThread, parentPort } from 'node:worker_threads';
 
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // pdf.js runs its worker in this thread from the module that registers itself here
@@ -526,15 +525,6 @@ async function serve(): Promise<void> {
   process.exit(0);
 }
 
-if (import.meta.main && isMainThread) {
+if (import.meta.main) {
   void serve();
-}
-
-if (!isMainThread && parentPort !== null) {
-  const port = parentPort;
-  port.once('message', (request: ReaderRequest) => {
-    void readPagesHere(request).then((reply) => {
-      port.postMessage(reply);
-    });
-  });
 }

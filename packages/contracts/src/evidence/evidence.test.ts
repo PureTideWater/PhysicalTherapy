@@ -76,7 +76,7 @@ const ok = (pages: Awaited<ReturnType<typeof readDocumentPages>>): readonly stri
 };
 
 describe('the bounded page reader (ADR 0033)', () => {
-  it('reads each PDF page’s text layer in its own thread, and an empty string for a page without one', async () => {
+  it('reads each PDF page’s text layer in its own process, and an empty string for a page without one', async () => {
     const pages = ok(await readDocumentPages({ bytes: syntheticPdf([PAGE_ONE, PAGE_TWO, { scanned: true }]), contentType: 'application/pdf' }));
     expect(pages.map(normalizePageText)).toEqual([PAGE_ONE.join(' '), PAGE_TWO.join(' '), '']);
   });
@@ -122,7 +122,7 @@ describe('the bounded page reader (ADR 0033)', () => {
     expect(await readDocumentPages({ bytes: workbook, contentType: XLSX }, { limits: { maxPages: 1 } })).toEqual({ ok: false, problem: 'unsupported_document' });
   });
 
-  it('stops the reading thread when a decompression bomb passes the memory cap, and this thread is untouched', async () => {
+  it('stops the reader when a decompression bomb passes the memory cap, and this process is untouched', async () => {
     const before = process.memoryUsage().heapUsed;
     const started = Date.now();
     expect(await readDocumentPages({ bytes: deflateBombPdf(160), contentType: 'application/pdf' }, { limits: { maxMemoryBytes: 64 * 1024 * 1024 } })).toEqual({ ok: false, problem: 'unsupported_document' });

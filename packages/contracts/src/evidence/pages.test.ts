@@ -5,9 +5,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
-import { READER_REQUEST_HEADER_MAX_BYTES, type ReaderReply, type ReaderRequest, readerRequestHeader } from './page-reader';
-import * as pages from './pages';
-import { PAGE_READ_LIMITS, type PageReadLimits, readDocumentPages } from './pages';
+import { READER_FRAME, READER_REQUEST_HEADER_MAX_BYTES, type ReaderRequest, readerRequestHeader } from './page-reader';
+import { PAGE_READ_LIMITS, PageReadError, READER_FRAME_TYPES, READER_SEMI_SPACE_MB, readDocumentPages, readInChild, readerArgv, readerEntry } from './pages';
 import { deflateBombPdf, syntheticLine } from './test-support/documents';
 
 /**
@@ -23,23 +22,9 @@ const STUB = new URL('./test-support/stub-reader.ts', import.meta.url);
 const SILENT = new URL('./test-support/stub-silent.ts', import.meta.url);
 const PDF = 'application/pdf';
 
-/** What the change adds to pages.ts, read through the module so this file runs against the reader before it. */
-interface ChildReader {
-  readonly readInChild?: (request: ReaderRequest, limits: PageReadLimits, entry?: URL) => Promise<ReaderReply>;
-  readonly readerArgv?: (limits: PageReadLimits, entry?: URL) => readonly string[];
-  readonly PageReadError: new (message: string) => Error;
-}
-const reader = pages as unknown as ChildReader;
-
-/** The reader in a child process, or a failed assertion naming what is missing. */
-function readInChild(): NonNullable<ChildReader['readInChild']> {
-  expect(reader.readInChild, 'pages.ts reads a document in a child process (readInChild)').toBeTypeOf('function');
-  return reader.readInChild as NonNullable<ChildReader['readInChild']>;
-}
-
 /** V8's heap_size_limit for a process run with these flags. */
 function heapLimitWith(flags: readonly string[]): number {
-  return Number(execFileSync(process.execPath, [...flags, '-p', 'require("node:v8").getHeapStatistics().heap_size_limit'], { encoding: 'utf8', env: {} }));
+  return Number.parseInt(execFileSync(process.execPath, [...flags, '-p', 'require("node:v8").getHeapStatistics().heap_size_limit'], { encoding: 'utf8', env: {} }), 10);
 }
 
 /** The page-reader processes this process has running now: its children run with the reader's heap flags. */
@@ -156,45 +141,45 @@ describe('the page reader in its own process (ADR 0033)', () => {
     inItsOwnProcess(seen);
     expect(await readDocumentPages({ bytes: pdf, contentType: PDF }, { limits: { timeoutMs: 0 } })).toEqual({ ok: false, problem: 'unsupported_document' });
     // A reader that never says it is ready is stopped by the same deadline.
-    const silent = await watched(() => readInChild()(stubRequest('never read'), { ...PAGE_READ_LIMITS, timeoutMs: 500 }, SILENT));
+    const silent = await watched(() => readInChild(stubRequest('never read'), { ...PAGE_READ_LIMITS, timeoutMs: 500 }, SILENT));
     expect(silent.result).toEqual({ kind: 'refused', problem: 'unsupported_document' });
     inItsOwnProcess(silent.seen);
   }, 60_000);
 
   it("names only the code or signal when the reader itself fails: an exit, a crash, a malformed frame", async () => {
-    const read = readInChild();
-    await expect(read(stubRequest('exit-3'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new reader.PageReadError('the page reader stopped with exit code 3'));
-    await expect(read(stubRequest('segv'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new reader.PageReadError('the page reader stopped with signal SIGSEGV'));
+    const read = readInChild;
+    await expect(read(stubRequest('exit-3'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new PageReadError('the page reader stopped with exit code 3'));
+    await expect(read(stubRequest('segv'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new PageReadError('the page reader stopped with signal SIGSEGV'));
     const malformed = await read(stubRequest('malformed'), PAGE_READ_LIMITS, STUB).then(
       () => null,
       (error: unknown) => error,
     );
-    expect(malformed).toBeInstanceOf(reader.PageReadError);
+    expect(malformed).toBeInstanceOf(PageReadError);
     expect((malformed as Error).message).toMatch(/^the page reader (sent a malformed reply|stopped with (exit code \d+|signal SIG[A-Z0-9]+))$/);
   }, 60_000);
 
   it('refuses a document whose reading exhausts the heap, or floods past the reply bound, and stops the reader', async () => {
-    const read = readInChild();
+    const read = readInChild;
     const oom = await watched(() => read(stubRequest('oom'), PAGE_READ_LIMITS, STUB));
     expect(oom.result).toEqual({ kind: 'refused', problem: 'unsupported_document' });
     inItsOwnProcess(oom.seen);
-    const flood = await watched(() => read(stubRequest('flood'), { ...PAGE_READ_LIMITS, maxPages: 5, maxTextCharacters: 3_000 }, STUB));
+    const flood = await watched(() => read({ ...stubRequest('flood'), maxPages: 5, maxTextCharacters: 3_000 }, PAGE_READ_LIMITS, STUB));
     expect(flood.result).toEqual({ kind: 'refused', problem: 'unsupported_document' });
     inItsOwnProcess(flood.seen);
   }, 60_000);
 
   it('gives the reader no environment, no argument but its entry, and no file, process, thread or addon', async () => {
-    const read = readInChild();
+    const read = readInChild;
     const saved = { ...process.env };
     // SYNTHETIC values: what the worker task holds and the reader must never see.
     Object.assign(process.env, { AWS_ACCESS_KEY_ID: 'AKIASYNTHETIC000000', AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: '/v2/synthetic', DATABASE_URL: 'postgres://synthetic@localhost/synthetic', NODE_OPTIONS: '--max-old-space-size=560' });
     try {
       const reply = await read(stubRequest('inspect'), PAGE_READ_LIMITS, STUB);
       expect(reply.kind).toBe('pages');
-      const seen = JSON.parse(reply.kind === 'pages' ? (reply.pages[0] ?? '') : '') as Record<string, unknown>;
+      const seen = JSON.parse(reply.kind === 'pages' ? (reply.pages[0] ?? '') : '{}') as Record<string, unknown>;
       expect(seen.env).toEqual([]);
       expect(seen.argv).toEqual([process.execPath, decodeURIComponent(STUB.pathname)]);
-      expect(seen.execArgv).toEqual(reader.readerArgv?.(PAGE_READ_LIMITS, STUB));
+      expect(seen.execArgv).toEqual(readerArgv(PAGE_READ_LIMITS, STUB));
       expect(seen).toMatchObject({ write: 'ERR_ACCESS_DENIED', environ: 'ERR_ACCESS_DENIED', etc: 'ERR_ACCESS_DENIED', spawn: 'ERR_ACCESS_DENIED', worker: 'ERR_ACCESS_DENIED', addon: 'ERR_DLOPEN_DISABLED' });
     } finally {
       for (const name of Object.keys(process.env)) {
@@ -220,7 +205,28 @@ describe('the page reader in its own process (ADR 0033)', () => {
   }, 60_000);
 });
 
-describe("the reader's request header", () => {
+describe("the reader's command and frames", () => {
+  it('starts the reader with its own heap, stack and permissions, and nothing inherited', () => {
+    const entry = new URL('file:///app/dist/page-reader.js');
+    expect(readerArgv(PAGE_READ_LIMITS, entry)).toEqual([
+      '--max-old-space-size=192',
+      `--max-semi-space-size=${String(READER_SEMI_SPACE_MB)}`,
+      '--stack-size=3920',
+      '--permission',
+      '--allow-fs-read=/app/dist/page-reader.js',
+      '--disallow-code-generation-from-strings',
+    ]);
+    // In the source tree the reader reads the workspace, through which pdf.js and yauzl resolve.
+    expect(readerArgv(PAGE_READ_LIMITS)).toContain(`--allow-fs-read=${REPO}`);
+    expect(readerEntry('file:///app/dist/main.js').href).toBe('file:///app/dist/page-reader.js');
+    expect(readerEntry(new URL('./pages.ts', import.meta.url)).pathname).toMatch(/\/packages\/contracts\/src\/evidence\/page-reader\.ts$/);
+  });
+
+  it('reads the frames page-reader.ts writes', () => {
+    // pages.ts keeps its own copy (it never imports pdf.js); the two stay equal.
+    expect(READER_FRAME_TYPES).toEqual(READER_FRAME);
+  });
+
   it('is the format and the caps, numbers and an enum only, within its bound', () => {
     const header = { format: 'pdf', byteLength: 10, maxBytes: 64 * MIB, maxPages: 2_000, maxTextCharacters: 16 * MIB, maxInflatedBytes: 64 * MIB, deadlineMs: 60_000 };
     expect(readerRequestHeader(JSON.stringify(header))).toEqual(header);
@@ -229,7 +235,7 @@ describe("the reader's request header", () => {
     expect(readerRequestHeader(JSON.stringify({ ...header, byteLength: 64 * MIB + 1 }))).toBeNull();
     expect(readerRequestHeader(JSON.stringify({ ...header, maxPages: -1 }))).toBeNull();
     expect(readerRequestHeader(JSON.stringify({ ...header, deadlineMs: '60000' }))).toBeNull();
-    expect(readerRequestHeader(JSON.stringify({ ...header, maxTextCharacters: 1.5 }))).toBeNull();
+    expect(readerRequestHeader(JSON.stringify({ ...header, maxTextCharacters: Math.SQRT2 }))).toBeNull();
     expect(readerRequestHeader('not json')).toBeNull();
     expect(readerRequestHeader('null')).toBeNull();
   });
