@@ -66,7 +66,7 @@ Tokens are CSS custom properties in `packages/brand/src/tokens.css` and typed co
 | Ink `--pw-ink` | #0D1E3A | Wordmark, ring, primary text, primary buttons | 16.6:1 |
 | Brass `--pw-brass` | #C99A3B | The keystone. Also foil, seals, one accent rule or underline. Never text on white. | 2.6:1 |
 | White `--pw-white` | #FFFFFF | Product and report ground | |
-| Paper `--pw-paper` | #F6F4EE | Report covers, print, and the sign-in ground (section 7) | |
+| Paper `--pw-paper` | #F6F4EE | Report covers, print, and the light-theme sign-in | |
 | Slate `--pw-slate` | #526070 | Secondary text, labels | 6.4:1 |
 | Line `--pw-line` | #DAD7CF | Rules, borders, table lines | |
 
@@ -76,7 +76,7 @@ Status colors are for data only and never appear in or near the logo:
 | --- | --- | --- |
 | Whole `--pw-whole` | #1F7A4D | Paid as contracted (5.3:1 on white) |
 | Short `--pw-short` | #B5452E | Paid below the contract (5.4:1 on white) |
-| Unpriced `--pw-unpriced` | #7A8594 | Could not be priced; the reason is always shown |
+| Unpriced `--pw-unpriced` | #646E7C | Could not be priced; the reason is always shown (4.6:1 on its tint, 5.1:1 on white) |
 
 Status is shown as colored text on a quiet tint (`--pw-*-bg`), never as white text on a saturated
 fill. Colors that must be told apart also differ in lightness and are always paired with a label.
