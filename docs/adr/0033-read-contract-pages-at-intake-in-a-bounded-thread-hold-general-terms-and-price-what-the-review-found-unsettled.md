@@ -156,8 +156,11 @@ binding no longer loads into the worker).
   (only its last 1 KiB is read, for V8's fixed out-of-memory line); its console is silenced before it reads a byte.
   Results are given on `close`, never on `exit`, which came before the last frames (985 of 1,000 pages, measured).
   The deadline and the memory bound hold until `close`, the reply in or not, and a child that has sent its last frame
-  has 1 s to close (`READER_EXIT_GRACE_MS`): past it the child is killed and the read is `PageReadError`, so a reader a
-  document compromised can neither hold the one reader slot nor grow after replying (review fix round, 2026-11-05).
+  has 1 s to exit (`READER_EXIT_GRACE_MS`): past it a child still running is killed and the read is `PageReadError`, so
+  a reader a document compromised can neither hold the one reader slot nor grow after replying (review fix round,
+  2026-11-05). Both timers run on the worker's clock, so each decides a turn after it is due, once the input waiting
+  then is in: a worker loop held past the grace by other work would otherwise fail a reader that had exited at once
+  (14 of 15 reads under a 1.2 s hold, measured; none after).
 - **One at a time:** at most one reader per worker process, one child per document, never reused; its slot is freed
   once it has closed, and every running child is killed when the worker exits normally (or on a thrown error). A
   worker killed by a signal or aborted runs no exit handler: the task's init process (`initProcessEnabled`) then exits

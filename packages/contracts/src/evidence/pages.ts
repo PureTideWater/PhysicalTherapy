@@ -122,13 +122,26 @@ export const READER_BASELINE_MAX_BYTES = 224 * MIB;
 const V8_OUT_OF_MEMORY = 'JavaScript heap out of memory';
 const READER_STDERR_TAIL_BYTES = 1024;
 /**
- * How long a reader may take to close once it has sent its last frame (it exits as soon as the frame is flushed: a few
- * milliseconds). Past it the reader is killed and its read fails as its own (PageReadError); the deadline and the
- * memory bound stay armed until it has closed, so a reader a document compromised can neither linger nor grow.
+ * How long a reader may take to exit once it has sent its last frame (it exits as soon as the frame is flushed: a few
+ * milliseconds). Past it a reader still running is killed and its read fails as its own (PageReadError); the deadline
+ * and the memory bound stay armed until it has closed, so a reader a document compromised can neither linger nor grow.
+ * The grace and the deadline run on this process's clock: a loop held past either has the reader's exit and its end of
+ * output still waiting when the timer is due, so each decides only a turn later (afterPendingInput), once they are in.
  */
 export const READER_EXIT_GRACE_MS = 1_000;
 /** Where /proc is missing (a developer's Mac), the reader's memory is read with ps at most this often. */
 const PS_POLL_MS = 100;
+
+/**
+ * Runs `decision` once the input already waiting has been taken: an expired timer runs before the loop polls for input,
+ * so a timer due while the loop was held would otherwise decide before a child's frames, exit and close that came in
+ * meanwhile. setImmediate runs after that poll.
+ */
+function afterPendingInput(decision: () => void): () => void {
+  return () => {
+    setImmediate(decision);
+  };
+}
 
 // The frames, as page-reader.ts writes them (its READER_FRAME; pages.test.ts holds the two equal). Not imported:
 // page-reader.ts loads pdf.js, which this module never does.
@@ -333,6 +346,7 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
     const pages: string[] = [];
     let characters = 0;
     let settled = false;
+    let exited = false;
 
     let exitGrace: NodeJS.Timeout | undefined;
     const stop = (): void => {
@@ -365,7 +379,14 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
       outcome();
     };
 
-    const deadline = setTimeout(refuse, limits.timeoutMs);
+    const deadline = setTimeout(
+      afterPendingInput(() => {
+        if (!settled) {
+          refuse();
+        }
+      }),
+      limits.timeoutMs,
+    );
     const poll = setInterval(
       () => {
         // Measured until the child has closed, its reply sent or not.
@@ -390,11 +411,17 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
       PROC ? limits.pollMs : Math.max(limits.pollMs, PS_POLL_MS),
     );
 
-    // The last frame is in: the reader has READER_EXIT_GRACE_MS to close, and the deadline and the poll stay armed.
+    // The last frame is in: the reader has READER_EXIT_GRACE_MS to exit, and the deadline and the poll stay armed until it
+    // has closed (one that exited and has not closed is still under the deadline).
     const awaitExit = (): void => {
-      exitGrace = setTimeout(() => {
-        fail('the page reader did not exit after its reply');
-      }, READER_EXIT_GRACE_MS);
+      exitGrace = setTimeout(
+        afterPendingInput(() => {
+          if (!exited) {
+            fail('the page reader did not exit after its reply');
+          }
+        }),
+        READER_EXIT_GRACE_MS,
+      );
     };
 
     const send = (): void => {
@@ -493,6 +520,9 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
           reject(new PageReadError(`the page reader could not start: ${error.code ?? 'error'}`));
         });
       }
+    });
+    child.once('exit', () => {
+      exited = true;
     });
     child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
       settle(() => {

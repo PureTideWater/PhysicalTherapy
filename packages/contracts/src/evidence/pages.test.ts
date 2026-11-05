@@ -313,6 +313,34 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
     }
   }, 60_000);
 
+  it('gives the pages of a reader that exited at once while this process was held past the exit grace', async () => {
+    // The worker's loop held 1.2 s at a time (past READER_EXIT_GRACE_MS) from the check phase, right after the poll that
+    // took the reader's frames: its exit and its end of stdout are then still waiting when the grace timer is due.
+    for (let run = 0; run < 6; run += 1) {
+      let holding = true;
+      const hold = (): void => {
+        if (!holding) {
+          return;
+        }
+        const until = Date.now() + 1_200;
+        while (Date.now() < until) {
+          // Held.
+        }
+        setTimeout(() => setImmediate(hold), 5);
+      };
+      setImmediate(hold);
+      const reply = await readInChild({ ...stubRequest('many 20'), maxPages: 100, maxTextCharacters: MIB }, PAGE_READ_LIMITS, STUB)
+        .then(
+          (result) => (result.kind === 'pages' ? result.pages.length : result),
+          (error: unknown) => (error as Error).message,
+        )
+        .finally(() => {
+          holding = false;
+        });
+      expect(reply, `run ${String(run)}`).toBe(20);
+    }
+  }, 60_000);
+
   it('lets a crashed reader write no core file, whatever core limit its parent has', (context) => {
     // A core of the reader holds the document's bytes and text. The kernel writes one where core_pattern says, and a
     // relative pattern ('core' here) lands in the crashed process's working directory.
