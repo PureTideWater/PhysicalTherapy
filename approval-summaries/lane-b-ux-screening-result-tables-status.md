@@ -64,6 +64,12 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - "Expected under Medicare, …" becomes "Medicare figure, …" (design P5);
   - GroupStatus says "its" for one row;
   - scope `screening.spec.ts:517` to `[data-stacked-copy="table"]`.
+  - (added 2026-11-05 by acting S4 from #121's UX and brand review, P1, an S its skeptic confirmed; routed here by Lane A's
+    orchestrator) `apps/web/src/components/screening/anomalies.tsx`: standingWords() and GroupStatus() build the anomaly
+    label as a plain string, so its "$5" renders in the sans face; brand.md requires money figures in the mono face with
+    tabular numerals. Wrap the figure, e.g. "Anomaly: more than <span className="font-mono tabular-nums">$5.00</span> a
+    claim line below the fully reduced figure". The same standing is also tone `short` in the table copy and unpriced in
+    the stacked rows: give both copies the unpriced tone. Touches anomalies.tsx and result.test.tsx.
 - **Stacked items:** a stacked anomaly item could show its standing chip with the heading, as coverage shows its outcome, so a reader scanning 50 cards finds the anomaly.
 - **Page weight:** the 512 KiB cap measures renderToString only; the served page also carries the RSC flight payload, so measure what a phone downloads.
 - **`StackedRows`:** a shared `copiesAgree(html)` check for every paired caller.
