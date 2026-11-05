@@ -159,7 +159,11 @@ binding no longer loads into the worker).
   has 1 s to close (`READER_EXIT_GRACE_MS`): past it the child is killed and the read is `PageReadError`, so a reader a
   document compromised can neither hold the one reader slot nor grow after replying (review fix round, 2026-11-05).
 - **One at a time:** at most one reader per worker process, one child per document, never reused; its slot is freed
-  once it has closed, and every running child is killed when the worker exits.
+  once it has closed, and every running child is killed when the worker exits normally (or on a thrown error). A
+  worker killed by a signal or aborted runs no exit handler: the task's init process (`initProcessEnabled`) then exits
+  and the kernel ends the container's processes, the reader's included, so the container's end is the last bound;
+  outside a container (development, CI) a reader in synchronous parsing, whose own orphan checks run only when its
+  loop is free, runs until that work ends (review fix round, 2026-11-05).
 - **Cost:** spawn to the reader's ready frame 226 to 261 ms from the bundle (11 runs, a 2-page PDF), about 60 ms a
   document more than the thread warm and 2.1 s for the first read after a cold start; intake is one document at a time
   and not latency-bound.

@@ -387,7 +387,11 @@ export const READER_FRAME = { ready: 0, page: 1, done: 2, refused: 3 } as const;
 export const READER_FRAME_HEADER_BYTES = 5;
 /** The request's header (its JSON, before the document's bytes) is at most this long. */
 export const READER_REQUEST_HEADER_MAX_BYTES = 1024;
-/** The reader's own exits: a request that breaks the protocol (2); a reader that outlived its parent or its deadline (3). */
+/**
+ * The reader's own exits: a request that breaks the protocol (2); a reader that outlived its parent or its deadline,
+ * noticed only when its loop is free (3): a reader stuck in synchronous parsing runs neither backstop, and its parent's
+ * SIGKILL, or the container's end, is its bound.
+ */
 export const READER_EXIT = { protocol: 2, orphan: 3 } as const;
 /** How long past the request's deadline the reader stops itself if its parent has not (a backstop for an orphan). */
 const ORPHAN_GRACE_MS = 5_000;

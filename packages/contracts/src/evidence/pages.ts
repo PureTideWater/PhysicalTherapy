@@ -512,7 +512,11 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
   });
 }
 
-/** Every reader still running; a worker stopping mid-read leaves none behind. */
+/**
+ * Every reader still running, killed when the worker exits normally or on a thrown error. A worker that is killed or
+ * aborts runs no exit handler: in the image its init process then exits and the kernel ends the container's processes,
+ * the reader's included; outside a container (development, CI) a reader busy in synchronous work runs until it is done.
+ */
 const LIVE = new Set<ChildProcessWithoutNullStreams>();
 process.once('exit', () => {
   for (const child of LIVE) {
