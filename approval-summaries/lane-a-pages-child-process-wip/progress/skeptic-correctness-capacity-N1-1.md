@@ -9,3 +9,6 @@ Clone: /home/user/sk-pcp-correctness-capacity-N1-1 at origin/co-001/wip-pages-ch
 
 ## Verdict
 refuted=true for the finding as stated (the quote hash does not differ). Residual: a text-only difference, nit. Optional fix: decodeXml maps 0xD800-0xDFFF to U+FFFD itself (keeps in-process and child text the same), plus a test on a synthetic xlsx cell with &#xD800;.
+
+## Resumed run (2026-11-05)
+- Branch head still c369bc77...; clone already removed. Re-checked on Node 24: sha256('9\uD800' as utf8) === sha256('9�') -> true; pageTextHash (page-text.ts:18) unchanged at head. Verdict stands: refuted=true, residual nit.

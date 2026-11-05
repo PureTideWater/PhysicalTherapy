@@ -19,3 +19,8 @@ filename/title (accepted ADR; amended in body), ADR 0051:51 (accepted ADR; at mo
 Real, not refuted. Severity: nit (comments only; behaviour unchanged).
 Fix: in the six code comments, say "in a child process of its own (docs/adr/0033)"; pages.ts:115/149 say
 "the old worker thread's 4 MiB stack". Leave the applied migration and accepted ADR titles alone.
+
+## Re-check (resumed run, 2026-11-05)
+Head still c369bc77...; `git grep` on it confirms the same lines. The apps/worker/src/screening/* and jobs/screening.ts
+"worker thread" comments are about the screening consumer (ADR 0062), still true, and not to change.
+Verdict unchanged: real, nit.

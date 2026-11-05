@@ -16,3 +16,7 @@ Clone /home/user/sk-pcp-correctness-capacity-N2-1 at origin/co-001/wip-pages-chi
 Not refuted. Severity nit (comments only; no behaviour). Fix: in the four named files plus apps/worker/src/intake/intake.ts:50,
 say "in a child process of its own (docs/adr/0033)"; leave the applied migration, ADR 0033's title/filename and accepted ADR 0051's
 text alone (optionally a dated note in 0051 is not needed since 0033's amendment is the record).
+
+## Rerun (resumed)
+Re-cloned at c369bc77..., re-ran the grep: same hits, plus packages/model-gateway/eval/sets.ts:290 ("each in its own bounded
+reading thread"), which the fix should also cover. Verdict unchanged: not refuted, nit. Clone removed.

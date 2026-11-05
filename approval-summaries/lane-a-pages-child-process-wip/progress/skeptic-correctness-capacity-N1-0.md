@@ -11,3 +11,5 @@ Checked:
 Verdict: not refuted on the text change, refuted on the hash consequence. Severity nit.
 Fix: make every page text well-formed in one place before it leaves the reader (text.toWellFormed() in the child before writeFrame, and the same on the in-process path if any), plus a unit test; one line in ADR 0033 that page text is well-formed UTF-16 (lone surrogates read as U+FFFD).
 Log: scratchpad/pcp/logs/skeptic-N1-0.log
+
+Resumed run: head still c369bc77...; re-checked pageTextHash (update(normalizePageText(text),"utf8")) and the probe log; verdict unchanged. Clone already removed.

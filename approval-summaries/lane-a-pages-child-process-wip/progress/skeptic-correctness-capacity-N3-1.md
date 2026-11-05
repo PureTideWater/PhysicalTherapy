@@ -12,3 +12,4 @@
 - Verdict: real, not refuted. Severity: should (the property this item exists for, a 1,024 MiB task budget, is unpinned; design T3 promised it).
 - Fix: in the 1 GiB bomb test, read a small SYNTHETIC PDF first under watched() to take the reader's ready peak, then assert the bomb's child VmHWM minus that is < maxMemoryBytes + 32 MiB (one poll's measured overshoot 18 MiB, plus margin); watched() reads VmHWM from /proc/<pid>/status for each reader pid it sees; skip only that assertion where /proc is absent.
 - Clone removed.
+- Resumed run: head still c369bc77, logs present, clone already removed; verdict stands (submitted).

@@ -17,3 +17,6 @@ the thread's did. No data is stored pre-launch, so no old stored page text to mi
 
 Verdict: refuted (not a reachable defect); severity none. Optional hygiene: map D800-DFFF to U+FFFD in decodeXml
 so in-process and child text are byte-identical strings.
+
+Resumed run: re-checked at c369bc77... (git show, no clone needed): page-reader.ts:432 Buffer.from(body,'utf8');
+page-text.ts:18 pageTextHash updates with 'utf8'; hash probe equal (true) again. Clone confirmed removed. Verdict final.
