@@ -205,7 +205,8 @@ launch"), Dependabot reads `.github/dependabot.yml` from `claude/build-platform`
 there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres on Wednesdays at 04:43, npm on Thursdays
 at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
 runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
-mutation only for what a shard reads (docs/adr/0066, Part 7): every shard, about 54 runner-minutes, when it moves the
+mutation only for what a shard reads (docs/adr/0066, Part 7): every shard (about 54 runner-minutes with the seven
+shards before #84; seventeen since, re-measured on its push runs) when it moves the
 test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves,
 or a catalog or manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an
 actions pull request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports
@@ -516,7 +517,8 @@ checks above.
 
 ### What runs
 
-- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (seven today).
+- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (seventeen since #84;
+  seven before it).
 - **On a pull request:** every shard of each package whose closure the change touches, and nothing else. The
   `changes` job prints which packages it chose and why (the first changed paths that reach each one) to its log and
   summary (`tools/stryker/affected.ts`). A package's closure is:
@@ -585,18 +587,31 @@ checks above.
 - **A pull request that touches no money path** runs only `changes` and `mutation`, which passes with "No money path
   changed".
 
-| Shard | Mutates | Mean job time on CI (12 push runs, 40324477819 to 41348076075) |
+| Shard | Mutates | Time (on CI, the mean job time over 12 push runs, 40324477819 to 41348076075; local where marked) |
 | --- | --- | --- |
 | `money-ledger` | money, then the ledger | 4 min 30 s |
-| `packets-scan` | packets' `scan.ts` | 7 min 14 s |
-| `packets-rest` | the rest of packets' set | 12 min 36 s |
-| `packets-explain` | packets' `explain.ts` and `explain/` | 11 min 52 s |
+| `packets-scan` | packets' `scan.ts` | 7 min 54 s (local, 2026-11-04) |
+| `packets-roles` | the role reader (docs/adr/0086): `roles.ts` and its walk over the tokens (`roles-reader/walk.ts`, `kinds.ts`) | 9 min 26 s (local, 2026-11-04) |
+| `packets-roles-cues` | the reader's cues (`roles-reader/cues.ts`) | 6 min 25 s (local, 2026-11-04) |
+| `packets-roles-numbers` | the reader's numbers (`roles-reader/numbers.ts`) | 7 min 52 s (local, 2026-11-04) |
+| `packets-words-labels` | the reader's words (`roles-words/`): the labels and nouns (`labels.ts`) | 4 min 24 s (local, 2026-11-04) |
+| `packets-words-amounts` | the amounts' cues (`roles-words/amounts.ts`) | 4 min 11 s (local, 2026-11-04) |
+| `packets-words-days` | the day counts', pages' and percentages' cues (`roles-words/days.ts`) | 3 min 34 s (local, 2026-11-04) |
+| `packets-words-dates` | the dates' cues (`roles-words/dates.ts`) | 3 min 14 s (local, 2026-11-04) |
+| `packets-words-prose` | the prose words (`roles-words/prose.ts`, `index.ts`) | 4 min 35 s (local, 2026-11-04) |
+| `packets-verifier` | the verifier's check (`verifier/`) and the text it reads (`readable.ts`) | 8 min 12 s (local, 2026-11-04) |
+| `packets-facts` | the facts a narrative is held to (`facts.ts`), the payer's names (`payer.ts`) and the placeholders | 6 min 38 s (local, 2026-11-04) |
+| `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | 6 min 7 s (local, 2026-11-04) |
+| `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | 8 min 40 s (local, 2026-11-04) |
 | `pricing-engine` | pricing's `engine.ts` | 7 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 4 min 9 s |
 | `pricing-rest` | the rest of pricing | 5 min 38 s |
 
-The times are each shard job's, setup included, over every push run since `stryker/shards.json` last changed (#51's
-merge, 2026-10-26): 53.4 runner-minutes for the shards, 54.2 with `changes` and `mutation`.
+The times of `money-ledger` and pricing's three shards are each shard job's, setup included, over every push run since
+`stryker/shards.json` last changed before #84 (#51's merge, 2026-10-26); those seven shards took 53.4 runner-minutes,
+54.2 with `changes` and `mutation`. #84 split packets' three shards into thirteen (docs/adr/0086), so the packets rows
+are Stryker's own times in #84's one full local suite (4 shared CPUs, 2026-11-04) until push runs measure them, and
+the seventeen-shard total is re-measured on the push runs after #84's merge.
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads

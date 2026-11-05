@@ -308,6 +308,26 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/report/csv-arena.test.ts',
     'apps/worker/src/reconcile/patient-share.test.ts',
   ]),
+  // Lane B (co-001/packet-day-counts; docs/adr/0086): every narrative figure in the role its words give it.
+  'CAS-43': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+    'apps/worker/src/packets/packets.db.test.ts',
+    'apps/worker/src/packets/verifier-now.test.ts',
+    'apps/web/src/lib/packets/view.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/stored-narrative.test.tsx',
+    'apps/web/src/components/packets/narrative-editor.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-44': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+  ]),
   // Lane B (co-001/ux-payer-response): a choice that records a fact starts unchosen, and the payer’s letter is uploaded with its response, apart from the contract documents.
   'CAS-45': none(8, 'A case line on a synthetic practice the test creates, written off: no file.', [
     'apps/web/src/lib/cases/write-off.test.ts',

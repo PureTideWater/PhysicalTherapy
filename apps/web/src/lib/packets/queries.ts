@@ -1,5 +1,5 @@
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, WORDS_VERSION, draftNarrative, exportFileName, packetReference } from '@tp/packets';
+import { type CheckedFigure, type PacketContent, VERIFIER_FORMAT, type VerifierReport, WORDS_VERSION, checkedFigures, draftNarrative, exportFileName, narrativeFacts, packetReference } from '@tp/packets';
 import type { DeadlineStatus } from '@tp/triage';
 import {
   type ExportReadiness,
@@ -7,7 +7,10 @@ import {
   type PacketAttestation,
   type PacketExportFile,
   type PacketVersionDetail,
+  type VerifierNow,
+  type VerifierStanding,
   approvePacketVersion,
+  caseVerifiersNow,
   downloadPacketExport,
   exportReadiness,
   packetOfCase,
@@ -25,6 +28,7 @@ import { type CalculationWords, calculationWordsOf, wordsRefusalReason } from '.
 import { type ContactNow, contactNow } from './contact';
 import { type ExportAttempt, exportAttempt } from './export-attempts';
 import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
+import { refuseFailingNow } from './verifier-now';
 
 export { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, STALE_LEVEL_NOT_EXPORTABLE } from './export-attempts';
 
@@ -64,7 +68,10 @@ export interface VersionSummary {
   readonly current: boolean;
   readonly writtenAt: string;
   readonly writtenBy: string | null;
+  /** Whether the verifier passed it when it was written (the stored report). */
   readonly verifierPassed: boolean;
+  /** What the verifier says of it now (docs/adr/0086, CORR-5): what the history shows. */
+  readonly verifierStanding: VerifierStanding;
   readonly approvedAt: string | null;
   readonly approvedBy: string | null;
   readonly approvedAlone: boolean;
@@ -91,7 +98,17 @@ export interface VersionView {
    * 1, D5): what the payer's copy prints in its approval line and names its files by, and what a payer quotes back.
    */
   readonly reference: string | null;
+  /** Whether the version is approved (an approval names it). */
+  readonly approved: boolean;
+  /** The verifier's report stored when it was written. */
   readonly verifier: VerifierReport;
+  /**
+   * What the verifier says of it now, run again over the stored narrative and content (docs/adr/0086; the review of
+   * 2026-11-01, CORR-5), with the report the screen shows: the badge, the marks and the list.
+   */
+  readonly verifierNow: VerifierNow;
+  /** The narrative's failing figures as the check reads them now: what each was read as and what the records hold it as. */
+  readonly figures: readonly CheckedFigure[];
   readonly writtenAt: string;
   readonly writtenBy: string | null;
   readonly regulationConfirmed: boolean;
@@ -249,6 +266,8 @@ export function requireWordsVersion(posted: string, then: 'approve' | 'request t
 }
 
 interface VersionChecks {
+  readonly verifierNow: VerifierNow;
+  readonly figures: readonly CheckedFigure[];
   readonly deadlineNow: DeadlineStatus;
   readonly atCaseLevel: boolean;
   readonly pricingNow: PricingNowView;
@@ -269,6 +288,7 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null, atte
     narrative: detail.narrative,
     contentSha256: detail.contentSha256,
     reference: detail.approvedAt === null ? null : packetReference(detail.contentSha256),
+    approved: detail.approvedAt !== null,
     verifier: detail.verifier,
     writtenAt: detail.createdAt.toISOString(),
     writtenBy,
@@ -324,6 +344,10 @@ export async function builderView(
        FROM packet_version v WHERE v.id = $3`,
     [input.caseId, input.practiceId, shown.id],
   );
+  // The verifier again over every version's stored narrative (CORR-5): the badge, the history and the approval panel say it.
+  const verifiers = await caseVerifiersNow(scope, services.keys, { practiceId: input.practiceId, caseId: input.caseId, requestId: input.requestId });
+  const standingOf = (row: HistoryRow): VerifierStanding => verifiers.get(row.id)?.standing ?? (row.verifier_passed ? 'fails_now' : 'failed');
+  const shownNow = verifiers.get(shown.id) ?? { standing: standingOf(shown), report: detail.verifier, figures: [] };
   const pricing = await pricingNow(scope, { practiceId: input.practiceId, content: detail.content, requestId: input.requestId });
   const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: shown.id, asOf: input.now.toISOString().slice(0, 10) });
   if (readiness === undefined) {
@@ -332,6 +356,7 @@ export async function builderView(
   const approval = approvalState(
     {
       verifierPassed: shown.verifier_passed,
+      verifierFailsNow: shownNow.standing === 'fails_now',
       verifierCurrent: detail.verifier.format === VERIFIER_FORMAT,
       current: shown.current,
       matchesCase: facts[0]?.matches ?? false,
@@ -359,6 +384,7 @@ export async function builderView(
       writtenAt: row.created_at.toISOString(),
       writtenBy: person(row.drafted_by),
       verifierPassed: row.verifier_passed,
+      verifierStanding: standingOf(row),
       approvedAt: row.approved_at?.toISOString() ?? null,
       approvedBy: person(row.approved_by),
       approvedAlone: row.approved_alone,
@@ -369,6 +395,8 @@ export async function builderView(
       attestedAt: row.attested_at?.toISOString() ?? null,
     })),
     version: versionView(detail, person(shown.drafted_by), await attesterEmail(scope, detail.attestedBy), {
+      verifierNow: shownNow,
+      figures: checkedFigures(detail.narrative, narrativeFacts(detail.content)).filter((figure) => !figure.passed),
       deadlineNow: await deadlineNow(scope, input.caseId, detail.content),
       atCaseLevel: await atCaseLevel(scope, input.caseId, detail.content),
       pricingNow: pricing,
@@ -459,15 +487,23 @@ export async function versionOfCase(
 }
 
 /**
- * Approves a version naming its hash, unless it is approved already (then nothing changes). A version whose calculation
- * the renderer cannot word is refused first, with the same reason the builder shows (design 3.7: a reviewer never
- * approves wording the PDF refuses to print). The database decides the rest.
+ * Approves a version naming its hash, unless it is approved already (then nothing changes). A version the verifier
+ * passed when it was written and fails now is refused first, with each mismatch (docs/adr/0086, CORR-5: the verifier runs
+ * again over the stored narrative and content with today's identifiers, as the export job runs it); then one whose
+ * calculation the renderer cannot word, with the same reason the builder shows (design 3.7: a reviewer never approves
+ * wording the PDF refuses to print). The database decides the rest.
  */
-export async function approveOnce(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly versionSha256: string; readonly requestId: string }): Promise<boolean> {
+export async function approveOnce(
+  scope: Scope,
+  keys: Services['keys'],
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly versionSha256: string; readonly requestId: string },
+): Promise<boolean> {
   const version = await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
   if (version.approved) {
     return false;
   }
+  // The verifier again over the stored narrative, as the export job runs it: a version it fails now is not approved (CORR-5).
+  await refuseFailingNow(scope, keys, { practiceId: input.practiceId, versionId: input.versionId, requestId: input.requestId });
   const { rows } = await scope.client.query<{ content: PacketContent }>('SELECT content FROM packet_version WHERE id = $1 AND practice_id = $2', [input.versionId, input.practiceId]);
   const content = rows[0]?.content;
   if (content === undefined) {
@@ -484,6 +520,8 @@ export async function approveOnce(scope: Scope, input: { readonly practiceId: st
 /** Why approval is blocked, in words, with the next step (the approval panel's reason, beside its disabled button). */
 export const BLOCKED_TEXT: Readonly<Record<BlockedReason, string>> = {
   verifier: 'Approval is blocked: the verifier failed this version (its mismatches are listed above). Correct the narrative and save a new version; only a version that passes can be approved.',
+  verifier_now:
+    'Approval is blocked: the verifier passed this version when it was written and fails it now (its mismatches are listed above). Correct the narrative and save a new version; only a version the verifier passes now can be approved.',
   verifier_outdated: 'An earlier verifier checked this version. Save it again as a new version so the current verifier checks it; only a version the current verifier passed can be approved.',
   not_current: 'A later version of this packet was written since; only the current version can be approved.',
   case_changed: 'The case’s lines changed since this version was written (a line was written off or reopened); write a new version first.',

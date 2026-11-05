@@ -161,7 +161,9 @@ function requirement(terms: Terms, payer: string, style: number): string {
     case 'LESSER_OF':
       return `${version} pays the lesser of the billed charge and ${amount} per unit for ${listed(terms.codes)} [1].`;
     case 'PER_VISIT':
-      return `${version} pays a case rate of ${amount} per visit for ${listed(terms.codes)} [1].`;
+      // The codes in a sentence of their own: a sentence that names a code names a part of the lines, so an amount in it
+      // keeps no scope (docs/adr/0086, rule 1).
+      return `${version} pays a case rate of ${amount} per visit [1]. That rate is for ${listed(terms.codes)} [1].`;
     case 'MA_NONCONTRACTED':
       return `${payer} has no contract with the practice for this Medicare Advantage plan, so it owes what Original Medicare would pay under 42 CFR 422.214 [1].`;
   }
@@ -182,20 +184,22 @@ function referenceNarrative(terms: Terms, sums: Totals, payer: string, interest:
   switch (style) {
     case 0:
       body = [
-        `The remittances allowed ${money(sums.observed, grouped)} for ${plural(sums.lines, 'line', 'lines')} on ${plural(sums.claims, 'claim', 'claims')} with service dates ${span} [3].`,
-        `${basis} those lines come to ${money(sums.expected, grouped)}, a shortfall of ${money(sums.variance, grouped)} [3].`,
+        `The pattern is ${plural(sums.lines, 'line', 'lines')} on ${plural(sums.claims, 'claim', 'claims')} with service dates ${span} [3].`,
+        `The remittances allowed ${money(sums.observed, grouped)} in total for those lines [3].`,
+        `${basis} those lines come to ${money(sums.expected, grouped)} in total, a shortfall of ${money(sums.variance, grouped)} in total [3].`,
       ];
       break;
     case 1:
       body = [
-        `Across ${plural(sums.lines, 'line', 'lines')} for ${plural(sums.patients, 'patient', 'patients')}, with services ${span}, ${payer} allowed ${money(sums.observed, grouped)} [3].`,
-        `${regulation ? 'Original Medicare would have paid' : 'The contract requires'} ${money(sums.expected, grouped)} for the same lines [3].`,
-        `The difference owed is ${money(sums.variance, grouped)} [3].`,
+        `The services were ${span}, on ${plural(sums.lines, 'line', 'lines')} for ${plural(sums.patients, 'patient', 'patients')} [3].`,
+        `${payer} allowed ${money(sums.observed, grouped)} in total for those lines [3].`,
+        `${regulation ? 'Original Medicare would have paid' : 'The contract requires'} ${money(sums.expected, grouped)} in total for these lines [3].`,
+        `The difference owed is ${money(sums.variance, grouped)} in total [3].`,
       ];
       break;
     default:
       body = [
-        `Expected payment for the ${plural(sums.lines, 'line', 'lines')} in the schedule is ${money(sums.expected, grouped)} and the remittances show ${money(sums.observed, grouped)} [3].`,
+        `Expected payment for the ${plural(sums.lines, 'line', 'lines')} in the schedule is ${money(sums.expected, grouped)} in all and the remittances show ${money(sums.observed, grouped)} in all [3].`,
         `The payer underpaid ${plural(sums.claims, 'claim', 'claims')} by ${money(sums.variance, grouped)} in all [3].`,
       ];
   }
