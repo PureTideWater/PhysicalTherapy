@@ -264,6 +264,9 @@ importers:
       '@paidwhole/brand':
         specifier: workspace:*
         version: link:../../packages/brand
+      '@tp/auth-mail':
+        specifier: workspace:*
+        version: link:../../packages/auth-mail
       '@tp/billing':
         specifier: workspace:*
         version: link:../../packages/billing
