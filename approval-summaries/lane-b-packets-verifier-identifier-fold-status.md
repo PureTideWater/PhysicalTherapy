@@ -19,3 +19,17 @@ Nothing.
 
 ## Next step
 The workflow, then the push, a draft PR, CI, a fresh-clone verification, ready, and the merge.
+
+- 2026-11-05 07:55 UTC: **Stood down** on Lane A's orchestrator's order (this account at 99% of its weekly usage; Lane B takes over from 2026-11-06 19:00 UTC, `lanes/lane-a-handoff-to-lane-b-2026-11-05.md`). wf_54232b96-397 was stopped at its first save point: the three scouts were done, and the designer had only just started and wrote nothing. Its check-in was cancelled.
+
+## RESUME-BLOCK (for Lane B)
+- **Branch:** `co-001/packets-verifier-identifier-fold`, cut locally from claude/build-platform **23b25ad0**. It has **no commits and is not on origin**; no WIP ref exists, because there is no code. Cut it afresh from the current base.
+- **PR:** none. **CI:** none. **Counters used:** none. MOD-19 and MOD-20 are reserved and unused; no ADR number was taken.
+- **Done:** three design scouts. Their reports are in `approval-summaries/lane-b-packets-verifier-identifier-fold-wip/`:
+  - `scout-verifier.md`: identifierSpans today, with each gap class probed;
+  - `scout-gateway.md`: redact.ts's fold and matcher and their exports;
+  - `scout-boundary.md`: which packages may import which, and what a new shared package needs.
+- **Not done:** the design (`designs/lane-b-packets-verifier-identifier-fold.md` does not exist), its review, the build, the two reviews (security, then correctness with the redaction oracle), the fixes, the suite, the critic, the push, the PR, the verification and the merge.
+- **Exact next step:** re-run the workflow script `workflow-scripts/lane-b-packets-verifier-identifier-fold-wf_54232b96-397.js` from its Design phase. It is written for this session's scratchpad paths, so copy the three scout reports into its `SP/fix/` first, or change SP and skip the Scout phase. Then follow it through to a push-ready branch.
+- **Findings open or fixed:** none yet.
+- **Follow-on (unstarted):** SUITE-CAP-3's worker-side fixes only, from WIP `co-001/wip-suite-cap-3` (956b32ef). The `ledger_line_net` rewrite needs a founder exception.
