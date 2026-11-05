@@ -1,12 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
 import { READER_FRAME, READER_REQUEST_HEADER_MAX_BYTES, type ReaderRequest, readerRequestHeader } from './page-reader';
-import { PAGE_READ_LIMITS, PageReadError, READER_FRAME_TYPES, READER_SEMI_SPACE_MB, readDocumentPages, readInChild, readerArgv, readerEntry } from './pages';
+import { PAGE_READ_LIMITS, PageReadError, READER_FRAME_TYPES, READER_SEMI_SPACE_MB, readDocumentPages, readInChild, readerArgv, readerCommand, readerEntry } from './pages';
 import { deflateBombPdf, syntheticLine } from './test-support/documents';
 
 /**
@@ -18,6 +19,7 @@ import { deflateBombPdf, syntheticLine } from './test-support/documents';
 const MIB = 1024 * 1024;
 const REPO = path.resolve(import.meta.dirname, '../../../..');
 const PROBE = path.join(import.meta.dirname, 'test-support/reader-heap.ts');
+const CORE_PROBE = path.join(import.meta.dirname, 'test-support/core-probe.ts');
 const STUB = new URL('./test-support/stub-reader.ts', import.meta.url);
 const SILENT = new URL('./test-support/stub-silent.ts', import.meta.url);
 const PDF = 'application/pdf';
@@ -197,6 +199,47 @@ describe('the page reader in its own process (ADR 0033)', () => {
     }
   }, 60_000);
 
+  it('lets a crashed reader write no core file, whatever core limit its parent has', (context) => {
+    // A core of the reader holds the document's bytes and text. The kernel writes one where core_pattern says, and a
+    // relative pattern ('core' here) lands in the crashed process's working directory.
+    const pattern = readFileSync('/proc/sys/kernel/core_pattern', 'utf8').trim();
+    const isCore = (name: string): boolean => /^core(\.\d+)?$/.test(name);
+    const scratch = mkdtempSync(path.join(tmpdir(), 'tp-core-'));
+    try {
+      // The control: a plain node crashing under the same raised limit does dump here, so a missing core below is the
+      // reader's guard and not the host's.
+      spawnSync('/bin/sh', ['-c', 'ulimit -c unlimited && exec "$@"', 'control', process.execPath, '-e', 'process.kill(process.pid, "SIGSEGV")'], { cwd: scratch, env: {} });
+      if (!readdirSync(scratch).some(isCore)) {
+        context.skip(`this host writes no core file here (core_pattern ${pattern.startsWith('|') ? 'pipes to a program' : 'is not relative'}), so there is nothing to look for`);
+      }
+      const places = [scratch, path.join(import.meta.dirname, 'test-support'), import.meta.dirname, REPO, '/'];
+      const coresNow = (): string[] =>
+        places.flatMap((place) => {
+          try {
+            return readdirSync(place, { withFileTypes: true })
+              .filter((entry) => entry.isFile() && isCore(entry.name))
+              .map((entry) => path.join(place, entry.name));
+          } catch {
+            return [];
+          }
+        });
+      for (const file of readdirSync(scratch)) {
+        rmSync(path.join(scratch, file), { force: true });
+      }
+      const before = new Set(coresNow());
+      const probe = spawnSync('/bin/sh', ['-c', 'ulimit -c unlimited && exec "$@"', 'probe', process.execPath, '--import', 'tsx', CORE_PROBE], { cwd: REPO, encoding: 'utf8', timeout: 60_000 });
+      expect(probe.status, probe.stderr).toBe(0);
+      expect(JSON.parse(probe.stdout)).toEqual({ segv: 'the page reader stopped with signal SIGSEGV', abort: 'the page reader stopped with signal SIGABRT' });
+      const written = coresNow().filter((file) => !before.has(file));
+      for (const file of written) {
+        rmSync(file, { force: true });
+      }
+      expect(written, 'core files the crashed readers wrote (deleted)').toEqual([]);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }, 120_000);
+
   it('gives the reader no environment, no argument but its entry, and no file, process, thread or addon', async () => {
     const read = readInChild;
     const saved = { ...process.env };
@@ -245,6 +288,8 @@ describe("the reader's command and frames", () => {
       '--allow-fs-read=/app/dist/page-reader.js',
       '--disallow-code-generation-from-strings',
     ]);
+    // Through the shell that pins its core limit at 0 and then execs node in its place, with nothing else.
+    expect(readerCommand(PAGE_READ_LIMITS, entry)).toEqual({ file: '/bin/sh', args: ['-c', 'ulimit -c 0 && unset PWD && exec "$@"', 'page-reader', process.execPath, ...readerArgv(PAGE_READ_LIMITS, entry), '/app/dist/page-reader.js'] });
     // In the source tree the reader reads the workspace, through which pdf.js and yauzl resolve.
     expect(readerArgv(PAGE_READ_LIMITS)).toContain(`--allow-fs-read=${REPO}`);
     expect(readerEntry('file:///app/dist/main.js').href).toBe('file:///app/dist/page-reader.js');

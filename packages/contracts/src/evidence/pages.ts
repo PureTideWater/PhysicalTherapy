@@ -20,8 +20,8 @@ import { normalizePageText } from './page-text';
  *   heap flags, a cap on the process's memory growth (polled from this process, which stays free), a
  *   deadline, and caps on the pages, the page text and a workbook's inflated parts, which this process
  *   applies again to the reply. The child gets an empty environment, an argv of its flags and entry
- *   only, the document's bytes on stdin, and Node's permission model (it reads its own code and writes,
- *   spawns and loads nothing). A document past any limit is unsupported_document, never read in part;
+ *   only, the document's bytes on stdin, no core file (readerCommand), and Node's permission model (it reads its own
+ *   code and writes, spawns and loads nothing). A document past any limit is unsupported_document, never read in part;
  *   one the reader cannot parse is document_unreadable; the reader's own failure is PageReadError;
  * - an image, and the pages of a PDF with no text layer, go to the scan reader (Textract) when one is
  *   configured.
@@ -166,6 +166,22 @@ export function readerArgv(limits: PageReadLimits, entry: URL = READER): string[
   ];
 }
 
+/**
+ * A crashed reader must write no core file: its memory holds the document's bytes and text, and a V8 heap out of memory
+ * (a routine refusal) aborts it. Node cannot set a resource limit, so the reader is started through /bin/sh, which sets
+ * RLIMIT_CORE to 0, soft and hard (the reader cannot raise it), drops the PWD it would export and execs node in its
+ * place (same pid, the same argv and an empty environment). Its working directory is `/`, which the worker image's user
+ * cannot write, and the worker image's containers pin the core limit at 0 too (infra/lib/constructs/compute.ts).
+ */
+export const READER_SHELL = '/bin/sh';
+export const READER_SHELL_SCRIPT = 'ulimit -c 0 && unset PWD && exec "$@"';
+const READER_CWD = '/';
+
+/** The reader's spawn: the shell that pins its core limit, then node with readerArgv and the entry, nothing else. */
+export function readerCommand(limits: PageReadLimits, entry: URL = READER): { readonly file: string; readonly args: string[] } {
+  return { file: READER_SHELL, args: ['-c', READER_SHELL_SCRIPT, 'page-reader', process.execPath, ...readerArgv(limits, entry), fileURLToPath(entry)] };
+}
+
 const REFUSED: ChildReply = { kind: 'refused', problem: 'unsupported_document' };
 
 /** A process's resident set in bytes, or undefined once it is gone: /proc where there is one, else ps. */
@@ -300,7 +316,8 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
     let child: ChildProcessWithoutNullStreams;
     try {
       // An empty environment and an argv of flags and the entry only: nothing of the document, the practice or the task.
-      child = spawn(process.execPath, [...readerArgv(limits, entry), fileURLToPath(entry)], { cwd: fileURLToPath(new URL('.', entry)), env: NO_ENVIRONMENT, stdio: 'pipe', shell: false, windowsHide: true });
+      const command = readerCommand(limits, entry);
+      child = spawn(command.file, command.args, { cwd: READER_CWD, env: NO_ENVIRONMENT, stdio: 'pipe', shell: false, windowsHide: true });
     } catch {
       reject(new PageReadError('the page reader could not start'));
       return;

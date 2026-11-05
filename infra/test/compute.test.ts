@@ -39,6 +39,7 @@ interface ContainerDefinition {
   readonly Secrets?: { Name: string; ValueFrom: unknown }[];
   readonly LogConfiguration?: { LogDriver: string; Options: Record<string, unknown> };
   readonly LinuxParameters?: Record<string, unknown>;
+  readonly Ulimits?: Record<string, unknown>[];
   readonly PortMappings?: Record<string, unknown>[];
   readonly StopTimeout?: number;
   readonly ReadonlyRootFilesystem?: boolean;
@@ -333,10 +334,12 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     }
   });
 
-  it('runs every container in production mode, trusting the RDS certificate bundle, with an init process', () => {
+  it('runs every container in production mode, trusting the RDS certificate bundle, with an init process and no core files', () => {
     for (const name of TASKS) {
       expect(environmentOf(definitions[name]), name).toMatchObject({ NODE_ENV: 'production', NODE_EXTRA_CA_CERTS: RDS_CA_BUNDLE_PATH, DATABASE_NAME: 'tp' });
       expect(definitions[name].LinuxParameters, name).toMatchObject({ InitProcessEnabled: true });
+      // A crashed page reader's memory holds a contract's text (docs/adr/0033): no core, and no raising the limit.
+      expect(definitions[name].Ulimits, name).toEqual([{ Name: 'core', SoftLimit: 0, HardLimit: 0 }]);
       expect(definitions[name].Privileged, name).toBeUndefined();
     }
   });

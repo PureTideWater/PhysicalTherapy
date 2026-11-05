@@ -455,6 +455,9 @@ export class Compute extends Construct {
         maxBufferSize: Size.mebibytes(25),
       }),
       linuxParameters: new ecs.LinuxParameters(this, `${spec.name}LinuxParameters`, { initProcessEnabled: true }),
+      // No core files, soft or hard: a crashed process's memory holds what it was reading (the worker's page reader, a
+      // contract's text, aborts on a V8 heap out of memory; docs/adr/0033), and the task's disk is no place for it.
+      ulimits: [{ name: ecs.UlimitName.CORE, softLimit: 0, hardLimit: 0 }],
       ...(spec.port === undefined ? {} : { portMappings: [{ containerPort: spec.port, protocol: ecs.Protocol.TCP }] }),
       ...(spec.stopTimeout === undefined ? {} : { stopTimeout: spec.stopTimeout }),
     });

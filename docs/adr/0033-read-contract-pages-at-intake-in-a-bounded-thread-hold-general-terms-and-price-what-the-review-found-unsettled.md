@@ -134,7 +134,12 @@ its parent runs with.
 (the thread's 4 MiB), `--permission` reading only its own code (`dist/page-reader.js` in the image, the workspace in the
 source tree) and `--disallow-code-generation-from-strings`. Its environment is empty (no credentials, no database or
 queue URL, no `NODE_OPTIONS`), its argv names nothing of the document, the bytes go in on stdin (one framed request,
-copied once) and the pages come back on stdout one frame at a time; nothing is written to disk. Measured: it cannot
+copied once) and the pages come back on stdout one frame at a time; nothing is written to disk, a crash included: a V8
+heap out of memory aborts the reader, and a core of its memory holds the document's text (a SYNTHETIC 1,500-page PDF
+left an 858 MB core in the reader's directory under `ulimit -c unlimited`, review fix round), so the reader is started
+through `/bin/sh` setting `ulimit -c 0` (soft and hard, which it cannot raise) before it execs node in its place, its
+working directory is `/` (not writable by the image's user), and every container pins `core` at 0 in its task
+definition (`infra/lib/constructs/compute.ts`). Measured: it cannot
 write a file, read `/etc` or `/proc/*/environ`, spawn a process, start a thread or load an addon (pdf.js's native canvas
 binding no longer loads into the worker).
 

@@ -50,6 +50,9 @@ if (behaviour === 'exit-3') {
   process.exit(3);
 } else if (behaviour === 'segv') {
   process.kill(process.pid, 'SIGSEGV');
+} else if (behaviour === 'abort') {
+  // SIGABRT without V8's out-of-memory line: the reader's own crash.
+  process.abort();
 } else if (behaviour === 'malformed') {
   await write(frame(9, 'x'));
 } else if (behaviour === 'oom') {
