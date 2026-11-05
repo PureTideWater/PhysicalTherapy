@@ -1,7 +1,7 @@
 import { WEB_POOL_CONNECTIONS } from '../../apps/web/src/lib/server/pools';
 import { type TaskPool, workerTaskPools } from '../../apps/worker/src/pools';
 import { databaseClass } from '../../tools/screening-capacity/limits';
-import { DEPLOY_MAX_HEALTHY_PERCENT, WEB_ESIGN_PROVIDER, WORKER_JOBS } from './constructs/compute';
+import { WEB_ESIGN_PROVIDER, WORKER_JOBS } from './constructs/compute';
 import { DATABASE_PARAMETERS } from './constructs/database';
 import type { EnvironmentName, EnvironmentSettings, ServiceSettings } from './environments';
 
@@ -11,8 +11,9 @@ import type { EnvironmentName, EnvironmentSettings, ServiceSettings } from './en
  * could hold, each of its pools full, plus a reserve, must stay under the connections its instance class gives the
  * application logins. A stack over budget does not synthesize, so no deploy can start one; PlatformStack runs the check.
  *
- * - Tasks: each service at the most ECS runs at once, its desired count times DEPLOY_MAX_HEALTHY_PERCENT (every service
- *   starts its new tasks before it stops the old ones), and the migration task.
+ * - Tasks: each service at the most ECS runs at once, its desired count times its own deployment's maxHealthyPercent
+ *   (environments.ts: 200 where it starts the new tasks before it stops the old ones, every service but dev's worker;
+ *   100 where it stops them first, dev's worker), and the migration task.
  * - Pools: read from the apps, where they are opened (apps/web/src/lib/server/pools.ts; apps/worker/src/pools.ts, the
  *   practice pool's PRACTICE_JOB_SLOTS among them), never typed here.
  * - The instance's connections: the parameter group's max_connections where it sets one (DATABASE_PARAMETERS), else RDS
@@ -108,9 +109,12 @@ export function webTaskPools(esignProvider: string = WEB_ESIGN_PROVIDER): readon
   ];
 }
 
-/** The most tasks a service runs at once: its desired count, and during a deploy DEPLOY_MAX_HEALTHY_PERCENT of it. */
+/**
+ * The most tasks a service runs at once: during a deploy, its own deployment's maxHealthyPercent of its desired count
+ * (twice it for a new-before-old deploy, the desired count itself for a stop-first one), never fewer than the desired count.
+ */
 export function mostTasks(service: ServiceSettings): number {
-  return Math.floor((service.desiredCount * DEPLOY_MAX_HEALTHY_PERCENT) / 100);
+  return Math.max(service.desiredCount, Math.floor((service.desiredCount * service.deployment.maxHealthyPercent) / 100));
 }
 
 function line(service: BudgetLine['service'], tasks: number, pools: readonly TaskPool[]): BudgetLine {

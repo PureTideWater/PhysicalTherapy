@@ -116,14 +116,21 @@ step 3 checks whether any did. It is not a security event: open no incident reco
 ## An operational alarm, not a security event: the database's connections (ADR 0083)
 
 The alarm `DatabaseConnections` (on the operator topic) fires when the database held 316 or more connections at any
-moment of a five-minute period: 80% of the 394 `max_connections` the stack reads for db.t4g.medium, the class every
-environment runs (`infra/lib/connections.ts`). Each stack's synthesis checks that every task's pools, all of them full
-at once while a deploy runs old and new tasks side by side, plus a reserve of 10, stay under the 389 connections the
-application logins can open (394 less the 5 RDS keeps for superusers): 205 in production, 163 in dev and staging. So the alarm means connections the budget does not count: more tasks than the settings, a pool
-larger than its code says, connections that are never given back, or a client outside the tasks. The alarm alone does
-not mean anything failed. Past 389 the database refuses new connections: the request or job that wanted one fails, and a
-job's attempt logs `job attempt failed` with `error_code` `DB_53300` (too many connections). It is not a security event
-unless step 3 finds a client nobody can name: then open the record (section 1).
+moment of a five-minute period: 80% of the 394 `max_connections` the stack reads for db.t4g.medium, production's and
+staging's class (in dev, 135 of the 168 it reads for db.t4g.small; `infra/lib/connections.ts`). Each stack's synthesis
+checks that every task's pools, all of them full at once while a deploy runs old and new tasks side by side (dev's
+worker stops first, so it counts once), plus a reserve of 10, stay under what the budget estimates the application
+logins can open: 389 on db.t4g.medium (394 less the 5 RDS keeps for superusers) and 163 on db.t4g.small. The worst case
+is 207 in production, 165 in staging and 140 in dev. So the alarm means connections the budget does not count: more
+tasks than the settings, a pool larger than its code says, connections that are never given back, or a client outside
+the tasks. The alarm alone does not mean anything failed. 389 is the budget's lower bound, not the instance's limit: the
+budget assumes RDS keeps more of the class's memory than it was measured to (a 4 GiB instance on PostgreSQL 17 gave
+402), so the instance most likely refuses later. Its own limit is `SHOW max_connections` (or the parameter group's value, where
+it sets one) less those 5, read in a session as the operator; until staging's measured figure replaces the estimate in
+`infra/lib/connections.ts` (ADR 0083's revisit list), compare the console's count with that, never with 389. Past it
+the database refuses new connections: the request or job that wanted one fails, and a job's attempt logs `job attempt
+failed` with `error_code` `DB_53300` (too many connections). It is not a security event unless step 3 finds a client
+nobody can name: then open the record (section 1).
 
 1. In the RDS console, read the instance's `DatabaseConnections` over the last day. A rise during a deploy that falls
    back once the old tasks stop is the deploy; a level that stays up, or keeps climbing between deploys, is not.

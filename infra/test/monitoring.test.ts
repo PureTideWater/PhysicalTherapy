@@ -5,7 +5,18 @@ import { describe, expect, it } from 'vitest';
 
 import { connectionBudget } from '../lib/connections';
 import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
-import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, PLATFORM_HEARTBEAT_METRIC, workerLogGroupName } from '../lib/heartbeat';
+import { ROLLING_DEPLOYMENT, STOP_FIRST_DEPLOYMENT } from '../lib/environments';
+import {
+  HEARTBEAT_INTERVAL_SECONDS,
+  HEARTBEAT_MESSAGE,
+  HEARTBEAT_METRIC,
+  MISSED_HEARTBEATS_TO_ALARM,
+  PLATFORM_HEARTBEAT_METRIC,
+  STOP_FIRST_START_ALLOWANCE_SECONDS,
+  WORKER_STOP_TIMEOUT_SECONDS,
+  missedHeartbeatsToAlarm,
+  workerLogGroupName,
+} from '../lib/heartbeat';
 import { HEAP_MIB } from '../lib/heap';
 import {
   JOB_FAILED_MESSAGE,
@@ -627,15 +638,19 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
   });
 
-  it('alarms when two consecutive heartbeat periods are empty, missing data counting as missed', () => {
+  // Two missed beats where the worker deploys new-before-old; in dev, whose worker deploys stop-first (Lane A's
+  // orchestrator, 2026-11-05), ten: a deploy's gap without a worker never pages (round 4).
+  const missed = environment === 'dev' ? 10 : 2;
+
+  it('alarms when consecutive heartbeat periods are empty, missing data counting as missed: two, and in dev, whose worker deploys stop-first, its deploy’s whole gap', () => {
     const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm)).toMatchObject({
       Namespace: HEARTBEAT_METRIC.namespace,
       MetricName: HEARTBEAT_METRIC.metricName,
       Statistic: 'Sum',
       Period: HEARTBEAT_INTERVAL_SECONDS,
-      EvaluationPeriods: 2,
-      DatapointsToAlarm: 2,
+      EvaluationPeriods: missed,
+      DatapointsToAlarm: missed,
       ComparisonOperator: 'LessThanThreshold',
       Threshold: 1,
       TreatMissingData: 'breaching',
@@ -647,7 +662,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm).AlarmActions).toEqual([topic]);
     expect(propertiesOf(alarm).OKActions).toEqual([topic]);
-    expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed 2 consecutive heartbeats.`);
+    expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed ${String(missed)} consecutive heartbeats.`);
   });
 
   it('counts each job that fails its last attempt, and tells the operator within five minutes (JOB-02, the restore drill included)', () => {
@@ -686,5 +701,18 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       Condition: { StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } } },
     });
     expect(JSON.stringify(allows[0]?.Condition?.ArnLike)).toContain(':alarm:*');
+  });
+});
+
+/** Lane A's orchestrator, 2026-11-05: a dev deploy never pages (round 4, the instance classes). */
+describe('the heartbeat alarm where a deploy stops the worker first', () => {
+  it('counts two missed beats for a new-before-old deploy, and for a stop-first deploy every beat its gap can miss', () => {
+    expect(missedHeartbeatsToAlarm(ROLLING_DEPLOYMENT)).toBe(MISSED_HEARTBEATS_TO_ALARM);
+    expect(MISSED_HEARTBEATS_TO_ALARM).toBe(2);
+    // The gap: up to one interval since the old task's last beat, its stop timeout, then the new task's start before its first beat.
+    expect(WORKER_STOP_TIMEOUT_SECONDS).toBe(60);
+    expect(STOP_FIRST_START_ALLOWANCE_SECONDS).toBe(480);
+    expect(missedHeartbeatsToAlarm(STOP_FIRST_DEPLOYMENT)).toBe((HEARTBEAT_INTERVAL_SECONDS + WORKER_STOP_TIMEOUT_SECONDS + STOP_FIRST_START_ALLOWANCE_SECONDS) / HEARTBEAT_INTERVAL_SECONDS);
+    expect(missedHeartbeatsToAlarm(STOP_FIRST_DEPLOYMENT)).toBe(10);
   });
 });

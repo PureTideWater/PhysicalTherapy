@@ -621,20 +621,40 @@ function eventsLine(memory: WorkerMemory): string {
 
 /**
  * The Known gap line as the summary prints it: the fixed words, with this run's F reconcile time against its attempt (the
- * margin SUITE-CAP-3's item leaves step 7b) beside the full-size figure; or that this run did not time it.
+ * margin SUITE-CAP-3's item leaves step 7b) beside the full-size figure; or why this run gives no margin. pg-boss resets a
+ * job's started_on at each claim, so its time is its last attempt's alone: a margin is printed only for a reconcile that
+ * completed on its first attempt, never for one a retry completed (its earlier attempt is the one that did not fit).
  */
 export function knownGap(m: CapacityMeasurements): string {
   const reconcile = m.jobs.find((job) => job.what === 'F reconcile');
   const attempt = RECONCILE_ATTEMPT_SECONDS * 1000;
+  const limit = `its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt`;
   const lines = m.expected.reconcileLines.toLocaleString('en-US');
   let figure: string;
   if (reconcile === undefined || reconcile.elapsedMs === null) {
-    figure = `This run did not time F’s reconcile against its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt.`;
+    figure = `This run did not time F’s reconcile against ${limit}.`;
+  } else if (reconcile.state !== 'completed') {
+    figure = `This run’s step 7b did not complete F’s reconcile (it ended ${reconcile.state ?? 'unread'}), so this run gives no margin against ${limit}.`;
+  } else if (reconcile.attempts === null) {
+    figure = `This run could not read how many attempts F’s reconcile took, so it gives no margin against ${limit}.`;
+  } else if (reconcile.attempts > 1) {
+    const earlier = reconcile.attempts - 1;
+    const which = earlier === 1 ? 'its first attempt' : `its first ${String(earlier)} attempts`;
+    const they = earlier === 1 ? 'it' : 'they';
+    const logged =
+      reconcile.failedAttempts === undefined
+        ? ''
+        : reconcile.failedAttempts.length === 0
+          ? ` (${they} logged no \`job attempt failed\` line: the worker’s process ended before the attempt did)`
+          : ` (${they} logged ${reconcile.failedAttempts.join(', ')})`;
+    figure =
+      `This run’s step 7b reconciled F’s ${lines} lines on attempt ${String(reconcile.attempts)}, not its first: ${which} did not complete${logged}, ` +
+      `and ${seconds(reconcile.elapsedMs)} is the last attempt’s time alone, so this run gives no margin against ${limit}.`;
   } else if (reconcile.elapsedMs > attempt) {
-    figure = `This run’s step 7b reconciled F’s ${lines} lines in ${seconds(reconcile.elapsedMs)}, past its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt.`;
+    figure = `This run’s step 7b reconciled F’s ${lines} lines in ${seconds(reconcile.elapsedMs)}, past ${limit}.`;
   } else {
     const share = Math.round((reconcile.elapsedMs / attempt) * 100);
-    figure = `This run’s step 7b reconciled F’s ${lines} lines in ${seconds(reconcile.elapsedMs)} of its ${String(RECONCILE_ATTEMPT_SECONDS)} s attempt (${String(share)}%, ${seconds(attempt - reconcile.elapsedMs)} to spare).`;
+    figure = `This run’s step 7b reconciled F’s ${lines} lines in ${seconds(reconcile.elapsedMs)} of ${limit} (${String(share)}%, ${seconds(attempt - reconcile.elapsedMs)} to spare).`;
   }
   return `${KNOWN_GAP_FIGURE} ${figure} ${KNOWN_GAP_REVISIT}`;
 }

@@ -33,9 +33,33 @@ export interface TaskSize {
   readonly memoryMiB: number;
 }
 
+/**
+ * How ECS replaces a service's tasks on a deploy (compute.ts service()), as shares of its desired count: the least it
+ * keeps running and the most it runs at once. The connection budget counts each service at its own most
+ * (infra/lib/connections.ts mostTasks).
+ */
+export interface DeploymentSettings {
+  readonly minHealthyPercent: number;
+  readonly maxHealthyPercent: number;
+}
+
+/** New before old: ECS starts the new tasks, up to twice the desired count, before it stops the old ones, and never runs fewer than the desired count. */
+export const ROLLING_DEPLOYMENT: DeploymentSettings = { minHealthyPercent: 100, maxHealthyPercent: 200 };
+
+/**
+ * Stop first: ECS stops the old tasks before it starts the new ones, so the service never runs more than its desired
+ * count, and for a deploy's gap none. Dev's worker only (Lane A's orchestrator, 2026-11-05; docs/adr/0083, "The instance
+ * classes"): dev needs no zero-downtime deploy, and its database's class (db.t4g.small) holds its tasks only with its
+ * worker counted once; its heartbeat alarm counts the gap (infra/lib/heartbeat.ts missedHeartbeatsToAlarm), so a dev
+ * deploy never pages.
+ */
+export const STOP_FIRST_DEPLOYMENT: DeploymentSettings = { minHealthyPercent: 0, maxHealthyPercent: 100 };
+
 export interface ServiceSettings extends TaskSize {
   /** Tasks the service runs once an image is released (ImageTag set); none before. */
   readonly desiredCount: number;
+  /** How a deploy replaces its tasks: ROLLING_DEPLOYMENT everywhere but dev's worker, STOP_FIRST_DEPLOYMENT. */
+  readonly deployment: DeploymentSettings;
 }
 
 /**
@@ -97,10 +121,13 @@ export interface EnvironmentSettings {
 const burstable = (size: ec2.InstanceSize) => ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, size);
 
 /*
- * Every environment's database is db.t4g.medium (dev and staging since 2026-11-04, docs/adr/0083, "The practice pool"):
- * the connection budget (infra/lib/connections.ts), every task's pools full during a deploy, holds 163 connections in dev
- * and staging, which db.t4g.micro (51 for the application logins) and db.t4g.small (163) do not stay under, and 205 in
- * production, against db.t4g.medium's 389. Production alone is Multi-AZ with deletion protection.
+ * The databases' classes (Lane A's orchestrator, 2026-11-05; docs/adr/0083, "The instance classes"; ADR 0012's note):
+ * production and staging on db.t4g.medium, staging matching production because releases and capacity are proved there;
+ * dev on db.t4g.small, its worker deploying stop-first. The connection budget (infra/lib/connections.ts), every task's
+ * pools full during a deploy, holds 207 connections in production and 165 in staging, against db.t4g.medium's 389 for
+ * the application logins, and 140 in dev, its worker counted once, against db.t4g.small's 163 (165 with its worker
+ * deploying new-before-old, which db.t4g.small does not stay under). Production alone is Multi-AZ with deletion
+ * protection.
  */
 
 /**
@@ -113,11 +140,16 @@ const burstable = (size: ec2.InstanceSize) => ec2.InstanceType.of(ec2.InstanceCl
  * (a 560 MiB heap limit at 1,024 MiB, 259 MiB at 512, measured), so the heap follows this size, and the capacity test
  * runs the web under the same limit, read from here (tools/screening-capacity/limits.ts).
  */
-const compute = (webTasks: number, natGateways: number, screeningStarts: ScreeningServiceSettings['starts']): ComputeSettings => ({
-  web: { cpu: 512, memoryMiB: 1024, desiredCount: webTasks },
-  worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1 },
-  platform: { cpu: 256, memoryMiB: 512, desiredCount: 1 },
-  screening: { cpu: 2048, memoryMiB: 4096, desiredCount: 1, concurrency: 3, starts: screeningStarts },
+const compute = (
+  webTasks: number,
+  natGateways: number,
+  screeningStarts: ScreeningServiceSettings['starts'],
+  workerDeployment: DeploymentSettings = ROLLING_DEPLOYMENT,
+): ComputeSettings => ({
+  web: { cpu: 512, memoryMiB: 1024, desiredCount: webTasks, deployment: ROLLING_DEPLOYMENT },
+  worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1, deployment: workerDeployment },
+  platform: { cpu: 256, memoryMiB: 512, desiredCount: 1, deployment: ROLLING_DEPLOYMENT },
+  screening: { cpu: 2048, memoryMiB: 4096, desiredCount: 1, deployment: ROLLING_DEPLOYMENT, concurrency: 3, starts: screeningStarts },
   migration: { cpu: 256, memoryMiB: 512 },
   natGateways,
 });
@@ -128,7 +160,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     holdsPhi: false,
     vpcCidr: '10.10.0.0/16',
     database: {
-      instanceType: burstable(ec2.InstanceSize.MEDIUM),
+      instanceType: burstable(ec2.InstanceSize.SMALL),
       multiAz: false,
       deletionProtection: false,
       allocatedStorageGiB: 20,
@@ -137,7 +169,8 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'GOVERNANCE',
     protectFromDeletion: false,
     pullRequestDiffRole: false,
-    compute: compute(1, 1, 'deploy'),
+    // Its worker deploys stop-first (STOP_FIRST_DEPLOYMENT), so db.t4g.small holds its tasks; dev only.
+    compute: compute(1, 1, 'deploy', STOP_FIRST_DEPLOYMENT),
   },
   staging: {
     name: 'staging',

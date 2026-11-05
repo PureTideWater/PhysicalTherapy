@@ -16,7 +16,7 @@ import { Construct } from 'constructs';
 
 import type { DeployParameters } from '../deploy-parameters';
 import type { EnvironmentName, EnvironmentSettings, ServiceSettings, TaskSize } from '../environments';
-import { HEARTBEAT_INTERVAL_SECONDS } from '../heartbeat';
+import { HEARTBEAT_INTERVAL_SECONDS, WORKER_STOP_TIMEOUT_SECONDS } from '../heartbeat';
 import { type ConnectionUrl, DATABASE_SETTINGS, RDS_CA_BUNDLE_PATH, launchScript, secretVariables } from '../launch';
 import { logGroupName } from '../log-groups';
 import { MAIL_VALIDATION_DAILY_CAP, mailStreamPrefix } from '../mail';
@@ -55,18 +55,10 @@ export const LOGIN_SECRET_VARIABLES = {
 export const WORKER_JOBS = { worker: 'practice', platform: 'platform', screening: 'screening' } as const;
 
 /** How long ECS waits after SIGTERM: the worker drains its active jobs (apps/worker/src/shutdown.ts). */
-export const WORKER_STOP_TIMEOUT = Duration.seconds(60);
+export const WORKER_STOP_TIMEOUT = Duration.seconds(WORKER_STOP_TIMEOUT_SECONDS);
 
 /** How long ECS waits after SIGTERM for the screening consumer: Fargate's most (infra/lib/screening.ts). */
 export const SCREENING_STOP_TIMEOUT = Duration.seconds(SCREENING_STOP_TIMEOUT_SECONDS);
-
-/**
- * Every service's rolling deploy (service()): ECS starts the new tasks, up to twice the desired count, before it stops the
- * old ones, and never runs fewer than the desired count. So a service can run this percentage of its desired count at
- * once, and the database's connection budget counts it (infra/lib/connections.ts).
- */
-export const DEPLOY_MIN_HEALTHY_PERCENT = 100;
-export const DEPLOY_MAX_HEALTHY_PERCENT = 200;
 
 /**
  * The web's e-signature vendor: none is chosen yet, and agreements are recorded in the console (docs/adr/0053), so the
@@ -494,8 +486,10 @@ export class Compute extends Construct {
       securityGroups: [securityGroup],
       platformVersion: ecs.FargatePlatformVersion.LATEST,
       circuitBreaker: { enable: true, rollback: true },
-      minHealthyPercent: DEPLOY_MIN_HEALTHY_PERCENT,
-      maxHealthyPercent: DEPLOY_MAX_HEALTHY_PERCENT,
+      // The service's own deploy (environments.ts): new before old everywhere but dev's worker, which stops first; the
+      // connection budget counts each service at its maxHealthyPercent (infra/lib/connections.ts).
+      minHealthyPercent: settings.deployment.minHealthyPercent,
+      maxHealthyPercent: settings.deployment.maxHealthyPercent,
       enableExecuteCommand: false,
       propagateTags: ecs.PropagatedTagSource.SERVICE,
       ...(behindLoadBalancer ? { healthCheckGracePeriod: Duration.seconds(60) } : {}),

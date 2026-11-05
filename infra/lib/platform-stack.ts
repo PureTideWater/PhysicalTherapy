@@ -98,6 +98,7 @@ export class PlatformStack extends Stack {
       key,
       operator: props.operator ?? {},
       database: { instance: this.database.instance, maxConnections: this.connectionBudget.maxConnections, alarmThreshold: this.connectionBudget.alarmThreshold },
+      workerDeployment: this.settings.compute.worker.deployment,
       ...(this.settings.compute.screening.starts === 'launch' ? { screeningRuns: parameters.screeningLaunched } : {}),
     });
     this.mailStreams = new MailStreams(this, 'MailStreams', {

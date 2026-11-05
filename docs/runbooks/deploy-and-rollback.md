@@ -168,7 +168,11 @@ static host (its assets load from the application host), and says so in the buil
    redeploy after it starts again from its default `held`: pass `running` then too. The migration task runs first, as
    the owner login, and creates any missing service login (the screening's `tp_screening_login` among them); no service
    moves to the new task definition until it has exited 0, so a failed migration fails the deploy before traffic moves.
-   Each service then rolls with its circuit breaker.
+   Each service then rolls with its circuit breaker, its new tasks started before the old ones stop. In dev alone the
+   worker stops first (`STOP_FIRST_DEPLOYMENT` in `infra/lib/environments.ts`; ADR 0083, "The instance classes"): dev
+   has no practice worker from the old task's stop (up to 60 seconds) until the new task starts, its queued jobs wait in
+   pg-boss, and its heartbeat alarm, which counts ten missed beats in dev, stays OK; a dev worker still silent after ten
+   minutes pages as anywhere.
 5. **Smoke checks.** `GET https://<AppDomainName>/api/health` answers 200 (it touches the database); `/sign-in` and
    `/status` load; `/.well-known/security.txt` names the environment's `SecurityEmail` and links `/security`, which
    loads; in production, `/security` shows neither "What you can expect from us" nor "Research in good faith" while

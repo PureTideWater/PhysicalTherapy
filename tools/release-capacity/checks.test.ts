@@ -509,13 +509,36 @@ describe('the Known gap line (Lane A’s orchestrator, 2026-11-04: step 7b on a 
     expect(printed(report({ ...PASSING, small: true, expected: { ...PASSING.expected, reconcileLines: 600, postedLines: 600 }, jobs: change('F reconcile', { elapsedMs: 31_000 }) }))).toEqual([
       `${FIGURE} This run’s step 7b reconciled F’s 600 lines in 31.0 s of its 900 s attempt (3%, 869.0 s to spare). ${REVISIT}`,
     ]);
-    // Past the attempt: only a later attempt can have completed it, which the run fails on.
-    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 930_000, attempts: 2 }) }))).toEqual([
-      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines in 930.0 s, past its 900 s attempt. ${REVISIT}`,
+    // Past the attempt by pg-boss's own times on its first attempt (its claim and its completion bracket the handler).
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 900_400 }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines in 900.4 s, past its 900 s attempt. ${REVISIT}`,
     ]);
     for (const jobs of [change('F reconcile', { elapsedMs: null, state: 'active' }), JOBS.filter((entry) => entry.what !== 'F reconcile')]) {
       expect(printed(report({ ...PASSING, jobs }))).toEqual([`${FIGURE} This run did not time F’s reconcile against its 900 s attempt. ${REVISIT}`]);
     }
+  });
+
+  it('prints no margin when a later attempt completed F’s reconcile: pg-boss times only the last attempt (round-3 review WR-3)', () => {
+    // pg-boss resets started_on at each claim, so the time is attempt 2's alone; the first attempt did not complete.
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 600_000, attempts: 2, failedAttempts: ['JOB_EXPIRED'] }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines on attempt 2, not its first: its first attempt did not complete (it logged JOB_EXPIRED), and 600.0 s is the last attempt’s time alone, so this run gives no margin against its 900 s attempt. ${REVISIT}`,
+    ]);
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 600_000, attempts: 3, failedAttempts: ['JOB_EXPIRED', 'DB_POOL_TIMEOUT'] }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines on attempt 3, not its first: its first 2 attempts did not complete (they logged JOB_EXPIRED, DB_POOL_TIMEOUT), and 600.0 s is the last attempt’s time alone, so this run gives no margin against its 900 s attempt. ${REVISIT}`,
+    ]);
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 600_000, attempts: 2, failedAttempts: [] }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines on attempt 2, not its first: its first attempt did not complete (it logged no \`job attempt failed\` line: the worker’s process ended before the attempt did), and 600.0 s is the last attempt’s time alone, so this run gives no margin against its 900 s attempt. ${REVISIT}`,
+    ]);
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 600_000, attempts: 2 }) }))).toEqual([
+      `${FIGURE} This run’s step 7b reconciled F’s 2,000 lines on attempt 2, not its first: its first attempt did not complete, and 600.0 s is the last attempt’s time alone, so this run gives no margin against its 900 s attempt. ${REVISIT}`,
+    ]);
+    // Not completed, or its attempts unread: no margin either.
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 600_000, state: 'failed', attempts: 3 }) }))).toEqual([
+      `${FIGURE} This run’s step 7b did not complete F’s reconcile (it ended failed), so this run gives no margin against its 900 s attempt. ${REVISIT}`,
+    ]);
+    expect(printed(report({ ...PASSING, jobs: change('F reconcile', { elapsedMs: 600_000, attempts: null }) }))).toEqual([
+      `${FIGURE} This run could not read how many attempts F’s reconcile took, so it gives no margin against its 900 s attempt. ${REVISIT}`,
+    ]);
   });
 });
 

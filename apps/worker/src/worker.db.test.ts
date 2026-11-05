@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { LocalKeyProvider, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { asOwner, createMigratedDatabase, createTenantWorld, endPool, withScratchDatabase } from '@tp/db/testing';
@@ -16,7 +17,7 @@ import { JOB_TYPES, type JobType, QUEUE_OPTIONS, workOptions } from './jobs/regi
 import { databaseJobRuns } from './jobs/runs';
 import { parseHandler } from './parse/job';
 import { DocumentStore } from './storage/documents';
-import { JOB_FAILED_MESSAGE, type QueueClient, practicePool, startWorker } from './worker';
+import { JOB_ATTEMPT_FAILED_MESSAGE, JOB_FAILED_MESSAGE, JOB_HEAP_MESSAGE, type QueueClient, practicePool, startWorker } from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const OTHER_PRACTICE = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
@@ -205,6 +206,78 @@ describe('practice jobs against PostgreSQL', () => {
       await database.drop();
     }
   });
+
+  it('logs an attempt pg-boss expired, once its handler returns, and records it retrying, never succeeded (round-3 review WR-2)', async () => {
+    const database = await createMigratedDatabase(readDatabaseUrl());
+    const owner = databaseClient(database.url);
+    await owner.connect();
+    const pool = openPool(database.appUrl, 2);
+    const lines: Record<string, unknown>[] = [];
+    const boss = new PgBoss(database.url);
+    boss.on('error', () => undefined);
+    let calls = 0;
+    let done: () => void = () => undefined;
+    const completed = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    try {
+      const world = await createTenantWorld(owner, 'job-expiry');
+      await boss.start();
+      // The queue exists before startWorker, so its createQueue leaves it as it is: a one-second attempt, retried at once.
+      await boss.createQueue('digest', { ...QUEUE_OPTIONS, expireInSeconds: 1, retryDelay: 0, retryBackoff: false });
+      const runs = databaseJobRuns(pool);
+      const states: unknown[] = [];
+      const worker = await startWorker({
+        boss,
+        pool,
+        logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }),
+        runs: {
+          started: (run) => runs.started(run),
+          finished: async (run) => {
+            await runs.finished(run);
+            states.push((await owner.query('SELECT attempts, outcome, error_code FROM job_run WHERE job_id = $1', [run.jobId])).rows[0]);
+          },
+        },
+        heartbeatMs: 60_000,
+        handlers: {
+          ...placeholderHandlers,
+          digest: async () => {
+            calls += 1;
+            if (calls === 1) {
+              // Past the attempt's one second: pg-boss fails the attempt and holds the worker until this returns.
+              await sleep(2_500);
+              return;
+            }
+            done();
+          },
+        },
+      });
+      let id: string | null = null;
+      try {
+        id = await enqueue(boss, 'digest', { practice_id: world.practiceId, period: '2026-10' });
+        await completed;
+        await sleep(500);
+      } finally {
+        await worker.stop();
+      }
+      const [job] = (await owner.query<{ state: string; retry_count: number }>("SELECT state, retry_count FROM pgboss.job WHERE name = 'digest' AND id = $1", [id])).rows;
+      expect(job).toEqual({ state: 'completed', retry_count: 1 });
+      expect(calls).toBe(2);
+      expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE)).toEqual([
+        { time: expect.any(String), level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, job_id: id, job_type: 'digest', error_code: 'JOB_EXPIRED' },
+      ]);
+      expect(lines.filter((line) => line.msg === JOB_HEAP_MESSAGE)).toHaveLength(2);
+      expect(states).toEqual([
+        { attempts: 1, outcome: 'retrying', error_code: 'JOB_EXPIRED' },
+        { attempts: 2, outcome: 'succeeded', error_code: null },
+      ]);
+    } finally {
+      await boss.stop({ graceful: false }).catch(() => undefined);
+      await endPool(pool);
+      await owner.end();
+      await database.drop();
+    }
+  }, 60_000);
 });
 
 /** A valid payload of each practice job type for `practiceId`, every other ID a fresh one. */

@@ -636,7 +636,8 @@ and three such attempts fail the job (a parse marks its document failed; the job
 counted from the queues' local concurrency (`jobs/registry.ts`: fifteen), so no job waits for a connection another job
 holds. The ten-second timeout stays, for a database that cannot give a connection at all. Each failed attempt now logs
 `job attempt failed` with the job's ID and type and an `error_code` (`attemptErrorCode`: `DB_POOL_TIMEOUT`,
-`DB_CONNECT_TIMEOUT`, `DB_<SQLSTATE>`, a code the error carries, or its class), never the error's text. The weekly run
+`DB_CONNECT_TIMEOUT`, `DB_<SQLSTATE>`, a code the error carries, or its class), never the error's text; an attempt
+pg-boss failed while its handler still ran logs it too, once the handler returns (round-3 review, below). The weekly run
 prints those codes beside a job that completed on a later attempt, so the job log says why. The check itself is
 unchanged: a retry still fails the run. Rejected: capping the worker at four jobs at once, which would serialize the job
 types (a ten-minute reconcile or a two-minute price would hold up parses and the monitoring chain); and waiting for a
@@ -650,15 +651,19 @@ starts (4, now 15); each failed attempt's line and code; and the summary's codes
 each stack now checks, as it synthesizes, that every task its environment can run at once, each of its pools full,
 plus a reserve, stays under what its database gives the application logins (`infra/lib/connections.ts`, run by
 `PlatformStack`; a stack over budget does not synthesize, so no deploy can start one). As built:
-- Each service counts at the most tasks ECS runs at once: its desired count, twice over while a deploy starts the new
-  tasks before it stops the old ones (`DEPLOY_MAX_HEALTHY_PERCENT`, 200, in `compute.ts`), and the migration task.
+- Each service counts at the most tasks ECS runs at once: its desired count times its own deployment's
+  `maxHealthyPercent` (`environments.ts`, which `compute.ts` deploys it by): twice over where a deploy starts the new
+  tasks before it stops the old ones (`ROLLING_DEPLOYMENT`, every service but dev's worker), once where it stops them
+  first (`STOP_FIRST_DEPLOYMENT`, dev's worker; "The instance classes", below); and the migration task.
 - The pools are read from the apps where they are opened, never typed in infra: the web task's from
   `apps/web/src/lib/server/pools.ts` (the application login's 10, billing's 4, the model gateway's 5, pg-boss's
   producer's 2: 21; the e-signature pool's 2 count once a vendor is configured, `WEB_ESIGN_PROVIDER` is `none`), and
   each worker task's from `apps/worker/src/pools.ts` (`workerTaskPools`): the practice jobs' 15 and pg-boss's 10, now
   set explicitly at pg-boss's own default, 25 (14 before the fix); the platform jobs' operator 2 and pg-boss's 10, 12;
-  the screening consumer's sweep 2, three threads of 2 and pg-boss's 10, 18. The migration task holds one client at a
-  time. The reserve is 10: the seven Secrets Manager rotation functions should they run at once, and three for a
+  the screening consumer's sweep 2, three threads of 2, pg-boss's 10 and pg-boss's LISTEN/NOTIFY client, 19: with
+  `useListenNotify` on (`SCREENING_BOSS_OPTIONS`) pg-boss 12.38 opens a `pg.Client` of its own for LISTEN, outside its
+  pool, so the pool's `max` does not cap it (a pool of 10 under load held 11 backends; round-3 review WR-5 and INFRA-1:
+  18 before). The migration task holds one client at a time. The reserve is 10: the seven Secrets Manager rotation functions should they run at once, and three for a
   person's session.
 - `max_connections` is the parameter group's where it sets one; it sets none, so RDS for PostgreSQL's documented
   default holds, `LEAST({DBInstanceClassMemory/9531392}, 5000)`, less the 5 connections kept for superusers
@@ -668,33 +673,90 @@ plus a reserve, stays under what its database gives the application logins (`inf
   788 on db.t4g.large. A published measurement on RDS for PostgreSQL 17 (Classmethod, 2026-10-14, on the t3 classes of
   the same memory) read 191 at 2 GiB, 402 at 4 GiB and 841 at 8 GiB, where the whole memory would give 225, 450 and 901;
   the budget stays below each, so it never counts on a connection the instance may not have.
-- The worst case is 205 connections in production (web 4 × 21, worker 2 × 25, platform 2 × 12, screening 2 × 18,
-  migration 1, reserve 10; 183 before the fix) and 163 in dev and staging (one web task: 2 × 21; 141 before), against
-  389 on db.t4g.medium.
+- The worst case is 207 connections in production (web 4 × 21, worker 2 × 25, platform 2 × 12, screening 2 × 19,
+  migration 1, reserve 10; 185 before the fix) and 165 in staging (one web task: 2 × 21; 143 before), against 389 on
+  db.t4g.medium; and 140 in dev, whose worker deploys stop-first (worker 1 × 25), against 163 on db.t4g.small.
 
-Dev and staging did not fit their classes, so both move to db.t4g.medium, production's class (`environments.ts`; ADR
-0012's table notes it). Dev's db.t4g.micro gives the application logins 51 connections: it could not hold even one task
-of each service at rest (89), with or without the fix. Staging's db.t4g.small gives 163, exactly its worst case, which
-must stay under (it held 141 before the fix). The two ways the orchestrator named were to cap the environment's worker
-tasks or to move it one class up, whichever is cheaper and still safe. The worker already runs one task, so the only
-cap is a deploy that stops the old worker before it starts the new one (100% at most); it costs nothing, but it leaves
-the environment with no practice worker for up to the 60-second stop timeout and a task's start on every deploy, which
-can trip the two-minute heartbeat alarm each time, and staging would no longer deploy the worker as production does: not
-safe enough for an alarm the operator must trust. One class up is db.t4g.medium for staging, about $23 a month more
-(about $23.36 on demand for db.t4g.small, about $47 for db.t4g.medium, single-AZ), and it also gives staging
-production's memory and connections, which its own measurements (the screening's runner-to-Fargate factor) then run
-on. For dev one class up (db.t4g.small) still holds 163 against 163, so dev takes staging's class too; dev deploys
-nothing today (its database is local Docker Postgres, ADR 0012), so the class costs nothing until it is deployed, and
-then about $35 a month more than db.t4g.micro. PRD section 19's RDS line rises by staging's share once staging runs.
+**The instance classes.** Round 3 found that dev and staging did not fit their classes: dev's db.t4g.micro gives the
+application logins 51 connections, under even one task of each service at rest (88), with or without the fix, and
+staging's db.t4g.small gives 163, under its worst case (165, the LISTEN client counted), which must stay under. Round 3
+moved both to db.t4g.medium; that is replaced by the decision, word for word:
+
+> Lane A's orchestrator, 2026-11-05 (~01:11 UTC), on the co-founder's standing direction: staging goes to db.t4g.medium,
+> the same class as production (staging is where releases and capacity are proved, so it must match production; about
+> +$23 a month); dev takes db.t4g.small with stop-first worker deploys in dev only (dev needs neither zero-downtime
+> deploys nor production's instance class; it keeps production's pool size, so it exercises the same code path; about
+> $24 a month less than medium). A dev deploy never pages: silence the worker heartbeat alarm during dev's deploy
+> window, or give dev a longer evaluation period. The connection-budget check passes for dev under stop-first. Both
+> choices and their reasons are recorded in ADR 0083, with the ADR 0012 note. The PR description carries one line for
+> the founder: "RDS: staging db.t4g.small → medium (+~$23/mo); dev micro → small (+~$11/mo when deployed)". PRD section
+> 19 stays the founder's to update.
+
+It is a decision of Lane A's orchestrator, not a founder ruling; no line, budget or check moves. As built:
+- **Staging: db.t4g.medium**, production's class. Staging is where a release and its capacity are proved (the
+  screening's runner-to-Fargate factor among them), so it runs on production's memory and connections, and deploys
+  every service as production does. About $23 a month more: about $23.36 on demand for db.t4g.small, about $47 for
+  db.t4g.medium, single-AZ. Its worst case, 165, against 389.
+- **Dev: db.t4g.small, its worker deploying stop-first** (`STOP_FIRST_DEPLOYMENT`: minimum healthy 0, maximum 100;
+  `compute.ts` deploys each service from its own `deployment` in `environments.ts`), in dev only; every other service in
+  dev, and every service in staging and production, keeps `ROLLING_DEPLOYMENT` (100, 200). Dev needs neither a
+  zero-downtime deploy nor production's class, and it keeps production's pools (the practice pool's 15 among them), so
+  it runs the same code path. The budget counts dev's worker once: 140 against db.t4g.small's 163, 23 to spare; with the
+  worker deploying new-before-old dev holds 165 against 163 and is refused (the failing-first test). About $11 a month
+  more than db.t4g.micro (about $11.68) once dev is deployed, and about $24 a month less than db.t4g.medium; dev deploys
+  nothing today (its database is local Docker Postgres, ADR 0012), so the class costs nothing until then.
+- **A dev deploy never pages.** A stop-first deploy leaves dev with no practice worker from the old task's stop (up to
+  the 60-second stop timeout) until the new task's first heartbeat. Of the decision's two ways, the longer evaluation
+  period is the one the monitoring code supports cleanly: each alarm sets its own evaluation periods, and nothing in the
+  stack marks a deploy's window for an alarm's actions to be suppressed by. So the worker's heartbeat alarm counts its
+  missed beats by its deploy (`missedHeartbeatsToAlarm`, `infra/lib/heartbeat.ts`): two where the worker deploys
+  new-before-old (staging and production, unchanged), and in dev every one-minute period a deploy's gap can leave empty,
+  ten (one interval since the old task's last beat, its 60-second stop timeout and 480 seconds for the new task's start:
+  Fargate's placement, the image's pull with Chromium in it, and the worker's start before its first beat). A dev worker
+  that does not come back still pages, ten minutes on. Jobs queued during the gap wait in pg-boss; the old task's jobs
+  drain in its stop timeout, or pg-boss fails them and they retry, each logging `JOB_STOPPED`.
+- The cost line for the founder, in the pull request's description: "RDS: staging db.t4g.small → medium (+~$23/mo); dev
+  micro → small (+~$11/mo when deployed)". PRD section 19 stays the founder's to update.
+
+Tests, each failing first: dev on db.t4g.small with its worker still deploying new-before-old is refused, naming 163
+against 165 (`infra/test/connections.test.ts`; its stack does not synthesize), and passes once the worker deploys
+stop-first (140); each service's deployment configuration in the synthesized template, dev's worker at 0 and 100 and
+every other at 100 and 200 (`compute.test.ts`); and the heartbeat alarm's evaluation periods, ten in dev and two
+elsewhere (`monitoring.test.ts`).
 
 **The alarm.** `DatabaseConnections` (`infra/lib/constructs/monitoring.ts`) tells the operator when RDS's
 `DatabaseConnections` reaches 80% of `max_connections` as the budget reads it at any moment of five minutes: 316 of 394
-in every environment, so it fires early rather than late. Its runbook section is in
-`docs/runbooks/incident-response.md` ("the database's connections"). Tests, each failing first: the budget test
+in production and staging, 135 of 168 in dev, so it fires early rather than late. Its runbook section is in
+`docs/runbooks/incident-response.md` ("the database's connections"). Tests, each failing first (round 3): the budget test
 (`infra/test/connections.test.ts`) on the old classes, where dev's and staging's stacks are refused (5 of its 17 tests
-fail, and `monitoring.test.ts` cannot synthesize at all), and passes on db.t4g.medium; the alarm's own test in
+fail, and `monitoring.test.ts` cannot synthesize at all), and passes on the new ones; the alarm's own test in
 `monitoring.test.ts`; and a pin of the web's model pool to the gateway's calls in flight and one to spare
 (`apps/web/src/lib/server/pools.test.ts`).
+
+**Round 3's code review, 2026-11-05.** An adversarial review of this subsection's code (infra, worker, security; a
+skeptic per finding) confirmed six findings, fixed here, each with a test that failed first where a test can show it:
+- *WR-1.* `attemptErrorCode` logged `UNCLASSIFIED` for this codebase's own retryable failures, whose class names do not
+  end in `Error` (`ExportLoadFailed`, the reconcile attempt's designed failure; `DigestSendFailed`, `PricedOutOfOrder`,
+  `ReleaseTypeNotRead`), and for AWS SDK exceptions (`NoSuchKey`). It now takes a class's own name in upper snake case
+  where code wrote it: the name of the class the error was constructed from, or an AWS SDK v3 service exception's (the
+  service's error code, told by the shape the SDK's own `ServiceException.isInstance` reads, a fault and the response's
+  metadata, since the worker's bundle names the SDK's classes `_NoSuchKey`, and an unmodelled error such as S3's
+  `SlowDown` comes on the service's base class). A name set on an error afterwards still logs `UNCLASSIFIED`.
+- *WR-2.* An attempt pg-boss expired logged no `job attempt failed` line, and `job_run` recorded it `succeeded`: pg-boss
+  12.38 fails the attempt at its `expireInSeconds` and holds the worker until the abandoned handler returns, and the
+  handler's return took the success path. pg-boss aborts the job's `signal` when it gives up on an attempt, before the
+  handler returns, and on an ordinary completion only after it returned, so once the handler returns the worker reads it
+  (`abandonedAttemptCode`): `JOB_EXPIRED`, `JOB_CLAIM_LOST` (the heartbeat found the claim gone) or `JOB_STOPPED` (a
+  stop's grace ran out). It logs the line, and on the last attempt the operator alarm's line, and records the attempt
+  `retrying`, or `failed` on the last. The database test runs a real pg-boss with a one-second expiry and a first
+  attempt of 2.5 s.
+- *WR-3.* The Known gap line's margin read F's reconcile time from pg-boss's `started_on`, which each claim resets, so
+  on a job a retry completed it printed the last attempt's time with seconds to spare (below).
+- *WR-5 and INFRA-1.* The screening consumer's pg-boss LISTEN/NOTIFY client was not counted (above: 19 a task, not 18).
+- *INFRA-2.* The incident runbook gave the budget's estimate (389) as the database's limit; it now names it the lower
+  bound and the instance's own limit `SHOW max_connections` less the 5 reserved.
+Three were refuted by their skeptics and are not changed (WR-4, INFRA-3, SEC-RT-1; the pull request's findings table
+gives each reason).
 
 #### The reconcile pass at step 7b's 2,000 lines: a known limit, SUITE-CAP-3's, 2026-11-04
 
@@ -729,7 +791,11 @@ SUITE-CAP-3's (Lane B), handed over with the profile: its designed D1 (one candi
 written so its cost cannot depend on `ledger_match`'s statistics) and D3 (`syncLineStages` as one multi-row insert, so a
 case is refreshed once per statement). Until then every summary's Known gap line prints the run's F reconcile time
 against its 900 s attempt, with its share and the seconds to spare, beside the full-size figure (Lane A's orchestrator,
-2026-11-04, ~22:27 UTC); whichever of this pull request and SUITE-CAP-3 lands second resets step 7b's expectation.
+2026-11-04, ~22:27 UTC); whichever of this pull request and SUITE-CAP-3 lands second resets step 7b's expectation. The
+margin is printed only for a reconcile that completed on its first attempt: pg-boss resets a job's `started_on` at each
+claim, so a job's time is its last attempt's alone, and when a retry completed F's reconcile the line names the attempt
+and what the earlier attempts logged and gives no margin (round-3 review WR-3), as it does for a reconcile that did not
+complete or whose attempts could not be read.
 
 ## Alternatives considered
 
@@ -772,7 +838,9 @@ against its 900 s attempt, with its share and the seconds to spare, beside the f
   open case line, `claimLines`' per-line correction chain and `syncLineStages`' statement per stage, which grow faster
   than the lines. SUITE-CAP-3 measures reconcile at real size.
 - Staging reads its database's `max_connections` (`SHOW max_connections` on db.t4g.medium): the connection budget's
-  estimate (394) gives way to the measured figure (`infra/lib/connections.ts`), and the alarm's line follows.
+  estimate (394) gives way to the measured figure (`infra/lib/connections.ts`), and the alarm's line follows. Dev, once
+  deployed, reads db.t4g.small's the same way (the estimate is 168), and its first stop-first worker deploys time the
+  gap the heartbeat alarm allows (`STOP_FIRST_START_ALLOWANCE_SECONDS`, 480 s for the new task's start).
 - The weekly run's step 7b at full size: about 31% of A's 100,000 lines are now actionable, and the reconcile pass
   walks every open case line (2,084 lines took 333.2 s at 0.5 vCPU), so A's reconcile cannot finish in an attempt until
   SUITE-CAP-3. Decided by Lane A's orchestrator on 2026-11-04 ("The weekly run's memory line and step 7b", above):

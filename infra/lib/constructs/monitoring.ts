@@ -16,7 +16,7 @@ import {
 import { Construct } from 'constructs';
 
 import { DATABASE_CONNECTIONS_ALARM_PERCENT } from '../connections';
-import type { EnvironmentName } from '../environments';
+import type { DeploymentSettings, EnvironmentName } from '../environments';
 import { HEAP_MIB } from '../heap';
 import {
   JOB_FAILED_MESSAGE,
@@ -34,6 +34,7 @@ import {
   HEARTBEAT_METRIC,
   MISSED_HEARTBEATS_TO_ALARM,
   PLATFORM_HEARTBEAT_METRIC,
+  missedHeartbeatsToAlarm,
   workerLogGroupName,
 } from '../heartbeat';
 import { logGroupName } from '../log-groups';
@@ -102,6 +103,11 @@ export interface MonitoringProps {
    * DATABASE_CONNECTIONS_ALARM_PERCENT of it.
    */
   readonly database: { readonly instance: rds.IDatabaseInstance; readonly maxConnections: number; readonly alarmThreshold: number };
+  /**
+   * How the practice worker's deploy replaces it (environments.ts): where it stops first (dev), its heartbeat alarm waits
+   * out the deploy's whole gap (missedHeartbeatsToAlarm), so a deploy never pages.
+   */
+  readonly workerDeployment: DeploymentSettings;
 }
 
 /**
@@ -113,8 +119,10 @@ export interface MonitoringProps {
  * The worker's log group is created here, encrypted under the environment key, so the heartbeat
  * metric exists before the worker does. A metric filter counts the worker's heartbeat lines as the
  * custom metric HEARTBEAT_METRIC; the alarm fires when two consecutive one-minute periods have no
- * heartbeat, missing data counting as missed, and tells the operator when beats resume. Until the
- * worker runs (the first release, docs/adr/0049) the alarm is, correctly, in ALARM.
+ * heartbeat, missing data counting as missed, and tells the operator when beats resume. Where the
+ * worker deploys stop-first (dev; environments.ts), it waits out a deploy's whole gap instead, ten
+ * periods (missedHeartbeatsToAlarm), so a deploy never pages. Until the worker runs (the first
+ * release, docs/adr/0049) the alarm is, correctly, in ALARM.
  *
  * A second metric filter counts the line a job logs when it fails its last (third) attempt, the
  * restore drill and the audit copy included (infra/lib/jobs.ts; test matrix JOB-02); its alarm tells
@@ -269,13 +277,15 @@ export class Monitoring extends Construct {
       unit: cloudwatch.Unit.COUNT,
     });
 
+    // Two missed beats, or where the worker's deploy stops it first (dev), every beat that deploy's gap can miss.
+    const workerMissedBeats = missedHeartbeatsToAlarm(props.workerDeployment);
     this.heartbeatAlarm = new cloudwatch.Alarm(this, 'WorkerHeartbeatMissed', {
-      alarmDescription: `The ${props.environmentName} worker missed ${String(MISSED_HEARTBEATS_TO_ALARM)} consecutive heartbeats.`,
+      alarmDescription: `The ${props.environmentName} worker missed ${String(workerMissedBeats)} consecutive heartbeats.`,
       metric: heartbeats.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(HEARTBEAT_INTERVAL_SECONDS) }),
       comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
       threshold: 1,
-      evaluationPeriods: MISSED_HEARTBEATS_TO_ALARM,
-      datapointsToAlarm: MISSED_HEARTBEATS_TO_ALARM,
+      evaluationPeriods: workerMissedBeats,
+      datapointsToAlarm: workerMissedBeats,
       treatMissingData: cloudwatch.TreatMissingData.BREACHING,
     });
     const notify = new cloudwatchActions.SnsAction(this.operatorTopic);

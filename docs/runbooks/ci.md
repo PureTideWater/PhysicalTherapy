@@ -71,7 +71,9 @@ Every summary, red or green, also prints a "Known gap" line: step 7b reconciles 
 full-size figure it gives this run's F reconcile time against the job's 900 s attempt, with its share and the seconds to
 spare: that margin is what SUITE-CAP-3's item leaves step 7b (CI measured 526.3 and 615.7 s on 3ac856d5). A margin that
 shrinks run over run points at the runner or at SUITE-CAP-3's code, never at a longer attempt; past 900 s pg-boss
-expires the attempt, and the run fails on the job's later attempt.
+expires the attempt, and the run fails on the job's later attempt. pg-boss times only a job's last attempt, so when a
+later attempt completed F's reconcile the line prints no margin: it names the attempt and what the earlier attempts
+logged (`JOB_EXPIRED` for one past its 900 s), since the first attempt is the one that did not fit.
 - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
   would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
   `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
@@ -79,9 +81,15 @@ expires the attempt, and the run fails on the job's later attempt.
   at once than the pool holds (`practicePool` holds `PRACTICE_JOB_SLOTS`, one per job: if it fires, look for a job
   that holds two); `DB_CONNECT_TIMEOUT` a new connection that took longer than that; `DB_<SQLSTATE>` an error from
   PostgreSQL (`DB_53200` out of shared memory: the lock table is full; `DB_40P01` a deadlock); otherwise the error's own
-  code or its class (`PRICING_RUN_NOT_FOUND_ERROR`). The attempt's `job heap` line, with the same job ID, marks when it
-  ended; read the Postgres log in the artifact's `logs/` at that time. A heap out-of-memory ends the worker's process
-  before it logs anything: the summary's restarts count shows it. The run never counts a retry as a pass.
+  code or its class (`PRICING_RUN_NOT_FOUND_ERROR`; a class's own name such as `EXPORT_LOAD_FAILED`, the reconcile's
+  designed failure, or an S3 or KMS exception's, `NO_SUCH_KEY`). An attempt pg-boss failed while its handler still ran
+  logs the line once the handler returns: `JOB_EXPIRED`, past the job's `expireInSeconds` (900 s; an hour for intake),
+  `JOB_CLAIM_LOST` (a screening job whose heartbeat found it no longer this worker's) or `JOB_STOPPED` (the worker
+  stopped, and its grace ran out). pg-boss holds that queue's worker until the handler returns, so the retry starts only
+  after the line. The attempt's `job heap` line, with the same job ID, marks when it ended; read the Postgres log in the
+  artifact's `logs/` at that time. A retried job with no `job attempt failed` line at all means the worker's process ended
+  before the attempt did: a restart (a heap out-of-memory ends the process before it logs anything: the summary's
+  restarts count shows it). The run never counts a retry as a pass.
 - **A backend held more than 64 advisory locks.** The sampler reads, each second, the largest advisory-lock count any
   one backend holds (`pg_locks`, `locktype = 'advisory'`, grouped by `pid`); 64 is the loader's trace bound
   (`TRACE_LOCK_BUCKETS`, equal to the default `max_locks_per_transaction`). A job that takes a lock per line or per row
