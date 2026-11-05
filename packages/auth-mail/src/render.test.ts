@@ -20,7 +20,7 @@ import {
   fallbackCodeMessage,
   fallbackInvitationMessage,
   passwordChangedLines,
-  utcWords,
+  utcMinute,
 } from './index';
 
 const repository = path.resolve(import.meta.dirname, '../../..');
@@ -205,14 +205,14 @@ describe('the words of each message', () => {
 });
 
 describe('the password-changed email (sent from the follow-on pull request, ADR 0091)', () => {
-  it('says when in UTC words, that every device was signed out and the factor still holds, and the support route, with no link', () => {
-    expect(utcWords(new Date('2026-11-05T14:32:59.999Z'))).toBe('November 5, 2026 at 14:32 UTC');
-    expect(utcWords(new Date('2027-01-09T03:04:00Z'))).toBe('January 9, 2027 at 03:04 UTC');
+  it('says when, as every screen writes a time (format.ts utc()), that every session ended and the factor still holds, and the support route, with no link', () => {
+    expect(utcMinute(new Date('2026-11-05T14:32:59.999Z'))).toBe('2026-11-05 14:32 UTC');
+    expect(utcMinute(new Date('2027-01-09T03:04:00Z'))).toBe('2027-01-09 03:04 UTC');
     expect(PASSWORD_CHANGED_SUBJECT).toBe('Your password was changed');
     const lines = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example');
     expect(lines).toEqual([
-      'The password for your PaidWhole account was changed on November 5, 2026 at 14:32 UTC, with a code sent to this address.',
-      'Every device signed in to the account was signed out. Signing in still asks for your authenticator code or hardware key.',
+      'The password for your PaidWhole account was changed at 2026-11-05 14:32 UTC, with a code sent to this address.',
+      'Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.',
       'If you changed it, there is nothing more to do.',
       'If you did not, write to support@paidwhole.example from this address now, and we will help you secure the account.',
     ]);
