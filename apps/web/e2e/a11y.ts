@@ -1,4 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright';
+import { contrastRatio } from '@paidwhole/brand/contrast';
 import { type Locator, type Page, expect } from '@playwright/test';
 
 /**
@@ -87,50 +88,38 @@ export async function setDark(page: Page, dark: boolean): Promise<void> {
 /**
  * The contrast of the focused element's outline against what it is drawn on (WCAG 1.4.11 asks 3:1 of a focus
  * indicator): the outline's colour against the background colour of the nearest element, from the focused one up,
- * that paints an opaque one (White, the browser's canvas, when none does). The ratio is WCAG's: each channel s = C/255
- * linearised (s/12.92 up to 0.04045, else ((s + 0.055)/1.055)^2.4), L = 0.2126 R + 0.7152 G + 0.0722 B, and
- * (lighter + 0.05) / (darker + 0.05), to two places. A focus that draws no outline (a box-shadow ring) throws, so it is
- * never counted as passing.
+ * that paints an opaque one (White, the browser's canvas, when none does). The page reports the two computed colours;
+ * the ratio is WCAG's, computed here by `contrastRatio` from @paidwhole/brand (the repository's one copy of the
+ * formula), to two places. A focus that draws no outline (a box-shadow ring) throws, so it is never counted as passing.
  */
 export async function focusContrast(page: Page): Promise<{ readonly outline: string; readonly ground: string; readonly ratio: number }> {
-  return page.evaluate(() => {
+  const { outline, ground } = await page.evaluate(() => {
     const element = document.activeElement;
     if (element === null || element === document.body) {
       throw new Error('focusContrast: nothing is focused');
     }
-    const channels = (colour: string): readonly [number, number, number, number] => {
+    const opaque = (colour: string): boolean => {
       const match = /^rgba?\((\d+(?:\.\d+)?),?\s*(\d+(?:\.\d+)?),?\s*(\d+(?:\.\d+)?)(?:\s*[,/]\s*(\d+(?:\.\d+)?))?\)$/.exec(colour);
       if (match === null) {
         throw new Error(`focusContrast: a colour it cannot read: ${colour}`);
       }
-      return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])];
+      return match[4] === undefined || Number(match[4]) === 1;
     };
     const style = getComputedStyle(element);
     if (style.outlineStyle === 'none' || Number.parseFloat(style.outlineWidth) === 0) {
       throw new Error(`focusContrast: the focus on ${element.tagName.toLowerCase()} draws no outline (box-shadow ${style.boxShadow})`);
     }
-    let ground = 'rgb(255, 255, 255)';
+    let behind = 'rgb(255, 255, 255)';
     for (let node: Element | null = element; node !== null; node = node.parentElement) {
       const background = getComputedStyle(node).backgroundColor;
-      if (channels(background)[3] === 1) {
-        ground = background;
+      if (opaque(background)) {
+        behind = background;
         break;
       }
     }
-    const luminance = (colour: string): number => {
-      const [red, green, blue] = channels(colour)
-        .slice(0, 3)
-        .map((channel) => {
-          const s = channel / 255;
-          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-        });
-      return 0.2126 * (red ?? 0) + 0.7152 * (green ?? 0) + 0.0722 * (blue ?? 0);
-    };
-    const outline = luminance(style.outlineColor);
-    const behind = luminance(ground);
-    const ratio = (Math.max(outline, behind) + 0.05) / (Math.min(outline, behind) + 0.05);
-    return { outline: style.outlineColor, ground, ratio: Math.round(ratio * 100) / 100 };
+    return { outline: style.outlineColor, ground: behind };
   });
+  return { outline, ground, ratio: Math.round(contrastRatio(outline, ground) * 100) / 100 };
 }
 
 /**
