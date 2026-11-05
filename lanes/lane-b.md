@@ -1609,3 +1609,14 @@ HANDOFF.md; LANES.md rule 10).
 - #110 (SUITE-CAP-1b): the suggested approval line is posted (https://github.com/PureTideWater/PhysicalTherapy/pull/110#discussion_r4476277082; e024cf9f…c4df). CAS-42.5 passes: working set 719.9 of 921.6 MiB, OOM 0, every job on attempt 1.
 - S4 next: `co-001/auth-emails` (the branded Cognito code email via CustomMessage; a "password changed" email through #42's transactional stream). SGN-13 to SGN-16; ADR 0091 if needed.
 - Next free: ADR 0092, SGN-17, SEC-25, CAS-56.
+
+### 2026-11-05 05:10 UTC: SUITE-CAP-1b merged as #110 (f7d609cc)
+- The second schema PR of the chain. It rested on the founder's line 61fc4e6c, `--check --require-approval` exit 0, every check green, and CAS-42.5 and CAS-42.6 passing.
+- On the base now:
+  - one practice lock key in triage and the ledger triggers, per the founder's Q1 exception;
+  - the worker pool sized to its job slots;
+  - the connection budget checked at synthesis, with a DatabaseConnections alarm;
+  - the release loader's freeze, with both grants;
+  - RDS staging at medium and dev at small.
+- Next: the interest fix's PR stage (head 650a3108; its own CAS-42.5 passes at full size).
+- Merged since 2026-11-05 00:00 UTC: #84, #119, #118, #120, #121, #110.
