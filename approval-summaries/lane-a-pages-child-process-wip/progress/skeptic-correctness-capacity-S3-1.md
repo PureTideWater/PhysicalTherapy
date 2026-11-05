@@ -1,0 +1,10 @@
+# Skeptic 2 of 3, correctness-capacity finding S3 (surviving mutations)
+- Clone: /home/user/sk-pcp-correctness-capacity-S3-1 at c369bc77… read only.
+- Step: cloned; reading code and mutations.txt.
+- Read: the review ran its mutations against pages.test.ts only; evidence.test.ts line 162 calls readPagesHere with maxPages 0 (may kill child-pagecap). Re-running each mutation against pages.test.ts + evidence.test.ts.
+- Running: 10 cases (baseline, the six review mutations, plus baselinecap-both, child-textcap, child-orphan-both) against pages.test.ts, evidence.test.ts and index.test.ts; script scratchpad pcp/sk-cc-S3-1/mut.py, logs pcp/logs/sk-s3-1/.
+- Partial (pages + evidence + index tests, 38): baseline green; baselinecap, baselinecap-both, liveexit, exitcode, child-console survive (38/38). child-pagecap (whole cap `if (false)`) is KILLED by evidence.test.ts (readPagesHere maxPages 0): the review only ran pages.test.ts. Waiting on child-textcap, child-orphan, child-orphan-both.
+- Final: child-textcap (text half of the PageText cap), child-orphan and child-orphan-both also survive 38/38.
+- Verdict: NOT refuted, severity should (narrowed). Real: baselinecap (one or both checks), liveexit, exitcode, child-console, child-textcap, child-orphan survive the whole contracts suite. Overstated: child-pagecap as the review wrote it (whole cap removed) is killed by evidence.test.ts line 162; only its text-character half survives.
+- Fix: stub-reader behaviours "baseline-large" (allocate ~300 MiB and touch it BEFORE the ready frame; expect PageReadError 'the page reader started too large') and "done-then-exit-1" (page + done frames, then process.exit(1); expect PageReadError 'exit code 1'); readPagesHere with maxTextCharacters below the text (expect refused unsupported_document) beside the maxPages 0 case; optionally a page-reader child test that its stderr is empty on a pdf.js-warning document and that an orphaned reader exits 3. liveexit is hard to unit-test (needs a parent that exits mid-read: a spawned probe parent, then check the child pid gone before the 1 s orphan check).
+- Clone removed.
