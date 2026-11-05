@@ -21,8 +21,44 @@ const value = (catalog: FactCatalog, id: string) => {
   return 'found' in found ? found.found.value : found.problem;
 };
 const of = (content: PacketContent) => factCatalog(content);
+/** A packet of `count` lines of 97110, each on its own March date, over `claims` claims taken in turn. */
+const many = (count: number, claims = count) =>
+  of(
+    assemblePacket(
+      assemblyInput({
+        lines: Array.from({ length: count }, (_, index) =>
+          line(index + 1, { serviceDate: `2026-03-${String((index % 28) + 1).padStart(2, '0')}`, claimId: `20000000-0000-4000-8000-${String((index % claims) + 1).padStart(12, '0')}` }),
+        ),
+      }),
+    ),
+  );
 
 describe('the catalog of a packet', () => {
+  it('gives each fact the scope of its subject: the pattern’s in total, a code’s, a claim’s, a line’s and a set of rows’ a part', () => {
+    for (const make of Object.values(FACT_CONTENTS)) {
+      const catalog = of(make());
+      // A set of rows of each measure too (the first and third rows: a code's, a claim's or `lines.*`), resolved on demand.
+      const [first, , third] = catalog.content.lines.map((item) => item.row);
+      const ids = third === undefined ? [] : (['units', 'expected', 'service_dates'] as const).map((measure) => canonicalFactId(catalog, [first as number, third], measure));
+      const resolved = ids.flatMap((id) => (id === null ? [] : [lookupFact(catalog, id)])).flatMap((found) => ('found' in found ? [found.found] : []));
+      for (const entry of [...catalog.entries, ...resolved]) {
+        if (['code', 'claim', 'line', 'lines'].includes(entry.subject)) {
+          expect(entry.scope, entry.id).toBe('part');
+        }
+        if (entry.subject === 'pattern') {
+          expect(entry.scope, entry.id).toBe(entry.measure.endsWith('_each') ? 'line' : 'total');
+        }
+      }
+    }
+    const several = of(FACT_CONTENTS.severalCodes());
+    for (const id of ['claim.5.lines', 'code.97110.lines', 'code.97110.service_dates', 'line.1.service_date', 'line.1.paid_on']) {
+      expect(several.byId.get(id)?.scope, id).toBe('part');
+    }
+    for (const id of ['pattern.lines', 'pattern.claims', 'pattern.patients', 'pattern.service_dates']) {
+      expect(several.byId.get(id)?.scope, id).toBe('total');
+    }
+  });
+
   it('lists each fact once, under an id of the grammar that names itself', () => {
     for (const make of Object.values(FACT_CONTENTS)) {
       const catalog = of(make());
@@ -96,7 +132,7 @@ describe('the catalog of a packet', () => {
     expect(entry('pattern.paid')).toMatchObject({ value: '16800', paths: [['lines', '#', 'paid_cents']], summed: true });
     expect(entry('pattern.patient_share')).toMatchObject({ value: '4200', paths: [['lines', '#', 'calculation', 'patient_share_cents']], summed: true });
     expect(entry('pattern.units')).toMatchObject({ value: '6', kind: 'units', paths: [['pattern', 'units']] });
-    expect(entry('pattern.lines')).toMatchObject({ value: 3, kind: 'count', scope: null, paths: [['pattern', 'lines']] });
+    expect(entry('pattern.lines')).toMatchObject({ value: 3, kind: 'count', scope: 'total', paths: [['pattern', 'lines']] });
     expect(entry('pattern.claims')).toMatchObject({ value: 3, paths: [['pattern', 'claims']] });
     expect(entry('pattern.patients')).toMatchObject({ value: 3, paths: [['pattern', 'patients']] });
     expect(entry('pattern.service_dates')).toMatchObject({ value: { from: '2026-03-05', to: '2026-03-07' }, paths: [['pattern', 'first_service_date'], ['pattern', 'last_service_date']], phrase: 'pattern.service_dates' });
@@ -127,13 +163,13 @@ describe('the catalog of a packet', () => {
     expect(catalog.byId.get('code.g0283.service_dates')).toMatchObject({ value: { from: '2026-03-04', to: '2026-03-04' }, phrase: 'code.service_dates.one' });
     expect(catalog.byId.get('claim.5.expected')).toMatchObject({ value: '24000', rows: [5, 6], summed: true, model: false });
     expect(catalog.byId.get('claim.5.units')).toMatchObject({ value: '4' });
-    expect(catalog.byId.get('claim.5.lines')).toMatchObject({ value: 2, scope: null });
+    expect(catalog.byId.get('claim.5.lines')).toMatchObject({ value: 2, scope: 'part' });
     expect(value(catalog, 'lines.1+2.units')).toBe('3.5');
     expect(value(catalog, 'lines.1+2+3.expected')).toBe('20000');
     expect(value(catalog, 'lines.2+6.paid')).toBe('4200');
     expect(value(catalog, 'lines.2+3.service_dates')).toEqual({ from: '2026-03-03', to: '2026-03-04' });
     expect(lookupFact(catalog, 'lines.1+5.variance')).toMatchObject({ found: { id: 'lines.1+5.variance', subject: 'lines', scope: 'part', rows: [1, 5], summed: true, model: false, phrase: 'lines.variance' } });
-    expect(lookupFact(catalog, 'lines.2+3.service_dates')).toMatchObject({ found: { scope: null, phrase: 'lines.service_dates' } });
+    expect(lookupFact(catalog, 'lines.2+3.service_dates')).toMatchObject({ found: { scope: 'part', phrase: 'lines.service_dates' } });
     expect(lookupFact(catalog, 'lines.3+6.service_dates')).toMatchObject({ found: { value: { from: '2026-03-04', to: '2026-03-10' } } });
   });
 
@@ -236,6 +272,37 @@ describe('one set of lines, one id', () => {
     expect(canonicalFactId(several, [6], 'code')).toBeNull();
   });
 
+  it('gives a set of rows whose name would be longer than a fact id no id, so it never offers one the verifier refuses', () => {
+    // Forty lines of one code over three claims: a set of rows is named by its rows, ten to thirty-nine here.
+    const forty = many(40, 3);
+    const rows = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
+    const long = `lines.${rows(10, 39).join('+')}.expected`;
+    expect(long.length).toBeGreaterThan(96);
+    expect(canonicalFactId(forty, rows(10, 39), 'expected')).toBeNull();
+    expect(canonicalFactId(forty, rows(10, 39), 'variance')).toBeNull();
+    expect(canonicalFactId(forty, rows(10, 39), 'service_dates')).toBeNull();
+    expect(lookupFact(forty, long)).toEqual({ problem: 'unknown_fact' });
+    // Written in another order, the long set still names no fact (never a canonical id the grammar refuses).
+    expect(lookupFact(forty, `lines.${rows(10, 39).reverse().join('+')}.expected`)).toEqual({ problem: 'unknown_fact' });
+    // Fifteen rows fit: the id is the grammar's, and the verifier finds it.
+    const fifteen = canonicalFactId(forty, rows(10, 24), 'expected') as string;
+    expect(fifteen).toBe(`lines.${rows(10, 24).join('+')}.expected`);
+    expect(isFactId(fifteen)).toBe(true);
+    expect(lookupFact(forty, fifteen)).toMatchObject({ found: { id: fifteen, rows: rows(10, 24) } });
+    // Every id canonicalFactId gives over any run of rows is one the grammar takes and lookupFact finds.
+    for (let from = 1; from <= 40; from += 3) {
+      for (let to = from; to <= 40; to += 5) {
+        for (const measure of ['expected', 'units', 'service_dates'] as const) {
+          const id = canonicalFactId(forty, rows(from, to), measure);
+          if (id !== null) {
+            expect(isFactId(id), id).toBe(true);
+            expect(lookupFact(forty, id), id).toMatchObject({ found: { id } });
+          }
+        }
+      }
+    }
+  });
+
   it('knows no fact of a row, a measure or a subject the content lacks, nor any id outside the grammar', () => {
     const [several] = catalogs();
     for (const id of [
@@ -263,8 +330,23 @@ describe('one set of lines, one id', () => {
       'Pattern.paid',
       '',
       `pattern.${'a'.repeat(100)}`,
+      // A row's key is its decimal digits: an exponent, a leading zero or a sign names no row.
+      'line.1e0.expected',
+      'line.1e1.expected',
+      'claim.1e0.paid',
+      'claim.5e0.expected',
+      'line.01.expected',
+      'line.0.expected',
     ]) {
       expect(lookupFact(several, id), id).toEqual({ problem: 'unknown_fact' });
+    }
+  });
+
+  it('reads a row key in exponent form as no row, however many rows the schedule has', () => {
+    const twelve = many(12);
+    expect(lookupFact(twelve, 'line.10.expected')).toMatchObject({ found: { id: 'line.10.expected' } });
+    for (const id of ['line.1e1.expected', 'line.1e0.expected', 'claim.1e0.expected', 'claim.1e1.paid', 'lines.1e0+2.paid']) {
+      expect(lookupFact(twelve, id), id).toEqual({ problem: 'unknown_fact' });
     }
   });
 });
@@ -464,7 +546,7 @@ describe('the catalog’s edges', () => {
     expect(paths('lines.1+2.service_dates')).toEqual([['lines', '#', 'service_date'], ['lines', '#', 'service_date']]);
     expect(paths('lines.1+2.patient_share')).toEqual([['lines', '#', 'calculation', 'patient_share_cents']]);
     expect(paths('lines.1+2.allowed')).toEqual([['lines', '#', 'observed_cents']]);
-    expect(paths('claim.5.lines')).toEqual([['lines']]);
+    expect(paths('claim.5.lines')).toEqual([['lines', '#']]);
     expect(paths('claim.5.service_dates')).toEqual([['lines', '#', 'service_date'], ['lines', '#', 'service_date']]);
     expect(paths('line.2.units')).toEqual([['lines', 1, 'units']]);
     expect(paths('line.2.service_date')).toEqual([['lines', 1, 'service_date']]);

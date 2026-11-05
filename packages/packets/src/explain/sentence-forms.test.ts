@@ -23,7 +23,7 @@ import { RENDERER_REVISION } from './version';
  */
 const PINNED = {
   revision: 5,
-  sha256: 'd731b79076bcd2037ccbf9aa2d40b213d86fb4533a421c6019bd3a427bdc73cf',
+  sha256: 'c24edc673e3262d882b7360459e06da219ab091036aa9a4df78bb359e03e1ecb',
 } as const;
 
 const FILES = ['line.ts', 'worksheet.ts', 'figures.ts', '../fact-catalog.ts', '../render.ts'] as const;

@@ -1,9 +1,9 @@
-import { formatUsd, parseCents } from '@tp/money';
+import { formatUsd, formatUsdPlain, parseCents } from '@tp/money';
 import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
 import { ExplainShapeError, type Segment, formatFigure, segmentText } from './explain/figures';
-import { factCatalog } from './fact-catalog';
+import { type FactEntry, factCatalog } from './fact-catalog';
 import { FACT_CONTENTS } from './fact-contents.test-support';
 import { factWords } from './fact-words';
 import type { PacketContent } from './format';
@@ -26,6 +26,32 @@ const rendered = (template: string, content: PacketContent): string => {
   }
   return result.text;
 };
+/**
+ * What a figure's source names, printed in its form: the value at its path in the content; for a path read in each of
+ * its rows (`#`), the lines at those rows (form `count`) or the one value they all hold; amounts by formatUsdPlain.
+ * Null for a sum code made over the rows (an amount, units), which the property test holds equal to the rows' own sum.
+ */
+function resolved(content: PacketContent, entry: FactEntry, segment: Extract<Segment, { figure: string }>): string | null {
+  const { path, form, rows } = segment.source;
+  const at = (value: unknown, keys: readonly (string | number)[]): unknown => keys.reduce<unknown>((item, key) => (item as Record<string | number, unknown>)[key], value);
+  const hash = path.indexOf('#');
+  let value: unknown;
+  if (hash === -1) {
+    value = at(content, path);
+  } else {
+    const lines = (rows ?? []).map((row) => content.lines.find((item) => item.row === row));
+    expect(lines.every((item) => item !== undefined) && lines.length > 0, JSON.stringify(rows)).toBe(true);
+    const read = lines.map((item) => at(item, path.slice(hash + 1)));
+    if (form === 'count' && hash === path.length - 1) {
+      value = read;
+    } else if (!(entry.summed && form !== 'verbatim') && new Set(read.map((item) => JSON.stringify(item))).size === 1) {
+      value = read[0];
+    } else {
+      return null;
+    }
+  }
+  return form === 'dollars' ? formatUsdPlain(parseCents(value as string)) : formatFigure(value, form);
+}
 const phrase = (id: string, content: PacketContent) => rendered(factPlaceholder(id), content);
 const problems = (template: string, content: PacketContent) => {
   const result = renderFacts(template, content);
@@ -119,8 +145,12 @@ describe('a fact’s phrase', () => {
           }
           if ('figure' in segment) {
             expect(segment.source).toMatchObject({ from: 'content', slot: entry.id });
-            expect(entry.paths.concat([['lines']]).some((path) => JSON.stringify(path) === JSON.stringify(segment.source.path)), entry.id).toBe(true);
+            expect(entry.paths.concat([['lines', '#']]).some((path) => JSON.stringify(path) === JSON.stringify(segment.source.path)), entry.id).toBe(true);
             expect('rows' in segment.source, entry.id).toBe(segment.source.path.includes('#'));
+            const named = resolved(content, entry, segment);
+            if (named !== null) {
+              expect(named, `${entry.id}: ${JSON.stringify(segment.source)}`).toBe(segment.figure);
+            }
           }
         }
       }
@@ -154,7 +184,7 @@ describe('a fact’s phrase', () => {
     expect(segments('lines.1+2+6.units').slice(-6)).toEqual([{ text: ' units in total for lines ' }, { label: '1', of: 'row' }, { text: ', ' }, { label: '2', of: 'row' }, { text: ' and ' }, { label: '6', of: 'row' }]);
     expect(segments('claim.5.lines')).toEqual([
       { text: 'the ' },
-      { figure: '2', source: { from: 'content', path: ['lines'], form: 'integer', slot: 'claim.5.lines' } },
+      { figure: '2', source: { from: 'content', path: ['lines', '#'], form: 'count', slot: 'claim.5.lines', rows: [5, 6] } },
       { text: ' lines of claim {{claim_control_number:5}}' },
     ]);
     expect(segments('pattern.claims')).toEqual([{ text: 'the ' }, { figure: '3', source: { from: 'content', path: ['pattern', 'claims'], form: 'integer', slot: 'pattern.claims' } }, { text: ' claims of the schedule' }]);

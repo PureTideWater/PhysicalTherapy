@@ -55,6 +55,11 @@ export interface FactEntry {
   readonly measure: string;
   readonly kind: FactKind;
   readonly role: FigureRole | null;
+  /**
+   * What the fact is stated over (design section 1's table): `total` for the pattern's (its counts and span included)
+   * and interest's total, `line` for a value each line holds, `part` for every fact of a code, a claim, a line or a set
+   * of rows (their counts and dates included), `unit` or `visit` for the contract's rate, and none for the rest.
+   */
   readonly scope: FactScope | null;
   /** The schedule rows the fact covers, ascending: every row for the pattern, its set for a part, interest's stated rows; none for the rest. */
   readonly rows: readonly number[];
@@ -245,7 +250,8 @@ function summed(context: CatalogContext, rows: readonly number[], measure: SetMe
   const lines = rows.map((row) => (context.byRow.get(row) as { readonly line: ScheduleLine }).line);
   const { role, kind } = context.words.lineMeasures[measure];
   if (measure === 'lines') {
-    return { kind, role, value: lines.length, paths: [['lines']], summed: true };
+    // The lines at the fact's rows, counted (form `count` over `['lines', '#']` with those rows).
+    return { kind, role, value: lines.length, paths: [['lines', '#']], summed: true };
   }
   if (measure === 'units') {
     return { kind, role, value: canonicalNumber(sumUnits(lines.map((line) => line.units))), paths: [['lines', '#', 'units']], summed: true };
@@ -372,11 +378,11 @@ function rowEntries(context: CatalogContext, row: number, entries: Entries, cano
     const lineMeasure = measure === 'service_dates' ? 'service_date' : measure;
     const id = `line.${String(row)}.${lineMeasure}`;
     if (!canonical || canonicalName(context, [row], measure) === id) {
-      entries.add(id, 'line', lineMeasure, measure === 'service_dates' ? null : 'part', [row], lineFact(context, row, measure));
+      entries.add(id, 'line', lineMeasure, 'part', [row], lineFact(context, row, measure));
     }
   }
   const own = (measure: 'paid_on' | 'received_on' | 'window_ends_on', value: string | null) => {
-    entries.add(`line.${String(row)}.${measure}`, 'line', measure, null, [row], value === null ? null : { kind: 'date', role: roleOf(context, measure), value, paths: [['lines', index, measure]], summed: false, phrase: `line.${measure}` });
+    entries.add(`line.${String(row)}.${measure}`, 'line', measure, 'part', [row], value === null ? null : { kind: 'date', role: roleOf(context, measure), value, paths: [['lines', index, measure]], summed: false, phrase: `line.${measure}` });
   };
   own('paid_on', line.paid_on);
   own('received_on', line.received_on);
@@ -447,7 +453,7 @@ export function factCatalog(content: PacketContent): FactCatalog {
 
   // The pattern: every line. Its per-line value only where every line of two or more holds the same one.
   for (const measure of [...context.words.setMeasures.slice(0, 1), 'claims' as const, 'patients' as const, ...context.words.setMeasures.slice(1)]) {
-    entries.add(`pattern.${measure}`, 'pattern', measure, measure === 'lines' || measure === 'claims' || measure === 'patients' || measure === 'service_dates' ? null : 'total', context.all, patternFact(context, measure));
+    entries.add(`pattern.${measure}`, 'pattern', measure, 'total', context.all, patternFact(context, measure));
   }
   if (context.all.length > 1) {
     for (const measure of context.words.eachMeasures) {
@@ -469,7 +475,7 @@ export function factCatalog(content: PacketContent): FactCatalog {
     }
     for (const measure of context.words.setMeasures) {
       if (canonicalName(context, code.rows, measure) === `code.${code.id}.${measure}`) {
-        entries.add(`code.${code.id}.${measure}`, 'code', measure, measure === 'service_dates' || measure === 'lines' ? null : 'part', code.rows, codeFact(context, code, measure));
+        entries.add(`code.${code.id}.${measure}`, 'code', measure, 'part', code.rows, codeFact(context, code, measure));
       }
     }
   }
@@ -480,7 +486,7 @@ export function factCatalog(content: PacketContent): FactCatalog {
       const id = `claim.${String(claim.first)}.${measure}`;
       if (canonicalName(context, claim.rows, measure) === id) {
         const made = summed(context, claim.rows, measure);
-        entries.add(id, 'claim', measure, measure === 'service_dates' || measure === 'lines' ? null : 'part', claim.rows, made === null ? null : { ...made, phrase: setPhrase('claim', measure, made.value) });
+        entries.add(id, 'claim', measure, 'part', claim.rows, made === null ? null : { ...made, phrase: setPhrase('claim', measure, made.value) });
       }
     }
   }
@@ -522,27 +528,33 @@ function setOfRows(catalog: FactCatalog, rows: readonly number[], measure: SetMe
     return null;
   }
   const id = `lines.${rows.join('+')}.${measure}`;
-  return { id, subject: 'lines', measure, scope: measure === 'service_dates' ? null : 'part', rows, ...made, phrase: setPhrase('lines', measure, made.value), model: false };
+  return { id, subject: 'lines', measure, scope: 'part', rows, ...made, phrase: setPhrase('lines', measure, made.value), model: false };
 }
 
-/** The fact a canonical name of a measure over rows names, listed or (a set of rows) resolved, or null when none. */
+/**
+ * The fact a canonical name of a measure over rows names, listed or (a set of rows) resolved, or null when none. A set
+ * of rows whose `lines.*` name is longer than a fact id may be (96 characters, ./placeholders.ts isFactId) has no id:
+ * no template can name it, so it is no fact, and the person names it by claim, code or smaller sets.
+ */
 function named(catalog: FactCatalog, name: string | null, rows: readonly number[], measure: SetMeasure | 'code' | 'modifiers'): FactEntry | null {
-  if (name === null) {
+  if (name === null || !isFactId(name)) {
     return null;
   }
   return catalog.byId.get(name) ?? (name.startsWith('lines.') ? setOfRows(catalog, rows, measure as SetMeasure) : null);
 }
 
 /**
- * The rows an id's row list names (its digits and `+` signs), ascending and distinct, or null when one is written with a
- * leading zero, is empty or is not a row of the schedule.
+ * The rows an id's row list names (its digits and `+` signs), ascending and distinct, or null when one is not a row's
+ * decimal digits (a leading zero, an exponent, empty) or is not a row of the schedule.
  */
 function rowsNamed(catalog: FactCatalog, list: string): number[] | null {
   const rows = list.split('+');
+  if (!rows.every((row) => /^[1-9]\d{0,5}$/.test(row))) {
+    return null;
+  }
   const numbers = [...new Set(rows.map(Number))].sort((a, b) => a - b);
-  return rows.every((row) => !row.startsWith('0')) && numbers.every((row) => catalog.context.byRow.has(row)) ? numbers : null;
+  return numbers.every((row) => catalog.context.byRow.has(row)) ? numbers : null;
 }
-
 
 /**
  * The fact an id names in a catalog: the fact; `fact_not_canonical` with the canonical id when a well-formed id names
@@ -587,8 +599,8 @@ export function lookupFact(catalog: FactCatalog, id: string): FactLookup {
 
 /**
  * The canonical id of a measure over a set of rows (in any order, repeats ignored), or null when no row is given, a row
- * is not the schedule's, or the content holds no such fact: the id the picker's "Sum of lines..." inserts, and the
- * one the verifier requires.
+ * is not the schedule's, or the content holds no such fact (a set of rows whose `lines.*` name would be longer than a
+ * fact id's 96 characters included): the id the picker's "Sum of lines..." inserts, and the one the verifier requires.
  */
 export function canonicalFactId(catalog: FactCatalog, rows: readonly number[], measure: SetMeasure | 'code' | 'modifiers'): string | null {
   const set = [...new Set(rows)].sort((a, b) => a - b);

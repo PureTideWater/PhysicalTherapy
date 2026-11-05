@@ -68,6 +68,15 @@ const counted = (words: FactWords, entry: FactEntry, count: number, noun: keyof 
   return [figure(entry, String(count), form, path), { text: ` ${count === 1 ? one : many}` }];
 };
 
+/**
+ * The count of the lines a fact covers, with its noun: the lines at the fact's rows counted (form `count` over
+ * `['lines', '#']` with those rows), so the figure's source is where its value is ("2 lines" of a claim's 2 rows).
+ */
+const linesCovered = (words: FactWords, entry: FactEntry): Segment[] => {
+  const [one, many] = words.nouns.lines;
+  return [printed(entry, formatFigure(entry.rows, 'count'), 'count', ['lines', '#']), { text: ` ${entry.rows.length === 1 ? one : many}` }];
+};
+
 /** Items joined as a list: "a", "a and b", "a, b and c". */
 function listed(items: readonly Segment[]): Segment[] {
   return items.flatMap((item, index) => (index === 0 ? [item] : [{ text: index === items.length - 1 ? ' and ' : ', ' }, item]));
@@ -89,8 +98,8 @@ function slot(words: FactWords, content: PacketContent, entry: FactEntry, name: 
     case '<lines>':
     case '<claims>':
     case '<patients>':
-      // A count fact's own value; otherwise the count of the rows the fact covers.
-      return entry.kind === 'count' ? counted(words, entry, value as number, name.slice(1, -1) as 'lines', 'integer', path) : counted(words, entry, entry.rows.length, 'lines', 'integer', ['lines']);
+      // A stored count's own value; otherwise (a count code makes of rows, or another fact's) the rows the fact covers, counted.
+      return entry.kind === 'count' && !path.includes('#') ? counted(words, entry, value as number, name.slice(1, -1) as 'lines', 'integer', path) : linesCovered(words, entry);
     case '<days>':
       return counted(words, entry, value as number, 'days', 'integer', path);
     case '<number>':

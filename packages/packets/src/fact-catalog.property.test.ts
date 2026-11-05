@@ -140,7 +140,13 @@ describe('the facts’ catalog, over generated patterns', () => {
           const result = renderFacts(factPlaceholder(entry.id), catalog);
           expect(result.ok, entry.id).toBe(true);
           for (const segment of renderFact(content, entry)) {
-            if ('figure' in segment && segment.source.path.join('.') !== 'lines') {
+            if ('figure' in segment && segment.source.form === 'count') {
+              // The lines at the fact's rows, counted: each row a line of the content.
+              const rows = segment.source.rows ?? [];
+              expect(segment.source.path, entry.id).toEqual(['lines', '#']);
+              expect(rows.length > 0 && rows.every((row) => at(content, segment.source.path, row) !== undefined), entry.id).toBe(true);
+              expect(segment.figure, entry.id).toBe(String(rows.length));
+            } else if ('figure' in segment) {
               const rows = segment.source.rows ?? [];
               const values = rows.length === 0 ? [at(content, segment.source.path, 0)] : rows.map((row) => at(content, segment.source.path, row));
               // Each value the figure is read from is in the content; a stored or one-row figure prints that value.

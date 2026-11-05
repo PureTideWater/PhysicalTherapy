@@ -14,11 +14,11 @@ contract.rate | amount | expected | visit | - | model | stored
   the contract’s amount of $90.00 per visit
 release.no.1 | release | release | - | - | model | stored
   rule release 900001
-pattern.lines | count | lines | - | 1,2,3 | model | stored
+pattern.lines | count | lines | total | 1,2,3 | model | stored
   the 3 lines of the schedule
-pattern.claims | count | claims | - | 1,2,3 | model | stored
+pattern.claims | count | claims | total | 1,2,3 | model | stored
   the 3 claims of the schedule
-pattern.patients | count | patients | - | 1,2,3 | model | stored
+pattern.patients | count | patients | total | 1,2,3 | model | stored
   the 3 patients of the schedule
 pattern.units | units | units | total | 1,2,3 | model | stored
   6 units in total for the 3 lines
@@ -32,7 +32,7 @@ pattern.variance | amount | variance | total | 1,2,3 | model | stored
   a shortfall of $90.00 in total for the 3 lines
 pattern.patient_share | amount | patient_share | total | 1,2,3 | model | summed
   the patient share of $42.00 in total for the 3 lines
-pattern.service_dates | date_span | service_date | - | 1,2,3 | model | stored
+pattern.service_dates | date_span | service_date | total | 1,2,3 | model | stored
   service dates from 2026-03-05 to 2026-03-07
 pattern.units_each | units | units | line | 1,2,3 | model | stored
   2 units per line on each of the 3 lines
@@ -60,9 +60,9 @@ line.1.variance | amount | variance | part | 1 | person | stored
   a shortfall of $30.00 for line 1
 line.1.patient_share | amount | patient_share | part | 1 | person | stored
   the patient share of $14.00 for line 1
-line.1.service_date | date | service_date | - | 1 | person | stored
+line.1.service_date | date | service_date | part | 1 | person | stored
   the service date 2026-03-05 of line 1
-line.1.paid_on | date | paid_date | - | 1 | person | stored
+line.1.paid_on | date | paid_date | part | 1 | person | stored
   the payment date 2026-04-08 of line 1
 line.1.code | code | - | part | 1 | person | stored
   97110
@@ -78,9 +78,9 @@ line.2.variance | amount | variance | part | 2 | person | stored
   a shortfall of $30.00 for line 2
 line.2.patient_share | amount | patient_share | part | 2 | person | stored
   the patient share of $14.00 for line 2
-line.2.service_date | date | service_date | - | 2 | person | stored
+line.2.service_date | date | service_date | part | 2 | person | stored
   the service date 2026-03-06 of line 2
-line.2.paid_on | date | paid_date | - | 2 | person | stored
+line.2.paid_on | date | paid_date | part | 2 | person | stored
   the payment date 2026-04-08 of line 2
 line.2.code | code | - | part | 2 | person | stored
   97110
@@ -96,9 +96,9 @@ line.3.variance | amount | variance | part | 3 | person | stored
   a shortfall of $30.00 for line 3
 line.3.patient_share | amount | patient_share | part | 3 | person | stored
   the patient share of $14.00 for line 3
-line.3.service_date | date | service_date | - | 3 | person | stored
+line.3.service_date | date | service_date | part | 3 | person | stored
   the service date 2026-03-07 of line 3
-line.3.paid_on | date | paid_date | - | 3 | person | stored
+line.3.paid_on | date | paid_date | part | 3 | person | stored
   the payment date 2026-04-08 of line 3
 line.3.code | code | - | part | 3 | person | stored
   97110

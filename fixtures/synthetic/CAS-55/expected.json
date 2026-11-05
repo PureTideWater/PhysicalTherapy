@@ -10,7 +10,8 @@
     "packages/packets/src/fact-catalog.test.ts",
     "packages/packets/src/fact-catalog.property.test.ts",
     "packages/packets/src/render-golden.test.ts",
-    "packages/money/src/usd-plain.test.ts"
+    "packages/money/src/usd-plain.test.ts",
+    "apps/web/src/components/packets/fact-render.browser.test.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.",

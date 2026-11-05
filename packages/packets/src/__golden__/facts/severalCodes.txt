@@ -14,11 +14,11 @@ contract.rate | amount | expected | unit | - | model | stored
   the contract’s fee-schedule amount of $50.00 per unit
 release.no.1 | release | release | - | - | model | stored
   rule release 900001
-pattern.lines | count | lines | - | 1,2,3,4,5,6 | model | stored
+pattern.lines | count | lines | total | 1,2,3,4,5,6 | model | stored
   the 6 lines of the schedule
-pattern.claims | count | claims | - | 1,2,3,4,5,6 | model | stored
+pattern.claims | count | claims | total | 1,2,3,4,5,6 | model | stored
   the 3 claims of the schedule
-pattern.patients | count | patients | - | 1,2,3,4,5,6 | model | stored
+pattern.patients | count | patients | total | 1,2,3,4,5,6 | model | stored
   the 3 patients of the schedule
 pattern.units | units | units | total | 1,2,3,4,5,6 | model | stored
   11.5 units in total for the 6 lines
@@ -32,11 +32,11 @@ pattern.variance | amount | variance | total | 1,2,3,4,5,6 | model | stored
   a shortfall of $202.50 in total for the 6 lines
 pattern.patient_share | amount | patient_share | total | 1,2,3,4,5,6 | model | summed
   the patient share of $77.50 in total for the 6 lines
-pattern.service_dates | date_span | service_date | - | 1,2,3,4,5,6 | model | stored
+pattern.service_dates | date_span | service_date | total | 1,2,3,4,5,6 | model | stored
   service dates from 2026-03-02 to 2026-03-10
 code.97110 | code | - | part | 1,2,4 | model | stored
   97110
-code.97110.lines | count | lines | - | 1,2,4 | model | stored
+code.97110.lines | count | lines | part | 1,2,4 | model | stored
   the 3 lines of 97110
 code.97110.units | units | units | part | 1,2,4 | model | stored
   6.5 units in total for the 3 lines of 97110
@@ -50,13 +50,13 @@ code.97110.variance | amount | variance | part | 1,2,4 | model | stored
   a shortfall of $97.50 in total for the 3 lines of 97110
 code.97110.patient_share | amount | patient_share | part | 1,2,4 | model | summed
   the patient share of $45.50 in total for the 3 lines of 97110
-code.97110.service_dates | date_span | service_date | - | 1,2,4 | model | summed
+code.97110.service_dates | date_span | service_date | part | 1,2,4 | model | summed
   service dates from 2026-03-02 to 2026-03-05 for the 3 lines of 97110
 code.g0283 | code | - | part | 3 | model | stored
   G0283
 code.g0283.modifiers | modifiers | - | part | 3 | model | stored
   modifiers GP and KX
-code.g0283.lines | count | lines | - | 3 | model | stored
+code.g0283.lines | count | lines | part | 3 | model | stored
   the 1 line of G0283
 code.g0283.units | units | units | part | 3 | model | stored
   1 unit in total for the 1 line of G0283
@@ -70,13 +70,13 @@ code.g0283.variance | amount | variance | part | 3 | model | stored
   a shortfall of $15.00 in total for the 1 line of G0283
 code.g0283.patient_share | amount | patient_share | part | 3 | model | summed
   the patient share of $2.00 in total for the 1 line of G0283
-code.g0283.service_dates | date_span | service_date | - | 3 | model | summed
+code.g0283.service_dates | date_span | service_date | part | 3 | model | summed
   the service date 2026-03-04 for the 1 line of G0283
 code.0275t | code | - | part | 5 | model | stored
   0275T
 code.0275t.modifiers | modifiers | - | part | 5 | model | stored
   modifier 59
-code.0275t.lines | count | lines | - | 5 | model | stored
+code.0275t.lines | count | lines | part | 5 | model | stored
   the 1 line of 0275T
 code.0275t.units | units | units | part | 5 | model | stored
   2 units in total for the 1 line of 0275T
@@ -90,9 +90,9 @@ code.0275t.variance | amount | variance | part | 5 | model | stored
   a shortfall of $80.00 in total for the 1 line of 0275T
 code.0275t.patient_share | amount | patient_share | part | 5 | model | summed
   the patient share of $0.00 in total for the 1 line of 0275T
-code.0275t.service_dates | date_span | service_date | - | 5 | model | summed
+code.0275t.service_dates | date_span | service_date | part | 5 | model | summed
   the service date 2026-03-06 for the 1 line of 0275T
-claim.5.lines | count | lines | - | 5,6 | person | summed
+claim.5.lines | count | lines | part | 5,6 | person | summed
   the 2 lines of claim {{claim_control_number:5}}
 claim.5.units | units | units | part | 5,6 | person | summed
   4 units in total for the 2 lines of claim {{claim_control_number:5}}
@@ -106,7 +106,7 @@ claim.5.variance | amount | variance | part | 5,6 | person | summed
   a shortfall of $90.00 in total for the 2 lines of claim {{claim_control_number:5}}
 claim.5.patient_share | amount | patient_share | part | 5,6 | person | summed
   the patient share of $30.00 in total for the 2 lines of claim {{claim_control_number:5}}
-claim.5.service_dates | date_span | service_date | - | 5,6 | person | summed
+claim.5.service_dates | date_span | service_date | part | 5,6 | person | summed
   service dates from 2026-03-06 to 2026-03-10 for the 2 lines of claim {{claim_control_number:5}}
 line.1.units | units | units | part | 1 | person | stored
   2 units for line 1
@@ -120,13 +120,13 @@ line.1.variance | amount | variance | part | 1 | person | stored
   a shortfall of $30.00 for line 1
 line.1.patient_share | amount | patient_share | part | 1 | person | stored
   the patient share of $14.00 for line 1
-line.1.service_date | date | service_date | - | 1 | person | stored
+line.1.service_date | date | service_date | part | 1 | person | stored
   the service date 2026-03-02 of line 1
-line.1.paid_on | date | paid_date | - | 1 | person | stored
+line.1.paid_on | date | paid_date | part | 1 | person | stored
   the payment date 2026-04-08 of line 1
-line.1.received_on | date | received_date | - | 1 | person | stored
+line.1.received_on | date | received_date | part | 1 | person | stored
   the date 2026-02-10 the payer received the claim of line 1
-line.1.window_ends_on | date | deadline | - | 1 | person | stored
+line.1.window_ends_on | date | deadline | part | 1 | person | stored
   the dispute window ending 2036-04-05 for line 1
 line.1.code | code | - | part | 1 | person | stored
   97110
@@ -142,21 +142,21 @@ line.2.variance | amount | variance | part | 2 | person | stored
   a shortfall of $22.50 for line 2
 line.2.patient_share | amount | patient_share | part | 2 | person | stored
   the patient share of $10.50 for line 2
-line.2.service_date | date | service_date | - | 2 | person | stored
+line.2.service_date | date | service_date | part | 2 | person | stored
   the service date 2026-03-03 of line 2
-line.2.paid_on | date | paid_date | - | 2 | person | stored
+line.2.paid_on | date | paid_date | part | 2 | person | stored
   the payment date 2026-04-08 of line 2
-line.2.received_on | date | received_date | - | 2 | person | stored
+line.2.received_on | date | received_date | part | 2 | person | stored
   the date 2026-02-10 the payer received the claim of line 2
-line.2.window_ends_on | date | deadline | - | 2 | person | stored
+line.2.window_ends_on | date | deadline | part | 2 | person | stored
   the dispute window ending 2036-04-05 for line 2
 line.2.code | code | - | part | 2 | person | stored
   97110
-line.3.paid_on | date | paid_date | - | 3 | person | stored
+line.3.paid_on | date | paid_date | part | 3 | person | stored
   the payment date 2026-04-08 of line 3
-line.3.received_on | date | received_date | - | 3 | person | stored
+line.3.received_on | date | received_date | part | 3 | person | stored
   the date 2026-02-10 the payer received the claim of line 3
-line.3.window_ends_on | date | deadline | - | 3 | person | stored
+line.3.window_ends_on | date | deadline | part | 3 | person | stored
   the dispute window ending 2036-04-05 for line 3
 line.4.units | units | units | part | 4 | person | stored
   3 units for line 4
@@ -170,21 +170,21 @@ line.4.variance | amount | variance | part | 4 | person | stored
   a shortfall of $45.00 for line 4
 line.4.patient_share | amount | patient_share | part | 4 | person | stored
   the patient share of $21.00 for line 4
-line.4.service_date | date | service_date | - | 4 | person | stored
+line.4.service_date | date | service_date | part | 4 | person | stored
   the service date 2026-03-05 of line 4
-line.4.paid_on | date | paid_date | - | 4 | person | stored
+line.4.paid_on | date | paid_date | part | 4 | person | stored
   the payment date 2026-04-08 of line 4
-line.4.received_on | date | received_date | - | 4 | person | stored
+line.4.received_on | date | received_date | part | 4 | person | stored
   the date 2026-02-10 the payer received the claim of line 4
-line.4.window_ends_on | date | deadline | - | 4 | person | stored
+line.4.window_ends_on | date | deadline | part | 4 | person | stored
   the dispute window ending 2036-04-05 for line 4
 line.4.code | code | - | part | 4 | person | stored
   97110
-line.5.paid_on | date | paid_date | - | 5 | person | stored
+line.5.paid_on | date | paid_date | part | 5 | person | stored
   the payment date 2026-04-08 of line 5
-line.5.received_on | date | received_date | - | 5 | person | stored
+line.5.received_on | date | received_date | part | 5 | person | stored
   the date 2026-02-10 the payer received the claim of line 5
-line.5.window_ends_on | date | deadline | - | 5 | person | stored
+line.5.window_ends_on | date | deadline | part | 5 | person | stored
   the dispute window ending 2036-04-05 for line 5
 line.6.units | units | units | part | 6 | person | stored
   2 units for line 6
@@ -198,13 +198,13 @@ line.6.variance | amount | variance | part | 6 | person | stored
   a shortfall of $10.00 for line 6
 line.6.patient_share | amount | patient_share | part | 6 | person | stored
   the patient share of $30.00 for line 6
-line.6.service_date | date | service_date | - | 6 | person | stored
+line.6.service_date | date | service_date | part | 6 | person | stored
   the service date 2026-03-10 of line 6
-line.6.paid_on | date | paid_date | - | 6 | person | stored
+line.6.paid_on | date | paid_date | part | 6 | person | stored
   the payment date 2026-04-08 of line 6
-line.6.received_on | date | received_date | - | 6 | person | stored
+line.6.received_on | date | received_date | part | 6 | person | stored
   the date 2026-02-10 the payer received the claim of line 6
-line.6.window_ends_on | date | deadline | - | 6 | person | stored
+line.6.window_ends_on | date | deadline | part | 6 | person | stored
   the dispute window ending 2036-04-05 for line 6
 deadline.ends_on | date | deadline | - | - | model | stored
   the dispute deadline 2036-04-05
