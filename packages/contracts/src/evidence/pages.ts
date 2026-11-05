@@ -173,7 +173,7 @@ function residentBytes(pid: number): Promise<number | undefined> {
     }
   }
   return new Promise((resolve) => {
-    execFile('ps', ['-o', 'rss=', '-p', String(pid)], { env: {} }, (error, stdout) => {
+    execFile('ps', ['-o', 'rss=', '-p', String(pid)], { env: NO_ENVIRONMENT }, (error, stdout) => {
       const kib = Number.parseInt(stdout.trim(), 10);
       resolve(error === null && Number.isSafeInteger(kib) ? kib * 1024 : undefined);
     });
@@ -181,6 +181,9 @@ function residentBytes(pid: number): Promise<number | undefined> {
 }
 
 const PROC = existsSync('/proc/self/status');
+
+/** No variable at all. Typed as an environment because apps/web's Next.js types make NODE_ENV a required one. */
+const NO_ENVIRONMENT = {} as NodeJS.ProcessEnv;
 
 /** Reads the reader's frames from its stdout, each body copied once into a buffer of its own length. */
 class FrameReader {
@@ -290,7 +293,7 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
     let child: ChildProcessWithoutNullStreams;
     try {
       // An empty environment and an argv of flags and the entry only: nothing of the document, the practice or the task.
-      child = spawn(process.execPath, [...readerArgv(limits, entry), fileURLToPath(entry)], { cwd: fileURLToPath(new URL('.', entry)), env: {}, stdio: 'pipe', shell: false, windowsHide: true });
+      child = spawn(process.execPath, [...readerArgv(limits, entry), fileURLToPath(entry)], { cwd: fileURLToPath(new URL('.', entry)), env: NO_ENVIRONMENT, stdio: 'pipe', shell: false, windowsHide: true });
     } catch {
       reject(new PageReadError('the page reader could not start'));
       return;
