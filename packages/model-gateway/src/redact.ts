@@ -1216,6 +1216,49 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
 
 const WORD_UNIT = /^[\p{L}\p{N}]$/u;
 
+/** What stands between two numbers of one list: a comma, "and", "or" or "&", or a comma and one of them (review round 2, finding 3). */
+const LIST_JOINER = /^[ \t]*(?:,[ \t]*(?:(?:AND|OR|&)[ \t]+)?|(?:AND|OR|&)[ \t]+)$/u;
+/** How many numbers back a list is followed to the noun that names it: a bound, so a letter of lists stays linear. */
+const LIST_REACH = 16;
+
+/**
+ * decideBare, with a list (R5a, review round 2, finding 3): a number whose own words decide nothing ('none') and that
+ * follows another number, a match already found or a placeholder, across a list joiner alone ("Claim numbers 900123456 and 900123457",
+ * "Reference 2025550123, 2025550124") is kept when the list's first number that its words decide is kept; a label
+ * inside the list ("Claim 900123456 and SSN 900551234"), any other word or a sentence end ends the list, and a list
+ * after an SSN or phone label is no keep.
+ */
+function decideNamed(text: string, start: number, stops: (index: number) => boolean, length: number, digits: string): Decision {
+  const decision = decideBare(labelWindow(text, start, stops), length, digits);
+  let at = start;
+  for (let hop = 0; decision === 'none' && hop < LIST_REACH; hop += 1) {
+    const window = labelWindow(text, at, stops);
+    const end = at - window.length;
+    if (!LIST_JOINER.test(window)) {
+      break;
+    }
+    // The item before the joiner: a match already found (the call's own claim, "Claim SYNCLAIM0001 and 900123457"), a
+    // placeholder (the BARRIER of masked text, where the check reads that claim) or a run of digits, standing as a word.
+    const unit = text[end - 1] ?? '';
+    const inItem = end > 0 && stops(end - 1) ? stops : unit === BARRIER ? (index: number) => text[index] === BARRIER : (index: number) => DIGIT.test(text[index] ?? '');
+    if (!inItem(end - 1)) {
+      break;
+    }
+    let from = end - 1;
+    while (from > 0 && inItem(from - 1)) from -= 1;
+    if (from > 0 && WORD_UNIT.test(text[from - 1] ?? '')) {
+      break;
+    }
+    const item = text.slice(from, end);
+    const named = decideBare(labelWindow(text, from, stops), item.length, item);
+    if (named !== 'none') {
+      return named === 'keep' ? 'keep' : decision;
+    }
+    at = from;
+  }
+  return decision;
+}
+
 /** The token written against a view range on one side, joined as letterJoins reads it: its start (or end) and compact form. */
 function tokenBeside(text: string, start: number, end: number, side: 'before' | 'after'): { readonly at: number; readonly compact: string } | null {
   if (side === 'before') {
@@ -1380,7 +1423,7 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         if (form !== 'mask5' && form !== 'local' && pushOwn(view, readingsOf(view, start, end, core))) {
           continue;
         }
-        const decision = decideBare(labelWindow(view.text, start, stops), form === 'local' ? 7 : core.length, core);
+        const decision = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
         const labeled = decision === 'ssn' || decision === 'phone';
         let taken: PatternKind | null;
         if (wrapped) {
@@ -1553,7 +1596,7 @@ function survivorIn(text: string): boolean {
     let blocked = false;
     for (let i = start; i < end && !blocked; i += 1) blocked = barrier[i] === 1;
     if (!blocked && (match[0].length === 9 || match[0].length === 10)) {
-      blocked = decideBare(labelWindow(text, start, () => false), match[0].length, match[0]) === 'keep';
+      blocked = decideNamed(text, start, () => false, match[0].length, match[0]) === 'keep';
     }
     groups.push({ start, end, digits: match[0], blocked });
   }

@@ -334,6 +334,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a digit and a CRLF, repeated', ['JANE Q VANTREE'], fill('1\r\n'), ['SYN555001']],
     ['a digit, a dash and a bare line break, repeated', ['JANE Q VANTREE'], fill('5-\n'), ['SYN555001']],
     ['an amount before a date, repeated', ['JANE Q VANTREE'], fill('$150.00 2026-11-01 '), ['SYN555001']],
+    // Review round 2: a date or amount range, and a list a keep-noun names (each followed back LIST_REACH numbers at most).
+    ['date ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('10/01/2026-10/15/2026 '), ['SYN555001']],
+    ['amount ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('150.00-120.00 '), ['SYN555001']],
+    ['a list after a keep-noun as long as the letter', ['JANE Q VANTREE'], `Claims 900123456${fill(' and 900123457')}`, ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
@@ -726,6 +730,16 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['R5-24 an opening quote (A8)', 'A', 'Claim: “2025550123”', 'Claim: “2025550123”', []],
     ['R5-25 an equals sign (A8)', 'A', 'Claim = 2025550123', 'Claim = 2025550123', []],
     ['R5-26 a phone label never keeps a nine', 'A', 'Call 900551234', 'Call [SSN]', ['900551234']],
+    ['R5-27 a list after a keep-noun (review round 2, finding 3)', 'A', 'Claim number(s) 900123456 and 900123457.', 'Claim number(s) 900123456 and 900123457.', []],
+    ['R5-28', 'A', 'Reference numbers 2025550123, 2025550124.', 'Reference numbers 2025550123, 2025550124.', []],
+    ['R5-29 three, with a comma and “and”', 'A', 'Claims 900123456, 900123457, and 2025550124.', 'Claims 900123456, 900123457, and 2025550124.', []],
+    ['R5-30 “or”', 'A', 'Reference 2025550123 or 2025550124.', 'Reference 2025550123 or 2025550124.', []],
+    ['R5-31 a label inside the list decides', 'A', 'Claim 900123456 and SSN 900551234', 'Claim 900123456 and SSN [SSN]', ['900551234']],
+    ['R5-32 a word that is no list’s joiner', 'A', 'Claim 900123456 and member 900551234', 'Claim 900123456 and member [SSN]', ['900551234']],
+    ['R5-33 a sentence end ends the list', 'A', 'Claim 900123456. 900551234 is on file.', 'Claim 900123456. [SSN] is on file.', ['900551234']],
+    ['R5-34 a list after a phone label', 'A', 'Call 2025550123 or 2025550124.', 'Call [PHONE] or [PHONE].', ['2025550123', '2025550124']],
+    ['R5-35 a list after an SSN label', 'A', 'SSN 900551234 and 900123456', 'SSN [SSN] and [SSN]', ['900551234', '900123456']],
+    ['R5-36 a list after the call’s own claim', 'A', 'Claim SYNCLAIM0001 and 900123457.', 'Claim [CLAIM_1] and 900123457.', []],
     // R12: rare forms
     ['R12-1', 'A', 'SSN ###-##-3456', 'SSN [SSN]', []],
     ['R12-2', 'A', 'SSN ___-__-3456', 'SSN [SSN]', []],

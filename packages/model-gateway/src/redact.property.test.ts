@@ -1420,7 +1420,9 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
         // A keep-noun that names a bare nine or ten, with connectors between (R5a, A7, A8).
         const noun = ['Reference no.: ', 'Claim #: ', 'Claim number ', 'ICN ', 'Appeal ', 'Case no. ', 'Ref. No. ', '**Claim:** ', 'Claim, ', 'Claim = ', 'Claim\nNumber: ', 'Claim: “', 'Authorization ', 'Invoice # ', 'Group '][pick % 15] ?? 'Claim ';
         const reference = [nine, ten][pick % 2] ?? nine;
-        return { text: `${noun}${reference}`, reference };
+        // A list after the noun: each number after the first is named by it too (review round 2, finding 3).
+        const listed = Math.floor(pick / 15) % 3 === 0 ? `${[' and ', ', ', ', and ', ' or ', ' & '][Math.floor(pick / 45) % 5] ?? ' and '}${[ten, nine][pick % 2] ?? ten}` : '';
+        return { text: `${noun}${reference}${listed}`, reference };
       }
       case 11:
         // Service-line rows: codes, units and amounts in columns.
