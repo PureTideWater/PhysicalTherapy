@@ -95,6 +95,9 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'pricing-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'ledger-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'ledger-viewer', organization: 'other_group', role: 'viewer' },
+  // The interest journey (docs/adr/0084; e2e/ledger-interest.spec.ts): a billing manager of the other group who signs in
+  // to it alone, so its sign-ins never spend a TOTP step that the payment-terms journey's 'ledger-manager' needs.
+  { key: 'interest-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-drafter', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-approver', organization: 'other_group', role: 'billing_manager' },
   // The packet's export attestation (D16; docs/adr/0061): the reimbursement reviewer, under a support grant on the journey's practice.

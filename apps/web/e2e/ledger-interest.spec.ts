@@ -26,10 +26,14 @@ async function withWorker(run: () => Promise<void>): Promise<void> {
   }
 }
 
-/** A practice of its own with LED-23's case open from its original payment, the billing manager signed in. */
+/**
+ * A practice of its own with LED-23's case open from its original payment, the journey's own billing manager signed in:
+ * a persona no other journey signs in, since the provider takes each TOTP step once and the payment-terms journey,
+ * which runs beside this one, signs 'ledger-manager' in twice.
+ */
 async function interestCase(page: Page): Promise<string> {
   const practiceId = await patientSharePractice('LED-23');
-  await signInWithTotp(page, 'ledger-manager');
+  await signInWithTotp(page, 'interest-manager');
   await withWorker(async () => {
     await uploadLedger835(page, practiceId, 'LED-23', 'original.835');
     await openLedgerCase(practiceId);
