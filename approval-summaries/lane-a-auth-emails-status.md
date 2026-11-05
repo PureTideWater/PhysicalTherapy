@@ -71,6 +71,11 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
     line for the founder. Never write the approval line or approvers.json.
   - O-5: a White plate. O-8: "If you asked more than once, use the newest code." Both go in co-001/email-lockup-plate
     first.
+- 2026-11-05T06:45Z: the schema chain session confirmed:
+  - #126's migration 20261110090000_ledger_interest_once.sql touches none of mail_send's CHECK constraints,
+    audit_event's triggers and policies, or tp_operator's grants;
+  - the follow-on only sorts after it and regenerates domain-model.md on top once #126 merges;
+  - it messages me with #126's merge commit.
 
 ## Waiting on someone
 - The schema chain session: #126's merge, which opens the schema slot for the follow-on. Then the founder: the follow-on's approval (CO-02).
