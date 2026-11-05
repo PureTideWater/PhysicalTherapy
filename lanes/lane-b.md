@@ -1589,3 +1589,11 @@ HANDOFF.md; LANES.md rule 10).
 - #110 (SUITE-CAP-1b) head c2626113: CAS-42.5 passed on attempt 1, run 41940882156. Then come an adversarial review of the round's infra and worker code, the base merge, the body, and the suggested line.
 - **Decided:** staging RDS goes to db.t4g.medium (production's class; about +$23 a month). Dev goes to db.t4g.small with stop-first worker deploys in dev only (about +$11 a month when deployed), its heartbeat alarm quiet during deploys. Recorded in ADR 0083. PRD section 19's cost line stays the founder's.
 - **For Lane B (SUITE-CAP-3):** `approval-summaries/lane-a-to-lane-b-sc1b-reconcile-time-2026-11-05.md`, with 7b's 2,000-line reconcile at 526 to 657 s of 900, and the profile.
+
+### 2026-11-05 02:00 UTC: pricing-run-cutoff merged as #118 (54d061fd)
+- The run-creation cut-off reads now()::text. rerunReasons and runsPricedElsewhere compare in SQL, and rerunReasons fails closed.
+- The console's suspension card matches by status_since, read once as text.
+- Reviews: payment engine, correctness and delta, with skeptics. No B or S findings.
+- Unchanged: packages/pricing, the schema and every amount.
+- Leftover WIP refs `co-001/wip-pricing-run-cutoff` and `co-001/wip/pricing-run-cutoff-s4` are now superseded. Deleting them is the person's housekeeping call; until then they stay, never reused.
+- S4: brand-settle is running, then the emails.
