@@ -5,6 +5,7 @@ import { createLogger } from '@tp/observability';
 
 import type { NotificationConfig } from '../config';
 import { configuredMailSender } from '../mail/mail';
+import { SCREENING_THREAD_CONNECTIONS } from '../pools';
 import { priceScreeningRun } from './job';
 import { screeningRunFailureCode } from './failure-code';
 import type { ScreeningThreadReply, ScreeningThreadRequest } from './threads';
@@ -28,9 +29,6 @@ export interface ScreeningThreadSettings {
   /** The process's worker_id, on every line the thread logs. */
   readonly workerId: string;
 }
-
-/** The thread's connections: two, as each prices one run at a time (a read and a record never overlap). */
-export const SCREENING_THREAD_CONNECTIONS = 2;
 
 function isSettings(value: unknown): value is ScreeningThreadSettings {
   if (typeof value !== 'object' || value === null) {

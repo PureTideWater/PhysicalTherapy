@@ -10,7 +10,6 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
 import { type CompliancePlatform, FileCompliancePlatform } from '@tp/compliance';
-import { DEFAULT_CALL_LIMITS } from '@tp/model-gateway';
 import { type Logger, createLogger } from '@tp/observability';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
@@ -31,6 +30,7 @@ import { assumedRoleCredentials } from '../screening/validation-credentials';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { type AuthProviderSettings, DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+import { WEB_POOL_CONNECTIONS } from './pools';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -258,17 +258,17 @@ export function servicesFromConfig(config: WebConfig): Services {
   const sealer = new Sealer(config.cookieSecret);
   const logger = createLogger();
   const documents = config.documents;
-  const pool = openPool(config.databaseUrl, 10);
-  const billingPool = openPool(config.billingDatabaseUrl, 4);
+  const pool = openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.application);
+  const billingPool = openPool(config.billingDatabaseUrl, WEB_POOL_CONNECTIONS.billing);
   const auth = provider(config, sealer, logger);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
     pool,
     billingPool,
-    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, 2),
-    // One connection for each call the process lets be in flight at once, and one to spare.
-    modelPool: openPool(config.databaseUrl, DEFAULT_CALL_LIMITS.perProcess + 1),
+    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),
+    // One connection for each call the process lets be in flight at once, and one to spare (pools.ts).
+    modelPool: openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.model),
     provider: auth,
     credentialProbe: credentialProbeOf(config.auth, auth, logger),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),

@@ -5,12 +5,10 @@ import type { ScreeningConfig } from '../config';
 import type { JobSender } from '../jobs/enqueue';
 import { type ScreeningJobs, createScreeningHandlers } from '../jobs/screening';
 import { mailSender } from '../platform/wiring';
+import { SCREENING_SWEEP_CONNECTIONS } from '../pools';
 import { SWEEP_MIN_QUEUED_AGE_SECONDS, resendScreeningRuns } from './job';
 import type { ScreeningThreadSettings } from './thread';
 import { ScreeningThreadPool, screeningThreadScript } from './threads';
-
-/** The sweep's own connections on the main thread: the due runs, a stale run's failure and the gauge, one at a time. */
-export const SCREENING_SWEEP_CONNECTIONS = 2;
 
 export interface ScreeningConsumerOptions {
   /** The process's worker_id, on every line its threads log. */

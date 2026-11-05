@@ -3,9 +3,31 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ENVIRONMENTS } from '../lib/environments';
-import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, PLATFORM_HEARTBEAT_METRIC, workerLogGroupName } from '../lib/heartbeat';
-import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../lib/jobs';
+import { connectionBudget } from '../lib/connections';
+import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
+import { ROLLING_DEPLOYMENT, STOP_FIRST_DEPLOYMENT } from '../lib/environments';
+import {
+  HEARTBEAT_INTERVAL_SECONDS,
+  HEARTBEAT_MESSAGE,
+  HEARTBEAT_METRIC,
+  MISSED_HEARTBEATS_TO_ALARM,
+  PLATFORM_HEARTBEAT_METRIC,
+  STOP_FIRST_START_ALLOWANCE_SECONDS,
+  WORKER_STOP_TIMEOUT_SECONDS,
+  missedHeartbeatsToAlarm,
+  workerLogGroupName,
+} from '../lib/heartbeat';
+import { HEAP_MIB } from '../lib/heap';
+import {
+  JOB_FAILED_MESSAGE,
+  JOB_FAILED_METRIC,
+  JOB_FAILED_PERIOD_SECONDS,
+  JOB_HEAP_ALARM_PERCENT,
+  JOB_HEAP_MESSAGE,
+  JOB_HEAP_METRIC,
+  PRICING_ENGINE_ERRORS_MESSAGE,
+  PRICING_ENGINE_ERRORS_METRIC,
+} from '../lib/jobs';
 import { LOG_GROUPS, LOG_RETENTION_DAYS, logGroupName } from '../lib/log-groups';
 import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../lib/models';
 import {
@@ -63,6 +85,22 @@ describe('the job-failure contract with the worker (JOB-02)', () => {
     expect(worker).toContain(`export const JOB_FAILED_MESSAGE = '${JOB_FAILED_MESSAGE}';`);
     // Three attempts in all: two retries after the first (apps/worker/src/jobs/registry.ts).
     expect(readFileSync(path.resolve(import.meta.dirname, '../../apps/worker/src/jobs/registry.ts'), 'utf8')).toContain('retryLimit: 2,');
+  });
+});
+
+describe('the live-heap contract with the worker (docs/adr/0083, D19 and D23)', () => {
+  it('matches the line apps/worker logs as each attempt ends, with the peak and the limit as numeric fields', () => {
+    const worker = readFileSync(path.resolve(import.meta.dirname, '../../apps/worker/src/worker.ts'), 'utf8');
+    expect(worker).toContain(`export const JOB_HEAP_MESSAGE = '${JOB_HEAP_MESSAGE}';`);
+    expect(worker).toContain(`logger.info('${JOB_HEAP_MESSAGE}', { job_id: job.id, job_type: type, heap_live_peak_mib: heapLivePeakMib, heap_limit_mib: heapLimitMib });`);
+    // Both fields are kept by the logger only as finite numbers (packages/observability's numeric fields).
+    expect(readFileSync(path.resolve(import.meta.dirname, '../../packages/observability/src/fields.ts'), 'utf8')).toContain("'heap_live_peak_mib', 'heap_limit_mib'] as const;");
+  });
+
+  it('alarms at 75% of the worker heap, 420 MiB', () => {
+    expect(JOB_HEAP_ALARM_PERCENT).toBe(75);
+    expect((HEAP_MIB.worker * JOB_HEAP_ALARM_PERCENT) / 100).toBe(HEAP_MIB.worker * 0.75);
+    expect(HEAP_MIB.worker * 0.75).toBe(420);
   });
 });
 
@@ -155,7 +193,7 @@ describe('the screening consumer\'s metric contract with the worker and the web 
     expect(TIME_TO_EMAIL_LIMIT_MS).toBe(60_000);
     expect(OLDEST_QUEUED_LIMIT_MS).toBe(120_000);
     // elapsed_ms is a field the logger keeps only as a finite number (packages/observability's allowlist).
-    expect(source('packages/observability/src/fields.ts')).toContain("export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count'] as const;");
+    expect(source('packages/observability/src/fields.ts')).toContain("export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib'] as const;");
   });
 });
 
@@ -203,18 +241,19 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   const heartbeatAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.heartbeatAlarm));
   const jobAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.jobFailedAlarm));
   const engineErrorsAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.pricingEngineErrorsAlarm));
+  const heapAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.jobHeapAlarm));
 
   const platformHeartbeatAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.platformHeartbeatAlarm));
   const signInAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.failedSignInBurstAlarm));
 
   it('has the worker, platform and web metric filters and the stack\'s alarms, and no other', () => {
-    // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
+    // Worker: heartbeat, final job failures, pricing engine errors, job heap peaks, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
     // the platform's five codes, an unsent probe, and the web's refused validation and validation cap. Reset and
     // enrolment (R-11; docs/adr/0088, D7): the web's undelivered requests (configuration, throttle), failed requests,
     // refused enrolments, refused client credentials and the start-up probe's refusal.
-    expect(filters).toHaveLength(28);
+    expect(filters).toHaveLength(29);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -225,6 +264,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.platformHeartbeatAlarm,
       stack.monitoring.jobFailedAlarm,
       stack.monitoring.pricingEngineErrorsAlarm,
+      stack.monitoring.jobHeapAlarm,
+      stack.monitoring.databaseConnectionsAlarm,
       stack.monitoring.failedSignInBurstAlarm,
       stack.monitoring.modelBudgetAlarm,
       stack.edge.signInRateLimitAlarm,
@@ -544,6 +585,48 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
   });
 
+  it('takes each job\'s live heap peak from the worker\'s log and tells the operator when one passes 75% of the worker heap in five minutes (D23)', () => {
+    expect(propertiesOf(filterFor(JOB_HEAP_METRIC.metricName))).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.workerLogGroup)),
+      FilterPattern: `{ $.msg = "${JOB_HEAP_MESSAGE}" }`,
+      MetricTransformations: [{ MetricNamespace: JOB_HEAP_METRIC.namespace, MetricName: JOB_HEAP_METRIC.metricName, MetricValue: '$.heap_live_peak_mib' }],
+    });
+    expect(JOB_HEAP_METRIC.namespace).toBe('TherapyPlatform/Worker');
+    expect(propertiesOf(heapAlarm)).toMatchObject({
+      Namespace: JOB_HEAP_METRIC.namespace,
+      MetricName: JOB_HEAP_METRIC.metricName,
+      Statistic: 'Maximum',
+      Period: 300,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanThreshold',
+      Threshold: HEAP_MIB.worker * 0.75,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
+    expect(propertiesOf(heapAlarm).Dimensions).toBeUndefined();
+    expect(propertiesOf(heapAlarm).OKActions).toBeUndefined();
+  });
+
+  it('tells the operator when the database holds 80% of its max_connections in five minutes, the figure synthesis checked every task against (docs/adr/0083)', () => {
+    const budget = connectionBudget(environmentSettings(environment));
+    const alarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.databaseConnectionsAlarm));
+    expect(budget.alarmThreshold).toBe(Math.ceil(budget.maxConnections * 0.8));
+    expect(propertiesOf(alarm)).toMatchObject({
+      AlarmDescription: `The ${environment} database held ${String(budget.alarmThreshold)} or more connections, 80 percent of the ${String(budget.maxConnections)} the connection budget reads for its class.`,
+      Namespace: 'AWS/RDS',
+      MetricName: 'DatabaseConnections',
+      Dimensions: [{ Name: 'DBInstanceIdentifier', Value: ref(logicalIdOf(stack, stack.database.instance)) }],
+      Statistic: 'Maximum',
+      Period: 300,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      Threshold: budget.alarmThreshold,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
+    expect(propertiesOf(alarm).OKActions).toBeUndefined();
+  });
+
   it('counts each heartbeat line as the custom heartbeat metric', () => {
     const filter = filterFor(HEARTBEAT_METRIC.metricName);
     expect(propertiesOf(filter)).toEqual({
@@ -555,15 +638,19 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
   });
 
-  it('alarms when two consecutive heartbeat periods are empty, missing data counting as missed', () => {
+  // Two missed beats where the worker deploys new-before-old; in dev, whose worker deploys stop-first (Lane A's
+  // orchestrator, 2026-11-05), ten: a deploy's gap without a worker never pages (round 4).
+  const missed = environment === 'dev' ? 10 : 2;
+
+  it('alarms when consecutive heartbeat periods are empty, missing data counting as missed: two, and in dev, whose worker deploys stop-first, its deploy’s whole gap', () => {
     const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm)).toMatchObject({
       Namespace: HEARTBEAT_METRIC.namespace,
       MetricName: HEARTBEAT_METRIC.metricName,
       Statistic: 'Sum',
       Period: HEARTBEAT_INTERVAL_SECONDS,
-      EvaluationPeriods: 2,
-      DatapointsToAlarm: 2,
+      EvaluationPeriods: missed,
+      DatapointsToAlarm: missed,
       ComparisonOperator: 'LessThanThreshold',
       Threshold: 1,
       TreatMissingData: 'breaching',
@@ -575,7 +662,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm).AlarmActions).toEqual([topic]);
     expect(propertiesOf(alarm).OKActions).toEqual([topic]);
-    expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed 2 consecutive heartbeats.`);
+    expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed ${String(missed)} consecutive heartbeats.`);
   });
 
   it('counts each job that fails its last attempt, and tells the operator within five minutes (JOB-02, the restore drill included)', () => {
@@ -614,5 +701,18 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       Condition: { StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } } },
     });
     expect(JSON.stringify(allows[0]?.Condition?.ArnLike)).toContain(':alarm:*');
+  });
+});
+
+/** Lane A's orchestrator, 2026-11-05: a dev deploy never pages (round 4, the instance classes). */
+describe('the heartbeat alarm where a deploy stops the worker first', () => {
+  it('counts two missed beats for a new-before-old deploy, and for a stop-first deploy every beat its gap can miss', () => {
+    expect(missedHeartbeatsToAlarm(ROLLING_DEPLOYMENT)).toBe(MISSED_HEARTBEATS_TO_ALARM);
+    expect(MISSED_HEARTBEATS_TO_ALARM).toBe(2);
+    // The gap: up to one interval since the old task's last beat, its stop timeout, then the new task's start before its first beat.
+    expect(WORKER_STOP_TIMEOUT_SECONDS).toBe(60);
+    expect(STOP_FIRST_START_ALLOWANCE_SECONDS).toBe(480);
+    expect(missedHeartbeatsToAlarm(STOP_FIRST_DEPLOYMENT)).toBe((HEARTBEAT_INTERVAL_SECONDS + WORKER_STOP_TIMEOUT_SECONDS + STOP_FIRST_START_ALLOWANCE_SECONDS) / HEARTBEAT_INTERVAL_SECONDS);
+    expect(missedHeartbeatsToAlarm(STOP_FIRST_DEPLOYMENT)).toBe(10);
   });
 });

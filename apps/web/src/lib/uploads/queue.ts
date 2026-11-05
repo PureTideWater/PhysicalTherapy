@@ -3,6 +3,8 @@ import type { Logger } from '@tp/observability';
 import { type JobPayload, type JobType, SCREENING_PRICE_PAYLOAD, SCREENING_PRIORITY, type ScreeningRunJobOptions, enqueue, enqueueScreeningRun, parsePayload } from '@tp/worker/jobs';
 import { PgBoss } from 'pg-boss';
 
+import { WEB_POOL_CONNECTIONS } from '../server/pools';
+
 /**
  * How the web app queues work for the worker (PRD 10, Pipeline step 1: "the server records
  * source_document ... then queues"; docs/adr/0004 and 0026): through the worker's own job contract
@@ -33,7 +35,7 @@ export class PgBossQueue implements JobQueue {
 
   private boss(): Promise<PgBoss> {
     this.started ??= (async () => {
-      const boss = new PgBoss({ connectionString: this.connectionString, supervise: false, schedule: false, migrate: false, max: 2, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
+      const boss = new PgBoss({ connectionString: this.connectionString, supervise: false, schedule: false, migrate: false, max: WEB_POOL_CONNECTIONS.queue, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
       boss.on('error', () => {
         // pg-boss errors are logged by code only; their text can carry SQL and connection details.
         this.logger.error('queue error', { error_code: 'QUEUE_ERROR' });

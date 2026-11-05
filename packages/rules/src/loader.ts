@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { readRelease } from './content';
 import { FIRST_SYNTHETIC_RELEASE, RELEASE_NOTES_FILE, isSyntheticReleaseNumber } from './manifest';
@@ -32,6 +33,11 @@ export interface LoadOptions {
    * withScratchDatabase pass it; the release commands never do.
    */
   readonly allowSyntheticFixtureForTests?: boolean;
+  /**
+   * How long, once the load has committed, it waits for its records to be frozen (FREEZE_WAIT_MS unless given): no pass
+   * starts after it, and a pass that has started runs to its end. 0 runs the one pass and waits for nothing.
+   */
+  readonly freezeWaitMs?: number;
 }
 
 export interface LoadResult {
@@ -39,6 +45,12 @@ export interface LoadResult {
   readonly releaseNo: number;
   readonly manifestSha256: string;
   readonly records: number;
+  /**
+   * Every page of rule_record all-visible and all-frozen when the load returned. False only when the wait ran out with a
+   * page not yet all-frozen, held back by something outside the load, such as a transaction older than it; the release
+   * is loaded and published all the same, and loading it again finishes the freeze.
+   */
+  readonly frozen: boolean;
 }
 
 /** Records per INSERT statement (nine parameters each, well under PostgreSQL's 65,535). */
@@ -46,6 +58,93 @@ const BATCH_SIZE = 500;
 
 /** Advisory lock class for loads: two loaders of the same release run one after the other. */
 const LOAD_LOCK_CLASS = 0x52554c45;
+
+/**
+ * How long a committed load waits for its records to be frozen: three minutes, the budget of the longest single
+ * transaction the platform runs (CAS-42's real-size report, 180 s). It bounds when the last pass starts: a pass that
+ * has started runs to its end.
+ */
+export const FREEZE_WAIT_MS = 180_000;
+
+/** The first pause between VACUUMs while the horizon is held back; each pause doubles, up to FREEZE_PAUSE_MAX_MS. */
+const FREEZE_PAUSE_MS = 50;
+const FREEZE_PAUSE_MAX_MS = 2_000;
+/**
+ * After a later pass, the pause is also at least this many times as long as that pass took, so a wait over a real-size
+ * release spends at most a fifth of its time re-reading the pages not yet frozen.
+ */
+const FREEZE_PAUSE_PER_PASS = 4;
+
+/** rule_record's pages, and how many of them the visibility map holds all-frozen, as the last VACUUM or ANALYZE counted them. */
+export interface FreezeCounts {
+  readonly pages: number;
+  readonly allFrozen: number;
+}
+
+/** What pg_class counts of rule_record's pages: all of them all-frozen (so all-visible) is a frozen release. */
+export async function ruleRecordFreezeCounts(client: SqlClient): Promise<FreezeCounts> {
+  const { rows } = await client.query("SELECT relpages::integer AS pages, relallfrozen::integer AS \"allFrozen\" FROM pg_class WHERE oid = 'rule_record'::regclass");
+  return rows[0] as FreezeCounts;
+}
+
+async function ruleRecordFrozen(client: SqlClient): Promise<boolean> {
+  const counts = await ruleRecordFreezeCounts(client);
+  return counts.allFrozen >= counts.pages;
+}
+
+/**
+ * The warning `pnpm release:load` writes to stderr when a load returns unfrozen. It names the cause the loader can see,
+ * pg_class's counts when the wait ran out, and only points to where the rest is found: what kept the pages from
+ * freezing ran outside the load, and the loader cannot tell which of those it was.
+ */
+export function notFrozenWarning(releaseNo: number, counts: FreezeCounts, waitMs = FREEZE_WAIT_MS): string {
+  return (
+    `release:load: release ${String(releaseNo)} is published, but rule_record is not yet frozen: when the ${String(waitMs / 1000)} s wait ` +
+    `ran out, pg_class counted ${String(counts.allFrozen)} of its ${String(counts.pages)} pages all-frozen. Something outside the load ` +
+    `still kept the rest from freezing, such as a transaction or snapshot older than the load (look in pg_stat_activity's ` +
+    `backend_xmin, pg_prepared_xacts and pg_replication_slots). Run the same release:load again once it has ended; it writes ` +
+    `nothing and finishes the freeze.\n`
+  );
+}
+
+/**
+ * Analyzes rule_record and freezes its records, which never change: the first screenings after a load then neither plan
+ * without statistics nor set every page's hint bits (CI's capacity run on 9eb4474: S1-1, the first screening after the
+ * load, hash-joined every record of the release and recorded no batch for five minutes), and no anti-wraparound vacuum
+ * rewrites them later. Outside any transaction: VACUUM cannot run in one.
+ *
+ * The first pass takes the statistics and sets every record's hint bits whatever else runs. But PostgreSQL freezes a
+ * record, and marks its page all-visible, only once the record's inserting transaction precedes the database's
+ * visibility horizon, the oldest xmin or xid among this database's backends (vacuums aside). Any transaction of this
+ * database that began before the load committed holds the horizon back, and so does any snapshot of this database
+ * taken while a transaction older than the load still runs anywhere in the cluster, since a snapshot's xmin is the
+ * oldest transaction running in any database; a transaction in another database alone holds nothing back. autovacuum's
+ * ANALYZE of a catalog in a scratch database, beside a long transaction in another, so left every page of the
+ * synthetic release unfrozen in test:db (relallvisible 0 of 7). So each pass is checked against the visibility map's
+ * counts, which the pass itself has just written to pg_class, and repeated after a pause while they fall short; no
+ * pass starts once `waitMs` has run out, and one that has started runs to its end. A later pass only freezes, reading
+ * only the pages not yet all-frozen: the first pass's statistics already count every committed record, whatever the
+ * horizon. It also cleans the indexes (INDEX_CLEANUP ON). A load that failed before its commit leaves its records dead;
+ * when they lie on fewer than 2% of the table's pages, a VACUUM left to choose (INDEX_CLEANUP AUTO, as the first pass
+ * is) skips the indexes, so the dead records' line pointers stay and their pages never turn all-visible, and every
+ * later load would wait out its wait. Returns whether every page ended all-frozen.
+ */
+async function analyzeAndFreeze(client: SqlClient, waitMs: number): Promise<boolean> {
+  const deadline = Date.now() + waitMs;
+  for (let backoff = FREEZE_PAUSE_MS, pass = 1; ; backoff = Math.min(backoff * 2, FREEZE_PAUSE_MAX_MS), pass += 1) {
+    const started = Date.now();
+    await client.query(pass === 1 ? 'VACUUM (FREEZE, ANALYZE) rule_record' : 'VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record');
+    if (await ruleRecordFrozen(client)) {
+      return true;
+    }
+    // The first pass also analyzes and writes every page's hint bits, so it says nothing of what a later pass costs.
+    const pause = pass === 1 ? backoff : Math.max(backoff, FREEZE_PAUSE_PER_PASS * (Date.now() - started));
+    if (Date.now() + pause > deadline) {
+      return false;
+    }
+    await sleep(pause);
+  }
+}
 
 /** The `source` column: where the record came from, the text it quotes, and its notes. */
 export function sourceColumn(record: RuleRecord): Record<string, unknown> {
@@ -116,10 +215,11 @@ export function loadRefusals(releaseNo: number, records: readonly Located<RuleRe
  * Verifies the release (manifest, every record against the schema, no overlapping windows, the
  * release number asked for, and every record verified to L2 or higher and not synthetic), then in
  * one transaction inserts the release, its records, and marks it published, and then analyzes
- * rule_record and freezes the records (VACUUM, which no transaction may hold). From then on the
+ * rule_record and freezes the records (analyzeAndFreeze: VACUUM, which no transaction may hold,
+ * waiting up to `freezeWaitMs` for the transactions older than the load). From then on the
  * database refuses any change to either table's rows for that release. Loading the same release
- * again is a no-op; loading a different release under a number already loaded is refused. Nothing
- * is written when any check fails.
+ * again writes nothing and finishes a freeze an earlier load left short; loading a different
+ * release under a number already loaded is refused. Nothing is written when any check fails.
  */
 export async function loadRelease(client: SqlClient, dir: string, options: LoadOptions): Promise<LoadResult> {
   const release = readRelease(dir);
@@ -136,6 +236,7 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
   const releaseNo = release.manifest.release;
   const records = release.records.map((located) => located.record);
   const result = { releaseNo, manifestSha256: release.manifestSha256, records: records.length };
+  const waitMs = options.freezeWaitMs ?? FREEZE_WAIT_MS;
 
   await client.query('BEGIN');
   let open = true;
@@ -147,7 +248,10 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
       await client.query('ROLLBACK');
       open = false;
       if (loaded.manifest_sha256 === release.manifestSha256) {
-        return { status: 'already_loaded', ...result };
+        // A load whose wait ran out, or that stopped between its commit and its VACUUM, is finished here. Always by a
+        // VACUUM: pg_class holds the counts of the last VACUUM or ANALYZE, which a stopped load never ran, and pages
+        // already frozen are skipped.
+        return { status: 'already_loaded', ...result, frozen: await analyzeAndFreeze(client, waitMs) };
       }
       throw new ReleaseLoadError(
         `release ${String(releaseNo)} is already loaded from a different manifest; a published release never changes, so the new content needs a new number`,
@@ -166,14 +270,10 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
       await client.query('ROLLBACK');
     }
   }
-  // Analyzed and frozen before anything reads it (outside the transaction: VACUUM cannot run in one). Without
-  // statistics the planner reckons a release a sliver of rule_record, and the first screenings after a load hash-joined
-  // every record of the release instead of probing rule_record_identity, setting each page's hint bits as they read
-  // (CI's capacity run on 9eb4474: S1-1, the first screening after the load, recorded no batch for five minutes). A
-  // release's records never change, so they are frozen once, here, and no anti-wraparound vacuum rewrites them later;
-  // pages already frozen are skipped.
-  await client.query('VACUUM (FREEZE, ANALYZE) rule_record');
-  return { status: 'loaded', ...result };
+  // Analyzed and frozen before anything reads it. Without statistics the planner reckons a release a sliver of
+  // rule_record, and the first screenings after a load hash-joined every record of the release instead of probing
+  // rule_record_identity; pages already frozen are skipped.
+  return { status: 'loaded', ...result, frozen: await analyzeAndFreeze(client, waitMs) };
 }
 
 export interface WithdrawOptions {
