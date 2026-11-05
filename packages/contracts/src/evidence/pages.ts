@@ -20,10 +20,11 @@ import { normalizePageText } from './page-text';
  *   heap flags, a cap on the process's memory growth (polled from this process, which stays free), a
  *   deadline, and caps on the pages, the page text and a workbook's inflated parts, which this process
  *   applies again to the reply. The child gets an empty environment, an argv of its flags and entry
- *   only, the document's bytes on stdin, no core file (readerCommand), and Node's permission model (it reads its own
- *   code and writes, spawns and loads nothing; it can still open a network connection, which Node 24's permission
- *   model cannot deny: docs/adr/0033, "Not bounded: the network"). A document past any limit is unsupported_document, never read in part;
- *   one the reader cannot parse is document_unreadable; the reader's own failure is PageReadError;
+ *   only, the document's bytes on stdin, no core file (readerCommand), and Node's permission model (it
+ *   reads its own code and writes, spawns and loads nothing; it can still open a network connection,
+ *   which Node 24's permission model cannot deny: docs/adr/0033, "Not bounded: the network"). A
+ *   document past any limit is unsupported_document, never read in part; one the reader cannot parse
+ *   is document_unreadable; the reader's own failure is PageReadError;
  * - an image, and the pages of a PDF with no text layer, go to the scan reader (Textract) when one is
  *   configured.
  *
@@ -153,8 +154,8 @@ function readablePath(entry: URL): string {
 
 /**
  * The reader's node flags, exactly (the infra guard and the tests read this): its own heap (old maxHeapMb, young from
- * 16 MiB semi-spaces), the old worker thread's stack, Node's permission model reading only its code, and no code from strings.
- * Nothing inherited: no NODE_OPTIONS (the environment is empty), no loader, no source maps.
+ * 16 MiB semi-spaces), the old worker thread's stack, Node's permission model reading only its code, and no code from
+ * strings. Nothing inherited: no NODE_OPTIONS (the environment is empty), no loader, no source maps.
  */
 export function readerArgv(limits: PageReadLimits, entry: URL = READER): string[] {
   return [

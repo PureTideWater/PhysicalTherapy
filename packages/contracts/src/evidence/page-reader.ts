@@ -10,8 +10,8 @@ import yauzl from 'yauzl';
  * The page reader (docs/adr/0033): the text of each page of one untrusted document, read in a process of its own that
  * the caller starts with this file as its entry and bounds (pages.ts readInChild: its own heap flags, a memory bound on
  * the whole process, a deadline, an empty environment, Node's permission model (which cannot deny it a network
- * connection on Node 24; docs/adr/0033), and the caps below, which the caller applies again to the reply). Nothing else in the worker decompresses or parses a contract, an exhibit or a payer
- * letter.
+ * connection on Node 24; docs/adr/0033), and the caps below, which the caller applies again to the reply). Nothing
+ * else in the worker decompresses or parses a contract, an exhibit or a payer letter.
  *
  * - A text PDF: pdf.js (Mozilla's reader) with no worker, scripts, fonts or canvas; only the text layer
  *   is read, page by page. A page with no text layer comes back empty (the caller may scan it).
@@ -494,8 +494,8 @@ function readRequest(): Promise<{ readonly header: ReaderRequestHeader; readonly
 /**
  * The process's loop: silence every console and warning before any document byte is read (pdf.js's warnings can quote
  * a document's text, and its console.log would land among the frames on stdout; it runs at verbosity 0, which logs
- * nothing of a document, so this is the second guard; fd 2 carries only the runtime's own fatal lines), say ready, read the one request, reply page
- * by page (each write flushed before the next), then exit. The parent's SIGKILL is the bound; the two backstops for an
+ * nothing of a document, so this is the second guard; fd 2 carries only the runtime's own fatal lines), say ready,
+ * read the one request, reply page by page (each write flushed before the next), then exit. The parent's SIGKILL is the bound; the two backstops for an
  * orphan (the parent gone, or the deadline long past) run only when the loop is free.
  */
 async function serve(): Promise<void> {

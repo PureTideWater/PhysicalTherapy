@@ -19,7 +19,8 @@ export function heapFlag(service: keyof typeof HEAP_MIB): string {
 
 /**
  * A node command with a heap flag after `node`, the one spelling the weekly real-size test (tools/release-capacity) and
- * infra/test/heap.test.ts's measurement use; a command that already carries a heap flag, or does not run node, is refused.
+ * infra/test/heap.test.ts's measurement use; a command that already carries a heap flag, or does not run node, is
+ * refused.
  */
 export function withHeapFlag(command: readonly string[], flag: string): string[] {
   if (command[0] !== 'node') {
