@@ -720,6 +720,16 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['L-2 a labeled local number', 'A', 'Call 555-0100', 'Call [PHONE]', []],
     ['L-3', 'A', 'Patient ID 900551234', 'Patient ID [SSN]', ['900551234']],
     ['L-4', 'A', 'ID: 900.55.1234', 'ID: [SSN]', ['900551234']],
+    // Review round 1, SEC-3: a form feed (pdftotext's page break) and a vertical tab are line breaks, U+1680 is a space.
+    ['SEC3-1 form feeds', 'A', 'Subscriber 900\f12\f3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-2 form feeds', 'A', 'Tel 202\f555\f0123 on file.', 'Tel [PHONE] on file.', ['2025550123']],
+    ['SEC3-3 vertical tabs', 'A', 'Subscriber 900\v12\v3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-4 U+1680', 'A', 'Subscriber 900\u168012\u16803456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-5 U+1680', 'A', 'Tel 202\u1680555\u16800123 on file.', 'Tel [PHONE] on file.', ['2025550123']],
+    ['SEC3-6 a page break after a dash', 'A', 'Subscriber 900-12-\f3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-7 a page break and a dash', 'A', 'Subscriber 900\f12-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-8 a page break inside a phone', 'A', 'Phone 202-555-\f0123 on file.', 'Phone [PHONE] on file.', ['2025550123']],
+    ['SEC3-9 U+1680 and a dash', 'A', 'Subscriber 900-12\u16803456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
   ];
 
   it.each(rows)('%s: sends %j as expected, refuses none, and offers the screen what it must (patient %s)', (_row, row, letter, sent, offered) => {

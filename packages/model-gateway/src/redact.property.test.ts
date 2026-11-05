@@ -1268,6 +1268,26 @@ describe('MOD-15: every Social Security and phone number is redacted, and a lett
     expect(holdsIdentifier(redacted, patient, claims), letter).toBe(true);
   });
 
+  // Review round 1, SEC-3: a form feed and a vertical tab are line breaks to the patterns and the scan, U+1680 a space.
+  it.each([
+    ['900\f12\f3456', '[SSN]'], ['202\f555\f0123', '[PHONE]'], ['900\v12\v3456', '[SSN]'], ['900\u168012\u16803456', '[SSN]'], ['202\u1680555\u16800123', '[PHONE]'],
+    ['900\f12-3456', '[SSN]'], ['900-12-\f3456', '[SSN]'], ['202-555-\f0123', '[PHONE]'], ['900-12\u16803456', '[SSN]'],
+  ])('redacts a number written over a form feed, a vertical tab or U+1680: %j (review round 1)', (written, placeholder) => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+    const redacted = redactLetter(`Ref ${written} on file.`, patient, claims).text;
+    expect(redacted).toBe(`Ref ${placeholder} on file.`);
+    expect(holdsIdentifier(redacted, patient, claims)).toBe(false);
+  });
+
+  it('refuses a labeled chain no pattern reads over a form feed, a vertical tab or U+1680 (the scan reads them too: review round 1, SEC-3)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+    for (const letter of ['Ref 900-12 \f 34 56 on file.', 'Ref 900\u1680\u168012-34 56 on file.', 'Ref 900-12\v-34 56 on file.']) {
+      expect(holdsIdentifier(redactLetter(letter, patient, claims).text, patient, claims), JSON.stringify(letter)).toBe(true);
+    }
+  });
+
   it.each([
     'Claim lines 1 2 3 4 5 6 7 8 9', 'Please call about CPT 97110 97140.', 'Call regarding codes 97110 97140 billed', 'Contact TIN 12-3456789',
     'Call our office, TIN 12-3456789', 'Paid 900.12 3456 units', 'Phone us about ZIP 90001 1234', 'Medicare 97110 97140', 'Call about $150.00 2026',
