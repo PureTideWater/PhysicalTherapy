@@ -66,7 +66,5 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
 ## Waiting on someone
 - The founder: O-1, the follow-on's migration (CO-02). The brand owner: O-5. The co-founder: O-8.
 
-- None.
-
 ## Next step
 The follow-on co-001/password-changed-notice (migration, ADR 0091, SGN-16) once O-1 is answered. The worktree /home/user/auth-emails can be removed.
