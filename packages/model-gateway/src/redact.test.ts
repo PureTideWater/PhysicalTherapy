@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 
 import { textPhiFindings } from '@tp/observability';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_REQUEST_BYTES } from './functions/contract-terms';
 import { SCREEN_MAX_IDENTIFIERS } from './patient-records';
@@ -584,5 +584,27 @@ describe('Social Security and phone numbers by pattern: the placeholders, the na
       expect(redactLetter(`Reference ${written}.`, who, claims).text, written).toBe(`Reference ${written}.`);
       expect(holdsIdentifier(`Reference ${written}.`, who, claims), written).toBe(written.includes('-'));
     }
+  });
+
+  // Review round 1, corr-ssn-2 (fail-first in review round 2): a letter with no invisible run is read once by the patterns
+  // and once by the scan, not on two readings that are the same text. Counted in regular-expression runs, which are the
+  // same on every machine, not in seconds, which a loaded runner would make flaky.
+  it('reads a letter with no invisible run on one reading, so it takes far fewer regular-expression runs than the same letter with one (review round 1, corr-ssn-2)', () => {
+    const plain = 'Call 202-555-0123 or SSN 900-12-3456 about 97110 on 11/01/2026.\n5\n5\n5\n';
+    const runsOf = (text: string) => {
+      const sent = redactLetter(text, patient, claims).text;
+      const exec = vi.spyOn(RegExp.prototype, 'exec');
+      try {
+        redactLetter(text, patient, claims);
+        holdsIdentifier(sent, patient, claims);
+        return exec.mock.calls.length;
+      } finally {
+        exec.mockRestore();
+      }
+    };
+    const once = runsOf(plain);
+    const twice = runsOf(`${plain}\u200B`);
+    // About 0.83 with one reading; about 0.98 when the plain letter is read twice as well (the code before corr-ssn-2's fix).
+    expect(once / twice, `${String(once)} runs against ${String(twice)}`).toBeLessThan(0.9);
   });
 });
