@@ -138,3 +138,16 @@ and §17, and the draft PR (stage 3).
 - 07:29 UTC: CI green on d333d70d (21 runs; the four required runs green). **Fresh-clone verification** (wf_09ee7935-640; `lane-b-redact-ssn-phone-verify-summary.md`): code, tests, boundaries and CI pass. 94 forms probed: every SSN and phone form is redacted at head and none at base; the must-stay classes are kept; the scan refuses and names no number; MOD-15 and MOD-16 fail on the base's redact.ts. It FAILed only the description (a stale Checks section; one false claim: a glued list item is redacted, not refused; inexact fail-first counts). All fixed; posted and read back.
 - **2026-11-05 07:36 UTC: #127 MERGED as 23b25ad0** (method merge, expectedHeadSha d333d70d; ready 07:35; approval-of-record green; up to date). Unsubscribed; check-ins cancelled. **Item done.**
 - 2026-11-05 07:55 UTC: the acting session stood down (orchestrator's order). This item is merged (#127, 23b25ad0); nothing is left. The WIP ref `co-001/wip-redact-ssn-phone` (ef901af6) is superseded by the merge and may be deleted by Lane B.
+
+## RESUME-BLOCK (for Lane B): a follow-up defect in #127, reported by S2 at 07:57 UTC on 2026-11-05 after the stand-down
+- **What:** MOD-16's unseeded property in `packages/model-gateway/src/redact.property.test.ts` failed on #128's CI. The test is "sends amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, named numbers and service-line rows unchanged, refuses none…". It failed on run 41989155119, job 127116974440, head 4ffadf3f, which has no model-gateway change.
+  - Seed **1034253323**, "Property failed after 47 tests"; the full path is in that job's log.
+  - The synthetic counterexample is `Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00`: it is not sent unchanged.
+  - The likely cause is a date range glued to the next word with no space or full stop. The dash-range barrier (ef901af6) or the glued-date barrier (6a8cff99) does not hold for a range glued to letters. The text is probably refused by the survivor scan, or partly redacted.
+- **Effect:** the base fails any PR's unit job at random, as MOD-13 did before #115.
+- **Next step:**
+  1. Cut `co-001/redact-range-glued` (or a similar name) from the current base.
+  2. Reproduce with the seed pinned as a fixed run beside `LABEL_BOUNDARY_SEED`, plus an example test of the counterexample, and show both fail.
+  3. Fix the barrier so a dash-joined date or amount range counts as a barrier when glued to letters, and sweep that class.
+  4. Run two adversarial reviews (security, then correctness with the redaction oracle), the fast checks and the touched tests, then open the PR and merge it under the up-to-date rule.
+  5. Tell S2's successor and the other sessions to merge the base.
