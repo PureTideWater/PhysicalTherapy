@@ -332,7 +332,9 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   temporary password on its own line, the sign-in page as plain text and its 7 days
   (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification, sign-up,
   resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The footer of
-  every message: "PaidWhole never asks for your password or a code by email, phone or chat." The 7 days, 15 minutes
+  every message: "PaidWhole never asks you to send your password or a code to anyone, by email, phone or chat:
+  enter a code only on the PaidWhole page that asked for it." (It ends messages that themselves carry a code, so it
+  says what never happens and where a code goes, not that PaidWhole never asks for one.) The 7 days, 15 minutes
   (the reset step, A1) and 3 minutes (the sign-in session) are held to `identity.ts` and `step-limits.ts` by tests.
   - The pool's own verification and invitation templates are the same frame's generic fallback ("Your PaidWhole code
     is {####}. Enter it on the page that sent it. If you did not ask for it, ignore this email: nothing on your

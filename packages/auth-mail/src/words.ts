@@ -46,7 +46,7 @@ export const SIGN_IN_CODE_MINUTES = 3;
 export const AUTH_MAIL_SENDER_NAME = brandName;
 
 /** The footer of every message the pool sends: the sentence a phishing look-alike cannot keep. */
-export const AUTH_MAIL_FOOTER = `${brandName} never asks for your password or a code by email, phone or chat.`;
+export const AUTH_MAIL_FOOTER = `${brandName} never asks you to send your password or a code to anyone, by email, phone or chat: enter a code only on the ${brandName} page that asked for it.`;
 
 const code = { slot: 'code' } as const;
 const username = { slot: 'username' } as const;
