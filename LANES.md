@@ -164,6 +164,8 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
 
 > **2026-11-01 14:50 UTC: Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) takes back every Lane B item (handoff sections 2 and 3) and, until Lane A's account returns (2026-11-03 14:00 UTC), acts as Lane A for #42's last steps and the schema chain. One session per item; the sessions are named in each row as they start.**
 
+> **2026-11-05 07:55 UTC: Lane A's account is at 99% of its weekly usage (it resets about 2026-11-10 14:00 UTC). All its sessions are standing down. From 2026-11-06 19:00 UTC Lane B runs everything, the schema chain included as acting Lane A, per `lanes/lane-a-handoff-to-lane-b-2026-11-05.md`.**
+
 > **2026-11-04 02:45 UTC, speed rules for both lanes, and acting Lane B:** see `lanes/acting-lane-b-2026-11-04.md`. In short:
 > - CI is the full suite of record; the full local suite runs once per PR.
 > - The base is merged once, right before the last push.
