@@ -1,4 +1,4 @@
-ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-04T23:25Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) at 23:23Z. It is QUEUED: it starts after pricing-run-cutoff merges and before the emails.
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-04T23:25Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) at 23:23Z. It is IN PROGRESS (started 2026-11-05T01:10Z, while #118 waits on CI; the files do not overlap).
 
 # Item: brand-settle (`co-001/brand-settle`)
 
@@ -25,8 +25,12 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
 ## Log (UTC)
 - 2026-11-04T23:25:00Z: assigned; queued behind pricing-run-cutoff (wf_cdca5fda-8a5).
 
+- 2026-11-05T01:10:00Z: started. Worktree /home/user/brand-settle, branch co-001/brand-settle, base 370b8973 (#119).
+  Workflow wf_56da560b-1ec runs design, build (red first, shots, draft PR), one UX and brand review with skeptics,
+  one fix round (full suite once) and verification. Script archived as workflow-scripts/lane-a-brand-settle.js.
+
 ## Waiting on someone
 - None.
 
 ## Next step
-Starts when pricing-run-cutoff merges.
+The workflow; then mark ready, wait for approval-of-record, and merge.
