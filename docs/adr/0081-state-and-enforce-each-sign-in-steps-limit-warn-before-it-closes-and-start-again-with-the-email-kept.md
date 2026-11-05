@@ -380,8 +380,9 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     `password_reset_completed`), sent by a platform job on the transactional stream as kind `password_changed`.
     ADR 0091 records it, with SGN-16, in the follow-on pull request, after the founder approves the domain model
     (CO-02). Not for the invitation's first password;
-  - dark rules in email (the brand owner's call: the worker's lockup PNG is close to unreadable in a client that
-    inverts colors);
+  - dark rules in email. A client that inverts colors made the worker's lockup PNG close to unreadable; the brand
+    owner's delegate decided (O-5, co-001/email-lockup-plate) that the worker's lockup sits on a fixed White plate in
+    every variant, not a reversed variant and not a dark rule. The user pool's mail has no header (B3), so no plate;
   - the organization's name in the invitation.
 - **Not verified here** (no user pool in this lane; the founder's pool smoke check, phase 2 on staging, with a
   synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that

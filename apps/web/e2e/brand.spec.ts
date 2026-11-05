@@ -308,7 +308,7 @@ test('no page asks a font service or another origin for anything; the brand face
   expect(requests.some((url) => url.startsWith(`${baseURL ?? ''}/_next/static/media/`) && url.endsWith('.woff2'))).toBe(true);
 });
 
-test('the email header is the outlined lockup with its tagline at 160 px on White, embedded from the static host, which alone answers cross-origin', async ({ page, baseURL }) => {
+test('the email header is the outlined lockup with its tagline at 160 px on its White plate, embedded from the static host, which alone answers cross-origin', async ({ page, baseURL }) => {
   // The application's own headers stay as ADR 0053 and 0055 set them, the brand art included (reconciliation-001, D7).
   const art = await page.request.get(EMAIL_LOCKUP_PATH);
   expect(art.status()).toBe(200);
@@ -352,6 +352,12 @@ test('the email header is the outlined lockup with its tagline at 160 px on Whit
     await expect(lockup).toHaveJSProperty('complete', true);
     expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    // The fixed White plate (O-5): the art and the cell it sits in are White of their own, by style and by attribute.
+    await expect(lockup).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    const plate = lockup.locator('xpath=..');
+    await expect(plate).toHaveAttribute('bgcolor', '#FFFFFF');
+    await expect(plate).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(plate).toHaveCSS('border-radius', '6px');
     await page.screenshot({ path: shot('email.png'), fullPage: true });
     // Answered as the application answers (same-origin), the mail client could not embed the art at all: the
     // exception lives on the static host alone. (Another address for the art, so no cache answers for it.)

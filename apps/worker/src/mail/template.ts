@@ -1,4 +1,4 @@
-import { brandName, palette } from '@paidwhole/brand';
+import { brandName, palette, radius, space } from '@paidwhole/brand';
 import { AUTH_MAIL_FOOTER } from '@tp/auth-mail';
 
 import { escapeHtml } from '../report/escape';
@@ -15,7 +15,7 @@ export type MailVariant = 'customer' | 'prospect' | 'account';
 
 /**
  * The PaidWhole email template (docs/brand/BRAND.md, sections 3 and 7): the outlined horizontal lockup with
- * its tagline in the header at 160 px wide, on White, then the message's fixed lines and its links. Email
+ * its tagline in the header at 160 px wide, on its White plate, then the message's fixed lines and its links. Email
  * clients do not read CSS variables, so the hex comes from @paidwhole/brand's tokens.ts (the one place
  * outside packages/brand/src where brand hex reaches markup).
  *
@@ -31,6 +31,16 @@ export type MailVariant = 'customer' | 'prospect' | 'account';
  * A prospect's message (a screening's link, Change Order 001 CO-04) is headed by the lockup without the tagline,
  * /brand/paidwhole-lockup-horizontal-1200w.png (1200 x 218 art, drawn at the same 160 px), and its footer says the
  * message holds a link only and why it came: a prospect has no account to sign in to.
+ *
+ * The lockup sits on a fixed White plate in every variant (decision O-5, Lane A's orchestrator as the brand owner's
+ * delegate, 2026-11-05): a White rounded table behind the full-colour art, never a reversed variant. A client that
+ * forces dark mode (Gmail's apps, Outlook.com and Outlook for iOS) inverts the cells' colours but not images, and no
+ * message can detect it or depends on it behaving the same way twice, so the art keeps a White ground of its own: the
+ * plate's table and cell carry White as a bgcolor attribute (Outlook's Word renderer and clients that drop styles) and
+ * as background-color, and the image carries a White background and its explicit width. In a client that keeps the
+ * colours the plate is White on White and the art sits where it always has (the header cell's 8 x 12 px and the
+ * plate's 12 px make the old 20 x 24 px), so the message looks as before; the corners are radius md, the card's, and
+ * a client that ignores border-radius (Outlook desktop) draws a square plate.
  *
  * Links only, never PHI, exactly as the plain-text body: the HTML is built from the same lines and links
  * mailBody checks, and every value is escaped. Plex Sans falls back to the system sans.
@@ -72,7 +82,21 @@ export function emailLockup(staticOrigin: string, variant: MailVariant = 'custom
   const source = variant === 'prospect' ? new URL(EMAIL_PROSPECT_LOCKUP_PATH, staticOrigin).href : new URL(EMAIL_LOCKUP_PATH, staticOrigin).href;
   const width = String(EMAIL_LOCKUP_WIDTH);
   const height = String(variant === 'prospect' ? EMAIL_PROSPECT_LOCKUP_HEIGHT : EMAIL_LOCKUP_HEIGHT);
-  return `<img src="${escapeHtml(source)}" width="${width}" height="${height}" alt="${brandName}" style="display:block;width:${width}px;height:auto;border:0;outline:none;text-decoration:none;font-family:${SANS};font-size:16px;font-weight:700;color:${palette.ink};">`;
+  return `<img src="${escapeHtml(source)}" width="${width}" height="${height}" alt="${brandName}" style="display:block;width:${width}px;height:auto;background-color:${palette.white};border:0;outline:none;text-decoration:none;font-family:${SANS};font-size:16px;font-weight:700;color:${palette.ink};">`;
+}
+
+/**
+ * The header: the lockup on its fixed White plate (O-5), a table so every client draws it, White by attribute and by
+ * style, padded space 3 and rounded radius md, in a cell padded space 2 by space 3 above the header's rule.
+ */
+export function emailHeader(staticOrigin: string, variant: MailVariant = 'customer'): string {
+  const plate = `bgcolor="${palette.white}" style="background-color:${palette.white};border-radius:${String(radius.md)}px;"`;
+  return [
+    `<tr><td style="padding:${String(space[2])}px ${String(space[3])}px;border-bottom:1px solid ${palette.line};">`,
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" ${plate}>`,
+    `<tr><td bgcolor="${palette.white}" style="padding:${String(space[3])}px;background-color:${palette.white};border-radius:${String(radius.md)}px;">${emailLockup(staticOrigin, variant)}</td></tr></table>`,
+    '</td></tr>',
+  ].join('');
 }
 
 /**
@@ -90,7 +114,7 @@ export function mailHtml(subject: string, lines: readonly string[], links: reado
     `<body style="margin:0;padding:0;background-color:${palette.white};">`,
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${palette.white};"><tr><td align="center" style="padding:24px 12px;">`,
     `<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background-color:${palette.white};border:1px solid ${palette.line};border-radius:6px;">`,
-    ...(staticOrigin === null ? [] : [`<tr><td style="padding:20px 24px;border-bottom:1px solid ${palette.line};">${emailLockup(staticOrigin, variant)}</td></tr>`]),
+    ...(staticOrigin === null ? [] : [emailHeader(staticOrigin, variant)]),
     `<tr><td style="padding:24px;font-family:${SANS};font-size:15px;line-height:22px;color:${palette.ink};">${paragraphs}${anchors}</td></tr>`,
     `<tr><td style="padding:16px 24px;border-top:1px solid ${palette.line};font-family:${SANS};font-size:12px;line-height:18px;color:${palette.slate};">${escapeHtml(MAIL_FOOTERS[variant])}</td></tr>`,
     '</table></td></tr></table></body></html>',

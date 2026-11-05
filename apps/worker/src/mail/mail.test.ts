@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { parseMailQueueMessage } from './events';
 import { LocalMailSender, MailAddressError, MailPhiError, type MailMessage, MemoryMailSender, SesMailSender, configuredMailSender, mailBody, mailBodyHtml, sesMailSender } from './mail';
 import { MailTagError } from './streams';
-import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from './template';
+import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS, emailHeader } from './template';
 
 /** The CloudFront static host the deployed tasks name (STATIC_ASSET_ORIGIN), which serves the brand art under /brand/. */
 const STATIC = 'https://static.synthetic.test';
@@ -241,8 +241,8 @@ describe('the branded HTML email (docs/brand/BRAND.md, section 7)', () => {
     expect(bare).toContain(MESSAGE.lines[0] ?? '');
     expect(bare).toContain(`href="${MESSAGE.links[0] ?? ''}"`);
     expect(bare).toContain('This message carries links only; sign in to see the details.');
-    expect(bare.replace(/<tr><td style="padding:20px 24px;[^"]*">.*?<\/td><\/tr>/, '')).toBe(bare);
-    expect(html.replace(/<tr><td style="padding:20px 24px;[^"]*">.*?<\/td><\/tr>/, '')).toBe(bare);
+    expect(bare).not.toContain(emailHeader(STATIC));
+    expect(html.replace(emailHeader(STATIC), '')).toBe(bare);
   });
 
   it('refuses a link the PHI guard flags, as the text body does', () => {

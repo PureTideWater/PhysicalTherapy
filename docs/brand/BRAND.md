@@ -129,7 +129,12 @@ Contract-verified calculation without cash is a line status (validated), never a
   turn the keystone back into a progress ring). Use a plain progress bar for progress.
 - Email: the horizontal lockup with its tagline in the header, as the outlined art's PNG
   (`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, 1200 px wide, drawn at 160 px with the
-  alternative text "PaidWhole"; some mail clients strip SVG), on White. The one exception is a
+  alternative text "PaidWhole"; some mail clients strip SVG), on a fixed White plate: a White rounded
+  table (padding `--pw-space-3`, corners `--pw-radius-md`, White as a `bgcolor` attribute and as
+  `background-color`) behind the full-colour art, which carries a White background of its own, never a
+  reversed lockup. A client that forces dark mode (Gmail's apps, Outlook.com) inverts cell colours but not
+  images, and a message cannot detect it, so the plate is the one rendering that holds in every client
+  (decision O-5, 2026-11-05; every variant of `apps/worker/src/mail/template.ts`). The one exception is a
   prospect's email (a free screening's link or notice, `variant: 'prospect'` in
   `apps/worker/src/mail/template.ts`): it is headed by the lockup without the tagline,
   `/brand/paidwhole-lockup-horizontal-1200w.png`, drawn at the same 160 px, because the tagline
