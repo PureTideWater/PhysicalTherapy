@@ -262,6 +262,15 @@ its unpushed work is not waited for).
   instance-class decision (staging medium, dev small with stop-first worker deploys and no paging), base 370b8973+, the
   Freeze-exception and cost lines, one push; then verification and CAS-42.5 if the worker or harness changed). A first launch
   passed placeholder text instead of the findings and was stopped before it wrote anything.
+- **03:20 UTC. Round 4 pushed 171825c3** (d580d0fe: WR-1, WR-2, WR-3, WR-5 + INFRA-1 (screening task 19 connections;
+  production 207, staging 165), INFRA-2, and the instance classes: staging db.t4g.medium, dev db.t4g.small with dev's worker
+  STOP_FIRST (0/100) and the budget counting each service's own deployment; base 54d061fd (#118) merged; body 61,547). CAS-42.5
+  dispatched on it (run 41956080470). The base then moved to af3e79f3 (#120) and conflicted in docs/runbooks/ci.md, so no CI
+  could run; the session stopped wf_edd43592-de8's waiting verifier and merged it itself (421eca27: #120's three
+  content-calendar rows and 1b's release-capacity row kept), regenerated (provenance only), ran the fast checks,
+  actions:check, toolchain:check and 433 unit tests, and pushed **650efb9b**. **Running: wf_8cfb34ee-c5c**: the body
+  refresh, the fresh-clone verification reading CI on 650efb9b, and CAS-42.5's result on 171825c3 (the delta touches no
+  worker, harness or schema). Then the suggested line.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
