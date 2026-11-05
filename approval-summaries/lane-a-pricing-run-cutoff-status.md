@@ -40,9 +40,16 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   rerunReasons failing closed, updatedAt dropped, and docs. Its suite had died, so verification was NOT VERIFIED
   (unpushed head). Saved as WIP ref `co-001/wip-pricing-run-cutoff` (bf33d5b9). Finishing workflow wf_8f9d925a-a9f: a
   delta review with skeptics, the full suite once, push, description, verification. Subscribed to #118.
+- 2026-11-05 00:30Z: the delta review (with skeptics) found no B or S findings. It added three commits,
+  bf33d5b9..df632136, for N1 to N3.
+  - A container restart then killed the finishing workflow and its suite.
+  - df632136 is saved as WIP ref `co-001/wip/pricing-run-cutoff-s4`.
+  - Setup was re-run (OK).
+  - The base moved to 7fb3e102 (#84). Merged once, cleanly, as 7e2c5539.
+  - The full suite is running once on 7e2c5539, with db on 5433.
 
 ## Waiting on someone
 - None.
 
 ## Next step
-The item workflow.
+The suite on 7e2c5539, then the push, the description, fresh-clone verification on CI, and the merge.
