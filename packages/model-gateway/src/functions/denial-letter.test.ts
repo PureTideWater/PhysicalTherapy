@@ -329,6 +329,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a phone label before nine digits, repeated', ['JANE Q VANTREE'], fill('Phone 900123456 '), ['SYN555001']],
     ['a digit and an indented line break, repeated', ['JANE Q VANTREE'], fill('5\n    '), ['SYN555001']],
     ['a digit, two dashes and a line break, repeated', ['JANE Q VANTREE'], fill('5--\n  '), ['SYN555001']],
+    // Review round 1, corr-ssn-2: every digit a wrapped candidate (about 10 to 30 times base 00fd2906's time before the fix).
+    ['a digit and a bare line break, repeated', ['JANE Q VANTREE'], fill('5\n'), ['SYN555001']],
+    ['a digit and a CRLF, repeated', ['JANE Q VANTREE'], fill('1\r\n'), ['SYN555001']],
+    ['a digit, a dash and a bare line break, repeated', ['JANE Q VANTREE'], fill('5-\n'), ['SYN555001']],
     ['an amount before a date, repeated', ['JANE Q VANTREE'], fill('$150.00 2026-11-01 '), ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);

@@ -292,6 +292,8 @@ interface View {
   readonly text: string;
   readonly from: readonly number[];
   readonly to: readonly number[];
+  /** Whether a code point became nothing (an invisible run, a mark on nothing): when none did, every reading of invisible runs is this one. */
+  readonly emptied: boolean;
 }
 
 const digitValues = new Map<string, string>();
@@ -332,6 +334,7 @@ function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = f
   const to: number[] = [];
   let offset = 0;
   let joining = false;
+  let emptied = false;
   for (const codePoint of normal) {
     const start = offset;
     offset += codePoint.length;
@@ -339,6 +342,7 @@ function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = f
     // ASCII folds to itself in upper case (no ASCII character is a blank, invisible or a digit of another script).
     let unit = code < 0x80 ? (code >= 0x61 && code <= 0x7a ? String.fromCharCode(code - 0x20) : codePoint) : BLANK.test(codePoint) ? ' ' : IGNORABLE.test(codePoint) ? '' : digits && DECIMAL_DIGIT.test(codePoint) ? digitValue(codePoint) : fold(codePoint);
     if (unit === '') {
+      emptied = true;
       if (invisible === 'drop') {
         continue;
       }
@@ -357,7 +361,7 @@ function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = f
       to.push(offset);
     }
   }
-  return { text: units.join(''), from, to };
+  return { text: units.join(''), from, to, emptied };
 }
 
 interface Range {
@@ -1054,7 +1058,6 @@ const CENTS_AFTER = /^[.,][0-9]{1,2}(?![0-9])/u;
 const CURRENCY_BEFORE = /\p{Sc}[ \t]?$/u;
 const DIGIT = /^[0-9]$/u;
 const DASH_UNIT = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
-const BREAK_UNIT = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
  * The digit across one line break from a view position (R2c), or -1: going back (`before`), indentation, the break,
@@ -1062,21 +1065,28 @@ const BREAK_UNIT = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
  * the break, indentation and a digit. Read character by character, a fixed number of steps at most.
  */
 function digitAcross(text: string, at: number, side: 'before' | 'after'): number {
+  // Read by UTF-16 code, with no regular expression for ASCII: it runs for every wrapped candidate (review finding corr-ssn-2).
   const step = side === 'before' ? -1 : 1;
   let index = side === 'before' ? at - 1 : at;
-  const skip = (test: (unit: string) => boolean, most: number) => {
-    for (let count = 0; count < most && test(text[index] ?? ''); count += 1) index += step;
+  const dash = () => {
+    for (let count = 0; count < 2 && dashCode(text.charCodeAt(index), text, index); count += 1) index += step;
   };
-  const indent = (unit: string) => unit === ' ' || unit === '\t';
-  if (side === 'after') skip((unit) => DASH_UNIT.test(unit), 2);
-  skip(indent, 16);
-  if (!BREAK_UNIT.test(text[index] ?? '')) return -1;
+  if (side === 'after') dash();
+  for (let count = 0; count < 16 && indentCode(text.charCodeAt(index)); count += 1) index += step;
+  const code = text.charCodeAt(index);
+  if (!breakCode(code)) return -1;
   // CRLF is one break.
-  index += text[index] === (side === 'before' ? '\n' : '\r') && text[index + step] === (side === 'before' ? '\r' : '\n') ? 2 * step : step;
-  skip(indent, 16);
-  if (side === 'before') skip((unit) => DASH_UNIT.test(unit), 2);
-  return DIGIT.test(text[index] ?? '') ? index : -1;
+  index += code === (side === 'before' ? 0x0a : 0x0d) && text.charCodeAt(index + step) === (side === 'before' ? 0x0d : 0x0a) ? 2 * step : step;
+  for (let count = 0; count < 16 && indentCode(text.charCodeAt(index)); count += 1) index += step;
+  if (side === 'before') dash();
+  const digit = text.charCodeAt(index);
+  return digit >= 0x30 && digit <= 0x39 ? index : -1;
 }
+
+const indentCode = (code: number) => code === 0x20 || code === 0x09;
+const breakCode = (code: number) => code === 0x0a || code === 0x0d || code === 0x0c || code === 0x0b || code === 0x85 || code === 0x2028 || code === 0x2029;
+/** DASH_UNIT by code: "-" at once, any other ASCII never, the rest by the class. */
+const dashCode = (code: number, text: string, index: number) => (code === 0x2d ? true : code < 0x80 || Number.isNaN(code) ? false : DASH_UNIT.test(text[index] ?? ''));
 
 /** An NPI's check digit: the Luhn check over the 80840 prefix and the first nine digits. */
 function npiCheckDigitValid(ten: string): boolean {
@@ -1320,7 +1330,9 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
     results.push({ ...range, kind, claim: 0, compacts });
     cover(range);
   };
-  const views = (['join', 'space'] as const).map((invisible) => viewOf(normal, invisible, true));
+  // The space reading only where it differs from the join reading: a letter with no invisible run is read once (review finding corr-ssn-2).
+  const join = viewOf(normal, 'join', true);
+  const views = join.emptied ? [join, viewOf(normal, 'space', true)] : [join];
   for (const view of views) {
     for (const { pattern, kind, form } of SHAPED_PATTERNS) {
       const matcher = new RegExp(pattern.source, pattern.flags);
@@ -1358,12 +1370,12 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         const start = match.index;
         const end = start + match[0].length;
         const groups = match.groups ?? {};
-        const core = (groups.line ?? '').replace(/[^0-9]/gu, '');
         // A wrapped form that crosses no break, or reads into another number, is no match: known before its label window is read.
         if (wrapped && (!SPACED.test(groups.line ?? '') || wrappedAcross(view, start, end))) {
           matcher.lastIndex = start + 1;
           continue;
         }
+        const core = (groups.line ?? '').replace(/[^0-9]/gu, '');
         // The call's own number, however the words before it read, takes its placeholder (4.2).
         if (form !== 'mask5' && form !== 'local' && pushOwn(view, readingsOf(view, start, end, core))) {
           continue;
@@ -1555,7 +1567,11 @@ function scanLabeled(window: string): ScanLabel {
 }
 
 /** Whether masked text holds a survivor (survivorIn) on its digits view with invisible runs dropped or read as spaces (R4, R7). */
-const survivorLeft = (text: string) => (['drop', 'space'] as const).some((invisible) => survivorIn(viewOf(text, invisible, true).text));
+const survivorLeft = (text: string) => {
+  const drop = viewOf(text, 'drop', true);
+  // With no invisible run the two readings are one text: it is scanned once (review finding corr-ssn-2).
+  return survivorIn(drop.text) || (drop.emptied && survivorIn(viewOf(text, 'space', true).text));
+};
 
 // ---------------------------------------------------------------------------------------------------
 // Redaction
