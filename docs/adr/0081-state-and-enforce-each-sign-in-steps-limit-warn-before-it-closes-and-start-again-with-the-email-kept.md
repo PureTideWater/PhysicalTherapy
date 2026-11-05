@@ -324,9 +324,12 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     KMS key and a KMS and an SES call per message inside Cognito's 5 seconds: a network dependency on the path of
     every code.
 - **B2. The words of every source** (`packages/auth-mail/src/words.ts`; house voice, BRAND.md 1; none is legal text):
-  the reset code's are the recovery design's section 2.5 word for word ("Your PaidWhole code"; "Your code to choose a
-  new PaidWhole password is {####}. Enter it on the page that sent it within 15 minutes. If you did not ask for it,
-  ignore this email: your password is unchanged."). The invitation and its resend ("Your PaidWhole invitation") give
+  the reset code's are the recovery design's section 2.5 word for word, with one sentence added after its 15 minutes
+  ("Your PaidWhole code"; "Your code to choose a new PaidWhole password is {####}. Enter it on the page that sent it
+  within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email:
+  your password is unchanged."). The added sentence is decision O-8 (Lane A's orchestrator as the brand owner's
+  delegate, co-001/email-lockup-plate): it holds whether or not Cognito voids an earlier code when a second is asked
+  for, which is not verified, so the email never says that a new request replaces the code. The invitation and its resend ("Your PaidWhole invitation") give
   Cognito's `{username}` once without saying what it is ("Your account is {username}. Sign in with the address this
   email came to and this temporary password:", since in an email-attribute pool it may be the internal name), the
   temporary password on its own line, the sign-in page as plain text and its 7 days
@@ -393,9 +396,11 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   completes with it (if it is refused, the list names every attribute but `email`); what the invitation's `{username}` becomes (the
   address or the pool's internal name; the words hold either way), in the trigger's message and the pool's own
   invitation template; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
-  the trigger returns); and Cognito's subject (140) and message (20,000) limits and CloudFormation's limit on an inline
-  `ZipFile` (the source is 14.1 KB; the tests cap it at 16 KiB), which are quoted from memory: AWS's documentation
-  was not reachable from this session. If the inline limit binds, the source goes as `Code.fromAsset` of the same text.
+  the trigger returns); whether a first reset code still works after a second is requested (request two reset codes
+  and confirm whether the first still works; the email's words hold either way); and Cognito's subject (140) and
+  message (20,000) limits and CloudFormation's limit on an inline `ZipFile` (the source is 14.2 KB, 14,171 bytes; the
+  tests cap it at 16 KiB), which are quoted from memory: AWS's documentation was not reachable from this session. If
+  the inline limit binds, the source goes as `Code.fromAsset` of the same text.
 
 ## Revisit when
 
