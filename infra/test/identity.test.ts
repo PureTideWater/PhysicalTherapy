@@ -106,6 +106,15 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(pool.DeletionPolicy).toBe('Retain');
   });
 
+  it('keeps the verified address in force until a new one is confirmed (keepOriginal), so a token holder cannot swap it unverified', () => {
+    expect(poolProperties.AutoVerifiedAttributes).toEqual(['email']);
+    expect(poolProperties.UserAttributeUpdateSettings).toEqual({ AttributesRequireVerificationBeforeUpdate: ['email'] });
+  });
+
+  it('lets the web client write no attribute: the app writes them only through Admin calls with server credentials', () => {
+    expect(clientProperties.WriteAttributes).toEqual([]);
+  });
+
   it('issues tokens no longer-lived than the session rules allow', () => {
     const { absoluteMinutes, idleMinutes } = sessionLimits();
     expect(clientProperties.TokenValidityUnits).toEqual({ AccessToken: 'minutes', IdToken: 'minutes', RefreshToken: 'minutes' });
