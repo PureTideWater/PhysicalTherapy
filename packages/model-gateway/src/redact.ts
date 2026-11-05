@@ -1109,7 +1109,7 @@ const MEDICARE_LABEL = /(?<![\p{L}\p{N}])MEDICARE(?!\p{L})/gu;
 /** Words that say a bare number is a phone number. */
 const PHONE_LABEL = /(?<![\p{L}\p{N}])(?:PHONES?|PH|TEL(?:EPHONE)?S?|FAX(?:ES)?|FACSIMILE|CALL(?:ING|ED|S)?|TTY|TDD|TOLL[\p{Pd}\u2212]?[ \t]?FREE|CELL|MOBILE|CONTACT(?:S|ED|ING)?)(?!\p{L})/gu;
 /** Nouns that name a bare number as something that is no person's SSN or phone: a claim's, a reference's, an NPI ... */
-const KEEP_NOUN = /(?<![\p{L}\p{N}])(?:CLAIMS?|ICN|DCN|REFERENCE|REF|APPEAL|CASE|NPI|TIN|EIN|TAX[ \t]?ID|CHECK|EFT|TRACE|CONTROL|INVOICE|AUTHORIZATION|AUTH|ZIP|GROUP)(?!\p{L})/gu;
+const KEEP_NOUN = /(?<![\p{L}\p{N}])(?:CLAIMS?|ICN|DCN|REFERENCE|REF|APPEAL|CASE|NPI|TIN|EIN|TAX[ \t]?ID(?:ENTIFICATION)?|CHECK|EFT|TRACE|CONTROL|INVOICE|AUTHORIZATION|AUTH|ZIP|GROUP)(?!\p{L})/gu;
 /**
  * What may stand between a keep-noun and the number it names (R5a, A8): white space, ":", "#", "-" and any dash, ".", "*"
  * (Markdown bold), "=", "(" and the opening quotes, "(S)", and the words NO, NUMBER, NUMBERS, NBR, NUM and ID, in any order;
@@ -1166,7 +1166,7 @@ function decideBare(window: string, length: number, digits: string): Decision {
     if (length === 10 && noun[0] === 'NPI' && npiCheckDigitValid(digits)) {
       return 'keep';
     }
-    if (length === 9 && /^(?:TIN|EIN|TAX[ \t]?ID)$/u.test(noun[0])) {
+    if (length === 9 && /^(?:TIN|EIN|TAX[ \t]?ID(?:ENTIFICATION)?)$/u.test(noun[0])) {
       return 'keep';
     }
   }

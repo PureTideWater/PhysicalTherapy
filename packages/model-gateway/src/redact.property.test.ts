@@ -1403,7 +1403,7 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
       case 4:
         return { text: `${['CA ', 'ZIP ', 'Los Synth, CA '][pick % 3] ?? 'CA '}${[`9${n(4)}`, `9${n(4)}-${n(4, 1)}`][pick % 2] ?? '90001'}` };
       case 5:
-        return { text: [`TIN ${n(2)}-${n(7, 1)}`, `TIN ${nine}`, `EIN ${nine}`, `Tax ID number ${nine}`, `Medicare Advantage TIN ${nine}`][pick % 5] ?? `TIN ${nine}` };
+        return { text: [`TIN ${n(2)}-${n(7, 1)}`, `TIN ${nine}`, `EIN ${nine}`, `Tax ID number ${nine}`, `Medicare Advantage TIN ${nine}`, `Tax identification number ${nine}`][pick % 6] ?? `TIN ${nine}` };
       case 6:
         return { text: `${['ICN ', 'Control ', 'DCN '][pick % 3] ?? 'ICN '}${icn}` };
       case 7:

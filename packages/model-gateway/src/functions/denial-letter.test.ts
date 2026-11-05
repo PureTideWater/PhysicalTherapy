@@ -690,6 +690,8 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['R5-13', 'A', 'Medicare Advantage claim 1900123456', 'Medicare Advantage claim 1900123456', []],
     ['R5-14', 'A', 'Reference no.: 2025550123', 'Reference no.: 2025550123', []],
     ['R5-15', 'A', 'Tax ID number 900123457', 'Tax ID number 900123457', []],
+    ['R5-15a the IRS’s wording (review round 1, corr-ssn-4)', 'A', 'Tax identification number 900123457', 'Tax identification number 900123457', []],
+    ['R5-15b', 'A', 'Federal tax identification number: 900123457', 'Federal tax identification number: 900123457', []],
     ['R5-16', 'A', 'Claim #: 900123456', 'Claim #: 900123456', []],
     ['R5-17 (15.15)', 'A', 'Claim number is 2025550123', 'Claim number is [PHONE]', ['2025550123']],
     ['R5-18 a keep-noun across a sentence end (A7)', 'A', 'See our claim. 900551234 is the subscriber number.', 'See our claim. [SSN] is the subscriber number.', ['900551234']],
