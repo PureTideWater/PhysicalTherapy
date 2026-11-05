@@ -75,7 +75,7 @@ export class CognitoMessages extends Construct {
 
     const lambdaMetric = (metricName: string) => this.handler.metric(metricName, { statistic: cloudwatch.Stats.SUM, period: ALARM_PERIOD });
     this.failureAlarm = new cloudwatch.Alarm(this, 'Failures', {
-      alarmDescription: `The ${props.environmentName} user pool message trigger failed or was throttled: Cognito could not send a code or an invitation, a reset answered as sent and an invitation failed to its administrator (docs/runbooks/deliverability.md).`,
+      alarmDescription: `The ${props.environmentName} user pool message trigger failed or was throttled: Cognito could not send a code or an invitation, a reset answered as sent and an invitation failed to its administrator (docs/runbooks/deliverability.md, 3.9).`,
       metric: new cloudwatch.MathExpression({
         expression: 'errors + throttles',
         usingMetrics: { errors: lambdaMetric('Errors'), throttles: lambdaMetric('Throttles') },
@@ -96,7 +96,7 @@ export class CognitoMessages extends Construct {
       unit: cloudwatch.Unit.COUNT,
     });
     this.fallbackAlarm = new cloudwatch.Alarm(this, 'Fallback', {
-      alarmDescription: `A ${props.environmentName} user pool message went with the pool's generic template, not its own words: read the trigger's log line for its reason code (docs/runbooks/deliverability.md).`,
+      alarmDescription: `A ${props.environmentName} user pool message went with the pool's generic template, not its own words: read the trigger's log line for its reason code (docs/runbooks/deliverability.md, 3.9).`,
       metric: fallbacks.metric({ statistic: cloudwatch.Stats.SUM, period: ALARM_PERIOD }),
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       threshold: 1,

@@ -109,6 +109,7 @@ describe.each(ENVIRONMENTS)('%s: the user pool’s messages', (environment) => {
       ['throttles', 'AWS/Lambda', 'Throttles', 300, 'Sum', [{ Name: 'FunctionName', Value: ref(functionId) }]],
     ]);
     expect(String(failure.AlarmDescription)).not.toMatch(/\$|\{/);
+    expect(failure.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.9');
 
     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, candidate]) => JSON.stringify(propertiesOf(candidate).LogGroupName) === JSON.stringify(ref(logGroupId)));
     expect(filters).toHaveLength(1);
@@ -127,6 +128,7 @@ describe.each(ENVIRONMENTS)('%s: the user pool’s messages', (environment) => {
       TreatMissingData: 'notBreaching',
       AlarmActions: [topic],
     });
+    expect(fallback.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.9');
   });
 
   it('sets the pool’s own templates to the branded, generic fallback: the code with {####}, the invitation with {username}, {####} and its sign-in page', () => {
