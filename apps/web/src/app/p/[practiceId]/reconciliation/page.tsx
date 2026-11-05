@@ -214,7 +214,7 @@ function LinkageItem({ line, place, total, practiceId, canReconcile, phi }: { re
       {line.recoupments.length === 0 && line.interest.length === 0 && line.reportedInterest.length === 0 ? null : (
         <div className="grid gap-3 lg:grid-cols-2">
           <Matches title="Recoupments" matches={line.recoupments} empty="Nothing taken back." {...shared} />
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-3">
             <Matches title="Interest" matches={line.interest} empty="No interest paid." {...shared} />
             <ReportedInterest rows={line.reportedInterest} />
           </div>

@@ -160,10 +160,13 @@ export function interestWords(match: Pick<MatchView, 'source' | 'takesBack'>): s
   return match.takesBack ? ': interest taken back in this check (PLB L6)' : ': interest paid in this check (PLB L6)';
 }
 
+/** The label of a line's reported interest, its list's accessible name: what the rows are, and that they count nowhere. */
+export const REPORTED_INTEREST_LABEL = 'Reported on the claim (AMT I), not counted';
+
 /**
- * Under a line's Interest list: each remittance in which the claims of a chain the line is matched to report interest
- * (AMT I) netting to other than zero, as reported and counted nowhere, then once what is counted (docs/adr/0084). Nothing
- * when no chain reports any.
+ * Under a line's Interest list, a group of its own with its own label: each remittance in which the claims of a chain
+ * the line is matched to report interest (AMT I) netting to other than zero, as reported and counted nowhere, then once
+ * what is counted (docs/adr/0084). Nothing when no chain reports any.
  */
 export function ReportedInterest({ rows }: { readonly rows: readonly ReportedInterestView[] }) {
   if (rows.length === 0) {
@@ -171,7 +174,8 @@ export function ReportedInterest({ rows }: { readonly rows: readonly ReportedInt
   }
   return (
     <div className="flex flex-col gap-1" data-reported-interest={rows.length}>
-      <ul className="flex flex-col gap-1">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">{REPORTED_INTEREST_LABEL}</p>
+      <ul aria-label={REPORTED_INTEREST_LABEL} className="flex flex-col gap-1">
         {rows.map((row, index) => (
           <li key={`${row.remittanceId}-${String(index)}`} className="text-sm" data-reported={row.takenBack ? 'taken-back' : 'paid'} data-cents={row.amountCents}>
             Remittance <span className="font-mono">{row.trace}</span>, {row.payerName}, paid {row.paidOn}: the claim reports <Money value={row.amountCents} /> of interest
@@ -180,7 +184,7 @@ export function ReportedInterest({ rows }: { readonly rows: readonly ReportedInt
         ))}
       </ul>
       <p className="text-xs text-muted-foreground" data-reported-note="">
-        Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.
+        Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.
       </p>
     </div>
   );
