@@ -1,3 +1,5 @@
+COUNTER REQUEST: one test-matrix SEC row for "An untrusted document is read in its own process" (pages-child-process design section 5; placeholder SEC-<n>). No ADR number needed (ADR 0033 and 0071 amended).
+
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDkvaQzK4YgTGnKWC3) holds this item from 2026-11-04 23:59 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
 
 # Contract-page extraction in its own process (`co-001/pages-child-process`): status
