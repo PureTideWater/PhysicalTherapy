@@ -165,6 +165,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'Coverage, Pricing runs, the home page and the mapping list count the lines whose pricing in effect is `NO_MAPPING` while a mapping is now in force on their date, in lines, billed cents and priced months only; the count falls to zero once the re-runs pricing them are accepted, and never counts a line of a plan with no mapping',
   },
+  {
+    id: 'PRC-32',
+    title: "A run's cut-off and creation, to the microsecond",
+    assertion:
+      "A service line whose created_at equals the run's own created_at (loaded at the instant of the transaction that creates the run) is the run's at creation and in the price job alike: its period is not refused as holding no service line, nor as nothing mapped (MAP-07), and creation judges exactly the plans and dates the job prices. Every time a run is judged against is compared in Postgres, to the microsecond, never as a millisecond JS Date: a mapping made at the run's own instant is not a reason to re-run it, while one made after is, and a complete run with no line created before the location's last save, within the same millisecond, is listed as priced before the location changed",
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },
