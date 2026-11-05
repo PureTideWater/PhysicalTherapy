@@ -287,6 +287,11 @@ its unpushed work is not waited for).
   pass (F 600 of 600 posted in full, 22 jobs on attempt 1). Adversarial verifier: ok, no problems. Domain model
   47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef, line 7469 (provisional). Open for interest's PR: ADR
   0084 D5's line-whole cap sentence; its UX/brand review; a full-size CAS-42.5 on its own head (its reconcile changes).
+- **04:35 UTC. The founder committed SUITE-CAP-1b's approval line:** 61fc4e6c (04:13:30 UTC, "Update domain-model.md",
+  "Commit suggestion"): line 7459 only, `Approved by: Tyler Williams  Date: 2026-11-05  Document SHA-256: e024cf9f…c4df`.
+  The base moved to f185655c (#121, brand rulings; 11 files, no schema, lockfile or workflow change; clean merge): the
+  session merges it, regenerates, runs the fast checks and `--require-approval`, pushes, then CI, ready, approval-of-record,
+  merge. Interest's own CAS-42.5 dispatched on 650a3108 (run 41966650378) as early evidence for its PR stage.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
