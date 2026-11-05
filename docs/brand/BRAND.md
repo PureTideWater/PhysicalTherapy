@@ -76,7 +76,7 @@ Status colors are for data only and never appear in or near the logo:
 | --- | --- | --- |
 | Whole `--pw-whole` | #1F7A4D | Paid as contracted (5.3:1 on white) |
 | Short `--pw-short` | #B5452E | Paid below the contract (5.4:1 on white) |
-| Unpriced `--pw-unpriced` | #646E7C | Could not be priced; the reason is always shown (4.6:1 on its tint, 5.1:1 on white) |
+| Unpriced `--pw-unpriced` | #5F6A79 | Could not be priced; the reason is always shown (4.8:1 on its tint, 5.4:1 on white) |
 
 Status is shown as colored text on a quiet tint (`--pw-*-bg`), never as white text on a saturated
 fill. Colors that must be told apart also differ in lightness and are always paired with a label.

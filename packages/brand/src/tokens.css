@@ -16,8 +16,8 @@
   /* Status (data only; never in or near the logo) */
   --pw-whole: #1F7A4D;
   --pw-short: #B5452E;
-  /* Unpriced is text too: 4.6:1 on its tint, 5.1:1 on White (docs/adr/0056, the brand owner's ruling 3) */
-  --pw-unpriced: #646E7C;
+  /* Unpriced is text too: 4.8:1 on its tint, 5.4:1 on White (docs/adr/0056, the brand owner's ruling 3) */
+  --pw-unpriced: #5F6A79;
   --pw-whole-bg: #EAF4EE;
   --pw-short-bg: #F8ECE8;
   --pw-unpriced-bg: #F0F2F5;
