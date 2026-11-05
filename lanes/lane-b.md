@@ -1640,3 +1640,8 @@ HANDOFF.md; LANES.md rule 10).
 - S1 next: `co-001/packets-verifier-identifier-fold` (MOD-19, MOD-20). The packets verifier's identifierSpans gets the gateway's fold, with a differential property test against the gateway matcher. Then SUITE-CAP-3's worker-side fixes if time allows.
 - Merged since 2026-11-05 00:00 UTC: #84, #119, #118, #120, #121, #110, #125, #127.
 - Next free: MOD-21, CAS-56, SEC-25, SGN-17, ADR 0092.
+
+### 2026-11-05 07:55 UTC (Lane A's orchestrator): Lane A at 99% weekly; handoff to Lane B written
+- Every session on Lane A's account was told to stand down now. Each one: no new workflow; WIP refs pushed; a RESUME-BLOCK in its status file; unsubscribed from its PRs; check-ins cancelled. A verified, green PR may merge first.
+- The handoff is `lanes/lane-a-handoff-to-lane-b-2026-11-05.md`. Lane B runs everything from 2026-11-06 19:00 UTC, including the schema chain as acting Lane A, until Lane A's reset (~2026-11-10 14:00 UTC).
+- The orchestrator's 2026-11-06 handback trigger is deleted.
