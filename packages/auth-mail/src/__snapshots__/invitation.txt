@@ -1,0 +1,11 @@
+Subject: Your PaidWhole invitation
+
+You are invited to PaidWhole. Sign in with this email address, {username}, and this temporary password:
+
+{####}
+
+Sign in at https://app.paidwhole.example/sign-in within 7 days. You then choose your own password and set up an authenticator app.
+
+If you did not expect this invitation, ignore this email: it ends after 7 days.
+
+PaidWhole never asks for your password or a code by email, phone or chat.

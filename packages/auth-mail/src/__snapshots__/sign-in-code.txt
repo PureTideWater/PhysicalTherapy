@@ -1,0 +1,7 @@
+Subject: Your PaidWhole sign-in code
+
+Your PaidWhole sign-in code is {####}.
+
+Enter it on the page that sent it within 3 minutes. If you are not signing in, someone may know your password: choose a new one with “Forgot your password?” on the sign-in page.
+
+PaidWhole never asks for your password or a code by email, phone or chat.

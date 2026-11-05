@@ -1,0 +1,7 @@
+Subject: Your PaidWhole code
+
+Your code to confirm this new email address for your PaidWhole account is {####}.
+
+Enter it on the page that sent it. If you did not ask for it, ignore this email: the address stays unconfirmed.
+
+PaidWhole never asks for your password or a code by email, phone or chat.
