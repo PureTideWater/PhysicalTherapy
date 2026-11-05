@@ -8,8 +8,9 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import { type LedgerEntry, type ReportReconciliation, entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
 
+import { decodePng, plateHolds } from '../../../tools/brand-email-plate/plate';
 import { mailBodyHtml } from '../../worker/src/mail/mail';
-import { EMAIL_LOCKUP_PATH } from '../../worker/src/mail/template';
+import { EMAIL_LOCKUP_PATH, EMAIL_LOCKUP_WIDTH, EMAIL_PLATE_WIDTH } from '../../worker/src/mail/template';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
 import { personaEmail } from '../scripts/synthetic-personas';
 import { expectAccessible, expectAccessibleInDark, focusContrast, setDark, tabTo } from './a11y';
@@ -317,6 +318,9 @@ test('the email header is the outlined lockup with its tagline at 160 px on its 
   expect(art.headers()['cross-origin-resource-policy']).toBe('same-origin');
   expect((await page.request.get('/sign-in')).headers()['cross-origin-resource-policy']).toBe('same-origin');
   const body = await art.body();
+  // The plate's ground is the served art's own pixels (UX-S1, UX-N4): opaque White inside the rounded plate and across
+  // its padding, which no client that forces dark mode inverts, so this holds the inverted case without a baseline.
+  expect(plateHolds(decodePng(body))).toBe(true);
   const message = {
     to: ['admin@synthetic.test'],
     subject: 'Monitoring digest for October 2026',
@@ -351,7 +355,8 @@ test('the email header is the outlined lockup with its tagline at 160 px on its 
     await page.goto(`${mailClient}/message`, { waitUntil: 'load' });
     const lockup = page.getByRole('img', { name: 'PaidWhole' });
     await expect(lockup).toHaveJSProperty('complete', true);
-    expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
+    expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1380, EMAIL_PLATE_WIDTH]);
+    expect(EMAIL_PLATE_WIDTH - EMAIL_LOCKUP_WIDTH).toBe(24);
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     // The fixed White plate (O-5): the art and the cell it sits in are White of their own, by style and by attribute.
     await expect(lockup).toHaveCSS('background-color', 'rgb(255, 255, 255)');
@@ -359,6 +364,7 @@ test('the email header is the outlined lockup with its tagline at 160 px on its 
     await expect(plate).toHaveAttribute('bgcolor', palette.white);
     await expect(plate).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await expect(plate).toHaveCSS('border-radius', '6px');
+    await expect(plate).toHaveCSS('padding', '0px');
     await page.screenshot({ path: shot('email.png'), fullPage: true });
     // Answered as the application answers (same-origin), the mail client could not embed the art at all: the
     // exception lives on the static host alone. (Another address for the art, so no cache answers for it.)
