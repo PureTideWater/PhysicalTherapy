@@ -1,0 +1,22 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-05T04:10Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg), the last item of the queue after brand-settle (#121, merged).
+
+# Item: the branded code email and the "password changed" email (`co-001/auth-emails`), one UX item
+
+The sources: designs/lane-b-ux-sign-in-recovery.md, section 2.5 (the proposed words) and the handoffs "Lane A or the
+founder" (a worker job carrying `user_id` only); approval-summaries/lane-b-ux-sign-in-recovery-status.md; lanes/lane-b.md:1455.
+- Cognito's code email is unbranded today (infra/lib/constructs/identity.ts). Unless a CustomMessage trigger is set, the
+  forgot-password email shares the pool's verification template.
+- There is no "your password was changed" email.
+#42 (mail streams) merged 2026-11-02, so its files are on the base; there is no overlap to wait on.
+Reviews: auth and email, so two reviews with skeptics, security and UX/brand, then CI and the merge.
+GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text and never touches .gitleaksignore.
+
+## Log (UTC)
+- 2026-11-05T04:10Z: started. Worktree /home/user/auth-emails from f185655c (#121). A workflow runs design, build,
+  two reviews with skeptics, one fix round with the full suite, and verification.
+
+## Waiting on someone
+- None.
+
+## Next step
+The workflow.
