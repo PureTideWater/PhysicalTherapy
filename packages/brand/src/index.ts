@@ -1,5 +1,4 @@
 export * from "./tokens";
-export * from "./contrast";
 export * from "./mark";
 export * from "./name";
 
