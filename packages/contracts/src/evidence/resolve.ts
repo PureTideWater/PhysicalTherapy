@@ -8,8 +8,8 @@ import { normalizePageText, pageTextHash, quoteOnPage } from './page-text';
  * the one the citation stores. The page text comes from a PageSource: in the web app, the text intake
  * read once and stored sealed (docs/adr/0033); in the worker and in tests, `documentPages` from
  * `@tp/contracts/pages`, which reads a document's bytes in a child process of its own with its own heap
- * limit. A PDF's pages, a workbook's sheets and a CSV's row blocks are its pages. A failure names its problem, which the
- * specialist sees beside the field (CON-05), and approval is refused until it resolves.
+ * limit. A PDF's pages, a workbook's sheets and a CSV's row blocks are its pages. A failure names its
+ * problem, which the specialist sees beside the field (CON-05), and approval is refused until it resolves.
  */
 
 export const EVIDENCE_PROBLEMS = [

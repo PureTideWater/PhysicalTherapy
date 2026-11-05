@@ -495,8 +495,9 @@ function readRequest(): Promise<{ readonly header: ReaderRequestHeader; readonly
  * The process's loop: silence every console and warning before any document byte is read (pdf.js's warnings can quote
  * a document's text, and its console.log would land among the frames on stdout; it runs at verbosity 0, which logs
  * nothing of a document, so this is the second guard; fd 2 carries only the runtime's own fatal lines), say ready,
- * read the one request, reply page by page (each write flushed before the next), then exit. The parent's SIGKILL is the bound; the two backstops for an
- * orphan (the parent gone, or the deadline long past) run only when the loop is free.
+ * read the one request, reply page by page (each write flushed before the next), then exit. The parent's SIGKILL is
+ * the bound; the two backstops for an orphan (the parent gone, or the deadline long past) run only when the loop is
+ * free.
  */
 async function serve(): Promise<void> {
   for (const name of ['log', 'info', 'warn', 'error', 'debug', 'trace', 'dir'] as const) {
