@@ -1602,3 +1602,10 @@ HANDOFF.md; LANES.md rule 10).
 - SEC-24: pages-child-process ("An untrusted document is read in its own process"). SEC-20 to SEC-23 are cognito-confidential-client's (#113).
 - Next free: SEC-25, CAS-56, ADR 0091 (0090 is UX PR 8's), synth module 21 (Lane B released 21; none taken since), fixture release 900008.
 - #120 (ci-findings-transport) is verified, its base re-merged after #118, CI running. pages-child-process is built (WIP c369bc77) and in its two reviews.
+
+### 2026-11-05 04:05 UTC: #120 (af3e79f3) and #121 (f185655c) merged; SUITE-CAP-1b awaits the founder's line
+- #120 (ci-findings-transport): the content calendar's findings travel without exceeding one environment string. Its first run of record read all 16 findings.
+- #121 (brand-settle): `--pw-unpriced` is #5F6A79 (4.90:1 on its tint; the test holds 4.8 or more). ADR 0056 is amended with the brand rulings, BRAND.md sections 3, 4 and 7 agree, and ADR 0058 has an "Answered" line. The anomaly chip's sans "$5" is queued for UX PR 4b.
+- #110 (SUITE-CAP-1b): the suggested approval line is posted (https://github.com/PureTideWater/PhysicalTherapy/pull/110#discussion_r4476277082; e024cf9f…c4df). CAS-42.5 passes: working set 719.9 of 921.6 MiB, OOM 0, every job on attempt 1.
+- S4 next: `co-001/auth-emails` (the branded Cognito code email via CustomMessage; a "password changed" email through #42's transactional stream). SGN-13 to SGN-16; ADR 0091 if needed.
+- Next free: ADR 0092, SGN-17, SEC-25, CAS-56.
