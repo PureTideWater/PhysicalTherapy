@@ -64,6 +64,18 @@ if (behaviour === 'exit-3') {
   for (;;) {
     await write(frame(1, 'x'.repeat(1000)));
   }
+} else if (behaviour.startsWith('header ')) {
+  // One page frame whose header claims the length named, then up to 4 MiB of its body, a mebibyte at a time.
+  const length = Number(behaviour.slice('header '.length));
+  const header = Buffer.alloc(5);
+  header.writeUInt8(1, 0);
+  header.writeUInt32BE(length, 1);
+  await write(header);
+  for (let sent = 0; sent < Math.min(length, 4 * 1024 * 1024); sent += 1024 * 1024) {
+    await write(Buffer.alloc(Math.min(1024 * 1024, length - sent), 0x78));
+  }
+  await write(frame(2, '0'));
+  process.exit(0);
 } else if (behaviour === 'silent') {
   setInterval(() => undefined, 1000);
 } else if (behaviour === 'done-hang' || behaviour === 'refused-hang' || behaviour === 'done-grow') {

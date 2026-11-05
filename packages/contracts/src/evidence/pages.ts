@@ -458,7 +458,10 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
       }
     };
 
-    // The reply's bound: every character at four UTF-8 bytes, each page's frame header, the done frame.
+    // The reply's bound: every character at four UTF-8 bytes, each page's frame header, the done frame. FrameReader
+    // refuses a frame whose declared length passes what is left of it before taking a buffer for its body (a malformed
+    // reply); the count below stops reading a chunk past it before it is parsed. A reader within the page and character
+    // caps never reaches the bound, so between them the two checks give one outcome (pages.test.ts).
     const bound = request.maxTextCharacters * 4 + (request.maxPages + 2) * FRAME_HEADER_BYTES + 64;
     let received = 0;
     const frames = new FrameReader(bound, onFrame, () => {

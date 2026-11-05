@@ -170,6 +170,45 @@ describe('the page reader in its own process (ADR 0033)', () => {
     inItsOwnProcess(flood.seen);
   }, 60_000);
 
+  it("refuses a reply frame past the reply's bound before reading its body, and this process is untouched", async () => {
+    const read = readInChild;
+    const request = stubRequest('');
+    // pages.ts's bound: every character at four UTF-8 bytes, each page's frame header, the done frame; less what came
+    // before this frame (the ready frame and this frame's own header).
+    const room = request.maxTextCharacters * 4 + (request.maxPages + 2) * 5 + 64 - 10;
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown): void => {
+      uncaught.push(error);
+    };
+    process.on('uncaughtException', onUncaught);
+    process.on('unhandledRejection', onUncaught);
+    try {
+      for (const length of [room + 1, 1024 * MIB, 0xffff_ffff]) {
+        const before = process.memoryUsage().rss;
+        const started = Date.now();
+        const past = await watched(() =>
+          read(stubRequest(`header ${String(length)}`), PAGE_READ_LIMITS, STUB).then(
+            (reply) => reply,
+            (error: unknown) => error,
+          ),
+        );
+        expect(past.result, `a frame of ${String(length)} bytes`).toBeInstanceOf(PageReadError);
+        expect((past.result as Error).message).toBe('the page reader sent a malformed reply');
+        expect(Date.now() - started).toBeLessThan(10_000);
+        expect(process.memoryUsage().rss - before, 'no body buffer was taken').toBeLessThan(64 * MIB);
+        inItsOwnProcess(past.seen);
+      }
+      // A frame of exactly the room left is read, and its text is past the character cap: refused, never in part.
+      const atBound = await watched(() => read(stubRequest(`header ${String(room)}`), PAGE_READ_LIMITS, STUB));
+      expect(atBound.result).toEqual({ kind: 'refused', problem: 'unsupported_document' });
+      inItsOwnProcess(atBound.seen);
+    } finally {
+      process.off('uncaughtException', onUncaught);
+      process.off('unhandledRejection', onUncaught);
+    }
+    expect(uncaught).toEqual([]);
+  }, 60_000);
+
   it('keeps the reader bounded after its last frame: one that does not exit, or grows, is stopped and frees its slot', async () => {
     const read = readInChild;
     for (const [behaviour, expected] of [
