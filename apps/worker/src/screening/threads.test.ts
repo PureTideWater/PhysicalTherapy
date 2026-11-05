@@ -144,7 +144,8 @@ describe('ScreeningThreadPool', () => {
   // Node gives a worker thread its process's --max-old-space-size whatever resourceLimits asks (threads.ts), and a
   // worker cannot set its own: so under a unit run's NODE_OPTIONS=--max-old-space-size=6144 the 32 MiB stand-in filled
   // gigabytes and outlived the test's budget. The case runs in a child process whose environment carries no heap flag,
-  // where the thread's resourceLimits hold, and reports what it saw; nothing the case asserts changed.
+  // where the thread's resourceLimits hold, and reports what it saw; nothing the case asserts changed. The child has its
+  // own deadline, since execFileSync blocks the event loop and the test's own timeout could not stop a hung child.
   it('fails only the run whose thread failed it, stopped or ran out of memory, replaces that thread and goes on', () => {
     const child = path.join(dir, 'out-of-memory.mts');
     writeFileSync(
@@ -165,8 +166,8 @@ await threads.close();
 process.stdout.write(JSON.stringify({ failed, stopped, outOfMemory, beside: await beside, after, lines }));
 `,
     );
-    const env = { ...process.env, NODE_OPTIONS: (process.env.NODE_OPTIONS ?? '').replace(/--max-old-space-size=\S+/g, '').trim() };
-    const seen = JSON.parse(execFileSync(process.execPath, [...screeningThreadScript().execArgv, child], { encoding: 'utf8', env })) as {
+    const env = { ...process.env, NODE_OPTIONS: (process.env.NODE_OPTIONS ?? '').replace(/--max[-_]old[-_]space[-_]size=\S+/g, '').trim() };
+    const seen = JSON.parse(execFileSync(process.execPath, [...screeningThreadScript().execArgv, child], { encoding: 'utf8', env, timeout: 25_000, killSignal: 'SIGKILL' })) as {
       readonly failed: { readonly error?: boolean };
       readonly stopped: { readonly error?: boolean; readonly message?: string };
       readonly outOfMemory: { readonly error?: boolean };
