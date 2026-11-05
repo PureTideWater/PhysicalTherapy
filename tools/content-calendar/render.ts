@@ -1,4 +1,4 @@
-import type { CalendarEntry, ContentCalendar, DueItem } from '@tp/rules/calendar';
+import { type CalendarEntry, CONTENT_FAMILIES, type ContentCalendar, type DueItem } from '@tp/rules/calendar';
 
 import type { SourceFinding } from './fetch';
 
@@ -7,15 +7,29 @@ import type { SourceFinding } from './fetch';
  * finding, the due items in DUE_STAGES order and then the source watch's, every one of them (fix round SB-5: the
  * notify job, which knows which titles are open, opens at most MAX_OPENED_PER_RUN new issues a run and lists the rest
  * in one issue). A title is one line and the issue's dedupe key; a body is Markdown of at most MAX_BODY characters, the
- * file at most MAX_FILE_BYTES so its base64 fits a job output. Bodies hold only calendar data, repository release
- * numbers, public page addresses and file names seen on public pages, plain or percent-encoded (fetch.ts).
+ * file at most MAX_FILE_BYTES, every finding whole even at its worst (each character escaped as six bytes), handed to
+ * the notify job as the run's own artifact. Bodies hold only calendar data, repository release numbers, public page
+ * addresses and file names seen on public pages, plain or percent-encoded (fetch.ts).
  */
 
 /** The most new issues the notify job opens in one run (.github/workflows/content-calendar.yml holds the same number). */
 export const MAX_OPENED_PER_RUN = 20;
 export const MAX_BODY = 6_000;
-/** The findings file's bound in bytes: its base64 stays under 1 MB, GitHub's limit on a job output. */
-export const MAX_FILE_BYTES = 700_000;
+/** GitHub refuses a longer issue title, and the title is the dedupe key. */
+export const MAX_TITLE = 256;
+/** Per family at most its review, its due item and its source's (content-calendar.test.ts holds each to one). */
+export const FINDINGS_PER_FAMILY = 3;
+/**
+ * The most findings a run has: the calendar's two of its own and three per family. A bound the tests hold, not one
+ * checked at run time: the file's byte bound is.
+ */
+export const MAX_FINDINGS = 2 + FINDINGS_PER_FAMILY * CONTENT_FAMILIES.length;
+/**
+ * The findings file's bound in bytes: MAX_FINDINGS findings at their worst (a 256-unit title and a 6,000-unit body,
+ * each unit escaped as six bytes) take 1,540,660; the notify job downloads the file as an artifact and refuses one over
+ * this bound too.
+ */
+export const MAX_FILE_BYTES = 2_000_000;
 export const RUNBOOK = 'docs/runbooks/content-updates.md';
 const UNREVIEWED = 'These dates are not yet confirmed against the source page (the calendar entry has no review).';
 /** Where the rest of a cut body is, per kind of body (fix round S2: no command prints a body whole). */
@@ -54,7 +68,8 @@ function bounded(lines: readonly string[], tail: number, rest: string): string {
       return text;
     }
   }
-  return body.slice(0, MAX_BODY);
+  // A cut never leaves half of a surrogate pair, which JSON escapes as six bytes and an issue shows as a replacement.
+  return body.slice(0, MAX_BODY).replace(/[\uD800-\uDBFF]$/, '');
 }
 
 function heldIn(basis: Basis): string {
@@ -124,12 +139,20 @@ export function findings(items: readonly DueItem[], sources: readonly SourceFind
   return all;
 }
 
-/** The findings file's text: two-space JSON. Throws past MAX_FILE_BYTES of UTF-8, so the check fails rather than hand the notify job a cut list. */
-export function findingsJson(list: readonly Finding[]): string {
+/**
+ * The findings file's text: two-space JSON. Throws on a title over MAX_TITLE characters, and past `maxBytes` of UTF-8
+ * (MAX_FILE_BYTES unless given), so the check fails rather than hand the notify job a cut list.
+ */
+export function findingsJson(list: readonly Finding[], maxBytes = MAX_FILE_BYTES): string {
+  for (const finding of list) {
+    if (finding.title.length > MAX_TITLE) {
+      throw new RangeError(`a finding's title is ${String(finding.title.length)} characters, over ${String(MAX_TITLE)}`);
+    }
+  }
   const text = `${JSON.stringify(list, null, 2)}\n`;
   const bytes = new TextEncoder().encode(text).byteLength;
-  if (bytes > MAX_FILE_BYTES) {
-    throw new RangeError(`the findings file holds ${String(bytes)} bytes, over ${String(MAX_FILE_BYTES)}`);
+  if (bytes > maxBytes) {
+    throw new RangeError(`the findings file holds ${String(bytes)} bytes, over ${String(maxBytes)}`);
   }
   return text;
 }
