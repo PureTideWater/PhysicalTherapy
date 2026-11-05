@@ -1597,3 +1597,8 @@ HANDOFF.md; LANES.md rule 10).
 - Unchanged: packages/pricing, the schema and every amount.
 - Leftover WIP refs `co-001/wip-pricing-run-cutoff` and `co-001/wip/pricing-run-cutoff-s4` are now superseded. Deleting them is the person's housekeeping call; until then they stay, never reused.
 - S4: brand-settle is running, then the emails.
+
+### 2026-11-05 02:15 UTC: counter allocated
+- SEC-24: pages-child-process ("An untrusted document is read in its own process"). SEC-20 to SEC-23 are cognito-confidential-client's (#113).
+- Next free: SEC-25, CAS-56, ADR 0091 (0090 is UX PR 8's), synth module 21 (Lane B released 21; none taken since), fixture release 900008.
+- #120 (ci-findings-transport) is verified, its base re-merged after #118, CI running. pages-child-process is built (WIP c369bc77) and in its two reviews.
