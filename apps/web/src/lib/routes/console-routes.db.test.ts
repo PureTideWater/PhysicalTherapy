@@ -857,6 +857,37 @@ describe('suspending and reinstating an organization (docs/adr/0055; docs/adr/00
     });
   });
 
+  it('names the suspension in force by its own row to the microsecond, not an earlier suspension in the same millisecond (PRC-32 sweep)', async () => {
+    const target = await createTenantWorld(owner, 'console same millisecond');
+    const id = target.organizationId;
+    const second = await platformAdmin();
+    // Synthetic history, written as the owner: a suspension by the second administrator with a note, its change of
+    // reason, its reinstatement, then the suspension in force by the first, all within one millisecond. The
+    // organization's status_since is the last one. The earlier suspension's note and change of reason are its own:
+    // the suspension in force shows neither, which holds only if its rows are chosen to the microsecond.
+    await owner.query("UPDATE organization SET status = 'suspended', status_reason = 'security_hold' WHERE id = $1", [id]);
+    await owner.query("UPDATE organization SET status_since = '2026-10-05T12:00:00.000500Z' WHERE id = $1", [id]);
+    await owner.query(
+      `INSERT INTO organization_status_change (organization_id, from_status, to_status, reason, note, changed_by, at) VALUES
+         ($1, 'active', 'suspended', 'customer_request', 'SYNTHETIC EARLIER NOTE', $2, '2026-10-05T12:00:00.000100Z'),
+         ($1, 'suspended', 'suspended', 'agreement_ended', NULL, $2, '2026-10-05T12:00:00.000150Z'),
+         ($1, 'suspended', 'active', 'resolved', NULL, $2, '2026-10-05T12:00:00.000200Z'),
+         ($1, 'active', 'suspended', 'security_hold', NULL, $3, '2026-10-05T12:00:00.000500Z')`,
+      [id, second.id, admin.id],
+    );
+    const page = await run(organizationPage, admin.token, undefined, { organizationId: id });
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    expect(page.data.suspension).toEqual({
+      reason: 'security_hold',
+      since: new Date('2026-10-05T12:00:00.000Z'),
+      suspendedBy: { email: await emailOf(admin.id), at: new Date('2026-10-05T12:00:00.000Z') },
+      reasonChangedBy: null,
+      note: null,
+    });
+  });
+
   it('reads a suspension the previous image wrote directly as one whose author was not recorded (D11), and holds a direct write to closed or the internal organization in Postgres', async () => {
     const target = await createTenantWorld(owner, 'console direct');
     const id = target.organizationId;

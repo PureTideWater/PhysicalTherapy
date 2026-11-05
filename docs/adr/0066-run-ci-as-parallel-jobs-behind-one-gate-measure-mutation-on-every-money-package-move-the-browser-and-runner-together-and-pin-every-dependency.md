@@ -1202,23 +1202,22 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
       github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
       holding what toJSON writes of every output it reads, quoted and escaped, six bytes a byte at most, with their
-      names and indents), and refuses one over 131,072 bytes, or one holding a value with no bound, but for the one
-      value named over the limit, which is exempt from that limit only alone in its string (one expression that reads
-      it and nothing else, at its one place), never from its process's whole below. A mapping given as one expression
-      (an env, a step's `with:`, a container or a service), whose names and strings come from the value at run time,
-      is refused, so each string a workflow sets is one the sum reads. It holds each argument the runner hands a
-      process to the same 131,072 bytes (a container's or a service's image, options, entrypoint or command, a default
-      or a step's shell), and every string a step's process or a container is given from the workflow, together, under
-      `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's own. A value a job passes a called workflow as a secret is
-      held to a secret's 48 KB, the bound that workflow's own sum gives `secrets.<name>` (the pin rules refuse a
-      reusable workflow today, so none is passed). What a script builds from the values it reads, its own commands'
-      arguments, is the script's: no rule reads it.
-    - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`), held to the
-      one place each job reads them, and alone in its string there, so no second use and no other value joins them.
-      Their transport is an item of its own, `ci-findings-transport`, which also owns their job output: up to 933,336
-      characters, 1,866,672 bytes as GitHub counts an output (UTF-16), over its 1 MB limit. Every listed value whose
-      bound passes 131,072 bytes is held to the places it is read in the same way: those findings in both jobs, and
-      publish-content's release numbers, read in one script.
+      names and indents), and refuses one over 131,072 bytes, or one holding a value with no bound, with no exception. A
+      mapping given as one expression (an env, a step's `with:`, a container or a service), whose names and strings come
+      from the value at run time, is refused, so each string a workflow sets is one the sum reads. It holds each
+      argument the runner hands a process to the same 131,072 bytes (a container's or a service's image, options,
+      entrypoint or command, a default or a step's shell), and every string a step's process or a container is given
+      from the workflow, together, under `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's own. A value a job passes
+      a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's own sum gives
+      `secrets.<name>` (the pin rules refuse a reusable workflow today, so none is passed). What a script builds from
+      the values it reads, its own commands' arguments, is the script's: no rule reads it.
+    - No listed value is over the limit. The content calendar's findings, once its check job's output (up to 933,336
+      characters, 1,866,672 bytes as GitHub counts an output, UTF-16, over its 1 MB limit) read by its notify job as one
+      environment variable over the limit (`FINDINGS_B64`), travel as the run's own artifact: the check job uploads
+      `findings.json`, and the notify job (and on a pull request the handoff job) downloads it with `gh run download`,
+      so they pass through no job output and no environment string (docs/adr/0071, Amendment,
+      `co-001/ci-findings-transport`). Every listed value whose bound passes 131,072 bytes is held to the places it is
+      read: publish-content's release numbers, read in one script.
     - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
       is one entry of a closed map, its variable's only write: its exact line (so its value's form too) and each file,
       job and step that makes it, once, with that step's fingerprint (a changed script or input, its own or inherited, fails until a person

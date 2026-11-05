@@ -632,7 +632,7 @@ export const pricingSettingsPage = practiceRoute({
     const { location, reading } = await practiceLocationReading(scope.client, practiceId);
     const { places, split } = await placesInEffect(scope.client, practiceId);
     const inEffect = location === null ? [] : await runsInEffect(scope, practiceId, request.requestId);
-    const elsewhere = location === null ? new Set<string>() : await runsPricedElsewhere(scope.client, practiceId, inEffect, location);
+    const elsewhere = location === null ? new Set<string>() : await runsPricedElsewhere(scope.client, practiceId, inEffect);
     const pricedBefore = inEffect
       .filter((run) => elsewhere.has(run.id))
       .map((run): PricedBeforeLocation => ({ runId: run.id, periodFrom: run.periodFrom, periodTo: run.periodTo, releaseNo: run.releaseNo }));

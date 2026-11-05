@@ -13,7 +13,7 @@ export const palette = {
 export const status = {
   whole: "#1F7A4D",
   short: "#B5452E",
-  unpriced: "#7A8594",
+  unpriced: "#5F6A79",
 } as const;
 
 export const statusDark = {
@@ -29,6 +29,7 @@ export const contrastOnWhite = {
   brass: 2.6, // graphic only; never text on white
   whole: 5.3,
   short: 5.4,
+  unpriced: 5.4,
 } as const;
 
 export const fonts = {

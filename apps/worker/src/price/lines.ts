@@ -8,9 +8,15 @@ import { type Cents, parseCents } from '@tp/money';
  * the period, of every claim the payer adjudicated and no correction superseded. A reversal (claim
  * status 22) is the payer's undo of a claim, not a service, so it is not a line to price; a claim a
  * correction supersedes is priced through its correction; a claim reversed and not corrected stays and
- * comes out REVERSED_CLAIM. Only lines loaded by the time the run was created belong to it, so a run's
- * lines are fixed when it is created, and the run's coverage names the plans that had no mapping among
- * those same lines (tp-pricing-coverage/2; combined audit #32, docs/adr/0075).
+ * comes out REVERSED_CLAIM. Only lines loaded by the time the run was created belong to it (created_at at or
+ * before the cut-off), and the run's coverage names the plans that had no mapping among those same lines
+ * (tp-pricing-coverage/2; combined audit #32, docs/adr/0075).
+ *
+ * A known limit, older than PRC-32: a line's created_at is its loading transaction's start, not its commit. A
+ * load still open when a run is created has lines at or before the cut-off that neither the creation check nor a
+ * job that runs before the load commits can see; a later re-run (which copies the cut-off) or the release impact
+ * does see them. No amount is wrong (each run prices what it reads); the set is fixed by the cut-off and by what had
+ * committed. Closing it needs a commit-ordered stamp or a lock loads share with run creation (follow-up).
  */
 
 export interface RunScope {
@@ -19,10 +25,11 @@ export interface RunScope {
   readonly periodFrom: string;
   readonly periodTo: string;
   /**
-   * Lines loaded after this instant are not the run's: its creation, or for a re-run the original's
-   * (as text it keeps the database's microseconds).
+   * Lines loaded after this instant are not the run's: its creation, or for a re-run the original's. A
+   * timestamptz as Postgres prints it (`::text`), which keeps its microseconds; never a JS Date, which keeps
+   * milliseconds and would leave out a line loaded in the cut-off's own millisecond (PRC-32).
    */
-  readonly loadedBy: Date | string;
+  readonly loadedBy: string;
 }
 
 /**

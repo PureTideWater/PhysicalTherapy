@@ -28,8 +28,6 @@ export const LOCATION_CHANGED = 'The billing ZIP changed since this page loaded.
 export interface PracticeLocation {
   readonly zip: string;
   readonly zipPlusFour: string | null;
-  /** When it last changed (the setters stamp it), which a confirmation must be at or after. */
-  readonly updatedAt: Date;
 }
 
 export interface LocationReading {
@@ -45,8 +43,9 @@ export interface LocationReading {
 
 /** The practice's location, or null when it has none (a practice created before PR 6b with no ZIP). */
 export async function practiceLocation(client: ScopeClient, practiceId: string): Promise<PracticeLocation | null> {
-  const row = (await client.query<{ zip: string; zip_plus_four: string | null; updated_at: Date }>('SELECT zip, zip_plus_four, updated_at FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0];
-  return row === undefined ? null : { zip: row.zip, zipPlusFour: row.zip_plus_four, updatedAt: row.updated_at };
+  // Never its updated_at as a JS Date: the times it is compared with are compared in Postgres, to the microsecond (PRC-32).
+  const row = (await client.query<{ zip: string; zip_plus_four: string | null }>('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0];
+  return row === undefined ? null : { zip: row.zip, zipPlusFour: row.zip_plus_four };
 }
 
 /** The rule release in force, or null. */
@@ -102,35 +101,31 @@ export async function locationConfirmed(client: ScopeClient, practiceId: string)
 }
 
 /**
- * Of the complete runs given, the ones priced at another location than `location`: the ZIP and ZIP+4 a line of the
- * run read (every line of a run reads the run's settings, which its trace keeps, a null ZIP+4 left out), never the
- * times, so a save of the same location, or a change and a change back, lists no run as priced elsewhere. A run with
- * no line keeps no trace, and is compared by time: created before the location last changed. One line a run is read,
- * its settings alone.
+ * Of the complete runs given, the ones priced at another location than the practice's own as it stands: the ZIP and
+ * ZIP+4 a line of the run read (every line of a run reads the run's settings, which its trace keeps, a null ZIP+4 left
+ * out), never the times, so a save of the same location, or a change and a change back, lists no run as priced
+ * elsewhere. A run with no line keeps no trace, and is compared by time: created before the location last changed.
+ * One statement decides both against one reading of the location, in Postgres, so the times are compared to the
+ * microsecond (never as JS Dates, which keep milliseconds and would read a run created before the save in the same
+ * millisecond as not before; PRC-32). One line a run is read, its settings alone. None when the practice has no
+ * location.
  */
-export async function runsPricedElsewhere(
-  client: ScopeClient,
-  practiceId: string,
-  runs: readonly { readonly id: string; readonly createdAt: string | Date }[],
-  location: PracticeLocation,
-): Promise<ReadonlySet<string>> {
+export async function runsPricedElsewhere(client: ScopeClient, practiceId: string, runs: readonly { readonly id: string }[]): Promise<ReadonlySet<string>> {
   if (runs.length === 0) {
     return new Set();
   }
-  const { rows } = await client.query<{ id: string; zip: string | null; zip_plus_four: string | null; traced: boolean }>(
-    `SELECT r.id::text AS id, s.settings ->> 'zip' AS zip, s.settings ->> 'zip_plus_four' AS zip_plus_four, s.settings IS NOT NULL AS traced
+  const { rows } = await client.query<{ id: string }>(
+    `SELECT r.id::text AS id
        FROM unnest($2::uuid[]) AS r (id)
-       LEFT JOIN LATERAL (SELECT p.trace -> 'settings' AS settings FROM priced_line p WHERE p.practice_id = $1 AND p.pricing_run_id = r.id LIMIT 1) s ON true`,
+       JOIN pricing_run p ON p.id = r.id AND p.practice_id = $1
+       JOIN practice_site site ON site.practice_id = $1
+       LEFT JOIN LATERAL (SELECT l.trace -> 'settings' AS settings FROM priced_line l WHERE l.practice_id = $1 AND l.pricing_run_id = r.id LIMIT 1) s ON true
+      WHERE CASE WHEN s.settings IS NOT NULL
+                 THEN (s.settings ->> 'zip') IS DISTINCT FROM site.zip OR (s.settings ->> 'zip_plus_four') IS DISTINCT FROM site.zip_plus_four
+                 ELSE p.created_at < site.updated_at END`,
     [practiceId, runs.map((run) => run.id)],
   );
-  const created = new Map(runs.map((run) => [run.id, new Date(run.createdAt)]));
-  return new Set(
-    rows
-      .filter((row) =>
-        row.traced ? row.zip !== location.zip || (row.zip_plus_four ?? null) !== location.zipPlusFour : (created.get(row.id)?.getTime() ?? Infinity) < location.updatedAt.getTime(),
-      )
-      .map((row) => row.id),
-  );
+  return new Set(rows.map((row) => row.id));
 }
 
 /**
