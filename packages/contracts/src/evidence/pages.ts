@@ -112,7 +112,7 @@ export type ChildReply = { readonly kind: 'pages'; readonly pages: string[]; rea
 
 /** The reader's young generation: 16 MiB semi-spaces, so its heap_size_limit is old + 48 MiB (240 at 192) on any host. */
 export const READER_SEMI_SPACE_MB = 16;
-/** The reader's stack in KiB: the thread's 4 MiB, less V8's guard (a deeply nested document reads as it did). */
+/** The reader's stack in KiB: the old worker thread's 4 MiB, less V8's guard (a deeply nested document reads as it did then). */
 export const READER_STACK_KIB = 3920;
 /** The most the reader may hold before it reads a byte (139 to 146 MiB measured, the reader imported); more is its own failure. */
 export const READER_BASELINE_MAX_BYTES = 224 * MIB;
@@ -152,7 +152,7 @@ function readablePath(entry: URL): string {
 
 /**
  * The reader's node flags, exactly (the infra guard and the tests read this): its own heap (old maxHeapMb, young from
- * 16 MiB semi-spaces), the thread's stack, Node's permission model reading only its code, and no code from strings.
+ * 16 MiB semi-spaces), the old worker thread's stack, Node's permission model reading only its code, and no code from strings.
  * Nothing inherited: no NODE_OPTIONS (the environment is empty), no loader, no source maps.
  */
 export function readerArgv(limits: PageReadLimits, entry: URL = READER): string[] {

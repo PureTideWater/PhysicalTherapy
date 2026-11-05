@@ -7,8 +7,8 @@ import { normalizePageText, pageTextHash, quoteOnPage } from './page-text';
  * version's, the document has the page, the quote is on that page's text, and the page text's hash is
  * the one the citation stores. The page text comes from a PageSource: in the web app, the text intake
  * read once and stored sealed (docs/adr/0033); in the worker and in tests, `documentPages` from
- * `@tp/contracts/pages`, which reads a document's bytes in a bounded thread. A PDF's pages, a
- * workbook's sheets and a CSV's row blocks are its pages. A failure names its problem, which the
+ * `@tp/contracts/pages`, which reads a document's bytes in a child process of its own with its own heap
+ * limit. A PDF's pages, a workbook's sheets and a CSV's row blocks are its pages. A failure names its problem, which the
  * specialist sees beside the field (CON-05), and approval is refused until it resolves.
  */
 
