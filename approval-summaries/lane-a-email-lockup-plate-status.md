@@ -15,8 +15,23 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
 - 2026-11-05T06:50Z: started. Worktree /home/user/email-plate from 0f4a5ed5 (#125). The workflow's script is archived
   as workflow-scripts/lane-a-email-lockup-plate.js.
 
+- 2026-11-05T07:45Z: workflow wf_80ea358c-97c.
+  - Draft PR #129: the table plate, the newest-code sentence, red first.
+  - The UX review found UX-S1: forced inversion inverts the plate cells too.
+  - The fix round made new plated PNGs (the delivered art composited onto an opaque White plate inside the image),
+    written by tools/brand-email-plate and held pixel for pixel by a test. Its agent returned early: 3 commits
+    unpushed, the suite unfinished.
+  - CI on 231da9c4 was red: SGN-13's synth copy was not updated. I fixed it (synth matrix.ts and its fixture) and
+    merged #127 (23b25ad0).
+- 2026-11-05T07:55Z: the orchestrator, as the brand owner's delegate, confirmed the derived art, with conditions:
+  - versioned file names (kept);
+  - each img keeps width, height and alt "PaidWhole" (holds);
+  - input and output SHA-256 pinned in the test: dceba1a5, which fails on a one-byte change;
+  - BRAND.md section 7 calls it a derived plate composite, generated, never hand-edited: f62265dc.
+  The full suite is running on f62265dc.
+
 ## Waiting on someone
 - None.
 
 ## Next step
-The workflow, then the merge; then the follow-on.
+The suite on f62265dc, the push and the description, CI, then the merge. Then the follow-on.
