@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import * as pages from '../../packages/contracts/src/evidence/pages';
+import { PAGE_READER_ISOLATION, PAGE_READ_LIMITS, READER_SEMI_SPACE_MB, readerArgv } from '../../packages/contracts/src/evidence/pages';
 import { ENVIRONMENTS, type EnvironmentName, environmentSettings } from '../lib/environments';
 import { HEAP_MIB, heapFlag } from '../lib/heap';
 import { SYNTH_TIMEOUT_MS, logicalIdOf, propertiesOf, resourcesOf, synthesized } from './synth';
@@ -94,8 +94,7 @@ describe('the page reader against the heap flags', () => {
   it.each(ENVIRONMENTS)('%s: lets a worker-image container carry a heap flag only while the reader runs in its own process', (environment) => {
     const containers = workerImageContainers(environment);
     expect(containers.map((container) => container.name).sort()).toEqual(['migrate', 'platform', 'screening', 'worker']);
-    const isolation = (pages as Record<string, unknown>).PAGE_READER_ISOLATION;
-    expect(refused(containers, isolation), `a heap flag on these containers needs PAGE_READER_ISOLATION 'process' (it is ${String(isolation)})`).toEqual([]);
+    expect(refused(containers, PAGE_READER_ISOLATION), `a heap flag on these containers needs PAGE_READER_ISOLATION 'process' (it is ${PAGE_READER_ISOLATION})`).toEqual([]);
   }, SYNTH_TIMEOUT_MS);
 
   it("gives the reader today's heap under the worker task's real command with heapFlag('worker')", () => {
@@ -112,7 +111,10 @@ describe('the page reader against the heap flags', () => {
     expect(probe.status, probe.stderr).toBe(0);
     const measured = JSON.parse(probe.stdout) as { parent: number; reader: number | null };
     expect(measured.parent).toBe(heapLimitWith([heapFlag('worker')]));
-    expect(measured.reader).toBe(heapLimitWith([`--max-old-space-size=${String(pages.PAGE_READ_LIMITS.maxHeapMb)}`, '--max-semi-space-size=16']));
-    expect(measured.reader).toBeLessThan((pages.PAGE_READ_LIMITS.maxHeapMb + 64) * MIB);
+    // V8's answer for the reader's own heap flags, exactly as readerArgv gives them: 240 MiB at old 192, semi 16.
+    const readerHeapFlags = readerArgv(PAGE_READ_LIMITS).filter((word) => V8_HEAP_FLAG.test(word));
+    expect(readerHeapFlags).toEqual([`--max-old-space-size=${String(PAGE_READ_LIMITS.maxHeapMb)}`, `--max-semi-space-size=${String(READER_SEMI_SPACE_MB)}`]);
+    expect(measured.reader).toBe(heapLimitWith(readerHeapFlags));
+    expect(measured.reader).toBeLessThan((PAGE_READ_LIMITS.maxHeapMb + 64) * MIB);
   }, 120_000);
 });

@@ -100,6 +100,13 @@ export function documentFormat(bytes: Uint8Array, contentType: string): Document
   return null;
 }
 
+/**
+ * Where an untrusted document is read: in a process of its own, whose heap its own flags set. infra/test/heap.test.ts
+ * refuses a V8 heap flag on any container of the worker image unless this is 'process': a process-wide heap flag
+ * overrides a worker thread's resourceLimits on Node 24 (docs/adr/0071).
+ */
+export const PAGE_READER_ISOLATION = 'process' as const;
+
 /** The reader's reply as this process takes it: the pages and the heap limit the reader ran under, or its refusal. */
 export type ChildReply = { readonly kind: 'pages'; readonly pages: string[]; readonly heapSizeLimit: number } | { readonly kind: 'refused'; readonly problem: ReadRefusal };
 
