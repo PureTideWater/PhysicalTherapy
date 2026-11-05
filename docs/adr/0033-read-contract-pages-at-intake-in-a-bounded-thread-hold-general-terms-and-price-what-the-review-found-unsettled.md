@@ -154,9 +154,10 @@ binding no longer loads into the worker).
 - **Same results:** with no flag, today's thread reads 1,000 and 1,250 SYNTHETIC pages and refuses 1,500 to 2,000; the
   child at heap 192 does exactly the same, under the planned flag too. A larger heap gains nothing (at 224 the memory
   cap refuses the same documents), so none is added.
-- **Results:** a limit passed (memory, deadline, a V8 heap out of memory, a reply past its pages, characters or bytes)
-  is `unsupported_document`; a document the reader cannot parse is `document_unreadable`; any other exit, a malformed
-  frame or a spawn failure is `PageReadError`, naming only the exit code or signal. The child's stderr is never logged
+- **Results:** a limit passed (memory, deadline, a V8 heap out of memory, a reply past its pages, characters or total
+  bytes) is `unsupported_document`; a document the reader cannot parse is `document_unreadable`; any other exit, a
+  malformed frame (one whose header claims more than the reply's bound leaves among them, refused before its body is
+  read) or a spawn failure is `PageReadError`, naming only the exit code or signal. The child's stderr is never logged
   (only its last 1 KiB is read, for V8's fixed out-of-memory line); its console is silenced before it reads a byte.
   Results are given on `close`, never on `exit`, which came before the last frames (985 of 1,000 pages, measured).
   The deadline and the memory bound hold until `close`, the reply in or not, and a child that has sent its last frame
