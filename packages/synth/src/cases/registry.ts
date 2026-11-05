@@ -1036,6 +1036,24 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/sign-in.spec.ts',
     'apps/web/e2e/sign-in-time.spec.ts',
   ]),
+  // The code email and every message the user pool sends (co-001/auth-emails; docs/adr/0081, the code-email amendment).
+  'SGN-13': none(1, 'The words are rendered in memory with Cognito’s placeholders and synthetic values, and the pool is read from the synthesized template; no file.', [
+    'packages/auth-mail/src/render.test.ts',
+    'infra/test/cognito-messages.test.ts',
+    'infra/test/identity.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'SGN-14': none(1, 'The handler runs in a fresh vm context on synthetic Cognito events, and the function is read from the synthesized template; no file.', [
+    'packages/auth-mail/src/lambda.test.ts',
+    'infra/test/cognito-messages.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-15': none(1, 'The local identity provider writes its invitations and reset codes to a synthetic outbox the tests read; no file.', [
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
   'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [

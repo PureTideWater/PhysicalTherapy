@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { SESv2Client } from '@aws-sdk/client-sesv2';
+import { cognitoMessage } from '@tp/auth-mail';
 import type { BillingProvider } from '@tp/billing';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
@@ -106,32 +107,34 @@ export interface Services {
   readonly credentialProbe: CredentialProbe;
 }
 
-/** The local outbox where the development provider "sends" an invitation's temporary password. */
-export function devOutbox(directory: string): (email: string, temporaryPassword: string) => Promise<void> {
+/**
+ * The local outbox where the development provider "sends" an invitation: the subject, text and HTML Cognito's
+ * CustomMessage trigger sends (@tp/auth-mail, SGN-15), naming this server's sign-in page, so the e2e reads the
+ * temporary password from the message's own words. The email and the password fields stay for filtering and the http
+ * test. Synthetic accounts only.
+ */
+export function devOutbox(directory: string, signInUrl: string): (email: string, temporaryPassword: string) => Promise<void> {
   return async (email, temporaryPassword) => {
     const outbox = path.join(directory, 'outbox');
     await mkdir(outbox, { recursive: true });
-    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ email, temporaryPassword })}\n`, { mode: 0o600 });
-  };
-}
-
-/** The words of the reset code's email, as proposed for Cognito's template (Lane A), so the e2e reads the code as it will arrive. */
-function resetCodeEmail(code: string): { readonly subject: string; readonly body: string } {
-  return {
-    subject: 'Your PaidWhole code',
-    body: `Your code to choose a new PaidWhole password is ${code}. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.`,
+    const message = cognitoMessage('CustomMessage_AdminCreateUser', { code: temporaryPassword, username: email, signInUrl });
+    const record = { email, temporaryPassword, subject: message.subject, body: message.text, html: message.html };
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify(record)}\n`, { mode: 0o600 });
   };
 }
 
 /**
  * The local outbox where the development provider "sends" a password-reset code: a sibling of the invitations' outbox,
- * which e2e/onboarding.spec.ts reads whole as invitations. Synthetic accounts only.
+ * which e2e/onboarding.spec.ts reads whole as invitations, in the words and frame Cognito's trigger sends (section 2.5's,
+ * from @tp/auth-mail). Synthetic accounts only.
  */
 export function devResetOutbox(directory: string): (email: string, code: string) => Promise<void> {
   return async (email, code) => {
     const outbox = path.join(directory, 'reset-outbox');
     await mkdir(outbox, { recursive: true });
-    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ email, code, ...resetCodeEmail(code) })}\n`, { mode: 0o600 });
+    const message = cognitoMessage('CustomMessage_ForgotPassword', { code });
+    const record = { email, code, subject: message.subject, body: message.text, html: message.html };
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify(record)}\n`, { mode: 0o600 });
   };
 }
 
@@ -150,7 +153,7 @@ function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvid
     store: new FileDevStore(path.join(config.auth.directory, 'store.json')),
     sealer: sealer.derive('dev-provider'),
     webauthn: { rpId: config.rpId, rpName: 'Therapy Platform', origin: config.origin },
-    deliverInvitation: devOutbox(config.auth.directory),
+    deliverInvitation: devOutbox(config.auth.directory, `${config.origin}/sign-in`),
     deliverResetCode: devResetOutbox(config.auth.directory),
   });
 }

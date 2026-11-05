@@ -575,6 +575,7 @@ export class Monitoring extends Construct {
       SecondFactorEnrolmentRefused: `A ${props.environmentName} sign-in that passed the password was refused second-factor enrolment outside a live invitation (docs/adr/0088, D3): read the user ID, and treat it as an attempted takeover until the person is confirmed.`,
       ClientCredentialRefused: `Cognito refused the ${props.environmentName} web client's credential, so sign-in fails for everyone: check the client secret and the client ID the web task was given (docs/adr/0088, D2).`,
       ClientCredentialProbeRefused: `A ${props.environmentName} web task's start-up probe found its Cognito client credential refused, so its health check fails and the deploy rolls back: check the client secret and the client ID the new task definition was given (docs/adr/0088, D8).`,
+      PasswordResetRequestOverFloor: `Three ${props.environmentName} password reset requests in an hour were answered after their floor, so their timing could tell an account from none: find the slow call (Cognito, the message trigger's cold start), or raise RESET_REQUEST_FLOOR_MS (docs/adr/0081).`,
     };
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
     for (const count of RESET_AND_ENROLMENT_COUNTS) {

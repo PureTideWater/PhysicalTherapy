@@ -46,7 +46,8 @@ import { badgeText, descriptor, independenceClaim, sealLabel, sealText, tagline,
  * refusals (the workbench shows the refusals); the worker's screening (the screening emails and the upload's
  * refusals, which the screening page shows; a screening file, so owed, underpaid and recovered fail there); and
  * the packages whose words the screens show: the UI states, triage (the stage labels, the write-off and pattern
- * words) and the packet's assembly.
+ * words) and the packet's assembly; and every email the user pool sends, with the password-changed email's words
+ * (packages/auth-mail; docs/adr/0081, the code-email amendment).
  */
 export const COPY_ROOTS = [
   'apps/web/src',
@@ -58,6 +59,7 @@ export const COPY_ROOTS = [
   'packages/ui/src',
   'packages/triage/src',
   'packages/packets/src',
+  'packages/auth-mail/src',
 ] as const;
 
 /**

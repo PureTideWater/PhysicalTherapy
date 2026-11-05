@@ -46,13 +46,14 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(config).toContain('rpId: settings.WEBAUTHN_RP_ID ?? new URL(settings.APP_ORIGIN).hostname');
   });
 
-  it('sends Cognito\'s email in phase 2 through SES from MailFromAddress, under its domain\'s identity and the transactional set; in phase 1 through Cognito\'s own sender (docs/adr/0065, D2)', () => {
+  it('sends Cognito\'s email in phase 2 through SES as PaidWhole <MailFromAddress>, under its domain\'s identity and the transactional set; in phase 1 through Cognito\'s own sender (docs/adr/0065, D2)', () => {
     expect(poolProperties.EmailConfiguration).toEqual({
       'Fn::If': [
         MAIL_IDENTITIES_VERIFIED_CONDITION,
         {
           EmailSendingAccount: 'DEVELOPER',
-          From: { Ref: PARAMETER_NAMES.mailFromAddress },
+          // The product's name as the sender, as the worker's mail has it (template.ts, senderAddress).
+          From: { 'Fn::Join': ['', ['PaidWhole <', { Ref: PARAMETER_NAMES.mailFromAddress }, '>']] },
           SourceArn: {
             'Fn::Join': [
               '',
@@ -103,6 +104,15 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(poolProperties.AccountRecoverySetting).toEqual({ RecoveryMechanisms: [{ Name: 'verified_email', Priority: 1 }] });
     expect(poolProperties.DeletionProtection).toBe(environment === 'production' ? 'ACTIVE' : 'INACTIVE');
     expect(pool.DeletionPolicy).toBe('Retain');
+  });
+
+  it('keeps the verified address in force until a new one is confirmed (keepOriginal), so a token holder cannot swap it unverified', () => {
+    expect(poolProperties.AutoVerifiedAttributes).toEqual(['email']);
+    expect(poolProperties.UserAttributeUpdateSettings).toEqual({ AttributesRequireVerificationBeforeUpdate: ['email'] });
+  });
+
+  it('lets the web client write no attribute: the app writes them only through Admin calls with server credentials', () => {
+    expect(clientProperties.WriteAttributes).toEqual([]);
   });
 
   it('issues tokens no longer-lived than the session rules allow', () => {
