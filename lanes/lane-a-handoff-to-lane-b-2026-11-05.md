@@ -41,6 +41,11 @@ SUITE-CAP-1b (#110). #42 merged on 2026-11-02.
 | Contract pages in their own process | `co-001/wip-pages-child-process` (c369bc77 or later); `lane-a-pages-child-process-status.md` | Built; two reviews running; SEC-24 | Fix round, PR, CI, merge. **infra/lib/heap.ts's planned `--max-old-space-size=560` must not ship before it.** |
 | Packets verifier identifier fold | `co-001/packets-verifier-identifier-fold`; `lane-b-packets-verifier-identifier-fold-status.md` | Just started (S1); MOD-19, MOD-20 | The gateway's fold reused in `packages/packets` identifierSpans, with a differential property test; two reviews. |
 
+**First thing for Lane B: #127's MOD-16 property fails on some seeds.** It is unseeded, in `packages/model-gateway/src/redact.property.test.ts`. It failed at seed 1034253323 on "Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00" (#128's CI). The base's push run passed only by its random seed, so any PR's unit job can go red.
+- It is a real over- or under-redaction case, or a survivor-scan false positive, between the SSN and phone patterns and an amount next to a date range.
+- Root-cause it, pin the seed as a regression case, and fix it. It is PHI redaction, so two reviews.
+- S1 stood down before fixing it (`lane-b-redact-ssn-phone-status.md`).
+
 ## 3. Paused Lane B items (no session holds them)
 
 - UX PR 4b: the screening labels re-pin, under the ruling in `lanes/lane-b.md` 2026-10-28 03:20 UTC, plus #121's P1 (the anomaly chip's sans "$5").
