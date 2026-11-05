@@ -246,6 +246,13 @@ its unpushed work is not waited for).
   Domain model unchanged e024cf9f…c4df, line 7459. **Open before the suggested line:** the base moved to 370b8973 (#119,
   test-only); this round's new infra and worker code has had no adversarial review; the class change is a cost decision
   beyond "one size up" (asked of the orchestrator 01:20).
+- **01:25 UTC. Decided by the orchestrator (~01:11):** staging db.t4g.small -> db.t4g.medium (production's class; staging
+  proves releases and capacity; ~+$23/mo); dev db.t4g.micro -> db.t4g.small with stop-first worker deploys in dev only
+  (keeps production's pool size; ~+$11/mo when deployed; ~$24/mo less than medium); dev's deploys never page (silence the
+  worker heartbeat alarm in the deploy window or a longer evaluation period in dev); the budget check passes for dev under
+  stop-first; ADR 0083 + the ADR 0012 note; the PR body carries one line for the founder: "RDS: staging db.t4g.small →
+  medium (+~$23/mo); dev micro → small (+~$11/mo when deployed)"; PRD section 19 stays the founder's. The orchestrator
+  records the SUITE-CAP-3 hand-off in LANES.md and lanes/lane-b.md. Review of round 3's new code running: wf_42e0e4b4-b51.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
