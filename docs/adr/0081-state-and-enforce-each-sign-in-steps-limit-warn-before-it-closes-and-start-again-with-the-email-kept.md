@@ -368,8 +368,8 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   each message's subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the
   reset code from the message's own words. SGN-13 to SGN-15.
 - **Not covered:**
-  - the "password changed" email. Its words (`passwordChangedLines`: when, in UTC words, that every device was signed
-    out and the second factor still holds, and "write to <support address> from this address now"; no link and no
+  - the "password changed" email. Its words (`passwordChangedLines`: when, as the screens write a time, that every
+    session ended and the second factor still holds, and "write to <support address> from this address now"; no link and no
     "from where") and the worker template's `account` variant are built and tested here, and nothing sends them. Its
     kind is refused by `mail_send`'s CHECK constraints and no mail-sending role may read a user's address, so it needs
     a migration: an outbox row the database writes in the reset's own transaction (a trigger on `audit_event` for

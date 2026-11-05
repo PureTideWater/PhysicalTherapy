@@ -121,23 +121,20 @@ export const FALLBACK_INVITATION: MessageWords = invitation;
 /** The password-changed email's subject, sent as "Your password was changed | PaidWhole" by the worker's brandedSubject(). */
 export const PASSWORD_CHANGED_SUBJECT = 'Your password was changed';
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
-
-/** A moment in UTC words: "November 5, 2026 at 14:32 UTC" (the minute, never rounded up). */
-export function utcWords(at: Date): string {
-  const two = (value: number) => String(value).padStart(2, '0');
-  return `${MONTHS[at.getUTCMonth()] ?? ''} ${String(at.getUTCDate())}, ${String(at.getUTCFullYear())} at ${two(at.getUTCHours())}:${two(at.getUTCMinutes())} UTC`;
+/** A moment as every screen writes it (apps/web's format.ts utc()): "2026-11-05 14:32 UTC" (the minute, never rounded up). */
+export function utcMinute(at: Date): string {
+  return `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 /**
- * The password-changed email's lines (sent from the follow-on pull request, docs/adr/0091): when, that every device was
- * signed out and the second factor still holds, and the support route, which is to write from the address one signs in
+ * The password-changed email's lines (sent from the follow-on pull request, docs/adr/0091): when, that every session
+ * ended (the sign-in notice's words) and the second factor still holds, and the support route, which is to write from the address one signs in
  * with (docs/runbooks/support-mail.md). No link that acts on the account, and no "from where".
  */
 export function passwordChangedLines(changedAt: Date, supportEmail: string): readonly string[] {
   return [
-    `The password for your ${brandName} account was changed on ${utcWords(changedAt)}, with a code sent to this address.`,
-    'Every device signed in to the account was signed out. Signing in still asks for your authenticator code or hardware key.',
+    `The password for your ${brandName} account was changed at ${utcMinute(changedAt)}, with a code sent to this address.`,
+    'Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.',
     'If you changed it, there is nothing more to do.',
     `If you did not, write to ${supportEmail} from this address now, and we will help you secure the account.`,
   ];
