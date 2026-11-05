@@ -1,4 +1,4 @@
-ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-04T23:25Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) at 23:23Z. It is IN PROGRESS (started 2026-11-05T01:10Z, while #118 waits on CI; the files do not overlap).
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-04T23:25Z, assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) at 23:23Z. It is DONE: #121 merged as f185655c at 2026-11-05T04:03Z.
 
 # Item: brand-settle (`co-001/brand-settle`)
 
@@ -38,8 +38,24 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   - The description was updated. CI on 062db660 had db (1/4) fail on the known load.db.test.ts flake
     (lane-a-wip/flaky-load).
 
+- 2026-11-05T03:00Z: the orchestrator ruled:
+  - take #5F6A79, the brand owner's F3 value, for a margin on small chip text;
+  - keep the ADR 0058 line;
+  - P1 goes to UX PR 4b's queue (done);
+  - the load flake is #110's.
+  Done:
+  - the margin test fe5cde6b, red on #646E7C (4.608 < 4.8);
+  - the token cb26278a: 4.90 on its tint, 5.49 on White, 3.82 against Line, 1.17:1 and OKLab dE 3.7 from Slate;
+    dark unchanged;
+  - docs 7fa2b971;
+  - shots re-taken: an exact color swap.
+  The full suite passed once on 7fa2b971. Pushed; the description was updated and read back.
+- 2026-11-05T04:03Z: MERGED. CI on 7fa2b971 was green (all green, mutation, screening-capacity gate,
+  approval-of-record after ready). Merged as f185655c, method merge, expectedHeadSha 7fa2b971. Unsubscribed; the
+  check-in was deleted.
+
 ## Waiting on someone
 - None.
 
 ## Next step
-CI on 8a9f6880, then mark ready, approval-of-record, and merge.
+None: done. The worktree /home/user/brand-settle can be removed.
