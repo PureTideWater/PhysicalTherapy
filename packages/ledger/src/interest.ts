@@ -40,7 +40,11 @@ export interface InterestAdjustment {
   readonly cashCents: Cents;
   /** The chain its reference names among the claims of its own payer (D2), or null when it names none. */
   readonly namedChain: string | null;
-  /** The claims of that chain its reference reaches; empty when it names none. */
+  /**
+   * The claims of that chain: those its reference reaches and every other claim of the chain the reconcile read (the
+   * claims its case lines are matched to among them), so a draw for the chain reaches the lines matched to any claim of
+   * it (D5), whichever one the reference carries; empty when it names none.
+   */
   readonly namedClaimIds: readonly string[];
 }
 
@@ -53,8 +57,8 @@ export interface InterestDraw {
   /** The chain's amount was its share of a short pool shared by two or more chains (D4 step 3; D10). */
   readonly shared: boolean;
   /**
-   * The claims a paid draw reaches lines through: the claims the PLB L6 names (D4 steps 1, 2 and 4), the chain's
-   * claims in the L6's remittance (step 3), or both.
+   * The claims a paid draw reaches lines through: the claims of the chain the PLB L6 names (D4 steps 1, 2 and 4), the
+   * chain's claims in the L6's remittance (step 3), or both.
    */
   readonly claimIds: readonly string[];
 }
@@ -312,6 +316,11 @@ export function attributeInterest({ remittances, adjustments }: { readonly remit
  * there are any, split by their approvals remaining; a take-back goes to the lines holding the chain's interest, cut
  * to what they hold and split by it. A part is allocated when its draw was a share of a short pool or two or more
  * lines took a part. The worker writes exactly the parts returned.
+ *
+ * Take-backs are written first: an L6 writes one entry on a line, a take-back can reach only the lines holding its
+ * chain's interest and a payment any line matched to a claim it is for, so a payment goes to the lines the take-backs
+ * left. When two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
+ * unwritten, so the figure errs low and never above the cash (LED-24 two-chains.835).
  */
 export function interestWrites({
   draws,
@@ -341,12 +350,11 @@ export function interestWrites({
   const left = new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
   const reached = new Set(written.map((entry) => entry.serviceLineId));
   const parts: InterestPart[] = [];
-  for (const draw of draws) {
+  for (const [sign, draw] of [-1n, 1n].flatMap((ofSign) => draws.filter((item) => item.cents / size(item.cents) === ofSign).map((item) => [ofSign, item] as const))) {
     const chainLines = lines.get(draw.chain);
     if (chainLines === undefined) {
       continue;
     }
-    const sign = draw.cents / size(draw.cents);
     const given = towards(
       written.filter((entry) => entry.chain === draw.chain).map((entry) => entry.cents),
       sign,
