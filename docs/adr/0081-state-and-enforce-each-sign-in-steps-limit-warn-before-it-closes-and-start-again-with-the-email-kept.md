@@ -354,6 +354,12 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   throttles, and each fallback, alarm the operator (docs/runbooks/deliverability.md, 3.9). On the first deploy the
   invoke permission is created just after the pool names the function (it names the pool's ARN), a window of seconds
   in which a code email fails as above.
+- **B4a. The address cannot be swapped with a token.** The pool keeps the verified address in force until a new one is
+  confirmed (`keepOriginal: { email: true }`), and the web client may write no attribute (`writeAttributes` empty):
+  the app writes attributes only through Admin calls with server credentials, and answers `NEW_PASSWORD_REQUIRED` with
+  the password alone. So a stolen access token can neither change the address at once nor lock its owner out of
+  sign-in and reset. The attribute-update and verification words stay, unreachable from the app, as the other
+  unreachable sources' do.
 - **B5. The dev twin delivers what Cognito delivers.** The development provider's invitation and reset outboxes write
   each message's subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the
   reset code from the message's own words. SGN-13 to SGN-15.
@@ -368,8 +374,6 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     (CO-02). Not for the invitation's first password;
   - dark rules in email (the brand owner's call: the worker's lockup PNG is close to unreadable in a client that
     inverts colors);
-  - restricting the client's attribute writes and `keepOriginal: { email: true }` (a user holding an access token can
-    change their own email in Cognito today, unverified at once; the app never does);
   - the organization's name in the invitation.
 - **Not verified here** (no user pool in this lane; the founder's pool smoke check, phase 2 on staging, with a
   synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that

@@ -89,6 +89,8 @@ export class Identity extends Construct {
       signInAliases: { email: true },
       signInCaseSensitive: false,
       autoVerify: { email: true },
+      // A new address takes effect only once its code is confirmed; the verified one stays in force until then.
+      keepOriginal: { email: true },
       standardAttributes: { email: { required: true, mutable: true } },
       mfa: cognito.Mfa.REQUIRED,
       mfaSecondFactor: { otp: true, sms: false, email: false },
@@ -136,6 +138,9 @@ export class Identity extends Construct {
     // hosted UI and no OAuth flow, and no client secret to store.
     this.webClient = this.userPool.addClient('WebClient', {
       authFlows: { user: true, userSrp: true },
+      // No attribute writes with a user's own token: the app writes attributes only through Admin calls with server
+      // credentials, and answers NEW_PASSWORD_REQUIRED with the password alone.
+      writeAttributes: new cognito.ClientAttributes(),
       disableOAuth: true,
       generateSecret: false,
       preventUserExistenceErrors: true,
