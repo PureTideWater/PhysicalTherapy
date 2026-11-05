@@ -554,8 +554,8 @@ above stays as it was decided; where it differs, this amendment holds.
   the screen's refusal is the fixed `more_than_one_patient` (MOD-14, MOD-16).
 - **The self-check** (`holdsIdentifier`) runs the patterns on the masked sent text and also an independent survivor
   scan, written apart from them: on the digits view with invisible runs dropped and read as spaces, after barriers
-  (placeholders; whole separated dates with a reading, none joined to another group by a joiner; amounts; bare numbers a
-  keep-noun names or the NPI and TIN rule keeps), it refuses a letter in which one to four consecutive digit groups,
+  (placeholders; whole separated dates with a reading, none joined to another group by a joiner, a date glued to a word
+  read with its letters as blanks; amounts; bare numbers a keep-noun names or the NPI and TIN rule keeps), it refuses a letter in which one to four consecutive digit groups,
   joined by white space (up to sixteen spaces or tabs, or one line break with up to sixteen on each side) with at most
   one joiner (dashes, `.`, `(`, `)`, `/`, every non-white number joiner, `;` with no space after it, and U+30FC, U+2053,
   U+02C9, U+2215, U+2044 and U+3001), hold 9 or 10 digits, or 11 starting with 1 across groups, unless one group has

@@ -837,6 +837,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['an NPI', 'NPI 2345678900'],
     ['a column-aligned service-line row (SEC-2)', '97110        1        1200.00'],
     ['a column-aligned ZIP+4 (SEC-2)', 'CA 90001        1234'],
+    ['a date glued to the next word after an amount (MOD-16 seed 20276943)', 'Billed $500-50 2020-01-01Paid $0,000.00'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);

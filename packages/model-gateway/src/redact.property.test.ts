@@ -1294,6 +1294,7 @@ describe('MOD-15: every Social Security and phone number is redacted, and a lett
   it.each([
     'Claim lines 1 2 3 4 5 6 7 8 9', 'Please call about CPT 97110 97140.', 'Call regarding codes 97110 97140 billed', 'Contact TIN 12-3456789',
     'Call our office, TIN 12-3456789', 'Paid 900.12 3456 units', 'Phone us about ZIP 90001 1234', 'Medicare 97110 97140', 'Call about $150.00 2026',
+    'Billed $305 50 0345 2020-01-01Paid $0,000.00',
   ])('sends a chain a code or keep-noun names after the label, or that no label names, unrefused: %s (R7, review round 1)', (letter) => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
     const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];

@@ -1456,7 +1456,7 @@ function joinedRight(text: string, at: number): boolean {
 /**
  * Whether a chain of digit groups that could be a Social Security or phone number survives in a view of masked text:
  * 1. barriers first: every placeholder (the BARRIER), every whole separated date with a reading (not joined on either
- *    side to another group by a joiner: A3), every amount (a currency sign and its number; an unsigned amount, comma
+ *    side to another group by a joiner: A3; a date glued to a word read with its letters as blanks), every amount (a currency sign and its number; an unsigned amount, comma
  *    thousands or one or two decimals, not joined to a group on either side), and every bare nine or ten a keep-noun
  *    names, or that R5 keeps (an NPI, a TIN);
  * 2. chains: digit groups joined by SCAN_GAP;
@@ -1482,9 +1482,14 @@ function survivorIn(text: string): boolean {
     }
     return held;
   };
-  for (const span of datesIn(text)) {
-    if (span.separated && span.dates.length > 0 && !joinedLeft(text, span.start) && !joinedRight(text, span.end)) {
-      mark(span.start, span.end);
+  // A date glued to a word ("2020-01-01Paid", extracted text that lost its space) is read with the letters as blanks too:
+  // datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16, check round 1).
+  const unglued = /[0-9]\p{L}|\p{L}[0-9]/u.test(text) ? [text, text.replace(/\p{L}/gu, (letter) => ' '.repeat(letter.length))] : [text];
+  for (const reading of unglued) {
+    for (const span of datesIn(reading)) {
+      if (span.separated && span.dates.length > 0 && !joinedLeft(text, span.start) && !joinedRight(text, span.end)) {
+        mark(span.start, span.end);
+      }
     }
   }
   for (const match of text.matchAll(CURRENCY_AMOUNT)) {
