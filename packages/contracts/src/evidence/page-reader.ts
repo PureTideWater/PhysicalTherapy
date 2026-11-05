@@ -451,8 +451,8 @@ function writeFrame(type: number, body: string): Promise<void> {
 
 /**
  * The request from stdin: a 4-byte big-endian header length, the header, then exactly its byteLength bytes, copied as
- * they arrive into one buffer sized from the header (one copy of the document, as the thread's message made). A header
- * past READER_REQUEST_HEADER_MAX_BYTES, a header that does not parse, more bytes than declared or fewer exit 2.
+ * they arrive into one buffer sized from the header (one copy of the document, as the worker thread's message made). A
+ * header past READER_REQUEST_HEADER_MAX_BYTES, a header that does not parse, more bytes than declared or fewer exit 2.
  */
 function readRequest(): Promise<{ readonly header: ReaderRequestHeader; readonly bytes: Uint8Array }> {
   return new Promise((resolve) => {

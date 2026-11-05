@@ -175,7 +175,7 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
     const measured = JSON.parse(probe.stdout) as { parent: number; reader: number | null; read: boolean };
     expect(measured.read).toBe(true);
     expect(measured.parent).toBe(heapLimitWith(['--max-old-space-size=560']));
-    // Today's thread asks old 192 and young 32 (240 MiB); a process-wide flag overrides it (608 MiB measured). The
+    // The old worker thread asked old 192 and young 32 (240 MiB); a process-wide flag overrode it (608 MiB measured). The
     // reader's own process gets the same 240 MiB from its own flags, whatever its parent runs with.
     expect(measured.reader).toBe(heapLimitWith([`--max-old-space-size=${String(PAGE_READ_LIMITS.maxHeapMb)}`, '--max-semi-space-size=16']));
     expect(measured.reader).toBeLessThan((PAGE_READ_LIMITS.maxHeapMb + 64) * MIB);

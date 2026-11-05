@@ -11,9 +11,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 /**
  * The page reader's entry in the worker's image (docs/adr/0033): build.ts bundles it as dist/page-reader.js beside
  * dist/main.js, and the bundled pages.ts starts it from there, allowed to read that one file. The weekly real-size test
- * reads its SYNTHETIC PDF in the harness's own process, from the source tree (tools/release-capacity/scenario.ts), so it
- * never starts the image's reader: the last test here builds the bundle as build.ts does and reads SYNTHETIC documents
- * through the bundled reader, under the image's argv.
+ * reads its SYNTHETIC PDF through a reader the harness starts from the source tree (tools/release-capacity/scenario.ts),
+ * so it never starts the image's reader: the last test here builds the bundle as build.ts does and reads SYNTHETIC
+ * documents through the bundled reader, under the image's argv.
  */
 describe("the worker bundle's page reader", () => {
   it('is built from page-reader.ts as dist/page-reader.js beside dist/main.js', () => {

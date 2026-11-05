@@ -287,7 +287,10 @@ export interface ContractSetOptions {
   readonly manifest?: string;
   /** The directory the manifest's case paths are relative to (fixtures/synthetic by default). */
   readonly fixtures?: string;
-  /** How many documents are read at once, each in its own bounded reading thread. */
+  /**
+   * How many cases are read together; each document is read in a child process of its own, one at a time per process
+   * (MAX_READERS in @tp/contracts/pages), so the rest wait their turn.
+   */
   readonly concurrency?: number;
 }
 
