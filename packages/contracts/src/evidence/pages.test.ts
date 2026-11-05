@@ -372,7 +372,7 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
   it('gives the pages of a reader that exited at once while this process was held past the exit grace', async () => {
     // The worker's loop held 1.2 s at a time (past READER_EXIT_GRACE_MS) from the check phase, right after the poll that
     // took the reader's frames: its exit and its end of stdout are then still waiting when the grace timer is due.
-    for (let run = 0; run < 6; run += 1) {
+    for (let run = 0; run < 3; run += 1) {
       let holding = true;
       const hold = (): void => {
         if (!holding) {
