@@ -1,4 +1,4 @@
-COUNTER REQUEST: one test-matrix SEC row for "An untrusted document is read in its own process" (pages-child-process design section 5; placeholder SEC-<n>). No ADR number needed (ADR 0033 and 0071 amended).
+COUNTER ALLOCATED (orchestrator, 2026-11-05 02:09 UTC): test-matrix **SEC-24** for "An untrusted document is read in its own process" (SEC-20 to SEC-23 went to #113; the next free is SEC-25). Replace the placeholder SEC-<n> with SEC-24 in the fix round and register it in packages/synth with the test that asserts it. No ADR number needed (ADR 0033 and 0071 amended).
 
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDkvaQzK4YgTGnKWC3) holds this item from 2026-11-04 23:59 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
 
