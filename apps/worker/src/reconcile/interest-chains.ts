@@ -106,7 +106,7 @@ export interface InterestReading {
   readonly attribution: InterestAttribution;
   /** Each PLB L6's draws, by PLB L6, in attributeInterest's order. */
   readonly draws: ReadonlyMap<string, readonly InterestDraw[]>;
-  /** The chain (root) of every claim read: those of the remittances holding a PLB L6, those the references reach, and those interest matches name. */
+  /** The chain (root) of every claim read: those of the remittances holding a PLB L6, those the references reach, and those claim and interest matches name. */
   readonly chainOf: ReadonlyMap<string, string>;
 }
 
@@ -114,8 +114,8 @@ const CLAIM_COLUMNS = 'c.id, c.remittance_id, coalesce(c.interest_cents, 0)::tex
 
 /**
  * interestAttribution's statement: $1 the practice, $2 the moment's remittances (S), $3 those holding a PLB L6, $4 the
- * reference candidates' hashes. Every claim of $3, every claim of S a hash reaches and every claim an interest match
- * names, each with its root walked within S.
+ * reference candidates' hashes. Every claim of $3, every claim of S a hash reaches and every claim a claim or interest
+ * match names, each with its root walked within S.
  */
 export const ATTRIBUTION_CLAIMS = `WITH RECURSIVE wanted AS (
        SELECT ${CLAIM_COLUMNS} FROM claim c JOIN remittance r ON r.id = c.remittance_id
@@ -126,7 +126,7 @@ export const ATTRIBUTION_CLAIMS = `WITH RECURSIVE wanted AS (
        UNION
        SELECT ${CLAIM_COLUMNS} FROM claim c JOIN remittance r ON r.id = c.remittance_id
         WHERE c.practice_id = $1 AND c.remittance_id = ANY ($2::uuid[])
-          AND c.id IN (SELECT m.claim_id FROM ledger_match m WHERE m.practice_id = $1 AND m.kind = 'interest' AND m.claim_id IS NOT NULL)), ${WALK_BACK}
+          AND c.id IN (SELECT m.claim_id FROM ledger_match m WHERE m.practice_id = $1 AND m.kind IN ('claim', 'interest') AND m.claim_id IS NOT NULL)), ${WALK_BACK}
      SELECT w.id, w.remittance_id, w.interest_cents, w.hash, w.payer_id, roots.root FROM wanted w JOIN roots ON roots.start = w.id ORDER BY w.remittance_id, w.id`;
 
 interface ClaimRow {
@@ -142,9 +142,11 @@ interface ClaimRow {
  * Whom each PLB L6 of the moment is for (D2 to D4, D17), in one statement after statement 1: every claim of each
  * remittance in S holding a PLB L6, the claims of S whose control number a PLB L6's reference candidates hash to
  * (@tp/ledger referenceCandidates; the whole reference first, then its identifiers), and the claims the practice's
- * interest matches name, each with its chain root walked within S. A reference names a chain only when the claims of
- * the PLB L6's own payer it reaches are of exactly one chain. It takes statement 1's result as its argument, so a test
- * can hand it an earlier moment.
+ * claim and interest matches name, each with its chain root walked within S. A reference names a chain only when the
+ * claims of the PLB L6's own payer it reaches are of exactly one chain; the PLB L6 is then for every claim of that chain
+ * read, so a draw for it reaches the lines matched to any of them (D5), whichever claim of the chain the reference
+ * carries: a reference to the original, whose control number its reversal carries too, reaches the lines its correction
+ * is matched to. It takes statement 1's result as its argument, so a test can hand it an earlier moment.
  */
 export async function interestAttribution(scope: Scope, cipher: PracticeCipher, practiceId: string, moment: AdjustmentMoment): Promise<InterestReading> {
   const l6s = moment.adjustments.filter((row) => row.category === 'interest');
@@ -179,7 +181,7 @@ export async function interestAttribution(scope: Scope, cipher: PracticeCipher, 
       position: row.position,
       cashCents: negateCents(parseCents(row.amount_cents)),
       namedChain,
-      namedClaimIds: namedChain === null ? [] : [...new Set(reached.map((claim) => claim.id))],
+      namedClaimIds: namedChain === null ? [] : [...new Set(rows.filter((claim) => claim.root === namedChain).map((claim) => claim.id))],
     };
   });
   const attribution = attributeInterest({ remittances, adjustments });

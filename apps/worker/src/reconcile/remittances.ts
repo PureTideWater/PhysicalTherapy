@@ -955,9 +955,10 @@ async function interestState(scope: Scope, practiceId: string, matches: readonly
  * already (in earlier reconciles and earlier in this pass, reversed matches included) and, per chain, the lines its draws
  * may reach, handed to @tp/ledger interestWrites, which decides every amount; then each part it returns written as an
  * interest match carrying the PLB L6 and the claim, and its entry. The paid lines are those with a standing claim match
- * to a claim the draw is for (the latest such match, an approving one first), weighted by approvals remaining; the lines
- * a take-back may reach are those holding the chain's interest (@tp/ledger interestHeld), each through its latest
- * standing interest match of the chain, holding no more than the line's interest as a whole.
+ * to a claim the draw is for (for the chain a PLB L6 names, any claim of it; the latest such match, an approving one
+ * first), weighted by approvals remaining; the lines a take-back may reach are those holding the chain's interest
+ * (@tp/ledger interestHeld), each through its latest standing interest match of the chain, holding no more than the
+ * line's interest as a whole.
  */
 async function recordInterest(
   scope: Scope,
