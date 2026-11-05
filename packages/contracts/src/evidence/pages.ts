@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads';
 
-import type { DocumentFormat, ThreadReply, ThreadRequest } from './page-thread';
+import type { DocumentFormat, ThreadReply, ThreadRequest } from './page-reader';
 import type { DocumentSource, PageSource, Pages } from './resolve';
 import type { ScannedPageReader } from './scan';
 import { normalizePageText } from './page-text';
@@ -13,7 +13,7 @@ import { normalizePageText } from './page-text';
  *
  * - the format comes from the bytes (a PDF's header, a zip's signature for a workbook) and, for a
  *   CSV, the declared type; anything else, an .xls workbook among them, is unsupported_document;
- * - a PDF, a workbook or a CSV is read in its own worker thread (page-thread.ts) under a heap limit,
+ * - a PDF, a workbook or a CSV is read in its own worker thread (page-reader.ts) under a heap limit,
  *   a cap on the thread's heap and buffers together (polled from this thread, which stays free), a
  *   deadline, and caps on the pages, the page text and a workbook's inflated parts. A document past
  *   any of them is unsupported_document, never read in part; one the reader cannot parse is
@@ -96,7 +96,7 @@ export function documentFormat(bytes: Uint8Array, contentType: string): Document
 }
 
 /** The thread's module beside this one: TypeScript in the source tree, the bundle's own file in the worker image. */
-const THREAD = new URL(import.meta.url.endsWith('.ts') ? './page-thread.ts' : './page-thread.js', import.meta.url);
+const THREAD = new URL(import.meta.url.endsWith('.ts') ? './page-reader.ts' : './page-reader.js', import.meta.url);
 
 const REFUSED: ThreadReply = { kind: 'refused', problem: 'unsupported_document' };
 

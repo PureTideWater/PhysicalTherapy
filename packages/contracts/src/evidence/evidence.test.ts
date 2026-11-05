@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
 import { syntheticXlsx, zipParts } from '../testing/synthetic-xlsx';
-import { CSV_ROWS_PER_PAGE, csvRows, csvText, decodeXml, readPagesHere, sharedStrings, sheetText, workbookSheets } from './page-thread';
+import { CSV_ROWS_PER_PAGE, csvRows, csvText, decodeXml, readPagesHere, sharedStrings, sheetText, workbookSheets } from './page-reader';
 import { normalizePageText, pageTextHash, quoteOnPage } from './page-text';
 import { PAGE_READ_LIMITS, documentFormat, documentPages, looksLikePdf, readDocumentPages } from './pages';
 import { type DocumentSource, EvidenceResolver, type PageSource } from './resolve';

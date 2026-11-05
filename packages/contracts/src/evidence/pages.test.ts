@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
-import type { ThreadReply, ThreadRequest } from './page-thread';
+import type { ThreadReply, ThreadRequest } from './page-reader';
 import * as pages from './pages';
 import { PAGE_READ_LIMITS, type PageReadLimits, readDocumentPages } from './pages';
 import { deflateBombPdf, syntheticLine } from './test-support/documents';
