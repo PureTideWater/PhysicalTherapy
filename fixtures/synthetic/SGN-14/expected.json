@@ -1,0 +1,22 @@
+{
+  "case": "SGN-14",
+  "module": "SGN",
+  "title": "The message trigger is small and contained",
+  "assertion": "The trigger is an inline Node 22 function with no dependency, network or VPC, 128 MB and a 3-second timeout, one environment variable, a role with only its own log group’s two write actions and no managed policy, invoked only by Cognito for this pool and account; an unknown source, a missing parameter or a thrown error returns the event unchanged (Cognito sends the fallback template) and logs one line of codes with no address; the function’s errors, throttles and fallbacks alarm the operator; a reset request whose code Cognito could not send for the trigger answers alike at its floor, and an invitation it could not send fails visibly",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/auth-mail/src/lambda.test.ts",
+    "infra/test/cognito-messages.test.ts",
+    "apps/web/src/lib/auth/cognito-provider.test.ts",
+    "apps/web/src/lib/auth/sign-in.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The handler runs in a fresh vm context on synthetic Cognito events, and the function is read from the synthesized template; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

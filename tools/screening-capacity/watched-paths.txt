@@ -113,6 +113,7 @@ apps/web/src/lib/screening/tlds.ts
 apps/web/src/lib/screening/validation-credentials.ts
 apps/web/src/lib/screening/validation.ts
 apps/web/src/lib/server/config.ts
+apps/web/src/lib/server/pools.ts
 apps/web/src/lib/server/services.ts
 apps/web/src/lib/uploads/limits.ts
 apps/web/src/lib/uploads/queue.ts
@@ -134,6 +135,7 @@ apps/worker/src/deploy/logins.ts
 apps/worker/src/digest/figures.ts
 apps/worker/src/digest/job.ts
 apps/worker/src/digest/view.ts
+apps/worker/src/heap.ts
 apps/worker/src/heartbeat.ts
 apps/worker/src/intake/classify.ts
 apps/worker/src/intake/intake.ts
@@ -192,6 +194,7 @@ apps/worker/src/platform/rds-restorer.ts
 apps/worker/src/platform/restore-drill.ts
 apps/worker/src/platform/support-notices.ts
 apps/worker/src/platform/wiring.ts
+apps/worker/src/pools.ts
 apps/worker/src/price/causes.ts
 apps/worker/src/price/coverage.ts
 apps/worker/src/price/create.ts
@@ -262,6 +265,10 @@ apps/worker/src/triage/deadline.ts
 apps/worker/src/triage/execute.ts
 apps/worker/src/triage/job.ts
 apps/worker/src/worker.ts
+packages/auth-mail/src/index.ts
+packages/auth-mail/src/lambda.ts
+packages/auth-mail/src/render.ts
+packages/auth-mail/src/words.ts
 packages/billing/config/plans.json
 packages/billing/src/catalog.ts
 packages/billing/src/dunning.ts

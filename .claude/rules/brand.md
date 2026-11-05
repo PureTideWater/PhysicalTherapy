@@ -5,6 +5,7 @@ paths:
   - "packages/ui/**"
   - "apps/worker/src/report/**"
   - "apps/worker/src/mail/**"
+  - "packages/auth-mail/**"
   - "apps/worker/src/reconcile/statement-html.ts"
   - "apps/worker/src/packets/html.ts"
 ---
@@ -13,7 +14,8 @@ paths:
 - Colors come from tokens: CSS variables in packages/brand/src/tokens.css or the Tailwind preset
   (bg-ink, text-fg-muted, text-status-short ...). No hex values in components; tokens.css is the
   only file that holds brand hex. Email templates are the one exception and take their hex from
-  packages/brand/src/tokens.ts (apps/worker/src/mail/template.ts).
+  packages/brand/src/tokens.ts (apps/worker/src/mail/template.ts, packages/auth-mail/src/render.ts).
+  The user pool's mail (packages/auth-mail) has no header and no remote asset (BRAND.md 7).
 - The mark is <PaidWholeMark/> (apps/web/src/components/brand) or markSvg() from @paidwhole/brand.
   Never redraw it, copy its paths, or place a PNG of it in the app. The small cut switches on
   automatically at 32 px and below; minimum 16 px.

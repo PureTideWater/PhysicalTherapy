@@ -1,17 +1,27 @@
 # 0083. Read a month's triage and audit report in batches, look each line up through an index, and hold only a small, measured share of heap per line
 
-- **Status:** accepted for SUITE-CAP-1a (`co-001/suite-cap-1-bounded-reads`, bounded reads, no migration). This ADR is
-  shared with SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`, the stage lock), which completes this status line and
-  adds the lock's section as built ("The split", below). Only SUITE-CAP-1a's part is written here; the decisions it
-  reserves for SUITE-CAP-1b are listed by number and are not yet decided as built.
+- **Status:** accepted for SUITE-CAP-1a (`co-001/suite-cap-1-bounded-reads`, bounded reads, no migration), merged as
+  #81. SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`, the stage lock, built on SS-01 and #81's merge) is built and
+  recorded below ("SUITE-CAP-1b, as built"); its migration `20261109090000_line_status_heads.sql` takes effect only
+  with the founder's approval of the regenerated domain model (CO-02), which its pull request asks for. SUITE-CAP-1a's
+  part is kept as it merged; the decisions it reserved for SUITE-CAP-1b are now recorded as built.
 - **Date:** 2026-10-28
 - **Deciders:** the co-founder, under the founder's delegation of 2026-10-25 (LANES.md, claim row 188), whose ruling of
   2026-10-26 (about 00:20 UTC, "Don't ask for approvals anymore just build and optimize") has the build take each
   recommended option without asking; the build (Lane B), for the design's choices and its review's findings, each
   reversible. Every option is judged under the founder's standing rule of 2026-10-18. SUITE-CAP-1a needs no founder
   action: it has no migration, no domain-model change and no freeze item.
+- **SUITE-CAP-1b's ledger freeze exception (D8):** granted by the founder, Tyler Williams, relayed by the co-founder,
+  on 2026-10-27 at 20:49 UTC (`approval-summaries/founder-asks-2026-10-27.md`, line 3), word for word: "Granted: the
+  ledger freeze exceptions in designs/ledger-interest-once.md section 10.1 and designs/suite-cap-1-triage-locks.md
+  section 4.5, as written." Recorded also in reconciliation-001, "Ledger semantics". SUITE-CAP-1b stays inside that
+  text: section 4.5 changes the lock line of the two `ledger_entry` triggers and nothing else.
+- **SUITE-CAP-1b's content-pipeline freeze exception (the release loader's freeze):** granted by the founder, Tyler
+  Williams, relayed by Lane A's orchestrator, on 2026-11-04 at about 09:55 UTC, and amended by him on 2026-11-04 at about
+  13:15 UTC (each retry pass cleans the indexes; the warning names the cause it can see); both quoted below ("The release
+  loader's freeze, 2026-11-04") and recorded also in reconciliation-001, "Content pipeline".
 - **PRD sections:** 6 (Reports and exports), 8 (`line_status` and the status machine), 12 (triage and cases), 15 (the
-  worker), 18 (testing and release); test matrix CAS-41; ADRs
+  worker), 18 (testing and release); test matrix CAS-40, CAS-41 and CAS-42; ADRs
   [0038](0038-triage-runs-into-anomalies-and-cases-keep-five-stages-and-release-an-audit-report-only-once-a-reviewer-signs.md)
   (one transaction per triage and per report, unchanged),
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -268,6 +278,525 @@ previous image runs the whole reads on a trigger that no longer stops them. A ro
 supported step on SUITE-CAP-1b's schema: on a large month the whole reads take the worker, and every practice's
 in-flight job, down. SUITE-CAP-1b's runbook note for its release says so.
 
+### SUITE-CAP-1b, as built
+
+SUITE-CAP-1b moves a line's stage lock out of the cluster's shared lock table and measures the worker's heap per job.
+It changes no writer's code and no sentence a person reads.
+
+#### The decisions it reserved, as built
+
+| # | Decision, as built | Why |
+| --- | --- | --- |
+| D1, D5, D6 | `line_status_head`: one row per service line with any stage event, holding its current stage and the `seq` of its latest event. Its key is an `id` (every registered table's key is one column, which the cross-tenant tests address rows by); the unique index `line_status_head_once (practice_id, service_line_id)` is the upsert's arbiter and keeps `practice_id` leading. No foreign keys. Forced row-level security with the tenant policy `line_status_head_tenant`, a registry row, and `line_status`'s guards (`triage_never_deleted()`, `triage_no_truncate()`). | The design's option H. The stage event the trigger checks carries the same references in the same statement; CAS-40.5's property and CAS-40.7's backfill hold the head row equal to the line's latest event, which a foreign key cannot say. |
+| D2, D3 | `line_status_rules()` takes the line's lock by writing its head row first: `INSERT … ON CONFLICT (practice_id, service_line_id) DO UPDATE … RETURNING WITH (OLD AS prior, NEW AS next) prior.stage, next.seq`. `prior.stage` is the stage the event follows (null for a line's first) and the checks run against it, with today's messages; `NEW.seq` is the identity value a first event drew, or a `nextval` drawn under the lock. The `pg_advisory_xact_lock` per line is gone. | A writer of the same line waits on the row until the other commits, so a line's events sort in commit order (CAS-40.2) and the lock lives in the row, not in the shared lock table (CAS-40.9, 30,000 events in one transaction with no advisory lock). |
+| D4 | `line_status_rules()` is `SECURITY DEFINER`, owned by `tp_owner`, `SET search_path = pg_catalog, public, pg_temp`, `REVOKE ALL … FROM PUBLIC`. No role may insert, update or delete `line_status_head`; the trigger is its only writer. **`tp_app` holds `SELECT` on it,** within its practices by the tenant policy, as it reads `line_status`. | The design said no grant at all. Every tenant table is read as `tp_app` by the generated access and cross-tenant tests (`access.db.test.ts`, 6 tests; `cross-tenant.db.test.ts`, 8 tests), which fail with "permission denied" without it, and those tests are never loosened (CLAUDE.md rule 4). A read grant shows a person nothing new: the head row is the latest event of `line_status`, which `tp_app` already reads in the same practices. CAS-40.8 asserts the exact ACL. The founder's approval of the domain model covers it. |
+| D7 | No writer's code changes for locking: triage, the report, opening a case, reconcile, manual ledger work and the reopen keep their transactions, their outer locks (`triage:`, `ledger:`) and their statements. | ADR 0038's "an advisory lock per practice" stays true (its dated note of 2026-10-28). |
+| D8 | Under the founder's grant (Deciders, above): `ledger_entry_within_evidence()` and `ledger_entry_within_line()` take `pg_advisory_xact_lock(hashtextextended('ledger:' \|\| NEW.practice_id::text, 0))`, the key `lockLedger` already holds, instead of one key per posting or EFT row and one per line. Nothing else in either body changes; CAS-40.8 diffs each body against `20261027090000`'s. | Every `ledger_entry` writer runs after `lockLedger`, so the triggers re-take a lock the transaction holds: no new lock-table entry and no deadlock. |
+| D9 | `max_locks_per_transaction` stays 64 everywhere. | The tests prove a bound that does not depend on it. |
+| D10, D20 | The weekly run reads the new checks (first attempt; at most `TRACE_LOCK_BUCKETS` = 64 advisory locks per backend; the live heap at most `HEAP_LIVE_PERCENT` = 75% of its `job heap` line's limit; memory per phase, the working set since 2026-11-04) and runs the phases "reconcile" (step 7b, on F since 2026-11-04) and "the large jobs together" (step 7c). | The review's F1 and F2; "The weekly run's memory line and step 7b, 2026-11-04", below. |
+| D11 | The stored per-content windows stay with #8. | Unchanged. |
+| D15 | `claim_by_superseded ON claim (superseded_by_claim_id) WHERE superseded_by_claim_id IS NOT NULL`, built under the lock loop's `SHARE` lock. | The report's patient balance and `claimLines` look claims up by the claim they supersede (Context, defect 4). |
+| D19 | The heap line: `apps/worker/src/heap.ts` keeps one process-wide `PerformanceObserver` on major collections and the heap in use just after the latest one. `attempt()` in `apps/worker/src/worker.ts` opens a handle before every attempt of every job kind the worker runs (the practice jobs, the platform jobs and the screening jobs) and logs, in a `finally`, whether the attempt completed, failed or was refused, `job heap` with `job_id`, `job_type`, `heap_live_peak_mib` and `heap_limit_mib`. The peak is the largest live heap seen while the attempt ran (a job with no major collection reports the latest value from before it began), rounded **up** to a whole MiB, so a peak just over a line never reads under it; the limit is V8's `heap_size_limit`, rounded **down**. IDs and numbers only. | The quantity that crashes the worker is the live heap, not a sampled `heapUsed`. |
+| D22 | The migration takes `claim`'s `SHARE` lock and `line_status`'s `SHARE ROW EXCLUSIVE` lock together with `NOWAIT`, once a second, up to 300 tries, in a subtransaction each; after that it fails with "line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)" (55P03). | A refused try queues nobody, so no reopen or 835 load waits behind the migration. |
+| D23 | An alarm on the metric `JobHeapLivePeak` (`TherapyPlatform/Worker`, from a filter on `job heap`): the maximum of `heap_live_peak_mib` over 300 s above `HEAP_MIB.worker` × 75% (420 MiB), missing data not breaching, routed as the worker's other alarms. | The weekly run's line, read in production. |
+
+#### CAS-42.3 at 2,000 lines
+
+The reconcile at size (`apps/worker/src/reconcile/reconcile.large.db.test.ts`) runs 2,000 case lines by default, not the
+design's 20,000; `TP_LARGE_RECONCILE_LINES` sets any size. The pass grows faster than its lines whatever its locks:
+`candidatesFor` runs two queries per open case line per pass (the by-patient one decrypting every claim of the same code
+and date), `claimLines` reads each line's correction chain on its own, and `syncLineStages` writes each stage as a
+statement of its own that refreshes the line's whole case. 2,000 lines took 57.7 s and 6,000 took 341.8 s on 4 CPUs
+with the lock fixed, so 20,000 would take hours, past a CI shard. The lock bound it proves (at most the practice's one
+`ledger:` lock) is the same at every size: on SUITE-CAP-1a's merge the sampled peak was 6,001 locks at 2,000 lines,
+about three per line. The pass's own time at size is handed on (Revisit when). Its 835s are LED-06's SYNTHETIC segments
+repeated under new numbers, since the worker does not depend on `@tp/synth`.
+
+#### The proof at real size (CAS-42.1 and CAS-42.2), measured
+
+`apps/worker/src/triage/triage.large.db.test.ts` (`TP_LARGE_TRIAGE_LINES`, 100,000 by default) builds the harness's
+shape: B's month (20,000 lines) priced, triaged and reported; A's and Y's months (100,000 lines each) priced. Each
+month is half Medicare Advantage non-contracted and half under a SYNTHETIC contract at 110% of Medicare with a cited and
+verified 365-day window, in claims of four lines with sealed SYNTHETIC claim numbers, priced by the price job. Each job
+runs through its own code (`executeTriage`, `generateAuditReport`) in a child process
+(`apps/worker/src/triage/test-support/large-jobs.ts`) on the worker's login, printing with Chromium, and the heap is
+D19's observer in that child. The advisory locks per backend are sampled every 25 ms.
+
+Measured on this container (4 CPUs, Node 24, PostgreSQL 18.4 with 64 locks per transaction and 100 connections),
+Chromium from `/opt/pw-browsers`, on 2026-11-01 and 2026-11-02 (two full runs of the file at `ce408d2f`; the times
+below are the second's, the first's within 5%):
+
+| Job | Heap flag | Time (budget) | Live heap peak (75% of the flag) | Advisory locks per backend | For the record: sampled `heapUsed`, resident |
+| --- | --- | --- | --- | --- | --- |
+| A's triage alone (CAS-42.1): 83,332 validated, 41,667 actionable in 1 case | 420 MiB | **60.1 s** (120 s); actionable write **6.6 s** (30 s) | **151 MiB** (315 MiB) | 1 | 231 MiB, 486 MiB |
+| A's report alone, right after A's triage (CAS-42.1) | 420 MiB | **460.2 s** (180 s): **fails the budget**, see below | **128 MiB** (315 MiB) | 1 | 212 MiB, 549 MiB |
+| A's second report and Y's triage together (CAS-42.2) | 560 MiB | report **87.2 s**, triage **70.0 s** (actionable 6.9 s) | **189 MiB** (420 MiB) | 1 | 307 MiB, 649 MiB |
+
+The first run gave 61.5 s (actionable 6.7 s) and a live peak of 160 MiB for the triage, 481.3 s and 149 MiB for the
+report alone, and 89.4 s, 72.3 s and 220 MiB for the pair. The file took 838 and 939 s, of which the shared setup
+(B's month priced, triaged and reported; A's and Y's months priced) took 191 and 317 s.
+
+With the candidates' query fixed (below), the integration's full database suite on 2026-11-02 ran the file in its
+first shard (its shard took 722 s with every other file in it, against CI's 20-minute job): setup 358.3 s; A's triage
+alone 70.8 s (actionable write 6.9 s), live peak 163 MiB; A's report alone right after it **95.8 s** (180 s), its
+candidate read 10.8 s, live peak 117 MiB; A's second report and Y's triage together 111.8 s and 88.6 s (actionable
+8.5 s), live peak 219 MiB (420 MiB); at most 1 advisory lock per backend throughout. Both tests pass.
+
+On SUITE-CAP-1a's merge (`efb20704`, without SUITE-CAP-1b's migration; the test, its child and `heap.ts` copied in as a
+scratch measurement): B's 20,000-line triage, in the shared setup, failed with 53200
+("out of shared memory") at its validated write after 30 s, so neither test ran. At 20,000 lines
+(`TP_LARGE_TRIAGE_LINES=20000`, B at 4,000), the setup completed in 44.7 s and both tests failed with 53200: A's
+triage alone (CAS-42.1), and A's report beside Y's triage (CAS-42.2). The heap never came into it: the shared lock
+table runs out first, as probe B found. So CAS-42.1 and CAS-42.2 fail on the base and, but for the report's time, pass
+on the head.
+
+Every live peak is far below 75% of the flag in force, so the gate of section 8.2 (the heap) holds and SUITE-CAP-1b
+went on. Four readings of the numbers:
+- **A report right after its own practice's triage took the wrong plan (fixed here).** 391.8 s of the 460.2 s is
+  `FETCH 2000 FROM triage_candidates` (21 fetches): the report's own read of the candidates, `candidateRows`' query. The
+  same practice's next report (CAS-42.2, minutes later) took 87.2 s, its candidate read 10.3 s. With autovacuum off on `line_status`, `case_line`
+  and `line_status_head` the cursor took 421.7 s, and its plan (`auto_explain`) shows why: the statistics still hold
+  `case_line` and `line_status` as they were before the triage added 41,667 case lines and 124,999 stage events, so the
+  planner expects one candidate and answers `NOT EXISTS (… case_line …)` with a nested loop over every case line of the
+  practice through `case_line_by_case (practice_id, case_id)`, 83,332 loops of 31,250 rows (2.6 billion rows filtered),
+  instead of the unique `case_line_once (service_line_id)`. With autovacuum on, whether the report wins the race with
+  its `ANALYZE` decides between about 80 s and about 460 s (two runs of 460 and 481 s, one of 80 s). It was a plan
+  that depended on statistics, as D12's was. The integration fixed it: the query asks whether a line is in a case
+  through a correlated subquery, `NOT coalesce((SELECT true FROM case_line cl WHERE cl.service_line_id = …), false)`,
+  which the planner keeps per row and answers through `case_line_once`, so no anti-join plan is left to choose. Its
+  rows and their order are unchanged (one case line per line, `case_line_once`). On the same database and statistics
+  (100,000 lines, A's and Y's months priced, autovacuum off on the three tables, the cursor read as the worker's login),
+  the old form had read 16,000 of 41,665 candidates when it was stopped at 120 s; the new one read all of them in 4.4 s
+  (3.9 s for the old form once analysed). CAS-42.1 holds the report to its 180 s budget.
+- **The report's own lines' query had the same dependence (fixed here).** At `048bc843`, the interest integration ran
+  CAS-42.1 twice on fresh databases and A's report took 748.4 and 730.4 s, 688.1 and 672.7 s of it in
+  `FETCH 2000 FROM report_lines` (51 fetches), while the pair's report (CAS-42.2) took 92 to 95 s; 1b's own run had
+  95.8 s. `runLines`' query joined each priced line to a `DISTINCT ON` of the practice's every stage event and to every
+  case line. With autovacuum off on `line_status`, `case_line` and `line_status_head` after the setup's `ANALYZE`
+  (statistics as they were before A's triage: `case_line` 8,334 tuples against 50,001 live, `line_status` 25,000
+  against 149,999), the cursor read as the worker's login, `auto_explain` with `log_analyze`: the old form's plan is a
+  nested loop that rescans a materialized copy of every current stage (83,332 rows) and every case line (41,667) for
+  each line, and its first `FETCH 2000` took 27.4 s with 111,057,071 and 83,334,000 rows removed by the join filters
+  (about 23 minutes for the 100,000 lines at that rate). The query now reads a line's stage from its head row through
+  `line_status_head_once (practice_id, service_line_id)` (a scalar subquery; the head row holds the stage of the line's
+  latest event, written by `line_status_rules()` in the event's own statement) and its case line through a `LATERAL`
+  with `LIMIT 1` through `case_line_once (service_line_id)`, so the planner keeps both per row and has no join to
+  choose: on the same database and statistics it read all 100,000 lines in 16.6 s (100,000 index lookups each). Its
+  rows are unchanged (one head row and at most one case line per line); the report's streamed-equals-whole test
+  (`streamed.db.test.ts`) still compares it with the whole read's old form. No `ANALYZE` at the end of triage instead:
+  the application role owns no table and may not analyze one, and a `SECURITY DEFINER` helper would add a migration
+  for what the query's shape settles. Measured with the fix (2026-11-02, this container): CAS-42.1 three times in a
+  row with autovacuum on, A's report right after A's triage **83.2, 81.3 and 80.8 s** (180 s; `report_lines` 22.6,
+  21.6 and 22.2 s), A's triage 65.9, 66.0 and 61.8 s, and 85.9 s a fourth time in the database run of the report's and
+  triage's directories; once with autovacuum off on the three tables (a scratch setting in an untracked copy of the
+  file, never committed), A's triage 63.2 s and A's report **79.5 s** (`report_lines` 21.7 s); CAS-42.2's report
+  91.5, 90.1, 86.7, 110.6 and 86.3 s and Y's triage 74.3, 74.1, 70.2, 88.0 and 70.9 s; at most 1 advisory lock per
+  backend throughout; both tests passed in all five runs.
+- **The limit V8 reports is not the flag.** `heap_size_limit` is the old generation's limit plus the young
+  generation's: 612 MiB under `--max-old-space-size=420` and 752 MiB under 560, measured on Node 24.22. CAS-42 holds
+  each peak to 75% of the flag itself. The weekly run's check took 75% of the `job heap` line's `heap_limit_mib`, which
+  allowed 564 MiB under the worker's 560 MiB flag where the design meant 420 MiB. It now holds each peak to 75% of the
+  worker command's `--max-old-space-size` flag (or of the logged limit, when that is lower or the command has none:
+  `heapLimitMib` in `tools/release-capacity/checks.ts`), the line the production alarm reads (420 MiB). The line still
+  logs V8's limit, as D19 says.
+- **The sampled `heapUsed` and the resident memory are printed for the record only.** They count garbage V8 has yet to
+  collect, and resident memory leaves out the Chromium processes.
+- **The weekly run's A had no actionable line, so its reconcile (step 7b) posted 0 of 0 and passed.** A's contract was
+  silent on its dispute window, release 900110 carries no `commercial_default`, so its lines had no window
+  (`NO_WINDOW`), and the Medicare Advantage lines' deadlines stay unverified (the release's Medicare record is L1, and no
+  route is confirmed until golden QUESTIONS Q34). The seed now drafts the contract with a ten-year window on page 1,
+  cited and verified by the specialist as the large triage test's contract is (CAS-42.1), so A's material contract
+  lines are actionable, and D's triage in the large jobs together writes its actionable lines too. The check now fails
+  a reconcile with no actionable line to post, and counts A's lines posted, and posted in full, not entries: a claim's
+  twin lines (one code, date and amount) cannot be told apart by a line-level posting row, so one of them may be
+  posted from two rows. The monitoring chain each reprocessing parse queues is cancelled before it starts, so step 7b
+  and the large jobs together run only their own jobs. Small runs: 607 actionable lines posted in full, A's reconcile
+  on attempt 1 in 37.6 to 66.1 s; 6,600 lines: 2,084 posted, 333.2 s. Since 2026-11-04 step 7b reconciles F, a
+  practice of its own, and the checks count F's lines ("The weekly run's memory line and step 7b", below).
+
+#### The weekly run's memory line and step 7b, 2026-11-04
+
+*Added 2026-11-04.* Two decisions of Lane A's orchestrator change how the weekly run (CAS-42.5,
+`tools/release-capacity`) measures; neither is a founder ruling, and neither moves a line: the 90% line, the 64 locks,
+the 75% heap and section 8.4's budgets stay as they were.
+
+**The 90% line judges the worker's working set.** Decided, word for word: "Lane A's orchestrator, 2026-11-04 (~18:10
+UTC), on the co-founder's standing direction: CAS-42.5's 90% memory line (921.6 of 1,024 MiB) applies to the worker
+container's working set, memory.current minus inactive_file, sampled as now (the measure the kubelet and cAdvisor use
+for eviction, and the one that predicts an OOM kill, because the kernel reclaims inactive page cache first).
+memory.peak and the memory-by-kind table (anon, file, shmem, kernel) stay in the summary beside the working set. The run
+also fails on any OOM kill or any memory.events oom or oom_kill increment. Not a founder ruling: no founder ruling chose
+memory.peak (the line comes from the design and ADR 0062, whose own screening check already judges anonymous memory);
+it corrects how the line is measured and neither reverses a ruling nor loosens the line."
+
+The evidence. CAS-42.5's run 41810890284 (on `ab8c9c27`) failed on memory alone: `memory.peak` 980.4 MiB over the run
+and 936.6 MiB over the large jobs together, against the line's 921.6. Two instrumented runs on one tree (`d219e97d` and
+a probe, on `co-001/wip-sc1b-mem-1`) then split the container's memory by kind every 250 ms: run 41842486076 passed
+with `memory.peak` 842.9 MiB and run 41848025627 failed with 958.6 MiB, the same code. The page cache charged to the
+worker container was 238.2 and 335.0 MiB (node and its bundle about 65 MiB at the start, Chromium's headless shell
+130 to 225 MiB more at the first PDF print, the report files the harness's local store writes about 46 MiB), while
+anonymous, kernel and shared memory peaked at 595.8 and 622.8 MiB: the pass and the fail differ by page cache. At
+run 2's peak the working set was about 812 MiB; V8's live heap was at most 312 MiB; Chromium's process flags save at
+most 12 MiB. A local run on the process route sees almost none of that cache (the binaries are already resident,
+charged elsewhere), which is why it read 721.6 MiB where CI read 980.4.
+
+As built (`tools/release-capacity/checks.ts`, `run.ts`):
+- From the worker's start to the read-back a sampler reads, each second, `memory.current` and `memory.stat` together
+  (cgroup v2's `anon`, `file`, `inactive_file`, `shmem` and `kernel`; on a v1 host `memory.usage_in_bytes` and the
+  `total_rss`, `total_cache`, `total_inactive_file` and `total_shmem` lines, with no kernel figure); each sampled period
+  (the concurrent phase, A's triage, A's audit report, F's reconcile and the large jobs together) reads the same files
+  at its own ticks, which join the whole run's samples. A sample whose working set cannot be computed is not counted,
+  so the sample-count check (at least one each 2 seconds) shows the gap.
+- The check holds the working set, `memory.current` less `inactive_file` and its highest over the samples, to 90% of
+  the task over the whole run and in each period; its failing line reads "the worker’s working set (memory.current less
+  inactive_file, sampled each second) over <period> is …, above 90% of its 1024 MiB (921.6 MiB)", and a working set
+  that could not be read fails closed.
+- `memory.peak` is read at the end and at each period's end (the run so far, page cache included; the harness cannot
+  reset it) and reported, never judged; the highest `memory.current` of each period stays in `release-capacity.json`
+  (`peakBytes`) for comparison with earlier runs.
+- The run reads `memory.events` (v1: `memory.oom_control`) once the worker has started and at the end, and fails on any
+  increase of `oom` (the limit reached with an allocation about to fail) or `oom_kill`, beside the OOM-kill check it had;
+  either reading unread fails closed.
+- The summary (also printed to the job's log) states the line and what it judges, the working set over the whole run,
+  `memory.peak`, the `memory.events` increments, and a "Memory by kind" table: for the whole run and each period, the
+  working set, `memory.current`, anonymous memory, page cache, its inactive part, shared memory and kernel memory at the
+  sample the working set peaked at, `memory.peak` at its end and its sample count. Section 8's text (the design, on the
+  ops repository) still says `memory.peak`; this section records the measure as built.
+- Failing first: the new tests over synthetic samples (a working set over 921.6 MiB fails; run 41848025627's shape,
+  page cache carrying `memory.current` and `memory.peak` past the line with the working set at 812 MiB, passes; an
+  `oom` or `oom_kill` increase fails; an unread `memory.events` fails closed; the summary prints the working set and
+  memory by kind) fail on the old `checks.ts`, 20 of the file's 34 tests, and pass with the new.
+
+**Step 7b reconciles a practice of its own until SUITE-CAP-3.** Decided, word for word: "Lane A's orchestrator,
+2026-11-04 (~18:25 UTC), on the co-founder's standing direction (test scope, not a founder ruling): CAS-42.5's step 7b
+runs on a practice of its own at CAS-42.3's 2,000 lines; A keeps its full month for triage and reports. The capacity
+summary prints a fixed "Known gap" line on every run naming that full-size reconcile is SUITE-CAP-3's tracked item,
+its last measured figure (10,000 lines in 3,412 s) and the revisit condition. ADR 0083 records it as temporary until
+SUITE-CAP-3 lands, with the move back to A as SUITE-CAP-3's acceptance step."
+
+Why: once A's contract cited its window (above), about 31% of A's 100,000 lines are actionable, and the reconcile pass
+walks every open case line; SUITE-CAP-3's profile, with this pull request's migration, took 3,412.1 s for 10,000 lines,
+so A's month cannot reconcile in a 15-minute attempt and the run would fail on SUITE-CAP-3's item rather than measure
+this one's.
+
+As built (`tools/release-capacity/scenario.ts`, `run.ts`, `checks.ts`):
+- F, step 7b's practice (`RECONCILE_PRACTICE`), holds `reconcileLines` lines of A's shape under its own seed: 2,000 at
+  full size, CAS-42.3's default (`TP_LARGE_RECONCILE_LINES`, which a unit test reads so the two cannot drift), and 600
+  at the smoke size. Every claim is under a SYNTHETIC contract that pays a fixed $100.00 a unit (`FIXED_RATE`, a
+  `FIXED_SCHEDULE` record cited on the agreement's page 2), with the same cited and verified ten-year window as the
+  other practices'. Each line's original remittance allowed 50.00, so every line's shortfall is at least $50, far above
+  the $5 line materiality, whatever the release's values: F's triage makes each line actionable, in one case. A unit
+  test prices all 2,000 lines with the engine under F's own terms and judges the smallest shortfall actionable.
+- F's month is priced and triaged during setup (not measured). Step 7b then stages F's reprocessing 835s and posting
+  export, parses them and runs the reconcile job, measured as before: each job on its first attempt, its `job heap`
+  line under 420 MiB, the locks at most 64 at every sample, the phase's working set under the line, and each actionable
+  line posted in full. A new check fails a run in which F's triage made other than each of its lines actionable, so
+  step 7b always reconciles the size it was seeded at. The 30 s actionable write budget is CAS-42.1's, on A's triage of
+  its full month (`triage.large.db.test.ts`), unchanged; the weekly run's times stay advisory.
+- A keeps its full month: priced in the concurrent phase, triaged and reported in the chain, reported again in the
+  large jobs together. Its actionable lines are not reconciled until SUITE-CAP-3. Once its chain triage has run, the run
+  reads A's actionable lines (those in an open case) beside the lines the scenario makes actionable, read from the price
+  job's priced lines rather than from triage's own rows (`expectedActionableLines`: each of A's lines on the contract's
+  plan at least the line materiality short, none of its Medicare Advantage lines, whose deadlines stay unverified), and
+  fails unless they are the same lines, none of them included; the summary's Run line prints both. While step 7b ran on
+  A, its guard against a reconcile of nothing covered a triage of A that made no line actionable; this check keeps that
+  cover on A once step 7b moved to F, and also catches a triage that makes fewer, more or other lines actionable than
+  the month it was seeded with (the review of 2026-11-04).
+- Every summary, on a pass, a failure, a smoke run or a run that stopped early, prints the fixed line
+  (`KNOWN_GAP`; since the orchestrator's addition of 2026-11-04, ~22:27 UTC, with the run's F reconcile time against its
+  900 s attempt between its two sentences, `knownGap`: "The reconcile pass at step 7b's 2,000 lines", below), word for
+  word: "Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F,
+  a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage
+  and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s
+  15-minute attempt. Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step
+  (docs/adr/0083)."
+- **Temporary until SUITE-CAP-3 lands.** SUITE-CAP-3's acceptance step moves step 7b back to A's full month (F and its
+  fixed rate go, the `F’s reconcile` period becomes A's again, and the Known gap line is removed), and its pull request
+  passes the weekly run that way.
+- Failing first: the new scenario tests (F seeded at CAS-42.3's 2,000 lines, not A; each of F's lines priced and judged
+  actionable) fail on the old `scenario.ts`, 3 of the file's 22 tests; the new checks (F's posted lines, F's triage
+  making each line actionable, the Known gap line on a pass and on a failure) are among the 20 above.
+  A's check (none, fewer, more or other lines than the scenario's, or uncounted; and the Run line) fails on the
+  `checks.ts` before it, 2 of the file's 35 tests, and its scenario test (A's actionable lines matched against the
+  expected ones) on the `scenario.ts` before it.
+
+#### The release loader's freeze, 2026-11-04
+
+*Added 2026-11-04.* The database suite's first shard, run on the shared local cluster in SS-01's integration (on which
+SUITE-CAP-1b is built), failed once in `tools/release/load.db.test.ts`, "leaves the release analyzed and frozen once
+loaded", and passed on a re-run: `rule_record`'s `relallvisible` and `relallfrozen` were 0 of its 7 pages after the
+loader's one `VACUUM (FREEZE, ANALYZE) rule_record` ("expected +0 to be 7"). PostgreSQL freezes a record, and marks its
+page all-visible, only once the record's inserting transaction precedes its database's visibility horizon, which any
+snapshot of that database holds back. An autovacuum worker's `ANALYZE` of a catalog in the scratch database held one
+whose xmin had not passed the load's transaction, taken before the load committed or after it while an older transaction
+ran in another database of the cluster (a snapshot's xmin is the oldest transaction running anywhere), so the loader's
+one pass froze nothing and returned. A transaction in another database alone holds nothing back. Hint bits, prepared
+transactions and replication slots played no part (each ruled out on PostgreSQL 18.4's source and on the cluster). On a
+private cluster beside a held transaction in another database, the unchanged test failed once in 20 runs and the fixed
+one passed 20 of 20 (the investigation, on `22177731`, whose four files are this branch's).
+
+**The fix: the loader keeps its promise** (ADR 0062, "The release read": the first screenings after a load read a
+release analyzed and frozen). After the commit `loadRelease` (`analyzeAndFreeze` in `packages/rules/src/loader.ts`) runs
+`VACUUM (FREEZE, ANALYZE) rule_record` and reads `pg_class`, which the pass has just written from the visibility map;
+while `relallfrozen` is short of `relpages` it pauses (50 ms doubling to 2 s, and from the second pass at least four
+times the last pass's time) and runs `VACUUM (FREEZE) rule_record` again (`VACUUM (FREEZE, INDEX_CLEANUP ON)` since
+the amendment below), which skips the pages already frozen (the first pass's statistics already count every committed
+record), for up to `FREEZE_WAIT_MS`, 180 seconds (`LoadOptions.freezeWaitMs`). The 180 seconds bound when the last pass
+starts: no pass starts once they have run out, and a pass that has started runs to its end, so a load can return a
+pass's length after them. The result gains `frozen`, false only when the wait runs out; the release is published at
+its commit either way. Loading a release already loaded writes nothing and runs the same freeze, always by a VACUUM (a
+load stopped between its commit and its VACUUM leaves `pg_class` at the counts from before it). `pnpm release:load`
+warns on stderr when the release is not yet frozen; `pnpm release:rollback` loads the previous release with
+`freezeWaitMs: 0`, the one pass, so a withdrawal never waits behind an older transaction. With nothing holding the
+horizon back a load costs what it did, plus one read of `pg_class`; loading a release already loaded, which returned at
+once, now runs one `VACUUM (FREEZE, ANALYZE)` over pages already frozen. A test-side fix was not taken: a test that
+vacuums again itself asserts its own VACUUM, one that asserts only when nothing holds the horizon is loosened,
+autovacuum cannot be kept out of a database, turning it off on CI's Postgres changes every shard's environment and
+leaves the loader's promise broken in production, and `COPY FREEZE` would need rule-table DDL.
+
+The file's five new tests hold the horizon themselves, so each is deterministic: an older snapshot of the same database
+(the load waits, then freezes); a snapshot of the same database taken after the commit beside an older transaction in
+another database (the load waits for the snapshot, not for that transaction); the wait running out (`frozen: false`,
+published, and loading again finishes the freeze); a load stopped between its commit and its VACUUM (loading again
+analyzes and freezes); and a rollback beside an older transaction (the withdrawal does not wait). The two result checks
+expect `frozen: true`. On this branch, with the old `loader.ts` and `rollback.ts`, 7 of the file's 18 tests failed; with
+the new loader and the old rollback, the rollback's test timed out at 30 s; with the fix, all 18 passed in each of ten
+runs in a row alone on the shared local cluster (31 to 79 s a run) and in a run beside a transaction held open, with its
+ID, in another database of the cluster. The 108 database test files the change touches on this branch (the 90 that
+import the loader by Vitest's module graph, and the investigation's list of 72) passed together, 8,264 tests in 1,840 s,
+the large ones among them.
+
+The loader is part of the content pipeline, which reconciliation-001's checks freeze, so the change waited for the
+founder's ruling: **granted by the founder, Tyler Williams, on 2026-11-04 at about 09:55 UTC, relayed by Lane A's
+orchestrator, and recorded in `approval-summaries/founder-asks-2026-10-27.md` under "Granted 2026-11-04 (~09:55 UTC):
+the release loader's freeze"**, word for word: "Granted: an exception to reconciliation-001's content-pipeline check for
+the release loader's freeze, as written: after a load commits, loadRelease runs VACUUM (FREEZE, ANALYZE) rule_record
+and, while pg_class shows rule_record not all-frozen, pauses and runs VACUUM (FREEZE) rule_record again, for up to 180
+seconds; its result gains frozen, false only when the wait runs out; loading an already-loaded release writes nothing
+and runs the same freeze; release:load warns on stderr when not yet frozen; release:rollback does not wait. Everything
+else in the pipeline stays frozen. It also covers PR 6b-3's original VACUUM." Recorded also in reconciliation-001,
+"Content pipeline", with the four files it covers (`packages/rules/src/loader.ts`, `tools/release/index.ts`,
+`tools/release/rollback.ts` and `tools/release/load.db.test.ts`). No schema file, no `content/releases` file and no rule
+table's DDL changes, and the domain model is unchanged.
+
+**The amendment, 2026-11-04: each retry pass cleans the indexes, and the warning names what it can see.** The fix's
+checker reproduced a second way to wait out the 180 seconds, on PostgreSQL 18.4: a load that fails before its commit
+leaves its records dead, and when they lie on fewer than 2% of `rule_record`'s pages, a VACUUM left to choose
+(`INDEX_CLEANUP AUTO`, the default) skips index vacuuming. The dead records' line pointers then stay, their pages never
+turn all-visible, and every later load, with nothing older than it running, waited the whole 180 seconds, returned
+`frozen: false` and warned that an older transaction held the horizon back, a cause it had not seen. Each retry pass now
+runs `VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record`, which vacuums the indexes whatever the share, so the second pass
+frees those line pointers and freezes their pages; the first pass is unchanged. `pnpm release:load`'s warning now names
+what the loader saw, `pg_class`'s count of all-frozen pages when the wait ran out (`notFrozenWarning` and
+`ruleRecordFreezeCounts` in `loader.ts`), and only points to where the rest is found (`pg_stat_activity`'s
+`backend_xmin`, `pg_prepared_xacts` and `pg_replication_slots`), since what held the pages back ran outside the load.
+Two tests show it, each failing first: a 1,500-record release (more than 100 pages), a load of a second release whose
+`COMMIT` is lost, then that release loaded again: with the old loader it returned `frozen: false` after its 30-second
+wait, with nothing holding the horizon back; now the second pass, with `INDEX_CLEANUP ON`, freezes every page. And the
+wait-runs-out test checks the warning's words against the counts. With the old `loader.ts` both failed; with the fix the
+file's 19 tests pass. **Granted by the founder, Tyler Williams, on 2026-11-04 at about 13:15 UTC, relayed by Lane A's
+orchestrator, and recorded in `approval-summaries/founder-asks-2026-10-27.md` under "Granted 2026-11-04 (~13:15 UTC): an
+amendment to the release loader's freeze"**, word for word: "Granted: in the release loader's freeze, each retry pass
+runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen;
+the warning names the cause it can see." Recorded also in reconciliation-001, "Content pipeline". It changes the same
+files as the first grant, and no other.
+
+#### The practice pool, 2026-11-04
+
+*Added 2026-11-04.* **A defect older than SUITE-CAP-1b, fixed here.** The practice worker's pool of four connections
+(`main.ts`), its fifteen practice jobs at once and the ten-second connection timeout are all on the base:
+`git diff origin/claude/build-platform...3ac856d5 -- apps/worker packages/db/src/connect.ts` changes `heap.ts`, the job
+heap line and the triage and report query shapes, and no pool size, concurrency or timeout. It rides this pull request
+because it blocks SUITE-CAP-1b's acceptance run: CAS-42.5 needs every measured job on its first attempt, and the defect
+fails that whenever the runner is slow. Decided by Lane A's schema-chain session, 2026-11-04 (~22:30 UTC), and agreed
+by Lane A's orchestrator, who added the connection budget, the alarm and the Known gap margin below; neither is a founder
+ruling, and no line, budget or check moves.
+
+**Why A price and C parse 4 completed on attempt 2 (CAS-42.5 on 3ac856d5, run 41901463895).** The practice worker runs a
+job from each practice queue's loop and four parses at once (`workOptions`): fifteen jobs, each holding one of its
+login's connections at a time (the worker's own login, ADR 0061), for its `job_run` writes, its gate and each of its
+transactions in turn. `main.ts` opened that pool with four connections and the ten-second connection timeout
+(`CONNECTION_TIMEOUT_MS`, ADR 0055). A month's price job holds its one connection for its whole run, and an audit report
+for its triage, its reading and its print, so the concurrent phase's six jobs (A's price, B's report, C's four parses)
+left two of them waiting for a connection. That run's runner was slower across the board (its seed 62 s against 37 s on
+run 41848025627, its parses 13.1 s against 5.0 to 5.6 s), the connections stayed held past ten seconds, and the two
+waiting attempts failed; pg-boss ran them again 30 to 60 seconds later and both completed. An instrumented run of the
+same tree (run 41913629020, on `co-001/wip-sc1b-retry-1`, the harness alone changed) caught it directly. Its large jobs
+together failed A's second report and C's parses 7 and 8 on their first attempts, each with pg-pool's `timeout exceeded
+when trying to connect`, raised in the handler's transaction (`transaction` in `packages/db/src/authz/scope.ts`,
+awaiting `pool.connect()`) while E's price, D's triage and C's parses 5 and 6 held the four connections, the two parses
+for 11 seconds. In its concurrent phase the four parses held all four connections for 7 seconds, and A's price and B's
+report waited 7 seconds for theirs, inside the timeout. Every local run, and the faster runners, waited less than ten
+seconds, so no attempt failed. Production runs the same worker (`WORKER_JOBS=practice`, one task at half a vCPU) with
+the same pool: a job that needs a connection while four longer jobs hold theirs fails its attempt after ten seconds,
+and three such attempts fail the job (a parse marks its document failed; the job-failure alarm fires).
+
+**The fix: a connection for each job the worker runs at once, and a code for each failed attempt.** `practicePool`
+(`apps/worker/src/worker.ts`, opened by `main.ts` and by the end-to-end worker) holds `PRACTICE_JOB_SLOTS` connections,
+counted from the queues' local concurrency (`jobs/registry.ts`: fifteen), so no job waits for a connection another job
+holds. The ten-second timeout stays, for a database that cannot give a connection at all. Each failed attempt now logs
+`job attempt failed` with the job's ID and type and an `error_code` (`attemptErrorCode`: `DB_POOL_TIMEOUT`,
+`DB_CONNECT_TIMEOUT`, `DB_<SQLSTATE>`, a code the error carries, or its class), never the error's text; an attempt
+pg-boss failed while its handler still ran logs it too, once the handler returns (round-3 review, below). The weekly run
+prints those codes beside a job that completed on a later attempt, so the job log says why. The check itself is
+unchanged: a retry still fails the run. Rejected: capping the worker at four jobs at once, which would serialize the job
+types (a ten-minute reconcile or a two-minute price would hold up parses and the monitoring chain); and waiting for a
+connection with no timeout, which would park jobs behind minutes-long holders inside pg-boss's fifteen-minute expiry and
+hang them on a database that cannot answer, instead of failing them. Tests, each failing first: fifteen jobs at once,
+one from each queue and four parses, each holding its transaction past a shortened timeout on the pool `main.ts` opens
+(on four connections 11 of the 15 attempts failed; now all complete); the pool's size against the loops `startWorker`
+starts (4, now 15); each failed attempt's line and code; and the summary's codes beside a retried job.
+
+**The database's connection budget, checked at synthesis.** The fix lets a worker task hold eleven more connections, so
+each stack now checks, as it synthesizes, that every task its environment can run at once, each of its pools full,
+plus a reserve, stays under what its database gives the application logins (`infra/lib/connections.ts`, run by
+`PlatformStack`; a stack over budget does not synthesize, so no deploy can start one). As built:
+- Each service counts at the most tasks ECS runs at once: its desired count times its own deployment's
+  `maxHealthyPercent` (`environments.ts`, which `compute.ts` deploys it by): twice over where a deploy starts the new
+  tasks before it stops the old ones (`ROLLING_DEPLOYMENT`, every service but dev's worker), once where it stops them
+  first (`STOP_FIRST_DEPLOYMENT`, dev's worker; "The instance classes", below); and the migration task.
+- The pools are read from the apps where they are opened, never typed in infra: the web task's from
+  `apps/web/src/lib/server/pools.ts` (the application login's 10, billing's 4, the model gateway's 5, pg-boss's
+  producer's 2: 21; the e-signature pool's 2 count once a vendor is configured, `WEB_ESIGN_PROVIDER` is `none`), and
+  each worker task's from `apps/worker/src/pools.ts` (`workerTaskPools`): the practice jobs' 15 and pg-boss's 10, now
+  set explicitly at pg-boss's own default, 25 (14 before the fix); the platform jobs' operator 2 and pg-boss's 10, 12;
+  the screening consumer's sweep 2, three threads of 2, pg-boss's 10 and pg-boss's LISTEN/NOTIFY client, 19: with
+  `useListenNotify` on (`SCREENING_BOSS_OPTIONS`) pg-boss 12.38 opens a `pg.Client` of its own for LISTEN, outside its
+  pool, so the pool's `max` does not cap it (a pool of 10 under load held 11 backends; round-3 review WR-5 and INFRA-1:
+  18 before). The migration task holds one client at a time. The reserve is 10: the seven Secrets Manager rotation functions should they run at once, and three for a
+  person's session.
+- `max_connections` is the parameter group's where it sets one; it sets none, so RDS for PostgreSQL's documented
+  default holds, `LEAST({DBInstanceClassMemory/9531392}, 5000)`, less the 5 connections kept for superusers
+  (`superuser_reserved_connections` 3 and `rds.rds_superuser_reserved_connections` 2, both RDS's defaults). RDS
+  publishes the formula, not `DBInstanceClassMemory` for each class, so the budget takes the class's memory less the
+  larger of 512 MiB and an eighth of it: 56 connections on db.t4g.micro, 168 on db.t4g.small, 394 on db.t4g.medium,
+  788 on db.t4g.large. A published measurement on RDS for PostgreSQL 17 (Classmethod, 2026-10-14, on the t3 classes of
+  the same memory) read 191 at 2 GiB, 402 at 4 GiB and 841 at 8 GiB, where the whole memory would give 225, 450 and 901;
+  the budget stays below each, so it never counts on a connection the instance may not have.
+- The worst case is 207 connections in production (web 4 × 21, worker 2 × 25, platform 2 × 12, screening 2 × 19,
+  migration 1, reserve 10; 185 before the fix) and 165 in staging (one web task: 2 × 21; 143 before), against 389 on
+  db.t4g.medium; and 140 in dev, whose worker deploys stop-first (worker 1 × 25), against 163 on db.t4g.small.
+
+**The instance classes.** Round 3 found that dev and staging did not fit their classes: dev's db.t4g.micro gives the
+application logins 51 connections, under even one task of each service at rest (88), with or without the fix, and
+staging's db.t4g.small gives 163, under its worst case (165, the LISTEN client counted), which must stay under. Round 3
+moved both to db.t4g.medium; that is replaced by the decision, word for word:
+
+> Lane A's orchestrator, 2026-11-05 (~01:11 UTC), on the co-founder's standing direction: staging goes to db.t4g.medium,
+> the same class as production (staging is where releases and capacity are proved, so it must match production; about
+> +$23 a month); dev takes db.t4g.small with stop-first worker deploys in dev only (dev needs neither zero-downtime
+> deploys nor production's instance class; it keeps production's pool size, so it exercises the same code path; about
+> $24 a month less than medium). A dev deploy never pages: silence the worker heartbeat alarm during dev's deploy
+> window, or give dev a longer evaluation period. The connection-budget check passes for dev under stop-first. Both
+> choices and their reasons are recorded in ADR 0083, with the ADR 0012 note. The PR description carries one line for
+> the founder: "RDS: staging db.t4g.small → medium (+~$23/mo); dev micro → small (+~$11/mo when deployed)". PRD section
+> 19 stays the founder's to update.
+
+It is a decision of Lane A's orchestrator, not a founder ruling; no line, budget or check moves. As built:
+- **Staging: db.t4g.medium**, production's class. Staging is where a release and its capacity are proved (the
+  screening's runner-to-Fargate factor among them), so it runs on production's memory and connections, and deploys
+  every service as production does. About $23 a month more: about $23.36 on demand for db.t4g.small, about $47 for
+  db.t4g.medium, single-AZ. Its worst case, 165, against 389.
+- **Dev: db.t4g.small, its worker deploying stop-first** (`STOP_FIRST_DEPLOYMENT`: minimum healthy 0, maximum 100;
+  `compute.ts` deploys each service from its own `deployment` in `environments.ts`), in dev only; every other service in
+  dev, and every service in staging and production, keeps `ROLLING_DEPLOYMENT` (100, 200). Dev needs neither a
+  zero-downtime deploy nor production's class, and it keeps production's pools (the practice pool's 15 among them), so
+  it runs the same code path. The budget counts dev's worker once: 140 against db.t4g.small's 163, 23 to spare; with the
+  worker deploying new-before-old dev holds 165 against 163 and is refused (the failing-first test). About $11 a month
+  more than db.t4g.micro (about $11.68) once dev is deployed, and about $24 a month less than db.t4g.medium; dev deploys
+  nothing today (its database is local Docker Postgres, ADR 0012), so the class costs nothing until then.
+- **A dev deploy never pages.** A stop-first deploy leaves dev with no practice worker from the old task's stop (up to
+  the 60-second stop timeout) until the new task's first heartbeat. Of the decision's two ways, the longer evaluation
+  period is the one the monitoring code supports cleanly: each alarm sets its own evaluation periods, and nothing in the
+  stack marks a deploy's window for an alarm's actions to be suppressed by. So the worker's heartbeat alarm counts its
+  missed beats by its deploy (`missedHeartbeatsToAlarm`, `infra/lib/heartbeat.ts`): two where the worker deploys
+  new-before-old (staging and production, unchanged), and in dev every one-minute period a deploy's gap can leave empty,
+  ten (one interval since the old task's last beat, its 60-second stop timeout and 480 seconds for the new task's start:
+  Fargate's placement, the image's pull with Chromium in it, and the worker's start before its first beat). A dev worker
+  that does not come back still pages, ten minutes on. Jobs queued during the gap wait in pg-boss; the old task's jobs
+  drain in its stop timeout, or pg-boss fails them and they retry, each logging `JOB_STOPPED`.
+- The cost line for the founder, in the pull request's description: "RDS: staging db.t4g.small → medium (+~$23/mo); dev
+  micro → small (+~$11/mo when deployed)". PRD section 19 stays the founder's to update.
+
+Tests, each failing first: dev on db.t4g.small with its worker still deploying new-before-old is refused, naming 163
+against 165 (`infra/test/connections.test.ts`; its stack does not synthesize), and passes once the worker deploys
+stop-first (140); each service's deployment configuration in the synthesized template, dev's worker at 0 and 100 and
+every other at 100 and 200 (`compute.test.ts`); and the heartbeat alarm's evaluation periods, ten in dev and two
+elsewhere (`monitoring.test.ts`).
+
+**The alarm.** `DatabaseConnections` (`infra/lib/constructs/monitoring.ts`) tells the operator when RDS's
+`DatabaseConnections` reaches 80% of `max_connections` as the budget reads it at any moment of five minutes: 316 of 394
+in production and staging, 135 of 168 in dev, so it fires early rather than late. Its runbook section is in
+`docs/runbooks/incident-response.md` ("the database's connections"). Tests, each failing first (round 3): the budget test
+(`infra/test/connections.test.ts`) on the old classes, where dev's and staging's stacks are refused (5 of its 17 tests
+fail, and `monitoring.test.ts` cannot synthesize at all), and passes on the new ones; the alarm's own test in
+`monitoring.test.ts`; and a pin of the web's model pool to the gateway's calls in flight and one to spare
+(`apps/web/src/lib/server/pools.test.ts`).
+
+**Round 3's code review, 2026-11-05.** An adversarial review of this subsection's code (infra, worker, security; a
+skeptic per finding) confirmed six findings, fixed here, each with a test that failed first where a test can show it:
+- *WR-1.* `attemptErrorCode` logged `UNCLASSIFIED` for this codebase's own retryable failures, whose class names do not
+  end in `Error` (`ExportLoadFailed`, the reconcile attempt's designed failure; `DigestSendFailed`, `PricedOutOfOrder`,
+  `ReleaseTypeNotRead`), and for AWS SDK exceptions (`NoSuchKey`). It now takes a class's own name in upper snake case
+  where code wrote it: the name of the class the error was constructed from, or an AWS SDK v3 service exception's (the
+  service's error code, told by the shape the SDK's own `ServiceException.isInstance` reads, a fault and the response's
+  metadata, since the worker's bundle names the SDK's classes `_NoSuchKey`, and an unmodelled error such as S3's
+  `SlowDown` comes on the service's base class). A name set on an error afterwards still logs `UNCLASSIFIED`.
+- *WR-2.* An attempt pg-boss expired logged no `job attempt failed` line, and `job_run` recorded it `succeeded`: pg-boss
+  12.38 fails the attempt at its `expireInSeconds` and holds the worker until the abandoned handler returns, and the
+  handler's return took the success path. pg-boss aborts the job's `signal` when it gives up on an attempt, before the
+  handler returns, and on an ordinary completion only after it returned, so once the handler returns the worker reads it
+  (`abandonedAttemptCode`): `JOB_EXPIRED`, `JOB_CLAIM_LOST` (the heartbeat found the claim gone) or `JOB_STOPPED` (a
+  stop's grace ran out). It logs the line, and on the last attempt the operator alarm's line, and records the attempt
+  `retrying`, or `failed` on the last. The database test runs a real pg-boss with a one-second expiry and a first
+  attempt of 2.5 s.
+- *WR-3.* The Known gap line's margin read F's reconcile time from pg-boss's `started_on`, which each claim resets, so
+  on a job a retry completed it printed the last attempt's time with seconds to spare (below).
+- *WR-5 and INFRA-1.* The screening consumer's pg-boss LISTEN/NOTIFY client was not counted (above: 19 a task, not 18).
+- *INFRA-2.* The incident runbook gave the budget's estimate (389) as the database's limit; it now names it the lower
+  bound and the instance's own limit `SHOW max_connections` less the 5 reserved.
+Three were refuted by their skeptics and are not changed (WR-4, INFRA-3, SEC-RT-1; the pull request's findings table
+gives each reason).
+
+#### The reconcile pass at step 7b's 2,000 lines: a known limit, SUITE-CAP-3's, 2026-11-04
+
+*Added 2026-11-04.* F's reconcile in step 7b took 615.7 s on CI (run 41901463895) and 526.3 s (run 41913629020, the
+same tree and a harness probe), and 730.8 s locally (CAS-42.6), all on the first attempt: 58% to 81% of the job's 900 s
+attempt at 2,000 lines, where CAS-42.3's database test takes 55.2 s at the same size (its measured pass posts only; its
+approvals run in earlier setup passes). A profile on a private PostgreSQL 18.4 cluster, the harness stopped where step
+7b queues F's reconcile and each variant run as `run.ts` runs it on a fresh copy, found the time in two families of the
+base's statements, which neither this pull request's migration nor its code changes:
+- `candidatesFor`'s `byPatient` query (`apps/worker/src/reconcile/remittances.ts`): 4,000 calls, 403.5 s (100.9 ms a
+  call, 137,231,521 buffer hits), 72% to 75% of the pass. Its exclusion of claims already matched, a correlated
+  `NOT EXISTS` on `ledger_match`, is planned as a nested-loop anti-join whose inner side is a bitmap scan of
+  `ledger_match_by_remittance` on the practice alone, run again for each of about 560 candidate claims and reading every
+  match the pass has written so far: `ledger_match` was empty and never analyzed when the pass began, and every row it
+  holds is the pass's own uncommitted write, so no ANALYZE can correct the estimate. An index on
+  `ledger_match (practice_id, claim_id, service_line_id) WHERE kind = 'claim'` was never used (580.5 s; the same 137 M
+  hits); the exclusion written as an uncorrelated InitPlan took the pass to 223.7 s (`byPatient` 55.2 s, 40.4 M hits,
+  the same rows and writes).
+- The case refresh on each stage event: `syncLineStages` writes 4,000 single-row `INSERT INTO line_status`, and each
+  fires `line_status_refresh_cases`, whose `case_rules()` totals re-count all 2,000 lines of F's one case: 89.5 s to
+  114.9 s for the inserts, of it `case_rules`' SELECT 84.4 s to 108.1 s (120,287,999 buffer hits), a good, F-scoped plan
+  run once per event.
+- On the base's bodies (this pull request's trigger bodies, `claim_by_superseded` and `line_status_head` taken away) the
+  pass took 676.8 s with exactly the same buffer counts for both families: the cost is the base's. This pull request's
+  own statements cost 0.6 s of it (the head upsert 0.23 s, `line_status_rules()` 0.36 s), and `claim_by_superseded`
+  takes about 25 s off it (`claimLines` 28.6 s on the base, 3.1 s to 3.9 s here).
+
+It fits the attempt today, on the first attempt, with 284 to 374 s to spare on CI; a runner 1.46 times slower than the
+slower CI run would cross 900 s. It does not have the 2.5-times headroom section 8.4 keeps for its own budgets (that
+would need 360 s or less), and F is pinned at 2,000 lines in one case, so only the runner's speed can move it. The fix is
+SUITE-CAP-3's (Lane B), handed over with the profile: its designed D1 (one candidate search per pass, with the exclusion
+written so its cost cannot depend on `ledger_match`'s statistics) and D3 (`syncLineStages` as one multi-row insert, so a
+case is refreshed once per statement). Until then every summary's Known gap line prints the run's F reconcile time
+against its 900 s attempt, with its share and the seconds to spare, beside the full-size figure (Lane A's orchestrator,
+2026-11-04, ~22:27 UTC); whichever of this pull request and SUITE-CAP-3 lands second resets step 7b's expectation. The
+margin is printed only for a reconcile that completed on its first attempt: pg-boss resets a job's `started_on` at each
+claim, so a job's time is its last attempt's alone, and when a retry completed F's reconcile the line names the attempt
+and what the earlier attempts logged and gives no margin (round-3 review WR-3), as it does for a reconcile that did not
+complete or whose attempts could not be read.
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |
@@ -302,5 +831,18 @@ in-flight job, down. SUITE-CAP-1b's runbook note for its release says so.
   same two rules and its own measurement.
 - The Cases page's time (it recomputes its waiting patterns on every load, over 20 s for 33,332 waiting candidates on
   4 CPUs): bounded in memory here, not in time; storing the waiting patterns at triage is handed to Lane A.
-- `candidateRows`' and `runLines`' queries still read the practice's whole stage log through a `DISTINCT ON`, which
-  grows with the practice's history: SUITE-CAP-1b's head row, or a per-line lookup, would remove it in a later item.
+- `candidateRows`' query still reads the practice's whole stage log through a `DISTINCT ON`, which grows with the
+  practice's history (`runLines`' now reads each line's head row): the head row, or a per-line lookup, would remove it
+  in a later item.
+- The reconcile pass's own time at size (CAS-42.3 runs 2,000 lines, not 20,000): `candidatesFor`'s two queries per
+  open case line, `claimLines`' per-line correction chain and `syncLineStages`' statement per stage, which grow faster
+  than the lines. SUITE-CAP-3 measures reconcile at real size.
+- Staging reads its database's `max_connections` (`SHOW max_connections` on db.t4g.medium): the connection budget's
+  estimate (394) gives way to the measured figure (`infra/lib/connections.ts`), and the alarm's line follows. Dev, once
+  deployed, reads db.t4g.small's the same way (the estimate is 168), and its first stop-first worker deploys time the
+  gap the heartbeat alarm allows (`STOP_FIRST_START_ALLOWANCE_SECONDS`, 480 s for the new task's start).
+- The weekly run's step 7b at full size: about 31% of A's 100,000 lines are now actionable, and the reconcile pass
+  walks every open case line (2,084 lines took 333.2 s at 0.5 vCPU), so A's reconcile cannot finish in an attempt until
+  SUITE-CAP-3. Decided by Lane A's orchestrator on 2026-11-04 ("The weekly run's memory line and step 7b", above):
+  step 7b reconciles F, a practice of its own at CAS-42.3's 2,000 lines, and every summary prints the Known gap line,
+  until SUITE-CAP-3 lands; moving step 7b back to A's full month is SUITE-CAP-3's acceptance step.

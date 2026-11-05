@@ -95,6 +95,8 @@ a synthetic mailbox you control, and reads IDs and counts.
   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
   | `MAIL_VALIDATION_REFUSED` | AWS refused an address validation: the address-validation role or its call (web log) | 3.8 |
+  | `IdentityMessagesFailures…` | the user pool's message trigger failed or was throttled: Cognito sent no code or invitation | 3.9 |
+  | `IdentityMessagesFallback…` (`COGNITO_MESSAGE_FALLBACK`) | a user pool message went with the pool's generic template (the trigger's log) | 3.9 |
 
   `MAIL_EVENT_UNREADABLE` (an event the platform cannot read) is covered by the dead-letter alarm;
   `MAIL_DOMAIN_CHECK_UNAVAILABLE` and `MAIL_VALIDATION_UNAVAILABLE` (the address checks timed out; the upload was
@@ -305,6 +307,10 @@ gone.) Then send the invitation again from the console's organization page ("Sen
 record it in the support ticket. A transactional bounce rate at 2% means invitations are going to bad addresses at
 volume: look for one organization's import.
 
+A reset code goes through the same transactional set and is held back the same way: a person whose address SES holds
+back gets no code, while the page still says "Check your email" (it says so for every address). Release the address as
+above once the person confirms the mailbox is theirs, then they ask for a new code.
+
 ### 3.5 The validation cap reached (`MAIL_VALIDATION_CAP_REACHED`)
 
 The day's SES validations are spent (1,000 in production); the rest of the day's uploads get the DNS check alone.
@@ -381,6 +387,28 @@ environment. Check, in order:
    ```
 
    and the same with `AttributeValue=GetEmailAddressInsights` in the address-validation account.
+
+### 3.9 A user pool message failed, or went in the generic words (`IdentityMessagesFailures…`, `IdentityMessagesFallback…`)
+
+Every email the user pool sends goes through its CustomMessage trigger, `/tp/<env>/cognito-messages` its log
+(docs/adr/0081, the code-email amendment).
+
+- **Failures** (the function's errors or throttles): Cognito sent nothing. A person who asked for a reset code saw
+  "Check your email" and got no email; once fixed, they ask for a new code. An invitation failed in front of its
+  administrator, who sends it again. Read the log group's `REPORT` lines (a timeout at 3 seconds, a memory limit) and
+  Lambda's service health; check that nothing changed the function by hand. Never raise its timeout to Cognito's 5
+  seconds or past it, and never give it a VPC, a layer or a network call.
+- **Fallback** (`COGNITO_MESSAGE_FALLBACK`): the person got a correct code, or invitation, in the pool's generic
+  branded words. The line holds a `reason` and a `trigger_source`, and nothing else:
+  - `unknown_source`: Cognito fired a source with no words; add them in `packages/auth-mail` (`unrecognized` means the
+    source was not a CustomMessage name);
+  - `code_parameter` or `username_parameter`: Cognito's placeholder was not `{####}` or `{username}`'s shape; check
+    AWS's CustomMessage trigger documentation for a change;
+  - `sign_in_url`: the function's `APP_SIGN_IN_URL` is not `https://<AppDomainName>/sign-in` (the stack's
+    `AppDomainName` parameter); only invitations fall back;
+  - `no_request`, `no_response` or `error`: the event's shape changed; compare it with AWS's documentation.
+
+  Work by these codes and the request IDs alone: the trigger never logs an address.
 
 ## 4. Rules
 
