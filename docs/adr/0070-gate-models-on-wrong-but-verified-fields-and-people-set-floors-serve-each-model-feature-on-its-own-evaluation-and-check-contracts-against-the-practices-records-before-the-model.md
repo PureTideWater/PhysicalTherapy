@@ -1369,6 +1369,12 @@ The fix round of the pull request's review (2026-10-27) adds these:
     screen finds only when the practice's own value holds its separator, of the four only the screen reads, and of
     the comma, plus sign and closing parenthesis neither reads. A letter is therefore no longer redacted of everything
     the screen would find (P14).
+  - Amended 2026-11-04 (docs/adr/0054, amendment of that day; the founder's ruling of 2026-11-01): the letter path also
+    reads every Social Security and phone shape whatever its separators (dashes, periods, the number joiners above, a
+    line break, an invisible character), refuses a letter in which a 9- to 11-digit chain survives, and the screen is
+    asked about the redactor's candidates (the runs of the sent text, of the letter with only the call's identifiers
+    replaced, and every SSN- or phone-shaped match that is not the call's), not only the runs of the sent text. The
+    property above holds with that: the letter path reads a writing it joins, or one its patterns or survivor scan read.
 
 - **N14.** The request's cap is 1,000,000 bytes, as sent and in NFKC form (the reasoning is under "The request's
   length"), and its notice says "This document is too long to send to the model, so nothing was sent. Enter its terms by
