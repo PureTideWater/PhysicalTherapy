@@ -134,7 +134,10 @@ Contract-verified calculation without cash is a line status (validated), never a
   `apps/worker/src/mail/template.ts`): it is headed by the lockup without the tagline,
   `/brand/paidwhole-lockup-horizontal-1200w.png`, drawn at the same 160 px, because the tagline
   says "owed" and a screening never does (decision D11 a, ADR 0062; the copy lint refuses owed,
-  underpaid and recovered in the screening's files). The image loads from the
+  underpaid and recovered in the screening's files). The second exception is the mail the user
+  pool sends (codes and invitations, `packages/auth-mail`; docs/adr/0081, the code-email
+  amendment B3): it has no header and no remote asset, only the frame and the footer, and the
+  wordmark is never typed in place of the lockup. The image loads from the
   CloudFront static host (`STATIC_ASSET_ORIGIN`), never from the application; with no static host
   configured, the message goes without it, and the wordmark is never typed in its place. Hex colors
   from `tokens.ts` (CSS variables do not work in email); Plex Sans falls back to system sans.

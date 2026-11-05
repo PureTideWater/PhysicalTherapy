@@ -124,9 +124,14 @@ function resetCodesFor(email: string): string[] {
   return readdirSync(outbox)
     .filter((file) => file.endsWith('.json'))
     .sort()
-    .map((file) => JSON.parse(readFileSync(path.join(outbox, file), 'utf8')) as { readonly email: string; readonly body: string })
+    .map((file) => JSON.parse(readFileSync(path.join(outbox, file), 'utf8')) as { readonly email: string; readonly body: string; readonly html: string })
     .filter((message) => message.email === email)
-    .map((message) => /password is (\d{6})\./.exec(message.body)?.[1] ?? '');
+    .map((message) => {
+      // As Cognito delivers it (SGN-15): no remote asset, no link and no address in the code email.
+      expect(message.html).not.toMatch(/<img|<link|<script|<a[\s>]|href=|src=|url\(|https?:/i);
+      expect(message.body).not.toMatch(/https?:|@/);
+      return /password is (\d{6})\./.exec(message.body)?.[1] ?? '';
+    });
 }
 
 /** Asks for a reset code from the forgot-password page's first phase, and waits for its second. */

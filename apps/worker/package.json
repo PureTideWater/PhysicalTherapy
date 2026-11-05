@@ -38,6 +38,7 @@
     "@aws-sdk/client-sesv2": "^3.1160.0",
     "@aws-sdk/client-sqs": "^3.1160.0",
     "@paidwhole/brand": "workspace:*",
+    "@tp/auth-mail": "workspace:*",
     "@tp/billing": "workspace:*",
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",

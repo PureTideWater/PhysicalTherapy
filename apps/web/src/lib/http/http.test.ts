@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { cognitoMessage } from '@tp/auth-mail';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -679,15 +680,25 @@ describe('the development outbox', () => {
     }
   });
 
-  it('writes an invitation’s temporary password to a local file named by opaque IDs', async () => {
+  it('SGN-15: writes an invitation to a local file named by opaque IDs, readable by the owner only, in the words and frame Cognito sends', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'tp-outbox-'));
-    await devOutbox(dir)('invited@synthetic.test', 'Temporary-Pass-1!');
+    await devOutbox(dir, 'http://localhost:3000/sign-in')('invited@synthetic.test', 'Temporary-Pass-1!');
     const [file = ''] = readdirSync(path.join(dir, 'outbox'));
     expect(file).toMatch(/^\d+-[0-9a-f-]{36}\.json$/);
-    expect(JSON.parse(readFileSync(path.join(dir, 'outbox', file), 'utf8'))).toEqual({ email: 'invited@synthetic.test', temporaryPassword: 'Temporary-Pass-1!' });
+    const written = path.join(dir, 'outbox', file);
+    expect(statSync(written).mode & 0o777).toBe(0o600);
+    const message = cognitoMessage('CustomMessage_AdminCreateUser', { code: 'Temporary-Pass-1!', username: 'invited@synthetic.test', signInUrl: 'http://localhost:3000/sign-in' });
+    expect(JSON.parse(readFileSync(written, 'utf8'))).toEqual({
+      email: 'invited@synthetic.test',
+      temporaryPassword: 'Temporary-Pass-1!',
+      subject: 'Your PaidWhole invitation',
+      body: message.text,
+      html: message.html,
+    });
+    expect(message.text).toContain('this temporary password:\n\nTemporary-Pass-1!\n\nSign in at http://localhost:3000/sign-in within 7 days.');
   });
 
-  it('writes a reset code to a sibling outbox, readable by the owner only, in the code email’s words, and leaves the invitations’ outbox alone', async () => {
+  it('SGN-15: writes a reset code to a sibling outbox, readable by the owner only, in the code email’s words and frame, and leaves the invitations’ outbox alone', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'tp-outbox-'));
     await devResetOutbox(dir)('reset@synthetic.test', '012345');
     const [file = ''] = readdirSync(path.join(dir, 'reset-outbox'));
@@ -698,7 +709,12 @@ describe('the development outbox', () => {
       email: 'reset@synthetic.test',
       code: '012345',
       subject: 'Your PaidWhole code',
-      body: 'Your code to choose a new PaidWhole password is 012345. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+      body: [
+        'Your code to choose a new PaidWhole password is 012345.',
+        'Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+        'PaidWhole never asks you to send your password or a code to anyone, by email, phone or chat: enter a code only on the PaidWhole page that asked for it.',
+      ].join('\n\n'),
+      html: cognitoMessage('CustomMessage_ForgotPassword', { code: '012345' }).html,
     });
     expect(readdirSync(dir)).toEqual(['reset-outbox']);
   });

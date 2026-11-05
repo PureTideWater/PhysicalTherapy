@@ -781,6 +781,24 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       'The sign-in page lists help as a list with a reset link that names itself, the code and key steps say where to write about a lost factor from the address one signs in with, the locked words name the support address in the refusal, the key page and the notice, and a closed hardware-key step returns to the key page; the reset page in both phases, the sign-in page, the code step and the key step pass axe (WCAG 2.1 A and AA) at 1280 and 390 px',
   },
   {
+    id: 'SGN-13',
+    title: 'Every message the user pool sends is the brand’s',
+    assertion:
+      'Each CustomMessage source (forgot password, invitation and its resend, attribute update, attribute verification, sign-up, resend code and authentication) has its own subject and words from `@tp/auth-mail`: the reset code’s are section 2.5’s word for word, the invitation names the sign-in page as plain text with no query and states 7 days from `INVITATION_DAYS`; each message holds Cognito’s code parameter once (the invitation its username parameter once), stays within Cognito’s subject and message lengths, reads the same with its tags stripped, and holds no image, font, stylesheet or link (but the invitation’s sign-in address); the pool’s own verification and invitation templates are the branded generic fallback, never reset-specific words; the copy lint reads the package',
+  },
+  {
+    id: 'SGN-14',
+    title: 'The message trigger is small and contained',
+    assertion:
+      'The trigger is an inline Node 22 function with no dependency, network or VPC, 128 MB and a 3-second timeout, one environment variable, a role with only its own log group’s two write actions and no managed policy, invoked only by Cognito for this pool and account; an unknown source, a missing parameter or a thrown error returns the event unchanged (Cognito sends the fallback template) and logs one line of codes with no address; the function’s errors, throttles and fallbacks alarm the operator; a reset request whose code Cognito could not send for the trigger answers alike at its floor, and an invitation it could not send fails visibly',
+  },
+  {
+    id: 'SGN-15',
+    title: 'The local identity provider delivers what Cognito delivers',
+    assertion:
+      'The development provider’s invitation and reset outboxes hold each message’s subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the reset code from the message’s own text, with no remote asset and no link but the sign-in address; the text is the HTML’s with its tags stripped, since Cognito sends the HTML alone, with no text part',
+  },
+  {
     id: 'HOM-01',
     title: 'One actionable figure everywhere',
     assertion:

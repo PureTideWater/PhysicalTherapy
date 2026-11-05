@@ -265,6 +265,10 @@ apps/worker/src/triage/deadline.ts
 apps/worker/src/triage/execute.ts
 apps/worker/src/triage/job.ts
 apps/worker/src/worker.ts
+packages/auth-mail/src/index.ts
+packages/auth-mail/src/lambda.ts
+packages/auth-mail/src/render.ts
+packages/auth-mail/src/words.ts
 packages/billing/config/plans.json
 packages/billing/src/catalog.ts
 packages/billing/src/dunning.ts
