@@ -136,7 +136,7 @@ describe('every message the user pool sends (SGN-13)', () => {
     expect(html).toContain(`color:${palette.ink}`);
     expect(html).toContain(`border:1px solid ${palette.line}`);
     expect(html).toContain(`color:${palette.slate};">${AUTH_MAIL_FOOTER}</td>`);
-    expect(AUTH_MAIL_FOOTER).toBe(`${brandName} never asks for your password or a code by email, phone or chat.`);
+    expect(AUTH_MAIL_FOOTER).toBe(`${brandName} never asks you to send your password or a code to anyone, by email, phone or chat: enter a code only on the ${brandName} page that asked for it.`);
   });
 });
 
