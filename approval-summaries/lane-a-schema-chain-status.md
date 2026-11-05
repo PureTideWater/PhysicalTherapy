@@ -308,6 +308,9 @@ its unpushed work is not waited for).
 - **06:00 UTC. Interest PR #126 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/126, head c49367c5
   (base f7d609cc merged; 20261110090000 unchanged; domain model 47887070…eb8ef, provisional; body 32,766). Subscribed.
   Reviews running.
+- **06:45 UTC. The orchestrator:** the next schema PR after #126 is S4's `co-001/password-changed-notice` (ADR 0091; S4 =
+  session_019i9ifAfByN2caCea4jgSdu), opening only after #126 merges. **When #126 merges: send S4 the merge commit** (the
+  schema slot passes to it). Lane A's queue after that comes from LANES.md "Handed to Lane A", ordered with the orchestrator.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
