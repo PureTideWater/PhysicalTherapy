@@ -63,8 +63,17 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
     clients); O-6; O-7; O-8 (co-founder: "A new request replaces this code"). See the PR body and
     designs/lane-a-auth-emails.md.
 
+- 2026-11-05T06:40Z: the orchestrator decided:
+  - Build the follow-on co-001/password-changed-notice as a Lane A item (the Friday handback does not apply to it).
+    Build and verify it on the branch through the new-migration skill's marker route, with a timestamp after
+    20261110090000. Open no PR until #126 merges; the schema chain session (session_019i9ifEG147aKfNHEAsoS7h) says
+    when. Then: draft PR, security and correctness/mail reviews, the fix round, verification, and the suggested approval
+    line for the founder. Never write the approval line or approvers.json.
+  - O-5: a White plate. O-8: "If you asked more than once, use the newest code." Both go in co-001/email-lockup-plate
+    first.
+
 ## Waiting on someone
-- The founder: O-1, the follow-on's migration (CO-02). The brand owner: O-5. The co-founder: O-8.
+- The schema chain session: #126's merge, which opens the schema slot for the follow-on. Then the founder: the follow-on's approval (CO-02).
 
 ## Next step
 The follow-on co-001/password-changed-notice (migration, ADR 0091, SGN-16) once O-1 is answered. The worktree /home/user/auth-emails can be removed.
