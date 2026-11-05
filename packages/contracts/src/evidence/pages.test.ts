@@ -166,7 +166,7 @@ function stubRequest(behaviour: string): ReaderRequest {
   return { format: 'csv', bytes: new TextEncoder().encode(behaviour), maxPages: 10, maxTextCharacters: 100_000, maxInflatedBytes: 1024 };
 }
 
-describe('the page reader in its own process (ADR 0033)', () => {
+describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', () => {
   it("keeps today's heap limit under the worker task's planned heap flag (infra/lib/heap.ts)", () => {
     // The task's planned command: node --max-old-space-size=560 --enable-source-maps dist/main.js (heapFlag('worker')).
     const probe = spawnSync(process.execPath, ['--max-old-space-size=560', '--enable-source-maps', '--import', 'tsx', PROBE], { cwd: REPO, encoding: 'utf8', timeout: 120_000 });

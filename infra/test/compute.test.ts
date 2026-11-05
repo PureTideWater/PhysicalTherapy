@@ -334,7 +334,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     }
   });
 
-  it('runs every container in production mode, trusting the RDS certificate bundle, with an init process and no core files', () => {
+  it('runs every container in production mode, trusting the RDS certificate bundle, with an init process and no core files (test matrix SEC-24)', () => {
     for (const name of TASKS) {
       expect(environmentOf(definitions[name]), name).toMatchObject({ NODE_ENV: 'production', NODE_EXTRA_CA_CERTS: RDS_CA_BUNDLE_PATH, DATABASE_NAME: 'tp' });
       expect(definitions[name].LinuxParameters, name).toMatchObject({ InitProcessEnabled: true });

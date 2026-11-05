@@ -1,0 +1,23 @@
+{
+  "case": "SEC-24",
+  "module": "SEC",
+  "title": "An untrusted document is read in its own process (ADR 0033's amendment of 2026-11-05)",
+  "assertion": "Each contract, exhibit or payer letter is read in a child process of its own, one at a time in a worker process, with an empty environment, an argv of its flags and entry only, Node's permission model reading only its own code (no file written, no process, thread or addon), no core file (a core limit of 0 it cannot raise, its working directory `/`, every container's core ulimit 0) and a heap of its own, 240 MiB under any parent's heap flag (measured under the worker command with `heapFlag('worker')`); past its memory cap over its ready baseline, its deadline, the page, character or reply bounds, or on a V8 heap out of memory it is killed and the document is unsupported_document, never read in part; the bounds hold until it closes, and one that does not exit within 1 s of its last frame is killed; any other failure is PageReadError, naming only an exit code or signal; a container of the worker image carries a V8 heap flag only while `PAGE_READER_ISOLATION` is `'process'`; the bundled reader reads SYNTHETIC documents under the image's argv",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/contracts/src/evidence/pages.test.ts",
+    "packages/contracts/src/evidence/evidence.test.ts",
+    "infra/test/heap.test.ts",
+    "infra/test/compute.test.ts",
+    "apps/worker/src/bundle.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Every document is SYNTHETIC and built in memory by the tests (PDFs, a deflate bomb, workbooks, CSVs); the stand-in readers send frames, not files; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

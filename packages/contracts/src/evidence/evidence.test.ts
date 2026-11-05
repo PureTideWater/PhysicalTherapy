@@ -160,7 +160,7 @@ describe('the bounded page reader (ADR 0033)', () => {
     expect(csvRows('')).toEqual([]);
     expect(csvText(new Uint8Array([0x63, 0x61, 0x66, 0xe9]))).toBe('café');
     expect(await readPagesHere({ format: 'csv', bytes: new TextEncoder().encode('a\n'), maxPages: 0, maxTextCharacters: 10, maxInflatedBytes: 10 })).toEqual({ kind: 'refused', problem: 'unsupported_document' });
-    // Past the character cap with pages to spare: refused by the reader itself, never read in part.
+    // Past the character cap with pages to spare: refused by the reader itself, never read in part (test matrix SEC-24).
     expect(await readPagesHere({ format: 'csv', bytes: new TextEncoder().encode('SYNTHETIC,TEXT\n'), maxPages: 10, maxTextCharacters: 5, maxInflatedBytes: 10 })).toEqual({ kind: 'refused', problem: 'unsupported_document' });
   });
 

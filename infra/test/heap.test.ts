@@ -82,7 +82,7 @@ function heapLimitWith(flags: readonly string[]): number {
  * container of the worker image carries one unless the reader of untrusted documents runs in a process of its own
  * (PAGE_READER_ISOLATION, packages/contracts/src/evidence/pages.ts), whose heap its own flags set.
  */
-describe('the page reader against the heap flags', () => {
+describe('the page reader against the heap flags (test matrix SEC-24)', () => {
   it('finds a V8 heap flag in either spelling, and nothing else', () => {
     expect(heapFlagsIn('set -eu\nexec node --max-old-space-size=560 --enable-source-maps dist/main.js')).toEqual(['--max-old-space-size=560']);
     expect(heapFlagsIn('--max_semi_space_size=16 --max-heap-size=900 --max-young-generation-size=32 --stack-size=984')).toEqual(['--max_semi_space_size=16', '--max-heap-size=900', '--max-young-generation-size=32']);

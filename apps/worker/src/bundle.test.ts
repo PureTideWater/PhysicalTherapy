@@ -30,7 +30,7 @@ describe("the worker bundle's page reader", () => {
   });
 });
 
-describe('the bundled page reader, built as the image builds it', () => {
+describe('the bundled page reader, built as the image builds it (test matrix SEC-24)', () => {
   let out = '';
   beforeAll(() => {
     out = mkdtempSync(path.join(tmpdir(), 'tp-worker-bundle-'));
