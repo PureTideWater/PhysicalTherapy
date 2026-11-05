@@ -1,0 +1,21 @@
+{
+  "case": "SGN-15",
+  "module": "SGN",
+  "title": "The local identity provider delivers what Cognito delivers",
+  "assertion": "The development provider’s invitation and reset outboxes hold each message’s subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the reset code from the message’s own text, with no remote asset and no link but the sign-in address",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/http/http.test.ts",
+    "apps/web/e2e/onboarding.spec.ts",
+    "apps/web/e2e/sign-in.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The local identity provider writes its invitations and reset codes to a synthetic outbox the tests read; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
