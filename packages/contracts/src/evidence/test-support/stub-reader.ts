@@ -63,6 +63,21 @@ if (behaviour === 'exit-3') {
   }
 } else if (behaviour === 'silent') {
   setInterval(() => undefined, 1000);
+} else if (behaviour === 'done-hang' || behaviour === 'refused-hang' || behaviour === 'done-grow') {
+  // A reader a document compromised: a well-formed last frame, then it neither exits nor stays small.
+  if (behaviour === 'refused-hang') {
+    await write(frame(3, 'unsupported_document'));
+  } else {
+    await write(frame(1, 'SYNTHETIC PAGE'));
+    await write(frame(2, '0'));
+  }
+  const held: Buffer[] = [];
+  setInterval(() => {
+    if (behaviour === 'done-grow') {
+      // Off the V8 heap, so its own heap flag does not stop it.
+      held.push(Buffer.alloc(32 * 1024 * 1024, 1));
+    }
+  }, 20);
 } else if (behaviour === 'inspect') {
   const seen = {
     env: Object.keys(process.env),

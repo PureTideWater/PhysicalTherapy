@@ -168,6 +168,35 @@ describe('the page reader in its own process (ADR 0033)', () => {
     inItsOwnProcess(flood.seen);
   }, 60_000);
 
+  it('keeps the reader bounded after its last frame: one that does not exit, or grows, is stopped and frees its slot', async () => {
+    const read = readInChild;
+    for (const [behaviour, expected] of [
+      ['done-hang', new PageReadError('the page reader did not exit after its reply')],
+      ['refused-hang', new PageReadError('the page reader did not exit after its reply')],
+      ['done-grow', { kind: 'refused', problem: 'unsupported_document' }],
+    ] as const) {
+      const started = Date.now();
+      const hung = watched(() =>
+        read(stubRequest(behaviour), PAGE_READ_LIMITS, STUB).then(
+          (reply) => reply,
+          (error: unknown) => error,
+        ),
+      );
+      // A SYNTHETIC CSV queued behind it (one reader at a time) must still be read.
+      const queued = readDocumentPages({ bytes: new TextEncoder().encode('SYNTHETIC,QUEUED\n'), contentType: 'text/csv' });
+      const { result, seen } = await hung;
+      if (expected instanceof PageReadError) {
+        expect(result, behaviour).toBeInstanceOf(PageReadError);
+        expect((result as Error).message, behaviour).toBe(expected.message);
+      } else {
+        expect(result, behaviour).toEqual(expected);
+      }
+      expect(Date.now() - started, `${behaviour} settles far inside the deadline`).toBeLessThan(10_000);
+      inItsOwnProcess(seen);
+      expect(await queued, behaviour).toEqual({ ok: true, pages: ['SYNTHETIC\tQUEUED'] });
+    }
+  }, 60_000);
+
   it('gives the reader no environment, no argument but its entry, and no file, process, thread or addon', async () => {
     const read = readInChild;
     const saved = { ...process.env };

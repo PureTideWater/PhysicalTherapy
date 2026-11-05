@@ -119,6 +119,12 @@ export const READER_BASELINE_MAX_BYTES = 224 * MIB;
 /** V8's fixed line on a heap out of memory, looked for in the last READER_STDERR_TAIL_BYTES of the reader's stderr. */
 const V8_OUT_OF_MEMORY = 'JavaScript heap out of memory';
 const READER_STDERR_TAIL_BYTES = 1024;
+/**
+ * How long a reader may take to close once it has sent its last frame (it exits as soon as the frame is flushed: a few
+ * milliseconds). Past it the reader is killed and its read fails as its own (PageReadError); the deadline and the
+ * memory bound stay armed until it has closed, so a reader a document compromised can neither linger nor grow.
+ */
+export const READER_EXIT_GRACE_MS = 1_000;
 /** Where /proc is missing (a developer's Mac), the reader's memory is read with ps at most this often. */
 const PS_POLL_MS = 100;
 
@@ -283,7 +289,8 @@ export async function readInChild(request: ReaderRequest, limits: PageReadLimits
 
 /**
  * One child, start to close. Resolves only once the child has closed (exited, every pipe drained: on `exit` the last
- * frames can still be unread), never on the decision.
+ * frames can still be unread), never on the decision. The deadline and the memory bound hold until then, the reply in
+ * or not, and a child that has sent its last frame has READER_EXIT_GRACE_MS to close.
  */
 function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): Promise<ChildReply> {
   if (request.bytes.byteLength > limits.maxBytes) {
@@ -308,9 +315,11 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
     let characters = 0;
     let settled = false;
 
+    let exitGrace: NodeJS.Timeout | undefined;
     const stop = (): void => {
       clearInterval(poll);
       clearTimeout(deadline);
+      clearTimeout(exitGrace);
     };
     /** The first decision stands: the child is killed, and the result given once it has closed. */
     const decide = (decision: NonNullable<typeof verdict>): void => {
@@ -340,7 +349,8 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
     const deadline = setTimeout(refuse, limits.timeoutMs);
     const poll = setInterval(
       () => {
-        if (measuring || verdict !== undefined || reply !== undefined || child.pid === undefined) {
+        // Measured until the child has closed, its reply sent or not.
+        if (measuring || verdict !== undefined || child.pid === undefined) {
           return;
         }
         measuring = true;
@@ -360,6 +370,13 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
       },
       PROC ? limits.pollMs : Math.max(limits.pollMs, PS_POLL_MS),
     );
+
+    // The last frame is in: the reader has READER_EXIT_GRACE_MS to close, and the deadline and the poll stay armed.
+    const awaitExit = (): void => {
+      exitGrace = setTimeout(() => {
+        fail('the page reader did not exit after its reply');
+      }, READER_EXIT_GRACE_MS);
+    };
 
     const send = (): void => {
       const header = Buffer.from(
@@ -415,10 +432,10 @@ function runReader(request: ReaderRequest, limits: PageReadLimits, entry: URL): 
         }
       } else if (type === FRAME.done && /^\d{1,16}$/.test(body.toString('latin1'))) {
         reply = { kind: 'pages', pages, heapSizeLimit: Number.parseInt(body.toString('latin1'), 10) };
-        stop();
+        awaitExit();
       } else if (type === FRAME.refused && (body.toString('latin1') === 'unsupported_document' || body.toString('latin1') === 'document_unreadable')) {
         reply = { kind: 'refused', problem: body.toString('latin1') as ReadRefusal };
-        stop();
+        awaitExit();
       } else {
         fail('the page reader sent a malformed reply');
       }
