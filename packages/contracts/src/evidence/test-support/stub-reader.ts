@@ -76,6 +76,26 @@ if (behaviour === 'exit-3') {
   }
   await write(frame(2, '0'));
   process.exit(0);
+} else if (behaviour === 'done-exit-1') {
+  await write(frame(1, 'SYNTHETIC PAGE'));
+  await write(frame(2, '0'));
+  process.exit(1);
+} else if (behaviour === 'page-done-extra') {
+  await write(frame(1, 'SYNTHETIC PAGE'));
+  await write(frame(2, '0'));
+  await write(frame(1, 'SYNTHETIC PAGE AFTER THE REPLY'));
+  process.exit(0);
+} else if (behaviour.startsWith('many ')) {
+  // That many page frames and done in one write, then an exit as soon as the kernel has them: the last frames are still
+  // in the pipe when the process has exited, so only a parent that waits for close has them all.
+  const count = Number(behaviour.slice('many '.length));
+  const frames: Buffer[] = [];
+  for (let page = 0; page < count; page += 1) {
+    frames.push(frame(1, `SYNTHETIC PAGE ${String(page)} ${'x'.repeat(1000)}`));
+  }
+  frames.push(frame(2, '0'));
+  await write(Buffer.concat(frames));
+  process.exit(0);
 } else if (behaviour === 'silent') {
   setInterval(() => undefined, 1000);
 } else if (behaviour === 'done-hang' || behaviour === 'refused-hang' || behaviour === 'done-grow') {

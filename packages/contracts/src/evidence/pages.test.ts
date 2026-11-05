@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -22,6 +22,9 @@ const PROBE = path.join(import.meta.dirname, 'test-support/reader-heap.ts');
 const CORE_PROBE = path.join(import.meta.dirname, 'test-support/core-probe.ts');
 const STUB = new URL('./test-support/stub-reader.ts', import.meta.url);
 const SILENT = new URL('./test-support/stub-silent.ts', import.meta.url);
+const FAT = new URL('./test-support/stub-fat.ts', import.meta.url);
+const EXIT_PROBE = path.join(import.meta.dirname, 'test-support/exit-probe.ts');
+const READER = new URL('./page-reader.ts', import.meta.url);
 const PDF = 'application/pdf';
 
 /** V8's heap_size_limit for a process run with these flags. */
@@ -79,6 +82,58 @@ function gone(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ESRCH';
   }
+}
+
+/** A process that has exited (a zombie no one has reaped yet counts: it runs nothing). */
+function dead(pid: number): boolean {
+  try {
+    return /^State:\s+Z/m.test(readFileSync(`/proc/${String(pid)}/status`, 'utf8'));
+  } catch {
+    return true;
+  }
+}
+
+async function until(condition: () => boolean, ms: number): Promise<boolean> {
+  const started = Date.now();
+  while (!condition()) {
+    if (Date.now() - started > ms) {
+      return false;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return true;
+}
+
+/** The real reader started by hand with readerArgv: its frames, its stderr and its exit, for what pages.ts never shows. */
+function readDirectly(bytes: Uint8Array): Promise<{ readonly frames: { type: number; body: string }[]; readonly stderr: string; readonly code: number | null }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [...readerArgv(PAGE_READ_LIMITS), decodeURIComponent(READER.pathname)], { env: {}, stdio: 'pipe' });
+    let out = Buffer.alloc(0);
+    let stderr = '';
+    let sent = false;
+    child.stdout.on('data', (chunk: Buffer) => {
+      out = Buffer.concat([out, chunk]);
+      if (!sent && out.length >= 5) {
+        sent = true;
+        const header = Buffer.from(JSON.stringify({ format: 'pdf', byteLength: bytes.length, maxBytes: PAGE_READ_LIMITS.maxBytes, maxPages: 100, maxTextCharacters: 100_000, maxInflatedBytes: MIB, deadlineMs: 30_000 }));
+        const length = Buffer.alloc(4);
+        length.writeUInt32BE(header.length, 0);
+        child.stdin.end(Buffer.concat([length, header, bytes]));
+      }
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.once('close', (code) => {
+      const frames: { type: number; body: string }[] = [];
+      for (let at = 0; at + 5 <= out.length; ) {
+        const length = out.readUInt32BE(at + 1);
+        frames.push({ type: out.readUInt8(at), body: out.subarray(at + 5, at + 5 + length).toString('utf8') });
+        at += 5 + length;
+      }
+      resolve({ frames, stderr, code });
+    });
+  });
 }
 
 /** A read happened in at least one process of its own, and every such process is gone. */
@@ -278,6 +333,101 @@ describe('the page reader in its own process (ADR 0033)', () => {
       rmSync(scratch, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it("fails the read as the reader's own when it exits non-zero after its reply, sends a frame after it, or aborts", async () => {
+    const read = readInChild;
+    await expect(read(stubRequest('done-exit-1'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new PageReadError('the page reader stopped with exit code 1'));
+    await expect(read(stubRequest('page-done-extra'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new PageReadError('the page reader sent a malformed reply'));
+    // SIGABRT without V8's out-of-memory line is a crash of the reader's own, not a document past its heap.
+    await expect(read(stubRequest('abort'), PAGE_READ_LIMITS, STUB)).rejects.toThrow(new PageReadError('the page reader stopped with signal SIGABRT'));
+  }, 60_000);
+
+  it('fails a reader that starts too large as its own, never widening its bound', async () => {
+    const fat = await watched(() =>
+      readInChild(stubRequest('never read'), { ...PAGE_READ_LIMITS, timeoutMs: 5_000 }, FAT).then(
+        (reply) => reply,
+        (error: unknown) => error,
+      ),
+    );
+    expect(fat.result).toEqual(new PageReadError('the page reader started too large'));
+    inItsOwnProcess(fat.seen);
+  }, 60_000);
+
+  it('gives every frame a reader wrote before it exited: the result waits for close, not exit', async () => {
+    // About 4 MiB of frames written at once, then an exit: the pipe still holds the last of them when the process has
+    // exited. Run a few times, since which event comes first is the loop's choice.
+    for (let run = 0; run < 10; run += 1) {
+      // This process's loop held up now and then, so the child's exit and its last bytes are ready at the same turn.
+      const busy = setInterval(() => {
+        const until = Date.now() + 30;
+        while (Date.now() < until) {
+          // Held.
+        }
+      }, 37);
+      const reply = await readInChild({ ...stubRequest('many 4000'), maxPages: 4_000, maxTextCharacters: 8 * MIB }, PAGE_READ_LIMITS, STUB).finally(() => {
+        clearInterval(busy);
+      });
+      expect(reply.kind === 'pages' ? reply.pages.length : reply, `run ${String(run)}`).toBe(4_000);
+    }
+  }, 60_000);
+
+  it('kills a running reader when the worker exits mid-read', async () => {
+    const probe = spawnSync(process.execPath, ['--import', 'tsx', EXIT_PROBE], { cwd: REPO, encoding: 'utf8', timeout: 30_000 });
+    expect(probe.status, probe.stderr).toBe(0);
+    const pid = Number(probe.stdout.trim());
+    expect(Number.isSafeInteger(pid), probe.stdout).toBe(true);
+    try {
+      // The stand-in has no orphan check of its own: only the exit handler stops it, before the worker is gone.
+      expect(await until(() => dead(pid), 500), `reader ${String(pid)} is gone with its worker`).toBe(true);
+    } finally {
+      if (!dead(pid)) {
+        process.kill(pid, 'SIGKILL');
+      }
+    }
+  }, 60_000);
+
+  it('stops a reader whose parent has gone, on its own, when its loop is free', async () => {
+    // The reader under a shell that is then killed: its stdin is a pipe from a sleep that outlives the shell, so it
+    // waits for a request that never comes until its orphan check sees its parent change.
+    const shell = spawn('/bin/sh', ['-c', 'sleep 20 | "$@" & echo $! >&2; exec sleep 60', 'orphan', process.execPath, ...readerArgv(PAGE_READ_LIMITS), decodeURIComponent(READER.pathname)], { env: {}, stdio: 'pipe' });
+    let stderr = '';
+    shell.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    let ready = false;
+    shell.stdout.on('data', () => {
+      ready = true;
+    });
+    expect(await until(() => ready && /^\d+\n/.test(stderr), 20_000), 'the reader said it was ready').toBe(true);
+    const pid = Number(/^(\d+)\n/.exec(stderr)?.[1]);
+    try {
+      expect(dead(pid)).toBe(false);
+      shell.kill('SIGKILL');
+      expect(await until(() => dead(pid), 5_000), `orphaned reader ${String(pid)} stopped itself`).toBe(true);
+    } finally {
+      if (!dead(pid)) {
+        process.kill(pid, 'SIGKILL');
+      }
+      shell.stdin.destroy();
+    }
+  }, 60_000);
+
+  it("writes nothing of a damaged document to its stderr or among its frames, whatever pdf.js makes of it", async () => {
+    // SYNTHETIC: an unknown operator named in the content and a broken cross-reference, both of which pdf.js reports
+    // with the document's own words when it is allowed to speak.
+    const damaged = Buffer.from(syntheticPdf([['SYNTHETIC PROVIDER AGREEMENT']]))
+      .toString('latin1')
+      .replace('Tj', 'SYNTHETICOPERATOR Tj')
+      .replace(/startxref\n\d+/, 'startxref\n12');
+    const bytes = new Uint8Array(Buffer.from(damaged, 'latin1'));
+    const direct = await readDirectly(bytes);
+    expect(direct.code).toBe(0);
+    expect(direct.frames.map((entry) => entry.type)).toEqual([READER_FRAME.ready, READER_FRAME.page, READER_FRAME.done]);
+    expect(direct.stderr).not.toMatch(/SYNTHETIC/);
+    // Only the runtime's and pdf.js's fixed lines as it loads, before the reader reads a byte.
+    expect(direct.stderr.split('\n').filter((line) => line !== '' && !/^Warning: Cannot (load|polyfill) /.test(line))).toEqual([]);
+    expect(await readDocumentPages({ bytes, contentType: PDF })).toEqual({ ok: true, pages: [direct.frames[1]?.body] });
+  }, 60_000);
 
   it('gives the reader no environment, no argument but its entry, and no file, process, thread or addon', async () => {
     const read = readInChild;
