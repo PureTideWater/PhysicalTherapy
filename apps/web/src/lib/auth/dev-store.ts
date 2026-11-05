@@ -26,6 +26,20 @@ export interface DevUserRecord {
   /** The last TOTP step accepted, so a code is never accepted twice. */
   readonly totpLastStep: number;
   readonly credentials: readonly DevCredential[];
+  /**
+   * A mailed password-reset code, kept only as its hash, until it is used, expires or runs out of tries. Optional, so
+   * stores written before it existed (and the seed) still load.
+   */
+  readonly reset?: DevResetCode;
+}
+
+export interface DevResetCode {
+  /** The code's keyed hash (base64url), never the code. */
+  readonly codeHash: string;
+  /** When the code stops working, in epoch milliseconds. */
+  readonly expiresAt: number;
+  /** Wrong codes tried against it. */
+  readonly attempts: number;
 }
 
 export interface DevCredentialStore {

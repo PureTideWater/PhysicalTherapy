@@ -435,6 +435,22 @@ export function lineEntriesEmptyText(kind: CorrectionView['kind']): string {
   return kind === null ? 'No entry on this line yet.' : 'No entry on this line: the correction paid nothing more.';
 }
 
+/**
+ * The Exports empty state's next step, true to what the upload panel above shows (PRD baseline: an empty state's next
+ * step is one the person can take). The panel says first that this person cannot upload, then that uploads are not
+ * open, paused or closed; the step follows the same order, so it never asks for an upload the panel refuses. A closed
+ * gate's words hold for each of its states (no agreement yet, paused, closed): none promises that uploads open again.
+ */
+export function exportsEmptyNextStep(upload: { readonly canUpload: boolean; readonly gate: { readonly open: boolean } }): string {
+  if (!upload.canUpload) {
+    return 'Billing managers, analysts and firm principals upload the practice-management system’s payment-posting export and the bank’s EFT export.';
+  }
+  if (!upload.gate.open) {
+    return 'No export can be uploaded now; the note above says why.';
+  }
+  return 'Upload the practice-management system’s payment-posting export and the bank’s EFT export above.';
+}
+
 /** Whether the case page shows its "Billable to the patient" Fact (UX-5): something billable, or a line with a correction that paid nothing more. */
 export function showsBillableFact(corrections: { readonly billableCents: string; readonly lines: Readonly<Record<string, CorrectionView>> }): boolean {
   return corrections.billableCents !== '0' || Object.values(corrections.lines).some((line) => line.kind !== null);

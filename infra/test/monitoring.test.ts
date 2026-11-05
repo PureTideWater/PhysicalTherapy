@@ -3,8 +3,20 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ENVIRONMENTS } from '../lib/environments';
-import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, PLATFORM_HEARTBEAT_METRIC, workerLogGroupName } from '../lib/heartbeat';
+import { connectionBudget } from '../lib/connections';
+import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
+import { ROLLING_DEPLOYMENT, STOP_FIRST_DEPLOYMENT } from '../lib/environments';
+import {
+  HEARTBEAT_INTERVAL_SECONDS,
+  HEARTBEAT_MESSAGE,
+  HEARTBEAT_METRIC,
+  MISSED_HEARTBEATS_TO_ALARM,
+  PLATFORM_HEARTBEAT_METRIC,
+  STOP_FIRST_START_ALLOWANCE_SECONDS,
+  WORKER_STOP_TIMEOUT_SECONDS,
+  missedHeartbeatsToAlarm,
+  workerLogGroupName,
+} from '../lib/heartbeat';
 import { HEAP_MIB } from '../lib/heap';
 import {
   JOB_FAILED_MESSAGE,
@@ -37,8 +49,23 @@ import {
   UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS,
   UPLOAD_SENT_TO_WAIT_MESSAGE,
 } from '../lib/screening';
-import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../lib/security-events';
-import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
+import {
+  CLIENT_CREDENTIAL_REFUSED_MESSAGE,
+  CREDENTIAL_PROBE_REFUSED_MESSAGE,
+  ENROLMENT_REFUSED_MESSAGE,
+  PASSWORD_RESET_FAILED_MESSAGE,
+  PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES,
+  PASSWORD_RESET_NOT_DELIVERED_MESSAGE,
+  PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
+  PASSWORD_RESET_REQUESTED_MESSAGE,
+  RESET_AND_ENROLMENT_COUNTS,
+  RESET_REQUESTS_PER_USER,
+  SECURITY_ALARM_PERIOD_SECONDS,
+  SIGN_IN_BURST_MESSAGES,
+  SIGN_IN_BURST_METRIC,
+  resetRequestsRuleName,
+} from '../lib/security-events';
+import { type CfnResource, type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
 
 describe('the heartbeat contract with the worker', () => {
   it('matches the line apps/worker logs for each beat', () => {
@@ -83,6 +110,53 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
     for (const message of SIGN_IN_BURST_MESSAGES) {
       expect(web).toContain(`logger.warn('${message}'`);
     }
+  });
+});
+
+describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
+  const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
+
+  it('pins the six counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+    // Literals, so an edit to the constants cannot pass by changing both sides.
+    expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
+      {
+        metricName: 'PasswordResetNotDeliveredConfig',
+        message: 'password reset request not delivered',
+        errorCodes: ['UserNotFoundException', 'NotAuthorizedException', 'InvalidParameterException', 'CodeDeliveryFailureException'],
+        threshold: 1,
+        periodSeconds: 300,
+      },
+      { metricName: 'PasswordResetNotDeliveredThrottled', message: 'password reset request not delivered', errorCodes: ['LimitExceededException', 'TooManyRequestsException'], threshold: 3, periodSeconds: 3600 },
+      { metricName: 'PasswordResetRequestFailed', message: 'password reset request failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      { metricName: 'SecondFactorEnrolmentRefused', message: 'security event: second-factor enrolment refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      { metricName: 'ClientCredentialRefused', message: 'security event: client credential refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // The start-up probe's refusal (review infra-auth-IA-2): a deploy it rolls back reaches no user, so no other line is written.
+      { metricName: 'ClientCredentialProbeRefused', message: 'cognito probe refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
+    ]);
+    expect(PASSWORD_RESET_REQUESTED_MESSAGE).toBe('password reset requested');
+    expect(RESET_REQUESTS_PER_USER).toEqual({ threshold: 5, periodSeconds: 3600 });
+    expect(SECURITY_ALARM_PERIOD_SECONDS).toBe(300);
+  });
+
+  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal and each account\'s request', () => {
+    const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
+    const flow = source('apps/web/src/lib/auth/sign-in.ts');
+    expect(provider).toContain(`this.logger.warn('${PASSWORD_RESET_NOT_DELIVERED_MESSAGE}', { error_code: code, request_id: requestId ?? null });`);
+    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_FAILED_MESSAGE}', { request_id: context.requestId, error_code: errorCode(error) });`);
+    expect(flow).toContain(`this.deps.logger.warn('${ENROLMENT_REFUSED_MESSAGE}', {`);
+    expect(flow).toContain(`this.deps.logger.error('${CLIENT_CREDENTIAL_REFUSED_MESSAGE}', {`);
+    expect(source('apps/web/src/lib/auth/credential-probe.ts')).toContain(`logger?.error('${CREDENTIAL_PROBE_REFUSED_MESSAGE}', { error_code: code });`);
+    // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
+    expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
+  });
+
+  it('splits every code the provider answers as not delivered into exactly the configuration codes and the throttle codes', () => {
+    const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
+    const listed = /const RESET_NOT_DELIVERED = new Set\(\[([^\]]*)\]\);/.exec(provider)?.[1] ?? '';
+    const codes = [...listed.matchAll(/'([A-Za-z]+)'/g)].map((match) => match[1]);
+    expect(codes).toHaveLength(6);
+    expect([...PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES, ...PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES].sort()).toEqual(codes.sort());
+    expect(PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES.filter((code) => (PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES as readonly string[]).includes(code))).toEqual([]);
   });
 });
 
@@ -176,8 +250,10 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // Worker: heartbeat, final job failures, pricing engine errors, job heap peaks, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
-    // the platform's five codes, an unsent probe, and the web's refused validation and validation cap.
-    expect(filters).toHaveLength(23);
+    // the platform's five codes, an unsent probe, and the web's refused validation and validation cap. Reset and
+    // enrolment (R-11; docs/adr/0088, D7): the web's undelivered requests (configuration, throttle), failed requests,
+    // refused enrolments, refused client credentials and the start-up probe's refusal.
+    expect(filters).toHaveLength(29);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -189,6 +265,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.jobFailedAlarm,
       stack.monitoring.pricingEngineErrorsAlarm,
       stack.monitoring.jobHeapAlarm,
+      stack.monitoring.databaseConnectionsAlarm,
       stack.monitoring.failedSignInBurstAlarm,
       stack.monitoring.modelBudgetAlarm,
       stack.edge.signInRateLimitAlarm,
@@ -199,6 +276,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.mailProbeUnsentAlarm,
       stack.monitoring.mailValidationRefusedAlarm,
       stack.monitoring.mailValidationCapAlarm,
+      ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
+      stack.monitoring.resetRequestsPerUserAlarm,
       stack.mailStreams.accountBounceWarningAlarm,
       stack.mailStreams.accountBounceHighAlarm,
       stack.mailStreams.accountComplaintWarningAlarm,
@@ -386,6 +465,84 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
   });
 
+  describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
+    const web = stack.monitoring.webLogGroup;
+
+    it('counts each of the six lines on the web log group alone, by message and, for undelivered requests, by code, and alarms at its threshold', () => {
+      for (const count of RESET_AND_ENROLMENT_COUNTS) {
+        const codes = count.errorCodes as readonly string[];
+        const pattern =
+          codes.length === 0
+            ? `{ $.msg = "${count.message}" }`
+            : `{ ($.msg = "${count.message}") && ((${codes.map((code) => `$.error_code = "${code}"`).join(') || (')})) }`;
+        expect(propertiesOf(filterFor(count.metricName, web)), count.metricName).toEqual({
+          LogGroupName: ref(logicalIdOf(stack, web)),
+          FilterPattern: pattern,
+          MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Web', MetricName: count.metricName, MetricValue: '1', Unit: 'Count' }],
+        });
+        const alarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms[count.metricName]));
+        expect(propertiesOf(alarm), count.metricName).toMatchObject({
+          Namespace: 'TherapyPlatform/Web',
+          MetricName: count.metricName,
+          Statistic: 'Sum',
+          Period: count.periodSeconds,
+          EvaluationPeriods: 1,
+          ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+          Threshold: count.threshold,
+          TreatMissingData: 'notBreaching',
+          AlarmActions: [topic],
+        });
+        expect(propertiesOf(alarm).Dimensions, count.metricName).toBeUndefined();
+      }
+      const counted = filters.filter(([, filter]) => RESET_AND_ENROLMENT_COUNTS.some((count) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${count.metricName}"`)));
+      expect(counted).toHaveLength(RESET_AND_ENROLMENT_COUNTS.length);
+    });
+
+    it('counts reset requests per user with one contributor rule keyed on the user ID, and no metric filter counts them', () => {
+      const rules = resourcesOf(template, 'AWS::CloudWatch::InsightRule');
+      expect(rules).toHaveLength(1);
+      const [id, rule] = rules[0] as [string, CfnResource & { readonly DependsOn?: readonly string[] }];
+      // The rule is itself the CloudFormation resource (an L1), so its logical ID is read from it, not a default child.
+      expect(id).toBe(stack.getLogicalId(stack.monitoring.resetRequestsPerUserRule));
+      const properties = propertiesOf(rule);
+      expect(properties.RuleName).toBe(resetRequestsRuleName(environment));
+      expect(properties.RuleState).toBe('ENABLED');
+      expect(JSON.parse(properties.RuleBody as string)).toEqual({
+        Schema: { Name: 'CloudWatchLogRule', Version: 1 },
+        LogGroupNames: [logGroupName(environment, 'web')],
+        LogFormat: 'JSON',
+        Contribution: { Keys: ['$.user_id'], Filters: [{ Match: '$.msg', In: [PASSWORD_RESET_REQUESTED_MESSAGE] }] },
+        AggregateOn: 'Count',
+      });
+      // The rule reads the web log group by name, so it is created after it.
+      expect(rule.DependsOn).toContain(logicalIdOf(stack, web));
+      // No metric per user: no filter counts the line (the rule alone does), and none has a dimension.
+      for (const [filterId, filter] of filters) {
+        expect(String(propertiesOf(filter).FilterPattern), filterId).not.toContain(PASSWORD_RESET_REQUESTED_MESSAGE);
+      }
+    });
+
+    it('alarms when one user\'s reset requests reach five in an hour, naming no user', () => {
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetRequestsPerUserAlarm)));
+      expect(alarm).toMatchObject({
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 5,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      const metrics = alarm.Metrics as Record<string, unknown>[];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0]).toMatchObject({
+        Expression: `INSIGHT_RULE_METRIC('${resetRequestsRuleName(environment)}', 'MaxContributorValue')`,
+        Period: 3600,
+        ReturnData: true,
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(alarm.MetricName).toBeUndefined();
+    });
+  });
+
   it('counts every model budget refusal and crossing in the web app’s and the worker’s logs, and tells the operator within five minutes (MOD-05)', () => {
     const pattern = `{ (${MODEL_BUDGET_ERROR_CODES.map((code) => `$.error_code = "${code}"`).join(') || (')}) }`;
     for (const group of [stack.monitoring.webLogGroup, stack.monitoring.workerLogGroup]) {
@@ -450,6 +607,26 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     expect(propertiesOf(heapAlarm).OKActions).toBeUndefined();
   });
 
+  it('tells the operator when the database holds 80% of its max_connections in five minutes, the figure synthesis checked every task against (docs/adr/0083)', () => {
+    const budget = connectionBudget(environmentSettings(environment));
+    const alarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.databaseConnectionsAlarm));
+    expect(budget.alarmThreshold).toBe(Math.ceil(budget.maxConnections * 0.8));
+    expect(propertiesOf(alarm)).toMatchObject({
+      AlarmDescription: `The ${environment} database held ${String(budget.alarmThreshold)} or more connections, 80 percent of the ${String(budget.maxConnections)} the connection budget reads for its class.`,
+      Namespace: 'AWS/RDS',
+      MetricName: 'DatabaseConnections',
+      Dimensions: [{ Name: 'DBInstanceIdentifier', Value: ref(logicalIdOf(stack, stack.database.instance)) }],
+      Statistic: 'Maximum',
+      Period: 300,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      Threshold: budget.alarmThreshold,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
+    expect(propertiesOf(alarm).OKActions).toBeUndefined();
+  });
+
   it('counts each heartbeat line as the custom heartbeat metric', () => {
     const filter = filterFor(HEARTBEAT_METRIC.metricName);
     expect(propertiesOf(filter)).toEqual({
@@ -461,15 +638,19 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
   });
 
-  it('alarms when two consecutive heartbeat periods are empty, missing data counting as missed', () => {
+  // Two missed beats where the worker deploys new-before-old; in dev, whose worker deploys stop-first (Lane A's
+  // orchestrator, 2026-11-05), ten: a deploy's gap without a worker never pages (round 4).
+  const missed = environment === 'dev' ? 10 : 2;
+
+  it('alarms when consecutive heartbeat periods are empty, missing data counting as missed: two, and in dev, whose worker deploys stop-first, its deploy’s whole gap', () => {
     const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm)).toMatchObject({
       Namespace: HEARTBEAT_METRIC.namespace,
       MetricName: HEARTBEAT_METRIC.metricName,
       Statistic: 'Sum',
       Period: HEARTBEAT_INTERVAL_SECONDS,
-      EvaluationPeriods: 2,
-      DatapointsToAlarm: 2,
+      EvaluationPeriods: missed,
+      DatapointsToAlarm: missed,
       ComparisonOperator: 'LessThanThreshold',
       Threshold: 1,
       TreatMissingData: 'breaching',
@@ -481,7 +662,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm).AlarmActions).toEqual([topic]);
     expect(propertiesOf(alarm).OKActions).toEqual([topic]);
-    expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed 2 consecutive heartbeats.`);
+    expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed ${String(missed)} consecutive heartbeats.`);
   });
 
   it('counts each job that fails its last attempt, and tells the operator within five minutes (JOB-02, the restore drill included)', () => {
@@ -520,5 +701,18 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       Condition: { StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } } },
     });
     expect(JSON.stringify(allows[0]?.Condition?.ArnLike)).toContain(':alarm:*');
+  });
+});
+
+/** Lane A's orchestrator, 2026-11-05: a dev deploy never pages (round 4, the instance classes). */
+describe('the heartbeat alarm where a deploy stops the worker first', () => {
+  it('counts two missed beats for a new-before-old deploy, and for a stop-first deploy every beat its gap can miss', () => {
+    expect(missedHeartbeatsToAlarm(ROLLING_DEPLOYMENT)).toBe(MISSED_HEARTBEATS_TO_ALARM);
+    expect(MISSED_HEARTBEATS_TO_ALARM).toBe(2);
+    // The gap: up to one interval since the old task's last beat, its stop timeout, then the new task's start before its first beat.
+    expect(WORKER_STOP_TIMEOUT_SECONDS).toBe(60);
+    expect(STOP_FIRST_START_ALLOWANCE_SECONDS).toBe(480);
+    expect(missedHeartbeatsToAlarm(STOP_FIRST_DEPLOYMENT)).toBe((HEARTBEAT_INTERVAL_SECONDS + WORKER_STOP_TIMEOUT_SECONDS + STOP_FIRST_START_ALLOWANCE_SECONDS) / HEARTBEAT_INTERVAL_SECONDS);
+    expect(missedHeartbeatsToAlarm(STOP_FIRST_DEPLOYMENT)).toBe(10);
   });
 });

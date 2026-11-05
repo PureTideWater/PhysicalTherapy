@@ -8,6 +8,7 @@ import type { NotificationConfig, PlatformConfig } from '../config';
 import type { JobSender } from '../jobs/enqueue';
 import { type MailEventsDependencies, type PlatformHandlers, createPlatformHandlers } from '../jobs/platform';
 import { type MailSender, configuredMailSender } from '../mail/mail';
+import { OPERATOR_POOL_CONNECTIONS } from '../pools';
 import { LocalObjectStore } from '../storage/local-object-store';
 import type { ObjectStore } from '../storage/object-store';
 import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
@@ -68,7 +69,7 @@ export function mailEvents(config: Pick<PlatformConfig, 'mail' | 'mailEvents'>):
 
 /** The platform handlers and the operator pool they use (closed by the caller on shutdown); the queue takes the monitoring schedule's jobs. */
 export function platformRuntime(config: PlatformConfig, queue?: JobSender): { handlers: PlatformHandlers; operator: DatabasePool } {
-  const operator = openPool(config.operatorDatabaseUrl, 2);
+  const operator = openPool(config.operatorDatabaseUrl, OPERATOR_POOL_CONNECTIONS);
   return {
     operator,
     handlers: createPlatformHandlers({

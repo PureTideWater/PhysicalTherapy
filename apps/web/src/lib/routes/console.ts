@@ -279,6 +279,12 @@ interface StatusChangeRow {
   readonly note: string | null;
   readonly at: Date;
   readonly email: string;
+  /**
+   * Whether this row began the suspension in force: its at equals the organization's status_since as the page read
+   * it, compared in Postgres to the microsecond. Never matched as JS Dates, which keep milliseconds and would take an
+   * earlier suspension in the same millisecond for this one (PRC-32 sweep).
+   */
+  readonly began: boolean;
 }
 
 const changeOf = (row: StatusChangeRow): StatusChange['change'] => (row.to_status === 'active' ? 'reinstated' : row.from_status === 'active' ? 'suspended' : 'reason_changed');
@@ -292,7 +298,7 @@ export function suspensionOf(organization: Pick<OrganizationSummary, 'status' | 
     return null;
   }
   const since = organization.statusSince;
-  const own = since === null ? undefined : rows.find((row) => row.from_status === 'active' && row.at.getTime() === since.getTime());
+  const own = rows.find((row) => row.from_status === 'active' && row.began);
   let reason: string | null = own?.reason ?? null;
   let reasonChangedBy: StatusChangeAuthor | null = null;
   let note: string | null = null;
@@ -354,18 +360,23 @@ export const organizationPage = platformRoute({
   params: z.object({ organizationId: opaqueId, created: optionalText(opaqueId).catch(undefined) }),
   handle: async ({ scope, params }) => {
     const id = params.organizationId;
-    const row = (await scope.client.query<OrganizationRow>(`SELECT ${ORGANIZATION_COLUMNS} FROM organization WHERE id = $1`, [id])).rows[0];
+    const row = (await scope.client.query<OrganizationRow & { status_since_text: string | null }>(`SELECT ${ORGANIZATION_COLUMNS}, status_since::text AS status_since_text FROM organization WHERE id = $1`, [id])).rows[0];
     if (row === undefined) {
       throw new NotFoundError();
     }
     const organization = organizationOf(row);
     // The history (organization_status_change: platform administrators read it, organization.manage), with each
     // actor's email; the suspension in force from its own rows, however long the history is.
-    const changeColumns = 'c.id, c.from_status, c.to_status, c.reason, c.note, c.at, u.email FROM organization_status_change c JOIN "user" u ON u.id = c.changed_by';
-    const history = await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 ORDER BY c.at DESC, c.id DESC LIMIT 20`, [id]);
+    // The suspension in force is found by the status_since this page read, carried as text to the microsecond and
+    // compared in Postgres, never passed back as a JS Date (PRC-32 sweep). Every statement uses that one value, so a
+    // status change committed while the page reads cannot pair one suspension's start with another's rows.
+    const statusSince = row.status_since_text;
+    const changeColumns =
+      'c.id, c.from_status, c.to_status, c.reason, c.note, c.at, u.email, coalesce(c.at = $2::timestamptz, false) AS began FROM organization_status_change c JOIN "user" u ON u.id = c.changed_by';
+    const history = await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 ORDER BY c.at DESC, c.id DESC LIMIT 20`, [id, statusSince]);
     const current =
-      organization.status === 'suspended' && organization.statusSince !== null
-        ? (await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 AND c.to_status = 'suspended' AND c.at >= $2 ORDER BY c.at, c.id`, [id, organization.statusSince])).rows
+      organization.status === 'suspended' && statusSince !== null
+        ? (await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 AND c.to_status = 'suspended' AND c.at >= $2::timestamptz ORDER BY c.at, c.id`, [id, statusSince])).rows
         : [];
     // What a suspension reaches: the grants in force the organization holds, and the practices they reach.
     const held = await scope.client.query<{ grants: number; practices: number }>(
@@ -665,6 +676,13 @@ export const setPracticeLocation = platformRoute({
   sample: { params: () => ({}), input: (refs) => ({ practiceId: refs.practiceId, zip: '00011' }) },
 });
 
+/**
+ * The answer for an address whose identity-provider account cannot be linked to an invitation: one already linked to
+ * another account here, or (with no account here) one that has signed in (docs/adr/0088 D4). The reconcile is an
+ * engineer's, run by the founder's break-glass session (docs/runbooks/support-mail.md, Sign-in help tickets).
+ */
+export const ANOTHER_IDENTITY = 'this email belongs to another identity; ask an engineer to reconcile it';
+
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
 }
@@ -676,7 +694,7 @@ export const inviteMember = platformRoute({
   phi: false,
   permission: 'organization.manage',
   params: z.object({}),
-  input: z.object({ organizationId: opaqueId, email: z.string().trim().toLowerCase().pipe(z.email('an email address')), role: z.enum(MEMBERSHIP_ROLES) }),
+  input: z.object({ organizationId: opaqueId, email: z.string().trim().toLowerCase().pipe(z.email('enter an email address')), role: z.enum(MEMBERSHIP_ROLES) }),
   audit: { action: 'membership_created', objectType: 'membership' },
   handle: async ({ scope, input, services, actor }): Promise<MutationResult> => {
     const organization = (await scope.client.query<{ kind: 'group' | 'firm' | 'internal' }>('SELECT kind FROM organization WHERE id = $1', [input.organizationId])).rows[0];
@@ -709,10 +727,17 @@ export const inviteMember = platformRoute({
       throw new InputError([{ field: 'email', message: 'a member of a practice group or a firm cannot hold an internal role' }]);
     }
     // The provider's account: created with a temporary password it delivers (an invitation), or found.
-    const { sub } = await services.provider.ensureUser(input.email);
+    const ensured = await services.provider.ensureUser(input.email);
+    const { sub } = ensured;
     let userId = known?.id;
     if (known !== undefined && known.cognito_sub !== sub) {
-      throw new InputError([{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }]);
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
+    }
+    // SEC-22, docs/adr/0088 D4: with no account here, a provider account found (not made now) is linked only if it has
+    // never signed in; otherwise whoever holds its password, and any factor, would take the invitation.
+    const linksExisting = known === undefined && !ensured.created;
+    if (linksExisting && !ensured.neverSignedIn) {
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
     }
     if (userId === undefined) {
       userId = randomUUID();
@@ -729,6 +754,12 @@ export const inviteMember = platformRoute({
         throw new InputError([{ field: 'email', message: 'already a member of this organization' }]);
       }
       throw error;
+    }
+    // A new temporary password for this invitation; the provider voids the one it mailed before. An account that signed
+    // in since the check above is not sent one, and is refused as one that had: the transaction writes nothing (review
+    // security-N3).
+    if (linksExisting && !(await services.provider.resendInvitation(input.email))) {
+      throw new InputError([{ field: 'email', message: ANOTHER_IDENTITY }]);
     }
     return { objectId: membershipId, redirect: `/console/organizations/${input.organizationId}` };
   },

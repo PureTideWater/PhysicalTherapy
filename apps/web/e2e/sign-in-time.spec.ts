@@ -1,10 +1,11 @@
+import { brandName } from '@paidwhole/brand/name';
 import { type Browser, type Locator, type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { totpCode } from '../src/lib/auth/totp';
-import { atPhoneWidth, expectAccessible } from './a11y';
-import { addVirtualKey, enterPassword, withDatabase } from './helpers';
+import { atPhoneWidth, expectAccessible, expectAccessibleInDark } from './a11y';
+import { addVirtualKey, enterPassword, refusal, withDatabase } from './helpers';
 
 /**
  * Each sign-in step's time limit (docs/adr/0081; test matrix SGN-01 to SGN-04): the code step states its limit, warns
@@ -16,11 +17,22 @@ import { addVirtualKey, enterPassword, withDatabase } from './helpers';
  * counts toward the ten-failure lock and the mfa bucket, and specs run in parallel). The browser's clock is
  * Playwright's where a test moves it: TOTP codes are computed here from Node's real clock and checked by the server's,
  * which nothing moves, and a step the server should find closed is closed by deleting `tp_sign_in`, as the browser
- * itself does at the cookie's Max-Age. Synthetic data only.
+ * itself does at the cookie's Max-Age. The forgotten password's surfaces (the amendment of docs/adr/0081; SGN-06, SGN-08)
+ * pass axe here too: the sign-in page's help list and reset notice, the reset page in both phases with its code step
+ * warning and closing in its own words, and the code and key steps with their lost-factor lines; and a key step that
+ * closed before its answer returns to the key page (UXS-01). Synthetic data only.
  */
 
 const KEEPS = 'If you need more time, start again: your email is kept, and you type your password again.';
 const CLOSED = 'Start again: your email is kept, and you type your password again.';
+
+/**
+ * A sign-in page's title (the root layout's template). A step's restart, a server action's redirect, is a client-side
+ * navigation whose new title reaches the head after its body: axe waits for this one, not the step before's.
+ */
+function titled(name: string): string {
+  return `${name} | ${brandName}`;
+}
 
 /** The status below a step's form, which speaks at the warning and when the step has closed. */
 function regionOf(page: Page): Locator {
@@ -178,6 +190,25 @@ async function setupKeyOf(page: Page): Promise<string> {
   return secret;
 }
 
+/**
+ * A lost-factor line below a step's card (docs/adr/0081, the forgotten password, A7): its words around the support
+ * address, which is a `mailto:` link with no subject and no body, and outside the step's status.
+ */
+async function expectLostFactorLine(page: Page, before: string, after: string): Promise<void> {
+  const line = page.locator('p').filter({ hasText: before.trim() });
+  await expect(line).toHaveCount(1);
+  const link = line.getByRole('link');
+  await expect(link).toHaveCount(1);
+  const href = (await link.getAttribute('href')) ?? '';
+  expect(href).toMatch(/^mailto:[^?&]+@[^?&]+$/);
+  const address = href.slice('mailto:'.length);
+  await expect(link).toHaveText(address);
+  await expect(line).toHaveText(`${before}${address}${after}`);
+  if ((await regionOf(page).count()) > 0) {
+    await expect(regionOf(page)).not.toContainText(before.trim());
+  }
+}
+
 /** A browser context without JavaScript, closed after `run` (its step is abandoned). */
 async function withoutJavaScript(browser: Browser, run: (page: Page) => Promise<void>): Promise<void> {
   const context = await browser.newContext({ javaScriptEnabled: false });
@@ -204,6 +235,14 @@ test('the code step states its limit, warns once, closes, and starts again with 
     await expect(page.locator('[data-slot="step-marker"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Verification code', exact: true })).toBeVisible();
     await expectOpen(page);
+  });
+
+  await test.step('below the card, the lost-authenticator line names the support address, and the step passes axe with it at 1280 and 390 px (SGN-08)', async () => {
+    await expectLostFactorLine(page, 'Lost your authenticator app? Write to ', ' from the address you sign in with.');
+    await expectAccessible(page, 'Code step, open, lost-authenticator line');
+    // In dark too: the frame's muted line and its link, on the frame's own ground (review UXD-N1).
+    await expectAccessibleInDark(page, 'Code step, open, lost-authenticator line');
+    await atPhoneWidth(page, 'Code step, open, lost-authenticator line');
   });
 
   await test.step('at one minute left the status warns, politely, and the focus and what was typed stay', async () => {
@@ -240,7 +279,7 @@ test('the code step states its limit, warns once, closes, and starts again with 
     await page.context().clearCookies({ name: 'tp_sign_in' });
     await pressCode(page, personaTotpCode(key), 'Sign in');
     await expectKept(page, 'step_expired', email, ['Sign-in step closed', 'That sign-in step closed. Your email is filled in: type your password to start again.']);
-    await expectAccessible(page, 'Sign in, email kept');
+    await expectAccessible(page, 'Sign in, email kept', { title: titled('Sign in') });
   });
 
   await test.step('the kept email is a sealed, HttpOnly, SameSite=Lax cookie that ends within 18 minutes', async () => {
@@ -353,6 +392,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expect(page.locator('[data-slot="step-marker"]')).toHaveText(/^Step 1 of 2:?\s*$/);
     await expect(phraseOf(page)).toHaveText('This step stays open for 3 minutes.');
     await expectOpen(page);
+    // In dark: the new-password card, its fields and its limit, on the frame's ground (review UXD116-N2).
+    await expectAccessibleInDark(page, 'New password, open');
   });
 
   await test.step('during the warning the sentence stays in view beside the second password field, and after a refusal too', async () => {
@@ -403,6 +444,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await expect(region).toContainText('This step closes within a minute');
     await expect(region).toContainText('Starting again gives you a new setup key: replace this one in your authenticator app.');
     await expectAccessible(page, 'Enrolment, warning shown');
+    // In dark too: the setup key's box on the raised ground, and the warning beside it (review UXD116-N2).
+    await expectAccessibleInDark(page, 'Enrolment, warning shown');
     await atPhoneWidth(page, 'Enrolment, warning shown');
     await expectCueInView(page, codeOf(page), 'Enrolment, warning shown');
   });
@@ -494,6 +537,8 @@ test('an invited support engineer’s three steps are numbered, and key registra
     await expectStartAgain(region);
     await expect(phraseOf(page)).toHaveText('This step closes within 2 minutes.');
     await expectAccessible(page, 'Key registration, warning shown');
+    // In dark too: the key step's card and its warning (review UXD116-N2).
+    await expectAccessibleInDark(page, 'Key registration, warning shown');
   });
 
   await test.step('closed, key registration says starting again also asks for a code, and Start again keeps the email', async () => {
@@ -520,6 +565,168 @@ test('an invited support engineer’s three steps are numbered, and key registra
     await expect(page.locator('[data-slot="step-marker"]')).toHaveCount(0);
   });
 
+  await test.step('the key page’s lost-key line names the support address, and the page passes axe with it at 1280 and 390 px (SGN-08)', async () => {
+    await expectLostFactorLine(page, 'Lost your hardware key? Sign in with your second key. If you have none, write to ', ' from the address you sign in with.');
+    await expectAccessible(page, 'Hardware key, lost-key line');
+    await atPhoneWidth(page, 'Hardware key, lost-key line');
+  });
+
+  await test.step('a key step that closed before the key answered returns to the key page, not the password page (SGN-08, UXS-01)', async () => {
+    // The flow's own ceremony, with the step gone by the time its answer is posted, as when the browser drops the
+    // cookie at its Max-Age: the verify request goes without `tp_sign_in`.
+    await page.route('**/api/sign-in/hardware-key/verify', async (route) => {
+      await page.context().clearCookies({ name: 'tp_sign_in' });
+      const headers = await route.request().allHeaders();
+      const cookie = (headers.cookie ?? '')
+        .split(/;\s*/)
+        .filter((pair) => pair !== '' && !pair.startsWith('tp_sign_in='))
+        .join('; ');
+      await route.continue({ headers: { ...headers, cookie } });
+    });
+    await page.goto('/sign-in/hardware-key');
+    await page.getByLabel('Email', { exact: true }).fill(email);
+    await page.getByRole('button', { name: 'Sign in with hardware key' }).click();
+    await expect(page).toHaveURL(/\/sign-in\/hardware-key\?reason=step_expired$/);
+    const notice = page.locator('[data-slot="arrival-focus"]');
+    await expect(notice).toBeFocused();
+    await expect(notice).toContainText('That sign-in step closed. Start again with your hardware key.');
+    await page.unroute('**/api/sign-in/hardware-key/verify');
+    await page.getByLabel('Email', { exact: true }).fill(email);
+    await page.getByRole('button', { name: 'Sign in with hardware key' }).click();
+    await page.waitForURL((url) => !url.pathname.startsWith('/sign-in'));
+  });
+
   noAddress(email);
 });
 
+
+test('the sign-in page’s help list, the reset notice and the forgotten-password page in both phases pass axe at 1280 and 390 px, the code step warning and closing in its own words (SGN-06, SGN-08)', async ({ page }) => {
+  // An address of no account, 60 characters long, so phase 2's card title is seen to wrap at a phone's width: the
+  // request answers it as it answers every address, so no persona is spent.
+  const email = `${'reset-long-synthetic-address-'.padEnd(45, 'x')}@synthetic.test`;
+  expect(email).toHaveLength(60);
+  const noAddress = watchRequests(page);
+  await page.clock.install();
+
+  await test.step('the sign-in page lists its help under a heading, with a reset link that names itself and the support address as a plain mailto: link', async () => {
+    await page.goto('/sign-in');
+    const help = page.getByRole('region', { name: 'Help signing in' });
+    await expect(help.getByRole('heading', { level: 2, name: 'Help signing in' })).toBeVisible();
+    const items = help.getByRole('listitem');
+    await expect(items).toHaveCount(6);
+    await expect(items.nth(1)).toHaveText('Forgot your password? Reset it by email.');
+    await expect(items.nth(1).getByRole('link', { name: 'Reset it by email' })).toHaveAttribute('href', '/sign-in/forgot-password');
+    for (const index of [2, 3]) {
+      await expect(items.nth(index).getByRole('link')).toHaveAttribute('href', /^mailto:[^?&]+@[^?&]+$/);
+    }
+    await expect(items.nth(4).getByRole('link', { name: 'Request an audit' })).toHaveAttribute('href', '/request-audit');
+    await expect(items.nth(5).getByRole('link', { name: 'Service status' })).toHaveAttribute('href', '/status');
+    // The forgot link sits between the sign-in card and the hardware-key card (review UXR-03).
+    expect(await precedes(page.getByRole('link', { name: 'Forgot your password?' }), page.locator('[data-slot="hardware-key-requirement"]'))).toBe(true);
+    await expectAccessible(page, 'Sign in, help list');
+    await atPhoneWidth(page, 'Sign in, help list');
+  });
+
+  await test.step('the reset’s arrival notice on the sign-in page passes axe', async () => {
+    await page.goto('/sign-in?reason=password_reset');
+    const notice = page.locator('[data-slot="arrival-focus"]');
+    await expect(notice).toBeFocused();
+    await expect(notice).toContainText('Password changed');
+    await expectAccessible(page, 'Sign in, password changed');
+    await atPhoneWidth(page, 'Sign in, password changed');
+  });
+
+  await test.step('phase 1, empty, and refused for an address the server does not take', async () => {
+    await page.getByRole('link', { name: 'Forgot your password?' }).click();
+    await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Reset your password', exact: true })).toBeVisible();
+    await expectAccessible(page, 'Forgot password, request', { title: titled('Reset your password') });
+    await atPhoneWidth(page, 'Forgot password, request', { title: titled('Reset your password') });
+    // The browser takes an address with no dot in its domain; the server's schema refuses it.
+    const field = page.getByLabel('Email', { exact: true });
+    await field.fill('reset-no-dot@synthetic');
+    await page.getByRole('button', { name: 'Send code' }).click();
+    await expect(refusal(page)).toBeVisible();
+    await expect(refusal(page)).toContainText('Email: enter an email address');
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    await expect(field).toHaveValue('reset-no-dot@synthetic');
+    await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
+    await expectAccessible(page, 'Forgot password, request refused');
+    await atPhoneWidth(page, 'Forgot password, request refused');
+  });
+
+  const region = regionOf(page);
+  await test.step('phase 2 states 15 minutes, its card title wraps the long address at 390 px, and it passes axe', async () => {
+    await page.getByLabel('Email', { exact: true }).fill(email);
+    await page.getByRole('button', { name: 'Send code' }).click();
+    await expect(page).toHaveURL(/\/sign-in\/forgot-password\?reason=code_sent$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Choose a new password', exact: true })).toBeVisible();
+    await expect(phraseOf(page)).toHaveText('This step stays open for 15 minutes.');
+    await expectOpen(page);
+    // Back to sign in is a POST here and a link in phase 1, with one look: the link's colour (review UXB-N1).
+    const colour = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).color);
+    expect(await colour(page.getByRole('button', { name: 'Back to sign in' }))).toBe(await colour(page.locator('[data-slot="no-email"] a')));
+    // The "No email?" list names the support address last, with no subject and no body (review UXB-S1, UX-066).
+    await expect(page.locator('[data-slot="no-email"] li').last()).toContainText('Still nothing after a new code: write to');
+    await expect(page.locator('[data-slot="no-email"] a')).toHaveAttribute('href', /^mailto:[^?&]+@[^?&]+$/);
+    await expectAccessible(page, 'Forgot password, code step', { title: titled('Reset your password') });
+    // In dark too: Back to sign in (the link button) and the No email? list on the frame's own ground (review UXD-N1).
+    await expectAccessibleInDark(page, 'Forgot password, code step', { title: titled('Reset your password') });
+    await atPhoneWidth(page, 'Forgot password, code step', { title: titled('Reset your password') });
+    const before = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    try {
+      const title = page.locator('[data-slot="card-title"]').filter({ hasText: email });
+      await expect(title).toHaveCount(1);
+      const box = await title.evaluate((element) => ({
+        lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)),
+        overflow: element.scrollWidth - element.clientWidth,
+      }));
+      expect(box.lines, `the card title wraps at 390 px (${JSON.stringify(box)})`).toBeGreaterThan(1);
+      expect(box.overflow, 'the card title fits its card at 390 px').toBeLessThanOrEqual(0);
+    } finally {
+      if (before !== null) {
+        await page.setViewportSize(before);
+      }
+    }
+  });
+
+  await test.step('a wrong code is the one refusal, on the code field, and the page passes axe', async () => {
+    const chosen = 'Synthetic-reset-Axe-Pass-2026!';
+    await codeOf(page).fill('000000');
+    await page.getByLabel('New password', { exact: true }).fill(chosen);
+    await page.getByLabel('New password again', { exact: true }).fill(chosen);
+    await page.getByRole('button', { name: 'Save password' }).click();
+    await expect(refusal(page)).toContainText('That did not match.');
+    await expect(codeOf(page)).toHaveAttribute('aria-invalid', 'true');
+    await expect(codeOf(page)).toHaveValue('');
+    await expectAccessible(page, 'Forgot password, code refused');
+    await atPhoneWidth(page, 'Forgot password, code refused');
+  });
+
+  await test.step('at two minutes left the status warns in the reset’s own words, with no Start again of its own', async () => {
+    await page.clock.fastForward('13:00');
+    await expect(region).toHaveAttribute('data-phase', 'warning');
+    await expect(region).toContainText('This step closes within 2 minutes');
+    await expect(region).toContainText('If you need more time, send a new code below: it replaces the code already sent, and the step opens again for 15 minutes.');
+    await expect(region).not.toContainText('your email is kept');
+    await expect(region.getByRole('button')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Send a new code' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Use a different email' })).toBeVisible();
+    await expectAccessible(page, 'Forgot password, warning shown');
+    await atPhoneWidth(page, 'Forgot password, warning shown');
+  });
+
+  await test.step('closed, the status says to send a new code or use a different email, and both stay', async () => {
+    await page.clock.fastForward('02:00');
+    await expect(region).toHaveAttribute('data-phase', 'closed');
+    await expect(region).toContainText('Send a new code below to continue, or use a different email.');
+    await expect(region.getByRole('button')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Send a new code' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Use a different email' })).toBeEnabled();
+    await expectAccessible(page, 'Forgot password, closed');
+    await atPhoneWidth(page, 'Forgot password, closed');
+  });
+
+  noAddress(email);
+});

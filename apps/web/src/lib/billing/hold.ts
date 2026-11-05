@@ -47,6 +47,9 @@ export async function practiceHold(scope: PracticeScope<ScopeClient>, practiceId
   };
 }
 
+/** The causes whose hold lifts: a suspension, billing's hold, or either as someone outside the held organization reads it. */
+const LIFTING_CAUSES: ReadonlySet<HoldCause | null> = new Set<HoldCause>(['suspended', 'nonpayment', 'on_hold']);
+
 interface PauseRow {
   readonly reason: string | null;
   readonly source: HoldSource | null;
@@ -68,7 +71,8 @@ export async function workPause(scope: PracticeScope<ScopeClient>, practiceId: s
   if (row?.reason === null || row?.reason === undefined || row.source === null) {
     return null;
   }
-  return { reason: row.reason, source: row.source, restarts: row.cause !== 'closed' };
+  // A closure restarts nothing; a cause these words do not know promises nothing either way (docs/adr/0085).
+  return { reason: row.reason, source: row.source, restarts: row.cause === 'closed' ? false : LIFTING_CAUSES.has(row.cause) ? true : null };
 }
 
 /**

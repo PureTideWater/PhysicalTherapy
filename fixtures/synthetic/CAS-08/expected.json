@@ -452,8 +452,8 @@
     },
     {
       "path": "narrative-draft.txt",
-      "sha256": "355081be5ccffe889c6ffeaa1a594fa3a2ef8641d2bfa1b804a90a2274c8dcf1",
-      "bytes": 297,
+      "sha256": "4a9067c9382bd9ee70acd6bd145a82a1af8f23199e14cb4d76b1ca9ef2725f08",
+      "bytes": 341,
       "kind": "text",
       "description": "A draft narrative with one figure (1234.56) that is in no input record."
     }

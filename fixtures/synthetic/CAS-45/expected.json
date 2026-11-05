@@ -1,0 +1,21 @@
+{
+  "case": "CAS-45",
+  "module": "CAS",
+  "title": "A write-off reason the line’s own records contradict",
+  "assertion": "The Reason starts on “Choose the reason”, and a write-off with no reason chosen is refused on Reason; “Window passed” is neither offered nor accepted for a line whose dispute window is open or unknown, and is refused on Reason with nothing written; once the window has ended it is offered and recorded",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/lib/cases/write-off.test.ts",
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+    "apps/web/e2e/triage.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A case line on a synthetic practice the test creates, written off: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

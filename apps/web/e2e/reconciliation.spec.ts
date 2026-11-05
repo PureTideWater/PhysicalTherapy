@@ -56,7 +56,7 @@ async function throughTheChain(practiceId: string): Promise<void> {
 
 /** An export uploaded through the Reconciliation screen's own uploader, once intake has taken it in. */
 async function uploadExport(page: Page, kind: 'posting_export' | 'eft_export', file: string, mimeType: string): Promise<void> {
-  const uploads = page.getByRole('region', { name: 'Upload exports' });
+  const uploads = page.getByRole('region', { name: 'Upload posting and EFT exports' });
   await uploads.getByLabel('Kind of document').selectOption(kind);
   await uploads.getByLabel('Choose files to upload').setInputFiles([{ name: file, mimeType, buffer: fixture(file) }]);
   await expect(uploads.getByRole('region', { name: 'This batch' }).getByRole('status')).toContainText('1 of 1 sent; 1 of 1 taken in', { timeout: 90_000 });
@@ -96,6 +96,12 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await expect(page.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Reconciliation', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$0.00');
     await expect(page.getByText('No case line has a ledger entry or a match yet')).toBeVisible();
+    // The upload panel takes its name from its title; its drop zone takes its name from its own heading, one level
+    // below, and says "choose", as on Contracts.
+    const uploads = page.getByRole('region', { name: 'Upload posting and EFT exports' });
+    await expect(uploads.getByRole('heading', { level: 2 })).toHaveText('Upload posting and EFT exports');
+    const dropZone = uploads.getByRole('region', { name: 'Choose posting or EFT exports to upload' });
+    await expect(dropZone.getByRole('heading', { level: 3 })).toHaveText('Choose posting or EFT exports to upload');
   });
 
   await test.step('the posting template is mapped once, previewed on a sample that never leaves the browser', async () => {

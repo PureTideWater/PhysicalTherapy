@@ -7,10 +7,12 @@ name: release-capacity
 # way, under the SYNTHETIC quarterly scale release 900110 (seven years of CMS quarters, about 4.17 million records),
 # built outside the repository. A 100,000-line period prices while another practice's audit report prints and four 835s
 # parse, then triages and reports; it fails on any job not complete, the run not complete, a count other than the
-# period's lines or the 835s' claims, an OOM kill or a restart, memory.peak above 90% of the task, or a read outside the
-# keyed fetch or a job's last failed attempt in the worker's log. Times are recorded and advisory (the founder's ruling
-# of 2026-10-23 for the screening's test). The five 50,000-row screenings are screening-capacity's weekly S1 to S5.
-# Synthetic data only, no credentials. Not a required check.
+# period's lines, the lines the scenario makes actionable or the 835s' claims, an OOM kill, a restart or any
+# memory.events oom or oom_kill, the worker's working set (memory.current less inactive_file) above 90% of the task,
+# memory.peak reported beside it and never judged (Lane A's orchestrator, 2026-11-04; docs/adr/0083), or a read outside
+# the keyed fetch or a job's last failed attempt in the worker's log. Times are recorded and advisory (the founder's
+# ruling of 2026-10-23 for the screening's test). The five 50,000-row screenings are screening-capacity's weekly S1 to
+# S5. Synthetic data only, no credentials. Not a required check.
 on:
   schedule:
     # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (F1 (a)).
@@ -60,8 +62,13 @@ jobs:
       # workflow's layer cache and writes none, so the weekly run never churns the repository's Actions cache. The cache
       # stays, unlike release.yml's (docs/adr/0066, Part 2): this run's report is advisory, never attested, and no launch
       # check, deploy or required check reads it, so a layer another run built cannot reach a binding measurement.
+      # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
+      # whole event in it, and in the log. Its build record, which holds the whole event too, is uploaded as an artifact
+      # any signed-in account can read for 90 days, so a pull request's run uploads none (DOCKER_BUILD_RECORD_UPLOAD;
+      # docs/adr/0066, Part 3, N32): this workflow runs on none, and sets the variable as every build does.
       - name: Build the worker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled, DOCKER_BUILD_RECORD_UPLOAD: "${{ github.event_name != 'pull_request' }}" }
         with:
           context: .
           file: apps/worker/Dockerfile

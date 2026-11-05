@@ -201,6 +201,18 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect(line?.era).toEqual([expect.objectContaining({ kind: 'claim', trace: 'SYNEFTLED06002', paidOn: '2026-06-08', outcome: 'approved', manual: false, matchedBy: null, standing: true })]);
     expect(line?.entries.map((entry) => [entry.stage, entry.amountCents, entry.byJob])).toEqual([['approved', '3000', true]]);
     expect(page.canReconcile).toBe(true);
+    // Uploads open; while the organization is suspended its panel says they are paused, the database's sentence whole beneath (ux85-1, n7; docs/adr/0080).
+    expect(page.upload.gate).toEqual({ open: true, title: null, reason: null });
+    await w.owner.query("UPDATE organization SET status = 'suspended' WHERE id = $1", [practice.world.organizationId]);
+    try {
+      expect(ok(await call(reconciliationPage, practice.manager, P())).upload.gate).toEqual({
+        open: false,
+        title: 'Uploads are paused',
+        reason: 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable.',
+      });
+    } finally {
+      await w.owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [practice.world.organizationId]);
+    }
     const seen = ok(await call(reconciliationPage, viewer, P()));
     expect(seen.phi).toBe(false);
     expect(seen.canReconcile).toBe(false);

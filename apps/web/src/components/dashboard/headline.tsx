@@ -103,19 +103,20 @@ export function HeadlineTiles({ practiceId, headline, recoveredQuarter }: { read
 
 /**
  * Whether the person may upload here now, as Uploads decides it: the BAA on file (practice_baa_on_file()), then no hold
- * on their uploads (docs/adr/0080): paused while it can lift, stopped by a closure (SS-01 review UX-SS01-3).
+ * on their uploads (docs/adr/0080): paused while it can lift, stopped by a closure (SS-01 review UX-SS01-3), and
+ * unknown for a cause the words do not know, which promises nothing (docs/adr/0085).
  */
-export type UploadGate = 'open' | 'no_baa' | 'paused' | 'stopped';
+export type UploadGate = 'open' | 'no_baa' | 'paused' | 'stopped' | 'unknown';
 
 export function uploadGate(uploads: Dashboard['uploads'], hold: WorkPause | null): UploadGate {
-  return !uploads.baaOnFile ? 'no_baa' : hold === null ? 'open' : hold.restarts ? 'paused' : 'stopped';
+  return !uploads.baaOnFile ? 'no_baa' : hold === null ? 'open' : hold.restarts === true ? 'paused' : hold.restarts === false ? 'stopped' : 'unknown';
 }
 
 /**
  * The home before its first file (UX-140): the gate Uploads itself uses, in its words. Open: the upload sentence and
  * Go to Uploads. No BAA: the BAA sentence Uploads shows, and the agreement chain for a role that may act on it
- * (`agreements`), never Uploads. Paused or stopped: the hold named above it, which lifts or, for a closure, does not
- * (uploadsHeld; BIL-09), and no link.
+ * (`agreements`), never Uploads. Paused, stopped or unknown: the hold named above it, which lifts, does not for a
+ * closure (uploadsHeld; BIL-09), or, for a cause the words do not know, promises nothing (docs/adr/0085), and no link.
  */
 export function FirstUpload({ practiceId, gate, agreements }: { readonly practiceId: string; readonly gate: UploadGate; readonly agreements: boolean }) {
   switch (gate) {
@@ -149,6 +150,7 @@ export function FirstUpload({ practiceId, gate, agreements }: { readonly practic
       );
     case 'paused':
     case 'stopped':
+    case 'unknown':
       return <EmptyState mark title={FIRST_UPLOAD_HELD[gate].title} nextStep={FIRST_UPLOAD_HELD[gate].nextStep} />;
   }
 }

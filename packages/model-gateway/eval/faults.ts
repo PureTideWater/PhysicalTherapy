@@ -542,7 +542,8 @@ export function dropFact(inner: ModelProvider, options: FaultOptions = {}): Mode
     inner,
     PROMPTS.draftPacketNarrative.id,
     (output) => {
-      const sentences = paragraphs(output).join(' ').split(/(?<=\])\.\s+|(?<=\]\.)\s+/);
+      // Each sentence keeps its period, so what is left reads as the sentences it was.
+      const sentences = paragraphs(output).join(' ').split(/(?<=\]\.)\s+/);
       const kept = sentences.filter((sentence) => !/shortfall|underpaid|difference owed/.test(sentence));
       return { paragraphs: [kept.join(' ')] };
     },

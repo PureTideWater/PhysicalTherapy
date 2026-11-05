@@ -53,39 +53,87 @@ every file equals the record must also start: its `--version` must print `Google
 
 Beside ci.yml, two workflows of the release content checks (docs/adr/0071) run on a schedule. Neither is a required
 check, and their schedules fire only from the default branch (the founder's ruling F1 (a)); until then they run on
-request. Each issue they open holds only public references: page addresses, file names, release numbers and run links.
+request. Everything they publish holds only public references: page addresses, file names, release numbers and run
+links. That is each issue they open, and for the content calendar also the check's summary and its one-day `findings`
+artifact.
 
 | Workflow, job | What it runs | Timeout |
 | --- | --- | --- |
-| `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
-| `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
-| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then A's reconcile of a SYNTHETIC posting export, then the large jobs together (A's second report, D's triage, E's price job and C's second set of parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 75% of its heap limit or a measured job with no `job heap` line, a phase's or a chain job's memory above 90% of the task, or a job of the new phase not completed; its report kept as `release-capacity` | 180 min |
+| `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary and to this run's `findings` artifact, kept one day (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
+| `content-calendar`, `handoff` | on a pull request only, after the check: downloads this run's `findings` artifact and checks it reads as one findings list (a single JSON document, read whole) with the notify job's own lines, logging its count, size and SHA-256, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address. It holds `actions: read` alone, checks nothing out, runs no repository code and writes nothing | 5 min |
+| `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, with `actions: read` to download this run's `findings` artifact, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address; it checks nothing out, runs no action and runs no repository code | 5 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then F's reconcile of a SYNTHETIC posting export (step 7b, on a practice of its own at CAS-42.3's 2,000 lines until SUITE-CAP-3; the summary's "Known gap" line), then the large jobs together (A's second report, D's triage, E's price job and C's second four parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 420 MiB (75% of the worker's 560 MiB `--max-old-space-size`) or a measured job with no `job heap` line, the worker's working set (`memory.current` less `inactive_file`) above 90% of the task over the run or in a phase or chain job, any `memory.events` oom or oom_kill during the run, any job not completed, A's triage making other than the lines its scenario makes actionable (each of its contract lines at least the line materiality short, read from its priced lines; none of its Medicare Advantage lines) or none, F's triage making other than each of its lines actionable, or F's reconcile posting other than each of them in full (its contract pays a fixed rate a unit and states its dispute window, cited and verified; the monitoring chain the reprocessing parses queue is cancelled before it starts); its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
 
-Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's table names each measured job with its
-"Attempts" and "Live heap", and the memory line names each phase's and each chain job's peak; the failing check names
-the job, by ID and type only.
+Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's table names each job with its phase,
+"Attempts" and "Live heap" (the peak beside the limit the check holds it to), and the "Memory by kind" table gives the
+whole run's and each phase's and chain job's working set; a failing check names the job by its label in the run
+(`A triage`), its type and its pg-boss ID (also in release-capacity.json, `jobs[].jobId`), and the phase it ran in.
+Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
+2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure. Beside the
+full-size figure it gives this run's F reconcile time against the job's 900 s attempt, with its share and the seconds to
+spare: that margin is what SUITE-CAP-3's item leaves step 7b (CI measured 526.3 and 615.7 s on 3ac856d5). A margin that
+shrinks run over run points at the runner or at SUITE-CAP-3's code, never at a longer attempt; past 900 s pg-boss
+expires the attempt, and the run fails on the job's later attempt. pg-boss times only a job's last attempt, so when a
+later attempt completed F's reconcile the line prints no margin: it names the attempt and what the earlier attempts
+logged (`JOB_EXPIRED` for one past its 900 s), since the first attempt is the one that did not fit.
 - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
-  would have waited on. Read the worker log of the run's report for that job ID's error code (53200
-  "out of shared memory" is a lock count; a heap out-of-memory ends the worker's process). The run never counts a retry
-  as a pass.
+  would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
+  `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
+  waited `CONNECTION_TIMEOUT_MS` (ten seconds) for one of the practice pool's connections, so the worker ran more jobs
+  at once than the pool holds (`practicePool` holds `PRACTICE_JOB_SLOTS`, one per job: if it fires, look for a job
+  that holds two); `DB_CONNECT_TIMEOUT` a new connection that took longer than that; `DB_<SQLSTATE>` an error from
+  PostgreSQL (`DB_53200` out of shared memory: the lock table is full; `DB_40P01` a deadlock); otherwise the error's own
+  code or its class (`PRICING_RUN_NOT_FOUND_ERROR`; a class's own name such as `EXPORT_LOAD_FAILED`, the reconcile's
+  designed failure, or an S3 or KMS exception's, `NO_SUCH_KEY`). An attempt pg-boss failed while its handler still ran
+  logs the line once the handler returns: `JOB_EXPIRED`, past the job's `expireInSeconds` (900 s; an hour for intake),
+  `JOB_CLAIM_LOST` (a screening job whose heartbeat found it no longer this worker's) or `JOB_STOPPED` (the worker
+  stopped, and its grace ran out). pg-boss holds that queue's worker until the handler returns, so the retry starts only
+  after the line. The attempt's `job heap` line, with the same job ID, marks when it ended; read the Postgres log in the
+  artifact's `logs/` at that time. A retried job with no `job attempt failed` line at all means the worker's process ended
+  before the attempt did: a restart (a heap out-of-memory ends the process before it logs anything: the summary's
+  restarts count shows it). The run never counts a retry as a pass.
 - **A backend held more than 64 advisory locks.** The sampler reads, each second, the largest advisory-lock count any
   one backend holds (`pg_locks`, `locktype = 'advisory'`, grouped by `pid`); 64 is the loader's trace bound
   (`TRACE_LOCK_BUCKETS`, equal to the default `max_locks_per_transaction`). A job that takes a lock per line or per row
-  is back: find the statement by the job type the check names, and fix the code, never the bound. A line's stage lock
+  is back. The check names the sampled period that was open when the peak was first seen (or "setup or between
+  phases"): find the statement among the job types of that phase, and fix the code, never the bound. A line's stage lock
   is its row in `line_status_head`, and the ledger triggers take only the practice's `ledger:` key, so triage, the
   report and reconcile each hold one advisory lock.
 - **A job's live heap passed 75% of its limit, or a measured job logged no `job heap` line.** Each job attempt logs
-  `job heap` with `heap_live_peak_mib` (the heap in use just after the largest major collection while it ran) and
+  `job heap` with `heap_live_peak_mib` (the largest heap in use just after a major collection while it ran) and
   `heap_limit_mib` (V8's limit, which adds the young generation to the flag). The check holds the peak to 75% of the
   worker's `--max-old-space-size` flag (420 of 560 MiB), or of the logged limit when that is lower. Above it the month
-  outgrew the bounded readers' margin: find which job by its ID, then which reader holds a month's lines (ADR 0083's
-  rule: no job holds a month's lines beyond a small, measured per-line holder). A missing line means the worker image
-  does not log it, or the job never ended: read the worker's log for the job ID. Production alarms at the same line
-  (docs/runbooks/incident-response.md).
-- **A phase's or a chain job's memory above 90%.** The task's `memory.current`, sampled each second, passed 921.6 MiB;
-  the line names the phase and the chain job. The large jobs together share one worker process, so read their live
-  heaps beside the peak.
+  outgrew the bounded readers' margin: the peak is the whole process's, so find which jobs ran at that time by their
+  IDs (each shows the process's peak), then which reader among them holds a month's lines (ADR 0083's rule: no job holds
+  a month's lines beyond a small, measured per-line holder). A completed job with no `job heap` line means the worker
+  image does not log it (an image before SUITE-CAP-1b), or the worker's log could not be read (the summary then also
+  says so, and every measured job reports the same): read the worker's log in the artifact for the job's ID. Production
+  alarms at the same line (docs/runbooks/incident-response.md).
+- **A's triage made none, fewer, more or other lines actionable than its scenario.** The summary's Run line prints
+  A's actionable lines after its chain triage (those in an open case), how many of them are expected, and how many the
+  scenario expects: each of A's lines on the contract's plan that the price job priced at least the line materiality
+  short, and none of its Medicare Advantage lines, whose deadlines stay unverified (ADR 0083). A gap means triage now
+  judges A's month otherwise (its contract's window no longer cited or verified, its version not in force, a review
+  flag), so the chain and A's reports measured a lighter or another month than the one A was seeded with. A `--small`
+  run checks the same on A's 2,000 lines, where one missing line can be judged by hand; fix the cause, not the scenario.
+- **The worker's working set above 90%, or an OOM event.** The line, 921.6 of the task's 1,024 MiB, judges the
+  working set: `memory.current` less `memory.stat`'s `inactive_file` (the page cache the kernel reclaims first),
+  sampled each second, its highest over the whole run and in each phase and chain job, the measure the kubelet and
+  cAdvisor evict on and the one that predicts an OOM kill (Lane A's orchestrator, 2026-11-04; ADR 0083). The failing
+  line names the period. Read the summary's "Memory by kind" table (also in the job's log) at that period's row, the
+  sample its working set peaked at: "Anonymous" is the worker's heap and native memory and Chromium's, which only the
+  code can shrink, so read the live heaps of the jobs that ran then beside it (the large jobs together share one worker
+  process); "Page cache" is the image's binaries the container faulted in (node and its bundle at the start, Chromium's
+  headless shell at the first PDF print) and the files the harness's local store writes, which production sends to S3,
+  and it counts "Shared memory"; "Inactive page cache" is the part the working set leaves out; "Kernel" is the kernel's
+  own memory for the container (no figure on cgroup v1). A working set near the line with anonymous memory near it
+  means the code outgrew the task; one carried by active page cache means files the container keeps reading. "memory.peak
+  at its end" is the container's highest so far, page cache included, which the harness cannot reset: it is reported,
+  never judged, and can pass 921.6 MiB on a green run (CAS-42.5's run 41848025627 read 958.6 MiB with a working set of
+  about 812 MiB). The run also fails on any `oom` (the limit reached with an allocation about to fail) or `oom_kill`
+  that `memory.events` counts between the worker's start and the end, killed or not, and when `memory.events` or the
+  working set cannot be read.
 
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier
@@ -170,14 +218,21 @@ differential test, which prices the base's engine and this commit's.
      (`tools/ci/print-pictures.sh`; rebuild one as "Upgrading the browser", step 5, says; docs/adr/0058). A "flaky" test,
      one that passed only on its retry, fails the run by design: fix it, never re-run it to green. A refusal of the
      build's stamp means the shard was handed another commit's build: re-run the whole workflow, not the shard.
-   - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a base-image
-     or package bump), or record why not in docs/adr/0010's way. No table and a failed "The pinned Trivy" step means
-     the install failed: a download refused (re-run), or an archive whose SHA-256 is not the one
+   - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a
+     base-image or package bump), or record why not in docs/adr/0010's way. No table and a failed "The pinned Trivy"
+     step means the install failed: a download refused (re-run), or an archive whose SHA-256 is not the one
      `tools/trivy/release.txt` pins, which is never re-run past: read which archive was served. A new Trivy is a pull
      request that changes every line of `release.txt`, each SHA-256 copied from the release's
      `trivy_<version>_checksums.txt`; `pnpm actions:check` refuses a version whose tag is under three days old or no
      longer listed (docs/adr/0066, Part 2, amendment of 2026-11-04). setup-trivy's own install is never used: its
-     installer downloads from get.trivy.dev, gone since 2026-11-03.
+     installer downloads from get.trivy.dev, gone since 2026-11-03. An identity step's `::error` names the archive's
+     config digest and the one buildx reported ("nothing it reported" when the metadata lacked it); "Argument list too
+     long" on any step means an environment string (`NAME=value` and its NUL) or one argument over 131,072 bytes, or
+     the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string and argument
+     a workflow sets, and each step's and container's whole, and refuses a string or argument over 131,072 bytes, or
+     one holding a value it does not list with its bound, with no exception, and a whole over `ARG_MAX` less 256 KiB
+     (docs/adr/0066, Part 3, N32). A pull request's run uploads no build record (`.dockerbuild`) by design; a push's
+     run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -222,9 +277,14 @@ launch"), Dependabot reads `.github/dependabot.yml` from `claude/build-platform`
 there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres on Wednesdays at 04:43, npm on Thursdays
 at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
 runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
-mutation in full (31 to 36 runner-minutes) when it changes the root manifest, the catalog or `mutation.yml`. A full
-Thursday batch is about 550 to 650 runner-minutes and fills GitHub Free's 20 concurrent jobs per account for about 30
-to 35 minutes. A person triages every one and never merges one as it stands (docs/runbooks/dependency-upgrades.md).
+mutation only for what a shard reads (docs/adr/0066, Part 7): every shard (about 54 runner-minutes with the seven
+shards before #84; seventeen since, re-measured on its push runs) when it moves the
+test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves,
+or a catalog or manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an
+actions pull request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports
+what moved. A full Thursday batch is about 550 to 650 runner-minutes and fills GitHub Free's 20 concurrent jobs per
+account for about 30 to 35 minutes. A person triages every one and never merges one as it stands
+(docs/runbooks/dependency-upgrades.md).
 
 **The bot queue, for the first four weekly batches.** For each Dependabot head, and for each lane pull request pushed
 while a batch runs, take A1′'s two commands above with that head's SHA, and the run's queue time from "Timing a run"
@@ -459,6 +519,47 @@ user that cannot run the binary.
   (CI-10), and installs Chromium before any vitest step of the unit or db project (CI-05).
 - A new required check changes `tools/required-checks.ts`, every marked listing (the test names each file) and the
   ruleset, which only the founder sets.
+- A step takes only the value it uses (one environment string, `NAME=value` and its NUL, is at most 131,072 bytes; the
+  test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
+  value's bound in bytes, and holds each to 131,072 bytes, with no exception; an env, a `with:`, a container or a
+  service given as one expression is refused, since no sum can read its strings).
+  `workflows.test.ts` reads every expression of a workflow in an env, an input, a
+  script, a job's outputs, a matrix or a key as the runner does, and admits only bounded values, none in any key
+  (GitHub evaluates one as an env name, an input's name, a service id or a matrix key), and refuses a workflow's, a
+  job's or a step's key it does not read (a new GitHub key joins its list once the rule reads it). It reads this
+  repository's workflows; a pinned action's own `action.yml` and code are not read by it (`pnpm actions:check` reads a
+  pin's `action.yml` for the pin rules, never to bound a value): the defect N32 fixes came from action code (buildx
+  copying the event into its metadata), which no expression rule can read, so every step output is bounded where a
+  workflow hands it to a process, by the value rule and its list. Never use a build's whole metadata, an event object,
+  a description or title, or `toJSON` of anything but `needs` or one job's `outputs` (of one value it quotes and
+  escapes, up to six bytes a byte; a `toJSON` row holds that of every output it reads, with their names and indents).
+  A new step output or value one job hands another joins its list with its bound and its producers by name, exactly
+  those its value reads (a step by job and id, a `uses:` step with its action, a job output that is one step's or
+  needed job's output alone, a matrix key, a needed job, tool code as `path#symbol` with the unit test its owners keep
+  for its bound, named by its title: the test checks that title is one plain `it()` or `test()` written to run whenever
+  its file runs (no skip, condition or `return` around it, no hook of its file or context of its own that can skip
+  it, no `it` of its own), not what it asserts), never by line; a row whose bound passes 131,072 bytes also names every place it is
+  read (`sites`, each as the rule writes a place, its job, step and key), and any other read fails the value table's
+  test. A row whose producer is a `run:` step holds the fingerprint of its script and what it runs with, its own
+  `env`, `shell` and `working-directory` or those its job and the workflow give it, and its job's container: when the
+  test prints a new one, re-read the bound against the change, then write the new fingerprint in the row. A new
+  `$GITHUB_ENV` write joins its closed map: its exact line, each file, job and step that makes it with that step's
+  fingerprint, its bound, and the test that runs the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let
+  a script set a variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` or `$GITHUB_PATH` (a
+  shell, a default shell, an input or an env naming it is refused), nor anything the runner's `_runner_file_commands` (or a file of it, `set_env_` or `add_path_`).
+  A `$GITHUB_PATH` write joins a closed map of its own, held the same way (today one: the pinned Trivy's directory);
+  every other script line naming it is refused. Any other tracked file that names
+  `$GITHUB_ENV`, `$GITHUB_PATH` or a file command file (a script a step runs, tool code, a package's script) is refused
+  unless it joins the value table test's closed list, with why it sets nothing. Every `docker/build-push-action` step
+  sets `BUILDX_METADATA_PROVENANCE: disabled` and
+  `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`, and no other variable (no `DOCKER_BUILD_`
+  or `BUILDX_` variable is set for a whole job (its env or its container's, and a job container's `options` set no
+  variable) or workflow): its build record (a
+  `.dockerbuild` artifact whose provenance holds the whole event, a description and title or commit messages and
+  e-mails) can be downloaded by any signed-in account for 90 days in this public repository, so a pull request's run
+  uploads none, while every other run (a push's, a scheduled or a dispatched one's, the release's) keeps the default
+  (docs/adr/0066, Part 3, N32); so a workflow with a build runs only on `push`, `pull_request`, `schedule` or
+  `workflow_dispatch`, never on another event whose payload carries a pull request.
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes
@@ -488,7 +589,8 @@ checks above.
 
 ### What runs
 
-- **On a push to `claude/build-platform`, weekly, and on request:** every package, all six shards.
+- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (seventeen since #84;
+  seven before it).
 - **On a pull request:** every shard of each package whose closure the change touches, and nothing else. The
   `changes` job prints which packages it chose and why (the first changed paths that reach each one) to its log and
   summary (`tools/stryker/affected.ts`). A package's closure is:
@@ -497,26 +599,91 @@ checks above.
   - the `package.json` and `tsconfig.json` of each workspace package in that closure;
   - the data files its tests and code read (`DATA_FILES` in `affected.ts`);
   - the third-party packages it imports, what the mutation tooling itself imports (yaml) and the test tooling
-    (vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check, tsx), as the lockfile resolves them: a lockfile change
-    counts only when it moves one of them, or anything below them.
+    (vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check, tsx, and typescript, which Stryker's core imports
+    undeclared to rewrite every sandbox's tsconfig), as the lockfile resolves them: a lockfile change counts only when
+    it moves one of them, or anything below them. A catalog, root or `tools/package.json` move of typescript runs every
+    shard.
 
   Closures are taken at the head and at the merge base, and a changed path a package's mutate or test set selects
   counts whether or not it still exists, so deleting a money test, renaming one to `*.db.test.ts`, or deleting a
   helper, manifest or fixture only the old side held, measures its package.
 
-  The mutation configuration (`stryker/**`, `tools/stryker/**`, `vitest.mutation.config.ts`), the root
-  `package.json`, `pnpm-workspace.yaml`, the root tsconfigs and this workflow affect all four.
+  The mutation configuration and tooling (`stryker/**`, `tools/stryker/**`, `vitest.mutation.config.ts`), the files a
+  shard loads by path (`GLOBAL_LOADED` in `affected.ts`) and everything they import, the root tsconfigs,
+  `tools/tsconfig.json`, and what pnpm or the runner reads on every step (`.npmrc`, `.pnpmfile.*`, `patches/**`,
+  `**/package.yaml`, `**/package.json5`, `.pnp.cjs`, `.github/workflows/actions.lock`, `.github/actions/**`, and every
+  `.gitattributes`, root or nested, which the checkout applies to every file, whatever attribute the edit changes)
+  affect all four, and so does any changed path whose name holds a control character (C0, DEL or C1) or U+2028 or
+  U+2029, which the log prints JSON-quoted. Git's stderr is captured, never passed through to the log: what git
+  prints there on success, and the error the command fails with (its own, git's with that stderr, or Node's, which
+  name a path as it is), go through `printable` in `affected.ts`, so each of their lines that holds such a character,
+  or that starts with `::` or `##[` after leading whitespace (a workflow command), is printed JSON-quoted. Such an
+  error fails the job (exit 1) and decides no shard.
+
+  The root `package.json`, `pnpm-workspace.yaml`, this workflow and every workspace `package.json` are read field by
+  field, on both sides of the change (`tools/stryker/manifests.ts`; docs/adr/0066, Part 7):
+  - **all four:** what the install, pnpm, Node or the mutation tooling reads: `packageManager`, `engines`, `type`, the
+    root's `name`, an install script (`preinstall`, `install`, `postinstall`, `prepare`, `prepublishOnly` and the
+    rest) or `dependenciesMeta` in any workspace manifest, the workspace's `packages`, `overrides` and
+    `onlyBuiltDependencies`, the test tooling, a root entry named `node`, `deno` or `bun` or not from the registry,
+    `tools/package.json`'s `type`, `imports` and other module fields (its `name` and `exports` only when a file the
+    mutation tooling loads imports that name, else its owners' shards), any key no table lists, any YAML anchor,
+    alias, tag or duplicate key, and any file that cannot be read or parsed;
+  - **a package's shards:** a dependency or catalog entry its closure imports, and its closure manifests' `exports`,
+    `imports`, `type` and other module fields;
+  - **none:** every other script, a dependency or catalog entry no closure and none of the tooling imports, the
+    release-age and trust settings, comments, and an entry moved within its map;
+  - **`money-ledger` alone:** a change to this workflow that moves only step actions from one full SHA to another of
+    the same action, neither artifact action among them. Its canary and the gate prove the new pins on the runner.
+
+  The `changes` log names each field and why, keys in quotes, for example:
+
+  ```text
+  money: affected by package.json packageManager (read by the install or every step, every package)
+  pricing: affected by pnpm-workspace.yaml catalog."zod" (imported by pricing, packets)
+  money: affected by .github/workflows/mutation.yml step references only: runner proved on money-ledger
+  read and affecting no package: package.json scripts."db:domain-model" (no mutation step runs it)
+  ```
+
+  Before it decides, the `changes` job checks its own runtime and checkout ("The runtime is the pinned one",
+  `tools/stryker/runtime.ts`), and the `mutation` job runs the same step before its gate whenever the gate runs. It
+  prints `runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8` (pnpm from the user agent), then
+  `runtime: pnpm --version prints 10.34.8` (the pnpm on the step's `PATH`), then `checkout: commit <sha>`, then that
+  this is the pinned one at the commit tested, or an error for each difference: both pnpm legs must be
+  `packageManager`'s ("The runtime is not the pinned one"), and the commit must be `GITHUB_SHA` ("The checkout is not
+  the commit tested"). Every shard's canary verdict names its runtime and the commit it checked out
+  (`canary: on Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8, at commit <sha>`), and each shard's own view
+  prints them first. The gate fails a shard whose Node, Unicode, ICU or pnpm is not the pinned one
+  (`tools/stryker/unicode.json`'s `checkedOn`, the root `packageManager`), or whose commit differs from another shard's
+  or from the one tested (`GITHUB_SHA`).
 - **A pull request that touches no money path** runs only `changes` and `mutation`, which passes with "No money path
   changed".
 
-| Shard | Mutates | Time (Stryker's, 4 CPUs shared with other work, 2026-10-25) |
+| Shard | Mutates | Time (on CI, the mean job time over 12 push runs, 40324477819 to 41348076075; local where marked) |
 | --- | --- | --- |
-| `money-ledger` | money, then the ledger | 3 min 37 s (money 32 s, the ledger 3 min 5 s) |
-| `packets-scan` | packets' `scan.ts` | 6 min 13 s |
-| `packets-rest` | the rest of packets' set | 5 min 43 s |
-| `pricing-engine` | pricing's `engine.ts` | 8 min 25 s |
-| `pricing-recompute` | pricing's `recompute.ts` | 3 min 47 s |
-| `pricing-rest` | the rest of pricing | 5 min 24 s |
+| `money-ledger` | money, then the ledger | 4 min 30 s |
+| `packets-scan` | packets' `scan.ts` | 7 min 54 s (local, 2026-11-04) |
+| `packets-roles` | the role reader (docs/adr/0086): `roles.ts` and its walk over the tokens (`roles-reader/walk.ts`, `kinds.ts`) | 9 min 26 s (local, 2026-11-04) |
+| `packets-roles-cues` | the reader's cues (`roles-reader/cues.ts`) | 6 min 25 s (local, 2026-11-04) |
+| `packets-roles-numbers` | the reader's numbers (`roles-reader/numbers.ts`) | 7 min 52 s (local, 2026-11-04) |
+| `packets-words-labels` | the reader's words (`roles-words/`): the labels and nouns (`labels.ts`) | 4 min 24 s (local, 2026-11-04) |
+| `packets-words-amounts` | the amounts' cues (`roles-words/amounts.ts`) | 4 min 11 s (local, 2026-11-04) |
+| `packets-words-days` | the day counts', pages' and percentages' cues (`roles-words/days.ts`) | 3 min 34 s (local, 2026-11-04) |
+| `packets-words-dates` | the dates' cues (`roles-words/dates.ts`) | 3 min 14 s (local, 2026-11-04) |
+| `packets-words-prose` | the prose words (`roles-words/prose.ts`, `index.ts`) | 4 min 35 s (local, 2026-11-04) |
+| `packets-verifier` | the verifier's check (`verifier/`) and the text it reads (`readable.ts`) | 8 min 12 s (local, 2026-11-04) |
+| `packets-facts` | the facts a narrative is held to (`facts.ts`), the payer's names (`payer.ts`) and the placeholders | 6 min 38 s (local, 2026-11-04) |
+| `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | 6 min 7 s (local, 2026-11-04) |
+| `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | 8 min 40 s (local, 2026-11-04) |
+| `pricing-engine` | pricing's `engine.ts` | 7 min 25 s |
+| `pricing-recompute` | pricing's `recompute.ts` | 4 min 9 s |
+| `pricing-rest` | the rest of pricing | 5 min 38 s |
+
+The times of `money-ledger` and pricing's three shards are each shard job's, setup included, over every push run since
+`stryker/shards.json` last changed before #84 (#51's merge, 2026-10-26); those seven shards took 53.4 runner-minutes,
+54.2 with `changes` and `mutation`. #84 split packets' three shards into thirteen (docs/adr/0086), so the packets rows
+are Stryker's own times in #84's one full local suite (4 shared CPUs, 2026-11-04) until push runs measure them, and
+the seventeen-shard total is re-measured on the push runs after #84's merge.
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads
@@ -534,6 +701,11 @@ Each `FAIL` line, also an error annotation, is one of these:
 | `<pkg> scores 85.00% (... of ...), not above 85%` | the package is at or below PRD 18's line (killed + timeout over killed + timeout + survived + no coverage; load failures left out, recorded equivalents counted as survivors) | Kill survivors. Recording equivalents never raises a score |
 | `<pkg>: RuntimeError that is not a test file's load failure` | the mutant made Vitest fail outside any test, and not by breaking a test file's load | Read the reason; it is a real error the run must not hide |
 | `shard <s> ran with no canary verdict` or `canary is n of 5` | the shard's runner was not proved | Read the shard's canary step (below) |
+| `shard <s> ran on Node … , not the pinned …` (or Unicode, ICU, pnpm), `… ran on commit …`, or a verdict that `names no runtime` or `names no commit` | the shard ran on another runtime than the pins, or on another commit than the one tested or than another shard (docs/adr/0066, Part 7) | Read the shard's setup: setup-node's version, action-setup's "Switching pnpm" line, the checkout's ref. Moving the Node also means checking `tools/stryker/unicode.json` again (Part 4); `packageManager` is the pnpm pin |
+| `The runtime is not the pinned one: ...` in the `changes` or `mutation` (gate) job, `pnpm --version prints ...` among them | that job's own Node, Unicode, ICU or pnpm is not the pin: setup-node, pnpm/action-setup, `packageManager`, a `node` bin a dependency links, or an `.npmrc` `user-agent` or workspace `userAgent` moved one leg | Check the job's setup steps and `packageManager` against `tools/stryker/unicode.json`'s `checkedOn`; move the pin and the record together, or revert the step |
+| `The checkout is not the commit tested: ...` in the `changes` or `mutation` (gate) job | the commit checked out is not `GITHUB_SHA` (a checkout `ref:` input, a step that checks out another commit), or `GITHUB_SHA` is not a full commit | Check the job's checkout step's `ref` input; every mutation job checks out the commit tested |
+| `The runtime check runs without --pnpm ...` or `... without --commit ...` | the job's `runtime.ts` run line dropped a flag, so on a runner it would check less | Restore the run line `workflows.test.ts` pins (`RUNTIME_CHECK`) |
+| `@stryker-mutator/core is not installed in ... as the root's own dependency`, `... outside it`, or `... cannot run by path` | `tools/stryker/stryker.ts` found no Stryker core as the root's direct link in its `node_modules`, so it will not run one by name or from elsewhere | Run `pnpm install --frozen-lockfile`; if it persists, check the root `package.json` and the lockfile still list the core |
 | `<pkg> ran in ... but not in ...` | some of a package's shards ran and some did not | Re-run the failed or missing shard jobs |
 | `... records ... which no longer exists (stale)` | a recorded equivalent matches no mutant: its code changed | Remove the entry, then judge the new mutant afresh |
 | `... records ... as equivalent, but it is Killed` | a test now tells the recorded mutant apart, so it was never equivalent | Remove the entry |
@@ -620,18 +792,22 @@ compares them). Each entry has exactly these keys, in this order:
 
 ### Running it locally
 
-Run one shard at a time, never two, on the Node the workflow pins (24.22.0: the gate holds the Unicode-bound
-equivalents to its data). Each command writes `reports/mutation/<shard>/`, then the gate reads it:
+Run one shard at a time, never two, every shard on one commit, on the Node the workflow pins and the pnpm the root
+`packageManager` names (24.22.0 and 10.34.8 today): the gate holds every shard to `tools/stryker/unicode.json`'s
+`checkedOn` and to `packageManager`, and the shards' commits to each other (`pnpm -s exec tsx tools/stryker/runtime.ts`
+checks this machine's; off a runner its `--pnpm` and `--commit` may be left out, which on a runner fails). Each command
+writes `reports/mutation/<shard>/`, then the gate reads it, as CI runs them, Stryker by path:
 
 ```sh
-pnpm stryker run tools/stryker/canary/stryker.config.mjs
+pnpm -s exec tsx tools/stryker/stryker.ts run tools/stryker/canary/stryker.config.mjs
 pnpm -s exec tsx tools/stryker/canary/verdict.ts --shard money-ledger
 pnpm -s exec tsx tools/stryker/shards.ts money-ledger
 pnpm -s exec tsx tools/stryker/gate.ts reports/mutation
 ```
 
-The last line judges what ran: a package none of whose shards ran is "not affected". A narrow run while killing
-survivors: `pnpm stryker run stryker/<package>.config.mjs --mutate <file>[:<lines>]` (report
+The last line judges what ran: a package none of whose shards ran is "not affected". `pnpm stryker run <config>` (the
+root script) also runs Stryker, through the script and its bin, not as CI does. A narrow run while killing survivors:
+`pnpm -s exec tsx tools/stryker/stryker.ts run stryker/<package>.config.mjs --mutate <file>[:<lines>]` (report
 `reports/mutation/<package>.json`, at the top of the directory, which the gate refuses as stray: delete it, or point
 the gate at a directory of shard reports only). A package's mutation test set outside Stryker:
 `TP_MUTATION_PACKAGE=<package> pnpm exec vitest run --config vitest.mutation.config.ts`. What a branch affects:

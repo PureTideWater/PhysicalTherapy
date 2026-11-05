@@ -54,6 +54,7 @@ let app: DatabasePool;
 let services: Services;
 let keys: LocalKeyProvider;
 let provider: DevAuthProvider;
+let store: MemoryDevStore;
 let invitations: string[];
 let queue: SeenAtSend;
 
@@ -81,8 +82,9 @@ beforeAll(async () => {
   keys = LocalKeyProvider.random();
   invitations = [];
   const sealer = new Sealer(randomBytes(32));
+  store = new MemoryDevStore();
   provider = new DevAuthProvider({
-    store: new MemoryDevStore(),
+    store,
     sealer: sealer.derive('dev-provider'),
     webauthn: { rpId: 'localhost', rpName: 'Test', origin: 'http://localhost:3100' },
     deliverInvitation: (email) => {
@@ -299,6 +301,49 @@ describe('members', () => {
       status: 'invalid',
       issues: [{ field: 'email', message: expect.stringContaining('another identity') }],
     });
+  });
+
+  // SEC-22, docs/adr/0088 D4: an address with no account here whose provider account already exists is linked only
+  // when that provider account has never signed in (Cognito's FORCE_CHANGE_PASSWORD; the twin's temporary password).
+  it('refuses an invitation onto a provider account that has signed in, and links and sends nothing (SEC-22)', async () => {
+    const email = `orphan-signed-in-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    await store.update(sub, (current) => ({ ...current, temporary: false }));
+    const sent = invitations.length;
+    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }],
+    });
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
+  });
+
+  it('links an invitation onto a provider account that never signed in, and sends its invitation again (SEC-22)', async () => {
+    const email = `orphan-never-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    const sent = invitations.length;
+    expect((await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).status).toBe('ok');
+    expect((await owner.query('SELECT cognito_sub, status FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([{ cognito_sub: sub, status: 'invited' }]);
+    expect(invitations.slice(sent)).toEqual([email]);
+  });
+
+  it('refuses, writing nothing, a link whose provider account signs in between the check and the resend (SEC-22, review security-N3)', async () => {
+    const email = `orphan-race-${randomUUID()}@synthetic.test`;
+    const { sub } = await provider.ensureUser(email);
+    const resend = provider.resendInvitation.bind(provider);
+    // The holder of the earlier temporary password sets their own just before the resend.
+    const raced = vi.spyOn(provider, 'resendInvitation').mockImplementationOnce(async (address) => {
+      await store.update(sub, (current) => ({ ...current, temporary: false }));
+      return resend(address);
+    });
+    const sent = invitations.length;
+    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: 'this email belongs to another identity; ask an engineer to reconcile it' }],
+    });
+    raced.mockRestore();
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
   });
 
   it('ends a membership: the user’s sessions end at once and the provider signs them out', async () => {
@@ -809,6 +854,37 @@ describe('suspending and reinstating an organization (docs/adr/0055; docs/adr/00
     expect(await run(organizationPage, admin.token, undefined, { organizationId: id })).toMatchObject({
       status: 'ok',
       data: { grants: expect.arrayContaining([expect.objectContaining({ granteeId: firmId, granteeStatus: 'suspended' }), expect.objectContaining({ granteeId: id, practiceId: other.practiceId, granteeStatus: 'active' })]) },
+    });
+  });
+
+  it('names the suspension in force by its own row to the microsecond, not an earlier suspension in the same millisecond (PRC-32 sweep)', async () => {
+    const target = await createTenantWorld(owner, 'console same millisecond');
+    const id = target.organizationId;
+    const second = await platformAdmin();
+    // Synthetic history, written as the owner: a suspension by the second administrator with a note, its change of
+    // reason, its reinstatement, then the suspension in force by the first, all within one millisecond. The
+    // organization's status_since is the last one. The earlier suspension's note and change of reason are its own:
+    // the suspension in force shows neither, which holds only if its rows are chosen to the microsecond.
+    await owner.query("UPDATE organization SET status = 'suspended', status_reason = 'security_hold' WHERE id = $1", [id]);
+    await owner.query("UPDATE organization SET status_since = '2026-10-05T12:00:00.000500Z' WHERE id = $1", [id]);
+    await owner.query(
+      `INSERT INTO organization_status_change (organization_id, from_status, to_status, reason, note, changed_by, at) VALUES
+         ($1, 'active', 'suspended', 'customer_request', 'SYNTHETIC EARLIER NOTE', $2, '2026-10-05T12:00:00.000100Z'),
+         ($1, 'suspended', 'suspended', 'agreement_ended', NULL, $2, '2026-10-05T12:00:00.000150Z'),
+         ($1, 'suspended', 'active', 'resolved', NULL, $2, '2026-10-05T12:00:00.000200Z'),
+         ($1, 'active', 'suspended', 'security_hold', NULL, $3, '2026-10-05T12:00:00.000500Z')`,
+      [id, second.id, admin.id],
+    );
+    const page = await run(organizationPage, admin.token, undefined, { organizationId: id });
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    expect(page.data.suspension).toEqual({
+      reason: 'security_hold',
+      since: new Date('2026-10-05T12:00:00.000Z'),
+      suspendedBy: { email: await emailOf(admin.id), at: new Date('2026-10-05T12:00:00.000Z') },
+      reasonChangedBy: null,
+      note: null,
     });
   });
 

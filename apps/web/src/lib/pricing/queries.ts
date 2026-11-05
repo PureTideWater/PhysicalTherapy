@@ -144,7 +144,7 @@ async function summaries(scope: Scope, rows: readonly RunRow[]): Promise<RunSumm
       createdBy: row.monitoring ? 'monitoring (the monthly chain, on new files)' : (row.email ?? 'a member of the practice'),
       monitoring: row.monitoring,
       coverage: row.coverage === null ? null : parseCoverage(row.coverage),
-      rerun: row.status === 'complete' ? await rerunReasons(scope.client, { practiceId: row.practice_id, createdAt: row.created_at, releaseNo: row.release_no }) : [],
+      rerun: row.status === 'complete' ? await rerunReasons(scope.client, { practiceId: row.practice_id, pricingRunId: row.id }) : [],
       rerunOfId: row.rerun_of_id,
       acceptedAt: row.accepted_at?.toISOString() ?? null,
       acceptedBy: row.accepted_at === null ? null : (row.accepted_email ?? 'a member of the practice'),

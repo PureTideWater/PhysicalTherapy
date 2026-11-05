@@ -1,4 +1,3 @@
-import { WRITE_OFF_REASONS } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,7 +10,9 @@ import { Counted, Fact, Money, Pager } from '../../../../../components/remittanc
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { ActionableLinesOn, CaseStateBadge, Deadline, NetExpected, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
+import { WRITE_OFF_REASON_WORDS, withheldReasonHint, writeOffReasonsFor } from '../../../../../lib/cases/write-off';
 import { PRICING_CAUSE_TEXT } from '../../../../../lib/packets/pricing';
+import { CASE_VERIFIER_TEXT } from '../../../../../lib/packets/view';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
@@ -31,7 +32,8 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string }>;
  * stages (actionable here, payer approved and recovered from the recovery ledger), deadline, pursuit
  * cost and owner; every line with its trace, struck through when written off (with its reason, kept
  * visible: WINDOW_PASSED when its window closed); its notes; its packet and dispute; and the timeline
- * of everything recorded on it. A line whose pricing is no longer current (priced again since it joined, its rule
+ * of everything recorded on it. A write-off's Reason starts unchosen and offers "Window passed" only once the line's
+ * window has ended, saying why under Reason until then (docs/adr/0085). A line whose pricing is no longer current (priced again since it joined, its rule
  * release withdrawn, or its contract version no longer signed off or covering its date; audit item #4) is marked
  * with the cause: it is out of the actionable figure, and the packet is written only once it is written off or
  * priced current again, since nothing refreshes the case automatically yet. Beside the ledger and counted in no total
@@ -143,10 +145,10 @@ export default async function CasePage(props: Props) {
           <CardDescription>The packet presents the pattern once and the lines as a schedule; the practice submits it through the payer’s own channel and logs the submission and the payer’s response.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
-          <p data-packet={dispute.packet === null ? 'none' : dispute.packet.approved ? 'approved' : 'draft'}>
+          <p data-packet={dispute.packet === null ? 'none' : dispute.packet.approved ? 'approved' : 'draft'} data-packet-verifier={dispute.packet?.verifier}>
             {dispute.packet === null
               ? 'No packet yet.'
-              : `Packet version ${String(dispute.packet.versionNo)}: ${dispute.packet.verifierPassed ? 'the verifier passed it' : 'the verifier failed it'}; ${dispute.packet.approved ? 'approved' : 'not approved'}; ${dispute.packet.exported ? 'exported' : 'not exported'}.`}
+              : `Packet version ${String(dispute.packet.versionNo)}: ${CASE_VERIFIER_TEXT[dispute.packet.verifier]}; ${dispute.packet.approved ? 'approved' : 'not approved'}; ${dispute.packet.exported ? 'exported' : 'not exported'}.`}
           </p>
           <p>
             {dispute.latestSubmission === null
@@ -221,7 +223,16 @@ export default async function CasePage(props: Props) {
                     <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseLineId" value={line.id} />
-                    <SelectField id={`reason-${line.id}`} label="Reason" name="reason" required options={WRITE_OFF_REASONS.map((reason) => ({ value: reason, label: writeOffText(reason) }))} />
+                    {/* Starts unchosen, on an enabled first option that a reset or a render without JavaScript also lands on; only the reasons the line's records allow (docs/adr/0085 D1, D2). */}
+                    <SelectField
+                      id={`reason-${line.id}`}
+                      label="Reason"
+                      name="reason"
+                      required
+                      defaultValue=""
+                      hint={withheldReasonHint(line) ?? undefined}
+                      options={[{ value: '', label: WRITE_OFF_REASON_WORDS.placeholder }, ...writeOffReasonsFor(line).map((reason) => ({ value: reason, label: writeOffText(reason) }))]}
+                    />
                     <Field id={`text-${line.id}`} label="Why (for “Other” only)" name="text" maxLength={500} />
                     <CheckboxField id={`confirm-${line.id}`} name="confirm" errorName="Confirmation" required label={`${WRITE_OFF_CONSEQUENCE} Write it off.`} />
                   </ActionForm>

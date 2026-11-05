@@ -9,7 +9,10 @@
  *
  * Since the best-option audit's item #4 (the founder's ruling of 2026-10-18; docs/adr/0061) the database
  * also refuses an approval while the version's pricing is not current (packet_version_approval_pricing),
- * which the panel says ahead as 'pricing_not_current' (after case_changed, before the regulation). The
+ * which the panel says ahead as 'pricing_not_current' (after case_changed, before the regulation). Since ADR 0086 the
+ * verifier reads each figure in its role, and a version the verifier passed when it was written may fail now: its
+ * request and approval are refused by the step (the database cannot run the reader until Lane A's tp-packet-verifier/3),
+ * which the panel says ahead as 'verifier_now' (after a stored failure, before an outdated report). The
  * words for each blocked reason are BLOCKED_TEXT in ./queries (server code, beside the pricing check's
  * words): this module stays free of server code, since the client's Countdown imports waitText from it.
  */
@@ -19,6 +22,11 @@ export const SINGLE_USER_DELAY_MS = 24 * 60 * 60 * 1000;
 
 export interface ApprovalFacts {
   readonly verifierPassed: boolean;
+  /**
+   * Whether the verifier, run again over the stored narrative and content now, fails a version whose stored report
+   * passed (docs/adr/0086; the review of 2026-11-01, CORR-5): the request and the approval are refused, as the export is.
+   */
+  readonly verifierFailsNow: boolean;
   /** Whether the current verifier wrote the version's report (an earlier one's pass is not approved; docs/adr/0047). */
   readonly verifierCurrent: boolean;
   /** Whether it is the packet's current version (an edit since makes a new one, which clears approval). */
@@ -49,7 +57,7 @@ export interface ApprovalViewer {
 }
 
 /** Why no one may approve the version now, in the order the panel checks them. */
-export const BLOCKED_REASONS = ['verifier', 'verifier_outdated', 'not_current', 'case_changed', 'pricing_not_current', 'regulation'] as const;
+export const BLOCKED_REASONS = ['verifier', 'verifier_now', 'verifier_outdated', 'not_current', 'case_changed', 'pricing_not_current', 'regulation'] as const;
 export type BlockedReason = (typeof BLOCKED_REASONS)[number];
 
 export type ApprovalState =
@@ -70,6 +78,9 @@ export function approvalState(facts: ApprovalFacts, viewer: ApprovalViewer, now:
   }
   if (!facts.verifierPassed) {
     return { status: 'blocked', reason: 'verifier' };
+  }
+  if (facts.verifierFailsNow) {
+    return { status: 'blocked', reason: 'verifier_now' };
   }
   if (!facts.verifierCurrent) {
     return { status: 'blocked', reason: 'verifier_outdated' };

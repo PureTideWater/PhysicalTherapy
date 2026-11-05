@@ -28,10 +28,28 @@ template differ from the deployed one, so behaviors that matter are explicit pro
 
 | Setting | dev | staging | production |
 | --- | --- | --- | --- |
-| Database instance | db.t4g.micro | db.t4g.small | db.t4g.medium, Multi-AZ, deletion protection |
+| Database instance | db.t4g.small, its worker deploying stop-first (db.t4g.micro until 2026-11-05) | db.t4g.medium (db.t4g.small until 2026-11-05) | db.t4g.medium, Multi-AZ, deletion protection |
 | Object Lock mode (packets, audit copies) | GOVERNANCE | GOVERNANCE | COMPLIANCE |
 | User pool deletion protection, stack termination protection | off | off | on |
 | Read-only pull-request diff role | no | yes | no |
+
+*Since 2026-11-05:* each stack checks as it synthesizes that every task's database pools fit under its instance's
+connections (ADR 0083, "The practice pool"), and the classes follow this decision, recorded with its reasons and figures
+in ADR 0083 ("The instance classes"), word for word:
+
+> Lane A's orchestrator, 2026-11-05 (~01:11 UTC), on the co-founder's standing direction: staging goes to db.t4g.medium,
+> the same class as production (staging is where releases and capacity are proved, so it must match production; about
+> +$23 a month); dev takes db.t4g.small with stop-first worker deploys in dev only (dev needs neither zero-downtime
+> deploys nor production's instance class; it keeps production's pool size, so it exercises the same code path; about
+> $24 a month less than medium). A dev deploy never pages: silence the worker heartbeat alarm during dev's deploy
+> window, or give dev a longer evaluation period. The connection-budget check passes for dev under stop-first. Both
+> choices and their reasons are recorded in ADR 0083, with the ADR 0012 note. The PR description carries one line for
+> the founder: "RDS: staging db.t4g.small → medium (+~$23/mo); dev micro → small (+~$11/mo when deployed)". PRD section
+> 19 stays the founder's to update.
+
+As built: staging's worst case is 165 connections against db.t4g.medium's 389; dev's 140 against db.t4g.small's 163,
+its worker counted once (165 with the worker deploying new-before-old, which the check refuses); dev's worker heartbeat
+alarm counts ten missed beats, so a deploy's gap never pages. A decision of Lane A's orchestrator, not a founder ruling.
 
 **Network.** Subnet groups `edge` (public, no public addresses assigned, empty until the load balancer),
 `app` (web, worker, rotation functions, endpoints) and `data` (RDS), the last two isolated: no NAT gateway and no

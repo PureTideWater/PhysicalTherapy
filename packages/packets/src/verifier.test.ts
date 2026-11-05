@@ -7,11 +7,11 @@ import { describe, expect, it } from 'vitest';
 
 import { type AssemblyLine, assemblePacket } from './assemble';
 import { draftNarrative } from './draft';
-import { narrativeFacts } from './facts';
-import type { PacketContent } from './format';
+import { heldRoles, narrativeFacts } from './facts';
+import type { PacketContent, PacketContentV2 } from './format';
 import { scanText } from './scan';
-import { assemblyInput, contractCitation, line } from './test-support';
-import { type VerifierReport, identifierForms, verifyNarrative } from './verifier';
+import { HAND_WRITTEN, MISSTATED, REVIEWED, STATED, assemblyInput, contractCitation, line, roleContents, roleOracle, scopedOracle } from './test-support';
+import { type VerifierReport, checkedFigures, identifierForms, verifyNarrative } from './verifier';
 import { identifierSpans } from './verifier/mismatches';
 
 /**
@@ -26,7 +26,6 @@ const EXPECTED = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixture
 };
 
 const content = assemblePacket(assemblyInput());
-const facts = narrativeFacts(content);
 const verify = (narrative: string, of: PacketContent = content, identifiers: readonly string[] = []) => verifyNarrative(narrative, narrativeFacts(of), identifiers);
 const codes = (report: VerifierReport) => report.mismatches.map((mismatch) => mismatch.code);
 
@@ -44,14 +43,15 @@ describe('the CAS-08 narrative (a figure in no input record)', () => {
     for (const passes of EXPECTED.outcome.verifier.passes) {
       expect(matched).toContain(passes === '3' ? 'three' : passes);
     }
-    // The draft has no citation markers, so each of its four sentences fails on that as well.
-    expect(codes(report).filter((code) => code === 'sentence_without_citation')).toHaveLength(4);
+    // The draft has no citation markers, so each of its five sentences fails on that as well.
+    expect(codes(report).filter((code) => code === 'sentence_without_citation')).toHaveLength(5);
   });
 
   it('passes once the invented figure is gone and every sentence cites its source', () => {
     const cited = CAS08.replace('SYNTHETIC packet narrative draft (no real patient, payer or claim).', 'SYNTHETIC packet narrative draft [1].')
       .replace('per unit.', 'per unit [1].')
-      .replace('a shortfall of 90.00.', 'a shortfall of 90.00 [3].')
+      .replace('97110 x 2.', '97110 x 2 [3].')
+      .replace('a shortfall of 90.00 in total.', 'a shortfall of 90.00 in total [3].')
       .replace('The payer also withheld 1234.56 on these claims.\n', '');
     expect(verify(cited)).toMatchObject({ passed: true, mismatches: [] });
   });
@@ -94,16 +94,33 @@ describe('verifyNarrative', () => {
     const narrative = [
       'The contract, version 1, page 2, effective January 1, 2026, pays 97110 at $50.00 per unit [1].',
       'Rule release 900001 priced the lines [2].',
-      'Three claims of 97110 x 2 on March 5, 2026, 2026-03-06 and 3/7/2026 were allowed 70.00 each, $210.00 in all [3].',
-      'They expected $300.00, a shortfall of 90.00 over 6 units in March 2026, paid on April 8 [3].',
+      'Three claims of 97110 x 2 were on March 5, 2026, 2026-03-06 and 3/7/2026 [3].',
+      'They were allowed 70.00 a line, $210.00 in all [3].',
+      'They expected $300.00 in all, a shortfall of 90.00 in all over 6 units in all [3].',
+      'The services were in March 2026, paid on April 8 [3].',
     ].join(' ');
     expect(verify(narrative)).toMatchObject({ passed: true, mismatches: [] });
   });
 
   it('accepts figures the quoted clause and the statute hold as they hold them', () => {
     const quoted = assemblePacket(assemblyInput({ citation: { ...content.citation, quote: 'Section 4.2: 97110 is paid 50.00 per unit within 90 days under G.S. 58-3-225' } as PacketContent['citation'] }));
-    expect(verify('Section 4.2 pays within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(true);
-    expect(verify('Section 4.3 pays within 91 days [1].', quoted).passed).toBe(false);
+    expect(verify('Section 4.2 requires disputes within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(true);
+    expect(verify('Section 4.3 requires disputes within 91 days [1].', quoted).passed).toBe(false);
+    // In a role the quote's own words do not give it ("pays within" is the days to pay; the clause's "within" the
+    // window's), the quoted day count is no repetition (docs/adr/0086, CORR-14).
+    expect(verify('Section 4.2 pays within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(false);
+  });
+
+  it('fails every figure of a "respectively" list in neither plain form, and holds one in a plain form to its cues and scopes (rule 3)', () => {
+    // Read in no role, each figure passed whatever it was (every one of no roles holds it), and then, figure by figure,
+    // a guess at each (the fix round): now a list with no cue on either side is in neither plain form, so each fails.
+    for (const narrative of ['These were $300.00 and $91.00, respectively [3].', 'These were $300.00 and $210.00, respectively [3].']) {
+      expect(flagged(narrative, verify(narrative)), narrative).toEqual(narrative.match(/\$\d+\.\d\d/g));
+      expect(checkedFigures(narrative, narrativeFacts(content)).map((figure) => figure.needs)).toEqual(['own_words', 'own_words']);
+    }
+    // In a plain form, each figure takes its cue in order, and states its scope (CORR-D1).
+    expect(flagged('$91.00 and $168.00 were allowed and paid, respectively, in total [3].', verify('$91.00 and $168.00 were allowed and paid, respectively, in total [3].'))).toEqual(['$91.00', '$168.00']);
+    expect(verify('$210.00 and $168.00 were the allowed and paid amounts in total, respectively [3].')).toMatchObject({ passed: true, mismatches: [] });
   });
 
   it('accepts the contract window’s days only as days and its page only as a page, never as a count (tp-packet/2)', () => {
@@ -160,7 +177,7 @@ describe('figures in other characters', () => {
       [`It affected 1${cp(0x200b)}11 claims [3].`, 'hidden_character'],
       [`It affected 1${cp(0xad)}1 claims [3].`, 'hidden_character'],
       ['It affected a dozen claims [3].', 'figure_not_in_input'],
-      ['This is the fifth dispute [3].', 'figure_not_in_input'],
+      ['This line is the fifth [3].', 'figure_not_in_input'],
       ['It was billed on March ninth [3].', 'figure_not_in_input'],
       ['A score of claims were short [3].', 'figure_not_in_input'],
       ['It paid half the contract rate [1].', 'figure_not_in_input'],
@@ -172,15 +189,16 @@ describe('figures in other characters', () => {
       expect(report.passed, narrative).toBe(false);
       expect(codes(report), narrative).toContain(code);
     }
-    // Read, a figure in words is checked like any other: twice is 2 (each line's units) and March fifth
-    // a service date, both of which this content holds.
-    expect(verify('Each line billed twice [3].').passed).toBe(true);
+    // Read, a figure in words is checked like any other: March fifth is a service date this content holds. Twice is
+    // 2 of nothing its words name, so it fails as a number with no role would (docs/adr/0086); "2 units" passes.
     expect(verify('A line was billed on March fifth [3].').passed).toBe(true);
+    expect(codes(verify('Each line billed twice [3].'))).toEqual(['figure_not_in_input']);
+    expect(verify('The lines billed 2 units per line [3].').passed).toBe(true);
   });
 
   it('reads a figure the input holds in compatibility digits as that figure, and says where a hidden one is', () => {
-    expect(verify(`The shortfall is $${inDigits(0xff10, '90.00')} on ${inDigits(0x1d7ce, '3')} claims [3].`).passed).toBe(true);
-    const split = `The shortfall is $9${cp(0x200b)}0.00 [3].`;
+    expect(verify(`The shortfall is $${inDigits(0xff10, '90.00')} in total on ${inDigits(0x1d7ce, '3')} claims [3].`).passed).toBe(true);
+    const split = `The shortfall is $9${cp(0x200b)}0.00 in total [3].`;
     const report = verify(split);
     expect(report.mismatches.map((item) => [item.code, split.slice(item.start, item.end)])).toEqual([['hidden_character', cp(0x200b)]]);
     const arabic = `The shortfall is ${inDigits(0x660, '90')} dollars [3].`;
@@ -273,10 +291,12 @@ describe('the edges of the check', () => {
     ]);
   });
 
-  it('accepts a five-digit figure read as a code when the inputs hold it as a number', () => {
+  it('reads a five-digit figure as the number its words make it, and only then as one', () => {
     const paged = assemblePacket(assemblyInput({ citation: contractCitation({ page: 12345 }) }));
     expect(verify('The clause is on page 12345 [1].', paged).passed).toBe(true);
-    expect(verify('The clause is on page 12345 [1].').mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'code']]);
+    expect(verify('The clause is on page 12345 [1].').mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'number']]);
+    // Named as nothing but a code, it is a code: the page's 12345 is no procedure code.
+    expect(verify('CPT 12345 was billed [1].', paged).mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'code']]);
   });
 
   it('compares each identifier whole and word by word, in NFKC, longest first', () => {
@@ -354,20 +374,68 @@ const contentArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 })
 
 /**
  * Counts for the properties below: any from 2 to 100,000, and a quarter of the time one beside a figure the inputs hold
- * (each numeric code and its neighbours, the service year and the next), where in and not in the input meet. A
- * five-digit count reads as a procedure code, so one equal to an input's code is that code (97140 at seed 2019154346).
+ * (each numeric code and its neighbours, the service year and the next), where in and not in the input meet.
  */
 const countArbitrary = fc.oneof(
   { weight: 3, arbitrary: fc.integer({ min: 2, max: 100_000 }) },
   { weight: 1, arbitrary: fc.constantFrom(...CODES.filter((code) => /^\d+$/.test(code)).flatMap((code) => [-1, 0, 1].map((step) => Number.parseInt(code, 10) + step)), 2026, 2027) },
 );
-/** Whether the verifier finds a count, written in ASCII digits, in the inputs: among their numbers, or their codes. */
-const inInput = (generated: PacketContent, count: number) => {
-  const facts = narrativeFacts(generated);
-  return facts.numbers.has(String(count)) || facts.codes.has(String(count));
+/**
+ * Whether "It affected N visits" states a count the inputs hold: visits are lines or claims (../roles.ts), and a
+ * five-digit N after "affected" is a count, never the code (only an article or a preposition before it makes it
+ * the code of the visits). The oracle reads the content's fields (./role-examples.ts roleOracle()), not the facts.
+ */
+const visitsHeld = (generated: PacketContentV2, count: number) => {
+  const oracle = roleOracle(generated);
+  return ['lines', 'claims'].some((role) => oracle.get(role)?.has(String(count)) === true);
+};
+/** Every amount any role's inputs hold. */
+const amountsHeld = (generated: PacketContentV2) => {
+  const oracle = roleOracle(generated);
+  return new Set(['expected', 'allowed', 'paid', 'variance', 'interest', 'patient_share', 'calculation'].flatMap((role) => [...(oracle.get(role) ?? [])]));
+};
+/** The first amount from `from` up that no input holds: a value not held, by construction (no fc.pre). */
+const notHeldAmount = (generated: PacketContentV2, from: bigint) => {
+  const held = amountsHeld(generated);
+  let amount = from;
+  while (held.has(amount.toString())) {
+    amount += 1n;
+  }
+  return amount;
 };
 
-const FILLER = ['the', 'payer', 'paid', 'these', 'lines', 'under', 'its', 'contract', 'short', 'of', 'what', 'it', 'requires', 'and'] as const;
+/** Words that name no role of any figure (no cue, no label, no noun), so the figure beside them keeps its own words'. */
+const FILLER = ['the', 'payer', 'these', 'under', 'its', 'of', 'what', 'it', 'and', 'so', 'here', 'note'] as const;
+
+/** Each role's words around a figure the inputs hold in it (../roles.ts), the figure written where `{}` is. */
+const ROLE_WORDS: Readonly<Record<string, string>> = {
+  lines: '{} lines',
+  claims: '{} claims',
+  patients: '{} patients',
+  units: '{} units in all',
+  line_units: '{} units per line',
+  row: 'line {}',
+  claim_row: 'claim {}',
+  patient_row: 'patient {}',
+  version: 'version {}',
+  citation_page: 'the clause on page {}',
+  window_page: 'the window on page {}',
+  window_days: 'within {} days',
+  release: 'release {}',
+  level: 'a level {} appeal',
+  expected: 'expected {}',
+  allowed: 'allowed {}',
+  paid: 'paid {}',
+  variance: 'a shortfall of {}',
+  patient_share: 'a patient share of {}',
+  calculation: '{}',
+  service_date: 'billed on {}',
+  paid_date: 'paid on {}',
+  effective_date: 'effective {}',
+};
+
+/** The amount roles, whose values the pool writes in dollars. */
+const AMOUNT_ROLE_NAMES = { expected: true, allowed: true, paid: true, variance: true, patient_share: true, calculation: true } as const;
 
 describe('properties of the verifier', () => {
   it('passes the code-built draft of any pattern', () => {
@@ -382,8 +450,8 @@ describe('properties of the verifier', () => {
 
   it('fails a draft into which any amount not in the input is written', () => {
     fc.assert(
-      fc.property(contentArbitrary, fc.bigInt({ min: 1n, max: 10_000_000n }), fc.boolean(), (generated, amount, sign) => {
-        fc.pre(!narrativeFacts(generated).amounts.has(amount.toString()));
+      fc.property(contentArbitrary, fc.bigInt({ min: 1n, max: 10_000_000n }), fc.boolean(), (generated, from, sign) => {
+        const amount = notHeldAmount(generated, from);
         const written = `${sign ? '$' : ''}${formatCents(cents(amount))}`;
         const narrative = `${draftNarrative(generated)} The payer kept ${written} [3].`;
         const report = verify(narrative, generated);
@@ -397,7 +465,7 @@ describe('properties of the verifier', () => {
     fc.assert(
       fc.property(contentArbitrary, countArbitrary, (generated, count) => {
         const narrative = `${draftNarrative(generated)} It affected ${String(count)} visits [3].`;
-        expect(flagged(narrative, verify(narrative, generated))).toEqual(inInput(generated, count) ? [] : [String(count)]);
+        expect(flagged(narrative, verify(narrative, generated))).toEqual(visitsHeld(generated, count) ? [] : [String(count)]);
       }),
     );
   });
@@ -413,19 +481,28 @@ describe('properties of the verifier', () => {
     );
   });
 
-  it('passes any narrative made of the inputs’ own figures, prose and markers', () => {
+  it('passes any narrative made of the inputs’ own figures, each with its role’s words, prose and markers', () => {
     fc.assert(
       fc.property(
         contentArbitrary,
         fc.array(fc.tuple(fc.array(fc.constantFrom(...FILLER), { minLength: 1, maxLength: 4 }), fc.nat(), fc.constantFrom(1, 2, 3)), { minLength: 1, maxLength: 6 }),
         (generated, sentences) => {
-          const own = narrativeFacts(generated);
-          const pool = [
-            ...[...own.amounts].filter((amount) => !amount.startsWith('-')).map((amount) => `$${formatCents(cents(BigInt(amount)))}`),
-            ...[...own.dates],
-            ...[...own.codes],
-            ...[...own.numbers].filter((number) => /^\d+$/.test(number)),
-          ];
+          const oracle = roleOracle(generated);
+          const scoped = scopedOracle(generated);
+          const written = (role: string, value: string) => (/_date$/.test(role) ? value : role in AMOUNT_ROLE_NAMES ? `$${formatCents(cents(BigInt(value)))}` : value);
+          // An amount with the scope phrase right after it (rules 1 and 2 of docs/adr/0086): each line, in total or per unit.
+          const per = (role: string, value: string) => (['line', 'total', 'unit'] as const).find((scope) => scoped.get(`${scope}|${role}`)?.has(value) === true);
+          const scope = { line: ' per line', total: ' in total', unit: ' per unit' } as const;
+          const pool = Object.entries(ROLE_WORDS).flatMap(([role, words]) =>
+            [...(oracle.get(role) ?? [])]
+              .filter((value) => !value.startsWith('-'))
+              // A value only some lines hold is no figure a sentence of the lines states: per line it is not every line's (PE5-2).
+              .filter((value) => !(role in AMOUNT_ROLE_NAMES) || per(role, value) !== undefined || scoped.get(`row|${role}`)?.has(value) !== true)
+              .map((value) => {
+                const found = role in AMOUNT_ROLE_NAMES ? per(role, value) : undefined;
+                return `${words.replace('{}', written(role, value))}${found === undefined ? '' : scope[found]}`;
+              }),
+          );
           const narrative = sentences
             .map(([words, pick, marker]) => `${words.join(' ')} ${pool[pick % pool.length] ?? ''} [${String(marker)}].`)
             .map((sentence) => sentence.charAt(0).toUpperCase() + sentence.slice(1))
@@ -444,7 +521,7 @@ describe('properties of the verifier', () => {
           // Digits it does not read fail whatever their value.
           expect(report.passed).toBe(false);
           expect(codes(report)).toContain('unreadable_figure');
-        } else if (inInput(generated, count)) {
+        } else if (visitsHeld(generated, count)) {
           // Read as ASCII digits, a count in the input is that figure, as in the property above.
           expect(codes(report)).not.toContain('figure_not_in_input');
         } else {
@@ -495,9 +572,14 @@ describe('properties of the verifier', () => {
   });
 });
 
-it('holds the facts of the CAS-08 content', () => {
-  expect([...facts.amounts]).toEqual(expect.arrayContaining(['5000', '21000', '30000', '9000']));
-  expect(facts.amounts.has('123456')).toBe(false);
+it('holds the facts of the CAS-08 content, each in its role', () => {
+  // Read in the test, never when the file loads, so the reader's mutants are tried per test (docs/adr/0066, Part 4).
+  const facts = narrativeFacts(content);
+  expect([...heldRoles(facts, 'amount', '5000')]).toEqual(['expected']);
+  expect([...heldRoles(facts, 'amount', '21000')]).toEqual(['allowed']);
+  expect([...heldRoles(facts, 'amount', '30000')]).toEqual(['expected']);
+  expect([...heldRoles(facts, 'amount', '9000')]).toEqual(['variance']);
+  expect(heldRoles(facts, 'amount', '123456').size).toBe(0);
 });
 
 // ---------------------------------------------------------------------------------------------------
@@ -514,16 +596,13 @@ describe('the check: the inputs each rule separates', () => {
     }),
   );
 
-  it('accepts a day count before its own word, singular or plural, with calendar, business or working and any spaces between', () => {
-    for (const passes of [
-      'It is a 3650 day window [1].',
-      'The window is 3650 business days [1].',
-      'The window is 3650 working days [1].',
-      'The window is 3650 calendar  days [1].',
-      'The window is 3650 business  days [1].',
-      'The window is 3650 working  days [1].',
-    ]) {
+  it('accepts a day count before its own word, singular or plural, with calendar and any spaces between, and business or working days only where the record counts them', () => {
+    for (const passes of ['It is a 3650 day window [1].', 'The window is 3650 calendar  days [1].', 'The window is 3650 calendar days [1].']) {
       expect(verify(passes, window), passes).toMatchObject({ passed: true });
+    }
+    // The contract window counts calendar days (D17): its days are no business or working days.
+    for (const fails of ['The window is 3650 business days [1].', 'The window is 3650 working days [1].', 'The window is 3650 business  days [1].']) {
+      expect(flagged(fails, verify(fails, window)), fails).toEqual(['3650']);
     }
   });
 
@@ -533,10 +612,9 @@ describe('the check: the inputs each rule separates', () => {
     }
   });
 
-  it('takes a day count as days only when its word follows it at once, not later in the text nor joined by a hyphen', () => {
-    for (const fails of ['It billed 3650 units in the days after notice [1].', 'It is a 3650-day window [1].']) {
-      expect(flagged(fails, verify(fails, window)), fails).toEqual(['3650']);
-    }
+  it('takes a day count as days only when its word follows it at once or joined by a hyphen, not later in the text', () => {
+    expect(flagged('It billed 3650 units in the days after notice [1].', verify('It billed 3650 units in the days after notice [1].', window))).toEqual(['3650']);
+    expect(verify('It is a 3650-day window [1].', window).passed).toBe(true);
   });
 
   it('takes a page’s number as a page only right after its word, at the text’s start or after any spaces', () => {
@@ -547,13 +625,17 @@ describe('the check: the inputs each rule separates', () => {
     expect(verify(counted, window).mismatches.map((item) => [item.code, item.kind, item.start])).toEqual([['figure_not_in_input', 'number', counted.lastIndexOf('9')]]);
   });
 
-  it('accepts a month and a day of a month that only a quoted clause names', () => {
+  it('accepts a month and a day of a month that only a quoted clause names, repeated as the clause holds them', () => {
     const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit from July 2026, billed by March 20' }) }));
-    expect(verify('It was paid in July 2026 [1].', quoted).passed).toBe(true);
-    expect(verify('It was billed on March 20 [1].', quoted).passed).toBe(true);
-    // Neither is among the content's dates: the quote alone allows them.
-    expect(verify('It was paid in July 2026 [1].').passed).toBe(false);
-    expect(verify('It was billed on March 20 [1].').passed).toBe(false);
+    expect(verify('The rate applies from July 2026 [1].', quoted).passed).toBe(true);
+    expect(verify('Billed by March 20 [1].', quoted).passed).toBe(true);
+    // In a role, the narrative's clause must end where the quote's does: "Lines billed by" goes on before "billed by".
+    expect(verify('Lines billed by March 20 [1].', quoted).passed).toBe(false);
+    // Neither is among the content's dates: the quote alone allows them, and only as it holds them, never as the
+    // payment's month or a service date (docs/adr/0086).
+    expect(verify('The rate applies from July 2026 [1].').passed).toBe(false);
+    expect(verify('It was paid in July 2026 [1].', quoted).passed).toBe(false);
+    expect(verify('It was billed on March 20 [1].', quoted).passed).toBe(false);
   });
 
   it('accepts a modifier the lines hold, and never takes a modifier for a number', () => {
@@ -562,7 +644,7 @@ describe('the check: the inputs each rule separates', () => {
     expect(verify('The lines with modifier GP were short [3].', modified).passed).toBe(true);
     // 90 is a number the quoted clause holds (90 days), never the modifier 90.
     const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit within 90 days' }) }));
-    expect(verify('It pays within 90 days [1].', quoted).passed).toBe(true);
+    expect(verify('97110 is paid 50.00 per unit within 90 days [1].', quoted).passed).toBe(true);
     expect(verify('The 97110-90 lines were short [3].', quoted).mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'modifier']]);
   });
 
@@ -579,3 +661,143 @@ describe('the check: the inputs each rule separates', () => {
     expect(at(between, verify(between))).toEqual([['hidden_character', -1, cp(0x200b)]]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// Each figure in the role its words give it (test matrix CAS-43 and CAS-44; docs/adr/0086): the design's every class of
+// a figure stated in another role fails at that figure, and every way of stating a figure in its own role, the
+// hand-written ones among them, passes.
+// ---------------------------------------------------------------------------------------------------
+
+describe('a figure stated in another role (CAS-43)', () => {
+  const contents = roleContents();
+  it.each(MISSTATED)('$id: fails at the figure, with its kind', ({ content, narrative, figure, kind }) => {
+    const report = verify(narrative, contents[content]);
+    expect(report.passed).toBe(false);
+    expect(report.mismatches.map((item) => [item.code, item.kind, item.sentence, narrative.slice(item.start, item.end)])).toEqual([['figure_not_in_input', kind, 0, figure]]);
+  });
+});
+
+describe('the review of 2026-11-01: one role per figure, quotes in their own role, counts over years, per line apart from in total (CAS-43, CAS-44)', () => {
+  const contents = roleContents();
+  it.each(REVIEWED.filter((example) => example.fails.length > 0))('CAS-43 $id: fails at each misstated figure, with its kind and what its words must say', ({ content, narrative, fails }) => {
+    const report = verify(narrative, contents[content]);
+    expect(report.passed).toBe(false);
+    // The stored report's mismatch is figure_not_in_input; what the words must say is the reading's (FigureNeeds).
+    const figures = checkedFigures(narrative, narrativeFacts(contents[content]));
+    const needs = (start: number, end: number) => figures.find((figure) => figure.start === start && figure.end === end)?.needs ?? null;
+    expect(report.mismatches.map((item) => [item.code, item.kind, narrative.slice(item.start, item.end), ...(item.code === 'figure_not_in_input' && needs(item.start, item.end) !== null ? [needs(item.start, item.end)] : [])])).toEqual(fails);
+  });
+  it.each(REVIEWED.filter((example) => example.fails.length === 0))('CAS-44 $id: passes', ({ content, narrative }) => {
+    expect(verify(narrative, contents[content]).mismatches).toEqual([]);
+  });
+});
+
+describe('a figure stated in its own role, or as a quoted text holds it (CAS-44)', () => {
+  const contents = roleContents();
+  it.each([...STATED, ...HAND_WRITTEN])('$id: passes', ({ content, narrative }) => {
+    expect(verify(narrative, contents[content]).mismatches).toEqual([]);
+  });
+
+  it('holds at least a hundred hand-written forms, none of them a drafting template’s', () => {
+    expect(HAND_WRITTEN.length).toBeGreaterThanOrEqual(100);
+    // No hand-written sentence opens with a drafted sentence's first four words.
+    const opening = (sentence: string) => sentence.split(' ').slice(0, 4).join(' ');
+    const drafts = new Set(Object.values(contents).flatMap((content) => draftNarrative(content).split(/(?<=\])\. /).map(opening)));
+    for (const { narrative } of HAND_WRITTEN) {
+      expect(drafts.has(opening(narrative)), narrative).toBe(false);
+    }
+  });
+});
+
+describe('what a failing figure’s words must say (docs/adr/0086, rules 2 and 3)', () => {
+  const needs = (narrative: string, written: string, facts = narrativeFacts(content)) => {
+    const figure = checkedFigures(narrative, facts).find((item) => narrative.slice(item.start, item.end) === written);
+    return figure === undefined ? undefined : { passed: figure.passed, needs: figure.needs };
+  };
+
+  it('asks a figure in no role’s words for a scope only where an input holds it', () => {
+    expect(needs('The schedule lists $300.00 against the letter [3].', '$300.00')).toEqual({ passed: false, needs: 'scope' });
+    expect(needs('The schedule lists $300.00 in total against the letter [3].', '$300.00')).toEqual({ passed: true, needs: null });
+    expect(needs('The schedule lists $123.45 against the letter [3].', '$123.45')).toEqual({ passed: false, needs: null });
+  });
+
+  it('asks a figure in a role for a scope only where one of its roles holds it, any of them or each of them', () => {
+    // "due" names the expected amount and the shortfall: $100.00 is expected per line alone.
+    expect(needs('It allowed $70.00 per line where $100.00 was due [3].', '$100.00')).toEqual({ passed: false, needs: 'scope' });
+    expect(needs('It allowed $70.00 per line where $123.45 was due [3].', '$123.45')).toEqual({ passed: false, needs: null });
+    // Each of two roles: held so in both, it passes with no scope where each role's per line and total are one.
+    const both = { ...narrativeFacts(content) };
+    const roles = new Map(both.roles);
+    roles.set('amount:5600', new Set(['expected', 'paid']));
+    const scoped = new Map(both.scoped);
+    scoped.set('line|amount:5600', new Set(['expected', 'paid']));
+    scoped.set('row|amount:5600', new Set(['expected', 'paid']));
+    scoped.set('total|amount:5600', new Set(['expected', 'paid']));
+    const every = 'The contract requires more than the payer paid: $56.00 [1].';
+    expect(needs(every, '$56.00', { ...both, roles, scoped })).toEqual({ passed: true, needs: null });
+    // Held in each per line alone, while each holds another value in total: its words must say which.
+    const lineOnly = new Map(scoped);
+    lineOnly.delete('total|amount:5600');
+    expect(needs(every, '$56.00', { ...both, roles, scoped: lineOnly })).toEqual({ passed: false, needs: 'scope' });
+    expect(needs('The contract requires more than the payer paid: $56.00 per line [1].', '$56.00', { ...both, roles, scoped: lineOnly })).toEqual({ passed: true, needs: null });
+  });
+
+  it('fails a figure of a "respectively" list in neither plain form, however its value is held', () => {
+    expect(needs('These were $100.00 and $70.00, respectively [3].', '$100.00')).toEqual({ passed: false, needs: 'own_words' });
+    expect(needs('The contract expected per line and the payer allowed per line $100.00 and $70.00, respectively [3].', '$100.00')).toEqual({ passed: true, needs: null });
+  });
+});
+
+describe('a sentence that names a part of the lines (the amended rule 1 of docs/adr/0086)', () => {
+  const contents = roleContents();
+  const figure = (narrative: string, written: string, packet = contents.base) => {
+    const found = checkedFigures(narrative, narrativeFacts(packet)).find((item) => narrative.slice(item.start, item.end) === written);
+    return found === undefined ? undefined : { passed: found.passed, needs: found.needs, scope: found.scope };
+  };
+
+  it('holds each count of lines, claims or patients to the pattern’s, and a figure in other roles to none', () => {
+    expect(figure('The 3 lines on 3 claims for 3 patients were allowed $210.00 in total [3].', '$210.00')).toEqual({ passed: true, needs: null, scope: 'total' });
+    for (const counts of ['The 2 claims', 'The 2 patients', 'The 2 lines', 'The 2 visits']) {
+      expect(figure(`${counts} were allowed $210.00 in total [3].`, '$210.00'), counts).toEqual({ passed: false, needs: 'scope', scope: null });
+    }
+    // A count the pattern holds in one of its roles ("3 visits": its lines and its claims) names none.
+    expect(figure('The 3 visits were allowed $210.00 in total [3].', '$210.00')).toMatchObject({ passed: true, scope: 'total' });
+    // Its 3 lines on one claim: "3 visits" is its lines, so it names none.
+    expect(figure('The 3 visits were allowed $210.00 in total [3].', '$210.00', contents.oneClaim)).toMatchObject({ passed: true, scope: 'total' });
+    // A figure in no count's roles names none, whatever its value.
+    expect(figure('Under version 1 the payer allowed $210.00 in total on page 2 [3].', '$210.00')).toMatchObject({ passed: true, scope: 'total' });
+  });
+
+  it('reads "the claim" and "the patient" as a part where the pattern has more than one, and as the whole where it has one', () => {
+    for (const words of ['for the claim', 'for the patient']) {
+      expect(figure(`The payer allowed $210.00 in total ${words} [3].`, '$210.00'), words).toMatchObject({ passed: false, needs: 'scope' });
+      expect(figure(`The payer allowed $210.00 in total ${words} [3].`, '$210.00', contents.oneClaim), words).toMatchObject({ passed: true, scope: 'total' });
+    }
+  });
+
+  it('reads a date, a month or a day of a month a line’s service date is or falls in as a part, whatever role its words give it', () => {
+    for (const date of ['on 2026-03-05', 'in March 2026', 'on March 5']) {
+      expect(figure(`The payer paid $56.00 per line ${date} [3].`, '$56.00'), date).toMatchObject({ needs: 'scope', scope: null });
+    }
+    for (const date of ['on 2026-04-08', 'in April 2026', 'on April 8']) {
+      expect(figure(`The payer paid $56.00 per line ${date} [3].`, '$56.00'), date).toEqual({ passed: true, needs: null, scope: 'line' });
+    }
+  });
+
+  it('keeps each unit’s scope in such a sentence, and passes where per line and in total are one', () => {
+    expect(figure('The contract pays $50.00 per unit for 97110 [1].', '$50.00')).toEqual({ passed: true, needs: null, scope: 'unit' });
+    expect(figure('The payer allowed $70.00 per line for 97110 [3].', '$70.00', contents.oneLine)).toMatchObject({ passed: true, scope: null });
+  });
+});
+
+describe('a partitive’s part', () => {
+  it('is held to the number after it, else to the largest count its roles hold, and fails when they hold none', () => {
+    // 4 of 5: the part is at most the 5 stated after it (which itself is no claim count), never the 3 claims held.
+    expect(flagged('We note 4 of the 5 claims were short [1].', verify('We note 4 of the 5 claims were short [1].'))).toEqual(['5']);
+    expect(verify('We note 2 of them here [1].').passed).toBe(true);
+    // No count held in the pronoun's roles: the part fails.
+    const none = { ...narrativeFacts(content), roles: new Map() };
+    expect(flagged('We note 2 of them here [1].', verifyNarrative('We note 2 of them here [1].', none, []))).toEqual(['2']);
+  });
+});
+

@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 import { MUTATION_PACKAGES, type MutationPackage, SHARD_VARIABLE, type Shard, readShards } from '../../stryker/base.mjs';
 import { repositoryRoot } from '../content-files';
+import { type Spawn, runStryker } from './stryker';
 
 /**
  * The mutation workflow's shards (stryker/shards.json; docs/adr/0066, Part 4): which packages each holds, and which
@@ -12,6 +12,7 @@ import { repositoryRoot } from '../content-files';
  *
  * `pnpm -s exec tsx tools/stryker/shards.ts <shard>` runs one shard: each of its packages' Stryker configurations in
  * turn, under TP_MUTATION_SHARD, each writing reports/mutation/<shard>/<package>.json. It stops at the first failure.
+ * Stryker runs by path (tools/stryker/stryker.ts; docs/adr/0066, Part 7), never through a root script or a bin by name.
  */
 
 export type { Shard } from '../../stryker/base.mjs';
@@ -33,18 +34,16 @@ export function shardNamed(name: string, shards: readonly Shard[] = readShards()
   return found;
 }
 
-/** Runs a shard's packages one after another, as its CI job does; returns the first failing exit status, or 0. */
-export function runShard(name: string, root: string = repositoryRoot): number {
+/**
+ * Runs a shard's packages one after another, as its CI job does, each through Stryker by path in `root`; returns the
+ * first failing exit status, or 0. `spawn` starts each run (a test passes a recorder, so no process starts).
+ */
+export function runShard(name: string, root: string = repositoryRoot, spawn?: Spawn): number {
   const shard = shardNamed(name);
   for (const pkg of packagesOf(shard)) {
     process.stdout.write(`stryker (${name}): ${pkg}\n`);
-    const run = spawnSync('pnpm', ['stryker', 'run', `stryker/${pkg}.config.mjs`], {
-      cwd: root,
-      stdio: 'inherit',
-      env: { ...process.env, [SHARD_VARIABLE]: name },
-    });
-    if (run.error !== undefined) throw run.error;
-    if (run.status !== 0) return run.status ?? 1;
+    const status = runStryker(['run', `stryker/${pkg}.config.mjs`], { ...process.env, [SHARD_VARIABLE]: name }, root, spawn);
+    if (status !== 0) return status;
   }
   return 0;
 }

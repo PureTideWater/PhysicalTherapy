@@ -44,6 +44,10 @@ const FILES = [
   // ci-browser (docs/adr/0066, Part 3).
   'tools/screening-capacity/image-id.test.ts',
   'tools/test/browser-version.test.ts',
+  // The mutation trigger (docs/adr/0066, Part 7).
+  'tools/stryker/manifests.test.ts',
+  'tools/stryker/runtime.test.ts',
+  'tools/stryker/stryker.test.ts',
 ];
 
 /** What Node itself keeps in the temporary directory (module.enableCompileCache), not a test's. */
