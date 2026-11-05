@@ -326,8 +326,10 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
 - **B2. The words of every source** (`packages/auth-mail/src/words.ts`; house voice, BRAND.md 1; none is legal text):
   the reset code's are the recovery design's section 2.5 word for word ("Your PaidWhole code"; "Your code to choose a
   new PaidWhole password is {####}. Enter it on the page that sent it within 15 minutes. If you did not ask for it,
-  ignore this email: your password is unchanged."). The invitation and its resend ("Your PaidWhole invitation") name
-  the address, the temporary password on its own line, the sign-in page as plain text and its 7 days
+  ignore this email: your password is unchanged."). The invitation and its resend ("Your PaidWhole invitation") give
+  Cognito's `{username}` once without saying what it is ("Your account is {username}. Sign in with the address this
+  email came to and this temporary password:", since in an email-attribute pool it may be the internal name), the
+  temporary password on its own line, the sign-in page as plain text and its 7 days
   (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification, sign-up,
   resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The footer of
   every message: "PaidWhole never asks for your password or a code by email, phone or chat." The 7 days, 15 minutes
@@ -379,7 +381,9 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that
   it accepts the display-name `From`; that a resend fires `CustomMessage_AdminCreateUser`; that it substitutes the
   parameters once and sends the pool's template when the response is unchanged; a real reset's cold start against the
-  1,500 ms floor; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
+  1,500 ms floor; what the invitation's `{username}` becomes (the
+  address or the pool's internal name; the words hold either way), in the trigger's message and the pool's own
+  invitation template; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
   the trigger returns); and Cognito's subject (140) and message (20,000) limits and CloudFormation's limit on an inline
   `ZipFile` (the source is 13.5 KB; the tests cap it at 16 KiB), which are quoted from memory: AWS's documentation
   was not reachable from this session. If the inline limit binds, the source goes as `Code.fromAsset` of the same text.

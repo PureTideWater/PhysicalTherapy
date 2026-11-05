@@ -62,7 +62,9 @@ const confirmAccount: MessageWords = {
 const invitation: MessageWords = {
   subject: `Your ${brandName} invitation`,
   paragraphs: [
-    [`You are invited to ${brandName}. Sign in with this email address, `, username, ', and this temporary password:'],
+    // {username} is whatever Cognito puts there (the address, or the pool's internal name in an email-attribute pool),
+    // so the words never say which; the person signs in with the address the email came to.
+    [`You are invited to ${brandName}. Your account is `, username, '. Sign in with the address this email came to and this temporary password:'],
     [code],
     ['Sign in at ', signInUrl, ` within ${String(INVITATION_DAYS)} days. You then choose your own password and set up an authenticator app.`],
     [`If you did not expect this invitation, ignore this email: it ends after ${String(INVITATION_DAYS)} days.`],

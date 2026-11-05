@@ -1,6 +1,6 @@
 Subject: Your PaidWhole invitation
 
-You are invited to PaidWhole. Sign in with this email address, {username}, and this temporary password:
+You are invited to PaidWhole. Your account is {username}. Sign in with the address this email came to and this temporary password:
 
 {####}
 
