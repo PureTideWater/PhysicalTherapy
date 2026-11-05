@@ -1249,6 +1249,32 @@ describe('MOD-15: every Social Security and phone number is redacted, and a lett
     }
   });
 
+  // Review round 1 (findings SEC-1, corr-ssn-1, SEC-4, SEC-5): after an SSN or phone label, a chain of 9 or 10 digits (or 11
+  // starting with 1) is refused whatever its grouping: two groups with one of five digits or more, five groups or more, a
+  // period or comma amount-shaped first pair. Twins only (9xx, NPA-555-01xx).
+  it.each([
+    'Phone: 202-5550123', 'Phone 202 5550123', 'Phone 202555-0123', 'Phone 202555 0123', 'Phone 1 202 5550123', 'Phone +1 202-5550123',
+    'Phone 20255 50123', 'Call 2025550-123', 'SSN 9001 23456', 'SSN 90012 3456', 'SSN 90012-3456', 'SSN 900-123456', 'Medicare 9001 23456',
+    'SSN 9 0 0 1 2 3 4 5 6', 'Tel 2 0 2 5 5 5 0 1 2 3', 'SSN 9 0 0-12-3456', 'SSN 9 00-12-34 56', 'SSN 9 0 0 - 1 2 - 3 4 5 6', 'phone 20 25 55 01 23',
+    'SSN 900.12 3456', 'SSN 900,12 3456',
+  ])('refuses a labeled chain no pattern reads, whatever its grouping: %s (R7, review round 1)', (letter) => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+    const redacted = redactLetter(`Noted. ${letter} on file.`, patient, claims).text;
+    expect(holdsIdentifier(redacted, patient, claims), letter).toBe(true);
+  });
+
+  it.each([
+    'Claim lines 1 2 3 4 5 6 7 8 9', 'Please call about CPT 97110 97140.', 'Call regarding codes 97110 97140 billed', 'Contact TIN 12-3456789',
+    'Call our office, TIN 12-3456789', 'Paid 900.12 3456 units', 'Phone us about ZIP 90001 1234', 'Medicare 97110 97140', 'Call about $150.00 2026',
+  ])('sends a chain a code or keep-noun names after the label, or that no label names, unrefused: %s (R7, review round 1)', (letter) => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+    const redacted = redactLetter(`Noted. ${letter} on file.`, patient, claims).text;
+    expect(redacted).toBe(`Noted. ${letter} on file.`);
+    expect(holdsIdentifier(redacted, patient, claims), letter).toBe(false);
+  });
+
   it('reads a date-shaped number with an implausible year as digits, never as a date the survivor scan lets through, and offers another patient’s to the screen (R14)', () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
     const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['00230426'] }];

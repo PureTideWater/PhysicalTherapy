@@ -765,6 +765,13 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a semicolon with no space after it (A2)', 'SSN 900;12;3456'],
     ['a spaced nine in a comma list', 'SSN 900 12 3456,900 55 1234'],
     ['a digit and an invisible run before a number with one inside it (read on neither reading)', 'Claim 12345\u200B900-1\u200B2-3456'],
+    // Review round 1 (SEC-1, corr-ssn-1, SEC-4, SEC-5): a labeled chain, whatever its grouping.
+    ['a labeled 3-7 phone (SEC-1)', 'Phone: 202-5550123'],
+    ['a labeled 5-4 SSN (corr-ssn-1)', 'SSN 90012-3456'],
+    ['a labeled 3-6 SSN (corr-ssn-1)', 'SSN 900-123456'],
+    ['a labeled SSN digit by digit (SEC-4)', 'SSN 9 0 0 1 2 3 4 5 6'],
+    ['a labeled phone in five pairs (SEC-4)', 'phone 20 25 55 01 23'],
+    ['a labeled SSN with a period and a space (SEC-5)', 'SSN 900.12 3456'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);

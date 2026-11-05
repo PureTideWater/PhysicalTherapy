@@ -1396,6 +1396,8 @@ const SCAN_JOINER = "[\\p{Pd}\\u2212\\u2043\\u02D7\\u2796]{1,2}|[./()_|\\\\'\\u2
 const SCAN_SPACE = `(?:[ \\t]{0,3}|[ \\t]{0,16}(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])[ \\t]{0,16})`;
 /** What joins two digit groups into one chain: white space (three spaces or tabs at most, or one line break with indentation), with at most one joiner. */
 const SCAN_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER})${SCAN_SPACE})?$`, 'u');
+/** Under an SSN or phone label a comma joins two groups too ("SSN 900,12 3456"); elsewhere it is an amount's or a list's. */
+const SCAN_LABELED_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');
 const SCAN_JOINER_CHARACTER = /^[\p{Pd}\u2212\u2043\u02D7\u2796./()_|\\'\u2018\u2019\u02BC\u02B9\u02CA\u2032\u2035`~\u00B7\u2027\u2219\u22C5\u30FB\u2022"\u201C\u201D;]$/u;
 const SCAN_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
 const SCAN_DIGIT = /^[0-9]$/u;
@@ -1435,12 +1437,25 @@ function joinedRight(text: string, at: number): boolean {
  * 2. chains: digit groups joined by SCAN_GAP;
  * 3. a survivor: one to four consecutive groups of a chain holding 9 or 10 digits, or 11 starting with 1 across two or
  *    more groups, unless they are two or more and one has five digits or more (codes, ZIPs, TINs, ICN columns), or the
- *    group is one ten starting 0 or 1, one ten starting 2 that passes the NPI check, or one of eleven digits or more.
+ *    group is one ten starting 0 or 1, one ten starting 2 that passes the NPI check, or one of eleven digits or more;
+ * 4. under a label (scanLabeled: an SSN or phone label the nearest word before the chain's first group): any number of
+ *    consecutive groups of two or more holding 9 or 10 digits, or 11 starting with 1, whatever their lengths (review
+ *    findings SEC-1, SEC-4, corr-ssn-1: "Phone 202-5550123", "SSN 90012-3456", "SSN 9 0 0 1 2 3 4 5 6"), and an
+ *    unsigned amount there is no barrier ("SSN 900.12 3456": SEC-5).
  */
 function survivorIn(text: string): boolean {
   const barrier = new Uint8Array(text.length + 1);
   const mark = (start: number, end: number) => {
     for (let i = start; i < end; i += 1) barrier[i] = 1;
+  };
+  const labeled = new Map<number, ScanLabel>();
+  const labeledAt = (start: number): ScanLabel => {
+    let held = labeled.get(start);
+    if (held === undefined) {
+      held = scanLabeled(labelWindow(text, start, () => false));
+      labeled.set(start, held);
+    }
+    return held;
   };
   for (const span of datesIn(text)) {
     if (span.separated && span.dates.length > 0 && !joinedLeft(text, span.start) && !joinedRight(text, span.end)) {
@@ -1451,7 +1466,7 @@ function survivorIn(text: string): boolean {
     mark(match.index, match.index + match[0].length);
   }
   for (const match of text.matchAll(UNSIGNED_AMOUNT)) {
-    if (!joinedLeft(text, match.index) && !joinedRight(text, match.index + match[0].length)) {
+    if (!joinedLeft(text, match.index) && !joinedRight(text, match.index + match[0].length) && labeledAt(match.index) !== 'person') {
       mark(match.index, match.index + match[0].length);
     }
   }
@@ -1466,13 +1481,18 @@ function survivorIn(text: string): boolean {
     }
     groups.push({ start, end, digits: match[0], blocked });
   }
+  const chained = (digits: string) => digits.length === 9 || digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
   for (let first = 0; first < groups.length; first += 1) {
     let digits = '';
     let long = false;
-    for (let count = 1; count <= 4 && first + count <= groups.length; count += 1) {
+    // Under a label the chain runs on until it holds more than eleven digits (each group one digit at least, so twelve groups at most).
+    const label = (groups[first]?.digits.length ?? 12) < 11 && first + 1 < groups.length ? labeledAt(groups[first]?.start ?? 0) : null;
+    // "Medicare" labels a nine only (R5d), as decideBare reads it.
+    const labeledChain = (held: string) => (label === 'medicare' ? held.length === 9 : label !== null && chained(held));
+    for (let count = 1; (label !== null || count <= 4) && digits.length <= 11 && first + count <= groups.length; count += 1) {
       const group = groups[first + count - 1];
       const previous = groups[first + count - 2];
-      if (group === undefined || group.blocked || (count > 1 && (previous === undefined || !SCAN_GAP.test(text.slice(previous.end, group.start))))) {
+      if (group === undefined || group.blocked || (count > 1 && (previous === undefined || !(label === 'person' ? SCAN_LABELED_GAP : SCAN_GAP).test(text.slice(previous.end, group.start))))) {
         break;
       }
       digits += group.digits;
@@ -1482,12 +1502,43 @@ function survivorIn(text: string): boolean {
         if ((digits.length === 9 || digits.length === 10) && !ten) {
           return true;
         }
-      } else if (!long && (digits.length === 9 || digits.length === 10 || (digits.length === 11 && digits.startsWith('1')))) {
+      } else if (labeledChain(digits) || (!long && count <= 4 && chained(digits))) {
         return true;
       }
     }
   }
   return false;
+}
+
+/** What the words before a chain say it is to the scan: a person's number (an SSN or phone label), a nine after "Medicare", or nothing. */
+type ScanLabel = 'person' | 'medicare' | null;
+
+/** Codes a letter names that are no person's: what, nearer the chain than an SSN or phone label, leaves it to the unlabeled rules (scanLabeled). */
+const SCAN_CODE_NOUN = /(?<![\p{L}\p{N}])(?:CPT|HCPCS|CODES?|MODIFIERS?|REV(?:ENUE)?|ICD(?:[\p{Pd}\u2212 ]?10)?|ZIP)(?!\p{L})/gu;
+
+/**
+ * Whether the words before a chain's first group (a label window) name it a Social Security or phone number for the scan:
+ * an SSN, Medicare or phone label within LABEL_REACH whose end is nearer the chain than any keep-noun or code (CPT, ZIP ...);
+ * a keep-noun after the label ("Call our office, TIN 12-3456789") or a code ("Please call about CPT 97110 97140") leaves the
+ * chain to the unlabeled rules. Written for the scan on its own (R7: independent of R5's decision).
+ */
+function scanLabeled(window: string): ScanLabel {
+  if (!/\p{L}/u.test(window)) {
+    // No word at all: no label (most windows in a column of digits).
+    return null;
+  }
+  const lastEnd = (pattern: RegExp) => {
+    let end = -1;
+    for (const match of window.matchAll(pattern)) {
+      const at = match.index + match[0].length;
+      if (window.length - at <= LABEL_REACH) end = at;
+    }
+    return end;
+  };
+  const person = Math.max(lastEnd(SSN_LABEL), lastEnd(PHONE_LABEL));
+  const medicare = lastEnd(MEDICARE_LABEL);
+  const code = Math.max(lastEnd(KEEP_NOUN), lastEnd(SCAN_CODE_NOUN));
+  return person > code && person >= medicare ? 'person' : medicare > code ? 'medicare' : null;
 }
 
 /** Whether masked text holds a survivor (survivorIn) on its digits view with invisible runs dropped or read as spaces (R4, R7). */
