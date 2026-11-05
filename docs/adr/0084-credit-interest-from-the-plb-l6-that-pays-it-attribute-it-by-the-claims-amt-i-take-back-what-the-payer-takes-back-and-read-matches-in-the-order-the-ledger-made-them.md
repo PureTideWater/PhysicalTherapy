@@ -112,8 +112,16 @@ names. (5) The rest is attributed to no chain and counted nowhere; the remittanc
 with no L6 draws nothing.
 
 **Lines (D5).** A paid draw is split by `approvedRemaining` over the lines with a standing claim match to a claim the
-draw is for, the approved ones when there are any; a taken-back draw over the lines holding the chain's interest, by
-what each holds (a holding below zero counts as zero), never more than they hold. A line whose weight is zero takes
+draw is for, the approved ones when there are any: for a PLB L6 that names a chain, a claim of the named chain,
+whichever of its claims the reference carries (a reference to the original, whose control number its reversal carries
+too, reaches the lines its correction is matched to); for the pool, the chain's claims in the L6's remittance. A
+taken-back draw is split over the lines holding the chain's interest, by what each holds (a holding below zero counts
+as zero), never more than they hold; a take-back is cut to both what a line holds of the chain and the line's interest
+as a whole (every chain's, and a match's that names none, together, net of corrections and take-backs), so it never
+meets `ledger_interest_line_floor` when a specialist lowered another chain's entry on the line. One PLB L6 writes one
+entry on a line, so its take-backs are written before its payments: a payment reaches the lines the take-backs left,
+and when two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
+unwritten, so the figure errs low, never above the cash (LED-24 `two-chains.835`). A line whose weight is zero takes
 nothing now; a later reconcile credits it once it has a weight.
 
 **Once (D6; `interestWrites`, pure).** For each L6 and sign, what is left is its draws under the current attribution
@@ -237,6 +245,12 @@ check by reading it.
   the original in REF F8, is left unlinked by the loader, so beside its correction and another claim in one exact pool
   the correction's interest counts again, as it did before this change. LED-23 `renumbered-reversal.835` pins it until
   the loader links such a reversal (handed on below). Its principal has the same gap today.
+- **Two chains on one line, netted in one PLB L6.** A correction the payer sends under its own control number with no
+  REF F8, before the reversal it would follow, is left unlinked by the loader, so it is a chain of its own on the same
+  case lines. When one PLB L6 nets its interest paid against the linked chain's interest taken back, the take-back is
+  written there and the payment, which only those lines could take, is not: an understatement by up to the payment,
+  never an overstatement, and a later take-back of the unlinked chain finds nothing to take. LED-24 `two-chains.835`
+  pins it; a loader that links such a correction lets the payment reach the lines.
 - **Lock alignment.** The new trigger takes the practice's `ledger:` key, the key SUITE-CAP-1b moved the other two
   ledger triggers to, so a writer holding `lockLedger` takes no new lock slot.
 
@@ -264,6 +278,8 @@ check by reading it.
 ## Revisit when
 
 - The loader links a renumbered reversal: LED-23 `renumbered-reversal.835` flips to "no new interest".
+- The loader links a correction with no REF F8 that comes before its reversal: LED-24 `two-chains.835`'s payment then
+  reaches the lines as one chain's net.
 - A payer's PLB03-2 is seen naming a claim by something other than CLP07 or with identifiers run together.
 - `provider_adjustment.reference` is encrypted: the token split then runs on the decrypted reference in memory.
 - A ruling moves interest folded into CLP04 out of principal.
