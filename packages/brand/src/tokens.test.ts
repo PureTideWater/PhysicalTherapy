@@ -176,6 +176,12 @@ describe('the status colors on their tints (WCAG 1.4.3 and 1.4.11; BRAND.md sect
       }
     });
 
+    // Unpriced is small chip text on a tint, so it keeps a margin above 4.5:1 that anti-aliasing and display
+    // variance cannot eat: 4.8:1 or more on its tint (the brand owner's F3 value; docs/adr/0056, ruling 3).
+    it(`${name}: unpriced text keeps its margin on its tint, 4.8:1 or more`, () => {
+      expect(ratio(theme, '--pw-unpriced', '--pw-unpriced-bg'), `${name} --pw-unpriced on --pw-unpriced-bg`).toBeGreaterThanOrEqual(4.8);
+    });
+
     it(`${name}: unpriced is text on the page grounds too (the report's .unpriced), 4.5:1 or more`, () => {
       for (const ground of ['--pw-bg', '--pw-bg-raised']) {
         expect(ratio(theme, '--pw-unpriced', ground), `${name} --pw-unpriced on ${ground}`).toBeGreaterThanOrEqual(4.5);
