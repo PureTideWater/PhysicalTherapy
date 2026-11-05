@@ -3,8 +3,7 @@
 - **Status:** accepted (`co-001/release-content-checks`, combined audit #7, #30, #31 and #59). Amends
   [0008](0008-rule-records-and-releases.md) (a release's coverage is refused when it
   shrinks; below). A later pull request, after #42 merges, appends the alarms, the heap flags and the daily content job
-  ("The split", below). Amended 2026-11-05 (`co-001/pages-child-process`): the worker task's heap flag lands only after
-  the page reader runs in its own process ("The heap limits" and "The split", below; ADR 0033's amendment).
+  ("The split", below).
 - **Date:** 2026-10-26
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (about
   15:10 UTC; items #7, #30, #31 and #59 among it, each placed in the release-operations pull request before PR 7, and
@@ -17,6 +16,9 @@
   reads, through its trace), 12 (triage), 16 (operations security: what a public issue may hold), 18 (the checks and
   the weekly tests); 19's runbooks (`docs/runbooks/content-updates.md`); Change Order 001 and reconciliation-001's
   checks (the content pipeline); test matrix RCC-01 to RCC-08; ADRs 0008, 0062 and 0064.
+- **Amended 2026-11-05 (`co-001/pages-child-process`):** the worker task's heap flag lands only after the page reader
+  runs in its own process ("The heap limits" and "The split", below; ADR 0033's amendment). Its own line, so the
+  Status line's other amendments of the same day merge beside it.
 
 ## Context
 
