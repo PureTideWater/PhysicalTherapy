@@ -1,5 +1,8 @@
-import { Aws, type CfnCondition, Duration, Fn, RemovalPolicy, Stack, aws_cognito as cognito } from 'aws-cdk-lib';
+import { Aws, type CfnCondition, Duration, Fn, RemovalPolicy, Stack, type aws_cloudwatch_actions as cloudwatchActions, aws_cognito as cognito, aws_iam as iam, type aws_kms as kms } from 'aws-cdk-lib';
+import { AUTH_MAIL_SENDER_NAME, fallbackCodeMessage, fallbackInvitationMessage } from '@tp/auth-mail';
 import { Construct } from 'constructs';
+
+import { CognitoMessages } from './cognito-messages';
 
 /**
  * Token lifetimes for the web client, from docs/product/sessions.md. The refresh token lasts the
@@ -32,6 +35,8 @@ export interface IdentityProps {
   readonly configurationSet: string;
   /** True in phase 2 (MailIdentitiesVerified): the stack's identity is verified, so Cognito may send through it. */
   readonly identitiesVerified: CfnCondition;
+  /** What the CustomMessage trigger needs: its log group's name and key, the sign-in page's host and the operator's alarms. */
+  readonly messages: { readonly environmentName: string; readonly key: kms.IKey; readonly appDomainName: string; readonly notify: cloudwatchActions.SnsAction };
 }
 
 /**
@@ -59,16 +64,26 @@ export interface IdentityProps {
  *   (MailIdentitiesVerified=true): the stack creates that identity, and Cognito refuses an unverified one,
  *   so in phase 1 the pool keeps Cognito's own capped sender, before any customer exists (D2).
  *
+ * - Every email the pool sends is the brand's (docs/adr/0081, the code-email amendment): a CustomMessage trigger
+ *   (CognitoMessages) sets each source's own words from @tp/auth-mail, and the pool's own verification and invitation
+ *   templates are the same frame's generic fallback, which Cognito sends when the trigger leaves a message unchanged.
+ *   The verification template is shared by every code source, so it never carries the reset's words. The sender
+ *   reads "PaidWhole <MailFromAddress>", as the worker's mail does.
+ *
  * Lockout after ten failures, the 30-minute idle limit and the device list are application rules
  * (sessions.md); Cognito's own lockout sits beneath them.
  */
 export class Identity extends Construct {
   readonly userPool: cognito.UserPool;
   readonly webClient: cognito.UserPoolClient;
+  readonly messages: CognitoMessages;
 
   constructor(scope: Construct, id: string, props: IdentityProps) {
     super(scope, id);
     const stack = Stack.of(this);
+    this.messages = new CognitoMessages(this, 'Messages', props.messages);
+    const code = fallbackCodeMessage();
+    const invitation = fallbackInvitationMessage(`https://${props.messages.appDomainName}/sign-in`);
     this.userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: false,
       signInAliases: { email: true },
@@ -89,6 +104,8 @@ export class Identity extends Construct {
         tempPasswordValidity: Duration.days(INVITATION_DAYS),
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      userVerification: { emailStyle: cognito.VerificationEmailStyle.CODE, emailSubject: code.subject, emailBody: code.html },
+      userInvitation: { emailSubject: invitation.subject, emailBody: invitation.html },
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
       deletionProtection: props.deletionProtection,
       removalPolicy: RemovalPolicy.RETAIN,
@@ -99,12 +116,21 @@ export class Identity extends Construct {
       props.identitiesVerified.logicalId,
       {
         EmailSendingAccount: 'DEVELOPER',
-        From: props.mailFrom.address,
+        From: Fn.join('', [`${AUTH_MAIL_SENDER_NAME} <`, props.mailFrom.address, '>']),
         SourceArn: `arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/${props.mailFrom.domain}`,
         ConfigurationSet: props.configurationSet,
       },
       Aws.NO_VALUE,
     );
+    // The trigger, by hand rather than lambdaTriggers, so the permission names the account as well as the pool.
+    const pool = this.userPool.node.defaultChild as cognito.CfnUserPool;
+    pool.lambdaConfig = { customMessage: this.messages.handler.functionArn };
+    this.messages.handler.addPermission('InvokedByTheUserPool', {
+      principal: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
+      action: 'lambda:InvokeFunction',
+      sourceArn: this.userPool.userPoolArn,
+      sourceAccount: stack.account,
+    });
 
     // The web app's server signs users in with SRP or the choice-based flow (passkeys); there is no
     // hosted UI and no OAuth flow, and no client secret to store.

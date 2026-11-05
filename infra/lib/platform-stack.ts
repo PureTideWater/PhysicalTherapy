@@ -109,6 +109,7 @@ export class PlatformStack extends Stack {
       mailFrom: { address: parameters.mailFromAddress, domain: parameters.mailFromDomain },
       configurationSet: mail.configurationSets.transactional.configurationSetName,
       identitiesVerified: parameters.mailIdentitiesVerified,
+      messages: { environmentName, key, appDomainName: parameters.appDomainName, notify: this.monitoring.notify },
     });
     this.accountSecurity = new AccountSecurity(this, 'AccountSecurity', {
       environmentName,

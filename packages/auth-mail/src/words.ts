@@ -42,6 +42,9 @@ export const RESET_STEP_MINUTES = 15;
 /** Cognito's sign-in session (TOKEN_LIFETIMES.authSession), the time an emailed sign-in code could be used in. */
 export const SIGN_IN_CODE_MINUTES = 3;
 
+/** The sender's display name on every message the pool sends, as the worker's mail has it ("PaidWhole <address>"). */
+export const AUTH_MAIL_SENDER_NAME = brandName;
+
 /** The footer of every message the pool sends: the sentence a phishing look-alike cannot keep. */
 export const AUTH_MAIL_FOOTER = `${brandName} never asks for your password or a code by email, phone or chat.`;
 

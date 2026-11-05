@@ -343,6 +343,9 @@ importers:
 
   infra:
     dependencies:
+      '@tp/auth-mail':
+        specifier: workspace:*
+        version: link:../packages/auth-mail
       aws-cdk-lib:
         specifier: ^2.275.0
         version: 2.275.0(constructs@10.8.1)
