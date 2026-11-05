@@ -444,6 +444,7 @@ export {
   type CaseLineRow,
   type CaseRow,
   LINE_STAGE_VALUES,
+  type LineStatusHeadRow,
   type LineStatusRow,
   WRITE_OFF_REASON_VALUES,
   anomaly,
@@ -453,5 +454,6 @@ export {
   caseLine,
   caseTable,
   lineStatus,
+  lineStatusHead,
 } from './triage';
 export { CASE_ACTIVITY_KINDS, type CaseActivityKind, type CaseActivityRow, caseActivity } from './workbench';

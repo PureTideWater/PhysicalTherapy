@@ -9,19 +9,32 @@ import {
   aws_iam as iam,
   type aws_kms as kms,
   aws_logs as logs,
+  type aws_rds as rds,
   aws_sns as sns,
   aws_sns_subscriptions as subscriptions,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-import type { EnvironmentName } from '../environments';
-import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../jobs';
+import { DATABASE_CONNECTIONS_ALARM_PERCENT } from '../connections';
+import type { DeploymentSettings, EnvironmentName } from '../environments';
+import { HEAP_MIB } from '../heap';
+import {
+  JOB_FAILED_MESSAGE,
+  JOB_FAILED_METRIC,
+  JOB_FAILED_PERIOD_SECONDS,
+  JOB_HEAP_ALARM_PERCENT,
+  JOB_HEAP_MESSAGE,
+  JOB_HEAP_METRIC,
+  PRICING_ENGINE_ERRORS_MESSAGE,
+  PRICING_ENGINE_ERRORS_METRIC,
+} from '../jobs';
 import {
   HEARTBEAT_INTERVAL_SECONDS,
   HEARTBEAT_MESSAGE,
   HEARTBEAT_METRIC,
   MISSED_HEARTBEATS_TO_ALARM,
   PLATFORM_HEARTBEAT_METRIC,
+  missedHeartbeatsToAlarm,
   workerLogGroupName,
 } from '../heartbeat';
 import { logGroupName } from '../log-groups';
@@ -85,6 +98,16 @@ export interface MonitoringProps {
    * a missing beat counts as missed, as the worker's does.
    */
   readonly screeningRuns?: CfnCondition;
+  /**
+   * The database and its connection budget's figures (infra/lib/connections.ts): its max_connections and the alarm's line,
+   * DATABASE_CONNECTIONS_ALARM_PERCENT of it.
+   */
+  readonly database: { readonly instance: rds.IDatabaseInstance; readonly maxConnections: number; readonly alarmThreshold: number };
+  /**
+   * How the practice worker's deploy replaces it (environments.ts): where it stops first (dev), its heartbeat alarm waits
+   * out the deploy's whole gap (missedHeartbeatsToAlarm), so a deploy never pages.
+   */
+  readonly workerDeployment: DeploymentSettings;
 }
 
 /**
@@ -96,8 +119,10 @@ export interface MonitoringProps {
  * The worker's log group is created here, encrypted under the environment key, so the heartbeat
  * metric exists before the worker does. A metric filter counts the worker's heartbeat lines as the
  * custom metric HEARTBEAT_METRIC; the alarm fires when two consecutive one-minute periods have no
- * heartbeat, missing data counting as missed, and tells the operator when beats resume. Until the
- * worker runs (the first release, docs/adr/0049) the alarm is, correctly, in ALARM.
+ * heartbeat, missing data counting as missed, and tells the operator when beats resume. Where the
+ * worker deploys stop-first (dev; environments.ts), it waits out a deploy's whole gap instead, ten
+ * periods (missedHeartbeatsToAlarm), so a deploy never pages. Until the worker runs (the first
+ * release, docs/adr/0049) the alarm is, correctly, in ALARM.
  *
  * A second metric filter counts the line a job logs when it fails its last (third) attempt, the
  * restore drill and the audit copy included (infra/lib/jobs.ts; test matrix JOB-02); its alarm tells
@@ -113,7 +138,9 @@ export interface MonitoringProps {
  * alarm. The web app's failed sign-in bursts (a second-factor burst, a lockout) are counted from
  * its log group and alarm at once. A practice that reaches or spends its daily model budget (test
  * matrix MOD-05: "calls refused; alert") is counted from the web app's and the worker's log groups,
- * both of which call the model gateway, and alarms at once. Alarm text is fixed: an alarm name, the
+ * both of which call the model gateway, and alarms at once. Each worker job's live heap peak (its
+ * `job heap` line, docs/adr/0083) is taken from the worker's log group, and its maximum alarms above 75%
+ * of the worker's heap limit in a five-minute period. Alarm text is fixed: an alarm name, the
  * environment and a reason, never a value from a log line.
  *
  * The screening consumer (docs/adr/0062; PR 6b-3, decisions 13 to 16) logs to its own group (/tp/<env>/screening). Its
@@ -138,6 +165,10 @@ export interface MonitoringProps {
  * request, a refused second-factor enrolment and a refused client credential. Reset requests per user are counted by a
  * Contributor Insights rule keyed on the user ID, never by a metric with a user dimension, and alarm at five in an
  * hour; the alarm names no user.
+ *
+ * The database's connections (docs/adr/0083, "The practice pool"): RDS's DatabaseConnections at its largest in five
+ * minutes, alarmed at DATABASE_CONNECTIONS_ALARM_PERCENT (80%) of the instance's max_connections as the connection
+ * budget reads it, the figure the stack's synthesis checked every task's pools against.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -150,6 +181,10 @@ export class Monitoring extends Construct {
   readonly platformHeartbeatAlarm: cloudwatch.Alarm;
   readonly jobFailedAlarm: cloudwatch.Alarm;
   readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
+  /** A job's live heap above 75% of the worker's heap limit (D23). */
+  readonly jobHeapAlarm: cloudwatch.Alarm;
+  /** The database's connections at 80% of its max_connections (docs/adr/0083). */
+  readonly databaseConnectionsAlarm: cloudwatch.Alarm;
   readonly failedSignInBurstAlarm: cloudwatch.Alarm;
   readonly modelBudgetAlarm: cloudwatch.Alarm;
   readonly screeningHeartbeatAlarm: cloudwatch.Alarm;
@@ -242,13 +277,15 @@ export class Monitoring extends Construct {
       unit: cloudwatch.Unit.COUNT,
     });
 
+    // Two missed beats, or where the worker's deploy stops it first (dev), every beat that deploy's gap can miss.
+    const workerMissedBeats = missedHeartbeatsToAlarm(props.workerDeployment);
     this.heartbeatAlarm = new cloudwatch.Alarm(this, 'WorkerHeartbeatMissed', {
-      alarmDescription: `The ${props.environmentName} worker missed ${String(MISSED_HEARTBEATS_TO_ALARM)} consecutive heartbeats.`,
+      alarmDescription: `The ${props.environmentName} worker missed ${String(workerMissedBeats)} consecutive heartbeats.`,
       metric: heartbeats.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(HEARTBEAT_INTERVAL_SECONDS) }),
       comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
       threshold: 1,
-      evaluationPeriods: MISSED_HEARTBEATS_TO_ALARM,
-      datapointsToAlarm: MISSED_HEARTBEATS_TO_ALARM,
+      evaluationPeriods: workerMissedBeats,
+      datapointsToAlarm: workerMissedBeats,
       treatMissingData: cloudwatch.TreatMissingData.BREACHING,
     });
     const notify = new cloudwatchActions.SnsAction(this.operatorTopic);
@@ -324,6 +361,32 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.pricingEngineErrorsAlarm.addAlarmAction(notify);
+
+    const heapPeaks = this.workerLogGroup.addMetricFilter('JobHeapLivePeak', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_HEAP_MESSAGE),
+      metricNamespace: JOB_HEAP_METRIC.namespace,
+      metricName: JOB_HEAP_METRIC.metricName,
+      metricValue: '$.heap_live_peak_mib',
+    });
+    this.jobHeapAlarm = new cloudwatch.Alarm(this, 'JobHeapLivePeak', {
+      alarmDescription: `A ${props.environmentName} worker job saw the live heap pass ${String(JOB_HEAP_ALARM_PERCENT)} percent of the worker heap limit.`,
+      metric: heapPeaks.metric({ statistic: cloudwatch.Stats.MAXIMUM, period: Duration.seconds(JOB_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: (HEAP_MIB.worker * JOB_HEAP_ALARM_PERCENT) / 100,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.jobHeapAlarm.addAlarmAction(notify);
+
+    this.databaseConnectionsAlarm = new cloudwatch.Alarm(this, 'DatabaseConnections', {
+      alarmDescription: `The ${props.environmentName} database held ${String(props.database.alarmThreshold)} or more connections, ${String(DATABASE_CONNECTIONS_ALARM_PERCENT)} percent of the ${String(props.database.maxConnections)} the connection budget reads for its class.`,
+      metric: props.database.instance.metricDatabaseConnections({ statistic: cloudwatch.Stats.MAXIMUM, period: Duration.seconds(JOB_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: props.database.alarmThreshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.databaseConnectionsAlarm.addAlarmAction(notify);
 
     const signInBursts = this.webLogGroup.addMetricFilter('FailedSignInBursts', {
       filterPattern: logs.FilterPattern.any(...SIGN_IN_BURST_MESSAGES.map((message) => logs.FilterPattern.stringValue('$.msg', '=', message))),

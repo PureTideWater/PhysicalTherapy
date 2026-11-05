@@ -62,8 +62,78 @@ artifact.
 | `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary and to this run's `findings` artifact, kept one day (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
 | `content-calendar`, `handoff` | on a pull request only, after the check: downloads this run's `findings` artifact and checks it reads as one findings list (a single JSON document, read whole) with the notify job's own lines, logging its count, size and SHA-256, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address. It holds `actions: read` alone, checks nothing out, runs no repository code and writes nothing | 5 min |
 | `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, with `actions: read` to download this run's `findings` artifact, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address; it checks nothing out, runs no action and runs no repository code | 5 min |
-| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then F's reconcile of a SYNTHETIC posting export (step 7b, on a practice of its own at CAS-42.3's 2,000 lines until SUITE-CAP-3; the summary's "Known gap" line), then the large jobs together (A's second report, D's triage, E's price job and C's second four parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 420 MiB (75% of the worker's 560 MiB `--max-old-space-size`) or a measured job with no `job heap` line, the worker's working set (`memory.current` less `inactive_file`) above 90% of the task over the run or in a phase or chain job, any `memory.events` oom or oom_kill during the run, any job not completed, A's triage making other than the lines its scenario makes actionable (each of its contract lines at least the line materiality short, read from its priced lines; none of its Medicare Advantage lines) or none, F's triage making other than each of its lines actionable, or F's reconcile posting other than each of them in full (its contract pays a fixed rate a unit and states its dispute window, cited and verified; the monitoring chain the reprocessing parses queue is cancelled before it starts); its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
+
+Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's table names each job with its phase,
+"Attempts" and "Live heap" (the peak beside the limit the check holds it to), and the "Memory by kind" table gives the
+whole run's and each phase's and chain job's working set; a failing check names the job by its label in the run
+(`A triage`), its type and its pg-boss ID (also in release-capacity.json, `jobs[].jobId`), and the phase it ran in.
+Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
+2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure. Beside the
+full-size figure it gives this run's F reconcile time against the job's 900 s attempt, with its share and the seconds to
+spare: that margin is what SUITE-CAP-3's item leaves step 7b (CI measured 526.3 and 615.7 s on 3ac856d5). A margin that
+shrinks run over run points at the runner or at SUITE-CAP-3's code, never at a longer attempt; past 900 s pg-boss
+expires the attempt, and the run fails on the job's later attempt. pg-boss times only a job's last attempt, so when a
+later attempt completed F's reconcile the line prints no margin: it names the attempt and what the earlier attempts
+logged (`JOB_EXPIRED` for one past its 900 s), since the first attempt is the one that did not fit.
+- **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
+  would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
+  `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
+  waited `CONNECTION_TIMEOUT_MS` (ten seconds) for one of the practice pool's connections, so the worker ran more jobs
+  at once than the pool holds (`practicePool` holds `PRACTICE_JOB_SLOTS`, one per job: if it fires, look for a job
+  that holds two); `DB_CONNECT_TIMEOUT` a new connection that took longer than that; `DB_<SQLSTATE>` an error from
+  PostgreSQL (`DB_53200` out of shared memory: the lock table is full; `DB_40P01` a deadlock); otherwise the error's own
+  code or its class (`PRICING_RUN_NOT_FOUND_ERROR`; a class's own name such as `EXPORT_LOAD_FAILED`, the reconcile's
+  designed failure, or an S3 or KMS exception's, `NO_SUCH_KEY`). An attempt pg-boss failed while its handler still ran
+  logs the line once the handler returns: `JOB_EXPIRED`, past the job's `expireInSeconds` (900 s; an hour for intake),
+  `JOB_CLAIM_LOST` (a screening job whose heartbeat found it no longer this worker's) or `JOB_STOPPED` (the worker
+  stopped, and its grace ran out). pg-boss holds that queue's worker until the handler returns, so the retry starts only
+  after the line. The attempt's `job heap` line, with the same job ID, marks when it ended; read the Postgres log in the
+  artifact's `logs/` at that time. A retried job with no `job attempt failed` line at all means the worker's process ended
+  before the attempt did: a restart (a heap out-of-memory ends the process before it logs anything: the summary's
+  restarts count shows it). The run never counts a retry as a pass.
+- **A backend held more than 64 advisory locks.** The sampler reads, each second, the largest advisory-lock count any
+  one backend holds (`pg_locks`, `locktype = 'advisory'`, grouped by `pid`); 64 is the loader's trace bound
+  (`TRACE_LOCK_BUCKETS`, equal to the default `max_locks_per_transaction`). A job that takes a lock per line or per row
+  is back. The check names the sampled period that was open when the peak was first seen (or "setup or between
+  phases"): find the statement among the job types of that phase, and fix the code, never the bound. A line's stage lock
+  is its row in `line_status_head`, and the ledger triggers take only the practice's `ledger:` key, so triage, the
+  report and reconcile each hold one advisory lock.
+- **A job's live heap passed 75% of its limit, or a measured job logged no `job heap` line.** Each job attempt logs
+  `job heap` with `heap_live_peak_mib` (the largest heap in use just after a major collection while it ran) and
+  `heap_limit_mib` (V8's limit, which adds the young generation to the flag). The check holds the peak to 75% of the
+  worker's `--max-old-space-size` flag (420 of 560 MiB), or of the logged limit when that is lower. Above it the month
+  outgrew the bounded readers' margin: the peak is the whole process's, so find which jobs ran at that time by their
+  IDs (each shows the process's peak), then which reader among them holds a month's lines (ADR 0083's rule: no job holds
+  a month's lines beyond a small, measured per-line holder). A completed job with no `job heap` line means the worker
+  image does not log it (an image before SUITE-CAP-1b), or the worker's log could not be read (the summary then also
+  says so, and every measured job reports the same): read the worker's log in the artifact for the job's ID. Production
+  alarms at the same line (docs/runbooks/incident-response.md).
+- **A's triage made none, fewer, more or other lines actionable than its scenario.** The summary's Run line prints
+  A's actionable lines after its chain triage (those in an open case), how many of them are expected, and how many the
+  scenario expects: each of A's lines on the contract's plan that the price job priced at least the line materiality
+  short, and none of its Medicare Advantage lines, whose deadlines stay unverified (ADR 0083). A gap means triage now
+  judges A's month otherwise (its contract's window no longer cited or verified, its version not in force, a review
+  flag), so the chain and A's reports measured a lighter or another month than the one A was seeded with. A `--small`
+  run checks the same on A's 2,000 lines, where one missing line can be judged by hand; fix the cause, not the scenario.
+- **The worker's working set above 90%, or an OOM event.** The line, 921.6 of the task's 1,024 MiB, judges the
+  working set: `memory.current` less `memory.stat`'s `inactive_file` (the page cache the kernel reclaims first),
+  sampled each second, its highest over the whole run and in each phase and chain job, the measure the kubelet and
+  cAdvisor evict on and the one that predicts an OOM kill (Lane A's orchestrator, 2026-11-04; ADR 0083). The failing
+  line names the period. Read the summary's "Memory by kind" table (also in the job's log) at that period's row, the
+  sample its working set peaked at: "Anonymous" is the worker's heap and native memory and Chromium's, which only the
+  code can shrink, so read the live heaps of the jobs that ran then beside it (the large jobs together share one worker
+  process); "Page cache" is the image's binaries the container faulted in (node and its bundle at the start, Chromium's
+  headless shell at the first PDF print) and the files the harness's local store writes, which production sends to S3,
+  and it counts "Shared memory"; "Inactive page cache" is the part the working set leaves out; "Kernel" is the kernel's
+  own memory for the container (no figure on cgroup v1). A working set near the line with anonymous memory near it
+  means the code outgrew the task; one carried by active page cache means files the container keeps reading. "memory.peak
+  at its end" is the container's highest so far, page cache included, which the harness cannot reset: it is reported,
+  never judged, and can pass 921.6 MiB on a green run (CAS-42.5's run 41848025627 read 958.6 MiB with a working set of
+  about 812 MiB). The run also fails on any `oom` (the limit reached with an allocation about to fail) or `oom_kill`
+  that `memory.events` counts between the worker's start and the end, killed or not, and when `memory.events` or the
+  working set cannot be read.
 
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier

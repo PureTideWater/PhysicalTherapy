@@ -14,6 +14,20 @@ export const JOB_FAILED_METRIC = { namespace: 'TherapyPlatform/Worker', metricNa
 export const JOB_FAILED_PERIOD_SECONDS = 300;
 
 /**
+ * The worker's live-heap alert contract (docs/adr/0083, D19 and D23): each attempt of a job logs JOB_HEAP_MESSAGE as it
+ * ends, completed or failed (apps/worker/src/worker.ts), with `heap_live_peak_mib`, the largest heap in use just after a
+ * major collection while it ran, and `heap_limit_mib`. A metric filter on the worker's log group takes the peak, and the
+ * alarm fires when its maximum in a period passes JOB_HEAP_ALARM_PERCENT of the worker's heap (infra/lib/heap.ts), the
+ * line the weekly real-size run checks, so a month that outgrows the margin is seen before it crashes the worker.
+ */
+export const JOB_HEAP_MESSAGE = 'job heap';
+
+export const JOB_HEAP_METRIC = { namespace: 'TherapyPlatform/Worker', metricName: 'JobHeapLivePeak' } as const;
+
+/** The share of the worker's heap limit above which a job's live peak alarms. */
+export const JOB_HEAP_ALARM_PERCENT = 75;
+
+/**
  * The pricing-run alert contract (Rules reference, Unpriced reasons and their remedies: ENGINE_ERROR's
  * remedy is "Operator alert"; docs/adr/0035): the worker logs PRICING_ENGINE_ERRORS_MESSAGE once per
  * completed pricing run that recorded an ENGINE_ERROR line whose detail pages the operator

@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- ledger_entry_within_evidence()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d0bb740ca00d3883
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5fae7e8217951979
 -- Trigger function of: ledger_entry.ledger_entry_within_evidence
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_entry_within_evidence()
@@ -34,7 +34,7 @@ BEGIN
   ELSE
     RETURN NEW;
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('ledger_evidence:' || row_id::text, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended('ledger:' || NEW.practice_id::text, 0));
   SELECT coalesce((SELECT p.amount_cents FROM posting_row p WHERE p.id = row_id), (SELECT e.amount_cents FROM eft_row e WHERE e.id = row_id)) INTO row_amount;
   SELECT coalesce(sum(x.amount_cents), 0) INTO so_far FROM (
     SELECT p.amount_cents FROM ledger_entry p WHERE p.evidence_id = row_id AND p.stage IN ('posted', 'deposited')

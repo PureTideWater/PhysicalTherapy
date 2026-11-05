@@ -176,3 +176,10 @@ export const PARSE_CONCURRENCY = 4;
 export function workOptions(type: JobType): WorkOptions {
   return type === 'parse_835' ? { batchSize: 1, pollingIntervalSeconds: 0.5, localConcurrency: PARSE_CONCURRENCY } : { batchSize: 1 };
 }
+
+/**
+ * How many practice jobs one worker runs at once: one from each practice queue's loop and PARSE_CONCURRENCY parses
+ * (workOptions). Every attempt holds at most one of the application login's connections at a time (its job_run writes,
+ * its gate and each of its transactions in turn), so the practice pool holds this many (worker.ts practicePool).
+ */
+export const PRACTICE_JOB_SLOTS: number = JOB_TYPES.reduce((slots, type) => slots + (workOptions(type).localConcurrency ?? 1), 0);
