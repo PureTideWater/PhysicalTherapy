@@ -131,7 +131,9 @@ describe.each(ENVIRONMENTS)('%s: the user pool’s messages', (environment) => {
 
   it('sets the pool’s own templates to the branded, generic fallback: the code with {####}, the invitation with {username}, {####} and its sign-in page', () => {
     const code = fallbackCodeMessage();
-    expect(poolProperties.VerificationMessageTemplate).toEqual({ DefaultEmailOption: 'CONFIRM_WITH_CODE', EmailSubject: code.subject, EmailMessage: code.html });
+    expect(poolProperties.VerificationMessageTemplate).toMatchObject({ DefaultEmailOption: 'CONFIRM_WITH_CODE', EmailSubject: code.subject, EmailMessage: code.html });
+    // CDK's default SMS words stay in the template, but the pool cannot send a text: it has no SMS configuration.
+    expect(poolProperties.SmsConfiguration).toBeUndefined();
     const invite = (poolProperties.AdminCreateUserConfig as { InviteMessageTemplate: { EmailSubject: string; EmailMessage: unknown } }).InviteMessageTemplate;
     const expected = fallbackInvitationMessage('https://app.synthetic.test/sign-in');
     expect(invite.EmailSubject).toBe(expected.subject);
