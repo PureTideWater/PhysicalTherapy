@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm';
+
 import {
   COGNITO_MESSAGE_FALLBACK,
   COGNITO_MESSAGE_SIGN_IN_ENV,
@@ -33,6 +35,35 @@ function joined(value: unknown, domain: string): string {
       throw new Error(`an unexpected part: ${JSON.stringify(part)}`);
     })
     .join(join[0]);
+}
+
+/** The inline handler as Lambda runs it, with a console that records: the one line it logs for an event it leaves to the fallback. */
+function fallbackLine(event: Record<string, unknown>): string {
+  const lines: string[] = [];
+  const record = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+  const context = { exports: {} as { handler?: (event: unknown) => Promise<unknown> }, process: { env: {} }, console: { log: record, info: record, warn: record, error: record } };
+  runInNewContext(COGNITO_MESSAGE_SOURCE, context);
+  void context.exports.handler?.(event);
+  if (lines.length !== 1) {
+    throw new Error(`expected one line, got ${String(lines.length)}`);
+  }
+  return lines[0] ?? '';
+}
+
+/**
+ * CloudWatch Logs' matching of a filter pattern against one log event, for the only kind this group's filter may use:
+ * quoted terms, each of which must appear in the event. A JSON selector ({ $.field ... }) matches only an event that is
+ * a whole JSON document, which a text-format Lambda line never is, so it is refused here.
+ */
+function textPatternMatches(pattern: string, event: string): boolean {
+  if (pattern.trim().startsWith('{')) {
+    throw new Error(`a JSON selector pattern never matches a text-format Lambda line: ${pattern}`);
+  }
+  const terms = [...pattern.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => (match[1] ?? '').replace(/\\(.)/g, '$1'));
+  if (terms.length === 0) {
+    throw new Error(`not a quoted-term pattern: ${pattern}`);
+  }
+  return terms.every((term) => event.includes(term));
 }
 
 /**
@@ -114,7 +145,7 @@ describe.each(ENVIRONMENTS)('%s: the user pool’s messages', (environment) => {
     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, candidate]) => JSON.stringify(propertiesOf(candidate).LogGroupName) === JSON.stringify(ref(logGroupId)));
     expect(filters).toHaveLength(1);
     expect(propertiesOf((filters[0] as [string, CfnResource])[1])).toMatchObject({
-      FilterPattern: `{ $.error_code = "${COGNITO_MESSAGE_FALLBACK}" }`,
+      FilterPattern: `"${COGNITO_MESSAGE_FALLBACK}"`,
       MetricTransformations: [{ MetricNamespace: COGNITO_MESSAGES_NAMESPACE, MetricName: COGNITO_MESSAGE_FALLBACK_METRIC, MetricValue: '1', Unit: 'Count' }],
     });
     const fallback = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, messages.fallbackAlarm)));
@@ -129,6 +160,17 @@ describe.each(ENVIRONMENTS)('%s: the user pool’s messages', (environment) => {
       AlarmActions: [topic],
     });
     expect(fallback.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.9');
+  });
+
+  it('counts the line the handler really logs on a fallback, as the Node 22 runtime writes it to the log group', () => {
+    const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, candidate]) => JSON.stringify(propertiesOf(candidate).LogGroupName) === JSON.stringify(ref(logGroupId)));
+    const pattern = String(propertiesOf((filters[0] as [string, CfnResource])[1]).FilterPattern);
+    // The function sets no LoggingConfig.LogFormat, so the runtime writes console.log as text with a prefix.
+    expect((fn.LoggingConfig as { LogFormat?: unknown }).LogFormat).toBeUndefined();
+    const line = fallbackLine({ triggerSource: 'CustomMessage_Unknown', request: {}, response: {} });
+    const text = `2026-11-05T04:00:00.000Z\tsynthetic-request-id\tINFO\t${line}\n`;
+    expect(textPatternMatches(pattern, text)).toBe(true);
+    expect(textPatternMatches(pattern, '2026-11-05T04:00:00.000Z\tsynthetic-request-id\tINFO\tsome other line\n')).toBe(false);
   });
 
   it('sets the pool’s own templates to the branded, generic fallback: the code with {####}, the invitation with {username}, {####} and its sign-in page', () => {
