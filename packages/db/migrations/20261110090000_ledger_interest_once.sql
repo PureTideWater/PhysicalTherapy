@@ -41,10 +41,15 @@
 -- - A rollback of the image keeps this schema, and the previous image behaves as above until the image rolls forward.
 --
 -- Each deploy-window effect:
--- - Adding seq rewrites ledger_match, and the two CHECKs validate, under ACCESS EXCLUSIVE locks on ledger_match and
---   ledger_entry held to the end of this migration: a reconcile, a person's ledger action or a page reading the ledger
---   during it waits, then proceeds (well under a second at launch size; no customer data exists before launch). A
---   reconcile already running holds its locks, and this migration waits for it to commit.
+-- - The lock loop: the migration takes ledger_entry's and ledger_match's ACCESS EXCLUSIVE locks together with NOWAIT,
+--   once a second, up to 300 tries, as migration 20261109090000 takes its own (docs/adr/0083). A refused try holds and
+--   queues nothing, so a reconcile already running (it reads ledger_entry, then ledger_match) and a page (ledger_match,
+--   then ledger_entry) go on unqueued and never deadlock against it (40P01), until a moment with neither table in use.
+--   If none comes in five minutes it fails with "ledger_entry or ledger_match stayed in use for five minutes; run the
+--   deploy again (docs/adr/0084)", before any service moves, and the deploy is run again.
+-- - Once held, to the end of this migration (adding seq rewrites ledger_match, and the two CHECKs validate), a
+--   reconcile, a person's ledger action or a page reading the ledger waits, then proceeds (well under a second at
+--   launch size; no customer data exists before launch).
 -- - ledger_match_rules() is replaced in place, under the lock CREATE OR REPLACE takes on the function; the new trigger
 --   is created under ledger_entry's lock above.
 
@@ -66,6 +71,29 @@ BEGIN
     RAISE EXCEPTION 'claim_by_superseded does not exist; migration 20261110090000 relies on migration 20261109090000''s index for the correction chain''s walk'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The table locks, without a queue (docs/adr/0084, D16)
+-- ---------------------------------------------------------------------------------------------------
+
+-- A plain ALTER would take ledger_match's lock, then wait for ledger_entry's behind a reconcile that has read
+-- ledger_entry and not yet ledger_match, whose next read would then deadlock against it (40P01), and it would queue
+-- every later reader of either table behind it. Each try below takes both locks in one subtransaction with NOWAIT: a
+-- refused try releases what it took and queues nobody. Held to the end of the migration.
+DO $$
+BEGIN
+  FOR attempt IN 1..300 LOOP
+    BEGIN
+      LOCK TABLE ledger_entry IN ACCESS EXCLUSIVE MODE NOWAIT;
+      LOCK TABLE ledger_match IN ACCESS EXCLUSIVE MODE NOWAIT;
+      RETURN;
+    EXCEPTION WHEN lock_not_available THEN
+      PERFORM pg_sleep(1);
+    END;
+  END LOOP;
+  RAISE EXCEPTION 'ledger_entry or ledger_match stayed in use for five minutes; run the deploy again (docs/adr/0084)' USING ERRCODE = 'lock_not_available';
 END;
 $$;
 
