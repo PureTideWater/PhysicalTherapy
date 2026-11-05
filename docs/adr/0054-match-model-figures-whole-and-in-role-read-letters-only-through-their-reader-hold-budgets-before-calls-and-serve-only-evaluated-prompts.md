@@ -5,7 +5,9 @@
   on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27: the letter
   reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below);
   amended 2026-10-27 by 0070, Part 3: a contract or exhibit is checked against the practice's records before the
-  model ("Amendment (`co-001/contract-phi-check`, 2026-10-27)", below)
+  model ("Amendment (`co-001/contract-phi-check`, 2026-10-27)", below); amended 2026-11-04: a payer letter's Social
+  Security and phone numbers redacted by pattern, as the founder ruled on 2026-11-01 ("Amendment
+  (`co-001/redact-ssn-phone`, 2026-11-04)", below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes and their verifiers; PHI minimization; Provider and data path; Operational limits;
@@ -489,3 +491,97 @@ holds.
   follow-up (0070, P9). The contract screen does not tokenize through `identifierTokenRuns` (amendment of
   `co-001/redact-placeholders`, above): it streams its own runs (`someIdentifierRun`), which join differently, each path
   for its task (0070, Part 3, N6).
+
+## Amendment (`co-001/redact-ssn-phone`, 2026-11-04): Social Security and phone numbers by pattern
+
+The founder (Tyler Williams) ruled on 2026-11-01 that a payer letter has its Social Security numbers and phone numbers
+redacted **by pattern** before the model reads it (`readDenialLetter`), as a PRD 14 "PHI minimization" requirement. The
+co-founder relayed it to Lane A (session_01TrKDxeLbxVo7t7zwRXFzrg, commit 18bbe0e9, 14:04 UTC) and confirmed it in
+session_01FcouKNNHsdecRMzfTs7XwW at about 14:40 UTC. Addresses stay a residual: the ruling does not cover them. The text
+above stays as it was decided; where it differs, this amendment holds.
+
+- **No longer residuals.** Social Security numbers and phone numbers are no longer residuals of the amendment of
+  `co-001/redact-placeholders` (its "Still not covered" list, above): they are redacted by pattern (below); addresses
+  still are.
+- **Scope.** The letter reader only (`letterSubject`'s `patterns`): `redactLetter`, `redactionSpans` and
+  `holdsIdentifier` read the patterns; the narrative check (`holdsNameOrNumber`) and every contract-screen function do
+  not. Contract pages stay as stored (a changed page would reject true quotes, and a contract's phone numbers are the
+  payer's).
+- **The patterns** run inside `matchesIn`, last, into the same found list as the call's own identifiers, on the
+  letter's folded view with every decimal digit read as its value (Arabic-Indic and Devanagari digits too), on both
+  readings of an invisible run (joined, and as a space), so "On 11/01/2026<ZWSP>202-555-0123" is read. An SSN is a
+  3-2-4, a masked one (`XXX-XX-3456`, `***`, `#`, `_`, after an SSN label `*****3456` too), a bare nine, with a HICN's
+  suffix inside the span. A phone is `(AAA) EEE-LLLL`, `AAA EEE LLLL` (area code 2-9), with `+1` or `1` and an
+  extension inside the span, `+` and ten digits, a bare ten, `1` and ten after a phone label, or a seven-digit local
+  number after a phone label. Between two groups: one or two dashes with up to two spaces or a wrapped line around
+  them, one to three spaces or tabs, a line break with indentation, a period, one of the number joiners the call's own
+  number reads (an underscore, a bar, a backslash, grouping apostrophes and primes, `~`, middle dots, bullets), or an
+  invisible run; inside a group, an invisible run or a wrapped line. A period or a joiner never sits in one match with
+  white space, and a match with white space between groups is never one beside an amount's decimal point or cents
+  ("150.00 2026-11-01", "Row 250 10 1500.00" stay); no shaped match follows a currency sign. A letter may touch a match
+  ("Tel202-555-0123", "SSN900-12-3456"); a digit may not. A number with a group wrapped across a line break (and a bare
+  one wrapped, only after a label and on the joined reading) is never read into a number on the next or previous
+  line: no digit across a break beside it that no other match holds, and no other match running over its ends.
+- **Labels and keep-nouns** decide a bare number, read in a window of 64 characters before it that ends at the last
+  match already found, a BARRIER, a digit or a second line break, a word counting within 24 characters. A keep-noun
+  (claim, ICN, DCN, reference, appeal, case, NPI, TIN, EIN, tax ID, check, EFT, trace, control, invoice, authorization,
+  ZIP, group) keeps it only when it names it, with nothing but connectors between them (white space, `:`, `#`, a dash,
+  `.`, `*`, `=`, `(`, an opening quote, one comma, `NO`, `NUMBER`, `NBR`, `NUM`, `ID`) and no sentence end but an
+  abbreviation's full stop ("See our claim. 900551234" is redacted, "Ref. No. 2025550123" kept). An SSN or phone label
+  in the window decides over a keep-noun, the nearer of the two (a phone label never keeps a nine), except that a
+  Luhn-valid ten named by NPI and a nine named by TIN, EIN or tax ID are always kept; `Medicare` labels a nine, never a
+  ten. With no word: a nine is `[SSN]`; a ten starting 3-9, or 2 and failing the NPI check, is `[PHONE]`; a ten starting
+  0 or 1 is kept.
+- **What stays.** Amounts, every date `datesIn` reads (the date of birth by its own rule), NPIs, procedure, adjustment
+  and diagnosis codes, ZIPs and ZIP+4s, TINs, ICNs of 11 digits or more, EFT traces, checks and references named by a
+  word: no pattern takes them (test matrix MOD-16). A bare ZIP+4 with no `ZIP` word before it is `[SSN]` (an address
+  part, a residual of PHI already), and a reference written in an SSN or phone shape is redacted and cannot be reported.
+- **Placeholders and ranks.** `[SSN]` and `[PHONE]` rank below the call's own (`RANK`: claim, member, birth, name, ssn,
+  phone), so a pattern span that overlaps the call's own match takes the call's placeholder. A pattern match that is
+  the call's own member ID or claim number, whole, by its core digits or joined to the token written against it, takes
+  its placeholder, over that token ("Claim (202) 555-0123", "Claim +1 202 555 0123", "Claim SYN (202) 555-0123" for
+  the call's claim are `[CLAIM_n]`). A match of the call's own inside, and not equal to, another number's pattern span
+  lends it no rank (the call's short claim `1234` inside another patient's `900-55-1234` is `[SSN]`). `PLACEHOLDER`
+  and `masked` read `[SSN]` and `[PHONE]` as every placeholder, so a patient named `PHONE` reads none in them and
+  neither word is offered to the screen. The verifier rejects a claim reference that holds a placeholder without being
+  one of the call's claims ("ZZ-[SSN]") as `unknown_claim`.
+- **The screen** is asked about the redactor's candidates (`redactLetterForScreen`, used by `denial-letter.ts` only and
+  not exported from the package): the runs of the sent text, the runs of the letter with only the call's identifiers
+  replaced, and the compact form of every SSN or phone match that is not the call's own, whole, its core digits and
+  joined to the token on either side ("900-55-1234-01" offers `90055123401`). The call's own member IDs and claim
+  numbers are never among them. They live in the prepared call's context only, are never sent, logged or stored, and
+  the screen's refusal is the fixed `more_than_one_patient` (MOD-14, MOD-16).
+- **The self-check** (`holdsIdentifier`) runs the patterns on the masked sent text and also an independent survivor
+  scan, written apart from them: on the digits view with invisible runs dropped and read as spaces, after barriers
+  (placeholders; whole separated dates with a reading, none joined to another group by a joiner; amounts; bare numbers
+  a keep-noun names or the NPI and TIN rule keeps), it refuses a letter in which one to four consecutive digit groups,
+  joined by white space with at most one joiner (dashes, `.`, `(`, `)`, `/`, every non-white number joiner, `;` with no
+  space after it), hold 9 or 10 digits, or 11 starting with 1 across groups, unless one group has five digits or more
+  (codes, ZIPs, TINs, ICN columns) or the one group is a ten starting 0 or 1, a ten starting 2 that passes the NPI
+  check, or eleven digits or more. The refusal is `identifier_left`, the fixed sentence that names no number. A letter
+  that glues the patient's name to a pattern span ("RE: Vantree900-12-3456") is refused the same way.
+- **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
+  bare match, the scan's chains at most four groups from each. A letter of 100 kB of the crafted shapes is redacted and
+  checked well within the 3 s budget. The folded view no longer reads the end of a string it is building, which made a
+  letter of invisible runs quadratic.
+- **No new prompt version.** `[SSN]` and `[PHONE]` are identifiers in square brackets, which the prompt and the user
+  message already describe; no field the reader returns is an SSN or a phone.
+- **Tests.** Test matrix MOD-15 (every form redacted, the survivors refused) and MOD-16 (what stays, the call's own
+  placeholders, another patient's offered), in `src/redact.property.test.ts` and `functions/denial-letter.test.ts`;
+  `src/redact.test.ts` pins phi-guard's SSN and phone examples (area code 2-9) as redacted, `(202)555-0123` as redacted
+  and not flagged by phi-guard, and phi-guard's wider net the other way.
+
+Still not covered, recorded as residuals: addresses (the ruling does not cover them); an MBI (a member ID, redacted when
+the records hold it); a phone written in words or with letters (`1-800-555-SYNP`); an SSN's last four in prose
+(`ending in 3456`); an unlabeled bare ten starting 2 that passes the NPI check; a seven-digit local number with no
+phone label, or with a digit in its label window (`Phone 1: 555-0100`); a non-NANP phone number; `1` and ten written
+as one run with no phone label (`Patient 12025550123`, kept as an 11-digit ICN is); two phones with nothing between
+them (`202-555-0123202-555-0124`); an SSN written with an OCR space and then a whole slashed or dashed date for its
+last six (`SSN 900 12/03/56`); a ten-digit chain of short groups with an area code 0 or 1 (`123-456-7890`), refused by
+the scan rather than sent; other-script digits in names, member IDs and dates (SSN and phone shapes are read by value);
+and a payer letter misfiled as a contract, which reaches `proposeContractTerms` unredacted unless its patient is
+already in the records (a proposal: the contract screen refuses a page holding a dash-, period- or invisible-joined
+3-2-4, a masked SSN or an SSN-labeled nine). A slash or a closing parenthesis between groups (`202/555-0123`,
+`202)555-0123`), an OCR space inside a group, a semicolon with no space, a number after a digit and an invisible run that
+also holds an invisible run inside a group, and two numbers each wrapped inside a group on lines next to each other are
+refused by the survivor scan, never sent.
