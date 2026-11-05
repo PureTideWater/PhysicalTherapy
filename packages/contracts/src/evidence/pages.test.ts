@@ -245,6 +245,20 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
     inItsOwnProcess(flood.seen);
   }, 60_000);
 
+  it("applies the page and character caps again to the reply, whatever the reader's own caps did", async () => {
+    // The stand-in ignores the request's caps, as a reader a document compromised would; each of its pages is about 1,017
+    // characters, so these replies stay far under the reply's byte bound and only the parent's own count can refuse them.
+    const read = readInChild;
+    expect(await read(stubRequest('many 10'), PAGE_READ_LIMITS, STUB)).toMatchObject({ kind: 'pages', pages: { length: 10 } });
+    const pages = await watched(() => read(stubRequest('many 11'), PAGE_READ_LIMITS, STUB));
+    expect(pages.result, 'one page past maxPages').toEqual({ kind: 'refused', problem: 'unsupported_document' });
+    inItsOwnProcess(pages.seen);
+    const characters = await watched(() => read({ ...stubRequest('many 5'), maxTextCharacters: 5_000 }, PAGE_READ_LIMITS, STUB));
+    expect(characters.result, 'past maxTextCharacters').toEqual({ kind: 'refused', problem: 'unsupported_document' });
+    inItsOwnProcess(characters.seen);
+    expect(await read({ ...stubRequest('many 4'), maxTextCharacters: 5_000 }, PAGE_READ_LIMITS, STUB)).toMatchObject({ kind: 'pages', pages: { length: 4 } });
+  }, 60_000);
+
   it("refuses a reply frame past the reply's bound before reading its body, and this process is untouched", async () => {
     const read = readInChild;
     const request = stubRequest('');
