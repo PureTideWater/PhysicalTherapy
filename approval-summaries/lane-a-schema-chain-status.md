@@ -253,6 +253,15 @@ its unpushed work is not waited for).
   stop-first; ADR 0083 + the ADR 0012 note; the PR body carries one line for the founder: "RDS: staging db.t4g.small →
   medium (+~$23/mo); dev micro → small (+~$11/mo when deployed)"; PRD section 19 stays the founder's. The orchestrator
   records the SUITE-CAP-3 hand-off in LANES.md and lanes/lane-b.md. Review of round 3's new code running: wf_42e0e4b4-b51.
+- **01:55 UTC. Round 3's new code reviewed** (wf_42e0e4b4-b51; infra, worker, security; findings and verdicts:
+  `approval-summaries/lane-a-wip/sc1b-pool/round3-review.json`): 9 findings, 6 confirmed (WR-1 attempt codes UNCLASSIFIED for
+  the code's own retryable failures and AWS SDK errors; WR-2 an expired attempt logs no attempt line; WR-3 the Known gap
+  margin reads only the last attempt; WR-5 and INFRA-1 the screening task's pg-boss LISTEN connection uncounted; INFRA-2 the
+  runbook calls the estimate the real limit), 3 refuted (WR-4, INFRA-3, SEC-RT-1). Infra synth of all 6 stacks without
+  credentials, infra tests 751, worker tests, lint:logs green. **Running: wf_edd43592-de8** (round 4: the six fixes, the
+  instance-class decision (staging medium, dev small with stop-first worker deploys and no paging), base 370b8973+, the
+  Freeze-exception and cost lines, one push; then verification and CAS-42.5 if the worker or harness changed). A first launch
+  passed placeholder text instead of the findings and was stopped before it wrote anything.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
