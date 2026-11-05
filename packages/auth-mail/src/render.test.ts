@@ -149,12 +149,12 @@ describe('the words of each message', () => {
     );
   });
 
-  it('the invitation names the address, the temporary password, the plain sign-in page and its 7 days, and an authenticator', () => {
+  it('the invitation names Cognito’s {username} without saying what it is, signs in with the address the email came to, the temporary password, the plain sign-in page and its 7 days, and an authenticator', () => {
     const { subject, text } = cognitoMessage('CustomMessage_AdminCreateUser', PLACEHOLDERS);
     expect(subject).toBe('Your PaidWhole invitation');
     expect(text).toBe(
       [
-        'You are invited to PaidWhole. Sign in with this email address, {username}, and this temporary password:',
+        'You are invited to PaidWhole. Your account is {username}. Sign in with the address this email came to and this temporary password:',
         '{####}',
         'Sign in at https://app.paidwhole.example/sign-in within 7 days. You then choose your own password and set up an authenticator app.',
         'If you did not expect this invitation, ignore this email: it ends after 7 days.',
