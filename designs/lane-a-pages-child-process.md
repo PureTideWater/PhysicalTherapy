@@ -283,10 +283,12 @@ Each test is written and run red on the WIP ref before the code changes, its red
 | T11 | Closure (`packages/contracts/src/index.test.ts`) | the package index never reaches `evidence/page-reader.ts` | it names `page-thread.ts` |
 | T12 | Logs and suite | `pnpm lint:logs`, `pnpm typecheck`, `pnpm lint`, the unit suite, `pnpm test:db` once, unchanged | |
 
-The weekly release-capacity run keeps reading a PDF through `documentPages` in the real image under
-`heapFlag('worker')`: it is the end-to-end proof of the entry path and the cgroup's peak, with the child in it.
-Test-matrix row: **SEC-<n>** (placeholder; COUNTER REQUEST in the status file): "An untrusted document is read in its
-own process" covering T1 to T8 and the guard.
+*(Corrected in the fix round, F6:)* the weekly release-capacity run reads its PDF through `documentPages` in the
+harness's own process, from the source tree (`tools/release-capacity/scenario.ts`), not through the image's
+`dist/page-reader.js`; the entry path is proved by `apps/worker/src/bundle.test.ts`, which builds the bundle as
+`build.ts` does and reads a SYNTHETIC PDF, workbook and CSV through the bundled reader under the image's argv.
+Test-matrix row: **SEC-24** (allocated by the orchestrator 2026-11-05 02:09 UTC; added in the fix round, F9): "An
+untrusted document is read in its own process" covering T1 to T8 and the guard.
 
 ## 6. Alternatives, and why they lose
 
@@ -306,7 +308,8 @@ own process" covering T1 to T8 and the guard.
 - **Startup cost per document:** about +60 ms warm, 2.1 s for the first read after a cold start (measured); intake is
   one document at a time and not latency-bound. Recorded in ADR 0033.
 - **The image's entry path:** `dist/page-reader.js` must sit beside `dist/main.js`; T10 checks the build's entry and
-  the URL rule, the weekly real-image run reads a PDF through it. The permission model's single allowed file is that
+  the URL rule, and the bundle test reads SYNTHETIC documents through the built bundle (fix round F6; the weekly run
+reads its PDF in the harness, not through it). The permission model's single allowed file is that
   path, so a moved entry fails closed (`PageReadError`), never open.
 - **Network:** the child can still open TCP (Node 24 has no network permission) and the worker's group allows HTTPS
   anywhere: a reader compromised by a document could send that document out. It holds no credential, no other
@@ -317,3 +320,103 @@ own process" covering T1 to T8 and the guard.
 - **Off-Linux development:** the `ps` poll is slower (100 ms); the memory tests' timing assertions run on Linux.
 - **The permission model's surface:** `--permission` is stable in Node 24; a future Node that refuses a path the
   reader needs fails closed in T7 and T9 first.
+
+## Fix round
+
+The two reviews, their skeptics and the critic (2026-11-05), each confirmed finding fixed on the WIP ref, failing first
+(logs `pcp/logs/fix/<id>-red.log` and `-green.log`). Correctness S2 and N1 were refuted and are left.
+
+- **F1, security S1 = correctness B1 (blocking): a reader that replies and then lingers or grows.** After a done or
+  refused frame the deadline and the memory poll were stopped, and the read settled only on `close`, so a compromised
+  reader held the one reader slot for good and grew without bound. Resolution: the deadline and the poll stay armed
+  until `close`; a well-formed last frame starts `READER_EXIT_GRACE_MS` (1 s), past which the child is killed and the
+  read is `PageReadError` ("the page reader did not exit after its reply"); growth past the cap after the reply is
+  `unsupported_document`. Stand-ins done-hang, refused-hang and done-grow, each with a SYNTHETIC CSV queued behind it.
+- **F2, critic G1 (blocking): a crashed reader's core file.** Verified first: this container's core_pattern is
+  `core` (relative), soft limit 0, hard unlimited; under `ulimit -c unlimited` the segv and abort stand-ins left a
+  `core` in the reader's cwd (test-support/) at c369bc77. Resolution: the reader is spawned as `/bin/sh -c 'ulimit -c 0
+  && unset PWD && exec "$@"' page-reader <node> <readerArgv> <entry>` (RLIMIT_CORE 0 soft and hard; the same pid,
+  argv and empty environment after exec), with cwd `/`; every ECS container carries `ulimits core 0/0`
+  (infra/lib/constructs/compute.ts, asserted in infra/test/compute.test.ts). Test: a parent under `ulimit -c
+  unlimited` crashes the reader with SIGSEGV and SIGABRT and finds no core in the scratch dir, test-support/, the
+  evidence dir, the repository or `/`, after a control (a plain node under the same limit) proves this host dumps;
+  where the host writes no core (a piped pattern) the file check is skipped with its reason.
+- **F3, correctness S1 (should): the two reply bounds untested.** A stand-in sends one page frame whose header claims
+  the room left plus one byte, 1 GiB, or 0xFFFFFFFF: each is `PageReadError` (malformed reply) within seconds, the child
+  gone, this process's RSS up by under 64 MiB and no uncaught exception; a frame of exactly the room left is read and
+  refused at the character cap. Mutants: the per-frame bound removed, and both bounds removed, are killed; the stdout
+  total alone removed survives as an equivalent mutant (FrameReader's cumulative check bounds the same total, and a
+  reply within the page and character caps cannot reach it), recorded in the code's comment. No production change.
+- **F4, correctness S3 and critic G5 (should): surviving mutants.** New stand-ins and tests: `stub-fat.ts` (240 MiB
+  before ready: `PageReadError` "started too large"), done-exit-1 (`PageReadError` exit code 1, never pages),
+  page-done-extra (a frame after the reply: malformed), abort (SIGABRT without V8's line: `PageReadError` signal
+  SIGABRT), `exit-probe.ts` (a worker that exits mid-read: its reader, with no orphan check of its own, is gone within
+  500 ms), an orphaned real reader under a killed shell (stops itself within 5 s), a damaged SYNTHETIC PDF read by the
+  real reader directly (its stderr holds only the fixed load-time lines and nothing of the document; its frames are
+  ready, page, done), many-then-exit (4,000 pages written and an exit at once, ten runs with this loop held up), and
+  readPagesHere past the character cap with pages to spare. Mutants killed: the baseline ceiling, the exit handler's
+  kill, `code === 0`, the child's text cap, the orphan check, a frame after the reply, the SIGABRT stderr check, and the
+  console left loud with pdf.js at verbosity 5. Two survive, recorded: the console silencing alone (pdf.js at
+  verbosity 0 logs nothing of a document, so it is the second guard), and settling on `exit` (not reproducible on
+  Linux: the last bytes, written before the exit, are read in the same turn; the critic found the same; the test stays
+  as the guard).
+- **F5, critic G2 (should): the measurement refused the command it measures.** `infra/test/heap.test.ts` required the
+  worker's exec line to carry no heap flag, so ADR 0071's later pull request (adding `heapFlag('worker')` to the
+  command) would turn it red before it measured anything. Resolution: `withHeapFlag` moves to `infra/lib/heap.ts` (one
+  spelling; `tools/release-capacity/scenario.ts` re-exports it); the test takes the command as it ships when it carries
+  exactly `heapFlag('worker')`, inserts it with `withHeapFlag` when it carries none, and refuses any other heap flag.
+  Checked with the command mutated to carry the flag (green, reader 240 MiB) and to carry `--max-old-space-size=600`
+  (red).
+- **F6, critic G3 (should): no test ran the bundled reader.** `apps/worker/src/bundle.test.ts` now builds the worker's
+  bundle as `build.ts` does, into a directory of its own (`build.ts` takes an optional outdir, 2.4 s), and reads a
+  SYNTHETIC PDF, workbook and CSV through the bundled `page-reader.js` with `readInChild` (the image's argv: it may read
+  only that file), each at a 240 MiB heap. The critic's mutant (yauzl made external) left the old test 2/2 green and
+  now fails it (`PageReadError` exit code 1). The wording that the weekly real-size test reads through the image's
+  reader is corrected here (T-section note, risks) and in the test's comment.
+- **F7, critic G4 (should): ADR 0071's Status line conflicted** with claude/build-platform (af3e79f3…) and three live
+  co-001 heads (ci-findings-transport's own "Amended 2026-11-05" on the same line). Resolution without a base merge
+  (the base merge comes once, before the PR branch): the Status line is back to the base's text and this branch's
+  amendment is a bullet of its own after the PRD sections; `git merge-tree` against all four is now clean, and the
+  merged Status block holds both amendments.
+- **F8, nits.** Security S4 and correctness N2: seven comments that still said "bounded thread" now say a child process
+  of its own (the applied migration's comment and the screening consumer's real threads are left). Security S3:
+  pages.ts's and page-reader.ts's comments say the reader can still open a network connection. Security S2:
+  READER_EXIT, LIVE and ADR 0033 say the orphan backstops run only when the reader's loop is free and that a killed or
+  aborted worker leaves the container's end (the init process exiting) as the last bound. Correctness N3 (T3's peak):
+  `watched()` keeps each reader's VmHWM, and the 1 GiB bomb test asserts its growth over a small read's peak stays
+  under maxMemoryBytes + 96 MiB (261 MiB measured; the cap doubled gives 517 and fails). Two comment rewraps besides.
+- **F9, SEC-24** (the orchestrator's allocation): the row in `docs/product/test-matrix.md` (and its note),
+  `packages/synth/src/cases/matrix.ts` and `registry.ts` (`none(1, …)`, asserted by pages.test.ts, evidence.test.ts,
+  infra/test/heap.test.ts, infra/test/compute.test.ts and apps/worker/src/bundle.test.ts, each naming the row);
+  `pnpm synth --all` wrote `fixtures/synthetic/SEC-24/expected.json`. The design's placeholder now reads SEC-24.
+
+### Fix round, repair 1 (the fix check's first round)
+
+- **R1 (blocking): the exit grace on a held loop.** A worker loop held past `READER_EXIT_GRACE_MS` by other work failed a
+  reader that had exited at once (14 of 15 reads under a 1.2 s hold). The grace and the deadline now decide through
+  `afterPendingInput` (a `setImmediate` after the loop's poll for input), and the grace fails only a reader with no
+  `exit` yet. Test: many 20 under a 1.2 s hold from the check phase (4e675ee8…).
+- **R2 (should, extends F2): the core guard on every host.** A test reads the running reader's `/proc/<pid>/limits`
+  (Max core file size 0, soft and hard) and its cwd (`/`), so the guard is asserted where the host writes no core
+  file. The crash test also kills the real reader by a V8 heap out-of-memory on a SYNTHETIC PDF, beside SIGSEGV and
+  SIGABRT. ADR 0033 and SEC-24 name the residual of a piping core_pattern (a host's handler that ignores
+  RLIMIT_CORE) (5dcc760b…).
+- **R3 and R4 (should, extend F3 and F4): the parent's own caps and the two baseline checks.** The parent's page and
+  character caps on the reply, each tested alone (6f2ef532…); the ready-frame baseline check and the poll's, each
+  with a stand-in of its own (`stub-fat.ts` with a 30 s poll, `stub-fat-unready.ts`) (8809d656…).
+- **R5 to R7 (nits):** heap.test.ts compares the worker command's node flags in any order (9b89f0b9…); the last
+  "thread" comments (476aa126…); SEC-24's wording on an oversized frame against a reply past its bound (a46473fd…).
+
+### Fix round, repair 2 (the fix check's second round)
+
+- **Q1 (should): the deadline after the last frame.** A stand-in sends done 1.5 s into a 2 s deadline and hangs: the
+  read is refused at the deadline, before the grace, with a CSV queued behind it. Clearing the deadline at the reply
+  turns it red (782fb33b…).
+- **Q2 (nit, found a defect): the deadline on a held loop.** With the worker held from 2.4 s to 3.3 s on a 3 s
+  deadline, a reader that replied and exited at 2.5 s was refused: one deferred turn has its exit in but not its
+  close (the pipes close in the loop's close phase, after that turn). The deadline now gives an exited reader one
+  turn more. Red at the earlier head and with the deadline's deferral removed (515046e5…).
+- **Q3 (nit):** the held-loop grace test reads three times, not six (7.2 s; its mutant still fails at run 1)
+  (6f002b37…).
+- **Not changed:** the 1 GiB bomb's peak-growth bound (about 90 MiB of headroom over the 261 MiB measured) stays; its
+  failure message prints both peaks, so a CI flake can be told from a regression.
