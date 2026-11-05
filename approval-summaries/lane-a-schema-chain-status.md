@@ -292,6 +292,13 @@ its unpushed work is not waited for).
   The base moved to f185655c (#121, brand rulings; 11 files, no schema, lockfile or workflow change; clean merge): the
   session merges it, regenerates, runs the fast checks and `--require-approval`, pushes, then CI, ready, approval-of-record,
   merge. Interest's own CAS-42.5 dispatched on 650a3108 (run 41966650378) as early evidence for its PR stage.
+- **05:10 UTC. SUITE-CAP-1b MERGED: #110 → claude/build-platform f7d609cc** (method merge, expectedHeadSha 5199c2a6). Base
+  f185655c (#121) merged by the session (6303493d; provenance 5199c2a6; the founder's line byte-identical;
+  `--check --strict --require-approval` exit 0, "carries an approval for this text"); fast checks and 263 brand/synth unit
+  tests green; every check on 5199c2a6 green (35 + 1 skipped), required checks all green, mutation, screening-capacity gate,
+  approval-of-record (re-run after ready: 41971573978); base an ancestor; mergeable clean. Unsubscribed from #110. Reported.
+- **Interest's early CAS-42.5 at full size PASSES** (run 41966650378 on 650a3108: working set 778.4 of 921.6 MiB, memory.peak
+  878.3, OOM 0; F's 2,000 lines 627.4 s of 900). **Next: the interest fix's PR stage** (base f7d609cc into 650a3108).
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
@@ -559,7 +566,7 @@ its unpushed work is not waited for).
 | # | Item | Branch | State |
 | --- | --- | --- | --- |
 | 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (**merged as #104, e084da22, 2026-11-04 13:08 UTC**; older text follows) | Built; full suite passed at d763ba78; head f897a282 (base 56ed6279 merged; unchecked); needs base 83d71fd6 and #42's step-1 head; PR waits on #42's merge |
-| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); 1a merged (#81); needs SS-01 f897a282+ merged in, deferred parts, full suite; real-size runs wait on an 8-CPU runner |
+| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) (**merged as #110, f7d609cc, 2026-11-05 05:10 UTC**; older text follows) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); 1a merged (#81); needs SS-01 f897a282+ merged in, deferred parts, full suite; real-size runs wait on an 8-CPU runner |
 | 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Partial at e0646746: slices 1, 2, 3, 5 pushed; slice 4 (screens) and the integrator not done; exception granted; PR opens after 1b merges |
 
 ## Decisions taken (recommended option; security: the safer), with reasons
