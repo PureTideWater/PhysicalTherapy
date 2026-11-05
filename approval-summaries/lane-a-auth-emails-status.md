@@ -13,6 +13,7 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
 
 ## Log (UTC)
 - 2026-11-05T04:10Z: started. Worktree /home/user/auth-emails from f185655c (#121). A workflow runs design, build,
+  Workflow wf_a7821f86-a18; script archived as workflow-scripts/lane-a-auth-emails.js.
   two reviews with skeptics, one fix round with the full suite, and verification.
 
 ## Waiting on someone
