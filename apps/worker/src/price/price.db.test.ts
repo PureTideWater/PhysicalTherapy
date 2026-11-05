@@ -349,7 +349,7 @@ describe('MAP-03: a mapping corrected', () => {
     await execute(target, first);
     const before = { run: await runRow(first), lines: await pricedLines(first) };
     expect(before.lines.map((line) => line.unpriced_reason)).toEqual(['NO_AGREEMENT', 'NO_AGREEMENT', 'NO_AGREEMENT']);
-    const since = { practiceId: target.practiceId, createdAt: await one<{ created_at: Date }>('SELECT created_at FROM pricing_run WHERE id = $1', [first]).then((row) => row.created_at), releaseNo: RELEASE };
+    const since = { practiceId: target.practiceId, pricingRunId: first };
     const offered = () => withJobScope(w.app, { jobId: randomUUID(), practiceId: target.practiceId }, (scope) => rerunReasons(scope.client, since));
     expect(await offered()).toEqual([]);
 
