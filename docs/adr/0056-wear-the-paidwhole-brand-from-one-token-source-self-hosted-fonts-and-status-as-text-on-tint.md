@@ -142,11 +142,11 @@ them. It answers ADR 0058's D9 question (2). The co-founder, as brand owner, set
    disagreement among sections 3, 4 and 7, which now say the same: the stacked lockup on Paper in the light theme.
 3. **`--pw-unpriced` is darkened to at least 4.5:1 on `--pw-unpriced-bg`**, so the unpriced status uses its own
    color for text. The value moves from #7A8594 (3.3:1 on its tint, 3.7:1 on White) to #646E7C: the same hue and
-   saturation (HSL 215 degrees, 11%) at 43.9% lightness, 4.6:1 on its tint, 5.1:1 on White and 4.7:1 on Paper.
-   The unpriced tone's chip (Unpriced, Flagged, Deadline passed) and the report stylesheet's `.unpriced` take
-   `--pw-unpriced` in place of Slate. The chip's border, the same token, is 4.6:1 on its tint and 3.5:1 against
-   the neutral chip's Line border. The dark pair (#9AA5B5 on #1A2537, 6.1:1) already met the minimum and is
-   unchanged. `packages/brand/src/tokens.test.ts` holds every status color at 4.5:1 or more on its tint, in both
+   saturation (HSL 215 degrees, 11%) at 43.9% lightness, 4.6:1 on its tint, 5.1:1 on White and 4.6:1 on Paper.
+   The unpriced tone's chip (Unpriced, Flagged, Deadline passed, and the free screening's unpriced dispositions and
+   stacked anomaly standings) and the report stylesheet's `.unpriced` take `--pw-unpriced` in place of Slate. The
+   chip's border, the same token, is 4.6:1 on its tint and 3.5:1 against the neutral chip's Line border. The dark
+   pair (#9AA5B5 on #1A2537, 6.1:1) already met the minimum and is unchanged. `packages/brand/src/tokens.test.ts` holds every status color at 4.5:1 or more on its tint, in both
    themes.
 4. **Dark mode's ship rule.** Dark mode stays off until a dark-mode pass has checked every screen, PHI screens
    first. After that it follows `prefers-color-scheme`, with an override in settings. That pass is separate work,
@@ -155,8 +155,8 @@ them. It answers ADR 0058's D9 question (2). The co-founder, as brand owner, set
 **Dark mode** is wired through the tokens and correct when forced (`[data-theme="dark"]` or `.dark`): the ring and the
 wordmark turn white together (the wordmark reads `--pw-mark-ring`), the Verified badge takes the foreground color, and
 the reversed seal replaces the Ink one. Nothing switches it on: there is no toggle and no `prefers-color-scheme` hook,
-because no user has asked for it and a half-checked dark mode on PHI screens is worse than none. Revisit with a setting:
-the ship rule is the brand owner's ruling 4 above (amended 2026-11-04).
+because a half-checked dark mode on PHI screens is worse than none (ruling 4). It
+ships only under the brand owner's ruling 4 above (amended 2026-11-04).
 
 **The name.** "PaidWhole" replaces the working name and every placeholder for the vendor in user-facing text: page
 titles (`%s | PaidWhole`), the manifest, the home, status, terms, request-audit and invitation pages, the hardware-key
@@ -188,4 +188,4 @@ roles and environment variables keep their names.
 
 ## Revisit when
 
-A dark-mode setting is offered to users, the brand changes a token, or the CSP changes its `style-src`.
+The dark-mode pass of ruling 4 completes, the brand changes a token, or the CSP changes its `style-src`.
