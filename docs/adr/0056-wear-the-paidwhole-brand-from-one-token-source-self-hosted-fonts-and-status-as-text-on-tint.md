@@ -2,7 +2,8 @@
 
 - **Status:** accepted; amended by [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md),
   [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
-  and [0078](0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md)
+  and [0078](0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md);
+  amended 2026-11-04 by the co-founder's brand rulings (`co-001/brand-settle`; "The brand owner's rulings" below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 6 (Cross-cutting: accessibility; PHI pages make no third-party requests), 7 (the shell, the
@@ -94,9 +95,10 @@ is not repeated down a page and a screen reader does not hear "PaidWhole" for ea
 | Deadline passed | unpriced | nothing left to pursue |
 | Deadline later, none | neutral | |
 
-Whole and short are their colors on their tints (4.7:1 and better). Unpriced's own gray is 3.7:1 on white, below the
-4.5:1 text minimum, so an unpriced chip's text is Slate and its hue is the chip's border; the report stylesheet's
-`.unpriced` is Slate text likewise. A system state that is not a payment status (succeeded, ready, released, open) is a
+Whole, short and unpriced are their colors on their tints (4.6:1 and better); an unpriced chip's border is its color
+too, which sets it apart from the neutral chip on a near-identical tint. *(Amended 2026-11-04: until the brand owner's
+ruling 3 below, unpriced's gray was 3.7:1 on White, so its chip's text and the report stylesheet's `.unpriced` were
+Slate.)* A system state that is not a payment status (succeeded, ready, released, open) is a
 neutral badge, Ink text on the inset tint with its rule: Ink fills are the primary button's alone. A failure (a failed
 run, a refused check, an evidence gap) is danger text on the danger tint: `--pw-danger` and `--pw-danger-bg` are named
 apart from Short, the data color, although the brand defines no other red yet and both still read Short's values. A
@@ -127,17 +129,34 @@ its name; it never earns the seal or the badge. Nothing it computes or contains 
 reading of a choice the brand does not make (it frames "Reports (PDF)" and lets a white label lead); the product owner
 may decide instead that packets carry the PaidWhole cover, which is the frame's default and a one-line change.
 
-**Readings of the specification.** BRAND.md disagrees with itself in two places, and one of its rules cannot be met;
-until the brand owner settles them this repository reads them so: sign-in uses the stacked lockup on Paper, as section
-7 says for sign-in, over section 3's "Horizontal: sign-in" and section 4's "Paper: report covers and print only"; and
-the unpriced status's text is Slate with the unpriced gray as its chip's border, since `--pw-unpriced` is 3.7:1 on
-white and 3.3:1 on its own tint, below the 4.5:1 text minimum. The brand owner is asked to settle sign-in and to darken
-`--pw-unpriced` to at least 4.5:1 on `--pw-unpriced-bg`.
+**The brand owner's rulings.** *Amended 2026-11-04 (`co-001/brand-settle`; the co-founder's brand rulings of
+2026-11-04, about 22:50 UTC, adopted as recommended, recorded in the founder's asks of 2026-10-27, "Brand rulings,
+2026-11-04"):* this paragraph recorded how the repository read BRAND.md where it disagreed with itself (sign-in's
+lockup and ground) and where one rule could not be met (the unpriced status's text), until the brand owner settled
+them. It answers ADR 0058's D9 question (2). The co-founder, as brand owner, settled them:
+
+1. **Sign-in's ground.** Every sign-in step sits on Paper in light mode and on the dark ground (`--pw-bg`) in dark
+   mode, as #116 built (`apps/web/src/app/sign-in/layout.tsx`). On dark it shows the reversed stacked lockup (White
+   ring and wordmark, the Brass keystone) and, wherever the seal appears, the reversed seal.
+2. **BRAND.md section 4** reads "Paper: report covers, print, and the light-theme sign-in". This settles the
+   disagreement among sections 3, 4 and 7, which now say the same: the stacked lockup on Paper in the light theme.
+3. **`--pw-unpriced` is darkened to at least 4.5:1 on `--pw-unpriced-bg`**, so the unpriced status uses its own
+   color for text. The value moves from #7A8594 (3.3:1 on its tint, 3.7:1 on White) to #646E7C: the same hue and
+   saturation (HSL 215 degrees, 11%) at 43.9% lightness, 4.6:1 on its tint, 5.1:1 on White and 4.7:1 on Paper.
+   The unpriced tone's chip (Unpriced, Flagged, Deadline passed) and the report stylesheet's `.unpriced` take
+   `--pw-unpriced` in place of Slate. The chip's border, the same token, is 4.6:1 on its tint and 3.5:1 against
+   the neutral chip's Line border. The dark pair (#9AA5B5 on #1A2537, 6.1:1) already met the minimum and is
+   unchanged. `packages/brand/src/tokens.test.ts` holds every status color at 4.5:1 or more on its tint, in both
+   themes.
+4. **Dark mode's ship rule.** Dark mode stays off until a dark-mode pass has checked every screen, PHI screens
+   first. After that it follows `prefers-color-scheme`, with an override in settings. That pass is separate work,
+   queued for Lane B. This amendment records the rule only, and nothing here switches dark mode on.
 
 **Dark mode** is wired through the tokens and correct when forced (`[data-theme="dark"]` or `.dark`): the ring and the
 wordmark turn white together (the wordmark reads `--pw-mark-ring`), the Verified badge takes the foreground color, and
 the reversed seal replaces the Ink one. Nothing switches it on: there is no toggle and no `prefers-color-scheme` hook,
-because no user has asked for it and a half-checked dark mode on PHI screens is worse than none. Revisit with a setting.
+because no user has asked for it and a half-checked dark mode on PHI screens is worse than none. Revisit with a setting:
+the ship rule is the brand owner's ruling 4 above (amended 2026-11-04).
 
 **The name.** "PaidWhole" replaces the working name and every placeholder for the vendor in user-facing text: page
 titles (`%s | PaidWhole`), the manifest, the home, status, terms, request-audit and invitation pages, the hardware-key
@@ -152,7 +171,7 @@ roles and environment variables keep their names.
 | `next/font/google` as the drop-in has it | Fetches from Google at build time, which this network refuses and the plan forbids |
 | A Tailwind v3 config with the preset | The repository is on Tailwind v4; the CSS theme gives the same utility names |
 | Map `accent` to Brass as the preset does | Every hover surface would turn Brass; Brass is never a background |
-| Color the unpriced chip's text in the unpriced gray | 3.7:1 fails the brand's own 4.5:1 text minimum and axe's contrast check |
+| Color the unpriced chip's text in the unpriced gray | 3.7:1 failed the brand's own 4.5:1 text minimum and axe's contrast check; adopted on 2026-11-04 once the brand owner darkened the token (ruling 3) |
 
 ## Consequences
 
@@ -163,7 +182,8 @@ roles and environment variables keep their names.
   (`apps/worker/src/report/**`, `apps/worker/src/mail/**`, the statement and packet templates, `packages/ui/**`), so it
   loads where the hex and seal exceptions live; BRAND.md says where its paths are here.
 - The hex check allows a directory by prefix and a file only by its exact path.
-- Dark mode is wired through the tokens but nothing switches it on yet (no `data-theme` toggle).
+- Dark mode is wired through the tokens but nothing switches it on yet (no `data-theme` toggle); it ships only under
+  ruling 4's rule.
 - The drop-in's `tailwind-preset.ts` stays in the package for a v3 consumer; this repository reads `tailwind-theme.css`.
 
 ## Revisit when

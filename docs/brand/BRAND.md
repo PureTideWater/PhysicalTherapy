@@ -47,7 +47,7 @@ make it flush with the ring, never move it from 12 o'clock.
 | --- | --- | --- |
 | Horizontal | App header, documents, decks; a prospect's (free screening) email header, as its PNG (section 7; ADR 0062, decision D11) | `<PaidWholeLockup/>`; `/brand/paidwhole-lockup-horizontal.svg`; `/brand/paidwhole-lockup-horizontal-1200w.png` |
 | Horizontal with tagline | Marketing pages, a customer's email header (as its PNG, section 7; never a screening's) | `<PaidWholeLockup tagline/>`; `/brand/paidwhole-lockup-horizontal-tagline.svg`; `/brand/paidwhole-lockup-horizontal-tagline-1200w.png` |
-| Stacked | Sign-in, on Paper (section 7); square placements (avatars with name, tiles) | `<PaidWholeLockup stacked/>`; `/brand/paidwhole-lockup-stacked.svg` |
+| Stacked | Sign-in, on Paper in the light theme and reversed on the dark ground in dark mode (section 7); square placements (avatars with name, tiles) | `<PaidWholeLockup stacked/>`; `/brand/paidwhole-lockup-stacked.svg` |
 | Symbol | Favicon, app icon, table rows, loading states, anywhere under 120 px wide | `<PaidWholeMark/>` |
 
 The wordmark is "PaidWhole" as one word in Schibsted Grotesk 700, letter-spacing -0.03em, one
@@ -119,7 +119,8 @@ Contract-verified calculation without cash is a line status (validated), never a
 
 - App header: `<PaidWholeLockup size={20}/>` left; practice switcher and account right. One brass
   underline marks the active navigation item; that is Brass's only job in the UI.
-- Sign-in: stacked lockup, Paper ground, nothing else decorative.
+- Sign-in: stacked lockup on the Paper ground in the light theme; in dark mode the dark ground (`--pw-bg`) with the
+  reversed stacked lockup; nothing else decorative.
 - Tables: Plex Mono for every figure; status as text on tint; the three numbers (expected, paid,
   short) always in that order.
 - Dashboard tiles: label in Slate 12px, value in Plex Mono 500, note in Slate. "Recovered" is never
