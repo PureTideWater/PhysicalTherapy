@@ -271,6 +271,15 @@ its unpushed work is not waited for).
   actions:check, toolchain:check and 433 unit tests, and pushed **650efb9b**. **Running: wf_8cfb34ee-c5c**: the body
   refresh, the fresh-clone verification reading CI on 650efb9b, and CAS-42.5's result on 171825c3 (the delta touches no
   worker, harness or schema). Then the suggested line.
+- **03:35 UTC. SUITE-CAP-1b verified; suggested line posted.** wf_8cfb34ee-c5c: body refreshed (63,591, read back equal);
+  fresh-clone verification passed, no problems (CI on 650efb9b green but the domain model's blank line; mutation 16 shards,
+  screening-capacity, approval-of-record pass; infra tests 759, synth of all six stacks without credentials (dev
+  db.t4g.small, alarm 135; staging and production db.t4g.medium, alarm 316); 1b's db tests 1,298; the summary equals a fresh
+  run; base af3e79f3 an ancestor). **CAS-42.5 PASS** (run 41956080470 on 171825c3 = 650efb9b in worker, harness and schema:
+  22 jobs on attempt 1; working set 719.9 of 921.6 MiB; OOM 0; locks 22 of 64; live heap <= 275; F 609.4 of 900 s; no
+  attempt-failed lines). **Domain model SHA-256 e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df, line
+  7459. Suggested line (one PR comment):** https://github.com/PureTideWater/PhysicalTherapy/pull/110#discussion_r4476277082 .
+  Reported to the orchestrator. Next: interest takes 650efb9b in one merge (no PR) while the founder decides.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
