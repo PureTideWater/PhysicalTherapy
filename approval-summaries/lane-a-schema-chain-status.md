@@ -299,6 +299,12 @@ its unpushed work is not waited for).
   approval-of-record (re-run after ready: 41971573978); base an ancestor; mergeable clean. Unsubscribed from #110. Reported.
 - **Interest's early CAS-42.5 at full size PASSES** (run 41966650378 on 650a3108: working set 778.4 of 921.6 MiB, memory.peak
   878.3, OOM 0; F's 2,000 lines 627.4 s of 900). **Next: the interest fix's PR stage** (base f7d609cc into 650a3108).
+- **05:20 UTC. Running: wf_b04ba66e-7ff** (`workflow-scripts/lane-a-interest-pr-stage-wf_b04ba66e-7ff.js`), the interest
+  fix's PR stage: base f7d609cc merged; the draft PR headed by the summary (Freeze exception: the 2026-10-27 grant, already in
+  ADR 0084); reviews as default agents (ledger/money, security/tenancy, UX/brand with 1280/390 light and 1280 dark shots of
+  section 7's screens, reliability), a skeptic per finding; the fix round (findings; ADR 0084 D5's line-whole cap sentence;
+  the full suite once; one push; body); then the fresh-clone verification reading CI beside CAS-42.5 on the final head and
+  re-shots of fixed screens. Then the suggested line.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
