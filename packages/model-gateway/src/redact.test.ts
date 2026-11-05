@@ -2,8 +2,9 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import { textPhiFindings } from '@tp/observability';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_REQUEST_BYTES } from './functions/contract-terms';
 import { SCREEN_MAX_IDENTIFIERS } from './patient-records';
@@ -15,9 +16,11 @@ import {
   compactIdentifier,
   datesIn,
   holdsIdentifier,
+  holdsNameOrNumber,
   identifierCandidates,
   identifierRuns,
   isCompactCalendarDate,
+  redactLetter,
   runIndex,
   screenIdentifier,
   screenedBytes,
@@ -195,10 +198,19 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
         const tokens = 1 + groups.slice(1).filter(([, sep]) => sep !== '').length;
         const screen = runs(text).includes(compact);
         const matcher = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [written] }, []);
+        // Since the letter's Social Security and phone numbers are redacted by pattern (docs/adr/0054, amendment of
+        // 2026-11-04), the check also refuses a text that holds one, or a chain of nine to eleven digits the survivor scan
+        // reads, whatever the patient's number: the same text with no identifier to look for says whether it does.
+        const patterned = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [] }, []);
+        // From the generator's side, one way: digits alone in a 3-2-4 or 3-3-4 shape (an area code 2-9) over dashes, a
+        // space or an invisible character between every two groups are such a number, whatever word stands before it.
+        const shapes = groups.map(([group]) => group.length).join('-');
+        const shapedNumber =
+          /^\d+$/u.test(compact) && (shapes === '3-2-4' || (shapes === '3-3-4' && /^[2-9]/u.test(compact))) && groups.slice(1).every(([, sep]) => /^(?:-|–|\u2212| |\u00AD|\u200B|\uFEFF)$/u.test(sep)) && !/[\p{L}\p{N}]/u.test(suffix.charAt(0));
         const candidate = identifierCandidates(text).includes(compact);
         // The letter's candidates (identifierCandidates) join at most three tokens and offer only a run with a digit; they read
         // the label as the matcher does (review finding G1), so they offer what either reading joins.
-        return screen && matcher === (letterReads || labeledReads) && candidate === ((letterReads || labeledReads) && tokens <= 3 && /\d/u.test(compact));
+        return screen && matcher === (letterReads || labeledReads || patterned) && (!shapedNumber || patterned) && candidate === ((letterReads || labeledReads) && tokens <= 3 && /\d/u.test(compact));
       }),
       { numRuns: 2000 },
     );
@@ -238,6 +250,13 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
       const text = `Also ${written} on file`;
       expect(screens(text, [compactIdentifier(written)]), written).toBe(true);
       expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [compactIdentifier(written)] }, []), written).toBe(false);
+    }
+    // And the two the letter path reads only by pattern (docs/adr/0054, amendment of 2026-11-04): a phone written with
+    // periods and no label, and a bare nine before "*"; the number itself is not read either way.
+    for (const written of ['202.555.0123', '900123456*1']) {
+      const text = `Also ${written} on file`;
+      expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [] }, []), written).toBe(true);
+      expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [compactIdentifier(written)] }, []), written).toBe(true);
     }
     // After an identifier label the letter path reads digits joined by "." or "/" too (review finding R5-2), never "*".
     for (const [written, reads] of [['1234.567890', true], ['20261234/01', true], ['123*4567890', false]] as const) {
@@ -511,5 +530,81 @@ describe('the stored side: floors and rules (the session’s Q2 ruling)', () => 
     const loose = { memberId: { minLength: 6, digit: false }, payerClaimNumber: { minLength: 6, digit: false }, patientControlNumber: { minLength: 6, digit: false } };
     expect(screenIdentifier('patientControlNumber', 'AGREEMENT', loose)).toBe('AGREEMENT');
     expect(screenIdentifier('patientControlNumber', '123456', loose)).toBe('123456');
+  });
+});
+
+describe('Social Security and phone numbers by pattern: the placeholders, the narrative check and phi-guard (docs/adr/0054, amendment of 2026-11-04)', () => {
+  // SYNTHETIC twins only: SSNs in the 9xx area, phones NPA-555-01xx.
+  const patient = { pseudonym: 'synthetic-patient-15', names: ['PHONE SSN VANTREE'], datesOfBirth: [], memberIds: ['ZZ1234567'] };
+  const claims = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+
+  it('masks [SSN] and [PHONE] as it masks every placeholder: a patient named PHONE or SSN reads none in them, and neither word is offered to the screen', () => {
+    expect(holdsIdentifier('Call [PHONE]; SSN on file [SSN].', { ...patient, names: ['ORLA VANTREE'] }, claims)).toBe(false);
+    expect(holdsIdentifier('Call [PHONE] or [SSN] today.', patient, claims)).toBe(false);
+    expect(holdsIdentifier('Call PHONE today.', patient, claims)).toBe(true);
+    for (const text of ['[SSN]12345', '[PHONE]-12345', '12345[SSN]', 'ZZ[PHONE]12345', '[SSN] [PHONE] 12345']) {
+      expect(identifierCandidates(text).filter((candidate) => /SSN|PHONE/.test(candidate)), text).toEqual([]);
+    }
+    // A letter's own "[SSN]" is never a placeholder: its brackets become parentheses.
+    expect(redactLetter('Your [SSN] and [PHONE] are on file.', patient, claims).text).toBe('Your ([PATIENT_NAME]) and ([PATIENT_NAME]) are on file.');
+  });
+
+  it('leaves Social Security and phone numbers to the letter: the narrative check reads only the case’s own names and numbers (patterns off)', () => {
+    for (const text of ['Call 202-555-0123 for the appeal.', 'SSN 900-12-3456', 'Phone: 2025550123', 'Ref 900 551 234']) {
+      expect(holdsNameOrNumber(text, { names: ['ORLA VANTREE'], numbers: ['ZZ1234567'] }), text).toBe(false);
+    }
+    expect(holdsNameOrNumber('Member 900-12-3456', { names: ['ORLA VANTREE'], numbers: ['900123456'] })).toBe(true);
+  });
+
+  it('redacts every SSN and phone example phi-guard flags with an area code 2-9, refuses the one it reads across a period and a space, and keeps the intended differences (review C4, R11; step 0, A6)', () => {
+    const who = { ...patient, names: ['ORLA VANTREE'] };
+    for (const [written, placeholder] of [
+      ['900-12-3456', '[SSN]'],
+      ['(202) 555-0123', '[PHONE]'],
+      ['202.555.0123', '[PHONE]'],
+      ['202 555 0123', '[PHONE]'],
+      ['202-555 0123', '[PHONE]'],
+    ] as const) {
+      expect(textPhiFindings(written), written).not.toEqual([]);
+      const redacted = redactLetter(`On file: ${written}.`, who, claims).text;
+      expect(redacted, written).toBe(`On file: ${placeholder}.`);
+      expect(holdsIdentifier(redacted, who, claims), written).toBe(false);
+    }
+    // Redacted by the letter and not flagged by phi-guard, whose phone shape needs a separator after ")": an intended difference.
+    expect(textPhiFindings('(202)555-0123')).toEqual([]);
+    expect(redactLetter('On file: (202)555-0123.', who, claims).text).toBe('On file: [PHONE].');
+    // A period and a space in one number: phi-guard flags it; the letter never reads an amount across them (R1a), so its
+    // survivor scan refuses the letter instead.
+    expect(textPhiFindings('202.555 0123')).not.toEqual([]);
+    expect(holdsIdentifier(redactLetter('On file: 202.555 0123.', who, claims).text, who, claims)).toBe(true);
+    // The other way, not redacted by the letter: 11 to 14 digits in one run (an ICN), sent; and an area code starting 1
+    // (no phone, no SSN), which no pattern reads and the survivor scan refuses as a ten-digit chain of short groups (R7).
+    for (const written of ['10012345678', '12345678901234', '123-456-7890']) {
+      expect(textPhiFindings(written), written).not.toEqual([]);
+      expect(redactLetter(`Reference ${written}.`, who, claims).text, written).toBe(`Reference ${written}.`);
+      expect(holdsIdentifier(`Reference ${written}.`, who, claims), written).toBe(written.includes('-'));
+    }
+  });
+
+  // Review round 1, corr-ssn-2 (fail-first in review round 2): a letter with no invisible run is read once by the patterns
+  // and once by the scan, not on two readings that are the same text. Counted in regular-expression runs, which are the
+  // same on every machine, not in seconds, which a loaded runner would make flaky.
+  it('reads a letter with no invisible run on one reading, so it takes far fewer regular-expression runs than the same letter with one (review round 1, corr-ssn-2)', () => {
+    const plain = 'Call 202-555-0123 or SSN 900-12-3456 about 97110 on 11/01/2026.\n5\n5\n5\n';
+    const runsOf = (text: string) => {
+      const sent = redactLetter(text, patient, claims).text;
+      const exec = vi.spyOn(RegExp.prototype, 'exec');
+      try {
+        redactLetter(text, patient, claims);
+        holdsIdentifier(sent, patient, claims);
+        return exec.mock.calls.length;
+      } finally {
+        exec.mockRestore();
+      }
+    };
+    const once = runsOf(plain);
+    const twice = runsOf(`${plain}\u200B`);
+    // About 83 in 100 with one reading; about 98 in 100 when the plain letter is read twice as well (before corr-ssn-2's fix).
+    expect(once * 100, `${String(once)} runs against ${String(twice)}`).toBeLessThan(twice * 90);
   });
 });

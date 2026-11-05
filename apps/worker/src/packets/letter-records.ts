@@ -5,9 +5,10 @@ import { type OtherPatientCheck, compactIdentifier } from '@tp/model-gateway';
  * The practice's records, asked whether a payer letter names another patient (PRD 14, PHI
  * minimization: the gateway "never sends more than one patient's material in one call"). The
  * denial-letter reader (v1.5, behind its own flag) gives the gateway this check with the letter; the
- * gateway asks it, before anything is sent, whether any run of the redacted letter is a member ID or a
- * claim number (patient or payer claim control number) the practice holds for a patient other than the
- * letter's, and refuses the call on a yes.
+ * gateway asks it, before anything is sent, whether any of the letter's candidates (docs/adr/0054,
+ * amendment of 2026-11-04: runs of the redacted letter, and every Social Security or phone number it
+ * writes that is not the call's own) is a member ID or a claim number (patient or payer claim control
+ * number) the practice holds for a patient other than the letter's, and refuses the call on a yes.
  *
  * The answer is yes or no. The other patients' identifiers are read once, in the person's or job's own
  * scope (an audited read of the patients and claims, purpose letter_screen), decrypted and compacted in

@@ -545,6 +545,20 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   },
   {
+    id: 'MOD-15',
+    title:
+      "A payer letter that writes a Social Security number (3-2-4 with any dash, spaces, a period, a number joiner such as an underscore, a middle dot or a bullet, a line break or an invisible character between or inside its groups, full-width or other-script digits, masked as XXX-XX-1234, nine digits with an SSN label or no label, a HICN suffix) or a phone number ((AAA) EEE-LLLL, dashes, periods or spaces, +1 or 1, an extension, ten digits with a phone label or none, a seven-digit local number with a phone label), glued to a word, in a comma list with no space, wrapped across a line with indentation or inside a group, after a digit and an invisible character, after a label of the other kind or a word that does not name it, the call's own identifiers among them, or crafted to make redaction slow",
+    assertion:
+      "No digit of it is sent: each is [SSN] or [PHONE], or the call's own placeholder when its digits are the call's member ID or claim number; every placeholder is exact and counted; the self-check refuses (identifier_left, a fixed message with no number) a text in which one survives, a letter in which a nine-, ten- or eleven-digit chain no pattern read survives (an OCR space inside a group, a slash, a closing parenthesis, a semicolon, up to sixteen spaces or tabs, a page break, any grouping after an SSN or phone label), and a letter in which the patient's name is glued to one; a crafted letter of 100 kB is redacted and checked within its time budget",
+  },
+  {
+    id: 'MOD-16',
+    title:
+      "A payer letter with amounts, dates in every form datesIn reads, two dates or two amounts joined by a dash (a service period, a range), NPIs, procedure, adjustment and diagnosis codes, ZIPs and ZIP+4s, TINs, ICNs, EFT traces, checks and references, nine- and ten-digit numbers after a word that names them, alone or in a list (claim, NPI, TIN, check, reference ...), an NPI or TIN after Medicare or contact, service-line rows (codes, units and amounts in columns, a slashed date before a code) and amounts directly before dates and numbers, the call's member ID and claim numbers written SSN- or phone-shaped, and another patient's nine- or ten-digit member ID or claim number written SSN- or phone-shaped",
+    assertion:
+      "The first are sent unchanged (after NFKC), the self-check refuses none of them, and the verifier still reads their dates and references; the call's identifiers keep their placeholders ([MEMBER_ID], [CLAIM_n], the lowest of equal claims), never [SSN] or [PHONE], and are never offered to the screen; another patient's is offered to the one-patient screen whole and with a prefix written against it, so the letter is refused (more_than_one_patient) with nothing of it logged or in the refusal",
+  },
+  {
     id: 'MOD-17',
     title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; the configuration with extra headers asked for on the Anthropic path; the installed SDK's own code; and the failures a request through that client meets",
     assertion:

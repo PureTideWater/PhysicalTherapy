@@ -687,3 +687,13 @@ Under the same ruling of October 26, 2026 (about 00:20 UTC), the CI series' foll
 Under the same ruling of October 26, 2026 (about 00:20 UTC), the content calendar's findings transport, which #86 recorded over the limit (`co-001/ci-findings-transport`, `docs/adr/0071`, Amendment):
 
 - **The findings as the run's own artifact:** the check uploads `findings.json` (one day, replaced on a re-run) and the notify job, with `actions: read` beside `issues: write`, downloads it with `gh`, failing closed into "check failing"; a pull-request-only `handoff` job proves the download on a runner and writes nothing; the file's bound is 2,000,000 bytes, 41 findings at their worst, so every finding reaches the notify job whole; job outputs and a body budget were refused (`docs/adr/0071`, Amendment). Not an exception to a check above.
+
+Ruled by the founder, Tyler Williams, on November 1, 2026, relayed by the co-founder to Lane A (session_01TrKDxeLbxVo7t7zwRXFzrg, commit 18bbe0e9, 14:04 UTC) and confirmed in session_01FcouKNNHsdecRMzfTs7XwW at about 14:40 UTC: a payer letter has its Social Security numbers and phone numbers redacted by pattern before the model reads it, as a PRD 14 PHI minimization requirement. Recorded in PRD 14 and ADR 0054 (amendment of 2026-11-04), built in `co-001/redact-ssn-phone`. Not an exception to the checks above:
+
+- **Scope:** the letter reader only (`readDenialLetter`); contract pages, the narrative's facts and the evidence requests are unchanged.
+- **What stays:** amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces and references named by a word are sent as written (test matrix MOD-16).
+- **The call's identifiers** keep their placeholders, and the call's digits-only claim written `(202) 555-0123` or `202.555.0123` with no label is now its placeholder.
+- **The screen** is offered another patient's SSN- or phone-shaped identifier whole and with the token written against it (MOD-14, MOD-16).
+- **The self-check** also runs an independent survivor scan and refuses a letter in which an SSN- or phone-length chain survives, with the fixed `identifier_left` sentence.
+- **Addresses** stay a residual (the ruling does not cover them), and so does a payer letter misfiled as a contract (a proposal of its own).
+- **The co-founder's points** (the design's section 15), each decided as the safer option: unlabeled bare nines and tens are redacted; the payer's own phone numbers are redacted with any other; a reference in an SSN or phone shape is redacted; an SSN or phone label beats a keep-noun, but for an NPI or TIN it names; a letter gluing the patient's name to a number, or holding a chain no pattern read, is refused and goes by hand.
