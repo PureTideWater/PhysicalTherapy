@@ -305,6 +305,9 @@ its unpushed work is not waited for).
   section 7's screens, reliability), a skeptic per finding; the fix round (findings; ADR 0084 D5's line-whole cap sentence;
   the full suite once; one push; body); then the fresh-clone verification reading CI beside CAS-42.5 on the final head and
   re-shots of fixed screens. Then the suggested line.
+- **06:00 UTC. Interest PR #126 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/126, head c49367c5
+  (base f7d609cc merged; 20261110090000 unchanged; domain model 47887070…eb8ef, provisional; body 32,766). Subscribed.
+  Reviews running.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
