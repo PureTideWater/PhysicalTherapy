@@ -1620,3 +1620,12 @@ HANDOFF.md; LANES.md rule 10).
   - RDS staging at medium and dev at small.
 - Next: the interest fix's PR stage (head 650a3108; its own CAS-42.5 passes at full size).
 - Merged since 2026-11-05 00:00 UTC: #84, #119, #118, #120, #121, #110.
+
+### 2026-11-05 06:50 UTC: auth emails part 1 merged as #125 (0f4a5ed5); interest open as #126
+- #125: every Cognito code email goes through a CustomMessage trigger in brand words (@tp/auth-mail), text-first, with no link in any code email and an anti-phishing footer. The pool's own templates are a branded fallback. Security S-2: an email cannot be changed by its own token holder (keepOriginal; empty writeAttributes). SGN-13 to SGN-15; ADR 0081 amended.
+- **Decided:**
+  - O-5 (brand): a White plate behind the lockup in every worker email, because forced inversion in mail clients is undetectable. PR `co-001/email-lockup-plate`.
+  - O-8 (wording): "If you asked more than once, use the newest code." It is true either way; whether a new request replaces the old code is left to the staging smoke checks.
+- **Lane A, schema, queued after #126:** `co-001/password-changed-notice` (ADR 0091, SGN-16). It adds a password_notice table filled by an AFTER INSERT trigger on audit_event, tp_operator claim functions and a password_changed kind on the transactional stream. S4 builds it to verification on its branch; its PR opens when #126 merges, and then it needs the founder's approval line.
+- The interest fix is draft #126 (head c49367c5), in four reviews.
+- Next free: ADR 0092, SGN-17.
