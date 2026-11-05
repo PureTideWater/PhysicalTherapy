@@ -796,7 +796,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SGN-15',
     title: 'The local identity provider delivers what Cognito delivers',
     assertion:
-      'The development provider’s invitation and reset outboxes hold each message’s subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the reset code from the message’s own text, with no remote asset and no link but the sign-in address',
+      'The development provider’s invitation and reset outboxes hold each message’s subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the reset code from the message’s own text, with no remote asset and no link but the sign-in address; the text is the HTML’s with its tags stripped, since Cognito sends the HTML alone, with no text part',
   },
   {
     id: 'HOM-01',
