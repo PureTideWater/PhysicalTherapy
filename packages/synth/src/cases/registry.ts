@@ -214,6 +214,11 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/mapping-routes.db.test.ts',
     'apps/web/e2e/mapping.spec.ts',
   ]),
+  // co-001/pricing-run-cutoff: a run's cut-off and creation compared to the microsecond, at creation and after.
+  'PRC-32': none(3, "No file of its own: PRC-19's file, with lines and times the tests set.", [
+    'apps/worker/src/price/cut-off.db.test.ts',
+    'apps/web/src/lib/pricing/location.db.test.ts',
+  ]),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },

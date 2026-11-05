@@ -279,6 +279,12 @@ interface StatusChangeRow {
   readonly note: string | null;
   readonly at: Date;
   readonly email: string;
+  /**
+   * Whether this row began the suspension in force: its at equals the organization's status_since as the page read
+   * it, compared in Postgres to the microsecond. Never matched as JS Dates, which keep milliseconds and would take an
+   * earlier suspension in the same millisecond for this one (PRC-32 sweep).
+   */
+  readonly began: boolean;
 }
 
 const changeOf = (row: StatusChangeRow): StatusChange['change'] => (row.to_status === 'active' ? 'reinstated' : row.from_status === 'active' ? 'suspended' : 'reason_changed');
@@ -292,7 +298,7 @@ export function suspensionOf(organization: Pick<OrganizationSummary, 'status' | 
     return null;
   }
   const since = organization.statusSince;
-  const own = since === null ? undefined : rows.find((row) => row.from_status === 'active' && row.at.getTime() === since.getTime());
+  const own = rows.find((row) => row.from_status === 'active' && row.began);
   let reason: string | null = own?.reason ?? null;
   let reasonChangedBy: StatusChangeAuthor | null = null;
   let note: string | null = null;
@@ -354,18 +360,23 @@ export const organizationPage = platformRoute({
   params: z.object({ organizationId: opaqueId, created: optionalText(opaqueId).catch(undefined) }),
   handle: async ({ scope, params }) => {
     const id = params.organizationId;
-    const row = (await scope.client.query<OrganizationRow>(`SELECT ${ORGANIZATION_COLUMNS} FROM organization WHERE id = $1`, [id])).rows[0];
+    const row = (await scope.client.query<OrganizationRow & { status_since_text: string | null }>(`SELECT ${ORGANIZATION_COLUMNS}, status_since::text AS status_since_text FROM organization WHERE id = $1`, [id])).rows[0];
     if (row === undefined) {
       throw new NotFoundError();
     }
     const organization = organizationOf(row);
     // The history (organization_status_change: platform administrators read it, organization.manage), with each
     // actor's email; the suspension in force from its own rows, however long the history is.
-    const changeColumns = 'c.id, c.from_status, c.to_status, c.reason, c.note, c.at, u.email FROM organization_status_change c JOIN "user" u ON u.id = c.changed_by';
-    const history = await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 ORDER BY c.at DESC, c.id DESC LIMIT 20`, [id]);
+    // The suspension in force is found by the status_since this page read, carried as text to the microsecond and
+    // compared in Postgres, never passed back as a JS Date (PRC-32 sweep). Every statement uses that one value, so a
+    // status change committed while the page reads cannot pair one suspension's start with another's rows.
+    const statusSince = row.status_since_text;
+    const changeColumns =
+      'c.id, c.from_status, c.to_status, c.reason, c.note, c.at, u.email, coalesce(c.at = $2::timestamptz, false) AS began FROM organization_status_change c JOIN "user" u ON u.id = c.changed_by';
+    const history = await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 ORDER BY c.at DESC, c.id DESC LIMIT 20`, [id, statusSince]);
     const current =
-      organization.status === 'suspended' && organization.statusSince !== null
-        ? (await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 AND c.to_status = 'suspended' AND c.at >= $2 ORDER BY c.at, c.id`, [id, organization.statusSince])).rows
+      organization.status === 'suspended' && statusSince !== null
+        ? (await scope.client.query<StatusChangeRow>(`SELECT ${changeColumns} WHERE c.organization_id = $1 AND c.to_status = 'suspended' AND c.at >= $2::timestamptz ORDER BY c.at, c.id`, [id, statusSince])).rows
         : [];
     // What a suspension reaches: the grants in force the organization holds, and the practices they reach.
     const held = await scope.client.query<{ grants: number; practices: number }>(
