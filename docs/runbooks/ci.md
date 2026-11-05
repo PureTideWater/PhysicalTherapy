@@ -53,12 +53,15 @@ every file equals the record must also start: its `--version` must print `Google
 
 Beside ci.yml, two workflows of the release content checks (docs/adr/0071) run on a schedule. Neither is a required
 check, and their schedules fire only from the default branch (the founder's ruling F1 (a)); until then they run on
-request. Each issue they open holds only public references: page addresses, file names, release numbers and run links.
+request. Everything they publish holds only public references: page addresses, file names, release numbers and run
+links. That is each issue they open, and for the content calendar also the check's summary and its one-day `findings`
+artifact.
 
 | Workflow, job | What it runs | Timeout |
 | --- | --- | --- |
-| `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
-| `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
+| `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary and to this run's `findings` artifact, kept one day (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
+| `content-calendar`, `handoff` | on a pull request only, after the check: downloads this run's `findings` artifact and checks it reads as one findings list (a single JSON document, read whole) with the notify job's own lines, logging its count, size and SHA-256, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address. It holds `actions: read` alone, checks nothing out, runs no repository code and writes nothing | 5 min |
+| `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, with `actions: read` to download this run's `findings` artifact, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address; it checks nothing out, runs no action and runs no repository code | 5 min |
 | `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
 
@@ -157,10 +160,9 @@ differential test, which prices the base's engine and this commit's.
      long" on any step means an environment string (`NAME=value` and its NUL) or one argument over 131,072 bytes, or
      the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string and argument
      a workflow sets, and each step's and container's whole, and refuses a string or argument over 131,072 bytes, or
-     one holding a value it does not list with its bound (but for the content calendar's `FINDINGS_B64`, recorded over
-     the limit and `ci-findings-transport`'s to fix, which it holds alone in its string at its one place), and a whole
-     over `ARG_MAX` less 256 KiB, that value counted in it (docs/adr/0066, Part 3, N32). A pull request's run uploads
-     no build record (`.dockerbuild`) by design; a push's run on the build branch does.
+     one holding a value it does not list with its bound, with no exception, and a whole over `ARG_MAX` less 256 KiB
+     (docs/adr/0066, Part 3, N32). A pull request's run uploads no build record (`.dockerbuild`) by design; a push's
+     run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -449,9 +451,9 @@ user that cannot run the binary.
   ruleset, which only the founder sets.
 - A step takes only the value it uses (one environment string, `NAME=value` and its NUL, is at most 131,072 bytes; the
   test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
-  value's bound in bytes, and holds each to 131,072 bytes but `FINDINGS_B64`, recorded over the limit and held alone
-  in its string at its one place; an env, a `with:`, a container or a service given as one expression is refused,
-  since no sum can read its strings). `workflows.test.ts` reads every expression of a workflow in an env, an input, a
+  value's bound in bytes, and holds each to 131,072 bytes, with no exception; an env, a `with:`, a container or a
+  service given as one expression is refused, since no sum can read its strings).
+  `workflows.test.ts` reads every expression of a workflow in an env, an input, a
   script, a job's outputs, a matrix or a key as the runner does, and admits only bounded values, none in any key
   (GitHub evaluates one as an env name, an input's name, a service id or a matrix key), and refuses a workflow's, a
   job's or a step's key it does not read (a new GitHub key joins its list once the rule reads it). It reads this
