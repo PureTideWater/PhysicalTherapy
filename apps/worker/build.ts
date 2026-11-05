@@ -48,7 +48,8 @@ await build({
     logins: 'src/deploy/logins-cli.ts',
     'evaluate-permitted': 'src/models/permitted-cli.ts',
   },
-  outdir: 'dist',
+  // dist/, or the directory named after the script (apps/worker/src/bundle.test.ts builds the same bundle into its own).
+  outdir: process.argv[2] ?? 'dist',
   bundle: true,
   platform: 'node',
   format: 'esm',
