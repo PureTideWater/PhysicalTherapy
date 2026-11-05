@@ -329,15 +329,15 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email:
   your password is unchanged."). The added sentence is decision O-8 (Lane A's orchestrator as the brand owner's
   delegate, co-001/email-lockup-plate): it holds whether or not Cognito voids an earlier code when a second is asked
-  for, which is not verified, so the email never says that a new request replaces the code. The invitation and its resend ("Your PaidWhole invitation") give
-  Cognito's `{username}` once without saying what it is ("Your account is {username}. Sign in with the address this
-  email came to and this temporary password:", since in an email-attribute pool it may be the internal name), the
-  temporary password on its own line, the sign-in page as plain text and its 7 days
-  (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification, sign-up,
-  resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The footer of
-  every message: "PaidWhole never asks you to send your password or a code to anyone, by email, phone or chat:
-  enter a code only on the PaidWhole page that asked for it." (It ends messages that themselves carry a code, so it
-  says what never happens and where a code goes, not that PaidWhole never asks for one.) The 7 days, 15 minutes
+  for, which is not verified, so the email never says that a new request replaces the code. The invitation and its
+  resend ("Your PaidWhole invitation") give Cognito's `{username}` once without saying what it is ("Your account is
+  {username}. Sign in with the address this email came to and this temporary password:", since in an email-attribute
+  pool it may be the internal name), the temporary password on its own line, the sign-in page as plain text and its 7
+  days (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification,
+  sign-up, resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The
+  footer of every message: "PaidWhole never asks you to send your password or a code to anyone, by email, phone or
+  chat: enter a code only on the PaidWhole page that asked for it." (It ends messages that themselves carry a code, so
+  it says what never happens and where a code goes, not that PaidWhole never asks for one.) The 7 days, 15 minutes
   (the reset step, A1) and 3 minutes (the sign-in session) are held to `identity.ts` and `step-limits.ts` by tests.
   - The pool's own verification and invitation templates are the same frame's generic fallback ("Your PaidWhole code
     is {####}. Enter it on the page that sent it. If you did not ask for it, ignore this email: nothing on your
