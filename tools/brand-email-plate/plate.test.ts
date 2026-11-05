@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -34,6 +35,22 @@ describe('the email lockups on their White plate (O-5, UX-S1)', () => {
     expect(plateHolds(image)).toBe(true);
     expect(image.pixels[3]).toBe(0);
     expect(image.pixels[(image.width * image.height - 1) * 4 + 3]).toBe(0);
+  });
+
+  // The inputs and outputs, pinned by SHA-256: a changed delivered lockup or a hand-edited plate fails here, and the
+  // plates are regenerated (pnpm brand:email-plate --write) under a new file name, so a cached older email never
+  // shows a mismatched plate (the brand owner's delegate's conditions, 2026-11-05).
+  const DIGESTS: Readonly<Record<string, string>> = {
+    '/brand/paidwhole-lockup-horizontal-tagline-1200w.png': '5a420711294eddecbb2182524f3ac9543d816fe392ce8114e07c1175063be062',
+    '/brand/paidwhole-lockup-horizontal-1200w.png': 'c8636b734480b4b2aa51437ed67f95c9c8fec887506750f16ae53b74ee42c14c',
+    '/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png': 'aaa2a199c20c051dd719195fc32aeb95a908b41d79456d3f3782e789df3d3c9f',
+    '/brand/paidwhole-lockup-horizontal-email-plate-1380w.png': '5819842f780b9920c5ff9365d4e8dae8ce67a85b7af63046573c92f34dfe6b13',
+  };
+
+  it.each(PLATES)('$plate and its source $source are the files whose digests are pinned', ({ source, plate }) => {
+    for (const file of [source, plate]) {
+      expect(createHash('sha256').update(read(file)).digest('hex'), file).toBe(DIGESTS[file]);
+    }
   });
 
   it('refuses an image whose plate is not opaque, as the transparent art alone is', () => {
