@@ -1081,6 +1081,9 @@ const SURVIVORS = [
   '900-12-34 56', '202/555-0123', '202)555-0123', '900;12;3456', '900-12-03-56', '900.12.03.56', '202.555 0123', '900 551 234', '900-12-34.56',
   // Review round 1, SEC-2: four to sixteen spaces or tabs between groups (justified or column-aligned PDF text).
   '900    12    3456', '202    555    0123', '900\t\t\t\t12 3456', '900        12        3456', '202\t\t\t\t\t\t\t\t555 0123',
+  // Review round 1, SEC-6: dash-, slash- and comma-like marks NFKC leaves as they are (katakana prolonged sound mark, swung
+  // dash, modifier macron, division slash, fraction slash, ideographic comma).
+  '900\u30FC12\u30FC3456', '202\u30FC555\u30FC0123', '900\u205312\u20533456', '900\u02C912\u02C93456', '900\u221512\u22153456', '900\u204412\u20443456', '900\u300112\u30013456',
 ];
 
 interface PatternSegment {

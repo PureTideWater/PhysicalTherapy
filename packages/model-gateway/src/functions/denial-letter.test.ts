@@ -730,6 +730,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['SEC3-7 a page break and a dash', 'A', 'Subscriber 900\f12-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
     ['SEC3-8 a page break inside a phone', 'A', 'Phone 202-555-\f0123 on file.', 'Phone [PHONE] on file.', ['2025550123']],
     ['SEC3-9 U+1680 and a dash', 'A', 'Subscriber 900-12\u16803456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    // Review round 1, SEC-6: the braille blank (U+2800) is a blank.
+    ['SEC6-1 braille blanks', 'A', 'Subscriber 900\u280012\u28003456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC6-2 braille blanks', 'A', 'Tel 202\u2800555\u28000123 on file.', 'Tel [PHONE] on file.', ['2025550123']],
   ];
 
   it.each(rows)('%s: sends %j as expected, refuses none, and offers the screen what it must (patient %s)', (_row, row, letter, sent, offered) => {
@@ -785,6 +788,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['four spaces between groups (SEC-2)', 'SSN 900    12    3456'],
     ['eight spaces between groups (SEC-2)', 'Tel 202        555        0123'],
     ['tabs between groups (SEC-2)', 'SSN 900\t\t\t\t12 3456'],
+    ['katakana prolonged sound marks (SEC-6)', 'SSN 900\u30FC12\u30FC3456'],
+    ['division slashes (SEC-6)', 'SSN 900\u221512\u22153456'],
+    ['ideographic commas (SEC-6)', 'Tel 202\u3001555\u30010123'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);

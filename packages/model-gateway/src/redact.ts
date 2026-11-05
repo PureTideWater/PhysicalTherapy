@@ -240,9 +240,10 @@ export function datesIn(text: string): DateSpan[] {
 
 /**
  * Letters, and one format character, that a letter shows as a blank (the Hangul fillers, the Mongolian vowel separator),
- * and the one space separator NFKC leaves as it is (U+1680 OGHAM SPACE MARK): white space here (review finding SEC-3).
+ * the one space separator NFKC leaves as it is (U+1680 OGHAM SPACE MARK) and the braille blank (U+2800): white space here
+ * (review findings SEC-3 and SEC-6).
  */
-const BLANK = /^[\u115F\u1160\u3164\uFFA0\u180E\u1680]$/u;
+const BLANK = /^[\u115F\u1160\u3164\uFFA0\u180E\u1680\u2800]$/u;
 const IGNORABLE = /^\p{Default_Ignorable_Code_Point}$/u;
 const MARKS = /\p{M}/gu;
 const WORD_CHARACTER = /^[\p{L}\p{N}]$/u;
@@ -1397,15 +1398,20 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
 
 // The survivor scan (R7, with step 0's A2 and A3): written apart from the patterns, so a form the patterns miss is refused.
 
-/** The scan's joiners (one between two groups): one or two dashes, ".", "(", ")", "/", every non-white number joiner (mirrors NUMBER_JOINERS, written here on its own), and ";" with no white space after it. */
-const SCAN_JOINER = "[\\p{Pd}\\u2212\\u2043\\u02D7\\u2796]{1,2}|[./()_|\\\\'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022\"\\u201C\\u201D]|;(?![\\s\\u0085])";
+/**
+ * The scan's joiners (one between two groups): one or two dashes, ".", "(", ")", "/", every non-white number joiner (mirrors
+ * NUMBER_JOINERS, written here on its own), ";" with no white space after it, and the dash-, slash- and comma-like marks NFKC
+ * leaves as they are (U+30FC katakana prolonged sound mark, U+2053 swung dash, U+02C9 modifier macron, U+2215 division slash,
+ * U+2044 fraction slash, U+3001 ideographic comma: review finding SEC-6).
+ */
+const SCAN_JOINER = "[\\p{Pd}\\u2212\\u2043\\u02D7\\u2796]{1,2}|[./()_|\\\\'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022\"\\u201C\\u201D\\u30FC\\u2053\\u02C9\\u2215\\u2044\\u3001]|;(?![\\s\\u0085])";
 /** White space in a chain's gap: up to sixteen spaces or tabs (a justified or column-aligned PDF line: SEC-2), or one line break (a form feed and a vertical tab are ones: SEC-3) with up to sixteen on each side. */
 const SCAN_SPACE = `[ \\t]{0,16}(?:(?:\\r\\n|[\\n\\r\\f\\v\\u0085\\u2028\\u2029])[ \\t]{0,16})?`;
 /** What joins two digit groups into one chain: white space (SCAN_SPACE), with at most one joiner. */
 const SCAN_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER})${SCAN_SPACE})?$`, 'u');
 /** Under an SSN or phone label a comma joins two groups too ("SSN 900,12 3456"); elsewhere it is an amount's or a list's. */
 const SCAN_LABELED_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');
-const SCAN_JOINER_CHARACTER = /^[\p{Pd}\u2212\u2043\u02D7\u2796./()_|\\'\u2018\u2019\u02BC\u02B9\u02CA\u2032\u2035`~\u00B7\u2027\u2219\u22C5\u30FB\u2022"\u201C\u201D;]$/u;
+const SCAN_JOINER_CHARACTER = /^[\p{Pd}\u2212\u2043\u02D7\u2796./()_|\\'\u2018\u2019\u02BC\u02B9\u02CA\u2032\u2035`~\u00B7\u2027\u2219\u22C5\u30FB\u2022"\u201C\u201D;\u30FC\u2053\u02C9\u2215\u2044\u3001]$/u;
 const SCAN_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
 const SCAN_DIGIT = /^[0-9]$/u;
 const CURRENCY_AMOUNT = /\p{Sc}[ \t]?[0-9][0-9,]*(?:\.[0-9]{1,2})?/gu;
