@@ -89,7 +89,8 @@ export class CognitoMessages extends Construct {
     this.failureAlarm.addAlarmAction(props.notify);
 
     const fallbacks = this.logGroup.addMetricFilter('Fallbacks', {
-      filterPattern: logs.FilterPattern.stringValue('$.error_code', '=', COGNITO_MESSAGE_FALLBACK),
+      // A term, not a JSON selector: the runtime writes the handler's line as text with a prefix, which { $.field } never matches.
+      filterPattern: logs.FilterPattern.allTerms(COGNITO_MESSAGE_FALLBACK),
       metricNamespace: COGNITO_MESSAGES_NAMESPACE,
       metricName: COGNITO_MESSAGE_FALLBACK_METRIC,
       metricValue: '1',
