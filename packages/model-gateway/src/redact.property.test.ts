@@ -1387,7 +1387,8 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
   .map(({ kind, pick, nine, ten, icn, date, neutral }): KeptSegment => {
     const n = (digits: number, at = 0) => String(Math.floor(pick / 10 ** at) % 10 ** digits).padStart(digits, '0');
     const cpt = `9${n(4)}`;
-    const amount = [`$${n(1)},${n(3, 1)}.${n(2, 2)}`, `${n(1)},${n(3)},${n(3, 1)}.${n(2)}`, `$${n(3)}-${n(2, 1)}`, `$${n(3)}.${n(2, 3)}`, `${n(4)}.${n(2, 1)}`][pick % 5] ?? '$150.00';
+    // The last: a currency sign before a spaced 3-3-4 or 3-2-4 (R1b's currency guard; review round 1, corr-ssn-3).
+    const amount = [`$${n(1)},${n(3, 1)}.${n(2, 2)}`, `${n(1)},${n(3)},${n(3, 1)}.${n(2)}`, `$${n(3)}-${n(2, 1)}`, `$${n(3)}.${n(2, 3)}`, `${n(4)}.${n(2, 1)}`, `$${String(200 + (pick % 800))} ${[n(3, 1), n(2, 1)][pick % 2] ?? '555'} ${n(4, 2)}`][pick % 6] ?? '$150.00';
     const iso = date.toISOString().slice(0, 10);
     switch (kind) {
       case 0:

@@ -690,6 +690,12 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['R5-13', 'A', 'Medicare Advantage claim 1900123456', 'Medicare Advantage claim 1900123456', []],
     ['R5-14', 'A', 'Reference no.: 2025550123', 'Reference no.: 2025550123', []],
     ['R5-15', 'A', 'Tax ID number 900123457', 'Tax ID number 900123457', []],
+    // Review round 1, corr-ssn-3: a shape after a currency sign is an amount (R1b's currency guard, on every shaped match).
+    ['K-c1 a currency sign before a phone shape', 'A', 'Paid $202-555-0123 in full.', 'Paid $202-555-0123 in full.', []],
+    ['K-c2 spaced', 'A', 'Billed $202 555 0123 total', 'Billed $202 555 0123 total', []],
+    ['K-c3 an SSN shape', 'A', 'Paid $900 12 3456 total', 'Paid $900 12 3456 total', []],
+    ['K-c4 a space after the sign', 'A', 'Paid $ 900 12 3456 total', 'Paid $ 900 12 3456 total', []],
+    ['K-c5 the euro sign and periods', 'A', 'Paid \u20AC202.555.0123', 'Paid \u20AC202.555.0123', []],
     ['R5-15a the IRS’s wording (review round 1, corr-ssn-4)', 'A', 'Tax identification number 900123457', 'Tax identification number 900123457', []],
     ['R5-15b', 'A', 'Federal tax identification number: 900123457', 'Federal tax identification number: 900123457', []],
     ['R5-16', 'A', 'Claim #: 900123456', 'Claim #: 900123456', []],
