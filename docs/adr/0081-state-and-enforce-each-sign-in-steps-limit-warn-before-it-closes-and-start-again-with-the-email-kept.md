@@ -385,7 +385,10 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     (CO-02). Not for the invitation's first password;
   - dark rules in email. A client that inverts colors made the worker's lockup PNG close to unreadable; the brand
     owner's delegate decided (O-5, co-001/email-lockup-plate) that the worker's lockup sits on a fixed White plate in
-    every variant, not a reversed variant and not a dark rule. The user pool's mail has no header (B3), so no plate;
+    every variant, not a reversed variant and not a dark rule. Since such a client inverts the plate's cells too, the
+    plate's ground is the art's own pixels (review finding UX-S1): the email files are the 1200w art composited onto an
+    opaque White rounded plate (`tools/brand-email-plate`, BRAND.md 7). The user pool's mail has no header (B3), so no
+    plate;
   - the organization's name in the invitation.
 - **Not verified here** (no user pool in this lane; the founder's pool smoke check, phase 2 on staging, with a
   synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that
@@ -400,7 +403,12 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   and confirm whether the first still works; the email's words hold either way); and Cognito's subject (140) and
   message (20,000) limits and CloudFormation's limit on an inline `ZipFile` (the source is 14.2 KB, 14,171 bytes; the
   tests cap it at 16 KiB), which are quoted from memory: AWS's documentation was not reachable from this session. If
-  the inline limit binds, the source goes as `Code.fromAsset` of the same text.
+  the inline limit binds, the source goes as `Code.fromAsset` of the same text. Outside the pool, for the worker's mail
+  on staging: open a worker email in Gmail for iOS and in Outlook.com, both in dark mode, and confirm the lockup sits on
+  White and is legible; and confirm that
+  `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` answers 200 with
+  `Cross-Origin-Resource-Policy: cross-origin` (ADR 0058's first-deploy check, for the plated file). The repository's
+  renders emulate an inverting client and are not proof of these clients.
 
 ## Revisit when
 
