@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
 import { READER_FRAME, READER_REQUEST_HEADER_MAX_BYTES, type ReaderRequest, readerRequestHeader } from './page-reader';
-import { PAGE_READ_LIMITS, PageReadError, READER_FRAME_TYPES, READER_SEMI_SPACE_MB, readDocumentPages, readInChild, readerArgv, readerCommand, readerEntry } from './pages';
+import { PAGE_READ_LIMITS, PageReadError, READER_EXIT_GRACE_MS, READER_FRAME_TYPES, READER_SEMI_SPACE_MB, readDocumentPages, readInChild, readerArgv, readerCommand, readerEntry } from './pages';
 import { deflateBombPdf, syntheticLine } from './test-support/documents';
 
 /**
@@ -327,6 +327,25 @@ describe('the page reader in its own process (ADR 0033; test matrix SEC-24)', ()
       expect(await queued, behaviour).toEqual({ ok: true, pages: ['SYNTHETIC\tQUEUED'] });
     }
   }, 60_000);
+
+  it('keeps the deadline after the last frame: a reader that replies just before it and lingers is refused at it', async () => {
+    // Done 1.5 s into a 2 s deadline, then a hang: the deadline comes before the exit grace would (1.5 s + 1 s), so the
+    // read is refused there, not failed by the grace.
+    const timeoutMs = 2_000;
+    const started = Date.now();
+    const hung = watched(() =>
+      readInChild(stubRequest('late-done-hang 1500'), { ...PAGE_READ_LIMITS, timeoutMs }, STUB).then(
+        (reply) => reply,
+        (error: unknown) => error,
+      ),
+    );
+    const queued = readDocumentPages({ bytes: new TextEncoder().encode('SYNTHETIC,QUEUED\n'), contentType: 'text/csv' });
+    const { result, seen } = await hung;
+    expect(result).toEqual({ kind: 'refused', problem: 'unsupported_document' });
+    expect(Date.now() - started, 'refused by the deadline, before the exit grace').toBeLessThan(timeoutMs + READER_EXIT_GRACE_MS / 2);
+    inItsOwnProcess(seen);
+    expect(await queued).toEqual({ ok: true, pages: ['SYNTHETIC\tQUEUED'] });
+  }, 30_000);
 
   it('gives the pages of a reader that exited at once while this process was held past the exit grace', async () => {
     // The worker's loop held 1.2 s at a time (past READER_EXIT_GRACE_MS) from the check phase, right after the poll that
