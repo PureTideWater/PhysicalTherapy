@@ -1,3 +1,12 @@
+<!-- SLICE-2 -->
+## Slice 2 (Lane B, S4 https://claude.ai/code/session_01FcouKPkXdRW5ntz6ye92pL, from 2026-11-06 19:40 UTC)
+- Holder: Lane B S4 (started by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW). The acting-Lane-A RESUME-BLOCK below is history; this section is current.
+- Branch `co-001/packet-figure-placeholders-2` cut from claude/build-platform cc3dd7f6 (worktree /home/user/pfp2). WIP ref `co-001/wip-packet-figure-placeholders-2`. Claim row: missing in LANES.md; asked the orchestrator to record it (claim of record lanes/lane-b.md 2026-11-04 16:30 UTC).
+- Decisions (taken, recorded): /3 is reachable only by an explicit format argument; every caller keeps VERIFIER_FORMAT (/2), and the code draft emits tokens only for /3 (its /2 output byte-identical), so nothing served changes. Under /2 a fact token fails closed (unknown_placeholder). For slice 3: flipping VERIFIER_FORMAT stores token templates, which the export prints only once slice 4 renders them: slice 3's flip must ship with or after slice 4's export render (to the orchestrator for Lane A's queue).
+- Log (UTC):
+  - 2026-11-06 19:40: started; setup running; build workflow next (builder in two parts, then money A, money B, security fail-closed and test-quality reviews, two skeptics per finding, fixer, recheck).
+- Next: the build workflow.
+
 <!-- RESUME-BLOCK -->
 ## RESUME-BLOCK for Lane B (acting S2 stood down 2026-11-05 ~08:15 UTC: Lane A's account at 99% weekly usage)
 - **Item:** narrative figures as placeholders bound to fact ids (design `designs/lane-b-packet-figure-placeholders.md`, reviewed; 7 slices, section 9). **Slice 1 MERGED: PR #128 as cc3dd7f6** (2026-11-05 ~08:12 UTC, method merge, expectedHeadSha 4ffadf3f). Slice 2 not started. Slice 3 (the verifier /3 migration) is Lane A's (schema queue after the interest fix and password-changed-notice).
