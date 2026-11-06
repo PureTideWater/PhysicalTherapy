@@ -242,8 +242,9 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
   missing one fails the journey there; run it on Linux or in CI.
 - The image build is not checked here (no Docker daemon). The first deploy should confirm that
   `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-1200w.png` answers 200 with
-  `Cross-Origin-Resource-Policy: cross-origin` (amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md): confirm the plated file,
-  `/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png`, which the worker's mail loads from the static host). CloudFront caches `/brand/*` under the build output's policy; Next serves
+  `Cross-Origin-Resource-Policy: cross-origin` (amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md): confirm the plated files,
+  `/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` and, for a prospect's mail,
+  `/brand/paidwhole-lockup-horizontal-email-plate-1380w.png`, which the worker's mail loads from the static host). CloudFront caches `/brand/*` under the build output's policy; Next serves
   public files with `max-age=0`, so CloudFront keeps them for its one-second minimum, and a changed lockup shows almost
   at once although the names are not content-hashed.
 - The hex rule is D9 item 4, which the owner approved: hex in `packages/brand/src/tokens.css`, `tokens.ts` and `mark.ts`
