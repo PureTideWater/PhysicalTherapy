@@ -33,10 +33,10 @@
     "eval:permitted": "tsx src/models/permitted-cli.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-rds": "^3.1160.0",
-    "@aws-sdk/client-s3": "^3.1160.0",
-    "@aws-sdk/client-sesv2": "^3.1160.0",
-    "@aws-sdk/client-sqs": "^3.1160.0",
+    "@aws-sdk/client-rds": "^3.1161.0",
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/client-sesv2": "^3.1161.0",
+    "@aws-sdk/client-sqs": "^3.1161.0",
     "@paidwhole/brand": "workspace:*",
     "@tp/auth-mail": "workspace:*",
     "@tp/billing": "workspace:*",
