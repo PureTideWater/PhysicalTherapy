@@ -1769,3 +1769,157 @@ HANDOFF.md; LANES.md rule 10).
      departures D-1 to D-4; Cognito rulings 13 to 15; the CAS-42.5 working-set judgement; the placeholder rule; the
      child-process rule.
   9. Release tags are the founder's; there are none.
+
+### 2026-11-06 21:30 UTC (Lane B's orchestrator): the co-founder's plan for the week; PHI findings
+- **The plan of record for 2026-11-06 to 2026-11-10** is the co-founder's handoff prompt (19:30 UTC; it reached this
+  session at 19:35 UTC). Where it differs from the 19:40 UTC waves above, it wins. About five sessions at once, at most
+  two heavy workflows each:
+  - **S1**, session_01FcouKP1U2GGDFhhZT9CaUV: `co-001/redact-range-glued` (MOD-16), then
+    `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22; added at 21:04 UTC, PHI first), then the packets verifier
+    identifier fold (MOD-19, MOD-20).
+  - **S2**, session_01FcouKQthXdmDnPmwhFepxW, acting Lane A: #126, then password-changed-notice (ADR 0091, SGN-16), then
+    the 11-05 handoff's §4 queue. One schema PR open at a time, and each suggested line's link goes to the co-founder at
+    once.
+  - **S3**, session_01FcouKQJppM8BdCui7NVQUa: pages-child-process (SEC-24). Its second item, #129, already runs in
+    parallel in session_01FcouKRo5iee5QFtPT8UimZ (started 19:29 UTC, before the plan), so S3 finishes sooner. Once
+    pages-child-process merges, S3 takes its next item from S5's list.
+  - **S4**, session_01FcouKPkXdRW5ntz6ye92pL: packet-figure-placeholders slice 2 (ADR 0089, CAS-52 to CAS-54).
+  - **S5**, session_01FcouKRDfoFAeXZK4Thp8M8, in this order:
+    1. UX PR 4b, with #121's P1;
+    2. ux-forms-after-42;
+    3. SUITE-CAP-3's worker-side fixes only (no `ledger_line_net` rewrite without a founder exception);
+    4. P2;
+    5. P5;
+    6. UX PR 8;
+    7. dark-mode-ship.
+
+    It starts when #129 merges.
+  - **The other kept sessions:**
+    - SUITE-CAP-3's design review finishes in session_01FcouKP4ekrT97eyDtLe4Rd. It was told at 19:50 UTC that the build
+      covers the worker-side fixes only, and that the `ledger_line_net` part goes into the freeze-exception ask.
+    - P2's 19:40 UTC slot in session_01FcouKNP2XtaombFLueKLnu is superseded by S5's queue. That session stays kept and
+      idle, as does #48's (session_01FcouKNB2TyuPCAha9BaEjQ, wave 3).
+    - Dependabot #122 to #124 stay open and untriaged.
+- **New sessions** are created with `source_url` https://github.com/PureTideWater/PhysicalTherapy and `source_revision`
+  `claude/build-platform`. Each gets an `append_system_prompt` that authorizes it to:
+  - push `co-001/*` branches and `claude/build-ops`;
+  - open and update its own draft PRs, and comment on and subscribe to them;
+  - merge verified, green PRs as LANES.md allows.
+
+  So none waits on a relayed go-ahead. S4 (19:37 UTC) is the first. If one still waits, the co-founder types "go" in it.
+- **Decisions:** the orchestrator decides as an expert software architect, takes the most optimized option (for security,
+  the safer one) and records why.
+- **Founder-only.** These go to the co-founder with the exact text or link:
+  - approving `docs/product/domain-model.md` by committing the suggested approval line;
+  - release tags;
+  - owner-admin settings;
+  - legal text;
+  - freeze exceptions;
+  - reversing a founder ruling.
+- **Never:**
+  - sign or approve as the founder, or write the approval line or approvers.json;
+  - approve or request changes on a PR;
+  - merge a schema PR before the founder commits its line;
+  - open a PR into main, or create a release tag;
+  - use --no-verify, force-push, or touch .gitleaksignore (a gitleaks refusal is fixed by rewriting the flagged text);
+  - write files through the GitHub connector;
+  - put PHI or a model identifier in any artifact.
+- **Stand-down at 2026-11-10 09:00 UTC** (a scheduled reminder). That is before Lane A's reset (~14:00 UTC); it comes
+  sooner if this account nears its limit. Every session:
+  - pushes its WIP refs;
+  - writes its RESUME-BLOCK;
+  - unsubscribes from every PR;
+  - cancels its check-ins.
+
+  Then the handoff back is finalized.
+- **Rolling handoff:** `lanes/lane-b-handoff-to-lane-a-2026-11-10.md` is started in this commit. Every records commit keeps
+  it current, so a handoff exists whenever Lane B stops. The reason: the 7-day cap stopped this orchestrator too
+  (2026-11-02 12:35 to 2026-11-06 19:16 UTC), and the planned refresh of the 11-03 handoff never happened.
+
+#### Two PHI findings (S1, on the base cc3dd7f6: gaps in #127's SSN and phone patterns)
+1. **An SSN or phone number glued digit to digit to an amount or a range reaches the model unredacted.** The survivor scan
+   does not refuse the letter either. S1's MOD-16 sweep found it at 20:20 UTC. Synthetic examples:
+   `900 12 3456150.00-01/02/2020`, and `SSN 900123456120.00-...`. A space in place of the dash leaks the same way.
+2. **A masked SSN glued after digits or a word is sent too** (for example `...2020XXX-XX-3456`).
+- **Cause and exposure:** the range fix did not cause these. They have been on the base since #127 merged
+  (2026-11-05). Nothing is live before launch, so no real letter is exposed.
+- **The hunt:** a read-only workflow, wf_8da6dd19-398, maps the whole class at cc3dd7f6 from five angles:
+  - digit-glued;
+  - letter-, placeholder- and mask-glued;
+  - character evasions;
+  - barrier interplay;
+  - structure and the other model paths.
+
+  It loops until two dry rounds, then a completeness critic. Round 1 reported **52 candidate classes**: digit-glued 13,
+  letter- or mask-glued 13, barriers 10, characters 16.
+- **The hunt's skeptics** are batched per angle: 3 lenses by 5 angles a round, not 3 per leak. This machine runs two
+  agents at a time, so 156 single-leak skeptics would take many hours.
+- **What the hunt produces:** its synthesis is the leaks PR's design input. It separates pattern gaps (to fix) from
+  obfuscation beyond pattern reach (to fix, or a documented residual for the co-founder).
+- **Decision (S1's, agreed 21:03 UTC):** the fixes are their own PR, `co-001/redact-ssn-phone-leaks`, after
+  `co-001/redact-range-glued` and before the verifier fold. The range-glued PR fixes a CI flake that can turn any PR's
+  unit job red at random, so it should not wait on a much larger PHI change. Its PHI review still checks that the range
+  barrier widens no leak.
+- **Counters:** MOD-21 and MOD-22 were allocated to the leaks PR at 21:04 UTC; the next free is MOD-23.
+- **How the leaks PR is built:** two reviews (PHI and security; gateway correctness) with skeptics. Where a number's
+  boundary is unknowable, the letter is refused, never guessed.
+- Its claim row is added in this commit.
+
+#### Other state at 21:30 UTC
+- **#129's full local suite is green** on 31c41a9d (cc3dd7f6 merged once):
+  - unit 9,929;
+  - db 9,863;
+  - e2e 81 of 81;
+  - also infra 793, golden 381, oracle 689, and the brand baselines byte for byte.
+
+  Fix round 2 (wf_5ac1f379-e54: D1, D2) runs on WIP 0234d5fe. Then the push, CI, the verification and the merge.
+- **Live heads,** checked 21:32 UTC with `git ls-remote` and the GitHub API (read-only):
+  - `claude/build-platform` cc3dd7f6: nothing has merged since #128 (2026-11-05 08:19 UTC);
+  - `main` 220f2b4e;
+  - `claude/build-ops` 796b8cec before this commit;
+  - no tags;
+  - open: #126 (draft, c49367c5), #129 (draft, 231da9c4), and Dependabot #122, #123 and #124.
+- **LANES.md in this commit:**
+  - S4's claim row (slice 2, added at 19:40 UTC) is checked.
+  - New rows: redact-ssn-phone-leaks, the packets verifier identifier fold, password-changed-notice and dark-mode-ship.
+  - Every S1 to S5 row gets its 21:30 UTC sentence.
+  - The counters line now reads next free MOD-23.
+  - A note at the top of "Claims" records the plan of record.
+- **Schema queue note** (under "Handed to Lane A", on the /3 migration): slice 3's `VERIFIER_FORMAT` flip must ship with
+  or after slice 4's export render. This is S4's finding: the flip stores token templates, and the export prints them only
+  once slice 4 renders them.
+
+#### The ultracode flag
+- **The audit:** at 19:50 UTC the live session records showed the flag on for this orchestrator and for S5's and P2's
+  sessions only, which are the sessions the co-founder typed in. The six working sessions (S1, S2, SUITE-CAP-3, S3, #129,
+  S4) showed it absent.
+- **A relayed message does not set it.** This orchestrator sent "ultracode." to the six at 19:50 UTC (priority next), and
+  at the 19:54 UTC re-check the flag was still absent. Only a typed message turns it on.
+- **The co-founder was asked** to type "ultracode" in the six working sessions.
+- **Meanwhile** each runs every substantive stage as a Workflow with adversarial checks, as the brief requires.
+
+#### Build completion, re-estimated (the co-founder asked at 20:59 UTC)
+- **About 19% at the end of 2026-11-06 (range 13 to 23%), up from about 17% on 11-01.** Same method as 11-01, one
+  estimator and one skeptic.
+  - 32 PRs merged from 11-01 to 11-05 add about 3 points: #42, five UX PRs, two schema-chain PRs and 14 unplanned fixes.
+  - About 536 hours of newly found scope take about 1 point back: packet placeholders, Cognito, the privacy leaks, hostile
+    PDFs and dark mode.
+  - Nothing had merged in the 37 hours before the estimate, because both accounts were capped.
+- **Launch-ready: about 15%.** None of the 28 people-only items is done. They include release content, the 157 golden
+  lines to verify, counsel, AWS under the BAA, Stripe and SOC 2.
+- **Left, largest first:**
+  - the audit fixes, about 4,300 to 6,900 hours, with 13 critical items open;
+  - about 40 schema PRs, each needing the founder's approval;
+  - 82 of the 91 UX review PRs;
+  - milestones 12 and 13, and the final pass.
+- **The limits on pace** are the usage caps and the founder's approval turnaround, not the number of sessions.
+
+#### Pending with the co-founder and the founder
+- **The co-founder:**
+  - type "ultracode" in the six working sessions;
+  - Lane B's weekly usage % and reset time (rule 9);
+  - #126's suggested-line link, relayed when S2 posts it.
+- **The founder:**
+  - #126's approval of record;
+  - SUITE-CAP-3's freeze exception for the `ledger_line_net` rewrite (the ask is being drafted, not yet asked);
+  - the rest as in (D) of 19:40 UTC, and the rolling handoff's section 5.
