@@ -3,6 +3,10 @@
 Session: session_01FcouKP1U2GGDFhhZT9CaUV (https://claude.ai/code/session_01FcouKP1U2GGDFhhZT9CaUV). GitHub login: PureTideWater.
 Claimed by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) 2026-11-06 19:40 UTC: "GO on the MOD-16 follow-up (Lane A
 handoff 2026-11-05 §2, first item for Lane B) ... no new ADR/MOD expected; COUNTER REQUEST if one is".
+Follow-on (orchestrator, 2026-11-06 ~19:50 UTC, the co-founder's plan; this session is S1): after this merges, the packets
+verifier identifier fold (`approval-summaries/lane-b-packets-verifier-identifier-fold-status.md`, MOD-19/20; RESUME-BLOCK first;
+claim row and live heads; it shares verifier files with S4's packet-figure-placeholders slice 2 and the tp-packet-verifier/3
+migration: check S4's branch first, rule 6).
 Source: `approval-summaries/lane-b-redact-ssn-phone-status.md` RESUME-BLOCK; `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` §2.
 Rules: lanes/lane-b-session-brief.md; speed rules in lanes/acting-lane-b-2026-11-04.md (CI is the suite of record; full local
 suite once per PR; two adversarial reviews with skeptics for redaction/model-gateway changes; rule 2a up-to-date before merge).
