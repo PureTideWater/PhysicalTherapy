@@ -93,6 +93,14 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   80ce3ec0; fast checks and the brand e2e green on 80ce3ec0 (WIP `co-001/wip/email-lockup-plate-s5`). The sweep was not
   dry after 3 rounds, so wf_6882a2d4-33e (archived) sweeps until dry, then re-checks the description.
 
+- 2026-11-06T21:07Z: wf_6882a2d4-33e: the sweep went dry in round 3 and confirmed 2 findings, but its fix prompt carried no list
+  (a script defect, mine), so nothing was fixed. D1: ADR 0058's new line says the mail "embeds" the plate; it loads it
+  from the static host. D2: the O-8 text says replacement of an earlier code is unverified, while ADR 0081 A3 and the
+  reset page's step warning ("it replaces the code already sent") assert it. Decision (recommended on accuracy; within
+  the O-8 ruling): word the page's warning and A3 to hold either way, as the email does. wf_5ac1f379-e54 (archived)
+  fixes both, reviews the delta twice (UX and brand with shots; correctness) until dry, runs pnpm test and the sign-in
+  and brand e2e, then the description.
+
 ## Waiting on someone
 - None.
 
