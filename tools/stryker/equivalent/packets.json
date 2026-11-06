@@ -975,7 +975,7 @@
     "replacement": "marker.start <= span.end",
     "reason": "The same boundary as mismatches.ts's recorded equivalent of this mutant: a template's sentences are format /2's sentence rule (scan.ts sentenceSpans) over the template's readable text with each fact token and stray read as a word of x's (template.ts templateSentences), which changes no end mark, whitespace or marker, so a sentence still ends only before whitespace or the text's end and a marker after it starts past at least one whitespace character. In the template's own positions the two could meet only if that whitespace joined the cluster of the sentence's end mark, closing quote or bracket, or of the marker's bracket, and on Node 24's Unicode 17.0 data no grapheme cluster does (tools/stryker/unicode.json, checked for mismatches.ts's entry over every code point).",
     "proposedBy": "slice 2 of packet-figure-placeholders (Lane B, builder)",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "review round 2 of 2026-11-06 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedOn": "2026-11-06"
   }
 ]
