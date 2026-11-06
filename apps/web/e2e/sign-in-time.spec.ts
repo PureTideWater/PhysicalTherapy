@@ -708,7 +708,7 @@ test('the sign-in page’s help list, the reset notice and the forgotten-passwor
     await page.clock.fastForward('13:00');
     await expect(region).toHaveAttribute('data-phase', 'warning');
     await expect(region).toContainText('This step closes within 2 minutes');
-    await expect(region).toContainText('If you need more time, send a new code below: use the newest code sent, and the step opens again for 15 minutes.');
+    await expect(region).toContainText('If you need more time, send a new code below and the step opens again for 15 minutes. Then use the newest code.');
     await expect(region).not.toContainText('your email is kept');
     await expect(region.getByRole('button')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Send a new code' })).toBeVisible();
