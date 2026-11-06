@@ -8,12 +8,12 @@ item session, 2026-10-27), as the follow-on of PR 5 (`co-001/ux-download-refusal
 GitHub merged_at 2026-10-28T06:50:22Z).
 
 ## Now (2026-11-02 02:50 UTC): MERGED
-- **PR #93 merged** 2026-11-02 ~02:47 UTC as 877e662f (method merge, expectedHeadSha d1e4c4c4), into claude/build-platform. Unsubscribed. Worktree `/home/user/ux-home-figures` and the local branch removed (the remote branch stays); main checkout fast-forwarded to 877e662f and `pnpm install` run. Push runs on 877e662f: ci success, screening-capacity success, mutation success. **Stopped at a clean point** (no follow-on, per the pacing call).
+- **PR #93 merged** 2026-11-02 02:42:45 UTC (GitHub merged_at) as 877e662f (method merge, expectedHeadSha d1e4c4c4), into claude/build-platform. Unsubscribed. Worktree `/home/user/ux-home-figures` and the local branch removed (the remote branch stays); main checkout fast-forwarded to 877e662f and `pnpm install` run. Push runs on 877e662f: ci success, screening-capacity success, mutation success. **Stopped at a clean point** (no follow-on, per the pacing call).
 - **Stages, all done:** 1 design and review (wf_132e0b59-2b4); 2 build (wf_21e8bd67-64f; af3b6d89), before shots (wf_c880ba51-8cf); 3 draft PR and description (wf_b80e9712-f4a); base merge 1 (#82, #83: 87691be4, wf_4a5f0f16-f8c); 4 reviews (wf_a1a88081-22f: payment-engine and UX/brand with 38 after shots; no blocking; 23 real findings); 5 fix round (wf_768311e7-b88: all fixed, a fourth round's 4 fixed, full local suite once; 30c055c9); description republished (wf_52437a96-5cc); base merge 2 (#92: d1e4c4c4, rows kept both sides, SGN 19 then HOM 20; wf_7be2d381-b60); 6 fresh-clone verification (wf_e45d195a-ebd: scope, #42 overlap, HOM rows, ADR 0082; CI on d1e4c4c4 read after it completed: every check green, all green, mutation, screening-capacity gate and approval-of-record included; description brought to the head); 7 ready, approval-of-record re-run green, merged.
 - **Merge order:** the 20:36 UTC rule; no conflicting PR was ready ahead (#42, #85 drafts).
 - **Freeze exception:** none needed (payment-engine review). **Migration:** none. packages/pricing, packages/ledger, packages/db untouched.
 - **Reserved numbers used:** ADR 0082; test-matrix HOM-01 to HOM-04; synth module 20 (HOM). Nothing else.
-- **WIP refs:** `co-001/wip-ux-home-figures` (27a848c1) is superseded by the merge; left in place (never force or delete without the orchestrator).
+- **WIP refs:** `co-001/wip-ux-home-figures` (27a848c1, snapshot 4) and `co-001/wip-ux-home-figures-2` (b29b1a31, snapshot 3, pushed by the resumed build at 2026-11-01 20:33 UTC under the next free name) are this session's own and superseded by the merge; left in place (never force or delete without the orchestrator). The remote branch `co-001/ux-home-figures` stays at d1e4c4c4.
 - **Follow-on:** none taken (pacing call 2026-11-02 02:10 UTC: no new item after the merge). #46 (Verified seal) stays undesigned for the orchestrator to assign.
 
 ## Log
@@ -37,6 +37,7 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - 2026-11-02 02:41 UTC: CI green on d1e4c4c4; verification complete; PR marked ready; approval-of-record re-run green.
 - 2026-11-02 ~02:47 UTC: **merged as 877e662f**; unsubscribed; worktree cleaned.
 - 2026-11-02 ~03:30 UTC: push runs on 877e662f all green (ci, screening-capacity, mutation). Item done; session stopped at a clean point.
+- 2026-11-06 ~19:25 UTC: HOLD check after the weekly reset (orchestrator's request): #93 merged (877e662f, in claude/build-platform); LANES.md claim row already records the merge; no other lane or session changed this item since 2026-11-02. Nothing to resume; STOPPED, done.
 
 ## Waiting on someone
 - Nothing.
