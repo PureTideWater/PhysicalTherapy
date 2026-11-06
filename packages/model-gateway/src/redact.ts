@@ -1199,15 +1199,16 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
  * The label window before a bare number at a view position (3.4): up to LABEL_WINDOW characters back, ending at a
- * position `stops` (the last match already found), a BARRIER, a digit, or a second line break.
+ * position `stops` (the last match already found), a BARRIER, a digit (unless `throughDigits`: the scan's reading of
+ * SEC-5's label over the numbers before an amount), or a second line break.
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean): string {
+function labelWindow(text: string, start: number, stops: (index: number) => boolean, throughDigits = false): string {
   let from = start;
   let breaks = 0;
   while (from > 0 && start - from < LABEL_WINDOW) {
     const index = from - 1;
     const character = text[index] ?? '';
-    if (stops(index) || character === BARRIER || DIGIT.test(character)) {
+    if (stops(index) || character === BARRIER || (!throughDigits && DIGIT.test(character))) {
       break;
     }
     if (LINE_BREAK_CHARACTER.test(character) && !(character === '\r' && text[index + 1] === '\n')) {
@@ -1528,37 +1529,48 @@ const RANGE_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]{1,2}$/u;
  * ("10/01/2026-10/15/2026-0123") stands as no barrier, nor does any span in it. A side that is no digit (a month word, a
  * currency sign) is joined to nothing: no group chains into the span's digits over it. Spans may share a start or an end
  * (a date on both readings, an amount with and without its currency sign): a side stands free if any partner there does.
+ * Each span comes back with the start of its range's first end (its own start when nothing joins it on the left), where
+ * the scan reads an amount's label too (review GATEWAY1-2).
  */
-function wholeRanges<T extends { readonly start: number; readonly end: number }>(text: string, spans: readonly T[]): T[] {
-  /** Whether a range dash of one or two joins a side to a place where a span that stands free on that side ends (or starts). */
-  const toFree = (at: number, side: 'left' | 'right', free: ReadonlySet<number>): boolean => {
+function wholeRanges<T extends { readonly start: number; readonly end: number }>(text: string, spans: readonly T[]): (T & { readonly rangeStart: number })[] {
+  /**
+   * Where a range dash of one or two joins a side to a place where a span that stands free on that side ends (or starts):
+   * what is kept for that place, or undefined when no dash joins it to one.
+   */
+  const toFree = (at: number, side: 'left' | 'right', free: ReadonlyMap<number, number>): number | undefined => {
     for (const width of [1, 2]) {
       const gap = side === 'right' ? text.slice(at, at + width) : text.slice(at - width, at);
-      if (!RANGE_DASH.test(gap)) return false;
-      if (free.has(side === 'right' ? at + width : at - width)) return true;
+      if (!RANGE_DASH.test(gap)) return undefined;
+      const kept = free.get(side === 'right' ? at + width : at - width);
+      if (kept !== undefined) return kept;
     }
-    return false;
+    return undefined;
   };
   // Whether each side stands free: no joiner, or a range dash to a partner whose own side further out stands free. A partner
   // on the left ends before the span starts, so the left sides are settled in order of start and the right sides in
-  // reverse order of end, each pass keeping where the spans that stand free on its side end (or start).
-  const leftFree = new Array<boolean>(spans.length).fill(false);
+  // reverse order of end, each pass keeping where the spans that stand free on its side end (or start); the left pass
+  // keeps, for each such end, the earliest start of a range ending there.
+  const rangeStarts = new Array<number | undefined>(spans.length).fill(undefined);
   const rightFree = new Array<boolean>(spans.length).fill(false);
-  const freeEnds = new Set<number>();
+  const freeEnds = new Map<number, number>();
   for (const index of [...spans.keys()].sort((a, b) => (spans[a]?.start ?? 0) - (spans[b]?.start ?? 0))) {
     const span = spans[index];
     if (span === undefined) continue;
-    leftFree[index] = !SCAN_DIGIT.test(text[span.start] ?? '') || !joinedLeft(text, span.start) || toFree(span.start, 'left', freeEnds);
-    if (leftFree[index]) freeEnds.add(span.end);
+    const rangeStart = !SCAN_DIGIT.test(text[span.start] ?? '') || !joinedLeft(text, span.start) ? span.start : toFree(span.start, 'left', freeEnds);
+    rangeStarts[index] = rangeStart;
+    if (rangeStart !== undefined) freeEnds.set(span.end, Math.min(rangeStart, freeEnds.get(span.end) ?? rangeStart));
   }
-  const freeStarts = new Set<number>();
+  const freeStarts = new Map<number, number>();
   for (const index of [...spans.keys()].sort((a, b) => (spans[b]?.end ?? 0) - (spans[a]?.end ?? 0))) {
     const span = spans[index];
     if (span === undefined) continue;
-    rightFree[index] = !SCAN_DIGIT.test(text[span.end - 1] ?? '') || !joinedRight(text, span.end) || toFree(span.end, 'right', freeStarts);
-    if (rightFree[index]) freeStarts.add(span.start);
+    rightFree[index] = !SCAN_DIGIT.test(text[span.end - 1] ?? '') || !joinedRight(text, span.end) || toFree(span.end, 'right', freeStarts) !== undefined;
+    if (rightFree[index]) freeStarts.set(span.start, span.start);
   }
-  return spans.filter((_, index) => leftFree[index] === true && rightFree[index] === true);
+  return spans.flatMap((span, index) => {
+    const rangeStart = rangeStarts[index];
+    return rangeStart !== undefined && rightFree[index] === true ? [{ ...span, rangeStart }] : [];
+  });
 }
 
 /**
@@ -1576,7 +1588,8 @@ function wholeRanges<T extends { readonly start: number; readonly end: number }>
  * 4. under a label (scanLabeled: an SSN or phone label the nearest word before the chain's first group): any number of
  *    consecutive groups of two or more holding 9 or 10 digits, or 11 starting with 1, whatever their lengths (review
  *    findings SEC-1, SEC-4, corr-ssn-1: "Phone 202-5550123", "SSN 90012-3456", "SSN 9 0 0 1 2 3 4 5 6"), and an
- *    unsigned amount there is no barrier ("SSN 900.12 3456": SEC-5).
+ *    unsigned amount there is no barrier ("SSN 900.12 3456": SEC-5), the label read over the numbers before the amount
+ *    or its range too, and a chain from that amount read under it ("SSN 01/01/2020-900.12 3456": review GATEWAY1-2).
  */
 function survivorIn(text: string): boolean {
   const barrier = new Uint8Array(text.length + 1);
@@ -1589,6 +1602,18 @@ function survivorIn(text: string): boolean {
     if (held === undefined) {
       held = scanLabeled(labelWindow(text, start, () => false));
       labeled.set(start, held);
+    }
+    return held;
+  };
+  // SEC-5's label for an unsigned amount, read over the numbers before it as well, each digit as a space (so a label glued
+  // to a digit is still one): a date, an amount or a range between the label and the amount ends no label's reach
+  // ("SSN: 01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456": review GATEWAY1-2).
+  const labeledOver = new Map<number, ScanLabel>();
+  const labeledOverNumbers = (start: number): ScanLabel => {
+    let held = labeledOver.get(start);
+    if (held === undefined) {
+      held = scanLabeled(labelWindow(text, start, () => false, true).replace(/[0-9]/gu, ' '));
+      labeledOver.set(start, held);
     }
     return held;
   };
@@ -1614,9 +1639,14 @@ function survivorIn(text: string): boolean {
   // Dates of both readings and amounts are ranged together: either end of a range may be read on either reading
   // ("01/01/2020-01/02/2020Paid": the first end on the text, the second with the letters as blanks), and a range may
   // join a date to an amount or an amount to one with a currency sign (MOD-16 seed 1034253323). An unsigned amount
-  // under an SSN or phone label stays no barrier (SEC-5).
+  // under an SSN or phone label stays no barrier (SEC-5): the label read before the amount, or before its range's first
+  // end, over the numbers between too ("SSN January 1, 2020-900.12 3456", "Phone $45-$97-985.37 8257": review
+  // GATEWAY1-2); a chain whose first group starts that amount is read under the label.
+  const personAmounts = new Set<number>();
   for (const span of wholeRanges(text, [...dates, ...currency, ...amounts])) {
-    if (!span.amount || labeledAt(span.start) !== 'person') {
+    if (span.amount && (labeledAt(span.start) === 'person' || labeledOverNumbers(span.start) === 'person' || labeledOverNumbers(span.rangeStart) === 'person')) {
+      personAmounts.add(span.start);
+    } else {
       mark(span.start, span.end);
     }
   }
@@ -1635,8 +1665,9 @@ function survivorIn(text: string): boolean {
   for (let first = 0; first < groups.length; first += 1) {
     let digits = '';
     let long = false;
+    const start = groups[first]?.start ?? 0;
     // Under a label the chain runs on until it holds more than eleven digits (each group one digit at least, so twelve groups at most).
-    const label = (groups[first]?.digits.length ?? 12) < 11 && first + 1 < groups.length ? labeledAt(groups[first]?.start ?? 0) : null;
+    const label = (groups[first]?.digits.length ?? 12) < 11 && first + 1 < groups.length ? (labeledAt(start) ?? (personAmounts.has(start) ? 'person' : null)) : null;
     // "Medicare" labels a nine only (R5d), as decideBare reads it.
     const labeledChain = (held: string) => (label === 'medicare' ? held.length === 9 : label !== null && chained(held));
     for (let count = 1; (label !== null || count <= 4) && digits.length <= 11 && first + count <= groups.length; count += 1) {

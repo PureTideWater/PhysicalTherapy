@@ -1095,6 +1095,21 @@ const SURVIVORS = [
   '900\u30FC12\u30FC3456', '202\u30FC555\u30FC0123', '900\u205312\u20533456', '900\u02C912\u02C93456', '900\u221512\u22153456', '900\u204412\u20443456', '900\u300112\u30013456',
 ];
 
+/**
+ * A labeled number only the scan reads, in an amount's shape (SEC-5: "SSN 900.12 3456"), written after a date, an amount, a
+ * currency amount or a range under its label, joined to it by a range's dash or a space: the scan reads the label over the
+ * numbers between, so the letter is refused (review GATEWAY1-2). Each label ends in white space, so none is glued to a
+ * month word.
+ */
+const SHIELD_LABELS = ['SSN ', 'SSN: ', 'S.S.N. ', 'Social Security ', 'Soc Sec ', 'Phone ', 'Phone: ', 'Tel. ', 'Fax ', 'Call ', 'Contact '];
+const SHIELDS = ['01/01/2020', '2020-01-01', 'January 1, 2020', '150.00', '1,234.56', '$10', '$10.00', '01/01/2020-01/02/2020', '150.00-120.00', '01/01/2020-150.00', '$45-$97'];
+const SHIELD_JOINS = ['-', '\u2013', '\u2014', '\u2212', '--', '\u2010', ' '];
+/** An SSN or phone in an amount's shape: 3.2 4, 3,2 4 and 3.1 5, or 3.2 5 and 3.2 1 4. */
+const amountShaped = (value: string, pick: number) =>
+  value.length === 9
+    ? ([`${value.slice(0, 3)}.${value.slice(3, 5)} ${value.slice(5)}`, `${value.slice(0, 3)},${value.slice(3, 5)} ${value.slice(5)}`, `${value.slice(0, 3)}.${value.slice(3, 4)} ${value.slice(4)}`][pick % 3] ?? value)
+    : ([`${value.slice(0, 3)}.${value.slice(3, 5)} ${value.slice(5)}`, `${value.slice(0, 3)}.${value.slice(3, 5)} ${value.slice(5, 6)} ${value.slice(6)}`][pick % 2] ?? value);
+
 interface PatternSegment {
   readonly text: string;
   readonly secret: 'none' | 'pattern' | 'member' | 'claim';
@@ -1113,7 +1128,7 @@ const phoneValue = fc.tuple(fc.integer({ min: 200, max: 999 }), fc.integer({ min
 /** An unlabeled bare ten is a phone only with an area code 3-9, or 2 and no valid NPI: the generator writes 3-9. */
 const unlabeledPhone = fc.tuple(fc.integer({ min: 300, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
 const patternSlot = fc.record({
-  kind: fc.constantFrom('ssn', 'ssn', 'phone', 'phone', 'member', 'claim', 'filler', 'survivor', 'glued'),
+  kind: fc.constantFrom('ssn', 'ssn', 'phone', 'phone', 'member', 'claim', 'filler', 'survivor', 'glued', 'shielded'),
   form: fc.nat(1000),
   picks: fc.array(fc.nat(1000), { minLength: 13, maxLength: 13 }),
   script: fc.constantFrom(...SCRIPTS, 0x30, 0x30),
@@ -1158,6 +1173,12 @@ const ssnPhoneCase: fc.Arbitrary<PatternCase> = fc
       } else if (kind === 'survivor') {
         refused = true;
         segments.push({ text: `Ref ${SURVIVORS[index % SURVIVORS.length] ?? ''} on file. `, secret: 'none' });
+      } else if (kind === 'shielded') {
+        refused = true;
+        const value = form % 2 === 0 ? other(ssn, member) : other(phone, claim);
+        const pick = (at: number) => picks[at] ?? 0;
+        const shielded = `${SHIELD_LABELS[pick(0) % SHIELD_LABELS.length] ?? 'SSN '}${SHIELDS[pick(1) % SHIELDS.length] ?? '01/01/2020'}${SHIELD_JOINS[pick(2) % SHIELD_JOINS.length] ?? '-'}${amountShaped(value, pick(3))}`;
+        segments.push({ text: `${shielded}${['.', ' on file.', ''][pick(4) % 3] ?? '.'} Noted. `, secret: 'none' });
       } else if (kind === 'glued') {
         refused = true;
         segments.push({ text: `RE: Zephyra${['900-12-3456', '202-555-0123'][index % 2] ?? ''}. `, secret: 'none' });

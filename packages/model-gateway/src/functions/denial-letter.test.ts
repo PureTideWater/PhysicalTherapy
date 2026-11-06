@@ -341,6 +341,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // MOD-16 seed 1034253323: date ranges glued to the next word, and one word as long as the letter glued to a digit.
     ['date ranges glued to the next word, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020Paid '), ['SYN555001']],
     ['one word as long as the letter, glued to a digit', ['JANE Q VANTREE'], `${'a'.repeat(N - 2)}1a`, ['SYN555001']],
+    // Review GATEWAY1-1 and GATEWAY1-2: the third reading, and SEC-5's label read over the numbers before an amount.
+    ['date ranges glued to an ordinal-like word after the year, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020St. '), ['SYN555001']],
+    ['amounts after a range, each read for a label over the numbers before it, repeated', ['JANE Q VANTREE'], fill('Billed 01/01/2020-150.00-120.00 1.00 '), ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
@@ -836,6 +839,26 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     // Review round 2, finding 2: dates or amounts joined by a hyphen are a range only when the range is joined to nothing else.
     ['a date range joined to a further group', 'Seen 10/01/2026-10/15/2026-0123'],
     ['an amount range joined to a further group', 'Ref 12.34-56.78-901'],
+    // Review GATEWAY1-2: SEC-5's label is read over the numbers before an amount-shaped SSN or phone, and before its range's
+    // first end, so a date, an amount, a currency amount or a range between them shields nothing.
+    ['a labeled amount-shaped SSN after a date and a hyphen', 'SSN: 01/01/2020-900.12 3456'],
+    ['after a date with a month word', 'SSN January 1, 2020-900.12 3456'],
+    ['after a cents-less currency amount', 'SSN $10-900.12 3456'],
+    ['with a comma, after an en dash', 'SSN 01/01/2020\u2013900,12 3456'],
+    ['in 3.1 5', 'SSN 01/01/2020-900.1 23456'],
+    ['in 1.2 2 4', 'SSN 01/01/2020-9.00 12 3456'],
+    ['a labeled amount-shaped phone after a date', 'Phone 01/01/2020-202.55 50123'],
+    ['after an amount and a hyphen', 'SSN 10.00-900.12 3456'],
+    ['after a date and a space', 'SSN 01/01/2020 900.12 3456'],
+    ['after a currency amount and a space', 'SSN $10.00 900.12 3456'],
+    ['after an amount and a space', 'SSN 150.00 900.12 3456'],
+    ['after a range whose later end follows a currency end', 'SSN: 8,281.35\u2013$57--990.53 6728'],
+    ['a phone after two currency amounts', 'Phone $45-$97\u2212985.37 8257'],
+    ['a phone after a range and a space', 'Phone 2023-04-10-130.80 912.90 2128'],
+    ['a phone after a range ending in a currency amount', 'Contact us about 507.75\u2013$39-9.78 59 4246'],
+    // An SSN glued digit to digit to an amount after its label (review GATEWAY1-3): the amount is read under the label.
+    ['a labeled SSN glued to an amount', 'SSN 900 12 3456150.00'],
+    ['a labeled SSN glued to an amount that starts a range', 'SSN 900 12 3456150.00-01/02/2020'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -941,6 +964,28 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
   it('refuses a letter whose SSN joined to a date has no shape a pattern reads (the range is no barrier)', () => {
     expect(holdsIdentifier(redactLetter('Seen 01/01/2020-900-1-2-3456', A, AC).text, A, AC)).toBe(true);
     expect(holdsIdentifier(redactLetter('Seen 01/01/2020-01/02/2020-900-1-2-3456Paid', A, AC).text, A, AC)).toBe(true);
+  });
+
+  it('refuses amounts a phone label is nearest, read over the numbers before them, as SEC-5 refuses "Call us about 150.00 1234" (review GATEWAY1-2: the fail-safe side)', () => {
+    for (const letter of ['Call us about 150.00 1234', 'Call us about 150.00-120.00', 'Call us about 150.00 120.00']) {
+      expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
+    }
+  });
+
+  // Recorded residuals (docs/adr/0054), pinned so a change to them is seen: an SSN glued digit to digit to an amount or a
+  // year, which the scan reads as one long group (review GATEWAY1-3); an amount-shaped SSN whose first group reads as a
+  // date with the number before it ("10-9.00"); an amount-shaped phone after a range and white space with its label more
+  // than 24 characters back (GATEWAY1-2); an amount followed by a year-first date, read as [SSN] (GATEWAY1-5).
+  it.each([
+    ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
+    ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
+    ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],
+    ['an amount-shaped phone after a range and spaces, its label out of reach', 'Phone March 11, 2029\u22122,866.66  960.58 4433', 'Phone March 11, 2029\u22122,866.66  960.58 4433'],
+    ['an amount and a year-first date joined by a hyphen', 'Service 150.00-2020-04-05 billed', 'Service [SSN]-04-05 billed'],
+  ])('pins a recorded residual: %s', (_case, letter, sent) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(redacted.text).toBe(sent);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
   });
 
   it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
