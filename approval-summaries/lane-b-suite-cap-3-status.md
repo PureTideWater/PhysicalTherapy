@@ -89,7 +89,14 @@ ready; only conflicting PRs keep the section-6 order.
   decrypt counts, logs, with 1a's concurrency-and-capacity lens).
 
 ## Decisions taken (recommended option, with reasons)
-- None yet.
+- **D14, ruled by the orchestrator 2026-11-06 22:31 UTC:** step 7b stays on practice F, raised to 10,000 lines, for now
+  (practice A's month measures 1,653 s against the 900 s attempt until Lane A's trigger fixes land, so moving it now would fail
+  the gate on work outside this PR; F at 10,000 is a real-size measurement that passes on the candidate). Condition, recorded in
+  ADR 0083's amendment and the handoff to Lane A: once the corrected `ledger_line_net` and the `ledger_entry_rules` primary-key
+  lookup merge (after the founder's freeze exception), step 7b moves back to practice A's month as 1b's hand-off asked. To be
+  written into the design (section 3, D14) when the review loop finishes.
+- Scope (the co-founder, relayed 2026-11-06 ~19:50 UTC): the build covers worker-side fixes only; the freeze-exception ask
+  (`approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`) is being relayed to the co-founder by the orchestrator.
 
 ## For Lane A
 - **`ledger_line_net` rewrite** (design section 14.1, exact DDL there; a ledger function, so it needs a founder freeze
@@ -107,6 +114,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-06 22:31 UTC: orchestrator ruled D14 (7b stays on F at 10,000 lines until Lane A's trigger fixes land); ask being relayed.
 - 2026-11-06 22:30 UTC: review stage 1 done (rebase, remeasure, update; reviewers returned nothing); pre-review design 38123394; review loop wf_d171f0f0-948 launched.
 - 2026-11-06 19:31 UTC: design-review workflow wf_9dd7a743-340 launched on the orchestrator's go (review only).
 - 2026-11-06 19:25 UTC: HOLD check done; nothing changed by others; base now cc3dd7f6 (1b merged); waiting for go.
