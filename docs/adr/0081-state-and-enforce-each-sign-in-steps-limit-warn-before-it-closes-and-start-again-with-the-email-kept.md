@@ -8,7 +8,9 @@
   (its one exception: the sign-in email, rendered back after a step closes); reverses none of their rulings. UX PR 7
   (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08, whose A4 and Not covered
   [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends.
-  `co-001/auth-emails` adds the code-email amendment, with SGN-13 to SGN-15.
+  `co-001/auth-emails` adds the code-email amendment, with SGN-13 to SGN-15. `co-001/email-lockup-plate` amends
+  [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md)
+  (the worker's email lockup is the art on a White plate, and its first-deploy check names the plated file).
 - **Date:** 2026-11-01
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking (UX-128's marker
