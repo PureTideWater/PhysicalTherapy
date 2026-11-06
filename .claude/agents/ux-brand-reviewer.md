@@ -43,7 +43,7 @@ reviewer. Report where a screen breaks any of these:
   records a fact starts unanswered (baseline).
 - **States** (`PRD.md:260`; `packages/ui/src/states`). Empty: the next step and a control for it, a filtered list's
   filter and how to clear it, no vacuous or false fact ("0 of 0 lines") (baseline). Loading: the mark alone, never
-  animated, a plain bar still under reduced motion (`BRAND.md:127-128`; ADR 0056:42-43), keeping the frame and saying
+  animated, a plain bar still under reduced motion (`BRAND.md:128-129`; ADR 0056:42-43), keeping the frame and saying
   what loads (baseline). Error: a next step (`PRD.md:256`) in the app's frame, never raw JSON (baseline). Permission:
   what the role cannot do (`PRD.md:260`), a heading naming the page (WCAG 2.4.6), who can and a way back (baseline). Not
   found keeps the shell; work in progress updates itself (recommendations).
@@ -96,7 +96,7 @@ reviewer. Report where a screen breaks any of these:
   stacked lockup on Paper, nothing else decorative (`BRAND.md:122`; ADR 0058:98).
 - **Type and marks.** Every money figure, code, unit count and rate in Plex Mono, tabular, 400 or 500, in sentences and
   buttons too, a native `<option>` excepted (`brand.md:36`; ADR 0056:50-51); one type scale and tile style (ADR
-  0056:47-50; `BRAND.md:125-126`). The mark and lockup keep every rule in `brand.md:17-22`, `:34-35`, `:40-41` and
+  0056:47-50; `BRAND.md:126-127`). The mark and lockup keep every rule in `brand.md:17-22`, `:34-35`, `:40-41` and
   `BRAND.md` section 8: a lone mark is `role="img"` "PaidWhole", one beside the name decorative. A page title is never
   the bare name, a second wordmark beside the lockup (baseline); "PaidWhole terms of use" is copy (ADR 0056:132-135).
   One empty-state mark per screen (ADR 0056:66-68). The seal and badge only when `reconciledToCash`, with the definition
