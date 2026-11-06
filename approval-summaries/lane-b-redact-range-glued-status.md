@@ -1,3 +1,6 @@
+COUNTER REQUEST: a claim row and test-matrix numbers (two MOD rows, likely MOD-21 and MOD-22) for a follow-on PR `co-001/redact-ssn-phone-leaks`
+(the SSN/phone leak classes the hunt verifies at cc3dd7f6); no ADR expected (an ADR 0054 amendment).
+
 # Lane B item: a date or amount range glued to a word breaks MOD-16 (`co-001/redact-range-glued`)
 
 Session: session_01FcouKP1U2GGDFhhZT9CaUV (https://claude.ai/code/session_01FcouKP1U2GGDFhhZT9CaUV). GitHub login: PureTideWater.
@@ -33,6 +36,16 @@ Effect: any PR's unit job can go red at random.
   evasions, barrier interplay, structure and other model paths; three skeptics per reported leak; loop until two dry rounds;
   synthesis into `rg-leaks/verified.md` in the scratchpad; completeness critic). Its verified classes go into this PR's fix round
   (security: the safer option; refuse when the boundary is unknowable), with named regression tests.
+- 2026-11-06T21:10Z: round 1 of the hunt reported 52 candidate classes (digit-glued 13, letter/mask-glued 13, barriers 10,
+  characters 16). Two decisions, with reasons:
+  1. **The leak fixes become their own PR, `co-001/redact-ssn-phone-leaks`, right after this one** (one PR per change; this PR is
+     a CI-flake fix that turns any PR's unit job red at random, so it should not wait on a much larger PHI change; nothing is
+     live before launch, so no real letter is exposed meanwhile). This PR's PHI review still checks that the range barrier does
+     not widen any leak. COUNTER REQUEST at the top of this file.
+  2. **The hunt's skeptics are batched per angle** (3 lenses x 5 angles per round instead of 3 per leak: this 4-CPU machine runs 2
+     agents at a time per workflow, so 156 single-leak skeptics would take many hours). Stopped and resumed as the same run
+     wf_8da6dd19-398 (hunters replayed from cache); the synthesis now writes the brief as the follow-on PR's design input,
+     triaging pattern gaps (fix) from obfuscation beyond pattern reach (fix or documented residual, for the co-founder).
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
