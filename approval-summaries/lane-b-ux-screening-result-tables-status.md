@@ -24,7 +24,9 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **Push runs on 43565235:** ci 41348075952, mutation 41348076075 and screening-capacity 41348076076, all success.
 - **Handed on:** MOD-13 (model-gateway redaction of a year below 100), to the orchestrator.
 
-## Follow-on: UX PR 4b — WAITING ON #42
+## Follow-on: UX PR 4b — #42 MERGED; awaiting the orchestrator's resume
+- **2026-11-06 19:20 UTC:** #42 merged on 2026-11-02 07:35 UTC as 22789493, so 4b is unblocked. The base is cc3dd7f6; origin has 0 release tags. The 2026-11-05 handoff (§3) lists 4b among "Paused Lane B items (no session holds them)", and the orchestrator's pause said it resumes sessions itself, so 4b starts on the orchestrator's word, not this session's own. The machine is set up and ready.
+- **Add to 4b's scope:** #121's P1, the anomaly chip's sans "$5" (lanes/lane-b.md 2026-11-05; handoff §3). Pacing: the speed rules (`lanes/acting-lane-b-2026-11-04.md`): one adversarial review (UX and brand), since 4b is wording and display only, unless the labels re-pin counts as more; one full local suite on the final tree; the up-to-date rule (2a) before the merge.
 - **4b waiting on #42** (`co-001/pr-06b-mail-streams`, open draft, head 6c28d6a2 at 20:50 UTC; it needs its acting-Lane-A round and the founder's domain-model approval line, the founder's decision). This blocks 4b only.
 - The day #42 merges: cut `co-001/ux-screening-result-words` from claude/build-platform; create `approval-summaries/lane-b-ux-screening-result-words-status.md`; re-read design §11's file:line pins against #42's merged tree; run the whole pipeline (two reviews per rule 1; Lane A's three conditions of §12.1; `git ls-remote --tags origin` again before merge: 0 tags at 20:50 UTC); take the "For UX PR 4b" proposals below, and the one-other branch ("the last entry is the one other group…", P4-RC-01), which design 3.4's table does not list yet.
 
@@ -35,6 +37,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** merged as #74 (165c5993) and is in the branch.
 
 ## Log
+- 2026-11-06 19:20 UTC: check-in fired. #42 merged (2026-11-02 07:35 UTC). Asked the orchestrator to confirm 4b starts in this session now; idle until it does.
 - 2026-11-02 02:10 UTC: PAUSED on the co-founder's pacing call (7-day limit at its warning level, resets 2026-11-06 19:00 UTC). Nothing was running: #83 is merged and 4b has not started. One check-in kept, 2026-11-06 19:15 UTC. Exact next step: if #42 has merged, cut co-001/ux-screening-result-words from claude/build-platform and run 4b's pipeline per "Follow-on" above; otherwise keep waiting on #42.
 - 2026-11-01 20:50 UTC: #83 MERGED as 43565235 (orchestrator ruling 20:36: merge now). Description updated with the ruling and read back; ready; approval-of-record re-ran green; merged with expectedHeadSha 71536c60. Worktree removed, check-ins deleted. 4b waiting on #42.
 - 2026-11-01 20:40 UTC: description written and read back; fresh-clone verification PASS on 71536c60 with CI green. Ready; waiting on #84 (order #86, #75, #84, then #83). Check-ins every ~45 min.
