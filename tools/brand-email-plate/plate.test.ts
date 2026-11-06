@@ -27,7 +27,7 @@ describe('the email lockups on their White plate (O-5, UX-S1)', () => {
     expect(Buffer.from(committed.pixels).equals(Buffer.from(expected.pixels))).toBe(true);
   });
 
-  it.each(PLATES)('$plate is opaque White inside the plate, with rounded transparent corners outside it', ({ source, plate }) => {
+  it.each(PLATES)('$plate is opaque inside the rounded plate and White across its padding, with transparent corners outside it', ({ source, plate }) => {
     const art = decodePng(read(source));
     const image = decodePng(read(plate));
     const { padding } = plateGeometry(art.width);

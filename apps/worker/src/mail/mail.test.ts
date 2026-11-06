@@ -274,7 +274,8 @@ describe('the prospect variant (a screening’s email; CO-04, decision D11)', ()
     expect(lockup).toContain('alt="PaidWhole"');
     expect(html).not.toContain('tagline');
     expect(EMAIL_PROSPECT_LOCKUP_PATH).not.toContain('tagline');
-    // Both arts are the delivered files the static host serves from apps/web/public/brand.
+    // Both arts are the plated files generated from the delivered art (tools/brand-email-plate), which the static host
+    // serves from apps/web/public/brand.
     expect(existsSync(path.join(repository, 'apps/web/public', EMAIL_PROSPECT_LOCKUP_PATH))).toBe(true);
     expect(existsSync(path.join(repository, 'apps/web/public', EMAIL_LOCKUP_PATH))).toBe(true);
   });

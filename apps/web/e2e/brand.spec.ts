@@ -318,8 +318,9 @@ test('the email header is the outlined lockup with its tagline at 160 px on its 
   expect(art.headers()['cross-origin-resource-policy']).toBe('same-origin');
   expect((await page.request.get('/sign-in')).headers()['cross-origin-resource-policy']).toBe('same-origin');
   const body = await art.body();
-  // The plate's ground is the served art's own pixels (UX-S1, UX-N4): opaque White inside the rounded plate and across
-  // its padding, which no client that forces dark mode inverts, so this holds the inverted case without a baseline.
+  // The plate's ground is the served art's own pixels (UX-S1, UX-N4): opaque inside the rounded plate and White across
+  // the plate's padding, which no client that forces dark mode inverts, so this holds the inverted case without a
+  // baseline.
   expect(plateHolds(decodePng(body))).toBe(true);
   const message = {
     to: ['admin@synthetic.test'],

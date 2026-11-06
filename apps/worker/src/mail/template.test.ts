@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { palette, radius, space } from '@paidwhole/brand';
 import { AUTH_MAIL_FOOTER, PASSWORD_CHANGED_SUBJECT, authMailHtml, passwordChangedLines } from '@tp/auth-mail';
 import { describe, expect, it } from 'vitest';
@@ -62,6 +65,17 @@ describe('the lockup on a fixed White plate in every variant (O-5; docs/brand/BR
     expect(image).toContain(`background-color:${white};`);
     expect(image).not.toMatch(/reversed|white\.png|mono/);
     expect(image).toContain(new URL(variant === 'prospect' ? EMAIL_PROSPECT_LOCKUP_PATH : EMAIL_LOCKUP_PATH, STATIC).href);
+  });
+
+  it.each(VARIANTS)('%s: the height attribute is the plated PNG’s own height at 184 px, which Outlook’s Word renderer draws without height:auto', (variant) => {
+    const file = variant === 'prospect' ? EMAIL_PROSPECT_LOCKUP_PATH : EMAIL_LOCKUP_PATH;
+    const png = readFileSync(path.join(path.resolve(import.meta.dirname, '../../../..'), 'apps/web/public', file));
+    // The PNG's IHDR: width and height, big-endian, at bytes 16 and 20.
+    const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+    expect([width, height]).toEqual(variant === 'prospect' ? [1380, 398] : [1380, 468]);
+    const drawn = Math.round((height * EMAIL_PLATE_WIDTH) / width);
+    expect(drawn).toBe(variant === 'prospect' ? 53 : 62);
+    expect(emailLockup(STATIC, variant)).toContain(` width="${EMAIL_PLATE_WIDTH}" height="${drawn}" `);
   });
 
   it('draws no plate and no art without a static host: the frame is the user pool’s own', () => {

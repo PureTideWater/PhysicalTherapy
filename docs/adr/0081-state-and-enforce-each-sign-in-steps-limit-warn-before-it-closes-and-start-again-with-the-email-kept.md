@@ -411,8 +411,8 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` answers 200 with
   `Cross-Origin-Resource-Policy: cross-origin` (ADR 0058's first-deploy check, for the plated file). The renders of an
   inverting client were made for the review, outside the repository, and are not proof of these clients; the
-  repository checks the art's pixels (`plateHolds`: the served PNG is opaque White in the plate; `tools/brand-email-plate`
-  and `apps/web/e2e/brand.spec.ts`).
+  repository checks the art's pixels (`plateHolds`: the served PNG is opaque inside the rounded plate and White across
+  the plate's padding; `tools/brand-email-plate` and `apps/web/e2e/brand.spec.ts`).
 
 ## Revisit when
 
