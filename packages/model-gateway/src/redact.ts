@@ -1506,10 +1506,16 @@ function joinedRight(text: string, at: number): boolean {
 /** What a letter is read as in the scan's reading of a date glued to a word: no letter, digit, white space or date separator. */
 const WORD_BLANK = '#';
 /**
- * A word glued to a digit on either side, but a date's ordinal suffix ("3rd"): what that reading blanks. Each match starts
- * after a digit or at a word's first letter, so a long word is read once, never from each of its letters.
+ * A word glued to a digit on either side, but what reads as a date's ordinal suffix ("3rd"): what that reading blanks. Each
+ * match starts after a digit or at a word's first letter, so a long word is read once, never from each of its letters.
  */
 const GLUED_WORD = /(?<=[0-9])(?!(?:st|nd|rd|th)(?![\p{L}\p{N}]))\p{L}+|(?<!\p{L})\p{L}+(?=[0-9])/giu;
+/**
+ * Every word glued to a digit, a suffix GLUED_WORD keeps among them: what a third reading blanks. GLUED_WORD keeps "St",
+ * "Rd", "TH" or "nd" after any digit, a year's too, so a date glued to such a word ("10/15/2026St. Joseph", "2020-01-02nd
+ * floor") is read on this reading only (review GATEWAY1-1). The readings are joined, so keeping a suffix only adds a date.
+ */
+const GLUED_ANY = /(?<=[0-9])\p{L}+|(?<!\p{L})\p{L}+(?=[0-9])/gu;
 
 /** One or two dashes and nothing else (any dash the scan joins over: SCAN_DASH): what joins the two ends of a range ("10/01/2026-10/15/2026", "150.00-120.00"). */
 const RANGE_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]{1,2}$/u;
@@ -1590,8 +1596,15 @@ function survivorIn(text: string): boolean {
   // datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16, check round 1).
   // Only a word glued to a digit is blanked (GLUED_WORD), so a month word stays one ("2 January 2020Paid"), and a blank
   // is WORD_BLANK, never a space, so a word between two numbers never reads as the white space of one date (MOD-16 seed
-  // 1034253323).
-  const unglued = /[0-9]\p{L}|\p{L}[0-9]/u.test(text) ? [text, text.replace(GLUED_WORD, (word) => WORD_BLANK.repeat(word.length))] : [text];
+  // 1034253323). A third reading blanks an ordinal-like suffix as well ("2020St. Joseph": GLUED_ANY), where it differs.
+  const unglued = [text];
+  if (/[0-9]\p{L}|\p{L}[0-9]/u.test(text)) {
+    const blank = (word: string) => WORD_BLANK.repeat(word.length);
+    const ordinalsKept = text.replace(GLUED_WORD, blank);
+    const allBlanked = text.replace(GLUED_ANY, blank);
+    unglued.push(ordinalsKept);
+    if (allBlanked !== ordinalsKept) unglued.push(allBlanked);
+  }
   const dates = unglued.flatMap((reading) => datesIn(reading).filter((span) => span.separated && span.dates.length > 0)).map((span) => ({ start: span.start, end: span.end, amount: false }));
   const currency = [...text.matchAll(CURRENCY_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: false }));
   const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));

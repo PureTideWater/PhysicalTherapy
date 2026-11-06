@@ -1480,7 +1480,9 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
         // A word glued to a month word is two words run together, not a date glued to a word: no range starting with one follows "Service" glued.
         const glued = /^[0-9]/u.test(range) ? 'Service' : 'Service ';
         const before = ['Service ', 'DOS ', 'Coverage ', 'Eligibility ', 'Service period: ', 'From ', 'Billed ', 'Range ', glued, `${paid}. Service `, `${paid}.Service `][Math.floor(pick / 13) % 11] ?? 'Service ';
-        const after = ['', '', 'Paid', '.Paid', paid][Math.floor(pick / 143) % 5] ?? '';
+        // A word after it that starts like an ordinal suffix ("St. Mary", "Rd. 9", "TH", "nd floor"), which the scan's glued
+        // reading keeps after a year (review GATEWAY1-1).
+        const after = ['', '', 'Paid', '.Paid', paid, 'St. Mary', 'Rd. 9', 'TH', 'nd floor'][Math.floor(pick / 143) % 9] ?? '';
         return { text: `${before}${range}${after}` };
       }
       default:

@@ -897,6 +897,18 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a range from an amount to one with a currency sign, glued', 'Billed 150.00-$120.00Paid'],
     ['an amount range after an amount with a currency sign and a full stop', 'Paid $0,000.00.$0,000.00-150.00 1234'],
     ['an amount range glued to the next word', 'Billed 0,000.00-9,999.00Paid'],
+    // Review GATEWAY1-1: a range glued to a word that starts like an ordinal suffix after its year ("St.", "Rd.", "TH",
+    // "nd"), or after a two-digit year; and ordinal dates at both ends, still read.
+    ['a service period glued to "St." after its year', 'Service 10/01/2026-10/15/2026St. Joseph Medical Center'],
+    ['an ISO period glued to "St."', "Service 2020-01-01-2020-01-02St. Luke's Hospital"],
+    ['a period glued to "Rd."', 'Seen 01/01/2020-01/02/2020Rd. 9'],
+    ['a period glued to "TH"', 'Seen 01/01/2020-01/02/2020TH'],
+    ['a period glued to "St" and a space', 'Seen 01/01/2020-01/02/2020St Mary'],
+    ['an ISO period glued to "nd"', 'Seen 2020-01-01-2020-01-02nd floor'],
+    ['a period with two-digit years glued to "St."', 'Seen 01/01/2020-01/02/20St. Mary'],
+    ['a period with a two-digit year glued to "Rd"', 'Service 01/01/2020-01/02/20Rd'],
+    ['a period of ordinal dates glued to the next word', 'Service March 3rd, 2020-March 4th, 2020Paid'],
+    ['a period of ordinal dates, day first, glued', 'Service 3rd of March, 2020-4th of March, 2020Paid'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);
@@ -919,6 +931,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a phone joined to an amount range', 'Billed 150.00-120.00-555-012-3456Paid', 'Billed 150.00-120.00-[PHONE]Paid'],
     ['an SSN joined to a range of a date and an amount', 'Service 01/01/2020-150.00-900-12-3456', 'Service 01/01/2020-150.00-[SSN]'],
     ['a phone glued to its label after a glued range', 'Service 01/01/2020-01/02/2020Phone5550123456', 'Service 01/01/2020-01/02/2020Phone[PHONE]'],
+    ['an SSN glued to "St" after a glued range (review GATEWAY1-1)', 'Seen 01/01/2020-01/02/2020St900-12-3456', 'Seen 01/01/2020-01/02/2020St[SSN]'],
   ])('redacts an SSN or phone beside a range: %s', (_case, letter, sent) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(sent);
