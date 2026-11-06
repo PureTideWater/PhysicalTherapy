@@ -1,0 +1,21 @@
+export const meta = {
+  name: 'lane-b-email-lockup-plate-base2',
+  description: 'PR #129: merge claude/build-platform 31a7345f (#130) once, regenerate, fast checks and touched tests, then two adversarial checks of the merge',
+  phases: [{ title: 'Merge' }, { title: 'Check' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/9c25266a-dce9-5778-82ff-f48f559f8682/scratchpad'
+const WT = '/home/user/email-plate'
+const SESSION = 'https://claude.ai/code/session_01FcouKRo5iee5QFtPT8UimZ'
+const GL = 'GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks'
+const ENV = 'export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH'
+const COMMON = `Rules: synthetic data only; no model identifier in any file; never --no-verify, never force, never touch .gitleaksignore; heavy commands under \`flock /tmp/laneb-heavy.lock\` with \`${ENV}\`; Postgres 18 at postgres://postgres:test@localhost:5433/postgres. Generated files are regenerated with the repo's tooling, never hand-merged. Do NOT push to co-001/email-lockup-plate. SAVE rule: progress file kept and continued from.`
+phase('Merge')
+const merge = await agent(`In ${WT} (branch co-001/email-lockup-plate at 34927fd0, PR #129), git fetch origin claude/build-platform and merge origin/claude/build-platform (31a7345f, #130 pages-child-process) ONCE with a merge commit: message "Merge claude/build-platform (31a7345f: #130) into co-001/email-lockup-plate", a blank line, "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "Claude-Session: ${SESSION}". Both sides changed docs/product/test-matrix.md and packages/synth/src/cases/matrix.ts: keep both sides' rows (this PR's SGN-13 O-8 words; #130's new rows, e.g. SEC-24), then regenerate with pnpm synth --all and include regenerated fixtures in the merge commit. Then run under flock: pnpm install --frozen-lockfile (if the lockfile moved); pnpm typecheck; pnpm lint; pnpm lint:copy; pnpm lint:logs; pnpm check:fixtures; pnpm synth --all then git status --porcelain (empty); pnpm verify-content; pnpm db:domain-model --check; vitest for packages/synth (the word-for-word test), tools/brand-copy, and every test file in the packages #130 changed (git diff --name-only cc3dd7f6 31a7345f) plus apps/worker/src/mail and packages/auth-mail; pnpm --filter ./infra test if #130 touched infra. A failure caused by the merge: fix it in a follow-up commit (same trailers). Then push ONLY to \`${GL} git -C ${WT} push origin HEAD:refs/heads/co-001/wip/email-lockup-plate-s5\` (fast-forward). ${COMMON} Progress file: ${SP}/progress/base2.md. Return head SHA, conflicts and how resolved, and every check with exact counts.`, { label: 'merge-base', phase: 'Merge', schema: { type: 'object', required: ['head', 'allPassed', 'conflicts', 'results'], properties: { head: { type: 'string' }, allPassed: { type: 'boolean' }, conflicts: { type: 'string' }, results: { type: 'array', items: { type: 'object', required: ['command', 'result'], properties: { command: { type: 'string' }, result: { type: 'string' } } } } } } })
+if (!merge || !merge.allPassed) return { merge, note: 'merge checks failed' }
+phase('Check')
+const VER = { type: 'object', required: ['ok', 'problems'], properties: { ok: { type: 'boolean' }, problems: { type: 'array', items: { type: 'string' } } } }
+const checks = await parallel([
+  `Adversarially verify the base merge at ${WT} HEAD (${merge.head}): is every row of origin/claude/build-platform's docs/product/test-matrix.md and packages/synth/src/cases/matrix.ts present, plus this PR's SGN-13 change; are the regenerated fixtures exactly what pnpm synth produces (re-run nothing heavy; compare git show and the generator logic); does git diff origin/claude/build-platform...HEAD contain only this PR's own changes (no lost or duplicated base hunk)? Read-only.`,
+  `Completeness critic for the base merge at ${WT} HEAD (${merge.head}): does anything #130 (cc3dd7f6..31a7345f) added interact with this PR (ADR numbering, CLAUDE.md, brand-copy scan roots, infra static host paths, test-matrix series counters, the reviewer agent file, docs this PR edits) so that the merged tree is wrong without a conflict? Read-only.`,
+].map((p, i) => () => agent(`${p} Default ok=false only for a real, specific problem with file and line. ${COMMON}`, { label: `merge-check-${i}`, phase: 'Check', schema: VER })))
+return { merge, checks }

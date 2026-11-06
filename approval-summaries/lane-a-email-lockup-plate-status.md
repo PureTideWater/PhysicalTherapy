@@ -116,6 +116,11 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   - Next: CI green on 34927fd0, then the fresh-clone verification that reads CI, ready, approval-of-record's re-run,
     merge with expectedHeadSha.
 
+- 2026-11-06T22:56Z: CI on 34927fd0 all green (all green, mutation, screening-capacity gate, approval-of-record). The base moved to
+  31a7345f (#130), which shares test-matrix.md and the synth registry with this PR, so the up-to-date rule applies:
+  wf_464a574d-f04 (archived) merges it once, regenerates, runs the fast checks and touched tests, and checks the merge
+  twice. Next: push, CI, the fresh-clone verification reading CI, ready, merge.
+
 ## Waiting on someone
 - None.
 
