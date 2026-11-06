@@ -10,7 +10,9 @@ module). No migration timestamp and no fixture release are reserved; this item o
 written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcile.md`.
 
 ## Now
-**PAUSED 2026-11-02 04:05 UTC** on the orchestrator's pacing call (02:10 UTC, the co-founder's: the account's 7-day limit at its
+**RESUMED 2026-11-06 19:31 UTC for the DESIGN REVIEW ONLY** (the orchestrator's go, 19:40 UTC by its clock; the build waits for its next go). Workflow wf_9dd7a743-340 (`workflow-scripts/lane-b-suite-cap-3-review-wf_9dd7a743-340.js`): merge cc3dd7f6 into the WIP candidate (pushed as a fast-forward of `co-001/wip-suite-cap-3`); re-measure step 7b at 2,000 lines (1b's practice F and spread R, base vs candidate; D1's statistics-proof exclusion; D3; practice A's month for D14); update the design (1b hand-off, #126 c49367c5 collision, index/table decision) and write `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`; two adversarial reviews (payment-engine-reviewer, security-reviewer) with a skeptic per finding; revise; completeness critic. Speed rules per lanes/acting-lane-b-2026-11-04.md. Check-in 2026-11-07 00:42 UTC (trig_01CxB98ZAbaHYeznbUiUYzaX); if stopped: resumeFromRunId wf_9dd7a743-340. Next: commit the reviewed design, report, wait for the build go.
+
+Earlier: **PAUSED 2026-11-02 04:05 UTC** on the orchestrator's pacing call (02:10 UTC, the co-founder's: the account's 7-day limit at its
 warning level, resets Fri 2026-11-06 19:00 UTC). Resume only when the orchestrator says so. Only check-in: 2026-11-06 19:15 UTC
 (trig_01HArjxdYb2yesXHFKy8JJkq).
 
@@ -102,6 +104,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-06 19:31 UTC: design-review workflow wf_9dd7a743-340 launched on the orchestrator's go (review only).
 - 2026-11-06 19:25 UTC: HOLD check done; nothing changed by others; base now cc3dd7f6 (1b merged); waiting for go.
 - 2026-11-06 19:16 UTC: weekly-reset check-in; no resume from the orchestrator yet; still paused. 1b's reconcile-time hand-off noted for the review.
 - 2026-11-02 04:05 UTC: PAUSED (weekly-limit pacing). Design written (pre-review), committed; candidate on WIP ref co-001/wip-suite-cap-3 956b32ef.
