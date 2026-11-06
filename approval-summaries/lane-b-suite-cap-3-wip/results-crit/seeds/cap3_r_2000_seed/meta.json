@@ -1,0 +1,26 @@
+{
+  "name": "cap3_r_2000_seed",
+  "repo": "/tmp/claude-0/-home-user-PhysicalTherapy/6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad/cap3-base2",
+  "n": 2000,
+  "spread": "R",
+  "practiceId": "32aeacaa-e514-4330-836d-da97862102e2",
+  "managerId": "8213b294-0962-4c69-a534-a792b9b5633e",
+  "claims": 500,
+  "loadedClaims": 1500,
+  "superseded": 500,
+  "postingRows": 2000,
+  "denominators": {
+    "LINES_PER_CLAIM": 4,
+    "codes": 5,
+    "codesPerClaim": 4,
+    "CLAIMS_PER_PATIENT": 12,
+    "claimsPerDay": 20,
+    "dates": 25,
+    "claimsPerCodeDate": 16,
+    "CHECK_CLAIMS": 20,
+    "CHECKS_PER_FILE": 100,
+    "CLAIMS_PER_ORIGINAL_FILE": 500
+  },
+  "seedSeconds": 8.2,
+  "url": "postgres://postgres:test@localhost:5494/cap3_r_2000_seed"
+}

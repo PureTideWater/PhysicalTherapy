@@ -1,0 +1,64 @@
+2026-11-06T21:52:18Z seedF 10000 x
+1.2 s database migrated and release loaded (tp_test_cb63992558964fac9b3371e91481b230)
+3.8 s original 835s loaded: 2847 claims, 10000 lines
+13.9 s priced
+18.7 s triaged: 1 case(s), 10000 case lines, 10000 actionable
+29.4 s reprocessing 835 1 of 2 loaded
+34.4 s reprocessing 835 2 of 2 loaded
+49.4 s other tenant A: 100000 lines
+52.7 s other tenant B: 20000 lines
+68.3 s other tenant D: 100000 lines
+84.6 s other tenant E: 100000 lines
+85.4 s seeded cap3_fx_10000_seed: 2847 original claims, 8541 claims, 2847 superseded, 10000 posting rows
+2026-11-06T21:53:46Z seedF 10000 done
+2026-11-06T21:53:46Z run cand cap3_fx_10000_seed k 7b r1 dump
+NOTICE:  database "cap3_fx_10000_cand_k_7b_r1" does not exist, skipping
+cap3_fx_10000_cand_k_7b_r1-7b exit 0: pass 159951 ms; statements 70188; sql 149651 ms; ts 10288 ms; heap peak 146 MiB; locks/backend 1
+2026-11-06T21:56:37Z done cand cap3_fx_10000_seed k 7b r1 dump
+2026-11-06T21:56:37Z run cand cap3_fx_10000_seed mk 7b r1 dump
+NOTICE:  database "cap3_fx_10000_cand_mk_7b_r1" does not exist, skipping
+NOTICE:  extension "pg_stat_statements" already exists, skipping
+cap3_fx_10000_cand_mk_7b_r1-7b exit 0: pass 172116 ms; statements 70188; sql 162084 ms; ts 10020 ms; heap peak 157.1 MiB; locks/backend 1
+2026-11-06T21:59:39Z done cand cap3_fx_10000_seed mk 7b r1 dump
+2026-11-06T21:59:39Z run cand cap3_fx_10000_seed none 7b r1 dump
+NOTICE:  database "cap3_fx_10000_cand_none_7b_r1" does not exist, skipping
+NOTICE:  extension "pg_stat_statements" already exists, skipping
+2026-11-06T22:01:24Z queue restarted (nk added)
+2026-11-06T22:01:24Z run cand cap3_fx_10000_seed nk 7b r1 dump
+cap3_fx_10000_cand_none_7b_r1-7b exit 0: pass 219140 ms; statements 70188; sql 208300 ms; ts 10828 ms; heap peak 137.6 MiB; locks/backend 1
+NOTICE:  database "cap3_fx_10000_cand_nk_7b_r1" does not exist, skipping
+NOTICE:  extension "pg_stat_statements" already exists, skipping
+cap3_fx_10000_cand_nk_7b_r1-7b exit 0: pass 84894 ms; statements 70188; sql 75406 ms; ts 9475 ms; heap peak 157.2 MiB; locks/backend 1
+2026-11-06T22:05:04Z done cand cap3_fx_10000_seed nk 7b r1 dump
+2026-11-06T22:05:04Z seedF 30795 x
+1.4 s database migrated and release loaded (tp_test_66f41e9b4fa0491e9dfad92b90a86656)
+9.4 s original 835s loaded: 8757 claims, 30795 lines
+130.9 s priced
+146.6 s triaged: 1 case(s), 30795 case lines, 30795 actionable
+160.5 s reprocessing 835 1 of 5 loaded
+175.0 s reprocessing 835 2 of 5 loaded
+192.6 s reprocessing 835 3 of 5 loaded
+213.0 s reprocessing 835 4 of 5 loaded
+221.6 s reprocessing 835 5 of 5 loaded
+236.6 s other tenant A: 100000 lines
+240.2 s other tenant B: 20000 lines
+256.6 s other tenant D: 100000 lines
+272.9 s other tenant E: 100000 lines
+274.1 s seeded cap3_fx_30795_seed: 8757 original claims, 26271 claims, 8757 superseded, 30795 posting rows
+2026-11-06T22:09:40Z seedF 30795 done
+2026-11-06T22:09:40Z run cand cap3_fx_30795_seed nk 7b r1
+NOTICE:  database "cap3_fx_30795_cand_nk_7b_r1" does not exist, skipping
+NOTICE:  extension "pg_stat_statements" already exists, skipping
+cap3_fx_30795_cand_nk_7b_r1-7b exit 0: pass 309909 ms; statements 216048; sql 280797 ms; ts 29100 ms; heap peak 271.8 MiB; locks/backend 1
+2026-11-06T22:14:56Z done cand cap3_fx_30795_seed nk 7b r1
+2026-11-06T22:14:56Z run cand cap3_fx_10000_seed n 7b r1
+NOTICE:  database "cap3_fx_10000_cand_n_7b_r1" does not exist, skipping
+NOTICE:  extension "pg_stat_statements" already exists, skipping
+cap3_fx_10000_cand_n_7b_r1-7b exit 0: pass 128088 ms; statements 70188; sql 118058 ms; ts 10019 ms; heap peak 146 MiB; locks/backend 1
+2026-11-06T22:17:18Z done cand cap3_fx_10000_seed n 7b r1
+2026-11-06T22:17:18Z run cand cap3_fx_10000_seed m 7b r1
+NOTICE:  database "cap3_fx_10000_cand_m_7b_r1" does not exist, skipping
+NOTICE:  extension "pg_stat_statements" already exists, skipping
+cap3_fx_10000_cand_m_7b_r1-7b exit 0: pass 229594 ms; statements 70188; sql 218783 ms; ts 10798 ms; heap peak 137.2 MiB; locks/backend 1
+2026-11-06T22:22:02Z done cand cap3_fx_10000_seed m 7b r1
+2026-11-06T22:22:02Z queue end

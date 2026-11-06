@@ -1,0 +1,16 @@
+{
+  "name": "cap3_fx_30795_seed",
+  "repo": "/tmp/claude-0/-home-user-PhysicalTherapy/6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad/cap3-base2",
+  "n": 30795,
+  "spread": "F with the other tenants",
+  "practiceId": "3c9a9123-b849-4d6d-b843-a934bf339dbe",
+  "managerId": "2de44970-450a-45a6-b88f-ac029fd488c8",
+  "claims": 8757,
+  "loadedClaims": 26271,
+  "superseded": 8757,
+  "cases": 1,
+  "postingRows": 30795,
+  "reprocessingFiles": 5,
+  "seedSeconds": 274.1,
+  "url": "postgres://postgres:test@localhost:5494/cap3_fx_30795_seed"
+}

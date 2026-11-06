@@ -1,0 +1,16 @@
+{
+  "name": "cap3_f_2000_seed",
+  "repo": "/tmp/claude-0/-home-user-PhysicalTherapy/6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad/cap3-base2",
+  "n": 2000,
+  "spread": "F",
+  "practiceId": "6f57ba7d-8cad-4477-9c02-fc18c3f02da0",
+  "managerId": "b35b1430-84a1-41c3-9972-e673dc00a048",
+  "claims": 560,
+  "loadedClaims": 1680,
+  "superseded": 560,
+  "cases": 1,
+  "postingRows": 2000,
+  "reprocessingFiles": 1,
+  "seedSeconds": 8.6,
+  "url": "postgres://postgres:test@localhost:5494/cap3_f_2000_seed"
+}
