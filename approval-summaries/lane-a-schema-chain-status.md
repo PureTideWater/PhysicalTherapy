@@ -1,5 +1,17 @@
 # Lane A schema chain: build status (SS-01, SUITE-CAP-1b, the interest fix)
 
+ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW) holds #126 from 2026-11-06 19:45 UTC on the orchestrator's GO (19:40 UTC: #126 only); Lane A: read lanes/lane-b.md's latest entries before resuming.
+
+## 2026-11-06 19:50 UTC (acting Lane A): #126 resumed from the RESUME-BLOCK
+- Worktree /home/user/interest fast-forwarded to `co-001/wip-interest-fix` 23369ae6 (setup re-run, OK). subscribe_pr_activity
+  refused (another holder or none); polling with send_later instead.
+- **Running: wf_342b2332-e78** (`workflow-scripts/lane-a-interest-126-finish-wf_342b2332-e78.js`): the second adversarial
+  review round on the fix-round delta c49367c5..23369ae6 (payment-engine; database, concurrency and security), each finding
+  checked by a skeptic; the fixes; the base (cc3dd7f6 or later) merged once; the full local suite once (suite.sh); a
+  fast-forward push of co-001/ledger-interest-once; then the description refresh, CAS-42.5 (dispatch on the final head) and
+  UX-INT-1's re-shots in parallel; the fresh-clone verification reading CI. Then: mark ready, post the suggested line as one
+  comment, send the link to the orchestrator.
+
 ## 2026-11-06 19:25 UTC: session_01FcouKQthXdmDnPmwhFepxW (acting Lane A, 11-01 to 11-02) is HOLDING, on the orchestrator's word
 It was stopped by the weekly limit on 2026-11-02 (wf_78cd4c88-7b1, SS-01's PR stage, stopped in its base merge; nothing
 pushed by it after bb13be1b). Since then Lane A took the chain back (2026-11-04) and merged SS-01 (#104) and SUITE-CAP-1b
