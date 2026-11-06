@@ -1,3 +1,11 @@
+STOPPED (session_01FcouKRD17iBBR4HhnYcQQx, 2026-11-06T19:25Z, after the weekly reset, on the orchestrator's hold of ~19:20Z):
+this item was taken over by the acting session from 2026-11-04T02:40Z and is COMPLETE: A #90 (88708069), C #91 (21fa10df),
+B #94 (4846f043) and D #105 (df4daff7) merged; Dependabot #87, #88, #89, #99, #100 and #101 closed unmerged. This session
+starts nothing on it. Its leftovers, untouched: worktrees /home/user/deps-aws-cdk-minor-patch (e3fc02e4, = #94's head) and
+/home/user/test-flakes-2 (an earlier local build of D, cf3143fa and 06cb73e1, never pushed, superseded by #105); WIP refs
+co-001/wip-dependabot-batch-{a,b,c} on origin (442d7a81, f463f486, b1fd5df1), all now contained in merged work or
+superseded; local copies of three records the acting session later committed, moved to this session's scratchpad.
+
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-04T02:40Z; Lane B: read lanes/lane-b.md's latest entries before resuming.
 
 # Lane B item: Dependabot's batch of 2026-10-29 (#87, #88, #89) taken as the build's own PRs
@@ -461,6 +469,13 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
 - 2026-11-04T08:08:00Z: **#106 MERGED as 881e2bbd** (merge commit; expectedHeadSha 2f17796a). CI on 2f17796a (base 72096e94):
   21 runs, all four required checks success, the capacity job measured and passed on 4 CPUs. Unsubscribed. The
   private-repository fetch fix and the CI-11 guard are on the base. This session's CI work is done; UX PR 7 is in its build.
+
+- 2026-11-06T19:25:00Z (session_01FcouKRD17iBBR4HhnYcQQx): stopped on 2026-11-02 at about 11:06Z by the account's weekly
+  limit, with B's merge prep (wf_4e12aa8e-264) in its round-2 verification and D's pipeline (wf_79d9ea3e-347) after its build.
+  On return (after the 2026-11-06 19:00Z reset) the orchestrator asked every session to hold and check live. Live state: the
+  acting session (from 2026-11-04T02:40Z) verified and merged #94 (4846f043, 02:51:23Z) and closed #99/#100, and built and
+  merged PR D as #105 (df4daff7, 06:26:59Z); #101 was closed 02:59:09Z. The item is complete; this session stops and
+  reports. Nothing was pushed, merged, commented or re-run by this session after 2026-11-02T11:00Z.
 
 ## Waiting on someone
 - (Resolved 07:10Z: public again.) **The founder (2026-11-04): the repository was private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
