@@ -5,7 +5,8 @@
 - Decisions (taken, recorded): /3 is reachable only by an explicit format argument; every caller keeps VERIFIER_FORMAT (/2), and the code draft emits tokens only for /3 (its /2 output byte-identical), so nothing served changes. Under /2 a fact token fails closed (unknown_placeholder). For slice 3: flipping VERIFIER_FORMAT stores token templates, which the export prints only once slice 4 renders them: slice 3's flip must ship with or after slice 4's export render (to the orchestrator for Lane A's queue).
 - Log (UTC):
   - 2026-11-06 19:40: started; setup running; build workflow next (builder in two parts, then money A, money B, security fail-closed and test-quality reviews, two skeptics per finding, fixer, recheck).
-- Next: the build workflow.
+  - 2026-11-06 19:45: build workflow wf_445df00c-8d3 running (`workflow-scripts/lane-b-packet-figure-placeholders-slice-2-wf_445df00c-8d3.js`): builder 1 (pass 1, codes, /3 entry, fail-closed), builder 2 (pass 2, serializeDraft, draft tokens, ADR 0089, CAS-52..54, synth, mutation), reviews money A, money B, security, test quality with two skeptics each, fixer, recheck. Commits to WIP `co-001/wip-packet-figure-placeholders-2` only. Progress files in this session's scratchpad `progress/pfp2-*.md`. Check-in trig_011d7P4bdEagRs2Lt6PuxMjD at 2026-11-07 00:50 UTC. If stopped: resumeFromRunId (same session); otherwise restart from the WIP ref.
+- Next: the workflow's result, then the one full suite, the push, the PR (via the orchestrator if refused), CI, verification, merge.
 
 <!-- RESUME-BLOCK -->
 ## RESUME-BLOCK for Lane B (acting S2 stood down 2026-11-05 ~08:15 UTC: Lane A's account at 99% weekly usage)
