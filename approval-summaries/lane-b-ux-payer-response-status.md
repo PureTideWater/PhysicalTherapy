@@ -9,7 +9,10 @@ orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) and run by its item session
 session_01FcouKNxBLBBy2FVM7bfSvj (https://claude.ai/code/session_01FcouKNxBLBBy2FVM7bfSvj)** (prompt: `lanes/lane-b-item-prompts-2026-11-01/ux-payer-response.md`).
 Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orchestrator's order (history below).
 
-## Now (2026-11-01 21:58 UTC)
+## Now (2026-11-06 19:19 UTC)
+- **MERGED: #85 merged as 17641c88 on 2026-11-04 18:37 UTC** by acting Lane B (Lane A's account) from head 400821f5 (log below). Item done. Session session_01FcouKNxBLBBy2FVM7bfSvj, resumed after the weekly reset, found it merged at 2026-11-06 19:19 UTC and stopped (the orchestrator's hold of ~19:20 UTC); it did no work on it. Its last pushed head was a97d6011 (2026-11-01 21:05). The lines below are history.
+
+## Before the merge (history)
 - **2026-11-01 17:30: base merged and pushed: head 90ec40ab** (merge of 29dded52 and 83d71fd6, wf_f0e6c606-13a: 4 conflicts kept both sides; uploader inFlight reuses #78's stillSending; new CAS-47 browser test of the leave guard with the form; CAS-47 assertion + expected.json extended; adversarial review: no defect; checks: typecheck, lint, lint:copy, lint:logs, check:fixtures, unit 6,818 passed / 4 skipped, synth and watched.ts write nothing, test:db uploads/route shards 4,660 passed). First CI run on 90ec40ab. The base has since moved to bce57f16 (#82, no conflict with #85; merged again at step 7).
 - *Before the merge:* PR #85 open, draft, head 29dded52, base 83d71fd6; `mergeable_state` dirty, 0 check runs.
   Its branch sits on 165c599 (#74) and lacks 56ed6279 (#81) and 83d71fd6 (#78). Conflicts with the base: `uploader.tsx`
@@ -129,3 +132,4 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 | 2026-11-04 ~17:05 | Base #113 | 9b237a93 (#113) merged as **7023b20f** (the three shared documents, both sides kept; typecheck, lint:copy, check:fixtures, synth tests 192); pushed. |
 | 2026-11-04 18:20 | Base #114 | 9c6bb102 (#114, apps/worker/src/screening only) merged as **400821f5**; typecheck; pushed (7023b20f's run cancelled). |
 | **2026-11-04 18:38** | **MERGED** | CI green on 400821f5, all 21 runs and the four required ones; up to date with 9c6bb102; ready since 16:55; approval-of-record green on the head. **#85 merged as 17641c88** (method merge, expectedHeadSha 400821f5). S2 told; unsubscribed. The description's head and CI lines were updated after the merge to name the two final clean merges. **Item done.** |
+| 2026-11-06 19:19 | Found merged; stopped | Resumed after the weekly reset under the orchestrator's hold: pulled build-ops, checked live: #85 closed and merged (17641c88, 2026-11-04 18:37 UTC, acting Lane B; head 400821f5). Nothing done; no pending check-in of this session; worktree /home/user/ux-payer-response left as is (local only). |
