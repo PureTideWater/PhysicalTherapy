@@ -32,6 +32,15 @@ whichever of 1b and this item lands second resets step 7b's expectation, CAS-42.
 acceptance includes moving step 7b back to practice A's full month (the Known gap line then goes). The review phase must check
 the design and the WIP candidate against all three, and against practice F's one-case shape.
 
+**2026-11-06 19:25 UTC, the orchestrator's HOLD check:** nothing changed by anyone else. Claim row (LANES.md line 211 now): Lane B,
+this session, last entry 2026-11-05 (1b's hand-off). My files changed only by this session since the pause. Origin:
+`co-001/suite-cap-3-reconcile` 83d71fd6 (no commits), `co-001/wip-suite-cap-3` 956b32ef, no PR. The base moved 83d71fd6 ->
+cc3dd7f6: SUITE-CAP-1b merged (#110, f7d609cc; `claim_by_superseded`, `line_status_head`, the ledger lock; adds
+`reconcile.large.db.test.ts` and `stage-head.db.test.ts`); in `reconcile/` only public.ts, statement-html.ts, statements.ts
+changed (not remittances.ts, stages.ts or postings.ts, so the WIP candidate applies). The interest fix is not on the base.
+On resume the branch first merges cc3dd7f6 and the review measures against state (c), which is now the base. Waiting for the
+orchestrator's go; no workflow started.
+
 **Exact next step on resume:**
 1. Re-run setup with `co-001/suite-cap-3-reconcile:/home/user/suite-cap-3-reconcile`.
 2. If this same session resumes: `Workflow({scriptPath: <session>/workflows/scripts/lane-b-suite-cap-3-design-wf_4bc31523-700.js,
@@ -93,6 +102,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-06 19:25 UTC: HOLD check done; nothing changed by others; base now cc3dd7f6 (1b merged); waiting for go.
 - 2026-11-06 19:16 UTC: weekly-reset check-in; no resume from the orchestrator yet; still paused. 1b's reconcile-time hand-off noted for the review.
 - 2026-11-02 04:05 UTC: PAUSED (weekly-limit pacing). Design written (pre-review), committed; candidate on WIP ref co-001/wip-suite-cap-3 956b32ef.
 - 2026-11-02 01:05 UTC: stopped again by the 5-hour limit; WIP pushed; resumed.
