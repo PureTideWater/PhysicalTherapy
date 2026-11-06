@@ -212,13 +212,20 @@ interface DateSpan {
 /**
  * Every date a letter writes, with each calendar date it can be read as. Where one form holds another,
  * the longer is kept, unless only the shorter has a reading, so numbers that read as no date never hide
- * one that does.
+ * one that does. Each pattern is tried at the start of every number and month word, past the start of its
+ * own last match only, never past its end: a match that overlaps a date ("00.01/01" in "$0.00.01/01/2020",
+ * an amount's cents, a full stop and the date's month and day) never takes that date from the pattern
+ * (MOD-16 seed 1034253323, where a date of birth after it was missed as well). A pattern matches at most
+ * once at a start, so the matches stay linear in the text.
  */
 export function datesIn(text: string): DateSpan[] {
   const all: DateSpan[] = [];
   for (const { pattern, read, separated } of DATE_PATTERNS) {
-    for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
+    const search = new RegExp(pattern.source, pattern.flags);
+    for (let match = search.exec(text); match !== null; match = search.exec(text)) {
       all.push({ start: match.index, end: match.index + match[0].length, dates: read(match), separated });
+      // Past the whole first code point: with the u flag, an index inside a surrogate pair finds the same match again.
+      search.lastIndex = match.index + codePointAt(text, match.index).length;
     }
   }
   // keep a span unless a longer (or equal, earlier-found) span holds it and has a reading or it has none
@@ -1496,48 +1503,54 @@ function joinedRight(text: string, at: number): boolean {
   return SCAN_DIGIT.test(text[index + 1] ?? '');
 }
 
-/** One or two dashes and nothing else: what joins the two ends of a range ("10/01/2026-10/15/2026", "150.00-120.00"). */
-const RANGE_DASH = /^[\p{Pd}\u2212]{1,2}$/u;
+/** What a letter is read as in the scan's reading of a date glued to a word: no letter, digit, white space or date separator. */
+const WORD_BLANK = '#';
+/**
+ * A word glued to a digit on either side, but a date's ordinal suffix ("3rd"): what that reading blanks. Each match starts
+ * after a digit or at a word's first letter, so a long word is read once, never from each of its letters.
+ */
+const GLUED_WORD = /(?<=[0-9])(?!(?:st|nd|rd|th)(?![\p{L}\p{N}]))\p{L}+|(?<!\p{L})\p{L}+(?=[0-9])/giu;
+
+/** One or two dashes and nothing else (any dash the scan joins over: SCAN_DASH): what joins the two ends of a range ("10/01/2026-10/15/2026", "150.00-120.00"). */
+const RANGE_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]{1,2}$/u;
 
 /**
- * The spans (dates or unsigned amounts, in text order) that stand whole: joined by no non-white joiner to a digit group on
- * either side (A3), or joined only by a dash to another such span, the range as a whole joined to nothing else (a service
- * period "10/01/2026-10/15/2026", "2026-10-01-2026-10-15", amounts "150.00-120.00": review round 2, finding 2). A range
- * whose end is joined to a further group ("10/01/2026-10/15/2026-0123") stands as no barrier, nor does any span in it.
+ * The spans (dates or amounts, in any order) that stand whole: joined by no non-white joiner to a digit group on either
+ * side (A3), or joined only by a dash to another such span, the range as a whole joined to nothing else (a service period
+ * "10/01/2026-10/15/2026", "2026-10-01-2026-10-15", amounts "150.00-120.00": review round 2, finding 2; a date and an
+ * amount, "01/01/2020-150.00": MOD-16 seed 1034253323). A range whose end is joined to a further group
+ * ("10/01/2026-10/15/2026-0123") stands as no barrier, nor does any span in it. A side that is no digit (a month word, a
+ * currency sign) is joined to nothing: no group chains into the span's digits over it. Spans may share a start or an end
+ * (a date on both readings, an amount with and without its currency sign): a side stands free if any partner there does.
  */
 function wholeRanges<T extends { readonly start: number; readonly end: number }>(text: string, spans: readonly T[]): T[] {
-  const startingAt = new Map<number, number>();
-  const endingAt = new Map<number, number>();
-  spans.forEach((span, index) => {
-    if (!startingAt.has(span.start)) startingAt.set(span.start, index);
-    if (!endingAt.has(span.end)) endingAt.set(span.end, index);
-  });
-  /** The span a range dash joins this one to on a side, if any: the dash's end is the other's start (or its start the other's end). */
-  const partner = (span: T, side: 'left' | 'right'): number | undefined => {
+  /** Whether a range dash of one or two joins a side to a place where a span that stands free on that side ends (or starts). */
+  const toFree = (at: number, side: 'left' | 'right', free: ReadonlySet<number>): boolean => {
     for (const width of [1, 2]) {
-      const gap = side === 'right' ? text.slice(span.end, span.end + width) : text.slice(span.start - width, span.start);
-      if (!RANGE_DASH.test(gap)) return undefined;
-      const other = side === 'right' ? startingAt.get(span.end + width) : endingAt.get(span.start - width);
-      if (other !== undefined) return other;
+      const gap = side === 'right' ? text.slice(at, at + width) : text.slice(at - width, at);
+      if (!RANGE_DASH.test(gap)) return false;
+      if (free.has(side === 'right' ? at + width : at - width)) return true;
     }
-    return undefined;
+    return false;
   };
   // Whether each side stands free: no joiner, or a range dash to a partner whose own side further out stands free. A partner
-  // on the left starts before the span, so the left sides are settled in order of start and the right sides in reverse.
-  const order = spans.map((_, index) => index).sort((a, b) => (spans[a]?.start ?? 0) - (spans[b]?.start ?? 0));
+  // on the left ends before the span starts, so the left sides are settled in order of start and the right sides in
+  // reverse order of end, each pass keeping where the spans that stand free on its side end (or start).
   const leftFree = new Array<boolean>(spans.length).fill(false);
   const rightFree = new Array<boolean>(spans.length).fill(false);
-  for (const index of order) {
+  const freeEnds = new Set<number>();
+  for (const index of [...spans.keys()].sort((a, b) => (spans[a]?.start ?? 0) - (spans[b]?.start ?? 0))) {
     const span = spans[index];
     if (span === undefined) continue;
-    const other = joinedLeft(text, span.start) ? partner(span, 'left') : -1;
-    leftFree[index] = other === -1 || (other !== undefined && (spans[other]?.start ?? span.start) < span.start && leftFree[other] === true);
+    leftFree[index] = !SCAN_DIGIT.test(text[span.start] ?? '') || !joinedLeft(text, span.start) || toFree(span.start, 'left', freeEnds);
+    if (leftFree[index]) freeEnds.add(span.end);
   }
+  const freeStarts = new Set<number>();
   for (const index of [...spans.keys()].sort((a, b) => (spans[b]?.end ?? 0) - (spans[a]?.end ?? 0))) {
     const span = spans[index];
     if (span === undefined) continue;
-    const other = joinedRight(text, span.end) ? partner(span, 'right') : -1;
-    rightFree[index] = other === -1 || (other !== undefined && (spans[other]?.end ?? span.end) > span.end && rightFree[other] === true);
+    rightFree[index] = !SCAN_DIGIT.test(text[span.end - 1] ?? '') || !joinedRight(text, span.end) || toFree(span.end, 'right', freeStarts);
+    if (rightFree[index]) freeStarts.add(span.start);
   }
   return spans.filter((_, index) => leftFree[index] === true && rightFree[index] === true);
 }
@@ -1545,9 +1558,10 @@ function wholeRanges<T extends { readonly start: number; readonly end: number }>
 /**
  * Whether a chain of digit groups that could be a Social Security or phone number survives in a view of masked text:
  * 1. barriers first: every placeholder (the BARRIER), every whole separated date with a reading (not joined on either
- *    side to another group by a joiner: A3; a date glued to a word read with its letters as blanks; two such dates joined
- *    by a dash, a range, are whole: wholeRanges), every amount (a currency sign and its number; an unsigned amount, comma
- *    thousands or one or two decimals, not joined to a group on either side, or a range of two), and every bare nine or ten a keep-noun
+ *    side to another group by a joiner: A3; a date glued to a word read with that word as blanks; two such dates or
+ *    amounts, or one of each, joined by a dash, a range, are whole: wholeRanges), every amount (a currency sign and its
+ *    number; an unsigned amount, comma thousands or one or two decimals, not joined to a group on either side, or an end
+ *    of a range), and every bare nine or ten a keep-noun
  *    names, or that R5 keeps (an NPI, a TIN);
  * 2. chains: digit groups joined by SCAN_GAP;
  * 3. a survivor: one to four consecutive groups of a chain holding 9 or 10 digits, or 11 starting with 1 across two or
@@ -1572,20 +1586,24 @@ function survivorIn(text: string): boolean {
     }
     return held;
   };
-  // A date glued to a word ("2020-01-01Paid", extracted text that lost its space) is read with the letters as blanks too:
+  // A date glued to a word ("2020-01-01Paid", extracted text that lost its space) is read with that word as blanks too:
   // datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16, check round 1).
-  const unglued = /[0-9]\p{L}|\p{L}[0-9]/u.test(text) ? [text, text.replace(/\p{L}/gu, (letter) => ' '.repeat(letter.length))] : [text];
-  for (const reading of unglued) {
-    for (const span of wholeRanges(text, datesIn(reading).filter((span) => span.separated && span.dates.length > 0))) {
-      mark(span.start, span.end);
-    }
+  // Only a word glued to a digit is blanked (GLUED_WORD), so a month word stays one ("2 January 2020Paid"), and a blank
+  // is WORD_BLANK, never a space, so a word between two numbers never reads as the white space of one date (MOD-16 seed
+  // 1034253323).
+  const unglued = /[0-9]\p{L}|\p{L}[0-9]/u.test(text) ? [text, text.replace(GLUED_WORD, (word) => WORD_BLANK.repeat(word.length))] : [text];
+  const dates = unglued.flatMap((reading) => datesIn(reading).filter((span) => span.separated && span.dates.length > 0)).map((span) => ({ start: span.start, end: span.end, amount: false }));
+  const currency = [...text.matchAll(CURRENCY_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: false }));
+  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
+  for (const span of currency) {
+    mark(span.start, span.end);
   }
-  for (const match of text.matchAll(CURRENCY_AMOUNT)) {
-    mark(match.index, match.index + match[0].length);
-  }
-  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
-  for (const span of wholeRanges(text, amounts)) {
-    if (labeledAt(span.start) !== 'person') {
+  // Dates of both readings and amounts are ranged together: either end of a range may be read on either reading
+  // ("01/01/2020-01/02/2020Paid": the first end on the text, the second with the letters as blanks), and a range may
+  // join a date to an amount or an amount to one with a currency sign (MOD-16 seed 1034253323). An unsigned amount
+  // under an SSN or phone label stays no barrier (SEC-5).
+  for (const span of wholeRanges(text, [...dates, ...currency, ...amounts])) {
+    if (!span.amount || labeledAt(span.start) !== 'person') {
       mark(span.start, span.end);
     }
   }

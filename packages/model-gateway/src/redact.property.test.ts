@@ -652,6 +652,15 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     expect(redactLetter('Seen 1999-1\u200B2-31.', patient, claimsOf('19991231')).text).toBe('Seen 1999-1\u200B2-31.');
   });
 
+  it('reads a date that a match with no reading overlaps, so a date of birth straight after an amount and a full stop is replaced (MOD-16 seed 1034253323)', () => {
+    const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    // "00.03/14" and "12.03/14" are read first (the second as 2014-12-03); the date they overlap is still read.
+    expect(redactLetter('Paid 0.00.03/14/1980 today', born, []).text).toBe('Paid 0.00.[DATE_OF_BIRTH] today');
+    expect(redactLetter('Seen 12.03/14/1980 today', born, []).text).toBe('Seen 12.[DATE_OF_BIRTH] today');
+    expect(redactLetter('Paid $0,000.00.1980-03-14', born, []).text).not.toContain('1980');
+    expect(datesIn('Paid 0.00.03/14/1980').map((span) => span.dates)).toContainEqual(['1980-03-14']);
+  });
+
   it('joins a number over grouping apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 (review finding R5-1)', () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ7654321'] };
     const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['12345678'] }];
@@ -1467,37 +1476,53 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
     }
   });
 
+const mod16Patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-16', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+const mod16Claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['SYNCLAIM0001'] }];
+
+/** MOD-16's property: a letter of what must stay is sent unchanged, refused by no check, and its deadlines and references still verify. */
+const keepsWhatMustStay = fc.property(fc.array(fc.tuple(keptSegment, fc.constantFrom(...KEPT_JOINS)), { minLength: 1, maxLength: 8 }), (pieces) => {
+  // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
+  // to another and no number to another.
+  const glues = (i: number) => !/\p{L}$/u.test(pieces[i]?.[0].text ?? '') && /^\p{L}/u.test(pieces[i + 1]?.[0].text ?? '');
+  const text = pieces.map(([segment, join], i) => `${segment.text}${i === pieces.length - 1 ? '' : join === '' && !glues(i) ? ' ' : join}`).join('');
+  const screened = redactLetterForScreen(text, mod16Patient, mod16Claims);
+  expect(screened, JSON.stringify(text)).toMatchObject({ text: text.normalize('NFKC'), replaced: 0 });
+  expect(holdsIdentifier(screened.text, mod16Patient, mod16Claims), JSON.stringify(text)).toBe(false);
+  const input = { documentId: '00000000-0000-4000-8000-000000000016', documentSha256: '0'.repeat(64), text, patient: mod16Patient, claims: mod16Claims, otherPatients: { holdsOtherPatient: () => Promise.resolve(false) } };
+  for (const [segment] of pieces) {
+    const output = {
+      payer: null,
+      claim_references: segment.reference === undefined ? [] : [{ written: segment.reference, quote: segment.text.split('\n').at(-1) ?? segment.text }],
+      reason_category: 'authorization',
+      reason_quote: segment.text.split('\n').at(-1) ?? segment.text,
+      deadline: segment.deadline === undefined ? null : { written: segment.deadline, quote: segment.text },
+      requested_documents: [],
+    };
+    const reviewed = verifyDenialLetter(input, output, { text: screened.text, claims: screened.claims, candidates: screened.candidates });
+    const fields = reviewed.proposal.fields.filter((field) => field.field !== 'reason_category');
+    expect(fields.every((field) => field.verified), `${JSON.stringify(segment)} ${JSON.stringify(fields)}`).toBe(true);
+  }
+});
+
+/**
+ * The seed on which MOD-16 refused a kept letter on CI (2026-11-06): "Paid $0,000.00. Service 01/01/2020-01/02/2020Paid
+ * $0,000.00", a service period glued to the next word. Its second date is read only with the letters as blanks, and there
+ * a match with no reading ("00. Service 01/01": the cents, the full stop and the blanked word) had taken its first date; so
+ * neither end of the range stood as a barrier and the scan chained 01, 01, 2020 and 01 into ten digits. It pins one more
+ * fixed run of the property; the counterexample and its class are pinned on their own (redact.test.ts and below).
+ */
+const RANGE_GLUED_SEED = 1034253323;
+
 describe('MOD-16: what must stay is sent unchanged; the call’s identifiers keep their placeholders; another patient’s are screened', () => {
-  const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-16', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
-  const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['SYNCLAIM0001'] }];
+  const patient = mod16Patient;
+  const claims = mod16Claims;
 
   it('sends amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, named numbers and service-line rows unchanged, refuses none, and still verifies their deadlines and references (property)', () => {
-    fc.assert(
-      fc.property(fc.array(fc.tuple(keptSegment, fc.constantFrom(...KEPT_JOINS)), { minLength: 1, maxLength: 8 }), (pieces) => {
-        // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
-        // to another and no number to another.
-        const glues = (i: number) => !/\p{L}$/u.test(pieces[i]?.[0].text ?? '') && /^\p{L}/u.test(pieces[i + 1]?.[0].text ?? '');
-        const text = pieces.map(([segment, join], i) => `${segment.text}${i === pieces.length - 1 ? '' : join === '' && !glues(i) ? ' ' : join}`).join('');
-        const screened = redactLetterForScreen(text, patient, claims);
-        expect(screened, JSON.stringify(text)).toMatchObject({ text: text.normalize('NFKC'), replaced: 0 });
-        expect(holdsIdentifier(screened.text, patient, claims), JSON.stringify(text)).toBe(false);
-        const input = { documentId: '00000000-0000-4000-8000-000000000016', documentSha256: '0'.repeat(64), text, patient, claims, otherPatients: { holdsOtherPatient: () => Promise.resolve(false) } };
-        for (const [segment] of pieces) {
-          const output = {
-            payer: null,
-            claim_references: segment.reference === undefined ? [] : [{ written: segment.reference, quote: segment.text.split('\n').at(-1) ?? segment.text }],
-            reason_category: 'authorization',
-            reason_quote: segment.text.split('\n').at(-1) ?? segment.text,
-            deadline: segment.deadline === undefined ? null : { written: segment.deadline, quote: segment.text },
-            requested_documents: [],
-          };
-          const reviewed = verifyDenialLetter(input, output, { text: screened.text, claims: screened.claims, candidates: screened.candidates });
-          const fields = reviewed.proposal.fields.filter((field) => field.field !== 'reason_category');
-          expect(fields.every((field) => field.verified), `${JSON.stringify(segment)} ${JSON.stringify(fields)}`).toBe(true);
-        }
-      }),
-      { numRuns: 300 },
-    );
+    fc.assert(keepsWhatMustStay, { numRuns: 300 });
+  }, 60_000);
+
+  it(`holds on seed ${String(RANGE_GLUED_SEED)}, where a service period glued to the next word was refused (a fixed run of the property)`, () => {
+    fc.assert(keepsWhatMustStay, { numRuns: 300, seed: RANGE_GLUED_SEED });
   }, 60_000);
 
   it('keeps the call’s nine-digit member ID and ten-digit claim number their placeholders in every SSN and phone shape, never [SSN] or [PHONE], and never offers them (property)', () => {

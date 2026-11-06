@@ -598,7 +598,12 @@ above stays as it was decided; where it differs, this amendment holds.
   900.12 3456" are refused, "Please call about CPT 97110 97140." and "Call our office, TIN 12-3456789" sent). Review
   round 1 (2026-11-05: SEC-1, SEC-2, SEC-4, SEC-5, SEC-6, corr-ssn-1) widened the scan so. The refusal is
   `identifier_left`, the fixed sentence that names no number. A letter that glues the patient's name to a pattern span
-  ("RE: Vantree900-12-3456") is refused the same way.
+  ("RE: Vantree900-12-3456") is refused the same way. Since 2026-11-06 (MOD-16 seed 1034253323, where "Paid $0,000.00.
+  Service 01/01/2020-01/02/2020Paid $0,000.00" was refused) a range's two ends may be read on either reading and may be a
+  date and an amount (with or without a currency sign), the glued reading blanks only a word glued to a digit and never
+  as white space, and `datesIn` tries each date form at every number, so a match that reads as no date never hides a date
+  it overlaps (that also redacts a date of birth written straight after an amount and a full stop, "0.00.03/14/1980"); a
+  range joined to a further group is still no barrier.
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the

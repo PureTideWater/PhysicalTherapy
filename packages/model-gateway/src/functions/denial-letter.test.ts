@@ -338,6 +338,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['date ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('10/01/2026-10/15/2026 '), ['SYN555001']],
     ['amount ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('150.00-120.00 '), ['SYN555001']],
     ['a list after a keep-noun as long as the letter', ['JANE Q VANTREE'], `Claims 900123456${fill(' and 900123457')}`, ['SYN555001']],
+    // MOD-16 seed 1034253323: date ranges glued to the next word, and one word as long as the letter glued to a digit.
+    ['date ranges glued to the next word, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020Paid '), ['SYN555001']],
+    ['one word as long as the letter, glued to a digit', ['JANE Q VANTREE'], `${'a'.repeat(N - 2)}1a`, ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
@@ -874,10 +877,57 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['dashed dates joined by a hyphen', 'Service 10-01-2026-10-15-2026.'],
     ['amounts joined by a hyphen', 'Billed 150.00-120.00 allowed.'],
     ['amounts joined by a hyphen, no word after', 'Range 123.45-67.89.'],
+    ['a service period glued to the next word after an amount and a full stop (MOD-16 seed 1034253323)', 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00'],
+    // Its class: a range glued to a word on either side or after a full stop with no space, of dates or amounts or one of
+    // each, with any dash the scan joins over, a month word at an end, or an invisible character beside the dash.
+    ['a service period glued to words on both sides', 'Service01/01/2020-01/02/2020Paid'],
+    ['a service period after an amount and a full stop with no space', 'Paid $0,000.00.Service 01/01/2020-01/02/2020Paid $0,000.00'],
+    ['an ISO period glued to the next word', 'From 2020-01-01-2020-01-02Paid'],
+    ['a period of dashed dates glued to the next word', 'Service 01-01-2020-01-02-2020Paid'],
+    ['a period ending in a month word, glued to the next word', 'Service 2020-01-01-2 January 2020Paid'],
+    ['a period starting with a month word after an amount and a full stop', 'Paid $0,000.00.January 1, 2020-2020-01-02Paid'],
+    ['a period joined by an en dash, glued', 'Service 01/01/2020–01/02/2020Paid'],
+    ['a period joined by an em dash, glued', 'Service 01/01/2020—01/02/2020Paid'],
+    ['a period joined by the minus sign, glued', 'Service 01/01/2020−01/02/2020Paid'],
+    ['a period joined by the hyphen bullet', 'Service 2020-01-01⁃2020-01-02.Paid'],
+    ['a period joined by two hyphens, glued', 'Service 01/01/2020--01/02/2020Paid'],
+    ['a period with a zero-width space before the dash, glued', 'Service 01/01/2020​-01/02/2020Paid'],
+    ['a period joined by "to" with no spaces', 'Service 01/01/2020to01/02/2020Paid'],
+    ['a range from a date to an amount', 'Service 01/01/2020-150.00 billed'],
+    ['a range from an amount to one with a currency sign, glued', 'Billed 150.00-$120.00Paid'],
+    ['an amount range after an amount with a currency sign and a full stop', 'Paid $0,000.00.$0,000.00-150.00 1234'],
+    ['an amount range glued to the next word', 'Billed 0,000.00-9,999.00Paid'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  // A range is a barrier only as a whole: an SSN or phone beside one, inside one or glued to one is still redacted, or the
+  // letter refused (MOD-15 with MOD-16 seed 1034253323's barriers).
+  it.each([
+    ['an SSN after a date and a dash', 'Seen 01/01/2020-900-12-3456', 'Seen 01/01/2020-[SSN]'],
+    ['a phone after an amount and a dash', 'Paid $10.00-555-012-3456', 'Paid $10.00-[PHONE]'],
+    ['an SSN before a date and a dash', 'Seen 900-12-3456-01/01/2020', 'Seen [SSN]-01/01/2020'],
+    ['a phone before an amount and a dash', 'Paid 555-012-3456-$10.00', 'Paid [PHONE]-$10.00'],
+    ['an SSN glued to a word before a glued range', 'Paid900-12-3456-01/01/2020-01/02/2020Paid', 'Paid[SSN]-01/01/2020-01/02/2020Paid'],
+    ['an SSN joined to a range and glued to the next word', 'Service 01/01/2020-01/02/2020-900-12-3456Paid', 'Service 01/01/2020-01/02/2020-[SSN]Paid'],
+    ['a phone inside a range', 'Service 01/01/2020-555-012-3456-01/02/2020Paid', 'Service 01/01/2020-[PHONE]-01/02/2020Paid'],
+    ['an SSN glued to the word after a range', 'Service 01/01/2020-01/02/2020Paid900-12-3456', 'Service 01/01/2020-01/02/2020Paid[SSN]'],
+    ['a phone joined to a range by en dashes', 'Service 01/01/2020–01/02/2020–555–012–3456', 'Service 01/01/2020–01/02/2020–[PHONE]'],
+    ['a spaced SSN joined to an ISO range', 'Service 2020-01-01-2020-01-02-900 12 3456', 'Service 2020-01-01-2020-01-02-[SSN]'],
+    ['a phone joined to an amount range', 'Billed 150.00-120.00-555-012-3456Paid', 'Billed 150.00-120.00-[PHONE]Paid'],
+    ['an SSN joined to a range of a date and an amount', 'Service 01/01/2020-150.00-900-12-3456', 'Service 01/01/2020-150.00-[SSN]'],
+    ['a phone glued to its label after a glued range', 'Service 01/01/2020-01/02/2020Phone5550123456', 'Service 01/01/2020-01/02/2020Phone[PHONE]'],
+  ])('redacts an SSN or phone beside a range: %s', (_case, letter, sent) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(redacted.text).toBe(sent);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  it('refuses a letter whose SSN joined to a date has no shape a pattern reads (the range is no barrier)', () => {
+    expect(holdsIdentifier(redactLetter('Seen 01/01/2020-900-1-2-3456', A, AC).text, A, AC)).toBe(true);
+    expect(holdsIdentifier(redactLetter('Seen 01/01/2020-01/02/2020-900-1-2-3456Paid', A, AC).text, A, AC)).toBe(true);
   });
 
   it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
