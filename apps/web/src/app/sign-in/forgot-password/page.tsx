@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: 'Reset your password' };
  * and the password typed again, which is false here, where nothing is kept before the code is proven.
  */
 const RESET_STEP_WORDS = {
-  warning: 'If you need more time, send a new code below: it replaces the code already sent, and the step opens again for 15 minutes.',
+  warning: 'If you need more time, send a new code below: use the newest code sent, and the step opens again for 15 minutes.',
   closed: 'Send a new code below to continue, or use a different email.',
 } as const;
 

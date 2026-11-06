@@ -162,7 +162,7 @@ describe('the words', () => {
 
   it('SGN-06: a step’s own words (the reset’s) replace the default sentence, which would say an email is kept, and no note is added (review UXR-02)', () => {
     const words = {
-      warning: 'If you need more time, send a new code below: it replaces the code already sent, and the step opens again for 15 minutes.',
+      warning: 'If you need more time, send a new code below: use the newest code sent, and the step opens again for 15 minutes.',
       closed: 'Send a new code below to continue, or use a different email.',
     };
     expect(spokenWords('warning', 120, undefined, words)).toEqual({ title: 'This step closes within 2 minutes', words: words.warning });

@@ -248,7 +248,7 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   sealed one), so reset requests and sign-in attempts for an address share one 15-minute count; a flood of requests
   can hold a sign-in for that long, as wrong passwords can. The bound on code guessing is a rate, not a per-code
   count: about 64 to 80 guesses per account per hour with no end, in parallel across accounts, since a new request
-  replaces the code; Cognito's per-code and per-request caps are unverified.
+  sends a new code; whether it voids the earlier one, and Cognito's per-code and per-request caps, are unverified.
 - **A4. A wrong reset code is not a sign-in failure.** It counts toward no lock and writes no event: counting would mark
   real accounts by timing and let anyone lock an account. Sustained guessing shows instead as a run of
   `password_reset_requested` events for one user, and refused codes and the reset routes' rate-limit refusals log at
@@ -331,7 +331,8 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email:
   your password is unchanged."). The added sentence is decision O-8 (Lane A's orchestrator as the brand owner's
   delegate, co-001/email-lockup-plate): it holds whether or not Cognito voids an earlier code when a second is asked
-  for, which is not verified, so the email never says that a new request replaces the code. The invitation and its
+  for, which is not verified, so neither the email nor the reset page's warning says that a new request replaces
+  the code. The invitation and its
   resend ("Your PaidWhole invitation") give Cognito's `{username}` once without saying what it is ("Your account is
   {username}. Sign in with the address this email came to and this temporary password:", since in an email-attribute
   pool it may be the internal name), the temporary password on its own line, the sign-in page as plain text and its 7
@@ -402,7 +403,8 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   address or the pool's internal name; the words hold either way), in the trigger's message and the pool's own
   invitation template; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
   the trigger returns); whether a first reset code still works after a second is requested (request two reset codes
-  and confirm whether the first still works; the email's words hold either way); and Cognito's subject (140) and
+  and confirm whether the first still works; the email's words and the reset page's warning hold either way); and
+  Cognito's subject (140) and
   message (20,000) limits and CloudFormation's limit on an inline `ZipFile` (the source is 14.2 KB, 14,171 bytes; the
   tests cap it at 16 KiB), which are quoted from memory: AWS's documentation was not reachable from this session. If
   the inline limit binds, the source goes as `Code.fromAsset` of the same text. Outside the pool, for the worker's mail
