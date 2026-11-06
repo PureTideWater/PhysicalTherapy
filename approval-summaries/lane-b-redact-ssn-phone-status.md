@@ -151,3 +151,10 @@ and §17, and the draft PR (stage 3).
   3. Fix the barrier so a dash-joined date or amount range counts as a barrier when glued to letters, and sweep that class.
   4. Run two adversarial reviews (security, then correctness with the redaction oracle), the fast checks and the touched tests, then open the PR and merge it under the up-to-date rule.
   5. Tell S2's successor and the other sessions to merge the base.
+
+## 2026-11-06T19:20Z (session_01FcouKP1U2GGDFhhZT9CaUV, back after the weekly reset)
+- Read this file's acting-S1 section, the RESUME-BLOCK and lanes/lane-b.md 2026-11-05 07:40 UTC: the item is **done** (#127 merged as
+  23b25ad0, built by the acting session from this design). Checked live: base cc3dd7f6; no fix for the MOD-16 seed-1034253323 defect
+  on the base (last redact.ts change 26aa9ff5) and no branch for it on origin.
+- This session has not started the RESUME-BLOCK follow-up: its check-in resumes only on the orchestrator's word. Offered it to the
+  orchestrator (it can run here: the design, the scratchpad prototypes and the probe history are in this session). Idle until told.
