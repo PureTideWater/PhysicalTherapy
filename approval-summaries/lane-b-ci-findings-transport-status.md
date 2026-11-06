@@ -123,3 +123,4 @@ Open questions: none.
 - 2026-11-02T01:01:53Z: resumed after the worker restart; WIP ref co-001/wip-ci-findings-transport cut at #86's WIP d257fe6d and pushed; build starting.
 - 2026-11-02T02:03:24Z: built (wf_68f40358-e23); WIP head b9a83bd3; reviews next.
 - 2026-11-02T02:07:38Z: PAUSED (pacing call); reviews workflow wf_bbdb863e-90a stopped after ~3 min, no results; one check-in at 2026-11-06 19:15 UTC.
+- 2026-11-06T19:17:59Z: session session_01FcouKQ3BjYKaME5uBLn8Lz (the original item session, paused 2026-11-02 02:10 UTC) woke on its 2026-11-06 19:15 check-in, found #120 merged (af3e79f3) by another session, and stopped: no further work, no check-ins left; its local WIP worktree is not needed.
