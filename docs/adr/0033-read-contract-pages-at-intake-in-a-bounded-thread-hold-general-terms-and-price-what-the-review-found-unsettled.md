@@ -1,6 +1,6 @@
 # 0033. Read contract pages at intake in a bounded thread, hold general terms, and price what the review found unsettled
 
-- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (2026-10-21: a ZIP whose locality needs its ZIP+4 is priced from the ZIP+4 file's range when the settings give one)
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (2026-10-21: a ZIP whose locality needs its ZIP+4 is priced from the ZIP+4 file's range when the settings give one); amended 2026-11-05 (`co-001/pages-child-process`): the reader runs in a child process of its own, not a worker thread ("Amendment (2026-11-05)", below; marked in the Decision, the alternatives and the consequences)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering); the reimbursement specialist answers fixtures/golden/QUESTIONS.md Q31 to Q38
 - **PRD sections:** 1 (rule 1), 2 (points 6 to 8), 5 (J5), 6 (Intake and documents; Contract repository), 7 (screen
@@ -28,18 +28,19 @@ The review of milestones 3 to 5 found, among smaller things:
 
 ## Decision
 
-- **Contract pages are read once, at intake, in a bounded thread; the web app reads only stored text.** The worker's
+- **Contract pages are read once, at intake, in a bounded reader; the web app reads only stored text.** The worker's
   intake reads every clean contract, exhibit and payer letter (a top-level upload or a zip entry) before it marks it
-  stored: `@tp/contracts/pages` (`readDocumentPages`) runs the reader (`page-thread.ts`, which imports nothing of the
-  repository so Node runs it as written and esbuild bundles it as `dist/page-thread.js`) in its own worker thread with
-  a 192 MiB heap limit, a 256 MiB cap on the thread's heap and buffers together (polled every 25 ms through
-  `worker.getHeapStatistics()`, since typed-array buffers escape the heap limit), a 60-second deadline, at most 2,000
-  pages, 16 Mi characters of text and 64 MiB inflated from a workbook's parts, and drains the thread's output (pdf.js
+  stored: `@tp/contracts/pages` (`readDocumentPages`) runs the reader (`page-reader.ts`, which imports nothing of the
+  repository so Node runs it as written and esbuild bundles it as `dist/page-reader.js`) in a child process of its own
+  *(amended 2026-11-05; it was a worker thread)* with a 192 MiB old-generation heap and 16 MiB semi-spaces (240 MiB, its
+  own flags), a cap of 256 MiB on the process's memory growth over its idle footprint (polled every 25 ms from
+  `/proc`, since typed-array buffers escape the heap limit), a 60-second deadline, at most 2,000
+  pages, 16 Mi characters of text and 64 MiB inflated from a workbook's parts, and drains the reader's output (pdf.js
   warnings can carry document text). A document past any limit is `unsupported_document`, never read in part; one that
   cannot be parsed is `document_unreadable`. The page texts are sealed with the practice's key at
   `documentPagesKey` (the original's key and `.pages`), then `source_document.page_text_status` and `page_count` are
   set (migration `20261017120000`). The web app's `storedPages` reads that row under the practice's policies with an
-  audit event and opens the stored text; a document not read yet is `not_read_yet`. Neither pdf.js nor the thread is
+  audit event and opens the stored text; a document not read yet is `not_read_yet`. Neither pdf.js nor the reader is
   reachable from `@tp/contracts`' main entry, which the web app bundles.
 - **Spreadsheets and CSVs are pages.** An .xlsx is read by pattern from its parts (no XML parser, so no entity or
   external reference is resolved): a page per sheet in workbook order, each row a line of its cells' text joined by
@@ -90,7 +91,8 @@ The review of milestones 3 to 5 found, among smaller things:
 | --- | --- |
 | Run the reader in a worker thread inside the web server | The thread's script cannot be located reliably inside the Next.js bundle, and the web process would still parse untrusted bytes; reading once at intake also stops re-reading a document on every request |
 | `resourceLimits` alone | A Node heap limit does not bound typed-array buffers: a probe allocated 1,280 MiB of buffers in a thread limited to 64 MiB. The poll of the thread's heap statistics does; with it, a 512 MiB and a 1.5 GiB bomb both stopped near 300 MiB above the process's start |
-| A child process | Heavier per document, the same bundling question, and no better bound than the thread's polled cap |
+| A child process | *Taken 2026-11-05 (Amendment below).* It was rejected as heavier per document, the same bundling question, and no better bound than the thread's polled cap. Measured since: about 60 ms more a document warm, the bundle builds it beside `main.js`, and its bound is the one that survives the task's heap flag; the process adds the empty environment and Node's permission model |
+| A worker thread under the task's heap flag (2026-11-05) | A process-wide V8 heap flag overrides a thread's `resourceLimits` on Node 24: under `--max-old-space-size=560` (ADR 0071's worker flag) the thread asking 192 MiB measured 608 MiB and read a 1,500-page document today's reader refuses. A thread can take neither `--max-old-space-size` in its `execArgv` (`ERR_WORKER_INVALID_EXEC_ARGV`) nor `NODE_OPTIONS` in its env (ignored) |
 | A spreadsheet library | Adds a parser of untrusted XML with entity handling; the pattern reader needs only shared strings, inline strings and values |
 | Accept .xls exhibits and leave them uncitable | The finding's complaint exactly: an exhibit no record can be verified from |
 | `UNITS_RULE_UNKNOWN` only for timed codes | No rule record names them, and the plan forbids typing CMS lists from memory (QUESTIONS Q32) |
@@ -101,8 +103,9 @@ The review of milestones 3 to 5 found, among smaller things:
 ## Consequences
 
 - No uploaded document is parsed in the web process; a document's pages are read at most once, under limits that do
-  not grow with the bomb. The intake concurrency times the thread's cap must fit the worker task (milestone 11 sizes
-  it). A document taken in before this migration has no page text and cites as `not_read_yet`; no deployed environment
+  not grow with the bomb. The intake concurrency times the reader's process bound must fit the worker task (milestone
+  11 sizes it) *(amended 2026-11-05: it was the thread's cap; one reader at a time, about 420 MiB at worst)*. A
+  document taken in before this migration has no page text and cites as `not_read_yet`; no deployed environment
   holds one, and a development database is migrated and seeded afresh.
 - The golden oracle covers steps 7 and 8 and the branches the review named; 119 lines match the engine to the cent and
   every trace recomputes. None is specialist-verified, so milestone 5 stays open (README).
@@ -112,4 +115,72 @@ The review of milestones 3 to 5 found, among smaller things:
 ## Revisit when
 
 The specialist answers Q31 to Q38, milestone 7 adds the pricing runs (the operator alert for `ENGINE_ERROR`, the MA mark,
-MUE against the units bound), or a deployed worker's memory shows the thread's cap needs tuning.
+MUE against the units bound), or a deployed worker's memory shows the reader's cap needs tuning. *(Amended 2026-11-05:)*
+Node's network permission reaches an LTS (Node 26), or a parsing task with no outbound access is wanted: the reader's
+process can still open a connection (below).
+
+## Amendment (`co-001/pages-child-process`, 2026-11-05): the reader runs in a child process of its own
+
+**Why.** ADR 0071 plans `--max-old-space-size=560` on the worker task's command, and on Node 24 a process-wide heap flag
+overrides a worker thread's `resourceLimits`: the page thread, asking old 192 and young 32 (240 MiB), measured 608 MiB
+under that flag and read a SYNTHETIC 1,500-page PDF today's reader refuses, beside a 752 MiB main thread in a 1,024 MiB
+task. The weekly real-size test already runs the worker under the flag. A child process takes its own flags whatever
+its parent runs with.
+
+**What.** `readInChild` replaces `readInThread`; `readDocumentPages`, `documentPages`, `documentFormat`,
+`PAGE_READ_LIMITS` and `PageReadError` keep their signatures, and every result keeps its meaning. The child is
+`process.execPath` with `readerArgv(limits)` and its entry only: `--max-old-space-size=192 --max-semi-space-size=16`
+(240 MiB on any host: the old flag alone leaves the young generation host-sized, 384 MiB here), `--stack-size=3920`
+(the thread's 4 MiB), `--permission` reading only its own code (`dist/page-reader.js` in the image, the workspace in the
+source tree) and `--disallow-code-generation-from-strings`. Its environment is empty (no credentials, no database or
+queue URL, no `NODE_OPTIONS`), its argv names nothing of the document, the bytes go in on stdin (one framed request,
+copied once) and the pages come back on stdout one frame at a time; nothing is written to disk, a crash included: a V8
+heap out of memory aborts the reader, and a core of its memory holds the document's text (a SYNTHETIC 1,500-page PDF
+left an 858 MB core in the reader's directory under `ulimit -c unlimited`, review fix round), so the reader is started
+through `/bin/sh` setting `ulimit -c 0` (soft and hard, which it cannot raise) before it execs node in its place, its
+working directory is `/` (not writable by the image's user), and every container pins `core` at 0 in its task
+definition (`infra/lib/constructs/compute.ts`); `pages.test.ts` reads the reader's core limit (0, soft and hard) and
+working directory from `/proc` on every Linux host, and crashes it (SIGSEGV, SIGABRT, a V8 heap out of memory) where the
+host writes cores as files. These bound a core written as a file: a host whose `core_pattern` pipes to a program hands
+that program the dump whatever the limit (core(5); the limit reaches it only as `%c`), and on Fargate that is the
+host's handler, outside the task and its disk. Measured: it cannot
+write a file, read `/etc` or `/proc/*/environ`, spawn a process, start a thread or load an addon (pdf.js's native canvas
+binding no longer loads into the worker).
+
+- **Memory:** the child's resident set (`VmRSS`; `ps` every 100 ms off Linux) every 25 ms; past 256 MiB of growth over
+  its baseline, taken when it says ready (139 to 146 MiB measured), it is killed and the document is
+  `unsupported_document`. A baseline over 224 MiB is the reader's own failure (`PageReadError`), never a wider bound. A
+  1 GiB deflate bomb, which a child with no memory check took to 2,357 MiB, is killed at about 267 MiB of growth.
+- **Same results:** with no flag, today's thread reads 1,000 and 1,250 SYNTHETIC pages and refuses 1,500 to 2,000; the
+  child at heap 192 does exactly the same, under the planned flag too. A larger heap gains nothing (at 224 the memory
+  cap refuses the same documents), so none is added.
+- **Results:** a limit passed (memory, deadline, a V8 heap out of memory, a reply past its pages, characters or total
+  bytes) is `unsupported_document`; a document the reader cannot parse is `document_unreadable`; any other exit, a
+  malformed frame (one whose header claims more than the reply's bound leaves among them, refused before its body is
+  read) or a spawn failure is `PageReadError`, naming only the exit code or signal. The child's stderr is never logged
+  (only its last 1 KiB is read, for V8's fixed out-of-memory line); its console is silenced before it reads a byte.
+  Results are given on `close`, never on `exit`, which came before the last frames (985 of 1,000 pages, measured).
+  The deadline and the memory bound hold until `close`, the reply in or not, and a child that has sent its last frame
+  has 1 s to exit (`READER_EXIT_GRACE_MS`): past it a child still running is killed and the read is `PageReadError`, so
+  a reader a document compromised can neither hold the one reader slot nor grow after replying (review fix round,
+  2026-11-05). Both timers run on the worker's clock, so each decides a turn after it is due, once the input waiting
+  then is in: a worker loop held past the grace by other work would otherwise fail a reader that had exited at once
+  (14 of 15 reads under a 1.2 s hold, measured; none after). The deadline gives a reader that has exited one turn more,
+  for its pipes to close: a loop held past the deadline would otherwise refuse a reader that had replied and exited
+  before it (its exit was in, its close not yet; second fix round, 2026-11-05).
+- **One at a time:** at most one reader per worker process, one child per document, never reused; its slot is freed
+  once it has closed, and every running child is killed when the worker exits normally (or on a thrown error). A
+  worker killed by a signal or aborted runs no exit handler: the task's init process (`initProcessEnabled`) then exits
+  and the kernel ends the container's processes, the reader's included, so the container's end is the last bound;
+  outside a container (development, CI) a reader in synchronous parsing, whose own orphan checks run only when its
+  loop is free, runs until that work ends (review fix round, 2026-11-05).
+- **Cost:** spawn to the reader's ready frame 226 to 261 ms from the bundle (11 runs, a 2-page PDF), about 60 ms a
+  document more than the thread warm and 2.1 s for the first read after a cold start; intake is one document at a time
+  and not latency-bound.
+- **The order:** ADR 0071's worker heap flag lands only after this; `infra/test/heap.test.ts` refuses a V8 heap flag on
+  any container of the worker image unless `PAGE_READER_ISOLATION` is `'process'`, and runs the worker container's real
+  command with `heapFlag('worker')` to measure the reader at 240 MiB.
+- **Not bounded: the network.** Node 24 has no network permission and the worker's security group allows HTTPS
+  anywhere, so a reader a document compromised could send that document out. It holds no credential, key or other
+  document (the thread held all three in reach). Revisit when Node's network permission reaches an LTS, or with a
+  parsing task that has no outbound access.

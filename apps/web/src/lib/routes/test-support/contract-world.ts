@@ -37,7 +37,7 @@ const pageReads = new Map<string, Promise<PageRead>>();
 /**
  * A synthetic document's pages, read by the bounded reader the first time its bytes are seen in this test file and
  * remembered after (frozen, so no caller can change what the next one gets). syntheticPdf() is deterministic, so every
- * world's agreement and exhibit are the same bytes, and the reader's worker thread, which was most of a world's time,
+ * world's agreement and exhibit are the same bytes, and the reader's child process, which was most of a world's time,
  * starts once per distinct document per file instead of three times per world (audit item 109; docs/adr/0066). The
  * first world of each file still reads for real; the bounded reader itself is evidence.test.ts's and
  * contracts.db.test.ts's.
