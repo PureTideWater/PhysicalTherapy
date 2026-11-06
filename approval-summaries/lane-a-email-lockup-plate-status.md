@@ -101,6 +101,12 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   fixes both, reviews the delta twice (UX and brand with shots; correctness) until dry, runs pnpm test and the sign-in
   and brand e2e, then the description.
 
+- 2026-11-06T21:54Z: wf_5ac1f379-e54 done. f24a14f5 (D1, D2), 7fb2ac5c (UX review: the warning now reads "If you need more time,
+  send a new code below and the step opens again for 15 minutes. Then use the newest code."; dev-provider.ts scopes
+  replacement to the twin), 0234d5fe and 61169d8b (ADR 0058 and 0081 name both plated files). Reviews dry in round 3.
+  On 0234d5fe: pnpm test 9,932 passed; e2e sign-in-time, sign-in, brand 19 passed; fast checks green. WIP s5 = 61169d8b.
+  wf_4cb68701-e78 (archived) verifies 61169d8b and checks the description until clean; then push and #129's body.
+
 ## Waiting on someone
 - None.
 
