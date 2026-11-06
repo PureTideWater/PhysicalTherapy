@@ -1451,12 +1451,12 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
       case 16:
         return { text: `${neutral}${withCheckDigit(`2${nine.slice(1)}`)}` };
       case 17: {
-        // A service or coverage period, and a range of amounts, joined by a hyphen or an en dash with no space (review round 2,
+        // A service or coverage period, and a range of amounts, joined by one or two dashes with no space (review round 2,
         // finding 2): each date and each amount is one datesIn or the scan reads, so the range is a barrier, never a chain.
         const later = new Date(date.getTime() + (1 + (pick % 400)) * 86_400_000).toISOString().slice(0, 10);
         const [y1, m1, d1] = iso.split('-');
         const [y2, m2, d2] = later.split('-');
-        const dash = ['-', '-', '\u2013'][pick % 3] ?? '-';
+        const dash = ['-', '-', '\u2013', '\u2014', '\u2212', '--'][Math.floor(pick / 9) % 6] ?? '-';
         const unpadded = (part = '') => String(Number.parseInt(part, 10));
         const range = [
           `${m1}/${d1}/${y1}${dash}${m2}/${d2}/${y2}`,
@@ -1468,8 +1468,20 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
           `${n(3)}.${n(2, 1)}${dash}${n(3, 2)}.${n(2, 3)}`,
           `${n(1)},${n(3)}.${n(2, 1)}${dash}${n(3, 2)}.${n(2, 3)}`,
           `${n(3)},${n(2, 1)}${dash}${n(2, 2)},${n(2, 3)}`,
-        ][pick % 9] ?? iso;
-        return { text: `${['Service ', 'DOS ', 'Coverage ', 'Eligibility ', 'Service period: ', 'From ', 'Billed ', 'Range '][pick % 8] ?? 'Service '}${range}` };
+          // A date to an amount, an amount to one with a currency sign, and a month word at either end (MOD-16 seed 1034253323).
+          `${m1}/${d1}/${y1}${dash}${n(3, 2)}.${n(2, 3)}`,
+          `${n(3)}.${n(2, 1)}${dash}$${n(3, 2)}.${n(2, 3)}`,
+          `${iso}${dash}${unpadded(d2)} ${MONTH_WORDS[Number.parseInt(m2 ?? '1', 10) - 1] ?? 'May'} ${y2}`,
+          `${MONTH_WORDS[Number.parseInt(m1 ?? '1', 10) - 1] ?? 'May'} ${unpadded(d1)}, ${y1}${dash}${later}`,
+        ][pick % 13] ?? iso;
+        // The range glued to the word before or after it, or after an amount and a full stop with no space (extracted text
+        // that lost its spaces: MOD-16 seed 1034253323); none holds an SSN or a phone.
+        const paid = `Paid $${n(1)},${n(3, 1)}.${n(2, 2)}`;
+        // A word glued to a month word is two words run together, not a date glued to a word: no range starting with one follows "Service" glued.
+        const glued = /^[0-9]/u.test(range) ? 'Service' : 'Service ';
+        const before = ['Service ', 'DOS ', 'Coverage ', 'Eligibility ', 'Service period: ', 'From ', 'Billed ', 'Range ', glued, `${paid}. Service `, `${paid}.Service `][Math.floor(pick / 13) % 11] ?? 'Service ';
+        const after = ['', '', 'Paid', '.Paid', paid][Math.floor(pick / 143) % 5] ?? '';
+        return { text: `${before}${range}${after}` };
       }
       default:
         return { text: 'Hours 8:00-5:00, 555-0100 local' };
