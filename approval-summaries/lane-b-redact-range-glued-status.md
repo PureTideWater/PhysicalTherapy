@@ -25,9 +25,18 @@ Effect: any PR's unit job can go red at random.
 - 2026-11-06T19:31Z: build workflow **wf_bca3d2b3-77c** running (builder: reproduce with the seed pinned + example, root-cause, fix,
   sweep; reviews PHI/security and gateway correctness, each with a skeptic, loop up to 3 rounds; final fixer runs the full local
   suite once; completeness critic). Check-in 2026-11-07T00:42Z (trig_018dkUucZETxGpau5ZxvCeBt). Script archived when it ends.
+- 2026-11-06T20:20Z: the builder's sweep found a **pre-existing PHI leak at cc3dd7f6** (not caused by the range fix): an SSN or
+  phone glued digit-to-digit to an amount or range is sent (`900 12 3456150.00-01/02/2020`, `SSN 900123456120.00-...`), and a
+  masked SSN glued after digits or a word (`...2020XXX-XX-3456`); the same with a space for the dash too. On the user's word
+  ("that should be in ultracode"), a second, read-only workflow **wf_8da6dd19-398** hunts the whole leak class at cc3dd7f6 on the
+  probe worktree `/home/user/redact-range-glued-probe` (five angles: digit-glued, letter/placeholder/mask-glued, character
+  evasions, barrier interplay, structure and other model paths; three skeptics per reported leak; loop until two dry rounds;
+  synthesis into `rg-leaks/verified.md` in the scratchpad; completeness critic). Its verified classes go into this PR's fix round
+  (security: the safer option; refuse when the boundary is unknowable), with named regression tests.
 
 ## Waiting on someone
-None.
+None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
+meanwhile as the safer option.)
 
 ## Next step
 Build workflow: reproduce (seed pinned + example), root-cause, fix, sweep the class; two adversarial reviews (PHI/security;
