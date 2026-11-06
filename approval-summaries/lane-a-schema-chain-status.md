@@ -1,5 +1,13 @@
 # Lane A schema chain: build status (SS-01, SUITE-CAP-1b, the interest fix)
 
+## 2026-11-06 19:25 UTC: session_01FcouKQthXdmDnPmwhFepxW (acting Lane A, 11-01 to 11-02) is HOLDING, on the orchestrator's word
+It was stopped by the weekly limit on 2026-11-02 (wf_78cd4c88-7b1, SS-01's PR stage, stopped in its base merge; nothing
+pushed by it after bb13be1b). Since then Lane A took the chain back (2026-11-04) and merged SS-01 (#104) and SUITE-CAP-1b
+(#110); the interest fix is PR #126 (branch c49367c5, WIP `co-001/wip-interest-fix` 23369ae6). This session's local
+worktrees and WIP refs (`co-001/wip-ss01-chain` 79315a09, `co-001/wip-interest-chain` d39b72c0, `co-001/wip-interest-w`
+589e31d5) are superseded; it runs nothing and waits for the orchestrator's go. If it is told to continue, it starts from
+the RESUME-BLOCK below, not from its own older entries.
+
 ## RESUME-BLOCK (Lane A stood down 2026-11-05 07:58 UTC: this account is at 99% of its weekly usage)
 On the orchestrator's word (session_01TrKDxeLbxVo7t7zwRXFzrg, ~07:50 UTC), Lane B's account runs Lane A's chain as acting Lane A
 from 2026-11-06 19:00 UTC until this account's reset (`lanes/lane-a-handoff-to-lane-b-2026-11-05.md`, the orchestrator's).

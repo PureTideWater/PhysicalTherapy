@@ -199,6 +199,9 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
   mutation and screening-capacity all success. Main checkout fast-forwarded and installed; /home/user/pr6b4 and its local
   branch removed (remote branch and WIP refs kept). The PR subscription never existed (refused 2026-11-01); check-ins
   cancelled. Progress records `approval-summaries/lane-a-wip/progress/pr42{g,h,i}-*.md`.
+- 2026-11-06T19:25Z (acting Lane A): the orchestrator's hold check after the weekly reset: #42 is closed and merged
+  (22789493, an ancestor of claude/build-platform); LANES.md line 65 records the merge; nothing changed in this file since
+  713ff054. Stopped: nothing to resume, no workflow started.
 
 ## Next
 None for this item: #42 merged (22789493). The orchestrator signals the schema chain (SS-01 first) and the items that waited
