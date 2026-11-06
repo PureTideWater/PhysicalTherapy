@@ -99,6 +99,12 @@ ready; only conflicting PRs keep the section-6 order.
   (`approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`) is being relayed to the co-founder by the orchestrator.
 
 ## For Lane A
+- **Founder freeze exception GRANTED (relayed by the orchestrator 2026-11-06 ~22:40 UTC)** for the corrected `ledger_line_net`
+  and the `ledger_entry_rules` primary-key lookup, as in `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` (design
+  section 14.1). Lane A's schema queue (S2 this week) builds it after #126 and password-changed-notice. This item's PR stays
+  worker-side only and merges on its own. D14's condition stands: step 7b moves back to practice A's month once that migration
+  merges. To be written into design section 14.1 when the review loop finishes. (The entries below predate the critic's
+  correction: the figures that hold are design 14.1's: F 10,000 lines 219 -> 85 s; A's month 1,653 -> 310 s.)
 - **`ledger_line_net` rewrite** (design section 14.1, exact DDL there; a ledger function, so it needs a founder freeze
   exception). The two LEFT JOINs on reversal/adjustment targets become one correlated subquery per row; same answer for every
   line and stage. Measured on top of this item's worker fix (step 7b, state (c) -> (m)): 2,000 lines 60.2 -> 21.6 s, 6,000
@@ -108,12 +114,12 @@ ready; only conflicting PRs keep the section-6 order.
 - Nothing else beyond 1b's D15 (`claim_by_superseded`), cited.
 
 ## Waiting on someone
-- Founder: a ledger freeze exception, only if the design wants a ledger-table change (that part goes for Lane A; does not
-  block this PR).
+- (Done 2026-11-06 ~22:40 UTC: the founder granted the ledger freeze exception for Lane A's part.)
 - Founder: an 8-CPU runner to prove step 7b at full size after 1b merges (does not block this PR).
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-06 22:40 UTC: founder granted the freeze exception for Lane A's ledger_line_net + ledger_entry_rules fix (Lane A builds it after #126).
 - 2026-11-06 22:31 UTC: orchestrator ruled D14 (7b stays on F at 10,000 lines until Lane A's trigger fixes land); ask being relayed.
 - 2026-11-06 22:30 UTC: review stage 1 done (rebase, remeasure, update; reviewers returned nothing); pre-review design 38123394; review loop wf_d171f0f0-948 launched.
 - 2026-11-06 19:31 UTC: design-review workflow wf_9dd7a743-340 launched on the orchestrator's go (review only).
