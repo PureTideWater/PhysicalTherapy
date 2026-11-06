@@ -5,6 +5,11 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
 ## 2026-11-06 19:50 UTC (acting Lane A): #126 resumed from the RESUME-BLOCK
 - Worktree /home/user/interest fast-forwarded to `co-001/wip-interest-fix` 23369ae6 (setup re-run, OK). subscribe_pr_activity
   refused (another holder or none); polling with send_later instead.
+- **This session is S2 for the week (orchestrator, ~19:50 UTC, the co-founder's plan):** after #126, password-changed-notice
+  (`designs/lane-a-auth-emails.md`; ADR 0091, SGN-16; `approval-summaries/lane-a-auth-emails-status.md`), then
+  `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
+  before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
+  clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
 - **Running: wf_342b2332-e78** (`workflow-scripts/lane-a-interest-126-finish-wf_342b2332-e78.js`): the second adversarial
   review round on the fix-round delta c49367c5..23369ae6 (payment-engine; database, concurrency and security), each finding
   checked by a skeptic; the fixes; the base (cc3dd7f6 or later) merged once; the full local suite once (suite.sh); a
