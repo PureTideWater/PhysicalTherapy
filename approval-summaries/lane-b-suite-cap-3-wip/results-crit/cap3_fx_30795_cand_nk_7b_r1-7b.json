@@ -1,0 +1,1971 @@
+{
+  "n": 30795,
+  "db": "cap3_fx_30795_cand_nk_7b_r1",
+  "export": true,
+  "passMs": 309909,
+  "error": null,
+  "summary": {
+    "exports": [
+      "loaded"
+    ],
+    "approvedFromResponses": 0,
+    "remittances": {
+      "approved": 30795,
+      "confirmed": 0,
+      "noPaymentIncrease": 0,
+      "decreased": 0,
+      "decreasedNoEntry": 0,
+      "noChange": 0,
+      "recoupments": 0,
+      "interest": 0,
+      "recouped": 0
+    },
+    "postingsMatched": 30795,
+    "depositsMatched": 0,
+    "entriesSettled": 30795,
+    "stages": {
+      "forward": 61590,
+      "back": 0
+    },
+    "notified": 0
+  },
+  "statements": 216048,
+  "sqlMs": 280797,
+  "tsBetweenMs": 29100,
+  "byPhase": {
+    "cipher": {
+      "statements": 30799,
+      "sqlMs": 17451,
+      "tsMs": 5116,
+      "wallMs": 22567
+    },
+    "responses": {
+      "statements": 2,
+      "sqlMs": 3,
+      "tsMs": 3,
+      "wallMs": 4
+    },
+    "remittances": {
+      "statements": 61612,
+      "sqlMs": 70550,
+      "tsMs": 7711,
+      "wallMs": 78260
+    },
+    "postings": {
+      "statements": 92826,
+      "sqlMs": 63923,
+      "tsMs": 10546,
+      "wallMs": 74468
+    },
+    "deposits": {
+      "statements": 5,
+      "sqlMs": 245,
+      "tsMs": 9,
+      "wallMs": 253
+    },
+    "settle": {
+      "statements": 30801,
+      "sqlMs": 113877,
+      "tsMs": 5703,
+      "wallMs": 119575
+    },
+    "stages": {
+      "statements": 2,
+      "sqlMs": 14737,
+      "tsMs": 12,
+      "wallMs": 14748
+    },
+    "notify": {
+      "statements": 1,
+      "sqlMs": 11,
+      "tsMs": 1,
+      "wallMs": 11
+    }
+  },
+  "byFamily": {
+    "insert.entry": {
+      "count": 61590,
+      "ms": 141452,
+      "rows": 61590,
+      "maxMs": 25.7,
+      "perCallMs": 2.297
+    },
+    "insert.match": {
+      "count": 61590,
+      "ms": 57440,
+      "rows": 61590,
+      "maxMs": 28.7,
+      "perCallMs": 0.933
+    },
+    "postings.remittancesOf": {
+      "count": 30795,
+      "ms": 18476,
+      "rows": 30795,
+      "maxMs": 8,
+      "perCallMs": 0.6
+    },
+    "exports": {
+      "count": 30797,
+      "ms": 17449,
+      "rows": 30797,
+      "maxMs": 35.4,
+      "perCallMs": 0.567
+    },
+    "postings.refLines": {
+      "count": 30795,
+      "ms": 14426,
+      "rows": 267830,
+      "maxMs": 22.1,
+      "perCallMs": 0.468
+    },
+    "stages.insert": {
+      "count": 1,
+      "ms": 11431,
+      "rows": 61590,
+      "maxMs": 11431.3,
+      "perCallMs": 11431.26
+    },
+    "claimLines": {
+      "count": 4,
+      "ms": 3345,
+      "rows": 215565,
+      "maxMs": 942.2,
+      "perCallMs": 836.341
+    },
+    "stages.select": {
+      "count": 1,
+      "ms": 3306,
+      "rows": 30795,
+      "maxMs": 3305.6,
+      "perCallMs": 3305.574
+    },
+    "chain.order": {
+      "count": 3,
+      "ms": 3235,
+      "rows": 61590,
+      "maxMs": 1659,
+      "perCallMs": 1078.441
+    },
+    "candidates.passControl": {
+      "count": 2,
+      "ms": 2586,
+      "rows": 30795,
+      "maxMs": 1333.8,
+      "perCallMs": 1292.962
+    },
+    "candidates.passPatient": {
+      "count": 1,
+      "ms": 2192,
+      "rows": 8757,
+      "maxMs": 2192.3,
+      "perCallMs": 2192.297
+    },
+    "chain.reversals": {
+      "count": 3,
+      "ms": 1804,
+      "rows": 26271,
+      "maxMs": 656.1,
+      "perCallMs": 601.451
+    },
+    "settle.amounts": {
+      "count": 1,
+      "ms": 1445,
+      "rows": 30795,
+      "maxMs": 1444.5,
+      "perCallMs": 1444.522
+    },
+    "ledger.matches": {
+      "count": 7,
+      "ms": 652,
+      "rows": 246360,
+      "maxMs": 160,
+      "perCallMs": 93.1
+    },
+    "remit.caseLines": {
+      "count": 1,
+      "ms": 457,
+      "rows": 30795,
+      "maxMs": 456.7,
+      "perCallMs": 456.723
+    },
+    "remit.claimInterest": {
+      "count": 1,
+      "ms": 444,
+      "rows": 0,
+      "maxMs": 444.3,
+      "perCallMs": 444.316
+    },
+    "postings.refClaims": {
+      "count": 438,
+      "ms": 230,
+      "rows": 17514,
+      "maxMs": 1,
+      "perCallMs": 0.525
+    },
+    "ledger.entries": {
+      "count": 4,
+      "ms": 149,
+      "rows": 61590,
+      "maxMs": 71.3,
+      "perCallMs": 37.281
+    },
+    "postings.rows": {
+      "count": 3,
+      "ms": 148,
+      "rows": 61590,
+      "maxMs": 109,
+      "perCallMs": 49.323
+    },
+    "settle.caseLines": {
+      "count": 1,
+      "ms": 67,
+      "rows": 30795,
+      "maxMs": 67.2,
+      "perCallMs": 67.182
+    },
+    "candidates.passLoadedAt": {
+      "count": 1,
+      "ms": 31,
+      "rows": 8757,
+      "maxMs": 30.6,
+      "perCallMs": 30.591
+    },
+    "deposits.rows": {
+      "count": 3,
+      "ms": 14,
+      "rows": 0,
+      "maxMs": 12.9,
+      "perCallMs": 4.646
+    },
+    "notify.manual": {
+      "count": 1,
+      "ms": 11,
+      "rows": 0,
+      "maxMs": 11.5,
+      "perCallMs": 11.465
+    },
+    "responses": {
+      "count": 1,
+      "ms": 3,
+      "rows": 0,
+      "maxMs": 2.8,
+      "perCallMs": 2.776
+    },
+    "remit.providerAdjustments": {
+      "count": 1,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 1.8,
+      "perCallMs": 1.776
+    },
+    "cipher": {
+      "count": 1,
+      "ms": 1,
+      "rows": 1,
+      "maxMs": 1.2,
+      "perCallMs": 1.226
+    },
+    "ledger.lock": {
+      "count": 1,
+      "ms": 1,
+      "rows": 1,
+      "maxMs": 0.5,
+      "perCallMs": 0.506
+    },
+    "other": {
+      "count": 1,
+      "ms": 1,
+      "rows": 1,
+      "maxMs": 0.5,
+      "perCallMs": 0.503
+    }
+  },
+  "crypto": {
+    "encrypt posting_row.claim_reference @cipher": 30795,
+    "lookupHash posting_row.fingerprint @cipher": 30795,
+    "decrypt claim.patient_control_number @remittances": 39552,
+    "decrypt posting_row.claim_reference @postings": 30795,
+    "decrypt claim.patient_control_number @postings": 17514
+  },
+  "heap": {
+    "sampledPeakMiB": 271.8,
+    "liveBeforeMiB": 41.4,
+    "liveAfterMiB": 40.1,
+    "limit": "max-old-space-size=560"
+  },
+  "locks": {
+    "peakPerBackend": 1,
+    "peakAll": 1,
+    "samples": 1520,
+    "timeline": [
+      {
+        "t": 961,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 1974,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 2986,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 3999,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 5012,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 6026,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 7038,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 8071,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 9084,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 10097,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 11107,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 12120,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 13133,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 14144,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 15156,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 16167,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 17178,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 18192,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 19205,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 20217,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 21227,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 22239,
+        "perBackend": 0,
+        "all": 0
+      },
+      {
+        "t": 23463,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 24795,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 25813,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 26829,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 27946,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 28998,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 30460,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 31484,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 32497,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 33510,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 34523,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 35536,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 36551,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 37565,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 38579,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 39594,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 40607,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 41621,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 42633,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 43646,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 44659,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 45672,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 46684,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 47699,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 48713,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 49726,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 50740,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 51752,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 52764,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 53778,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 54791,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 55805,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 56818,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 57832,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 58843,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 59855,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 60868,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 61881,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 62892,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 63904,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 64917,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 65930,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 66944,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 67956,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 68969,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 69982,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 70996,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 72011,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 73025,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 74037,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 75051,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 76065,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 77079,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 78091,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 79105,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 80118,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 81132,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 82144,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 83157,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 84170,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 85186,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 86200,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 87214,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 88226,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 89240,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 90253,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 91265,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 92280,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 93293,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 94306,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 95319,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 96332,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 97348,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 98530,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 99545,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 100660,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 101672,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 102685,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 103699,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 104710,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 105722,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 106736,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 107749,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 108762,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 109774,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 110785,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 111798,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 112808,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 113819,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 114830,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 115841,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 116855,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 117867,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 118880,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 119891,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 120902,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 121913,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 122924,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 123935,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 124948,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 125959,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 126973,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 127984,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 128996,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 130008,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 131021,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 132034,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 133044,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 134056,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 135066,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 136078,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 137089,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 138100,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 139111,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 140122,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 141132,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 142142,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 143153,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 144166,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 145177,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 146188,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 147200,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 148212,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 149223,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 150238,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 151252,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 152263,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 153273,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 154283,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 155297,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 156310,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 157320,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 158331,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 159342,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 160354,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 161367,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 162382,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 163396,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 164406,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 165420,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 166431,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 167446,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 168457,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 169469,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 170484,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 171496,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 172507,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 173519,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 174532,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 175586,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 176603,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 177663,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 178686,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 180066,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 181079,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 182092,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 183104,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 184118,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 185133,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 186145,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 187157,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 188171,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 189185,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 190201,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 191215,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 192228,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 193244,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 194260,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 195271,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 196285,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 197303,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 198317,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 199331,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 200345,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 201358,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 202372,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 203386,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 204400,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 205412,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 206427,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 207442,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 208456,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 209469,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 210481,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 211493,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 212506,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 213521,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 214535,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 215548,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 216559,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 217570,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 218583,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 219597,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 220610,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 221623,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 222640,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 223653,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 224666,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 225680,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 226699,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 227711,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 228725,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 229737,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 230748,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 231762,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 232776,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 233788,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 234801,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 235814,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 236829,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 237841,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 238855,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 239867,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 240882,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 241893,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 242904,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 243919,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 244930,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 245949,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 246961,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 247972,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 248987,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 250000,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 251015,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 252027,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 253042,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 254055,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 255068,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 256081,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 257094,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 258109,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 259122,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 260134,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 261148,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 262164,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 263177,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 264192,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 265206,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 266221,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 267233,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 268250,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 269264,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 270278,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 271291,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 272304,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 273318,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 274331,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 275344,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 276361,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 277373,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 278389,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 279402,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 280417,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 281429,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 282442,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 283457,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 284471,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 285485,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 286499,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 287515,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 288530,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 289542,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 290556,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 291570,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 292582,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 293595,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 294609,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 295629,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 296647,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 297664,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 298682,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 299699,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 300715,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 301733,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 302749,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 303764,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 304779,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 305791,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 306806,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 307822,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 308841,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 309855,
+        "perBackend": 1,
+        "all": 1
+      }
+    ]
+  },
+  "after": {
+    "approved": 30795,
+    "posted": 30795,
+    "matches": 61590,
+    "stage_events": 123180,
+    "posted_cents": "494780000",
+    "recovered": 30795,
+    "payer_approved": 0
+  },
+  "logs": [],
+  "fingerprints": {
+    "4234085352": {
+      "family": "ledger.entries",
+      "text": "SELECT e.id, e.case_id, e.service_line_id, e.stage, e.amount_cents::text, e.evidence_kind, e.evidence_id, e.match_id, e.allocated, e.effective_on::text FROM led"
+    },
+    "cac1ac0ddf": {
+      "family": "cipher",
+      "text": "SELECT data_key_ref FROM practice WHERE id = $1"
+    },
+    "6f51bae801": {
+      "family": "exports",
+      "text": "SELECT d.id, d.kind FROM source_document d WHERE d.practice_id = $1 AND d.kind IN ('posting_export', 'eft_export') AND d.status = 'stored' AND d.scan_status = '"
+    },
+    "2689f54ed9": {
+      "family": "other",
+      "text": "SELECT settings FROM practice WHERE id = $1"
+    },
+    "e05f32dd71": {
+      "family": "exports",
+      "text": "INSERT INTO posting_row (practice_id, source_document_id, row_no, check_or_trace, posted_on, amount_cents, claim_reference, procedure_code, service_date, payer_"
+    },
+    "7eb780672a": {
+      "family": "exports",
+      "text": "UPDATE source_document SET status = $2 WHERE id = $1 AND status = 'stored'"
+    },
+    "89140a1b95": {
+      "family": "ledger.lock",
+      "text": "SELECT pg_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0))"
+    },
+    "6b93a3ade1": {
+      "family": "responses",
+      "text": "SELECT r.id, r.submission_id, s.case_id, s.packet_version_id, r.kind, r.amount_cents::text, r.received_on::text, r.document_id, (SELECT jsonb_agg(jsonb_build_ob"
+    },
+    "e8e8d22f5c": {
+      "family": "remit.caseLines",
+      "text": "SELECT cl.case_id, cl.service_line_id, l.claim_id, c.remittance_id, l.line_no, l.procedure_code, l.modifiers, l.units::text AS units, l.service_date::text AS se"
+    },
+    "e6b5959fde": {
+      "family": "chain.order",
+      "text": "SELECT m.id, (extract(epoch FROM m.matched_at) * 1000000)::bigint::text AS matched_at FROM ledger_match m JOIN remittance r ON r.id = m.remittance_id LEFT JOIN "
+    },
+    "defa68ac89": {
+      "family": "ledger.matches",
+      "text": "SELECT m.id, m.kind, m.claim_id, m.posting_row_id, m.eft_row_id, m.provider_adjustment_id, m.remittance_id, m.service_line_id, m.outcome, m.level, m.allocated, "
+    },
+    "56095a69da": {
+      "family": "chain.reversals",
+      "text": "SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed_claim_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM v.created_at) * 1000000)::bigint::"
+    },
+    "452e934c15": {
+      "family": "claimLines",
+      "text": "WITH RECURSIVE named (id) AS ( SELECT unnest($1::uuid[]) UNION SELECT k.id FROM claim k JOIN named n ON k.superseded_by_claim_id = n.id) SELECT s.id, s.claim_id"
+    },
+    "d99d127e72": {
+      "family": "candidates.passPatient",
+      "text": "WITH l (ix, service_line_id, remittance_id, claim_id, code, service_date) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[], $8::text[], $9"
+    },
+    "1bb5783481": {
+      "family": "candidates.passLoadedAt",
+      "text": "SELECT o.id, (extract(epoch FROM o.created_at) * 1000000)::bigint::text AS loaded_at FROM claim o WHERE o.practice_id = $1 AND o.id = ANY ($2::uuid[])"
+    },
+    "fda62f7008": {
+      "family": "candidates.passControl",
+      "text": "WITH l (ix, service_line_id, remittance_id, claim_id) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[])), k (ix, claim_id) AS (SELECT * FR"
+    },
+    "4ed2d1afe1": {
+      "family": "insert.match",
+      "text": "INSERT INTO ledger_match (practice_id, kind, claim_id, posting_row_id, eft_row_id, provider_adjustment_id, remittance_id, service_line_id, outcome, level, alloc"
+    },
+    "61a3c8f342": {
+      "family": "insert.entry",
+      "text": "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, allocated, effective_on, created_by,"
+    },
+    "62bcf1e3a1": {
+      "family": "remit.providerAdjustments",
+      "text": "SELECT a.id, a.remittance_id, a.reference, a.amount_cents::text AS amount_cents, r.bpr16_date::text AS paid_on, a.category FROM provider_adjustment a JOIN remit"
+    },
+    "6fb3815ea7": {
+      "family": "remit.claimInterest",
+      "text": "SELECT c.id, c.remittance_id, c.interest_cents::text AS interest_cents, r.bpr16_date::text AS paid_on FROM claim c JOIN remittance r ON r.id = c.remittance_id W"
+    },
+    "2e99d33d63": {
+      "family": "postings.rows",
+      "text": "SELECT m.posting_row_id AS id FROM ledger_match m WHERE m.practice_id = $1 AND m.posting_row_id IS NOT NULL"
+    },
+    "d1baa23009": {
+      "family": "postings.rows",
+      "text": "SELECT r.id FROM posting_row r WHERE r.practice_id = $1"
+    },
+    "4c11d255ba": {
+      "family": "postings.rows",
+      "text": "SELECT p.id, p.check_or_trace, p.amount_cents::text AS amount_cents, p.claim_reference, p.procedure_code, p.service_date::text AS service_date FROM posting_row "
+    },
+    "f9589a4965": {
+      "family": "postings.remittancesOf",
+      "text": "SELECT r.id, r.bpr02_cents::text AS payment_cents FROM remittance r WHERE r.practice_id = $1 AND r.trn02 = $2 AND r.status = 'loaded' AND r.bpr_credit_debit = '"
+    },
+    "01063f4166": {
+      "family": "postings.refClaims",
+      "text": "SELECT c.id, c.paid_cents::text AS paid_cents, c.patient_control_number FROM claim c WHERE c.remittance_id = $1 ORDER BY c.claim_no"
+    },
+    "68a0167317": {
+      "family": "postings.refLines",
+      "text": "SELECT s.claim_id, s.procedure_code, s.service_date::text AS service_date, s.paid_cents::text AS paid_cents FROM service_line s WHERE s.claim_id = ANY ($1::uuid"
+    },
+    "d4783e2f3e": {
+      "family": "deposits.rows",
+      "text": "SELECT m.eft_row_id AS id FROM ledger_match m WHERE m.practice_id = $1 AND m.eft_row_id IS NOT NULL"
+    },
+    "76d34c95c5": {
+      "family": "deposits.rows",
+      "text": "SELECT r.id FROM eft_row r WHERE r.practice_id = $1"
+    },
+    "6addb1eda1": {
+      "family": "deposits.rows",
+      "text": "SELECT e.id, e.source_document_id, e.trace, e.amount_cents::text AS amount_cents, e.batch_reference FROM eft_row e WHERE e.practice_id = $1 AND e.id = ANY ($2::"
+    },
+    "b93e42e456": {
+      "family": "settle.caseLines",
+      "text": "SELECT cl.service_line_id, cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1 ORDER BY l.claim_"
+    },
+    "de4c3e02c7": {
+      "family": "settle.amounts",
+      "text": "SELECT m.id AS match_id, coalesce(p.amount_cents, e.amount_cents)::text AS amount_cents, r.bpr02_cents::text AS payment_cents, p.procedure_code, p.service_date:"
+    },
+    "4c546afa42": {
+      "family": "stages.select",
+      "text": "SELECT cl.service_line_id, ledger_line_stage(cl.service_line_id) AS ledger_stage, (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_i"
+    },
+    "9d2c65b287": {
+      "family": "stages.insert",
+      "text": "INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from) SELECT $1, e.service_line_id, e.stage, $2, e.reason, e.reopened_fro"
+    },
+    "7c99706b9e": {
+      "family": "notify.manual",
+      "text": "SELECT e.id, e.case_id, e.service_line_id, e.amount_cents::text AS amount_cents FROM ledger_entry e WHERE e.practice_id = $1 AND e.stage = 'recouped' AND e.crea"
+    }
+  }
+}

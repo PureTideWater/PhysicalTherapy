@@ -1,0 +1,51 @@
+diff --git a/apps/worker/src/reconcile/remittances.ts b/apps/worker/src/reconcile/remittances.ts
+index 038b704f..fabcb457 100644
+--- a/apps/worker/src/reconcile/remittances.ts
++++ b/apps/worker/src/reconcile/remittances.ts
+@@ -214,7 +214,8 @@ function searchArrays(searched: readonly Searched[]): { readonly lines: unknown[
+  * filters each line's own query applied (loaded, not a reversal, not known, not of the line's own remittance, loaded no
+  * earlier than the line's claim, never matched to the line, no case line's claim), in the chain's claim order.
+  */
+-async function controlCandidates(scope: Scope, practiceId: string, searched: readonly Searched[]): Promise<Map<number, Candidate[]>> {
++async function controlCandidates(scope: Scope, practiceId: string, searched: readonly Searched[], matched: ReadonlySet<string>): Promise<Map<number, Candidate[]>> {
++  const lineOf = new Map(searched.map((item) => [item.ix, item.line.serviceLineId]));
+   const { lines, known } = searchArrays(searched);
+   const { rows } = await scope.client.query<{ ix: number; id: string; remittance_id: string; paid_on: string; loaded_at: string }>(
+     `WITH l (ix, service_line_id, remittance_id, claim_id) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[])),
+@@ -228,13 +229,16 @@ async function controlCandidates(scope: Scope, practiceId: string, searched: rea
+       WHERE c.practice_id = $1 AND r.status = 'loaded' AND c.claim_status_code <> '22'
+         AND NOT EXISTS (SELECT 1 FROM k WHERE k.ix = l.ix AND k.claim_id = c.id) AND c.remittance_id <> l.remittance_id
+         AND c.created_at >= (SELECT o.created_at FROM claim o WHERE o.id = l.claim_id)
+-        AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.kind = 'claim' AND m.claim_id = c.id AND m.service_line_id = l.service_line_id)
+         AND NOT EXISTS (SELECT 1 FROM case_line x JOIN service_line xl ON xl.id = x.service_line_id WHERE xl.claim_id = c.id)
+       ORDER BY l.ix, r.bpr16_date, c.created_at, c.id`,
+     [practiceId, ...lines, ...known],
+   );
+   const found = new Map<number, Candidate[]>();
+   for (const row of rows) {
++    // Never claim-matched to the line (standing or reversed): the pass's set, read before any write.
++    if (matched.has(`${row.id} ${lineOf.get(row.ix) as string}`)) {
++      continue;
++    }
+     const list = found.get(row.ix) ?? [];
+     list.push({ claimId: row.id, key: 'payer_claim_control_number', remittanceId: row.remittance_id, paidOn: row.paid_on, loadedAt: BigInt(row.loaded_at) });
+     found.set(row.ix, list);
+@@ -276,8 +280,7 @@ async function patientCandidates(scope: Scope, cipher: PracticeCipher, practiceI
+         AND NOT EXISTS (SELECT 1 FROM case_line x JOIN service_line xl ON xl.id = x.service_line_id WHERE xl.claim_id = c.id)
+         AND EXISTS (SELECT 1 FROM named n JOIN l ON l.ix = n.ix
+                      WHERE n.claim_id = c.id AND c.remittance_id <> l.remittance_id AND c.created_at >= (SELECT o.created_at FROM claim o WHERE o.id = l.claim_id)
+-                       AND NOT EXISTS (SELECT 1 FROM k WHERE k.ix = l.ix AND k.claim_id = c.id)
+-                       AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.kind = 'claim' AND m.claim_id = c.id AND m.service_line_id = l.service_line_id))
++                       AND NOT EXISTS (SELECT 1 FROM k WHERE k.ix = l.ix AND k.claim_id = c.id))
+       ORDER BY c.id`,
+     [practiceId, ...lines, ...known, searched.map((item) => item.line.procedureCode), searched.map((item) => item.line.serviceDate)],
+   );
+@@ -348,7 +351,7 @@ async function passCandidates(
+   const byPatient = await patientCandidates(scope, cipher, practiceId, open.map((_, ix) => searchedOf(ix)), matched);
+   let active = open.map((_, ix) => ix);
+   while (active.length > 0) {
+-    const byControl = await controlCandidates(scope, practiceId, active.map(searchedOf));
++    const byControl = await controlCandidates(scope, practiceId, active.map(searchedOf), matched);
+     const round = new Map<number, Candidate[]>();
+     for (const ix of active) {
+       const knownOfLine = known[ix] as Set<string>;

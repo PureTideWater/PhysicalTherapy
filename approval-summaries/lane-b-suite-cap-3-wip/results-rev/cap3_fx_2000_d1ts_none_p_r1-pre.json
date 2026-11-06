@@ -1,0 +1,433 @@
+{
+  "n": 2000,
+  "db": "cap3_fx_2000_d1ts_none_p_r1",
+  "export": false,
+  "passMs": 8137,
+  "error": null,
+  "summary": {
+    "exports": [],
+    "approvedFromResponses": 0,
+    "remittances": {
+      "approved": 2000,
+      "confirmed": 0,
+      "noPaymentIncrease": 0,
+      "decreased": 0,
+      "decreasedNoEntry": 0,
+      "noChange": 0,
+      "recoupments": 0,
+      "interest": 0,
+      "recouped": 0
+    },
+    "postingsMatched": 0,
+    "depositsMatched": 0,
+    "entriesSettled": 0,
+    "stages": {
+      "forward": 2000,
+      "back": 0
+    },
+    "notified": 0
+  },
+  "statements": 4043,
+  "sqlMs": 7377,
+  "tsBetweenMs": 745,
+  "byPhase": {
+    "cipher": {
+      "statements": 2,
+      "sqlMs": 4,
+      "tsMs": 4,
+      "wallMs": 8
+    },
+    "responses": {
+      "statements": 2,
+      "sqlMs": 3,
+      "tsMs": 2,
+      "wallMs": 4
+    },
+    "remittances": {
+      "statements": 4022,
+      "sqlMs": 5823,
+      "tsMs": 677,
+      "wallMs": 6500
+    },
+    "postings": {
+      "statements": 3,
+      "sqlMs": 2,
+      "tsMs": 1,
+      "wallMs": 2
+    },
+    "deposits": {
+      "statements": 5,
+      "sqlMs": 13,
+      "tsMs": 2,
+      "wallMs": 14
+    },
+    "settle": {
+      "statements": 6,
+      "sqlMs": 120,
+      "tsMs": 52,
+      "wallMs": 172
+    },
+    "stages": {
+      "statements": 2,
+      "sqlMs": 1411,
+      "tsMs": 6,
+      "wallMs": 1413
+    },
+    "notify": {
+      "statements": 1,
+      "sqlMs": 1,
+      "tsMs": 1,
+      "wallMs": 1
+    }
+  },
+  "byFamily": {
+    "insert.entry": {
+      "count": 2000,
+      "ms": 3291,
+      "rows": 2000,
+      "maxMs": 41.3,
+      "perCallMs": 1.646
+    },
+    "insert.match": {
+      "count": 2000,
+      "ms": 1859,
+      "rows": 2000,
+      "maxMs": 9.3,
+      "perCallMs": 0.93
+    },
+    "stages.insert": {
+      "count": 1,
+      "ms": 843,
+      "rows": 2000,
+      "maxMs": 843.3,
+      "perCallMs": 843.286
+    },
+    "stages.select": {
+      "count": 1,
+      "ms": 568,
+      "rows": 2000,
+      "maxMs": 567.8,
+      "perCallMs": 567.828
+    },
+    "candidates.passControl": {
+      "count": 2,
+      "ms": 305,
+      "rows": 2000,
+      "maxMs": 269.5,
+      "perCallMs": 152.495
+    },
+    "claimLines": {
+      "count": 4,
+      "ms": 237,
+      "rows": 14000,
+      "maxMs": 68.8,
+      "perCallMs": 59.339
+    },
+    "candidates.passPatient": {
+      "count": 1,
+      "ms": 56,
+      "rows": 560,
+      "maxMs": 56,
+      "perCallMs": 55.986
+    },
+    "chain.order": {
+      "count": 3,
+      "ms": 52,
+      "rows": 4000,
+      "maxMs": 25.3,
+      "perCallMs": 17.432
+    },
+    "remit.caseLines": {
+      "count": 1,
+      "ms": 45,
+      "rows": 2000,
+      "maxMs": 45.1,
+      "perCallMs": 45.056
+    },
+    "chain.reversals": {
+      "count": 3,
+      "ms": 43,
+      "rows": 1680,
+      "maxMs": 15.6,
+      "perCallMs": 14.353
+    },
+    "ledger.matches": {
+      "count": 7,
+      "ms": 39,
+      "rows": 12000,
+      "maxMs": 9.7,
+      "perCallMs": 5.544
+    },
+    "ledger.entries": {
+      "count": 4,
+      "ms": 13,
+      "rows": 4000,
+      "maxMs": 5.4,
+      "perCallMs": 3.252
+    },
+    "settle.caseLines": {
+      "count": 1,
+      "ms": 5,
+      "rows": 2000,
+      "maxMs": 5.4,
+      "perCallMs": 5.443
+    },
+    "candidates.passLoadedAt": {
+      "count": 1,
+      "ms": 3,
+      "rows": 560,
+      "maxMs": 2.6,
+      "perCallMs": 2.602
+    },
+    "settle.amounts": {
+      "count": 1,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 2.5,
+      "perCallMs": 2.452
+    },
+    "responses": {
+      "count": 1,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 2.4,
+      "perCallMs": 2.371
+    },
+    "remit.claimInterest": {
+      "count": 1,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 2.1,
+      "perCallMs": 2.1
+    },
+    "exports": {
+      "count": 1,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 2.1,
+      "perCallMs": 2.062
+    },
+    "postings.rows": {
+      "count": 3,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 0.9,
+      "perCallMs": 0.595
+    },
+    "cipher": {
+      "count": 1,
+      "ms": 2,
+      "rows": 1,
+      "maxMs": 1.7,
+      "perCallMs": 1.713
+    },
+    "deposits.rows": {
+      "count": 3,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 0.8,
+      "perCallMs": 0.568
+    },
+    "remit.providerAdjustments": {
+      "count": 1,
+      "ms": 1,
+      "rows": 0,
+      "maxMs": 1.2,
+      "perCallMs": 1.233
+    },
+    "notify.manual": {
+      "count": 1,
+      "ms": 1,
+      "rows": 0,
+      "maxMs": 1,
+      "perCallMs": 1.031
+    },
+    "ledger.lock": {
+      "count": 1,
+      "ms": 1,
+      "rows": 1,
+      "maxMs": 0.8,
+      "perCallMs": 0.812
+    }
+  },
+  "crypto": {
+    "decrypt claim.patient_control_number @remittances": 2560
+  },
+  "heap": {
+    "sampledPeakMiB": 101.7,
+    "liveBeforeMiB": 41,
+    "liveAfterMiB": 41.4,
+    "limit": "max-old-space-size=560"
+  },
+  "locks": {
+    "peakPerBackend": 1,
+    "peakAll": 1,
+    "samples": 40,
+    "timeline": [
+      {
+        "t": 883,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 1898,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 2912,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 3925,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 4939,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 5953,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 6983,
+        "perBackend": 1,
+        "all": 1
+      },
+      {
+        "t": 7998,
+        "perBackend": 1,
+        "all": 1
+      }
+    ]
+  },
+  "after": {
+    "approved": 2000,
+    "posted": 0,
+    "matches": 2000,
+    "stage_events": 6000,
+    "posted_cents": "0",
+    "recovered": 0,
+    "payer_approved": 2000
+  },
+  "logs": [],
+  "fingerprints": {
+    "4234085352": {
+      "family": "ledger.entries",
+      "text": "SELECT e.id, e.case_id, e.service_line_id, e.stage, e.amount_cents::text, e.evidence_kind, e.evidence_id, e.match_id, e.allocated, e.effective_on::text FROM led"
+    },
+    "cac1ac0ddf": {
+      "family": "cipher",
+      "text": "SELECT data_key_ref FROM practice WHERE id = $1"
+    },
+    "6f51bae801": {
+      "family": "exports",
+      "text": "SELECT d.id, d.kind FROM source_document d WHERE d.practice_id = $1 AND d.kind IN ('posting_export', 'eft_export') AND d.status = 'stored' AND d.scan_status = '"
+    },
+    "89140a1b95": {
+      "family": "ledger.lock",
+      "text": "SELECT pg_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0))"
+    },
+    "6b93a3ade1": {
+      "family": "responses",
+      "text": "SELECT r.id, r.submission_id, s.case_id, s.packet_version_id, r.kind, r.amount_cents::text, r.received_on::text, r.document_id, (SELECT jsonb_agg(jsonb_build_ob"
+    },
+    "e8e8d22f5c": {
+      "family": "remit.caseLines",
+      "text": "SELECT cl.case_id, cl.service_line_id, l.claim_id, c.remittance_id, l.line_no, l.procedure_code, l.modifiers, l.units::text AS units, l.service_date::text AS se"
+    },
+    "e6b5959fde": {
+      "family": "chain.order",
+      "text": "SELECT m.id, (extract(epoch FROM m.matched_at) * 1000000)::bigint::text AS matched_at FROM ledger_match m JOIN remittance r ON r.id = m.remittance_id LEFT JOIN "
+    },
+    "defa68ac89": {
+      "family": "ledger.matches",
+      "text": "SELECT m.id, m.kind, m.claim_id, m.posting_row_id, m.eft_row_id, m.provider_adjustment_id, m.remittance_id, m.service_line_id, m.outcome, m.level, m.allocated, "
+    },
+    "56095a69da": {
+      "family": "chain.reversals",
+      "text": "SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed_claim_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM v.created_at) * 1000000)::bigint::"
+    },
+    "452e934c15": {
+      "family": "claimLines",
+      "text": "WITH RECURSIVE named (id) AS ( SELECT unnest($1::uuid[]) UNION SELECT k.id FROM claim k JOIN named n ON k.superseded_by_claim_id = n.id) SELECT s.id, s.claim_id"
+    },
+    "b900609bcf": {
+      "family": "candidates.passPatient",
+      "text": "WITH l (ix, service_line_id, remittance_id, claim_id, code, service_date) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[], $8::text[], $9"
+    },
+    "1bb5783481": {
+      "family": "candidates.passLoadedAt",
+      "text": "SELECT o.id, (extract(epoch FROM o.created_at) * 1000000)::bigint::text AS loaded_at FROM claim o WHERE o.practice_id = $1 AND o.id = ANY ($2::uuid[])"
+    },
+    "a180faa91d": {
+      "family": "candidates.passControl",
+      "text": "WITH l (ix, service_line_id, remittance_id, claim_id) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[])), k (ix, claim_id) AS (SELECT * FR"
+    },
+    "4ed2d1afe1": {
+      "family": "insert.match",
+      "text": "INSERT INTO ledger_match (practice_id, kind, claim_id, posting_row_id, eft_row_id, provider_adjustment_id, remittance_id, service_line_id, outcome, level, alloc"
+    },
+    "61a3c8f342": {
+      "family": "insert.entry",
+      "text": "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, allocated, effective_on, created_by,"
+    },
+    "62bcf1e3a1": {
+      "family": "remit.providerAdjustments",
+      "text": "SELECT a.id, a.remittance_id, a.reference, a.amount_cents::text AS amount_cents, r.bpr16_date::text AS paid_on, a.category FROM provider_adjustment a JOIN remit"
+    },
+    "6fb3815ea7": {
+      "family": "remit.claimInterest",
+      "text": "SELECT c.id, c.remittance_id, c.interest_cents::text AS interest_cents, r.bpr16_date::text AS paid_on FROM claim c JOIN remittance r ON r.id = c.remittance_id W"
+    },
+    "2e99d33d63": {
+      "family": "postings.rows",
+      "text": "SELECT m.posting_row_id AS id FROM ledger_match m WHERE m.practice_id = $1 AND m.posting_row_id IS NOT NULL"
+    },
+    "d1baa23009": {
+      "family": "postings.rows",
+      "text": "SELECT r.id FROM posting_row r WHERE r.practice_id = $1"
+    },
+    "4c11d255ba": {
+      "family": "postings.rows",
+      "text": "SELECT p.id, p.check_or_trace, p.amount_cents::text AS amount_cents, p.claim_reference, p.procedure_code, p.service_date::text AS service_date FROM posting_row "
+    },
+    "d4783e2f3e": {
+      "family": "deposits.rows",
+      "text": "SELECT m.eft_row_id AS id FROM ledger_match m WHERE m.practice_id = $1 AND m.eft_row_id IS NOT NULL"
+    },
+    "76d34c95c5": {
+      "family": "deposits.rows",
+      "text": "SELECT r.id FROM eft_row r WHERE r.practice_id = $1"
+    },
+    "6addb1eda1": {
+      "family": "deposits.rows",
+      "text": "SELECT e.id, e.source_document_id, e.trace, e.amount_cents::text AS amount_cents, e.batch_reference FROM eft_row e WHERE e.practice_id = $1 AND e.id = ANY ($2::"
+    },
+    "b93e42e456": {
+      "family": "settle.caseLines",
+      "text": "SELECT cl.service_line_id, cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1 ORDER BY l.claim_"
+    },
+    "de4c3e02c7": {
+      "family": "settle.amounts",
+      "text": "SELECT m.id AS match_id, coalesce(p.amount_cents, e.amount_cents)::text AS amount_cents, r.bpr02_cents::text AS payment_cents, p.procedure_code, p.service_date:"
+    },
+    "4c546afa42": {
+      "family": "stages.select",
+      "text": "SELECT cl.service_line_id, ledger_line_stage(cl.service_line_id) AS ledger_stage, (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_i"
+    },
+    "9d2c65b287": {
+      "family": "stages.insert",
+      "text": "INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from) SELECT $1, e.service_line_id, e.stage, $2, e.reason, e.reopened_fro"
+    },
+    "7c99706b9e": {
+      "family": "notify.manual",
+      "text": "SELECT e.id, e.case_id, e.service_line_id, e.amount_cents::text AS amount_cents FROM ledger_entry e WHERE e.practice_id = $1 AND e.stage = 'recouped' AND e.crea"
+    }
+  }
+}
