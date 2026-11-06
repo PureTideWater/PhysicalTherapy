@@ -9,11 +9,11 @@ import { type DocumentStore, collect } from '../storage/documents';
 /**
  * Intake reads the page text of every clean contract, exhibit and payer letter once, so the web app
  * never parses an uploaded document (PRD 16, Upload safety; docs/adr/0033). The document is read in a
- * bounded thread (@tp/contracts/pages); its page texts are sealed with the practice's key beside the
- * original (documentPagesKey) before the row says they are ready. A document of no supported kind, or
- * past a limit, is recorded as unsupported_document, one the reader cannot parse as
- * document_unreadable: decisions, not job failures. A thread that fails for its own reasons throws,
- * and the job retries.
+ * child process of its own with its own heap limit (@tp/contracts/pages); its page texts are sealed
+ * with the practice's key beside the original (documentPagesKey) before the row says they are ready.
+ * A document of no supported kind, or past a limit, is recorded as unsupported_document, one the
+ * reader cannot parse as document_unreadable: decisions, not job failures. A reader that fails for its
+ * own reasons throws (PageReadError), and the job retries.
  */
 
 /** The kinds whose pages a rate record cites. */
