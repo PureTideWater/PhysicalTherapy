@@ -10,6 +10,8 @@ the claim row; do not touch it). No synth module, no fixture release; nothing ne
 "COUNTER REQUEST: <what>" line at the top of this file).
 Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lane-a-brief.md` (it wins where they differ).
 
+## MERGED 2026-11-02T07:16Z: #42 is merged as 22789493 (acting Lane A, session_01FcouKMmYaqDNXbqJyagW8u). Item done; no follow-on.
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** This round adds no migration and does not regenerate `docs/product/domain-model.md`.
 - **Done:** design (`designs/pr6b-email-streams.md`, Track C, 2026-10-21 against 8e33cb3, §15's review folded;
@@ -175,12 +177,33 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
   #83 (43565235) merged into the base at 20:40Z (no migration, no domain-model change, merges cleanly): the base keeps moving
   (#86, #75, #84, #85 queued), and item step 7 takes a migration-free base merge after the founder's commit, the line staying
   valid while the document's hash is unchanged.
+- 2026-11-02T06:25Z (acting Lane A): **the founder committed the approval line**: 9426a8d1 (PureTideWater via GitHub, 02:36:48Z,
+  signature verified, "Update domain-model.md"; changes line 7334 alone, to the posted suggestion; the same form as #39's
+  54ec8909); relayed also by the orchestrator at 06:20Z. Base now 88708069 (#83, #92, #93, #90: #90 changes
+  packages/model-gateway/package.json and the lockfile; no migration; merges cleanly). Workflow wf_447524bf-bd7 started
+  (archived as `workflow-scripts/lane-a-pr42-final-merge-wf_447524bf-bd7.js`): ff to 9426a8d1, merge the base, the checks the
+  delta needs (paced per the co-founder's 02:10Z call; CI runs the full suite), --check --require-approval on a fresh
+  database, one push (WIP `co-001/wip-pr42-final`); then a fresh-clone verification reading CI and the description's summary
+  refreshed. Then: ready, approval-of-record's re-run, merge.
+- 2026-11-02T07:16Z (acting Lane A): final round wf_447524bf-bd7: ff to the founder's 9426a8d1; merged 88708069 (#83, #92, #93,
+  #90; five files auto-merged, rule 6; generators wrote nothing) as **9bb0604e**; local: typecheck 22, lint 1,734 0/0,
+  lint:copy 554, lint:logs 1,111, check:fixtures, actions:check, toolchain:check (0 errors), unit 7,198 passed 1 skip,
+  tables.test 7/7 (AFTER_42 1/2/1), affected: no shard, targeted test:db 14 files 185 passed (the delta's db tests on #42's
+  schema + #42's apps db tests), build, capacity S1,S4 binding (environment-only reasons; S4 middle 39.7 s),
+  `db:domain-model --check --require-approval` exit 0 (b23fed0e…2518, approved by Tyler Williams 2026-11-01). Paced per the
+  co-founder's 02:10Z call: full db shards and e2e left to CI (no shared web file). Pushed once (WIP `co-001/wip-pr42-final`).
+  CI on 9bb0604e: all 25 jobs green (notify skipped) incl. `domain model`, `all green`, mutation, screening-capacity gate,
+  approval-of-record, images. Fresh-clone verification: pass. Description refreshed (summary against 88708069), 65,019
+  characters, read back byte for byte. Marked ready; approval-of-record re-ran green (07:14Z); merged with method merge and
+  expectedHeadSha 9bb0604e: **merge commit 227894939d8a…** ("Merge pull request #42: …"). Push runs on 22789493: ci,
+  mutation and screening-capacity all success. Main checkout fast-forwarded and installed; /home/user/pr6b4 and its local
+  branch removed (remote branch and WIP refs kept). The PR subscription never existed (refused 2026-11-01); check-ins
+  cancelled. Progress records `approval-summaries/lane-a-wip/progress/pr42{g,h,i}-*.md`.
 
 ## Next
-Waiting on: **the founder's commit of the suggestion**
-https://github.com/PureTideWater/PhysicalTherapy/pull/42#discussion_r4437376734 (as on #39, 54ec8909). Push nothing to the
-branch until then. After it: pull --ff-only in /home/user/pr6b4; merge the base (43565235 or later) with a merge commit only if
-its delta has no migration and `--check` still reads b23fed0e…2518 (else the line is void: regenerate, post a new suggestion);
-the checks that delta needs; push once; CI green incl. `domain model` and `all green`; mark ready; wait for approval-of-record's
-re-run; merge_pull_request (method merge, expectedHeadSha); unsubscribe; read the push runs; remove /home/user/pr6b4; record;
-tell the orchestrator. Check-ins by send_later while waiting.
+None for this item: #42 merged (22789493). The orchestrator signals the schema chain (SS-01 first) and the items that waited
+on #42 (ux-forms-after-42, #83's 4b, P5 ci-catalog, release-content-checks' #42 parts, ci-browser's follow-up, UX-DLR-18, UX PRs
+74-76's `tables.test.ts` removedBy, LANES.md queue items 15-16 and the "Not while #42 is open" list). Open founder items that
+block the screening's launch, not code: actions 2-7 in the description; counsel's review of the signed-off legal text (O4); the
+consumer's size (O9: CI's capacity middle S4 runs 55.1 s on 6c28d6a2 and 41.4 s on 9bb0604e against the 44-s question).
+Improvement noted (not done): the capacity harness records commit 'unknown' when the images directory is not a git checkout.

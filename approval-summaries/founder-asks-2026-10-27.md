@@ -58,3 +58,17 @@ as on #39. In order:
 - #42's legal text: signed off as written.
 - Social Security and phone numbers in letters are redacted by pattern before the model reads them (PRD 14): item `co-001/redact-ssn-phone`.
 - Dependabot #33: closed, not merged.
+
+## Granted 2026-11-04 (~09:55 UTC): the release loader's freeze
+Sent in Lane A's orchestrator session in reply to the request for the founder's grant: "Granted: an exception to reconciliation-001's content-pipeline check for the release loader's freeze, as written: after a load commits, loadRelease runs VACUUM (FREEZE, ANALYZE) rule_record and, while pg_class shows rule_record not all-frozen, pauses and runs VACUUM (FREEZE) rule_record again, for up to 180 seconds; its result gains frozen, false only when the wait runs out; loading an already-loaded release writes nothing and runs the same freeze; release:load warns on stderr when not yet frozen; release:rollback does not wait. Everything else in the pipeline stays frozen. It also covers PR 6b-3's original VACUUM."
+The fix goes into SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`). Its ADR and reconciliation-001 record the grant.
+
+## Granted 2026-11-04 (~13:15 UTC): an amendment to the release loader's freeze
+Sent in Lane A's orchestrator session in reply to the request for the founder's grant: "Granted: in the release loader's freeze, each retry pass runs VACUUM (FREEZE, INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen; the warning names the cause it can see."
+It goes into SUITE-CAP-1b with the loader fix (978891a3). Its ADR 0083 and reconciliation-001 record it beside the first grant.
+
+## Brand rulings, 2026-11-04 (~22:50 UTC): adopted by the co-founder ("let's go with these recommendations")
+1. **Sign-in background:** Paper in light mode; the dark ground (`--pw-bg`) in dark mode, as #116 built. The reversed stacked lockup and seal on dark.
+2. **BRAND.md section 4** reads "Paper: report covers, print, and the light-theme sign-in". This settles the section 3/4/7 disagreement ADR 0056 records.
+3. **`--pw-unpriced`** is darkened to at least 4.5:1 on `--pw-unpriced-bg`, so the unpriced status can use its own color for text.
+4. **Dark mode stays off** until a dark-mode pass over every screen, PHI screens first. It then follows `prefers-color-scheme`, with an override in settings.

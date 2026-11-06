@@ -1,0 +1,328 @@
+{
+  "commit": "unknown",
+  "runtime": "process",
+  "small": false,
+  "runner": {
+    "cpus": 4,
+    "memoryMiB": 16091,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "kernel": "6.18.44-fc-v233"
+  },
+  "worker": {
+    "cpus": 0.5,
+    "memoryMiB": 1024,
+    "cpuset": "3",
+    "command": [
+      "node",
+      "--max-old-space-size=560",
+      "--enable-source-maps",
+      "dist/main.js"
+    ]
+  },
+  "release": {
+    "releaseNo": 900110,
+    "records": 4172393,
+    "manifestSha256": "0b700554145bed94b54f75bc1304d9979e9666f6fa57673abec69c3766178723"
+  },
+  "expected": {
+    "pricedLines": 100000,
+    "parsedClaims": 16000,
+    "postedEntries": 0
+  },
+  "jobs": [
+    {
+      "what": "B price",
+      "name": "price",
+      "phase": "setup",
+      "jobId": "f5900b3d-5312-4a3c-86d3-93840473f291",
+      "state": "completed",
+      "elapsedMs": 22627,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "B triage",
+      "name": "triage",
+      "phase": "setup",
+      "jobId": "60b014e0-ea42-4bc3-a0c9-cea80e15a5aa",
+      "state": "completed",
+      "elapsedMs": 10016,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "D price",
+      "name": "price",
+      "phase": "setup",
+      "jobId": "dbfce682-d2cd-4ca8-9cf0-bc28aecad305",
+      "state": "completed",
+      "elapsedMs": 87684,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "A price",
+      "name": "price",
+      "phase": "concurrent",
+      "jobId": "43fa63ff-82e2-4f39-891e-cf3214a81f80",
+      "state": "completed",
+      "elapsedMs": 102199,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "B audit report",
+      "name": "audit_report",
+      "phase": "concurrent",
+      "jobId": "5e5d07a4-3806-4136-973b-6f714e91aa23",
+      "state": "completed",
+      "elapsedMs": 48996,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 1",
+      "name": "parse_835",
+      "phase": "concurrent",
+      "jobId": "e0874837-1084-41eb-a041-e5b5847986f5",
+      "state": "completed",
+      "elapsedMs": 9274,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 2",
+      "name": "parse_835",
+      "phase": "concurrent",
+      "jobId": "f079ebe6-ee40-434b-83d2-9ba1d0779f21",
+      "state": "completed",
+      "elapsedMs": 7139,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 3",
+      "name": "parse_835",
+      "phase": "concurrent",
+      "jobId": "65a20f07-eabb-4b85-8fbb-78d4301e7abe",
+      "state": "completed",
+      "elapsedMs": 7143,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 4",
+      "name": "parse_835",
+      "phase": "concurrent",
+      "jobId": "c9c25353-8eed-48c2-b2b1-6f9f182d6367",
+      "state": "completed",
+      "elapsedMs": 7144,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "A triage",
+      "name": "triage",
+      "phase": "chain",
+      "jobId": "490bfdb0-729a-46a7-8abe-982a4d306d96",
+      "state": "failed",
+      "elapsedMs": 39148,
+      "attempts": 3,
+      "heap": null
+    },
+    {
+      "what": "A audit report",
+      "name": "audit_report",
+      "phase": "chain",
+      "jobId": "20bfb6ca-7fa4-4e6f-8e57-65b301ce55a3",
+      "state": "failed",
+      "elapsedMs": 38086,
+      "attempts": 3,
+      "heap": null
+    },
+    {
+      "what": "A reconcile",
+      "name": "reconcile",
+      "phase": "reconcile",
+      "jobId": "04f8873c-84a4-4c73-ac8b-87e3c448964e",
+      "state": "completed",
+      "elapsedMs": 50,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "A audit report 2",
+      "name": "audit_report",
+      "phase": "together",
+      "jobId": "557ebb68-69ab-4cf5-b3b0-da721abe6055",
+      "state": "failed",
+      "elapsedMs": 41284,
+      "attempts": 3,
+      "heap": null
+    },
+    {
+      "what": "D triage",
+      "name": "triage",
+      "phase": "together",
+      "jobId": "2253bcf9-9c3c-4d6e-9234-7e6181da8256",
+      "state": "failed",
+      "elapsedMs": 41096,
+      "attempts": 3,
+      "heap": null
+    },
+    {
+      "what": "E price",
+      "name": "price",
+      "phase": "together",
+      "jobId": "e96e49b6-3b52-4917-ae03-cb7934ca9980",
+      "state": "completed",
+      "elapsedMs": 110118,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 5",
+      "name": "parse_835",
+      "phase": "together",
+      "jobId": "7056fc16-6f4b-4b6c-8e00-ccbb86fe45d9",
+      "state": "completed",
+      "elapsedMs": 6113,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 6",
+      "name": "parse_835",
+      "phase": "together",
+      "jobId": "997e7c62-06d8-4db9-b84c-d8fc8a63dfc6",
+      "state": "completed",
+      "elapsedMs": 9609,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 7",
+      "name": "parse_835",
+      "phase": "together",
+      "jobId": "d4807f16-d5ee-4181-9f52-bdc99295f74e",
+      "state": "completed",
+      "elapsedMs": 9603,
+      "attempts": 1,
+      "heap": null
+    },
+    {
+      "what": "C parse 8",
+      "name": "parse_835",
+      "phase": "together",
+      "jobId": "26737da7-4366-49c3-a03e-aa53e001261d",
+      "state": "completed",
+      "elapsedMs": 6126,
+      "attempts": 1,
+      "heap": null
+    }
+  ],
+  "run": {
+    "status": "complete",
+    "failureCode": null
+  },
+  "pricedLines": 100000,
+  "parsedClaims": 16000,
+  "postedEntries": 0,
+  "memory": {
+    "limitBytes": 1073741824,
+    "peakBytes": 780939264,
+    "periods": [
+      {
+        "what": "the concurrent phase",
+        "peakBytes": 625610752,
+        "samples": 105,
+        "ms": 104554
+      },
+      {
+        "what": "A’s triage",
+        "peakBytes": 628916224,
+        "samples": 291,
+        "ms": 290557
+      },
+      {
+        "what": "A’s audit report",
+        "peakBytes": 628916224,
+        "samples": 257,
+        "ms": 256462
+      },
+      {
+        "what": "A’s reconcile",
+        "peakBytes": 628666368,
+        "samples": 4,
+        "ms": 2021
+      },
+      {
+        "what": "the large jobs together",
+        "peakBytes": 766808064,
+        "samples": 333,
+        "ms": 333803
+      }
+    ],
+    "oomKills": 0,
+    "oomKilled": false,
+    "restarts": 0,
+    "running": true
+  },
+  "advisoryLocks": {
+    "peak": 13703,
+    "samples": 1785
+  },
+  "errorCodes": {
+    "JOB_FAILED": 4,
+    "UNMAPPED_PLAN": 4
+  },
+  "windows": {
+    "coldMs": 10407,
+    "warmMs": 10193,
+    "coldRestarted": false,
+    "cacheDropped": false,
+    "contents": 18,
+    "plan": "GroupAggregate  (cost=1963735.54..2536683.19 rows=416791 width=132) (actual time=2522.225..10132.029 rows=18.00 loops=1)\n  Group Key: (CASE WHEN ((record_type = 'mppr_rate'::text) AND (key ? 'hcpcs'::text)) THEN 'mppr_code'::text WHEN ((record_type = 'mppr_rate'::text) AND (key ? 'component'::text)) THEN 'mppr_general'::text ELSE record_type END)\n  Buffers: shared hit=643 read=443182, temp read=557126 written=557719\n  ->  Gather Merge  (cost=1963735.54..2449157.11 rows=4167908 width=556) (actual time=2522.180..5723.583 rows=4172393.00 loops=1)\n        Workers Planned: 2\n        Workers Launched: 2\n        Buffers: shared hit=643 read=443182, temp read=557126 written=557719\n        ->  Sort  (cost=1962735.52..1967077.09 rows=1736628 width=556) (actual time=2452.558..2993.489 rows=1390797.67 loops=3)\n              Sort Key: (CASE WHEN ((record_type = 'mppr_rate'::text) AND (key ? 'hcpcs'::text)) THEN 'mppr_code'::text WHEN ((record_type = 'mppr_rate'::text) AND (key ? 'component'::text)) THEN 'mppr_general'::text ELSE record_type END)\n              Sort Method: external merge  Disk: 705936kB\n              Buffers: shared hit=643 read=443182, temp read=557126 written=557719\n              Worker 0:  Sort Method: external merge  Disk: 786880kB\n              Worker 1:  Sort Method: external merge  Disk: 735704kB\n              ->  Parallel Seq Scan on rule_record  (cost=0.00..482821.13 rows=1736628 width=556) (actual time=0.184..848.374 rows=1390797.67 loops=3)\n                    Filter: (release_no = 900110)\n                    Buffers: shared hit=565 read=443182\nPlanning Time: 0.125 ms\nExecution Time: 10515.632 ms"
+  },
+  "times": {
+    "release build": 1,
+    "migrate": 1373,
+    "release load": 605328,
+    "seed": 65807,
+    "worker start": 3016,
+    "setup: B priced and triaged, D priced": 126301,
+    "concurrent phase": 104554,
+    "A triage": 290557,
+    "A audit report": 256462,
+    "A reconcile": 2021,
+    "large jobs together": 333803,
+    "windows query": 31120
+  },
+  "aborted": null,
+  "verdict": {
+    "pass": false,
+    "reasons": [
+      "A price (price) logged no job heap line (concurrent phase)",
+      "B audit report (audit_report) logged no job heap line (concurrent phase)",
+      "C parse 1 (parse_835) logged no job heap line (concurrent phase)",
+      "C parse 2 (parse_835) logged no job heap line (concurrent phase)",
+      "C parse 3 (parse_835) logged no job heap line (concurrent phase)",
+      "C parse 4 (parse_835) logged no job heap line (concurrent phase)",
+      "A triage (triage) ended failed, not completed (the chain)",
+      "A audit report (audit_report) ended failed, not completed (the chain)",
+      "A reconcile (reconcile) logged no job heap line (A’s reconcile)",
+      "A audit report 2 (audit_report) ended failed, not completed (the large jobs together)",
+      "D triage (triage) ended failed, not completed (the large jobs together)",
+      "E price (price) logged no job heap line (the large jobs together)",
+      "C parse 5 (parse_835) logged no job heap line (the large jobs together)",
+      "C parse 6 (parse_835) logged no job heap line (the large jobs together)",
+      "C parse 7 (parse_835) logged no job heap line (the large jobs together)",
+      "C parse 8 (parse_835) logged no job heap line (the large jobs together)",
+      "a backend held 13703 advisory locks at once, above 64 (a lock per line or per row is back)",
+      "the worker logged JOB_FAILED 4 times"
+    ],
+    "advisories": [
+      "the windows query took 10407 ms cold, above its 5000 ms budget (advisory)"
+    ]
+  }
+}

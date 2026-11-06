@@ -1,10 +1,390 @@
 # Lane A schema chain: build status (SS-01, SUITE-CAP-1b, the interest fix)
 
+## RESUME-BLOCK (Lane A stood down 2026-11-05 07:58 UTC: this account is at 99% of its weekly usage)
+On the orchestrator's word (session_01TrKDxeLbxVo7t7zwRXFzrg, ~07:50 UTC), Lane B's account runs Lane A's chain as acting Lane A
+from 2026-11-06 19:00 UTC until this account's reset (`lanes/lane-a-handoff-to-lane-b-2026-11-05.md`, the orchestrator's).
+Nothing of this session runs: wf_b04ba66e-7ff (`workflow-scripts/lane-a-interest-pr-stage-wf_b04ba66e-7ff.js`) was stopped at a
+save point (its fixes committed and pushed), its background suite killed, #126 unsubscribed, its check-in deleted. Done so far:
+SS-01 merged (#104, e084da22); SUITE-CAP-1b merged (#110, f7d609cc).
+
+**Interest fix, PR #126** (https://github.com/PureTideWater/PhysicalTherapy/pull/126, draft, `co-001/ledger-interest-once`):
+- **Heads.** The PR branch is c49367c5 (unchanged since 06:00 UTC). Everything since is on the WIP ref
+  **`co-001/wip-interest-fix` = 23369ae6**: the fix round's 16 commits and base 23b25ad0 (#127) merged (23369ae6; before it,
+  0f4a5ed5 (#125) in 15f3359d; both with no conflict, regenerated: provenance only). c49367c5 is an ancestor of 23369ae6, so
+  the PR branch takes it as a fast-forward.
+- **CI on c49367c5** (ci 41974228505): red domain model (the blank approval line: expected), e2e (1/2) (INT-REL-1: LED-14/15
+  hang at `helpers.ts:50`, job 127069715493) and all green (follows them). Green: mutation 41974228567, screening-capacity
+  41974228564, approval-of-record 41974228593 and 41974429678. No CI has run on 23369ae6 (a WIP ref has no PR).
+- **Domain model, provisional:** on 23369ae6 **f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7, line 7469**
+  (`Approved by: ________  Date: ________  Document SHA-256: ...`). On c49367c5 it was 47887070...eb8ef: INT-REL-3 changed the
+  branch's own migration 20261110090000 (marker route, marker removed), so the hash moved. A base change to a migration or a
+  function file moves it again.
+- **Checks on 23369ae6** (local, 07:50 to 07:54 UTC): typecheck, lint, lint:copy, lint:logs, check:fixtures, synth (no diff),
+  verify-content, actions:check, toolchain:check, `db:domain-model --check` and `--check --strict` green; `--require-approval`
+  red only for the blank line. Each fix's red and green tests are in the findings table. **Not yet run on 23369ae6: the full
+  suite** (unit, db, golden, e2e, build, Stryker's 17 shards). Its run 2 was stopped at unit by the stand-down; run 1 (on
+  15f3359d) was superseded when INT-REL-1..3 were found.
+- **Reviews** (four, on c49367c5, each in its own clone, a skeptic per finding). **Seven confirmed, all fixed on the WIP ref:**
+  LED-R1 (red 5859c722, fix 84534029), LED-R2 (red 3d92d329, fix 6ca6b8c8), LED-R3 (ADR 0084 D5, a8b4a088), UX-INT-1 (red
+  3d5cf8d1, fix 9b46c740), INT-REL-1 blocking (feb91645: the journey's own `interest-manager` persona), INT-REL-2 (red 5074ce3e:
+  CAS-42.3's pass 171.2 s over its 150 s; fix f7e2c5de: 46.1 s), INT-REL-3 (red 37a2b994, fix 99579d0c: the NOWAIT lock loop;
+  ADR 0084 D16 77653d10; regenerated 35e7762a). ADR 0084 D5's line-whole cap sentence: a8b4a088. **Refuted (not defects of this
+  PR):** UX-INT-2 (the design's behaviour; a follow-up on the copy of every ledger refusal on the adjustment form), UX-INT-3
+  (UX-153; UX PR 29, `co-001/ux-dates`), UX-INT-4 (a follow-up for the ROI pages' owner). Security and tenancy: none.
+  **The PR body's findings table, written and ready:** `approval-summaries/lane-a-wip/interest-pr/findings-table.md` (with
+  `body-build.py`, the suite script `suite.sh` + `common.sh`, and the stage's progress notes under `progress/`).
+  The brief handed to the fix agent listed only four of the seven; the agent found the other three in the skeptics' output.
+- **Open, outside the PR** (claude/build-ops, for the design's owner): `designs/ledger-interest-once.md` D5, section 7 and
+  risk 8 amended for LED-R1, LED-R2, LED-R3 and UX-INT-1's words.
+
+**Exact next step (acting Lane A), one schema PR at a time:**
+1. Check out `co-001/wip-interest-fix` (23369ae6) in the interest worktree. `git fetch origin claude/build-platform`; if it
+   moved past 23b25ad0, merge it by LANES.md rule 6 (merge commit; pnpm install; watched.ts --write; db:domain-model --out
+   --strict on a freshly migrated database; synth --all; shared documents keep both sides).
+2. Run the full local suite once on that tree (`suite.sh`; set `L` in `common.sh` to a log directory of your own).
+3. Push it to `co-001/ledger-interest-once` (a fast-forward of c49367c5; never force, never --no-verify).
+4. Update #126's body (read it first): the summary block regenerated whole (`pnpm -s db:domain-model --summary-since
+   origin/claude/build-platform --function-diffs list`); the findings table above; the Checks rows; the new hash; under
+   65,536 characters; update_pull_request; read back.
+5. A fresh-clone verification reading CI (expected red: the domain model's blank line only, and all green after it); CAS-42.5
+   on the final head (dispatch release-capacity.yml: required, since INT-REL-2 changed the reconcile); re-shoot UX-INT-1's
+   screens (`p.reconciliation.int-paid`, `p.reconciliation.int-reported-only` at 1280, 390 and 1280 dark).
+6. Post the suggested approval line as ONE pull-request comment on domain-model.md's approval line at the final head
+   (`gh api repos/PureTideWater/PhysicalTherapy/pulls/126/comments` with commit_id, path, side RIGHT, line; the body a
+   `suggestion` block of the line with the final hash), then send_message the orchestrator the PR link, the SHA-256 and the
+   comment link.
+7. After the founder commits the line: merge the base if it moved (`--check --require-approval` exit 0, hash unchanged), CI
+   green, mark ready, wait for approval-of-record's re-run, merge (method merge, expectedHeadSha). Then send S4
+   (session_019i9ifAfByN2caCea4jgSdu) the merge commit: the schema slot passes to it.
+
+**The chain's queue after #126:** (1) `co-001/password-changed-notice` (S4's design; ADR 0091, SGN-16), opening only after #126
+merges; (2) the verifier /3 migration; (3) LANES.md "Handed to Lane A", ordered with the orchestrator.
+
+**This session's WIP refs:** `co-001/wip-interest-fix` 23369ae6 (live: the next step above). Superseded by merged PRs:
+`co-001/wip-ss01-chain`, `co-001/wip-ss01-fix2` (SS-01), `co-001/wip-sc1b-fix`, `co-001/wip-sc1b-mem-1`,
+`co-001/wip-sc1b-retry-1` (1b; their content reached #110 as patches).
+
 Session: https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW, **acting Lane A on Lane B's account** (GitHub login
 PureTideWater), started 2026-11-01 ~16:58 UTC by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW, until Lane A
 returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-brief.md`, `lanes/acting-lane-a-brief.md`
 (wins where they differ), item `lanes/lane-b-item-prompts-2026-11-01/schema-chain.md`. The earlier session
 (session_019i9ifCi6u3MV8sy7oAhUmy, Lane A's account) is stopped; its record is kept below under "History".
+
+## Now (Lane A, 2026-11-04)
+Session https://claude.ai/code/session_019i9ifEG147aKfNHEAsoS7h (Lane A's schema-chain session; started 2026-11-04 by
+Lane A's orchestrator session_01TrKDxeLbxVo7t7zwRXFzrg). Takes the chain back from acting Lane A (session_01FcouKQthXdmDnPmwhFepxW;
+its unpushed work is not waited for).
+- **02:35 UTC.** Machine OK (tools/setup-container.sh: every line ok, one note: tp-oracle pip 26.2.2). GitHub login
+  PureTideWater. Heads: base 21fa10df; SS-01 bb13be1b (no PR); 1b 22177731; interest 74a6b290. Base delta for SS-01
+  since 43565235: #92, #93, #90, #42's final (22789493), #95, #91; the only migration in it is #42's own
+  20261107090000. Next: SS-01's PR stage (base merge, draft PR, two reviews, fix round, verification), one workflow.
+- **02:40 UTC. Running: wf_c5833de7-aa6** (`workflow-scripts/lane-a-ss01-pr-stage-wf_c5833de7-aa6.js`): base
+  21fa10df into SS-01 (re-read of SS-01's recreated objects on the base's bodies; regenerate; fast checks; push); the
+  draft PR headed by the summary; security and UX/brand reviews in fresh clones, a skeptic per finding; fix round with the
+  full local suite once and one push (WIP ref `co-001/wip-ss01-chain` before the suite); fresh-clone verification reading
+  CI. Beside it, read-only: the flaky `tools/release/load.db.test.ts` root cause (fix as a patch, for 1b). Check-in
+  scheduled 07:46 UTC (trig_01G5HLTy6TevngHswpbJDA2S).
+- **03:28 UTC. SS-01 PR #104 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/104, head
+  e4a6d2fc (base 21fa10df merged, then #94 4846f043, no conflict). Re-read: no body SS-01 recreates moved since
+  6c28d6a2; 20261108090000 unchanged, no marker. Two semantic conflicts fixed (abbf3052; one is #95's
+  mapping-routes.db.test.ts asserting the pre-SS-01 refusal sentence, now SS-01's R1); ADR 0080 count-free (776b6a15).
+  Fast checks, touched db tests (7,097 passed), actions:check, toolchain:check green. Domain model 08c1ba47…6142, line
+  7414 (provisional). Body 40,568 characters, read back equal. Subscribed. Reviews running.
+- **03:31 UTC (corrected from 03:50). CI red, not SS-01's: the repository is now private** (`private: true`; repo updated 02:51:33 UTC). The
+  base 4846f043 is red too (ci run 41763423759: images; screening-capacity 41763423983). (1) images: the Trivy install
+  exits 6 (trivy-action v0.36.0 -> setup-trivy v0.2.6 -> install.sh @75c4dc0 fetches get.trivy.dev; the runner cannot
+  resolve it). (2) screening-capacity: RUNNER_TOO_SMALL, 2 CPUs (a private repository's runner); on #104 its `changes`
+  job's blobless clone cannot fetch blobs without credentials. (3) This voids 1b's CAS-42.5 route (free 4-CPU runner
+  while public). The domain model job fails only for the approval line, as expected. Failed jobs re-run once.
+  Reported to the orchestrator for the founder/co-founder. No merge in the chain until required checks can go green.
+- **03:33 UTC. The orchestrator's ruling on the CI breakage:** S4 (session_019i9ifAfByN2caCea4jgSdu) owns the CI fixes
+  (Trivy from its GitHub release with a pinned SHA-256, `co-001/ci-trivy-install-2026-11-04`; the gate's `changes` fetch
+  with the workflow token; any other public-repository assumption) and sends the diff, which goes into #104 (one comment) or
+  at its base merge. The founder decides on the private repository (GitHub Team organization with a 4-core larger runner,
+  or public again); the harness's CPU requirement is not lowered. **CAS-42.5 is blocked on that decision**; CAS-42.6
+  (local process route) still runs. SS-01 continues; its suggested line goes up on the final head once every check that
+  can pass has passed.
+- **04:25 UTC. wf_c5833de7-aa6 stopped; its reviews had not run.** Both reviewer agents (agentType security-reviewer,
+  ux-brand-reviewer) hit their frontmatter `maxTurns` (20, 30) before returning, so the fix round started with no findings.
+  Stopped before it could write "no findings" into #104's body. Its partial full suite on e4a6d2fc is kept as a record
+  (chain1 green; test:db 4 shards 9,718 + 1 skipped; build). Lesson: run the reviews as default workflow agents (LANES
+  rule 1) with the agent file as their brief.
+  **Running: wf_4c65fb5f-eab** (`workflow-scripts/lane-a-ss01-reviews-fix-verify-wf_4c65fb5f-eab.js`): both reviews
+  again as default agents, a skeptic per finding, fix round (full suite once, counting e4a6d2fc's parts if the tree is
+  unchanged), one push, verification reading CI; beside it, the flaky fix finished as a patch.
+- **Flaky `tools/release/load.db.test.ts`: root cause found** (progress record, to be archived): the loader's one
+  `VACUUM (FREEZE, ANALYZE) rule_record` freezes only rows older than its database's horizon; an autovacuum ANALYZE (or
+  catalog scan) in the scratch database holds a snapshot whose xmin precedes the load's xid when it predates the commit,
+  or when any older xid runs anywhere in the shared cluster (a snapshot's xmin is cluster-wide), so every page stays
+  unfrozen (relallvisible 0 of 7). Reproduced deterministically (a same-database snapshot before the load: 0/3 frozen) and
+  in the wild (private cluster beside a held xid: 1 of 20 fails with the CI symptom; none without). The proposed fix is
+  in `packages/rules/src/loader.ts` (re-VACUUM until frozen, bounded wait, `LoadResult.frozen`): no schema file, but it
+  is being checked against Change Order 001's content-pipeline freeze before it goes into 1b.
+- **05:55 UTC. Container restart (~05:40); setup re-run OK; resuming wf_4c65fb5f-eab.** Before the restart: both reviews
+  returned (11 findings; skeptics confirmed 7: UX-SS01-1 blocking, SEC-F1, UX-SS01-2, UX-SS01-3 should-fix, UX-SS01-5,
+  -6, -8 nits; refuted SEC-F2, SEC-F3, UX-SS01-4, UX-SS01-7); the fix round had its failing-first tests written
+  (uncommitted; saved as WIP ref `co-001/wip-ss01-fix2` f99ea08e).
+- **Flaky load test: the fix is a content-pipeline change (Change Order 001 rule 4; change-order-001.md:10, :115).** No
+  deterministic test-only fix exists (record and patch: `approval-summaries/lane-a-wip/flaky-load/`). **Asked of the
+  founder via the orchestrator (05:50 UTC):** the exception, text proposed in the record. Until a ruling it stays a
+  known flake and the patch is not applied anywhere.
+- **05:57 UTC. S4:** the images fix is #107 (`co-001/ci-trivy-pin-2026-11-04`, 41818ac4; Trivy 0.70.0 from its GitHub
+  release, SHA-256 pinned; CI green), merging next; the gate's fetch fix is #106. SS-01 takes them by one base merge
+  before its final push (no hand port). A schema PR's screening-capacity gate measures (migrations are watched) and stops
+  RUNNER_TOO_SMALL on the private repository's 2-CPU runner until the founder's runner/organization decision (#102).
+- **07:12 UTC. The repository is public again** (API private=false; the orchestrator, 07:10): 4-CPU runners, the gate can
+  pass; **CAS-42.5's dispatch route is open again** for 1b. The loader freeze exception is still with the founder.
+  SS-01's fix round: all seven confirmed findings fixed (failing-first tests); base 7bf7b252 (#107) merged (84ec0093);
+  head 3b796604 locally: unit 7,376 + 4 skipped (two failures from this round fixed and re-run), golden, oracle, test:db
+  4 shards 9,720 + 1 skipped, build, e2e 73 passed; Stryker running; then one push and the PR body.
+- **08:40 UTC. SS-01 fix round done: #104 head 3b796604 pushed** (wf_4c65fb5f-eab). Fixed, each failing first: SEC-F1
+  (8b85a7ef: mapping holds monitoring only for the owner's hold), UX-SS01-1 (2d4ae8b1: E1 kept and Export disabled while
+  held), UX-SS01-2/-6 (5a526016), UX-SS01-3 (86cc892d), UX-SS01-5/-8 (28a88558); BIL-07/BIL-09 amended (79315a09,
+  3b796604); base 7bf7b252 (#107) merged. Refuted: SEC-F2, SEC-F3, UX-SS01-4, UX-SS01-7. **Full local suite once, green on
+  3b796604:** unit 7,378 + 4 skipped; golden 376; oracle 688; test:db 9,720 + 1 skipped; build; e2e 73 (0 flaky); Stryker
+  6 shards + gate (pricing 98.67%, packets 97.75%); typecheck, lint 1,762, lint:copy 562, lint:logs 1,121, fixtures,
+  synth, verify-content, actions:check, toolchain:check. Domain model 08c1ba47…6142, line 7414. PR body 57,946.
+  Verification: blocked: the base moved to 881e2bbd (#105, #75, #106; no migration) and conflicts in
+  `apps/web/src/components/uploads/uploader.tsx`, so no CI run starts.
+  **Running: wf_b656bc57-787** (archived): merge 881e2bbd (fast + touched checks; push; body), then the re-shoot of the
+  fixed states (the review saw them only broken) beside the fresh-clone verification reading CI. Then the suggested line.
+  Next after it: `workflow-scripts/lane-a-chain-forward-1b-interest.js` (SS-01 into 1b, CAS-42.5 dispatch, 1b into
+  interest, verifiers, CAS-42.6 local). CAS-42's assertedBy already holds reconcile.large (91efb58a, 2026-11-02).
+- **The orchestrator's merge step (07:48):** before any merge, if origin/claude/build-platform is no longer an ancestor of
+  the head: merge it again, fast checks and generators, push, CI green, then merge; check `--check --require-approval`
+  after each base merge (a delta with no migration keeps the hash, so the founder's line stays valid).
+- **09:45 UTC. SS-01 verified; suggested line posted.** wf_b656bc57-787: base 881e2bbd merged (a8d53a97; uploader.tsx
+  both sides), head **7076d64e** (fast + touched checks green; body 62,183). Re-shoot: every fixed state shown fixed (one
+  new nit: mixed apostrophes in the grantee mapping sentence, deferred). CI on 7076d64e: 24 of 27 green (images,
+  screening-capacity with a time advisory the base shares (O9: S4 54.5 s vs 44 s), mutation, db, e2e); domain model and
+  all green fail only for the blank line. Fresh-clone verification passed. **Domain model SHA-256
+  08c1ba4746589dc3d1acbcce966680e9bd22aa2ae07fb87f1c03b18ce9576142, line 7414. Suggested line (one PR comment):**
+  https://github.com/PureTideWater/PhysicalTherapy/pull/104#discussion_r4465978371 . Reported to the orchestrator.
+  Base moved to 24531dc2 (#86; no migration): merged after the founder commits, then CI green, ready, merge.
+  **Running: wf_130f3090-169** (`workflow-scripts/lane-a-chain-forward-1b-interest.js`, args ss01Head 7076d64e).
+- **11:35 UTC. Chain forward (wf_130f3090-169):** 1b **ab8c9c27** pushed (SS-01 7076d64e merged; 20261109090000
+  unchanged); CAS-42.5 dispatched on it (release-capacity run 41810890284); interest **adf0f5d2** pushed (1b merged; its
+  migration unchanged); both merges' adversarial fresh-clone verifiers: ok. CAS-42.6 (local process route, one release
+  dir): **before** (56ed6279, #81) FAIL as expected: A triage, A report x2, D triage 53200 out of shared memory after 3
+  attempts, one backend at 13,703 advisory locks; **after** (ab8c9c27) running.
+- **The founder GRANTED the release loader's freeze exception** (~09:55 UTC, relayed by the orchestrator 11:33; text in
+  `approval-summaries/founder-asks-2026-10-27.md`, "Granted 2026-11-04"). The fix goes into 1b with the grant recorded in
+  ADR 0083 and reconciliation-001; tools/release/load.db.test.ts is no longer a known flake. Script ready
+  (`workflow-scripts/lane-a-loader-freeze-into-1b.js`); it starts when CAS-42.6's head run ends, so the measurement runs
+  undisturbed.
+- **11:38 UTC. The founder committed SS-01's approval line:** d214ad6c (11:30:05 UTC, "Update domain-model.md", GitHub's
+  "Commit suggestion"): line 7414 only, `Approved by: Tyler Williams  Date: 2026-11-04  Document SHA-256:
+  08c1ba47…6142`. Next, once CAS-42.6's head run ends (~12:00): merge base 24531dc2 (#86; no migration), fast checks and
+  generators, `--check --require-approval`, push, CI green, ready, approval-of-record's re-run, merge (method merge,
+  expectedHeadSha).
+- **11:55 UTC. CAS-42.6 PASSED; CAS-42.5 FAILED (memory.peak).** Results and logs: `approval-summaries/lane-a-wip/cas42/`.
+  - CAS-42.6 (local process route, one release dir 900110, same harness and server; only the worker differs): **before**
+    56ed6279 (#81) FAIL: A triage, A report x2, D triage 53200 after 3 attempts, one backend at 13,703 advisory locks;
+    **after** ab8c9c27 PASS: 19 jobs on attempt 1, locks max 1, live heap max 339 MiB (line 420), A triage 43.6 s (120),
+    A report 95.4 s (180), together A report 2 139.6 s and D triage 79.9 s; memory peak 721.6 MiB (cgroup v1, local).
+  - CAS-42.5 (release-capacity.yml run 41810890284 on ab8c9c27, ubuntu-26.04 4 CPUs, worker 0.5 vCPU / 1,024 MiB):
+    **fail on two checks only:** the worker's memory.peak 980.4 MiB over the run and 936.6 MiB in the together phase, above
+    921.6 (90%). Everything else passed (attempt 1, live heaps <= 420, locks <= 64, no OOM/restart). Commented on #73 by
+    the workflow. Artifact unreadable here (blob host refused by the egress proxy). **Open for 1b's PR stage:** root-cause
+    the container peak (live heap is 339 MiB; the rest is native memory, Chromium or page cache), fix or measure, never
+    loosen the 90% line. Also open: the harness's step 7b posts 0 of 0 (A has no actionable lines), so section 8.4's 30 s
+    actionable-write budget is never exercised.
+  - Merge verifiers for 1b ab8c9c27 and interest adf0f5d2: ok.
+- **12:55 UTC. Loader fix in 1b: 978891a3** (wf_71702c03-7e6; the 4 files + ADR 0083 subsection + reconciliation-001
+  content-pipeline bullet quoting the grant; failing first 7 of 18; 10/10 alone, 1 beside a held xid; 108 touched db files,
+  8,264 tests; fast checks; dm --check unchanged; SCR-08 already covers the file). No in-repo flake listing existed.
+  **Checker's should-fix (reproduced on PG 18.4):** after an aborted load, < 2% of pages with dead tuples make VACUUM
+  bypass index cleanup, those pages never turn all-visible, so every later load waits 180 s, returns frozen:false and
+  warns about the wrong cause. Fix (`INDEX_CLEANUP ON` on the retry passes) is outside the grant's words: **amendment asked
+  of the founder via the orchestrator (12:55)**. Within the grant, to do in 1b's fix round: the warning's wording and the
+  documents' "180 s bounds when the last pass starts". Interest's merge of 978891a3 stopped early (staged, not
+  committed): aborted, interest stays at adf0f5d2 until the loader settles (one merge).
+- **12:58 UTC. SS-01 final base merge pushed: #104 head c0e15544** (wf_3c743e84-8d5): bases 24531dc2 (#86) and 45d7d0c1
+  (#108) merged (c802cd8b, 45893ebb; provenance commits 3589ff03, c0e15544); no migration, functions, domain model or
+  approvers.json in either delta; the founder's line 7414 byte-identical; `--check` and `--check --require-approval` exit 0,
+  hash 08c1ba47…6142. Fresh-clone verification waiting for CI on c0e15544. Then: ready, approval-of-record re-run, merge.
+- **13:08 UTC. SS-01 MERGED: #104 → claude/build-platform e084da22** (method merge, expectedHeadSha c0e15544). On
+  c0e15544: all 27 check runs green but notify (skipped), domain model included (`--check --strict --require-approval`
+  "carries an approval for this text", 08c1ba47…6142); required checks all green, mutation, screening-capacity gate
+  (no time advisory this run), approval-of-record (re-run after ready: 41834628129 success); base 45d7d0c1 an ancestor;
+  mergeable clean; fresh-clone verification passed. Unsubscribed from #104. Reported to the orchestrator.
+  **Next: SUITE-CAP-1b's PR stage** (base e084da22 into 1b 978891a3).
+- **13:15 UTC. Running: wf_a38ce7b6-ec3** (`workflow-scripts/lane-a-sc1b-pr-stage-wf_a38ce7b6-ec3.js`), 1b's PR stage:
+  base e084da22 merged (re-read; regenerate; checks; push); the draft PR headed by the summary (Freeze exception: both
+  rulings quoted); reviews as default agents (security/tenancy, ledger/money, reliability/capacity; UX only if a scout
+  finds changed words), a skeptic per finding; beside them two investigations (CAS-42.5's memory.peak; the harness's
+  0-actionable reconcile); fix round (findings, the loader's in-grant wording, INDEX_CLEANUP only if ruled, the 2026-10-27
+  grant in ADR 0083, the memory fix unless it needs a ruling) with the full suite once and one push; then the fresh-clone
+  verification reading CI beside CAS-42.5 re-dispatched on the final head (and CAS-42.6's after side if the worker
+  changed). Interest waits for 1b's final head.
+- **13:15 UTC. The founder GRANTED the loader amendment** (relayed by the orchestrator; `founder-asks-2026-10-27.md`,
+  "Granted 2026-11-04 (~13:15 UTC)"): "Granted: in the release loader's freeze, each retry pass runs VACUUM (FREEZE,
+  INDEX_CLEANUP ON) rule_record, so dead tuples a failed load left cannot keep the table unfrozen; the warning names the
+  cause it can see." 1b's fix round reads that file and applies it (failing-first on the aborted-load reproduction; ADR
+  0083 and reconciliation-001 record it beside the first grant). Interest takes 1b's final head in one merge.
+- **13:58 UTC. 1b PR #110 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/110, head d219e97d (base
+  e084da22 merged; 20261109090000 unchanged; domain model e024cf9f…c4df, provisional; body 35,855). Subscribed. The words
+  scout: no screen or PDF sentence changed; operator-facing text is new (JobHeapLivePeak alarm, two runbook sections, the
+  ci.md guide, the release:load warning, the capacity summary). **Decision:** those are words a person reads, so they get a
+  words review too: wf_78024f0c-4c1 (archived) reviews them with a skeptic per finding and hands confirmed ones to the fix
+  round's record before it starts. Reviews and the two investigations running in wf_a38ce7b6-ec3.
+- **14:25 UTC. Operator-words review done** (wf_78024f0c-4c1): 17 findings, 14 confirmed by a skeptic (all should-fix
+  or nit: the incident runbook's live-heap steps (peaks are the whole process's, never added; an out-of-memory crash logs
+  nothing and the job-failure alarm stays quiet; step 2's two readings; "nothing has failed yet"); ci.md's reading guide
+  (check lines carry no job ID; no SQLSTATE in the worker log; the lock check names no job type; the missing-heap-line
+  cause); and more), 3 refuted (OPS-9, OPS-11, OPS-17). The hand-over cut off after OPS-3; the session appended the other
+  11 and the refuted list to the fix round's record before it started.
+- **18:05 UTC. 1b fix round pushed #110 head 4a8357d9** (WIP f5d3ffa6 first; bases #109 (e04fe922) and #113 (52821641)
+  merged; provenance commits). In it: the confirmed review findings (security-S1 seed typecheck, others: see the PR
+  body); the loader amendment (retry passes VACUUM (FREEZE, INDEX_CLEANUP ON); warning names what pg_class shows; docs:
+  the 180 s bounds when the last pass starts), failing first; the 14 operator-words fixes; the harness now gives A
+  actionable lines so 7b and the 30 s actionable write are exercised (failing first 5 of 42). The 2026-10-27 ledger grant
+  was already in ADR 0083 word for word. **Full suite once, green on ff65a708:** unit 7,610 + 4; golden 381; oracle 689;
+  test:db 9,815 + 1 (CAS-42.1 triage 61.8 s, actionable write 6.0 s; report 75.8 s; CAS-42.2 85.6 + 67.7 s); build; e2e
+  77; Stryker 6 shards + gate; fast checks again on 4a8357d9. Domain model e024cf9f…c4df, line 7459 (unchanged).
+- **CAS-42.5's memory.peak root cause** (investigation, two instrumented CI runs on co-001/wip-sc1b-mem-1): the same tree
+  passed (842.9 MiB) and failed (958.6 MiB); the swing is page cache charged to the worker container (238 vs 335 MiB:
+  node and Chromium binaries faulted cold, report files); the worker's anon + kernel + shmem peaked 595.8 / 622.8 MiB;
+  Chromium flags save <= 12 MiB. **Asked of the founder (18:05, via the orchestrator):** apply the unchanged 90% line to
+  the container's working set (memory.current minus inactive_file), memory.peak and memory by kind reported beside it.
+  Until a ruling 1b does not merge on a failing CAS-42.5.
+- **18:20 UTC. Decided by Lane A's orchestrator (~18:10, on the co-founder's standing direction; not a founder
+  ruling):** CAS-42.5's 90% memory line (921.6 of 1,024 MiB) applies to the worker container's working set,
+  memory.current minus inactive_file; memory.peak and memory by kind reported beside it; the run also fails on any OOM
+  kill or memory.events oom/oom_kill increment. Recorded in ADR 0083 with the two runs as evidence; checks.ts and tests
+  failing first. wf_a38ce7b6-ec3 stopped after its fix round returned (its verification and CAS-42.5 would have measured
+  4a8357d9 without the change); a CAS-42.5 run it dispatched on 4a8357d9 (41882546709) is left to finish as evidence.
+  **Asked of the orchestrator (18:20):** step 7b at full size (A's ~31,000 open lines cannot reconcile in one attempt until
+  SUITE-CAP-3): recommended (a) 7b on its own practice at CAS-42.3's 2,000 lines until SUITE-CAP-3 moves it back.
+  Next: `workflow-scripts/lane-a-sc1b-working-set.js` (the change, an adversarial review, then verification + CAS-42.5).
+- **18:30 UTC. Decided by the orchestrator (~18:25; test scope, not a founder ruling): (a)** step 7b on a practice of its
+  own at CAS-42.3's 2,000 lines, A keeps its full month; a fixed "Known gap" line on every run (full-size reconcile is
+  SUITE-CAP-3's, 10,000 lines in 3,412 s, revisit condition); ADR 0083 records it as temporary, the move back to A being
+  SUITE-CAP-3's acceptance step. **Running: wf_7e937213-93c** (`workflow-scripts/lane-a-sc1b-working-set.js`, args head
+  4a8357d9): both decisions built with failing-first tests, memory by kind and the OOM-events check, ADR 0083; fast checks,
+  tools tests, a --small smoke; push; adversarial review (and its fixes); then the fresh-clone verification reading CI
+  beside CAS-42.5 on the final head. Then the suggested line.
+- **18:28 UTC. CAS-42.5 on 4a8357d9 (run 41882546709) failed as expected in step 7b:** "A's reconcile: 30795 actionable
+  lines in 7 reprocessing 835s", then `stopped: REPROCESSING_MONITOR_NOT_CANCELLED`; nothing read back. Evidence for the
+  7b decision; one comment on #110. CI otherwise green on 4a8357d9 but the domain model (blank line).
+- **20:40 UTC. 1b #110 head 3ac856d5** (wf_7e937213-93c: 934e5bb5 working set + OOM events + 7b on F; base 17641c88
+  (#114, #85) merged ff11fb28; review found problems, fixed in 3ac856d5: A's chain triage must make exactly the scenario's
+  lines actionable, plus the workflow header and comments). CI green but the domain model (blank line). **CAS-42.5 on
+  3ac856d5 (run 41901463895): memory now PASSES** (working set at most 642.8 MiB over the run vs 921.6; memory.peak 746.4),
+  7b on F (2,000 lines, attempt 1, 615.7 s), A's triage 30,795 of the 30,795 expected actionable, the together phase all
+  completed, the Known gap line printed; **FAIL on two retries:** A price and C parse 4 completed on attempt 2 (concurrent
+  phase; both attempt 1 on ab8c9c27); cause being read (worker log is in the artifact, unreachable here). Also noted:
+  advisory locks at most 22 per backend during F's reconcile (bound 64; 1b's claim is one per backend: to explain).
+- **21:10 UTC. wf_7e937213-93c done.** Verification: CI on 3ac856d5 green but the domain model (blank line); the base moved
+  to 00fd2906 (#115), so a base merge is due; approval line 7459, hash e024cf9f…c4df unchanged. **CAS-42.6 after side
+  re-run locally on 3ac856d5: PASS** (22 jobs on attempt 1; working set 708.2 MiB; locks 22 = the reprocessing parse's
+  trace-bucket locks (64 buckets; 28 traces); live heap 281; A's actionable write ~4.5 s). **CAS-42.5 on 3ac856d5: FAIL on
+  the two attempt-2 jobs only** (cause unconfirmed; leading hypothesis: 6 concurrent jobs on a 4-connection pool with a
+  10 s connection timeout on a slow runner). **F's reconcile 615.7 s CI / 730.8 s local at 2,000 lines** (CAS-42.3 alone
+  55.2 s): one backend at 100% CPU on single-row INSERT INTO line_status. **Running: wf_caf81379-09e** (archived): both
+  root-caused (local profile; an instrumented WIP run if needed), the 1b parts fixed failing-first (SUITE-CAP-3's parts
+  recorded and handed to Lane B), base merged, one push, then verification and CAS-42.5 again.
+- **22:35 UTC. Container restart ~22:20; setup re-run OK; resuming wf_caf81379-09e.** Findings so far (records and the
+  patch: `approval-summaries/lane-a-wip/sc1b-pool/`): **the retries are a pre-existing worker defect, confirmed in CI**
+  (instrumented run 41913629020 on co-001/wip-sc1b-retry-1): the practice pool has 4 connections (main.ts:139, 10 s timeout)
+  while the worker runs up to 15 practice jobs at once; long holders starve the rest, pg-pool times out, pg-boss retries.
+  **Session's decision (22:30):** the fix rides #110 since it blocks 1b's acceptance run (pool sized to the 15 job slots,
+  timeout kept, every failed attempt logged with an error code, the harness prints them; failing first: 11 of 15 time out
+  on 4 connections); cost: +11 worst-case connections per worker task; told the orchestrator. **F's reconcile time is
+  pre-existing, SUITE-CAP-3's** (same statements, plans and buffer counts on the base; 1b ~25 s faster via
+  claim_by_superseded; byPatient ~403 s and the case refresh dominate): a known limit in ADR 0083, handed to Lane B.
+- **22:40 UTC. The orchestrator agreed (~22:27) and added:** a synth-time infra check per environment that the worst-case
+  connections (worker and web tasks x pools + operator, migration, screening pools + reserve) stay under the instance's
+  max_connections less RDS's reserved; if dev/staging (db.t4g.micro) fail it, cap worker tasks or one size up, whichever
+  is cheaper and safe, recorded; a DatabaseConnections alarm at 80% of max_connections; the Known gap line shows F's
+  reconcile margin to its 900 s attempt. wf_caf81379-09e stopped, its fix step edited (archived) and resumed.
+- **01:20 UTC (2026-11-05). 1b #110 head c2626113: CAS-42.5 PASSES** (run 41940882156: every check passed, all 22 jobs
+  on attempt 1; one advisory, the windows query 52.0 s cold); **CAS-42.6 after side PASSES** locally on c2626113 (F's
+  reconcile 657.3 s of 900, 73%; working set 712.8 MiB; locks 22). CI green but the domain model (blank line). The fix
+  round (wf_caf81379-09e): acad05cd the practice pool (15 slots, 10 s timeout kept, failed attempts logged by code; failing
+  first); 5b7f5f83 the connection budget checked at synthesis (infra/lib/connections.ts: production 205 of 389; dev and
+  staging over budget on their classes), **dev db.t4g.micro and staging db.t4g.small moved to db.t4g.medium** (capping the
+  single worker task rejected as unsafe; staging ~+$23/month, dev $0 until deployed; ADR 0083 + an ADR 0012 note), a
+  DatabaseConnections alarm at 80%, its runbook section; F's reconcile a known limit, the Known gap line prints its margin;
+  hand-off to Lane B: `approval-summaries/lane-a-to-lane-b-sc1b-reconcile-time-2026-11-05.md`; base 7fb3e102 merged.
+  Domain model unchanged e024cf9f…c4df, line 7459. **Open before the suggested line:** the base moved to 370b8973 (#119,
+  test-only); this round's new infra and worker code has had no adversarial review; the class change is a cost decision
+  beyond "one size up" (asked of the orchestrator 01:20).
+- **01:25 UTC. Decided by the orchestrator (~01:11):** staging db.t4g.small -> db.t4g.medium (production's class; staging
+  proves releases and capacity; ~+$23/mo); dev db.t4g.micro -> db.t4g.small with stop-first worker deploys in dev only
+  (keeps production's pool size; ~+$11/mo when deployed; ~$24/mo less than medium); dev's deploys never page (silence the
+  worker heartbeat alarm in the deploy window or a longer evaluation period in dev); the budget check passes for dev under
+  stop-first; ADR 0083 + the ADR 0012 note; the PR body carries one line for the founder: "RDS: staging db.t4g.small →
+  medium (+~$23/mo); dev micro → small (+~$11/mo when deployed)"; PRD section 19 stays the founder's. The orchestrator
+  records the SUITE-CAP-3 hand-off in LANES.md and lanes/lane-b.md. Review of round 3's new code running: wf_42e0e4b4-b51.
+- **01:55 UTC. Round 3's new code reviewed** (wf_42e0e4b4-b51; infra, worker, security; findings and verdicts:
+  `approval-summaries/lane-a-wip/sc1b-pool/round3-review.json`): 9 findings, 6 confirmed (WR-1 attempt codes UNCLASSIFIED for
+  the code's own retryable failures and AWS SDK errors; WR-2 an expired attempt logs no attempt line; WR-3 the Known gap
+  margin reads only the last attempt; WR-5 and INFRA-1 the screening task's pg-boss LISTEN connection uncounted; INFRA-2 the
+  runbook calls the estimate the real limit), 3 refuted (WR-4, INFRA-3, SEC-RT-1). Infra synth of all 6 stacks without
+  credentials, infra tests 751, worker tests, lint:logs green. **Running: wf_edd43592-de8** (round 4: the six fixes, the
+  instance-class decision (staging medium, dev small with stop-first worker deploys and no paging), base 370b8973+, the
+  Freeze-exception and cost lines, one push; then verification and CAS-42.5 if the worker or harness changed). A first launch
+  passed placeholder text instead of the findings and was stopped before it wrote anything.
+- **03:20 UTC. Round 4 pushed 171825c3** (d580d0fe: WR-1, WR-2, WR-3, WR-5 + INFRA-1 (screening task 19 connections;
+  production 207, staging 165), INFRA-2, and the instance classes: staging db.t4g.medium, dev db.t4g.small with dev's worker
+  STOP_FIRST (0/100) and the budget counting each service's own deployment; base 54d061fd (#118) merged; body 61,547). CAS-42.5
+  dispatched on it (run 41956080470). The base then moved to af3e79f3 (#120) and conflicted in docs/runbooks/ci.md, so no CI
+  could run; the session stopped wf_edd43592-de8's waiting verifier and merged it itself (421eca27: #120's three
+  content-calendar rows and 1b's release-capacity row kept), regenerated (provenance only), ran the fast checks,
+  actions:check, toolchain:check and 433 unit tests, and pushed **650efb9b**. **Running: wf_8cfb34ee-c5c**: the body
+  refresh, the fresh-clone verification reading CI on 650efb9b, and CAS-42.5's result on 171825c3 (the delta touches no
+  worker, harness or schema). Then the suggested line.
+- **03:35 UTC. SUITE-CAP-1b verified; suggested line posted.** wf_8cfb34ee-c5c: body refreshed (63,591, read back equal);
+  fresh-clone verification passed, no problems (CI on 650efb9b green but the domain model's blank line; mutation 16 shards,
+  screening-capacity, approval-of-record pass; infra tests 759, synth of all six stacks without credentials (dev
+  db.t4g.small, alarm 135; staging and production db.t4g.medium, alarm 316); 1b's db tests 1,298; the summary equals a fresh
+  run; base af3e79f3 an ancestor). **CAS-42.5 PASS** (run 41956080470 on 171825c3 = 650efb9b in worker, harness and schema:
+  22 jobs on attempt 1; working set 719.9 of 921.6 MiB; OOM 0; locks 22 of 64; live heap <= 275; F 609.4 of 900 s; no
+  attempt-failed lines). **Domain model SHA-256 e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df, line
+  7459. Suggested line (one PR comment):** https://github.com/PureTideWater/PhysicalTherapy/pull/110#discussion_r4476277082 .
+  Reported to the orchestrator. Next: interest takes 650efb9b in one merge (no PR) while the founder decides.
+- **04:20 UTC. Interest carried forward: 650a3108** (wf_f41d1b09-cc0; 1b 650efb9b merged; conflicts reconciliation/page.tsx
+  (import union) and the domain model (regenerated); 20261110090000 unchanged (no body it recreates moved: 1b's delta since
+  ab8c9c27 touches no migration or function file)). Checks: fast checks, actions, toolchain; unit 1,879 + infra 759; db 26
+  files 1,483 (incl. chain.large, reconcile.large); build, e2e ledger-interest + reconciliation 3; --small capacity smoke
+  pass (F 600 of 600 posted in full, 22 jobs on attempt 1). Adversarial verifier: ok, no problems. Domain model
+  47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef, line 7469 (provisional). Open for interest's PR: ADR
+  0084 D5's line-whole cap sentence; its UX/brand review; a full-size CAS-42.5 on its own head (its reconcile changes).
+- **04:35 UTC. The founder committed SUITE-CAP-1b's approval line:** 61fc4e6c (04:13:30 UTC, "Update domain-model.md",
+  "Commit suggestion"): line 7459 only, `Approved by: Tyler Williams  Date: 2026-11-05  Document SHA-256: e024cf9f…c4df`.
+  The base moved to f185655c (#121, brand rulings; 11 files, no schema, lockfile or workflow change; clean merge): the
+  session merges it, regenerates, runs the fast checks and `--require-approval`, pushes, then CI, ready, approval-of-record,
+  merge. Interest's own CAS-42.5 dispatched on 650a3108 (run 41966650378) as early evidence for its PR stage.
+- **05:10 UTC. SUITE-CAP-1b MERGED: #110 → claude/build-platform f7d609cc** (method merge, expectedHeadSha 5199c2a6). Base
+  f185655c (#121) merged by the session (6303493d; provenance 5199c2a6; the founder's line byte-identical;
+  `--check --strict --require-approval` exit 0, "carries an approval for this text"); fast checks and 263 brand/synth unit
+  tests green; every check on 5199c2a6 green (35 + 1 skipped), required checks all green, mutation, screening-capacity gate,
+  approval-of-record (re-run after ready: 41971573978); base an ancestor; mergeable clean. Unsubscribed from #110. Reported.
+- **Interest's early CAS-42.5 at full size PASSES** (run 41966650378 on 650a3108: working set 778.4 of 921.6 MiB, memory.peak
+  878.3, OOM 0; F's 2,000 lines 627.4 s of 900). **Next: the interest fix's PR stage** (base f7d609cc into 650a3108).
+- **05:20 UTC. Running: wf_b04ba66e-7ff** (`workflow-scripts/lane-a-interest-pr-stage-wf_b04ba66e-7ff.js`), the interest
+  fix's PR stage: base f7d609cc merged; the draft PR headed by the summary (Freeze exception: the 2026-10-27 grant, already in
+  ADR 0084); reviews as default agents (ledger/money, security/tenancy, UX/brand with 1280/390 light and 1280 dark shots of
+  section 7's screens, reliability), a skeptic per finding; the fix round (findings; ADR 0084 D5's line-whole cap sentence;
+  the full suite once; one push; body); then the fresh-clone verification reading CI beside CAS-42.5 on the final head and
+  re-shots of fixed screens. Then the suggested line.
+- **06:00 UTC. Interest PR #126 open (draft):** https://github.com/PureTideWater/PhysicalTherapy/pull/126, head c49367c5
+  (base f7d609cc merged; 20261110090000 unchanged; domain model 47887070…eb8ef, provisional; body 32,766). Subscribed.
+  Reviews running.
+- **06:45 UTC. The orchestrator:** the next schema PR after #126 is S4's `co-001/password-changed-notice` (ADR 0091; S4 =
+  session_019i9ifAfByN2caCea4jgSdu), opening only after #126 merges. **When #126 merges: send S4 the merge commit** (the
+  schema slot passes to it). Lane A's queue after that comes from LANES.md "Handed to Lane A", ordered with the orchestrator.
+- **07:35 UTC. Interest PR #126 fix round (wf_b04ba66e-7ff):** reviews and skeptics done. Confirmed: LED-R1, LED-R2, LED-R3,
+  UX-INT-1, INT-REL-1 (blocking: e2e persona), INT-REL-2 (interest pass at size), INT-REL-3 (nit: migration header lock order);
+  refuted: UX-INT-2, UX-INT-3, UX-INT-4. LED-R1/R2/R3 and UX-INT-1 fixed failing-first (WIP `co-001/wip-interest-fix` a8b4a088,
+  with ADR 0084 D5's line-whole cap sentence); base 0f4a5ed5 (#125) merged (15f3359d, no conflict, regenerated: provenance
+  only). The brief handed to the fix agent listed only four findings (truncated); the agent found INT-REL-1..3 confirmed in the
+  skeptic transcripts, stopped the suite's first run at unit (the fast checks and domain-model checks had passed), and is
+  fixing them before the suite runs once. Open, not writable from the PR: design D5 / section 7 / risk 8 amendments (ops).
+- **07:58 UTC. Stood down** on the orchestrator's word (this account at 99% of its weekly usage): INT-REL-1..3 fixed
+  (feb91645 to 35e7762a) and base 23b25ad0 (#127) merged (23369ae6), fast checks green on it; pushed to
+  `co-001/wip-interest-fix`; wf_b04ba66e-7ff and its suite stopped; #126 unsubscribed; check-in deleted. See the RESUME-BLOCK.
 
 ## Now (acting Lane A, 2026-11-01)
 - **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
@@ -48,6 +428,93 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **~11:00 UTC (acting Lane A): 1b's CAS-42.1 fixed: 1b head 22177731 pushed** (wf_3118d5d7-edb; no migration, domain
+  model unchanged at e024cf9f…efc4df). Cause: RUN_LINES_QUERY joined each line to a DISTINCT ON CTE over the practice's
+  whole stage log and plain-joined case_line; on pre-triage statistics the planner chose a nested loop (first 2,000 rows
+  27.4 s; ~23 min for 100,000). Fix (query shape): the stage as a scalar subquery on line_status_head through
+  line_status_head_once, the case line as LEFT JOIN LATERAL ... LIMIT 1 through case_line_once; rows unchanged
+  (streamed.db.test.ts). Proof: cold statistics, all 100,000 lines read in 16.6 s; CAS-42.1 report 79.5-85.9 s in 4
+  runs (autovacuum off once, on three times), 1 lock; CAS-42.2 passes. Skeptic in a fresh clone: ok, report 75.4 s.
+  ADR 0083's 1b section updated. Revisit: CANDIDATE_QUERY's DISTINCT ON over the stage log. Interest (74a6b290) takes
+  22177731 at its PR stage.
+- **~09:20 UTC (acting Lane A): interest at its clean point: 74a6b290 pushed** (wf_3c4cf5ac-af0; results
+  `approval-summaries/lane-a-schema-chain-wf_3c4cf5ac-af0-result.json`). 379fed9f merged 1b 048bc843; builder W's slice
+  4 d37a0ee3 (reconciliation and ROI words per section 7, word for word in the result; routes db test 17/17 and
+  ledger-interest.spec 2/2, both failing first); the integrator's seam read found and fixed one defect (74a6b290: a
+  take-back is now capped at the line's whole interest as well as the chain's, so two chains on one line after a
+  specialist's correction can no longer trip ledger_interest_line_floor and roll back a reconcile (D8); failing-first
+  test). **One full local suite:** unit 7,275 + 4 skipped; golden 376; oracle 712; test:db shards 2-4 green, shard 1
+  3,334 passed + 1 failed: **CAS-42.1 (1b's test)**; build, stamp, e2e 71; Stryker affected shards (interest.ts 100%,
+  308/308) + gate; verify-content; synth; engine-freeze clean; scope 75 files in section 11. **Domain model SHA-256
+  47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef, line 7469** (provisional). Open: ADR 0084 D5
+  sentence on the line-whole cap (at interest's PR); its UX review at its PR.
+- **CAS-42.1 fails at 1b's own head 048bc843 too** (report 730-750 s vs 180 s, nearly all FETCH report_lines; 95.8 s in
+  1b's integrator run): the report's plan depends on whether autovacuum's ANALYZE lands after triage. **Running:
+  wf_3118d5d7-edb** (script archived) on /home/user/sc1b: a plan-independent fix (query shape first), proven by 3 runs
+  plus one with autovacuum off, narrow checks, push; a skeptic re-runs it. 1b's full suite runs once in its PR fix round.
+- **07:40 UTC (acting Lane A): #42 MERGED as 22789493 (orchestrator, 07:36 UTC). SS-01's PR stage started.**
+  **Running: wf_78cd4c88-7b1** (script `workflow-scripts/lane-a-ss01-pr-stage-wf_78cd4c88-7b1.js`): base 22789493 merged
+  into SS-01 (regenerated; SS-01's recreated objects re-read on #42's merged body; delta checks; push); the draft PR into
+  claude/build-platform (description headed by `--summary-since origin/claude/build-platform --function-diffs list`, whole;
+  every template section; < 65,536; read back); two adversarial reviews in fresh clones (security and tenant isolation;
+  UX and brand with 1280/390 light and 1280 dark shots), each finding checked by a skeptic; the fix round with the full
+  local suite once and one push; the fresh-clone verification reading CI and naming the approval line. Then the session
+  posts the suggested line as ONE PR review comment and reports its link. 1b and interest stay at their clean points
+  (interest finishing slice 4 and its one suite in wf_3c4cf5ac-af0) until SS-01 merges.
+- **06:25 UTC (acting Lane A): resumed after the 5-hour stop (~05:50) and a worker restart.**
+  - **Route proved; the 8-CPU-runner ask is WITHDRAWN.** wf_3c4cf5ac-af0's smoke: release-capacity run.ts --small
+    --runtime process at 1b 048bc843 on this 4-CPU container: "runner 4 CPUs, 16091 MiB", verdict pass, 19 jobs on
+    attempt 1, 1 advisory lock; requiredCpus = 4 (limits.ts); runs 40479127979 and 40584379787 reached FULL_SIZE
+    verdicts on GitHub's free 4-CPU runner. Needs no person and no money while the repository stays public. At 1b's PR
+    stage on its final head: CAS-42.5 by dispatching release-capacity.yml on 1b's branch (a failure or advisory also
+    comments on the "Release capacity test failing" issue); CAS-42.6 by the local process route, base and head builds,
+    one release dir (commits named by hand: the process route records Commit unknown; Postgres unthrottled, recorded as
+    departures). Commands in `approval-summaries/lane-a-wip/progress/rc-smoke.md`.
+  - **Interest: pushed 379fed9f** (1b 048bc843 merged). Builder W stopped mid failing-first e2e with its implementation
+    stashed (stash 589e31d5, saved as WIP ref `co-001/wip-interest-w`); its progress file says to pop it. Setup re-run
+    (PostgreSQL back; no marker); **wf_3c4cf5ac-af0 resumed 06:22 UTC** (W, then the integrator's one full suite).
+  - #42: open, draft, head 9426a8d1 (moved past 6c28d6a2), base now 88708069. SS-01 takes #42's final head and the base at
+    SS-01's PR stage (after #42 merges).
+- **~05:10 UTC (acting Lane A): wf_5566bd1c-8eb done** (results: `approval-summaries/lane-a-schema-chain-wf_5566bd1c-8eb-result.json`).
+  - **1b head 048bc843 pushed** (add1ebed merged SS-01 bb13be1b with #42 6c28d6a2 and base 43565235; only the domain model
+    conflicted, regenerated; 20261109090000 unchanged, marker never used). Built: the measurement gate, CAS-42.1/.2
+    (apps/worker/src/triage/triage.large.db.test.ts + test-support/large-jobs.ts), SLOW_FIRST 15 -> 17, ADR 0083's 1b
+    section. **Full local suite once, green:** unit 7,188 + 4 skipped; golden 376; oracle 687; test:db 4 shards 9,608 + 1
+    skipped (shard 1 722 s, holds both large tests); build, stamp, e2e 69; Stryker six affected shards + gate passed;
+    verify-content; fixtures; engine-freeze clean; **domain model SHA-256
+    e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df, approval line 7459** (blank; provisional).
+    CAS-42.1: triage 70.8 s (budget 120), report right after 95.8 s (budget 180; was 460 s before the integrator's fix of
+    the report's candidate query planning on stale statistics), live heap 163/117 MiB, 1 advisory lock; CAS-42.2 report
+    111.8 s + triage 88.6 s, live 219 MiB < 420; base: 53200 out of shared memory at 20,000 lines.
+    Integrator fixes: the heap line can no longer fail a finished job (worker.ts, failing-first test); the weekly heap
+    check now uses the worker's --max-old-space-size (checks.ts); the report's candidate lookup (performance).
+  - **The real-size runs need no 8-CPU runner (route scout, 02:30 UTC):** runnerTooSmall needs requiredCpus = 4 (the
+    shared layout since the founder's "Free: time advisory" ruling); FULL_SIZE runs 40479127979 and 40584379787 reached a
+    verdict on GitHub's free 4-CPU runner. CAS-42.5: dispatch release-capacity.yml on 1b's branch ($0); CAS-42.6: the
+    design's section 8.2 local process-runtime route (base and head builds, one release dir). Being proved by a --small
+    smoke now (wf_3c4cf5ac-af0); the "waiting on the founder" entry is withdrawn when it passes. The full runs go at 1b's
+    PR stage on its final head (pacing: no run on a head the reviews may still change).
+  - **Interest: not finished.** The forced stop at 02:15 made its merge agent return early (local d39b72c0, WIP ref
+    `co-001/wip-interest-chain`; not pushed), so W and its integrator did not run. Lesson recorded: stopping a workflow
+    makes in-flight agents return and their partial results are cached on resume.
+  - **Running: wf_3c4cf5ac-af0** (script `workflow-scripts/lane-a-schema-chain-interest-finish-wf_3c4cf5ac-af0.js`), from
+    05:15 UTC: interest merges 1b 048bc843 (quick checks, push), builder W slice 4, the integrator's seam read and ONE full
+    local suite, push; beside it the route smoke (read-only; no dispatch).
+- **~03:40 UTC (acting Lane A): wf_a12c973a-c12 done. SS-01 head bb13be1b pushed** (6af518c5 merged #42 6c28d6a2: only
+  the domain model conflicted, regenerated; bb13be1b merged base 43565235, no conflict). SS-01's recreated objects re-read
+  on #42's bodies: audit_event_record keeps #42's 7 reserved actions and adds organization_suspended/_reinstated; #42
+  touches none of SS-01's other objects; **migration 20261108090000 unchanged, marker never used.** Checks: typecheck,
+  lint 1,725, lint:copy 552, lint:logs 1,108, unit 7,160 + 4 skipped, test:db 4 shards 9,567 + 1 skipped, build, stamp,
+  e2e 69 passed (0 flaky), verify-content, synth 0 written, fixtures, **domain model --check: SHA-256
+  3922b6a6bb6d2042f5e4c16342841e150d0cae439b797e8cdb4240436195f019, approval line 7414 (blank; provisional until the
+  PR's final head).** Fresh-clone verifier: ok (two nits: one loose commit-message phrase; the attribution trailer the
+  brief requires). Base has since moved to 4eaf7124 (#92, no migration): taken at SS-01's PR time.
+- **02:15 UTC (acting Lane A): the co-founder's pacing call (7-day limit at warning; resets 2026-11-06 19:00 UTC):
+  finish to the next clean point, spend nothing that does not change the outcome.** Decision: wf_5566bd1c-8eb's script
+  edited (archived copy updated) and resumed so each full suite runs ONCE, on the final tree: 1b's integrator first waits
+  for SS-01 with #42 6c28d6a2 (wf_a12c973a-c12) and merges it, then runs 1b's full suite; the interest integrator runs
+  after 1b's and merges 1b's integrated head first; the two pre-PR fresh-clone verifiers are dropped (each PR's own
+  pipeline step 6 does that). Earlier agents replay from cache; the in-flight ones continue from their progress files.
 - **2026-11-02 01:05 UTC (acting Lane A): both workflows resumed** after the 5-hour limit (~22:00-00:10) and a worker
   restart stopped them; setup re-run (PostgreSQL back; no marker). State at the stop:
   - wf_a12c973a-c12: SS-01 local **bb13be1b** (#42 6c28d6a2 and base 43565235 merged; WIP ref `co-001/wip-ss01-chain`):
@@ -184,8 +651,8 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
 ## Items
 | # | Item | Branch | State |
 | --- | --- | --- | --- |
-| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Built; full suite passed at d763ba78; head f897a282 (base 56ed6279 merged; unchecked); needs base 83d71fd6 and #42's step-1 head; PR waits on #42's merge |
-| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); 1a merged (#81); needs SS-01 f897a282+ merged in, deferred parts, full suite; real-size runs wait on an 8-CPU runner |
+| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (**merged as #104, e084da22, 2026-11-04 13:08 UTC**; older text follows) | Built; full suite passed at d763ba78; head f897a282 (base 56ed6279 merged; unchecked); needs base 83d71fd6 and #42's step-1 head; PR waits on #42's merge |
+| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) (**merged as #110, f7d609cc, 2026-11-05 05:10 UTC**; older text follows) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); 1a merged (#81); needs SS-01 f897a282+ merged in, deferred parts, full suite; real-size runs wait on an 8-CPU runner |
 | 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Partial at e0646746: slices 1, 2, 3, 5 pushed; slice 4 (screens) and the integrator not done; exception granted; PR opens after 1b merges |
 
 ## Decisions taken (recommended option; security: the safer), with reasons
@@ -198,7 +665,7 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
 ## Waiting on someone
 - #42's merge (SS-01's PR opens after it); #42's own domain-model approval is the founder's.
 - The founder: each schema PR's domain-model approval (the founder commits the suggested line, as on #39, 54ec890).
-- **Waiting on the founder: an 8-CPU runner for 1b's real-size runs (CAS-42.5 and .6).** This container's 4 CPUs stop
+- ~~Waiting on the founder: an 8-CPU runner~~ **Withdrawn 2026-11-02 06:25 UTC: the runs need 4 CPUs (proved by smoke; see Now).** Former text: This container's 4 CPUs stop
   them as RUNNER_TOO_SMALL; GitHub's larger runners exist only for organizations on Team or Enterprise Cloud and the owner
   PureTideWater is a User account; the 2026-10-23 "Free: time advisory" ruling does not decide this case. A cost and
   owner-admin decision; it does not block 1b's PR or reviews, but as designed it blocks 1b's merge.

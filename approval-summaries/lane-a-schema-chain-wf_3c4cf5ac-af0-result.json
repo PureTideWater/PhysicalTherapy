@@ -1,0 +1,336 @@
+{
+ "workflow": "wf_3c4cf5ac-af0",
+ "note": "acting Lane A",
+ "results": [
+  {
+   "claim_holds": true,
+   "evidence": "The claim holds, with some caveats below. I did not dispatch any workflow and wrote nothing in any repository. Notes are in /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/rc-smoke.md.\n\n1. The code at 048bc84 (tools/screening-capacity/limits.ts:289-412):\n- requiredCpus(limits) = sharedLayoutCpus = Postgres 2 + consumer 2 = 4 CPUs.\n- runnerTooSmall fails only if the runner has fewer than 4 CPUs, or if Postgres would get less than MIN_POSTGRES_MIB. That memory is the smaller of 4 GiB and the runner's memory minus the tasks and a reserve, so a 16 GiB runner passes.\n- 8 CPUs only switches cpuLayout to the \"own\" layout (each service on its own CPUs). Nothing requires it. On 4 CPUs the harness reports the shared layout (expected.layout.kind).\n- release-capacity.yml runs on ubuntu-26.04 and runs the harness under taskset at --print-harness-cpus (0-1). It has a workflow_dispatch trigger with no branch guard.\n- `gh api repos/PureTideWater/PhysicalTherapy` says visibility public, so ubuntu-26.04 is GitHub's free 4-CPU runner.\n\n2. The two runs (I read them with `gh api .../actions/runs/<id>` and `.../actions/jobs/<job>/logs`, read-only):\n- 40479127979: scheduled, claude/build-platform at e908c21, capacity job 122104699853 on ubuntu-24.04.\n  - Runner line: \"harness on CPUs 0-1\", then \"runner 4 CPUs, 15989 MiB; runtime docker; worker 0.5 vCPU and 1024 MiB on CPUs 3\".\n  - It seeded A at 100,000 lines with release 900110 (4,172,393 records), so this was full size.\n  - Verdict: \"verdict: fail\". A's triage and A's audit report failed, with JOB_FAILED 2 times. This is the \"fails first\" failure CAS-42.5 expects.\n- 40584379787: workflow_dispatch on the branch co-001/ci-browser at 6484324, job 122471867560 on ubuntu-26.04.\n  - Runner line: \"runner 4 CPUs, 15983 MiB; runtime docker\".\n  - Verdict: \"verdict: fail\", for the same reason.\n- Neither run hit RUNNER_TOO_SMALL. Both reached a verdict on 4 CPUs.\n\n3. The local smoke run (process runtime, this container: 4 CPUs, 16 GiB, cgroup v1, root):\n- Commands:\n  - `git -C /home/user/PhysicalTherapy worktree add --detach .../scratchpad/rc 048bc84`\n  - `pnpm install --frozen-lockfile`: exit 0\n  - `flock /tmp/laneb-heavy.lock pnpm --filter @tp/worker build`: exit 0\n- Images dir (.../scratchpad/rc-img), laid out as follows:\n  - rc-img/worker holds dist, a copy of packages/db/migrations, and node_modules/playwright-core copied with cp -RL (version 1.64.1, Chromium revision 1248).\n  - rc-img/web is empty. run.ts filters out the missing server.js check.\n- Chromium: the process runtime passes the worker only PATH and HOME, so I set HOME to a scratch directory whose .cache/ms-playwright links to /opt/pw-browsers.\n- `--print-harness-cpus` printed 0-1. Run command: `HOME=<scratch home> flock /tmp/laneb-heavy.lock taskset -c 0-1 pnpm exec tsx tools/release-capacity/run.ts --out <scratch out> --runtime process --images <rc-img> --admin-url postgres://postgres:test@localhost:5433/postgres --database tp_rcsmoke_1 --small`\n- Result: exit 0 in about 72 s.\n  - Runner line: \"runner 4 CPUs, 16091 MiB; runtime process\", so it passed the RUNNER_TOO_SMALL check.\n  - Verdict: \"verdict: pass\" at smoke size. All 19 jobs completed on attempt 1, across every phase: setup, concurrent, chain, A's reconcile and the large jobs together.\n  - Priced lines 2000 of 2000; parsed claims 400 of 400; memory peak 421.9 of 1024 MiB; at most 1 advisory lock per backend.\n  - Two QUEUE_ERROR lines came after the verdict, during teardown, when the database is dropped.\n- Saved copies: .../scratchpad/logs/rc-smoke.log, rc-smoke-summary.md and rc-smoke-release-capacity.json.\n- Cleanup: the scratch worktree and its rc-img, home and out directories are removed. The harness dropped tp_rcsmoke_1 itself; a later DROP DATABASE IF EXISTS confirmed it was gone.\n\nCaveats:\n- A dispatch whose capacity job fails also runs the notify job (it is skipped only for pull_request events), which opens or comments on the issue \"Release capacity test failing\", naming the branch. CAS-42.5's head run is expected to pass. Any failure, or an advisory such as the windows query running over its budget (run 40479127979 logged 51 s cold against 5 s), will write to that issue.\n- A process-runtime run records Commit `unknown`, because run.ts runs `git rev-parse` inside the images' worker directory and the copy is not a git checkout. The before and after summaries must name their commits by hand in the PR.\n- The process runtime uses the caller's unlimited Postgres. It never restarts it, so cache is not dropped and no netem delay is applied (these are reported as departures from production). So the local CAS-42.6 compares base against head; it is not a production-class measurement. The design's own wording for .6 says `--worker-image`, but Docker has no daemon here, so the process route is the only local one, as section 8.2 provides.\n- The claim needs a public repository. If the repository goes private, ubuntu-26.04 has 2 CPUs and run.ts refuses with RUNNER_TOO_SMALL, as the workflow comment says.\n- Neither run needs the founder. Only the domain-model approval and Q1 go to the founder (section 10).",
+   "needs_person": false,
+   "smoke": "Pass. With --small --runtime process at 048bc84 on 4 CPUs and 16 GiB, the harness ran under taskset -c 0-1 (the --print-harness-cpus value) against tp_rcsmoke_1, under the lock.\n- Runner line: \"runner 4 CPUs, 16091 MiB; runtime process\", so the RUNNER_TOO_SMALL check passed.\n- Verdict: \"verdict: pass\", exit 0, about 72 s.\n- All 19 jobs completed on attempt 1, including the chain, A's reconcile and the large jobs together.\n- Priced 2000 of 2000; parsed 400 of 400; peak 421.9 of 1024 MiB; at most 1 advisory lock.\n- The summary records Commit `unknown`, because the images dir is not a git checkout.\n- Worktree, images dir and database removed.",
+   "full_run_commands": "CAS-42.5 (at PR time, run by Lane A; this agent dispatched nothing). Read-only checks first, then the dispatch:\n  gh api repos/PureTideWater/PhysicalTherapy --jq .visibility   # must print public\n  gh workflow run release-capacity.yml --repo PureTideWater/PhysicalTherapy --ref co-001/suite-cap-1-triage-locks\n  gh run list --repo PureTideWater/PhysicalTherapy --workflow release-capacity.yml --branch co-001/suite-cap-1-triage-locks --limit 1 --json databaseId,headSha\n  gh run watch <id> --repo PureTideWater/PhysicalTherapy --exit-status; gh run download <id> --repo PureTideWater/PhysicalTherapy -n release-capacity -D <dir>\n  # Check: the job log shows \"runner 4 CPUs\", headSha equals the PR head, and summary.md is pasted into the PR. A failure or advisory also comments on the \"Release capacity test failing\" issue.\n\nCAS-42.6 (local, process runtime; base = SUITE-CAP-1a's merge, head = PR head; one shared release dir; heavy steps one at a time under the lock):\n  export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH; R=<scratch>\n  for side in base head; do\n    git -C /home/user/PhysicalTherapy worktree add --detach $R/$side <base-sha|head-sha>\n    (cd $R/$side && pnpm install --frozen-lockfile && flock /tmp/laneb-heavy.lock pnpm --filter @tp/worker build)\n    mkdir -p $R/img-$side/worker/node_modules $R/img-$side/web\n    cp -R $R/$side/apps/worker/dist $R/img-$side/worker/dist\n    cp -R $R/$side/packages/db/migrations $R/img-$side/worker/migrations\n    cp -RL $R/$side/apps/worker/node_modules/playwright-core $R/img-$side/worker/node_modules/\n  done\n  mkdir -p $R/home/.cache && ln -sfn /opt/pw-browsers $R/home/.cache/ms-playwright\n  (cd $R/head && NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm exec tsx tools/release/scale.ts --shape quarterly --out $R/quarterly-release)\n  cd $R/head; cpus=$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)\n  for side in base head; do\n    HOME=$R/home flock /tmp/laneb-heavy.lock taskset -c \"$cpus\" pnpm exec tsx tools/release-capacity/run.ts --out $R/out-$side --runtime process --images $R/img-$side --admin-url postgres://postgres:test@localhost:5433/postgres --database tp_capacity_$side --release-dir $R/quarterly-release\n  done\n  # Run in the background (60 to 120 min each). Put $R/out-base/summary.md and $R/out-head/summary.md in the PR, naming each side's commit by hand (both summaries record Commit unknown).\n  # The harness runs from the head checkout for both sides; only --images changes.\n  # Cleanup: git worktree remove for both sides, rm -rf $R, and DROP DATABASE IF EXISTS tp_capacity_base and tp_capacity_head."
+  },
+  {
+   "head": "379fed9fbef55d93b237a874a68743191f6222d4",
+   "pushed": true,
+   "checks": [
+    {
+     "command": "pnpm install",
+     "passed": true,
+     "note": "Already up to date; pnpm-lock.yaml unchanged"
+    },
+    {
+     "command": "DATABASE_URL=.../tp_intmerge_1 pnpm -s db:migrate (fresh database)",
+     "passed": true,
+     "note": "48 migrations applied, the last 20261110090000_ledger_interest_once.sql"
+    },
+    {
+     "command": "pnpm db:domain-model --out --strict",
+     "passed": true,
+     "note": "100 tables, 1 view, 48 registered, 230 divergence rows (23 to approve), 0 explanation problems; 382 function files, 0 written, 0 removed"
+    },
+    {
+     "command": "pnpm -s exec tsx tools/screening-capacity/watched.ts --write",
+     "passed": true,
+     "note": "552 lines, unchanged"
+    },
+    {
+     "command": "pnpm synth --all",
+     "passed": true,
+     "note": "279 cases: 0 written, 698 unchanged, 0 removed; 8 EMR formats: 0 written, 16 unchanged"
+    },
+    {
+     "command": "pnpm typecheck",
+     "passed": true,
+     "note": "22 projects passed"
+    },
+    {
+     "command": "pnpm lint",
+     "passed": true,
+     "note": "1,737 files in 3 groups, 0 errors, 0 warnings"
+    },
+    {
+     "command": "pnpm -s db:domain-model --check",
+     "passed": true,
+     "note": "domain-model.md matches the schema at 20261110090000; the functions directory matches 382 names"
+    },
+    {
+     "command": "pnpm -s vitest run --project unit <the 17 unit test files the merge touched>",
+     "passed": true,
+     "note": "17 files, 326 tests passed"
+    },
+    {
+     "command": "pnpm -s vitest run --project db <the 5 db test files the merge touched, without triage.large>",
+     "passed": true,
+     "note": "5 files, 172 tests passed (mail-routes, screening routes, mail-events, mail, screening)"
+    },
+    {
+     "command": "git push origin co-001/ledger-interest-once (pre-push hook)",
+     "passed": true,
+     "note": "e0646746..379fed9f on the first try, the hook ran"
+    }
+   ],
+   "conflicts": [
+    "docs/product/domain-model.md (generated file): I took our side to clear the markers, then regenerated it with db:domain-model --out --strict on a database migrated from empty (tp_intmerge_1). The result differs from our parent only in #42's final mail streams rows and hashes and in the approval line's document hash, which the generator writes. Nobody wrote an approval line by hand.",
+    "Merged with no conflict, both sides kept (checked): docs/product/test-matrix.md, docs/product/reconciliation-001.md, packages/synth/src/cases/matrix.ts, packages/synth/src/cases/registry.ts (LED-23 to LED-25 sit beside CAS-42 and TBL-05 to TBL-08), and tools/screening-capacity/watched-paths.txt (regenerated, unchanged).",
+    "Code: since the merge base ce408d2f, no code file changed on both sides. 1b's apps/worker/src/triage changes, worker.ts and tools/release-capacity/checks.ts came in clean. ADR 0083, ci.md, the registry and the matrix were changed only by 1b or merged with no conflict.",
+    "Migration re-read: the merge changes 20261107090000_mail_streams.sql (mail only, no ledger mention) and leaves 20261109090000 unchanged. The ledger_entry_within_evidence and ledger_entry_within_line bodies and the ledger: lock key that 20261110090000 builds on did not move, so 20261110090000 is unchanged and the marker route was not used."
+   ],
+   "open_items": [
+    "I did not run apps/worker/src/triage/triage.large.db.test.ts, which the merge brought in from 1b. It is CAS-42 and takes about 722 s, and it does not exercise the ledger. Under the pacing rule it is left to the integrator's full suite.",
+    "Not run here, by design: the full test:db shards, test:golden, test:e2e and the other suites. The integrator runs these on 379fed9f.",
+    "No PR was opened. The approval line in the domain model stays blank for the founder (23 divergence rows to approve).",
+    "Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/fin-int-merge.md. Logs: /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/logs/fin-int-*.log. Database tp_intmerge_1 has been dropped."
+   ]
+  },
+  {
+   "head": "d37a0ee306b92caacc54397f65bdb48466a9e8a1",
+   "pushed": true,
+   "files": [
+    "/home/user/interest/apps/web/src/lib/reconciliation/queries.ts",
+    "/home/user/interest/apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+    "/home/user/interest/apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx",
+    "/home/user/interest/apps/web/src/components/reconciliation/display.tsx",
+    "/home/user/interest/apps/web/src/lib/routes/specialist.ts",
+    "/home/user/interest/apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+    "/home/user/interest/apps/web/e2e/ledger-interest.spec.ts",
+    "/home/user/interest/packages/synth/src/cases/registry.ts",
+    "/home/user/interest/fixtures/synthetic/LED-23/expected.json",
+    "/home/user/interest/fixtures/synthetic/LED-24/expected.json",
+    "/tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/fin-int-web.md"
+   ],
+   "checks": [
+    {
+     "command": "pnpm -s exec vitest run apps/web/src/lib/routes/reconciliation-routes.db.test.ts (fresh migrated db, base 379fed9f + new tests)",
+     "passed": false,
+     "note": "Failing-first as intended: 17 tests, 5 failed, 12 skipped. Failures were the expected ones: no takesBack, no reportedInterest, old note, old consequence. Log: logs/fin-int-web-routes-base.log"
+    },
+    {
+     "command": "reconciliation-routes.db.test.ts (fresh migrated db, after the change)",
+     "passed": true,
+     "note": "1 file, 17/17 passed. Log: logs/fin-int-web-routes-head.log"
+    },
+    {
+     "command": "E2E_PORT=4981 playwright test e2e/ledger-interest.spec.ts (base code + new spec)",
+     "passed": false,
+     "note": "Failing-first as intended: 2 tests, 2 failed (old interest note; no reported-interest rows). Log: logs/fin-int-web-e2e-base.log"
+    },
+    {
+     "command": "pnpm build && build-stamp --write HEAD && E2E_PREBUILT=1 E2E_PORT=4981 E2E_DATABASE=tp_w_1 playwright test e2e/ledger-interest.spec.ts",
+     "passed": true,
+     "note": "Run on d37a0ee3: 2/2 passed in 1.4 min. Log: logs/fin-int-web-e2e-head.log"
+    },
+    {
+     "command": "pnpm typecheck",
+     "passed": true,
+     "note": "22 projects passed"
+    },
+    {
+     "command": "pnpm lint",
+     "passed": true,
+     "note": "1,738 files in 3 groups, 0 errors, 0 warnings"
+    },
+    {
+     "command": "pnpm lint:copy",
+     "passed": true,
+     "note": "552 files read; the brand's words are kept"
+    },
+    {
+     "command": "vitest unit apps/web + packages/synth",
+     "passed": true,
+     "note": "105 files, 1421/1421 tests passed"
+    },
+    {
+     "command": "pnpm synth --all",
+     "passed": true,
+     "note": "Wrote 2 files: LED-23/expected.json and LED-24/expected.json (assertedBy). Both are committed."
+    }
+   ],
+   "wording": [
+    "Reconciliation, PLB L6 interest match that pays: \": interest paid in this check (PLB L6)\"",
+    "Reconciliation, PLB L6 interest match that takes back: \": interest taken back in this check (PLB L6)\"",
+    "Reconciliation, AMT I interest match from before the change: \": the claim\u2019s interest\" (unchanged)",
+    "Under a line's Interest list: \"Remittance {trace}, {payer}, paid {date}: the claim reports {amount} of interest (AMT I).\"",
+    "Under a line's Interest list, when the net is below zero: \"Remittance {trace}, {payer}, paid {date}: the claim reports {amount} of interest taken back (AMT I).\"",
+    "Once, after the reported rows: \"Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.\"",
+    "Interest list empty text, unchanged: \"No interest paid.\"",
+    "Note on the totals tile's Interest figure: \"paid by the payer, net of any it took back, apart from principal\"",
+    "Note on the ROI statement page's Interest figure: \"Interest the payer paid in the period, less any it took back, shown apart from principal.\" (statement-html.ts already said this, from slice e0646746)",
+    "Adjustment consequence: \"Adjusting writes a new entry in your name with your reason that changes this entry\u2019s amount by what you enter; the entry itself never changes, and an adjustment is undone only by reversing its match. The ledger keeps it between zero and what the entry\u2019s evidence shows (the row\u2019s amount for a posting or a deposit, the entry\u2019s own amount for an approval, a recoupment or interest), a line\u2019s posted and deposited never above what was approved for it, and a line\u2019s interest, net of what the payer took back, never below zero. The totals and the line\u2019s stage follow the ledger.\"",
+    "Postgres refusal shown on the adjustment form's amount field, passed through from 23514 and asserted in the routes test: \"a line's interest, net of what the payer took back, never goes below zero\""
+   ],
+   "differences_from_design": [
+    "None in behaviour or wording. web ledger-world.ts needed no change: base commit d39b72c0 already pays interest through a PLB L6. The reversal form was already withheld from interest matches (page.tsx), so no reversal is offered and none was added.",
+    "The E2E spec covers LED-23 (paired.835 and reported-only.835). LED-24 (interest taken back, the line's floor) is asserted by reconciliation-routes.db.test.ts, and assertedBy says so."
+   ],
+   "open_items": [
+    "Section 7 asks for a UX and brand review with before and after shots at 1280 and 390 px. Not done here: it is the PR's adversarial review, and no PR is open. Neither 390 px nor keyboard use was checked in a browser. The new markup is plain list and paragraph text inside the existing layout, with no new controls.",
+    "The new reported-interest list has no aria-label of its own. Its explanatory note follows it directly, and no sentence outside section 7 was added.",
+    "The integrated full suite (test:db shards 3-4, synth) is still not run on d37a0ee3. The task leaves it to the integrated run.",
+    "Dropped the test database tp_w_1. A first drop command that looped over every tp_w_* database was refused by the permission classifier; dropping tp_w_1 by name then worked."
+   ]
+  },
+  {
+   "head": "74a6b29081101d7c9e3544e86ea15ba49ecaa6c8",
+   "domain_model_sha256": "47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef",
+   "approval_line_number": 7469,
+   "scope_ok": true,
+   "pushed": true,
+   "fixes": [
+    "Seam read found one defect, now fixed in commit 74a6b290 and pushed (d37a0ee3..74a6b290 on the first try, with the pre-push hook). The problem: a take-back was capped only at what the chain held on a line (interestHeld, which floors at zero), not at the line's interest as a whole. When two chains hold interest on one line and a contract specialist has lowered one chain's paid entry after its take-back, the other chain's take-back pushes the line below zero. Postgres's ledger_interest_line_floor then refuses it, which rolls back the practice's whole reconcile on every run. That breaks D8 ('the worker checks each bound before it writes; a valid reconcile is never refused').",
+    "The fix is in apps/worker/src/reconcile/remittances.ts recordInterest. A new lineHeld map holds each line's whole interest net of corrections and take-backs, computed with interestHeld over every interest match. Each take-back line's heldCents is now min(what the chain holds, lineHeld). No change to interest.ts, the migration, any amount, stage or recovered.",
+    "The test was written to fail first: a new case in apps/worker/src/reconcile/interest.db.test.ts, 'takes back from a line no more than its interest as a whole, when two chains hold interest there and a specialist lowered one (D5, D8)'. Before the fix it failed with Postgres's refusal 'a line's interest, net of what the payer took back, never goes below zero' (logs/fin-int-integ-floor-base.log). After the fix, interest, chain and ledger-oracle db tests: 3 files, 46/46 passed (logs/fin-int-integ-floor-head.log).",
+    "The domain model was regenerated on a freshly migrated database. Only its provenance line changed, and it is committed in 74a6b290."
+   ],
+   "suite": [
+    {
+     "command": "git pull --no-rebase origin co-001/ledger-interest-once",
+     "passed": true,
+     "note": "Already up to date at d37a0ee3; tree clean; no marker file"
+    },
+    {
+     "command": "pnpm install --frozen-lockfile",
+     "passed": true,
+     "note": "Done; lockfile unchanged"
+    },
+    {
+     "command": "pnpm typecheck",
+     "passed": true,
+     "note": "22 projects passed"
+    },
+    {
+     "command": "pnpm lint",
+     "passed": true,
+     "note": "1,738 files in 3 groups, 0 errors, 0 warnings"
+    },
+    {
+     "command": "pnpm lint:copy",
+     "passed": true,
+     "note": "552 files read; brand words kept"
+    },
+    {
+     "command": "pnpm lint:logs",
+     "passed": true,
+     "note": "1112 files scanned; every log call uses allowlisted fields"
+    },
+    {
+     "command": "pnpm -s exec tsx tools/screening-capacity/watched.ts --write",
+     "passed": true,
+     "note": "552 lines, unchanged"
+    },
+    {
+     "command": "pnpm synth --all",
+     "passed": true,
+     "note": "279 cases: 0 written, 698 unchanged, 0 removed; 8 EMR formats: 0 written, 16 unchanged"
+    },
+    {
+     "command": "pnpm db:domain-model --out --strict (fresh tp_fininteg_2, 48 migrations)",
+     "passed": true,
+     "note": "100 tables, 1 view, 48 registered, 230 divergence rows (23 to approve), 0 explanation problems; 382 function files, 0 written; only the provenance line changed (committed)"
+    },
+    {
+     "command": "pnpm test (unit + property, coverage)",
+     "passed": true,
+     "note": "423 files, 7275 passed, 4 skipped (7279)"
+    },
+    {
+     "command": "pnpm test:golden",
+     "passed": true,
+     "note": "5 files, 376/376"
+    },
+    {
+     "command": "pnpm synth --large && pnpm test:oracle",
+     "passed": true,
+     "note": "pyx12 agrees on all 712 synthetic 835s (701 valid, 11 malformed rejected as expected); edi835 agrees on every segment, amount and verdict"
+    },
+    {
+     "command": "vitest --project db ledger-oracle.db.test.ts (with interest.db and chain.db, fresh tp_fininteg_1)",
+     "passed": true,
+     "note": "3 files, 46/46, on the code committed as 74a6b290"
+    },
+    {
+     "command": "pnpm test:db --shard=1/4 (fresh tp_fininteg_s1, PG_BIN_DIR=/opt/pg18/bin)",
+     "passed": false,
+     "note": "36 files: 1 failed, 35 passed; tests: 1 failed, 3334 passed, 1 skipped. The only failure is CAS-42.1 in apps/worker/src/triage/triage.large.db.test.ts (SUITE-CAP-1b's test): A's report took 747261 ms against a 180000 ms budget, almost all in FETCH 2000 FROM report_lines (683 s). The same report in the 560 MiB child took 95 s. See the next two rows."
+    },
+    {
+     "command": "vitest --project db triage.large.db.test.ts, re-run alone on fresh tp_fininteg_cas42 at 74a6b290",
+     "passed": false,
+     "note": "Reproduced, so not a flake: 1 failed, 1 passed; report 748439 ms (FETCH report_lines 688105 ms); CAS-42.2's report 91967 ms. Log: logs/fin-int-integ-cas42-rerun.log"
+    },
+    {
+     "command": "A/B: vitest -t CAS-42.1 at 1b's head 048bc843 (detached checkout, fresh tp_fininteg_cas42b)",
+     "passed": false,
+     "note": "Fails the same at 1b's own head: report 730399 ms (FETCH report_lines 672729 ms). Not caused by this branch: RUN_LINES_QUERY touches no object the interest migration changes. 1b's own run on this machine earlier reported 95.8 s. Log: logs/fin-int-integ-cas42-base.log. Back on 74a6b290 afterwards."
+    },
+    {
+     "command": "pnpm test:db --shard=2/4 (fresh db)",
+     "passed": true,
+     "note": "35 files, 2187/2187"
+    },
+    {
+     "command": "pnpm test:db --shard=3/4 (fresh db)",
+     "passed": true,
+     "note": "35 files, 3104/3104"
+    },
+    {
+     "command": "pnpm test:db --shard=4/4 (fresh db)",
+     "passed": true,
+     "note": "35 files, 1014/1014"
+    },
+    {
+     "command": "pnpm build && build-stamp --write HEAD",
+     "passed": true,
+     "note": "Stamped 74a6b29081101d7c9e3544e86ea15ba49ecaa6c8"
+    },
+    {
+     "command": "E2E_PREBUILT=1 E2E_PORT=4981 E2E_DATABASE=tp_fininteg_e2e playwright test --workers=2 (DATABASE_URL on 5433)",
+     "passed": true,
+     "note": "71 passed (11.0 min). A first attempt had no DATABASE_URL, so prepare.ts reached the old PostgreSQL on 5432 and failed on 20261109090000's PG18 syntax: an environment slip, not the code. Log: logs/fin-int-integ-e2e-wrongserver.log"
+    },
+    {
+     "command": "Stryker: canary, then tools/stryker/shards.ts for every shard affected.ts picks against 048bc843 (money-ledger, packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest)",
+     "passed": true,
+     "note": "All exit 0. interest.ts 100.00% (308/308, 0 survived). pricing-rest was re-run alone after the batch script hit its 2 h background limit."
+    },
+    {
+     "command": "pnpm -s exec tsx tools/stryker/gate.ts reports/mutation",
+     "passed": true,
+     "note": "First run failed only because 6 shards had no canary verdict (verdict.ts had run for money-ledger only). verdict.ts --shard for each: 5/5 cases each. Gate then passed: money 96.58% (8 recorded equivalents), pricing 98.67% (26), ledger 98.68% (31), packets 97.75% (99)."
+    },
+    {
+     "command": "pnpm verify-content",
+     "passed": true,
+     "note": "Every content set passes"
+    },
+    {
+     "command": "pnpm -s exec tsx tools/engine-freeze/check.ts 048bc8437b75128f572851b84129ea8a9e9b0376",
+     "passed": true,
+     "note": "Problems: none"
+    },
+    {
+     "command": "pnpm -s db:domain-model --check",
+     "passed": true,
+     "note": "Matches the schema at 20261110090000_ledger_interest_once.sql; functions directory matches 382 names. Approval line 7469 unfilled, document SHA-256 47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef (file sha256sum 875564c6...)."
+    },
+    {
+     "command": "git diff --name-only 048bc843...HEAD (scope)",
+     "passed": true,
+     "note": "75 files, all in section 11's list (claim_by_superseded left out, since 1b's 20261109090000 has it), plus tests (streamed.db.test.ts) and generated files (LED-23/24/25 fixtures, LED-16 fixture, domain model, function files, watched-paths). Exactly one new migration, 20261110090000_ledger_interest_once.sql; none modified. Nothing under packages/edi835, pricing/src, rules, fixtures/golden or content/releases."
+    },
+    {
+     "command": "git push origin co-001/ledger-interest-once",
+     "passed": true,
+     "note": "d37a0ee3..74a6b290 on the first try; the pre-push hook ran"
+    }
+   ],
+   "open_items": [
+    "CAS-42.1 (triage.large.db.test.ts, SUITE-CAP-1b's test) fails on this machine at both 1b's head 048bc843 and this head. A's report takes about 730-750 s against the 180 s budget, almost all in FETCH report_lines, while the same report in CAS-42.2 takes 92-95 s. This is not caused by the interest fix (A/B evidence above), but test:db shard 1 stays red here until SUITE-CAP-1b's owner looks at the report_lines plan right after triage. I did not loosen or skip the test.",
+    "restore-drill.db.test skipped its pg_dump drill because there is no pg_dump of version 18 or later here: /opt/pg18/bin has only initdb, pg_ctl and postgres, and the system pg_dump is version 16. The drill was not exercised locally.",
+    "ADR 0084 and the design's D5 still describe a take-back's weight as 'what the line holds of the chain'. The fix also caps it at the line's whole interest, which is D8's worker-side check. One sentence in ADR 0084 D5 could record this when the PR is opened. I did not edit it here, because the design document is outside this worktree's write scope.",
+    "Section 7's UX and brand review (before and after shots at 1280 and 390 px) is still open from slice W. It belongs to the PR's adversarial review, and no PR is open.",
+    "Domain model approval: approval line 7469 is unfilled, with document SHA-256 47887070bc3c99f9a5148590e5f30c85a5661ca053ad54712a6d4104f10eb8ef. It is the founder's, through an APPROVED review of the PR's latest commit. I did not write it.",
+    "No equivalent mutant was ever recorded for interest.ts (tools/stryker/equivalent has none), so there was nothing to review. interest.ts scores 100%."
+   ]
+  }
+ ]
+}

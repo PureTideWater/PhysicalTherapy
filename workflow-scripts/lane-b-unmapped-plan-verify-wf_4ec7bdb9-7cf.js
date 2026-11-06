@@ -1,0 +1,25 @@
+export const meta = {
+  name: 'lane-b-unmapped-plan-verify',
+  description: 'PR #95 fresh-clone verification at 48dabc28: reads CI, checks the description, the lane rules and the fix round against the code, then an adversarial check of the verdict',
+  phases: [{ title: 'Verify' }, { title: 'Challenge' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/aa4b05fd-cf7b-57fe-8086-b5b14b24e00e/scratchpad'
+const HEAD = '48dabc2830c4ba787c54d5b8ce4985d174cfd814'
+const BASE = '22789493'
+const V = { type: 'object', properties: { verdict: { type: 'string', enum: ['PASS', 'FAIL'] }, problems: { type: 'array', items: { type: 'object', properties: { severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, title: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['severity', 'title', 'evidence', 'fix'] } }, ci: { type: 'string' }, summary: { type: 'string' } }, required: ['verdict', 'problems', 'ci', 'summary'] }
+const RULES = `Rules: export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH in every command; heavy commands only under flock /tmp/laneb-heavy.lock, one at a time, long ones in the background. PostgreSQL 18 on port 5433. Never push, commit, comment on GitHub, approve or merge. No model name or identifier in any file. The pacing call (the co-founder, 2026-11-02 02:10 UTC): CI has already run the full suite on this exact head; do not re-run the full suite; run only what reading cannot settle.`
+phase('Verify')
+const v = await agent(`You are the fresh-clone verifier of Lane B PR PureTideWater/PhysicalTherapy #95 ("One unmapped plan no longer freezes a whole month (audit #32; ADR 0075)"), head ${HEAD}, base claude/build-platform ${BASE}. ${RULES}
+Save as you go: keep ${SP}/progress/verify-95.md up to date; if it exists, continue from it.
+1. Fresh clone: git clone --quiet https://github.com/PureTideWater/PhysicalTherapy /home/user/verify-95 (if absent) && git -C /home/user/verify-95 checkout --quiet ${HEAD}; confirm HEAD; pnpm install --frozen-lockfile under the lock.
+2. CI on ${HEAD}: read every check run (gh api repos/PureTideWater/PhysicalTherapy/commits/${HEAD}/check-runs) and the required ones' job logs (load mcp__github__get_job_logs with ToolSearch; return_content, large tail_lines): all green, mutation (the Stryker shards' scores and the gate), screening-capacity gate, approval-of-record, unit, db (1-4/4), e2e (1-2/2) with their test totals. Compare the totals with the description's Checks section.
+3. The description (gh api -X GET repos/PureTideWater/PhysicalTherapy/pulls/95 --jq .body): every template section present (.github/pull_request_template.md), true against the code at ${HEAD} and the records (/home/user/ops/designs/lane-b-unmapped-plan/pr95-dispositions.md, pr95-review-findings.json, /home/user/ops/approval-summaries/lane-b-unmapped-plan-status.md); no PHI, no model identifier; under 65,536 characters; ends with the Claude Code footer.
+4. The lane rules on the diff ${BASE}...${HEAD}: no migration, nothing under packages/db/migrations or packages/db/src/schema, no non-test change under packages/pricing, domain-model.md and unpriced-reasons.md unchanged, generated files equal their generators' output (pnpm synth --all writes nothing; watched.ts --write leaves watched-paths.txt unchanged; run both under the lock in the clone), commits carry the two trailer lines, no model identifier in the diff or commit messages.
+5. The fix round: for each finding the description marks fixed, spot-check the code and its test exist at ${HEAD} (all blocking and should-fix ones; a sample of nits). For the money rules: the guard gone at its three sites; PricingRunNothingMapped uses the mapping in force on the line's date; coverage/2 counts in integer cents; both new routes have Zod, role check, practice-scoped transaction, audit event and sit in RUN_STARTING_ROUTES; a suspended practice's mapping queues nothing.
+Return PASS only if nothing blocking or should-fix is found; each problem with evidence and a fix.`, { label: 'verify-95', phase: 'Verify', schema: V })
+if (!v) throw new Error('verifier returned nothing: stop')
+phase('Challenge')
+const c = await agent(`${RULES}
+A fresh-clone verifier of PR #95 (head ${HEAD}) returned: ${JSON.stringify(v)}
+Challenge it, read only (in /home/user/verify-95 or /home/user/unmapped-plan; notes only in ${SP}/progress/verify-95-challenge.md): if it says PASS, look for what it skipped or took on trust (a CI total it did not read from a log, a claim it did not open the code for, a lane rule it did not check) and check the two or three riskiest yourself; if it says FAIL, try to refute each problem. Return the corrected verdict with the problems that stand.`, { label: 'verify-95-challenge', phase: 'Challenge', schema: V })
+return { v, c }

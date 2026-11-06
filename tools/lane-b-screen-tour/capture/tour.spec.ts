@@ -714,9 +714,10 @@ async function noUploadRequest(page: Page): Promise<{ readonly sent: () => void 
 
 /**
  * The Contracts upload card: named "Upload a contract or exhibit" before PR #75's fix round, by its title from it on (the
- * review's N-3); from PR #85's fix round 3 (13e4e2fe) by its title "Upload a contract, exhibit or payer’s terms letter".
+ * review's N-3); from PR #85's fix round 3 (13e4e2fe) by its title "Upload a contract, exhibit or payer’s terms letter", and
+ * from a57812ac (PR #85, shots75 F1) "Upload a contract, exhibit or payer’s terms or policy letter".
  */
-const CONTRACT_UPLOAD = /^Upload a contract(, exhibit or payer letter|, exhibit or payer’s terms letter| or exhibit)$/;
+const CONTRACT_UPLOAD = /^Upload a contract(, exhibit or payer letter|, exhibit or payer’s terms letter|, exhibit or payer’s terms or policy letter| or exhibit)$/;
 /** Files waiting in the browser for their kind or system, and for Upload (PR #75's fix round, the review's UX-1). */
 const WAITING = /^Waiting to upload/;
 

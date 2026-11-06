@@ -44,6 +44,10 @@ advisory-lock monitor reads `pg_locks` every 200 ms on its own superuser connect
   `pg_restore_relation_stats` / `pg_restore_attribute_stats` (the generated calls are kept as `$OUT/<db>.stats.sql`),
   then the 7b pass. A seeded database's ledger is empty, so the trigger functions' cached plans are made for an empty
   ledger; a running deployment's ledger is not. The control separates that from real growth.
+- `fillx.sh <seed> <state> [rows]`: the shared-ledger control. A fresh step-7b copy (`<..>_<state>_7bf`) whose
+  ledger_entry already holds ROWS (default 100,000) SYNTHETIC rows of a tenant that is no practice (written as superuser
+  with session_replication_role = replica, then ANALYZE), as a running multi-tenant deployment's ledger would; RLS keeps
+  them out of the pass. Separates the trigger plans cached on an empty ledger from real growth.
 - `runq.sh <queue file>`: a detached queue (setsid nohup) of probe/prep/statsx steps, each under the heavy lock,
   skipping a step whose result json exists; resumable after a restart.
 - `matrix.sh "<probe step>" ...`: steps one after another, each under `flock /tmp/laneb-heavy.lock`.
@@ -84,3 +88,16 @@ $R/cluster.sh down /tmp/laneb-suitecap3-pg-1
 To compare a candidate fix, seed with the base (the seed's writes do not depend on the reconcile code) and run the
 passes with `TP_REPO` set to the candidate; compare the pass's totals and `after` counts (`posted_cents`, stage counts),
 not hashes (IDs differ between seeds).
+
+## The candidate fix's runs (design phase, 2026-11-02)
+- `runcap3.sh <base|try> <seed> <a|c|l|m> <7b|P> [dump]` (and `runcap3m.sh`, the same with state m): one shape of a
+  seed in a state with the base clone's code (`cap3-base`) or the candidate's (`cap3-try`), under its own database
+  name, the database dropped after. State l = c + `state-l.sql` (an index; no gain); state m = c + `state-m.sql`
+  (ledger_line_net rewritten; the Lane A candidate). Never edit a runcap/queue script while a queue runs (bash reads it
+  as it goes).
+- `queue-cap3.sh` / `queue-cap3m.sh "<seed N R|A>" "<run label seed state shape [dump]>" ...`: resumable queues (a
+  step whose result json exists is skipped), each step under the heavy lock.
+- `dump.py <port> <db> <seed>`: the pass's writes, canonical (new UUIDs by ordinal, ciphertext as set or not,
+  timestamps out, plus a check row: settle's entries follow ledgerMatches' order). `compare.py <base dir> <try dir>`:
+  base against candidate per pass; settle's posted and deposited entries compared as a set.
+- `beforeafter.py <scratchpad>`: every run's totals side by side (`cap3-results-try/beforeafter.md`).

@@ -54,3 +54,7 @@ Started 2026-11-01 (item session). Base 83d71fd6.
 - 21:39 10000 R c 7b: 3,412.1 s (statements 160,035; heap peak 172.1 MiB; locks 1). Fit from 2000/6000 had projected 3,912 s.
 - 21:56 statsx 6000 c 7b: 1,035.3 s (vs 1,486.4 s with seed stats).
 - 22:05 settle/insert.entry still grows in statsx (planner rescales restored stats to the table's actual pages). Added fillx.sh (100,000 other-tenant ledger_entry rows written with replication role replica, ANALYZE) and queued fillx 2000 c, 6000 c after A 6000 c.
+- 01:05 RESUMED 2 (machine restart): cluster restarted; queue3.txt = fillx 2000 c, fillx 6000 c only. DROPPED: 10000 pre+P (state c P at 10000) and 6000 b 7b/P - states (a) and (c) bracket (b) (b differs from a only by claim_by_superseded; 2000 b measured both shapes), and 10000 c 7b is measured.
+- 01:05 fillx 2000 c 7b (100,000 other-tenant ledger rows, analyzed): 144.5 s (= statsx 143.8). fillx 6000 c running (started 01:04:57).
+- 01:22 fillx 6000 c 7b: 1,033.7 s. queue3 done. Next: analyze, attribute, cluster down.
+- 01:30 DONE: profile.md regenerated (analyze.py), README notes fillx.sh, private cluster on 5494 stopped and /tmp/laneb-suitecap3-pg-1 removed. Dropped (with why): 6000 b 7b/P and 10000 pre+P (states a and c bracket b; 10000 c 7b measured); 20,000 extrapolated (projects ~2.9-3.3 h).

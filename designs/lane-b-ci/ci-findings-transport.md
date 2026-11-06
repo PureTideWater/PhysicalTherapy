@@ -664,31 +664,52 @@ Commit 2 makes c1 to c3, and commit 3 the documents. `pnpm test`, `pnpm typechec
 
 ---
 
-## 7. Local proof (done, 17:10 UTC; re-run 2026-11-01 after the review's fold)
+## 7. Local proof (done, 17:10 UTC; re-run 2026-11-01 after the review's fold; regenerated 2026-11-04 in the fix round and again in its two repair rounds)
 
-`designs/lane-b-ci/ci-findings-transport/proof/scripts/prove.mjs` (SHA-256 `23394532…34ec`), run as
-`node proof/scripts/prove.mjs proof/work`. It writes `proof/local-proof.txt` (SHA-256 `2e279a22…ed74`). It runs
-`work/proposed-notify.sh` (`beb9ab0f…d37c`) and `work/proposed-handoff.sh` (`5c850d4e…1790`), whose download lines
-are §5's block. The script starts each step as the runner does (`bash --noprofile --norc -e -o pipefail <file>`),
-with a stand-in `gh`. It uses synthetic data only. Results:
+Regenerated against the download block as built (critic G3), at WIP 3d48d0b3… (the workflow as of 3d48d0b3…): every try
+under `timeout -k 10 "$DOWNLOAD_LIMIT"` inside a group whose own output goes nowhere, so neither gh's output nor bash's
+report of a killed try reaches the log (fix repair K1), the read check inside the block and reading
+the file whole (`jq -e -s`, one JSON document; fix check K1). `proof/scripts/extract.mjs`
+(SHA-256 `b306eeb0…c186`) takes the notify and handoff step scripts from the workflow as the runner receives them,
+`node proof/scripts/extract.mjs <content-calendar.yml> proof/work <a file in the repository>`, writing
+`work/proposed-notify.sh` (`38896660…0b22`) and `work/proposed-handoff.sh` (`8751509e…7b24`).
+`proof/scripts/prove.mjs` (`81d98976…5d9c`), run as `node proof/scripts/prove.mjs proof/work`, writes
+`proof/local-proof.txt` (`482e6269…770b`). It starts each step as the runner does (`bash --noprofile --norc -e -o
+pipefail <file>`), with the step's own DOWNLOAD_PAUSE (10) and DOWNLOAD_LIMIT (60, 1 in the stall cases) and a stand-in
+`gh` that behaves as gh 2.89 and 2.103 do where it matters: it extracts with O_EXCL, so it refuses a findings.json
+already in its -D directory; a try can fail before writing (HTTP 502), after writing a cut file (a zip checksum
+error), or stall past DOWNLOAD_LIMIT after writing a cut file, or die of SIGKILL at once, or ignore the stop and be killed 10
+seconds later (both exit 137, timeout dying of the signal as on the runner); its output and every error name a synthetic signed
+address. A stand-in `sleep` logs each pause. Synthetic data only. Results:
 
 | Case | Result |
 | --- | --- |
 | Base notify (83d71fd6 `:78`), file of 98,292 B, `FINDINGS_B64=` string 131,070 B | started, one issue |
 | Base notify, file of 98,293 B, string 131,074 B | **bash did not start, E2BIG** |
-| Proposed notify, the exact worst case: 41 full-length findings at 6 B a unit, file 1,540,660 B | exit 0; 20 issues + "not filed" with 21 titles (5,581 chars); environment 346 B, longest string 53 B |
-| Proposed, a near-worst file (2-digit title prefixes), 1,540,045 B | the same |
-| Proposed, 41 ASCII findings, 248,084 B | exit 0; 20 + "not filed" with 21 titles |
-| Proposed, 98,293 B (one body, transport only) | exit 0; filed |
-| Proposed, 400 short findings (21,093 B) | exit 0; 20 + "not filed" listing 200 titles (2,911 chars), last line "- and 180 more, each named in the run's summary" |
-| No artifact; check `failure`; file over `MAX_FILE_BYTES`; not a list | each "check failing" (downloads 3, 0, 1, 1) |
-| Two failed tries, then success; three failed tries | filed; "check failing" |
-| Handoff: the download block equal in both scripts | true (20 lines) |
-| Handoff, the exact worst case | exit 0; "the notify job reads 41 findings, 1540660 bytes, SHA-256 dde573f4…"; no issue call |
-| Handoff: no artifact; file over `MAX_FILE_BYTES`; not a list | each exit 1 (downloads 3, 1, 1); no issue call |
+| Built notify, the exact worst case: 41 full-length findings at 6 B a unit, file 1,540,660 B | exit 0; 20 issues + "not filed" with 21 titles (5,581 chars); environment 365 B, longest string 53 B |
+| Built, a near-worst file (2-digit title prefixes), 1,540,045 B; 41 ASCII findings, 248,084 B; 98,293 B | the same; the same; filed |
+| Built, 400 short findings (21,093 B) | exit 0; 20 + "not filed" listing 200 titles, last line "- and 180 more, each named in the run's summary" |
+| No artifact; check `failure`; over `MAX_FILE_BYTES`; one byte over; a list padded with whitespace past it; a list followed by other bytes; not a list; an entry with no body; two JSON documents in one file (a list, then `[]`); an artifact holding no findings.json | each "check failing" (downloads 3, 0, then 1 each) |
+| Exactly `MAX_FILE_BYTES` (100 B, bound 100) | filed |
+| Two failed tries, then the artifact; three failed tries | try, pause 10, try, pause 10, try; filed; "check failing"; each failed try logged as "try N of 3 to download the findings failed (exit 1)" |
+| A try that leaves a cut findings.json; one stall | try, pause 10, try; filed; logged exit 1 and exit 124; never "file exists" |
+| Three stalls (DOWNLOAD_LIMIT 1) | three tries, two pauses; "check failing"; each logged exit 124 |
+| A try killed by SIGKILL at once; a try that ignores the stop, killed 10 s later (DOWNLOAD_LIMIT 1) | try, pause 10, try; filed; logged exit 137; no stderr line but the step's own "content-calendar: " lines |
+| Counter-proof: the killed try outside its group (the line as at 14e71f0c…) | the same fixed line, and one more: bash's "line N: PID Killed  timeout -k 10 … gh run download …" |
+| Any case of sections 4 and 5: a stderr line other than the step's own | never (21 of 21 cases) |
+| Counter-proof: the cut-file try with the per-try clearing removed | three tries, two pauses, "check failing" |
+| Any case, every section from 2 to 5 (each prints the flag): the stand-in's signed address in the step's output | never (37 of 37 cases) |
+| Handoff: the download block equal in both scripts | true (31 lines), the read check inside it, no `jq -e` after it in either job |
+| Handoff, the exact worst case; exactly `MAX_FILE_BYTES`; a cut file, then the artifact; one stall, then the artifact; a try killed by SIGKILL, then the artifact | each exit 0, "the notify job reads N findings, B bytes, SHA-256 …"; no issue call |
+| Handoff: no artifact; over the bound; one byte over; padded past it; not a list; an entry with no body; two JSON documents in one file; no findings.json; three stalls | each exit 1 with "could not read this run's findings"; no issue call |
 
 What it does not show: the real artifact service. A stand-in `gh` copies a file; that `gh run download` reads a
-running run's artifact on a runner is shown by `handoff` on the pull request (§10).
+running run's artifact on a runner is shown by `handoff` on the pull request (§10). The 2026-11-01 proof (prove.mjs
+`23394532…34ec`, notify `beb9ab0f…d37c`, handoff `5c850d4e…1790`, output `2e279a22…ed74`) predates the timeout and
+is replaced by this one, as is the fix round's (prove.mjs `2e035f0a…006f`, notify `651d4854…6f20`, handoff
+`495a4dde…e6fe`, output `6728e00c…55a9`), which read only the last JSON document and printed no leak flag in sections
+2 and 3. A stalled try stopped by TERM logs exit 124; a try that ignores the stop is killed 10 seconds later through the
+real `-k 10` path and logs exit 137, which the proof shows too (section 4).
 
 ---
 
@@ -789,7 +810,9 @@ regenerated with `pnpm synth --all`, and only its `assertion` field changes.
 **Issue text.** What an issue says changes in one place, past a bound no run reaches today: a "findings not filed"
 issue with more than 200 titles lists 200 and ends "- and N more, each named in the run's summary" (brand.md: plain
 words; reported here under the ruling of 2026-10-25). The "check failing" body keeps its sentence. A download failure
-reads "did not hand on its findings (the check: success)", which is true, and the run link leads to `gh`'s message.
+reads "did not hand on its findings (the check: success)", which is true, and the run link leads to a log line for
+each failed try with its exit status (124 when stopped), never `gh`'s own message, which names the artifact's signed
+address (fix round, security N1).
 
 ---
 
@@ -1314,3 +1337,72 @@ Each gap verified at d257fe6d (`git show d257fe6d:tools/test/workflows.test.ts`)
   real 200 stays held by T-N, T-P and §7. The builder re-times it and writes the figure beside it (16.4).
 - **Wrong line numbers.** Real, all five. Fixed: permissions `:1136`; the check test `:1158-1169`, outputs `:1168`,
   the `${{` check `:1164`; `fake/` at `:1178`; "seven other workflow lines", each named (16.1, 16.2, 16.4).
+
+### 16.8 Fix round (2026-11-04, WIP 1322c7cf… onward, base 30871f72…)
+
+The reviews' confirmed findings, each failing first (progress `approval-summaries/lane-b-ci-findings-transport-wip/progress/fix-build.md`):
+- Tests only: the fake gh refuses a findings.json already in -D (O_EXCL) and can leave a cut file (ci-infra S1); a
+  stand-in `sleep` holds the pause's order and seconds (S2); exactly `MAX_FILE_BYTES` and one byte over (N1); a list
+  padded or followed by other bytes past the bound, and the one bounded read (security S1); an artifact holding no
+  findings.json (critic G2).
+- Workflow, both jobs word for word: the read check moves inside the download block, each job only branching on it
+  after the end marker (critic G1); a failed try logs one fixed line, `content-calendar: try N of 3 to download the
+  findings failed (exit C)`, and gh's own output, which on a blob error names the artifact's signed address, goes to
+  /dev/null (security N1, the safer option). §8's "the run link leads to gh's message" is edited: the run's log names
+  each failed try and its exit status (124 when stopped). ADR 0071's Amendment, ci.md and content-updates.md say so.
+- §7 regenerated against the block as built (critic G3). ci-infra N2 was refuted and is left as it is.
+- Repair round 2 (verifier K1 nit, WIP 14e71f0c… → 3d48d0b3…): a try runs inside `{ …; } > /dev/null 2>&1`, so a try
+  killed by a signal logs only the fixed line with exit 137, never bash's own "Killed" report naming its line and
+  command; both jobs' cases hold the step's stderr to that line; §7 regenerated with the killed cases and a
+  counter-proof. Live base still 35422a92… (#116, checked 23:49 UTC); the base merge is still to do.
+
+---
+
+## Fix round (2026-11-04)
+
+The two adversarial reviews of the WIP at 1322c7cf… (CI and test infrastructure; security and supply chain), three
+skeptics a finding, and the completeness critic. Every confirmed finding was fixed with the recommended option
+(security the safer), each failing first; ci-infra N2 was refuted (two of three skeptics) and is left as it is. Record
+of the round: `approval-summaries/lane-b-ci-findings-transport-fix-round.md`; progress
+`approval-summaries/lane-b-ci-findings-transport-wip/progress/fix-*.md`.
+
+| Finding | Skeptics | Resolution | Commit |
+| --- | --- | --- | --- |
+| ci-infra S1 (should): no test held the per-try `rm -rf`; the fake gh overwrote where gh refuses (O_EXCL) | 3 of 3 real | fake gh refuses a findings.json already in -D, as gh 2.89 and 2.103 extract, and can leave a cut file; cases with a partial try and a stall | a62a0fa6… |
+| ci-infra S2 (should): no test held the pause | 3 of 3 | a stand-in `sleep` logs each pause; try, sleep 10, try, never after the last | 086d2953… |
+| ci-infra N1 (nit): no case at exactly `MAX_FILE_BYTES` | 3 of 3 | exactly the bound read, a byte over refused, in notify and handoff | fb29b355… |
+| ci-infra N2 (nit): the failing body says "(the check: success)" after a failed download | 2 of 3 refuted | left as it is | none |
+| security S1 (should): no test failed with the size refusal removed | 3 of 3 (one as nit) | a padded list and a list followed by other bytes refused; a static check that the block reads the file once through `head -c "$((MAX_FILE_BYTES + 1))"`, the refusal next | 44757e39… |
+| security N1 (nit): a failed blob download wrote the artifact's signed address into the public log | 2 of 3 real | safer option: gh's output goes nowhere; a failed try logs one fixed line with its exit status | 6a3c9258…, 3d48d0b3… |
+| critic G1 (should): handoff's read check sat outside the block T-H holds equal | critic | the read check sets `readable` inside the shared block; each job only branches on it after the marker | 1bf36150… |
+| critic G2 (nit): no test of the head line's `2>/dev/null \|\| : > findings.json` | critic | an artifact holding no findings.json: notify "check failing" after 1 try, handoff exit 1 | 5f45db7c… |
+| critic G3 (should): §7 proved the block before the timeout | critic | `proof/scripts/extract.mjs` takes the steps from the workflow; §7 regenerated at 6a3c9258…, 14e71f0c… and 3d48d0b3… | ops only |
+| critic G4 (nit): records named a stale base | critic | records name the live base; the base merge is done (below) | ops only |
+
+Check rounds and repairs:
+- Round 1 (three verifiers on 6a3c9258…): K1 should, the read check accepted a file of two JSON documents (jq -e judges
+  the last): `jq -e -s 'length == 1 and (.[0] | …)'` (473b9e7d…); nits fixed in e7241327… (orphan comment), e67d16cf…
+  (cut-file row's limit), 02e5cd8e… (exit 137 when killed), 14e71f0c… (ci.md's handoff row); §7 regenerated.
+- Round 2 (on 14e71f0c…): one nit, a killed try also logged bash's own "Killed" line; each try now runs in
+  `{ …; } > /dev/null 2>&1` (3d48d0b3…), with a SIGKILL case in both jobs; §7 regenerated (37 of 37 cases no address,
+  21 of 21 no stray stderr line). The scripts §7 proves are byte-identical at the base merge 811c65b7… (notify
+  `38896660…0b22`, handoff `8751509e…7b24`), since the merge leaves `content-calendar.yml` as it was.
+- §7's closing sentence, which said the proof showed exit 124 only, predated round 2 and is corrected: the proof also
+  runs a try that ignores the stop and is killed through the real `-k 10` path, logged with exit 137.
+
+**The §16.4 departure, `sites`.** §16.4 deletes `sites` with `over`, because 9ac28806 added it only to pin the one row the
+sum exempted. The base merge of 30871f72… (a552f770…) kept `sites`: #86's final rule, merged after §16.4 was written,
+uses it for publish-content's release numbers, and its T6 holds every row past 131,072 bytes to exact sites. Deleting it
+would loosen #86's rule for a row this item does not own. So only `over`, the over exemption, `FINDINGS_BYTES`,
+`FINDINGS` and the two findings rows went; the sites fixture test was retitled (b4881927…) and N32's sentence reads "No
+listed value is over the limit" (1322c7cf…). The security review called this stricter than §16.4 and correct.
+
+**Base merges.** a552f770… merged 30871f72… (20 PRs, before the reviews). 811c65b7… merges 7fb3e102… (#117, #116, #84)
+with no conflict: ADR 0066, `test-matrix.md`, `ci.md` and `packages/synth/src/cases/matrix.ts` auto-merged, both sides
+kept; the generators wrote nothing. cd2c91c0… merges 370b8973… (#119, `apps/worker/src/screening/threads.test.ts` only) with no
+conflict; the generators wrote nothing.
+
+**Full suite and push.** The full local suite on 811c65b7… was green (unit 9,261 passed, 4 local skips; test:db 143
+files, 9,805 passed, 1 skipped; e2e 81 passed; the rest in the fix-round record), the fast checks and
+`workflows.test.ts` (142/142) green again on cd2c91c0…, and `co-001/ci-findings-transport` was pushed at cd2c91c0… on
+2026-11-05 at 01:15 UTC through the pre-push hook, the WIP ref at the same sha.

@@ -1286,3 +1286,362 @@ HANDOFF.md; LANES.md rule 10).
     interest fix's slice 4) and wf_a12c973a-c12 (#42's 6c28d6a2 and the base 43565235 into SS-01) running.
 - **Next:** each PR merges as soon as it is verified and green; between conflicting pairs, #86 before P2 and #91, #75
   before #85 and #84; #42 at the founder's commit, then the schema chain.
+
+### 2026-11-02 02:35 UTC (Lane B's orchestrator): the weekly cap and the pacing call
+- **The weekly cap:** every session reports `rate_limit` `seven_day` `allowed_warning`, resetting 2026-11-06 19:00 UTC.
+  The 5-hour stops (~22:20 UTC on 2026-11-01, reset 00:10 UTC) were HTTP 429 `usage_limit_reached` with overage
+  disabled at the organization level; "no hourly limits" did not hold for this account.
+- **The co-founder's call (relayed 02:07 UTC):** finish the near-done PRs, economically and with no follow-ons; pause the
+  design- and build-stage items at clean points, with one check-in at 2026-11-06 19:15 UTC; no second wave. Budget is
+  kept for the Lane A handoff.
+  - **Finishing:** #86 (ci-images-digest), #75 (contract-phi-check), #85 (ux-payer-response), #93 (ux-home-figures), #95
+    (unmapped-plan), Dependabot (#90, #94, #91), #84 (packet-day-counts; its re-review loop now ends at the first dry
+    round), the schema chain (to a clean point: SS-01 bb13be1b, 1b, interest c18a847e) and #42.
+  - **Paused until the reset:** UX PR 4b (#83's follow-on), ci-findings-transport (built on WIP b9a83bd3, paused before
+    its reviews), redact-ssn-phone (design done), P2 and P4 (P4 is draft #96 at 50029e64, paused before its reviews;
+    resume wf_f8ce3582-ddc), SUITE-CAP-3 (profile: 10,000 lines with 1b 3,412 s; WIP a215ba62).
+  - **Held:** UX PR 7 (now unblocked by #92) and every other new session.
+- **Ruling, 02:11 UTC (Lane B's orchestrator):** P4 keeps its `tools/test/workflows.test.ts` edit (the mutation describe
+  only; disjoint from #42; trial merge clean), a shared file under rule 6 with #42.
+- **Merged:** #92 (UX PR 6, sign-in time) as 4eaf7124, 2026-11-02 02:14 UTC, from ab68af87. Left: UX PR 7 (with UXS-01),
+  UX PR 64, UX PR 66 and the "three days" comment (Lane A and the founder), UXR2-02, audit #103.
+- **The Lane A handoff:** written early and pushed (`lanes/lane-b-handoff-to-lane-a-2026-11-03.md`, 713bd72b; checked
+  live at 02:25 UTC); refreshed before 2026-11-03 14:00 UTC. LANES.md "Handed to Lane A" now has #84's
+  `tp-packet-verifier/3` migration, #92's `identity.ts` comment and AssociateSoftwareToken staging check, and #93's F9.
+- **#42:** still waiting on the founder's commit of the suggested approval line at 02:30 UTC (head 6c28d6a2, behind the
+  base by #83 and #92, both migration-free).
+- **Other:** O9's capacity sizing (S4 45.6 s against 44 s) is a founder item blocking launch, not merges (issue #41);
+  recorded in #94. 1b's CAS-42.1 reports 481 s against its 180 s budget (investigating; CAS-42.2 passes).
+
+### 2026-11-02 06:20 UTC (Lane B's orchestrator): #93 and #90 merged; the founder approved #42
+- **#42:** THE FOUNDER COMMITTED THE APPROVAL LINE as 9426a8d1 (2026-11-02 02:36 UTC: "Approved by: Tyler Williams
+  Date: 2026-11-01  Document SHA-256: `b23fed0e…2518`"). #42's session is merging the base and going to merge; then the
+  schema chain opens SS-01's PR.
+- **Merged:** #93 (UX PR 9, home figures) as 877e662f, 02:44 UTC, from d1e4c4c4, all green; #90 (PR A, the SDK major) as
+  88708069, 04:00 UTC; Dependabot #87 closed with a comment. 88708069 changes `packages/model-gateway` (sdk ^1.3.0, the
+  client options, ADR 0048, MOD-17 and MOD-18); #75 told; #94 takes A's merge (a `package.json` conflict). Merges this
+  round: #82, #83, #92, #93, #90.
+- **Stopped at clean points:** #92's session (push runs on 4eaf7124 green after one ci re-run; an archive candidate) and
+  #93's (no follow-on; #46's Verified seal deferred to after the reset; proposals after #42: `help.ts` stage five and
+  the reconciliation-001 line).
+- **The schema chain at clean points:** SS-01 bb13be1b (unit 7,160, test:db 9,567+1, e2e 69; domain model `3922b6a6…f019`
+  at line 7414, provisional); 1b 048bc843 (test:db 9,608, e2e 69, Stryker; domain model `e024cf9f…efc4df` at line 7459,
+  provisional). CAS-42.1 481 s -> 95.8 s (the candidate-query fix). 1b needs NO 8-CPU runner (the 4-CPU runner gave its
+  real-size verdicts): the founder ask is withdrawn once the `--small` smoke confirms. The interest fix finishing
+  (wf_3c4cf5ac-af0).
+- **SUITE-CAP-3:** paused after design (67159eaf; WIP 956b32ef). Probed: 6,000 lines 1,486 -> 378 s; 10,000 lines
+  3,412 -> 1,058 s; the writes identical; ADR 0087 needed. Its `ledger_line_net` rewrite (10,000 lines 1,058 -> 263 s;
+  DDL in the design's §14.1) needs a founder ledger-freeze exception: Handed to Lane A, 2026-11-02 06:20 UTC (a). All five
+  design-stage sessions are paused.
+- **In flight:** #84 resumed 06:18 UTC with the Stryker split (17 shards; WIP `-5` = 15d8ed1c; the base 88708069's
+  `test-support/browser.ts` conflict merged inside the fix round); #94 and #91 in fix rounds; #85 waits for #75 (now also
+  a `display.test.tsx` overlap with #93, resolved in its one base merge).
+- **Push run red on 88708069** (ci 41386010790, `unit`): `action-form.browser.test.tsx` FRM-01 :366 timed out at 30 s;
+  7,012 others passed; mutation and capacity green; the tree equals cf124313 (passed on the PR). Likely a flake; the
+  Dependabot session is root-causing it (wf_63290a32-038).
+- **Open: three flaky tests** (Handed to Lane A, 2026-11-02 06:20 UTC (b)): `tools/release/load.db.test.ts`;
+  `apps/worker/src/report/csv-arena.test.ts:151` (5 s timeout; proposal: an explicit timeout for CAS-41.3's test);
+  `apps/web/src/components/action-form.browser.test.tsx` FRM-01 :366 (30 s timeout).
+- **The third 5-hour stop:** ~03:10-05:50 UTC; the sessions resumed after it.
+- **The co-founder's question on reusing open-source code** (answered 03:05 UTC): a bounded prior-art check in the design
+  stage for official data sources, permissively licensed maintained libraries and test oracles; never copying code
+  without a compatible licence. Awaiting the co-founder's yes to add it to the session brief.
+
+### 2026-11-02 09:25 UTC (Lane B's orchestrator): #42 and #95 merged; SS-01's PR under way
+- **#42 MERGED** as 22789493 (2026-11-02 07:35 UTC, a merge commit) from head 9bb0604e: the founder's approval line
+  9426a8d1 (Tyler Williams, 2026-11-01, `b23fed0e…2518`), then the base 88708069 merged in (migration-free; `--check
+  --require-approval` still reads `b23fed0e…2518`). CI green on 9bb0604e, `domain model` and `all green` included;
+  fresh-clone verification pass. Push runs on 22789493 green (ci 41407227669, mutation 41407227619, screening-capacity
+  41407227658). Its session is done. The items that waited on #42 (UX PR 4b, ux-forms-after-42, P5 ci-catalog, the
+  `help.ts` proposals) stay paused until the 7-day reset.
+- **#95 (#32, one unmapped plan) MERGED** as 2affb854 (08:47 UTC) from head 48dabc28 after its fresh-clone
+  verification; push runs on 2affb854 green (ci 41415623536, mutation 41415623512, screening-capacity 41415623520). Used
+  ADR 0075, MAP-06 to MAP-09 and PRC-29 to PRC-31; MAP-10 stays reserved for Lane A's notice follow-up. #48 (narrative
+  draft) NOT started (pacing): paused. Base now **2affb854**.
+- **Merges this round:** #82, #83, #92, #93, #90, #42, #95.
+- **The schema chain (acting Lane A):**
+  - **SS-01's PR stage runs** (wf_78cd4c88-7b1, from 07:40 UTC): the base 22789493 merged into bb13be1b and
+    regenerated, the draft PR, two reviews (security and tenant isolation; UX and brand with shots), the fix round with
+    one full suite, the verification, then its suggested approval line for the founder as one pull-request comment. At
+    09:25 UTC origin is still bb13be1b and no PR is open. It is the only schema PR to open next.
+  - **1b at 048bc843.** **The 8-CPU-runner ask is WITHDRAWN** (06:22 UTC): the `--small` smoke at 048bc843 passed on 4
+    CPUs, and GitHub's free 4-CPU runner gave FULL_SIZE verdicts (runs 40479127979, 40584379787); CAS-42.5 and .6 run at
+    1b's PR stage. New at ~09:20 UTC: CAS-42.1 fails at 048bc843 too (the report 730-750 s against 180 s; its plan
+    depends on whether autovacuum's ANALYZE lands after triage); a plan-independent fix runs (wf_3118d5d7-edb).
+  - **Interest:** 379fed9f (1b in, 04:26 UTC), then slice 4 (d37a0ee3) and the integrator's take-back fix: at its clean
+    point **74a6b290** (~09:20 UTC), its one full suite green but for 1b's CAS-42.1 (unit 7,275, e2e 71); domain model
+    `47887070…eb8ef` at line 7469, provisional.
+- **Rulings:** (06:22 UTC) the Dependabot session owns **PR D**, `co-001/test-flakes-2`, tests only: FRM-01's monotonic
+  wait (the root cause of the red push run on 88708069: the exact data-shown wait raced a deliberate re-key ~35-50 ms
+  later, 1 in 48 CI runs, not #90's change) and `csv-arena.test.ts:151`'s explicit timeout; added to the Dependabot claim
+  row; it builds after B's and C's suites. (08:52 UTC, an update) **#91 no longer waits for #86** (the first-ready rule;
+  a trivial ADR 0066 overlap that #86 resolves); B, C and D merge when ready. Told to the Dependabot and #86
+  sessions.
+- **Dependabot:** after #90 it closed #89 (04:07 UTC) and #88 (04:10 UTC) and opened #97 (minor-and-patch, 17 updates),
+  deferred to the next weekly triage (pacing; named in #94). After #42 merged it closed #97 (07:42 UTC) and opened #98
+  (minor-and-patch, 18 updates, 07:45 UTC), left like #97 to the next weekly triage.
+- **In flight (finishing):** #75: 88708069 merged locally (WIP `-9` 315ac91e), the suite green through test:db; mutation,
+  e2e and critic 2, then one push. #86: check rounds on the open dispositions (repair 1 fixed two loosenings, WIP
+  a5bc1170; repairs since on the WIP ref, 5c01f150 at 09:18 UTC); then the base, the suite once, push R3. #84: the
+  Stryker split done (17 shards; `-5` 15d8ed1c), a base-merge step before its one suite and re-reviews. #85: verified and
+  ready at a97d6011, waits for #75 only. #94 (B): fix round in its suite (`-b` f43f809d), then B(6) at its merge prep.
+  #91 (C): fix round done (b1fd5df1); merge prep wf_194e8aaf-799.
+- **LANES.md "Handed to Lane A", #32:** checked: it already reads as design §14 (review 12c) does (no figure codes;
+  `lines` and `billed` exist); its "What Lane B did" line now names #95.
+- **The handoff** (`lanes/lane-b-handoff-to-lane-a-2026-11-03.md`) is refreshed to this state (sections 1-3, 5-7 and 9);
+  the 8-CPU runner is off the founder items there and in LANES.md.
+
+### 2026-11-03 14:20 UTC (Lane A's orchestrator, back after its weekly reset)
+- Read `lanes/lane-b-handoff-to-lane-a-2026-11-03.md` (state as of 2026-11-02 09:25 UTC). Nothing on GitHub or claude/build-ops has moved since about 11:15 UTC on 2026-11-02. The refresh and stand-down that handoff promised before 14:00 UTC today did not happen, most likely because Lane B's 7-day cap stopped it.
+- Live heads: base 21fa10df (#91 merged after the handoff); SS-01 bb13be1b (no PR; its PR stage wf_78cd4c88-7b1 was mid-run, so anything it had not pushed exists only in its session's worktree); SUITE-CAP-1b 22177731 (the CAS-42.1 report-plan fix, pushed 11:02 UTC 2026-11-02); interest 74a6b290.
+- **Lane A takes back the schema chain, #42's follow-ups and the counters from these heads, as soon as the co-founder confirms.** Lane B's acting-Lane-A sessions (session_01FcouKMmYaqDNXbqJyagW8u and session_01FcouKQthXdmDnPmwhFepxW) must not resume the chain after Lane B's reset (2026-11-06 19:00 UTC): read this entry first and stand down.
+
+### 2026-11-04 02:30 UTC (Lane A's orchestrator): the schema chain taken back
+- The co-founder said go (Lane A's weekly usage 10%). session_019i9ifEG147aKfNHEAsoS7h runs SS-01's PR stage from bb13be1b, then carries 1b (22177731) and interest (74a6b290) forward until each one's turn.
+- Its pacing: CI is the full suite of record; locally the fast checks, the touched tests and the domain-model check; the full local suite once per branch on its final tree; the base merged once, right before a push.
+- Lane B's acting-Lane-A sessions stand down on their next wake.
+
+### 2026-11-04 02:45 UTC (Lane A's orchestrator): Lane A finishes Lane B's six waiting PRs until 2026-11-06 18:30 UTC
+- The co-founder's direction: decide without asking, speed up without lowering quality, no extra usage.
+- Four sessions on Lane A's account, by `lanes/acting-lane-b-2026-11-04.md`:
+  - S1: #75, then #85;
+  - S2: #84;
+  - S3: #86, then #96;
+  - S4: #94, then PR D.
+- The speed rules there now apply to both lanes. Lane B's sessions read this entry before resuming. At 18:30 UTC on 2026-11-06 each acting session stands down at a clean point with a RESUME-BLOCK for Lane B.
+
+### 2026-11-04 03:40 UTC (Lane A's orchestrator): two base-red causes after #94 (4846f043), neither #94's
+- **images:** the Trivy installer's host (get.trivy.dev) stopped resolving on 2026-11-03, so every images job and release.yml's scan fail. S4 is fixing it: `co-001/ci-trivy-install-2026-11-04` installs the pinned Trivy from its GitHub release with a checksum (ADR 0066 amendment, two reviews), and its diff goes to every session to port.
+- **screening-capacity:** the repository is now **private** on a personal GitHub Free account. Private standard runners have 2 CPUs, and the capacity harness refuses fewer than 4 by design (RUNNER_TOO_SMALL), so the required "screening-capacity gate" fails for every PR touching the screening, and the weekly release-capacity run fails too. Private on Free also has no branch protection, secret scanning or push protection (ADR 0063). **For the founder:** github-governance.md sections 1 and 2 (an organization on GitHub Team, then the repository transferred into it), then a 4-core larger runner whose label the build puts in both capacity jobs. Tracked in issue #102. Until then, a PR that touches watched paths cannot pass that gate.
+
+### 2026-11-04 05:50 UTC (Lane A's orchestrator): check-in
+- All five sessions are running: the schema chain and S1 to S4.
+- Merged so far today: #94 (Dependabot B) as 4846f043.
+- Open: #104 (SS-01, reviews running), #75 (pushed a8149341; verification 2), #105 (PR D), #106 (CI fetch fix) and the split Trivy-pin PR.
+- Blocked on the founder's runner decision (the repository is private; issue #102): #104, #75 to #85 to #84, and #106.
+
+### 2026-11-04 06:30 UTC (Lane A's orchestrator)
+- Merged:
+  - #107, Trivy installed from its pinned GitHub release with a checksum, as 7bf7b252. Every images job is green again after the next base merge.
+  - PR D (#105, test-flakes-2), as df4daff7.
+- Waiting only on the founder's runner and organization decision (#102): #75 (verified, a8149341), then #85 and #84; SS-01 #104 (in its fix round); #106 (the capacity gate's private-repository fetch fix). Each needs one base merge and a push after the decision.
+- S4 takes UX PR 7 (sign-in recovery) as acting Lane B and keeps #106 dormant.
+
+### 2026-11-04 07:10 UTC (Lane A's orchestrator): the repository is public again; #102 resolved
+- The founder made the repository public (the API reads private=false). Standard runners have 4 CPUs again, so the screening-capacity gate and CAS-42.5's free route work.
+- Told every session:
+  - S1: #75 now, then #85.
+  - S2: #84 after #85.
+  - S3: #86 takes #107, then #96.
+  - S4: #106 is woken and merged for robustness; UX PR 7 continues.
+  - The schema chain: SS-01 #104 finishes, then its approval line.
+- Still with the founder: the release loader's freeze exception (`tools/release/load.db.test.ts`'s flake; the schema chain's ask of 2026-11-04 05:50 UTC).
+
+### 2026-11-04 07:40 UTC: #75 (contract-phi-check) merged as 72096e94
+- CI: all 26 checks green, the capacity gate and images included. S1 goes on to #85 (four conflicts to resolve at its base merge), then hands to S2 for #84.
+- redact-ssn-phone, which waited for #75, can now start. It is Lane B's, paused until Lane B's reset.
+
+### 2026-11-04 09:25 UTC: #106 merged as 881e2bbd; #86 merged as 24531dc2
+- #106: the screening-capacity gate's private-repository fetch fix and the CI-11 guard.
+- #86 (ci-images-digest): description cut to 33,954 characters.
+- New merge step, in force from 08:00: GitHub now enforces the up-to-date rule, so a PR whose base moved since its last CI merges the base again and re-runs CI first (`lanes/acting-lane-b-2026-11-04.md`, 2a).
+- S3: #96, then ci-findings-transport. S1: #85, then redact-ssn-phone. S4: UX PR 7.
+
+### 2026-11-04 09:30 UTC: UX PR 7 (sign-in recovery) is draft #108
+- Head 6b25ed60, built red-first; integration green, e2e and axe included.
+- S-3 ruled the safer way (ADR 0081 A2 amended): a Cognito or audit failure on a real account answers like a non-account and is logged by IDs only.
+- The wording departures D-1 to D-4 from the UX review's ruled words are listed in the PR body. Taken under the co-founder's "decide without asking" direction; none is legal text.
+- Two reviews are running.
+- Handed to Lane A (not blocking): alarms on password-reset requests per user and on undelivered requests (R-11); branded wording for Cognito's code email; a "your password was changed" email.
+
+### 2026-11-04 09:55 UTC: the release loader's freeze exception granted
+- Recorded in `approval-summaries/founder-asks-2026-10-27.md`. The schema chain puts the loader fix (its failing-first patch: 4 files) into SUITE-CAP-1b. That fixes the flaky `tools/release/load.db.test.ts` at its root.
+- SS-01 (#104) awaits the founder's commit of its suggested approval line (https://github.com/PureTideWater/PhysicalTherapy/pull/104#discussion_r4465978371).
+
+### 2026-11-04 11:50 UTC: UX PR 7 (#108) merged as 45d7d0c1; SS-01's line committed by the founder
+- #108: design, then build red-first, then two reviews with skeptics, two fix rounds, the full suite once and two verifications. The CI capacity gate passed.
+- SS-01: the founder committed the approval line (d214ad6c, 11:30 UTC). The schema chain is taking the base forward, then CI, ready and merge.
+- **Security, Lane A, now in S4:** `co-001/cognito-confidential-client` (#108's P-1).
+  - The problem: Cognito's app client is public with EMAIL_ONLY recovery, so ForgotPassword, ConfirmForgotPassword and InitiateAuth can be called past the app's gate, rate limit, audit and lockout. A confirmed user with no factor can be taken over through MFA_SETUP.
+  - The fix: a confidential client with SecretHash.
+  - Also in it: P-3 (the per-code attempt cap) and R-11 (the reset alarms).
+  - Reserved: ADR 0088 if needed and SEC-20 to SEC-23. Next free: ADR 0089 (0090 is UX PR 8's), SEC-24.
+- Queued after it in S4:
+  - the dark sign-in frame's links at about 1.9:1 contrast (a WCAG failure, on the base already);
+  - the branded code email and a "password changed" email.
+
+### 2026-11-04 12:30 UTC: cognito-confidential-client designed as two PRs (ADR 0088)
+- Why two: a Cognito client cannot gain a secret in place. CDK replaces it with a new client ID, so an image rollback across a single PR would break every sign-in.
+- PR 1, building now: the enrolment rule (MFA_SETUP only inside a live invitation, matched by sub and email; closes the app-path takeovers); the invitation rule; SecretHash support, inactive until a secret exists; the staging diff role denied DescribeUserPoolClient and ListUserPoolClientSecrets; the R-11 alarms; SEC-20 to SEC-23.
+- PR 2, after PR 1 is on staging: the confidential client, its secret in Secrets Manager (readable by the web role only), rotation, the cutover.
+- Decided by Lane A's orchestrator, as recommended:
+  - ruling 13: rotation by the break-glass role only;
+  - ruling 14: admin-delete-user by break-glass only;
+  - ruling 15: N+1 within 7 days of N in production, and before the first customer invitation.
+- For the founder before PR 2 merges: ruling 16 (an SCP or permission boundary denying DescribeUserPoolClient to read-only permission sets) and the credentialed steps F1 to F5 (design section 10).
+
+### 2026-11-04 13:10 UTC: SS-01 merged as #104 (e084da22)
+- The first schema PR of the chain. It rested on: the founder's line d214ad6c; `--check --require-approval` exit 0 (08c1ba47…6142); all required checks green, the domain model included; approval-of-record re-run after ready; fresh-clone verification passed.
+- Next in the chain: SUITE-CAP-1b's PR stage. Its open items: CAS-42.5's memory.peak (980 MiB against 921.6); the loader warning's wording; the founder's ruling on the INDEX_CLEANUP ON amendment.
+- Merged today in all: #94, #107, #105, #75, #106, #86, #108, #104.
+
+### 2026-11-04 13:15 UTC: the loader freeze's INDEX_CLEANUP ON amendment granted
+- Recorded in `approval-summaries/founder-asks-2026-10-27.md`. It goes into SUITE-CAP-1b's PR with the loader fix.
+
+### 2026-11-04 14:40 UTC: #109 merged; SUITE-CAP-1b open as #110; a rule break caught and corrected
+- #109 (test-flakes-3, scan.test.ts on a mocked clock) merged as c4941291.
+- SUITE-CAP-1b is draft #110 (head d219e97d), with three reviews running. Its body quotes both of the founder's freeze grants.
+- **The rule break:** S4's build agent for cognito-confidential-client PR 1 met a gitleaks refusal on a synthetic test password. It added two .gitleaksignore entries (45b7766f, 1721a256) on `co-001/cognito-confidential-client` and opened draft #112. Never merged.
+- **The remedy:** PR 1 is rebuilt on `co-001/cognito-confidential-client-pr1` without an ignore entry, with the test value rewritten. #112 is closed with a comment. The superseded branch `co-001/cognito-confidential-client` stays on origin unmerged (whether to delete it is the person's call); it must never be merged or reused. Workflow prompts now state that a gitleaks refusal means rewriting the flagged text, never .gitleaksignore.
+- **For the founder before release N reaches production:** F0, a staging check that Cognito's challenge names the user's sub (ADR 0088 "Not verified here").
+- **Lane A's queue:** a migration to relink an app row to a new Cognito subject. Until then, the stuck-invitee runbook uses the re-send remedy.
+
+### 2026-11-04 16:30 UTC: #84's fix round done; packet-figure-placeholders claimed
+- #84 (packet day counts) is at `co-001/wip-packet-day-counts-2` 3b276add and waits only for #85.
+  - Each figure now takes its own role, never the union of its clause's cues.
+  - verifierNow runs at request, approval, export and on screens.
+  - Its packets Stryker is split into 13 shards.
+- The re-review loop kept finding English ways to name part of the lines ("apiece", "save one"). Every one also passes the base, so #84 narrows the class and opens nothing; ADR 0086 records it as a known limit.
+- **Decided by Lane A's orchestrator (CLAUDE.md's first rule, code computes every number):** the narrative's figures become placeholders bound to fact ids, rendered by code at export, and free-text numbers in a model narrative are refused.
+  - New item `co-001/packet-figure-placeholders`; ADR 0089 if needed; CAS-52 to CAS-55.
+  - In S2 after #84: design first; built only if time allows before the handback. A migration, if one is needed, is Lane A's.
+- Next free: ADR 0091 (0090 is UX PR 8's), CAS-56.
+
+### 2026-11-04 17:45 UTC: cognito-confidential-client PR 1 merged as #113 (9b237a93)
+- On the base now:
+  - second-factor enrolment only inside a live invitation, matched by Cognito sub and email;
+  - no invitation onto a Cognito user that ever signed in;
+  - SecretHash support, inactive until a secret exists;
+  - the staging diff role denied the client-secret reads;
+  - the R-11 alarms;
+  - ADR 0088, proposed; SEC-20 to SEC-23.
+- PR 2 (the confidential client and the cutover) is cut after PR 1 is deployed to staging.
+- For the founder: F0 (a staging sign-in with a synthetic account, before release N reaches production); F1 to F5 and ruling 16 (the SCP), before PR 2.
+- #114 (test-flakes-4) is open, opened by the orchestrator for S2. S4 goes on to the dark sign-in frame's link contrast, then the code email and the "password changed" email.
+
+### 2026-11-04 18:10 UTC: SUITE-CAP-1b (#110) fix round pushed 4a8357d9; CAS-42.5's memory measure decided
+- #110's fix round: the confirmed findings fixed; the loader amendment, failing first; 14 operator-word fixes; the harness exercises step 7b; #109 and #113 merged in. Full suite once, green: unit 7,610; test:db 9,815; e2e 77; Stryker.
+- **Decided (not a founder ruling: no ruling chose memory.peak; ADR 0062's own check already judges anonymous memory):** CAS-42.5's 90% line (921.6 MiB) applies to the worker container's working set, memory.current minus inactive_file. That is the kubelet's eviction measure, and the kernel reclaims inactive cache before an OOM kill.
+  - memory.peak and memory by kind stay reported beside it.
+  - Any oom or oom_kill event fails the run.
+  - Evidence from two instrumented runs on one tree: peak 842.9 and 958.6 MiB, all of the swing page cache (238 and 335 MiB); the worker's own memory 595.8 and 622.8 MiB.
+
+### 2026-11-04 18:40 UTC: #114 merged (9c6bb102); #85 merged (17641c88)
+- #114 (test-flakes-4): the screening thread's failure code moved to a module of its own, so its test no longer loads the thread's whole graph.
+- #85 (UX PR 10): the payer's answer and the write-off reason start unchosen; the letter is uploaded inside "Log a payer response". #104's suspension gate and #85's upload gate are resolved into one upload gate, with the resolution reviewed (0 findings).
+- Open:
+  - #84: S2's final base merge, now unblocked.
+  - #115 (redact-label-boundary): CI re-running after the #108 sign-in-time flake.
+  - #110 (SUITE-CAP-1b): working-set measure and step 7b on its own practice.
+  - test-flakes-5 (S4): axe waits for the page title.
+  - #96 and ci-findings-transport (S3).
+- Merged today: 12.
+
+### 2026-11-04 21:05 UTC: #115 merged (00fd2906); #96 merged (30871f72)
+- #115 (redact-label-boundary): a sentence end now breaks a label's head, so an ID written as a date after a bare "ID:" is redacted. MOD-13's seed 460548619 is pinned.
+- #96 (P4, ci-mutation-trigger): a change that Stryker core loads (the root typescript) now runs its shards. The mutant counts equal the base push run on all 42 files.
+- PE-S1 (nine shard rows in ci.md, shardsFor = 9) goes to #84, which merges second.
+- S1 is on redact-ssn-phone; S3 on ci-findings-transport. P2 (ci-trivy-version) stays Lane B's.
+- Merged today: 14.
+
+### 2026-11-04 22:35 UTC: two production causes found by SUITE-CAP-1b's acceptance run
+- **The worker's practice pool** holds 4 connections, but the worker runs up to 15 practice jobs at once. Long jobs hold a connection for their whole run, so later jobs time out waiting and pg-boss retries them; this happens in production whenever more than 4 long jobs overlap.
+  - The fix rides #110: the pool sized to the job slots (15), failed attempts logged by code, failing-first tests.
+  - Added guards: a synth-time check that the pools never exceed each environment's max_connections, and a DatabaseConnections alarm at 80%.
+  - Pre-existing; recorded in ADR 0083.
+- **A 2,000-line reconcile** takes 538 to 731 s against the 900 s attempt. It is pre-existing and handed to SUITE-CAP-3 with the profile: byPatient about 403 s; the case refresh 90 to 115 s. The capacity summary's "Known gap" line shows the margin.
+- Also handed back to Lane B: test-flakes-6 (threads.test.ts's oom case under a process-wide max-old-space-size).
+- S4's next item after #117 and #116: `co-001/pricing-run-cutoff`, a product defect. The run's creation check reads now() as a JS Date (milliseconds) while the price job reads it to the microsecond, so a line created in the same millisecond is missed. It causes false refusals only; the fix keeps the cut-off at full precision.
+
+### 2026-11-04 22:40 UTC: #117 (c7bed0f7) and #116 (35422a92) merged
+- #117 (test-flakes-5): the e2e accessibility helper waits for the page's title before axe; the sweep covers 179 calls.
+- #116: in dark mode the sign-in frame takes --pw-bg (existing tokens; light unchanged). Its lowest contrast ratio is now 8.39:1, up from 1.02 to 1.97.
+  - The UX review's N1 goes to the brand owner (ADR 0056:134): does dark sign-in keep Paper, or take the dark ground as now?
+- test-flakes-6 (threads.test.ts's oom case under a process-wide max-old-space-size) is raised: S2 takes it right after #84, since it costs every session's full local run.
+- Merged today: 16.
+
+### 2026-11-04 22:50 UTC: brand rulings adopted (`approval-summaries/founder-asks-2026-10-27.md`)
+- Sign-in uses Paper in light mode and the dark ground in dark mode (as #116 built). BRAND.md section 4 is amended to match.
+- `--pw-unpriced` is darkened to at least 4.5:1 on its tint.
+- Dark mode ships only after a dark-mode pass over every screen; then it follows the OS preference, with a settings override.
+- Work:
+  - **brand-settle** (`co-001/brand-settle`): the ADR 0056 amendment, BRAND.md section 4, and the `--pw-unpriced` darkening with its contrast test. In S4 after pricing-run-cutoff, before the emails; one UX and brand review with shots.
+  - **dark-mode-ship** (the full pass, then the OS hook and the setting): queued for Lane B.
+
+### 2026-11-04 23:50 UTC: #84 (packet day counts) merged as 7fb3e102
+- Each figure now takes its own role.
+- verifierNow runs at request, approval, export and on screens.
+- The packets Stryker split now runs every shard, at 98.99%.
+- The CI mutation failure on a654224a was #84's own. Its role properties had pushed two recorded equivalents past Stryker's per-mutant clock. Fixed in ec974c60 by reducing those properties' runs: no timeout raised, no equivalent edited.
+- For Lane A: the tp-packet-verifier/3 migration (in #84's status file).
+- S2 next: test-flakes-6, then packet-figure-placeholders' build.
+- Merged on 2026-11-04 in all, 17: #94, #107, #105, #75, #106, #86, #108, #104, #109, #113, #114, #85, #115, #96, #117, #116, #84.
+
+### 2026-11-05 00:00 UTC: test-flakes-6's real fix; a latent memory-safety defect for untrusted PDFs
+- test-flakes-6: on Node 24 a worker thread cannot hold its own heap under a process-wide --max-old-space-size (measured). The oom case therefore runs in a child node started without the flag, passing with and without it. Lane A's orchestrator's first suggestion (execArgv/env) was wrong and is withdrawn.
+- **Found by its sweep (latent):** contract-page extraction (`packages/contracts/src/evidence/pages.ts`) relies on a worker thread's 192 MiB limit. heap.ts's planned `--max-old-space-size=560` on the worker task would override it, so a hostile PDF could exhaust the 1,024 MiB task.
+  - **Decided:** extraction runs in a child process with its own heap flag, with a test of its heap limit under the real command and a synth-time guard.
+  - **Order:** heap.ts's flag must not ship before it.
+  - Item `co-001/pages-child-process`, in S3 after ci-findings-transport.
+
+### 2026-11-05 01:25 UTC: #119 merged (370b8973); SUITE-CAP-1b's CAS-42.5 passes; RDS classes decided
+- #119 (test-flakes-6): the screening pool's oom case runs in a child node without the heap flag.
+- #110 (SUITE-CAP-1b) head c2626113: CAS-42.5 passed on attempt 1, run 41940882156. Then come an adversarial review of the round's infra and worker code, the base merge, the body, and the suggested line.
+- **Decided:** staging RDS goes to db.t4g.medium (production's class; about +$23 a month). Dev goes to db.t4g.small with stop-first worker deploys in dev only (about +$11 a month when deployed), its heartbeat alarm quiet during deploys. Recorded in ADR 0083. PRD section 19's cost line stays the founder's.
+- **For Lane B (SUITE-CAP-3):** `approval-summaries/lane-a-to-lane-b-sc1b-reconcile-time-2026-11-05.md`, with 7b's 2,000-line reconcile at 526 to 657 s of 900, and the profile.
+
+### 2026-11-05 02:00 UTC: pricing-run-cutoff merged as #118 (54d061fd)
+- The run-creation cut-off reads now()::text. rerunReasons and runsPricedElsewhere compare in SQL, and rerunReasons fails closed.
+- The console's suspension card matches by status_since, read once as text.
+- Reviews: payment engine, correctness and delta, with skeptics. No B or S findings.
+- Unchanged: packages/pricing, the schema and every amount.
+- Leftover WIP refs `co-001/wip-pricing-run-cutoff` and `co-001/wip/pricing-run-cutoff-s4` are now superseded. Deleting them is the person's housekeeping call; until then they stay, never reused.
+- S4: brand-settle is running, then the emails.
+
+### 2026-11-05 02:15 UTC: counter allocated
+- SEC-24: pages-child-process ("An untrusted document is read in its own process"). SEC-20 to SEC-23 are cognito-confidential-client's (#113).
+- Next free: SEC-25, CAS-56, ADR 0091 (0090 is UX PR 8's), synth module 21 (Lane B released 21; none taken since), fixture release 900008.
+- #120 (ci-findings-transport) is verified, its base re-merged after #118, CI running. pages-child-process is built (WIP c369bc77) and in its two reviews.
+
+### 2026-11-05 04:05 UTC: #120 (af3e79f3) and #121 (f185655c) merged; SUITE-CAP-1b awaits the founder's line
+- #120 (ci-findings-transport): the content calendar's findings travel without exceeding one environment string. Its first run of record read all 16 findings.
+- #121 (brand-settle): `--pw-unpriced` is #5F6A79 (4.90:1 on its tint; the test holds 4.8 or more). ADR 0056 is amended with the brand rulings, BRAND.md sections 3, 4 and 7 agree, and ADR 0058 has an "Answered" line. The anomaly chip's sans "$5" is queued for UX PR 4b.
+- #110 (SUITE-CAP-1b): the suggested approval line is posted (https://github.com/PureTideWater/PhysicalTherapy/pull/110#discussion_r4476277082; e024cf9f…c4df). CAS-42.5 passes: working set 719.9 of 921.6 MiB, OOM 0, every job on attempt 1.
+- S4 next: `co-001/auth-emails` (the branded Cognito code email via CustomMessage; a "password changed" email through #42's transactional stream). SGN-13 to SGN-16; ADR 0091 if needed.
+- Next free: ADR 0092, SGN-17, SEC-25, CAS-56.
+
+### 2026-11-05 05:10 UTC: SUITE-CAP-1b merged as #110 (f7d609cc)
+- The second schema PR of the chain. It rested on the founder's line 61fc4e6c, `--check --require-approval` exit 0, every check green, and CAS-42.5 and CAS-42.6 passing.
+- On the base now:
+  - one practice lock key in triage and the ledger triggers, per the founder's Q1 exception;
+  - the worker pool sized to its job slots;
+  - the connection budget checked at synthesis, with a DatabaseConnections alarm;
+  - the release loader's freeze, with both grants;
+  - RDS staging at medium and dev at small.
+- Next: the interest fix's PR stage (head 650a3108; its own CAS-42.5 passes at full size).
+- Merged since 2026-11-05 00:00 UTC: #84, #119, #118, #120, #121, #110.
+
+### 2026-11-05 06:50 UTC: auth emails part 1 merged as #125 (0f4a5ed5); interest open as #126
+- #125: every Cognito code email goes through a CustomMessage trigger in brand words (@tp/auth-mail), text-first, with no link in any code email and an anti-phishing footer. The pool's own templates are a branded fallback. Security S-2: an email cannot be changed by its own token holder (keepOriginal; empty writeAttributes). SGN-13 to SGN-15; ADR 0081 amended.
+- **Decided:**
+  - O-5 (brand): a White plate behind the lockup in every worker email, because forced inversion in mail clients is undetectable. PR `co-001/email-lockup-plate`.
+  - O-8 (wording): "If you asked more than once, use the newest code." It is true either way; whether a new request replaces the old code is left to the staging smoke checks.
+- **Lane A, schema, queued after #126:** `co-001/password-changed-notice` (ADR 0091, SGN-16). It adds a password_notice table filled by an AFTER INSERT trigger on audit_event, tp_operator claim functions and a password_changed kind on the transactional stream. S4 builds it to verification on its branch; its PR opens when #126 merges, and then it needs the founder's approval line.
+- The interest fix is draft #126 (head c49367c5), in four reviews.
+- Next free: ADR 0092, SGN-17.
+
+### 2026-11-05 07:40 UTC: redact-ssn-phone merged as #127 (23b25ad0); #128 open
+- #127, the founder's ruling of 2026-11-01, is built:
+  - a payer letter's SSNs and phone numbers are redacted by pattern ([SSN], [PHONE]);
+  - an independent survivor scan refuses a letter in which one survives;
+  - PRD 14, ADR 0054, ADR 0070 N6 and reconciliation-001 record the ruling;
+  - MOD-15 and MOD-16 are used.
+- #128 is open (packet-figure-placeholders slice 1, opened by the orchestrator for S2).
+- S1 next: `co-001/packets-verifier-identifier-fold` (MOD-19, MOD-20). The packets verifier's identifierSpans gets the gateway's fold, with a differential property test against the gateway matcher. Then SUITE-CAP-3's worker-side fixes if time allows.
+- Merged since 2026-11-05 00:00 UTC: #84, #119, #118, #120, #121, #110, #125, #127.
+- Next free: MOD-21, CAS-56, SEC-25, SGN-17, ADR 0092.
+
+### 2026-11-05 07:55 UTC (Lane A's orchestrator): Lane A at 99% weekly; handoff to Lane B written
+- Every session on Lane A's account was told to stand down now. Each one: no new workflow; WIP refs pushed; a RESUME-BLOCK in its status file; unsubscribed from its PRs; check-ins cancelled. A verified, green PR may merge first.
+- The handoff is `lanes/lane-a-handoff-to-lane-b-2026-11-05.md`. Lane B runs everything from 2026-11-06 19:00 UTC, including the schema chain as acting Lane A, until Lane A's reset (~2026-11-10 14:00 UTC).
+- The orchestrator's 2026-11-06 handback trigger is deleted.

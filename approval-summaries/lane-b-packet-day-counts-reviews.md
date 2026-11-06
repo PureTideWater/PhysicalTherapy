@@ -1056,3 +1056,24 @@ No finding was refuted: all 34 reached the two votes needed. The refutations rec
 - CRIT-3: a date after a figure, or opening the sentence, gets no role.
 - CRIT-4: a correct deadline after "days after payment" fails, a regression.
 - The percentage, page and due-date parts of PE-4.
+
+## Re-review of the fix round, 2026-11-04 (acting S2; wf_4ca2cf69-8dc, delta 1c423691..ac727b15)
+Each finding checked by two skeptics (reproduce; intent and scope). The payment-engine review returned no result (it ran out of room on a fuzz dump); it is redone at d7d587a2 in round 2 (wf_d831f69a-b19).
+| Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| CORR-D1 | blocking | A "respectively" list with its cues after it: the swapped dispute passed, the correct one failed (CORR-6 incomplete; the gateway shares the reader). | Fixed in d7d587a2 (cues after the list map in order); rechecked fixed. |
+| CORR-D2 | should fix | "per line"/"in total" beside a "respectively" list applied to one figure only. | Fixed in d7d587a2 (amountScope); rechecked fixed. |
+| UX-D1 | should fix | "Fails now" said "cannot be approved" on an approved, exported or earlier version. | Fixed in d7d587a2 (wording by state; Export blocked alert); rechecked fixed. |
+| UX-D3 | nit | The refusal listed mismatches by kind only, repeated items, nested colons. | Fixed in d7d587a2; rechecked fixed. |
+| UX-D2, UX-D4 | nit | Counts not in mono; an internal role named. | Refuted (one of two skeptics). |
+| NEW-N1 | blocking | d7d587a2's list scope reaches past the clause edge, so a total read as per line passes (regression). | Round 2. |
+| NEW-N2 | should fix | A scope stated with each cue after a list is flattened to one. | Round 2. |
+| NEW-N3 | nit | Export-blocked and hash-only texts name marked figures when none are marked. | Round 2. |
+The UX review read code only this round (no screen tour capture).
+
+## Round 2 and the converge stages, 2026-11-04 (acting S2; wf_d831f69a-b19)
+- Round 2 (payment-engine review at d7d587a2, two skeptics): PE-D1 (blocking, CORR-D1 incomplete), PE-D2, PE-D3; gateway fuzz 195,750 sentences, 0 role swaps against the base. Three fix-and-recheck passes (063274c8, 6b49d9ac, 9aa178c0) each found new scope cases.
+- Converge (the closed rules, 9001a0e2): reviews found PE3-1, PE3-2, CORR3-1 (blocking), PE3-3, CORR3-2..4; fixed in bb65c477; recheck PE4-1, CORR4-1 (blocking).
+- Converge 2 (scope by adjacency only, fail-closed part-of-the-lines triggers, f82bf183): reviews found PE5-1..3, CORR5-1..3 (blocking), CORR5-4, CORR5-5; fixed in 6e49c6b3 (CORR5-4 in part); recheck PE6-1..5 (blocking by the review's own bar: further words naming a part of the lines, "apiece", "per date", patient synonyms and pronouns) and PE6-6 (nit).
+- Disposition of PE6-1..5 and the rest of CORR5-4: **known limit, not fixed in #84** (ADR 0086 consequences, 3b276add). Every reproduction checked also passes the base 83d71fd6 (13 of 13 PASS at the base; the item's own swap "The payer allowed $300.00 in total" passes at the base and fails now), so #84 narrows the class and opens nothing. A list of trigger words cannot close it; the proposal that would (figures as placeholders bound to the facts, rendered at export, free-text numbers refused) is the founder's choice (ADR 0086 "Revisit when").
+- PE6-6 (nit): a per-line figure only some lines hold fails with no editor guidance: rides a follow-on.

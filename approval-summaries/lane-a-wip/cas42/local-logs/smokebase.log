@@ -1,0 +1,28 @@
+[release-capacity 2026-11-04T10:39:24.898Z] runner 4 CPUs, 16091 MiB; runtime process; worker 0.5 vCPU and 1024 MiB on CPUs 3: node --max-old-space-size=560 --enable-source-maps dist/main.js
+[release-capacity 2026-11-04T10:39:24.899Z] building the SYNTHETIC quarterly scale release at the smoke size
+[release-capacity 2026-11-04T10:39:25.726Z] release 900110: 11247 records
+[release-capacity 2026-11-04T10:39:29.700Z] loaded: {"status":"loaded","releaseNo":900110,"manifestSha256":"9039a2d746bbd2f04fa3d401bf646ebb64109b36d277d95de0371e7efb14bd22","records":11247,"seconds":1.6}
+[release-capacity 2026-11-04T10:39:33.010Z] seeded A (2000 lines), B (500), C (two sets of 4 835s of 50 claims), D and E (2000 each)
+(node:13567) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[release-capacity 2026-11-04T10:39:46.661Z] concurrent phase: A price completed, B audit report completed, C parse 1 completed, C parse 2 completed, C parse 3 completed, C parse 4 completed
+[release-capacity 2026-11-04T10:39:53.695Z] A's reconcile: 0 actionable lines in 0 reprocessing 835s
+[release-capacity 2026-11-04T10:40:00.758Z] large jobs together: A audit report 2 completed, D triage completed, E price completed, C parse 5 completed, C parse 6 completed, C parse 7 completed, C parse 8 completed
+[release-capacity 2026-11-04T10:40:30.501Z] verdict: fail
+[release-capacity 2026-11-04T10:40:30.501Z]   A price (price) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T10:40:30.501Z]   B audit report (audit_report) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 1 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 2 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 3 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 4 (parse_835) logged no job heap line (concurrent phase)
+[release-capacity 2026-11-04T10:40:30.501Z]   A triage (triage) logged no job heap line (the chain)
+[release-capacity 2026-11-04T10:40:30.501Z]   A audit report (audit_report) logged no job heap line (the chain)
+[release-capacity 2026-11-04T10:40:30.501Z]   A reconcile (reconcile) logged no job heap line (A’s reconcile)
+[release-capacity 2026-11-04T10:40:30.501Z]   A audit report 2 (audit_report) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T10:40:30.501Z]   D triage (triage) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T10:40:30.501Z]   E price (price) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 5 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 6 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 7 (parse_835) logged no job heap line (the large jobs together)
+[release-capacity 2026-11-04T10:40:30.501Z]   C parse 8 (parse_835) logged no job heap line (the large jobs together)
+exit=1 10:40:35

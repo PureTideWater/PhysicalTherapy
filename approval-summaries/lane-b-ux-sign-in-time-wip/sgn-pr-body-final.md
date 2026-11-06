@@ -1,0 +1,18 @@
+# sgn-pr-body-final progress
+- started 2026-11-02; live body == scratchpad/pr-body.md (32,448 bytes, describes e4e05a0d only). Head ab68af87 confirmed.
+- next: gather diffs b8654622/d557f7d9/ab68af87, design 9, shots.json skips, CI on head, 20:36 ruling
+- facts: before-2 (20:32:49Z, bce57f16) 48 shots/33 skips = 11 states x3; reasons: restarted 404 (1 state), time-mfa not seeded (4: mfa.warning, mfa.closed, restarted-kept, step-expired-kept), step_expired keeps no email (2: step-expired-chosen/temporary), enroll no limit (2: warning, closed), time-staff not seeded (1: new-password.invited-staff), register-key no limit (1: warning). after (01:27Z, b8654622) 81/0; id sets equal.
+- diffs read: b8654622 22 files +564/-131; d557f7d9 5 files +55/-11; merge ab68af87 27 files from #83; bce57f16..ab68af87 66 files +5163/-449; e4e05a0d..d557f7d9 22 files +616/-139 (sic check)
+- 20:36 ruling found in ops approval-summaries (merge when verified and green; section-6 order only between conflicting PRs; PR merged second resolves)
+- ran at ab68af87 (worktree, flock): SGN unit+fixtures and 3 db files; see runs/final/*.json
+- head tests: unit SGN files 80/80 (step-timer.test 12, browser 14, notice 7, pending 6, step-limits 3, dev-provider 15 (1 SGN), fixtures 23); db 32/32 (sign-in-routes 19 with 12 SGN, sign-in.db 10, seed 3)
+- CI on ab68af87 at 01:54Z: approval-of-record, mutation, changes, domain model success; ci run 41374759882 + capacity 41374759876 in progress. CI on b8654622 all green (ci 41371850309).
+- PR diff vs base 43565235: 43 files +3,114/-130. Overlaps now: #42(219) #75 #84: 3 docs+watched; #85: 3 docs + forms-harness; #90 #95: 3 docs; #91: test-matrix+matrix.ts; #93: test-matrix, common.ts, matrix.ts, registry.ts, expected/types.ts, watched; #86 #94 #87-89: none
+- writing new body to scratchpad/pr-body.md (backup pr-body.e4e05a0d.md)
+- body drafted (fix: ADR D4/D5); verifying then send
+- edits: UX PR 14/7/64 lines kept to design 3.5 + section 9; next send
+- SENT 1x via update_pull_request; read-back body == pr-body.md exactly (48,871 chars / 48,884 bytes). next: adversarial re-read
+- adversarial fixes: CASE_MODULES is in expected/types.ts, MODULE_NUMBER in cases/common.ts (swapped); UXR2-01 390 fold wording per verifier. resend
+- CI 02:03: ci run success (all green etc), capacity pending; paragraph updated
+- SENT 2nd (adversarial fixes + CI 02:03); read-back compare logged below
+- DONE: final read-back == pr-body.md byte for byte (49,089 chars, 49,102 bytes), head ab68af87; capacity gate pending at 02:03

@@ -1,0 +1,458 @@
+diff --git a/packages/rules/src/loader.ts b/packages/rules/src/loader.ts
+index 7176d1a8..b097bd0c 100644
+--- a/packages/rules/src/loader.ts
++++ b/packages/rules/src/loader.ts
+@@ -1,5 +1,6 @@
+ import { readFileSync } from 'node:fs';
+ import path from 'node:path';
++import { setTimeout as sleep } from 'node:timers/promises';
+ 
+ import { readRelease } from './content';
+ import { FIRST_SYNTHETIC_RELEASE, RELEASE_NOTES_FILE, isSyntheticReleaseNumber } from './manifest';
+@@ -32,6 +33,11 @@ export interface LoadOptions {
+    * withScratchDatabase pass it; the release commands never do.
+    */
+   readonly allowSyntheticFixtureForTests?: boolean;
++  /**
++   * How long, once the load has committed, it waits for its records to be frozen (FREEZE_WAIT_MS unless given); 0 runs
++   * the one pass and waits for nothing.
++   */
++  readonly freezeWaitMs?: number;
+ }
+ 
+ export interface LoadResult {
+@@ -39,6 +45,12 @@ export interface LoadResult {
+   readonly releaseNo: number;
+   readonly manifestSha256: string;
+   readonly records: number;
++  /**
++   * Every page of rule_record all-visible and all-frozen when the load returned. False only when a transaction older
++   * than the load still held the database's visibility horizon back once the wait ran out; the release is loaded and
++   * published all the same, and loading it again finishes the freeze.
++   */
++  readonly frozen: boolean;
+ }
+ 
+ /** Records per INSERT statement (nine parameters each, well under PostgreSQL's 65,535). */
+@@ -47,6 +59,62 @@ const BATCH_SIZE = 500;
+ /** Advisory lock class for loads: two loaders of the same release run one after the other. */
+ const LOAD_LOCK_CLASS = 0x52554c45;
+ 
++/**
++ * How long a committed load waits for its records to be frozen: three minutes, the budget of the longest single
++ * transaction the platform runs (CAS-42's real-size report, 180 s).
++ */
++export const FREEZE_WAIT_MS = 180_000;
++
++/** The first pause between VACUUMs while the horizon is held back; each pause doubles, up to FREEZE_PAUSE_MAX_MS. */
++const FREEZE_PAUSE_MS = 50;
++const FREEZE_PAUSE_MAX_MS = 2_000;
++/**
++ * After a later pass, the pause is also at least this many times as long as that pass took, so a wait over a real-size
++ * release spends at most a fifth of its time re-reading the pages not yet frozen.
++ */
++const FREEZE_PAUSE_PER_PASS = 4;
++
++/** Whether the visibility map holds every page of rule_record all-frozen (so all-visible), as the last VACUUM or ANALYZE counted it. */
++async function ruleRecordFrozen(client: SqlClient): Promise<boolean> {
++  const { rows } = await client.query("SELECT relallfrozen >= relpages AS frozen FROM pg_class WHERE oid = 'rule_record'::regclass");
++  return (rows[0] as { frozen: boolean }).frozen;
++}
++
++/**
++ * Analyzes rule_record and freezes its records, which never change: the first screenings after a load then neither plan
++ * without statistics nor set every page's hint bits (CI's capacity run on 9eb4474: S1-1, the first screening after the
++ * load, hash-joined every record of the release and recorded no batch for five minutes), and no anti-wraparound vacuum
++ * rewrites them later. Outside any transaction: VACUUM cannot run in one.
++ *
++ * The first pass takes the statistics and sets every record's hint bits whatever else runs. But PostgreSQL freezes a
++ * record, and marks its page all-visible, only once the record's inserting transaction precedes the database's
++ * visibility horizon, the oldest xmin or xid among this database's backends (vacuums aside). Any transaction of this
++ * database that began before the load committed holds the horizon back, and so does any snapshot of this database
++ * taken while a transaction older than the load still runs anywhere in the cluster, since a snapshot's xmin is the
++ * oldest transaction running in any database; a transaction in another database alone holds nothing back. autovacuum's
++ * ANALYZE of a catalog in a scratch database, beside a long transaction in another, so left every page of the
++ * synthetic release unfrozen in test:db (relallvisible 0 of 7). So each pass is checked against the visibility map's
++ * counts, which the pass itself has just written to pg_class, and repeated after a pause while they fall short, for up
++ * to `waitMs`. A later pass only freezes (VACUUM (FREEZE), reading only the pages not yet all-frozen): the first pass's
++ * statistics already count every committed record, whatever the horizon. Returns whether every page ended all-frozen.
++ */
++async function analyzeAndFreeze(client: SqlClient, waitMs: number): Promise<boolean> {
++  const deadline = Date.now() + waitMs;
++  for (let backoff = FREEZE_PAUSE_MS, pass = 1; ; backoff = Math.min(backoff * 2, FREEZE_PAUSE_MAX_MS), pass += 1) {
++    const started = Date.now();
++    await client.query(pass === 1 ? 'VACUUM (FREEZE, ANALYZE) rule_record' : 'VACUUM (FREEZE) rule_record');
++    if (await ruleRecordFrozen(client)) {
++      return true;
++    }
++    // The first pass also analyzes and writes every page's hint bits, so it says nothing of what a later pass costs.
++    const pause = pass === 1 ? backoff : Math.max(backoff, FREEZE_PAUSE_PER_PASS * (Date.now() - started));
++    if (Date.now() + pause > deadline) {
++      return false;
++    }
++    await sleep(pause);
++  }
++}
++
+ /** The `source` column: where the record came from, the text it quotes, and its notes. */
+ export function sourceColumn(record: RuleRecord): Record<string, unknown> {
+   return { ...record.source, quotes: record.quotes, notes: record.notes };
+@@ -116,10 +184,11 @@ export function loadRefusals(releaseNo: number, records: readonly Located<RuleRe
+  * Verifies the release (manifest, every record against the schema, no overlapping windows, the
+  * release number asked for, and every record verified to L2 or higher and not synthetic), then in
+  * one transaction inserts the release, its records, and marks it published, and then analyzes
+- * rule_record and freezes the records (VACUUM, which no transaction may hold). From then on the
++ * rule_record and freezes the records (analyzeAndFreeze: VACUUM, which no transaction may hold,
++ * waiting up to `freezeWaitMs` for the transactions older than the load). From then on the
+  * database refuses any change to either table's rows for that release. Loading the same release
+- * again is a no-op; loading a different release under a number already loaded is refused. Nothing
+- * is written when any check fails.
++ * again writes nothing and finishes a freeze an earlier load left short; loading a different
++ * release under a number already loaded is refused. Nothing is written when any check fails.
+  */
+ export async function loadRelease(client: SqlClient, dir: string, options: LoadOptions): Promise<LoadResult> {
+   const release = readRelease(dir);
+@@ -136,6 +205,7 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
+   const releaseNo = release.manifest.release;
+   const records = release.records.map((located) => located.record);
+   const result = { releaseNo, manifestSha256: release.manifestSha256, records: records.length };
++  const waitMs = options.freezeWaitMs ?? FREEZE_WAIT_MS;
+ 
+   await client.query('BEGIN');
+   let open = true;
+@@ -147,7 +217,10 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
+       await client.query('ROLLBACK');
+       open = false;
+       if (loaded.manifest_sha256 === release.manifestSha256) {
+-        return { status: 'already_loaded', ...result };
++        // A load whose wait ran out, or that stopped between its commit and its VACUUM, is finished here. Always by a
++        // VACUUM: pg_class holds the counts of the last VACUUM or ANALYZE, which a stopped load never ran, and pages
++        // already frozen are skipped.
++        return { status: 'already_loaded', ...result, frozen: await analyzeAndFreeze(client, waitMs) };
+       }
+       throw new ReleaseLoadError(
+         `release ${String(releaseNo)} is already loaded from a different manifest; a published release never changes, so the new content needs a new number`,
+@@ -166,14 +239,10 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
+       await client.query('ROLLBACK');
+     }
+   }
+-  // Analyzed and frozen before anything reads it (outside the transaction: VACUUM cannot run in one). Without
+-  // statistics the planner reckons a release a sliver of rule_record, and the first screenings after a load hash-joined
+-  // every record of the release instead of probing rule_record_identity, setting each page's hint bits as they read
+-  // (CI's capacity run on 9eb4474: S1-1, the first screening after the load, recorded no batch for five minutes). A
+-  // release's records never change, so they are frozen once, here, and no anti-wraparound vacuum rewrites them later;
+-  // pages already frozen are skipped.
+-  await client.query('VACUUM (FREEZE, ANALYZE) rule_record');
+-  return { status: 'loaded', ...result };
++  // Analyzed and frozen before anything reads it. Without statistics the planner reckons a release a sliver of
++  // rule_record, and the first screenings after a load hash-joined every record of the release instead of probing
++  // rule_record_identity; pages already frozen are skipped.
++  return { status: 'loaded', ...result, frozen: await analyzeAndFreeze(client, waitMs) };
+ }
+ 
+ export interface WithdrawOptions {
+diff --git a/tools/release/index.ts b/tools/release/index.ts
+index 1d856145..7304877c 100644
+--- a/tools/release/index.ts
++++ b/tools/release/index.ts
+@@ -68,6 +68,12 @@ async function load(releaseNo: number, dirOption: string | undefined): Promise<v
+     process.stdout.write(
+       `release:load: release ${String(result.releaseNo)} ${result.status === 'loaded' ? 'loaded' : 'was already loaded'} (${String(result.records)} records, manifest ${result.manifestSha256}).\n`,
+     );
++    if (!result.frozen) {
++      // Published all the same: only the freeze waits, on a transaction that began before the load (pg_stat_activity's backend_xmin).
++      process.stderr.write(
++        `release:load: release ${String(result.releaseNo)} is published, but rule_record is not yet frozen: a transaction older than the load still holds back the database's visibility horizon. Run the same release:load again once it ends; it writes nothing and finishes the freeze.\n`,
++      );
++    }
+   } finally {
+     await client.end();
+   }
+diff --git a/tools/release/load.db.test.ts b/tools/release/load.db.test.ts
+index f9d57a94..46826de6 100644
+--- a/tools/release/load.db.test.ts
++++ b/tools/release/load.db.test.ts
+@@ -6,11 +6,12 @@ import { OWNER_ROLE, appDevLoginUrl, migrate, readDatabaseUrl } from '@tp/db';
+ import { withScratchDatabase } from '@tp/db/testing';
+ import { MANIFEST_FILE, buildManifest, recordSha256, serializeManifest, serializeRecords, sha256 } from '@tp/rules';
+ import { fileSha256, listContentFiles, readRelease } from '@tp/rules/content';
+-import { ReleaseLoadError, loadRelease } from '@tp/rules/loader';
++import { ReleaseLoadError, type SqlClient, loadRelease } from '@tp/rules/loader';
+ import pg from 'pg';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ 
+ import { repositoryRoot } from '../content-files';
++import { rollbackRelease } from './rollback';
+ import { SYNTHETIC_RELEASE_DIR, SYNTHETIC_RELEASE_NUMBER } from './synthetic';
+ 
+ const adminUrl = readDatabaseUrl();
+@@ -77,6 +78,35 @@ async function releaseCount(client: pg.Client): Promise<number> {
+   return (await client.query('SELECT 1 FROM rule_release')).rowCount ?? 0;
+ }
+ 
++interface RulePages {
++  readonly relpages: number;
++  readonly relallvisible: number;
++  readonly relallfrozen: number;
++}
++
++/** rule_record's pages, and how many the visibility map holds all-visible and all-frozen, as the last VACUUM or ANALYZE counted them. */
++async function rulePages(client: pg.Client): Promise<RulePages | undefined> {
++  return (await client.query<RulePages>("SELECT relpages, relallvisible, relallfrozen FROM pg_class WHERE oid = 'rule_record'::regclass")).rows[0];
++}
++
++/** Every page of rule_record all-visible and all-frozen. */
++async function expectEveryPageFrozen(client: pg.Client): Promise<void> {
++  const pages = await rulePages(client);
++  expect(pages?.relpages).toBeGreaterThan(0);
++  expect(pages).toEqual({ relpages: pages?.relpages, relallvisible: pages?.relpages, relallfrozen: pages?.relpages });
++}
++
++/** How many VACUUMs of rule_record have ended (each reports to the cumulative statistics as it ends). */
++async function ruleRecordVacuums(client: pg.Client): Promise<number> {
++  return (await client.query<{ n: number }>("SELECT vacuum_count::integer AS n FROM pg_stat_user_tables WHERE relid = 'rule_record'::regclass")).rows[0]?.n ?? 0;
++}
++
++/** Holds a snapshot of `client`'s database open until its transaction ends: VACUUM may freeze nothing it must not see. */
++async function holdSnapshot(client: pg.Client): Promise<void> {
++  await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
++  await client.query('SELECT 1');
++}
++
+ beforeEach(() => {
+   scratch = mkdtempSync(path.join(tmpdir(), 'release-load-'));
+ });
+@@ -92,7 +122,13 @@ describe('loading the synthetic release', () => {
+       const owner = await connect(url, OWNER_ROLE);
+       try {
+         const result = await loadRelease(owner, fixture, FIXTURE);
+-        expect(result).toEqual({ status: 'loaded', releaseNo: SYNTHETIC_RELEASE_NUMBER, manifestSha256: sha256(readFileSync(path.join(fixture, MANIFEST_FILE))), records: fixtureRecords.length });
++        expect(result).toEqual({
++          status: 'loaded',
++          releaseNo: SYNTHETIC_RELEASE_NUMBER,
++          manifestSha256: sha256(readFileSync(path.join(fixture, MANIFEST_FILE))),
++          records: fixtureRecords.length,
++          frozen: true,
++        });
+ 
+         const releases = await owner.query<{ release_no: number; manifest_sha256: string; published: boolean; notes: string }>(
+           'SELECT release_no, manifest_sha256, published_at IS NOT NULL AS published, notes FROM rule_release',
+@@ -131,7 +167,9 @@ describe('loading the synthetic release', () => {
+   it('leaves the release analyzed and frozen once loaded, so the first screening after a load reads it by its indexes', async () => {
+     // CI's capacity run on 9eb4474 read a release just loaded, before any ANALYZE: with no statistics each keyed read
+     // hash-joined all 2.2 million records of the release, setting every page's hint bits as it went, and S1-1 recorded
+-    // no batch for five minutes. The loader now analyzes rule_record and freezes the records it wrote, which never change.
++    // no batch for five minutes. The loader now analyzes rule_record and freezes the records it wrote, which never change,
++    // and returns only once the visibility map holds them frozen: autovacuum's ANALYZE in this scratch database, beside a
++    // long transaction in another database of the cluster, used to leave every page unfrozen here (the tests below).
+     await withLoadedRelease(async (url) => {
+       const admin = await connect(url);
+       try {
+@@ -150,11 +188,149 @@ describe('loading the synthetic release', () => {
+     });
+   });
+ 
++  it('waits, once committed, for a transaction of its database that began before the load, then freezes the release', async () => {
++    await withScratchDatabase(adminUrl, async (url) => {
++      await migrate({ databaseUrl: url });
++      const older = await connect(url);
++      const owner = await connect(url, OWNER_ROLE);
++      const admin = await connect(url);
++      let load: Promise<unknown> = Promise.resolve();
++      try {
++        await holdSnapshot(older);
++        let returned = false;
++        load = loadRelease(owner, fixture, FIXTURE).finally(() => {
++          returned = true;
++        });
++        // Committed and published, and its first VACUUM has ended with nothing frozen: the older snapshot must not see
++        // the records as committed. The load waits.
++        while (!returned && (await ruleRecordVacuums(admin)) === 0) {
++          await new Promise((resolve) => setTimeout(resolve, 20));
++        }
++        expect(await releaseCount(admin)).toBe(1);
++        expect(await rulePages(admin)).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
++        expect(returned).toBe(false);
++        await older.query('COMMIT');
++        expect(await load).toMatchObject({ status: 'loaded', frozen: true });
++        await expectEveryPageFrozen(admin);
++      } finally {
++        await older.end();
++        await load.catch(() => undefined);
++        await owner.end();
++        await admin.end();
++      }
++    });
++  });
++
++  it('waits for a snapshot of its database taken after the commit while an older transaction runs in another database, and not for that transaction alone', async () => {
++    await withScratchDatabase(adminUrl, async (otherUrl) => {
++      await withScratchDatabase(adminUrl, async (url) => {
++        await migrate({ databaseUrl: url });
++        const elsewhere = await connect(otherUrl);
++        const later = await connect(url);
++        const owner = await connect(url, OWNER_ROLE);
++        const admin = await connect(url);
++        try {
++          // A transaction older than the load, with a transaction ID, in another database of the same cluster.
++          await elsewhere.query('BEGIN');
++          await elsewhere.query('SELECT pg_current_xact_id()');
++          // The loader's client opens `later`'s snapshot once the load has committed, just before the first VACUUM, and
++          // ends it just before the second, keeping what the first left.
++          let vacuums = 0;
++          let afterFirst: RulePages | undefined;
++          const client: SqlClient = {
++            query: async (text, values) => {
++              if (text.startsWith('VACUUM')) {
++                vacuums += 1;
++                if (vacuums === 1) {
++                  await holdSnapshot(later);
++                } else if (vacuums === 2) {
++                  afterFirst = await rulePages(admin);
++                  await later.query('COMMIT');
++                }
++              }
++              return owner.query(text, values);
++            },
++          };
++          expect(await loadRelease(client, fixture, FIXTURE)).toMatchObject({ status: 'loaded', frozen: true });
++          // A snapshot's xmin is the oldest transaction running anywhere, so `later`'s, though taken after the commit,
++          // still held the release back.
++          expect(afterFirst).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
++          // The other database's transaction is still open: alone, it held nothing back.
++          expect((await elsewhere.query('SELECT pg_current_xact_id_if_assigned() IS NOT NULL AS open')).rows).toEqual([{ open: true }]);
++          await expectEveryPageFrozen(admin);
++        } finally {
++          await elsewhere.end();
++          await later.end();
++          await owner.end();
++          await admin.end();
++        }
++      });
++    });
++  });
++
++  it('reports the release unfrozen when its wait runs out, published all the same, and loading it again finishes the freeze', async () => {
++    await withScratchDatabase(adminUrl, async (url) => {
++      await migrate({ databaseUrl: url });
++      const older = await connect(url);
++      const owner = await connect(url, OWNER_ROLE);
++      const admin = await connect(url);
++      try {
++        await holdSnapshot(older);
++        expect(await loadRelease(owner, fixture, { ...FIXTURE, freezeWaitMs: 300 })).toMatchObject({ status: 'loaded', frozen: false });
++        expect(await rulePages(admin)).toMatchObject({ relallvisible: 0, relallfrozen: 0 });
++        // Published, and read whole by any snapshot taken since: only the freeze waits.
++        expect((await admin.query('SELECT published_at IS NOT NULL AS published FROM rule_release')).rows).toEqual([{ published: true }]);
++        expect((await admin.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
++        await older.query('COMMIT');
++        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', frozen: true });
++        await expectEveryPageFrozen(admin);
++        expect((await admin.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
++      } finally {
++        await older.end();
++        await owner.end();
++        await admin.end();
++      }
++    });
++  });
++
++  it('analyzes and freezes, when loaded again, a release whose load stopped between its commit and its VACUUM', async () => {
++    await withScratchDatabase(adminUrl, async (url) => {
++      await migrate({ databaseUrl: url });
++      const owner = await connect(url, OWNER_ROLE);
++      const admin = await connect(url);
++      try {
++        // The loader's process ends the moment its transaction has committed: no VACUUM runs, and pg_class keeps the
++        // counts of before the load.
++        const stopped: SqlClient = {
++          query: async (text, values) => {
++            if (text.startsWith('VACUUM')) {
++              throw new Error('the loader stopped after its commit');
++            }
++            return owner.query(text, values);
++          },
++        };
++        await expect(loadRelease(stopped, fixture, FIXTURE)).rejects.toThrow('the loader stopped after its commit');
++        expect(await releaseCount(admin)).toBe(1);
++        expect(await ruleRecordVacuums(admin)).toBe(0);
++        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', frozen: true });
++        expect(await ruleRecordVacuums(admin)).toBeGreaterThan(0);
++        await expectEveryPageFrozen(admin);
++        const stats = await admin.query<{ n: number }>("SELECT count(*)::integer AS n FROM pg_stats WHERE schemaname = 'public' AND tablename = 'rule_record'");
++        expect(stats.rows[0]?.n).toBeGreaterThan(0);
++        const table = await admin.query<{ reltuples: number }>("SELECT reltuples FROM pg_class WHERE oid = 'rule_record'::regclass");
++        expect(table.rows[0]?.reltuples).toBe(fixtureRecords.length);
++      } finally {
++        await owner.end();
++        await admin.end();
++      }
++    });
++  });
++
+   it('loads the same release again as a no-op', async () => {
+     await withLoadedRelease(async (url) => {
+       const owner = await connect(url, OWNER_ROLE);
+       try {
+-        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', releaseNo: SYNTHETIC_RELEASE_NUMBER });
++        expect(await loadRelease(owner, fixture, FIXTURE)).toMatchObject({ status: 'already_loaded', releaseNo: SYNTHETIC_RELEASE_NUMBER, frozen: true });
+         expect((await owner.query('SELECT 1 FROM rule_record')).rowCount).toBe(fixtureRecords.length);
+       } finally {
+         await owner.end();
+@@ -194,6 +370,41 @@ describe('loading the synthetic release', () => {
+   });
+ });
+ 
++describe('a rollback beside a transaction older than the release it loads', () => {
++  it('withdraws the release in force without waiting for the release it loads to be frozen, and a later load finishes the freeze', async () => {
++    await withScratchDatabase(adminUrl, async (url) => {
++      await migrate({ databaseUrl: url });
++      const owner = await connect(url, OWNER_ROLE);
++      const older = await connect(url);
++      const admin = await connect(url);
++      try {
++        await loadRelease(owner, fixture, FIXTURE);
++        // Release 1 is published in the repository only; the database's SYNTHETIC release is in force.
++        const published = path.join(scratch, 'content/releases/1');
++        realLookingRelease(published, 1, 'L2');
++        await holdSnapshot(older);
++        // The rollback loads release 1, whose records the older snapshot keeps from being frozen, and withdraws the
++        // release in force all the same; waiting for the freeze would hold the withdrawal until the older transaction ends.
++        expect(await rollbackRelease(owner, { root: scratch, release: SYNTHETIC_RELEASE_NUMBER, reason: 'SYNTHETIC: roll back the fixture' })).toEqual({
++          releaseNo: SYNTHETIC_RELEASE_NUMBER,
++          reinstatedReleaseNo: 1,
++          loaded: 1,
++        });
++        expect((await admin.query<{ n: number }>('SELECT current_rule_release() AS n')).rows[0]?.n).toBe(1);
++        const pages = await rulePages(admin);
++        expect(pages?.relallfrozen).toBeLessThan(pages?.relpages ?? 0);
++        await older.query('COMMIT');
++        expect(await loadRelease(owner, published, { release: 1 })).toMatchObject({ status: 'already_loaded', frozen: true });
++        await expectEveryPageFrozen(admin);
++      } finally {
++        await older.end();
++        await owner.end();
++        await admin.end();
++      }
++    });
++  });
++});
++
+ describe('what the loader refuses before writing anything', () => {
+   async function withOwner(body: (owner: pg.Client) => Promise<void>): Promise<void> {
+     await withScratchDatabase(adminUrl, async (url) => {
+diff --git a/tools/release/rollback.ts b/tools/release/rollback.ts
+index 4a4d100e..0fdc5079 100644
+--- a/tools/release/rollback.ts
++++ b/tools/release/rollback.ts
+@@ -44,7 +44,9 @@ export async function rollbackRelease(client: SqlClient, request: RollbackReques
+   if (previous !== null) {
+     const dir = path.join(request.root, 'content/releases', String(previous));
+     if (existsSync(dir)) {
+-      const result = await loadRelease(client, dir, { release: previous });
++      // The withdrawal waits for no freeze (freezeWaitMs 0: the loader's one pass, then on): the release loaded here is
++      // published at its commit, and a later `pnpm release:load` of it finishes a freeze an older transaction held back.
++      const result = await loadRelease(client, dir, { release: previous, freezeWaitMs: 0 });
+       loaded = result.status === 'loaded' ? previous : null;
+     }
+   }

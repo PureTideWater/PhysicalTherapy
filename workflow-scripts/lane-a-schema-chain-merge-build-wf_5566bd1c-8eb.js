@@ -11,7 +11,6 @@ export const meta = {
     { title: 'Interest merge', detail: '1b head into interest; regenerate; checks; push' },
     { title: 'Interest screens', detail: 'builder W, slice 4' },
     { title: 'Interest integrate', detail: 'seam read vs 10.1 and 16, full local suite, push' },
-    { title: 'Final verify', detail: 'fresh-clone adversarial verification of both pushed heads' },
   ],
 }
 
@@ -109,6 +108,7 @@ You are the real-size runs' route scout (READ-ONLY: write nothing; you may read 
 
 ${CTX1B}
 You are 1b's integrator. Reports: gate ${JSON.stringify(gate).slice(0, 5000)} route ${JSON.stringify(route).slice(0, 3000)}
+0. FIRST (the co-founder's pacing call: the full suite runs once, on the final tree): SS-01 is being merged with #42's head 6c28d6a2 and base 43565235 by another workflow (it pushes ${SSBR} when its whole check list passes; WIP ref co-001/wip-ss01-chain). Poll 'git fetch origin ${SSBR}' every 5 minutes (up to 4 hours) until origin/${SSBR} contains 6c28d6a2 (git merge-base --is-ancestor 6c28d6a2 origin/${SSBR}). Then git merge --no-ff origin/${SSBR} in ${WT} ("Merge SS-01 (<sha>, with #42 6c28d6a2 and claude/build-platform 43565235) into SUITE-CAP-1b: ..."); shared documents keep both; generated files regenerated on the merged tree (domain model on a freshly migrated database); re-read 1b's migration objects against #42's 20261107090000 bodies (anything 1b recreates must keep #42's changes; a change to 20261109090000 only through the marker route). The diff base for steps 2 and 4 below is then that SS-01 head, not ${ssHead}. If SS-01 never arrives in 4 hours, report it and run the suite on what you have.
 1. In ${WT}: git pull --no-rebase origin ${BR}; clean tree; no marker; regenerate watched-paths, synth, the domain model; whole-repo pnpm typecheck, pnpm lint, pnpm lint:copy, pnpm lint:logs.
 2. Adversarial read of the whole 1b diff against SS-01's ${ssHead}: concurrency (stage writers interleaving; any per-line lock left in line_status_rules or the two ledger triggers; the deploy's lock loop queueing nobody), the ledger freeze (4.5 changes only each function's lock line; packages/ledger untouched), security (line_status_head's RLS, FORCE, policy, registry row, grants), reliability (the heap line never throws; the alarm), the large tests' budgets against CI's shard limit. Fix with failing-first tests; report each.
 3. The full local suite once (lanes/lane-b.md "How Lane B runs"): unit and property; golden; the oracle and the ledger oracle; test:db in 4 shards one after another on fresh databases (record each shard's time: the large tests must fit CI's shard limit); build, stamp, e2e with E2E_PREBUILT=1 --workers=2 on ports 4971-4979; the Stryker shards the change affects per stryker/shards.json, then the gate; pnpm verify-content; synth and fixtures; infra tests; the engine-freeze check against ${ssHead}; pnpm -s db:domain-model --check (SHA-256, approval line). CAS-42.5 and .6 are excluded and recorded as waiting on the founder's 8-CPU runner.
@@ -137,11 +137,16 @@ ${ICTX}
 The branch is at ${im.head} (1b merged in). You are builder W, the screens (slice 4; sections 6.3 and 7; section 13's slice list; section 16's changes). git pull --no-rebase origin ${IBR} first. Read section 16 and commits a3c9d068, b5949dc1, 39e5caa0, 1b5036e3 and e0646746 for the interfaces (the chain walk export from apps/worker/src/reconcile/public.ts, the reported interest, the refusal codes). You own: apps/web/src/lib/reconciliation/queries.ts; apps/web/src/app/p/[practiceId]/reconciliation/page.tsx; apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx; apps/web/src/components/reconciliation/display.tsx; apps/web/src/lib/routes/specialist.ts; apps/web/src/lib/routes/test-support/ledger-world.ts; apps/web/src/lib/routes/reconciliation-routes.db.test.ts; apps/web/e2e/ledger-interest.spec.ts (new); and LED-23/24's assertedBy in packages/synth/src/cases/registry.ts (regenerating fixtures). Both pages changed since the design's base (reconciliation/page.tsx by ~100 lines through SS-01; the ROI page): build on the current code, keeping #79's ScrollTable and stacked rows, #74's kept input, and tables.test.ts's counts. Every sentence word for word from section 7 within .claude/rules/brand.md; the page keeps offering no reversal of an interest match; accessibility (labels, announcements, keyboard, 390 px). Code computes every number; the page only displays what the worker stored. Tests first (fail on ${im.head}, pass after). Checks: pnpm typecheck; pnpm lint; pnpm lint:copy; apps/web unit; reconciliation-routes.db.test.ts on a fresh database; ledger-interest.spec.ts alone on port 4981 (build first, E2E_PREBUILT=1). Commit, push; give every sentence word for word in "wording". ${SAVE('sc-int-web.md', 'steps done, failing-first counts, open items')}`, { label: 'interest: W screens', phase: 'Interest screens', schema: { type: 'object', properties: { head: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, wording: { type: 'array', items: { type: 'string' } }, checks: CHECKS, differences_from_design: { type: 'array', items: { type: 'string' } }, open_items: { type: 'array', items: { type: 'string' } } }, required: ['head', 'files', 'checks', 'open_items'] } })
   if (!web) return { error: 'builder W returned nothing', im }
 
+  return { im, web }
+}
+
+const interestIntegrate = async (im, web, b1bHead) => {
   phase('Interest integrate')
   const integ = await agent(`${COMMON}
 
 ${ICTX}
 You are the interest integrator. Reports: merge ${JSON.stringify(im).slice(0, 3000)} W ${JSON.stringify(web).slice(0, 5000)}
+0. FIRST: 1b's integrator has pushed ${b1bHead} on ${BR} (1b with SS-01, #42 6c28d6a2 and base 43565235 merged, its full suite passed). git fetch origin ${BR}; git merge --no-ff ${b1bHead} in ${IWT} ("Merge SUITE-CAP-1b (<sha>, with SS-01, #42 and claude/build-platform) into the interest fix: ..."); shared documents keep both; code merged by meaning; generated files regenerated on the merged tree. The diff base for steps 2, 3 (engine-freeze) and 4 below is ${b1bHead}, not ${bMerged}.
 1. In ${IWT}: git pull --no-rebase origin ${IBR}; clean; no marker. pnpm typecheck, pnpm lint, pnpm lint:copy, pnpm lint:logs; regenerate watched-paths and confirm the lockfile, synth output and domain model are what their generators write. Fix seams in the smallest change with a failing-first test.
 2. Adversarial seam read of the whole diff against ${bMerged}, as a payment-engine reviewer and against section 10.1's granted text and section 16: can one payment of interest still be credited twice (AMT I and PLB L6; a resend; a correction chain; one PLB L6 netting several claims); can interest exceed what the PLB L6 pays; any float on an amount; any principal amount, stage or the definition of recovered changed; anything beyond 10.1's text; packages/edi835, pricing, rules untouched; LED-01 to LED-18's amounts unchanged; the new trigger function's search_path, grants, lock key (consistent with 1b's practice ledger: key). Review any equivalent mutant recorded in the earlier slices (you are not its proposer). Fix with failing-first tests; report each.
 3. The full local suite once: unit and property; golden; pnpm test:oracle and the ledger oracle db test; test:db in 4 shards one after another on fresh databases; build, stamp, e2e with E2E_PREBUILT=1 --workers=2 on ports 4981-4989; Stryker for every shard the change affects (interest.ts at 100%; the ledger shards), then the gate; pnpm verify-content; synth and fixtures; the engine-freeze check against ${bMerged}; the screening-capacity gate if it runs locally (else why); pnpm -s db:domain-model --check (SHA-256, approval line).
@@ -150,19 +155,14 @@ You are the interest integrator. Reports: merge ${JSON.stringify(im).slice(0, 30
     head: { type: 'string' }, domain_model_sha256: { type: 'string' }, approval_line_number: { type: 'number' }, scope_ok: { type: 'boolean' }, pushed: { type: 'boolean' },
     suite: CHECKS, fixes: { type: 'array', items: { type: 'string' } }, open_items: { type: 'array', items: { type: 'string' } } },
     required: ['head', 'domain_model_sha256', 'scope_ok', 'pushed', 'suite', 'open_items'] } })
-  return { im, web, integ }
+  return { integ }
 }
 
-const [b1b, bint] = await parallel([branch1b, branchInterest])
-
-phase('Final verify')
-const finals = await parallel([
-  () => b1b && b1b.integ && b1b.integ.pushed ? agent(`${COMMON}
-
-You are 1b's fresh-clone adversarial verifier (READ-ONLY on every worktree; clone into ${SP}/fv-1b: git clone /home/user/PhysicalTherapy ${SP}/fv-1b, set its origin URL to the real remote, fetch ${BR}, check out ${b1b.integ.head}; pnpm install --frozen-lockfile under the lock; databases tp_fv1b_<n>). Try to refute that 1b's head is ready for its PR: the gate's peaks and ADR 0083's section say the same; CAS-42.1/.2 pass at the head and their failure on the base is real; the integrator's fixes are sound; pnpm typecheck, pnpm lint, the db tests 1b adds or changes, the large tests, pnpm -s db:domain-model --check on a fresh database (hash = ${b1b.integ.domain_model_sha256}); scope against ${ssHead}; ledger freeze kept to 4.5. Remove the clone after. ${SAVE('fv-1b.md', 'checks and findings')}`, { label: 'final verify: 1b', phase: 'Final verify', schema: VERDICT }) : Promise.resolve(null),
-  () => bint && bint.integ && bint.integ.pushed ? agent(`${COMMON}
-
-${ICTX}
-You are the interest fix's fresh-clone adversarial verifier (READ-ONLY on every worktree; clone into ${SP}/fv-int as above, check out ${bint.integ.head}; databases tp_fvint_<n>). Try to refute that the head is ready for its PR: interest credited once in every case of section 4.1 and LED-23/24 (run their tests and the ledger oracle); W's wording matches section 7 word for word; the screens offer no reversal; scope within 10.1's text against ${bMerged}; pnpm typecheck, lint, lint:copy; ledger-interest.spec.ts on port 4985; pnpm -s db:domain-model --check (hash = ${bint.integ.domain_model_sha256}). Remove the clone after. ${SAVE('fv-int.md', 'checks and findings')}`, { label: 'final verify: interest', phase: 'Final verify', schema: VERDICT }) : Promise.resolve(null),
-])
-return { m1, v1, m2, v2, b1b, bint, finals }
+const [b1b, ib] = await parallel([branch1b, branchInterest])
+let bint = ib
+if (b1b && b1b.integ && b1b.integ.pushed && ib && ib.web) {
+  const r = await interestIntegrate(ib.im, ib.web, b1b.integ.head)
+  bint = { ...ib, ...r }
+}
+log('Final fresh-clone verification is left to each PR\'s own pipeline step 6 (the co-founder\'s pacing call: no repeated suites on an unchanged head).')
+return { m1, v1, m2, v2, b1b, bint }

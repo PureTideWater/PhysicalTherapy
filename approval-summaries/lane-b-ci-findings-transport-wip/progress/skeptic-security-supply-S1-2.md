@@ -1,0 +1,11 @@
+# Skeptic 3/3, security-supply S1 (size refusal untested): CONFIRMED, should
+- Clone at origin/co-001/wip-ci-findings-transport 1322c7cf... (head past b9a83bd3; download block unchanged, notify 113-114, handoff 188-189). Clone removed.
+- Baseline: content-calendar cases 12/12 pass.
+- Mutant no-bound (wc line deleted in both jobs): workflows.test.ts 142/142 pass (logs/sk3-s1-no-bound.log).
+- Mutant cp-unbounded (head -c -> cp in both jobs): 142/142 pass (logs/sk3-s1-cp.log).
+- Why: the only over-bound cases (tests 1415, 1503) use body 'x'.repeat(200) with MAX_FILE_BYTES 100; the 101-byte cut is invalid JSON, so jq refuses it whether or not the wc line is there.
+- Padded scenario (one-finding list + 200 spaces = 234 bytes, MAX_FILE_BYTES 100), as a temporary test case through runNotify (logs/sk3-s1-padded.log):
+  - head: notify opens "Content calendar check failing"; handoff exits 1.
+  - no-bound: notify opens "Finding 1"; handoff exits 0.
+  - cp-unbounded: same result as head (wc still refuses), so only a static assertion can catch it; its effect is an unbounded copy to disk, not a different outcome.
+- Verdict: real, not refuted; severity should (the refusal is a defence-in-depth bound on a file the same run writes, and a pull-request run's check runs the PR's code, so handoff reads a file the PR controls). Fix as the finding gives it.

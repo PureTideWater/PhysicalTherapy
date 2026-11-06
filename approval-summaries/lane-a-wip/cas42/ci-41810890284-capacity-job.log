@@ -1,0 +1,1257 @@
+﻿2026-11-04T09:56:45.3805896Z Current runner version: '2.338.2'
+2026-11-04T09:56:45.3831740Z ##[group]Runner Image Provisioner
+2026-11-04T09:56:45.3832974Z Hosted Compute Agent
+2026-11-04T09:56:45.3834006Z Version: 20261028.624
+2026-11-04T09:56:45.3834991Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+2026-11-04T09:56:45.3836290Z Build Date: 2026-10-28T21:51:42Z
+2026-11-04T09:56:45.3837340Z Worker ID: {79355899-28d6-4f5e-86b6-ec143a91a4e5}
+2026-11-04T09:56:45.3838442Z Region: eastus3
+2026-11-04T09:56:45.3839596Z Cloud: Azure
+2026-11-04T09:56:45.3840312Z ##[endgroup]
+2026-11-04T09:56:45.3842285Z ##[group]Operating System
+2026-11-04T09:56:45.3843163Z Ubuntu
+2026-11-04T09:56:45.3843919Z 26.04.1
+2026-11-04T09:56:45.3844755Z LTS
+2026-11-04T09:56:45.3845554Z ##[endgroup]
+2026-11-04T09:56:45.3846278Z ##[group]Runner Image
+2026-11-04T09:56:45.3846965Z Image: ubuntu-26.04
+2026-11-04T09:56:45.3847488Z Version: 20261101.186.1
+2026-11-04T09:56:45.3849260Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261101.186/images/ubuntu/Ubuntu2604-Readme.md
+2026-11-04T09:56:45.3850765Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261101.186
+2026-11-04T09:56:45.3851667Z ##[endgroup]
+2026-11-04T09:56:45.3852678Z ##[group]GITHUB_TOKEN Permissions
+2026-11-04T09:56:45.3855059Z Contents: read
+2026-11-04T09:56:45.3855636Z Metadata: read
+2026-11-04T09:56:45.3856180Z ##[endgroup]
+2026-11-04T09:56:45.3858214Z Secret source: Actions
+2026-11-04T09:56:45.3859451Z Cache mode: write
+2026-11-04T09:56:45.3860334Z Prepare workflow directory
+2026-11-04T09:56:45.4322889Z Prepare all required actions
+2026-11-04T09:56:45.4397226Z Getting action download info
+2026-11-04T09:56:45.7040449Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-11-04T09:56:45.8136990Z Download action repository 'docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069' (SHA:f87e5991a6d7451dcb8d9637bfbc97413f497069)
+2026-11-04T09:56:46.0876081Z Download action repository 'docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc' (SHA:c3c9e263c25d99ce0380d002d59b67737d91b0dc)
+2026-11-04T09:56:46.3759521Z Download action repository 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1' (SHA:949feb2413d6458794dcd2491c4babbbce0c15c1)
+2026-11-04T09:56:46.4246804Z Download action repository 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413' (SHA:ea17c68df8912ef543352723c149a84f56e3d413)
+2026-11-04T09:56:46.6235325Z Download action repository 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9' (SHA:cf430e030ddbb5b0abf93d22962f4752f3646cd9)
+2026-11-04T09:56:46.7982988Z Complete job name: capacity
+2026-11-04T09:56:46.8804480Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-11-04T09:56:46.8805509Z with:
+2026-11-04T09:56:46.8805951Z   persist-credentials: false
+2026-11-04T09:56:46.8806480Z   repository: PureTideWater/PhysicalTherapy
+2026-11-04T09:56:46.8810470Z   token: ***
+2026-11-04T09:56:46.8810901Z   ssh-strict: true
+2026-11-04T09:56:46.8811317Z   ssh-user: git
+2026-11-04T09:56:46.8811719Z   clean: true
+2026-11-04T09:56:46.8812147Z   sparse-checkout-cone-mode: true
+2026-11-04T09:56:46.8812639Z   fetch-depth: 1
+2026-11-04T09:56:46.8813055Z   fetch-tags: false
+2026-11-04T09:56:46.8813522Z   show-progress: true
+2026-11-04T09:56:46.8813954Z   lfs: false
+2026-11-04T09:56:46.8814351Z   submodules: false
+2026-11-04T09:56:46.8814784Z   set-safe-directory: true
+2026-11-04T09:56:46.8815259Z   allow-unsafe-pr-checkout: false
+2026-11-04T09:56:46.8816045Z ##[endgroup]
+2026-11-04T09:56:47.1974929Z Syncing repository: PureTideWater/PhysicalTherapy
+2026-11-04T09:56:47.1978775Z ##[group]Getting Git version info
+2026-11-04T09:56:47.1981323Z Working directory is '/home/runner/work/PhysicalTherapy/PhysicalTherapy'
+2026-11-04T09:56:47.1984982Z [command]/usr/bin/git version
+2026-11-04T09:56:47.2011153Z git version 2.56.0
+2026-11-04T09:56:47.2035988Z ##[endgroup]
+2026-11-04T09:56:47.2047086Z Temporarily overriding HOME='/home/runner/work/_temp/a0eeaa26-a039-48b2-8087-9ca45e6235f0' before making global git config changes
+2026-11-04T09:56:47.2052738Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-04T09:56:47.2057893Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/PhysicalTherapy/PhysicalTherapy
+2026-11-04T09:56:47.2155589Z Deleting the contents of '/home/runner/work/PhysicalTherapy/PhysicalTherapy'
+2026-11-04T09:56:47.2160550Z ##[group]Determining repository object format
+2026-11-04T09:56:47.2164161Z ##[endgroup]
+2026-11-04T09:56:47.2167366Z ##[group]Initializing the repository
+2026-11-04T09:56:47.2170910Z [command]/usr/bin/git init /home/runner/work/PhysicalTherapy/PhysicalTherapy
+2026-11-04T09:56:47.2288538Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-04T09:56:47.2293536Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-04T09:56:47.2297879Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-04T09:56:47.2301818Z hint: call:
+2026-11-04T09:56:47.2303776Z hint:
+2026-11-04T09:56:47.2306055Z hint: 	git config --global init.defaultBranch <name>
+2026-11-04T09:56:47.2308934Z hint:
+2026-11-04T09:56:47.2311758Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-04T09:56:47.2315844Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-04T09:56:47.2319633Z hint:
+2026-11-04T09:56:47.2321482Z hint: 	git branch -m <name>
+2026-11-04T09:56:47.2323590Z hint:
+2026-11-04T09:56:47.2326330Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-04T09:56:47.2331523Z Initialized empty Git repository in /home/runner/work/PhysicalTherapy/PhysicalTherapy/.git/
+2026-11-04T09:56:47.2339628Z [command]/usr/bin/git remote add origin https://github.com/PureTideWater/PhysicalTherapy
+2026-11-04T09:56:47.2364605Z ##[endgroup]
+2026-11-04T09:56:47.2367835Z ##[group]Disabling automatic garbage collection
+2026-11-04T09:56:47.2370765Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-04T09:56:47.2398632Z ##[endgroup]
+2026-11-04T09:56:47.2402153Z ##[group]Setting up auth
+2026-11-04T09:56:47.2404380Z Removing SSH command configuration
+2026-11-04T09:56:47.2407847Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-04T09:56:47.2436401Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-04T09:56:47.2894667Z Removing HTTP extra header
+2026-11-04T09:56:47.2902331Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-04T09:56:47.2930451Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-04T09:56:47.3139801Z Removing includeIf entries pointing to credentials config files
+2026-11-04T09:56:47.3143881Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-04T09:56:47.3174923Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-04T09:56:47.3405353Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-04T09:56:47.3435134Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git.path /home/runner/work/_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:47.3472502Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:47.3501605Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:47.3529357Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:47.3552939Z ##[endgroup]
+2026-11-04T09:56:47.3554556Z ##[group]Fetching the repository
+2026-11-04T09:56:47.3560479Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ab8c9c2765fac4a42090d1495018ae63d39fcce1:refs/remotes/origin/co-001/suite-cap-1-triage-locks
+2026-11-04T09:56:48.7138539Z From https://github.com/PureTideWater/PhysicalTherapy
+2026-11-04T09:56:48.7140587Z  * [new ref]         ab8c9c2765fac4a42090d1495018ae63d39fcce1 -> origin/co-001/suite-cap-1-triage-locks
+2026-11-04T09:56:48.7150113Z [command]/usr/bin/git branch --list --remote origin/co-001/suite-cap-1-triage-locks
+2026-11-04T09:56:48.7172008Z   origin/co-001/suite-cap-1-triage-locks
+2026-11-04T09:56:48.7179720Z [command]/usr/bin/git rev-parse refs/remotes/origin/co-001/suite-cap-1-triage-locks
+2026-11-04T09:56:48.7199368Z ab8c9c2765fac4a42090d1495018ae63d39fcce1
+2026-11-04T09:56:48.7207551Z ##[endgroup]
+2026-11-04T09:56:48.7208057Z ##[group]Determining the checkout info
+2026-11-04T09:56:48.7208561Z ##[endgroup]
+2026-11-04T09:56:48.7208889Z [command]/usr/bin/git sparse-checkout disable
+2026-11-04T09:56:48.7254046Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-04T09:56:48.7278318Z ##[group]Checking out the ref
+2026-11-04T09:56:48.7282869Z [command]/usr/bin/git checkout --progress --force -B co-001/suite-cap-1-triage-locks refs/remotes/origin/co-001/suite-cap-1-triage-locks
+2026-11-04T09:56:48.9650495Z Switched to a new branch 'co-001/suite-cap-1-triage-locks'
+2026-11-04T09:56:48.9655500Z branch 'co-001/suite-cap-1-triage-locks' set up to track 'origin/co-001/suite-cap-1-triage-locks'.
+2026-11-04T09:56:48.9665827Z ##[endgroup]
+2026-11-04T09:56:48.9711821Z [command]/usr/bin/git log -1 --format=%H
+2026-11-04T09:56:48.9734219Z ab8c9c2765fac4a42090d1495018ae63d39fcce1
+2026-11-04T09:56:48.9746908Z ##[group]Removing auth
+2026-11-04T09:56:48.9747274Z Removing SSH command configuration
+2026-11-04T09:56:48.9747756Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-04T09:56:48.9772195Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-04T09:56:48.9994482Z Removing HTTP extra header
+2026-11-04T09:56:48.9998854Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-04T09:56:49.0024069Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-04T09:56:49.0237646Z Removing includeIf entries pointing to credentials config files
+2026-11-04T09:56:49.0240242Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-04T09:56:49.0268652Z includeif.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git.path
+2026-11-04T09:56:49.0269653Z includeif.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git/worktrees/*.path
+2026-11-04T09:56:49.0270237Z includeif.gitdir:/github/workspace/.git.path
+2026-11-04T09:56:49.0270714Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-04T09:56:49.0277948Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git.path
+2026-11-04T09:56:49.0296145Z /home/runner/work/_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:49.0304437Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-7953f690\-3996\-4b98\-931d\-a842f6e28549\.config
+2026-11-04T09:56:49.0332105Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git/worktrees/*.path
+2026-11-04T09:56:49.0355878Z /home/runner/work/_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:49.0363562Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/PhysicalTherapy/PhysicalTherapy/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-7953f690\-3996\-4b98\-931d\-a842f6e28549\.config
+2026-11-04T09:56:49.0392679Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-04T09:56:49.0412869Z /github/runner_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:49.0419890Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-7953f690\-3996\-4b98\-931d\-a842f6e28549\.config
+2026-11-04T09:56:49.0445069Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-04T09:56:49.0463308Z /github/runner_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config
+2026-11-04T09:56:49.0470222Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-7953f690\-3996\-4b98\-931d\-a842f6e28549\.config
+2026-11-04T09:56:49.0495483Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-04T09:56:49.0709718Z Removing credentials config '/home/runner/work/_temp/git-credentials-7953f690-3996-4b98-931d-a842f6e28549.config'
+2026-11-04T09:56:49.0718098Z ##[endgroup]
+2026-11-04T09:56:49.0943052Z ##[group]Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+2026-11-04T09:56:49.0943679Z with:
+2026-11-04T09:56:49.0944241Z   driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+2026-11-04T09:56:49.0944869Z   driver: docker-container
+2026-11-04T09:56:49.0945288Z   use: true
+2026-11-04T09:56:49.0945620Z   keep-state: false
+2026-11-04T09:56:49.0945971Z   cache-binary: true
+2026-11-04T09:56:49.0946328Z   cleanup: true
+2026-11-04T09:56:49.0946683Z ##[endgroup]
+2026-11-04T09:56:49.2901060Z ##[group]Docker info
+2026-11-04T09:56:49.2950662Z [command]/usr/bin/docker version
+2026-11-04T09:56:49.4301757Z Client: Docker Engine - Community
+2026-11-04T09:56:49.4302164Z  Version:           29.4.2
+2026-11-04T09:56:49.4302493Z  API version:       1.54
+2026-11-04T09:56:49.4302825Z  Go version:        go1.26.2
+2026-11-04T09:56:49.4303161Z  Git commit:        055a478
+2026-11-04T09:56:49.4303615Z  Built:             Fri May  1 10:24:04 2026
+2026-11-04T09:56:49.4303986Z  OS/Arch:           linux/amd64
+2026-11-04T09:56:49.4304309Z  Context:           default
+2026-11-04T09:56:49.4304486Z 
+2026-11-04T09:56:49.4304975Z Server: Docker Engine - Community
+2026-11-04T09:56:49.4305315Z  Engine:
+2026-11-04T09:56:49.4305628Z   Version:          29.4.2
+2026-11-04T09:56:49.4305950Z   API version:      1.54 (minimum version 1.40)
+2026-11-04T09:56:49.4306293Z   Go version:       go1.26.2
+2026-11-04T09:56:49.4306630Z   Git commit:       d329809
+2026-11-04T09:56:49.4306939Z   Built:            Fri May  1 10:24:04 2026
+2026-11-04T09:56:49.4307299Z   OS/Arch:          linux/amd64
+2026-11-04T09:56:49.4307618Z   Experimental:     false
+2026-11-04T09:56:49.4307917Z  containerd:
+2026-11-04T09:56:49.4308227Z   Version:          v2.4.2
+2026-11-04T09:56:49.4308574Z   GitCommit:        b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-04T09:56:49.4309481Z  runc:
+2026-11-04T09:56:49.4309912Z   Version:          1.5.2
+2026-11-04T09:56:49.4310441Z   GitCommit:        v1.5.2-0-g29dd3dc2
+2026-11-04T09:56:49.4311059Z  docker-init:
+2026-11-04T09:56:49.4311854Z   Version:          0.19.0
+2026-11-04T09:56:49.4312462Z   GitCommit:        de40ad0
+2026-11-04T09:56:49.4365906Z [command]/usr/bin/docker info
+2026-11-04T09:56:49.6637692Z Client: Docker Engine - Community
+2026-11-04T09:56:49.6638378Z  Version:    29.4.2
+2026-11-04T09:56:49.6638936Z  Context:    default
+2026-11-04T09:56:49.6640378Z  Debug Mode: false
+2026-11-04T09:56:49.6640867Z  Plugins:
+2026-11-04T09:56:49.6641286Z   buildx: Docker Buildx (Docker Inc.)
+2026-11-04T09:56:49.6641862Z     Version:  v0.38.1
+2026-11-04T09:56:49.6642424Z     Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+2026-11-04T09:56:49.6643178Z   compose: Docker Compose (Docker Inc.)
+2026-11-04T09:56:49.6643756Z     Version:  v5.1.3
+2026-11-04T09:56:49.6644422Z     Path:     /usr/libexec/docker/cli-plugins/docker-compose
+2026-11-04T09:56:49.6644958Z 
+2026-11-04T09:56:49.6645316Z Server:
+2026-11-04T09:56:49.6645752Z  Containers: 0
+2026-11-04T09:56:49.6646260Z   Running: 0
+2026-11-04T09:56:49.6646728Z   Paused: 0
+2026-11-04T09:56:49.6647127Z   Stopped: 0
+2026-11-04T09:56:49.6647569Z  Images: 6
+2026-11-04T09:56:49.6647977Z  Server Version: 29.4.2
+2026-11-04T09:56:49.6648495Z  Storage Driver: overlayfs
+2026-11-04T09:56:49.6649310Z   driver-type: io.containerd.snapshotter.v1
+2026-11-04T09:56:49.6649910Z  Logging Driver: json-file
+2026-11-04T09:56:49.6650480Z  Cgroup Driver: systemd
+2026-11-04T09:56:49.6650937Z  Cgroup Version: 2
+2026-11-04T09:56:49.6651330Z  Plugins:
+2026-11-04T09:56:49.6651798Z   Volume: local
+2026-11-04T09:56:49.6652322Z   Network: bridge host ipvlan macvlan null overlay
+2026-11-04T09:56:49.6653180Z   Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+2026-11-04T09:56:49.6653870Z  CDI spec directories:
+2026-11-04T09:56:49.6654295Z   /etc/cdi
+2026-11-04T09:56:49.6654609Z   /var/run/cdi
+2026-11-04T09:56:49.6654876Z  Swarm: inactive
+2026-11-04T09:56:49.6655198Z  Runtimes: runc io.containerd.runc.v2
+2026-11-04T09:56:49.6655865Z  Default Runtime: runc
+2026-11-04T09:56:49.6656161Z  Init Binary: docker-init
+2026-11-04T09:56:49.6656604Z  containerd version: b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-04T09:56:49.6657012Z  runc version: v1.5.2-0-g29dd3dc2
+2026-11-04T09:56:49.6657341Z  init version: de40ad0
+2026-11-04T09:56:49.6657687Z  Security Options:
+2026-11-04T09:56:49.6657942Z   apparmor
+2026-11-04T09:56:49.6658257Z   seccomp
+2026-11-04T09:56:49.6658613Z    Profile: builtin
+2026-11-04T09:56:49.6659384Z   cgroupns
+2026-11-04T09:56:49.6659847Z  Kernel Version: 7.0.0-1019-azure
+2026-11-04T09:56:49.6660346Z  Operating System: Ubuntu 26.04.1 LTS
+2026-11-04T09:56:49.6660742Z  OSType: linux
+2026-11-04T09:56:49.6661024Z  Architecture: x86_64
+2026-11-04T09:56:49.6661296Z  CPUs: 4
+2026-11-04T09:56:49.6661616Z  Total Memory: 15.61GiB
+2026-11-04T09:56:49.6661910Z  Name: runnervmwuk1x
+2026-11-04T09:56:49.6662253Z  ID: c9e80441-737e-41c3-b4fb-fafa48478e76
+2026-11-04T09:56:49.6662638Z  Docker Root Dir: /var/lib/docker
+2026-11-04T09:56:49.6662937Z  Debug Mode: false
+2026-11-04T09:56:49.6663294Z  Username: githubactions
+2026-11-04T09:56:49.6663774Z  Experimental: false
+2026-11-04T09:56:49.6664098Z  Insecure Registries:
+2026-11-04T09:56:49.6669561Z   ::1/128
+2026-11-04T09:56:49.6669934Z   127.0.0.0/8
+2026-11-04T09:56:49.6670403Z  Live Restore Enabled: false
+2026-11-04T09:56:49.6670847Z  Firewall Backend: iptables
+2026-11-04T09:56:49.6671047Z 
+2026-11-04T09:56:49.6671707Z ##[endgroup]
+2026-11-04T09:56:49.7494296Z ##[group]Buildx version
+2026-11-04T09:56:49.7507004Z [command]/usr/bin/docker buildx version
+2026-11-04T09:56:49.8109293Z github.com/docker/buildx v0.38.1 0dbe87f36ed472fe36b6796c3f70b4210a731fc5
+2026-11-04T09:56:49.8163651Z ##[endgroup]
+2026-11-04T09:56:49.8341638Z ##[group]Inspecting default docker context
+2026-11-04T09:56:49.8508952Z [
+2026-11-04T09:56:49.8509793Z   {
+2026-11-04T09:56:49.8510292Z     "Name": "default",
+2026-11-04T09:56:49.8510945Z     "Metadata": {},
+2026-11-04T09:56:49.8511434Z     "Endpoints": {
+2026-11-04T09:56:49.8511921Z       "docker": {
+2026-11-04T09:56:49.8512438Z         "Host": "unix:///var/run/docker.sock",
+2026-11-04T09:56:49.8513460Z         "SkipTLSVerify": false
+2026-11-04T09:56:49.8514063Z       }
+2026-11-04T09:56:49.8514450Z     },
+2026-11-04T09:56:49.8514876Z     "TLSMaterial": {},
+2026-11-04T09:56:49.8515479Z     "Storage": {
+2026-11-04T09:56:49.8515982Z       "MetadataPath": "<IN MEMORY>",
+2026-11-04T09:56:49.8516680Z       "TLSPath": "<IN MEMORY>"
+2026-11-04T09:56:49.8517213Z     }
+2026-11-04T09:56:49.8517654Z   }
+2026-11-04T09:56:49.8518171Z ]
+2026-11-04T09:56:49.8519349Z ##[endgroup]
+2026-11-04T09:56:49.9186392Z ##[group]Pulling BuildKit image(s)
+2026-11-04T09:56:49.9213487Z [command]/usr/bin/docker pull moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+2026-11-04T09:56:50.2694238Z docker.io/moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c: Pulling from moby/buildkit
+2026-11-04T09:56:50.3922449Z 4ba81650cd88: Pulling fs layer
+2026-11-04T09:56:50.3926364Z 91f4dcbcc107: Pulling fs layer
+2026-11-04T09:56:50.3927163Z 27bd79723a9f: Pulling fs layer
+2026-11-04T09:56:50.3927679Z d0c1d894c237: Pulling fs layer
+2026-11-04T09:56:50.3928166Z 568ffaf39259: Pulling fs layer
+2026-11-04T09:56:50.3928811Z 3944df379775: Pulling fs layer
+2026-11-04T09:56:50.3929354Z df55218d1d89: Pulling fs layer
+2026-11-04T09:56:50.4377474Z 4ba81650cd88: Download complete
+2026-11-04T09:56:50.5374547Z 568ffaf39259: Download complete
+2026-11-04T09:56:50.5420516Z 27bd79723a9f: Download complete
+2026-11-04T09:56:50.5421585Z d0c1d894c237: Download complete
+2026-11-04T09:56:50.5437800Z df55218d1d89: Download complete
+2026-11-04T09:56:50.5477715Z 44136fa355b3: Already exists
+2026-11-04T09:56:50.5492783Z 91f4dcbcc107: Download complete
+2026-11-04T09:56:50.6396636Z fb062ad6c291: Download complete
+2026-11-04T09:56:50.6397465Z bd717abc839a: Download complete
+2026-11-04T09:56:50.6402009Z f93ca2cbb75c: Download complete
+2026-11-04T09:56:50.6477019Z d0c1d894c237: Pull complete
+2026-11-04T09:56:50.7397559Z 44136fa355b3: Already exists
+2026-11-04T09:56:50.7402177Z a0db89cde758: Download complete
+2026-11-04T09:56:50.9385314Z 3944df379775: Download complete
+2026-11-04T09:56:50.9400978Z 568ffaf39259: Pull complete
+2026-11-04T09:56:50.9414431Z 27bd79723a9f: Pull complete
+2026-11-04T09:56:50.9434277Z 91f4dcbcc107: Pull complete
+2026-11-04T09:56:51.6805651Z 4ba81650cd88: Pull complete
+2026-11-04T09:56:51.6819876Z df55218d1d89: Pull complete
+2026-11-04T09:56:51.6835350Z 3944df379775: Pull complete
+2026-11-04T09:56:51.6836416Z Digest: sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+2026-11-04T09:56:51.6851746Z Status: Downloaded newer image for moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+2026-11-04T09:56:51.6853378Z docker.io/moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+2026-11-04T09:56:51.6861617Z ##[endgroup]
+2026-11-04T09:56:51.6862675Z ##[group]Creating a new builder instance
+2026-11-04T09:56:51.7611330Z [command]/usr/bin/docker buildx create --name builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5 --driver docker-container --driver-opt image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c --buildkitd-flags --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host --use
+2026-11-04T09:56:51.8264343Z builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5
+2026-11-04T09:56:51.8292024Z ##[endgroup]
+2026-11-04T09:56:51.8292930Z ##[group]Booting builder
+2026-11-04T09:56:51.8339279Z [command]/usr/bin/docker buildx inspect --bootstrap --builder builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5
+2026-11-04T09:56:51.8913001Z #1 [internal] booting buildkit
+2026-11-04T09:56:52.0420594Z #1 pulling image moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+2026-11-04T09:56:52.2490697Z #1 pulling image moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c 0.4s done
+2026-11-04T09:56:52.4743278Z #1 creating container buildx_buildkit_builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50
+2026-11-04T09:56:53.2930571Z #1 creating container buildx_buildkit_builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50 1.0s done
+2026-11-04T09:56:53.3243794Z #1 DONE 1.4s
+2026-11-04T09:56:53.3619481Z Name:          builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5
+2026-11-04T09:56:53.3635327Z Driver:        docker-container
+2026-11-04T09:56:53.3636109Z Last Activity: 2026-11-04 09:56:51 +0000 UTC
+2026-11-04T09:56:53.3636498Z 
+2026-11-04T09:56:53.3636747Z Nodes:
+2026-11-04T09:56:53.3637387Z Name:                  builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50
+2026-11-04T09:56:53.3638137Z Endpoint:              unix:///var/run/docker.sock
+2026-11-04T09:56:53.3639347Z Driver Options:        image="moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c"
+2026-11-04T09:56:53.3649791Z Status:                running
+2026-11-04T09:56:53.3650775Z BuildKit daemon flags: --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host
+2026-11-04T09:56:53.3651727Z BuildKit version:      v0.34.1
+2026-11-04T09:56:53.3652370Z Platforms:             linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/amd64/v4, linux/386
+2026-11-04T09:56:53.3653299Z Labels:
+2026-11-04T09:56:53.3653699Z  org.mobyproject.buildkit.worker.executor:         oci
+2026-11-04T09:56:53.3654231Z  org.mobyproject.buildkit.worker.hostname:         5fea75ac052e
+2026-11-04T09:56:53.3654845Z  org.mobyproject.buildkit.worker.network:          host
+2026-11-04T09:56:53.3655347Z  org.mobyproject.buildkit.worker.oci.process-mode: sandbox
+2026-11-04T09:56:53.3655878Z  org.mobyproject.buildkit.worker.selinux.enabled:  false
+2026-11-04T09:56:53.3656356Z  org.mobyproject.buildkit.worker.snapshotter:      overlayfs
+2026-11-04T09:56:53.3656765Z GC Policy rule#0:
+2026-11-04T09:56:53.3657086Z  All:            false
+2026-11-04T09:56:53.3657829Z  Filters:        type==source.local type==exec.cachemount type==source.git.checkout
+2026-11-04T09:56:53.3658391Z  Keep Duration:  48h0m0s
+2026-11-04T09:56:53.3658726Z  Max Used Space: 488.3MiB
+2026-11-04T09:56:53.3659233Z GC Policy rule#1:
+2026-11-04T09:56:53.3659712Z  All:            false
+2026-11-04T09:56:53.3660142Z  Keep Duration:  1440h0m0s
+2026-11-04T09:56:53.3660704Z  Reserved Space: 9.313GiB
+2026-11-04T09:56:53.3661064Z  Max Used Space: 93.13GiB
+2026-11-04T09:56:53.3661455Z  Min Free Space: 27.01GiB
+2026-11-04T09:56:53.3661772Z GC Policy rule#2:
+2026-11-04T09:56:53.3662042Z  All:            false
+2026-11-04T09:56:53.3662330Z  Reserved Space: 9.313GiB
+2026-11-04T09:56:53.3662648Z  Max Used Space: 93.13GiB
+2026-11-04T09:56:53.3662936Z  Min Free Space: 27.01GiB
+2026-11-04T09:56:53.3663275Z GC Policy rule#3:
+2026-11-04T09:56:53.3663565Z  All:            true
+2026-11-04T09:56:53.3663853Z  Reserved Space: 9.313GiB
+2026-11-04T09:56:53.3664180Z  Max Used Space: 93.13GiB
+2026-11-04T09:56:53.3664474Z  Min Free Space: 27.01GiB
+2026-11-04T09:56:53.3665150Z ##[endgroup]
+2026-11-04T09:56:53.4546318Z ##[group]Inspect builder
+2026-11-04T09:56:53.4621944Z {
+2026-11-04T09:56:53.4705926Z   "nodes": [
+2026-11-04T09:56:53.4706346Z     {
+2026-11-04T09:56:53.4706663Z       "name": "builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50",
+2026-11-04T09:56:53.4707036Z       "endpoint": "unix:///var/run/docker.sock",
+2026-11-04T09:56:53.4707529Z       "driver-opts": [
+2026-11-04T09:56:53.4708174Z         "image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c"
+2026-11-04T09:56:53.4708830Z       ],
+2026-11-04T09:56:53.4709257Z       "status": "running",
+2026-11-04T09:56:53.4709804Z       "buildkitd-flags": "--allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host",
+2026-11-04T09:56:53.4710315Z       "buildkit": "v0.34.1",
+2026-11-04T09:56:53.4710678Z       "platforms": "linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/amd64/v4,linux/386",
+2026-11-04T09:56:53.4711064Z       "features": {
+2026-11-04T09:56:53.4711394Z         "Automatically load images to the Docker Engine image store": true,
+2026-11-04T09:56:53.4712047Z         "Cache export": true,
+2026-11-04T09:56:53.4712291Z         "Direct push": true,
+2026-11-04T09:56:53.4712528Z         "Docker exporter": true,
+2026-11-04T09:56:53.4712785Z         "Multi-platform build": true,
+2026-11-04T09:56:53.4713042Z         "OCI exporter": true
+2026-11-04T09:56:53.4713261Z       },
+2026-11-04T09:56:53.4713440Z       "labels": {
+2026-11-04T09:56:53.4713708Z         "org.mobyproject.buildkit.worker.executor": "oci",
+2026-11-04T09:56:53.4714111Z         "org.mobyproject.buildkit.worker.hostname": "5fea75ac052e",
+2026-11-04T09:56:53.4714512Z         "org.mobyproject.buildkit.worker.network": "host",
+2026-11-04T09:56:53.4714932Z         "org.mobyproject.buildkit.worker.oci.process-mode": "sandbox",
+2026-11-04T09:56:53.4715386Z         "org.mobyproject.buildkit.worker.selinux.enabled": "false",
+2026-11-04T09:56:53.4715820Z         "org.mobyproject.buildkit.worker.snapshotter": "overlayfs"
+2026-11-04T09:56:53.4716160Z       },
+2026-11-04T09:56:53.4716355Z       "gcPolicy": [
+2026-11-04T09:56:53.4716560Z         {
+2026-11-04T09:56:53.4716752Z           "all": false,
+2026-11-04T09:56:53.4716971Z           "filter": [
+2026-11-04T09:56:53.4717292Z             "type==source.local type==exec.cachemount type==source.git.checkout"
+2026-11-04T09:56:53.4717659Z           ],
+2026-11-04T09:56:53.4717941Z           "keepDuration": "48h0m0s",
+2026-11-04T09:56:53.4718221Z           "maxUsedSpace": "488.3MiB"
+2026-11-04T09:56:53.4718495Z         },
+2026-11-04T09:56:53.4718715Z         {
+2026-11-04T09:56:53.4718910Z           "all": false,
+2026-11-04T09:56:53.4719491Z           "keepDuration": "1440h0m0s",
+2026-11-04T09:56:53.4719825Z           "reservedSpace": "9.313GiB",
+2026-11-04T09:56:53.4720105Z           "maxUsedSpace": "93.13GiB",
+2026-11-04T09:56:53.4720368Z           "minFreeSpace": "27.01GiB"
+2026-11-04T09:56:53.4720606Z         },
+2026-11-04T09:56:53.4720787Z         {
+2026-11-04T09:56:53.4721131Z           "all": false,
+2026-11-04T09:56:53.4721362Z           "reservedSpace": "9.313GiB",
+2026-11-04T09:56:53.4721645Z           "maxUsedSpace": "93.13GiB",
+2026-11-04T09:56:53.4721895Z           "minFreeSpace": "27.01GiB"
+2026-11-04T09:56:53.4722137Z         },
+2026-11-04T09:56:53.4722318Z         {
+2026-11-04T09:56:53.4722495Z           "all": true,
+2026-11-04T09:56:53.4722711Z           "reservedSpace": "9.313GiB",
+2026-11-04T09:56:53.4722970Z           "maxUsedSpace": "93.13GiB",
+2026-11-04T09:56:53.4723217Z           "minFreeSpace": "27.01GiB"
+2026-11-04T09:56:53.4723452Z         }
+2026-11-04T09:56:53.4723623Z       ]
+2026-11-04T09:56:53.4723808Z     }
+2026-11-04T09:56:53.4723984Z   ],
+2026-11-04T09:56:53.4724231Z   "name": "builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5",
+2026-11-04T09:56:53.4724556Z   "driver": "docker-container",
+2026-11-04T09:56:53.4724816Z   "lastActivity": "2026-11-04T09:56:51.000Z"
+2026-11-04T09:56:53.4725074Z }
+2026-11-04T09:56:53.4725538Z ##[endgroup]
+2026-11-04T09:56:53.4726126Z ##[group]BuildKit version
+2026-11-04T09:56:53.4726424Z builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50: v0.34.1
+2026-11-04T09:56:53.4726878Z ##[endgroup]
+2026-11-04T09:56:53.4828721Z ##[group]Run docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+2026-11-04T09:56:53.4829424Z with:
+2026-11-04T09:56:53.4829623Z   context: .
+2026-11-04T09:56:53.4829828Z   file: apps/worker/Dockerfile
+2026-11-04T09:56:53.4830057Z   load: true
+2026-11-04T09:56:53.4830243Z   push: false
+2026-11-04T09:56:53.4830446Z   tags: tp-worker:capacity
+2026-11-04T09:56:53.4830727Z   cache-from: type=gha,scope=screening-capacity-worker
+2026-11-04T09:56:53.4831038Z   no-cache: false
+2026-11-04T09:56:53.4831238Z   pull: false
+2026-11-04T09:56:53.4833536Z   github-token: ***
+2026-11-04T09:56:53.4833744Z ##[endgroup]
+2026-11-04T09:56:53.7227400Z ##[group]GitHub Actions runtime token ACs
+2026-11-04T09:56:53.7236110Z refs/heads/co-001/suite-cap-1-triage-locks: read/write
+2026-11-04T09:56:53.7236850Z refs/heads/claude/build-platform: read
+2026-11-04T09:56:53.7237756Z ##[endgroup]
+2026-11-04T09:56:53.7238212Z ##[group]Docker info
+2026-11-04T09:56:53.7280714Z [command]/usr/bin/docker version
+2026-11-04T09:56:53.7525619Z Client: Docker Engine - Community
+2026-11-04T09:56:53.7526264Z  Version:           29.4.2
+2026-11-04T09:56:53.7526808Z  API version:       1.54
+2026-11-04T09:56:53.7527285Z  Go version:        go1.26.2
+2026-11-04T09:56:53.7527862Z  Git commit:        055a478
+2026-11-04T09:56:53.7528952Z  Built:             Fri May  1 10:24:04 2026
+2026-11-04T09:56:53.7529746Z  OS/Arch:           linux/amd64
+2026-11-04T09:56:53.7530297Z  Context:           default
+2026-11-04T09:56:53.7530639Z 
+2026-11-04T09:56:53.7530960Z Server: Docker Engine - Community
+2026-11-04T09:56:53.7531445Z  Engine:
+2026-11-04T09:56:53.7531871Z   Version:          29.4.2
+2026-11-04T09:56:53.7532387Z   API version:      1.54 (minimum version 1.40)
+2026-11-04T09:56:53.7532999Z   Go version:       go1.26.2
+2026-11-04T09:56:53.7533495Z   Git commit:       d329809
+2026-11-04T09:56:53.7533994Z   Built:            Fri May  1 10:24:04 2026
+2026-11-04T09:56:53.7534590Z   OS/Arch:          linux/amd64
+2026-11-04T09:56:53.7535139Z   Experimental:     false
+2026-11-04T09:56:53.7535619Z  containerd:
+2026-11-04T09:56:53.7535978Z   Version:          v2.4.2
+2026-11-04T09:56:53.7536533Z   GitCommit:        b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-04T09:56:53.7537185Z  runc:
+2026-11-04T09:56:53.7537628Z   Version:          1.5.2
+2026-11-04T09:56:53.7538133Z   GitCommit:        v1.5.2-0-g29dd3dc2
+2026-11-04T09:56:53.7538674Z  docker-init:
+2026-11-04T09:56:53.7539248Z   Version:          0.19.0
+2026-11-04T09:56:53.7539723Z   GitCommit:        de40ad0
+2026-11-04T09:56:53.7575716Z [command]/usr/bin/docker info
+2026-11-04T09:56:53.8115906Z Client: Docker Engine - Community
+2026-11-04T09:56:53.8134023Z  Version:    29.4.2
+2026-11-04T09:56:53.8150791Z  Context:    default
+2026-11-04T09:56:53.8174474Z  Debug Mode: false
+2026-11-04T09:56:53.8203873Z  Plugins:
+2026-11-04T09:56:53.8208847Z   buildx: Docker Buildx (Docker Inc.)
+2026-11-04T09:56:53.8209788Z     Version:  v0.38.1
+2026-11-04T09:56:53.8210727Z     Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+2026-11-04T09:56:53.8211418Z   compose: Docker Compose (Docker Inc.)
+2026-11-04T09:56:53.8211926Z     Version:  v5.1.3
+2026-11-04T09:56:53.8212434Z     Path:     /usr/libexec/docker/cli-plugins/docker-compose
+2026-11-04T09:56:53.8212845Z 
+2026-11-04T09:56:53.8213037Z Server:
+2026-11-04T09:56:53.8213359Z  Containers: 1
+2026-11-04T09:56:53.8213727Z   Running: 1
+2026-11-04T09:56:53.8214078Z   Paused: 0
+2026-11-04T09:56:53.8214418Z   Stopped: 0
+2026-11-04T09:56:53.8214770Z  Images: 7
+2026-11-04T09:56:53.8215115Z  Server Version: 29.4.2
+2026-11-04T09:56:53.8215411Z  Storage Driver: overlayfs
+2026-11-04T09:56:53.8215769Z   driver-type: io.containerd.snapshotter.v1
+2026-11-04T09:56:53.8216257Z  Logging Driver: json-file
+2026-11-04T09:56:53.8216660Z  Cgroup Driver: systemd
+2026-11-04T09:56:53.8217037Z  Cgroup Version: 2
+2026-11-04T09:56:53.8217389Z  Plugins:
+2026-11-04T09:56:53.8217707Z   Volume: local
+2026-11-04T09:56:53.8218138Z   Network: bridge host ipvlan macvlan null overlay
+2026-11-04T09:56:53.8219551Z   Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+2026-11-04T09:56:53.8220255Z  CDI spec directories:
+2026-11-04T09:56:53.8220632Z   /etc/cdi
+2026-11-04T09:56:53.8220950Z   /var/run/cdi
+2026-11-04T09:56:53.8221303Z  Swarm: inactive
+2026-11-04T09:56:53.8221700Z  Runtimes: io.containerd.runc.v2 runc
+2026-11-04T09:56:53.8222196Z  Default Runtime: runc
+2026-11-04T09:56:53.8222595Z  Init Binary: docker-init
+2026-11-04T09:56:53.8223131Z  containerd version: b7a25261e029d68978bbf290df0a62fc819b3c51
+2026-11-04T09:56:53.8223747Z  runc version: v1.5.2-0-g29dd3dc2
+2026-11-04T09:56:53.8224200Z  init version: de40ad0
+2026-11-04T09:56:53.8224609Z  Security Options:
+2026-11-04T09:56:53.8224976Z   apparmor
+2026-11-04T09:56:53.8225307Z   seccomp
+2026-11-04T09:56:53.8225673Z    Profile: builtin
+2026-11-04T09:56:53.8226003Z   cgroupns
+2026-11-04T09:56:53.8226322Z  Kernel Version: 7.0.0-1019-azure
+2026-11-04T09:56:53.8226924Z  Operating System: Ubuntu 26.04.1 LTS
+2026-11-04T09:56:53.8227310Z  OSType: linux
+2026-11-04T09:56:53.8227640Z  Architecture: x86_64
+2026-11-04T09:56:53.8227962Z  CPUs: 4
+2026-11-04T09:56:53.8228236Z  Total Memory: 15.61GiB
+2026-11-04T09:56:53.8228579Z  Name: runnervmwuk1x
+2026-11-04T09:56:53.8228954Z  ID: c9e80441-737e-41c3-b4fb-fafa48478e76
+2026-11-04T09:56:53.8229561Z  Docker Root Dir: /var/lib/docker
+2026-11-04T09:56:53.8230002Z  Debug Mode: false
+2026-11-04T09:56:53.8230394Z  Username: githubactions
+2026-11-04T09:56:53.8230821Z  Experimental: false
+2026-11-04T09:56:53.8231153Z  Insecure Registries:
+2026-11-04T09:56:53.8231501Z   ::1/128
+2026-11-04T09:56:53.8231789Z   127.0.0.0/8
+2026-11-04T09:56:53.8232137Z  Live Restore Enabled: false
+2026-11-04T09:56:53.8232579Z  Firewall Backend: iptables
+2026-11-04T09:56:53.8232829Z 
+2026-11-04T09:56:53.8233299Z ##[endgroup]
+2026-11-04T09:56:53.8233899Z ##[group]Proxy configuration
+2026-11-04T09:56:53.8234273Z No proxy configuration found
+2026-11-04T09:56:53.8234915Z ##[endgroup]
+2026-11-04T09:56:53.8901055Z ##[group]Buildx version
+2026-11-04T09:56:53.8923531Z [command]/usr/bin/docker buildx version
+2026-11-04T09:56:53.9435186Z github.com/docker/buildx v0.38.1 0dbe87f36ed472fe36b6796c3f70b4210a731fc5
+2026-11-04T09:56:53.9461327Z ##[endgroup]
+2026-11-04T09:56:53.9461948Z ##[group]Builder info
+2026-11-04T09:56:54.0362029Z {
+2026-11-04T09:56:54.0363561Z   "nodes": [
+2026-11-04T09:56:54.0364459Z     {
+2026-11-04T09:56:54.0365185Z       "name": "builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50",
+2026-11-04T09:56:54.0366140Z       "endpoint": "unix:///var/run/docker.sock",
+2026-11-04T09:56:54.0367419Z       "driver-opts": [
+2026-11-04T09:56:54.0368204Z         "image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c"
+2026-11-04T09:56:54.0368926Z       ],
+2026-11-04T09:56:54.0371806Z       "status": "running",
+2026-11-04T09:56:54.0372463Z       "buildkitd-flags": "--allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host",
+2026-11-04T09:56:54.0373045Z       "buildkit": "v0.34.1",
+2026-11-04T09:56:54.0373407Z       "platforms": "linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/amd64/v4,linux/386",
+2026-11-04T09:56:54.0373784Z       "features": {
+2026-11-04T09:56:54.0374086Z         "Automatically load images to the Docker Engine image store": true,
+2026-11-04T09:56:54.0374450Z         "Cache export": true,
+2026-11-04T09:56:54.0374692Z         "Direct push": true,
+2026-11-04T09:56:54.0374922Z         "Docker exporter": true,
+2026-11-04T09:56:54.0375171Z         "Multi-platform build": true,
+2026-11-04T09:56:54.0375423Z         "OCI exporter": true
+2026-11-04T09:56:54.0375648Z       },
+2026-11-04T09:56:54.0375821Z       "labels": {
+2026-11-04T09:56:54.0376081Z         "org.mobyproject.buildkit.worker.executor": "oci",
+2026-11-04T09:56:54.0376472Z         "org.mobyproject.buildkit.worker.hostname": "5fea75ac052e",
+2026-11-04T09:56:54.0376863Z         "org.mobyproject.buildkit.worker.network": "host",
+2026-11-04T09:56:54.0377543Z         "org.mobyproject.buildkit.worker.oci.process-mode": "sandbox",
+2026-11-04T09:56:54.0377987Z         "org.mobyproject.buildkit.worker.selinux.enabled": "false",
+2026-11-04T09:56:54.0378409Z         "org.mobyproject.buildkit.worker.snapshotter": "overlayfs"
+2026-11-04T09:56:54.0378734Z       },
+2026-11-04T09:56:54.0378918Z       "gcPolicy": [
+2026-11-04T09:56:54.0379526Z         {
+2026-11-04T09:56:54.0379828Z           "all": false,
+2026-11-04T09:56:54.0380127Z           "filter": [
+2026-11-04T09:56:54.0380607Z             "type==source.local type==exec.cachemount type==source.git.checkout"
+2026-11-04T09:56:54.0381166Z           ],
+2026-11-04T09:56:54.0381476Z           "keepDuration": "48h0m0s",
+2026-11-04T09:56:54.0381882Z           "maxUsedSpace": "488.3MiB"
+2026-11-04T09:56:54.0382288Z         },
+2026-11-04T09:56:54.0382565Z         {
+2026-11-04T09:56:54.0382862Z           "all": false,
+2026-11-04T09:56:54.0383224Z           "keepDuration": "1440h0m0s",
+2026-11-04T09:56:54.0383935Z           "reservedSpace": "9.313GiB",
+2026-11-04T09:56:54.0384359Z           "maxUsedSpace": "93.13GiB",
+2026-11-04T09:56:54.0384755Z           "minFreeSpace": "27.01GiB"
+2026-11-04T09:56:54.0385155Z         },
+2026-11-04T09:56:54.0385429Z         {
+2026-11-04T09:56:54.0385709Z           "all": false,
+2026-11-04T09:56:54.0386077Z           "reservedSpace": "9.313GiB",
+2026-11-04T09:56:54.0386507Z           "maxUsedSpace": "93.13GiB",
+2026-11-04T09:56:54.0386932Z           "minFreeSpace": "27.01GiB"
+2026-11-04T09:56:54.0387285Z         },
+2026-11-04T09:56:54.0387541Z         {
+2026-11-04T09:56:54.0387807Z           "all": true,
+2026-11-04T09:56:54.0388145Z           "reservedSpace": "9.313GiB",
+2026-11-04T09:56:54.0388562Z           "maxUsedSpace": "93.13GiB",
+2026-11-04T09:56:54.0388955Z           "minFreeSpace": "27.01GiB"
+2026-11-04T09:56:54.0389719Z         }
+2026-11-04T09:56:54.0390011Z       ]
+2026-11-04T09:56:54.0390290Z     }
+2026-11-04T09:56:54.0390554Z   ],
+2026-11-04T09:56:54.0390959Z   "name": "builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5",
+2026-11-04T09:56:54.0391541Z   "driver": "docker-container",
+2026-11-04T09:56:54.0391982Z   "lastActivity": "2026-11-04T09:56:51.000Z"
+2026-11-04T09:56:54.0392410Z }
+2026-11-04T09:56:54.0393100Z ##[endgroup]
+2026-11-04T09:56:54.2113688Z [command]/usr/bin/docker buildx build --cache-from type=gha,scope=screening-capacity-worker --file apps/worker/Dockerfile --iidfile /home/runner/work/_temp/docker-actions-toolkit-UcAgyA/build-iidfile-620272812d.txt --tag tp-worker:capacity --load --metadata-file /home/runner/work/_temp/docker-actions-toolkit-UcAgyA/build-metadata-0bccc8a98f.json .
+2026-11-04T09:56:54.5510019Z #0 building with "builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5" instance using docker-container driver
+2026-11-04T09:56:54.5510615Z 
+2026-11-04T09:56:54.5510786Z #1 [internal] load build definition from Dockerfile
+2026-11-04T09:56:54.5511164Z #1 transferring dockerfile: 4.33kB done
+2026-11-04T09:56:54.5511474Z #1 DONE 0.0s
+2026-11-04T09:56:54.5511618Z 
+2026-11-04T09:56:54.5511848Z #2 [auth] library/node:pull token for registry-1.docker.io
+2026-11-04T09:56:54.5512211Z #2 DONE 0.0s
+2026-11-04T09:56:54.5512350Z 
+2026-11-04T09:56:54.5512843Z #3 [internal] load metadata for docker.io/library/node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+2026-11-04T09:56:54.7701829Z #3 DONE 0.4s
+2026-11-04T09:56:54.9620681Z 
+2026-11-04T09:56:54.9621897Z #4 [internal] load .dockerignore
+2026-11-04T09:56:54.9622475Z #4 transferring context: 223B done
+2026-11-04T09:56:54.9622955Z #4 DONE 0.0s
+2026-11-04T09:56:54.9623205Z 
+2026-11-04T09:56:54.9623392Z #5 [internal] load build context
+2026-11-04T09:56:54.9623876Z #5 DONE 0.0s
+2026-11-04T09:56:54.9624106Z 
+2026-11-04T09:56:54.9624845Z #6 [build 1/9] FROM docker.io/library/node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+2026-11-04T09:56:54.9626613Z #6 resolve docker.io/library/node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea done
+2026-11-04T09:56:54.9627687Z #6 DONE 0.0s
+2026-11-04T09:56:54.9628146Z 
+2026-11-04T09:56:54.9628833Z #7 [runtime 7/9] ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+2026-11-04T09:56:54.9630054Z #7 DONE 0.1s
+2026-11-04T09:56:54.9630286Z 
+2026-11-04T09:56:54.9630473Z #8 importing cache manifest from gha:15287537064585241331
+2026-11-04T09:56:54.9630825Z #8 DONE 0.2s
+2026-11-04T09:56:55.0679856Z 
+2026-11-04T09:56:55.0680577Z #5 [internal] load build context
+2026-11-04T09:56:55.3805445Z #5 transferring context: 28.25MB 0.4s done
+2026-11-04T09:56:55.4835854Z #5 DONE 0.4s
+2026-11-04T09:56:55.4836647Z 
+2026-11-04T09:56:55.4838000Z #6 [build 1/9] FROM docker.io/library/node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+2026-11-04T09:56:55.4839917Z #6 sha256:bc8b3f2c49238d1b7ab1afb031e5b900ecd9ec4cd92b7375d8bf83976da8d8c9 450B / 450B 0.0s done
+2026-11-04T09:56:55.4841234Z #6 sha256:622d521406a07428db0f079a21c4223903af43b954b03e7eda685c780b90f15b 1.72MB / 1.72MB 0.1s done
+2026-11-04T09:56:55.4842985Z #6 sha256:244264efccec16bd5b6d8b325ace069525527dc16b706b4d72df8af533971ebf 3.31kB / 3.31kB 0.1s done
+2026-11-04T09:56:55.5839675Z #6 sha256:1fea3edc99a2db1c70c69f4b0367a5a89e75888007ca0f9d2f49395645645b1a 51.12MB / 51.12MB 0.2s done
+2026-11-04T09:56:55.7550720Z #6 sha256:f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034 29.84MB / 29.84MB 0.2s done
+2026-11-04T09:56:55.7551457Z #6 extracting sha256:f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034
+2026-11-04T09:56:56.1101474Z #6 extracting sha256:f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034 0.5s done
+2026-11-04T09:56:56.1102417Z #6 DONE 0.7s
+2026-11-04T09:56:56.2654366Z 
+2026-11-04T09:56:56.2655681Z #6 [build 1/9] FROM docker.io/library/node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+2026-11-04T09:56:56.2657662Z #6 extracting sha256:244264efccec16bd5b6d8b325ace069525527dc16b706b4d72df8af533971ebf done
+2026-11-04T09:56:56.2659097Z #6 extracting sha256:1fea3edc99a2db1c70c69f4b0367a5a89e75888007ca0f9d2f49395645645b1a
+2026-11-04T09:56:56.9235215Z #6 extracting sha256:1fea3edc99a2db1c70c69f4b0367a5a89e75888007ca0f9d2f49395645645b1a 0.8s done
+2026-11-04T09:56:56.9236049Z #6 DONE 1.5s
+2026-11-04T09:56:57.1098460Z 
+2026-11-04T09:56:57.1099572Z #6 [build 1/9] FROM docker.io/library/node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+2026-11-04T09:56:57.1100486Z #6 extracting sha256:622d521406a07428db0f079a21c4223903af43b954b03e7eda685c780b90f15b 0.0s done
+2026-11-04T09:56:57.1101208Z #6 extracting sha256:bc8b3f2c49238d1b7ab1afb031e5b900ecd9ec4cd92b7375d8bf83976da8d8c9 done
+2026-11-04T09:56:57.1101711Z #6 DONE 1.6s
+2026-11-04T09:56:57.1101847Z 
+2026-11-04T09:56:57.1101969Z #9 [build 2/9] WORKDIR /repo
+2026-11-04T09:56:57.4031417Z #9 DONE 0.4s
+2026-11-04T09:56:57.5702441Z 
+2026-11-04T09:56:57.5702882Z #10 [build 3/9] COPY package.json ./
+2026-11-04T09:56:57.5703376Z #10 DONE 0.0s
+2026-11-04T09:56:57.5703505Z 
+2026-11-04T09:56:57.5703744Z #11 [build 4/9] COPY tools/check-toolchain/install-pnpm.sh /tmp/install-pnpm.sh
+2026-11-04T09:56:57.5704113Z #11 DONE 0.0s
+2026-11-04T09:56:57.5704228Z 
+2026-11-04T09:56:57.5704650Z #12 [build 5/9] RUN sh /tmp/install-pnpm.sh package.json && rm /tmp/install-pnpm.sh
+2026-11-04T09:56:58.1715916Z #12 0.752 install-pnpm: pnpm-10.34.8.tgz matches packageManager's sha512; installing it
+2026-11-04T09:57:00.1339564Z #12 2.714 
+2026-11-04T09:57:00.1340013Z #12 2.714 added 1 package in 2s
+2026-11-04T09:57:00.3295692Z #12 DONE 2.8s
+2026-11-04T09:57:00.3295976Z 
+2026-11-04T09:57:00.3296140Z #13 [build 6/9] COPY . .
+2026-11-04T09:57:00.4066547Z #13 DONE 0.2s
+2026-11-04T09:57:00.5581572Z 
+2026-11-04T09:57:00.5582716Z #14 [build 7/9] RUN pnpm install --frozen-lockfile --filter "@tp/worker..."
+2026-11-04T09:57:00.8942569Z #14 0.487 Scope: 15 of 22 workspace projects
+2026-11-04T09:57:01.0353266Z #14 0.564 Lockfile is up to date, resolution step is skipped
+2026-11-04T09:57:01.0354715Z #14 0.628 Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-11-04T09:57:01.2522381Z #14 0.693 .                                        | +421 ++++++++++++++++++++++++++++++++
+2026-11-04T09:57:01.3010842Z #14 0.893 
+2026-11-04T09:57:01.3012251Z #14 0.893    ╭──────────────────────────────────────────────────────────────────────╮
+2026-11-04T09:57:01.3013472Z #14 0.893    │                                                                      │
+2026-11-04T09:57:01.3014445Z #14 0.893    │                 Update available! 10.34.8 → 12.16.1.                 │
+2026-11-04T09:57:01.3015414Z #14 0.893    │                 Changelog: https://pnpm.io/v/12.16.1                 │
+2026-11-04T09:57:01.3016517Z #14 0.893    │   To update, run: curl -fsSL https://get.pnpm.io/install.sh | sh -   │
+2026-11-04T09:57:01.3017426Z #14 0.893    │                                                                      │
+2026-11-04T09:57:01.3018719Z #14 0.893    ╰──────────────────────────────────────────────────────────────────────╯
+2026-11-04T09:57:01.3020231Z #14 0.893 
+2026-11-04T09:57:02.0384699Z #14 1.630 Progress: resolved 421, reused 0, downloaded 75, added 31
+2026-11-04T09:57:03.0396824Z #14 2.630 Progress: resolved 421, reused 0, downloaded 279, added 126
+2026-11-04T09:57:03.9541061Z #14 3.546 Progress: resolved 421, reused 0, downloaded 421, added 421, done
+2026-11-04T09:57:04.1264193Z #14 3.719 .../esbuild@0.28.2/node_modules/esbuild postinstall$ node install.js
+2026-11-04T09:57:04.3436646Z #14 3.786 .../esbuild@0.28.2/node_modules/esbuild postinstall: Done
+2026-11-04T09:57:04.6002957Z #14 4.193 Done in 4.1s using pnpm v10.34.8
+2026-11-04T09:57:04.8040533Z #14 DONE 4.2s
+2026-11-04T09:57:04.8040997Z 
+2026-11-04T09:57:04.8041847Z #15 [build 8/9] RUN pnpm --filter @tp/worker build
+2026-11-04T09:57:05.3285440Z #15 0.675 
+2026-11-04T09:57:05.3286033Z #15 0.675 > @tp/worker@0.0.0 build /repo/apps/worker
+2026-11-04T09:57:05.3286896Z #15 0.675 > tsx build.ts
+2026-11-04T09:57:05.3287484Z #15 0.675 
+2026-11-04T09:57:07.1962647Z #15 2.543 
+2026-11-04T09:57:07.1972292Z #15 2.543   dist/main.js                      6.4mb ⚠️
+2026-11-04T09:57:07.1972976Z #15 2.543   dist/evaluate-permitted.js        4.4mb ⚠️
+2026-11-04T09:57:07.1973711Z #15 2.543   dist/page-thread.js               3.3mb ⚠️
+2026-11-04T09:57:07.1975013Z #15 2.543   dist/screening-thread.js          2.6mb ⚠️
+2026-11-04T09:57:07.1975613Z #15 2.543   dist/logins.js                  397.0kb
+2026-11-04T09:57:07.1976164Z #15 2.543   dist/migrate.js                 199.2kb
+2026-11-04T09:57:07.1976675Z #15 2.543   dist/main.js.map                 12.1mb
+2026-11-04T09:57:07.1977127Z #15 2.543   dist/evaluate-permitted.js.map   10.0mb
+2026-11-04T09:57:07.1977655Z #15 2.543   dist/page-thread.js.map           6.5mb
+2026-11-04T09:57:07.1978066Z #15 2.543   dist/screening-thread.js.map      4.9mb
+2026-11-04T09:57:07.1978388Z #15 2.543   dist/logins.js.map              926.5kb
+2026-11-04T09:57:07.1978678Z #15 2.543   dist/migrate.js.map             337.1kb
+2026-11-04T09:57:07.1978979Z #15 2.543 
+2026-11-04T09:57:07.1979624Z #15 2.543 ⚡ Done in 1667ms
+2026-11-04T09:57:07.9157704Z #15 DONE 3.3s
+2026-11-04T09:57:08.0642360Z 
+2026-11-04T09:57:08.0643698Z #16 [build 9/9] RUN mkdir /out && cp -RL apps/worker/node_modules/playwright-core /out/playwright-core
+2026-11-04T09:57:08.0644258Z #16 DONE 0.1s
+2026-11-04T09:57:08.0644384Z 
+2026-11-04T09:57:08.0644767Z #7 [runtime 7/9] ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+2026-11-04T09:57:08.0645393Z #7 DONE 0.1s
+2026-11-04T09:57:08.0645503Z 
+2026-11-04T09:57:08.0645603Z #17 [runtime 2/9] WORKDIR /app
+2026-11-04T09:57:08.0645903Z #17 CACHED
+2026-11-04T09:57:08.0646004Z 
+2026-11-04T09:57:08.0646265Z #18 [runtime 3/9] COPY --from=build /out/playwright-core ./node_modules/playwright-core
+2026-11-04T09:57:08.0646720Z #18 CACHED
+2026-11-04T09:57:08.0646824Z 
+2026-11-04T09:57:08.0648465Z #19 [runtime 4/9] RUN apt-get update  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends  && node node_modules/playwright-core/cli.js install --with-deps chromium-headless-shell  && rm -rf /var/lib/apt/lists/*  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+2026-11-04T09:57:08.2157494Z #19 sha256:9206759bbb951f4d4f41b8806af466988a6b50ce695685ebc2a072381e510f1c 93B / 93B 0.1s done
+2026-11-04T09:57:08.4374106Z #19 extracting sha256:9206759bbb951f4d4f41b8806af466988a6b50ce695685ebc2a072381e510f1c done
+2026-11-04T09:57:08.4375744Z #19 sha256:854028cfcba11a501a6aa9152ab571fcb68bf3fbb6f15aa3336fdbfe94d30da8 2.10MB / 3.21MB 0.3s
+2026-11-04T09:57:08.4376518Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 0B / 251.58MB 0.2s
+2026-11-04T09:57:08.5946557Z #19 sha256:854028cfcba11a501a6aa9152ab571fcb68bf3fbb6f15aa3336fdbfe94d30da8 3.21MB / 3.21MB 0.3s done
+2026-11-04T09:57:08.5947943Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 18.87MB / 251.58MB 0.5s
+2026-11-04T09:57:08.5949992Z #19 extracting sha256:854028cfcba11a501a6aa9152ab571fcb68bf3fbb6f15aa3336fdbfe94d30da8 0.1s done
+2026-11-04T09:57:08.7405048Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 37.75MB / 251.58MB 0.6s
+2026-11-04T09:57:08.8902804Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 62.91MB / 251.58MB 0.8s
+2026-11-04T09:57:09.0398434Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 87.03MB / 251.58MB 0.9s
+2026-11-04T09:57:09.1897736Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 110.10MB / 251.58MB 1.1s
+2026-11-04T09:57:09.3433728Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 135.27MB / 251.58MB 1.2s
+2026-11-04T09:57:09.4952861Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 160.43MB / 251.58MB 1.4s
+2026-11-04T09:57:09.6392496Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 179.31MB / 251.58MB 1.5s
+2026-11-04T09:57:09.7901807Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 204.47MB / 251.58MB 1.7s
+2026-11-04T09:57:09.9423935Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 229.64MB / 251.58MB 1.8s
+2026-11-04T09:57:10.0898801Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 251.58MB / 251.58MB 2.0s
+2026-11-04T09:57:10.5563771Z #19 sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 251.58MB / 251.58MB 2.3s done
+2026-11-04T09:57:10.5564996Z #19 extracting sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a
+2026-11-04T09:57:13.1735660Z #19 extracting sha256:2f3fee169cfa463a08be45692e7a080605b7205c934becb5ec45ad0d17442a6a 2.8s done
+2026-11-04T09:57:13.1736754Z #19 DONE 5.1s
+2026-11-04T09:57:13.3243440Z 
+2026-11-04T09:57:13.3244324Z #20 [runtime 5/9] COPY --from=build --chown=node:node /repo/apps/worker/dist ./dist
+2026-11-04T09:57:14.6078059Z #20 DONE 1.4s
+2026-11-04T09:57:14.7273016Z 
+2026-11-04T09:57:14.7273789Z #21 [runtime 6/9] COPY --from=build --chown=node:node /repo/packages/db/migrations ./migrations
+2026-11-04T09:57:14.7274535Z #21 DONE 0.1s
+2026-11-04T09:57:14.7274740Z 
+2026-11-04T09:57:14.7275448Z #22 [runtime 7/9] ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+2026-11-04T09:57:14.7276408Z #22 DONE 0.0s
+2026-11-04T09:57:14.7276592Z 
+2026-11-04T09:57:14.7277030Z #23 [runtime 8/9] RUN chmod 0755 /etc/ssl /etc/ssl/certs && chmod 0644 /etc/ssl/certs/rds-global-bundle.pem
+2026-11-04T09:57:14.7277737Z #23 DONE 0.0s
+2026-11-04T09:57:14.9478906Z 
+2026-11-04T09:57:14.9480061Z #24 [runtime 9/9] RUN ["node", "-e", "require('node:fs').readFileSync('/etc/ssl/certs/rds-global-bundle.pem')"]
+2026-11-04T09:57:14.9480934Z #24 DONE 0.1s
+2026-11-04T09:57:14.9481122Z 
+2026-11-04T09:57:14.9481286Z #25 exporting to oci image format
+2026-11-04T09:57:14.9481720Z #25 exporting layers
+2026-11-04T09:57:16.6063437Z #25 exporting layers 1.8s done
+2026-11-04T09:57:16.7652253Z #25 exporting manifest sha256:d45cc1b3a62bc47695ffe250b6c50d1f1c7ef884a4c857d5eb57efbc0c159c07 done
+2026-11-04T09:57:16.7655882Z #25 exporting config sha256:bff0436ad04bfe5af1eec01c8b73956ed8f1e5d1ade660d8c552e5f62b1e8bb5 done
+2026-11-04T09:57:16.7659708Z #25 sending tarball
+2026-11-04T09:57:23.9913088Z #25 ...
+2026-11-04T09:57:23.9913468Z 
+2026-11-04T09:57:23.9913785Z #26 importing to docker
+2026-11-04T09:57:24.0261349Z #26 DONE 0.0s
+2026-11-04T09:57:24.0261640Z 
+2026-11-04T09:57:24.0261880Z #25 exporting to oci image format
+2026-11-04T09:57:24.0262156Z #25 sending tarball 7.4s done
+2026-11-04T09:57:24.0262441Z #25 DONE 9.2s
+2026-11-04T09:57:24.0262561Z 
+2026-11-04T09:57:24.0262690Z #27 resolving provenance for metadata file
+2026-11-04T09:57:24.0262996Z #27 DONE 0.0s
+2026-11-04T09:57:24.0385172Z ##[group]ImageID
+2026-11-04T09:57:24.0385816Z sha256:d45cc1b3a62bc47695ffe250b6c50d1f1c7ef884a4c857d5eb57efbc0c159c07
+2026-11-04T09:57:24.0387119Z ##[endgroup]
+2026-11-04T09:57:24.0387684Z ##[group]Digest
+2026-11-04T09:57:24.0388275Z sha256:d45cc1b3a62bc47695ffe250b6c50d1f1c7ef884a4c857d5eb57efbc0c159c07
+2026-11-04T09:57:24.0389292Z ##[endgroup]
+2026-11-04T09:57:24.0389772Z ##[group]Metadata
+2026-11-04T09:57:24.0400942Z ::stop-commands::***
+2026-11-04T09:57:24.0401209Z {
+2026-11-04T09:57:24.0401437Z   "buildx.build.provenance": {
+2026-11-04T09:57:24.0401681Z     "builder": {
+2026-11-04T09:57:24.0401873Z       "id": ""
+2026-11-04T09:57:24.0402057Z     },
+2026-11-04T09:57:24.0402333Z     "buildType": "https://mobyproject.org/buildkit@v1",
+2026-11-04T09:57:24.0402637Z     "materials": [
+2026-11-04T09:57:24.0402829Z       {
+2026-11-04T09:57:24.0403391Z         "uri": "pkg:docker/node@24-trixie-slim?digest=sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea&platform=linux%2Famd64",
+2026-11-04T09:57:24.0403987Z         "digest": {
+2026-11-04T09:57:24.0404349Z           "sha256": "43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea"
+2026-11-04T09:57:24.0404760Z         }
+2026-11-04T09:57:24.0404960Z       },
+2026-11-04T09:57:24.0405139Z       {
+2026-11-04T09:57:24.0405473Z         "uri": "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
+2026-11-04T09:57:24.0405858Z         "digest": {
+2026-11-04T09:57:24.0406188Z           "sha256": "90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b"
+2026-11-04T09:57:24.0406583Z         }
+2026-11-04T09:57:24.0406785Z       }
+2026-11-04T09:57:24.0406986Z     ],
+2026-11-04T09:57:24.0407165Z     "invocation": {
+2026-11-04T09:57:24.0407378Z       "configSource": {
+2026-11-04T09:57:24.0407609Z         "entryPoint": "Dockerfile"
+2026-11-04T09:57:24.0407844Z       },
+2026-11-04T09:57:24.0408027Z       "parameters": {
+2026-11-04T09:57:24.0408252Z         "frontend": "dockerfile.v0",
+2026-11-04T09:57:24.0408529Z         "locals": [
+2026-11-04T09:57:24.0408728Z           {
+2026-11-04T09:57:24.0408969Z             "name": "context"
+2026-11-04T09:57:24.0409456Z           },
+2026-11-04T09:57:24.0409675Z           {
+2026-11-04T09:57:24.0409915Z             "name": "dockerfile"
+2026-11-04T09:57:24.0410178Z           }
+2026-11-04T09:57:24.0410388Z         ],
+2026-11-04T09:57:24.0410611Z         "root": {
+2026-11-04T09:57:24.0410819Z           "configSource": {
+2026-11-04T09:57:24.0411087Z             "path": "Dockerfile"
+2026-11-04T09:57:24.0411350Z           },
+2026-11-04T09:57:24.0411566Z           "request": {
+2026-11-04T09:57:24.0411816Z             "args": {
+2026-11-04T09:57:24.0412085Z               "vcs:localdir:context": ".",
+2026-11-04T09:57:24.0412425Z               "vcs:localdir:dockerfile": "apps/worker",
+2026-11-04T09:57:24.0412776Z               "vcs:revision": "ab8c9c2765fac4a42090d1495018ae63d39fcce1",
+2026-11-04T09:57:24.0413222Z               "vcs:source": "https://github.com/PureTideWater/PhysicalTherapy"
+2026-11-04T09:57:24.0413580Z             }
+2026-11-04T09:57:24.0413803Z           }
+2026-11-04T09:57:24.0414041Z         },
+2026-11-04T09:57:24.0414319Z         "compatibilityVersion": 30
+2026-11-04T09:57:24.0414880Z       },
+2026-11-04T09:57:24.0415099Z       "environment": {
+2026-11-04T09:57:24.0415397Z         "dockerfileVersion": "1.28.0",
+2026-11-04T09:57:24.0415714Z         "github_actor": "PureTideWater",
+2026-11-04T09:57:24.0416015Z         "github_actor_id": "198164797",
+2026-11-04T09:57:24.0416349Z         "github_event_name": "workflow_dispatch",
+2026-11-04T09:57:24.0416674Z         "github_event_payload": {
+2026-11-04T09:57:24.0416966Z           "inputs": null,
+2026-11-04T09:57:24.0417294Z           "ref": "refs/heads/co-001/suite-cap-1-triage-locks",
+2026-11-04T09:57:24.0417622Z           "repository": {
+2026-11-04T09:57:24.0417892Z             "allow_forking": true,
+2026-11-04T09:57:24.0418414Z             "archive_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/{archive_format}{/ref}",
+2026-11-04T09:57:24.0419232Z             "archived": false,
+2026-11-04T09:57:24.0420073Z             "assignees_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/assignees{/user}",
+2026-11-04T09:57:24.0422138Z             "blobs_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/git/blobs{/sha}",
+2026-11-04T09:57:24.0423267Z             "branches_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/branches{/branch}",
+2026-11-04T09:57:24.0423881Z             "clone_url": "https://github.com/PureTideWater/PhysicalTherapy.git",
+2026-11-04T09:57:24.0424578Z             "collaborators_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/collaborators{/collaborator}",
+2026-11-04T09:57:24.0425352Z             "comments_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/comments{/number}",
+2026-11-04T09:57:24.0426033Z             "commits_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/commits{/sha}",
+2026-11-04T09:57:24.0426737Z             "compare_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/compare/{base}...{head}",
+2026-11-04T09:57:24.0427481Z             "contents_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/contents/{+path}",
+2026-11-04T09:57:24.0428180Z             "contributors_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/contributors",
+2026-11-04T09:57:24.0428702Z             "created_at": "2026-10-14T23:16:30Z",
+2026-11-04T09:57:24.0429492Z             "default_branch": "claude/build-platform",
+2026-11-04T09:57:24.0430153Z             "deployments_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/deployments",
+2026-11-04T09:57:24.0430659Z             "description": null,
+2026-11-04T09:57:24.0430966Z             "disabled": false,
+2026-11-04T09:57:24.0431443Z             "downloads_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/downloads",
+2026-11-04T09:57:24.0432071Z             "events_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/events",
+2026-11-04T09:57:24.0432594Z             "fork": false,
+2026-11-04T09:57:24.0432871Z             "forks": 0,
+2026-11-04T09:57:24.0433232Z             "forks_count": 0,
+2026-11-04T09:57:24.0433605Z             "forks_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/forks",
+2026-11-04T09:57:24.0434032Z             "full_name": "PureTideWater/PhysicalTherapy",
+2026-11-04T09:57:24.0434555Z             "git_commits_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/git/commits{/sha}",
+2026-11-04T09:57:24.0435160Z             "git_refs_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/git/refs{/sha}",
+2026-11-04T09:57:24.0435766Z             "git_tags_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/git/tags{/sha}",
+2026-11-04T09:57:24.0436383Z             "git_url": "git://github.com/PureTideWater/PhysicalTherapy.git",
+2026-11-04T09:57:24.0436947Z             "has_discussions": false,
+2026-11-04T09:57:24.0437350Z             "has_downloads": false,
+2026-11-04T09:57:24.0437772Z             "has_issues": true,
+2026-11-04T09:57:24.0438178Z             "has_pages": false,
+2026-11-04T09:57:24.0438661Z             "has_projects": true,
+2026-11-04T09:57:24.0438957Z             "has_pull_requests": true,
+2026-11-04T09:57:24.0439530Z             "has_wiki": true,
+2026-11-04T09:57:24.0439922Z             "homepage": null,
+2026-11-04T09:57:24.0440387Z             "hooks_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/hooks",
+2026-11-04T09:57:24.0440862Z             "html_url": "https://github.com/PureTideWater/PhysicalTherapy",
+2026-11-04T09:57:24.0441197Z             "id": 1419945001,
+2026-11-04T09:57:24.0441435Z             "is_template": false,
+2026-11-04T09:57:24.0441893Z             "issue_comment_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/issues/comments{/number}",
+2026-11-04T09:57:24.0442575Z             "issue_events_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/issues/events{/number}",
+2026-11-04T09:57:24.0443201Z             "issues_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/issues{/number}",
+2026-11-04T09:57:24.0443879Z             "keys_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/keys{/key_id}",
+2026-11-04T09:57:24.0444447Z             "labels_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/labels{/name}",
+2026-11-04T09:57:24.0444869Z             "language": "TypeScript",
+2026-11-04T09:57:24.0445274Z             "languages_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/languages",
+2026-11-04T09:57:24.0445688Z             "license": null,
+2026-11-04T09:57:24.0446054Z             "merges_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/merges",
+2026-11-04T09:57:24.0446634Z             "milestones_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/milestones{/number}",
+2026-11-04T09:57:24.0447092Z             "mirror_url": null,
+2026-11-04T09:57:24.0447337Z             "name": "PhysicalTherapy",
+2026-11-04T09:57:24.0447593Z             "node_id": "R_kgDOVKKkKQ",
+2026-11-04T09:57:24.0448137Z             "notifications_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/notifications{?since,all,participating}",
+2026-11-04T09:57:24.0448747Z             "open_issues": 25,
+2026-11-04T09:57:24.0448991Z             "open_issues_count": 25,
+2026-11-04T09:57:24.0450565Z             "owner": {
+2026-11-04T09:57:24.0451110Z               "avatar_url": "https://avatars.githubusercontent.com/u/198164797?v=4",
+2026-11-04T09:57:24.0451683Z               "events_url": "https://api.github.com/users/PureTideWater/events{/privacy}",
+2026-11-04T09:57:24.0452169Z               "followers_url": "https://api.github.com/users/PureTideWater/followers",
+2026-11-04T09:57:24.0452680Z               "following_url": "https://api.github.com/users/PureTideWater/following{/other_user}",
+2026-11-04T09:57:24.0453192Z               "gists_url": "https://api.github.com/users/PureTideWater/gists{/gist_id}",
+2026-11-04T09:57:24.0453774Z               "gravatar_id": "",
+2026-11-04T09:57:24.0454261Z               "html_url": "https://github.com/PureTideWater",
+2026-11-04T09:57:24.0454628Z               "id": 198164797,
+2026-11-04T09:57:24.0454874Z               "login": "PureTideWater",
+2026-11-04T09:57:24.0455139Z               "node_id": "U_kgDOC8_BPQ",
+2026-11-04T09:57:24.0455502Z               "organizations_url": "https://api.github.com/users/PureTideWater/orgs",
+2026-11-04T09:57:24.0456019Z               "received_events_url": "https://api.github.com/users/PureTideWater/received_events",
+2026-11-04T09:57:24.0456516Z               "repos_url": "https://api.github.com/users/PureTideWater/repos",
+2026-11-04T09:57:24.0456862Z               "site_admin": false,
+2026-11-04T09:57:24.0457243Z               "starred_url": "https://api.github.com/users/PureTideWater/starred{/owner}{/repo}",
+2026-11-04T09:57:24.0457768Z               "subscriptions_url": "https://api.github.com/users/PureTideWater/subscriptions",
+2026-11-04T09:57:24.0458154Z               "type": "User",
+2026-11-04T09:57:24.0458432Z               "url": "https://api.github.com/users/PureTideWater",
+2026-11-04T09:57:24.0458911Z               "user_view_type": "public"
+2026-11-04T09:57:24.0459337Z             },
+2026-11-04T09:57:24.0459535Z             "private": false,
+2026-11-04T09:57:24.0459862Z             "pull_request_creation_policy": "all",
+2026-11-04T09:57:24.0460300Z             "pulls_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/pulls{/number}",
+2026-11-04T09:57:24.0460726Z             "pushed_at": "2026-11-04T09:55:12Z",
+2026-11-04T09:57:24.0461161Z             "releases_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/releases{/id}",
+2026-11-04T09:57:24.0461580Z             "size": 29240,
+2026-11-04T09:57:24.0461879Z             "ssh_url": "git@github.com:PureTideWater/PhysicalTherapy.git",
+2026-11-04T09:57:24.0462271Z             "stargazers_count": 0,
+2026-11-04T09:57:24.0462674Z             "stargazers_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/stargazers",
+2026-11-04T09:57:24.0463365Z             "statuses_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/statuses/{sha}",
+2026-11-04T09:57:24.0463958Z             "subscribers_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/subscribers",
+2026-11-04T09:57:24.0464565Z             "subscription_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/subscription",
+2026-11-04T09:57:24.0465081Z             "svn_url": "https://github.com/PureTideWater/PhysicalTherapy",
+2026-11-04T09:57:24.0465541Z             "tags_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/tags",
+2026-11-04T09:57:24.0466068Z             "teams_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/teams",
+2026-11-04T09:57:24.0466459Z             "topics": [],
+2026-11-04T09:57:24.0466846Z             "trees_url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy/git/trees{/sha}",
+2026-11-04T09:57:24.0467278Z             "updated_at": "2026-11-04T09:21:10Z",
+2026-11-04T09:57:24.0467656Z             "url": "https://api.github.com/repos/PureTideWater/PhysicalTherapy",
+2026-11-04T09:57:24.0468035Z             "visibility": "public",
+2026-11-04T09:57:24.0468293Z             "watchers": 0,
+2026-11-04T09:57:24.0468519Z             "watchers_count": 0,
+2026-11-04T09:57:24.0468777Z             "web_commit_signoff_required": false
+2026-11-04T09:57:24.0469225Z           },
+2026-11-04T09:57:24.0469462Z           "sender": {
+2026-11-04T09:57:24.0469796Z             "avatar_url": "https://avatars.githubusercontent.com/u/198164797?v=4",
+2026-11-04T09:57:24.0470295Z             "events_url": "https://api.github.com/users/PureTideWater/events{/privacy}",
+2026-11-04T09:57:24.0470778Z             "followers_url": "https://api.github.com/users/PureTideWater/followers",
+2026-11-04T09:57:24.0471294Z             "following_url": "https://api.github.com/users/PureTideWater/following{/other_user}",
+2026-11-04T09:57:24.0471809Z             "gists_url": "https://api.github.com/users/PureTideWater/gists{/gist_id}",
+2026-11-04T09:57:24.0472192Z             "gravatar_id": "",
+2026-11-04T09:57:24.0472504Z             "html_url": "https://github.com/PureTideWater",
+2026-11-04T09:57:24.0472803Z             "id": 198164797,
+2026-11-04T09:57:24.0473042Z             "login": "PureTideWater",
+2026-11-04T09:57:24.0473297Z             "node_id": "U_kgDOC8_BPQ",
+2026-11-04T09:57:24.0473655Z             "organizations_url": "https://api.github.com/users/PureTideWater/orgs",
+2026-11-04T09:57:24.0474226Z             "received_events_url": "https://api.github.com/users/PureTideWater/received_events",
+2026-11-04T09:57:24.0474746Z             "repos_url": "https://api.github.com/users/PureTideWater/repos",
+2026-11-04T09:57:24.0475163Z             "site_admin": false,
+2026-11-04T09:57:24.0475880Z             "starred_url": "https://api.github.com/users/PureTideWater/starred{/owner}{/repo}",
+2026-11-04T09:57:24.0476604Z             "subscriptions_url": "https://api.github.com/users/PureTideWater/subscriptions",
+2026-11-04T09:57:24.0477186Z             "type": "User",
+2026-11-04T09:57:24.0477805Z             "url": "https://api.github.com/users/PureTideWater",
+2026-11-04T09:57:24.0478161Z             "user_view_type": "public"
+2026-11-04T09:57:24.0478407Z           },
+2026-11-04T09:57:24.0478667Z           "workflow": ".github/workflows/release-capacity.yml"
+2026-11-04T09:57:24.0478966Z         },
+2026-11-04T09:57:24.0479360Z         "github_job": "capacity",
+2026-11-04T09:57:24.0479686Z         "github_ref": "refs/heads/co-001/suite-cap-1-triage-locks",
+2026-11-04T09:57:24.0480070Z         "github_ref_name": "co-001/suite-cap-1-triage-locks",
+2026-11-04T09:57:24.0480383Z         "github_ref_protected": "false",
+2026-11-04T09:57:24.0480651Z         "github_ref_type": "branch",
+2026-11-04T09:57:24.0480958Z         "github_repository": "PureTideWater/PhysicalTherapy",
+2026-11-04T09:57:24.0481282Z         "github_repository_id": "1419945001",
+2026-11-04T09:57:24.0481585Z         "github_repository_owner": "PureTideWater",
+2026-11-04T09:57:24.0481967Z         "github_repository_owner_id": "198164797",
+2026-11-04T09:57:24.0482252Z         "github_run_attempt": "1",
+2026-11-04T09:57:24.0482499Z         "github_run_id": "41810890284",
+2026-11-04T09:57:24.0482754Z         "github_run_number": "4",
+2026-11-04T09:57:24.0483006Z         "github_runner_arch": "X64",
+2026-11-04T09:57:24.0483308Z         "github_runner_environment": "github-hosted",
+2026-11-04T09:57:24.0483617Z         "github_runner_image_os": "ubuntu26",
+2026-11-04T09:57:24.0483914Z         "github_runner_image_version": "20261101.186.1",
+2026-11-04T09:57:24.0484234Z         "github_runner_name": "GitHub Actions 1000008874",
+2026-11-04T09:57:24.0484526Z         "github_runner_os": "Linux",
+2026-11-04T09:57:24.0484880Z         "github_runner_tracking_id": "github_09aaf26f-f892-46dd-9bb5-5698c2c17019",
+2026-11-04T09:57:24.0485294Z         "github_server_url": "https://github.com",
+2026-11-04T09:57:24.0485601Z         "github_triggering_actor": "PureTideWater",
+2026-11-04T09:57:24.0485895Z         "github_workflow": "release-capacity",
+2026-11-04T09:57:24.0486497Z         "github_workflow_ref": "PureTideWater/PhysicalTherapy/.github/workflows/release-capacity.yml@refs/heads/co-001/suite-cap-1-triage-locks",
+2026-11-04T09:57:24.0487157Z         "github_workflow_sha": "ab8c9c2765fac4a42090d1495018ae63d39fcce1",
+2026-11-04T09:57:24.0487511Z         "platform": "linux/amd64"
+2026-11-04T09:57:24.0487747Z       }
+2026-11-04T09:57:24.0487917Z     }
+2026-11-04T09:57:24.0488088Z   },
+2026-11-04T09:57:24.0488621Z   "buildx.build.ref": "builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5/builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50/jm1j8yn17jwy7j1nbyu9kc3tl",
+2026-11-04T09:57:24.0489574Z   "containerimage.descriptor": {
+2026-11-04T09:57:24.0489902Z     "mediaType": "application/vnd.oci.image.manifest.v1+json",
+2026-11-04T09:57:24.0490388Z     "digest": "sha256:d45cc1b3a62bc47695ffe250b6c50d1f1c7ef884a4c857d5eb57efbc0c159c07",
+2026-11-04T09:57:24.0490790Z     "size": 2769,
+2026-11-04T09:57:24.0490998Z     "annotations": {
+2026-11-04T09:57:24.0491296Z       "org.opencontainers.image.created": "2026-11-04T09:57:16Z"
+2026-11-04T09:57:24.0491608Z     },
+2026-11-04T09:57:24.0491788Z     "platform": {
+2026-11-04T09:57:24.0492002Z       "architecture": "amd64",
+2026-11-04T09:57:24.0492229Z       "os": "linux"
+2026-11-04T09:57:24.0492422Z     }
+2026-11-04T09:57:24.0492594Z   },
+2026-11-04T09:57:24.0492977Z   "containerimage.digest": "sha256:d45cc1b3a62bc47695ffe250b6c50d1f1c7ef884a4c857d5eb57efbc0c159c07",
+2026-11-04T09:57:24.0493482Z   "image.name": "docker.io/library/tp-worker:capacity"
+2026-11-04T09:57:24.0493770Z }
+2026-11-04T09:57:24.0494365Z ::***::
+2026-11-04T09:57:24.0494763Z ##[endgroup]
+2026-11-04T09:57:24.0495113Z ##[group]Reference
+2026-11-04T09:57:24.0495595Z builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5/builder-6ecdd877-aae9-48e6-900c-e7faff74e9b50/jm1j8yn17jwy7j1nbyu9kc3tl
+2026-11-04T09:57:24.0496256Z ##[endgroup]
+2026-11-04T09:57:24.0496594Z ##[group]Check build summary support
+2026-11-04T09:57:24.0496999Z Build summary supported!
+2026-11-04T09:57:24.0497355Z ##[endgroup]
+2026-11-04T09:57:24.0595866Z ##[group]Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+2026-11-04T09:57:24.0596237Z with:
+2026-11-04T09:57:24.0596440Z   node-version: 24
+2026-11-04T09:57:24.0596663Z   package-manager-cache: false
+2026-11-04T09:57:24.0596920Z   check-latest: false
+2026-11-04T09:57:24.0599708Z   token: ***
+2026-11-04T09:57:24.0599910Z ##[endgroup]
+2026-11-04T09:57:24.1896163Z Found in cache @ /opt/hostedtoolcache/node/24.22.2/x64
+2026-11-04T09:57:24.2819613Z ##[group]Environment details
+2026-11-04T09:57:24.6306851Z node: v24.22.2
+2026-11-04T09:57:24.6307119Z npm: 11.19.1
+2026-11-04T09:57:24.6307323Z yarn: 1.22.22
+2026-11-04T09:57:24.6307882Z ##[endgroup]
+2026-11-04T09:57:24.6414040Z ##[group]Run node tools/ci/browser-build.ts --image tp-worker:capacity
+2026-11-04T09:57:24.6414669Z [36;1mnode tools/ci/browser-build.ts --image tp-worker:capacity[0m
+2026-11-04T09:57:24.6457994Z shell: /usr/bin/bash -e {0}
+2026-11-04T09:57:24.6458448Z ##[endgroup]
+2026-11-04T09:57:27.5163452Z The headless shell: Google Chrome for Testing 156.0.8078.4
+2026-11-04T09:57:27.5165030Z The headless shell: revision 1248, 156.0.8078.4, 287 files under tp-worker:capacity: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1248, tree SHA-256 333985b325984894be390c5275ab467ff9ee99ef55414ba6abe2222b2454172e, binary SHA-256 4fa61f0ba0b4f89b7bec242c32ca16d3bccf69dbfef0651924a9ba8fede5f9d6
+2026-11-04T09:57:27.5166241Z The headless shell: equal to browser.json in every file
+2026-11-04T09:57:27.5262844Z ##[group]Run pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+2026-11-04T09:57:27.5263207Z with:
+2026-11-04T09:57:27.5263415Z   dest: ~/setup-pnpm
+2026-11-04T09:57:27.5263626Z   run_install: null
+2026-11-04T09:57:27.5263825Z   cache: false
+2026-11-04T09:57:27.5264054Z   cache_dependency_path: pnpm-lock.yaml
+2026-11-04T09:57:27.5264334Z   package_json_file: package.json
+2026-11-04T09:57:27.5264578Z   standalone: false
+2026-11-04T09:57:27.5264781Z ##[endgroup]
+2026-11-04T09:57:27.6708117Z ##[group]Running self-installer...
+2026-11-04T09:57:28.7479740Z 
+2026-11-04T09:57:28.7480728Z added 1 package, and audited 2 packages in 1s
+2026-11-04T09:57:28.7481146Z 
+2026-11-04T09:57:28.7481441Z 1 package is looking for funding
+2026-11-04T09:57:28.7481930Z   run `npm fund` for details
+2026-11-04T09:57:28.7490077Z 
+2026-11-04T09:57:28.7490577Z found 0 vulnerabilities
+2026-11-04T09:57:29.3796559Z Checking for updates...
+2026-11-04T09:57:29.5090681Z Switching pnpm from v11.25.0 to v10.34.8...
+2026-11-04T09:57:29.9050842Z .../v11/f9f-1a1a5fe0227-176eb335e71b2d74 | Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-11-04T09:57:29.9072697Z .../v11/f9f-1a1a5fe0227-176eb335e71b2d74 |   +1 +
+2026-11-04T09:57:30.1543015Z .../v11/f9f-1a1a5fe0227-176eb335e71b2d74 | Progress: resolved 1, reused 0, downloaded 1, added 1, done
+2026-11-04T09:57:30.6000069Z [WARN] Detected a pnpm v10 installation layout at PNPM_HOME. The pnpm shims at PNPM_HOME have been refreshed so the new version is active, but pnpm v11 expects bins in PNPM_HOME/bin. Run "pnpm setup" to migrate your PATH to the v11 layout.
+2026-11-04T09:57:30.6035226Z Successfully updated pnpm to v10.34.8
+2026-11-04T09:57:30.6275765Z ##[endgroup]
+2026-11-04T09:57:30.6276182Z Installation Completed!
+2026-11-04T09:57:30.6410470Z ##[group]Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+2026-11-04T09:57:30.6411050Z with:
+2026-11-04T09:57:30.6411337Z   node-version: 24
+2026-11-04T09:57:30.6411634Z   cache: pnpm
+2026-11-04T09:57:30.6411946Z   check-latest: false
+2026-11-04T09:57:30.6416053Z   token: ***
+2026-11-04T09:57:30.6416414Z   package-manager-cache: true
+2026-11-04T09:57:30.6416792Z env:
+2026-11-04T09:57:30.6417171Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-11-04T09:57:30.6417686Z ##[endgroup]
+2026-11-04T09:57:30.7660265Z Found in cache @ /opt/hostedtoolcache/node/24.22.2/x64
+2026-11-04T09:57:30.7870750Z ##[group]Environment details
+2026-11-04T09:57:30.9833389Z node: v24.22.2
+2026-11-04T09:57:30.9834003Z npm: 11.19.1
+2026-11-04T09:57:30.9834378Z yarn: 1.22.22
+2026-11-04T09:57:30.9835069Z ##[endgroup]
+2026-11-04T09:57:30.9854438Z [command]/home/runner/setup-pnpm/node_modules/.bin/bin/pnpm store path --silent
+2026-11-04T09:57:31.2908137Z /home/runner/setup-pnpm/node_modules/.bin/store/v10
+2026-11-04T09:57:31.4125730Z Cache hit for: node-cache-Linux-x64-pnpm-c31eb3e56a527eb63d788f520904e36b4332d072d7ecdc153009b217c42b52bf
+2026-11-04T09:57:32.4983940Z Received 201326592 of 258420561 (77.9%), 191.4 MBs/sec
+2026-11-04T09:57:32.6994654Z Received 258420561 of 258420561 (100.0%), 204.2 MBs/sec
+2026-11-04T09:57:32.6996146Z Cache Size: ~246 MB (258420561 B)
+2026-11-04T09:57:32.7074778Z [command]/usr/bin/tar -xf /home/runner/work/_temp/a83dd27b-7f35-49bd-8cf9-0d361c9c5b57/cache.tzst -P -C /home/runner/work/PhysicalTherapy/PhysicalTherapy --use-compress-program unzstd
+2026-11-04T09:57:34.4205537Z Cache restored successfully
+2026-11-04T09:57:34.4291669Z Cache restored from key: node-cache-Linux-x64-pnpm-c31eb3e56a527eb63d788f520904e36b4332d072d7ecdc153009b217c42b52bf
+2026-11-04T09:57:34.4495455Z ##[group]Run pnpm install --frozen-lockfile
+2026-11-04T09:57:34.4495812Z [36;1mpnpm install --frozen-lockfile[0m
+2026-11-04T09:57:34.4525682Z shell: /usr/bin/bash -e {0}
+2026-11-04T09:57:34.4525955Z env:
+2026-11-04T09:57:34.4526230Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-11-04T09:57:34.4526545Z ##[endgroup]
+2026-11-04T09:57:34.7890448Z Scope: all 22 workspace projects
+2026-11-04T09:57:34.8372596Z Lockfile is up to date, resolution step is skipped
+2026-11-04T09:57:34.8902295Z Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-11-04T09:57:34.9686140Z Packages: +501
+2026-11-04T09:57:34.9750467Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+2026-11-04T09:57:35.8909762Z Progress: resolved 501, reused 501, downloaded 0, added 483
+2026-11-04T09:57:36.0179304Z Progress: resolved 501, reused 501, downloaded 0, added 501, done
+2026-11-04T09:57:36.7102829Z 
+2026-11-04T09:57:36.7103715Z devDependencies:
+2026-11-04T09:57:36.7104108Z + @eslint/js 10.0.1
+2026-11-04T09:57:36.7104411Z + @next/eslint-plugin-next 16.4.3
+2026-11-04T09:57:36.7104721Z + @stryker-mutator/api 10.1.1
+2026-11-04T09:57:36.7105023Z + @stryker-mutator/core 10.1.1
+2026-11-04T09:57:36.7105331Z + @stryker-mutator/vitest-runner 10.1.1
+2026-11-04T09:57:36.7105639Z + @types/node 24.19.2
+2026-11-04T09:57:36.7105891Z + @vitest/coverage-v8 5.0.5
+2026-11-04T09:57:36.7106130Z + eslint 10.13.0
+2026-11-04T09:57:36.7106409Z + eslint-plugin-react-hooks 7.1.1
+2026-11-04T09:57:36.7106680Z + fast-check 4.10.2
+2026-11-04T09:57:36.7106903Z + globals 17.13.0
+2026-11-04T09:57:36.7107121Z + tsx 4.23.15
+2026-11-04T09:57:36.7107425Z + typescript 6.0.3
+2026-11-04T09:57:36.7107806Z + typescript-eslint 8.72.0
+2026-11-04T09:57:36.7108411Z + vitest 5.0.5
+2026-11-04T09:57:36.7108590Z 
+2026-11-04T09:57:36.8847232Z Done in 2.4s using pnpm v10.34.8
+2026-11-04T09:57:36.9131839Z ##[group]Run pnpm exec tsx tools/release/scale.ts --shape quarterly --out "$RUNNER_TEMP/quarterly-release"
+2026-11-04T09:57:36.9132550Z [36;1mpnpm exec tsx tools/release/scale.ts --shape quarterly --out "$RUNNER_TEMP/quarterly-release"[0m
+2026-11-04T09:57:36.9162117Z shell: /usr/bin/bash -e {0}
+2026-11-04T09:57:36.9162383Z env:
+2026-11-04T09:57:36.9162649Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-11-04T09:57:36.9162987Z   NODE_OPTIONS: --max-old-space-size=6144
+2026-11-04T09:57:36.9163261Z ##[endgroup]
+2026-11-04T09:59:03.6513157Z {"releaseNo":900110,"dir":"/home/runner/work/_temp/quarterly-release/release-synth-900110","manifestSha256":"0b700554145bed94b54f75bc1304d9979e9666f6fa57673abec69c3766178723","records":4172393,"byType":{"pfs_rvu":534660,"pfs_gpci":3052,"locality_map":1176000,"locality_map_plus_four":35644,"ncci_mue":420000,"conversion_factor":14,"mppr_rate":1051,"ncci_ptp":2000000,"carc":400,"rarc":1200,"claim_status_code":300,"assistant_modifier":2,"sequestration":1,"therapy_threshold":14,"dispute_window":3,"state_prompt_pay":51,"denial_category":1},"files":199}
+2026-11-04T09:59:03.7809618Z ##[group]Run cpus=$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)
+2026-11-04T09:59:03.7810594Z [36;1mcpus=$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)[0m
+2026-11-04T09:59:03.7811242Z [36;1mecho "harness on CPUs $cpus"[0m
+2026-11-04T09:59:03.7811824Z [36;1mtaskset -c "$cpus" pnpm exec tsx tools/release-capacity/run.ts \[0m
+2026-11-04T09:59:03.7812460Z [36;1m  --out "$RUNNER_TEMP/release-capacity" \[0m
+2026-11-04T09:59:03.7813061Z [36;1m  --release-dir "$RUNNER_TEMP/quarterly-release" \[0m
+2026-11-04T09:59:03.7813615Z [36;1m  --worker-image tp-worker:capacity[0m
+2026-11-04T09:59:03.7857310Z shell: /usr/bin/bash -e {0}
+2026-11-04T09:59:03.7857667Z env:
+2026-11-04T09:59:03.7858085Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-11-04T09:59:03.7858458Z ##[endgroup]
+2026-11-04T09:59:06.1023157Z harness on CPUs 0-1
+2026-11-04T09:59:08.2172036Z [release-capacity 2026-11-04T09:59:08.216Z] runner 4 CPUs, 15982 MiB; runtime docker; worker 0.5 vCPU and 1024 MiB on CPUs 3: node --max-old-space-size=560 --enable-source-maps dist/main.js
+2026-11-04T09:59:08.2250604Z [release-capacity 2026-11-04T09:59:08.221Z] release 900110: 4172393 records
+2026-11-04T10:07:55.2790226Z [release-capacity 2026-11-04T10:07:55.278Z] loaded: {"status":"loaded","releaseNo":900110,"manifestSha256":"0b700554145bed94b54f75bc1304d9979e9666f6fa57673abec69c3766178723","records":4172393,"seconds":516.2}
+2026-11-04T10:08:50.1041108Z [release-capacity 2026-11-04T10:08:50.103Z] seeded A (100000 lines), B (20000), C (two sets of 4 835s of 2000 claims), D and E (100000 each)
+2026-11-04T10:12:36.9026727Z (node:4294) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+2026-11-04T10:12:36.9028187Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-04T10:14:59.8179727Z [release-capacity 2026-11-04T10:14:59.817Z] concurrent phase: A price completed, B audit report completed, C parse 1 completed, C parse 2 completed, C parse 3 completed, C parse 4 completed
+2026-11-04T10:18:03.0401901Z [release-capacity 2026-11-04T10:18:03.039Z] A's reconcile: 0 actionable lines in 0 reprocessing 835s
+2026-11-04T10:21:34.1034205Z [release-capacity 2026-11-04T10:21:34.102Z] large jobs together: A audit report 2 completed, D triage completed, E price completed, C parse 5 completed, C parse 6 completed, C parse 7 completed, C parse 8 completed
+2026-11-04T10:24:39.6060752Z [release-capacity 2026-11-04T10:24:39.605Z] verdict: fail
+2026-11-04T10:24:39.6067053Z [release-capacity 2026-11-04T10:24:39.605Z]   the worker’s memory peak over the whole run is 980.4 MiB, above 90% of its 1024 MiB (921.6 MiB)
+2026-11-04T10:24:39.6068316Z [release-capacity 2026-11-04T10:24:39.606Z]   the worker’s memory peak over the large jobs together is 936.6 MiB, above 90% of its 1024 MiB (921.6 MiB)
+2026-11-04T10:24:39.6096480Z ##[warning]the windows query took 50497 ms cold, above its 5000 ms budget (advisory)
+2026-11-04T10:24:44.6418865Z ##[error]Process completed with exit code 1.
+2026-11-04T10:24:44.6591117Z ##[group]Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+2026-11-04T10:24:44.6591579Z with:
+2026-11-04T10:24:44.6591792Z   name: release-capacity
+2026-11-04T10:24:44.6592442Z   path: /home/runner/work/_temp/release-capacity/release-capacity.json
+/home/runner/work/_temp/release-capacity/summary.md
+/home/runner/work/_temp/release-capacity/logs/
+
+2026-11-04T10:24:44.6593128Z   if-no-files-found: ignore
+2026-11-04T10:24:44.6593368Z   retention-days: 90
+2026-11-04T10:24:44.6593589Z   overwrite: true
+2026-11-04T10:24:44.6593801Z   compression-level: 6
+2026-11-04T10:24:44.6594043Z   include-hidden-files: false
+2026-11-04T10:24:44.6594284Z   archive: true
+2026-11-04T10:24:44.6594476Z env:
+2026-11-04T10:24:44.6594715Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-11-04T10:24:44.6595026Z ##[endgroup]
+2026-11-04T10:24:45.0205143Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-04T10:24:45.0207459Z The least common ancestor is /home/runner/work/_temp/release-capacity. This will be the root directory of the artifact
+2026-11-04T10:24:45.0208816Z With the provided path, there will be 4 files uploaded
+2026-11-04T10:24:45.1742674Z Artifact name is valid!
+2026-11-04T10:24:45.1743212Z Root directory input is valid!
+2026-11-04T10:24:45.4004294Z Uploading artifact: release-capacity.zip
+2026-11-04T10:24:45.4043558Z Beginning upload of artifact content to blob storage
+2026-11-04T10:24:45.5115210Z Uploaded bytes 7290
+2026-11-04T10:24:45.5327521Z Finished uploading artifact content to blob storage!
+2026-11-04T10:24:45.5328631Z SHA256 digest of uploaded artifact is 58d307ad5a0c3075fd1950c3bc5924b00defc2180ece897fe0945a5fa53660e5
+2026-11-04T10:24:45.5329729Z Finalizing artifact upload
+2026-11-04T10:24:46.1034862Z Artifact release-capacity successfully finalized. Artifact ID 13313477019
+2026-11-04T10:24:46.1039982Z Artifact release-capacity has been successfully uploaded! Final size is 7290 bytes. Artifact ID is 13313477019
+2026-11-04T10:24:46.1041221Z Artifact download URL: https://github.com/PureTideWater/PhysicalTherapy/actions/runs/41810890284/artifacts/13313477019
+2026-11-04T10:24:46.1221041Z Post job cleanup.
+2026-11-04T10:24:46.2721501Z Pruning is unnecessary.
+2026-11-04T10:24:46.2866344Z Post job cleanup.
+2026-11-04T10:24:46.5311121Z ##[group]Generating build summary
+2026-11-04T10:24:46.7970992Z exporting build record to /home/runner/work/_temp/docker-actions-toolkit-vOR3qq/export
+2026-11-04T10:24:47.0094970Z [command]/usr/bin/docker buildx history export --builder builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5 --output /home/runner/work/_temp/docker-actions-toolkit-vOR3qq/export/PureTideWater~PhysicalTherapy~JM1J8Y.dockerbuild jm1j8yn17jwy7j1nbyu9kc3tl --finalize
+2026-11-04T10:24:47.1739354Z Build record written to /home/runner/work/_temp/docker-actions-toolkit-vOR3qq/export/PureTideWater~PhysicalTherapy~JM1J8Y.dockerbuild (43.9 KB)
+2026-11-04T10:24:47.1741941Z Uploading PureTideWater~PhysicalTherapy~JM1J8Y.dockerbuild as an artifact
+2026-11-04T10:24:47.1745913Z Artifact name is valid!
+2026-11-04T10:24:47.1746694Z Root directory input is valid!
+2026-11-04T10:24:47.4010155Z Uploading artifact: PureTideWater~PhysicalTherapy~JM1J8Y.dockerbuild
+2026-11-04T10:24:47.4045786Z Beginning upload of artifact content to blob storage
+2026-11-04T10:24:47.5076366Z Uploaded bytes 44953
+2026-11-04T10:24:47.5289812Z Finished uploading artifact content to blob storage!
+2026-11-04T10:24:47.5291004Z SHA256 digest of uploaded artifact is 62ca18b13115513ea19e5283d9ef9e79521079f9b1da5e10afc7c437c40577c4
+2026-11-04T10:24:47.5291954Z Finalizing artifact upload
+2026-11-04T10:24:48.0682346Z Artifact PureTideWater~PhysicalTherapy~JM1J8Y.dockerbuild successfully finalized. Artifact ID 13313038730
+2026-11-04T10:24:48.0684253Z Artifact download URL: https://github.com/PureTideWater/PhysicalTherapy/actions/runs/41810890284/artifacts/13313038730
+2026-11-04T10:24:48.0723448Z Writing summary
+2026-11-04T10:24:48.0736193Z ##[endgroup]
+2026-11-04T10:24:48.0736863Z ##[group]Removing temp folder /home/runner/work/_temp/docker-actions-toolkit-UcAgyA
+2026-11-04T10:24:48.0746273Z ##[endgroup]
+2026-11-04T10:24:48.0746762Z ##[group]Post cache
+2026-11-04T10:24:48.0747492Z State not set
+2026-11-04T10:24:48.0748058Z ##[endgroup]
+2026-11-04T10:24:48.0928557Z Post job cleanup.
+2026-11-04T10:24:48.2712737Z ##[group]Removing builder
+2026-11-04T10:24:48.3909838Z [command]/usr/bin/docker buildx rm builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5
+2026-11-04T10:24:52.1170078Z builder-6ecdd877-aae9-48e6-900c-e7faff74e9b5 removed
+2026-11-04T10:24:52.1207888Z ##[endgroup]
+2026-11-04T10:24:52.1208865Z ##[group]Cleaning up certificates
+2026-11-04T10:24:52.1212680Z ##[endgroup]
+2026-11-04T10:24:52.1213306Z ##[group]Post cache
+2026-11-04T10:24:52.1214706Z State not set
+2026-11-04T10:24:52.1215263Z ##[endgroup]
+2026-11-04T10:24:52.1404427Z Post job cleanup.
+2026-11-04T10:24:52.2312535Z [command]/usr/bin/git version
+2026-11-04T10:24:52.2450745Z git version 2.56.0
+2026-11-04T10:24:52.2501913Z Temporarily overriding HOME='/home/runner/work/_temp/fb28af4b-5ada-424c-aeaf-da9591b72599' before making global git config changes
+2026-11-04T10:24:52.2510869Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-04T10:24:52.2512071Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/PhysicalTherapy/PhysicalTherapy
+2026-11-04T10:24:52.2610590Z Removing SSH command configuration
+2026-11-04T10:24:52.2618344Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-04T10:24:52.2657712Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-04T10:24:52.3385498Z Removing HTTP extra header
+2026-11-04T10:24:52.3392333Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-04T10:24:52.3428763Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-04T10:24:52.3668407Z Removing includeIf entries pointing to credentials config files
+2026-11-04T10:24:52.3675355Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-04T10:24:52.3706084Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-04T10:24:52.4081847Z Evaluate and set job outputs
+2026-11-04T10:24:52.4087830Z Set output 'advisories'
+2026-11-04T10:24:52.4090440Z Cleaning up orphan processes

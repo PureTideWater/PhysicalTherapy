@@ -1,3 +1,5 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifCJSbPYXpafL86Rm6J) holds this item from 2026-11-04T19:45Z; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
 # Lane B item: letters have Social Security and phone numbers redacted by pattern (`co-001/redact-ssn-phone`)
 
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) from the item prompt
@@ -10,7 +12,10 @@ number). No migration timestamps. Gateway-only Lane B work, never a schema PR. I
 released: record it here and tell the orchestrator.
 Follow-on: none.
 
-## Now (2026-11-01T17:58Z)
+## Now (2026-11-02T02:12Z)
+- **PAUSED** on the co-founder's pacing call (relayed by the orchestrator 2026-11-02 02:10 UTC: the 7-day limit is at its
+  warning level; resets 2026-11-06 19:00 UTC). Clean point: stage 1 (design) done; nothing built, no branch, no PR, no WIP ref
+  needed (no code). One send_later at 2026-11-06T19:15Z; all other check-ins cancelled. Resume only when the orchestrator says.
 - **Stage 1 (design) done; waiting on #75's merge to build.** Design `designs/lane-b-redact-ssn-phone.md` (reviewed: one reviewer,
   a completeness critic, two-lens verification; F1-F12 and C1-C10 all applied; section 17 R1-R13 is the rule set the build follows).
   Workflow wf_8670bbfd-b5d, archived as `workflow-scripts/lane-b-redact-ssn-phone-design-wf_8670bbfd-b5d.js`.
@@ -84,6 +89,10 @@ Follow-on: none.
   number joins over `_`, `|` and `\`; a number stays a date only when it is that whole date). Against 871faff9 they change
   `redact.ts` (+48 lines net), `redact.test.ts`, `redact.property.test.ts` and ADR 0054. Build step 0 must re-read these: the join
   set and the whole-date rule touch design §3 (joiners), §17 R1/R7 (date barriers in the survivor scan) and R14.
+- 2026-11-02T01:01Z and 02:02Z: #75 still unmerged (PR head 871faff9, dirty); a newer WIP ref `-8` (49156dd8) exists. Step 0 reads
+  #75's merged state, whatever its last WIP was.
+- 2026-11-02T02:12Z: paused on the co-founder's pacing call (orchestrator, 02:10 UTC). Check-ins cancelled except one at
+  2026-11-06T19:15Z. Reported to the orchestrator.
 
 ## Waiting on someone
 - **#75's merge** (its own session, S4): the build waits for it (cut only from a base containing its merge commit).
@@ -109,9 +118,36 @@ align packages/observability phi-guard's SSN and phone shapes; 16.10 log prepare
 caller.
 
 ## Next step
-Wait for #75 to merge: check `gh api repos/PureTideWater/PhysicalTherapy/pulls/75 --jq '.merged, .merge_commit_sha'` on a
-send_later (no polling; do not subscribe to #75). Then: design §13 step 0 (diff #75's merged gateway files, PRD §14, ADR 0054,
-test-matrix and synth against 871faff9; re-run the probe and the prototype in the scratchpad if any gateway file changed; record);
-cut `co-001/redact-ssn-phone` from a base containing #75's merge (item prompt step 6); setup with
+Paused. On resume (the orchestrator says so, after 2026-11-06 19:00 UTC or a raised limit): re-run setup if PostgreSQL is down
+(`bash /tmp/setup-container.sh`; the probe worktree `/home/user/redact-ssn-phone-probe` may need re-adding at 871faff9 if the
+container was reclaimed); check #75 with `gh api repos/PureTideWater/PhysicalTherapy/pulls/75 --jq '.merged, .merge_commit_sha'` on
+an hourly send_later (no polling; do not subscribe to #75). Once merged: design §13 step 0 (diff #75's merged gateway files, PRD §14,
+ADR 0054, test-matrix and synth against 871faff9 — expect at least the WIP -7/-8 changes: plausible-year dates, joins over `_`, `|`,
+`\`, whole-date rule; re-run the probe and the prototype in a scratchpad if any gateway file changed; reconcile design §3, §17 R1,
+R7, R14 with them; record); cut `co-001/redact-ssn-phone` from a base containing #75's merge (item prompt step 6); setup with
 `co-001/redact-ssn-phone:/home/user/redact-ssn-phone`; remove the probe worktree; then the build workflow (stage 2) on design §13
 and §17, and the draft PR (stage 3).
+
+## Acting Lane B S1 (session_019i9ifCJSbPYXpafL86Rm6J), from 2026-11-04 19:45 UTC
+- Assigned by Lane A's orchestrator (07:40 UTC) after #85. #75 merged as 72096e94 and #115 (redact-label-boundary, the label-boundary fix on the same matcher) as 00fd2906. Branch `co-001/redact-ssn-phone` cut from **00fd2906**, worktree `/home/user/redact-ssn-phone`; the probe worktree is not needed (the base holds #75's code).
+- Build workflow running (script archived as `workflow-scripts/lane-b-redact-ssn-phone-build-<runId>.js`). Step 0 re-reads #75's final redact.ts (fixes 4, 4b, G1-G4, phi-G2-regress-1, numero-glued, label-end-dash) and #115's label rules against design §17 and re-runs the probe and prototype. Then the build per §13 and §17 R1-R14, and two adversarial reviews (security; correctness with the redaction oracle), each finding checked by a skeptic. Then fixes, the full suite once, and a critic. No push yet.
+- 2026-11-04 19:46 UTC: build workflow **wf_58fc6224-3b6** running (script archived). Check-in 2026-11-05 00:50 UTC (trig_017ncjQAb2f3wnv8w2zxyb4S).
+- 2026-11-05 ~06:30 UTC: **wf_58fc6224-3b6 done** (20 agents, ~10.7 h). Step 0: the design fits the merged code with 13 adaptations (`wip/step0.md`). Build: 9c9b1768, 77f5f1c8, 88aaa649. Reviews: security SEC-1 to SEC-6 and correctness corr-ssn-1 to -6; skeptics confirmed 11 and refuted 1 (corr-ssn-5). Fixed in round 1 (9c0a90fd .. d51286e8, 6a8cff99) and round 2 (base f185655c merged 4dc9a110; be3b35e6, ef901af6, bf12d736, 11f0ee29, 10b48fb3). Full suite on 10b48fb3: unit 9,621 / 4 skipped; db 145 files 9,814 / 1 skipped; golden 381; e2e 81; oracle, eval, synth, watched, verify-content, check:fixtures, stryker (no shard), freeze, build, gitleaks and the hook all pass. Critic 2: one blocking gap (an issued-area SSN twin in denial-letter.test.ts:673), fixed as an area-000 twin. Then base f7d609cc (#110) merged clean (four shared docs, both sides kept); typecheck, lint, lint:logs, lint:copy, check:fixtures, touched tests 1,672, eval pass, generators wrote nothing. **Pushed `co-001/redact-ssn-phone`.** Next: the draft PR (description fact-checked), CI, fresh-clone verification, ready, merge.
+- Base notes from S4: #117 (c7bed0f7) fixed the sign-in-time e2e flake; a rare `route-tests.8` db flake (PricingRunInputError in seedMappedNotPriced) is a base bug S4 fixes as co-001/pricing-run-cutoff: not this PR's if seen.
+- 2026-11-05 06:43 UTC: **draft PR #127** (description from the template, two fact-checks applied). Base 0f4a5ed5 (#125) merged clean as **d333d70d** (three shared documents, both sides kept; typecheck 23 projects, check:fixtures, synth tests 192); pushed.
+- 07:29 UTC: CI green on d333d70d (21 runs; the four required runs green). **Fresh-clone verification** (wf_09ee7935-640; `lane-b-redact-ssn-phone-verify-summary.md`): code, tests, boundaries and CI pass. 94 forms probed: every SSN and phone form is redacted at head and none at base; the must-stay classes are kept; the scan refuses and names no number; MOD-15 and MOD-16 fail on the base's redact.ts. It FAILed only the description (a stale Checks section; one false claim: a glued list item is redacted, not refused; inexact fail-first counts). All fixed; posted and read back.
+- **2026-11-05 07:36 UTC: #127 MERGED as 23b25ad0** (method merge, expectedHeadSha d333d70d; ready 07:35; approval-of-record green; up to date). Unsubscribed; check-ins cancelled. **Item done.**
+- 2026-11-05 07:55 UTC: the acting session stood down (orchestrator's order). This item is merged (#127, 23b25ad0); nothing is left. The WIP ref `co-001/wip-redact-ssn-phone` (ef901af6) is superseded by the merge and may be deleted by Lane B.
+
+## RESUME-BLOCK (for Lane B): a follow-up defect in #127, reported by S2 at 07:57 UTC on 2026-11-05 after the stand-down
+- **What:** MOD-16's unseeded property in `packages/model-gateway/src/redact.property.test.ts` failed on #128's CI. The test is "sends amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, named numbers and service-line rows unchanged, refuses none…". It failed on run 41989155119, job 127116974440, head 4ffadf3f, which has no model-gateway change.
+  - Seed **1034253323**, "Property failed after 47 tests"; the full path is in that job's log.
+  - The synthetic counterexample is `Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00`: it is not sent unchanged.
+  - The likely cause is a date range glued to the next word with no space or full stop. The dash-range barrier (ef901af6) or the glued-date barrier (6a8cff99) does not hold for a range glued to letters. The text is probably refused by the survivor scan, or partly redacted.
+- **Effect:** the base fails any PR's unit job at random, as MOD-13 did before #115.
+- **Next step:**
+  1. Cut `co-001/redact-range-glued` (or a similar name) from the current base.
+  2. Reproduce with the seed pinned as a fixed run beside `LABEL_BOUNDARY_SEED`, plus an example test of the counterexample, and show both fail.
+  3. Fix the barrier so a dash-joined date or amount range counts as a barrier when glued to letters, and sweep that class.
+  4. Run two adversarial reviews (security, then correctness with the redaction oracle), the fast checks and the touched tests, then open the PR and merge it under the up-to-date rule.
+  5. Tell S2's successor and the other sessions to merge the base.

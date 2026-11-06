@@ -1,0 +1,20 @@
+export const meta = {
+  name: 'lane-b-ux-payer-response-describe-2',
+  description: 'PR #85 at cab2fbcb: bring the description up to the #104 and #109 merges, fact-check it twice, apply (no posting)',
+  phases: [{ title: 'Describe', detail: 'update, two fact-checkers, apply' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/e19abd3f-a55e-5749-a0e9-7b2833d14390/scratchpad/pay'
+const CTX = `PR #85 (PureTideWater/PhysicalTherapy, branch co-001/ux-payer-response, head cab2fbcb, base c4941291). Since the description draft ${SP}/pr85-body.md (written for 03db7092) the branch merged e084da22 (#104 SS-01, ADR 0080) as 1f7b82b2, resolving uploads.ts, uploader.tsx, uploads.db.test.ts and billing-routes.db.test.ts into one upload gate (${SP}/fix/merge104.md: the gate's state from SS-01's workPause; the closed panel's body is now the database's SS-01 sentence whole; titles "Uploads are not open yet" (no BAA only), "Uploads are paused", "Uploads are closed", "Uploads are stopped" (unknown cause); suspension-words.ts uploadsHeld; WorkPause.restarts boolean|null; BIL-09 reworded; Contracts and Reconciliation gain the hold check), with 0 findings from its two reviews and its checks in ${SP}/fix/check104.md (unit 7,610 / 4 skipped; db 143 files 9,778 / 1 skipped; e2e 77) and the critic's notes; then merged c4941291 (#109, scan.test.ts only) as cab2fbcb (typecheck, golden 381, verify-content, engine freeze against e084da22 pass). CI on 03db7092 was red only from scan.test.ts:75 (twice), fixed by #109 in the base. Worktree /home/user/ux-payer-response (read-only). GitHub reads only through the GitHub MCP tools (ToolSearch), never gh or curl. No model identifier; synthetic examples only.`
+const author = await agent(`${CTX}
+
+Update ${SP}/pr85-body.md in place for head cab2fbcb: the head and base line; the base-merge list (add 1f7b82b2 with each conflict and its resolution, and cab2fbcb); every sentence about the closed upload panel's titles and bodies, the gate, and where it applies, as the merged code now has them (read uploads.ts, suspension-words.ts, hold.ts and the tests; quote the exact words); the residuals and Lane A items still true; "Shared files with open pull requests" (#104 is merged; recheck the open PRs with the MCP list_pull_requests and their files against this PR's files); the findings table (merge104's two reviews, 0 findings; the critic's points); the Checks section (check104's totals on 1f7b82b2, the cab2fbcb checks, and the affected.test.ts timing risk the critic noted as base tooling) with "CI on cab2fbcb: <!-- ci -->pending<!-- /ci -->"; the CI history (03db7092's scan.test.ts failures and #109). Keep every template section and the footer. Under 60,000 characters. Return what changed and the length.`, { label: 'author', phase: 'Describe' })
+const PROBLEMS = { type: 'object', properties: { problems: { type: 'array', items: { type: 'object', properties: { quote: { type: 'string' }, wrong: { type: 'string' }, truth: { type: 'string' }, source: { type: 'string' } }, required: ['quote', 'wrong', 'truth', 'source'] } } }, required: ['problems'] }
+const checks = await parallel(['code and words at cab2fbcb', 'records, SHAs, counts and template'].map((lens, i) => () => agent(`${CTX}
+
+Adversarially fact-check ${SP}/pr85-body.md. Lens: ${lens}. Report only claims you showed wrong, with the truth and its source. Empty is valid.`, { label: `check:${i}`, phase: 'Describe', schema: PROBLEMS })))
+const problems = checks.filter(Boolean).flatMap(c => c.problems)
+let applied = 'none'
+if (problems.length) applied = await agent(`${CTX}
+
+Apply each problem to ${SP}/pr85-body.md after checking it (skip one that does not hold, saying why): ${JSON.stringify(problems)}. Keep it under 60,000 characters. Return what changed and the final length.`, { label: 'apply', phase: 'Describe' })
+return { author, problems, applied }

@@ -1266,8 +1266,8 @@ reload clears what you typed" to say the same thing more plainly.
 
 | Where | Words |
 | --- | --- |
-| Card title (`<h2>`; fix round, ux85-5; it names the card's region, fix pass 3, today "Upload a contract or exhibit") | Upload a contract, exhibit or payer’s terms letter (today "Upload a contract, exhibit or payer letter") |
-| Drop zone heading (`<h3>`; fix round, ux85-5; level 3 under the card's `<h2>`, fix pass 3) | Choose contracts, exhibits or payer’s terms letters to upload (today "Drop contracts, exhibits or payer letters here") |
+| Card title (`<h2>`; fix round, ux85-5; it names the card's region, fix pass 3, today "Upload a contract or exhibit"; the kind's select's name since a57812ac, shots75 F1) | Upload a contract, exhibit or payer’s terms or policy letter (today "Upload a contract, exhibit or payer letter") |
+| Drop zone heading (`<h3>`; fix round, ux85-5; level 3 under the card's `<h2>`, fix pass 3; the kind's select's name since a57812ac, shots75 F1) | Choose contracts, exhibits or payer’s terms or policy letters to upload (today "Drop contracts, exhibits or payer letters here") |
 | Drop zone description (fix round, ux85-7: the size is `formatBytes`'s, as on Submissions) | PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to 2.0 GiB each. (today "2 GiB") |
 
 **Contracts, the panel's "Kind of document"** (`contracts/page.tsx:217`; review S12)
@@ -1283,7 +1283,7 @@ so #74 shows it alone)
 
 | Where | Words |
 | --- | --- |
-| Refusal (`documentId`) | a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms letter instead (review nit 8: a next step, `PRD.md:256`; "choose", not "tag", since the amendment and the correction refuse it too) |
+| Refusal (`documentId`) | a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms or policy letter instead (review nit 8: a next step, `PRD.md:256`; "choose", not "tag", since the amendment and the correction refuse it too; the kind's select's name since a57812ac, shots75 F1) |
 
 **Reconciliation, the export upload panel and the Exports empty state** (the final delta, a97d6011; the UX delta review)
 
@@ -1294,6 +1294,13 @@ so #74 shows it alone)
 | Exports empty state, next step, the person can upload and uploads are open | Upload the practice-management system’s payment-posting export and the bank’s EFT export above. (unchanged) |
 | Exports empty state, next step, uploads not open, paused or closed | No export can be uploaded now; the note above says why. |
 | Exports empty state, next step, the person cannot upload | Billing managers, analysts and firm principals upload the practice-management system’s payment-posting export and the bank’s EFT export. |
+
+**Uploads, the drop zone** (7e579010, shots75 F2: "choose", as on Contracts and Reconciliation)
+
+| Where | Words |
+| --- | --- |
+| Drop zone heading (`uploads/page.tsx`; it names the region) | Choose 835 files or ERA exports to upload (today "Drop 835 files or ERA exports here") |
+| The uploader's default heading, when a page names none (`uploader.tsx`) | Choose 835 files to upload (today "Drop 835 files here") |
 
 **Every upload panel, when uploads are closed** (Uploads, Contracts, Reconciliation, and the note under Payer’s letter;
 through `uploadGate` and `suspendedGate`, `uploads.ts`; fix round, ux85-1 and fix pass 3). Today every closed panel is

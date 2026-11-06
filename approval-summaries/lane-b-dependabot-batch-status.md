@@ -1,3 +1,5 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAfByN2caCea4jgSdu) holds this item from 2026-11-04T02:40Z; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
 # Lane B item: Dependabot's batch of 2026-10-29 (#87, #88, #89) taken as the build's own PRs
 
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) from the item prompt
@@ -11,7 +13,7 @@ Reserved (allocated 2026-11-01 14:50 UTC, LANES.md rule 4): ADR 0089 only if the
 with `packages/synth` cases the same if needed (the existing MOD module, 9). A routing fix amends CI-12, which needs no new ID.
 Any other number (a new CI row, a synth module, a fixture release) goes in a "COUNTER REQUEST: <what>" line at the top of this
 file. No migration.
-Follow-on: the next weekly triage if this session is still running (actions 2026-11-03 04:37 UTC, images 2026-11-04 04:43 UTC,
+Follow-on: none (the co-founder's pacing call, 2026-11-02 02:10 UTC; was: the next weekly triage if this session is still running (actions 2026-11-03 04:37 UTC, images 2026-11-04 04:43 UTC,
 npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of the #88/#89 PR.
 
 ORCHESTRATOR RULINGS (2026-11-01 18:00 UTC, session_01FcouKNNHsdecRMzfTs7XwW), answering the claim request and order ask:
@@ -34,6 +36,24 @@ ORCHESTRATOR RULING (2026-11-02 01:02 UTC) on O9 for #94: the consumer's size (S
 standing founder item that blocks the screening's launch, not a merge; the numbers (37.1 s on 43565235, 52.3 s on bce57f16,
 55.1 s on #42, same consumer code) show runner noise, not a #94 regression. #94's description records it that way with a link
 to issue #41, and #94 merges on green when ready. The orchestrator carries it in the founder list.
+
+PACING (the co-founder's call, relayed 2026-11-02 02:10 UTC): the account's 7-day limit is at its warning level (resets Fri
+2026-11-06 19:00 UTC). This item is one to FINISH: to its merges with no stage skipped, but nothing spent that does not change
+the outcome: one full suite per head, no review loops past dry, no follow-on item (no next weekly triage) after the merges;
+stop at a clean point and report. For B: no wait for the merge-time version windows; the lockfile is regenerated only when a
+base merge needs it (rule 6). WIP refs kept pushed.
+
+ORCHESTRATOR RULING (2026-11-02 06:22 UTC): this session owns the FRM-01 fix as **PR D** of the batch: branch
+`co-001/test-flakes-2` from the latest base, tests only: (1) FRM-01's `shownCount` wait becomes monotonic (data-shown >= N),
+with a test proving the old exact wait could hang (the forced reproduction); (2) if cheap, the second flake
+`apps/worker/src/report/csv-arena.test.ts:151` (CAS-41.3, timed out at its 5 s default under runner load on #92's merge run)
+gets an explicit timeout sized from its measured runtime, or the reason why not. No new test-matrix IDs. The claim joins this
+item's row. Pipeline: draft PR, two reviews (CI/test infrastructure; a skeptic of the race analysis), one fix round,
+verification, merge when green. Order: after B and C if it slows them, otherwise as soon as ready.
+
+ORCHESTRATOR RULING UPDATE (2026-11-02 08:52 UTC): C (#91) no longer waits for #86 (their overlap is separate ADR 0066
+subsections; #86 resolves it at its final base merge, keeping both); the 2026-11-04 12:00 UTC guard is moot. Under the 20:36
+first-ready rule, C, B (#94) and D each merge as soon as verified and green. Recorded in #91's description before its merge.
 
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
@@ -209,7 +229,241 @@ to issue #41, and #94 merges on green when ready. The orchestrator carries it in
 - 2026-11-02T01:02Z: setup re-run (PostgreSQL down). B/C reviews resumed (same run id, cached agents replay); A's fix round
   resumes once PostgreSQL is up.
 
+- 2026-11-02T02:20:00Z: **A's fix round done locally** (wf_416e36ca-397): 11 fix commits + the checker's S1 and N1-N10 (950e8ca8,
+  c7bdcbe4, c30be8ea, 48ba78d4, 442d7a81; the rest description-only); full local suite once at 442d7a81, green: typecheck,
+  lint (1,681 files), lint:logs, verify-content, unit 6,936 passed/1 skipped (root-only skip), golden 376, oracle 687 agree,
+  test:db 9,283 passed/1 skipped over 4 shards (every db file once; the PG18 restore drill re-run on PG16: 7 passed), build,
+  stamp, cdk:diff (synthesized), e2e 64 passed, Stryker: none selected, synth, watched, actions, toolchain, licenses,
+  actionlint, audit; the ANTHROPIC_* environment no longer changes a test (478 + 376 with three set). The local
+  screening:capacity no-Docker form exits 1 on its ten known not-applied checks, identically on base 43565235 (not this
+  PR's; CI's Docker run decides). The pusher held the push: the base moved to 4eaf7124 (#92 merged; shares test-matrix,
+  synth matrix and registry with A in separate places; trial merge clean). Design corrections and proposals 1-8 applied.
+  Per the pacing call no second full suite: wf_ba86e428-276 merges 4eaf7124, re-checks what it touched, pushes once,
+  rewrites the description, then the fresh-clone verification reads CI on that head.
+
+- 2026-11-02T03:00:00Z: A pushed **4e70738d** (02:34:50Z; base 4eaf7124 merged; targeted re-check green: synth 271 cases 0
+  written, watched 542 lines, verify-content, check:fixtures, typecheck, lint 1,691 files, unit 1,878 on synth/gateway/web,
+  no Stryker shard); description rewritten (40,170 characters, read back identical). CI on 4e70738d: 22 runs, 20 success,
+  2 skipped (unit 6,980/1 skipped, db 9,299, e2e 68, golden 376: every difference from the local suite is #92's). Records
+  `A-fix-round.md` and `A-verification.md`. **Verification: NOT VERIFIED** on merge state and description only: #93 merged
+  at 02:42:44Z (base 877e662f), the open-PR count was wrong, and the O9 sizing warning CI raised on 4e70738d (S4 middle run
+  52.0 s; the base itself 51.8 s) was not recorded. Applied the 01:02Z O9 ruling to #90 as written ("blocks the screening's
+  launch, not a merge"). Merge prep launched: wf_7806c9c6-310 (base merge, targeted re-check, one push, description
+  corrected, CI, fresh-clone verification; repeats while the base moves, at most 3 rounds); then the session marks #90
+  ready, waits for approval-of-record's re-run and merges with expectedHeadSha.
+
+- 2026-11-02T03:55:00Z: **B's and C's reviews done** (wf_91a35eba-252, 3 rounds each, 35 agents, none refuted; records
+  `B-review-{ci-infra,security-supply}.md` and `C-review-{ci-infra,security-supply}.md` committed). **B #94:** 25 findings, 0 B,
+  7 S, 18 N: O9 not recorded; no test that the installed CDK CLI still honours the three settings; cdk.json's top-level
+  `notices: false` hides CDK's security notices from a person's deploy (the scripts already pass --no-notices: drop it, the
+  safer option); test:golden stubs Textract, so it cannot evidence the client-textract/@smithy/core codec moves; the
+  merge-time @smithy/core 3.38.1 step does nothing or moves unreviewed tooling (dropped under the pacing call; 3.38.1 with the
+  next triage). **C #91:** 36 findings (22 distinct: 0 B, 4 S, 18 N), the change itself holds (63 direct dependencies, each in
+  one group under dependabot-core 85379652); the S are description and merge mechanics: merge order vs the rulings, C's own
+  merge starts Dependabot within seconds (a post-merge read of those runs), the resolved B x C runbook paragraph written down,
+  O9. **Fix rounds for B and C launched together**: wf_66dd34d8-a6a (the fix-round script once per PR). A's merge prep
+  (wf_7806c9c6-310) in round 2 (description only: the O9 note's claim about watched paths corrected; base unchanged 877e662f;
+  CI green on cf124313).
+
+- 2026-11-02T03:52:00Z: **PR A MERGED: #90 as 88708069** (merge commit; expectedHeadSha cf124313). Before it: merge prep
+  wf_7806c9c6-310, 2 rounds: base 877e662f merged in (cf124313), targeted re-check green, description corrected (O9 per the
+  ruling, with the six watched paths A changes and the heads with and without the change; exact conflict list); CI green on
+  cf124313 (24 runs: 22 success, 2 skipped; unit 7,013, db 9,306, e2e 68, golden 376); fresh-clone verification **VERIFIED**
+  (round 2; record `A-verification.md`). Marked ready 03:49Z; approval-of-record re-ran on ready (success 03:49:15Z); #94
+  (A's only conflicting PR) was a draft and behind, so no ready PR was jumped. **Dependabot #87 closed** with a comment
+  naming #90 and 88708069. Unsubscribed from #90; main checkout fast-forwarded to 88708069 and installed; A's worktree and
+  local branch removed (remote branch and WIP ref `co-001/wip-dependabot-batch-a` stay). Push runs of 88708069 being read.
+
+- 2026-11-02T04:10Z: **the ci push run of 88708069 is red** (run 41386010790; unit job 125086906641): one browser test,
+  `apps/web/src/components/action-form.browser.test.tsx` FRM-01 (S-SEC-2, :366), timed out at 30 s; 7,012 passed; mutation and
+  screening-capacity push runs green. Investigation wf_63290a32-038 (read only): **not #90's** (88708069, cf124313 and the PR's
+  merge ref share tree c7d2d26a); the root cause is a race in the test: its helper `shownCount` waits for the exact value
+  `body[data-shown="1"]`, which the code under test changes to "2" about 35-50 ms later on purpose, while Playwright 1.64.1
+  polls waitForSelector at about 0/20/70/170/270 ms then every 500 ms, so a missed window hangs until vitest's 30 s timeout;
+  reproduced (forced by delay band, and unforced once in 180 runs); CI history 1 timeout in 48 executions since 2026-10-28.
+  docs/runbooks/ci.md:150-151 allows a re-run only for an infrastructure failure, so no re-run; the fix is a tests-only change
+  (a monotonic ">= N" wait), proposed to the orchestrator as its own item. Its skeptic was stopped by the window; resumed 06:20Z.
+- 2026-11-02T04:45Z (recorded 06:20Z): the account's 5-hour window stopped the B/C fix rounds again (reset 05:50Z). Done: B's
+  fixer (all 25 findings; base 877e662f then 88708069 merged, the model-gateway manifest resolved keeping both ranges) and C's
+  fixer and checker (all 36; base merged twice, last 88708069). Not done: B's checker, both suites and pushes. B's last merge
+  commit kept git's "# Conflicts:" lines after the attribution lines; unpushed, so it was replaced by f43f809d (same tree and
+  parents, clean message) with a soft reset. WIP refs: `co-001/wip-dependabot-batch-b` = f43f809d, `-c` = a84a498b. Setup
+  re-run (PostgreSQL down); fix rounds resume next (wf_66dd34d8-a6a, same run id).
+
+- 2026-11-02T06:25:00Z: PR D ruling recorded (top). `co-001/test-flakes-2` created on origin at 88708069 through the hook.
+  C's saved head is b1fd5df1 (the suite stage had committed check N2 and N3 before the stop), not a84a498b as logged above.
+  Plan for D: design from the FRM-01 investigation and its skeptic (the design's reviewer), plus a CAS-41.3 runtime
+  measurement; build after B's and C's full suites, so D does not slow them (all heavy work shares one lock).
+
+- 2026-11-02T08:55:00Z: **#42 merged** (22789493, 07:34:57Z), then #95 (2affb854). After #90's merge Dependabot closed #89
+  (04:07:49Z) and #88 (04:10:18Z) and opened #97 (minor-and-patch, 17 updates): #88/#89 get only a comment when B merges; #97
+  is left to the next weekly triage (pacing). The FRM-01 challenge HOLDS with corrections (cause inferred, not observed);
+  design inputs filed under designs/lane-b-dependabot-batch/test-flakes-2-*.md. **C's fix round done locally** (head b1fd5df1;
+  full suite once, green apart from the local no-Docker capacity form, which fails identically on the base); its push stage
+  stopped on BASE MOVED, as designed. C's merge prep launched: wf_194e8aaf-799 (base merge, description changes from the fix
+  round, fix-round record, one push, CI, verification); C then waits for #86 (open) or the 2026-11-04 12:00Z guard. **B's fix
+  round** still in its suite (e2e green; Stryker shards next); its push will stop on the same base move. B's merge prep then
+  does B(6): #42's three ranges (web client-sesv2, client-sts; worker client-sqs) to ^3.1160.0, the manifest and lockfile
+  conflicts resolved by the generator, the synth comparison redone with #42's stacks.
+
+- 2026-11-02T10:10:00Z: **B's fix round done locally** (wf_66dd34d8-a6a): head f463f486 (all 25 findings; the check's 3 S
+  and 5 N fixed); the full local suite once at f463f486, green (unit, golden, oracle, test:db 4 shards, build, stamp,
+  cdk:diff, e2e, the six packets/pricing Stryker shards and the gate, synth, watched, actions, toolchain, licenses,
+  actionlint, infra 612; synth comparison vs 88708069: only the CDKMetadata version string) apart from the no-Docker capacity
+  form (the same 10 checks fail on the base). Push stopped on BASE MOVED (#42, #95). WIP ref -b = f463f486. **#97**
+  (Dependabot minor-and-patch, 17 updates incl. all of B's) is green and conflicts with B in the lockfile, but a Dependabot
+  PR never merges as it stands (LANES rule 7), so B is not held behind it; its five other updates (postcss,
+  @stripe/react-stripe-js, @stripe/stripe-js, @opentelemetry/api, typescript-eslint) are left to the next weekly triage.
+  **B's merge prep launched**: wf_4e12aa8e-264 (base merge with B(6): #42's three @aws-sdk ranges to ^3.1160.0, the lockfile
+  regenerated; targeted re-check (typecheck, lint, the whole unit project, infra, golden, synth comparison vs the new base,
+  toolchain, licenses); description changes; fix-round record; push; CI (db, e2e, Stryker, capacity) read by the verifier).
+  C's merge prep: CI green on 07b5382b; verification running.
+
+- 2026-11-02T10:30:00Z: **PR C MERGED: #91 as 21fa10df** (merge commit; expectedHeadSha 07b5382b). Before it: merge prep
+  wf_194e8aaf-799, 2 rounds (base 2affb854 merged in; the fix round's description changes applied; the fix-round record
+  written; round 2 for description corrections only); CI green on 07b5382b (all four required checks; unit 7,291, db 9,649,
+  e2e 70, golden 376; the capacity gate raised no sizing question, S4 middle run 41.1 s); fresh-clone verification
+  **VERIFIED** (an independent Python routing check: 65 direct dependencies, each in one group). The description records
+  the 08:52Z ruling. Marked ready 10:21Z; approval-of-record re-ran on ready (success 10:22:00Z); #86, #94, #75 and #85 were
+  drafts, so no ready PR was jumped. No bot PR to close. Unsubscribed; main checkout at 21fa10df and installed; C's worktree
+  and local branch removed. Watching the push runs of 21fa10df and the Dependabot runs the dependabot.yml change starts
+  (runbook step 1 for a merge that changes the file). Dependabot had closed #97 at 07:42:39Z and opened #98 after #42.
+  **PR D launched** (C's slot freed; D protects B's unit job too): wf_79d9ea3e-347 (design from the investigation and its
+  challenge with CAS-41.3 measured; failing-first build; check; push and draft PR; two reviews with skeptics; one fix round
+  with the unit suite and 30-run loops; one push). B's merge prep (wf_4e12aa8e-264) will meet C's runbook change: B is the
+  second merged of the B/C pair, so it keeps both in the AWS paragraph.
+
+- 2026-11-02T11:00:00Z: **C's merge read on the real Dependabot** (record `C-postmerge-dependabot.md`; challenge HOLDS): the four
+  runs #91's dependabot.yml change started at 10:22Z (npm 41428297500, actions, docker, docker_compose) all succeeded with no
+  routing-failure, skip-group, release-age or error line; npm assigned each of 65 direct dependencies to exactly one group
+  (all ten @aws-sdk/* to aws-sdk, next and @next/eslint-plugin-next to next, minor-and-patch only the 45 no other group names);
+  the updater image's dependabot-core 8786cc38 has the same group-assignment code as 85379652 (CI-12's model). Dependabot
+  closed #98 and opened **#99** (aws-sdk, 10 updates to 3.1160.0), **#100** (aws-cdk: aws-cdk-lib 2.275.0, aws-cdk 2.1146.1)
+  and **#101** (minor-and-patch, 6 updates). B (#94) carries #99's and #100's changes: when B merges, #99 and #100 are closed
+  with a comment (unless Dependabot closes them first), #88 and #89 get a comment; #101 is the next weekly triage's. Push runs
+  of 21fa10df all green (ci, mutation, screening-capacity): the build branch is green again.
+
+- 2026-11-04T02:45:00Z (acting S4, session_019i9ifAfByN2caCea4jgSdu, Lane A's account; login PureTideWater): setup OK.
+  Live: #94 head e3fc02e4 (draft; B(6) e6823f5b and base 21fa10df merged; pushed 2026-11-02T10:25Z), base still 21fa10df,
+  CI green on e3fc02e4 (30 runs: 29 success, 1 skipped; the four required checks), description already names #99-#101.
+  WIP -b f463f486 is an ancestor of the head. `co-001/test-flakes-2` at 88708069, no commits; D's earlier run
+  wf_79d9ea3e-347 left nothing on origin. Decisions: no new base merge or push for #94 (the base has not moved); the
+  full local suite stands (ran once at f463f486; e3fc02e4's targeted re-check and CI on the exact head; speed rule 1).
+  Launched: #94 fresh-clone verification wf_ea2961e5-096 (verifier + skeptic); PR D wf_b49ddbb6-964 (design, failing-first
+  build, check, draft PR, one adversarial review with a skeptic per B/S finding (test-only: speed rule 3), one fix round
+  with the base merged once, the full suite once, one push, fresh-clone verification). Scripts archived. subscribe_pr_activity
+  on #94 refused (held elsewhere): polling with pull_request_read; check-in trig_01H1GrZ47MonPvEYdBwPN79v at 07:53Z.
+  Next: on VERIFIED, mark #94 ready, approval-of-record's re-run, merge (expectedHeadSha e3fc02e4); close #99/#100 with a
+  comment, comment on #88/#89; #101 left to the next weekly triage.
+
+- 2026-11-04T02:55:00Z: **PR B MERGED: #94 as 4846f043** (merge commit; expectedHeadSha e3fc02e4). Fresh-clone
+  verification wf_ea2961e5-096 **VERIFIED**, its skeptic UPHELD (record `B-verification.md`; fix round `B-fix-round.md`):
+  heads unchanged (base 21fa10df); frozen install, lockfile regeneration no change, typecheck, lint:logs, verify-content,
+  check:fixtures, synth/watched clean, cli-settings + recorded-textract 14/14, infra 710, toolchain 0 errors; CI 30 runs (29
+  success, 1 skipped; unit 7,305/1 skipped; mutation gate passed); merge-tree vs every open head: only Dependabot #99
+  conflicts because of #94 (lockfile); no ready PR jumped. The verifier's five description corrections were timestamp
+  refreshes of dated, still-true claims: not applied (no change to the outcome). Marked ready 02:49Z; approval-of-record
+  re-ran on ready (success 02:50:04Z). **#99 and #100 closed** with a comment naming #94 and 4846f043; **#88 and #89**
+  commented. #101 left to the next weekly triage. Not subscribed (refused), so nothing to unsubscribe. Next: PR D
+  (wf_b49ddbb6-964 running); read 4846f043's push runs.
+
+- 2026-11-04T03:25:00Z: **push runs of 4846f043: ci and screening-capacity RED**, mutation green. ci 41763423759: only the
+  images job (126356134153) failed, on both Trivy scans (HIGH/CRITICAL); unit, db, e2e, static, lint, build, domain model
+  green. screening-capacity 41763423983: the measure step failed after 9 s (capacity job 126356184270, the scale release
+  restored from cache); gate red; notify updated the capacity issue. #94's own head passed both on 2026-11-02. No re-run.
+  Read-only investigation with a skeptic: wf_62f83f6d-b18 (whose, root cause, fix, owner). Orchestrator told.
+
+- 2026-11-04T03:40:00Z: **4846f043's red push runs: neither is #94's** (wf_62f83f6d-b18; skeptic upheld with one correction;
+  notes in `lane-b-dependabot-batch-red-push/`). (1) **images:** Trivy never scanned: setup-trivy's installer gets the binary
+  from get.trivy.dev, now NXDOMAIN (curl exit 6; 6 of 6 installs since 02:54Z, PRs #103 and #104 too; third-party reports
+  date it to the trivy.dev zone edit of 2026-11-03), so a re-run cannot pass. (2) **screening-capacity: the repository is
+  now private** (API `private: true`, still the personal account): the 2-CPU private runner gets RUNNER_TOO_SMALL by design
+  (screening-capacity.md:128, :353; ci.md:240-247): the founder's (organization on Team, then a 4-core larger runner for
+  both capacity jobs and the weekly release-capacity run; O15; ADR 0063:280 on private Free). Issue #102. No re-run.
+  Orchestrator's direction (03:23Z): the red base first, then D. **New PR `co-001/ci-trivy-install-2026-11-04`** (from
+  4846f043; worktree /home/user/ci-trivy): Trivy from its pinned GitHub release asset, hash-checked, skip-setup-trivy, in
+  ci.yml, release.yml, release-dry-run.yml; ADR 0066 amended; two reviews (supply chain). Workflow wf_87464ad4-ed6 (build,
+  check, draft PR, two reviews + skeptics, fix round with the suite once, verification); script archived. Before its merge,
+  its diff and head go to S1, S2, S3 and the schema chain session. D (wf_b49ddbb6-964) still running, draft only.
+
+- 2026-11-04T03:40:00Z: orchestrator (03:32Z): fold the private-repository fetch failure into the Trivy PR (screening-capacity's
+  changes job, a blobless fetch without credentials, "could not read Username", PR #104 run 41765454689), with the workflow
+  token, contents: read, a test, and an audit of every workflow for other public-repository assumptions; runner size stays
+  the founder's. wf_87464ad4-ed6 stopped in its build stage; relaunched with the wider scope as **wf_3717f39c-6bd** (the builder
+  continues from its progress file); script archived.
+
+- 2026-11-04T05:05:00Z: **PR D opened: draft #105** (`co-001/test-flakes-2`; wf_b49ddbb6-964 done, 8 agents). Head **7c97f9c0**
+  (base 4846f043 merged in the fix round). Design `designs/lane-b-dependabot-batch-test-flakes-2.md`: FRM-01's `shownCount`
+  waits `data-shown >= N` (10 s own timeout) with exact counts asserted once settled (S-SEC-2 2 then 3, FRM-03 3); the same
+  helper in `step-timer.browser.test.tsx` (SGN-02) fixed alike, with exact counts; a failing-first case proves the exact
+  wait hangs (30 s timeout on the old helper). **CAS-41.3: no timeout** (the ruling's "or the reason why not"): 95% of its
+  time was vitest's toEqual on a 470 KB Buffer (CI 1.8-4.4 s of 5 s); an exact `sameBytes` comparison takes it to 30-67 ms.
+  One review (speed rule 3, test-only; supersedes the 06:22Z ruling's two): 3 findings (S1 = CI images red, the base's
+  Trivy failure, not D's; N1, N2 fixed). Full suite once at 7c97f9c0: unit 7,303 passed/4 skipped (root-only and engine-
+  freeze skips), golden 376, loops 30/30 each, synth clean, Stryker none. Verifier returned before CI finished (not
+  verified). Subscribed to #105. **D waits for the Trivy PR (#106):** then the base merged once more, one push, CI, the
+  fresh-clone verification, ready, merge. **Trivy PR: draft #106**, fix round pushed 78cd55d2; its verifier reads CI.
+
+- 2026-11-04T05:40:00Z: **#106 VERIFIED, cannot merge: its screening-capacity gate is red.** wf_3717f39c-6bd done (9 agents; two
+  reviews: 10 findings, 2 S + 8 N confirmed, all fixed or recorded; suite once green; records `lane-b-ci-trivy-install-
+  {review,fix-round,verification}.md`). CI on 78cd55d2: all green, mutation and approval-of-record pass; images installs
+  pinned Trivy 0.70.0 (hash-checked, setup-trivy skipped) and scans both images, 0 HIGH/CRITICAL. The gate fails because
+  #106 touches two watched paths (screening-capacity.yml for the fetch fix; matrix.ts for the CI-11/CI-21 rows), and the
+  private 2-CPU runner stops with RUNNER_TOO_SMALL (the founder's, #102). **Decision: split.** New PR
+  `co-001/ci-trivy-pin-2026-11-04` with only the Trivy part, no watched path and no row text (wf_328041c8-16e: build, delta
+  check, draft PR, verification on CI; #106's reviews stand for the subset). It merges on green; #106 keeps the fetch fix and
+  waits on the founder. Orchestrator told.
+
+- 2026-11-04T06:02:00Z: **#107 MERGED as 7bf7b252** (`co-001/ci-trivy-pin-2026-11-04`; expectedHeadSha 41818ac4). Split from
+  #106 (wf_328041c8-16e: build, delta check clean, verification VERIFIED; record `lane-b-ci-trivy-pin-verification.md`). CI on
+  41818ac4: all 29 runs green, changes job 126410414130 success without the fetch fix, gate 126410470025 success (nothing
+  watched), images 126410414857 scanned both images with the pinned Trivy, 0 HIGH/CRITICAL; release-dry-run green. Head and
+  diff range sent to S1, S2, S3 and the schema chain before the merge (S3 acknowledged). Ready 05:57Z; approval-of-record
+  success 05:57:27Z; the only other ready PR was Dependabot's #103. **#106** keeps the fetch fix and waits on the founder
+  (#102); at its base merge it resolves ADR 0066, workflows.test.ts and ci.md (check N1). Next: D's merge prep
+  wf_1a0a2372-8e0 (base 7bf7b252 once, re-check, push, verification), then ready and merge; read 7bf7b252's push runs.
+
+- 2026-11-04T06:28:00Z: **PR D MERGED: #105 as df4daff7** (merge commit; expectedHeadSha dc54ca58). Merge prep wf_1a0a2372-8e0: base
+  7bf7b252 (#107) merged once (no conflict, lockfile unchanged), targeted re-check green (typecheck, lint, check:fixtures,
+  the three test files 58/58, workflows 119/119, check-action-pins 202/202), one push, description updated. Fresh-clone
+  verification **VERIFIED** (record `D-verification.md`): CI on dc54ca58, 25 runs, 22 success and 3 skipped by design; unit
+  7,312 passed/1 skipped (FRM-01 file 38 tests, SGN-02 14, CAS-41.3's file 6 in 199 ms); images scanned both images clean;
+  diff three test files only. The verifier's six description refinements were left out, since none changes a result
+  (items 4-6 went stale only when CI finished). Ready 06:25Z; approval-of-record success 06:25:52Z. Unsubscribed from
+  #105. **Both S4 items done (#94, D).** Still open and mine: **#106** (the private-repository fetch fix, the CI-11 guard
+  and the rows) waits on the founder's runner and organization decision (#102); its next step is a base merge of df4daff7
+  that keeps #107's Trivy text (check N1), then CI, once the gate can pass.
+
+- 2026-11-04T06:32:00Z: push runs of **7bf7b252** (#107): ci 41782516502 success (images scanning again), mutation 41782516484
+  success, release-dry-run 41782516510 success; no screening-capacity run (nothing watched). The build branch is green
+  again apart from the capacity gate on watched changes (#102). df4daff7's (#105) push runs are in progress.
+
+- 2026-11-04T07:00:00Z: push runs of **df4daff7** (#105): ci 41785595620 success, mutation 41785595438 success;
+  screening-capacity 41785595511 failure: on a push the changes job measures by design (`EVENT != pull_request` ->
+  measure=true), and the capacity job (126426942936) stops in its measure step on the private 2-CPU runner, as on 4846f043.
+  Not #105's: it is the founder's runner item (#102); every push run of this workflow fails the same way until then. No
+  re-run (a sizing refusal). Issue #102 updated by the notify job.
+
+- 2026-11-04T07:15:00Z: **the repository is public again** (orchestrator 07:10Z; confirmed: search API `private: false`).
+  The capacity gate's runner has 4 CPUs again. #106 woken (orchestrator: worth merging, to keep the gate working if the
+  repository goes private again): merge prep wf_e69a1f47-500 (base merge keeping #107's text, resolution check, targeted
+  re-check, one push, description, verification on CI); subscribed to #106; script archived.
+
+- 2026-11-04T07:50:00Z: **#106**: merge prep wf_e69a1f47-500 done: base df4daff7 merged (92ae9a25; ADR 0066 credits #107 and
+  #106 under separate headings), resolution check clean, verification **VERIFIED** (record `ci-trivy-install-verification-2.md`):
+  CI green incl. the capacity gate on 4 CPUs (`verdict: pass (time advisory)`; S4 middle run 54.9 s, O9 recorded in the
+  description under the 2026-11-02 01:02Z ruling). Ready 07:43Z; approval-of-record success 07:44:12Z. **Merge refused:**
+  "405 Repository rule violations found: 4 of 4 required status checks are expected". Public again, the repository's rules
+  apply and want the checks on a head with the current base (72096e94, #75, moved after CI). Base 72096e94 merged
+  (2f17796a: diff unchanged, synth 0 written, 708 tests, typecheck, check:fixtures) and pushed; CI running. Orchestrator
+  told: the speed rule needs a re-merge whenever the base moves after the last push.
+
+- 2026-11-04T08:08:00Z: **#106 MERGED as 881e2bbd** (merge commit; expectedHeadSha 2f17796a). CI on 2f17796a (base 72096e94):
+  21 runs, all four required checks success, the capacity job measured and passed on 4 CPUs. Unsubscribed. The
+  private-repository fetch fix and the CI-11 guard are on the base. This session's CI work is done; UX PR 7 is in its build.
+
 ## Waiting on someone
+- (Resolved 07:10Z: public again.) **The founder (2026-11-04): the repository was private on the personal account**: screening-capacity's 4-CPU runner (organization on GitHub Team, larger runner), O15, branch protection and secret scanning on private Free (ADR 0063:280). Blocks every watched PR's screening-capacity gate.
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
@@ -277,4 +531,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next: A's fix round when its reviews return; B's and C's fix rounds when wf_91a35eba-252 returns; then fresh-clone verifications; A and B merge when ready (20:36Z rule), C after #86.
+Next (2026-11-04T06:28Z): #94 and D merged; the session stops at a clean point. Open: #106 waits on the founder (#102), then a base merge, CI, ready and merge. Earlier: Next (2026-11-04T02:55Z): #94 merged; PR D (wf_b49ddbb6-964) to its merge; then stop at a clean point. Before: B's merge prep (wf_4e12aa8e-264) -> on VERIFIED: description names #99/#100/#101, mark ready, merge; comment on #88/#89 and close #99/#100 with a comment; D's pipeline (wf_79d9ea3e-347) -> D's merge prep -> merge; then stop at a clean point (pacing: no follow-on).

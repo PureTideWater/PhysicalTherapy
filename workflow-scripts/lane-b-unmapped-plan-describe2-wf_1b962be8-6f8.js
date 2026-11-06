@@ -1,0 +1,22 @@
+export const meta = {
+  name: 'lane-b-unmapped-plan-describe2',
+  description: 'PR #95: update the description to the head 48dabc28 (checks, every reviewer finding with its disposition, the base merges, file counts) and prove it byte for byte; then a critic reads it against the code',
+  phases: [{ title: 'Describe' }, { title: 'Critic' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/aa4b05fd-cf7b-57fe-8086-b5b14b24e00e/scratchpad'
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
+const HEAD = '48dabc28'
+const BASE = '22789493'
+phase('Describe')
+const d = await agent(`You update the description of draft PR PureTideWater/PhysicalTherapy #95 (branch co-001/unmapped-plan, now at ${HEAD}, which contains base claude/build-platform ${BASE}). The current body: ${SP}/pr95-body.md (set earlier and proven equal to GitHub's). ${SAVE('describe2-95.md', 'sections updated, the file, the update and the read-back')}
+Sources: /home/user/ops/approval-summaries/lane-b-unmapped-plan-status.md (every entry since 21:45 on 2026-11-01); /home/user/ops/designs/lane-b-unmapped-plan/pr95-dispositions.md (every finding, its verdict and disposition); /home/user/ops/designs/lane-b-unmapped-plan/pr95-review-findings.json; the progress files ${SP}/progress/{fix-suite,fix-critic,fix-recheck,merge2,merge2-verify,merge2-home,merge3,merge3-verify}.md; git -C /home/user/unmapped-plan log --oneline 8517ee3a~1..${HEAD} and git diff --stat ${BASE}...${HEAD} (the PR's own files, for the counts: C-7).
+Update every section that changed: What changes (the fix round's visible changes and exact wording, including the deviation: "mapped" means the mapping in force on the line's date; the home's UX-1 note dropped in favour of UX PR 9's out-of-the-figure count); Checks (the full local suite on the fixed tree with counts from fix-suite.md, the targeted checks after each base merge, and "CI on ${HEAD}: pending" for now); Reviewer agents' findings (one row per finding: payment-engine, security, UX and brand, completeness critic, the recheck's R-1 and R-2, HOME-1 judged not a defect (a tour artifact: the e2e worker's placeholder monitor for LAYOUT) with its reason; each row: reviewer, finding, resolution = fixed (commit 4748481f or the merge) / not a defect (why) / deferred (where); the shot ids before, after and after the fix round, in a private gallery); Decisions (add the fix round's: mapping in force; suspended practice queues nothing; the UX-1 note dropped at the merge with #93 and why); Overlaps (#42, #93 and #92 now merged and resolved here; SS-01 still to come: both new routes stay in RUN_STARTING_ROUTES, nothing in CONTINUES_STARTED_WORK, the mapping's monitor enqueue in neither). Keep every template section; under 60,000 characters; no PHI, no model name or identifier; end with exactly:
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01FcouKNB2TyuPCAha9BaEjQ
+
+Write it to ${SP}/pr95-body2.md, set it ONLY with mcp__github__update_pull_request (load with ToolSearch "select:mcp__github__update_pull_request,mcp__github__pull_request_read"; owner PureTideWater, repo PhysicalTherapy, pullNumber 95; keep it a draft), read it back (gh api GET repos/PureTideWater/PhysicalTherapy/pulls/95 --jq .body > ${SP}/pr95-readback2.md) and prove it byte for byte (cmp). Return: the character count, the cmp result, and what changed.`, { label: 'describe2-95', phase: 'Describe' })
+phase('Critic')
+const c = await agent(`Read PR PureTideWater/PhysicalTherapy #95's description (gh api GET repos/PureTideWater/PhysicalTherapy/pulls/95 --jq .body) against the code at ${HEAD} in /home/user/unmapped-plan (read only) and the records named in ${SP}/progress/describe2-95.md. Find any claim that is untrue: a count, a file, a wording quoted that the code does not show, a finding listed with the wrong resolution, a check claimed that did not run, a template section missing. Write nothing except ${SP}/progress/describe2-critic.md. If you find errors, fix them in ${SP}/pr95-body2.md, set it again only with mcp__github__update_pull_request and prove it byte for byte with cmp against gh api's read-back. Return the errors found and fixed, and the final cmp result.`, { label: 'describe2-critic', phase: 'Critic' })
+return { d, c }

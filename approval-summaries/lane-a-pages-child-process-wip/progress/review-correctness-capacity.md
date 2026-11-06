@@ -1,0 +1,17 @@
+# Review (correctness and capacity) progress
+- Clone /home/user/rv-pcp-correctness-capacity at c369bc77... (started)
+- Install ok; baseline pages.test.ts + infra heap.test.ts 28/28 pass (logs rv-cc/baseline.log)
+- Mutation batch running (22 mutations; rv-cc/mutations.txt)
+- Read pages.ts, page-reader.ts, tests, heap.ts, infra guard, ADR diffs, design.
+- Suspected (to prove): after a done/refused frame the deadline and memory poll stop; a child that then hangs or grows is unbounded and holds the one reader slot (probe after-done.ts).
+- Suspected (to prove): UTF-8 framing turns a lone surrogate (xlsx &#xD800;) into U+FFFD where the thread's structured clone kept it (probe surrogate.ts).
+- Capacity probe peak.ts written (parent under 560 with heap filled, child peak RSS).
+- Mutations (22 + 1 combined): caught: kill, heap flag, semi flag, env, permission, deadline, memcap, oommap, oommap-any, queue, isolation, guard-weak. SURVIVED: reply byte bound (total, per-frame, both), parent page/char cap, baseline ceiling, LIVE exit kill, exit-code check after done, child console silence, child page cap, orphan backstop. Bound+pagecap together: red (runner OOM SIGABRT).
+- FINDING (blocking): after done/refused the deadline and memory poll stop; a child that then hangs keeps the read pending past 15 s with a 1 s deadline and the one slot held (second read queued); one that grows reached 1,349 MiB RSS (probes1.log).
+- FINDING (should): reply bound untested; with it removed one 1 GiB frame crashes the parent with ERR_STRING_TOO_LONG (bigframe-mutated.log), all 12 tests green.
+- FINDING (should): main 453 MiB used heap (RSS 659) + child 382 = 1,041 MiB > 1,024 under 560 flag (peak-full.log); base thread same load 1,001 (peak-base.log). Child peak 371-387 for bombs, 329-339 for 1,250/1,500 pages.
+- FINDING (nit/should): lone surrogate (xlsx &#xD800;) now U+FFFD, thread kept it (probes1.log surrogate).
+- Bundle: dist/page-reader.js found from dist/, heap 240 MiB under 560 and under NODE_OPTIONS 900; 255-372 ms per 2-page doc (bundle-probe.log). Source tree child median 343-356 vs thread 259-267 (startup-compare.log).
+- Flakiness: 5 sequential + 4 concurrent runs all 12/12 (flake.log).
+- Clone cleaned of probe files; tree clean.
+- Review written to /home/user/ops/approval-summaries/lane-a-pages-child-process-review-correctness-capacity.md; clone removed. DONE.

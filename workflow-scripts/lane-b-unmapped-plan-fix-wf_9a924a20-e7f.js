@@ -1,0 +1,101 @@
+export const meta = {
+  name: 'lane-b-unmapped-plan-fix',
+  description: 'PR #95 fix round: finish the UX/brand review and verify it, merge base 43565235, fix every verified finding (data, reports/docs, screens), full local suite once, after-shot retake and UX recheck, dispositions critic',
+  phases: [{ title: 'UX' }, { title: 'Merge' }, { title: 'Fix' }, { title: 'Screens' }, { title: 'Suite' }, { title: 'Recheck' }, { title: 'Critic' }],
+}
+// RESUMED 2026-11-02 ~06:25 UTC: the 5-hour limit (reset 05:50 UTC) stopped fix-suite mid-run (it continues from its
+// progress file), fix-recheck and fix-critic; the worker restarted and setup-container.sh restarted PostgreSQL. The
+// working tree is on co-001/wip-unmapped-plan-3 (5eda5b79). Everything before the suite replays from cache.
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/aa4b05fd-cf7b-57fe-8086-b5b14b24e00e/scratchpad'
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
+const WT = '/home/user/unmapped-plan'
+const HEAD = '8517ee3a'
+const NEWBASE = '43565235'
+const DESIGN = '/home/user/ops/designs/lane-b-unmapped-plan.md'
+const FJSON = '/home/user/ops/designs/lane-b-unmapped-plan/pr95-review-findings.json'
+const S = r => (typeof r === 'string' ? r : JSON.stringify(r))
+const FINDINGS = { type: 'object', properties: { summary: { type: 'string' }, findings: { type: 'array', items: { type: 'object', properties: {
+  id: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, file: { type: 'string' }, line: { type: 'number' }, title: { type: 'string' },
+  evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'file', 'title', 'evidence', 'fix'] } } }, required: ['summary', 'findings'] }
+const VERDICT = { type: 'object', properties: { real: { type: 'boolean' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, reason: { type: 'string' }, fix: { type: 'string' } }, required: ['real', 'severity', 'reason'] }
+const RULES = `Rules: every shell command starts with export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH. Heavy commands (pnpm install, build, typecheck, lint, vitest, test:db, e2e, Stryker, the screen tour's build and server) only under flock /tmp/laneb-heavy.lock, one at a time, long ones with run_in_background and waited on by notification (no foreground sleep). Database tests use PostgreSQL 18 on port 5433. No migration, nothing under packages/db/migrations or packages/db/src/schema, no non-test change under packages/pricing, domain-model.md and unpriced-reasons.md unchanged, no file of open PR #42 (${SP}/pr42-files.txt) except the shared documents. CLAUDE.md's rules (code computes every number, integer cents, Zod + role check + practice-scoped transaction + audit event on every mutation, no PHI or identifier in a log, URL, job payload or error). Synthetic data only. No model name or identifier in any file. Never pkill -f a pattern your own shell matches. Never push, never commit (the session commits), never comment on GitHub, never approve. Improve as you go inside the PR's files; record anything outside as a proposal.`
+const COMMON = `Context: PaidWhole monorepo, Lane B PR PureTideWater/PhysicalTherapy #95 (combined audit #32, "one unmapped plan no longer freezes a whole month"), branch co-001/unmapped-plan, worktree ${WT} (head ${HEAD}). Design of record: ${DESIGN} (revision 3, §14 dispositions). The verified review findings so far: ${FJSON} (each with the verifier's verdict: real, severity, reason and corrected fix; a finding with real=false is not fixed, its reason is recorded). ${RULES}`
+
+phase('UX')
+const ux = await agent(`${COMMON}
+
+You are the UX and brand reviewer of PR #95 (read-only in ${WT}, at ${HEAD}). Your checklist: ${WT}/.claude/agents/ux-brand-reviewer.md (read it and apply every item: .claude/rules/brand.md, WCAG 2.1 AA with 2.2's additions, the UX baseline review, wording and figures, focus and keyboard, what a refusal or a refresh keeps). Before shots: ${SP}/screens-before (shots.json, tiles/index.json); after shots at ${HEAD}: ${SP}/screens-after (same). The capture notes: ${SP}/progress/up-capture-before.md and ${SP}/progress/up-capture-after.md. An earlier UX reviewer was cut off; its notes are ${SP}/progress/review-ux-r1.md: read them, confirm each against the tiles and code, and continue. ${SAVE('review-ux-r1b.md', 'each finding with the shot ids and evidence')}
+View the tiles with the Read tool (both sides, 1280 light, 1280 dark, 390 light), read the changed screens' code (pages under apps/web/src/app/p/[practiceId]/{page.tsx,coverage,pricing-runs,mapping}, components/mapping/months.tsx, components/pricing/display.tsx, components/reports/*) and the wording against design §5 and §9. Include the home Actionable figure dropping to $0.00 after the mapping (lib/dashboard/queries.ts lines count without the ACTIONABLE_NOW current check; this PR's file, so it is in scope). The critic already raised C-2 (role="alert" on informational Alerts) and C-3 ("a line the engine reaches"): do not repeat those. List the sample in your summary and any changed route outside it as "not seen, by sample". Evidence names shot ids in backticks.
+You MUST finish by calling the StructuredOutput tool with your findings.`, { label: 'review-ux', phase: 'UX', schema: FINDINGS })
+if (!ux) throw new Error('UX review returned nothing: stop')
+const uxv = await parallel(ux.findings.map(f => () => agent(`${COMMON}
+
+Adversarially verify ONE UX and brand review finding of PR #95 against the code in ${WT} and the shots in ${SP}/screens-after and ${SP}/screens-before (view the named tiles with the Read tool). Try to REFUTE it: is the evidence accurate, does it break a rule of .claude/rules/brand.md, WCAG or the design, is the fix right and the best option? real=true only if it holds. Re-grade severity. Write nothing except ${SP}/progress/verify-ux-${f.id}.md.
+Finding ${f.id} (${f.severity}) ${f.file}:${f.line || ''}: ${f.title}
+Evidence: ${f.evidence}
+Fix proposed: ${f.fix}
+You MUST finish by calling the StructuredOutput tool.`, { label: `verify:ux:${f.id}`, phase: 'UX', schema: VERDICT })))
+const uxFindings = ux.findings.map((f, i) => ({ ...f, dim: 'ux', verdict: uxv[i] }))
+log(`UX: ${uxFindings.length} findings, ${uxFindings.filter(f => f.verdict && f.verdict.real).length} real`)
+
+phase('Merge')
+const merge = await agent(`${COMMON}
+
+YOUR TASK: merge the latest claude/build-platform into the PR branch with a merge commit (LANES.md rule 6), in ${WT}. git -C ${WT} fetch origin claude/build-platform; confirm origin/claude/build-platform is ${NEWBASE} or later (use whatever it is now, and say which); git -C ${WT} merge --no-ff origin/claude/build-platform -m "Merge claude/build-platform (<sha>: <PRs>) into co-001/unmapped-plan for the fix round" followed by a blank line and these two lines:
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FcouKNB2TyuPCAha9BaEjQ
+This one commit is yours to make (the trial merge was clean). If a conflict appears: shared documents (test-matrix.md, synth matrix.ts and registry.ts, reconciliation-001.md, ADRs) keep both sides; generated files (pnpm-lock.yaml, watched-paths.txt) are regenerated, never hand-merged. Then, under the lock: pnpm install --frozen-lockfile (if the lockfile changed upstream), pnpm synth --all (it must write nothing new, or keep its output and say why), pnpm exec tsx tools/screening-capacity/watched.ts --write (keep its output), pnpm typecheck. Do not push. ${SAVE('fix-merge.md', 'the merge, its sha, each command and result')}
+Return: the merged base sha and the PRs it brought, the merge commit sha, conflicts and how resolved, each command's result.`, { label: 'fix-merge', phase: 'Merge' })
+
+phase('Fix')
+const FIXCOMMON = `${COMMON}
+The base is merged (${S(merge)}). Fix every finding judged real (at the verifier's severity, with the verifier's corrected fix where it gives one; take the best option, the safer for security, and record why). Other fixers edit other files in ${WT} at the same time: change ONLY your files (plus tests and new test files you name). Write a regression test for each fix where a test can show it (and name the finding id in the test name or a comment). Run, under the lock, typecheck of the packages you touch and vitest for each changed test file; all must pass. Record each finding's disposition (fixed + file:line, or not fixed + why) in your progress file and your result.`
+const [data, docs] = await parallel([
+  () => agent(`${FIXCOMMON}
+
+YOUR AREA: the data, pricing and routes. Files: apps/web/src/lib/pricing/mapped-plan.ts and mapped-plan.db.test.ts, apps/web/src/lib/contracts/mapping-queries.ts, apps/web/src/lib/routes/mapping.ts, routes/pricing.ts, routes/coverage.ts, apps/web/src/lib/dashboard/queries.ts, apps/web/src/lib/routes/mapping-routes.db.test.ts, pricing-routes.db.test.ts, apps/worker/src/price/create.ts, lines.ts, price.db.test.ts, apps/worker/src/monitor/plan.ts, monitor.db.test.ts, packages/contracts/src/coverage.ts, coverage.test.ts, contracts.db.test.ts. Findings (from ${FJSON} and the UX review below): payment-engine F1, F3, F5, F6, F7, F2 (NOTHING_MAPPED wording), R2-1, R2-2, R2-3, R2-4 (wording of the count, in the data/route layer if it sits there), R2-5, R3N-1 together with security F2 (decide "mapped" per line by the mapping in force on the line's date everywhere: monthsAwaitingMappings, the nothing-mapped check in createPricingRun, the unmapped figures; this supersedes the design's "any mapping" choice: record it as a deviation with its reason, accuracy, and update ${DESIGN} §14 with a "PR #95 review" disposition line for it), R3N-2; security F1 (a mapping in a suspended practice queues nothing and says "mapped": ask practice_run_refusal first); critic C-5 if it is code; the UX review's real findings that sit in these files (the home Actionable figure's current check in dashboard/queries.ts; months-waiting counts of 0 other plans on the unmapped plan's own page if it is a data fault; a mapping to No agreement whose lines resolve NO_AGREEMENT must not be listed as "mapped, still not priced" ready to price again if a re-run would leave them unpriced — fix the data so the label is true).
+UX REVIEW (verified): ${JSON.stringify(uxFindings)}
+${SAVE('fix-data.md', 'each finding, its disposition and test results')}
+Return: each finding's disposition, the data/route changes the screens fixer needs (names, shapes, new notice codes), tests and results.`, { label: 'fix-data', phase: 'Fix' }),
+  () => agent(`${FIXCOMMON}
+
+YOUR AREA: reports, the PHI guard and the documents. Files: apps/worker/src/report/content.ts, html.ts, documents.ts, documents.test.ts, report.test.ts, report test-support files; apps/web/src/lib/reports/documents.ts, apps/web/src/lib/routes/report-documents-routes.db.test.ts, audit-e2e.db.test.ts; apps/web/src/components/reports/display.test.tsx (new tests for ReadinessText and UnmappedPlansSentence as C-4 asks, if the file is not a #42 file; else the nearest test file); packages/observability/src/phi-guard.ts and phi-guard.test.ts; README.md; docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts and registry.ts (word for word with test-matrix; then pnpm synth --all), docs/adr/0075-*.md, docs/product/reconciliation-001.md. Findings: payment-engine F8; security SEC-R2-1 (own-property lookup in PAYLOAD_LISTS, with a test for keys like constructor and toString); critic C-4, C-5 (MAP-08's wording against what the code does: reword the row or note where the content-reopen path is tested), C-6 (README's monitoring paragraph); the UX review's real findings in report wording (a stored coverage report states the past: "had no mapping" for reports stored before a mapping; check the design §5.5 and decide the true tense for new reports, recorded). Leave apps/web/src/components/reports/documents.tsx and display.tsx to the screens fixer (tell it the wording you decide).
+UX REVIEW (verified): ${JSON.stringify(uxFindings)}
+${SAVE('fix-docs.md', 'each finding, its disposition and test results')}
+Return: each finding's disposition, wording the screens fixer must use, tests and results, synth result.`, { label: 'fix-docs', phase: 'Fix' }),
+])
+const screens = await agent(`${FIXCOMMON}
+
+The data fixer: ${S(data)}
+The reports and documents fixer: ${S(docs)}
+YOUR AREA: the screens. Files: apps/web/src/app/p/[practiceId]/page.tsx, coverage/page.tsx, pricing-runs/page.tsx, pricing-runs/[runId]/page.tsx, mapping/page.tsx, mapping/[planId]/page.tsx, mapping/actions.ts; apps/web/src/components/mapping/months.tsx, months.test.tsx, components/pricing/display.tsx, display.test.tsx, components/reports/documents.tsx, components/reports/display.tsx; e2e apps/web/e2e/mapping.spec.ts, pricing.spec.ts (keep them passing with the data fixer's changes). Findings: critic C-2 (informational and success Alerts must not be role="alert": use the status role the packages/ui Alert supports for non-urgent messages; keep alert for refusals; check packages/ui's Alert API and how other screens do it), C-3 (no build words such as "the engine reaches" to customers; NO_MAPPING in mono as a code), payment-engine R2-4 and F2's visible wording, and every real UX finding below that sits in these files (counts and numbers in mono per brand.md, "waits for 0 other plans" sentence, notices replayed on refresh / dropped filters, the run page's plan link label, the button counts, tense of a stored report's sentence as the docs fixer decided).
+UX REVIEW (verified): ${JSON.stringify(uxFindings)}
+Run, under the lock: web typecheck, eslint for apps/web, pnpm lint:copy, vitest for each changed component test; then build, stamp and run the e2e specs mapping.spec.ts and pricing.spec.ts with E2E_PREBUILT=1 (read apps/web/playwright.config.ts and package.json for the exact commands).
+${SAVE('fix-screens.md', 'each finding, its disposition and test results')}
+Return: each finding's disposition, the visible changes with exact wording, tests and results.`, { label: 'fix-screens', phase: 'Fix' })
+
+phase('Screens')
+const shots = await agent(`You retake the AFTER screenshots of PR #95 on the fixed worktree. ${RULES}
+${SAVE('fix-capture.md', 'each command and result')}
+The tour runs from a git ref, so first make a temporary ref of the working tree WITHOUT touching the branch or the index: export GIT_INDEX_FILE=${SP}/fixcap.index; cp "$(git -C ${WT} rev-parse --git-dir)/index" $GIT_INDEX_FILE; git -C ${WT} add -A; T=$(git -C ${WT} write-tree); C=$(printf 'WIP unmapped-plan fix round (screens)\\n\\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\\nClaude-Session: https://claude.ai/code/session_01FcouKNB2TyuPCAha9BaEjQ\\n' | git -C ${WT} commit-tree $T -p HEAD); unset GIT_INDEX_FILE. Push it through the hook to a fresh WIP ref: GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C ${WT} push origin $C:refs/heads/co-001/wip-unmapped-plan-2 (if that name exists, use -3; never force). Then follow /home/user/ops/tools/lane-b-screen-tour/README.md exactly as the earlier after run did (${SP}/progress/up-capture-after.md): pull claude/build-ops first; TOUR_DIR=${SP}/screens-after2 (fresh), TOUR_REF=<that commit sha>; TOUR_ONLY='p.home.unmapped-plan*,p.coverage.unmapped-plan*,p.pricing-runs.unmapped-plan*,p.pricing-run.unmapped-plan*,p.mapping.unmapped-plan*,p.plan.unmapped-plan*,p.report-document.unmapped-plan*'; setup.sh, build.sh under flock, run.sh with populate, touch stop, check 'server stopped' and fuser 3297/tcp, drop tp_e2e_screens, rm the temp dirs, then /usr/bin/python3 -I /home/user/ops/tools/lane-b-screen-tour/tile.py ${SP}/screens-after2 p.home.unmapped-plan p.coverage.unmapped-plan p.pricing-runs.unmapped-plan p.pricing-run.unmapped-plan p.mapping.unmapped-plan p.plan.unmapped-plan p.report-document.unmapped-plan. If a cap fails because a screen changed as designed, make the spec version-tolerant on claude/build-ops (commit, pull, push through the hook) and retake. Return: the WIP ref and sha, shot count, failures, tiles index path.`, { label: 'fix-capture', phase: 'Screens' })
+
+phase('Suite')
+const suite = await agent(`${COMMON}
+
+YOUR TASK: the full local suite, once, on the fixed worktree ${WT} (merged base plus the fixes, uncommitted). Fixers' results: DATA ${S(data)} DOCS ${S(docs)} SCREENS ${S(screens)}.
+Run each under flock /tmp/laneb-heavy.lock, one after another (read package.json, lanes/lane-b.md "How Lane B runs" in /home/user/ops for the exact forms): pnpm synth --all (writes nothing new, or keep and say); pnpm exec tsx tools/screening-capacity/watched.ts --write (keep its output); pnpm lint; pnpm typecheck; pnpm lint:copy; pnpm lint:logs; pnpm verify-content; pnpm test (unit + property); pnpm test:golden; the oracle (find its script); pnpm test:db in 4 shards one after another, each on a fresh PG18 database on port 5433 (as CI's db (n/4) jobs shard it; read .github/workflows for the shard command); build, stamp, then e2e with E2E_PREBUILT=1 (whole suite); the affected Stryker shards from stryker/shards.json (any shard whose files this PR changes; if none is affected, say so and why) and then the mutation gate. Fix any failure that is the PR's (in scope), re-run what it affects, and record each. Confirm: engine freeze (git -C ${WT} diff --stat origin/claude/build-platform -- packages/pricing/src ':!**/*.test.ts' empty), no migration, no schema, domain-model and unpriced-reasons unchanged, no #42 file except the shared documents, no model identifier in the diff.
+${SAVE('fix-suite.md', 'each command, its result with counts, each fix')}
+Return: each command with its result and counts (CI-style totals), fixes made, anything still failing with why.`, { label: 'fix-suite', phase: 'Suite' })
+
+phase('Recheck')
+const recheck = await agent(`${COMMON}
+
+You recheck the UX and brand findings of PR #95 after the fix round. Findings and verdicts (JSON): ${JSON.stringify(uxFindings.concat(JSON.parse('[]')))}; the critic's C-2 and C-3 are in ${FJSON}. The screens fixer: ${S(screens)}. The new after shots: ${S(shots)} (${SP}/screens-after2; compare with ${SP}/screens-after and ${SP}/screens-before). Checklist: ${WT}/.claude/agents/ux-brand-reviewer.md. For each finding judged real, look at the new tiles and the code: fixed or not. Also look for anything the fixes broke (a new defect at 1280 light, 1280 dark or 390). Read only; write nothing except ${SP}/progress/fix-recheck.md (continue it if it exists). Return per finding: fixed / not fixed (with why), and any new defect as a finding.`, { label: 'fix-recheck', phase: 'Recheck', schema: FINDINGS })
+
+phase('Critic')
+const critic = await agent(`${COMMON}
+
+You are the dispositions critic of PR #95's fix round. Every finding in ${FJSON} and every UX finding (${JSON.stringify(uxFindings.map(f => ({ id: f.id, title: f.title, real: f.verdict && f.verdict.real })))}) must have a disposition: fixed (file:line and the test that shows it) or not fixed (with a reason). Fixers: DATA ${S(data)} DOCS ${S(docs)} SCREENS ${S(screens)}; suite: ${S(suite)}; UX recheck: ${S(recheck)}. Check each fix in the code of ${WT} (read only, except: you may fix a small gap you verify, in scope, re-running the affected tests under the lock). Then write ${'/home/user/ops/designs/lane-b-unmapped-plan/pr95-dispositions.md'}: a table, one row per finding (reviewer, id, severity, verdict, disposition, file:line, test), ready to go into the PR description's "Reviewer agents' findings" table. ${SAVE('fix-critic.md', 'each finding checked and any gap fixed')}
+Return: the table's path, counts (fixed / not a defect / deferred), any gap fixed, anything still open.`, { label: 'fix-critic', phase: 'Critic' })
+
+return { ux: uxFindings, merge, data, docs, screens, shots, suite, recheck, critic }

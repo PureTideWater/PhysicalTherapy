@@ -79,10 +79,18 @@ ${COMMIT}
 ${SAVE('pdc3-fix-stryker.md', 'files changed; each shard: mutants, score, wall time; gate result')}
 ${RULES}`, { label: 'fixer-stryker', phase: 'Fix', schema: { ...FIX_SCHEMA, required: [...FIX_SCHEMA.required, 'shards'], properties: { ...FIX_SCHEMA.properties, shards: { type: 'array', items: { type: 'object', required: ['name', 'mutants', 'score', 'wall'], properties: { name: { type: 'string' }, mutants: { type: 'number' }, score: { type: 'string' }, wall: { type: 'string' } } } } } } })
 
+// Base merge before the reviews, so the one full suite and every review run on the final tree.
+const baseMerge = await agent(`${CONTEXT}
+Merge the latest base into the fix round's head, so every later review, the capture and the one full suite run on the final tree. The fix round's three parts are committed in ${WT} (head ${JSON.stringify(fixStryker?.commit ?? fixWeb?.commit)}); first check \`git -C ${WT} status --short\` is clean (if the Stryker part left anything uncommitted, stop and report it).
+In ${WT}: \`git fetch -q origin claude/build-platform\`, then \`git merge --no-ff origin/claude/build-platform\` (a merge commit; message "Merge remote-tracking branch 'origin/claude/build-platform' into co-001/packet-day-counts" ending with a blank line and the two lines "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" and "Claude-Session: ${SESSION}"). Expected at 88708069 (#90 anthropic SDK, #92 sign-in steps, #93 home figures): one conflict in apps/web/src/components/test-support/browser.ts: resolve keeping both sides' behaviour (read both sides and their tests). Auto-merged but check by reading: apps/web/e2e/packets.spec.ts, the packet pages, docs/product/test-matrix.md (keep every row of both sides), docs/runbooks/ci.md (the shard table must list this PR's shards), synth matrix.ts and registry.ts. Never hand-merge generated files: regenerate them under the lock with \`pnpm install --frozen-lockfile\` (pnpm-lock.yaml changed on the base), \`pnpm -s exec tsx tools/screening-capacity/watched.ts --write\` and \`pnpm synth --all\`, and amend nothing: commit any regenerated diff as a separate commit. Then run the delta's checks: typecheck; the web unit tests for components/test-support and packets; packets, model-gateway and synth tests; tools/stryker tests; eslint on the conflicted and touched files. Fix any failure the merge caused (separate commit).
+${COMMIT}
+${SAVE('pdc3-base-merge.md', 'base sha, conflicts and how resolved, regenerations, checks')}
+${RULES}`, { label: 'base-merge', phase: 'Fix', schema: FIX_SCHEMA })
+
 // Phase C: loop-until-dry re-review with 4 lenses, 3-lens verify, fixer.
 phase('Re-review')
 const headOf = (r) => (r && r.commit && r.commit !== 'none' ? r.commit : null)
-let head = headOf(fixStryker) ?? headOf(fixWeb) ?? headOf(fixCore) ?? HEAD0
+let head = headOf(baseMerge) ?? headOf(fixStryker) ?? headOf(fixWeb) ?? headOf(fixCore) ?? HEAD0
 const REVIEWERS = [
   { key: 'pe', text: `You review as .claude/agents/payment-engine-reviewer.md says (apply its checklist). First re-run EVERY reproduction in ${FINDINGS} and confirm each is fixed (list any that is not as a finding). Then try hard to make a wrong figure reach a payer: amounts, percents, dates, day counts, windows and deadlines (ADR 0061), codes, counts, units, pages, years, releases, levels, rows, quoted figures; any role swap, several cues in a sentence, lists, numbers in words, "respectively", per-line vs total.` },
   { key: 'corr', text: `Adversarial correctness review. Write 60+ NEW natural sentences a billing specialist would write about a packet (vary voice, order, lists, ordinals, partitives, dates, quotes) and check none fails wrongly; run the MOD-03 reference narratives in packages/model-gateway/eval and the e2e packets narratives; then try misfiled figures the earlier findings did not cover. Check the property tests (oracle independent of the reader; seeded; no fc.pre exhaustion) and run them over 40 seeds.` },
@@ -94,7 +102,7 @@ const rounds = []
 let dry = 0
 let round = 0
 const MAX_ROUNDS = 5
-while (dry < 2 && round < MAX_ROUNDS) {
+while (dry < 1 && round < MAX_ROUNDS) {
   round++
   const found = (await parallel(REVIEWERS.map((r) => () => agent(`${r.text}
 Subject: ${CONTEXT}
@@ -125,7 +133,7 @@ ${RULES}`, { label: `fixer-r${round}`, phase: 'Re-review', schema: FIX_SCHEMA })
   head = headOf(fix) ?? head
   rounds.push({ round, found: found.length, fresh: fresh.length, judged, fix })
 }
-if (dry < 2) log(`re-review stopped at the ${MAX_ROUNDS}-round cap before two dry rounds: the last round's findings are recorded for the PR description`)
+if (dry < 1) log(`re-review stopped at the ${MAX_ROUNDS}-round cap before a dry round: the last round's findings are recorded for the PR description`)
 
 // Phase D: capture before/after, UX review, verify, fix, re-capture check.
 phase('Capture')
@@ -190,4 +198,4 @@ const rec = await agent(`Write the fix round's records on claude/build-ops (/hom
 No model name or identifier anywhere. Commit (message ending with a blank line and "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" and "Claude-Session: ${SESSION}") and push: \`${GL} git -C /home/user/PhysicalTherapy push origin claude/build-ops\` (if the remote moved: pull --no-rebase, push again; never force).
 The round's data: ${JSON.stringify(record)}
 Return the commit pushed and a 10-line summary.`, { label: 'record', phase: 'Record', schema: { type: 'object', required: ['commit', 'summary'], properties: { commit: { type: 'string' }, summary: { type: 'string' } } } })
-return { head, rec, suiteAllPassed: suite?.allPassed ?? null, suiteFailures: suite?.failures ?? 'suite agent failed', shardTimes: suite?.shardTimes ?? null, roundsSummary: rounds.map((r) => ({ round: r.round, found: r.found, fresh: r.fresh, confirmed: r.judged.filter((f) => f.confirmed).length })), dryEnd: dry >= 2, ux: { findings: ux?.findings?.length ?? null, confirmed: uxConfirmed.length, recheck: ux2?.findings?.length ?? null }, notApplied: { core: fixCore?.notApplied, web: fixWeb?.notApplied, stryker: fixStryker?.notApplied }, forLaneA: [fixCore?.forLaneA, fixWeb?.forLaneA].filter(Boolean) }
+return { head, rec, suiteAllPassed: suite?.allPassed ?? null, suiteFailures: suite?.failures ?? 'suite agent failed', shardTimes: suite?.shardTimes ?? null, roundsSummary: rounds.map((r) => ({ round: r.round, found: r.found, fresh: r.fresh, confirmed: r.judged.filter((f) => f.confirmed).length })), dryEnd: dry >= 1, ux: { findings: ux?.findings?.length ?? null, confirmed: uxConfirmed.length, recheck: ux2?.findings?.length ?? null }, notApplied: { core: fixCore?.notApplied, web: fixWeb?.notApplied, stryker: fixStryker?.notApplied }, forLaneA: [fixCore?.forLaneA, fixWeb?.forLaneA].filter(Boolean) }

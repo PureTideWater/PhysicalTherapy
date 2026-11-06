@@ -1,0 +1,11 @@
+# intpr-open (opening the interest fix's draft PR)
+- 2026-11-05: started. Head c49367c5 on co-001/ledger-interest-once. No progress file existed.
+- Step 1: checking for an existing PR.
+- Step 1 done: list_pull_requests head PureTideWater:co-001/ledger-interest-once state all: [] (no PR).
+- Step 2 done: fetched base f7d609cc. Fresh tp_intpr_opener_1 (48 migrations, head 20261110090000), summary rc 0: intpr/summary.md (65 lines, 5,456 bytes); full diffs intpr/summary-full.md (for hazards). DB dropped. Tree clean.
+- Read: template, design (0, 7, 10.1, 11), ADR 0084, status interest entries, founder-asks line 3, reconciliation-001 :468, PR #110 body (house style), function diffs (2 files; no hazard on the list found). CAS-42.5 run 41966650378: success on 650a3108 (gh api). No CI on c49367c5 yet (no PR).
+- Next: write intpr/rest.md, build body.md = summary.md + rest.md, create PR, update body, read back.
+- body.md written: 32,766 chars (32,825 bytes), sha256 56f28817d8c31d7c28916e784b7229522a9d738da0ada9f0679091b87c193b4d, no trailing newline; summary whole first; 8 template sections in order; ruling verbatim. Next: re-check no PR, create PR (draft), update body, read back.
+- PR #126 created (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/126 with a placeholder body. Next: update_pull_request body = body.md, read back, compare.
+- update_pull_request #126 sent (ok). Next: read back and compare.
+- DONE: PR #126 (draft, open, head c49367c5, base claude/build-platform f7d609cc) body set by update_pull_request; read back by gh api (pulls/126): 32,766 chars, 32,825 bytes, sha256 56f28817d8c31d7c28916e784b7229522a9d738da0ada9f0679091b87c193b4d = body.md (EQUAL; intpr/readback.md); MCP pull_request_read get shows the same body, draft true, 75 files, 13 commits. tp_intpr_opener_1 dropped; no tp_intpr_* left; /home/user/interest clean at c49367c5. No comment, review or approval line posted.
