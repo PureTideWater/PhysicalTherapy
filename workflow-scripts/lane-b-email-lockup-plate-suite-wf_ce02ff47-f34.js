@@ -1,0 +1,57 @@
+export const meta = {
+  name: 'lane-b-email-lockup-plate-suite',
+  description: 'PR #129: full local suite once on the merged tree, adversarial review of the base-merge delta, then the PR description rewritten and verified',
+  phases: [{ title: 'Suite' }, { title: 'Delta' }, { title: 'Describe' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/9c25266a-dce9-5778-82ff-f48f559f8682/scratchpad'
+const WT = '/home/user/email-plate'
+const SESSION = 'https://claude.ai/code/session_01FcouKRo5iee5QFtPT8UimZ'
+const GL = 'GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks'
+const ENV = 'export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH'
+const COMMON = `Rules: synthetic data only; no model name or identifier in any file, commit or PR text; never use --no-verify, force a push, or touch .gitleaksignore (a gitleaks refusal is fixed by rewriting the flagged text); never write files through the GitHub connector; every heavy command (install, build, typecheck, lint, test, test:db, e2e, Stryker) runs under \`flock /tmp/laneb-heavy.lock\`. Improve as you go only inside files this PR already changes, and report it. SAVE rule: keep your progress file up to date after every step and continue from it if it already exists.`
+
+const SUITE_SCHEMA = { type: 'object', required: ['results', 'allPassed', 'failures', 'head', 'commitsAdded'], properties: {
+  results: { type: 'array', items: { type: 'object', required: ['command', 'result'], properties: { command: { type: 'string' }, result: { type: 'string' } } } },
+  allPassed: { type: 'boolean' }, failures: { type: 'string' }, head: { type: 'string' }, commitsAdded: { type: 'array', items: { type: 'string' } } } }
+
+const suiteP = agent(`Run the full local suite ONCE on the worktree ${WT} at its HEAD 31c41a9d (PR #129's tree: WIP f62265dc plus claude/build-platform cc3dd7f6 (#128) merged in cleanly; committed). Node 24: \`${ENV}\` in every command. PostgreSQL: PG18 on 5433 (DATABASE_URL=postgres://postgres:test@localhost:5433/postgres) and PG16 on 5432; check with pg_isready -h /tmp -p 5433; if down run \`bash /tmp/setup-container.sh\`. Read /home/user/ops/lanes/lane-b.md "How Lane B runs: conventions and pitfalls" for the exact forms (build stamp, e2e, test:db shards, mutation gate). The list, each under flock:
+1. fast checks: pnpm typecheck; pnpm lint; pnpm lint:copy; pnpm lint:logs; pnpm check:fixtures; pnpm synth then \`git status --porcelain\` must show no diff; pnpm verify-content; pnpm db:domain-model --check.
+2. pnpm test (unit + property); pnpm test:golden; pnpm test:oracle (if it exists); pnpm test:db in its shards one after another (as CI does; see .github/workflows); pnpm --filter ./infra test.
+3. pnpm build, the build stamp, then pnpm test:e2e with E2E_PREBUILT=1 and --workers=2; and the brand baselines regenerated from nothing as CI's step does (E2E_BASELINES_DIR=<empty dir> playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0) then compared byte for byte with the committed ones (tree clean).
+4. the Stryker mutation shards (stryker/shards.json) whose files this PR changes (git diff --name-only origin/claude/build-platform...HEAD), each timed, then the mutation gate as CI runs it. If no shard covers a changed file, say so and run the gate.
+Run long commands in the background and wait for them; keep logs in ${SP}/suite/ and read only tails and failure lines. Record exact pass counts (files, tests) from each run's own totals.
+A failure: find its root cause. If this PR caused it, fix it minimally, commit (message describing it, a blank line, "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "Claude-Session: ${SESSION}") and push only \`${GL} git -C ${WT} push origin HEAD:refs/heads/co-001/wip/email-lockup-plate-s5\` (fast-forward), then re-run that part. A failure this PR did not cause: show it fails the same way on origin/claude/build-platform (a separate worktree), one re-run at most to tell a flake, and report its root cause. Do NOT push to co-001/email-lockup-plate. ${COMMON} Progress file: ${SP}/progress/suite.md. You MUST finish by returning the structured result.`,
+  { label: 'full-suite', phase: 'Suite', schema: SUITE_SCHEMA })
+
+const FIND_SCHEMA = { type: 'object', required: ['findings'], properties: { findings: { type: 'array', items: { type: 'object', required: ['id', 'file', 'claim', 'severity'], properties: { id: { type: 'string' }, file: { type: 'string' }, claim: { type: 'string' }, severity: { type: 'string' } } } } } }
+const VERDICT = { type: 'object', required: ['refuted', 'reason'], properties: { refuted: { type: 'boolean' }, reason: { type: 'string' } } }
+
+const deltaP = (async () => {
+  const lenses = [
+    'semantic interaction: does anything #128 (cc3dd7f6) added or changed (packages/packets render/catalog, test-matrix rows, synth registry, brand-copy scan roots, ADRs, CLAUDE.md, CI workflows) interact with this PR\'s changes (worker email template and plate PNGs, tools/brand-email-plate, auth-mail words and snapshots, brand tokens, BRAND.md, ADR 0081, SGN-13 in test-matrix and synth) so that the merged tree is wrong though it merged without a conflict? E.g. a matrix row word-for-word test, a generated file that should have been regenerated, a duplicate counter, a copy-scan rule now catching the new sentence.',
+    'the item as a whole on the merged tree, against its stated decisions: O-5 (fixed White plate behind every worker email\'s full-colour lockup; the plated PNGs are generated by tools/brand-email-plate and pinned by SHA-256; img keeps width, height, alt "PaidWhole"; versioned file names; BRAND.md section 7 calls it a derived plate composite, generated, never hand-edited) and O-8 (reset code email\'s "If you asked more than once, use the newest code." in HTML and text, ADR 0081 staging smoke check for a first code after a second request). Look for anything that does not hold on HEAD, PHI or real data, a logged identifier, or a stale doc reference.',
+  ]
+  const found = await parallel(lenses.map((l, i) => () => agent(`Adversarial read-only review of ${WT} at HEAD (31c41a9d) against origin/claude/build-platform (cc3dd7f6), PR #129. Lens: ${l} Do not edit files and do not run heavy commands (git, grep, reading only). Report only real, specific defects with file and line; an empty list is a fine answer. ${COMMON}`, { label: `delta-review-${i + 1}`, phase: 'Delta', schema: FIND_SCHEMA })))
+  const all = found.filter(Boolean).flatMap(r => r.findings)
+  const judged = await parallel(all.map(f => () => parallel([0, 1].map(k => () => agent(`Try to REFUTE this review finding on ${WT} (HEAD 31c41a9d, PR #129). Read the code yourself; default refuted=true if it does not reproduce or is not a defect in the merged tree. Finding ${f.id} in ${f.file}: ${f.claim}. Read-only; no heavy commands.`, { label: `skeptic-${f.id}-${k}`, phase: 'Delta', schema: VERDICT }))).then(vs => ({ ...f, votes: vs.filter(Boolean), survives: vs.filter(Boolean).filter(v => !v.refuted).length >= 1 && vs.filter(Boolean).filter(v => !v.refuted).length >= vs.filter(Boolean).length / 2 }))))
+  return { all: judged.filter(Boolean), confirmed: judged.filter(Boolean).filter(j => j.survives) }
+})()
+
+const [suite, delta] = await Promise.all([suiteP, deltaP])
+log(`suite allPassed=${suite && suite.allPassed}; delta confirmed=${delta.confirmed.length} of ${delta.all.length}`)
+if (!suite || !suite.allPassed || delta.confirmed.length) return { suite, delta, body: null, note: 'stopped before the description: suite failure or confirmed delta finding' }
+
+phase('Describe')
+const facts = JSON.stringify({ suite, deltaReview: delta.all.map(f => ({ id: f.id, claim: f.claim, refuted: !f.survives })) })
+const draft = await agent(`Write the new description of PR #129 (PureTideWater/PhysicalTherapy) into ${SP}/pr-body.md. Read the current body with the GitHub MCP tool pull_request_read (method get), and .github/pull_request_template.md in ${WT}; keep every template section ("None" rather than omitted). Update it to the final head ${suite.head} (the branch will be pushed there): the commits since 231da9c4 (git -C ${WT} log --oneline 231da9c4..HEAD): the plated PNGs generated by tools/brand-email-plate (UX-S1: forced inversion inverts table cells too, so the White ground is the art's own pixels) and held pixel for pixel by a test; the docs (UX-N1, UX-S1); ADR 0081 rewrapped (UX-N3); SGN-13's synth copy fix (CI on 231da9c4 was red in packages/synth fixtures.test.ts); the base merges of 23b25ad0 (#127) and cc3dd7f6 (#128), both clean; the SHA-256 pins of plates and sources; the BRAND.md section 7 line. The description of WHAT changes must match the code on HEAD exactly (read the diff git -C ${WT} diff origin/claude/build-platform...HEAD; the earlier body describes a table-cell plate which the fix round replaced or extended — describe what HEAD really does). Replace the Checks table's results with these suite results, exact counts (do not invent any): ${facts}. Reviewer findings table: the UX and brand review (done by the acting session with the inverted-client renders; findings UX-S1, UX-N1, UX-N2, UX-N3, UX-N4, every one fixed — read /home/user/ops/approval-summaries/lane-a-email-lockup-plate-status.md and /home/user/ops/designs/lane-a-auth-emails.md for them), with UX-S1's derived art "confirmed by Lane A's orchestrator as the brand owner's delegate, 2026-11-05 07:43Z, with four conditions (versioned names; width, height and alt kept; input and output SHA-256 pinned; BRAND.md section 7's derived-composite line), all holding at HEAD"; the second review: the base-merge delta review of this round (two lenses, each finding checked by skeptics), with its result; payment, security and EDI reviewers not applicable. Keep the founder's-approval section as it is. End with exactly:\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_01FcouKRo5iee5QFtPT8UimZ\n\nUnder 65,536 characters. Do NOT update the PR yourself. ${COMMON} Return the file path and a one-paragraph summary.`, { label: 'pr-body', phase: 'Describe' })
+
+const CHECK = { type: 'object', required: ['errors'], properties: { errors: { type: 'array', items: { type: 'object', required: ['quote', 'problem', 'fix'], properties: { quote: { type: 'string' }, problem: { type: 'string' }, fix: { type: 'string' } } } } } }
+let round = 0, last = null
+while (round < 3) {
+  round++
+  const checks = (await parallel(['every factual claim about the code, files, paths, numbers and tokens against HEAD of ' + WT, 'every test result and count against the suite facts given, and every template section present, plus no model identifier, no PHI, and the exact ending lines'].map((lens, i) => () => agent(`Adversarially check the PR description draft at ${SP}/pr-body.md for PR #129 (worktree ${WT}). Lens: ${lens}. Suite facts: ${facts}. Report only real errors (a wrong claim, a missing section, an invented number), each with the quoted text and the fix. Read-only.`, { label: `body-check-${round}-${i}`, phase: 'Describe', schema: CHECK })))).filter(Boolean).flatMap(c => c.errors)
+  last = checks
+  if (!checks.length) break
+  await agent(`Apply these corrections to ${SP}/pr-body.md (PR #129's draft description), verifying each against ${WT} before applying; reject any that is wrong. Corrections: ${JSON.stringify(checks)}`, { label: `body-fix-${round}`, phase: 'Describe' })
+}
+return { suite, delta, draft, bodyRounds: round, lastErrors: last }

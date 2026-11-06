@@ -72,6 +72,14 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   - BRAND.md section 7 calls it a derived plate composite, generated, never hand-edited: f62265dc.
   The full suite is running on f62265dc.
 
+- 2026-11-06T19:55Z (Lane B item session, session_01FcouKRo5iee5QFtPT8UimZ): resumed from the RESUME-BLOCK.
+  - Worktree /home/user/email-plate from the WIP f62265dc; merged claude/build-platform cc3dd7f6 (#128) once, clean: 31c41a9d,
+    also pushed as WIP `co-001/wip/email-lockup-plate-s5`.
+  - Workflow wf_ce02ff47-f34 (archived as workflow-scripts/lane-b-email-lockup-plate-suite-wf_ce02ff47-f34.js): the full
+    local suite once (plus `pnpm --filter ./infra test` and the affected mutation shards), an adversarial review of the
+    base-merge delta (two lenses, skeptics per finding), then #129's description rewritten and checked.
+  - Next: push to co-001/email-lockup-plate, update #129's description, CI, verification reading CI, ready, merge.
+
 ## Waiting on someone
 - None.
 
