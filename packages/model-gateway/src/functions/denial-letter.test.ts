@@ -856,6 +856,12 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a phone after two currency amounts', 'Phone $45-$97\u2212985.37 8257'],
     ['a phone after a range and a space', 'Phone 2023-04-10-130.80 912.90 2128'],
     ['a phone after a range ending in a currency amount', 'Contact us about 507.75\u2013$39-9.78 59 4246'],
+    // Re-review GATEWAY1-1: a plain number in the amount's own run, before any word or span, is still read over.
+    ['a labeled SSN whose amount follows a group of it', 'SSN 9001 2.34 56'],
+    ['after a number in parentheses', 'SSN (2) 900.12 3456'],
+    ['after words and a number', 'SSN of member 2: 900.12 3456'],
+    ['after a number that starts its range', 'SSN 2: 01/01/2020-900.12 3456'],
+    ['a phone after the phone word\u2019s own number', 'Phone 711 900.12 3456'],
     // An SSN glued digit to digit to an amount after its label (review GATEWAY1-3): the amount is read under the label.
     ['a labeled SSN glued to an amount', 'SSN 900 12 3456150.00'],
     ['a labeled SSN glued to an amount that starts a range', 'SSN 900 12 3456150.00-01/02/2020'],
@@ -932,6 +938,18 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a period with a two-digit year glued to "Rd"', 'Service 01/01/2020-01/02/20Rd'],
     ['a period of ordinal dates glued to the next word', 'Service March 3rd, 2020-March 4th, 2020Paid'],
     ['a period of ordinal dates, day first, glued', 'Service 3rd of March, 2020-4th of March, 2020Paid'],
+    // Re-review GATEWAY1-1: SEC-5's label is read over a plain number only in the amount's own run, so a phone word's own
+    // number ("TTY 711", "Fax 2") followed by words, a date or an amount ends the read, as a digit ends every label window.
+    ['an amount before a year after a TTY sentence', 'TTY 711. Paid 150.00 2026'],
+    ['amounts after a TTY line', 'TTY users call 711.\nBilled 150.00 120.00'],
+    ['amounts in a list after a call sentence', 'Call 711. Billed 150.00, 120.00'],
+    ['amounts after a fax line', 'Fax 3 pages: 150.00 120.00'],
+    ['a row of amounts on the line after "TTY 711"', 'TTY 711\n150.00 120.00 30.00'],
+    ['a row of amounts after "TTY 711" and a space', 'TTY 711 150.00 120.00'],
+    ['a row with a currency amount on the line after "TTY 711"', 'TTY 711\n$150.00 120.00 30.00'],
+    ['a row of small amounts after "TTY 711"', 'TTY 711\n150.00 12.00 3.00'],
+    ['a date and amounts on the line after "Call 711"', 'Call 711\n01/02/2026 150.00 120.00'],
+    ['a date and amounts after a fax line', 'Fax 2; 03/19/2026 150.00 120.00'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);
@@ -966,8 +984,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     expect(holdsIdentifier(redactLetter('Seen 01/01/2020-01/02/2020-900-1-2-3456Paid', A, AC).text, A, AC)).toBe(true);
   });
 
-  it('refuses amounts a phone label is nearest, read over the numbers before them, as SEC-5 refuses "Call us about 150.00 1234" (review GATEWAY1-2: the fail-safe side)', () => {
-    for (const letter of ['Call us about 150.00 1234', 'Call us about 150.00-120.00', 'Call us about 150.00 120.00']) {
+  it('refuses amounts a phone label is nearest, read over the numbers before them, as SEC-5 refuses "Call us about 150.00 1234" (review GATEWAY1-2, re-review GATEWAY1-1: the fail-safe side)', () => {
+    // The chain's first group under the label, or an amount right after the phone word's own number with nothing between.
+    for (const letter of ['Call us about 150.00 1234', 'Call us about 150.00-120.00', 'Call us about 150.00 120.00', 'Contact us. 97110 1 150.00', 'TTY 711\n150.00 1234']) {
       expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
     }
   });
@@ -975,8 +994,13 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
   // Recorded residuals (docs/adr/0054), pinned so a change to them is seen: an SSN glued digit to digit to an amount or a
   // year, which the scan reads as one long group (review GATEWAY1-3); an amount-shaped SSN whose first group reads as a
   // date with the number before it ("10-9.00"); an amount-shaped phone after a range and white space with its label more
-  // than 24 characters back (GATEWAY1-2); an amount followed by a year-first date, read as [SSN] (GATEWAY1-5).
+  // than 24 characters back (GATEWAY1-2); an amount followed by a year-first date, read as [SSN] (GATEWAY1-5); an SSN or
+  // phone whose label is behind a number and then a word or a span (a digit in its label window, as "Phone 1: 555-0100":
+  // re-review GATEWAY1-1), which cc3dd7f6 sent too or refused only by a range's A3 join, now a barrier MOD-16 needs.
   it.each([
+    ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
+    ['an SSN glued to an amount after the label’s number, a word and a range', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00'],
+    ['an amount-shaped SSN after the label’s number, a word and a range', 'SSN 1: is 01/01/2020-900.12 3456', 'SSN 1: is 01/01/2020-900.12 3456'],
     ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
     ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
     ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],

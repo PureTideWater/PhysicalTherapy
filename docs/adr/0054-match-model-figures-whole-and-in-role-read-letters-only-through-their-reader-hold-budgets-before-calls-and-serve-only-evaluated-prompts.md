@@ -607,9 +607,16 @@ above stays as it was decided; where it differs, this amendment holds.
   GATEWAY1-2) added a third reading that blanks every word glued to a digit, an ordinal-like suffix too, so a range glued
   to "St.", "Rd.", "TH" or "nd" after its year is a barrier ("10/01/2026-10/15/2026St. Joseph"), and reads SEC-5's label
   over the numbers before an unsigned amount and before its range's first end, each digit as a space, so a date, an
-  amount, a currency amount or a range between an SSN or phone label and an amount-shaped number shields it ("SSN:
-  01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456", "SSN 900 12 3456150.00" are refused; so is "Call us about
-  150.00-120.00", the fail-safe side, as "Call us about 150.00 1234" was).
+  amount, a currency amount or a range between an SSN or phone label and an amount-shaped number no longer shields it
+  ("SSN: 01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456" are refused). Its re-review (2026-11-06; its gateway
+  findings reuse the ids GATEWAY1-n and are cited as re-review GATEWAY1-n) narrowed that read: a plain number, one in no
+  date, amount or currency amount, is read over only in the amount's own run, before any word or such span ("SSN 9001
+  2.34 56", "SSN (2) 900.12 3456", "Phone 711 900.12 3456" are refused), and one after a word or a span ends the read,
+  as a digit ends every label window, so a phone word's own number keeps the amounts after it ("TTY 711. Paid 150.00
+  2026", "TTY 711⏎150.00 120.00 30.00", "Fax 3 pages: 150.00 120.00" are sent, as at cc3dd7f6). On the fail-safe side,
+  as "Call us about 150.00 1234" was, a chain is refused whose first group a phone label is nearest ("Call us about
+  150.00-120.00", "Contact us. 97110 1 150.00") or that starts at an amount right after the label's own number with
+  nothing between ("TTY 711⏎150.00 1234").
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the
@@ -646,7 +653,10 @@ above stays as it was decided; where it differs, this amendment holds.
 Still not covered, recorded as residuals: addresses (the ruling does not cover them); an MBI (a member ID, redacted when
 the records hold it); a phone written in words or with letters (`1-800-555-SYNP`); an SSN's last four in prose (`ending
 in 3456`); an unlabeled bare ten starting 2 that passes the NPI check; a seven-digit local number with no phone label,
-or with a digit in its label window (`Phone 1: 555-0100`); a non-NANP phone number; `1` and ten written as one run with
+or with a digit in its label window (`Phone 1: 555-0100`), and so an SSN or phone whose label is behind a number and
+then a word, a date or an amount (`TTY 1: 7,439.10 942.77 3098`, `SSN 1: is 01/01/2020-900.12 3456`, `Phone 1: is
+2/5/26-545.68 936 90 8080172.00`: re-review GATEWAY1-1; cc3dd7f6 sent the first, and refused the others only because the
+range then joined the next group, A3); a non-NANP phone number; `1` and ten written as one run with
 no phone label (`Patient 12025550123`, kept as an 11-digit ICN is); two phones with nothing between them
 (`202-555-0123202-555-0124`); an SSN written with an OCR space and then a whole slashed or dashed date for its last six
 (`SSN 900 12/03/56`); a number written as two whole dates or amounts, or one of each (a currency amount too), joined by

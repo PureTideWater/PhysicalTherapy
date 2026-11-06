@@ -1199,17 +1199,28 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
  * The label window before a bare number at a view position (3.4): up to LABEL_WINDOW characters back, ending at a
- * position `stops` (the last match already found), a BARRIER, a digit (unless `throughDigits`: the scan's reading of
- * SEC-5's label over the numbers before an amount), or a second line break.
+ * position `stops` (the last match already found), a BARRIER, a digit, or a second line break. With `spanned` (the scan's
+ * reading of SEC-5's label over the numbers before an amount: review GATEWAY1-2), a digit of a date, an amount or a
+ * currency amount (where `spanned` holds) is read through, and so is any other digit until a letter or such a span has
+ * been read: the amount's own run of plain numbers ("SSN 9001 2.34 56"), never a number past a word or a span, as a
+ * phone word's own is to the amount in "TTY 711. Paid 150.00 2026" and to 120.00 in "TTY 711\n150.00 120.00"
+ * (re-review GATEWAY1-1).
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean, throughDigits = false): string {
+function labelWindow(text: string, start: number, stops: (index: number) => boolean, spanned?: (index: number) => boolean): string {
   let from = start;
   let breaks = 0;
+  // Whether a letter, or a digit where `spanned` holds, has been read since the start: past one, a plain digit ends the window.
+  let passed = false;
   while (from > 0 && start - from < LABEL_WINDOW) {
     const index = from - 1;
     const character = text[index] ?? '';
-    if (stops(index) || character === BARRIER || (!throughDigits && DIGIT.test(character))) {
+    const digit = DIGIT.test(character);
+    const inSpan = digit && spanned !== undefined && spanned(index);
+    if (stops(index) || character === BARRIER || (digit && !inSpan && (spanned === undefined || passed))) {
       break;
+    }
+    if (inSpan || (!digit && /\p{L}/u.test(character))) {
+      passed = true;
     }
     if (LINE_BREAK_CHARACTER.test(character) && !(character === '\r' && text[index + 1] === '\n')) {
       breaks += 1;
@@ -1605,18 +1616,6 @@ function survivorIn(text: string): boolean {
     }
     return held;
   };
-  // SEC-5's label for an unsigned amount, read over the numbers before it as well, each digit as a space (so a label glued
-  // to a digit is still one): a date, an amount or a range between the label and the amount ends no label's reach
-  // ("SSN: 01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456": review GATEWAY1-2).
-  const labeledOver = new Map<number, ScanLabel>();
-  const labeledOverNumbers = (start: number): ScanLabel => {
-    let held = labeledOver.get(start);
-    if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, true).replace(/[0-9]/gu, ' '));
-      labeledOver.set(start, held);
-    }
-    return held;
-  };
   // A date glued to a word ("2020-01-01Paid", extracted text that lost its space) is read with that word as blanks too:
   // datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16, check round 1).
   // Only a word glued to a digit is blanked (GLUED_WORD), so a month word stays one ("2 January 2020Paid"), and a blank
@@ -1636,6 +1635,24 @@ function survivorIn(text: string): boolean {
   for (const span of currency) {
     mark(span.start, span.end);
   }
+  // SEC-5's label for an unsigned amount, read over the numbers before it as well, each digit as a space (so a label glued
+  // to a digit is still one): a date, an amount or a range between the label and the amount ends no label's reach
+  // ("SSN: 01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456": review GATEWAY1-2). A plain number is read over only in
+  // the amount's own run, before any word or span: one before them, as a phone word's own ("TTY 711"), ends the read as a
+  // digit ends every label window (re-review GATEWAY1-1).
+  const spanned = new Uint8Array(text.length + 1);
+  for (const span of [...dates, ...currency, ...amounts]) {
+    spanned.fill(1, span.start, span.end);
+  }
+  const labeledOver = new Map<number, ScanLabel>();
+  const labeledOverNumbers = (start: number): ScanLabel => {
+    let held = labeledOver.get(start);
+    if (held === undefined) {
+      held = scanLabeled(labelWindow(text, start, () => false, (index) => spanned[index] === 1).replace(/[0-9]/gu, ' '));
+      labeledOver.set(start, held);
+    }
+    return held;
+  };
   // Dates of both readings and amounts are ranged together: either end of a range may be read on either reading
   // ("01/01/2020-01/02/2020Paid": the first end on the text, the second with the letters as blanks), and a range may
   // join a date to an amount or an amount to one with a currency sign (MOD-16 seed 1034253323). An unsigned amount
