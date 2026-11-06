@@ -88,6 +88,11 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   (commit trailers) was refuted. Fix round wf_f6e043ec-5b7 (archived): fixes, a sweep until dry with skeptics and a
   completeness critic, the fast checks, then the description.
 
+- 2026-11-06T20:56Z: wf_f6e043ec-5b7 done: F1 to F3 fixed (c189c4a1); the sweep confirmed 7 more (reviewer citations, ADR 0058 pointing
+  to 0081, plateHolds wording, lockup heights pinned to the plated PNGs, a mail test comment): d7a45752, 8a92286e,
+  80ce3ec0; fast checks and the brand e2e green on 80ce3ec0 (WIP `co-001/wip/email-lockup-plate-s5`). The sweep was not
+  dry after 3 rounds, so wf_6882a2d4-33e (archived) sweeps until dry, then re-checks the description.
+
 ## Waiting on someone
 - None.
 
