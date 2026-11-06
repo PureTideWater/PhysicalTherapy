@@ -22,9 +22,11 @@ interface Entry {
   /** Generates the case's files; absent with `noFile`. */
   readonly build?: Build;
   readonly noFile?: string;
+  /** What the case's tests do not assert yet, and which later slice does (the case's notes). */
+  readonly notes?: readonly string[];
 }
 
-const none = (completesIn: number, noFile: string, assertedBy?: readonly string[]): Entry => ({ completesIn, noFile, assertedBy });
+const none = (completesIn: number, noFile: string, assertedBy?: readonly string[], notes?: readonly string[]): Entry => ({ completesIn, noFile, assertedBy, ...(notes === undefined ? {} : { notes }) });
 
 function par29(b: CaseBuilder): void {
   const facts = largeFixtureFacts();
@@ -354,15 +356,26 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   // Lane B (co-001/packet-figure-placeholders, slice 2): verifier format /3 behind an explicit format (VERIFIER_FORMAT stays /2): pass 1's
   // strict scan and fact ids, pass 2's contradiction in both directions, the code draft's tokens. The model's half comes with slice 6.
-  'CAS-52': none(8, 'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.', [
-    'packages/packets/src/scan-strict.test.ts',
-    'packages/packets/src/verifier-template.test.ts',
-    'packages/packets/src/draft-template.test.ts',
-  ]),
-  'CAS-53': none(8, 'Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.', ['packages/packets/src/verifier-template.test.ts', 'packages/packets/src/fact-catalog.test.ts']),
+  'CAS-52': none(
+    8,
+    'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.',
+    ['packages/packets/src/scan-strict.test.ts', 'packages/packets/src/verifier-template.test.ts', 'packages/packets/src/draft-template.test.ts', 'packages/packets/src/serialize.test.ts'],
+    [
+      'Pending, slice 6 (the gateway prompt and schema): a model’s draft with a /3 mismatch not written (not_drafted, misstated), a text segment with a brace or a bracket as invalid_output, a model’s line.* or claim.* id as unknown_fact, and the pre-call guard. The tests listed assert the verifier’s and serializeDraft’s half.',
+    ],
+  ),
+  'CAS-53': none(
+    8,
+    'Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.',
+    ['packages/packets/src/verifier-template.test.ts', 'packages/packets/src/fact-catalog.test.ts'],
+    [
+      'Pending, slice 5 (the web picker and preview): a typed subset sum opening the picker. Pending, slice 4 (the worker’s export, approval and verifier of now): schedule_changed. The tests listed assert the ids’ half; fact-catalog.test.ts holds the off-shape code’s.',
+    ],
+  ),
   'CAS-54': none(8, 'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.', [
     'packages/packets/src/draft-template.test.ts',
     'packages/packets/src/verifier-template.test.ts',
+    'packages/packets/src/verifier-contradiction.test.ts',
   ]),
   // Lane B (co-001/packet-figure-placeholders, slice 1): a narrative’s figures as fact tokens rendered by code; the render half, in the worker
   // and in a browser (formatUsdPlain against formatUsd en-US, and renderFacts, in both). The approval and export half come with later slices.
@@ -1131,6 +1144,9 @@ function definition(id: string, title: string, assertion: string, entry: Entry, 
       const b = new CaseBuilder({ id, module, title, assertion, completesIn: entry.completesIn, assertedBy: entry.assertedBy, codeListRelease: module === 'PAR' || build !== undefined ? CODE_LIST_RELEASE : null }, dir);
       if (entry.noFile !== undefined) {
         b.noFiles(entry.noFile);
+      }
+      for (const note of entry.notes ?? []) {
+        b.note(note);
       }
       build?.(b);
       return b.build();

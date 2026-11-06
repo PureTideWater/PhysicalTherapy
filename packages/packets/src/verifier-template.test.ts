@@ -9,6 +9,7 @@ import { FACT_CONTENTS, type FactContent } from './fact-contents.test-support';
 import { narrativeFacts } from './facts';
 import { VERIFIER_FORMAT, VERIFIER_FORMAT_V3, type PacketContent } from './format';
 import { renderFacts } from './render';
+import { serializeDraft } from './serialize';
 import { CURRENCY_WORDS, MULTIPLES, MULTIPLIERS, ORDINALS, SCALES, STRICT_NUMBER_WORDS, STRICT_PLURALS, TEENS, TENS, UNITS } from './scan';
 import { assemblyInput, contractCitation, contractWindowSource } from './test-support';
 import { type Mismatch, type VerifierReportV3, verifyAtFormat, verifyNarrative, verifyTemplate } from './verifier';
@@ -203,6 +204,121 @@ describe('CAS-52: free text holds no figure; tokens, a person’s markers and id
   it('takes a token standing alone as a sentence, and never ends one at the dots of an id', () => {
     expect(verify('{{fact:pattern.allowed}} [1]. {{fact:pattern.paid}} [1].')).toMatchObject({ passed: true, sentences: 2 });
     expect(verify('{{fact:pattern.allowed}}.')).toMatchObject({ passed: false, sentences: 1, mismatches: [{ code: 'sentence_without_citation' }] });
+  });
+});
+
+describe('CAS-52: a fact token stands apart, so nothing typed against it prints as part of its figure', () => {
+  /** The template's text at each fact_not_separated mismatch. */
+  const glued = (template: string, of: PacketContent = content('base')) =>
+    verify(template, of)
+      .mismatches.filter((mismatch) => mismatch.code === 'fact_not_separated')
+      .map((mismatch) => [mismatch.kind, template.slice(mismatch.start, mismatch.end)]);
+
+  it('fails a sign, a point, a letter or a digit typed against a token, at the token’s span', () => {
+    const cases: readonly [string, string][] = [
+      ['The payer counted .{{fact:line.1.units}} [1].', '{{fact:line.1.units}}'],
+      ['The payer allowed for -{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for −{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      // At its span in the template, after a hidden character the text read leaves out.
+      ['The\u200B\u200B payer allowed for -{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for +{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for ±{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for ~{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for ,{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for /{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for x{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer allowed for ×{{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The lines were billed as {{fact:code.97110}}-GP-KX [1].', '{{fact:code.97110}}'],
+      ['The lines were billed as {{fact:code.97110}}-XU [1].', '{{fact:code.97110}}'],
+      ['The lines were billed as G{{fact:code.97110}} [1].', '{{fact:code.97110}}'],
+      ['The lines were billed as {{fact:code.97110}}T [1].', '{{fact:code.97110}}'],
+      ['The lines were billed as {{fact:code.97110}}.5 here [1].', '{{fact:code.97110}}'],
+      ['The appeal is at {{fact:packet.level}}I [1].', '{{fact:packet.level}}'],
+    ];
+    for (const [template, token] of cases) {
+      const report = verify(template);
+      expect(report.passed, template).toBe(false);
+      expect(glued(template), template).toEqual([['fact', token]]);
+      expect(report.mismatches.find((mismatch) => mismatch.code === 'fact_not_separated')?.start, template).toBe(template.indexOf(token));
+    }
+  });
+
+  it('fails two tokens glued together, or joined by a point, each at its span', () => {
+    expect(glued('The schedule shows {{fact:line.1.paid_on}}{{fact:line.1.units}} [1].')).toEqual([
+      ['fact', '{{fact:line.1.paid_on}}'],
+      ['fact', '{{fact:line.1.units}}'],
+    ]);
+    expect(glued('The payer paid {{fact:line.2.paid}}.{{fact:line.2.units}} [1].')).toEqual([
+      ['fact', '{{fact:line.2.paid}}'],
+      ['fact', '{{fact:line.2.units}}'],
+    ]);
+    expect(glued('The schedule lists code -{{fact:line.1.code}} [1].', content('severalCodes'))).toEqual([['fact', '{{fact:line.1.code}}']]);
+  });
+
+  it('fails a token a model’s text segment ends against, through serializeDraft', () => {
+    const template = serializeDraft({ paragraphs: [{ sentences: [{ segments: [{ text: 'The payer counted -' }, { fact: 'line.1.units' }], sources: [1] }] }] });
+    expect(template).toBe('The payer counted -{{fact:line.1.units}} [1].');
+    expect(verify(template).passed).toBe(false);
+    expect(glued(template)).toEqual([['fact', '{{fact:line.1.units}}']]);
+    const apart = serializeDraft({ paragraphs: [{ sentences: [{ segments: [{ text: 'The payer counted ' }, { fact: 'line.1.units' }], sources: [1] }] }] });
+    expect(verify(apart).passed).toBe(true);
+  });
+
+  it('passes a token between whitespace, brackets, quotation marks and closing punctuation', () => {
+    for (const template of [
+      '{{fact:pattern.allowed}} [1].',
+      'The remittances show ({{fact:pattern.allowed}}) here [1].',
+      'The remittances show “{{fact:pattern.allowed}}” here [1].',
+      'The remittances show "{{fact:pattern.allowed}}" here [1].',
+      'The remittances show {{fact:pattern.allowed}}, and the payer paid {{fact:pattern.paid}}; see [1].',
+      'The remittances show {{fact:pattern.allowed}}: see [1].',
+      'The remittances show\t{{fact:pattern.allowed}}\nhere [1].',
+      'The remittances show {{fact:pattern.allowed}} [1]. The payer paid {{fact:pattern.paid}}.',
+    ]) {
+      expect(glued(template), template).toEqual([]);
+    }
+    expect(verify('The remittances show ({{fact:pattern.allowed}}) here [1].').passed).toBe(true);
+  });
+});
+
+describe('CAS-52: a numeral normalization turns into letters is still a figure', () => {
+  it('fails a Roman numeral character as typed (NFKC reads “Ⅻ” as “XII”, the renderer prints “Ⅻ”), at its span', () => {
+    for (const numeral of ['Ⅻ', 'Ⅸ', 'ⅰ', 'Ⅿ']) {
+      const template = `The payer allowed ${numeral} units [1].`;
+      const report = verify(template);
+      expect(report.passed, numeral).toBe(false);
+      expect(found(template, report), numeral).toEqual([['free_figure', 'number', numeral]]);
+    }
+    // Letters that spell a Roman numeral outside level, appeal or tier stay prose (ADR 0089, its accepted readings).
+    expect(verify('The payer allowed XII units [1].').passed).toBe(true);
+  });
+});
+
+describe('pass 1 reports in template offsets, after a hidden character or a character normalization lengthens', () => {
+  it('marks each finding on the characters it names', () => {
+    // Two hidden characters left out of the text read (it is shorter), or a ligature normalized to two letters (longer).
+    for (const [opening, hidden] of [
+      ['Note\u200B\u200B on the file', [['hidden_character', null, '\u200B\u200B']]],
+      ['Note on the ﬁle', []],
+    ] as const) {
+      const template = `${opening}: {{fact:pattern.allowed}} and 3 here, seven too, with }} and {{patient_name:4}} for Quill [9]. No marker here.`;
+      const report = verify(template, content('base'), ['Quill']);
+      expect(found(template, report), opening).toEqual([
+        ...hidden,
+        ['free_figure', 'number', '3'],
+        ['number_word', 'number', 'seven'],
+        ['unknown_fact', 'fact', '}}'],
+        ['unknown_placeholder', 'placeholder', '{{patient_name:4}}'],
+        ['identifier_in_narrative', 'identifier', 'Quill'],
+        ['unknown_citation', 'citation', '[9]'],
+        ['sentence_without_citation', null, 'No marker here.'],
+      ]);
+    }
+  });
+
+  it('puts an identifier placeholder in its own sentence for pass 2, after hidden characters earlier', () => {
+    const template = 'Note\u200B\u200B\u200B\u200B\u200B\u200B\u200B\u200B [1]. {{patient_name:1}} has {{fact:pattern.allowed}} [1].';
+    expect(found(template, verify(template)).filter(([code]) => code !== 'hidden_character')).toEqual([['fact_contradicted', 'fact', '{{fact:pattern.allowed}}']]);
   });
 });
 

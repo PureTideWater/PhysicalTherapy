@@ -9,7 +9,7 @@ import { type DraftOutput, type DraftSegment, type DraftSentence, serializeDraft
 import { templateSentenceSpans, verifyTemplate } from './verifier';
 
 /**
- * serializeDraft (design lane-b-packet-figure-placeholders, section 2.3; docs/adr/0089): a drafted narrative's segments
+ * serializeDraft (design lane-b-packet-figure-placeholders, section 2.3; docs/adr/0089; test matrix CAS-52): a drafted narrative's segments
  * and sources written as the template the verifier reads, one drafted sentence one verifier sentence, each carrying its
  * own markers. The property's run count is pinned; its seed is the repo's convention (docs/adr/0066). All data
  * SYNTHETIC.

@@ -142,6 +142,20 @@ describe('a stand-in the words beside it do not leave a figure of its own', () =
     expect(contradicted('The schedule names {{fact:code.97110.lines}}% here [1].', several)).toEqual(['{{fact:code.97110.lines}}']);
   });
 
+  it('fails the token closed, and returns a report, when the stand-in is read from a sign before it ("$ 1")', () => {
+    const base = FACT_CONTENTS.base();
+    for (const [template, token] of [
+      ['The schedule has ${{fact:pattern.lines}} [1].', '{{fact:pattern.lines}}'],
+      ['The payer was billed for ${{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+      ['The payer was billed for US${{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
+    ] as const) {
+      const report = verifyTemplate(template, base, []);
+      expect(report.passed, template).toBe(false);
+      expect(contradicted(template, base), template).toEqual([token]);
+      expect(report.mismatches.map((mismatch) => mismatch.code), template).toContain('free_figure');
+    }
+  });
+
   it('fails a figure held in two roles of which neither is the fact’s', () => {
     expect(contradicted('The shortfall is more than the payer paid: {{fact:pattern.allowed}} [1].', FACT_CONTENTS.severalCodes())).toEqual(['{{fact:pattern.allowed}}']);
   });

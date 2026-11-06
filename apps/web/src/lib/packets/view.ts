@@ -22,6 +22,7 @@ export const MISMATCH_TEXT: Readonly<Record<MismatchCode, string>> = {
   unknown_fact: 'a figure placeholder this version’s records do not have; insert the figure again from the list',
   fact_not_canonical: 'a figure placeholder for lines another placeholder names; use the one the list offers',
   fact_contradicted: 'words beside a figure that say something other than what the figure covers; reword them or choose another figure',
+  fact_not_separated: 'a figure with a character typed right against it (a sign, a point, a letter or another figure), which would print as part of the figure; put a space between them',
 };
 
 /** A figure's kind, as a mismatch names it ("an amount that does not match this version’s records"). */
@@ -78,6 +79,7 @@ export function mismatchShown(code: MismatchCode, written: string): string | nul
     case 'unknown_fact':
     case 'fact_not_canonical':
     case 'fact_contradicted':
+    case 'fact_not_separated':
       return null;
   }
 }

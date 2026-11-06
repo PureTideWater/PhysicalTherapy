@@ -97,6 +97,55 @@ describe('the code draft', () => {
   });
 });
 
+/** The amounts a text writes out, as written ("$210.00"). */
+const amounts = (text: string): string[] => [...text.matchAll(/\$[\d,]+\.\d{2}/g)].map((match) => match[0].replaceAll(',', ''));
+
+/**
+ * The /3 draft states what the /2 draft states: rendered, it holds every amount the /2 draft writes (the pattern's
+ * totals, and interest exactly where /2 states it), and every procedure code /2 names; a contract draft lists every
+ * code token the catalog holds for the pattern.
+ */
+function statesWhatV2States(content: PacketContent): void {
+  const before = outcome(() => draftNarrative(content));
+  if (before.startsWith('threw ')) {
+    return;
+  }
+  const template = draftNarrative(content, V3);
+  const rendered = renderFacts(template, content);
+  expect(rendered.ok, template).toBe(true);
+  const text = rendered.ok ? rendered.text : '';
+  const statesInterest = before.includes('Prompt-pay interest of');
+  expect(template.includes('{{fact:interest.total}}'), template).toBe(statesInterest);
+  const v2Amounts = content.citation.kind === 'contract' && content.citation.method === 'FIXED_SCHEDULE' ? amounts(before).slice(-3 - (statesInterest ? 1 : 0)) : amounts(before);
+  const v3Amounts = new Set(amounts(text));
+  for (const amount of v2Amounts) {
+    expect(v3Amounts.has(amount), `${amount} in ${text}`).toBe(true);
+  }
+  // A code the catalog holds (an off-shape code has no fact, CAS-53): named in /3 wherever /2 names it, and listed in
+  // every contract draft.
+  const catalog = factCatalog(content);
+  for (const code of content.pattern.codes.map((each) => each.procedure_code).filter((each) => catalog.byId.has(`code.${each.toLowerCase()}`))) {
+    if (new RegExp(`\\b${code}\\b`).test(before)) {
+      expect(text, code).toMatch(new RegExp(`\\b${code}\\b`));
+    }
+    if (content.citation.kind === 'contract') {
+      expect(template, code).toContain(`{{fact:code.${code.toLowerCase()}}}`);
+    }
+  }
+}
+
+describe('the /3 code draft states the facts the /2 draft states', () => {
+  it('on every named content', () => {
+    for (const content of named()) {
+      statesWhatV2States(content);
+    }
+  });
+
+  it('on every generated pattern', () => {
+    fc.assert(fc.property(factPackets, statesWhatV2States), { numRuns: 40 });
+  });
+});
+
 /** A sentence is the template's free text where a word may go: each space outside a token or a marker. */
 function freeSpaces(template: string): number[] {
   const taken = [...template.matchAll(/\{\{[^}]*\}\}|\[[^\]]*\]/g)].map((match) => [match.index, match.index + match[0].length] as const);
@@ -128,6 +177,29 @@ describe('properties of format /3 (section 8)', () => {
         expect(report.passed).toBe(false);
         const figures = report.mismatches.filter((mismatch) => mismatch.code === 'free_figure' || mismatch.code === 'number_word');
         expect(figures.some((mismatch) => mismatch.start <= at && at + inserted.length <= mismatch.end)).toBe(true);
+      }),
+      { numRuns: 60 },
+    );
+  });
+
+  it('fails a sign, a point or a letter typed right against any token of the draft, at that token’s span', () => {
+    const before = ['-', '−', '+', '±', '~', '.', ',', '/', 'x', '×', 'G', '$'];
+    const after = ['-', '−', '+', '±', '~', '/', 'x', '×', 'T', 'I', 'G'];
+    fc.assert(
+      fc.property(factPackets, fc.boolean(), fc.nat(), fc.nat(), (content, ahead, pick, char) => {
+        const draft = draftNarrative(content, V3);
+        const tokens = [...draft.matchAll(/\{\{fact:[^}]+\}\}/g)];
+        const token = tokens[pick % tokens.length] as RegExpMatchArray & { index: number };
+        const typed = ahead ? (before[char % before.length] as string) : (after[char % after.length] as string);
+        const at = ahead ? token.index : token.index + token[0].length;
+        const template = `${draft.slice(0, at)}${typed}${draft.slice(at)}`;
+        const start = ahead ? token.index + 1 : token.index;
+        const report = verifyTemplate(template, content, []);
+        expect(report.passed, template).toBe(false);
+        expect(
+          report.mismatches.some((mismatch) => mismatch.code === 'fact_not_separated' && mismatch.start === start && mismatch.end === start + token[0].length),
+          template,
+        ).toBe(true);
       }),
       { numRuns: 60 },
     );

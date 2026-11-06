@@ -144,7 +144,7 @@ describe('strict scanning reads every figure of free text (section 2.4)', () => 
   });
 
   it('reads a zero amount stated in prose after a payment or allowance verb whole, in words', () => {
-    for (const phrase of ['paid nothing', 'allowed none', 'paid the practice zero', 'made no payment', 'issued no payments', 'nothing was paid', 'no amount has been allowed', 'reimbursed no money']) {
+    for (const phrase of ['paid nothing', 'allowed none', 'paid the practice zero', 'paid nil', 'allowed nought', 'paid naught', 'made no payment', 'issued no payments', 'nothing was paid', 'no amount has been allowed', 'reimbursed no money']) {
       const text = `The payer ${phrase} on the lines.`;
       expect(read(text), phrase).toEqual([[phrase, 'amount', 'words']]);
     }
@@ -155,6 +155,16 @@ describe('strict scanning reads every figure of free text (section 2.4)', () => 
 
 describe('the strict-only tables and readings, value by value', () => {
   const only = (text: string) => scanText(text, { strict: true }).figures.map(({ kind, value, start, end, written }) => ({ kind, value, start, end, written }));
+
+  it('holds the currency unit words, each read alone as a figure in words (a fixed list, not the table read back)', () => {
+    expect(CURRENCY_WORDS).toEqual(['dollar', 'dollars', 'cent', 'cents', 'penny', 'pennies']);
+    // The design's section 2.4 words, written out here so the oracle is not the code under test.
+    const SECTION_2_4 = ['zero', 'nil', 'nought', 'naught', 'billion', 'billions', 'quarter', 'quarters', 'double', 'triple', 'once', 'zeros', 'hundreds', 'thousands', 'millions', 'dozens', 'dollar', 'dollars', 'cent', 'cents', 'penny', 'pennies'];
+    for (const word of SECTION_2_4) {
+      const text = `The payer noted ${word} here.`;
+      expect(only(text).map(({ kind, start, end, written }) => [text.slice(start, end), kind, written]), word).toEqual([[word, 'number', 'words']]);
+    }
+  });
 
   it('states each strict-only number word’s number, and reads it in any case', () => {
     expect(STRICT_NUMBER_WORDS).toEqual({ nil: '0', nought: '0', naught: '0', billion: '1000000000', quarter: '0.25', double: '2', triple: '3', once: '1' });

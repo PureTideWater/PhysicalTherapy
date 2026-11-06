@@ -21,6 +21,11 @@ import { DATED, type Mismatch, type MismatchCode, type NarrativeCheck, identifie
  * - every fact token whose id the catalog does not hold for this content, every run in double braces that neither a
  *   fact token nor an identifier placeholder reads and every lone {{ or }} (`unknown_fact`), and every token written
  *   other than as the text shows it (a brace or letter that normalizes to one), which the renderer would not read;
+ * - every fact token with anything but whitespace, an opening bracket or quotation mark before it, or anything but
+ *   closing punctuation and then whitespace after it (`fact_not_separated`): a sign, a point, a letter, a digit or another
+ *   token typed against it would print as part of its phrase's figure ("-6 units", "line 12 units");
+ * - every number character of the template as typed that normalization reads as letters ("Ⅻ" as "XII"), which the
+ *   renderer prints as typed (`free_figure`);
  * - every well-formed id that names its set of lines by a lower subject than the catalog's (`fact_not_canonical`), its
  *   mismatch carrying the canonical id (the renderer's lookupFact, the one rule the catalog and the picker share);
  * - as format /2 does: hidden characters, figures in other digits, the case's own identifiers, identifier placeholders
@@ -34,6 +39,22 @@ import { DATED, type Mismatch, type MismatchCode, type NarrativeCheck, identifie
  * Pass 2 (./contradiction.ts), the contradiction check over the rendered text (`fact_contradicted`, section 4), reads
  * the rendered text through its span map, each token's role and scope the catalog's, and reports in template offsets.
  */
+
+/** A number character of the template as typed. */
+const NUMERAL = /\p{N}/gu;
+/** What may stand right before a fact token: whitespace, or an opening bracket or quotation mark. */
+const BEFORE_TOKEN = /[\s(“‘"]/u;
+/** What may follow a fact token before whitespace or the text's end: closing punctuation, brackets and quotation marks. */
+const AFTER_TOKEN = /^[.,;:!?)”’"]*(?:\s|$)/u;
+
+/**
+ * Whether a fact token stands apart in the text as read: whitespace, an opening bracket or quotation mark (or the
+ * text's start) before it, and whitespace (or the text's end) after it, with only closing punctuation between.
+ */
+function separated(text: string, token: TextSpan): boolean {
+  const before = text[token.start - 1];
+  return (before === undefined || BEFORE_TOKEN.test(before)) && AFTER_TOKEN.test(text.slice(token.end, token.end + 16));
+}
 
 /** A template read once: the check, and the template rendered (null when a token renders nothing). */
 export interface TemplateReading {
@@ -100,6 +121,20 @@ export function readTemplate(template: string, catalog: FactCatalog, identifiers
   }
   for (const stray of scan.strays) {
     add('unknown_fact', 'fact', at(stray));
+  }
+  // A token with a character typed against it: the renderer prints its phrase where it stands, so a sign, a point, a
+  // letter, a digit or another token against it would print as part of the figure ("-6 units", "line 12 units").
+  for (const token of scan.facts) {
+    if (!separated(text, token)) {
+      add('fact_not_separated', 'fact', at(token));
+    }
+  }
+  // A numeral the text's normalized form shows as letters (a Roman numeral character, "Ⅻ" read as "XII"): the renderer
+  // prints the character as typed, so it is a figure of the free text.
+  for (const match of template.matchAll(NUMERAL)) {
+    if (!/\p{N}/u.test(match[0].normalize('NFKC'))) {
+      add('free_figure', 'number', { start: match.index, end: match.index + match[0].length });
+    }
   }
   const rows = new Set(catalog.content.lines.map((line) => line.row));
   for (const token of scan.placeholders) {

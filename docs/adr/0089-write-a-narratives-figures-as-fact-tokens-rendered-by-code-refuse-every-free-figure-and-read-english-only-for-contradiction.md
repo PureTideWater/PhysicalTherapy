@@ -82,11 +82,26 @@ cent, cents, penny, pennies (`CURRENCY_WORDS`); a zero amount after a payment or
 the catalog, the gateway's figures, the evidence requests, the evaluation's faults and score); their tests pass
 unchanged.
 
-**Pass 1, the template** (`verifier/template.ts` `readTemplate`). Five new closed codes: `free_figure` (a figure
+**Pass 1, the template** (`verifier/template.ts` `readTemplate`). Six new closed codes: `free_figure` (a figure
 written in digits, a sign or a numeral: a number, an amount, a percent, a date, a code, a Roman numeral after level,
-appeal or tier, an ordinal day of a month, an identifier-like run), `number_word` (a figure in words, the strict-only
-words and zero phrases included), `unknown_fact`, `fact_not_canonical` and `fact_contradicted`. Mismatch `kind` gains
-`fact`. /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
+appeal or tier, an ordinal day of a month, an identifier-like run, and a number character of the template as typed
+that normalization reads as letters, such as the Roman numeral character "Ⅻ", which NFKC reads as "XII" while the
+renderer prints "Ⅻ"), `number_word` (a figure in words, the strict-only words and zero phrases included),
+`unknown_fact`, `fact_not_canonical`, `fact_contradicted` and `fact_not_separated`. Mismatch `kind` gains `fact`.
+
+**A token stands apart** (`fact_not_separated`, at the token's span; the review of slice 2). The renderer prints a
+phrase where its token stands, and some phrases begin or end with a bare figure (units "2 units for line 1", a code
+"97110", a level, every `line.N.*` phrase ending "line N"). A character typed against a token would print as part of
+that figure: "-{{fact:pattern.units}}" prints "-6 units", ".{{fact:line.1.units}}" prints ".2 units",
+"{{fact:code.97110}}-GP-KX" prints modifiers the content does not hold, and two tokens glued together print "line 12
+units". Neither pass read it: pass 1 masks the tokens and pass 2 reads each as a stand-in with a space on each side. So
+a token must have, in the text as read, whitespace, an opening bracket or quotation mark, or the text's start before
+it, and whitespace or the text's end after it with only closing punctuation (`. , ; : ! ? ) ” ’ "`) between. Anything
+else against it (a sign, a point, a comma or slash before it, a letter, a digit, another token) fails the token. The
+one rule holds for a person and a model: serializeDraft joins segments as they stand, so a text segment ending in "-"
+before a fact segment fails the same way. A new code rather than `unknown_fact` or `free_figure`, because the person's
+fix is a space, not another figure; the editor says so. Accepted false refusals: a possessive or a hyphenated word
+against a token ("97110’s rate", "{{fact:pattern.lines}}-line"), which the person rewords. /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
 placeholders naming no kind or row, markers naming no source, sentences with no marker, an empty template. Sentences
 are counted with each token read as a word, so a token can stand alone as a sentence and the dots inside an id never
 end one.
@@ -108,7 +123,9 @@ phrase is never read again. A token fails as `fact_contradicted` when:
   a total cue in its free text: `roles-reader/cues.ts` `totalCues()`, the one list, built from the reader's tables
   ("in total", "in all", "total", "totals", "altogether", "overall", each or every line, and all of or across the
   rows: "all the lines", "across the lines").
-A part fact beside a part trigger passes, and an all-lines fact beside a total cue passes.
+A part fact beside a part trigger passes, and an all-lines fact beside a total cue passes. A stand-in the reader does
+not read as one figure of its own (a sign before it, "$ 1" read from the "$"; one that runs past it, "1 %") fails its
+token closed as `fact_contradicted`, and the check returns a report, never throws.
 
 **The code draft at /3** writes the same statement with every figure a token a model may also use (no row-bound id),
 and names a fact only where the catalog holds it. ADR 0086's sentence splits stay: the codes and the service dates are
@@ -118,6 +135,9 @@ in sentences with no all-lines amount. A property holds that it passes /3 for ev
 system prompt from slice 6): "one of the lines", "first" ("To begin,"), "once", "double-check", "a quarter" (of a year),
 "the dollar amount", "level one" (it must be `{{fact:packet.level}}`), "on one of the lines" (also a part beside an
 all-lines fact). Ordinal days and Roman numerals are figures (`free_figure`), by the design's section 2.4 table.
+Letters spelling a Roman numeral outside level, appeal or tier ("XII units", "IX visits") and Han numerals (letters,
+not number characters) stay prose, as the design's one list has it; widening the list is a design change (Revisit
+when).
 
 **The residual: English that names a part without a token or a listed trigger** ("on a subset of the lines",
 "apiece", "for her", "to the claimant"). Such a sentence still passes, but it can no longer change what the payer
@@ -136,7 +156,7 @@ prints only rendered text: a /3 template exported by today's worker would print 
 - A /3 report's mismatch may carry a sixth key, `canonical`, on `fact_not_canonical` only (a fact id, never text), and
   kind `fact`; `packet_verifier_report_valid` must accept both in /3 reports. The editor offers the canonical id from
   the stored report without recomputing the catalog.
-- The five new codes are added to the report's closed code list for /3 reports only.
+- The six new codes are added to the report's closed code list for /3 reports only.
 
 ## Alternatives considered
 
@@ -161,16 +181,19 @@ prints only rendered text: a /3 template exported by today's worker would print 
   sets' does). A fact token can no longer pass /2.
 - The stricter scan refuses the accepted false refusals above in /3 free text; the person rewords in one step.
 - Checks: CAS-52 to CAS-54 (`docs/product/test-matrix.md`; `scan-strict.test.ts`, `verifier-template.test.ts`,
-  `draft-template.test.ts`, `serialize.test.ts`), the /2 differential, and the properties of section 8 this slice owns
-  (the code draft passes /3; a digit or a word of the scanner's tables inserted fails at its span; a part-naming token
-  beside an all-lines fact fails unless covering; a total cue beside a part fact fails; serialization keeps the
-  sentence count). Each ran under 40 seeds before the pull request.
+  `draft-template.test.ts`, `serialize.test.ts`, `verifier-contradiction.test.ts`), the /2 differential, the /3 draft
+  stating what the /2 draft states (its amounts, interest exactly where /2 states it, every code the catalog holds),
+  pass 1's spans in template offsets after a hidden character or a lengthening normalization, and the properties of
+  section 8 this slice owns (the code draft passes /3; a digit or a word of the scanner's tables inserted fails at its
+  span; a sign, a point or a letter typed against any token fails at that token's span; a part-naming token beside an
+  all-lines fact fails unless covering; a total cue beside a part fact fails; serialization keeps the sentence
+  count). Each ran under 40 seeds before the pull request.
 
 ## Not covered
 
 - The migration and the format flip (slice 3); the worker's export, write and approval path, `verifierNow`'s
   `rendered_sha256`, `rendered_changed` and `schedule_changed` (slice 4); the editor's picker, preview and one-click
-  conversion (slice 5; the web's `mismatchShown` already has plain cases for the five codes); the gateway's prompt v2,
+  conversion (slice 5; the web's `mismatchShown` already has plain cases for the six codes); the gateway's prompt v2,
   segment schema and use of `serializeDraft` (slice 6); the v2 evaluation set (slice 7).
 
 ## Not verified here
@@ -182,4 +205,6 @@ prints only rendered text: a /3 template exported by today's worker would print 
 - The evaluation's `fact_contradicted` rate (slice 7) shows careful drafts refused by cues beside phrases: consider a
   short phrase form per fact (design section 10), never a looser check.
 - People's narratives show an accepted false refusal often enough to cost more than its rewording.
+- A free figure in letters outside the scanner's one list (a Roman numeral spelled in letters outside level, appeal or
+  tier; a Han numeral) is seen in a draft: widen the list in the design first, then strict mode.
 - A patient subset is needed beyond rows (it needs `tp-packet/3`).

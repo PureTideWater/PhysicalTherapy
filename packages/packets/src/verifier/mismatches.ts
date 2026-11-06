@@ -55,6 +55,7 @@ export const MISMATCH_CODES = [
   'unknown_fact',
   'fact_not_canonical',
   'fact_contradicted',
+  'fact_not_separated',
 ] as const;
 export type MismatchCode = (typeof MISMATCH_CODES)[number];
 
@@ -62,8 +63,8 @@ export interface Mismatch {
   readonly code: MismatchCode;
   /**
    * The figure's kind for figure_not_in_input, free_figure and number_word; placeholder or citation for those codes;
-   * identifier for identifier_in_narrative; fact for unknown_fact, fact_not_canonical and fact_contradicted; null
-   * otherwise.
+   * identifier for identifier_in_narrative; fact for unknown_fact, fact_not_canonical, fact_contradicted and
+   * fact_not_separated; null otherwise.
    */
   readonly kind: FigureKind | 'placeholder' | 'citation' | 'fact' | null;
   /** The sentence it is in, from 0 (-1 for an empty narrative). */

@@ -159,7 +159,8 @@ describe('the words for a template’s mismatches (tp-packet-verifier/3; docs/ad
       ['fact_not_canonical', null],
     ]);
     expect(mismatchShown('fact_contradicted', '{{fact:pattern.paid}}')).toBeNull();
-    for (const code of ['free_figure', 'number_word', 'unknown_fact', 'fact_not_canonical', 'fact_contradicted'] as const) {
+    expect(mismatchShown('fact_not_separated', '{{fact:pattern.units}}')).toBeNull();
+    for (const code of ['free_figure', 'number_word', 'unknown_fact', 'fact_not_canonical', 'fact_contradicted', 'fact_not_separated'] as const) {
       expect(MISMATCH_TEXT[code], code).not.toMatch(/\{\{|fact_|canonical/);
     }
     expect(FIGURE_KIND_TEXT.fact).toBe('a figure placeholder');

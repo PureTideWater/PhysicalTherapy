@@ -170,9 +170,12 @@ export function contradictions(input: ContradictionInput): TextSpan[] {
   // part-naming token names.
   for (const { entry, span, probe: [start, end] } of probe.facts) {
     const into = sentence(sentenceOf(span.start));
-    // A token starts at every stand-in; one that runs past it ("1 %") is another figure, so the stand-in is not read.
-    const index = tokens.findIndex((token) => token.start === start);
-    into.facts.push({ entry, span, reading: (tokens[index] as Token).end === end ? byToken.get(index) : undefined });
+    // A stand-in read as one figure of its own is a token from its start to its end; one no token starts at ("$ 1", read
+    // from the "$") or one that runs past it ("1 %") is another figure, so the stand-in is not read.
+    const index = tokens.findIndex((token: Token) => token.start === start);
+    // No token at the stand-in: findIndex gives -1, which names no token.
+    const own = tokens[index]?.end === end;
+    into.facts.push({ entry, span, reading: own ? byToken.get(index) : undefined });
     if (PART_SUBJECTS.has(entry.subject)) {
       into.partRows.push([...entry.rows]);
     }

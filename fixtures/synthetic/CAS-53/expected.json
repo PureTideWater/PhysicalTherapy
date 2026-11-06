@@ -13,5 +13,7 @@
   "uploads": [],
   "scenario": null,
   "outcome": null,
-  "notes": []
+  "notes": [
+    "Pending, slice 5 (the web picker and preview): a typed subset sum opening the picker. Pending, slice 4 (the worker’s export, approval and verifier of now): schedule_changed. The tests listed assert the ids’ half; fact-catalog.test.ts holds the off-shape code’s."
+  ]
 }

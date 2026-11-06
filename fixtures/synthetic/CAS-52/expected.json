@@ -2,13 +2,14 @@
   "case": "CAS-52",
   "module": "CAS",
   "title": "A narrative template’s free text holds no figure",
-  "assertion": "Every figure `scanText` reads in strict mode (digit runs, signs, Roman numerals after a level, ordinal days, every word of the scanner’s tables, “zero”, “thousands”, “paid nothing”) fails at its span (`free_figure`, `number_word`), from a person or a model, while markers (a person’s), identifier placeholders (a person’s) and fact tokens pass. A model’s draft with any `/3` mismatch is not written (`not_drafted`, `misstated`); a text segment with `{`, `}`, `[` or `]` is `invalid_output`; a model’s `line.*`/`claim.*` id is `unknown_fact`. The pre-call guard passes a synthetic surname equal to a vocabulary word.",
+  "assertion": "Every figure `scanText` reads in strict mode (digit runs, signs, Roman numerals after a level, ordinal days, every word of the scanner’s tables, “zero”, “thousands”, “paid nothing”) fails at its span (`free_figure`, `number_word`), from a person or a model, while markers (a person’s), identifier placeholders (a person’s) and fact tokens pass. A fact token with a sign, a point, a letter, a digit or another token typed against it fails at its span (`fact_not_separated`), and a numeral character normalization reads as letters (“Ⅻ”) is a `free_figure`. A model’s draft with any `/3` mismatch is not written (`not_drafted`, `misstated`); a text segment with `{`, `}`, `[` or `]` is `invalid_output`; a model’s `line.*`/`claim.*` id is `unknown_fact`. The pre-call guard passes a synthetic surname equal to a vocabulary word.",
   "synthetic": true,
   "completesIn": 8,
   "assertedBy": [
     "packages/packets/src/scan-strict.test.ts",
     "packages/packets/src/verifier-template.test.ts",
-    "packages/packets/src/draft-template.test.ts"
+    "packages/packets/src/draft-template.test.ts",
+    "packages/packets/src/serialize.test.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.",
@@ -17,5 +18,7 @@
   "uploads": [],
   "scenario": null,
   "outcome": null,
-  "notes": []
+  "notes": [
+    "Pending, slice 6 (the gateway prompt and schema): a model’s draft with a /3 mismatch not written (not_drafted, misstated), a text segment with a brace or a bracket as invalid_output, a model’s line.* or claim.* id as unknown_fact, and the pre-call guard. The tests listed assert the verifier’s and serializeDraft’s half."
+  ]
 }
