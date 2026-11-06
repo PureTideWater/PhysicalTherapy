@@ -47,6 +47,15 @@ Effect: any PR's unit job can go red at random.
      agents at a time per workflow, so 156 single-leak skeptics would take many hours). Stopped and resumed as the same run
      wf_8da6dd19-398 (hunters replayed from cache); the synthesis now writes the brief as the follow-on PR's design input,
      triaging pattern gaps (fix) from obfuscation beyond pattern reach (fix or documented residual, for the co-founder).
+- 2026-11-06T21:50Z: build workflow state: builder 2861bc0f, 89fb3193; gateway review round 1 (GATEWAY1-1..6) fixed in 21e67bba,
+  435f0a68, e0cf46e0 (WIP `co-001/wip-redact-range-glued` = e0cf46e0). **The PHI review of round 1 was lost** (its agent died at
+  20:26 with no result), so fix round 1 ran on the gateway findings alone. Its notes showed REGRESSIONS against the base: letters
+  refused at cc3dd7f6 and sent at the builder's head (an SSN with an amount fused on, before a range: `SSN 900123456120.00-01/02/2020`,
+  `SSN 900 12 3456.78-01/02/2020`; 114 in a 20,000-letter seeded fuzz), and month-word name parts (a patient named May or June)
+  redacted at base and sent now in date-adjacent shapes (likely 2861bc0f's datesIn change). Stopped the workflow before round 2,
+  edited the script (the PHI lens as a default agent on the security-reviewer checklist, a seeded base-vs-HEAD differential, the
+  lost notes given explicitly; any reviewer that dies is retried once) and resumed the same run: the PHI round-1 review re-runs on
+  the current head, then the fixer applies its findings. This PR merges only with zero base-vs-HEAD regressions.
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
