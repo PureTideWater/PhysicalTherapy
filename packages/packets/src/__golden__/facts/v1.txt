@@ -1,0 +1,100 @@
+packet.as_of | date | as_of_date | - | - | model | stored
+  the packet date 2026-10-16
+packet.level | level | level | - | - | model | stored
+  dispute level 1
+citation.version | version | version | - | - | model | stored
+  version 1 of the contract
+citation.page | page | citation_page | - | - | model | stored
+  page 2 of the contract
+citation.effective | date_span | effective_date | - | - | model | stored
+  the contract version in effect from 2026-01-01
+citation.quote | quote | - | - | - | model | stored
+  “97110 is paid 50.00 per unit”
+contract.rate | amount | expected | unit | - | model | stored
+  the contract’s fee-schedule amount of $50.00 per unit
+release.no.1 | release | release | - | - | model | stored
+  rule release 900001
+pattern.lines | count | lines | total | 1,2,3 | model | stored
+  the 3 lines of the schedule
+pattern.claims | count | claims | total | 1,2,3 | model | stored
+  the 3 claims of the schedule
+pattern.patients | count | patients | total | 1,2,3 | model | stored
+  the 3 patients of the schedule
+pattern.units | units | units | total | 1,2,3 | model | stored
+  6 units in total for the 3 lines
+pattern.expected | amount | expected | total | 1,2,3 | model | stored
+  the contract amount of $300.00 in total for the 3 lines
+pattern.allowed | amount | allowed | total | 1,2,3 | model | stored
+  the allowed amount of $210.00 in total for the 3 lines
+pattern.paid | amount | paid | total | 1,2,3 | model | summed
+  payment of $168.00 in total for the 3 lines
+pattern.variance | amount | variance | total | 1,2,3 | model | stored
+  a shortfall of $90.00 in total for the 3 lines
+pattern.service_dates | date_span | service_date | total | 1,2,3 | model | stored
+  service dates from 2026-03-05 to 2026-03-07
+pattern.units_each | units | units | line | 1,2,3 | model | stored
+  2 units per line on each of the 3 lines
+pattern.expected_each | amount | expected | line | 1,2,3 | model | stored
+  the contract amount of $100.00 per line on each of the 3 lines
+pattern.allowed_each | amount | allowed | line | 1,2,3 | model | stored
+  the allowed amount of $70.00 per line on each of the 3 lines
+pattern.paid_each | amount | paid | line | 1,2,3 | model | stored
+  payment of $56.00 per line on each of the 3 lines
+pattern.variance_each | amount | variance | line | 1,2,3 | model | stored
+  a shortfall of $30.00 per line on each of the 3 lines
+code.97110 | code | - | part | 1,2,3 | model | stored
+  97110
+line.1.units | units | units | part | 1 | person | stored
+  2 units for line 1
+line.1.expected | amount | expected | part | 1 | person | stored
+  the contract amount of $100.00 for line 1
+line.1.allowed | amount | allowed | part | 1 | person | stored
+  the allowed amount of $70.00 for line 1
+line.1.paid | amount | paid | part | 1 | person | stored
+  payment of $56.00 for line 1
+line.1.variance | amount | variance | part | 1 | person | stored
+  a shortfall of $30.00 for line 1
+line.1.service_date | date | service_date | part | 1 | person | stored
+  the service date 2026-03-05 of line 1
+line.1.paid_on | date | paid_date | part | 1 | person | stored
+  the payment date 2026-04-08 of line 1
+line.1.window_ends_on | date | deadline | part | 1 | person | stored
+  the dispute window ending 2036-04-05 for line 1
+line.1.code | code | - | part | 1 | person | stored
+  97110
+line.2.units | units | units | part | 2 | person | stored
+  2 units for line 2
+line.2.expected | amount | expected | part | 2 | person | stored
+  the contract amount of $100.00 for line 2
+line.2.allowed | amount | allowed | part | 2 | person | stored
+  the allowed amount of $70.00 for line 2
+line.2.paid | amount | paid | part | 2 | person | stored
+  payment of $56.00 for line 2
+line.2.variance | amount | variance | part | 2 | person | stored
+  a shortfall of $30.00 for line 2
+line.2.service_date | date | service_date | part | 2 | person | stored
+  the service date 2026-03-06 of line 2
+line.2.paid_on | date | paid_date | part | 2 | person | stored
+  the payment date 2026-04-08 of line 2
+line.2.window_ends_on | date | deadline | part | 2 | person | stored
+  the dispute window ending 2036-04-05 for line 2
+line.2.code | code | - | part | 2 | person | stored
+  97110
+line.3.units | units | units | part | 3 | person | stored
+  2 units for line 3
+line.3.expected | amount | expected | part | 3 | person | stored
+  the contract amount of $100.00 for line 3
+line.3.allowed | amount | allowed | part | 3 | person | stored
+  the allowed amount of $70.00 for line 3
+line.3.paid | amount | paid | part | 3 | person | stored
+  payment of $56.00 for line 3
+line.3.variance | amount | variance | part | 3 | person | stored
+  a shortfall of $30.00 for line 3
+line.3.service_date | date | service_date | part | 3 | person | stored
+  the service date 2026-03-07 of line 3
+line.3.paid_on | date | paid_date | part | 3 | person | stored
+  the payment date 2026-04-08 of line 3
+line.3.window_ends_on | date | deadline | part | 3 | person | stored
+  the dispute window ending 2036-04-05 for line 3
+line.3.code | code | - | part | 3 | person | stored
+  97110

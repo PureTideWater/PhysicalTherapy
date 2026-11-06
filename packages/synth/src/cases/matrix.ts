@@ -286,6 +286,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'A response naming a document still in intake, held, a duplicate, a zip or one of its entries, of a kind other than a payer letter or other document, of another practice, or a contract version’s source is refused on the letter with one sentence, and nothing is recorded; the letters offered are grouped, those no response names first, this person’s uploads before another person’s, then this case’s responses’, listed whole, then other cases’, and a response with another case’s letter is still recorded; a letter a response names leaves Documents to tag and Documents awaiting abstraction, and tagging it, or naming it in an amendment or a correction, is refused with what to tag instead; a tag and a response of the same letter at the same time cannot both pass; a payer’s terms letter that no response names stays in both lists; the Contracts panel names its payer letter kind a payer’s terms or policy letter and says where a payer’s answer goes',
   },
+  {
+    id: 'CAS-55',
+    title: 'Render, approval and export of a narrative’s fact tokens',
+    assertion:
+      'The render equals each fact’s phrase with `formatUsdPlain` amounts, stored pattern and code totals, and code-computed row sums (bigint cents, decimal units); it is idempotent; it is the same in the browser and the worker, and `formatUsdPlain` equals `formatUsd` en-US in both; a renderer change between save and approval makes `verifierNow` read `fails_now` and blocks the approval (`rendered_changed` when the screen’s hash differs); the export refuses a `rendered_sha256` that differs or a surviving `{{`; the v2 set passes 300 of 300 at the gate on the local provider',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },
@@ -546,6 +552,20 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: "A letter that writes another patient's member ID or claim number, with a letter prefix or digits alone, with a dash, spaces or an invisible character, `_`, `.`, `/`, `:`, `#` or `(` next to a letter, after `ID:`, in brackets or as a claim placeholder's digits (`[CLAIM_7654321]`)",
     assertion:
       "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
+  },
+  {
+    id: 'MOD-15',
+    title:
+      "A payer letter that writes a Social Security number (3-2-4 with any dash, spaces, a period, a number joiner such as an underscore, a middle dot or a bullet, a line break or an invisible character between or inside its groups, full-width or other-script digits, masked as XXX-XX-1234, nine digits with an SSN label or no label, a HICN suffix) or a phone number ((AAA) EEE-LLLL, dashes, periods or spaces, +1 or 1, an extension, ten digits with a phone label or none, a seven-digit local number with a phone label), glued to a word, in a comma list with no space, wrapped across a line with indentation or inside a group, after a digit and an invisible character, after a label of the other kind or a word that does not name it, the call's own identifiers among them, or crafted to make redaction slow",
+    assertion:
+      "No digit of it is sent: each is [SSN] or [PHONE], or the call's own placeholder when its digits are the call's member ID or claim number; every placeholder is exact and counted; the self-check refuses (identifier_left, a fixed message with no number) a text in which one survives, a letter in which a nine-, ten- or eleven-digit chain no pattern read survives (an OCR space inside a group, a slash, a closing parenthesis, a semicolon, up to sixteen spaces or tabs, a page break, any grouping after an SSN or phone label), and a letter in which the patient's name is glued to one; a crafted letter of 100 kB is redacted and checked within its time budget",
+  },
+  {
+    id: 'MOD-16',
+    title:
+      "A payer letter with amounts, dates in every form datesIn reads, two dates or two amounts joined by a dash (a service period, a range), NPIs, procedure, adjustment and diagnosis codes, ZIPs and ZIP+4s, TINs, ICNs, EFT traces, checks and references, nine- and ten-digit numbers after a word that names them, alone or in a list (claim, NPI, TIN, check, reference ...), an NPI or TIN after Medicare or contact, service-line rows (codes, units and amounts in columns, a slashed date before a code) and amounts directly before dates and numbers, the call's member ID and claim numbers written SSN- or phone-shaped, and another patient's nine- or ten-digit member ID or claim number written SSN- or phone-shaped",
+    assertion:
+      "The first are sent unchanged (after NFKC), the self-check refuses none of them, and the verifier still reads their dates and references; the call's identifiers keep their placeholders ([MEMBER_ID], [CLAIM_n], the lowest of equal claims), never [SSN] or [PHONE], and are never offered to the screen; another patient's is offered to the one-patient screen whole and with a prefix written against it, so the letter is refused (more_than_one_patient) with nothing of it logged or in the refusal",
   },
   {
     id: 'MOD-17',

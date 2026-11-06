@@ -352,6 +352,16 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
   ]),
+  // Lane B (co-001/packet-figure-placeholders, slice 1): a narrative’s figures as fact tokens rendered by code; the render half, in the worker
+  // and in a browser (formatUsdPlain against formatUsd en-US, and renderFacts, in both). The approval and export half come with later slices.
+  'CAS-55': none(8, 'Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.', [
+    'packages/packets/src/render.test.ts',
+    'packages/packets/src/fact-catalog.test.ts',
+    'packages/packets/src/fact-catalog.property.test.ts',
+    'packages/packets/src/render-golden.test.ts',
+    'packages/money/src/usd-plain.test.ts',
+    'apps/web/src/components/packets/fact-render.browser.test.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
@@ -774,6 +784,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
   'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  // A letter's Social Security and phone numbers redacted by pattern (the founder's ruling of 2026-11-01; docs/adr/0054, amendment of 2026-11-04).
+  'MOD-15': none(10, 'Letters are generated in memory by the property test, which records where it wrote each Social Security and phone number; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  'MOD-16': none(10, 'Letters are generated in memory by the property test, which records what it wrote to stay; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // SDK 1.x on the Anthropic path: the client's tracing, logging and host held, extra headers refused (docs/adr/0048, amendment of 2026-11-01).
   'MOD-17': none(10, 'The client and the configuration are built in memory with a synthetic key, the SDK’s code is read where pnpm installed it, and a fake fetch answers each failure in memory; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts', 'packages/model-gateway/src/config.test.ts']),
   'MOD-18': none(10, 'A fake fetch answers a synthetic message in memory; no request leaves the process; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts']),

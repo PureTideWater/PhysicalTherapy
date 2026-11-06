@@ -71,7 +71,35 @@ export {
   feeScheduleWorksheets,
   plainText,
 } from './explain/index';
+export {
+  type DateSpan,
+  type FactCatalog,
+  type FactEntry,
+  type FactLookup,
+  type FactPath,
+  type FactValue,
+  canonicalFactId,
+  codeShaped,
+  factCatalog,
+  lookupFact,
+  modifierShaped,
+  rowFacts,
+  summedValue,
+} from './fact-catalog';
+export {
+  type EachMeasure,
+  type FactKind,
+  type FactPhraseKey,
+  type FactScope,
+  type FactSubject,
+  type FactWords,
+  type LineMeasure,
+  type OtherFact,
+  type SetMeasure,
+  factWords,
+} from './fact-words';
 export { type NarrativeFacts, heldRoles, narrativeFacts } from './facts';
+export { type RenderProblem, type RenderSpan, type RenderedFacts, renderFact, renderFacts } from './render';
 export {
   type CalculationStep,
   type CitedMethod,
@@ -128,6 +156,9 @@ export {
   fillPlaceholders,
   insertIdentifiers,
   isIdentifierKind,
+  factPlaceholder,
+  factPlaceholderPattern,
+  isFactId,
   lineHoldsOnlyPlaceholders,
   placeholder,
 } from './placeholders';
