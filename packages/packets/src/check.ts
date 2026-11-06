@@ -1,6 +1,8 @@
 import { type NarrativeFacts, narrativeFacts } from './facts';
 import type { PacketContent } from './format';
+import { type FactCatalog, factCatalog } from './fact-catalog';
 import { type NarrativeCheck, type NarrativeReading, findMismatches, readNarrative } from './verifier/mismatches';
+import { type TemplateReading, readTemplate } from './verifier/template';
 
 /**
  * The verifier's check for the packet builder's narrative editor (@tp/packets/check; PRD 7, Packet builder: "narrative
@@ -22,6 +24,7 @@ export { type FactCatalog, type FactEntry, type FactLookup, canonicalFactId, fac
 export { type FactWords, type SetMeasure, factWords } from './fact-words';
 export { type RenderProblem, type RenderSpan, type RenderedFacts, renderFact, renderFacts } from './render';
 export { FIGURE_ROLES, type FigureRole } from './roles';
+export { type TemplateReading, readTemplate };
 
 export function checkNarrative(narrative: string, content: PacketContent): NarrativeCheck {
   return findMismatches(narrative, narrativeFacts(content), []);
@@ -35,4 +38,12 @@ export function checkNarrative(narrative: string, content: PacketContent): Narra
  */
 export function checkReading(narrative: string, facts: NarrativeFacts): NarrativeReading {
   return readNarrative(narrative, facts, []);
+}
+
+/**
+ * The template check of format /3 (docs/adr/0089) for a screen: the same check verifyTemplate stores, against the
+ * version's catalog (built once per content), with no identifiers, and the template rendered.
+ */
+export function checkTemplate(template: string, catalog: FactCatalog | PacketContent): TemplateReading {
+  return readTemplate(template, 'byId' in catalog ? catalog : factCatalog(catalog), []);
 }
