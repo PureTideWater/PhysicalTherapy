@@ -13,6 +13,11 @@ Open questions: none.
 
 <!-- RESUME-BLOCK -->
 ## MERGED 2026-11-04 ~09:25 UTC as 24531dc2 (acting S3)
+- **2026-11-06 19:22 UTC, the original item session (session_01FcouKN1UjKZTWt4U9bZjyW) stopped:** resumed after the weekly
+  reset, it found #86 merged (GitHub: merged 2026-11-04T09:20:55Z, head 932ea45f, PR state closed/merged) and stopped
+  under the orchestrator's HOLD of 19:20 UTC. Its own fix-round run wf_401c564d-6b7 (stopped 2026-11-02 by the weekly
+  limit in check round 3) is superseded by acting S3's wf_2970023f-7c8 and is NOT resumed. Nothing pushed from this
+  session since 2026-11-02 06:25 UTC. No follow-on.
 - #86 merged with method merge, `expectedHeadSha` 932ea45f…, title "Merge pull request #86: CI: the images job takes only the digest it checks, so a long pull-request description no longer stops it (ci-browser's identity steps)", the message the title. Parents 881e2bbd… (base, an ancestor of the head at the merge) and 932ea45f…. The first merge call timed out at the MCP layer without merging (base unchanged, checked); the retry merged.
 - Before the merge: the verification passed; the one description edit (33,954 characters, ruler cut) read back matching; ready; approval-of-record ready_for_review run 41806408933 green (the edited run 41806379750 cancelled by its concurrency group).
 - Unsubscribed. Worktree /home/user/ci-images-digest and the trial worktrees removed.
