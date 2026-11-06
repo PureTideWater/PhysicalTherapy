@@ -72,3 +72,27 @@ It goes into SUITE-CAP-1b with the loader fix (978891a3). Its ADR 0083 and recon
 2. **BRAND.md section 4** reads "Paper: report covers, print, and the light-theme sign-in". This settles the section 3/4/7 disagreement ADR 0056 records.
 3. **`--pw-unpriced`** is darkened to at least 4.5:1 on `--pw-unpriced-bg`, so the unpriced status can use its own color for text.
 4. **Dark mode stays off** until a dark-mode pass over every screen, PHI screens first. It then follows `prefers-color-scheme`, with an override in settings.
+
+## Decided 2026-11-06 (relayed by the co-founder, ~22:40 UTC)
+1. **Granted by the founder (Tyler Williams): the ledger freeze exception for new bodies of `ledger_line_net` and
+   `ledger_entry_rules`, exactly as written in `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`.** The
+   co-founder's words: "Yes to freeze exception from Tyler."
+   - **What it allows:** one migration after #126 that replaces the bodies of those two functions (`CREATE OR REPLACE`)
+     with the text in the ask, and nothing else: no table, column, index, trigger, amount, stage or rule changes.
+     `ledger_line_stage` is not part of it.
+   - **What must hold:** every amount, stage, refusal and recovered total is unchanged, proved by LED-01 to LED-18,
+     LED-23 to LED-25, the ledger oracle, the refusal tests (no match, a match of another practice, a reversed match,
+     each refused with today's error) and the write-equality dumps (practice F at 10,000 lines, spread R at 2,000).
+   - **Who and when:** Lane A (acting: Lane B's S2) builds it, queued after #126 and password-changed-notice. It is a
+     schema PR, so it still needs the founder's approval of record on `docs/product/domain-model.md`. Lane A measures
+     again on #126's base. The PR records the grant in its ADR and in reconciliation-001, as for the earlier grants.
+2. **The co-founder's standing instruction, same time:** "Don't ask for approvals anymore just make the most optimized
+   decision."
+   - The orchestrators and sessions no longer ask before deciding. Each decision takes the most optimized option under
+     the founder's standing rule (for security and privacy, the safer one), and is recorded with who decided, when and
+     why.
+   - **These stay the founder's (CLAUDE.md; the delegation of 2026-10-25):** the approval of record (committing the
+     suggested approval line on `docs/product/domain-model.md`); release tags; the owner-admin repository settings;
+     sign-off of legal text; reversing or lifting a founder ruling. A new freeze exception lifts a freeze the founder
+     ruled (reconciliation-001), so it is still relayed with its exact text, as this one was.
+   - Nothing in it changes CLAUDE.md's "Never" list or LANES.md's rules 2, 6, 7 and 11.
