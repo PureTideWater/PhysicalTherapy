@@ -10,7 +10,7 @@
   [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends.
   `co-001/auth-emails` adds the code-email amendment, with SGN-13 to SGN-15. `co-001/email-lockup-plate` amends
   [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md)
-  (the worker's email lockup is the art on a White plate, and its first-deploy check names the plated file).
+  (the worker's email lockup is the art on a White plate, and its first-deploy check names the plated files).
 - **Date:** 2026-11-01
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking (UX-128's marker
@@ -410,8 +410,9 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   the inline limit binds, the source goes as `Code.fromAsset` of the same text. Outside the pool, for the worker's mail
   on staging: open a worker email in Gmail for iOS and in Outlook.com, both in dark mode, and confirm the lockup sits on
   White and is legible; and confirm that
-  `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` answers 200 with
-  `Cross-Origin-Resource-Policy: cross-origin` (ADR 0058's first-deploy check, for the plated file). The renders of an
+  `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` and, for a prospect's
+  mail, `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-email-plate-1380w.png` each answer 200 with
+  `Cross-Origin-Resource-Policy: cross-origin` (ADR 0058's first-deploy check, for the plated files). The renders of an
   inverting client were made for the review, outside the repository, and are not proof of these clients; the
   repository checks the art's pixels (`plateHolds`: the served PNG is opaque inside the rounded plate and White across
   the plate's padding; `tools/brand-email-plate` and `apps/web/e2e/brand.spec.ts`).
