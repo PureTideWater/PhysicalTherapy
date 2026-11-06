@@ -107,6 +107,15 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   On 0234d5fe: pnpm test 9,932 passed; e2e sign-in-time, sign-in, brand 19 passed; fast checks green. WIP s5 = 61169d8b.
   wf_4cb68701-e78 (archived) verifies 61169d8b and checks the description until clean; then push and #129's body.
 
+- 2026-11-06T22:18Z: wf_4cb68701-e78: 61169d8b verified (skeptic ok; lint, lint:copy, verify-content, 453 doc tests). Its last
+  description check found two reviewer citations one line early (BRAND.md 126-127, 128-129): fixed in 34927fd0 (22
+  files, 363 tests). Pushed 34927fd0 to co-001/email-lockup-plate (base cc3dd7f6 still an ancestor). #129's description
+  rewritten with the MCP tool and read back identical (a filter in the MCP path escapes an `<img src=` tag, so the
+  code block carries a placeholder and the attributes are in prose). subscribe_pr_activity failed, so send_later
+  check-ins stand in (22:55Z).
+  - Next: CI green on 34927fd0, then the fresh-clone verification that reads CI, ready, approval-of-record's re-run,
+    merge with expectedHeadSha.
+
 ## Waiting on someone
 - None.
 
