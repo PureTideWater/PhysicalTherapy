@@ -1645,3 +1645,127 @@ HANDOFF.md; LANES.md rule 10).
 - Every session on Lane A's account was told to stand down now. Each one: no new workflow; WIP refs pushed; a RESUME-BLOCK in its status file; unsubscribed from its PRs; check-ins cancelled. A verified, green PR may merge first.
 - The handoff is `lanes/lane-a-handoff-to-lane-b-2026-11-05.md`. Lane B runs everything from 2026-11-06 19:00 UTC, including the schema chain as acting Lane A, until Lane A's reset (~2026-11-10 14:00 UTC).
 - The orchestrator's 2026-11-06 handback trigger is deleted.
+
+### 2026-11-06 19:40 UTC (Lane B's orchestrator): back after the weekly cap; the 2026-11-05 handoff acknowledged
+- **Stopped, then back.** The account's 7-day cap stopped this orchestrator from 2026-11-02 ~12:35 to 2026-11-06 19:16 UTC.
+  The refresh of the 2026-11-03 handoff (`lane-b-handoff-to-lane-a-2026-11-03.md`) planned for before 2026-11-03 14:00 UTC
+  did not happen: build-ops has no commit from 2026-11-02 11:02 to 2026-11-03 14:16 UTC. Lane A found the state live (its
+  entry of 2026-11-03 14:20 UTC) and took the chain back at 2026-11-04 02:30 UTC.
+- **Acknowledged:** Lane A's handoff `lane-a-handoff-to-lane-b-2026-11-05.md` (14655cc4, 5431c8ad, 1575a7e8). From
+  2026-11-06 19:00 UTC Lane B runs everything: its own items, the acting items, and the schema chain as acting Lane A until
+  Lane A's reset (~2026-11-10 14:00 UTC). One schema PR at a time; the founder's decisions stay the founder's. Lane B
+  allocates the counters until Lane A returns (LANES.md rule 4, the 19:40 UTC sentence).
+- **Adopted for Lane B:** the speed rules of 2026-11-04 (`acting-lane-b-2026-11-04.md`), 2a included:
+  - CI is the suite of record; the full local suite runs once per PR.
+  - The base is merged once, right before the last push; GitHub's up-to-date rule (2a) can ask for one more.
+  - Two adversarial reviews with skeptics for the database, money, PHI and the gateway, sign-in, security and CI
+    permissions; one for wording, display, test-only and dependency changes.
+  - At most two heavy workflows per session, under flock.
+  - A gitleaks refusal is fixed by rewriting the flagged text, never by a .gitleaksignore entry (#112).
+- **Live heads (checked 19:33 UTC):** `claude/build-platform` cc3dd7f6 (#128); `main` 220f2b4e (unmoved since 2026-10-20);
+  `claude/build-ops` 719ab121 before this entry; no tags. 25 PRs merged into build-platform since 2026-11-02 12:35 UTC, all
+  as merge commits under the PureTideWater login; nothing into main or build-ops. Open, all into build-platform and behind
+  it: #126 (draft, 13 ahead / 67 behind), #129 (draft, 4 / 29), Dependabot #122, #123 and #124 (1 / 29 each).
+- **Records:** LANES.md's Lane B claim rows were at their 2026-11-02 states and its counters line at 2026-11-01 20:05 UTC
+  (its "next free ADR 0088" was wrong); both are brought to the live state in this commit. HANDOFF.md has no commit since
+  2026-11-01; Lane A wrote its 2026-11-03 to 11-05 entries in this file. The co-founder's last recorded instruction is
+  2026-11-04 22:50 UTC.
+- **Usage:** no weekly figure is recorded for Lane B since its reset. The 5-hour window reads allowed, no overage, resetting
+  2026-11-07 00:10 UTC. The figure is asked of the co-founder before any heavy run (rule 9; D below).
+
+#### The 15 sessions
+- **Ten items merged.** Each is a merge commit under PureTideWater; "S1" to "S4" are Lane A's acting-Lane-B sessions
+  (session_019i9ifCJSbPYXpafL86Rm6J, session_019i9ifAd3jhRt1Vkzz2vUSQ, session_019i9ifDkvaQzK4YgTGnKWC3,
+  session_019i9ifAfByN2caCea4jgSdu).
+
+  | Session | Item | Merged (UTC) | By |
+  | --- | --- | --- | --- |
+  | session_01FcouKMmYaqDNXbqJyagW8u | pr42 (acting Lane A) | #42 22789493, 2026-11-02 07:34 | this session |
+  | session_01FcouKN1UjKZTWt4U9bZjyW | ci-images-digest | #86 24531dc2, 2026-11-04 09:20 | S3 |
+  | session_01FcouKPAcRv6FTuHCMKAre2 | contract-phi-check | #75 72096e94, 2026-11-04 07:38 | S1 (this session pushed nothing after 11-02) |
+  | session_01FcouKQVq7K3Np8pwNtDhew | packet-day-counts | #84 7fb3e102, 2026-11-04 23:53 | S2 |
+  | session_01FcouKNxBLBBy2FVM7bfSvj | ux-payer-response | #85 17641c88, 2026-11-04 18:37 | S1 |
+  | session_01FcouKPLmdYyBmbVaUjag2c | ux-home-figures | #93 877e662f, 2026-11-02 02:42 | this session |
+  | session_01FcouKNxVRK8x6iV52PfxXz | ux-sign-in-time | #92 4eaf7124, 2026-11-02 02:14 | this session |
+  | session_01FcouKQ3BjYKaME5uBLn8Lz | ci-findings-transport | #120 af3e79f3, 2026-11-05 02:23 | S3 |
+  | session_01FcouKRD17iBBR4HhnYcQQx | dependabot-batch | A #90 88708069 (11-02 03:59) and C #91 21fa10df (11-02 10:22); B #94 4846f043 (11-04 02:51) and D #105 df4daff7 (11-04 06:26) | this session (A, C); S4 (B, D) |
+  | session_01FcouKP1U2GGDFhhZT9CaUV | redact-ssn-phone | #127 23b25ad0, 2026-11-05 07:35 | S1 |
+
+  Also merged in the window for kept sessions: P4 #96 (30871f72, 11-04 21:04, S3); SS-01 #104 (e084da22, 11-04 13:04) and
+  SUITE-CAP-1b #110 (f7d609cc, 11-05 05:04), both by Lane A's schema-chain session_019i9ifEG147aKfNHEAsoS7h.
+- **Archived at this entry (9):** pr42, ci-images-digest, contract-phi-check, packet-day-counts, ux-payer-response,
+  ux-home-figures, ux-sign-in-time, ci-findings-transport, dependabot-batch (its cleanup list copied below first).
+- **Kept (6):**
+  - ci-pin-age (session_01FcouKNP2XtaombFLueKLnu): the P2 re-design, wave 2.
+  - ux-screening-result-tables (session_01FcouKRDfoFAeXZK4Thp8M8): UX PR 4b, wave 2.
+  - unmapped-plan (session_01FcouKNB2TyuPCAha9BaEjQ): #48, wave 3.
+  - redact-ssn-phone (session_01FcouKP1U2GGDFhhZT9CaUV): MOD-16's follow-up `co-001/redact-range-glued`, wave 1.
+  - suite-cap-3 (session_01FcouKP4ekrT97eyDtLe4Rd): the design review, wave 1.
+  - schema-chain (session_01FcouKQthXdmDnPmwhFepxW): #126 as acting Lane A, wave 1. It never re-runs the SS-01 or 1b
+    stages and never pushes its old interest head 74a6b290.
+- **Each item's true state and holder** is in its LANES.md claim row (19:40 UTC sentences). New claim rows:
+  `co-001/redact-range-glued`; pages-child-process (session_01FcouKQJppM8BdCui7NVQUa) and #129 email-lockup-plate
+  (session_01FcouKRo5iee5QFtPT8UimZ), new Lane B sessions started 19:29 UTC; packet-figure-placeholders (no row until
+  now; slice 2 in session_01FcouKPkXdRW5ntz6ye92pL, started 19:37 UTC).
+
+#### Cleanup list (leftover refs; prune later, never force-delete a ref someone uses)
+- `co-001/ux-home-figures` d1e4c4c4 (#93's head, in the base); `co-001/wip-ux-home-figures` 27a848c1;
+  `co-001/wip-ux-home-figures-2` b29b1a31.
+- `co-001/wip-packet-day-counts-2` to `-5` (2eab51ef, #84's head, in the base; 9554cdc7; 081a8034; 15d8ed1c), and the
+  unsuffixed `co-001/wip-packet-day-counts` acfd8980.
+- `co-001/wip-dependabot-batch-a` 442d7a81, `-b` f463f486, `-c` b1fd5df1 (all in the base). The dependabot session's local
+  worktrees (`/home/user/deps-aws-cdk-minor-patch`, `/home/user/test-flakes-2`) live only in its container.
+- `co-001/wip-contract-phi-check` and `-1` to `-9` (`-9` 315ac91e in the base).
+- The schema chain's `co-001/wip-ss01-chain` 79315a09 (in the base), `co-001/wip-interest-chain` d39b72c0 (in 23369ae6) and
+  `co-001/wip-interest-w` 589e31d5 (a 2026-11-02 stash of slice 4's screens, in no later head), superseded.
+- Never prune `co-001/wip-interest-fix` 23369ae6 (#126's live start), `co-001/wip-pages-child-process`,
+  `co-001/wip/email-lockup-plate-s4` or `co-001/wip-suite-cap-3` while their items run. Lane A's own list (handoff §5:
+  `co-001/cognito-confidential-client`, never to be merged; `co-001/wip-pricing-run-cutoff`; `co-001/wip/pricing-run-cutoff-s4`)
+  stays the person's call.
+
+#### Waves (handoff §8's pace: about five sessions, at most two heavy workflows each)
+- **Wave 1, now:**
+  - MOD-16 (session_01FcouKP1U2GGDFhhZT9CaUV, `co-001/redact-range-glued`): two reviews (PHI, the gateway).
+  - #126 (session_01FcouKQthXdmDnPmwhFepxW, acting Lane A), from 23369ae6 by its RESUME-BLOCK (6dc6858a); the steps are
+    in its claim row.
+  - pages-child-process (new session, two reviews).
+  - #129 (new session; sign-in emails, so two reviews; it carries O-5 and O-8).
+  - SUITE-CAP-3's design review (session_01FcouKP4ekrT97eyDtLe4Rd, light; no build).
+- **Wave 2, as slots free:**
+  - UX PR 4b (session_01FcouKRDfoFAeXZK4Thp8M8), with #121's P1.
+  - packet-figure-placeholders slice 2 (ADR 0089, a fresh session from the RESUME-BLOCK in
+    `lane-b-packet-figure-placeholders-status.md`; started early, at 19:40 UTC, in session_01FcouKPkXdRW5ntz6ye92pL),
+    then verifier-identifier-fold (MOD-19, MOD-20). They and #84's /3 migration all touch the packet verifier: one at a
+    time.
+  - Dependabot triage of #122 to #124 (a fresh session; one replacement PR like #94, checked against #94;
+    `pnpm actions:check` and `pnpm toolchain:check`).
+  - After #126 merges: password-changed-notice (ADR 0091, SGN-16), then the rest of the schema queue (handoff §4) in order:
+    #84's /3 migration, #85's §7.2 items, #93's F9, the Cognito subject relink, the rest of "Handed to Lane A".
+  - The P2 re-design (session_01FcouKNP2XtaombFLueKLnu).
+- **Wave 3:** dark-mode-ship (after 4b, as a pass over every screen), ux-forms-after-42, UX PR 8, #46, #48
+  (session_01FcouKNB2TyuPCAha9BaEjQ, after slice 2), P5 ci-catalog.
+- **Hand to Lane A:** nothing now (Lane A is out). At about 2026-11-10 14:00 UTC, what remains of the schema queue goes back
+  through a handback entry here.
+- **Before Lane B's own weekly limit** (the week resets about 2026-11-13 19:00 UTC): a handback like Lane A's.
+
+#### (D) Pending with the founder and the co-founder
+- **The co-founder:**
+  - Lane B's weekly usage % and reset time (rule 9); none is recorded since the reset.
+  - Confirm that the 2026-11-02 pacing call ("no second wave") is finished for this week, so the handoff's plan goes
+    ahead; the three sessions that woke cite it.
+  - Confirm extra usage stays off.
+- **The founder:**
+  1. The approval of record on #126, and on every later schema PR.
+  2. The freeze exception for SUITE-CAP-3's `ledger_line_net` rewrite (not yet asked; its draft comes from the design
+     review).
+  3. Cognito PR 2: staging, ruling 16, and the credentialed steps F1 to F5.
+  4. F0, from the #112 .gitleaksignore incident (a staging sign-in with a synthetic account before release N reaches
+     production).
+  5. PRD section 19's cost line for the RDS classes (staging db.t4g.medium about +$23 a month, dev db.t4g.small about +$11).
+  6. #42's launch actions: AWS, DNS, SES, counsel O4, consumer size O9.
+  7. Issues: #102 is still open, though its cause was fixed on 2026-11-04 when the repository went public again; #73 and
+     #111 (release capacity) are open, and Lane B checks #73 on cc3dd7f6.
+  8. For awareness, the orchestrators' calls on founder ground: O-8 (raised for the co-founder); UX PR 7's S-3 and wording
+     departures D-1 to D-4; Cognito rulings 13 to 15; the CAS-42.5 working-set judgement; the placeholder rule; the
+     child-process rule.
+  9. Release tags are the founder's; there are none.
