@@ -18,6 +18,9 @@ Effect: any PR's unit job can go red at random.
 ## Log (UTC)
 - 2026-11-06T19:45Z: branch `co-001/redact-range-glued` cut on origin at cc3dd7f6 (= claude/build-platform). Setup re-run with
   `co-001/redact-range-glued:/home/user/redact-range-glued` (PostgreSQL was down after the restart). The #127 probe worktree removed.
+- 2026-11-06T19:31Z: build workflow **wf_bca3d2b3-77c** running (builder: reproduce with the seed pinned + example, root-cause, fix,
+  sweep; reviews PHI/security and gateway correctness, each with a skeptic, loop up to 3 rounds; final fixer runs the full local
+  suite once; completeness critic). Check-in 2026-11-07T00:42Z (trig_018dkUucZETxGpau5ZxvCeBt). Script archived when it ends.
 
 ## Waiting on someone
 None.
