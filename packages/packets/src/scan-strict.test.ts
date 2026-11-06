@@ -152,3 +152,53 @@ describe('strict scanning reads every figure of free text (section 2.4)', () => 
     expect(read('The payer noted nothing new.')).toEqual([]);
   });
 });
+
+describe('the strict-only tables and readings, value by value', () => {
+  const only = (text: string) => scanText(text, { strict: true }).figures.map(({ kind, value, start, end, written }) => ({ kind, value, start, end, written }));
+
+  it('states each strict-only number word’s number, and reads it in any case', () => {
+    expect(STRICT_NUMBER_WORDS).toEqual({ nil: '0', nought: '0', naught: '0', billion: '1000000000', quarter: '0.25', double: '2', triple: '3', once: '1' });
+    for (const [word, value] of Object.entries(STRICT_NUMBER_WORDS)) {
+      for (const written of [word, word.toUpperCase()]) {
+        expect(only(written), written).toEqual([{ kind: 'number', value, start: 0, end: word.length, written: 'words' }]);
+      }
+    }
+    expect(STRICT_PLURALS['zeroes']).toBe('zero');
+    expect(STRICT_PLURALS['zeros']).toBe('zero');
+    expect(Object.entries(STRICT_PLURALS).filter(([, word]) => word === 'zero').map(([plural]) => plural).sort()).toEqual(['zeroes', 'zeros']);
+    expect(only('ZEROES')).toEqual([{ kind: 'number', value: 'zeroes', start: 0, end: 6, written: 'words' }]);
+  });
+
+  it('reads a run of signs left over as one figure', () => {
+    expect(only('see §§ and #¢')).toEqual([
+      { kind: 'identifier', value: '§§', start: 4, end: 6, written: 'symbols' },
+      { kind: 'identifier', value: '#¢', start: 11, end: 13, written: 'symbols' },
+    ]);
+  });
+
+  it('reads every form of a zero amount whole, whatever the spaces between its words', () => {
+    for (const phrase of [
+      'make no payment',
+      'issue no payment',
+      'send no payment',
+      'made  no payment',
+      'made no  payment',
+      'sent no allowance',
+      'issued no reimbursement',
+      'makes no remittance',
+      'no  amount was paid',
+      'nothing  was paid',
+      'nothing has  been paid',
+      'none have  been allowed',
+      'zero was  reimbursed',
+    ]) {
+      expect(only(phrase), phrase).toEqual([{ kind: 'amount', value: '0', start: 0, end: phrase.length, written: 'words' }]);
+    }
+  });
+
+  it('keeps each token and stray in the text’s order', () => {
+    const scan = scanText('{{fact:pattern.paid}} }} {{fact:pattern.lines}} {{ [1]', { strict: true });
+    expect(scan.facts.map((token) => token.id)).toEqual(['pattern.paid', 'pattern.lines']);
+    expect(scan.strays.map((stray) => stray.start)).toEqual([22, 48]);
+  });
+});

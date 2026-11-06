@@ -50,6 +50,9 @@ describe('format /3 is reached only by asking for it', () => {
       expect(failed.passed, text).toBe(false);
       expect(failed.mismatches.map((mismatch) => mismatch.code), text).toContain('unknown_placeholder');
     }
+    // A stray beside an identifier placeholder of the schedule still fails, at its own span.
+    const beside = 'For {{patient_name:1}} and }} here, see [1].';
+    expect(found(beside, verifyAtFormat(VERIFIER_FORMAT, beside, of, []))).toEqual([['unknown_placeholder', 'placeholder', '}}']]);
     // An identifier placeholder of the schedule still passes there.
     expect(verifyAtFormat(VERIFIER_FORMAT, 'Line one of {{patient_name:1}} is cited [1].', of, []).passed).toBe(true);
   });
@@ -146,7 +149,8 @@ describe('CAS-52: free text holds no figure; tokens, a person’s markers and id
     ];
     for (const [inserted, kind, words] of cases) {
       const template = around(inserted);
-      expect(found(template, verify(template)), inserted).toEqual([['number_word', kind, words]]);
+      // Pass 1's finding; "one of the lines" and "first" also name a part beside an all-lines fact (pass 2, CAS-54).
+      expect(found(template, verify(template)).filter(([code]) => code !== 'fact_contradicted'), inserted).toEqual([['number_word', kind, words]]);
     }
   });
 
@@ -267,7 +271,8 @@ describe('CAS-53: fact ids', () => {
       const report = verify(template, content(of));
       expect(found(template, report), name).toEqual([['fact_not_canonical', 'fact', `{{fact:${id}}}`]]);
       expect(report.mismatches[0]?.canonical, name).toBe(canonical);
-      expect(verify(`The remittances show {{fact:${canonical}}} [1].`, content(of)).passed, name).toBe(true);
+      // In words that name no role, so the role a shortfall's or a payment's fact holds is contradicted by none (pass 2).
+      expect(verify(`The schedule states {{fact:${canonical}}} [1].`, content(of)).passed, name).toBe(true);
     }
   });
 
@@ -287,5 +292,62 @@ describe('CAS-53: fact ids', () => {
       ['unknown_fact', 'fact', '{{fact:pattern.​paid}}'],
       ['hidden_character', null, '​'],
     ]);
+  });
+});
+
+describe('pass 1 at its edges', () => {
+  const of = () => content('severalCodes');
+  const codes = (template: string, identifiers: readonly string[] = []) => found(template, verify(template, of(), identifiers));
+
+  it('reads every id through the renderer, in a sentence with no marker too, and marks each token once', () => {
+    expect(codes('The schedule states {{fact:line.99.paid}}.')).toEqual([
+      ['sentence_without_citation', null, 'The schedule states {{fact:line.99.paid}}.'],
+      ['unknown_fact', 'fact', '{{fact:line.99.paid}}'],
+    ]);
+    expect(codes('A }} here [1]. The schedule states {{fact:line.99.paid}} [1].')).toEqual([
+      ['unknown_fact', 'fact', '}}'],
+      ['unknown_fact', 'fact', '{{fact:line.99.paid}}'],
+    ]);
+    expect(codes('The schedule states {{fact:line.99.paid}} [1]. A }} here [1].')).toEqual([
+      ['unknown_fact', 'fact', '{{fact:line.99.paid}}'],
+      ['unknown_fact', 'fact', '}}'],
+    ]);
+    const hidden = 'The schedule states {{fact:pattern.​lines}} [1].';
+    expect(found(hidden, verify(hidden, of())).filter(([code]) => code === 'unknown_fact')).toEqual([['unknown_fact', 'fact', '{{fact:pattern.​lines}}']]);
+    // A lone fullwidth brace: a stray to the reader, though the renderer reads none.
+    expect(codes('The schedule states {{fact:pattern.lines}} ｝｝ [1].')).toEqual([['unknown_fact', 'fact', '｝｝']]);
+  });
+
+  it('carries a canonical id on fact_not_canonical alone', () => {
+    const [unknown] = verify('The schedule states {{fact:line.99.paid}} [1].', of()).mismatches;
+    expect(unknown !== undefined && 'canonical' in unknown).toBe(false);
+    const [alias] = verify('The schedule states {{fact:lines.2+1.paid}} [1].', of()).mismatches;
+    expect(alias).toMatchObject({ code: 'fact_not_canonical', canonical: 'lines.1+2.paid' });
+  });
+
+  it('counts a sentence of a stray alone, and numbers an empty template’s mismatch -1', () => {
+    expect(verify('The schedule states {{fact:pattern.lines}} [1]. {{ [2].', of()).sentences).toBe(2);
+    expect(verify('', of()).mismatches).toEqual([{ code: 'empty_narrative', kind: null, sentence: -1, start: 0, end: 0 }]);
+  });
+
+  it('fails an identifier written in digits as the case’s identifier too, and a marker naming any source the version lacks', () => {
+    expect(codes('Member 4455667 is named [1].', ['4455667'])).toEqual([
+      ['free_figure', 'number', '4455667'],
+      ['identifier_in_narrative', 'identifier', '4455667'],
+    ]);
+    expect(codes('The schedule states {{fact:pattern.lines}} [1, 99].')).toEqual([['unknown_citation', 'citation', '[1, 99]']]);
+  });
+
+  it('takes a marker at a sentence’s start as its marker, and counts what it checked', () => {
+    expect(verify('[1] The schedule states {{fact:pattern.lines}}.', of()).mismatches).toEqual([]);
+    expect(verify('The schedule states {{fact:pattern.lines}} for {{patient_name:1}} [1].', of()).checked).toBe(3);
+    expect(verify('A 5 }} [1].', of()).checked).toBe(3);
+    expect(codes('The schedule states {{fact:pattern.lines}} [1]. The schedule states {{fact:pattern.claims}}.')).toEqual([
+      ['sentence_without_citation', null, 'The schedule states {{fact:pattern.claims}}.'],
+    ]);
+  });
+
+  it('never reads a date as the case’s identifier: a date is a figure, never a name or a number of the case', () => {
+    expect(codes('Seen on 2026-03-02 here [1].', ['2026-03-02'])).toEqual([['free_figure', 'date', '2026-03-02']]);
   });
 });

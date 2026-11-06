@@ -462,7 +462,7 @@ export function scanText(text: string, options: ScanOptions = {}): Scan | Strict
   // A template's fact tokens, before anything else reads the digits of their ids.
   if (strict) {
     each(factPlaceholderPattern(), (match) => {
-      facts.push({ id: match[1] ?? '', start: match.index, end: match.index + match[0].length });
+      facts.push({ id: match[1] as string, start: match.index, end: match.index + match[0].length });
       masked.take(match.index, match.index + match[0].length);
     });
   }
@@ -652,11 +652,12 @@ export function scanText(text: string, options: ScanOptions = {}): Scan | Strict
   }
 
   const byPosition = (a: { start: number }, b: { start: number }) => a.start - b.start;
+  const scan = { figures: figures.sort(byPosition), placeholders: placeholders.sort(byPosition), markers: markers.sort(byPosition) };
   if (!strict) {
-    return { figures: figures.sort(byPosition), placeholders: placeholders.sort(byPosition), markers: markers.sort(byPosition) };
+    return scan;
   }
-  const read: StrictFigure[] = figures.map((found) => ({ ...found, written: inWords.has(found) ? 'words' : 'symbols' }));
-  return { figures: read.sort(byPosition), placeholders: placeholders.sort(byPosition), markers: markers.sort(byPosition), facts: facts.sort(byPosition), strays: strays.sort(byPosition) };
+  // Each fact token and stray is read by one pass over the text, so in its order already.
+  return { ...scan, figures: scan.figures.map((found): StrictFigure => ({ ...found, written: inWords.has(found) ? 'words' : 'symbols' })), facts, strays };
 }
 
 /** Words before a period that do not end a sentence. */

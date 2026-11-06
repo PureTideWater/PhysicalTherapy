@@ -1,0 +1,17 @@
+{
+  "case": "CAS-54",
+  "module": "CAS",
+  "title": "A fact token its sentence contradicts, in both directions",
+  "assertion": "A free-text role cue naming a role the fact does not hold; a closed-list trigger, or a part-naming token (`code.*`, `line.*`, `lines.*`, `claim.*`, an identifier placeholder), beside an all-lines fact; and a total or all-lines word beside a part fact, each fail (`fact_contradicted`); part-naming tokens covering every line together pass. ADR 0086’s known-limit sentences (“on a subset of the lines”, “apiece”, “for her”, ...) render with their set stated by code, and no sentence with a part-naming token or a listed trigger passes with an all-lines figure.",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["packages/packets/src/draft-template.test.ts","packages/packets/src/verifier-template.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

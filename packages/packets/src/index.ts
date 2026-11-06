@@ -42,7 +42,8 @@ export {
   phoneText,
 } from './correspondence';
 export { addDays, daysFrom, isIsoDate } from './dates';
-export { draftNarrative } from './draft';
+export { type DraftOptions, draftNarrative } from './draft';
+export { type DraftOutput, type DraftParagraph, type DraftSegment, type DraftSentence, serializeDraft, serializeSentence } from './serialize';
 export { type ExplainBindingReason, ExplainBindingError, type PacketWords, type RowWords, explainPacket } from './explain';
 export {
   AUDIENCES,
@@ -221,6 +222,7 @@ export {
   identifierForms,
   narrativeSha256,
   readTemplate,
+  templateSentenceSpans,
   verifyAtFormat,
   verifyNarrative,
   verifyTemplate,

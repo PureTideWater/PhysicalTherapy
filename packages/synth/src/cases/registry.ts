@@ -352,6 +352,18 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
   ]),
+  // Lane B (co-001/packet-figure-placeholders, slice 2): verifier format /3 behind an explicit format (VERIFIER_FORMAT stays /2): pass 1's
+  // strict scan and fact ids, pass 2's contradiction in both directions, the code draft's tokens. The model's half comes with slice 6.
+  'CAS-52': none(8, 'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.', [
+    'packages/packets/src/scan-strict.test.ts',
+    'packages/packets/src/verifier-template.test.ts',
+    'packages/packets/src/draft-template.test.ts',
+  ]),
+  'CAS-53': none(8, 'Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.', ['packages/packets/src/verifier-template.test.ts', 'packages/packets/src/fact-catalog.test.ts']),
+  'CAS-54': none(8, 'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.', [
+    'packages/packets/src/draft-template.test.ts',
+    'packages/packets/src/verifier-template.test.ts',
+  ]),
   // Lane B (co-001/packet-figure-placeholders, slice 1): a narrative’s figures as fact tokens rendered by code; the render half, in the worker
   // and in a browser (formatUsdPlain against formatUsd en-US, and renderFacts, in both). The approval and export half come with later slices.
   'CAS-55': none(8, 'Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.', [

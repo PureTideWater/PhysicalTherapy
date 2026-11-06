@@ -619,7 +619,7 @@
     "file": "packages/packets/src/scan.ts",
     "mutator": "StringLiteral",
     "original": "'0'",
-    "occurrence": 3,
+    "occurrence": 6,
     "replacement": "\"\"",
     "reason": "Group 2 of PLACEHOLDER_PATTERN, the row (\\d{1,6}), is a required group of its pattern, so match[n] is always a string when the callback runs and the fallback after ?? is never evaluated: no input reaches the replaced literal.",
     "proposedBy": "M4a",
@@ -966,5 +966,16 @@
     "proposedBy": "M4a",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
+  },
+  {
+    "file": "packages/packets/src/verifier/template.ts",
+    "mutator": "EqualityOperator",
+    "original": "marker.start < span.end",
+    "occurrence": 1,
+    "replacement": "marker.start <= span.end",
+    "reason": "The same boundary as mismatches.ts's recorded equivalent of this mutant: a template's sentences are format /2's sentence rule (scan.ts sentenceSpans) over the template's readable text with each fact token and stray read as a word of x's (template.ts templateSentences), which changes no end mark, whitespace or marker, so a sentence still ends only before whitespace or the text's end and a marker after it starts past at least one whitespace character. In the template's own positions the two could meet only if that whitespace joined the cluster of the sentence's end mark, closing quote or bracket, or of the marker's bracket, and on Node 24's Unicode 17.0 data no grapheme cluster does (tools/stryker/unicode.json, checked for mismatches.ts's entry over every code point).",
+    "proposedBy": "slice 2 of packet-figure-placeholders (Lane B, builder)",
+    "reviewedBy": "",
+    "reviewedOn": ""
   }
 ]

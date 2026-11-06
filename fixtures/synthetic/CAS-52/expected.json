@@ -1,0 +1,21 @@
+{
+  "case": "CAS-52",
+  "module": "CAS",
+  "title": "A narrative template’s free text holds no figure",
+  "assertion": "Every figure `scanText` reads in strict mode (digit runs, signs, Roman numerals after a level, ordinal days, every word of the scanner’s tables, “zero”, “thousands”, “paid nothing”) fails at its span (`free_figure`, `number_word`), from a person or a model, while markers (a person’s), identifier placeholders (a person’s) and fact tokens pass. A model’s draft with any `/3` mismatch is not written (`not_drafted`, `misstated`); a text segment with `{`, `}`, `[` or `]` is `invalid_output`; a model’s `line.*`/`claim.*` id is `unknown_fact`. The pre-call guard passes a synthetic surname equal to a vocabulary word.",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/scan-strict.test.ts",
+    "packages/packets/src/verifier-template.test.ts",
+    "packages/packets/src/draft-template.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

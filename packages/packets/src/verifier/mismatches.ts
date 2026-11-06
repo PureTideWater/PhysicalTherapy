@@ -294,11 +294,13 @@ export function identifierSpans(text: string, identifiers: readonly string[], sk
   return found.sort((a, b) => a.start - b.start);
 }
 
-/** Every run in double braces that is not one of the identifier placeholders read, and every lone {{ or }}. */
+/**
+ * Every run in double braces that is not one of the identifier placeholders read, and every lone {{ or }}. A placeholder
+ * is a braced run with no brace inside it, so the run that starts where it starts is that placeholder, whole.
+ */
 export function strayBraces(text: string, placeholders: readonly TextSpan[]): TextSpan[] {
-  return [...text.matchAll(BRACED)]
-    .map((match) => ({ start: match.index, end: match.index + match[0].length }))
-    .filter((span) => !placeholders.some((token) => token.start === span.start && token.end === span.end));
+  const read = new Set(placeholders.map((token) => token.start));
+  return [...text.matchAll(BRACED)].map((match) => ({ start: match.index, end: match.index + match[0].length })).filter((span) => !read.has(span.start));
 }
 
 /** Figures that name a date: a month's name there is the date, never a patient's name. */

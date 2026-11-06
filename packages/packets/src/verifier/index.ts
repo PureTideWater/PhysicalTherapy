@@ -47,7 +47,7 @@ export interface VerifierReportV3 extends ReportFields {
 /** A stored or computed verifier report, of either format. */
 export type VerifierReport = VerifierReportV2 | VerifierReportV3;
 
-export { type TemplateReading, readTemplate } from './template';
+export { type TemplateReading, readTemplate, templateSentenceSpans } from './template';
 
 export function narrativeSha256(narrative: string): string {
   return createHash('sha256').update(narrative, 'utf8').digest('hex');

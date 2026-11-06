@@ -278,7 +278,7 @@ there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres o
 at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
 runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
 mutation only for what a shard reads (docs/adr/0066, Part 7): every shard (about 54 runner-minutes with the seven
-shards before #84; eighteen since `packets-figures`, re-measured on the push runs) when it moves the
+shards before #84; eighteen since `packets-figures`, nineteen since `packets-template`, re-measured on the push runs) when it moves the
 test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves,
 or a catalog or manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an
 actions pull request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports
@@ -589,8 +589,8 @@ checks above.
 
 ### What runs
 
-- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (eighteen since `packets-figures`;
-  seventeen with #84, seven before it).
+- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (nineteen since `packets-template`;
+  eighteen since `packets-figures`, seventeen with #84, seven before it).
 - **On a pull request:** every shard of each package whose closure the change touches, and nothing else. The
   `changes` job prints which packages it chose and why (the first changed paths that reach each one) to its log and
   summary (`tools/stryker/affected.ts`). A package's closure is:
@@ -671,11 +671,12 @@ checks above.
 | `packets-words-days` | the day counts', pages' and percentages' cues (`roles-words/days.ts`) | 3 min 34 s (local, 2026-11-04) |
 | `packets-words-dates` | the dates' cues (`roles-words/dates.ts`) | 3 min 14 s (local, 2026-11-04) |
 | `packets-words-prose` | the prose words (`roles-words/prose.ts`, `index.ts`) | 4 min 35 s (local, 2026-11-04) |
-| `packets-verifier` | the verifier's check (`verifier/`) and the text it reads (`readable.ts`) | 8 min 12 s (local, 2026-11-04) |
+| `packets-verifier` | the verifier's check (`verifier/index.ts`, `verifier/mismatches.ts`) and the text it reads (`readable.ts`) | 8 min 12 s (local, 2026-11-04) |
 | `packets-facts` | the facts a narrative is held to (`facts.ts`), the payer's names (`payer.ts`) and the placeholders | 6 min 38 s (local, 2026-11-04) |
 | `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | 6 min 7 s (local, 2026-11-04) |
 | `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | 8 min 40 s (local, 2026-11-04) |
 | `packets-figures` | a narrative's facts' catalog and renderer (`fact-catalog.ts`, `fact-words.ts`, `render.ts`) | 5 min 46 s (local, 2026-11-05) |
+| `packets-template` | a narrative template's check at verifier format /3 (`verifier/template.ts`, `verifier/contradiction.ts`) and its serialization (`serialize.ts`; docs/adr/0089) | 1 min 51 s (local, 2026-11-06) |
 | `pricing-engine` | pricing's `engine.ts` | 7 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 4 min 9 s |
 | `pricing-rest` | the rest of pricing | 5 min 38 s |
@@ -684,8 +685,8 @@ The times of `money-ledger` and pricing's three shards are each shard job's, set
 `stryker/shards.json` last changed before #84 (#51's merge, 2026-10-26); those seven shards took 53.4 runner-minutes,
 54.2 with `changes` and `mutation`. #84 split packets' three shards into thirteen (docs/adr/0086), so the packets rows
 are Stryker's own times in #84's one full local suite (4 shared CPUs, 2026-11-04) until push runs measure them, and
-the shards' total (eighteen with `packets-figures`) is re-measured on the push runs after #84's merge. `packets-figures` (the
-eighteenth) is its Stryker time in its own local run, on the same machine, until push runs measure it.
+the shards' total (nineteen with `packets-template`) is re-measured on the push runs after #84's merge. `packets-figures` (the
+eighteenth) and `packets-template` (the nineteenth) are each its Stryker time in its own local run, on the same machine, until push runs measure it.
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads

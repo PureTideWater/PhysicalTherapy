@@ -382,8 +382,8 @@ describe('on this repository', () => {
 
   it('selects every shard of each affected package', () => {
     expect(shardsFor(['money'])).toEqual(['money-ledger']);
-    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-roles', 'packets-roles-cues', 'packets-roles-numbers', 'packets-words-labels', 'packets-words-amounts', 'packets-words-days', 'packets-words-dates', 'packets-words-prose', 'packets-verifier', 'packets-facts', 'packets-rest', 'packets-explain', 'packets-figures', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(18);
+    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-roles', 'packets-roles-cues', 'packets-roles-numbers', 'packets-words-labels', 'packets-words-amounts', 'packets-words-days', 'packets-words-dates', 'packets-words-prose', 'packets-verifier', 'packets-facts', 'packets-rest', 'packets-explain', 'packets-figures', 'packets-template', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(19);
     expect(shardsFor([] as MutationPackage[])).toEqual([]);
   });
 });

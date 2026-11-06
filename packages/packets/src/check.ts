@@ -2,7 +2,7 @@ import { type NarrativeFacts, narrativeFacts } from './facts';
 import type { PacketContent } from './format';
 import { type FactCatalog, factCatalog } from './fact-catalog';
 import { type NarrativeCheck, type NarrativeReading, findMismatches, readNarrative } from './verifier/mismatches';
-import { type TemplateReading, readTemplate } from './verifier/template';
+import { type TemplateReading, readTemplate, templateSentenceSpans } from './verifier/template';
 
 /**
  * The verifier's check for the packet builder's narrative editor (@tp/packets/check; PRD 7, Packet builder: "narrative
@@ -24,7 +24,8 @@ export { type FactCatalog, type FactEntry, type FactLookup, canonicalFactId, fac
 export { type FactWords, type SetMeasure, factWords } from './fact-words';
 export { type RenderProblem, type RenderSpan, type RenderedFacts, renderFact, renderFacts } from './render';
 export { FIGURE_ROLES, type FigureRole } from './roles';
-export { type TemplateReading, readTemplate };
+export { type TemplateReading, readTemplate, templateSentenceSpans };
+export { type DraftOutput, type DraftParagraph, type DraftSegment, type DraftSentence, serializeDraft, serializeSentence } from './serialize';
 
 export function checkNarrative(narrative: string, content: PacketContent): NarrativeCheck {
   return findMismatches(narrative, narrativeFacts(content), []);
