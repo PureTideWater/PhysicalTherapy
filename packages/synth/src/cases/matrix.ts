@@ -286,6 +286,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'A response naming a document still in intake, held, a duplicate, a zip or one of its entries, of a kind other than a payer letter or other document, of another practice, or a contract version’s source is refused on the letter with one sentence, and nothing is recorded; the letters offered are grouped, those no response names first, this person’s uploads before another person’s, then this case’s responses’, listed whole, then other cases’, and a response with another case’s letter is still recorded; a letter a response names leaves Documents to tag and Documents awaiting abstraction, and tagging it, or naming it in an amendment or a correction, is refused with what to tag instead; a tag and a response of the same letter at the same time cannot both pass; a payer’s terms letter that no response names stays in both lists; the Contracts panel names its payer letter kind a payer’s terms or policy letter and says where a payer’s answer goes',
   },
+  {
+    id: 'CAS-55',
+    title: 'Render, approval and export of a narrative’s fact tokens',
+    assertion:
+      'The render equals each fact’s phrase with `formatUsdPlain` amounts, stored pattern and code totals, and code-computed row sums (bigint cents, decimal units); it is idempotent; it is the same in the browser and the worker, and `formatUsdPlain` equals `formatUsd` en-US in both; a renderer change between save and approval makes `verifierNow` read `fails_now` and blocks the approval (`rendered_changed` when the screen’s hash differs); the export refuses a `rendered_sha256` that differs or a surviving `{{`; the v2 set passes 300 of 300 at the gate on the local provider',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

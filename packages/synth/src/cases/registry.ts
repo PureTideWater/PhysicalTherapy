@@ -352,6 +352,16 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
   ]),
+  // Lane B (co-001/packet-figure-placeholders, slice 1): a narrative’s figures as fact tokens rendered by code; the render half, in the worker
+  // and in a browser (formatUsdPlain against formatUsd en-US, and renderFacts, in both). The approval and export half come with later slices.
+  'CAS-55': none(8, 'Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.', [
+    'packages/packets/src/render.test.ts',
+    'packages/packets/src/fact-catalog.test.ts',
+    'packages/packets/src/fact-catalog.property.test.ts',
+    'packages/packets/src/render-golden.test.ts',
+    'packages/money/src/usd-plain.test.ts',
+    'apps/web/src/components/packets/fact-render.browser.test.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

@@ -69,6 +69,10 @@ export const MUTATE = {
     'packages/packets/src/explain/**/*.ts',
     'packages/packets/src/explain.ts',
     'packages/packets/src/words-version.ts',
+    // A packet narrative's figures as fact tokens rendered by code: the facts' catalog, its words and the renderer.
+    'packages/packets/src/fact-catalog.ts',
+    'packages/packets/src/fact-words.ts',
+    'packages/packets/src/render.ts',
     '!packages/packets/src/**/*.test.ts',
     '!packages/packets/src/test-support.ts',
     '!packages/packets/src/explain/__golden__/**',
