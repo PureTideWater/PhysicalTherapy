@@ -602,8 +602,14 @@ above stays as it was decided; where it differs, this amendment holds.
   Service 01/01/2020-01/02/2020Paid $0,000.00" was refused) a range's two ends may be read on either reading and may be a
   date and an amount (with or without a currency sign), the glued reading blanks only a word glued to a digit and never
   as white space, and `datesIn` tries each date form at every number, so a match that reads as no date never hides a date
-  it overlaps (that also redacts a date of birth written straight after an amount and a full stop, "0.00.03/14/1980"); a
-  range joined to a further group is still no barrier.
+  it overlaps (that also redacts a date of birth written after an amount and a full stop, "0.00.03/14/1980", "0.00.
+  03/14/1980", "0.00.03/14/80"); a range joined to a further group is still no barrier. The review of that fix (GATEWAY1-1,
+  GATEWAY1-2) added a third reading that blanks every word glued to a digit, an ordinal-like suffix too, so a range glued
+  to "St.", "Rd.", "TH" or "nd" after its year is a barrier ("10/01/2026-10/15/2026St. Joseph"), and reads SEC-5's label
+  over the numbers before an unsigned amount and before its range's first end, each digit as a space, so a date, an
+  amount, a currency amount or a range between an SSN or phone label and an amount-shaped number shields it ("SSN:
+  01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456", "SSN 900 12 3456150.00" are refused; so is "Call us about
+  150.00-120.00", the fail-safe side, as "Call us about 150.00 1234" was).
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the
@@ -643,8 +649,15 @@ in 3456`); an unlabeled bare ten starting 2 that passes the NPI check; a seven-d
 or with a digit in its label window (`Phone 1: 555-0100`); a non-NANP phone number; `1` and ten written as one run with
 no phone label (`Patient 12025550123`, kept as an 11-digit ICN is); two phones with nothing between them
 (`202-555-0123202-555-0124`); an SSN written with an OCR space and then a whole slashed or dashed date for its last six
-(`SSN 900 12/03/56`); a number written as two whole dates or two amounts joined by a dash, read as a range
-(`9-1-26-1-23-45`; no SSN or phone shape is one); a person's nine or ten written bare in a list a keep-noun names
+(`SSN 900 12/03/56`); a number written as two whole dates or amounts, or one of each (a currency amount too), joined by
+a dash, read as a range (`9-1-26-1-23-45`; no SSN or phone shape is one); an SSN or phone glued digit to digit to a date,
+a year, an amount or a currency amount, which the scan reads as one long group (`SSN 900-12-3456150.00`, `SSN
+01/01/2020900-12-3456`, `$514451/293-6215`: review GATEWAY1-3; `SSN 900 12 3456150.00` is refused); an amount-shaped SSN
+whose first group a date reading joins to the number before it (`SSN $10-9.00 12 3456`, where `10-9.00` reads as a date);
+an amount-shaped SSN or phone after a range and white space with its label more than 24 characters before it (`Phone
+March 11, 2029−2,866.66  960.58 4433`: GATEWAY1-2); an amount followed by a dash and a year-first date, whose last
+integer digits, cents and year are written `[SSN]` (`Service 150.00-2020-04-05` is `Service [SSN]-04-05`: over-redaction,
+never a leak, GATEWAY1-5); a person's nine or ten written bare in a list a keep-noun names
 (`Claims 900123456 and 900551234`), kept as the keep-noun keeps the first; a ten-digit chain of short groups with an
 area code 0 or 1 (`123-456-7890`), refused by the scan rather than sent; an SSN or phone written in two groups, one of
 five digits or more, or in five groups or more, with no SSN or phone label nearest it (`Also 202-5550123`, or `Call

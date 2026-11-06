@@ -656,6 +656,10 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
     // "00.03/14" and "12.03/14" are read first (the second as 2014-12-03); the date they overlap is still read.
     expect(redactLetter('Paid 0.00.03/14/1980 today', born, []).text).toBe('Paid 0.00.[DATE_OF_BIRTH] today');
+    // With a space after the full stop (an OCR'd table's likelier shape) and with a two-digit year, sent as written before
+    // the fix too (review GATEWAY1-6).
+    expect(redactLetter('Paid 0.00. 03/14/1980 today', born, []).text).toBe('Paid 0.00. [DATE_OF_BIRTH] today');
+    expect(redactLetter('Paid 0.00.03/14/80 today', born, []).text).toBe('Paid 0.00.[DATE_OF_BIRTH] today');
     expect(redactLetter('Seen 12.03/14/1980 today', born, []).text).toBe('Seen 12.[DATE_OF_BIRTH] today');
     expect(redactLetter('Paid $0,000.00.1980-03-14', born, []).text).not.toContain('1980');
     expect(datesIn('Paid 0.00.03/14/1980').map((span) => span.dates)).toContainEqual(['1980-03-14']);
@@ -1543,8 +1547,10 @@ const keepsWhatMustStay = fc.property(fc.array(fc.tuple(keptSegment, fc.constant
  * The seed on which MOD-16 refused a kept letter on CI (2026-11-06): "Paid $0,000.00. Service 01/01/2020-01/02/2020Paid
  * $0,000.00", a service period glued to the next word. Its second date is read only with the letters as blanks, and there
  * a match with no reading ("00. Service 01/01": the cents, the full stop and the blanked word) had taken its first date; so
- * neither end of the range stood as a barrier and the scan chained 01, 01, 2020 and 01 into ten digits. It pins one more
- * fixed run of the property; the counterexample and its class are pinned on their own (redact.test.ts and below).
+ * neither end of the range stood as a barrier and the scan chained 01, 01, 2020 and 01 into ten digits. The generator has
+ * since been widened, so this seed now draws other letters: a fixed run of the widened property, which fails at cc3dd7f6
+ * after 44 tests on a date-to-amount range glued to the next word. The CI counterexample and its class are pinned as rows
+ * in functions/denial-letter.test.ts ("refuses no letter of what must stay").
  */
 const RANGE_GLUED_SEED = 1034253323;
 
