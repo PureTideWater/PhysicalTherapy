@@ -130,8 +130,9 @@ Contract-verified calculation without cash is a line status (validated), never a
 - Email: the horizontal lockup with its tagline in the header, as the outlined art's PNG
   (`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, 1200 px wide, drawn at 160 px with the
   alternative text "PaidWhole"; some mail clients strip SVG), on a fixed White plate: a White rounded
-  table (padding `--pw-space-3`, corners `--pw-radius-md`, White as a `bgcolor` attribute and as
-  `background-color`) behind the full-colour art, never a reversed lockup. A client that forces dark mode
+  table (padding 0, corners `--pw-radius-md`, White as a `bgcolor` attribute and as `background-color`,
+  on the table and its cell) behind the full-colour art, never a reversed lockup; the plate's `--pw-space-3`
+  White margin is the image's own pixels. A client that forces dark mode
   (Gmail's apps, Outlook.com, Outlook for iOS) inverts the plate with the other cells, and may rewrite an
   image's CSS background, but not an image's pixels, and a message cannot detect it; so the art carries a
   White ground of its own as pixels, which is what stays legible there. The email files are the art
