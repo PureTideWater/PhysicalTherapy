@@ -1,4 +1,6 @@
+import { cents, formatUsd, formatUsdPlain } from '@tp/money';
 import type { PacketContent } from '@tp/packets';
+import { renderFacts } from '@tp/packets/check';
 import { AppRouterContext, type AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { Component, type ReactNode, StrictMode, startTransition, use, useEffect, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -466,6 +468,27 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       throw new Error('the narrative editor needs its content');
     }
     return <NarrativeEditor name="narrative" initial={init.initial} content={init.content} maxLength={20_000} />;
+  },
+  /**
+   * Not a form: a packet narrative's amounts and fact tokens as the browser formats and renders them (test matrix
+   * CAS-55, the render half; design lane-b-packet-figure-placeholders, section 5), over the SYNTHETIC amounts (cents as
+   * integer text) and contents the test hands the page, put on window.factRender for the test to hold equal to the
+   * worker's.
+   */
+  'fact-render': () => {
+    const init = (window as unknown as { harnessInit?: { readonly amounts: readonly string[]; readonly renders: readonly { readonly template: string; readonly content: PacketContent }[] } }).harnessInit;
+    if (init === undefined) {
+      throw new Error('the fact render needs its amounts and contents');
+    }
+    const amounts = init.amounts.map((amount) => cents(BigInt(amount)));
+    Object.assign(window, {
+      factRender: {
+        plain: amounts.map(formatUsdPlain),
+        enUs: amounts.map((amount) => formatUsd(amount, 'en-US')),
+        rendered: init.renders.map(({ template, content }) => renderFacts(template, content)),
+      },
+    });
+    return <p>Rendered in the browser.</p>;
   },
   /** The packet's Export button, a form of hidden fields with its own useActionState (design 4.2). */
   export: (page) => (

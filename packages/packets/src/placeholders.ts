@@ -15,6 +15,25 @@ export function placeholder(kind: IdentifierKind, row: number): string {
   return `{{${kind}:${String(row)}}}`;
 }
 
+/**
+ * A fact placeholder anywhere in text (design lane-b-packet-figure-placeholders, section 1): a figure of a narrative
+ * bound to a fact id of ./fact-catalog.ts, which code renders as its phrase (./render.ts). An id always starts with a
+ * letter, so PLACEHOLDER_PATTERN never reads a fact token and this never reads an identifier's. A new expression on
+ * each call (it is global, so it keeps its place), built when it is asked for rather than when the module loads.
+ */
+export const factPlaceholderPattern = (): RegExp => /\{\{fact:([a-z][a-z0-9_.+]{0,95})\}\}/g;
+
+/** Whether text is a fact id, whole: a lowercase letter, then at most 95 lowercase letters, digits, `_`, `.` and `+`. */
+export const isFactId = (text: string): boolean => /^[a-z][a-z0-9_.+]{0,95}$/.test(text);
+
+/** The token of a fact id ({{fact:pattern.allowed}}); an id outside the grammar is refused. */
+export function factPlaceholder(id: string): string {
+  if (!isFactId(id)) {
+    throw new TypeError('a fact id is a lowercase letter, then lowercase letters, digits, _, . and +');
+  }
+  return `{{fact:${id}}}`;
+}
+
 export function isIdentifierKind(value: string): value is IdentifierKind {
   return (IDENTIFIER_KINDS as readonly string[]).includes(value);
 }

@@ -13,9 +13,14 @@ import { type NarrativeCheck, type NarrativeReading, findMismatches, readNarrati
  *
  * The editor builds the version's facts once (narrativeFacts, memoised on its content) and reads the narrative once per
  * keystroke (checkReading: the check and every figure as read, from one reading; the review of 2026-11-01, PE-9).
+ * The facts' catalog and renderer (factCatalog, renderFacts; design lane-b-packet-figure-placeholders, section 5) are
+ * here too, so a screen renders a narrative's fact tokens with the same code and words the worker does.
  */
 export { type CheckedFigure, type FigureNeeds, MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, type NarrativeReading } from './verifier/mismatches';
 export { type NarrativeFacts, narrativeFacts } from './facts';
+export { type FactCatalog, type FactEntry, type FactLookup, canonicalFactId, factCatalog, lookupFact } from './fact-catalog';
+export { type FactWords, type SetMeasure, factWords } from './fact-words';
+export { type RenderProblem, type RenderSpan, type RenderedFacts, renderFact, renderFacts } from './render';
 export { FIGURE_ROLES, type FigureRole } from './roles';
 
 export function checkNarrative(narrative: string, content: PacketContent): NarrativeCheck {
