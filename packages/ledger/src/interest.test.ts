@@ -498,6 +498,20 @@ describe('interestWrites (D5, D6, D10)', () => {
     ]);
   });
 
+  it('writes each draw under its own sign only: a paying chain whose lines hold its interest is never taken back from by another chain’s take-back', () => {
+    // c is paid 5.40 and its line L7 holds 2.00 of c's interest; a takes back 1.00 from L3. Only a's take-back is a take-back.
+    const lines = new Map<string, ChainInterestLines>([
+      ['c', { paid: paid().paid, takenBack: [{ serviceLineId: 'L7', claimId: 'C', heldCents: cents(200n) }] }],
+      ['a', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'K', heldCents: cents(100n) }] }],
+    ]);
+    for (const draws of [
+      [drawOf('A', 'c', 540n, ['C']), drawOf('A', 'a', -100n, ['V'])],
+      [drawOf('A', 'a', -100n, ['V']), drawOf('A', 'c', 540n, ['C'])],
+    ]) {
+      expect(interestWrites({ draws, written: [], lines })).toEqual([part('a', 'L3', 'K', -100n, false), part('c', 'L1', 'C', 240n, true), part('c', 'L2', 'C', 300n, true)]);
+    }
+  });
+
   it('flags a part allocated when its draw was a share of a short pool or two or more lines took a part', () => {
     expect(interestWrites({ draws: [drawOf('A', 'c', 365n, ['C'], true)], written: [], lines: new Map([['c', paid('C', [2400n, 0n])]]) })).toEqual([part('c', 'L1', 'C', 365n, true)]);
     expect(interestWrites({ draws: [drawOf('A', 'c', 1n, ['C'])], written: [], lines: new Map([['c', paid()]]) })).toEqual([part('c', 'L2', 'C', 1n, false)]);
