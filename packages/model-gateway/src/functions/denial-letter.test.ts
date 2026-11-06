@@ -862,9 +862,14 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['after words and a number', 'SSN of member 2: 900.12 3456'],
     ['after a number that starts its range', 'SSN 2: 01/01/2020-900.12 3456'],
     ['a phone after the phone word\u2019s own number', 'Phone 711 900.12 3456'],
-    // An SSN glued digit to digit to an amount after its label (review GATEWAY1-3): the amount is read under the label.
-    ['a labeled SSN glued to an amount', 'SSN 900 12 3456150.00'],
-    ['a labeled SSN glued to an amount that starts a range', 'SSN 900 12 3456150.00-01/02/2020'],
+    // A spaced SSN glued digit to digit to an amount after its label (review GATEWAY1-3), refused only because some run of
+    // its groups under the label holds 9 or 10 digits (3456150 and the cents 00; 900, 12 and 34561): with other lengths
+    // the class is a recorded residual, pinned below (re-review GATEWAY1-2).
+    ['a labeled SSN glued to an amount, nine digits in a run under the label', 'SSN 900 12 3456150.00'],
+    ['a labeled SSN glued to an amount that starts a range, nine digits in a run', 'SSN 900 12 3456150.00-01/02/2020'],
+    ['a labeled SSN glued to a one-digit amount, ten digits in a run', 'SSN 900 12 34561.00'],
+    // The labeled twin of an unlabeled amount-shaped phone at the start of a range, which is sent (re-review PHI1-1).
+    ['a labeled amount-shaped phone that starts a range to a date', 'Phone 202 555 01.23-1/3/20'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -991,20 +996,41 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     }
   });
 
-  // Recorded residuals (docs/adr/0054), pinned so a change to them is seen: an SSN glued digit to digit to an amount or a
-  // year, which the scan reads as one long group (review GATEWAY1-3); an amount-shaped SSN whose first group reads as a
-  // date with the number before it ("10-9.00"); an amount-shaped phone after a range and white space with its label more
-  // than 24 characters back (GATEWAY1-2); an amount followed by a year-first date, read as [SSN] (GATEWAY1-5); an SSN or
-  // phone whose label is behind a number and then a word or a span (a digit in its label window, as "Phone 1: 555-0100":
-  // re-review GATEWAY1-1), which cc3dd7f6 sent too or refused only by a range's A3 join, now a barrier MOD-16 needs.
+  // Recorded residuals (docs/adr/0054), pinned so a change to them is seen. cc3dd7f6 sent each of them, or refused it only
+  // because a date or amount then joined the next group (A3), where MOD-16 now needs a barrier.
   it.each([
+    // An unlabeled amount-shaped SSN or phone is read as an amount, as R1 keeps "150.00 1234": alone, after white space
+    // or at an end of a range (re-review PHI1-1). The must-stay rows that force it are "Paid 900.12 3456 units"
+    // (redact.property.test.ts) and "Paid $0,000.00.$0,000.00-150.00 1234" above; under a label it is refused.
+    ['an unlabeled amount-shaped SSN at the end of a range of two amounts (since review round 2)', 'Paid 150.00-900.12 3456', 'Paid 150.00-900.12 3456'],
+    ['an unlabeled amount-shaped SSN at the end of a range from a date', 'Paid 01/01/2020-900.12 3456', 'Paid 01/01/2020-900.12 3456'],
+    ['an unlabeled amount-shaped SSN at the end of a range from a currency amount with no cents', 'Paid $1-900.12 3456', 'Paid $1-900.12 3456'],
+    ['an unlabeled amount-shaped phone at the start of a range to a date', 'Paid 202 555 01.23-1/3/20', 'Paid 202 555 01.23-1/3/20'],
+    // An SSN or phone glued digit to digit to an amount or a year, which the scan reads as one long group (review
+    // GATEWAY1-3); spaced and labeled, it is refused only where a run of its groups under the label holds 9 or 10 digits
+    // (re-review GATEWAY1-2), and next to a range as well (re-review PHI1-2).
+    ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
+    ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
+    ['a spaced labeled SSN glued to a two-digit amount', 'SSN 900 12 345615.00', 'SSN 900 12 345615.00'],
+    ['a spaced labeled SSN glued to an amount with one decimal', 'SSN 900 12 3456150.0', 'SSN 900 12 3456150.0'],
+    ['a spaced labeled phone glued to a two-digit amount', 'Phone 202 555 012315.00', 'Phone 202 555 012315.00'],
+    ['a spaced labeled phone glued to a one-digit amount', 'Phone 202 555 01231.00', 'Phone 202 555 01231.00'],
+    ['a spaced labeled SSN glued to an amount that starts a range', 'SSN 900 12 345615.00-01/02/2020', 'SSN 900 12 345615.00-01/02/2020'],
+    ['a labeled SSN fused to an amount that starts a range', 'SSN 900123456120.00-01/02/2020', 'SSN 900123456120.00-01/02/2020'],
+    ['a labeled phone fused to an amount that starts a range', 'Phone: 2025550123150.00-01/03/2020', 'Phone: 2025550123150.00-01/03/2020'],
+    ['a labeled phone in a shape glued to a date that starts a range', 'Tel: 202-555-01231 January 2020-150.00', 'Tel: 202-555-01231 January 2020-150.00'],
+    // An SSN written with an OCR space and then a whole dashed date for its last six, next to a range too (re-review PHI1-2).
+    ['a labeled SSN whose last six read as a date that starts a range', 'SSN 9 01-12-1985-150.00', 'SSN 9 01-12-1985-150.00'],
+    // An amount-shaped SSN whose first group reads as a date with the number before it ("10-9.00").
+    ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],
+    // An amount-shaped phone after a range and white space with its label more than 24 characters back (review GATEWAY1-2).
+    ['an amount-shaped phone after a range and spaces, its label out of reach', 'Phone March 11, 2029\u22122,866.66  960.58 4433', 'Phone March 11, 2029\u22122,866.66  960.58 4433'],
+    // An SSN or phone whose label is behind a number and then a word or a span (a digit in its label window, as "Phone 1:
+    // 555-0100": re-review GATEWAY1-1).
     ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
     ['an SSN glued to an amount after the label’s number, a word and a range', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00'],
     ['an amount-shaped SSN after the label’s number, a word and a range', 'SSN 1: is 01/01/2020-900.12 3456', 'SSN 1: is 01/01/2020-900.12 3456'],
-    ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
-    ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
-    ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],
-    ['an amount-shaped phone after a range and spaces, its label out of reach', 'Phone March 11, 2029\u22122,866.66  960.58 4433', 'Phone March 11, 2029\u22122,866.66  960.58 4433'],
+    // An amount followed by a dash and a year-first date, read as [SSN]: over-redaction, never a leak (review GATEWAY1-5).
     ['an amount and a year-first date joined by a hyphen', 'Service 150.00-2020-04-05 billed', 'Service [SSN]-04-05 billed'],
   ])('pins a recorded residual: %s', (_case, letter, sent) => {
     const redacted = redactLetter(letter, A, AC);

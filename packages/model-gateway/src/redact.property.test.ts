@@ -665,6 +665,38 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     expect(datesIn('Paid 0.00.03/14/1980').map((span) => span.dates)).toContainEqual(['1980-03-14']);
   });
 
+  it('pins a recorded residual: the call’s own date of birth glued to a word by a lost space is sent, as at cc3dd7f6 (re-review GATEWAY1-4; docs/adr/0054)', () => {
+    // datesIn reads no date against a letter, and neither redaction nor the check reads one on the scan's glued readings
+    // yet; a separate item is to. A full stop or an invisible character in the lost space's place is read.
+    const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    for (const letter of ['DOB03/14/1980', 'DOB1980-03-14', 'DOB: 1980-03-14Seen', 'Born 03/14/1980Paid', 'Born March 14, 1980Paid', 'DOB 3/14/80Paid', 'Born 14.03.1980Paid', 'Born 03/14/1980St. Mary', 'DOB 03141980Paid']) {
+      expect(redactLetter(letter, born, []).text, letter).toBe(letter);
+      expect(holdsIdentifier(letter, born, []), letter).toBe(false);
+    }
+    expect(redactLetter('Patient DOB 03/14/1980Member ID SYNMEMBER0042', born, []).text).toBe('Patient DOB 03/14/1980Member ID [MEMBER_ID]');
+    expect(redactLetter('Born 03/14/1980.', born, []).text).toBe('Born [DATE_OF_BIRTH].');
+    expect(redactLetter('DOB 03/14/1980​Paid', born, []).text).toBe('DOB [DATE_OF_BIRTH]​Paid');
+  });
+
+  it('keeps a patient named for a month whose name is the month word of a second date read from the first date’s year (re-review PHI1-3; docs/adr/0054: a name that is the month word of a separated date is not taken)', () => {
+    // "1 Jan 01" is read, and from its two-digit year "01 May-12" (2012-05-01) and "01 / June⏎01" too, since datesIn tries
+    // each form at every number (MOD-16 seed 1034253323); cc3dd7f6 replaced the name there only because the first match
+    // had taken the "01". Alone, such a date keeps the name at cc3dd7f6 too.
+    const may: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['MAY ZEPHYRA'], datesOfBirth: ['1961-03-03'], memberIds: ['ZZ7654321'] };
+    const june: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JUNE Q VANTREE'], datesOfBirth: ['1961-03-03'], memberIds: ['ZZ7654321'] };
+    for (const [who, letter] of [
+      [may, 'Seen 1 Jan 01 May-12, 3rd'],
+      [may, 'Seen 01 May-12, 3rd'],
+      [june, 'DOS 1 Jan 01 / June\n01'],
+      [june, 'DOS 01 / June\n01'],
+    ] as const) {
+      expect(redactLetter(letter, who, []).text, letter).toBe(letter);
+      expect(holdsIdentifier(letter, who, []), letter).toBe(false);
+    }
+    // Where no calendar reading holds the month word, the name is replaced.
+    expect(redactLetter('Dear May, seen 1 Jan 01', may, []).text).toBe('Dear [PATIENT_NAME], seen 1 Jan 01');
+  });
+
   it('joins a number over grouping apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 (review finding R5-1)', () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ7654321'] };
     const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['12345678'] }];
