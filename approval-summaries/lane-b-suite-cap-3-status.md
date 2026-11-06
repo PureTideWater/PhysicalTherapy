@@ -22,6 +22,16 @@ warning level, resets Fri 2026-11-06 19:00 UTC). Resume only when the orchestrat
 - WIP records: `approval-summaries/lane-b-suite-cap-3-wip/` (map, profile, design progress, probe scripts and README, results).
   The probe's seeds and the private cluster are gone with the container's /tmp at any restart; the README re-creates them.
 
+**2026-11-06 19:16 UTC:** the 19:15 UTC check-in fired after the weekly reset. No resume from the orchestrator yet (none on
+build-ops or by message), so the item stays PAUSED and idle; asked the orchestrator for its go. New input for the review on
+resume: `approval-summaries/lane-a-to-lane-b-sc1b-reconcile-time-2026-11-05.md` (1b's CAS-42.5, step 7b's practice F: one case of
+2,000 lines, 526-731 s against the 900 s attempt; byPatient's correlated `NOT EXISTS` on `ledger_match` ~403 s, the per-event case
+refresh 90-115 s). It asks: D1 writes the `ledger_match` exclusion so its cost cannot depend on that table's statistics (an
+uncorrelated InitPlan or a pre-materialized set, never a correlated NOT EXISTS); D3 removes the case-refresh family; and (D14)
+whichever of 1b and this item lands second resets step 7b's expectation, CAS-42.3's PASS_BUDGET_MS and size, and this item's
+acceptance includes moving step 7b back to practice A's full month (the Known gap line then goes). The review phase must check
+the design and the WIP candidate against all three, and against practice F's one-case shape.
+
 **Exact next step on resume:**
 1. Re-run setup with `co-001/suite-cap-3-reconcile:/home/user/suite-cap-3-reconcile`.
 2. If this same session resumes: `Workflow({scriptPath: <session>/workflows/scripts/lane-b-suite-cap-3-design-wf_4bc31523-700.js,
@@ -83,6 +93,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-06 19:16 UTC: weekly-reset check-in; no resume from the orchestrator yet; still paused. 1b's reconcile-time hand-off noted for the review.
 - 2026-11-02 04:05 UTC: PAUSED (weekly-limit pacing). Design written (pre-review), committed; candidate on WIP ref co-001/wip-suite-cap-3 956b32ef.
 - 2026-11-02 01:05 UTC: stopped again by the 5-hour limit; WIP pushed; resumed.
 - 2026-11-01 19:58 UTC: design workflow stopped by the 5-hour limit after the map; resumed.
