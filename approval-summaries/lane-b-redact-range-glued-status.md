@@ -1,12 +1,13 @@
-COUNTER REQUEST: a claim row and test-matrix numbers (two MOD rows, likely MOD-21 and MOD-22) for a follow-on PR `co-001/redact-ssn-phone-leaks`
-(the SSN/phone leak classes the hunt verifies at cc3dd7f6); no ADR expected (an ADR 0054 amendment).
+Counters (allocated by the orchestrator 2026-11-06 21:03 UTC): MOD-21 and MOD-22 for the follow-on PR `co-001/redact-ssn-phone-leaks`
+(the SSN/phone leak classes the hunt verifies at cc3dd7f6); no ADR expected (an ADR 0054 amendment). Next free becomes MOD-23.
 
 # Lane B item: a date or amount range glued to a word breaks MOD-16 (`co-001/redact-range-glued`)
 
 Session: session_01FcouKP1U2GGDFhhZT9CaUV (https://claude.ai/code/session_01FcouKP1U2GGDFhhZT9CaUV). GitHub login: PureTideWater.
 Claimed by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) 2026-11-06 19:40 UTC: "GO on the MOD-16 follow-up (Lane A
 handoff 2026-11-05 §2, first item for Lane B) ... no new ADR/MOD expected; COUNTER REQUEST if one is".
-Follow-on (orchestrator, 2026-11-06 ~19:50 UTC, the co-founder's plan; this session is S1): after this merges, the packets
+Follow-ons, in order (orchestrator 2026-11-06 21:03 UTC: PHI first): (1) `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22; the week's top PHI
+item; two reviews with skeptics; refuse where a boundary is unknowable); (2) (orchestrator ~19:50 UTC, this session is S1) the packets
 verifier identifier fold (`approval-summaries/lane-b-packets-verifier-identifier-fold-status.md`, MOD-19/20; RESUME-BLOCK first;
 claim row and live heads; it shares verifier files with S4's packet-figure-placeholders slice 2 and the tp-packet-verifier/3
 migration: check S4's branch first, rule 6).
