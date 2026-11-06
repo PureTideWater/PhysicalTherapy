@@ -16,8 +16,20 @@ export const CLOUDFORMATION_DESCRIBE_ACTIONS = [
   'cloudformation:ListStackResources',
 ];
 
-/** Reads that would return stored contents rather than configuration; refused even where ReadOnlyAccess allows them. */
-export const DENIED_CONTENT_READS = ['s3:GetObject*', 'secretsmanager:GetSecretValue', 'kms:Decrypt', 'ssm:GetParameter*'];
+/**
+ * Reads that would return stored contents rather than configuration; refused even where ReadOnlyAccess allows them.
+ * The two Cognito reads return the web client's secret once the client is confidential (DescribeUserPoolClient's
+ * `ClientSecret`, and possibly ListUserPoolClientSecrets' `ClientSecretValue`); `cdk diff --method template` calls
+ * neither (docs/adr/0088 D1).
+ */
+export const DENIED_CONTENT_READS = [
+  's3:GetObject*',
+  'secretsmanager:GetSecretValue',
+  'kms:Decrypt',
+  'ssm:GetParameter*',
+  'cognito-idp:DescribeUserPoolClient',
+  'cognito-idp:ListUserPoolClientSecrets',
+];
 
 export interface PullRequestDiffRoleProps {
   /** `owner/name` of the repository whose pull requests may assume the role. */
@@ -30,7 +42,7 @@ export interface PullRequestDiffRoleProps {
  * synthetic data only. The trust accepts GitHub's OIDC token only for this repository's
  * pull_request events, with the STS audience; sessions last an hour. Permissions are AWS's
  * ReadOnlyAccess plus the CloudFormation describe calls the diff makes, with object, secret,
- * parameter and decrypt reads explicitly denied.
+ * parameter and decrypt reads, and the Cognito reads that return the web client's secret, explicitly denied.
  */
 export class PullRequestDiffRole extends Construct {
   readonly provider: iam.OidcProviderNative;

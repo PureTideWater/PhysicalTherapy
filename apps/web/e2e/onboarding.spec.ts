@@ -8,7 +8,7 @@ import { personaEmail } from '../scripts/synthetic-personas';
 import { LocalESignature } from '../src/lib/agreements/esign';
 import { totpCode } from '../src/lib/auth/totp';
 import { atPhoneWidth, expectAccessible } from './a11y';
-import { E2E_DEV_AUTH_DIR, E2E_ESIGN_DIR, E2E_ESIGN_SECRET } from './env';
+import { E2E_DEV_AUTH_DIR, E2E_ESIGN_DIR, E2E_ESIGN_SECRET, E2E_ORIGIN } from './env';
 import { refusal, registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 import { chainFrom, queue, until } from './journeys';
 import { PREPARED_SPLIT } from './split';
@@ -38,18 +38,28 @@ async function noSidewaysScroll(page: Page, width: number, what: string): Promis
 
 const PDF = Buffer.from('%PDF-1.4\n% SYNTHETIC SIGNED AGREEMENT FOR E2E\n%%EOF\n');
 
-/** The temporary password the local identity provider "emailed" (its outbox, one JSON file per invitation). */
+/**
+ * The temporary password the local identity provider "emailed" (its outbox, one JSON file per invitation), read from
+ * the message's own words as Cognito delivers them: the line after "this temporary password:" (SGN-15). The message
+ * names the e2e server's own sign-in page as plain text, and holds no remote asset and no link.
+ */
 function temporaryPassword(email: string): string {
   const outbox = path.join(E2E_DEV_AUTH_DIR, 'outbox');
   const sent = readdirSync(outbox)
     .sort()
-    .map((file) => JSON.parse(readFileSync(path.join(outbox, file), 'utf8')) as { email: string; temporaryPassword: string })
+    .map((file) => JSON.parse(readFileSync(path.join(outbox, file), 'utf8')) as { email: string; body: string; html: string })
     .filter((message) => message.email === email);
   const last = sent.at(-1);
   if (last === undefined) {
     throw new Error('no invitation reached the outbox');
   }
-  return last.temporaryPassword;
+  expect(last.html).not.toMatch(/<img|<link|<script|<a[\s>]|href=|src=|url\(/i);
+  expect([...last.body.matchAll(/https?:\/\/\S+/g)].map((match) => match[0])).toEqual([`${E2E_ORIGIN}/sign-in`]);
+  const password = /this temporary password:\n\n(\S+)\n\n/.exec(last.body)?.[1];
+  if (password === undefined) {
+    throw new Error('the invitation does not state its temporary password');
+  }
+  return password;
 }
 
 /** Collects the browser's Content Security Policy reports: a page that breaks the policy shows here. */
@@ -471,7 +481,10 @@ test('a practice created with no seeded settings reaches a priced month from its
         await manager.getByLabel('Agreement', { exact: true }).selectOption({ label: 'Medicare Advantage, non-contracted' });
         await manager.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
         await manager.getByRole('button', { name: 'Save the mapping' }).click();
-        await expect(manager.locator('[data-notice="mapped"]')).toBeVisible();
+        // The practice's one plan, mapped with its location set and no run yet: the mapping completes March and queues its
+        // monitoring (combined audit #32, D2b; MAP-07). The chain below then finds March covered by that job's run, or
+        // waiting on the location, as the parse's own monitor would have left it; both take the practice's monitor lock.
+        await expect(manager.locator('[data-notice="mapped_pricing"]')).toBeVisible();
         const documentId = await withDatabase(
           async (client) => (await client.query<{ id: string }>("SELECT id FROM source_document WHERE practice_id = $1 AND kind = 'x12_835' ORDER BY created_at DESC LIMIT 1", [practiceId])).rows[0]?.id ?? '',
         );

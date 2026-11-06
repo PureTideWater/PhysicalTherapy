@@ -1,0 +1,22 @@
+{
+  "case": "SGN-13",
+  "module": "SGN",
+  "title": "Every message the user pool sends is the brand’s",
+  "assertion": "Each CustomMessage source (forgot password, invitation and its resend, attribute update, attribute verification, sign-up, resend code and authentication) has its own subject and words from `@tp/auth-mail`: the reset code’s are section 2.5’s word for word, the invitation names the sign-in page as plain text with no query and states 7 days from `INVITATION_DAYS`; each message holds Cognito’s code parameter once (the invitation its username parameter once), stays within Cognito’s subject and message lengths, reads the same with its tags stripped, and holds no image, font, stylesheet or link (but the invitation’s sign-in address); the pool’s own verification and invitation templates are the branded generic fallback, never reset-specific words; the copy lint reads the package",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/auth-mail/src/render.test.ts",
+    "infra/test/cognito-messages.test.ts",
+    "infra/test/identity.test.ts",
+    "tools/brand-copy/scan.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The words are rendered in memory with Cognito’s placeholders and synthetic values, and the pool is read from the synthesized template; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

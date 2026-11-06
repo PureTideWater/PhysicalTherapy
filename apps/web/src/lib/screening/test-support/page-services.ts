@@ -35,7 +35,16 @@ class MemoryJar implements CookieJar {
   }
 }
 
-export function screeningServices(pool: DatabasePool, options: { readonly queue?: JobQueue; readonly sink?: (line: string) => void; readonly screeningSlots?: number } = {}): Services {
+export function screeningServices(
+  pool: DatabasePool,
+  options: {
+    readonly queue?: JobQueue;
+    readonly sink?: (line: string) => void;
+    readonly screeningSlots?: number;
+    /** Receives the password-reset codes the development provider delivers, for a test that needs one. */
+    readonly deliverResetCode?: (email: string, code: string) => Promise<void>;
+  } = {},
+): Services {
   const sealer = new Sealer(randomBytes(32));
   return createServices({
     origin: SCREENING_ORIGIN,
@@ -45,6 +54,7 @@ export function screeningServices(pool: DatabasePool, options: { readonly queue?
       sealer: sealer.derive('dev-provider'),
       webauthn: { rpId: 'localhost', rpName: 'Test', origin: SCREENING_ORIGIN },
       deliverInvitation: () => Promise.resolve(),
+      ...(options.deliverResetCode === undefined ? {} : { deliverResetCode: options.deliverResetCode }),
       scryptCost: { n: 1024, r: 8, p: 1 },
     }),
     keys: LocalKeyProvider.random(),

@@ -17,7 +17,7 @@ describe('the screening rate limit’s account', () => {
     expect(screeningRateAccount('no-domain')).toBe('address:no-domain');
   });
 
-  it('reads one Gmail mailbox once whatever its spelling: case, dots, a plus tag, googlemail.com, a trailing dot, full-width letters', () => {
+  it('reads one Gmail mailbox once whatever its spelling: case, dots, a plus tag, googlemail.com, a trailing dot', () => {
     const mailbox = 'address:aliasprobe@gmail.com';
     for (const spelling of [
       'alias.probe@gmail.com',
@@ -30,10 +30,20 @@ describe('the screening rate limit’s account', () => {
       'alias.probe@gmail.com.',
       'alias.probe@gmail.com..',
       ' alias.probe@gmail.com ',
-      'ａｌｉａｓ.ｐｒｏｂｅ@ｇｍａｉｌ.ｃｏｍ',
     ]) {
       expect(screeningRateAccount(spelling), spelling).toBe(mailbox);
     }
+    // An address with a character outside ASCII is counted as read (its ASCII letters in lower case): the form refuses it,
+    // so it is never validated or mailed, and no Unicode table decides a key (the review of 2026-10-27).
+    expect(screeningRateAccount('ＡＬＩＡＳ.ｐｒｏｂｅ@ｇｍａｉｌ.ｃｏｍ')).toBe('address:ＡＬＩＡＳ.ｐｒｏｂｅ@ｇｍａｉｌ.ｃｏｍ');
+    expect(screeningRateAccount('Alias.Probé@Gmail.com')).toBe('address:alias.probé@gmail.com');
+  });
+
+  it('reads one iCloud mailbox once under its three domains (the review of 2026-10-27)', () => {
+    for (const spelling of ['alias.probe@icloud.com', 'Alias.Probe@me.com', 'alias.probe+x@mac.com', 'alias.probe@ME.com.']) {
+      expect(screeningRateAccount(spelling), spelling).toBe('address:alias.probe@icloud.com');
+    }
+    expect(screeningRateAccount('aliasprobe@icloud.com')).toBe('address:aliasprobe@icloud.com');
   });
 
   it('drops a plus tag at every free-mail domain, and keeps the dots where they name another mailbox', () => {

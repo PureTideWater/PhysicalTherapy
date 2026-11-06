@@ -4,9 +4,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { PASSWORD_MIN_LENGTH, TOKEN_LIFETIMES } from '../lib/constructs/identity';
-import { PARAMETER_NAMES } from '../lib/deploy-parameters';
+import { MAIL_IDENTITIES_VERIFIED_CONDITION, PARAMETER_NAMES } from '../lib/deploy-parameters';
 import { ENVIRONMENTS } from '../lib/environments';
-import { onlyResource, propertiesOf, synthesized } from './synth';
+import { logicalIdOf, onlyResource, propertiesOf, synthesized } from './synth';
 
 /** The session limits docs/product/sessions.md states, read from the document itself. */
 function sessionLimits(): { absoluteMinutes: number; idleMinutes: number } {
@@ -24,7 +24,7 @@ function sessionLimits(): { absoluteMinutes: number; idleMinutes: number } {
  * signs themselves up, and tokens are short-lived.
  */
 describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
-  const { template } = synthesized(environment);
+  const { stack, template } = synthesized(environment);
   const [, pool] = onlyResource(template, 'AWS::Cognito::UserPool');
   const poolProperties = propertiesOf(pool);
   const [, client] = onlyResource(template, 'AWS::Cognito::UserPoolClient');
@@ -46,25 +46,33 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(config).toContain('rpId: settings.WEBAUTHN_RP_ID ?? new URL(settings.APP_ORIGIN).hostname');
   });
 
-  it('sends Cognito\'s email through SES from MailFromAddress, under the SES identity of its domain in this region', () => {
+  it('sends Cognito\'s email in phase 2 through SES as PaidWhole <MailFromAddress>, under its domain\'s identity and the transactional set; in phase 1 through Cognito\'s own sender (docs/adr/0065, D2)', () => {
     expect(poolProperties.EmailConfiguration).toEqual({
-      EmailSendingAccount: 'DEVELOPER',
-      From: { Ref: PARAMETER_NAMES.mailFromAddress },
-      SourceArn: {
-        'Fn::Join': [
-          '',
-          [
-            'arn:',
-            { Ref: 'AWS::Partition' },
-            ':ses:',
-            { Ref: 'AWS::Region' },
-            ':',
-            { Ref: 'AWS::AccountId' },
-            ':identity/',
-            { 'Fn::Select': [1, { 'Fn::Split': ['@', { Ref: PARAMETER_NAMES.mailFromAddress }] }] },
-          ],
-        ],
-      },
+      'Fn::If': [
+        MAIL_IDENTITIES_VERIFIED_CONDITION,
+        {
+          EmailSendingAccount: 'DEVELOPER',
+          // The product's name as the sender, as the worker's mail has it (template.ts, senderAddress).
+          From: { 'Fn::Join': ['', ['PaidWhole <', { Ref: PARAMETER_NAMES.mailFromAddress }, '>']] },
+          SourceArn: {
+            'Fn::Join': [
+              '',
+              [
+                'arn:',
+                { Ref: 'AWS::Partition' },
+                ':ses:',
+                { Ref: 'AWS::Region' },
+                ':',
+                { Ref: 'AWS::AccountId' },
+                ':identity/',
+                { 'Fn::Select': [1, { 'Fn::Split': ['@', { Ref: PARAMETER_NAMES.mailFromAddress }] }] },
+              ],
+            ],
+          },
+          ConfigurationSet: { Ref: logicalIdOf(stack, stack.mailStreams.configurationSets.transactional) },
+        },
+        { Ref: 'AWS::NoValue' },
+      ],
     });
   });
 
@@ -96,6 +104,15 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(poolProperties.AccountRecoverySetting).toEqual({ RecoveryMechanisms: [{ Name: 'verified_email', Priority: 1 }] });
     expect(poolProperties.DeletionProtection).toBe(environment === 'production' ? 'ACTIVE' : 'INACTIVE');
     expect(pool.DeletionPolicy).toBe('Retain');
+  });
+
+  it('keeps the verified address in force until a new one is confirmed (keepOriginal), so a token holder cannot swap it unverified', () => {
+    expect(poolProperties.AutoVerifiedAttributes).toEqual(['email']);
+    expect(poolProperties.UserAttributeUpdateSettings).toEqual({ AttributesRequireVerificationBeforeUpdate: ['email'] });
+  });
+
+  it('lets the web client write no attribute: the app writes them only through Admin calls with server credentials', () => {
+    expect(clientProperties.WriteAttributes).toEqual([]);
   });
 
   it('issues tokens no longer-lived than the session rules allow', () => {

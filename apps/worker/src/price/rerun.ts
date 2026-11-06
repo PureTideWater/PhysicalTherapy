@@ -34,22 +34,32 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
 export const RERUN_REASONS = ['mapping_changed', 'release_published', 'release_withdrawn', 'version_signed_off'] as const;
 export type RerunReason = (typeof RERUN_REASONS)[number];
 
+/**
+ * The complete run whose reasons to re-run are asked. Its creation is read by Postgres from the run's own row and
+ * compared there, to the microsecond: never carried as a JS Date, which keeps milliseconds and would count a mapping
+ * or sign-off made in the run's own millisecond, at or before it, as made since (PRC-32).
+ */
 export interface RunSince {
   readonly practiceId: string;
-  readonly createdAt: Date;
-  readonly releaseNo: number;
+  readonly pricingRunId: string;
 }
 
 export async function rerunReasons(client: ScopeClient, run: RunSince): Promise<RerunReason[]> {
-  const { rows } = await client.query<Record<RerunReason, boolean>>(
-    `SELECT EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.practice_id = $1 AND m.created_at > $2) AS mapping_changed,
-            coalesce(current_rule_release() > $3, false) AS release_published,
-            EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = $3) AS release_withdrawn,
-            EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = $1 AND v.signed_off_at > $2) AS version_signed_off`,
-    [run.practiceId, run.createdAt, run.releaseNo],
+  const { rows } = await client.query<Record<RerunReason, boolean> & { found: boolean }>(
+    `WITH r AS (SELECT created_at, release_no FROM pricing_run WHERE id = $2 AND practice_id = $1)
+     SELECT (SELECT count(*) FROM r) = 1 AS found,
+            EXISTS (SELECT 1 FROM payer_plan_mapping m, r WHERE m.practice_id = $1 AND m.created_at > r.created_at) AS mapping_changed,
+            coalesce(current_rule_release() > (SELECT r.release_no FROM r), false) AS release_published,
+            EXISTS (SELECT 1 FROM rule_release_withdrawal w, r WHERE w.release_no = r.release_no) AS release_withdrawn,
+            EXISTS (SELECT 1 FROM contract_version v, r WHERE v.practice_id = $1 AND v.signed_off_at > r.created_at) AS version_signed_off`,
+    [run.practiceId, run.pricingRunId],
   );
   const found = rows[0];
-  return RERUN_REASONS.filter((reason) => found?.[reason] === true);
+  // A run this scope cannot read, or not the practice's, fails closed: never read as a run with nothing changed.
+  if (found?.found !== true) {
+    throw new RerunRefusedError('not_found', NOT_FOUND);
+  }
+  return RERUN_REASONS.filter((reason) => found[reason] === true);
 }
 
 /**
@@ -213,9 +223,9 @@ interface OriginalRow {
  * would not be against the pricing a person replaces (PRC-28); while a first run of overlapping dates is
  * queued or being priced (PRC-27), since it would supersede the re-run as soon as it completes; and a release
  * that is not the one in force. No lock: a re-run created beside a completion is judged when it is accepted,
- * under the lock. Its lines are the original's, whose plans were all mapped when it was created and stay
- * mapped (a mapping is corrected, never removed); the price job checks MAP-01 again when it executes the
- * re-run, as it does for every run.
+ * under the lock. It prices the same lines as the original (the original's cut-off), under the mappings
+ * read when it prices: a plan mapped since leaves NO_MAPPING (PRC-29), and any plan still unmapped stays
+ * NO_MAPPING, line by line, while every other line prices (MAP-01; combined audit #32, docs/adr/0075).
  */
 export async function createRerun(scope: PracticeScope<ScopeClient>, input: CreateRerunInput): Promise<CreatedRerun> {
   const { rows } = await scope.client.query<OriginalRow>(

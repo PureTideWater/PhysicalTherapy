@@ -32,17 +32,26 @@ export interface WorkspacePackage {
   readonly exports: readonly (readonly [subpath: string, target: string | null])[];
 }
 
-/** The package directories pnpm-workspace.yaml lists, as `dir` and `dir/*` patterns, each holding a package.json. */
-export function workspaceDirectories(root: string): string[] {
-  const text = readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
+/**
+ * The patterns of pnpm-workspace.yaml's `packages` list, as the mutation tooling reads them: the indented `-` items (and
+ * comment lines among them) right after `packages:`, each item's comment and quotes removed. Every shard's aliases and
+ * every closure rest on this reading, so tools/stryker/manifests.ts compares it on both sides of a change beside the
+ * YAML's own (docs/adr/0066, Part 7).
+ */
+export function workspacePatterns(text: string): string[] {
   // The list's items, and any comment lines among them.
   const block = /^packages:\r?\n((?:[ \t]+[-#][^\n]*(?:\n|$))+)/m.exec(text)?.[1];
   if (block === undefined) throw new Error('pnpm-workspace.yaml lists no packages');
-  const patterns = block
+  return block
     .split('\n')
     .filter((line) => /^\s*-/.test(line))
     .map((line) => line.replace(/\s#.*$/, '').replace(/^\s*-\s*/, '').trim().replace(/^(['"])(.*)\1$/, '$2'))
     .filter((pattern) => pattern !== '');
+}
+
+/** The package directories pnpm-workspace.yaml lists, as `dir` and `dir/*` patterns, each holding a package.json. */
+export function workspaceDirectories(root: string): string[] {
+  const patterns = workspacePatterns(readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8'));
   return patterns
     .flatMap((pattern) => {
       if (/^[^*?!{}[\]]+\/\*$/.test(pattern)) {

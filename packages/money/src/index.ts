@@ -9,6 +9,7 @@ export {
   formatCents,
   formatUnroundedUsd,
   formatUsd,
+  formatUsdPlain,
   maxCents,
   minCents,
   negateCents,

@@ -2,6 +2,7 @@ import type { MutationPackage, Shard } from '../../stryker/base.mjs';
 import { type CanaryVerdict, CANARY_CASES, CANARY_FORMAT, type Runtime } from './canary/verdict';
 import type { EquivalentEntry, ShardResult } from './gate';
 import type { MutantStatus, MutationReport, ReportMutant } from './mutants';
+import type { Pins } from './runtime';
 
 /**
  * Synthetic Stryker reports, canary verdicts and equivalents for the mutation tooling's tests (gate, canary verdict,
@@ -101,8 +102,18 @@ export function equivalentOf(file: string, occurrence: number, overrides: Partia
   };
 }
 
-/** The runtime a synthetic shard ran on: the Node, Unicode and ICU tools/stryker/unicode.json's entries were checked on. */
-export const TEST_RUNTIME: Runtime = { node: 'v24.22.0', unicode: '17.0', icu: '78.3' };
+/**
+ * The pins a synthetic run is held to (the gate's and the runtime check's input, never read from the repository): the
+ * Node, Unicode and ICU tools/stryker/unicode.json's entries were checked on, and a pnpm as the root's packageManager
+ * names it.
+ */
+export const TEST_PINS: Pins = { node: '24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' };
+
+/** The runtime a synthetic shard ran on: the pinned one, Node as process.version writes it. */
+export const TEST_RUNTIME: Runtime = { node: 'v24.22.0', unicode: '17.0', icu: '78.3', pnpm: '10.34.8' };
+
+/** The commit every synthetic shard ran on, and the one a synthetic gate tests (GITHUB_SHA on Actions). */
+export const TEST_COMMIT = '0123456789abcdef0123456789abcdef01234567';
 
 /** The canary verdict of a shard whose five cases were as expected, or of one whose listed cases were not. */
 export function canaryOf(shard: string, failing: readonly number[] = []): CanaryVerdict {
@@ -114,7 +125,7 @@ export function canaryOf(shard: string, failing: readonly number[] = []): Canary
     asExpected: !failing.includes(index + 1),
     problems: failing.includes(index + 1) ? ['a mutant not as expected'] : [],
   }));
-  return { format: CANARY_FORMAT, shard, runtime: TEST_RUNTIME, total: CANARY_CASES, asExpected: cases.filter((item) => item.asExpected).length, cases, problems: [] };
+  return { format: CANARY_FORMAT, shard, runtime: TEST_RUNTIME, commit: TEST_COMMIT, total: CANARY_CASES, asExpected: cases.filter((item) => item.asExpected).length, cases, problems: [] };
 }
 
 /** A shard's result: its canary verdict (as expected unless given) and its packages' reports. */

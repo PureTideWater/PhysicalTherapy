@@ -1,6 +1,9 @@
-import { type NarrativeFacts, PLACEHOLDER_KINDS } from '../facts';
-import { type TextSpan, readableText } from '../readable';
-import { type Figure, type FigureKind, scanText, sentenceSpans } from '../scan';
+import { decimal } from '@tp/money';
+
+import { type NarrativeFacts, PLACEHOLDER_KINDS, heldRoles, largestHeld, scopeUnstated } from '../facts';
+import { type ReadableText, type TextSpan, readableText } from '../readable';
+import { FIGURE_ROLES, type FigureReading, type FigureRole, type Scope, type SentenceParts, functionWords, quotedHolds, readFigures } from '../roles';
+import { type FigureKind, scanText, sentenceSpans } from '../scan';
 
 /**
  * The verifier's check itself (PRD 12: "any figure that is not in the input fails verification, and a
@@ -12,10 +15,16 @@ import { type Figure, type FigureKind, scanText, sentenceSpans } from '../scan';
  *
  * The narrative is read as it shows (../readable.ts: each character in its NFKC form, hidden characters
  * left out), and it fails:
- * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) whose
- *   value is not among the inputs of its kind (a number may match a count, units or any other number
- *   of the inputs; a five-digit code may also match one; a contract window's day count only before
- *   "day" or "days", and its page only after "page");
+ * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) the inputs
+ *   do not hold in the role its own words give it (../roles.ts; docs/adr/0086): "3650 days" is the window's
+ *   days, "page 2" a page, "3 claims" the claim count, "the payer allowed $70.00" the allowed amount, and a
+ *   value the inputs hold in another role fails ("10000 visits" when 10000 is the window's days); one cue's
+ *   role, never the union of every cue in the clause, and a scope phrase beside an amount ("per line", "in total")
+ *   holds it to a line's or a total; with none, or in a sentence that names a part of the lines (namesPart()), it
+ *   fails where its role's per-line and total values differ (rules 1 and 2 of docs/adr/0086), and a figure of a
+ *   "respectively" list in neither plain form fails whatever it is (rule 3). A figure whose words name no role passes in any role of its kind (an
+ *   amount, a percentage, a date), or, for a number, in none: only as a quoted text holds it, with the words around
+ *   it ("Section 4");
  * - every hidden character (one that prints as nothing or as something else), and every figure written
  *   in digits other than 0 to 9, which the verifier does not read;
  * - every occurrence of one of the case's own identifiers (a patient's name, a member ID, a claim
@@ -63,45 +72,175 @@ export interface NarrativeCheck {
   readonly mismatches: readonly Mismatch[];
 }
 
-function months(dates: ReadonlySet<string>): Set<string> {
-  return new Set([...dates].map((date) => date.slice(0, 7)));
+/**
+ * What a failing figure's words must say for it to be read (docs/adr/0086): `scope`, whether it is per line or in
+ * total (rule 2: no scope phrase stands beside it, or its sentence names a part of the lines, and its role's per-line
+ * and total values differ); `own_words`, its own words instead of a "respectively" list in neither plain form (rule
+ * 3); null, nothing more: it is not in the inputs as read.
+ * A stored report's mismatch stays figure_not_in_input; this is the reading's, for the words beside it.
+ */
+export type FigureNeeds = 'scope' | 'own_words' | null;
+
+/** A figure as the check read it: its kind, the roles its words give it, and whether the inputs hold it so. */
+export interface CheckedFigure {
+  /** The figure's kind as read (a year, or a five-digit figure read as a number, is a number). */
+  readonly kind: FigureKind;
+  /** The roles its words give it (any of them, or each of them when `every`), or null when they name none. */
+  readonly roles: readonly FigureRole[] | null;
+  /** Its words name several roles and none is its own: it must be held in every one (../roles.ts, step 5). */
+  readonly every: boolean;
+  readonly passed: boolean;
+  /** For a figure that failed, the roles the inputs hold its value in (a figure stated in the wrong role). */
+  readonly heldAs: readonly FigureRole[];
+  /** What an amount or a count of units is stated per, as read (null: no scope phrase beside it, or its sentence names a part of the lines). */
+  readonly scope: Scope | null;
+  /** For a figure that failed, what its words must say (FigureNeeds); null for one that passed. */
+  readonly needs: FigureNeeds;
+  /** The sentence it is in, from 0. */
+  readonly sentence: number;
+  /** Its position in the narrative, [start, end). */
+  readonly start: number;
+  readonly end: number;
 }
 
-function monthDays(dates: ReadonlySet<string>): Set<string> {
-  return new Set([...dates].map((date) => date.slice(5)));
-}
-
-/** A day count's own words after it: "days", "calendar days", or "(30) days" after a number in words. */
-const DAYS_AFTER = /^\s*\)?\s*(?:\(\s*[\d,]+\s*\)\s*)?(?:calendar\s+|business\s+|working\s+)?days?(?![\p{L}\p{N}])/iu;
-/** A page's own word before it: "page 4", "p. 4". */
-const PAGE_BEFORE = /(?:^|[^\p{L}\p{N}])(?:page|p\.)\s*$/iu;
-
-/** Whether a figure's value is among the inputs of its kind (`text` is what the figure's positions are in). */
-function inInputs(figure: Figure, facts: NarrativeFacts, derived: { readonly months: ReadonlySet<string>; readonly monthDays: ReadonlySet<string> }, text: string): boolean {
-  switch (figure.kind) {
-    case 'amount':
-      return facts.amounts.has(figure.value);
-    case 'percent':
-      return facts.percents.has(figure.value);
-    case 'date':
-      return facts.dates.has(figure.value);
-    case 'month':
-      return derived.months.has(figure.value) || facts.identifiers.has(`month:${figure.value}`);
-    case 'month_day':
-      return derived.monthDays.has(figure.value) || facts.identifiers.has(`month_day:${figure.value}`);
-    case 'code':
-      return facts.codes.has(figure.value) || (/^\d{5}$/.test(figure.value) && facts.numbers.has(String(Number.parseInt(figure.value, 10))));
-    case 'modifier':
-      return facts.modifiers.has(figure.value);
-    case 'number':
-      return (
-        facts.numbers.has(figure.value) ||
-        (facts.dayCounts.has(figure.value) && DAYS_AFTER.test(text.slice(figure.end, figure.end + 48))) ||
-        (facts.pages.has(figure.value) && PAGE_BEFORE.test(text.slice(Math.max(0, figure.start - 16), figure.start)))
-      );
-    case 'identifier':
-      return facts.identifiers.has(figure.value);
+/**
+ * Whether the inputs hold a figure as it is read (../roles.ts): a code, modifier or identifier among the inputs of its
+ * kind; any other figure in a role its words give it (in each of them when its words name several and none is its
+ * own), as stated per what its words say (each line, each unit, in total), or, when they give it none, in any role of
+ * its kind (a number with no role in none); a partitive's part at most its whole; or repeated with the words around
+ * it from a quoted text, in a role only where the quote's own words give it that role (quotedHolds()). A figure whose
+ * words state no scope fails where its role holds it only per line or only in total and holds another value the other
+ * way (rule 2 of docs/adr/0086, `scope`), and a figure of a "respectively" list in neither plain form always fails
+ * (rule 3, `own_words`).
+ */
+function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>): { readonly passed: boolean; readonly needs: FigureNeeds; readonly scope: Scope | null } {
+  // In a sentence that names a part of the lines, an amount or a count of units in all keeps no scope but each unit's:
+  // it passes only where it is held as its words state it and with no scope too, so a trigger only ever fails a figure
+  // ("the patient owes ... $50.00 per line" is no line's $50.00 rate per unit).
+  if (reading.scope !== 'unit' && reading.parts !== null && namesPart(reading.parts, facts, reading.scope)) {
+    const own = heldAs(reading, facts, tokens, words, reading.scope);
+    return { ...(own.passed ? heldAs(reading, facts, tokens, words, null) : own), scope: null };
   }
+  return { ...heldAs(reading, facts, tokens, words, reading.scope), scope: reading.scope };
+}
+
+/** Whether the inputs hold a figure as it is read, stated per `scope` (inInputs()), and what its words must say when they do not. */
+function heldAs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>, scope: Scope | null): { readonly passed: boolean; readonly needs: FigureNeeds } {
+  const verdict = (passed: boolean, needs: FigureNeeds = null) => ({ passed, needs: passed ? null : needs });
+  const quoted = (inRole: boolean) => facts.quotes.some((quote) => quotedHolds(tokens, reading, quote, inRole, words));
+  if (reading.unread) {
+    return verdict(false, 'own_words');
+  }
+  switch (reading.kind) {
+    case 'code':
+      return verdict(facts.codes.has(reading.value) || quoted(false));
+    case 'modifier':
+      return verdict(facts.modifiers.has(reading.value));
+    case 'identifier':
+      return verdict(facts.identifiers.has(reading.value));
+    case 'amount':
+    case 'percent':
+    case 'date':
+    case 'month':
+    case 'month_day':
+    case 'number':
+    case 'year': {
+      if (reading.prose || facts.codes.has(reading.code)) {
+        return verdict(true);
+      }
+      const held = heldRoles(facts, reading.kind, reading.value, scope);
+      // Held with no scope stated where the role's per-line and total values differ: its words must say which.
+      const unstated = (role: FigureRole) => scope === null && scopeUnstated(facts, reading.kind, reading.value, role);
+      const { roles } = reading;
+      if (roles === 'any') {
+        const clear = [...held].some((role) => !unstated(role));
+        return verdict(clear || quoted(false), held.size > 0 ? 'scope' : null);
+      }
+      if (roles === 'none') {
+        return verdict(quoted(false));
+      }
+      // A partitive's part ("2 of the 3 claims"): at most its whole, the number after it or the count its roles hold.
+      if (reading.part !== null) {
+        const whole = reading.part.of === null ? largestHeld(facts, reading.kind, roles) : decimal(reading.part.of);
+        return verdict(whole !== null && decimal(reading.value).lessThanOrEqualTo(whole));
+      }
+      // Business or working days are only the days to pay (the reader gives them that role alone, ../roles.ts) of a
+      // rule that counts business days.
+      const holds = (role: FigureRole) => held.has(role) && (!reading.business || facts.businessDays);
+      const inRole = reading.every ? roles.every(holds) : roles.some(holds);
+      const clear = reading.every ? roles.every((role) => holds(role) && !unstated(role)) : roles.some((role) => holds(role) && !unstated(role));
+      return verdict(clear || quoted(true), inRole ? 'scope' : null);
+    }
+  }
+}
+
+/**
+ * Whether a sentence names a part of the lines for a figure stated per `scope` (the fail-closed triggers of rule 1 of
+ * docs/adr/0086, as amended): a row, a code, a date of service, a partitive, one line's noun, the lines qualified by
+ * any word but the closed few that name them all, "remaining", "other", "first", "last", "some", "both" and the like
+ * (the reader's `named`), a claim or a patient where the pattern has more than one, a count of lines, claims or
+ * patients the pattern does not hold so ("for 2 lines" of 3), a date, month or day of a month a line's service date is
+ * or falls in, a scope phrase beside no figure that states another scope than the figure's ("On each line the
+ * payer allowed $210.00 in total"), or, for a figure in total, "each claim", "per claim", "each patient" and the like
+ * where the pattern has more than one ("$300.00 in total per claim").
+ */
+function namesPart(parts: SentenceParts, facts: NarrativeFacts, scope: Scope | null): boolean {
+  const pattern: Partial<Record<FigureRole, number>> = { lines: facts.rows, claims: facts.claims, patients: facts.patients };
+  // A figure read in a count's roles that the pattern holds in none of them.
+  const other = parts.counts.some((count) => {
+    const held = count.roles.filter((role) => pattern[role] !== undefined);
+    return held.length > 0 && !held.some((role) => decimal(String(pattern[role])).equals(decimal(count.value)));
+  });
+  const served = parts.dates.some((date) => heldRoles(facts, date.kind, date.value).has('service_date'));
+  // (A figure with no scope is held with none either way: inInputs().)
+  const astray = parts.phrases.some((phrase) => phrase !== scope);
+  // "for each claim", "per patient": a total there is each one's, where there are more than one.
+  const each = scope === 'total' && ((parts.eachClaim && facts.claims !== 1) || (parts.eachPatient && facts.patients !== 1));
+  return parts.named || (parts.claim && facts.claims !== 1) || (parts.patient && facts.patients !== 1) || other || served || astray || each;
+}
+
+/** Every figure of a narrative, read in its role and checked against the facts (`sentenceOf` a narrative position's sentence). */
+function checkFigures(readable: ReadableText, facts: NarrativeFacts, sentenceOf: (position: number) => number): CheckedFigure[] {
+  const read = readFigures(readable.text);
+  const words = functionWords();
+  return read.readings.map((reading) => {
+    const { passed, needs, scope } = inInputs(reading, facts, read.tokens, words);
+    const span = readable.original(reading.figure.start, reading.figure.end);
+    // A five-digit figure that may be a code or a count is reported as the code it is written as.
+    const kind: FigureKind = reading.code !== '' ? 'code' : reading.kind === 'year' ? 'number' : reading.kind;
+    const held = heldRoles(facts, reading.kind, reading.value);
+    return {
+      kind,
+      roles: Array.isArray(reading.roles) ? reading.roles : null,
+      every: reading.every,
+      passed,
+      heldAs: passed ? [] : FIGURE_ROLES.filter((role) => held.has(role)),
+      scope,
+      needs,
+      sentence: sentenceOf(span.start),
+      start: span.start,
+      end: span.end,
+    };
+  });
+}
+
+/**
+ * Every figure of a narrative as the check reads it, in text order: what the gateway's notice of a figure in the wrong
+ * role (model-gateway functions/narrative-roles.ts) and the editor's words for a failing figure are read from.
+ */
+export function checkedFigures(narrative: string, facts: NarrativeFacts): CheckedFigure[] {
+  const readable = readableText(narrative);
+  return checkFigures(readable, facts, sentenceFinder(originalSentences(readable)));
+}
+
+/** The narrative's sentences, in the original narrative's positions. */
+function originalSentences(readable: ReadableText): TextSpan[] {
+  return sentenceSpans(readable.text).map((span) => readable.original(span.start, span.end));
+}
+
+/** The index of the sentence a position falls in, or -1 for none. */
+function sentenceFinder(sentences: readonly TextSpan[]): (position: number) => number {
+  return (position) => sentences.findIndex((span) => position >= span.start && position < span.end);
 }
 
 /** Letters and digits: what an identifier is compared on, and what bounds it. */
@@ -151,17 +290,30 @@ const DATED: ReadonlySet<FigureKind> = new Set(['date', 'month', 'month_day']);
  * and claim numbers), which the server reads from the canonical records; the browser passes none.
  */
 export function findMismatches(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): NarrativeCheck {
+  return readNarrative(narrative, facts, identifiers).check;
+}
+
+/** A narrative read once: the check, and every figure as the check read it (checkedFigures()'s answer). */
+export interface NarrativeReading {
+  readonly check: NarrativeCheck;
+  readonly figures: readonly CheckedFigure[];
+}
+
+/**
+ * The check and every figure as it read them, from one reading of the narrative (the review of 2026-11-01, PE-9): the
+ * editor's two answers on each keystroke, so it reads the text once.
+ */
+export function readNarrative(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): NarrativeReading {
   const readable = readableText(narrative);
   const { text } = readable;
   const scan = scanText(text);
-  const sentences = sentenceSpans(text).map((span) => readable.original(span.start, span.end));
-  const sentenceOf = (position: number) => sentences.findIndex((span) => position >= span.start && position < span.end);
+  const sentences = originalSentences(readable);
+  const sentenceOf = sentenceFinder(sentences);
   const mismatches: Mismatch[] = [];
   const add = (code: MismatchCode, kind: Mismatch['kind'], span: TextSpan) => {
     mismatches.push({ code, kind, sentence: sentenceOf(span.start), start: span.start, end: span.end });
   };
   const at = (span: TextSpan) => readable.original(span.start, span.end);
-  const derived = { months: months(facts.dates), monthDays: monthDays(facts.dates) };
 
   if (sentences.length === 0) {
     mismatches.push({ code: 'empty_narrative', kind: null, sentence: -1, start: 0, end: narrative.length });
@@ -172,9 +324,10 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
   for (const span of readable.unreadable) {
     add('unreadable_figure', null, span);
   }
-  for (const figure of scan.figures) {
-    if (!inInputs(figure, facts, derived, text)) {
-      add('figure_not_in_input', figure.kind, at(figure));
+  const figures = checkFigures(readable, facts, sentenceOf);
+  for (const figure of figures) {
+    if (!figure.passed) {
+      mismatches.push({ code: 'figure_not_in_input', kind: figure.kind, sentence: figure.sentence, start: figure.start, end: figure.end });
     }
   }
   const skip = [...scan.placeholders, ...scan.markers, ...scan.figures.filter((figure) => DATED.has(figure.kind))];
@@ -198,5 +351,8 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
     }
   });
   mismatches.sort((a, b) => a.start - b.start || a.end - b.end || a.code.localeCompare(b.code));
-  return { passed: mismatches.length === 0, sentences: sentences.length, checked: scan.figures.length + scan.placeholders.length + scan.markers.length, mismatches };
+  return {
+    check: { passed: mismatches.length === 0, sentences: sentences.length, checked: scan.figures.length + scan.placeholders.length + scan.markers.length, mismatches },
+    figures,
+  };
 }

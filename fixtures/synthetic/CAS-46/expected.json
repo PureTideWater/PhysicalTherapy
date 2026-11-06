@@ -1,0 +1,17 @@
+{
+  "case": "CAS-46",
+  "module": "CAS",
+  "title": "A payer response or a submission with nothing chosen",
+  "assertion": "The Response starts on “Choose the payer’s answer”, the Channel on “Choose the channel” and the payer’s letter on “Choose the payer’s letter”, and Received on starts empty, its words saying the next dispute level’s window counts from it; a response with no answer, no letter or no date received, or a submission with no channel, is refused on that field and nothing is recorded; a response records the date entered, and a denial that reopens the case counts the next window from it; the words under Response say that every response is recorded for good, which state each answer gives the case (a denial without reopening resolves it, as an acceptance does, and a denial that reopens it awaits a response, as a request for information does) unless its lines already decide it (a line at Payer approved or later, a line moved back from it, which keeps the case awaiting a response, or every line written off), that the recovery ledger approves up to its amount at the next reconcile (Payer approved), and that nothing is recovered until it is posted or deposited",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["apps/web/src/lib/routes/workbench-routes.db.test.ts","apps/web/e2e/packets.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A response and a submission logged on a synthetic practice the test creates: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

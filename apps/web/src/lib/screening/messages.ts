@@ -205,3 +205,27 @@ export const FILE_MESSAGES = {
   textAfterQuote: 'A cell has text after its closing quote. Save it again as CSV and choose it again.',
   noFile: 'Choose the file to screen.',
 } as const;
+
+/**
+ * What the screening says while its mail stream is paused (audit #76; docs/adr/0065, D7; the founder's Q12 of
+ * 2026-10-21: the recommended wording, for counsel to confirm before the screening opens): the page's alert, and the
+ * refusal of an upload that raced the pause. Neither names a cause: the stream pauses on its own bounce rate, on its
+ * complaint rate (mail that was delivered and reported as spam), on the account's rates or SES's review, or by hand, so
+ * "could not be delivered" would be untrue of most pauses (the review of 2026-10-23, Wording).
+ */
+export const SCREENING_PAUSED = {
+  title: 'New screenings are paused',
+  text: 'We have paused new screenings while we check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.',
+  refusal: 'New screenings are paused for now. Try again later, or request an audit.',
+} as const;
+
+/**
+ * What the screening says when the client, or the email account it is counted under, has had 3 screening results that
+ * could not be delivered in 7 days (the bounce budget; the founder's Q10 (a) of 2026-10-21): the recommended wording,
+ * for counsel to confirm before the screening opens. The account is a work address's domain, or a free-mail address's
+ * own mailbox (rate.ts, screeningRateAccount), so the sentence names both, and a colleague at the same practice's domain
+ * is not told that their own address failed (the review of 2026-10-23, Wording). It names no address and nothing about
+ * any one screening.
+ */
+export const SCREENING_BOUNCE_BUDGET =
+  'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.';

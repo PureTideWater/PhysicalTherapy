@@ -4,18 +4,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+import { SESv2Client } from '@aws-sdk/client-sesv2';
+import { cognitoMessage } from '@tp/auth-mail';
 import type { BillingProvider } from '@tp/billing';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
 import { type CompliancePlatform, FileCompliancePlatform } from '@tp/compliance';
-import { DEFAULT_CALL_LIMITS } from '@tp/model-gateway';
 import { type Logger, createLogger } from '@tp/observability';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
 import { type AgreementDocuments, LocalAgreementDocuments, S3AgreementDocuments } from '../agreements/documents';
 import { type ESignatureProvider, LocalESignature } from '../agreements/esign';
 import { CognitoAuthProvider } from '../auth/cognito-provider';
+import { CredentialProbe, PROBE_USERNAME } from '../auth/credential-probe';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { FileDevStore } from '../auth/dev-store';
 import type { AuthProvider } from '../auth/provider';
@@ -24,9 +26,12 @@ import { SignInFlow } from '../auth/sign-in';
 import { readBillingConfig } from '../billing/config';
 import { billingProvider, memoryBillingProvider } from '../billing/provider';
 import type { BillingPool } from '@tp/worker/billing';
+import { type AddressCheckServices, localAddressChecks, sesAddressInsights, systemDomainResolver } from '../screening/validation';
+import { assumedRoleCredentials } from '../screening/validation-credentials';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
-import { DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+import { type AuthProviderSettings, DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+import { WEB_POOL_CONNECTIONS } from './pools';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -90,31 +95,66 @@ export interface Services {
   readonly screeningLaunch: ScreeningLaunch;
   /** Screenings the consumer prices at once (WebConfig.screeningSlots). */
   readonly screeningSlots: number;
+  /**
+   * The screening's address checks (docs/adr/0065, D9): the VPC's DNS and SES's validation under the day's cap on a
+   * deployed server, the stand-ins elsewhere (WebConfig.mailValidation).
+   */
+  readonly addressChecks: AddressCheckServices;
+  /**
+   * The start-up credential probe (docs/adr/0088, D8): run once, on the process's first services() call, while a
+   * client secret is set; the health check answers 503 while it holds a refusal. Skipped otherwise.
+   */
+  readonly credentialProbe: CredentialProbe;
 }
 
-/** The local outbox where the development provider "sends" an invitation's temporary password. */
-export function devOutbox(directory: string): (email: string, temporaryPassword: string) => Promise<void> {
+/**
+ * The local outbox where the development provider "sends" an invitation: the subject, text and HTML Cognito's
+ * CustomMessage trigger sends (@tp/auth-mail, SGN-15), naming this server's sign-in page, so the e2e reads the
+ * temporary password from the message's own words. The email and the password fields stay for filtering and the http
+ * test. Synthetic accounts only.
+ */
+export function devOutbox(directory: string, signInUrl: string): (email: string, temporaryPassword: string) => Promise<void> {
   return async (email, temporaryPassword) => {
     const outbox = path.join(directory, 'outbox');
     await mkdir(outbox, { recursive: true });
-    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ email, temporaryPassword })}\n`, { mode: 0o600 });
+    const message = cognitoMessage('CustomMessage_AdminCreateUser', { code: temporaryPassword, username: email, signInUrl });
+    const record = { email, temporaryPassword, subject: message.subject, body: message.text, html: message.html };
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify(record)}\n`, { mode: 0o600 });
   };
 }
 
-function provider(config: WebConfig, sealer: Sealer): AuthProvider {
+/**
+ * The local outbox where the development provider "sends" a password-reset code: a sibling of the invitations' outbox,
+ * which e2e/onboarding.spec.ts reads whole as invitations, in the words and frame Cognito's trigger sends (section 2.5's,
+ * from @tp/auth-mail). Synthetic accounts only.
+ */
+export function devResetOutbox(directory: string): (email: string, code: string) => Promise<void> {
+  return async (email, code) => {
+    const outbox = path.join(directory, 'reset-outbox');
+    await mkdir(outbox, { recursive: true });
+    const message = cognitoMessage('CustomMessage_ForgotPassword', { code });
+    const record = { email, code, subject: message.subject, body: message.text, html: message.html };
+    await writeFile(path.join(outbox, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  };
+}
+
+function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvider {
   if (config.auth.kind === 'cognito') {
     return new CognitoAuthProvider({
       client: new CognitoIdentityProviderClient({ region: config.auth.region }),
       userPoolId: config.auth.userPoolId,
       clientId: config.auth.clientId,
+      ...(config.auth.clientSecret === null ? {} : { clientSecret: config.auth.clientSecret }),
       verifier: CognitoJwtVerifier.create({ userPoolId: config.auth.userPoolId, tokenUse: 'id', clientId: config.auth.clientId }),
+      logger,
     });
   }
   return new DevAuthProvider({
     store: new FileDevStore(path.join(config.auth.directory, 'store.json')),
     sealer: sealer.derive('dev-provider'),
     webauthn: { rpId: config.rpId, rpName: 'Therapy Platform', origin: config.origin },
-    deliverInvitation: devOutbox(config.auth.directory),
+    deliverInvitation: devOutbox(config.auth.directory, `${config.origin}/sign-in`),
+    deliverResetCode: devResetOutbox(config.auth.directory),
   });
 }
 
@@ -132,6 +172,8 @@ export interface ServiceParts {
   readonly sealer: Sealer;
   readonly logger?: Logger;
   readonly now?: () => Date;
+  /** Tests give the reset request's floor a clock and a wait of their own; otherwise the real clock and a timer. */
+  readonly pace?: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> };
   /** Tests that upload give their own; otherwise a local receiver in a fresh temporary directory. */
   readonly uploads?: UploadTargets;
   /** Tests that queue give their own; otherwise queueing fails, so nothing is ever dropped silently. */
@@ -152,6 +194,10 @@ export interface ServiceParts {
   readonly environment?: 'dev' | 'staging' | 'production';
   readonly screeningLaunch?: ScreeningLaunch;
   readonly screeningSlots?: number;
+  /** Tests that check addresses give their own; otherwise the stand-ins, which call no one, at the default cap. */
+  readonly addressChecks?: AddressCheckServices;
+  /** The deployed server's start-up probe; skipped by default. */
+  readonly credentialProbe?: CredentialProbe;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -179,7 +225,7 @@ export function createServices(parts: ServiceParts): Services {
     keys: parts.keys,
     sealer: parts.sealer,
     logger,
-    signIn: new SignInFlow({ pool: parts.pool, provider: parts.provider, logger }),
+    signIn: new SignInFlow({ pool: parts.pool, provider: parts.provider, logger, ...(parts.pace === undefined ? {} : { now: parts.pace.now, sleep: parts.pace.sleep }) }),
     now: parts.now ?? (() => new Date()),
     uploads: parts.uploads ?? new LocalUploadTargets(parts.origin, documents, parts.sealer),
     queue: parts.queue ?? NO_QUEUE,
@@ -195,24 +241,39 @@ export function createServices(parts: ServiceParts): Services {
     environment: parts.environment ?? 'dev',
     screeningLaunch: parts.screeningLaunch ?? { imageTag: null, value: null },
     screeningSlots: parts.screeningSlots ?? DEFAULT_SCREENING_SLOTS,
+    addressChecks: parts.addressChecks ?? localAddressChecks(DEFAULT_MAIL_VALIDATION_DAILY_CAP),
+    credentialProbe: parts.credentialProbe ?? CredentialProbe.skipped(),
   };
+}
+
+/**
+ * The start-up credential probe for these settings (docs/adr/0088, D8): Cognito's probe request when the client has a
+ * secret, skipped while it has none (release N) and for the dev provider.
+ */
+export function credentialProbeOf(auth: AuthProviderSettings, provider: AuthProvider, logger: Logger): CredentialProbe {
+  if (auth.kind !== 'cognito' || auth.clientSecret === null || !(provider instanceof CognitoAuthProvider)) {
+    return CredentialProbe.skipped();
+  }
+  return new CredentialProbe(() => provider.probe(PROBE_USERNAME), logger);
 }
 
 export function servicesFromConfig(config: WebConfig): Services {
   const sealer = new Sealer(config.cookieSecret);
   const logger = createLogger();
   const documents = config.documents;
-  const pool = openPool(config.databaseUrl, 10);
-  const billingPool = openPool(config.billingDatabaseUrl, 4);
+  const pool = openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.application);
+  const billingPool = openPool(config.billingDatabaseUrl, WEB_POOL_CONNECTIONS.billing);
+  const auth = provider(config, sealer, logger);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
     pool,
     billingPool,
-    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, 2),
-    // One connection for each call the process lets be in flight at once, and one to spare.
-    modelPool: openPool(config.databaseUrl, DEFAULT_CALL_LIMITS.perProcess + 1),
-    provider: provider(config, sealer),
+    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),
+    // One connection for each call the process lets be in flight at once, and one to spare (pools.ts).
+    modelPool: openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.model),
+    provider: auth,
+    credentialProbe: credentialProbeOf(config.auth, auth, logger),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),
     sealer,
     logger,
@@ -231,13 +292,25 @@ export function servicesFromConfig(config: WebConfig): Services {
     environment: config.environment,
     screeningLaunch: config.screeningLaunch,
     screeningSlots: config.screeningSlots,
+    addressChecks:
+      config.mailValidation.kind === 'ses'
+        ? {
+            resolver: systemDomainResolver(),
+            // As the address-validation account's role (docs/adr/0065): never this account's, whose trail would keep the address.
+            insights: sesAddressInsights(new SESv2Client(config.mailValidation.roleArn === null ? {} : { credentials: assumedRoleCredentials(config.mailValidation.roleArn) })),
+            dailyCap: config.mailValidation.dailyCap,
+          }
+        : localAddressChecks(config.mailValidation.dailyCap, config.mailValidation.delayMs),
   });
 }
 
 let cached: Services | undefined;
 
-/** The process's services, built from the environment on first use. */
+/** The process's services, built from the environment on first use, which also starts the credential probe once. */
 export function services(): Services {
-  cached ??= servicesFromConfig(readWebConfig());
+  if (cached === undefined) {
+    cached = servicesFromConfig(readWebConfig());
+    void cached.credentialProbe.start();
+  }
   return cached;
 }

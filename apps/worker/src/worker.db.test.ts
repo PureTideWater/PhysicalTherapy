@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { LocalKeyProvider, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { asOwner, createMigratedDatabase, createTenantWorld, endPool, withScratchDatabase } from '@tp/db/testing';
@@ -11,12 +12,12 @@ import { describe, expect, it } from 'vitest';
 
 import { MemorySealedBytes } from './intake/test-support/memory-bytes';
 import { enqueue } from './jobs/enqueue';
-import { placeholderHandlers } from './jobs/handlers';
-import { QUEUE_OPTIONS } from './jobs/registry';
+import { type JobHandler, type JobHandlers, placeholderHandlers } from './jobs/handlers';
+import { JOB_TYPES, type JobType, QUEUE_OPTIONS, workOptions } from './jobs/registry';
 import { databaseJobRuns } from './jobs/runs';
 import { parseHandler } from './parse/job';
 import { DocumentStore } from './storage/documents';
-import { JOB_FAILED_MESSAGE, type QueueClient, startWorker } from './worker';
+import { JOB_ATTEMPT_FAILED_MESSAGE, JOB_FAILED_MESSAGE, JOB_HEAP_MESSAGE, type QueueClient, practicePool, startWorker } from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const OTHER_PRACTICE = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
@@ -205,4 +206,139 @@ describe('practice jobs against PostgreSQL', () => {
       await database.drop();
     }
   });
+
+  it('logs an attempt pg-boss expired, once its handler returns, and records it retrying, never succeeded (round-3 review WR-2)', async () => {
+    const database = await createMigratedDatabase(readDatabaseUrl());
+    const owner = databaseClient(database.url);
+    await owner.connect();
+    const pool = openPool(database.appUrl, 2);
+    const lines: Record<string, unknown>[] = [];
+    const boss = new PgBoss(database.url);
+    boss.on('error', () => undefined);
+    let calls = 0;
+    let done: () => void = () => undefined;
+    const completed = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    try {
+      const world = await createTenantWorld(owner, 'job-expiry');
+      await boss.start();
+      // The queue exists before startWorker, so its createQueue leaves it as it is: a one-second attempt, retried at once.
+      await boss.createQueue('digest', { ...QUEUE_OPTIONS, expireInSeconds: 1, retryDelay: 0, retryBackoff: false });
+      const runs = databaseJobRuns(pool);
+      const states: unknown[] = [];
+      const worker = await startWorker({
+        boss,
+        pool,
+        logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }),
+        runs: {
+          started: (run) => runs.started(run),
+          finished: async (run) => {
+            await runs.finished(run);
+            states.push((await owner.query('SELECT attempts, outcome, error_code FROM job_run WHERE job_id = $1', [run.jobId])).rows[0]);
+          },
+        },
+        heartbeatMs: 60_000,
+        handlers: {
+          ...placeholderHandlers,
+          digest: async () => {
+            calls += 1;
+            if (calls === 1) {
+              // Past the attempt's one second: pg-boss fails the attempt and holds the worker until this returns.
+              await sleep(2_500);
+              return;
+            }
+            done();
+          },
+        },
+      });
+      let id: string | null = null;
+      try {
+        id = await enqueue(boss, 'digest', { practice_id: world.practiceId, period: '2026-10' });
+        await completed;
+        await sleep(500);
+      } finally {
+        await worker.stop();
+      }
+      const [job] = (await owner.query<{ state: string; retry_count: number }>("SELECT state, retry_count FROM pgboss.job WHERE name = 'digest' AND id = $1", [id])).rows;
+      expect(job).toEqual({ state: 'completed', retry_count: 1 });
+      expect(calls).toBe(2);
+      expect(lines.filter((line) => line.msg === JOB_ATTEMPT_FAILED_MESSAGE)).toEqual([
+        { time: expect.any(String), level: 'warn', msg: JOB_ATTEMPT_FAILED_MESSAGE, job_id: id, job_type: 'digest', error_code: 'JOB_EXPIRED' },
+      ]);
+      expect(lines.filter((line) => line.msg === JOB_HEAP_MESSAGE)).toHaveLength(2);
+      expect(states).toEqual([
+        { attempts: 1, outcome: 'retrying', error_code: 'JOB_EXPIRED' },
+        { attempts: 2, outcome: 'succeeded', error_code: null },
+      ]);
+    } finally {
+      await boss.stop({ graceful: false }).catch(() => undefined);
+      await endPool(pool);
+      await owner.end();
+      await database.drop();
+    }
+  }, 60_000);
+});
+
+/** A valid payload of each practice job type for `practiceId`, every other ID a fresh one. */
+const PAYLOADS: { readonly [T in JobType]: (practiceId: string) => unknown } = {
+  intake: (practiceId) => ({ practice_id: practiceId, document_id: randomUUID() }),
+  parse_835: (practiceId) => ({ practice_id: practiceId, document_id: randomUUID() }),
+  monitor: (practiceId) => ({ practice_id: practiceId, day: '2026-11-04' }),
+  price: (practiceId) => ({ practice_id: practiceId, pricing_run_id: randomUUID() }),
+  triage: (practiceId) => ({ practice_id: practiceId, pricing_run_id: randomUUID() }),
+  audit_report: (practiceId) => ({ practice_id: practiceId, audit_report_id: randomUUID() }),
+  reconcile: (practiceId) => ({ practice_id: practiceId, day: '2026-11-04' }),
+  digest: (practiceId) => ({ practice_id: practiceId, period: '2026-10' }),
+  export: (practiceId) => ({ practice_id: practiceId, export_job_id: randomUUID() }),
+  packet_export: (practiceId) => ({ practice_id: practiceId, packet_version_id: randomUUID() }),
+  roi_statement: (practiceId) => ({ practice_id: practiceId, roi_statement_id: randomUUID() }),
+  report_document: (practiceId) => ({ practice_id: practiceId, report_document_id: randomUUID() }),
+};
+
+/** How long each job below holds its transaction: past the pool's connection timeout, as a month's price job holds its one for minutes. */
+const HOLD_MS = 1_000;
+
+describe('the practice pool', () => {
+  it('gives every practice job the worker runs at once a connection, so no attempt fails waiting for one (CAS-42.5 on 3ac856d5)', async () => {
+    const database = await createMigratedDatabase(readDatabaseUrl());
+    const owner = databaseClient(database.url);
+    await owner.connect();
+    // The pool main.ts opens, its connection timeout shortened from ten seconds so the test waits one.
+    const pool = practicePool(database.appUrl, { connectionTimeoutMillis: HOLD_MS / 4 });
+    try {
+      const world = await createTenantWorld(owner, 'pool-slots');
+      const hold: JobHandler<JobType> = async (_payload, context) => {
+        await context.transaction((scope) => scope.client.query('SELECT pg_sleep($1)', [HOLD_MS / 1000]));
+      };
+      const handlers = Object.fromEntries(JOB_TYPES.map((type) => [type, hold])) as unknown as JobHandlers;
+      const { client, handlers: queues } = directQueue();
+      const worker = await startWorker({ boss: client, pool, logger: silent, runs: databaseJobRuns(pool), handlers, heartbeatMs: 60_000 });
+      // As many jobs at once as one worker runs: one from each queue's loop and PARSE_CONCURRENCY parses (workOptions).
+      // CAS-42.5's concurrent phase was six of them (a price, an audit report and four parses) on four connections.
+      const jobs = JOB_TYPES.flatMap((type) => Array.from({ length: workOptions(type).localConcurrency ?? 1 }, () => ({ type, id: randomUUID() })));
+      let settled: PromiseSettledResult<unknown>[];
+      try {
+        settled = await Promise.allSettled(
+          jobs.map(async ({ type, id }) => {
+            const work = queues.get(type);
+            if (work === undefined) {
+              throw new Error(`no loop works ${type}`);
+            }
+            return work([{ id, data: PAYLOADS[type](world.practiceId) }]);
+          }),
+        );
+      } finally {
+        await worker.stop();
+      }
+      const failures = settled.flatMap((result, index) => (result.status === 'rejected' ? [`${jobs[index]?.type ?? '?'}: ${result.reason instanceof Error ? result.reason.message : 'unknown'}`] : []));
+      expect(failures).toEqual([]);
+      const outcomes = await owner.query<{ outcome: string; n: number }>('SELECT outcome, count(*)::int AS n FROM job_run WHERE practice_id = $1 GROUP BY outcome', [world.practiceId]);
+      expect(outcomes.rows).toEqual([{ outcome: 'succeeded', n: jobs.length }]);
+    } finally {
+      await endPool(pool);
+      await owner.end();
+      await database.drop();
+    }
+  }, 60_000);
 });

@@ -164,7 +164,7 @@ export const SLOTS = {
 export type Slot = keyof typeof SLOTS;
 
 /** Whether `path` is the slot's path, each `#` an array index (a non-negative integer) in its place. */
-export function pathMatchesSlot(slot: string, from: 'trace' | 'citation', path: readonly (string | number)[]): boolean {
+export function pathMatchesSlot(slot: string, from: 'trace' | 'citation' | 'content', path: readonly (string | number)[]): boolean {
   const entry = Object.hasOwn(SLOTS, slot) ? (SLOTS as Readonly<Record<string, SlotPath>>)[slot] : undefined;
   if (entry === undefined || entry.from !== from || entry.path.length !== path.length) {
     return false;

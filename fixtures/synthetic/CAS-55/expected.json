@@ -1,0 +1,24 @@
+{
+  "case": "CAS-55",
+  "module": "CAS",
+  "title": "Render, approval and export of a narrative’s fact tokens",
+  "assertion": "The render equals each fact’s phrase with `formatUsdPlain` amounts, stored pattern and code totals, and code-computed row sums (bigint cents, decimal units); it is idempotent; it is the same in the browser and the worker, and `formatUsdPlain` equals `formatUsd` en-US in both; a renderer change between save and approval makes `verifierNow` read `fails_now` and blocks the approval (`rendered_changed` when the screen’s hash differs); the export refuses a `rendered_sha256` that differs or a surviving `{{`; the v2 set passes 300 of 300 at the gate on the local provider",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/render.test.ts",
+    "packages/packets/src/fact-catalog.test.ts",
+    "packages/packets/src/fact-catalog.property.test.ts",
+    "packages/packets/src/render-golden.test.ts",
+    "packages/money/src/usd-plain.test.ts",
+    "apps/web/src/components/packets/fact-render.browser.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

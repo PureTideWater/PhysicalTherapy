@@ -8,7 +8,7 @@ import { MemoryCompliancePlatform, complianceExportSchema } from '@tp/compliance
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { LocalAgreementDocuments } from '../agreements/documents';
 import { ESIGN_SIGNATURE_HEADER, LocalESignature } from '../agreements/esign';
@@ -48,6 +48,7 @@ let platformAdmin: string;
 let supportEngineer: string;
 let internalOrganization: string;
 const invitations: { email: string; password: string }[] = [];
+const store = new MemoryDevStore();
 const scratch = mkdtempSync(path.join(tmpdir(), 'tp-onboarding-routes-'));
 const esign = new LocalESignature({ secret: 'synthetic-esign-secret-for-tests', directory: path.join(scratch, 'esign') });
 const platform = new MemoryCompliancePlatform();
@@ -68,7 +69,7 @@ beforeAll(async () => {
     billingPool,
     esignPool,
     provider: new DevAuthProvider({
-      store: new MemoryDevStore(),
+      store,
       sealer: sealer.derive('dev-provider'),
       webauthn: { rpId: 'localhost', rpName: 'Test', origin: 'http://localhost:3100' },
       deliverInvitation: (email, password) => {
@@ -321,6 +322,56 @@ describe('invitations (J2)', () => {
     ok(await call(resendInvitationFromConsole, platformAdmin, {}, { organizationId: world.organizationId, invitationId: invitation?.id }));
     const viewer = await newCustomer('viewer');
     expect((await call(resendInvitationAction, viewer, { organizationId: world.organizationId }, { invitationId: invitation?.id })).status).toBe('forbidden');
+  });
+});
+
+// SEC-22, docs/adr/0088 D4: an address with no account here whose identity-provider account already exists is linked
+// only when that provider account has never signed in (Cognito's FORCE_CHANGE_PASSWORD; the twin's temporary password).
+describe('inviting an address the identity provider already knows (SEC-22)', () => {
+  // Settings answers as for any address in use, so an organization never learns that the identity provider knows the
+  // address (an orphan is usually another organization's invitation that rolled back); the console names the identity.
+  it('refuses a provider account that has signed in with the same answer as any address in use, and links and sends nothing', async () => {
+    const email = `orphan-signed-in-${randomUUID()}@synthetic.test`;
+    const { sub } = await services.provider.ensureUser(email);
+    await store.update(sub, (current) => ({ ...current, temporary: false }));
+    const sent = invitations.length;
+    expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: EMAIL_IN_USE }],
+    });
+    expect(EMAIL_IN_USE).not.toMatch(/identity/);
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
+  });
+
+  it('links a provider account that never signed in and sends its invitation again, voiding the old temporary password', async () => {
+    const email = `orphan-never-${randomUUID()}@synthetic.test`;
+    const { sub } = await services.provider.ensureUser(email);
+    const old = invitations.at(-1)?.password ?? '';
+    const sent = invitations.length;
+    ok(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'viewer' }));
+    expect((await owner.query('SELECT cognito_sub, status FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([{ cognito_sub: sub, status: 'invited' }]);
+    expect(invitations.slice(sent).map((sentTo) => sentTo.email)).toEqual([email]);
+    expect(invitations.at(-1)?.password).not.toBe(old);
+    expect((await services.provider.signIn(email, old)).kind).toBe('rejected');
+  });
+
+  it('refuses, writing nothing, a link whose provider account signs in between the check and the resend (review security-N3)', async () => {
+    const email = `orphan-race-${randomUUID()}@synthetic.test`;
+    const { sub } = await services.provider.ensureUser(email);
+    const resend = services.provider.resendInvitation.bind(services.provider);
+    const raced = vi.spyOn(services.provider, 'resendInvitation').mockImplementationOnce(async (address) => {
+      await store.update(sub, (current) => ({ ...current, temporary: false }));
+      return resend(address);
+    });
+    const sent = invitations.length;
+    expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'viewer' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: EMAIL_IN_USE }],
+    });
+    raced.mockRestore();
+    expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
+    expect(invitations).toHaveLength(sent);
   });
 });
 

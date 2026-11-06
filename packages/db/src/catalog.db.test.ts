@@ -87,6 +87,8 @@ describe('the catalog test', () => {
       { table_name: 'ledger_match', policy_name: 'ledger_match_tenant' },
       { table_name: 'line_note', policy_name: 'line_note_tenant' },
       { table_name: 'line_status', policy_name: 'line_status_tenant' },
+      // Each line's stage head, the line's lock (migration 20261109090000): identifiers, a stage and a number.
+      { table_name: 'line_status_head', policy_name: 'line_status_head_tenant' },
       { table_name: 'model_budget_hold', policy_name: 'model_budget_hold_tenant' },
       { table_name: 'model_proposal', policy_name: 'model_proposal_tenant' },
       { table_name: 'notification', policy_name: 'notification_tenant' },
@@ -112,6 +114,9 @@ describe('the catalog test', () => {
       { table_name: 'source_document', policy_name: 'source_document_tenant' },
       { table_name: 'submission', policy_name: 'submission_tenant' },
       { table_name: 'support_grant', policy_name: 'support_grant_tenant' },
+      // A break-glass notice and its recipients (migration 20261107090000): no PHI, registered for their practice_id.
+      { table_name: 'support_grant_notice', policy_name: 'support_grant_notice_tenant' },
+      { table_name: 'support_grant_notice_recipient', policy_name: 'support_grant_notice_recipient_tenant' },
     ]);
     expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event', 'eval_example', 'model_call']);
     expect(await tenantTables(client)).toEqual([
@@ -138,6 +143,7 @@ describe('the catalog test', () => {
       { table: 'ledger_match', tenantColumn: 'practice_id' },
       { table: 'line_note', tenantColumn: 'practice_id' },
       { table: 'line_status', tenantColumn: 'practice_id' },
+      { table: 'line_status_head', tenantColumn: 'practice_id' },
       { table: 'model_budget_hold', tenantColumn: 'practice_id' },
       { table: 'model_call', tenantColumn: 'practice_id' },
       { table: 'model_proposal', tenantColumn: 'practice_id' },
@@ -164,6 +170,8 @@ describe('the catalog test', () => {
       { table: 'source_document', tenantColumn: 'practice_id' },
       { table: 'submission', tenantColumn: 'practice_id' },
       { table: 'support_grant', tenantColumn: 'practice_id' },
+      { table: 'support_grant_notice', tenantColumn: 'practice_id' },
+      { table: 'support_grant_notice_recipient', tenantColumn: 'practice_id' },
     ]);
   });
 

@@ -1,7 +1,28 @@
-import { Stack, aws_iam as iam, type aws_kms as kms, type aws_rds as rds, type aws_s3 as s3, type aws_secretsmanager as secretsmanager } from 'aws-cdk-lib';
+import { Stack, aws_iam as iam, type aws_kms as kms, type aws_rds as rds, type aws_s3 as s3, type aws_secretsmanager as secretsmanager, type aws_sqs as sqs } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import { MAIL_SIMULATOR_RECIPIENTS, type MailStream } from '../mail';
 import { SUPPORT_MAIL_PREFIX } from './support-mail';
+
+/**
+ * The SES control calls the platform's mail_events job makes (apps/worker/src/platform/mail-events.ts; D5): the
+ * account's enforcement status, and the screening set's sending read and switched. The switch is granted on the
+ * screening set alone, so nothing the platform does can pause the transactional or notices streams.
+ */
+export const MAIL_RECONCILE_SET_ACTIONS = ['ses:GetConfigurationSet', 'ses:PutConfigurationSetSendingOptions'] as const;
+
+/** The SQS calls the mail_events job makes on the event queue (batch calls are authorized as these). */
+export const MAIL_EVENTS_QUEUE_ACTIONS = ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility', 'sqs:GetQueueAttributes'] as const;
+
+/** What the platform's mail needs: the senders, the two identities, the three sets and the event queue (MailStreams). */
+export interface OperatorMail {
+  readonly mailFromAddress: string;
+  readonly screeningMailFromAddress: string;
+  readonly mailIdentityArn: string;
+  readonly screeningIdentityArn: string;
+  readonly configurationSetArns: Readonly<Record<MailStream, string>>;
+  readonly eventsQueue: sqs.IQueue;
+}
 
 /**
  * The S3 actions the nightly audit copy sends to the audit-copies bucket (apps/worker/src/storage/
@@ -30,6 +51,7 @@ export interface OperatorRoleProps {
   readonly restoreDrillInstanceId: string;
   /** The support inbox SES writes mail to (SupportMail). */
   readonly supportMail: s3.IBucket;
+  readonly mail: OperatorMail;
 }
 
 /** The S3 calls the support_mail job makes on the support inbox (apps/worker/src/support/inbox.ts): list and read. */
@@ -49,7 +71,12 @@ export const SUPPORT_MAIL_BUCKET_ACTIONS = ['s3:ListBucket'] as const;
  * - The restore drill: describe the source instance's automated snapshots, restore the newest to the
  *   one scratch instance, give it a one-time master password, wait for it and delete it, all on that
  *   instance's ARN; KMS grants for the encrypted snapshot only through RDS and only for AWS resources.
- * - SES, for the notices to practice administrators (links only, never PHI).
+ * - SES (docs/adr/0065): the support-access and dunning notices through the notices stream's set and MailFromAddress's
+ *   identity, from MailFromAddress alone; the daily probes through every set and both identities, to the mailbox
+ *   simulator's two addresses alone (`ses:Recipients`, which must be present); the account's status and both identities read; and the
+ *   screening set's sending read and switched, on that set alone (the cut-off pauses only the screening stream). No
+ *   statement names `identity/*`.
+ * - The mail events queue (D4): receive, delete, extend and count its messages, and decrypt them through SQS alone.
  * - The support inbox (docs/adr/0055): list and read the mail SES wrote under `inbound/`, KMS through S3
  *   for that bucket only; never a write or a delete (its lifecycle rule expires each message).
  */
@@ -64,7 +91,7 @@ export class OperatorRole extends Construct {
     const sourceSnapshots = rdsArn(`snapshot:rds:${props.database.instanceIdentifier}-*`);
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Platform jobs: audit copy, restore drill, support notices, support mail (tp_operator login)',
+      description: 'Platform jobs: audit copy, restore drill, notices, mail events, support mail (tp_operator login)',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -157,9 +184,49 @@ export class OperatorRole extends Construct {
         },
       }),
       new iam.PolicyStatement({
-        sid: 'SupportNotices',
+        sid: 'NoticeEmail',
         actions: ['ses:SendEmail'],
-        resources: [`arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/*`],
+        resources: [props.mail.mailIdentityArn, props.mail.configurationSetArns.notices],
+        conditions: { StringEquals: { 'ses:FromAddress': props.mail.mailFromAddress } },
+      }),
+      new iam.PolicyStatement({
+        sid: 'MailProbes',
+        actions: ['ses:SendEmail'],
+        resources: [props.mail.mailIdentityArn, props.mail.screeningIdentityArn, ...Object.values(props.mail.configurationSetArns)],
+        conditions: {
+          'ForAllValues:StringEquals': { 'ses:Recipients': [...MAIL_SIMULATOR_RECIPIENTS] },
+          // ForAllValues is true of a request with no value for the key, so a send whose recipients SES does not put in
+          // ses:Recipients (raw content without a destination) would pass it: the key must be present as well.
+          Null: { 'ses:Recipients': 'false' },
+          StringEquals: { 'ses:FromAddress': [props.mail.mailFromAddress, props.mail.screeningMailFromAddress] },
+        },
+      }),
+      new iam.PolicyStatement({
+        sid: 'MailReconcileScreeningSet',
+        actions: [...MAIL_RECONCILE_SET_ACTIONS],
+        resources: [props.mail.configurationSetArns.screening],
+      }),
+      new iam.PolicyStatement({
+        sid: 'MailIdentitiesRead',
+        actions: ['ses:GetEmailIdentity'],
+        resources: [props.mail.mailIdentityArn, props.mail.screeningIdentityArn],
+      }),
+      // GetAccount takes no resource.
+      new iam.PolicyStatement({
+        sid: 'MailAccountRead',
+        actions: ['ses:GetAccount'],
+        resources: ['*'],
+      }),
+      new iam.PolicyStatement({
+        sid: 'MailEventsQueue',
+        actions: [...MAIL_EVENTS_QUEUE_ACTIONS],
+        resources: [props.mail.eventsQueue.queueArn],
+      }),
+      new iam.PolicyStatement({
+        sid: 'MailEventsDecryptThroughSqs',
+        actions: ['kms:Decrypt'],
+        resources: [props.key.keyArn],
+        conditions: { StringEquals: { 'kms:ViaService': `sqs.${stack.region}.amazonaws.com` } },
       }),
     ];
     for (const statement of statements) {

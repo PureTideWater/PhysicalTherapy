@@ -1,16 +1,26 @@
+import type * as crypto from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DevAuthProvider, temporaryPassword } from './dev-provider';
 import { type DevUserRecord, FileDevStore, MemoryDevStore } from './dev-store';
 import { hashPassword, passwordProblems } from './password';
 import type { AuthStep } from './provider';
 import { Sealer } from './seal';
+import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS } from './step-limits';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
 import { totpCode } from './totp';
+
+// The real comparison, watched: a plain `===` would pass every answer, so the reset code's test reads the call (N-1).
+const { timingSafeEqual } = vi.hoisted(() => ({ timingSafeEqual: vi.fn<(a: NodeJS.ArrayBufferView, b: NodeJS.ArrayBufferView) => boolean>() }));
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof crypto>();
+  timingSafeEqual.mockImplementation(actual.timingSafeEqual);
+  return { ...actual, timingSafeEqual };
+});
 
 const ORIGIN = 'http://localhost:3100';
 const CHEAP = { n: 1024, r: 8, p: 1 };
@@ -27,6 +37,7 @@ async function provider(records: DevUserRecord[] = []) {
     await store.put(record);
   }
   const invitations: { email: string; password: string }[] = [];
+  const resets: { email: string; code: string }[] = [];
   const dev = new DevAuthProvider({
     store,
     sealer: new Sealer(Buffer.alloc(32, 3)),
@@ -35,10 +46,14 @@ async function provider(records: DevUserRecord[] = []) {
       invitations.push({ email, password });
       return Promise.resolve();
     },
+    deliverResetCode: (email, code) => {
+      resets.push({ email, code });
+      return Promise.resolve();
+    },
     now: () => clock,
     scryptCost: CHEAP,
   });
-  return { dev, store, invitations };
+  return { dev, store, invitations, resets };
 }
 
 async function record(overrides: Partial<DevUserRecord> = {}): Promise<DevUserRecord> {
@@ -80,12 +95,14 @@ describe('DevAuthProvider: password and TOTP', () => {
     expect(await dev.signIn('nobody@synthetic.test', PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
   });
 
-  it('expires a challenge after three minutes, and refuses one sealed for another step', async () => {
+  it('SGN-01: expires a challenge at the sign-in steps’ constant (three minutes), and refuses one sealed for another step', async () => {
     const { dev } = await provider([await record()]);
     const step = await dev.signIn('person@synthetic.test', PASSWORD);
     expect(await dev.completeTotpSetup(challengeOf(step), '123456')).toEqual({ kind: 'expired' });
     expect(await dev.setNewPassword(challengeOf(step), 'Another-Pass-2026')).toEqual({ kind: 'expired' });
-    advance(181);
+    advance(PROVIDER_CHALLENGE_SECONDS - 1);
+    expect(await dev.answerTotp(challengeOf(step), '000000')).toEqual({ kind: 'rejected', stage: 'mfa' });
+    advance(1);
     expect(await dev.answerTotp(challengeOf(step), totpCode('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', clock))).toEqual({ kind: 'expired' });
     expect(await dev.answerTotp('not a challenge', '123456')).toEqual({ kind: 'expired' });
   });
@@ -93,7 +110,8 @@ describe('DevAuthProvider: password and TOTP', () => {
   it('enrolls TOTP before anything else when none is set, then needs a code every time', async () => {
     const { dev, store } = await provider([await record({ totpSecret: null })]);
     const step = await dev.signIn('person@synthetic.test', PASSWORD);
-    expect(step.kind).toBe('mfa_setup_required');
+    // SEC-22: the step names the record's subject, as Cognito's USERNAME does (docs/adr/0088, D3).
+    expect(step).toMatchObject({ kind: 'mfa_setup_required', subject: 'sub-1' });
     const setup = await dev.beginTotpSetup(challengeOf(step));
     if ('kind' in setup) {
       throw new Error('expected a setup');
@@ -113,7 +131,7 @@ describe('DevAuthProvider: password and TOTP', () => {
     expect(step.kind).toBe('new_password_required');
     expect(await dev.setNewPassword(challengeOf(step), 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
     const next = await dev.setNewPassword(challengeOf(step), 'Chosen-Pass-2026');
-    expect(next.kind).toBe('mfa_setup_required');
+    expect(next).toMatchObject({ kind: 'mfa_setup_required', subject: 'sub-1' });
     expect((await dev.signIn('person@synthetic.test', PASSWORD)).kind).toBe('rejected');
     expect((await dev.signIn('person@synthetic.test', 'Chosen-Pass-2026')).kind).toBe('mfa_setup_required');
   });
@@ -140,7 +158,8 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const { dev, invitations } = await provider();
     const first = await dev.ensureUser('new@synthetic.test');
     expect(first.created).toBe(true);
-    expect(await dev.ensureUser('NEW@synthetic.test')).toEqual({ sub: first.sub, created: false });
+    expect(first.neverSignedIn).toBe(true);
+    expect(await dev.ensureUser('NEW@synthetic.test')).toEqual({ sub: first.sub, created: false, neverSignedIn: true });
     expect(invitations).toHaveLength(1);
     const password = invitations[0]?.password ?? '';
     expect(passwordProblems(password)).toEqual([]);
@@ -154,7 +173,7 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const { dev, invitations } = await provider();
     await dev.ensureUser('again@synthetic.test');
     const first = invitations[0]?.password ?? '';
-    await dev.resendInvitation('again@synthetic.test');
+    expect(await dev.resendInvitation('again@synthetic.test')).toBe(true);
     expect(invitations).toHaveLength(2);
     const second = invitations[1]?.password ?? '';
     expect(second).not.toBe(first);
@@ -162,9 +181,146 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const step = await dev.signIn('again@synthetic.test', second);
     expect(step.kind).toBe('new_password_required');
     await dev.setNewPassword(challengeOf(step), 'Chosen-Synthetic-Pass-2026!');
-    await dev.resendInvitation('again@synthetic.test');
-    await dev.resendInvitation('nobody@synthetic.test');
+    // Once a password is chosen, the account has signed in: an invitation is never linked onto it (SEC-22).
+    expect(await dev.ensureUser('again@synthetic.test')).toMatchObject({ created: false, neverSignedIn: false });
+    expect(await dev.resendInvitation('again@synthetic.test')).toBe(false);
+    expect(await dev.resendInvitation('nobody@synthetic.test')).toBe(false);
     expect(invitations).toHaveLength(2);
+  });
+});
+
+describe('DevAuthProvider: a forgotten password (SGN-06)', () => {
+  const NEW_PASSWORD = 'Chosen-Reset-Pass-2026';
+
+  function codeFor(resets: readonly { email: string; code: string }[]): string {
+    const last = resets.at(-1);
+    if (last === undefined) {
+      throw new Error('expected a delivered code');
+    }
+    return last.code;
+  }
+
+  it('delivers a six-digit code once for a known active record, and keeps only its hash', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await expect(dev.requestPasswordReset('PERSON@synthetic.test')).resolves.toBeUndefined();
+    expect(resets).toHaveLength(1);
+    expect(resets[0]?.email).toBe('PERSON@synthetic.test');
+    const code = codeFor(resets);
+    expect(code).toMatch(/^\d{6}$/);
+    const kept = await store.bySub('sub-1');
+    expect(kept?.reset).toMatchObject({ attempts: 0, expiresAt: clock.getTime() + PASSWORD_RESET_CODE_SECONDS * 1000 });
+    expect(kept?.reset?.codeHash).not.toBe(code);
+    expect(JSON.stringify(kept)).not.toContain(`"${code}"`);
+  });
+
+  it('sends no code and no error for an unknown address or an invited record', async () => {
+    const { dev, store, resets } = await provider([await record({ temporary: true, totpSecret: null })]);
+    await expect(dev.requestPasswordReset('nobody@synthetic.test')).resolves.toBeUndefined();
+    await expect(dev.requestPasswordReset('person@synthetic.test')).resolves.toBeUndefined();
+    expect(resets).toEqual([]);
+    expect((await store.bySub('sub-1'))?.reset).toBeUndefined();
+    expect(await dev.confirmPasswordReset('nobody@synthetic.test', '123456', NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', '123456', NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('sends a code to a record with a chosen password and no TOTP: the twin mirrors Cognito, and the flow’s gate stops it (SEC-B1)', async () => {
+    const { dev, resets } = await provider([await record({ totpSecret: null })]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    expect(resets).toHaveLength(1);
+  });
+
+  it('replaces the code on a new request, and takes each code once', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const first = codeFor(resets);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const second = codeFor(resets);
+    expect(resets).toHaveLength(2);
+    if (first !== second) {
+      expect(await dev.confirmPasswordReset('person@synthetic.test', first, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    }
+    expect(await dev.confirmPasswordReset('person@synthetic.test', second, NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', second, 'Another-Reset-Pass-2026')).toEqual({ kind: 'rejected' });
+  });
+
+  it('refuses an expired code at the code’s hour', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    advance(PASSWORD_RESET_CODE_SECONDS);
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    await dev.requestPasswordReset('person@synthetic.test');
+    advance(PASSWORD_RESET_CODE_SECONDS - 1);
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'reset' });
+  });
+
+  it('invalidates the code after five wrong tries', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const code = codeFor(resets);
+    const wrong = code === '000000' ? '000001' : '000000';
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+      expect((await store.bySub('sub-1'))?.reset?.attempts).toBe(attempt);
+    }
+    expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect((await store.bySub('sub-1'))?.reset).toBeUndefined();
+    expect(await dev.confirmPasswordReset('person@synthetic.test', code, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('compares the code’s hash in constant time, refusing a kept hash of another length without throwing (SEC-N4)', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    await store.update('sub-1', (current) => (current.reset === undefined ? current : { ...current, reset: { ...current.reset, codeHash: 'short' } }));
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+  });
+
+  it('compares a code’s hash of the same length with timingSafeEqual, not ===, for a wrong code and the right one (N-1)', async () => {
+    const { dev, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    const code = codeFor(resets);
+    const wrong = code === '000000' ? '000001' : '000000';
+    timingSafeEqual.mockClear();
+    expect(await dev.confirmPasswordReset('person@synthetic.test', wrong, NEW_PASSWORD)).toEqual({ kind: 'rejected' });
+    expect(await dev.confirmPasswordReset('person@synthetic.test', code, NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    // Both hashes reach the comparison, of one nonzero length.
+    expect(timingSafeEqual.mock.calls.map(([kept, offered]) => kept.byteLength > 0 && kept.byteLength === offered.byteLength)).toEqual([true, true]);
+    expect(timingSafeEqual.mock.results.map((result) => result.value as boolean)).toEqual([false, true]);
+  });
+
+  it('checks the password policy before the code, spending no try', async () => {
+    const { dev, store, resets } = await provider([await record()]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    expect(await dev.confirmPasswordReset('person@synthetic.test', '000000', 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
+    expect(await dev.confirmPasswordReset('nobody@synthetic.test', '000000', 'weak')).toEqual({ kind: 'invalid_password', problems: passwordProblems('weak') });
+    expect((await store.bySub('sub-1'))?.reset?.attempts).toBe(0);
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'reset' });
+  });
+
+  it('sets the new password and keeps TOTP and keys, so the next sign-in still asks for the code', async () => {
+    const credential = { id: 'Y3JlZA', publicKey: 'cGs', counter: 3 };
+    const { dev, store, resets } = await provider([await record({ totpLastStep: 7, credentials: [credential] })]);
+    await dev.requestPasswordReset('person@synthetic.test');
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    const kept = await store.bySub('sub-1');
+    expect(kept).toMatchObject({ temporary: false, totpSecret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', totpLastStep: 7, credentials: [credential] });
+    expect(kept?.reset).toBeUndefined();
+    expect(await dev.signIn('person@synthetic.test', PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
+    expect((await dev.signIn('person@synthetic.test', NEW_PASSWORD)).kind).toBe('mfa_required');
+  });
+
+  it('delivers nowhere by default, so a provider built without the hook still answers', async () => {
+    const store = new MemoryDevStore();
+    await store.put(await record());
+    const bare = new DevAuthProvider({
+      store,
+      sealer: new Sealer(Buffer.alloc(32, 3)),
+      webauthn: { rpId: 'localhost', rpName: 'Test', origin: ORIGIN },
+      deliverInvitation: () => Promise.resolve(),
+      now: () => clock,
+      scryptCost: CHEAP,
+    });
+    await expect(bare.requestPasswordReset('person@synthetic.test')).resolves.toBeUndefined();
+    expect((await store.bySub('sub-1'))?.reset?.attempts).toBe(0);
   });
 });
 

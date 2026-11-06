@@ -1,6 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
+import { type Page, expect, test } from '@playwright/test';
 
 import { SYNTHETIC_PRACTICES, personaEmail, personaPassword } from '../scripts/synthetic-personas';
+import { E2E_DEV_AUTH_DIR } from './env';
 import { enterPassword, practiceId, refusal, signInWithTotp, withDatabase } from './helpers';
 
 /**
@@ -105,4 +109,102 @@ test('lists the devices signed in from and revokes one, ending its session', asy
   await expect(page.getByText('This device was revoked')).toBeVisible();
   await page.goto('/account/devices');
   await expect(page).toHaveURL(/\/sign-in$/);
+});
+
+/**
+ * The reset codes the local identity provider "sent" to an address, oldest first (its reset outbox, one JSON file per
+ * message, named by the time it was sent), read from the message's words as the provider's email will deliver them.
+ * SYNTHETIC accounts only.
+ */
+function resetCodesFor(email: string): string[] {
+  const outbox = path.join(E2E_DEV_AUTH_DIR, 'reset-outbox');
+  if (!existsSync(outbox)) {
+    return [];
+  }
+  return readdirSync(outbox)
+    .filter((file) => file.endsWith('.json'))
+    .sort()
+    .map((file) => JSON.parse(readFileSync(path.join(outbox, file), 'utf8')) as { readonly email: string; readonly body: string; readonly html: string })
+    .filter((message) => message.email === email)
+    .map((message) => {
+      // As Cognito delivers it (SGN-15): no remote asset, no link and no address in the code email.
+      expect(message.html).not.toMatch(/<img|<link|<script|<a[\s>]|href=|src=|url\(|https?:/i);
+      expect(message.body).not.toMatch(/https?:|@/);
+      return /password is (\d{6})\./.exec(message.body)?.[1] ?? '';
+    });
+}
+
+/** Asks for a reset code from the forgot-password page's first phase, and waits for its second. */
+async function requestReset(page: Page, email: string): Promise<void> {
+  await page.goto('/sign-in');
+  await page.getByRole('link', { name: 'Forgot your password?' }).click();
+  await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Reset your password' })).toBeVisible();
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Send code' }).click();
+  await expect(page).toHaveURL(/\/sign-in\/forgot-password\?reason=code_sent$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Choose a new password' })).toBeVisible();
+}
+
+/** The notice that takes the focus once on arrival (components/arrival-focus.tsx). */
+function arrival(page: Page) {
+  return page.locator('[data-slot="arrival-focus"]');
+}
+
+test('a forgotten password is reset by emailed code, and the second factor is still asked (SGN-05, SGN-06, SGN-07)', async ({ page }) => {
+  const email = personaEmail('reset');
+  const chosen = 'Synthetic-reset-Chosen-Pass-2026!';
+  const urls: string[] = [];
+  page.on('framenavigated', (frame) => urls.push(frame.url()));
+  await requestReset(page, email);
+  await expect(arrival(page)).toBeFocused();
+  await expect(arrival(page)).toHaveText(/^Check your email.*If an account uses the address you typed, we sent it a six-digit code\./);
+  await expect.poll(() => resetCodesFor(email).length).toBeGreaterThan(0);
+  const code = resetCodesFor(email).at(-1) ?? '';
+  expect(code).toMatch(/^\d{6}$/);
+  // A wrong code is the one refusal, on the code field.
+  await page.getByLabel('Six-digit code').fill(code === '000000' ? '111111' : '000000');
+  await page.getByLabel('New password', { exact: true }).fill(chosen);
+  await page.getByLabel('New password again').fill(chosen);
+  await page.getByRole('button', { name: 'Save password' }).click();
+  await expect(refusal(page)).toContainText('That did not match.');
+  await page.getByLabel('Six-digit code').fill(code);
+  await page.getByLabel('New password', { exact: true }).fill(chosen);
+  await page.getByLabel('New password again').fill(chosen);
+  await page.getByRole('button', { name: 'Save password' }).click();
+  await expect(page).toHaveURL(/\/sign-in\?reason=password_reset$/);
+  await expect(arrival(page)).toBeFocused();
+  await expect(arrival(page)).toContainText('Your email is filled in: sign in with your new password and the code from your authenticator app.');
+  await expect(page.getByLabel('Email')).toHaveValue(email);
+  // The old password no longer opens the account.
+  await page.getByLabel('Password', { exact: true }).fill(personaPassword('reset'));
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(refusal(page)).toContainText('did not match');
+  // The new one does, and the code is still asked.
+  await enterPassword(page, 'reset', chosen);
+  await expect(page).toHaveURL(/\/sign-in\/mfa$/);
+  await expect(page.getByLabel('Six-digit code')).toBeVisible();
+  // The address was never in a URL.
+  expect(urls.some((url) => url.includes('@') || url.includes(encodeURIComponent('@')))).toBe(false);
+});
+
+test('Use a different email ends the reset step at any time, with the address not kept (SGN-06, review UXR-01)', async ({ page }) => {
+  await requestReset(page, 'reset-different@synthetic.test');
+  await page.getByRole('button', { name: 'Use a different email' }).click();
+  await expect(page).toHaveURL(/\/sign-in\/forgot-password$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Reset your password' })).toBeVisible();
+  await expect(page.getByLabel('Email')).toHaveValue('');
+  // No step is left live: the page opens on the request again.
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1, name: 'Reset your password' })).toBeVisible();
+});
+
+test('Send a new code opens the step again without typing, and the "Check your email" notice takes the focus again (SGN-06, review UXR-05)', async ({ page }) => {
+  await requestReset(page, 'reset-again@synthetic.test');
+  await expect(arrival(page)).toBeFocused();
+  await page.getByLabel('Six-digit code').focus();
+  await page.getByRole('button', { name: 'Send a new code' }).click();
+  await expect(page).toHaveURL(/\/sign-in\/forgot-password\?reason=code_sent$/);
+  await expect(arrival(page)).toBeFocused();
+  await expect(arrival(page)).toHaveText(/^Check your email/);
 });

@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactionForms } from '../redact';
+import { BARRIER, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '../redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -318,6 +318,26 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['dates written with slashes, one after another (2.6 s before)', ['JANE Q VANTREE'], fill('1/1/11 '), ['SYN555001']],
     ['dates written with spaces alone (4.7 s before)', ['JANE Q VANTREE'], fill('1 1 11 '), ['SYN555001']],
     ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
+    // Social Security and phone numbers by pattern (docs/adr/0054, amendment of 2026-11-04; twins NPA-555-01xx, 9xx).
+    ['phones back to back', ['JANE Q VANTREE'], fill('(202) 555-0123 '), ['SYN555001']],
+    ['SSNs back to back', ['JANE Q VANTREE'], fill('900-12-3456 '), ['SYN555001']],
+    ['spaced phone chains', ['JANE Q VANTREE'], fill('202 555 0123 '), ['SYN555001']],
+    ['a 100 k digit run', ['JANE Q VANTREE'], '9'.repeat(N), ['SYN555001']],
+    ['a digit and a dash, repeated', ['JANE Q VANTREE'], fill('5-'), ['SYN555001']],
+    ['a digit and a zero-width space, repeated (quadratic in the folded view before)', ['JANE Q VANTREE'], fill('5\u200B'), ['SYN555001']],
+    ['nine-digit runs back to back', ['JANE Q VANTREE'], fill('900123456 '), ['SYN555001']],
+    ['a phone label before nine digits, repeated', ['JANE Q VANTREE'], fill('Phone 900123456 '), ['SYN555001']],
+    ['a digit and an indented line break, repeated', ['JANE Q VANTREE'], fill('5\n    '), ['SYN555001']],
+    ['a digit, two dashes and a line break, repeated', ['JANE Q VANTREE'], fill('5--\n  '), ['SYN555001']],
+    // Review round 1, corr-ssn-2: every digit a wrapped candidate (about 10 to 30 times base 00fd2906's time before the fix).
+    ['a digit and a bare line break, repeated', ['JANE Q VANTREE'], fill('5\n'), ['SYN555001']],
+    ['a digit and a CRLF, repeated', ['JANE Q VANTREE'], fill('1\r\n'), ['SYN555001']],
+    ['a digit, a dash and a bare line break, repeated', ['JANE Q VANTREE'], fill('5-\n'), ['SYN555001']],
+    ['an amount before a date, repeated', ['JANE Q VANTREE'], fill('$150.00 2026-11-01 '), ['SYN555001']],
+    // Review round 2: a date or amount range, and a list a keep-noun names (each followed back LIST_REACH numbers at most).
+    ['date ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('10/01/2026-10/15/2026 '), ['SYN555001']],
+    ['amount ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('150.00-120.00 '), ['SYN555001']],
+    ['a list after a keep-noun as long as the letter', ['JANE Q VANTREE'], `Claims 900123456${fill(' and 900123457')}`, ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
@@ -355,10 +375,12 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('jo ann');
   });
 
-  it('joins a number with a slash or a colon next to a letter, never between digits', () => {
+  it('joins a number with a slash or a colon next to a letter, and between digits only after an identifier label', () => {
     expect(redact(['JANE VANTREE'], 'Member ZZ/1234567, ZZ:1234567; claim SYN/555001')).toBe('Member [MEMBER_ID], [MEMBER_ID]; claim [CLAIM_1]');
-    // The recorded residual: digits-only with a slash or a period between digits (a date's or an amount's writing).
-    expect(redact(['JANE VANTREE'], 'Ref 1234.5678 and 12/34/5678', ['12345678'])).toBe('Ref 1234.5678 and 12/34/5678');
+    // The recorded residual: digits-only with a slash or a period between digits (a date's or an amount's writing) and no label.
+    expect(redact(['JANE VANTREE'], 'Seen 1234.5678 and 12/34/5678', ['12345678'])).toBe('Seen 1234.5678 and 12/34/5678');
+    // After an identifier label they are the number (review finding R5-2).
+    expect(redact(['JANE VANTREE'], 'Ref 1234.5678 and claim 12/34/5678', ['12345678'])).toBe('Ref [CLAIM_1] and claim [CLAIM_1]');
     expect(identifierCandidates('also ZZ/7654321')).toContain('ZZ7654321');
   });
 
@@ -492,5 +514,406 @@ describe('the verifier', () => {
   it('reads the redacted text only (the original letter is never compared or returned)', () => {
     expect(SYNTHETIC_LETTER).toContain('SYNCLAIM0001');
     expect(JSON.stringify(verify(syntheticLetterOutput()).proposal)).not.toMatch(/SYNCLAIM0001|SYNMEMBER0042|ZEPHYRA/);
+  });
+});
+
+describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr/0054, amendment of 2026-11-04)', () => {
+  // SYNTHETIC twins only: SSNs in the 9xx area (never issued), phones NPA-555-01xx. Patient A's identifiers are ordinary;
+  // patient B's member ID is SSN-shaped and its claims phone-shaped (the O rows), so a pattern span that is the call's own
+  // keeps the call's placeholder (design section 4.2).
+  const Z = '\u200B';
+  const A = { pseudonym: 'synthetic-patient-15', names: ['ZEPHYRA Q VANTREE'], datesOfBirth: ['1961-03-03'], memberIds: ['ZZ1234567'] };
+  const AC = [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] }];
+  const B = { pseudonym: 'synthetic-patient-16', names: ['ORLA J STRAUSS'], datesOfBirth: ['1955-07-14'], memberIds: ['900-12-3456'] };
+  const BC = [
+    { claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-16', claimNumbers: ['202-555-0123'] },
+    { claimId: 'synthetic-claim-16-2', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['9001234567'] },
+  ];
+  const who = (row: 'A' | 'B') => (row === 'A' ? { patient: A, claims: AC } : { patient: B, claims: BC });
+
+  // [row, patient, letter, sent, offered to the screen (each must be a candidate)]
+  const rows: readonly (readonly [string, 'A' | 'B', string, string, readonly string[]])[] = [
+    // Social Security numbers (S rows)
+    ['S1', 'A', 'Subscriber 900-12-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S2', 'A', 'Subscriber 900 12 3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S3 U+2010', 'A', 'Subscriber 900‐12‐3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S4 U+2011', 'A', 'Subscriber 900‑12‑3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S5 U+2012', 'A', 'Subscriber 900‒12‒3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S6 en dash', 'A', 'Subscriber 900–12–3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S7 em dash', 'A', 'Subscriber 900—12—3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S8 minus sign', 'A', 'Subscriber 900−12−3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S9 ZWSP inside', 'A', `Subscriber 900-1${Z}2-34${Z}56 on file.`, 'Subscriber [SSN] on file.', ['900123456']],
+    ['S10 soft hyphen inside', 'A', 'Subscriber 900-1\u00AD2-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S11 word joiner', 'A', 'Subscriber 900-12\u2060-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S12 byte-order mark', 'A', 'Subscriber 9\uFEFF00-12-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S13 full width', 'A', 'Subscriber ９００-１２-３４５６ on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S14 periods', 'A', 'Subscriber 900.12.3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S14b Arabic-Indic', 'A', 'Subscriber ٩٠٠-١٢-٣٤٥٦ on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['S15', 'A', 'SSN: 900123456', 'SSN: [SSN]', ['900123456']],
+    ['S16', 'A', 'Social Security No. 900123456', 'Social Security No. [SSN]', ['900123456']],
+    ['S17', 'A', 'SS#900123456', 'SS#[SSN]', ['900123456']],
+    ['S18 keep-noun', 'A', 'Reference 900123456 applies.', 'Reference 900123456 applies.', ['900123456']],
+    ['S19 HICN', 'A', 'HICN 900123456A', 'HICN [SSN]', ['900123456A', '900123456']],
+    ['S20 HICN dashed', 'A', 'Medicare no. 900-12-3456-A', 'Medicare no. [SSN]', ['900123456A', '900123456']],
+    ['S21 masked', 'A', 'SSN ending in 3456, xxx-xx-3456', 'SSN ending in 3456, [SSN]', []],
+    // Phone numbers (P rows)
+    ['P1', 'A', 'Call (202) 555-0123 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P2', 'A', 'Call 202-555-0123 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P3', 'A', 'Call 202.555.0123 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P4', 'A', 'Call +1 202 555 0123 today.', 'Call [PHONE] today.', ['2025550123', '12025550123']],
+    ['P5', 'A', 'Call 1-800-555-0100 today.', 'Call [PHONE] today.', ['8005550100', '18005550100']],
+    ['P6', 'A', 'Call 202-555-0123 x123 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P7', 'A', 'Call 202-555-0123 ext. 45 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P8', 'A', 'Call 202-555-0123 extension 6789 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P9', 'A', 'Call 202-555-0123 #12 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P10', 'A', 'Phone: 2025550123', 'Phone: [PHONE]', ['2025550123']],
+    ['P11', 'A', 'Fax 2025550124', 'Fax [PHONE]', ['2025550124']],
+    ['P12 TTY', 'A', 'TTY users call 711 or 1-800-555-0199 (TTY).', 'TTY users call 711 or [PHONE] (TTY).', ['8005550199']],
+    ['P13 en dash', 'A', 'Call 202–555–0123 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P14 full width', 'A', 'Call ２０２-５５５-０１２３ today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P15 ZWSP', 'A', `Call 202-55${Z}5-0123 today.`, 'Call [PHONE] today.', ['2025550123']],
+    ['P16 vanity', 'A', 'Call 1-800-555-SYNP.', 'Call 1-800-555-SYNP.', []],
+    ['P17 keep-noun', 'A', 'Reference 2025550123 applies.', 'Reference 2025550123 applies.', ['2025550123']],
+    ['P18 plus and ten', 'A', 'Call +12025550123 today.', 'Call [PHONE] today.', ['2025550123']],
+    ['P19 one and parentheses', 'A', 'Call 1 (800) 555-0100 today.', 'Call [PHONE] today.', ['8005550100']],
+    // The call's own identifiers in SSN and phone shapes (O rows, patient B)
+    ['O1', 'B', 'Member ID 900-12-3456', 'Member ID [MEMBER_ID]', []],
+    ['O2', 'B', 'Member ID 900123456', 'Member ID [MEMBER_ID]', []],
+    ['O3', 'B', 'Member ID 900 12 3456', 'Member ID [MEMBER_ID]', []],
+    ['O4', 'B', 'Member ID 900–12–3456', 'Member ID [MEMBER_ID]', []],
+    ['O5', 'B', 'Claim 202-555-0123', 'Claim [CLAIM_1]', []],
+    ['O6', 'B', 'Claim (202) 555-0123', 'Claim [CLAIM_1]', []],
+    ['O6u', 'B', 'Seen (202) 555-0123', 'Seen [CLAIM_1]', []],
+    ['O7', 'B', 'Claim 202.555.0123', 'Claim [CLAIM_1]', []],
+    ['O7u', 'B', 'Seen 202.555.0123', 'Seen [CLAIM_1]', []],
+    ['O8', 'B', 'Claim 2025550123', 'Claim [CLAIM_1]', []],
+    ['O9', 'B', 'Claim 900-123-4567', 'Claim [CLAIM_2]', []],
+    ['O10', 'B', 'Claim +1 202 555 0123', 'Claim [CLAIM_1]', []],
+    ['O11', 'B', 'Member 900.12.3456 on file', 'Member [MEMBER_ID] on file', []],
+    ['O13', 'B', 'Member 900_12_3456 on file', 'Member [MEMBER_ID] on file', []],
+    ['O14', 'B', 'Member 900·12·3456 on file', 'Member [MEMBER_ID] on file', []],
+    ['O15 HICN suffix', 'B', 'Member 900-12-3456-A on file', 'Member [MEMBER_ID] on file', []],
+    // Another patient's (X rows): redacted, and offered to the one-patient screen
+    ['X1', 'A', 'Also member 900-55-1234 (SYN OTHER).', 'Also member [SSN] (SYN OTHER).', ['900551234']],
+    ['X2', 'A', 'Also member 900551234.', 'Also member [SSN].', ['900551234']],
+    ['X3', 'A', 'Also claim 2025550198.', 'Also claim 2025550198.', ['2025550198']],
+    ['X4', 'A', 'Also claim 202-555-0198.', 'Also claim [PHONE].', ['2025550198']],
+    ['X5', 'A', 'Also claim (202) 555-0198.', 'Also claim [PHONE].', ['2025550198']],
+    ['X6 a prefix, four tokens', 'A', 'Also ZZ-202-555-0198.', 'Also ZZ-[PHONE].', ['ZZ2025550198', '2025550198']],
+    ['X7 a dependent suffix', 'A', 'Also member 900-55-1234-01.', 'Also member [SSN]-01.', ['90055123401', '900551234']],
+    ['X8 a prefix in parentheses', 'A', 'Claim SYN (202) 555-0198', 'Claim SYN [PHONE]', ['SYN2025550198', '2025550198']],
+    // What must stay (K, D, N, C, Z, T, I, E, R rows)
+    ['K1', 'A', 'Billed $1,234.56 today.', 'Billed $1,234.56 today.', []],
+    ['K2', 'A', 'Billed 1,234,567.00 today.', 'Billed 1,234,567.00 today.', []],
+    ['K3', 'A', 'Billed $123-45 today.', 'Billed $123-45 today.', []],
+    ['K4', 'A', 'Billed $900,123,456.00 today.', 'Billed $900,123,456.00 today.', []],
+    ['D1', 'A', 'Appeal by 2026-11-01.', 'Appeal by 2026-11-01.', []],
+    ['D2', 'A', 'Appeal by 11/01/2026.', 'Appeal by 11/01/2026.', []],
+    ['D3', 'A', 'Appeal by 11-01-2026.', 'Appeal by 11-01-2026.', []],
+    ['D4', 'A', 'Appeal by 01.11.2026.', 'Appeal by 01.11.2026.', []],
+    ['D5', 'A', 'Appeal by 2026 11 01.', 'Appeal by 2026 11 01.', []],
+    ['D6', 'A', 'Appeal by 11 01 2026.', 'Appeal by 11 01 2026.', []],
+    ['D7', 'A', 'Appeal by 20261101.', 'Appeal by 20261101.', []],
+    ['D8', 'A', 'Appeal by 110126.', 'Appeal by 110126.', []],
+    ['D9', 'A', 'Appeal by November 1, 2026.', 'Appeal by November 1, 2026.', []],
+    ['D10', 'A', "Appeal by Nov 1st '26.", "Appeal by Nov 1st '26.", []],
+    ['D11', 'A', 'Appeal by 01-NOV-26.', 'Appeal by 01-NOV-26.', []],
+    ['D12', 'A', 'Appeal by 11/30/26.', 'Appeal by 11/30/26.', []],
+    ['D13', 'A', 'Remitted 2026-10-28, serviced 10/01/2026, appeal by 12/31/2026.', 'Remitted 2026-10-28, serviced 10/01/2026, appeal by 12/31/2026.', []],
+    ['D14 the date of birth, by its own rule', 'A', 'DOB 03/03/1961.', 'DOB [DATE_OF_BIRTH].', []],
+    ['D15 a service period joined by a hyphen (review round 2, finding 2)', 'A', 'Service 10/01/2026-10/15/2026.', 'Service 10/01/2026-10/15/2026.', []],
+    ['D16', 'A', 'DOS 10/01/2026-10/15/2026 97110', 'DOS 10/01/2026-10/15/2026 97110', []],
+    ['D17', 'A', 'Coverage 01/01/2026-12/31/2026.', 'Coverage 01/01/2026-12/31/2026.', []],
+    ['D18', 'A', 'Eligibility 1/1/2026-12/31/2026 confirmed.', 'Eligibility 1/1/2026-12/31/2026 confirmed.', []],
+    ['D19', 'A', 'Service period: 11/1/2026-11/15/2026.', 'Service period: 11/1/2026-11/15/2026.', []],
+    ['D20', 'A', 'DOS 11/01/2026-11/01/2026', 'DOS 11/01/2026-11/01/2026', []],
+    ['D21 ISO dates', 'A', 'From 2026-10-01-2026-10-15.', 'From 2026-10-01-2026-10-15.', []],
+    ['D22 dashed dates', 'A', 'Service 10-01-2026-10-15-2026.', 'Service 10-01-2026-10-15-2026.', []],
+    ['D23 an en dash', 'A', 'Service 10/01/2026–10/15/2026.', 'Service 10/01/2026–10/15/2026.', []],
+    ['D24 two-digit years', 'A', 'Service 11/01/26-11/15/26.', 'Service 11/01/26-11/15/26.', []],
+    ['K5 amounts joined by a hyphen (review round 2, finding 2)', 'A', 'Billed 150.00-120.00 allowed.', 'Billed 150.00-120.00 allowed.', []],
+    ['K6', 'A', 'Range 123.45-67.89.', 'Range 123.45-67.89.', []],
+    ['K7 comma thousands', 'A', 'Billed 1,250.00-980.00 allowed.', 'Billed 1,250.00-980.00 allowed.', []],
+    ['N1', 'A', 'NPI 1234567893.', 'NPI 1234567893.', []],
+    ['N2', 'A', 'Rendering NPI 2340178906.', 'Rendering NPI 2340178906.', []],
+    ['N3', 'A', 'Provider 1234567893.', 'Provider 1234567893.', []],
+    ['N4 an unlabeled ten that passes the NPI check', 'A', 'Provider 2025550106.', 'Provider 2025550106.', []],
+    ['C1', 'A', 'CPT 97110 and 97140.', 'CPT 97110 and 97140.', []],
+    ['C2', 'A', 'HCPCS G0283, A4556.', 'HCPCS G0283, A4556.', []],
+    ['C3', 'A', 'CARC CO-45, RARC N130.', 'CARC CO-45, RARC N130.', []],
+    ['C4', 'A', 'ICD-10 M54.50.', 'ICD-10 M54.50.', []],
+    ['C5', 'A', 'Line 97110-GP-59.', 'Line 97110-GP-59.', []],
+    ['Z1', 'A', 'Los Synth, CA 90001.', 'Los Synth, CA 90001.', []],
+    ['Z2', 'A', 'Los Synth, CA 90001-1234.', 'Los Synth, CA 90001-1234.', []],
+    ['Z3 a bare ZIP+4 (15.14)', 'A', 'Los Synth, CA 900011234.', 'Los Synth, CA [SSN].', ['900011234']],
+    ['T1', 'A', 'TIN 90-0123456.', 'TIN 90-0123456.', []],
+    ['T2', 'A', 'TIN 900123457.', 'TIN 900123457.', []],
+    ['I1', 'A', 'ICN 10012345678.', 'ICN 10012345678.', []],
+    ['I2', 'A', 'ICN 1234567890123.', 'ICN 1234567890123.', []],
+    ['I3', 'A', 'Control 12345678901234.', 'Control 12345678901234.', []],
+    ['E1', 'A', 'EFT 1900123456, check 000555012.', 'EFT 1900123456, check 000555012.', []],
+    ['E2', 'A', 'TRN*1*SYN20261101*1900000001~', 'TRN*1*SYN20261101*1900000001~', []],
+    ['R1', 'A', 'Reference 2026-1101-0001.', 'Reference 2026-1101-0001.', []],
+    ['R2', 'A', 'Appeal SYN-APL-555-0123; call 1-800-555-0100.', 'Appeal SYN-APL-555-0123; call [PHONE].', ['8005550100']],
+    ['R3', 'A', 'Group 900123 plan 55501, REF-SYN-77.', 'Group 900123 plan 55501, REF-SYN-77.', []],
+    ['R4', 'A', 'Hours 8:00-5:00, 555-0100 local.', 'Hours 8:00-5:00, 555-0100 local.', []],
+    ['R5', 'A', 'Page 1 of 2', 'Page 1 of 2', []],
+    ['R14 a date-shaped claim number with an implausible year, not the call’s', 'A', 'Claim 0023-04-26 on file.', 'Claim 0023-04-26 on file.', ['00230426']],
+    // Section 17, R1: amounts and dates are never read across a period and white space
+    ['R1-1', 'A', 'Billed $150.00 2026-11-01', 'Billed $150.00 2026-11-01', []],
+    ['R1-2', 'A', '150.00 1200.00', '150.00 1200.00', []],
+    ['R1-3', 'A', 'Total 1,250.00 2026', 'Total 1,250.00 2026', []],
+    ['R1-4', 'A', 'Row 250 10 1500.00', 'Row 250 10 1500.00', []],
+    ['R1-5', 'A', 'Row 250 100 1500.00', 'Row 250 100 1500.00', []],
+    ['R1-6', 'A', 'Paid 150.00\n2026-11-01', 'Paid 150.00\n2026-11-01', []],
+    ['R1-7 period then dash', 'A', 'Call 202.555-0123', 'Call [PHONE]', ['2025550123']],
+    ['R1-8 dash then period', 'A', 'Call 202-555.0123', 'Call [PHONE]', ['2025550123']],
+    ['R1-9 a comma list of SSNs', 'A', '900-12-3456,900-55-1234', '[SSN],[SSN]', ['900123456', '900551234']],
+    ['R1-10 a comma list of phones', 'A', '202-555-0123,202-555-0198', '[PHONE],[PHONE]', ['2025550123', '2025550198']],
+    ['R1-11 a table row of small numbers (15.10)', 'A', 'Line 000 02 1500', 'Line [SSN]', []],
+    // R2: a line break, with indentation, inside or between groups
+    ['R2-1', 'A', 'SSN 900-12-34\n56', 'SSN [SSN]', ['900123456']],
+    ['R2-2', 'A', 'SSN 900-12-34-\n56', 'SSN [SSN]', ['900123456']],
+    ['R2-3', 'A', 'Call 202-555-01\n23', 'Call [PHONE]', ['2025550123']],
+    ['R2-4', 'A', 'SSN 900-\r\n    12-3456', 'SSN [SSN]', ['900123456']],
+    ['R2-5', 'A', 'SSN 900\n    12 3456', 'SSN [SSN]', ['900123456']],
+    ['R2-6', 'A', 'Call (202)\n    555-0123', 'Call [PHONE]', ['2025550123']],
+    ['R2-7', 'A', 'Call 202 - \r\n 555-0123', 'Call [PHONE]', ['2025550123']],
+    ['R2-8 NEL', 'A', '900\u008512\u00853456', '[SSN]', ['900123456']],
+    ['R2-9', 'A', '900--12--3456', '[SSN]', ['900123456']],
+    ['R2-10', 'A', '202‐‐555-0123', '[PHONE]', ['2025550123']],
+    ['R2-11 a phone before a numbered line', 'A', 'Call 202-555-0123\n2. Submit the form', 'Call [PHONE]\n2. Submit the form', ['2025550123']],
+    ['R2-12', 'A', 'Billed 20261101\n1', 'Billed 20261101\n1', []],
+    ['R2-13', 'A', '97110\n1500 units', '97110\n1500 units', []],
+    ['R2-14 a labeled nine wrapped across a line', 'A', 'SSN 90012\n3456', 'SSN [SSN]', ['900123456']],
+    // R3: digit values
+    ['R3-1 Arabic-Indic', 'A', 'Call ٢٠٢-٥٥٥-٠١٢٣', 'Call [PHONE]', ['2025550123']],
+    ['R3-2', 'A', 'Call (٢٠٢) ٥٥٥-٠١٢٣', 'Call [PHONE]', ['2025550123']],
+    ['R3-3 Devanagari', 'A', 'Call २०२-५५५-०१२३', 'Call [PHONE]', ['2025550123']],
+    ['R3-4', 'A', 'Subscriber ٢٠٢٥٥٥٠١٢٣', 'Subscriber [PHONE]', ['2025550123']],
+    // R4: a digit and an invisible run before the number
+    ['R4-1', 'A', `On 11/01/2026${Z}202-555-0123`, `On 11/01/2026${Z}[PHONE]`, ['2025550123']],
+    ['R4-2', 'A', `Claim 12345${Z}900-12-3456`, `Claim 12345${Z}[SSN]`, ['900123456']],
+    ['R4-3', 'A', `DOB 03/03/1961${Z}2025550198`, `DOB [DATE_OF_BIRTH]${Z}[PHONE]`, ['2025550198']],
+    // R5: labels and keep-nouns (with step 0's A7 and A8)
+    ['R5-1', 'A', 'Please contact us regarding member 900551234', 'Please contact us regarding member [SSN]', ['900551234']],
+    ['R5-2', 'A', 'Call about subscriber 900551234', 'Call about subscriber [SSN]', ['900551234']],
+    ['R5-3', 'A', 'Phone/SSN: 2025550123', 'Phone/SSN: [SSN]', ['2025550123']],
+    ['R5-4', 'A', 'Medicare 2025550142', 'Medicare [PHONE]', ['2025550142']],
+    ['R5-5', 'A', 'Phone on file for claim: 2025550123', 'Phone on file for claim: [PHONE]', ['2025550123']],
+    ['R5-6', 'A', 'Member SSN or claim 900551234', 'Member SSN or claim [SSN]', ['900551234']],
+    ['R5-7', 'A', 'Case manager reachable at 2025550123', 'Case manager reachable at [PHONE]', ['2025550123']],
+    ['R5-8', 'A', 'Group subscriber 900123456', 'Group subscriber [SSN]', ['900123456']],
+    ['R5-9', 'A', 'Please call regarding claim 2025550123', 'Please call regarding claim [PHONE]', ['2025550123']],
+    ['R5-10', 'A', 'Medicare provider NPI 1234567893', 'Medicare provider NPI 1234567893', []],
+    ['R5-11', 'A', 'Contact your provider, NPI 2025550106', 'Contact your provider, NPI 2025550106', []],
+    ['R5-12', 'A', 'Medicare Advantage TIN 900123457', 'Medicare Advantage TIN 900123457', []],
+    ['R5-13', 'A', 'Medicare Advantage claim 1900123456', 'Medicare Advantage claim 1900123456', []],
+    ['R5-14', 'A', 'Reference no.: 2025550123', 'Reference no.: 2025550123', []],
+    ['R5-15', 'A', 'Tax ID number 900123457', 'Tax ID number 900123457', []],
+    // Review round 1, corr-ssn-3: a shape after a currency sign is an amount (R1b's currency guard, on every shaped match).
+    ['K-c1 a currency sign before a phone shape', 'A', 'Paid $202-555-0123 in full.', 'Paid $202-555-0123 in full.', []],
+    ['K-c2 spaced', 'A', 'Billed $202 555 0123 total', 'Billed $202 555 0123 total', []],
+    ['K-c3 an SSN shape', 'A', 'Paid $900 12 3456 total', 'Paid $900 12 3456 total', []],
+    ['K-c4 a space after the sign', 'A', 'Paid $ 900 12 3456 total', 'Paid $ 900 12 3456 total', []],
+    ['K-c5 the euro sign and periods', 'A', 'Paid \u20AC202.555.0123', 'Paid \u20AC202.555.0123', []],
+    ['R5-15a the IRS’s wording (review round 1, corr-ssn-4)', 'A', 'Tax identification number 900123457', 'Tax identification number 900123457', []],
+    ['R5-15b', 'A', 'Federal tax identification number: 900123457', 'Federal tax identification number: 900123457', []],
+    ['R5-16', 'A', 'Claim #: 900123456', 'Claim #: 900123456', []],
+    ['R5-17 (15.15)', 'A', 'Claim number is 2025550123', 'Claim number is [PHONE]', ['2025550123']],
+    ['R5-18 a keep-noun across a sentence end (A7)', 'A', 'See our claim. 900551234 is the subscriber number.', 'See our claim. [SSN] is the subscriber number.', ['900551234']],
+    ['R5-19 (A7)', 'A', 'Claim. ID 900551234', 'Claim. ID [SSN]', ['900551234']],
+    ['R5-20 an abbreviation’s full stop (A7)', 'A', 'Ref. No. 2025550123', 'Ref. No. 2025550123', []],
+    ['R5-21 a wrapped label (A7)', 'A', 'Claim\nNumber: 900123456', 'Claim\nNumber: 900123456', []],
+    ['R5-22 Markdown bold (A8)', 'A', '**Claim:** 900123456', '**Claim:** 900123456', []],
+    ['R5-23 a comma (A8)', 'A', 'Claim, 900123456', 'Claim, 900123456', []],
+    ['R5-24 an opening quote (A8)', 'A', 'Claim: “2025550123”', 'Claim: “2025550123”', []],
+    ['R5-25 an equals sign (A8)', 'A', 'Claim = 2025550123', 'Claim = 2025550123', []],
+    ['R5-26 a phone label never keeps a nine', 'A', 'Call 900551234', 'Call [SSN]', ['900551234']],
+    ['R5-27 a list after a keep-noun (review round 2, finding 3)', 'A', 'Claim number(s) 900123456 and 900123457.', 'Claim number(s) 900123456 and 900123457.', []],
+    ['R5-28', 'A', 'Reference numbers 2025550123, 2025550124.', 'Reference numbers 2025550123, 2025550124.', []],
+    ['R5-29 three, with a comma and “and”', 'A', 'Claims 900123456, 900123457, and 2025550124.', 'Claims 900123456, 900123457, and 2025550124.', []],
+    ['R5-30 “or”', 'A', 'Reference 2025550123 or 2025550124.', 'Reference 2025550123 or 2025550124.', []],
+    ['R5-31 a label inside the list decides', 'A', 'Claim 900123456 and SSN 900551234', 'Claim 900123456 and SSN [SSN]', ['900551234']],
+    ['R5-32 a word that is no list’s joiner', 'A', 'Claim 900123456 and member 900551234', 'Claim 900123456 and member [SSN]', ['900551234']],
+    ['R5-33 a sentence end ends the list', 'A', 'Claim 900123456. 900551234 is on file.', 'Claim 900123456. [SSN] is on file.', ['900551234']],
+    ['R5-34 a list after a phone label', 'A', 'Call 2025550123 or 2025550124.', 'Call [PHONE] or [PHONE].', ['2025550123', '2025550124']],
+    ['R5-35 a list after an SSN label', 'A', 'SSN 900551234 and 900123456', 'SSN [SSN] and [SSN]', ['900551234', '900123456']],
+    ['R5-36 a list after the call’s own claim', 'A', 'Claim SYNCLAIM0001 and 900123457.', 'Claim [CLAIM_1] and 900123457.', []],
+    // R12: rare forms
+    ['R12-1', 'A', 'SSN ###-##-3456', 'SSN [SSN]', []],
+    ['R12-2', 'A', 'SSN ___-__-3456', 'SSN [SSN]', []],
+    ['R12-3', 'A', 'SSNXXX-XX-3456', 'SSN[SSN]', []],
+    ['R12-4', 'A', 'SSN *****3456', 'SSN [SSN]', []],
+    ['R12-s1 residual: 1 and ten as one run', 'A', 'Patient 12025550123', 'Patient 12025550123', []],
+    ['R12-s2 residual: a digit in a local number’s window', 'A', 'Phone 1: 555-0100', 'Phone 1: 555-0100', []],
+    ['R12-s3 residual: two phones with nothing between', 'A', '202-555-0123202-555-0124', '202-555-0123202-555-0124', []],
+    // A1: the number joiners the call's own number reads, in a shape
+    ['A1-1 bullets', 'A', 'Call 202•555•0123', 'Call [PHONE]', ['2025550123']],
+    ['A1-2 middle dots', 'A', '900·12·3456', '[SSN]', ['900123456']],
+    ['A1-3 underscores', 'A', '900_12_3456', '[SSN]', ['900123456']],
+    // Glued, labeled
+    ['G1', 'A', 'Tel202-555-0123', 'Tel[PHONE]', ['2025550123']],
+    ['G2', 'A', 'SSN900-12-3456', 'SSN[SSN]', ['900123456']],
+    ['L-1 a label across one line break', 'A', 'Fax\n2025550124', 'Fax\n[PHONE]', ['2025550124']],
+    ['L-2 a labeled local number', 'A', 'Call 555-0100', 'Call [PHONE]', []],
+    ['L-3', 'A', 'Patient ID 900551234', 'Patient ID [SSN]', ['900551234']],
+    ['L-4', 'A', 'ID: 900.55.1234', 'ID: [SSN]', ['900551234']],
+    // Review round 1, SEC-3: a form feed (pdftotext's page break) and a vertical tab are line breaks, U+1680 is a space.
+    ['SEC3-1 form feeds', 'A', 'Subscriber 900\f12\f3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-2 form feeds', 'A', 'Tel 202\f555\f0123 on file.', 'Tel [PHONE] on file.', ['2025550123']],
+    ['SEC3-3 vertical tabs', 'A', 'Subscriber 900\v12\v3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-4 U+1680', 'A', 'Subscriber 900\u168012\u16803456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-5 U+1680', 'A', 'Tel 202\u1680555\u16800123 on file.', 'Tel [PHONE] on file.', ['2025550123']],
+    ['SEC3-6 a page break after a dash', 'A', 'Subscriber 900-12-\f3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-7 a page break and a dash', 'A', 'Subscriber 900\f12-3456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC3-8 a page break inside a phone', 'A', 'Phone 202-555-\f0123 on file.', 'Phone [PHONE] on file.', ['2025550123']],
+    ['SEC3-9 U+1680 and a dash', 'A', 'Subscriber 900-12\u16803456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    // Review round 1, SEC-6: the braille blank (U+2800) is a blank.
+    ['SEC6-1 braille blanks', 'A', 'Subscriber 900\u280012\u28003456 on file.', 'Subscriber [SSN] on file.', ['900123456']],
+    ['SEC6-2 braille blanks', 'A', 'Tel 202\u2800555\u28000123 on file.', 'Tel [PHONE] on file.', ['2025550123']],
+  ];
+
+  it.each(rows)('%s: sends %j as expected, refuses none, and offers the screen what it must (patient %s)', (_row, row, letter, sent, offered) => {
+    const { patient, claims } = who(row);
+    const redacted = redactLetterForScreen(letter, patient, claims);
+    expect(redacted.text).toBe(sent);
+    expect(redactLetter(letter, patient, claims).text).toBe(sent);
+    expect(holdsIdentifier(redacted.text, patient, claims)).toBe(false);
+    for (const candidate of offered) {
+      expect(redacted.candidates).toContain(candidate);
+    }
+    // The call's own identifiers are never offered.
+    for (const own of [...patient.memberIds, ...claims.flatMap((claim) => claim.claimNumbers)]) {
+      expect(redacted.candidates).not.toContain(own.replace(/[^\p{L}\p{N}]/gu, ''));
+    }
+    // A placeholder's word is never offered as part of a run of the sent text.
+    if (!/SSN|PHONE/i.test(letter)) {
+      expect(identifierCandidates(redacted.text).filter((candidate) => /SSN|PHONE/.test(candidate))).toEqual([]);
+    }
+  });
+
+  it('pins the call’s own claim when a phone shape is written against a token of it, and a short claim inside another patient’s number lends no placeholder (R6)', () => {
+    const claims = [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYN2025550123'] }];
+    expect(redactLetter('Claim SYN (202) 555-0123', A, claims).text).toBe('Claim [CLAIM_1]');
+    const short = [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-15', claimNumbers: ['1234'] }];
+    const screened = redactLetterForScreen('Also member 900-55-1234.', A, short);
+    expect(screened.text).toBe('Also member [SSN].');
+    expect(screened.candidates).toContain('900551234');
+    expect(holdsIdentifier(screened.text, A, short)).toBe(false);
+  });
+
+  // The survivor scan (R7, with step 0's A2 and A3): a 9- to 11-digit chain no pattern read is refused, never sent.
+  it.each([
+    ['an OCR space inside a group', 'SSN 900-12-34 56'],
+    ['a period and a space', 'Phone 202.555 0123'],
+    ['a slash', 'Call 202/555-0123'],
+    ['a closing parenthesis', 'Call 202)555-0123'],
+    ['four groups, a date’s last six (A3)', 'SSN 900-12-03-56'],
+    ['four groups with periods (A3)', 'SSN 900.12.03.56'],
+    ['four groups, a date-shaped tail (A3)', 'SSN 900-11-20-26'],
+    ['an amount-shaped tail (A3)', 'SSN 900-12-34.56'],
+    ['a 3-3-3 reference', 'Ref 900 551 234'],
+    ['a semicolon with no space after it (A2)', 'SSN 900;12;3456'],
+    ['a spaced nine in a comma list', 'SSN 900 12 3456,900 55 1234'],
+    ['a digit and an invisible run before a number with one inside it (read on neither reading)', 'Claim 12345\u200B900-1\u200B2-3456'],
+    // Review round 1 (SEC-1, corr-ssn-1, SEC-4, SEC-5): a labeled chain, whatever its grouping.
+    ['a labeled 3-7 phone (SEC-1)', 'Phone: 202-5550123'],
+    ['a labeled 5-4 SSN (corr-ssn-1)', 'SSN 90012-3456'],
+    ['a labeled 3-6 SSN (corr-ssn-1)', 'SSN 900-123456'],
+    ['a labeled SSN digit by digit (SEC-4)', 'SSN 9 0 0 1 2 3 4 5 6'],
+    ['a labeled phone in five pairs (SEC-4)', 'phone 20 25 55 01 23'],
+    ['a labeled SSN with a period and a space (SEC-5)', 'SSN 900.12 3456'],
+    ['four spaces between groups (SEC-2)', 'SSN 900    12    3456'],
+    ['eight spaces between groups (SEC-2)', 'Tel 202        555        0123'],
+    ['tabs between groups (SEC-2)', 'SSN 900\t\t\t\t12 3456'],
+    ['katakana prolonged sound marks (SEC-6)', 'SSN 900\u30FC12\u30FC3456'],
+    ['division slashes (SEC-6)', 'SSN 900\u221512\u22153456'],
+    ['ideographic commas (SEC-6)', 'Tel 202\u3001555\u30010123'],
+    // Review round 2, finding 2: dates or amounts joined by a hyphen are a range only when the range is joined to nothing else.
+    ['a date range joined to a further group', 'Seen 10/01/2026-10/15/2026-0123'],
+    ['an amount range joined to a further group', 'Ref 12.34-56.78-901'],
+  ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
+    let message = '';
+    try {
+      denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: letter });
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'identifier_left' });
+      message = (error as Error).message;
+    }
+    expect(message).toBe('the letter still holds an identifier after redaction; it is not sent');
+    expect(message).not.toMatch(/\p{Nd}/u);
+  });
+
+  it.each([
+    ['a service-line row', '97110   1   1200.00'],
+    ['a page number and a row', 'Page 1 of 2   97110 1   150.00'],
+    ['numbered lines', 'Claim lines 1 2 3 4 5 6 7 8 9'],
+    ['an amount before a date', 'Paid $150.00 2026-11-01'],
+    ['a slashed date before a code', 'DOS 11/01/2026 97110 GP 1'],
+    ['an amount and a date on two lines', 'Billed 150.00\n2026-11-01'],
+    ['a compact date and a unit', '20261101\n1'],
+    ['a code and units on two lines', '97110\n1500 units'],
+    ['codes in a row', 'Codes 97110 97140 97530 G0283'],
+    ['a CPT range', 'CPT range 97110-97546'],
+    ['two dates', '2026-10-28 2026-11-01'],
+    ['a list', 'Lines 101; 102; 103'],
+    ['a ZIP+4', 'CA 90001-1234'],
+    ['a TIN', 'TIN 90-0123456'],
+    ['an ICN', 'ICN 10012345678'],
+    ['an EFT trace', 'EFT 1900123456'],
+    ['an NPI', 'NPI 2340178906'],
+    ['a column-aligned service-line row (SEC-2)', '97110        1        1200.00'],
+    ['a column-aligned ZIP+4 (SEC-2)', 'CA 90001        1234'],
+    ['a date glued to the next word after an amount (MOD-16 seed 20276943)', 'Billed $500-50 2020-01-01Paid $0,000.00'],
+    ['a service period joined by a hyphen (review round 2, finding 2)', 'Service 10/01/2026-10/15/2026.'],
+    ['a coverage period, unpadded', 'Eligibility 1/1/2026-12/31/2026 confirmed.'],
+    ['ISO dates joined by a hyphen', 'From 2026-10-01-2026-10-15.'],
+    ['dashed dates joined by a hyphen', 'Service 10-01-2026-10-15-2026.'],
+    ['amounts joined by a hyphen', 'Billed 150.00-120.00 allowed.'],
+    ['amounts joined by a hyphen, no word after', 'Range 123.45-67.89.'],
+  ])('refuses no letter of what must stay: %s', (_case, letter) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(redacted.text).toBe(letter);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
+    for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456']) {
+      expect(holdsIdentifier(text, A, AC), text).toBe(true);
+    }
+    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'RE: Vantree900-12-3456' })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+  });
+
+  it('rejects a claim reference that holds a placeholder without being one of the call’s claims (R10b)', () => {
+    const letter = syntheticLetterInput({ text: `${SYNTHETIC_LETTER}\nCall 202-555-0123 or ZZ-900-55-1234.` });
+    const context = denialLetterSpec.prepare(letter).context;
+    expect(context.text).toContain('Call [PHONE] or ZZ-[SSN].');
+    const reviewed = verifyDenialLetter(letter, { ...syntheticLetterOutput(), claim_references: [{ written: 'ZZ-[SSN]', quote: 'ZZ-[SSN]' }, { written: '[PHONE]', quote: 'Call [PHONE]' }] }, context);
+    expect(reviewed.proposal.fields.filter((field) => field.field.startsWith('claim_references')).map((field) => field.problems)).toEqual([['unknown_claim'], ['unknown_claim']]);
+    expect(reviewed.proposal.claims).toEqual([]);
+  });
+
+  it('refuses before the call a letter that writes another patient’s member ID SSN-shaped, and asks the records about it, never the call’s own', async () => {
+    const ON: FlagRow = { key: 'model.read_denial_letter', scope: 'global', scopeId: null, value: true };
+    const text = `${SYNTHETIC_LETTER}\nAlso member 900-55-1234.`;
+    const records = syntheticRecords(['900551234']);
+    const refused = syntheticLetterInput({ text, otherPatients: records });
+    const { gateway, local, store } = localGateway({ flags: [ON] });
+    registerOutput(local, 'readDenialLetter', refused, syntheticLetterOutput());
+    await expect(gateway.readDenialLetter({ practiceId: SYNTHETIC_IDS.practice, requestKey: 'letter-ssn-other' }, refused)).rejects.toMatchObject({ code: 'more_than_one_patient' });
+    expect(local.requests).toEqual([]);
+    expect(store.calls).toEqual([]);
+    expect(records.asked.flat()).toContain('900551234');
+    expect(records.asked.flat().some((candidate) => candidate.includes('SYNMEMBER0042') || candidate.includes('SYNCLAIM0001'))).toBe(false);
+    // The same letter with records that hold none of it is sent with [SSN] and no digit of the number.
+    const sent = syntheticLetterInput({ text, otherPatients: syntheticRecords([]) });
+    const second = localGateway({ flags: [ON] });
+    registerOutput(second.local, 'readDenialLetter', sent, syntheticLetterOutput());
+    await expect(second.gateway.readDenialLetter({ practiceId: SYNTHETIC_IDS.practice, requestKey: 'letter-ssn-sent' }, sent)).resolves.toMatchObject({ passed: true });
+    expect(second.local.requests[0]?.user).toContain('Also member [SSN].');
+    expect(second.local.requests[0]?.user).not.toMatch(/900-55|551234/);
   });
 });

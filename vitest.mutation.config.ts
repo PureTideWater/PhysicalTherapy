@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { type ViteUserConfig, configDefaults, defineConfig } from 'vitest/config';
+import { BaseSequencer, type TestSpecification } from 'vitest/node';
 
 import { MUTATION_PACKAGES, type MutationPackage, PACKAGE_VARIABLE } from './stryker/base.mjs';
 import { workspacePackages } from './tools/stryker/workspace';
@@ -16,6 +17,8 @@ import { workspacePackages } from './tools/stryker/workspace';
  *   into node_modules, and Stryker links node_modules into the sandbox, so without them a test that imports a package
  *   by name (`@tp/pricing`) reaches the original, unmutated files and can kill nothing there.
  * - **fast-check seeded** (tools/stryker/seed-setup.ts), so a property's kill does not change from run to run.
+ * - **The shortest test files first** (ShortestFirstSequencer), so a mutant meets the tests that kill it in
+ *   milliseconds before the properties that take seconds.
  *
  * The canary (tools/stryker/canary/vitest.config.ts) builds its configuration with the same function,
  * mutationTestConfig, so its cases prove the aliases and the seed exactly as the packages' runs use them.
@@ -55,6 +58,10 @@ export const EXCLUDED: readonly { readonly glob: string; readonly reason: string
   {
     glob: 'packages/packets/src/explain/purity.test.ts',
     reason: "reads the calculation words' source text for its imports and arithmetic, which Stryker's instrumentation rewrites, so it fails on every run",
+  },
+  {
+    glob: 'packages/packets/src/render-purity.test.ts',
+    reason: "reads the facts' catalog and renderer's source text for what they name and import, which Stryker's instrumentation rewrites, so it fails on every run",
   },
   {
     glob: 'packages/packets/src/explain/sentence-forms.test.ts',
@@ -114,8 +121,27 @@ export function mutationPackage(value: string | undefined = process.env[PACKAGE_
 }
 
 /**
+ * The order a mutant's test files run in: vitest's own (BaseSequencer: a file that failed in its last run first, then
+ * by the duration the results cache holds for it), but the shortest first, not the longest. Stryker stops a mutant's run
+ * at its first failing test (bail), and a file that failed last is the one that killed this runner's last mutant, which
+ * is often the next one's neighbour in the source. Longest first, the role reader's properties (seconds each: they build
+ * and read whole narratives) ran first for every mutant they cover, before the unit tests that kill most of them in
+ * milliseconds; shortest first, a reader mutant takes about a third of the time (69 of roles.ts's, measured on
+ * 2026-11-02: 2 min 30 s longest first, 43 s shortest), and each mutant's verdict is the same, since a mutant a test
+ * kills is killed whatever the order, and a survivor runs every test that covers it.
+ */
+export class ShortestFirstSequencer extends BaseSequencer {
+  override sort(files: TestSpecification[]): Promise<TestSpecification[]> {
+    const result = (spec: TestSpecification) => this.ctx.cache.getTestSpecificationResult(spec);
+    const failed = (spec: TestSpecification) => (result(spec)?.failed === true ? 0 : 1);
+    const duration = (spec: TestSpecification) => result(spec)?.duration ?? 0;
+    return Promise.resolve([...files].sort((a, b) => failed(a) - failed(b) || duration(a) - duration(b)));
+  }
+}
+
+/**
  * A mutation run's vitest configuration for the given test files: rooted here (the sandbox, under Stryker), every
- * workspace package aliased to this checkout's files, the exclusions, and fast-check seeded.
+ * workspace package aliased to this checkout's files, the exclusions, fast-check seeded, and the shortest files first.
  */
 export function mutationTestConfig(include: readonly string[]): ViteUserConfig {
   return {
@@ -125,6 +151,7 @@ export function mutationTestConfig(include: readonly string[]): ViteUserConfig {
       include: [...include],
       exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', ...EXCLUDED.map((excluded) => excluded.glob)],
       setupFiles: [path.join(ROOT, SEED_SETUP_FILE)],
+      sequence: { sequencer: ShortestFirstSequencer },
     },
   };
 }

@@ -10,6 +10,7 @@
     ".": "./src/index.ts",
     "./mark": "./src/mark.ts",
     "./tokens": "./src/tokens.ts",
+    "./contrast": "./src/contrast.ts",
     "./name": "./src/name.ts",
     "./tokens.css": "./src/tokens.css",
     "./tailwind-theme.css": "./src/tailwind-theme.css",

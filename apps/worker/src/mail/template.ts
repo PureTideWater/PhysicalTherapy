@@ -1,13 +1,17 @@
 import { brandName, palette } from '@paidwhole/brand';
+import { AUTH_MAIL_FOOTER } from '@tp/auth-mail';
 
 import { escapeHtml } from '../report/escape';
 
 /**
  * Who a message is for: a customer (the default; the lockup with its tagline, and a footer that says to sign in for
- * the details) or a prospect who has no account (a screening's link: the lockup without the tagline, decision D11,
- * since the tagline says owed and screening never does, and a footer that says why the message came).
+ * the details), a prospect who has no account (a screening's link: the lockup without the tagline, decision D11,
+ * since the tagline says owed and screening never does, and a footer that says why the message came), or an account
+ * holder told about their own sign-in (the password-changed email, docs/adr/0091: the customer's lockup, and the user
+ * pool's footer from @tp/auth-mail, so it reads as the pool's own messages do; with no static host it is that frame
+ * exactly, which a test holds).
  */
-export type MailVariant = 'customer' | 'prospect';
+export type MailVariant = 'customer' | 'prospect' | 'account';
 
 /**
  * The PaidWhole email template (docs/brand/BRAND.md, sections 3 and 7): the outlined horizontal lockup with
@@ -47,6 +51,7 @@ const EMAIL_PROSPECT_LOCKUP_HEIGHT = 29;
 export const MAIL_FOOTERS: Readonly<Record<MailVariant, string>> = {
   customer: 'This message carries links only; sign in to see the details.',
   prospect: 'This message carries a link only, and no patient information. It was sent because this address was given on the PaidWhole screening page; if that was not you, ignore it.',
+  account: AUTH_MAIL_FOOTER,
 };
 
 /** The subject as sent: the message's own subject, then the product's name. */

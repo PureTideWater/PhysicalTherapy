@@ -6,7 +6,7 @@ import { InputRefusedError } from '../errors';
 import { figureInQuote, inQuote, normalized, readDate, wholeInQuote } from '../figures';
 import { isSha256, sha256Hex } from '../hash';
 import { PROMPTS } from '../prompts';
-import { type LetterClaim, type PatientIdentifiers, compactIdentifier, holdsIdentifier, identifierCandidates, redactLetter } from '../redact';
+import { type LetterClaim, type PatientIdentifiers, compactIdentifier, holdsIdentifier, redactLetterForScreen } from '../redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameText } from '../untrusted';
 
@@ -16,15 +16,20 @@ import { frameText } from '../untrusted';
  * flag, model.read_denial_letter, which is off unless a platform administrator turns it on.
  *
  * Before the call: one patient's material only, and the patient's names, dates of birth and member IDs
- * and the claims' numbers replaced by placeholders (../redact.ts). The call is refused when:
+ * and the claims' numbers replaced by placeholders, and every Social Security number and phone number the
+ * letter writes replaced by [SSN] or [PHONE], whoever's it is (../redact.ts; the founder's ruling of
+ * 2026-11-01, docs/adr/0054, amendment of 2026-11-04). The call is refused when:
  * - the input names no patient identifier to strip (no name, no member ID) or no claim with a number:
  *   with nothing to strip, the letter would go as it is;
  * - a claim of the input is another patient's;
- * - the redacted text still holds one of the identifiers, in any form redaction reads;
- * - the redacted text holds a member ID or claim number the practice's records hold for another
- *   patient: the caller's records check (OtherPatientCheck) answers yes or no, and the gateway asks it
- *   before anything is sent, so a letter that lists a second patient is never sent (PRD 14: "never
- *   sends more than one patient's material in one call").
+ * - the redacted text still holds one of the identifiers, in any form redaction reads, or a Social
+ *   Security or phone number, or a chain of digits that could be one (identifier_left, a fixed message);
+ * - the letter holds a member ID or claim number the practice's records hold for another patient: the
+ *   caller's records check (OtherPatientCheck) is asked about the redactor's candidates (runs of the sent
+ *   text, of the letter with only the call's identifiers replaced, and every Social Security or phone
+ *   number it writes that is not the call's own) and answers yes or no, and the gateway asks it before
+ *   anything is sent, so a letter that lists a second patient is never sent (PRD 14: "never sends more
+ *   than one patient's material in one call").
  *
  * The verifier: every quote is in the letter as sent; every written value is in its own quote; the
  * deadline is a date code can read; a claim reference is a claim's placeholder (mapped back to the
@@ -45,8 +50,9 @@ export const denialLetterOutput = z.strictObject({
 export type DenialLetterOutput = z.output<typeof denialLetterOutput>;
 
 /**
- * The practice's records, asked one question: does any of these runs of the letter (compact: letters and
- * digits, upper case) equal a member ID or claim number the practice holds for a patient other than the
+ * The practice's records, asked one question: does any of these candidates (compact runs of the letter, and
+ * the compact form of every Social Security or phone number it writes that is not the call's own: letters
+ * and digits, upper case) equal a member ID or claim number the practice holds for a patient other than the
  * letter's? Yes or no; the records are never returned. The caller builds it in the practice's scope
  * (an audited read of the claims and patients).
  */
@@ -93,6 +99,8 @@ export interface DenialLetterProposal {
 interface LetterContext {
   readonly text: string;
   readonly claims: ReadonlyMap<string, string>;
+  /** What the one-patient screen asks the records about (redactLetterForScreen). PHI: in memory for the screen only. */
+  readonly candidates: readonly string[];
 }
 
 function review(field: string, problems: LetterProblem[]): LetterFieldReview {
@@ -140,7 +148,8 @@ export function verifyDenialLetter(input: DenialLetterInput, output: DenialLette
     const problems = quotedProblems(reference, context.text, 'reference');
     const written = normalized(reference.written);
     const claimId = context.claims.get(written.toUpperCase());
-    if (/^\[[A-Z_]+(_\d+)?\]$/.test(written) && claimId === undefined) {
+    // A placeholder, or a reference holding one ("ZZ-[SSN]", "1234-[PHONE]"), that is not one of the call's claims.
+    if (/\[[A-Z_]+(_\d+)?\]/.test(written) && claimId === undefined) {
       problems.push('unknown_claim');
     }
     const result = review(field, problems);
@@ -200,7 +209,7 @@ export function verifyDenialLetter(input: DenialLetterInput, output: DenialLette
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput, DenialLetterProposal, LetterContext> = {
+export const denialLetterSpec = Object.freeze<PurposeSpec<DenialLetterInput, DenialLetterOutput, DenialLetterProposal, LetterContext>>({
   purpose: 'readDenialLetter',
   prompt: PROMPTS.readDenialLetter,
   output: denialLetterOutput,
@@ -218,7 +227,7 @@ export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput
     if (normalized(input.text) === '') {
       throw new InputRefusedError('no_text', 'the letter has no text to read');
     }
-    const redacted = redactLetter(input.text, input.patient, input.claims);
+    const redacted = redactLetterForScreen(input.text, input.patient, input.claims);
     if (holdsIdentifier(redacted.text, input.patient, input.claims)) {
       throw new InputRefusedError('identifier_left', 'the letter still holds an identifier after redaction; it is not sent');
     }
@@ -226,14 +235,14 @@ export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput
       user: `Read the payer letter below and answer with the fields the schema describes. Identifiers in it are placeholders in square brackets; cite a claim by its placeholder.\n\n${frameText('payer_letter', redacted.text)}`,
       inputHashes: [input.documentSha256],
       variant: 'default',
-      context: { text: redacted.text, claims: redacted.claims },
+      context: { text: redacted.text, claims: redacted.claims, candidates: redacted.candidates },
     };
   },
   async screen(input, prepared) {
-    const candidates = identifierCandidates(prepared.context.text);
+    const { candidates } = prepared.context;
     if (candidates.length > 0 && (await input.otherPatients.holdsOtherPatient(candidates))) {
       throw new InputRefusedError('more_than_one_patient', 'a call reads one patient’s material; this letter names another patient of the practice');
     }
   },
   verify: verifyDenialLetter,
-};
+});

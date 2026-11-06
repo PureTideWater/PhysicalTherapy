@@ -11,7 +11,7 @@ import { mailBodyHtml } from '../../worker/src/mail/mail';
 import { EMAIL_LOCKUP_PATH } from '../../worker/src/mail/template';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
 import { personaEmail } from '../scripts/synthetic-personas';
-import { expectAccessible } from './a11y';
+import { expectAccessible, expectAccessibleInDark, focusContrast, setDark, tabTo } from './a11y';
 import { signInWithTotp } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, untilLoaded, uploadedEarlier } from './journeys';
 import { startLocalWorker } from './worker';
@@ -380,6 +380,52 @@ test('the sign-in page is the stacked lockup on Paper, and nothing else decorati
   await page.screenshot({ path: shot('sign-in.png'), fullPage: true });
 });
 
+/** The dark ground, `--pw-bg` in the dark tokens, rgb() as the browser computes it. */
+const DARK_GROUND = 'rgb(11, 22, 38)';
+
+/**
+ * The sign-in frame in dark (review UXD-N1; docs/adr/0056, dark is tokens-only): the frame takes the dark ground, so
+ * its links, the link button, its headings, its muted lines and the lockup meet WCAG's contrast on the dark tokens, and
+ * the focus on the frame's own links draws at 3:1 or more. Each screen is checked at 1280 px, and the sign-in page at
+ * 390 px too; light stays Paper. Each check is soft, so one run reports every screen and check that fails. Synthetic pages
+ * only: none of these needs an account.
+ */
+test('the sign-in frame reads in dark: the dark ground, axe-core contrast, and the focus at 3:1 on the frame', async ({ page }) => {
+  // Five screens, each with soft checks that wait out their own timeout when they fail: room for a red run to report all.
+  test.setTimeout(120_000);
+  const screens: readonly { readonly name: string; readonly path: string; readonly width: number; readonly focus?: string }[] = [
+    { name: 'sign-in', path: '/sign-in', width: 1280, focus: 'Forgot your password?' },
+    { name: 'sign-in', path: '/sign-in', width: 390, focus: 'Forgot your password?' },
+    { name: 'sign-in-locked', path: '/sign-in?reason=locked', width: 1280 },
+    { name: 'forgot-password', path: '/sign-in/forgot-password', width: 1280, focus: 'Back to sign in' },
+    { name: 'hardware-key', path: '/sign-in/hardware-key', width: 1280 },
+  ];
+  const ground = page.locator('[data-slot="sign-in-ground"]');
+  for (const screen of screens) {
+    const what = `${screen.path} at ${String(screen.width)} px`;
+    await page.setViewportSize({ width: screen.width, height: screen.width === 390 ? 844 : 900 });
+    await page.goto(screen.path);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    await setDark(page, true);
+    try {
+      await expect.soft(ground, `${what}, dark: the frame's ground`).toHaveCSS('background-color', DARK_GROUND);
+      if (screen.focus !== undefined) {
+        await tabTo(page, { role: 'link', name: screen.focus });
+        const focus = await focusContrast(page);
+        expect.soft(focus.ratio, `${what}, dark: the focus on ${screen.focus} (${focus.outline} on ${focus.ground})`).toBeGreaterThanOrEqual(3);
+        await page.locator('body').focus();
+      }
+      await page.screenshot({ path: shot(`dark-${screen.name}-${String(screen.width)}.png`), fullPage: true });
+    } finally {
+      await setDark(page, false);
+    }
+    await expectAccessibleInDark(page, what, { soft: true });
+    // Light, the control: the same frame on Paper.
+    await expect.soft(ground, `${what}, light: the frame's ground`).toHaveCSS('background-color', PAPER);
+  }
+});
+
 test('the workspace wears the brand: header, brass underline, tiles in mono, status as text on tint; and the printed cover earns the seal only from the ledger', async ({ page, baseURL, browser }) => {
   test.setTimeout(420_000);
   const requests = recordRequests(page);
@@ -443,8 +489,13 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
   await test.step('the dashboard tiles: label in Slate, the figure in Plex Mono, recovered named with its proof level', async () => {
     const tiles = page.locator('[data-slot="tile-row"]');
     await expect(tiles.locator('[data-figure="recovered-total"]')).toContainText('Recovered (posted)');
-    await expect(tiles.locator('[data-figure="actionable"] .font-mono')).toHaveCSS('font-family', /mono/i);
-    await expect(tiles.locator('[data-figure="actionable"] .font-mono')).toHaveCSS('font-variant-numeric', 'tabular-nums');
+    // The tile's dollars and its note's line counts, each in the mono face (docs/brand/BRAND.md: every unit count).
+    const monos = await tiles.locator('[data-figure="actionable"] .font-mono').all();
+    expect(monos.length).toBeGreaterThanOrEqual(2);
+    for (const mono of monos) {
+      await expect(mono).toHaveCSS('font-family', /mono/i);
+      await expect(mono).toHaveCSS('font-variant-numeric', 'tabular-nums');
+    }
     await expectAccessible(page, 'The dashboard on brand');
     await page.mouse.move(0, 0);
     await tiles.screenshot({ path: shot('dashboard-tiles.png') });

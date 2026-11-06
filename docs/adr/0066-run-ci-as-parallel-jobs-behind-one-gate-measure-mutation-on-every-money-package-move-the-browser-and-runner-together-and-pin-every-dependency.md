@@ -1,8 +1,10 @@
 # 0066. Run CI as parallel jobs behind one gate, measure mutation on every money package, move the browser and runner together, and pin every dependency
 
 - **Status:** accepted, Part 1 (`co-001/ci-speed`, combined audit #109), Part 2 (`co-001/ci-deps`, #112, with #19's
-  assert loosening, Dependabot groups and licence fix), Part 3 (`co-001/ci-browser`, #19's upgrade part) and Part 4
-  (`co-001/ci-mutation`, #54). Part 1 amends
+  assert loosening, Dependabot groups and licence fix), Part 3 (`co-001/ci-browser`, #19's upgrade part), Part 4
+  (`co-001/ci-mutation`, #54), Part 5 (`co-001/ci-pin-age`, the series' follow-up P1) and Part 7
+  (`co-001/ci-mutation-trigger`, the series' follow-up P4; Part 6 is the follow-up P2's, `co-001/ci-trivy-version`,
+  and goes before Part 7 when it merges). Part 1 amends
   [0010](0010-supply-chain-gates-beside-ci.md) (the image and licence gates run as ci.yml jobs under `all green`) and
   [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
   (the required checks, the job that writes the domain model's summary, the per-job timeouts).
@@ -24,17 +26,34 @@
     (the release restores no cache, so the attested capacity report depends only on its own run) and
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
-    SHA at its release).
-- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26
+    SHA at its release). Amended 2026-11-01 (`co-001/dependabot-group-routing`): each dependency in one Dependabot
+    group (the amendment closing Part 2).
+  - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
+    read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
+    newness is read from the base's workflows, and its digest is aged with every other image).
+  - **Part 7** (`co-001/ci-mutation-trigger`) amends Part 4 (the root manifest, the workspace list, the workflow and
+    each closure's manifest are read field by field, not whole; and the gate holds every shard, not only one scoring
+    Unicode-bound equivalents, to the pinned Node, Unicode, ICU and pnpm and to the tested commit).
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28; N32 2026-10-28; Part 7 2026-11-02
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
+  - **Part 7:** the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended option, for
+    security the safer one), under which the follow-up itself (P4, an engineering item the series' design proposed) is
+    taken and each notice below is made; and his Q3 of 2026-10-25, about 21:05 UTC (engineering-only choices inside an
+    already-ruled design are pre-approved and reversible).
+  - **Part 5:** the founder's F2 (b) (the three-day release age, with a dated, exact exclude of at most seven days),
+    relayed by the co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's CQ1 (a) (actions and images keep
+    Dependabot's seven days); and the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended
+    option, for security the safer one), under which the follow-up itself (P1) is taken and each notice below is made.
   - **Part 4:** item #54 of that audit, placed "CI PR before PR 7"; and the founder's ruling of 2026-10-25, relayed by
     the co-founder, that his adoption covers #54's 85% exit for milestone 6 and Gate 1 (the series' question F6).
   - **Part 3:** item #19 of that audit (its upgrade part); the founder's F4 and F5 (F5 as recommended), relayed by the
     co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's Q2 (2026-10-25, about 21:05 UTC) and ruling of
     2026-10-26, about 00:20 UTC (every choice its recommended option, for security the safer one; the baselines'
     inspection by an adversarial visual-inspection agent's private gallery, not blocking the merge).
+    N32 is made under the same ruling of 2026-10-26, for the item Lane A's orchestrator handed Lane B on 2026-10-28 at
+    05:45 UTC (reconciliation-001).
   - **Part 2:** items #112 and #19 of that audit; the founder's rulings on the series' questions F1 (a), F2 (a) and
     (b), F4 and F7, relayed by the co-founder on 2026-10-25 at about 01:10 UTC, F7 applied that day at 21:14 UTC; and
     the co-founder's answers to CQ1, CQ2 and CQ3, each its recommended and safer option (2026-10-26, about 00:20 UTC),
@@ -42,6 +61,10 @@
 - **PRD sections:** 16 (dependency and image hygiene), 17 (milestone 0: "CI with every gate from section 18"), 18
   (continuous integration: "one workflow on every pull request"); Change Order 001, CO-02; reconciliation-001's checks;
   test matrix CI-01 to CI-10; ADRs 0010, 0058, 0062, 0063 and 0064
+  - **Part 7:** 18 (the mutation layer and continuous integration); reconciliation-001's record of the co-founder's
+    ruling of 2026-10-26; test matrix CI-27 to CI-29; Part 4 of this record.
+  - **Part 5:** 16 (dependency and image hygiene), 18; reconciliation-001's record of the co-founder's ruling of
+    2026-10-26; test matrix CI-21 to CI-23; ADR 0063 (a token on one step, as approval-of-record's).
   - **Part 4:** 17 (milestone 6's check), 18 (the mutation layer and continuous integration); reconciliation-001's
     checks (the engine freeze, the ledger's additions-only rule, the milestones); test matrix CI-15 to CI-17; ADRs
     0047 and 0064.
@@ -118,7 +141,9 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
   a merge's push follows the pull request's gated run; the build branch's ruleset (step 4A, applied 2026-10-25 21:14
   UTC) refuses a direct push, and the differential test still checks every push (`docs/runbooks/ci.md`).
 - **History.** `static`, `unit` and `domain model` check out the whole history (the scan, the differential test's
-  `git archive` of the base, the summary's base document); no checkout keeps the token, since no step calls GitHub.
+  `git archive` of the base, the summary's base document); no checkout keeps the token, since no step calls GitHub
+  (amended by Part 5: one step, Action pins, is given the job's read-only token for the age rule's reads of GitHub's
+  API, and no checkout keeps it still).
 - **Artifacts.** Upload-artifact names (v4 and later; v7 since Part 2) are unique per run and immutable, so every per-run name (`web-build`,
   `playwright-<k>`) sets `overwrite: true`, and a re-run of failed jobs replaces rather than fails.
 - **Logs.** Every verdict written to a job's summary is written to its log too (`tee -a`), because the verifier reads
@@ -451,7 +476,9 @@ the founder's tag.
   builds sets up buildx first, and that no container or `docker://` step runs by tag. Dependabot cannot update a
   `driver-opts` string, so `check-action-pins` reads Docker Hub for it on every networked run: the version's tag must
   be the pinned digest, and a newer release three days old is a warning naming it, for the manual step in
-  `docs/runbooks/dependency-upgrades.md`.
+  `docs/runbooks/dependency-upgrades.md` (amended by Part 5: the newer-release warning takes the workspace's floor
+  through `releaseAgeMinutes`, the builder's newness is read from the base's workflows, a push only warns, and the
+  builder's own digest is aged with every other image by check-toolchain's image rule).
 - **Postgres comes from the compose file everywhere.** `services:` cannot read an image from a file, four digest copies
   in workflows would drift (Dependabot's actions ecosystem rewrites only `uses:`), and a job output feeding `services:`
   would add a job to the critical path. So ci.yml's db, domain-model and e2e jobs and large-zip.yml declare no
@@ -711,9 +738,153 @@ together.
 
 GitHub lists pnpm 11 or later as supported for Dependabot (pnpm 11.3's `trustLockfile` then checks every lockfile entry
 on every install); actionlint accepts `concurrency.queue` and the bot-queue reading shows a lane waiting over 15 minutes
-(O13); a newer trivy is wanted than trivy-action's default (a `version:` pin and its check); the repository goes private
+(O13); a newer Trivy is wanted (`tools/trivy/release.txt`, below, amended 2026-11-04); the repository goes private
 (about 10 bot pull requests a week, about 3,500 to 4,000 billed minutes a month); or the launch switches the default
 branch back to `main`.
+
+### Amendment (`co-001/dependabot-group-routing`, 2026-11-01): each dependency in one group
+
+"In this order" (above) did not route. Dependabot ranks a group with no patterns (500) above a wildcard pattern
+(`@aws-sdk/*` 95, `@next/*` 92) and the empty group never gives a dependency up (dependabot-core 85379652,
+`pattern_specificity_calculator.rb`, `dependency_group_engine.rb`), so npm run 40818560725 assigned the nine
+`@aws-sdk/*` packages and `@next/eslint-plugin-next` to minor-and-patch, and its pull request (#89) carried the nine
+`@aws-sdk/*` with stripe (`@next/eslint-plugin-next` had no update); an exact name was in two groups, kept out of
+minor-and-patch's pull request only by the file's order. GitHub's documentation says the first matching group wins.
+minor-and-patch now excludes every pattern the specific groups name, which routes each dependency to one group under
+both rules; CI-12 ports the assignment and routes every direct dependency. Alternative: `patterns: ["*"]` on
+minor-and-patch (rests on undocumented scores; routes as before under the documented rule). Revisit when: Dependabot
+documents its group precedence; a group is added (the test fails until it is excluded); or dependabot-core changes its
+group assignment, such as how `exclude-patterns` or a group without patterns matches (GitHub picks the updater for
+each run: the weekly triage's step 1 reads each npm run's updater and its log for it).
+
+The same reading corrects a consequence above: the file's `ignore` entries do not hold for security updates. They name
+update types, which dependabot-core applies to version updates only (`ignore_condition.rb` at 85379652: a security job
+keeps only an entry's `versions`), so an advisory fixed only in an ignored major may open a `security` pull request
+that crosses it. The weekly triage reads such a pull request as a deliberate upgrade, and still reads the open alerts
+for a fix no pull request takes.
+
+### Amendment (`co-001/ci-trivy-pin-2026-11-04`, 2026-11-04): Trivy from its pinned release
+
+From 2026-11-03 every Trivy step failed before scanning. trivy-action v0.36.0 (`ed142fd0`) installs Trivy
+through setup-trivy (`3fb12ec1`), whose installer (trivy's `contrib/install.sh` at `75c4dc0f`) downloads the binary
+only from get.trivy.dev, and that name stopped resolving (NXDOMAIN, aquasecurity/setup-trivy#42; curl exit 6 in ci run
+41763423759, job 126356134153, and on PRs #103 and #104, six installs of six). The release assets on GitHub still
+download, so a re-run cannot pass, and no release could scan.
+
+- `tools/trivy/install.sh <dir>` installs Trivy the way `tools/gitleaks/install.sh` installs gitleaks:
+  - it reads `tools/trivy/release.txt`: version 0.70.0, trivy-action v0.36.0's default, so every scan reads as before;
+  - it downloads `trivy_0.70.0_Linux-64bit.tar.gz` (or `Linux-ARM64`) from
+    `github.com/aquasecurity/trivy/releases/download/v0.70.0/`;
+  - it checks the archive against the SHA-256 that `release.txt` pins before anything in it runs;
+  - it extracts `trivy` alone and requires it to report the pinned version;
+  - it installs it into the directory given, with no cache.
+- One step, "The pinned Trivy", word for word the same, installs it into `$RUNNER_TEMP/trivy-bin`, puts that
+  directory on `PATH` and writes `TRIVY_CMD`, its absolute path, which trivy-action's entrypoint runs in place of
+  `trivy` from `PATH` (where each trivy-action step prepends its own directory). It runs in ci.yml's `images` job, in
+  release.yml's `build` and in the dry run's `build`.
+- The installer's curl takes https alone and follows a redirect only to https (`--proto '=https,file'
+  --proto-redir '=https'`, `file:` for the tests' mirror), as `tools/gitleaks/install.sh`'s now does.
+- Each trivy-action step keeps its pin and adds only `skip-setup-trivy: true`. Severity, `ignore-unfixed`,
+  `exit-code`, format, `cache: false`, `cache-dir` under `runner.temp` and the database source are unchanged. The
+  database source is Trivy 0.70.0's default, `mirror.gcr.io/aquasec/trivy-db:2`. That database is trusted by its
+  registry tag and the transport, as it was before; pinning it, or reading `ghcr.io/aquasecurity/trivy-db:2` from
+  aquasecurity's own namespace, is a separate decision, not taken here.
+- So "the release restores no cache" holds for the binary as it did through setup-trivy's `cache: false`: every run
+  installs its own copy.
+- release-dry-run.yml also runs on a change to `tools/trivy/**`.
+- `workflows.test.ts` holds it, red on 4846f043 first (CI-11):
+  - every job with a Trivy step runs the install step before that step;
+  - every Trivy step skips setup-trivy and names no version;
+  - no workflow line but a comment names setup-trivy or its host;
+  - the pins are in their form, and the hash is checked before `tar`;
+  - the installer runs offline from a `file://` mirror: the pinned archive installs, another archive is refused and
+    leaves nothing, and a trivy that reports another version is refused.
+
+The pin, read on 2026-11-04:
+- `trivy_0.70.0_checksums.txt` has SHA-256 `c45281240bb9211ea9e830fc0bf5cf8acf7c0ca830feb64ac8a0aa932c5c92d9`.
+- Both archives' SHA-256s are the file's lines, and the two pinned in `release.txt`.
+- The file's Sigstore bundle (`trivy_0.70.0_checksums.txt.sigstore.json`) holds a certificate for
+  `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v0.70.0`. The certificate
+  names commit `8a3177aedf7ee0864920eb1852eef031cd3742b8`, run 24550601142, a GitHub-hosted runner and a push
+  trigger, and was issued 2026-04-17.
+- That is about six and a half months old, far past the three-day floor (Part 5). It is also after the March 2026
+  trivy-action tag hijack that Part 5 names. The upstream tag `v0.70.0` names that commit (git ls-remote, 2026-11-04).
+- The bundle verifies offline against Sigstore's public-good trusted root as sigstore-python 4.5.1 ships it (no TUF
+  fetch; sigstore-python's own verifier refuses the bundle only for want of its RFC 3161 timestamp authority, which
+  the Rekor entry makes unnecessary): the leaf certificate chains to Fulcio; its ECDSA signature over
+  `trivy_0.70.0_checksums.txt` verifies; the bundle's digest is the file's SHA-256; the Rekor entry's body names that
+  hash, that signature and that certificate; Rekor's signed entry timestamp verifies with rekor.sigstore.dev's key; and
+  its integrated time, 2026-04-17T06:46:08Z, lies inside the certificate's ten minutes.
+- At run time the pinned SHA-256 decides, as it does for gitleaks. It is a stronger check than setup-trivy's: that
+  installer fetched its checksum from the same release at run time.
+- Part 5's age rule reads `release.txt` (`tools/check-action-pins/releases.ts`, `PINNED_RELEASES`, with
+  `tools/gitleaks/release.txt`): a version new against the base resolves its upstream tag `v<version>` (git ls-remote,
+  three tries, then it fails closed), a tag the upstream does not list is refused (the compromised v0.69.4's tag was
+  deleted upstream), and the tag's commit is aged as a new action pin is: on the default branch, a time GitHub
+  recorded, three days by the youngest time read, the same excludes (CI-21). Before this, the version came from
+  trivy-action's pin, which that rule aged; a file no machine read would have loosened it.
+- A new Trivy is a pull request that changes every line of `release.txt`, each SHA-256 copied from the release's
+  checksums file; `pnpm actions:check` holds its age. docs/runbooks/ci.md says so.
+- Follow-up, not in this change: a pin-time check of the checksums file's Sigstore bundle against a pinned trusted
+  root, requiring the identity `https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v<version>`,
+  the issuer `https://token.actions.githubusercontent.com` and a GitHub-hosted runner, with the file's SHA-256 recorded
+  in `release.txt`; the same for gitleaks and for the actionlint pin in `tools/setup-container.sh`.
+
+Alternatives considered for Trivy:
+- **Re-run until get.trivy.dev answers.** The name looks removed rather than briefly down: the `trivy.dev` zone was
+  edited on 2026-11-03, and other repositories moved to the release assets.
+- **Run `trivy` directly, without trivy-action.** It would rewrite five steps and their tests next to #86's hunks.
+  setup-trivy no longer runs either way. It would also stop the runner downloading setup-trivy and its nested checkout
+  at "Set up job", which it does for every action a composite nests whatever each step's `if:` says, so an
+  unresolvable setup-trivy would still fail these jobs there; that was weighed against the conflict surface with #86
+  and left for a later change.
+- **A `version:` input.** It still installs through get.trivy.dev.
+- **Verify the checksums file with cosign on every run.** That is another pinned binary, plus Sigstore's TUF and
+  transparency log on every scan. It would be a new network dependency of the kind that just failed, while the pinned
+  hash already fixes the bytes.
+- **Fetch the checksums file at run time.** It adds nothing to a hash committed here.
+- **The `aquasec/trivy` image by digest.** It is another artifact to pin and age. It would also need Docker to reach
+  each archive and the daemon's image.
+
+### Amendment (`co-001/ci-trivy-install-2026-11-04`, 2026-11-04): no partial clone on a private repository
+
+The repository went private on 2026-11-04 at about 02:51Z. screening-capacity's `changes` job checked out with
+`filter: blob:none` and `persist-credentials: false`, so its `git diff --name-only` (rename detection) and `git show`
+fetched blobs from the promisor remote with no credentials. That failed: "could not read Username for
+'https://github.com'", run 41765454724, job 126369187941, exit 128. The repository was public again from about 07:10Z;
+the rules below stay, so the gate keeps working if it goes private again.
+
+- Its checkout now fetches every object, once, with the job's token (`fetch-depth: 0`, no filter, about 34 MiB packed).
+  `persist-credentials: false` and `contents: read` stay.
+- A blobless clone could also have read an unfetchable list as "the base keeps no watched list", through
+  `git cat-file -e`. A full clone cannot.
+- `workflows.test.ts` holds four rules (CI-11):
+  - no checkout that keeps no token makes a partial clone;
+  - the `changes` script passes on a full clone whose remote is gone and fails on a blobless one;
+  - no step runs git fetch, clone, `ls-remote`, pull, `submodule update` or `archive --remote` (with any global
+    options before the command), reads raw.githubusercontent.com, or curls the API, the server or this repository by
+    any of their names (`$GITHUB_API_URL`, `${{ github.api_url }}`, `$GITHUB_SERVER_URL`, `$GITHUB_REPOSITORY`,
+    owner/name), and every `gh` step sets `GH_TOKEN`; a mutation case per form;
+  - the same scan holds every shell script under `tools/` and `.github/`, and every TypeScript entry point a step
+    runs (directly or through a package.json script) with the `tools/` files it imports: git against a remote only in
+    `check-action-pins` (other owners' upstreams; no `uses:` names this repository), and GitHub's API or `gh` only
+    where the step is given the job's token.
+
+The audit of every workflow and the scripts they run found nothing else that read this repository unauthenticated:
+- Every other checkout is full (`fetch-depth: 0`) or reads only its own commit, and no step fetches after it.
+- Every `gh` step (the content calendar, release-capacity, screening-capacity's `notify`, release.yml's `report`) sets
+  `GH_TOKEN` and `GH_REPO`.
+- approval-of-record reads the API with the job's token.
+- `check-action-pins` and `check-toolchain` read only upstream repositories and registries.
+- gitleaks, fixture-check, check-releases-immutable, engine-freeze and stryker's affected set read the local clone.
+- The launch check's `gh attestation verify` reads only the release's bundle and Sigstore's trusted root, never this
+  repository.
+- Not a read, and the founder's: release.yml's `report` job runs actions/attest-build-provenance, and artifact
+  attestations for a private repository need GitHub Enterprise Cloud, so a release's report goes unattested and
+  production's screening stays closed until that is decided (open item O15, docs/runbooks/screening-capacity.md). Not
+  changed here.
+- Runner sizes, the 4-CPU harness minimum and the larger-runner and GitHub Team decision are the founder's, and are not
+  changed here.
 
 ## Part 3 (`co-001/ci-browser`)
 
@@ -963,6 +1134,106 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   each with a stand-in docker that accepts those two forms only, a stand-in `sha256sum` that fails on one file, and
   stand-in binaries whose bytes stay equal to the record while they print another version, fail to start or lose their
   execute bit.
+- **N32** (`co-001/ci-images-digest`, 2026-10-28). The images job's two identity steps take only the config digest
+  they compare, `fromJSON(steps.<id>.outputs.metadata || '{}')['containerimage.config.digest']`, never the whole
+  metadata output. The branch's commit messages call it N29, the number it held until the merge of #82, whose Part 5
+  notices, N23 to N31, include an N29 of their own.
+  - **Why.** buildx v0.38.1 copies the whole event into every build record's provenance and, by default, into the
+    metadata output. On #42's description of 95,324 characters, that output reached 132,377 bytes, 132,387 as one
+    environment string (`NAME=value` and its NUL), over Linux's 131,072 (`MAX_ARG_STRLEN`; the whole environment and
+    arguments are held to `ARG_MAX` besides), so bash never started (job 122624309161).
+  - **The guard.** The `|| '{}'` keeps an empty output on the step's own message: the runner evaluates a step's
+    `env` before its `if:`, so no condition could guard it.
+  - **The builds.** Every `docker/build-push-action` step also sets `BUILDX_METADATA_PROVENANCE: disabled`. No step
+    reads the provenance, and the event stops being printed in each build's log.
+    - **The build record.** build-push-action's post step exports each build's record (a `.dockerbuild` file:
+      BuildKit's history, whose provenance carries buildx's `github_actions_context.json`, the whole event: a pull
+      request's description, title and labels, a push's commit messages and its authors' names and e-mails) and
+      uploads it as an artifact. The repository is public, so any signed-in GitHub account can download it, for 90
+      days (no retention is set), after the description is edited. So every build step also sets
+      `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: a pull request's run uploads no record
+      (it is still written on the runner, and the build summary without its link), while every other run (a push's, a
+      scheduled or a dispatched one's, the release's) keeps the default upload, the release's record being the only
+      full provenance of a released image (its images build with `provenance: false`). build-push-action v7.4.0 reads
+      the variable in its post step with actions-toolkit's `parseBool`. A build's env holds these two variables and no
+      other, and no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job (its env or its container's) or
+      workflow (`DOCKER_BUILD_SUMMARY: false` would skip the record on every run): a job container's `options` set no
+      variable (`--env`, `-e`, `--env-file`) and none is given by an expression, and a service's name none. A variable
+      a container image's own config sets is not read; each image is the pin rules'. A workflow that holds a build runs
+      only on `push`, `pull_request`, `schedule` or `workflow_dispatch`: on another event whose payload carries a pull
+      request (`pull_request_target`, a review or a comment on one, `workflow_run`) the expression is true and the
+      record, with the description and title, would be uploaded. Decided for the safer option under the same ruling.
+    - **A proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder, needs
+      #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
+      `image=…@sha256:…`), so it stays with the founder.
+  - **What holds it.** `workflows.test.ts` reads every expression of this repository's workflows that reaches a step's
+    environment, an input or a script, or a key, as the runner reads it, and admits only a closed list; it refuses an
+    expression in any key: GitHub evaluates one in an env name, a step input's name (`INPUT_<key>`), a service's id or
+    a matrix key, and in keys whose own text reaches no process (a container's or a service's own, registry
+    credentials, `strategy`, a matrix's `include` entries, a job's `defaults.run`), and refuses one when it parses the
+    file in the rest (`on:`, the workflow's `defaults.run`, a job's id or outputs, a step's own keys, a reusable
+    workflow's `with:` and `secrets:`). It refuses a key
+    of a workflow, a job or a step outside the closed list it reads (a nested `parallel:` list of steps, say), so no
+    expression in a workflow goes unread. That list holds values GitHub or the workflow bounds, and every step output
+    and value one job hands another, each listed with its bound. It reads this repository's workflows: a pinned
+    action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read by it
+    (`pnpm actions:check` reads a pin's `action.yml` for the pin rules, never to bound a value). The defect this
+    notice fixes came from action code, buildx copying the event into its metadata, which no expression rule can read,
+    so every step output is bounded where a workflow hands it to a process, by the value rule and its list.
+    - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
+      by its job and id (a `uses:` step with its action, whose pin is the pin rules'), a job's output (which must
+      declare one step's or needed job's output alone, whose own row's bound is within the reader's), a matrix key, a
+      job the reader needs, and tool code by the name it declares (`path#symbol`). The steps, needed jobs and job
+      outputs a row names are exactly those its value reads (a `steps.<id>` value its own job's step `<id>`, a
+      `needs.<j>.outputs.<n>` value job `<j>` and its output `<n>`, `toJSON` each job and output it is given), so a
+      row that cites another job's producer, or leaves its own out, fails. A row whose producer is a workflow's `run:`
+      step holds the fingerprint of what the script runs with as parsed: its `run`, its `env` over its job's and the
+      workflow's, its `shell` and `working-directory` or the `defaults.run` its job or the workflow gives, and its
+      job's container, so a changed script or input, its own or inherited, fails until a person re-reads the bound and
+      updates it; a row whose bound is tool code's names instead, by its title, the unit test its owners keep for that
+      bound, since other lanes change that code for their own reasons. The test checks that the title is one test's
+      alone in its file, written to run whenever its file runs: a plain `it()` or `test()` at the file's top level or
+      directly in a plain `describe`'s callback, with no skip, todo, only, fails, each, skipIf or runIf, no if, loop,
+      ternary, function or `return` around it, no `it`, `test` or `describe` of its own scope's (an import from vitest
+      under its own name aside), its context read for its `expect` or `signal` alone, and no skip in its options, in a
+      call named `skip`, or in any hook of its file (each hook a function written there whose context is read the same
+      way). It does not check what that test asserts, nor that a project's include list runs its file.
+    - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
+      `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
+      github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
+      holding what toJSON writes of every output it reads, quoted and escaped, six bytes a byte at most, with their
+      names and indents), and refuses one over 131,072 bytes, or one holding a value with no bound, with no exception. A
+      mapping given as one expression (an env, a step's `with:`, a container or a service), whose names and strings come
+      from the value at run time, is refused, so each string a workflow sets is one the sum reads. It holds each
+      argument the runner hands a process to the same 131,072 bytes (a container's or a service's image, options,
+      entrypoint or command, a default or a step's shell), and every string a step's process or a container is given
+      from the workflow, together, under `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's own. A value a job passes
+      a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's own sum gives
+      `secrets.<name>` (the pin rules refuse a reusable workflow today, so none is passed). What a script builds from
+      the values it reads, its own commands' arguments, is the script's: no rule reads it.
+    - No listed value is over the limit. The content calendar's findings, once its check job's output (up to 933,336
+      characters, 1,866,672 bytes as GitHub counts an output, UTF-16, over its 1 MB limit) read by its notify job as one
+      environment variable over the limit (`FINDINGS_B64`), travel as the run's own artifact: the check job uploads
+      `findings.json`, and the notify job (and on a pull request the handoff job) downloads it with `gh run download`,
+      so they pass through no job output and no environment string (docs/adr/0071, Amendment,
+      `co-001/ci-findings-transport`). Every listed value whose bound passes 131,072 bytes is held to the places it is
+      read: publish-content's release numbers, read in one script.
+    - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
+      is one entry of a closed map, its variable's only write: its exact line (so its value's form too) and each file,
+      job and step that makes it, once, with that step's fingerprint (a changed script or input, its own or inherited, fails until a person
+      re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
+      reading the whole file it writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is
+      refused in any env. Nothing else names it: a shell (a step's or a default), an input, or an env's name or value
+      naming `$GITHUB_ENV` or `$GITHUB_PATH` is refused, since a command template or an action could write it unread,
+      and so is anything naming the runner's file command files (`_runner_file_commands`, or a file's own name,
+      `set_env_` or `add_path_`, which a script could reach beside `$GITHUB_OUTPUT`'s), a script line included.
+      `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has a closed map of
+      its own, held the same way: its one entry is the pinned Trivy's directory, written beside its `TRIVY_CMD` by the
+      install step of each job that scans (the amendment of 2026-11-04 to Part 2), and every other line naming it is
+      refused. Every other tracked file naming any of these (a script or tool code a step runs, a
+      package's script) is one of a closed list, each with why it sets nothing. A script that reaches the file without
+      naming it (a name built at run time, another interpreter) and a dependency's or a pinned action's own code are
+      not closed by reading text.
 
 ### Consequences
 
@@ -1089,8 +1360,9 @@ is fully run when every shard holding it ran. The gate fails when:
 - for a fully-run package, a recorded equivalent lacks its reviewer and date, is reviewed by its proposer or on a date
   after the run, no longer matches a mutant (stale), or matches one a test detects or that breaks a load;
 - for a fully-run package, an equivalent that rests on the engine's Unicode data (`tools/stryker/unicode.json`) was
-  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on, or the listing names an
-  entry no equivalents file records.
+  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on (and every shard is held to
+  the pinned Node, Unicode, ICU and pnpm and to the tested commit by Part 7), or the listing names an entry no
+  equivalents file records.
 
 A package none of whose shards ran is "not affected", and neither score rule judges it. The gate prints per-package
 and per-file scores, and every survivor with its covering tests, to the log and the summary.
@@ -1148,7 +1420,8 @@ on other data, and a test holds the workflow's pin to the Node the listing names
   any changed path a package's mutate or test set selects affects it, so a pull request that deletes a money test,
   renames one into the exclusions, or deletes a helper, manifest or data file only the old side held, is measured. A
   lockfile change counts only when it moves one of those resolved versions. The mutation configuration and tooling,
-  the root manifest, the workspace list, the root tsconfigs and the workflow affect all four.
+  the root manifest, the workspace list, the root tsconfigs and the workflow affect all four (narrowed field by field
+  by Part 7).
 - **Jobs:**
   - `changes` (5 min);
   - `stryker (<shard>)` (30 min; skipped when nothing is affected; reports uploaded with `overwrite: true`);
@@ -1256,3 +1529,731 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
 - The repository goes private: two vCPUs double shard times, and runner minutes are billed.
 - Stryker ships an ignorer that matches a single mutant.
 - fast-check, Stryker or Vitest fails a canary case on an upgrade.
+
+## Part 5 (`co-001/ci-pin-age`)
+
+### Context
+
+Part 2 holds every npm version the lockfile adds to the founder's F2 (b) release age: three days from its publish
+time, or a dated, exact exclude that expires within seven days. Nothing held what the workflows run, or the images the
+product is built on, to the same floor. Part 2 pins every action to its release's commit and every image to a digest,
+and `check-action-pins` checks that a new pin's tag names its commit. But a hand bump, to an action or to the BuildKit
+builder that Dependabot never updates, could take a release pushed minutes ago, inside the window the floor exists for.
+A hijacked tag is usually found within hours: tj-actions/changed-files in March 2025, and trivy-action's tags in March
+2026 (CVE-2026-33634). Dependabot's own cooldown (`default-days: 7`, CQ1 (a)) does not cover a hand bump, and it fails
+open: with no date it reads a version as outside the cooldown, and it prefers the one date a moved tag keeps old (a
+release's `published_at`, else the tag's creator date).
+
+### Decision
+
+**One floor and one exclude window for three lists** (`tools/check-toolchain/exclude-window.ts`). The floor is
+`pnpm-workspace.yaml`'s `minimumReleaseAge`, never under 4,320 minutes, read by `releaseAgeMinutes`; a setting that is
+not a finite number reads as the minimum. The npm rule, the action rule, the image rule and the BuildKit builder's
+newer-release warning read it there, so they cannot drift. The window checks moved out of the npm rule unchanged, and
+its own cases prove that:
+- `security-fix` (waives the floor): `added` no later than now; an expiry no earlier than the known time plus the floor,
+  and no later than `added` plus seven days;
+- the reasoned kinds (waive no age): `added` no later than now, and an expiry within seven days of `added`;
+- an expired entry fails only a pull request that edits its list, and warns elsewhere until the weekly triage removes
+  it.
+
+**Actions** (`tools/check-action-pins/age.ts`, the "Action pins" step of `static`; CI-21, CI-23). An action pin new
+against the base's workflows enters only when all three hold:
+- its commit is an ancestor of its repository's default branch;
+- its release tag still names it;
+- it is at least the floor old by the youngest of every time read, one of them a time GitHub recorded.
+
+Each commit is aged once, whatever refs use it (`actions/cache/restore` and `actions/cache/save` share one). The reads,
+from the pinned commit itself and never from whatever the tag names now:
+- **git, on every run.** One `git ls-remote --symref` names the default branch and the tag, so a tag the upstream lacks
+  is the answer "no tag" rather than a host failure. Then a blobless fetch of the default branch alone and the tag, into
+  a bare repository of its own that `close()` removes. That fetch gives the committer and author dates, an annotated
+  tag's tagger date (counted only while the tag names the pin), and the web-flow signature.
+- **The web-flow signature.** It is checked with `gpgv` against `github-web-flow.asc`: the current key
+  `968479A1AFF927E37D1A566BB5690EEEBB952194`, and the 2017 key `5DE3E0509C47EA3CF04A42D34AEE18F83AFDEB23`, which
+  counts only for a signature made before it expired at 2024-01-16T20:00:00Z. Fingerprints are computed in TypeScript
+  (`keys.ts`), so `gpgv` is the only binary.
+- **GitHub's API, on CI only.** The job's read-only token, `X-GitHub-Api-Version: 2026-03-10` and the base from
+  `GITHUB_API_URL` give `verification.verified_at` with its `reason` (`GET /repos/{o}/{r}/git/commits/{sha}`) and the
+  release's `published_at` and `immutable` (`GET /repos/{o}/{r}/releases/tags/{tag}`, a 404 meaning "no release").
+  `immutable` absent reads as false, and a null `published_at` gives no signal. A `reason` of `gpgverify_error` or
+  `gpgverify_unavailable` is a failed read that ends in "re-run", never "age unprovable". An authenticated read never
+  follows a redirect: a 3xx is an answer naming the move, and no message carries a request header.
+- **The arrival read, on CI only.** `GET /repos/{o}/{r}/activity?ref=refs/heads/<default>`, newest first, at most three
+  pages, back to now less the floor. The newest push or merge inside that window that brought the pin onto the default
+  branch joins the youngest-of: an entry whose `after` holds the pin and whose `before` the fetch holds without it. A
+  `before` the branch's fetch lacks (a force push's) is fetched by its SHA, and one that cannot be fetched or read
+  still counts, the safe direction. The read is best effort: one try a page and no rate-limit wait, and any other
+  outcome, a failed object read included, is a note, never a finding or a crash. It can make a pin young, and never
+  proves one old.
+
+GitHub-recorded means, on CI, a non-null `verified_at` or an immutable release's `published_at`. A signed commit whose
+`verified_at` is null or absent fails closed as "age unprovable" rather than falling back to the signature's time,
+which is the committer's (the assumption below). Locally, where the API is not read, a web-flow signature stands in,
+and the result is a local reading that CI re-checks. A `verified_at` more than the floor after every other time read
+(GitHub records it late for a commit signed before persistent verification) names the instant to re-run after. A
+time in the future makes the pin young until that instant plus the floor, which no exclude clears ("choose another
+release"). A committer, author or tagger time past the range of a date is a finding naming the epoch as written, and
+an annotated tag the fetch brought but cannot read fails closed with "re-run"; neither is a crash.
+
+Further rules of the age set and the verify loop:
+- **Bootstrapping.** When the merge base has no `tools/check-action-pins/age.ts`, every pin is aged, so this part's own
+  pull request proves the rule on CI. A later change to the checker does not age every pin: an unchanged pin is never
+  read for its age and never fails on it ("age: no pin new against the base, nothing read").
+- **One deadline.** The age reads run four at a time under one 180 s deadline, which the builder's Docker Hub reads
+  share: `READ_DEADLINE_MS` in `exclude-window.ts`, the one constant check-toolchain's image reads take too. Pins left
+  unread are one warning on a push and one error naming them and the host on a pull request. The builder's two Docker
+  Hub reads wait out a rate limit as the API reads do (`Retry-After`, else `x-ratelimit-reset`, capped at 60 s).
+- **A push warns.** On a push every age finding is a warning; the pull request was the gate. So, on a push, are the
+  verify loop's failed reads, moved tags and the refs its deadline left unread, for every ref, new against the previous
+  head or not: the pull request that added a new pin was its gate as well, and a red build branch blocks every lane. A
+  problem found in what was read (an input, a nested pin, a cache, an `action.yml` that does not parse) stays an error,
+  since no outage or upstream move makes one. That loop runs under its own 120 s deadline, which a change to the
+  checker reaches, since such a change re-verifies every ref. (The fix round of 2026-10-28, from the ci-infra review's
+  S4: the design's E16 had kept a new ref's faults as errors, the one red path a push run had left.)
+- **The builder's newness** is read from the base's workflows whatever the change edits, and on a push its faults warn
+  (Part 2's builder bullet, amended).
+- **What the rule cannot read is refused.** A `jobs.*.uses` that calls a reusable workflow of another repository is
+  refused by rule (a), and so is a Docker action, at any depth, whose `runs.image` is not `docker://…@sha256:<64 hex>`.
+  `runs.using` is read in any case, as the runner reads it, so a `Docker` or `Composite` action is refused or walked as
+  one (the security review's S4). None is used today. Offline, a file in a subdirectory of `.github/workflows` is
+  refused: GitHub never runs it and the checker never reads it, and the base's workflows are read at the top level
+  only, as the head's are, so a pin parked there cannot vouch for itself when it enters a workflow (the security
+  review's S3).
+- **A key rotation.** A push that aged a commit compares the fingerprints of `https://github.com/web-flow.gpg` with
+  the committed file's, and warns when they differ.
+
+**Images** (`tools/check-toolchain/images.ts`, the "Toolchain" step; CI-22, CI-23). Every image the tree names is held
+to the floor by the push time Docker Hub recorded:
+- each Dockerfile's `FROM` lines and frontend, read as BuildKit v0.34.1, the pinned builder, reads the file (below);
+- `docker-compose.yml`'s `services.*.image`, merge keys (`<<: *anchor`) honoured as Compose resolves them;
+- every setup-buildx step's builder (`driver-opts` `image=`);
+- every workflow's job container, service container, `docker://` step and setup-qemu image.
+
+**The Dockerfile reader** (`readDockerfile`, exported from `images.ts`; the security review's S1 and S2) is a port of
+BuildKit v0.34.1's parser: a byte-order mark stripped; the `syntax`, `escape` and `check` directives read with
+BuildKit's expression and keys, a value with a space accepted; its continuation rule for the escape token, so an
+escaped trailing escape continues nothing; a heredoc only from an unquoted word matching `^(\d*)<<(-?)\s*([^<]*)$`,
+its terminator that word unquoted, ONBUILD's included. The frontend is read as BuildKit's `DetectSyntax` reads it:
+after a byte-order mark and a `#!` line, a `#` or a `//` syntax directive, and, stricter, every other line that reads
+as one. It fails closed, so the next divergence refuses an image rather than hiding it: a JSON Dockerfile (handed
+whole to its frontend), a parse BuildKit refuses, a raw line matching `^\s*FROM` that it did not read as a FROM
+instruction (a heredoc's body, or a continuation), and a `from=` outside every COPY and RUN are refused. CI-13
+(`tools/test/workflows.test.ts`) reads each Dockerfile through the same export, so the two cannot read a file
+differently. Against BuildKit's own parser, built from v0.34.1, on its 37 test Dockerfiles and 23,000 generated ones,
+the instructions, flags, arguments, parse failures and frontend agreed; the one difference is BuildKit's error for a
+file with no instruction, which names no image (the fix round's differential run, 2026-10-28).
+
+Offline (the `images` rule, after `Dockerfiles`), each is `name:tag@sha256:<64 hex>`, with a tag, since a tagless
+digest has nothing to ask Docker Hub. Every image reference the rule does not read is refused, so "every image" holds
+on its own:
+- a `COPY --from=` or `RUN --mount=…,from=` naming anything but an earlier stage, an ONBUILD trigger's included, a
+  mount's fields read as BuildKit's CSV;
+- a line of a Dockerfile the reader cannot place (above);
+- on a `docker/build-push-action` step: any `build-contexts` (a named context takes the place of the stage or image of
+  its name); a `BUILDKIT_SYNTAX` build-arg, or an argument named by an expression; a `context:` outside the checkout; a
+  literal `file:` other than `apps/<name>/Dockerfile`; a `cache-from` or `cache-to` other than `type=gha` (an
+  expression only as `${{ '<a>' }}` or `${{ <condition> && '<a>' || '<b>' }}`); and an SBOM scan (`sbom:`,
+  `attests:`), whose scanner image it does not read (the security review's S2);
+- a tracked image file other than the three read, by Docker's own names, in any case: `Dockerfile` or `Containerfile`
+  alone, with a suffix or as one (`web.Dockerfile`), and `compose.y(a)ml` or `docker-compose.y(a)ml` with a `.<x>`
+  part or, for docker-compose, a `-<x>` one. A source or document file (`dockerfile.ts`, `dockerfiles.md`,
+  `compose-email.yml`) and `Dockerfile.dockerignore` are not image files (the ci-infra review's S2);
+- a compose `build:`, `include:` or `extends:` in any form (the security review's N1);
+- a setup-buildx step that names no builder image (unless its driver is `docker`, which runs none), or whose driver is
+  other than `docker-container` or `docker`;
+- a setup-qemu step that names no image, whose default `tonistiigi/binfmt:latest` is by tag;
+- a `docker/bake-action` step, whose bake files name images of their own.
+
+Networked, only a digest the base names nowhere is read (images are not bootstrapped):
+- **Its age.** Docker Hub's tag record gives the youngest of `tag_last_pushed`, `last_updated` and each
+  `images[].last_pushed` when the tag's digest, or one of its platform manifests' digests, is the pin. Otherwise the
+  repository's most recently updated tags are searched, five pages of 100, and the youngest time of the tags that
+  carry the pin is taken. A digest found on no tag fails, naming the tag's current digest and when that digest turns
+  old enough, and no exclude kind clears it.
+- **Another registry.** An image from a registry other than Docker Hub is "age unprovable".
+- **The revert path** (the ci-infra review's S3). A digest that a commit on the build branch's first-parent history
+  (`origin/claude/build-platform`, at or behind the merge base) named in an `apps/*/Dockerfile`, `docker-compose.yml`
+  or a top-level workflow counts as old enough when that commit's committer time is at least the floor old, with no
+  Docker Hub read and on any registry, and the finding names the commit. A digest is pushed before any commit can name
+  it, and first-parent commits there are the merge commits GitHub made, at GitHub's time; a merged side branch's own
+  commits, whose dates their author set, are never taken: the merge that brought the digest in is, at its own time. So
+  the exact revert of an images bump passes after Docker Hub has rebuilt every tag that carried the old digest. No
+  exclude kind is added.
+- **How Docker Hub is read.** The reads go through `registry.ts`'s `readJson`, four at a time under one 180 s deadline
+  (`READ_DEADLINE_MS`), whose message names the deadline the caller set.
+  A Hub 404 is an answer ("no such tag"); each Hub try has 30 s and each npm try 60 s. A rate-limit answer (429, or 403
+  with `Retry-After` or `x-ratelimit-remaining: 0`) waits for `Retry-After` or the reset, capped at 60 s.
+- **The registries' times are instants.** A registry document whose publish or push time does not parse as an instant
+  is refused, never read as NaN.
+
+On a push every image age finding, and every exceptions entry outside its window, is a warning (the ci-infra
+review's N3); the list's own form problems stay errors.
+
+**The excludes.** Each kind waives one requirement and nothing else, so a reason never admits a pin a signal shows
+young:
+- **`security-fix`:** the floor, inside F2 (b)'s window.
+  - For an action, a GHSA id, checked on CI against GitHub's advisory database (`GET /advisories/{ghsa_id}`): not
+    withdrawn; a vulnerability in ecosystem `actions` for that repository whose range covers the version the base
+    pins and not the pin's; and an action the base does not pin is refused.
+  - For an image, a GHSA or CVE id and `fixes: { package, version }`, checked for form only.
+- **`age-unprovable`:** only the need for a GitHub-recorded time. For an image, it applies only to a registry other
+  than Docker Hub.
+- **`off-default-branch`:** only the ancestry rule.
+
+Under either reasoned kind the pin or digest is still held to the floor by every time read. A pin that needs two
+waivers carries two entries. The lists are `tools/check-action-pins/age-exceptions.json` and
+`tools/check-toolchain/image-age-exceptions.json`, both empty. An entry for a pin or image no longer used is a warning.
+An entry this change adds for a pin the base already runs is an error, since that pin is never aged and the entry would
+admit nothing.
+
+**The token.** `ci.yml`'s "Action pins" step alone gets `GITHUB_TOKEN: ${{ github.token }}` in its `env`, and
+`ci.yml` names `github.token` exactly once (asserted). The asserts read every name as the runner reads an expression,
+in any case and with spaces around the dot: no `secrets.` or `secrets[`, no `github[`, `github.*`, `join(github` or
+`toJSON(` of either anywhere, and inside an expression the github context only by a property, never whole (the
+reviews' CI-S1 and SEC-N2). The permissions stay `contents: read`. "Toolchain" keeps `{ BASE }`: it reads npm and
+Docker Hub only. Within the step the token goes into the age rule's API request headers alone: git and `gpgv` run with
+`GITHUB_TOKEN` and `GH_TOKEN` dropped from their environment (the security review's N4).
+
+The token reads nothing an anonymous reader cannot, beyond a higher rate limit:
+- it is `contents: read` with GitHub's `metadata: read`;
+- the repository is public;
+- the full-history checkout already used the same token;
+- a same-repository pull request can already edit `ci.yml` to hand the token to any step, so the step gives a change's
+  author no new reach, and a fork's or Dependabot's run gets a read-only token.
+
+What it adds is exposure to the packages that step loads (`tsx` and the checker's imports, from the frozen lockfile
+under the release age): the caution ADR 0063 states for approval-of-record, which sets its token on one step the same
+way. Two facts temper it:
+- every earlier step of the job can already reach the token step's environment through `$GITHUB_ENV` (`NODE_OPTIONS`,
+  for one), the unpinned `pip install pyx12` among them;
+- the token already reaches third-party code in the same job: setup-node and checkout default their `token` input to
+  `github.token`.
+
+A repository gone private is the revisit trigger, since the token could then read what an anonymous reader cannot.
+
+**The assumption.** A web-flow signature's time is not taken as GitHub's clock on CI. In all 12 pinned commits it
+equals the committer time to the second, and GitHub's documentation refuses committer data only for bots with custom
+committer data (`about-commit-signature-verification.md:150`), saying nothing of user tokens. So on CI `verified_at`,
+or an immutable release, is required.
+
+### Measured (2026-10-27 and 2026-10-28)
+
+**The pins, locally.** `BASE=origin/claude/build-platform pnpm actions:check` from P1's head, base 0dd1ba7e, git
+2.43.0 and gpgv 2.4.4, 2026-10-28T02:24:40Z to 02:25:01Z. It printed the bootstrapping note, since the merge base has no
+`age.ts`. The API reads were skipped locally with a note: api.github.com answers 403 from where the series is built.
+For all 12 commits (13 refs):
+- the commit is on its default branch, and its tag names the pin;
+- gpgv reports `VALIDSIG 968479A1AFF927E37D1A566BB5690EEEBB952194`, at the committer time to the second;
+- no commit is signed with SSH, X.509 or the 2017 key.
+
+Every old-enough instant equals the design's reading of 2026-10-27T22:20Z. All 12 pass:
+
+| Pin | Version | Uses | Default branch | Youngest local time | Age (days) | Old enough from |
+| --- | --- | --- | --- | --- | --- | --- |
+| `actions/checkout@3d3c42e5` | v7.0.1 | 22 | main | committer 2026-07-17T18:45:11Z | 102.32 | 2026-07-20T18:45:11Z |
+| `actions/setup-node@949feb24` | v7.1.0 | 22 | main | committer 2026-10-08T02:43:26Z | 19.99 | 2026-10-11T02:43:26Z |
+| `pnpm/action-setup@ea17c68d` | v6.1.0 | 17 | master | tagger 2026-09-05T07:26:11Z | 52.79 | 2026-09-08T07:26:11Z |
+| `actions/setup-python@6d4fd22b` | v7.1.0 | 1 | main | committer 2026-10-22T02:33:06Z | 5.99 | 2026-10-25T02:33:06Z |
+| `actions/upload-artifact@cf430e03` | v7.0.2 | 9 | main | committer 2026-10-07T10:00:52Z | 20.68 | 2026-10-10T10:00:52Z |
+| `actions/download-artifact@9000827c` | v8.0.2 | 9 | main | committer 2026-10-07T10:00:57Z | 20.68 | 2026-10-10T10:00:57Z |
+| `actions/cache/{restore,save}@55cc8345` | v6.1.0 | 11 + 6 | main | committer 2026-06-23T20:30:28Z | 126.25 | 2026-06-26T20:30:28Z |
+| `docker/setup-buildx-action@f87e5991` | v4.4.1 | 5 | master | committer 2026-09-16T07:47:45Z | 41.78 | 2026-09-19T07:47:45Z |
+| `docker/build-push-action@c3c9e263` | v7.4.0 | 7 | master | committer 2026-09-15T07:29:04Z | 42.79 | 2026-09-18T07:29:04Z |
+| `docker/login-action@81c6f93d` | v4.7.0 | 2 | master | committer 2026-10-23T15:11:41Z | 4.47 | 2026-10-26T15:11:41Z |
+| `aquasecurity/trivy-action@ed142fd0` | v0.36.0 | 5 | master | tagger 2026-04-22T09:29:59Z | 188.70 | 2026-04-25T09:29:59Z |
+| `actions/attest-build-provenance@4d101475` | v4.2.2 | 1 | main | committer 2026-08-06T19:54:05Z | 82.27 | 2026-08-09T19:54:05Z |
+
+The two annotated tags (pnpm/action-setup's, PGP-signed, and trivy-action's, SSH-signed) give the youngest time for
+those two. The same run read the builder: its tag is the index `99368f3e…`, and no newer BuildKit release is three days
+old. The integrator's run of the same command from the merged head, 2026-10-28T02:59:19Z to 02:59:38Z, read the same
+12 blocks, the same youngest times and the same old-enough instants.
+
+**The pins, on CI** (filled from P1's CI run). This part's own pull request (#82, head b574d4e8… merged with
+165c5993…) aged all 12 on GitHub's runners with the token: `static` job 122611334491, "Action pins" from 03:20:58Z to
+03:21:17.7Z on 2026-10-28 (19.7 s), git 2.55.0. The step printed the bootstrapping note (the merge base 165c5993… has
+no `age.ts`), "every pin is read: this change edits tools/check-action-pins" with 13 refs verified, the builder (its
+tag is the index `99368f3e…`, and no newer release is three days old), and one block per commit. In each block the
+commit is on its default branch, its tag names it, and its web-flow signature is `VALIDSIG` by `968479A1…`. All 12
+pass:
+
+| Pin | Version | `verified_at` (`reason`) | Release `published_at` | `immutable` | Age (days) | Old enough from |
+| --- | --- | --- | --- | --- | --- | --- |
+| `actions/attest-build-provenance@4d101475…` | v4.2.2 | 2026-08-06T19:54:09Z (valid) | 2026-08-06T19:59:04Z | true | 82.31 | 2026-08-09T19:59:04Z |
+| `actions/cache/{restore,save}@55cc8345…` | v6.1.0 | 2026-06-23T20:30:29Z (valid) | 2026-06-26T19:17:06Z | false | 123.34 | 2026-06-29T19:17:06Z |
+| `actions/checkout@3d3c42e5…` | v7.0.1 | 2026-07-17T18:45:11Z (valid) | 2026-07-20T15:10:05Z | false | 99.51 | 2026-07-23T15:10:05Z |
+| `actions/download-artifact@9000827c…` | v8.0.2 | 2026-10-07T10:00:58Z (valid) | 2026-10-07T10:09:51Z | false | 20.72 | 2026-10-10T10:09:51Z |
+| `actions/setup-node@949feb24…` | v7.1.0 | 2026-10-08T02:43:27Z (valid) | 2026-10-08T02:52:34Z | true | 20.02 | 2026-10-11T02:52:34Z |
+| `actions/setup-python@6d4fd22b…` | v7.1.0 | 2026-10-22T02:33:06Z (valid) | 2026-10-22T02:56:04Z | true | 6.02 | 2026-10-25T02:56:04Z |
+| `actions/upload-artifact@cf430e03…` | v7.0.2 | 2026-10-07T10:00:52Z (valid) | 2026-10-07T10:08:14Z | false | 20.72 | 2026-10-10T10:08:14Z |
+| `aquasecurity/trivy-action@ed142fd0…` | v0.36.0 | 2026-04-22T09:20:49Z (valid) | 2026-04-22T09:39:33Z | true | 188.74 | 2026-04-25T09:39:33Z |
+| `docker/build-push-action@c3c9e263…` | v7.4.0 | 2026-09-15T07:29:04Z (valid) | 2026-09-15T08:22:01Z | true | 42.79 | 2026-09-18T08:22:01Z |
+| `docker/login-action@81c6f93d…` | v4.7.0 | 2026-10-23T15:11:41Z (valid) | 2026-10-23T15:22:45Z | true | 4.50 | 2026-10-26T15:22:45Z |
+| `docker/setup-buildx-action@f87e5991…` | v4.4.1 | 2026-09-16T07:47:46Z (valid) | 2026-09-16T07:50:21Z | true | 41.81 | 2026-09-19T07:50:21Z |
+| `pnpm/action-setup@ea17c68d…` | v6.1.0 | 2026-09-04T23:42:41Z (valid) | 2026-09-05T07:31:28Z | true | 52.83 | 2026-09-08T07:31:28Z |
+
+What the run shows:
+- **The youngest signal** in every block is the release's `published_at`, which comes after its commit: minutes to
+  hours for most, about three days for actions/cache and checkout. So on CI each old-enough instant is that much later than
+  the local reading above. The youngest pin is docker/login-action, 4.50 days old.
+- **`verified_at`** has `reason` valid for all 12 and lies 0 to 4 s after the committer time, so none is late, and
+  every one is at least three days before the run, as expected.
+- **Immutable releases.** 8 of the 12 publish them; actions/cache, checkout, download-artifact and upload-artifact do
+  not.
+- **The arrival read** answered 200 for all 12: "activity: no push brought the pin onto <branch> since
+  2026-10-25T03:21:12.792Z (1 entries read)". So the job's token does read another owner's `/activity`. The read lists
+  branch activity only, so it says nothing of a tag's push.
+- **"Toolchain"** printed "images: no image is new against the base, so nothing is read (3 digests named, each one in
+  the base)", then passed with 0 errors and 0 warnings.
+
+The log was read from GitHub (`get_job_logs`, read only) on 2026-10-28 and matches both reviewers' extraction field
+for field.
+
+**The images, locally.** `BASE=afe339b9^ pnpm toolchain:check` from P1's head, 2026-10-28T02:04:21Z to 02:04:31Z.
+That base, 6eae41a3, predates all three digests, so the image rule read Docker Hub for each through `images.ts` and
+`readJson`, each from its own tag, with no search needed. All three pass:
+
+| Image | Where | Youngest Hub time (`tag_last_pushed`) | Old enough from |
+| --- | --- | --- | --- |
+| `node:24-trixie-slim@sha256:43b9ba11…` | `apps/web/Dockerfile:7, :24`; `apps/worker/Dockerfile:5, :23` | 2026-10-21T17:39:11.31083Z | 2026-10-24T17:39:11Z |
+| `postgres:18-trixie@sha256:edb0c08d…` | `docker-compose.yml` `services.postgres` | 2026-10-21T19:08:32.855608Z | 2026-10-24T19:08:32Z |
+| `moby/buildkit:v0.34.1@sha256:99368f3e…` | the setup-buildx step of ci.yml's images job, release.yml, release-dry-run.yml, release-capacity.yml and screening-capacity.yml | 2026-10-20T21:37:36.856866Z | 2026-10-23T21:37:36Z |
+
+The integrator ran the same command again from the merged head, 2026-10-28T02:59:40Z to 02:59:46Z. Between the two
+runs Docker Hub rebuilt `node`: `24-trixie-slim` named `f2fb6134…` by then. So the rule searched the most recently
+updated tags for `43b9ba11…`, found it on `lts-trixie-slim`, and took that tag's `tag_last_pushed`,
+2026-10-21T17:41:02.078086Z, so it was old enough from 2026-10-24T17:41:02Z. It passed, as postgres and the builder did
+again from their own tags. That run proved the search path live as well as the direct read. It is also why images are
+not bootstrapped: the base's unchanged digest is never read on a pull request, so the tag's move turns nothing red.
+
+Docker Hub then rebuilt both again. The fix round's run of the same command, 2026-10-28T05:57Z, found `24-trixie-slim`
+re-pushed at 05:40:04Z and `18-trixie` at 04:13:41Z, and `43b9ba11…` and `edb0c08d…` on none of the 500 most recently
+updated tags of `library/node` and `library/postgres`, so both failed there as "nowhere": the ci-infra review's S3
+case, live (the builder passed from its own tag). A pull request is unaffected, since its base names both digests.
+From 2026-10-29T21:06:13Z the revert path vouches for all three by e908c214…, the merge of #48, the first commit on
+the build branch's first-parent history to name them, committed 2026-10-26T21:06:13Z.
+
+A read-only probe through the same reader, 2026-10-28T02:05:00Z, also checked two answers:
+- a missing tag of `library/node` reads as "no such tag";
+- the first page of `moby/buildkit`'s tags holds 100 tags and a next page, the builder's digest on `latest` and
+  `v0.34.1`.
+
+On CI this part's pull request reads no digest, since all three are in its base, and the image rule says so. From
+GitHub's runners the builder check's own read reaches Docker Hub on every networked run.
+
+**Bounded time.** On a push, at their limits:
+- the verify loop, 120 s;
+- the age reads with the builder check, 180 s;
+- the re-reads of unchanged tags, 120 s;
+- check-toolchain's Hub reads, 180 s.
+
+That is 600 s, inside the 900 s of `static`'s `timeout-minutes: 15`, whose other steps took about 183 s on
+run 40593100176. Unbounded, as before: the verify loop on a pull request, and check-toolchain's npm reads.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| A priority order of dates, as Dependabot's cooldown takes | It fails open with no date, and prefers the one date a moved tag keeps old; the youngest of every time read can only lose to a forged date, never gain from one |
+| The web-flow signature's time as GitHub's clock on CI (no token) | It equals the committer time in all 12 commits, so it is not proven to be GitHub's clock; `verified_at` is |
+| Trusting the commit's `committer GitHub` text, or the `openpgp` package | Anyone can write the text; the package is a new dependency under the release age, with more surface than `gpgv`, which every runner has |
+| The compare API for the default-branch rule | It needs the token and cannot run locally; `git merge-base --is-ancestor` runs the same everywhere in about a second |
+| The image config's `created`, or registry GETs | The builder sets `created`; registry GETs are rate-limited (a 429 seen from where the series is built). Docker Hub's push time is Dependabot's own source |
+| Aging the builder inside `buildkit.ts` | It splits image ages and their exceptions across two checkers, and a later job container would be in neither |
+| Bootstrapping images on this part's pull request | It would turn red whenever Docker Hub rebuilds `node`, since every tag naming that digest moves together, which proves nothing about this change; the local Hub reading above proves the path |
+| A separate job holding the token for the age reads | A new job under `all green` that loads the same code, with more to keep |
+| `redirect: 'error'` on authenticated reads | A renamed repository would become three failed reads and a host failure; a 3xx answer names the move |
+| A fixed backoff on a rate limit | It ends before Docker Hub's 60 s window does; the wait for the reset, capped at 60 s, still fails closed after three tries |
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N23.** The image rule ages every image the tree names, the BuildKit builder and any workflow container, service
+  or `docker://` image included, in check-toolchain, and refuses offline every image reference it does not read.
+- **N24.** Images are not bootstrapped. This part's own pull request ages every action pin, because three of the
+  action signals exist only on CI, but no digest already in its base; the local Docker Hub reading above is the record.
+- **N25.** The "Action pins" step is given the job's read-only token, on that step alone (above).
+- **N26.** On a push, the verify loop's upstream faults (a failed read, a moved tag, a ref its deadline left unread)
+  warn for every ref, new against the previous head or not, under their own deadline; the builder's newness comes from
+  the base's workflows. (The fix round: the ci-infra review's S4 supersedes the design's E16, which kept a new ref's
+  faults errors.)
+- **N27.** A Docker Hub digest found on no tag passes under no exclude kind, `security-fix` included, because an
+  image's advisory is checked for form only; a fix names a digest a tag carries.
+- **N28.** A reusable workflow of another repository, and a Docker action not pinned by digest, are refused.
+- **N29.** A digest the build branch's first-parent history named at least the floor ago is old enough by that merge
+  commit's time (the revert path), with no new exclude kind (the ci-infra review's S3).
+- **N30.** Each Dockerfile is read by a port of BuildKit v0.34.1's parser, which CI-13 shares and which refuses every
+  line it cannot place; the build-push-action inputs that change what a build runs unread are refused (the security
+  review's S1 and S2).
+- **N31.** An image file is one of Docker's own names; compose merge keys are honoured and `extends:` in any form is
+  refused; a file in a subdirectory of `.github/workflows` is refused (the ci-infra review's S2, the security review's
+  N1 and S3).
+
+### Consequences
+
+- **A hand bump under three days fails `static`.** An action pin or digest under the floor fails "Action pins" or
+  "Toolchain" on its pull request, naming every time read, its source and the instant it is old enough. At or over the
+  floor it passes.
+- **Dependabot's updates do not trip it on honest dates.** Its version updates are at least seven days old for an
+  action. For an image, Dependabot gates the tag's push time and writes the tag's current digest, so an images pull
+  request can be younger than its cooldown (#33's was 5.14 days old when written), and is still held to three days. A
+  young security update is red until a person adds its dated `security-fix` exclude, as for npm.
+- **A new action needs a fitting release.** One from an unsigned, non-immutable release needs an `age-unprovable`
+  exclude with its reason, and one released from a maintenance branch an `off-default-branch` exclude. Under either it
+  still waits three days by every time read (`docs/runbooks/dependency-upgrades.md`).
+- **Push runs warn.** A rate limit, an outage or a tag moved upstream cannot turn the build branch red, for a pin new
+  against the previous head as for any other. A late `verified_at` is a false red in the safe direction, cleared by a
+  re-run after the printed instant.
+- **A revert passes.** The exact revert of an images bump passes once the build-branch commit that first named the old
+  digest is three days old, whatever Docker Hub's tags carry by then.
+- **`gpgv` is a prerequisite** of `pnpm test` and `pnpm actions:check` locally (`docs/runbooks/ci.md`); every runner
+  has it.
+- **The API's rate.** On CI each new commit costs two API calls and one to three activity pages, one more per
+  `security-fix` exclude, against 1,000 an hour.
+- **The advisory read's live path is not yet proven.** No `security-fix` exclude exists, so this part's run does not
+  read an advisory; the runbook marks that path unproven until a run makes it.
+- **The weekly triage** removes expired entries from the two new lists as from the npm ones.
+- **Rollback** is a revert. Nothing holds state, there is no migration, and the excludes are files.
+
+**What it does not bound (the residuals).**
+- **Commit age, not tag age.** No interface exposes when a mutable tag came to name its commit, except an immutable
+  release's `published_at`. An attacker who can push to the upstream default branch can land a commit, wait three
+  days, then move a mutable tag to it, and the rule passes that pin.
+- **A staged commit.** The attacker need not wait on the default branch: a commit signed in a fork or on a deleted
+  branch three days ahead keeps its verification record across the repository network, so it can be fast-forwarded
+  onto the default branch and tagged in one minute with every time three days old. The ancestry rule holds at read
+  time only. A GitHub-recorded arrival inside the window makes such a pin young when the activity read answers; when
+  it does not, the pin passes.
+- **What runs at run time.** Node from setup-node's manifest, Python, Trivy and its database, pip packages (`pyx12`,
+  unpinned), and anything a `run:` step pulls with `docker run` or `docker pull`. Images nested in an action's
+  `docker://…@sha256` are the action author's, and are not aged. A custom frontend, even by digest, can pull images of
+  its own, and setup-buildx-action's `version:` input would download buildx unpinned (no step sets it).
+- **An image `security-fix` advisory** is checked for form only.
+- **The token's reach.** The token step's environment can be reached from every earlier step through `$GITHUB_ENV`.
+- **Who writes an exclude.** Until runbook 3i an exclude is self-approved, as F2 (b)'s npm excludes are.
+
+### Revisit when
+
+- **Immutable releases.** Most pinned publishers use them: then require them for new actions.
+- **A tag's creation time.** GitHub exposes it, or P1's CI log shows that the activity read records the pinned
+  repositories' tag pushes or proves an arrival older than the window.
+- **A web-flow key rotates.** The push run's warning names it; add the new key to `github-web-flow.asc`.
+- **The advisory read.** Its first live run of an action `security-fix` exclude.
+- **The repository goes private.** The token could then read what an anonymous reader cannot.
+
+## Part 7 (`co-001/ci-mutation-trigger`)
+
+### Context
+
+Part 4 decides what a pull request's mutation run measures from the paths it changes (`tools/stryker/affected.ts`).
+Three files counted whole, for every package: the root `package.json`, `pnpm-workspace.yaml` and
+`.github/workflows/mutation.yml`. A closure's own manifest (`packages/*/package.json`, `tools/package.json`) counted
+whole for the packages whose closure lists it. So a new root or package script, a catalog line no money code imports,
+a release-age exclude or a Dependabot actions bump ran every shard: seven since #52, 52.0 to 57.8 runner-minutes a run
+(mean 54.8 with the changes and gate jobs, push runs 40339580137 to 41330911489), and at least about 94 once #84 splits
+packets further. Replayed over the 58 pull requests into the build branch to #89, 22 ran every shard, and 7 of them
+for nothing a shard reads.
+
+The same rule left gaps the other way:
+- an install lifecycle script in a workspace manifest outside every closure (`apps/*`, `infra`) ran nothing, although
+  every shard's frozen install runs it;
+- `tools/package.json`, the manifest of the mutation tooling's own files (`"type": "module"`), counted for pricing
+  alone, and so did `tools/tsconfig.json`;
+- nothing named `.npmrc`, a pnpmfile, `patches/`, the workflows' action lockfile, a `package.yaml` or `package.json5`
+  manifest, a Plug'n'Play loader or a local action, each of which changes the install or every step unseen;
+- the files a shard loads by path (each package's Stryker configuration, the seed's setup file, the canary's
+  configurations and case tests) were not followed for what they import;
+- `pnpm stryker` ran Stryker through a root script and a bin by name, so a root `prestryker` script or another
+  package's `stryker` bin decided what ran.
+
+### Decision
+
+**Field by field, on both sides, failing closed** (`tools/stryker/manifests.ts`, called by `affected()`). The changes
+job reads the text of the root manifest, `pnpm-workspace.yaml`, `mutation.yml` and every changed `*/package.json` at
+the fork point and at the head (`changeSince`; `git diff --name-status --no-renames` tells an added or deleted file's
+absent side from one git cannot show). Each field affects every package, the packages whose closures read it, or none.
+A field no table lists, a side not read, a file that does not parse, and a key or a path holding a control character
+affect every package. Fields are compared in order, so a reordered `exports` condition or override is a change;
+scripts, dependency maps and catalogs are compared entry by entry, so reordering them alone is none. Each reason names
+its file and field, every key JSON-quoted so that no key a pull request writes can start a workflow command in the log,
+and the fields read and found inert are listed on a line of their own:
+
+```text
+pricing: affected by pnpm-workspace.yaml catalog."zod" (imported by pricing, packets)
+money: affected by .github/workflows/mutation.yml step references only: runner proved on money-ledger
+read and affecting no package: package.json scripts."db:domain-model" (no mutation step runs it)
+```
+
+- **The root manifest.** `packageManager`, `engines`, `type`, `name`, `private`, `pnpm` and every key not listed:
+  every package. Scripts: an install script (`pnpm:devPreinstall`, `preinstall`, `install`, `postinstall`,
+  `prepublish`, `preprepare`, `prepare`, `postprepare`, `prepublishOnly`) every package, any other none. Dependency
+  entries by the mirror rule: the test tooling (`TEST_TOOLING`: vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check,
+  tsx and typescript, N51) or a name the mutation tooling imports, every package;
+  a name a closure imports, that closure's package; else none. An entry named `node`, `deno` or `bun`, or whose
+  specifier on either side is not a registry version or range, `catalog:` or an `npm:` alias (`runtime:`,
+  `workspace:`, `link:`, `file:`, git, a URL), affects every package: it can put a `node` bin first on every step's
+  `PATH`, or install a tree no lockfile package entry records.
+- **A closure's manifest** (its owners are the packages whose closure lists it): install scripts and
+  `dependenciesMeta` every package; other scripts none; dependency entries by the mirror rule against the imports of
+  that package's own files, a `workspace:` specifier its owners; `name`, `exports`, `imports`, `type`, `main` and every
+  unlisted key its owners.
+- **The mutation tooling's own package**, a workspace manifest whose directory holds a file of the global closure,
+  computed, not named (`tools/package.json` today): `type`, `imports`, install scripts and every unlisted key every
+  package, since tsx loads every entry point under them, and so does its directory's `tsconfig.json`; `name` and
+  `exports` its owners', or every package when its name, on either side, is one a global file imports (another
+  manifest taking that name, too); dependency entries as the root's, a `workspace:` entry excepted (its owners).
+- **Every other workspace manifest** (`apps/*`, `infra`, a package in no closure): install scripts, `prepublishOnly`
+  and `dependenciesMeta` every package, since every frozen install runs them in every workspace project; everything
+  else none, because `closureOf` resolves imports by the same reading the aliases use, so a `name` or `exports` edit
+  that captures a closure's import makes it that closure's manifest at the head. An added or deleted one is judged
+  against `{}`. A manifest another global glob holds (`tools/stryker/canary/lib/package.json`, under
+  `tools/stryker/**`) and one a closure or the tooling reads as a file (an import, a data entry) are not classified and
+  count whole, as before.
+- **`pnpm-workspace.yaml`.** `packages` is compared by both readings, the YAML pnpm installs from and the mutation
+  tooling's own (`workspacePatterns`, which a blank line or a column-0 comment inside the list cuts short), and affects
+  every package when either differs. `catalog` and `catalogs` entries follow the mirror rule. `minimumReleaseAge`,
+  `minimumReleaseAgeExclude`, `trustPolicy`, `trustPolicyExclude` and `trustPolicyIgnoreAfter` affect none: a frozen
+  install never resolves, and pnpm 10 reads them only to resolve. `onlyBuiltDependencies`, `overrides`,
+  `patchedDependencies` and every other key affect every package, compared by their scalars' source text as well. An
+  anchor, alias, merge key, explicit tag, directive, byte-order mark, parse error or warning (a duplicate key) on
+  either side affects every package, since pnpm's js-yaml and the `yaml` package can read them differently.
+- **`mutation.yml`**, compared parsed under the same YAML rules, so comments and layout alone run nothing. A change
+  that is equal once each step `uses:` pinned to a full SHA on both sides, of the same owner, repository and path,
+  has its SHA removed (`<owner>/<repo>[/<path>]@<40 hex>`, Part 2's `PIN`, copied) runs `money-ledger` alone
+  (`RUNNER_PROOF_SHARD`), which holds money and ledger whole; a test reads `stryker/shards.json` to hold that no other
+  shard holds either. A move of `actions/upload-artifact` or `actions/download-artifact` is never pin-only, since a
+  one-shard run merges one artifact and cannot prove a merge of several; nor is a job-level `uses:`, a tag or branch
+  ref, `docker://`, `./`, `$/`, a changed path, or any other edit. Each of those affects every package, the reason
+  naming the paths that differ.
+- **Added to the global inputs**, none of which exists: `.npmrc`, `.pnpmfile.*`, `patches/**`,
+  `.github/workflows/actions.lock` (GitHub's workflow dependency lockfile, in preview, under which "the locked commit
+  is what runs"), `**/package.yaml` and `**/package.json5` (manifests pnpm reads and the tooling does not), `.pnp.cjs`
+  (required into every `pnpm exec` step) and `.github/actions/**`; and every `.gitattributes`, root or nested, which
+  the checkout applies to the bytes of every file a shard reads (N56).
+- **What a shard loads by path** (`GLOBAL_LOADED`): each package's `stryker/<package>.config.mjs`, the seed's setup
+  file, and the canary's Stryker and Vitest configurations and five case tests. The global closure follows their
+  imports with Part 4's entry points, tests included: 32 files, `tools/stryker/canary/**` among them, importing
+  `@tp/stryker-canary` and `fast-check` by name. A test holds the list to those loads, reading the canary's
+  configuration from the workflow's canary step.
+- **Any changed path holding a control character** (C0, DEL, C1, U+2028 or U+2029), wherever it lies, affects every
+  package before any glob is read, and every reason prints it JSON-quoted with those characters escaped, so no path a
+  pull request names starts a workflow command in the changes job's log or summary (N52). A glob's trailing `**`
+  also holds a name with a line break. Every `git` the job runs has its stderr captured, never passed through, and
+  what git or Node prints of a failure (git names a path it cannot show, and an error opening a file names that file,
+  as they are) reaches the log only through the same quoting, a line starting `::` or `##[` quoted too.
+- **Every `git` the changes job runs** takes a `PATH` with each `node_modules/.bin` entry and each relative entry
+  removed, so no dependency's bin answers for git.
+
+**Stryker by path** (`tools/stryker/stryker.ts`). Every Stryker run, the canary's and each shard's, is this Node on the
+`bin.stryker` file that `@stryker-mutator/core`'s own manifest names, resolved from the repository's root:
+`pnpm -s exec tsx tools/stryker/stryker.ts run <config>`. The package must be the root's own direct link,
+`node_modules/@stryker-mutator/core`, so one a parent directory supplies, or a copy only hoisted under
+`node_modules/.pnpm/node_modules` that `NODE_PATH` resolves, is refused (N53). No root `stryker`, `prestryker` or
+`poststryker` script, and no other package's `stryker` bin, decides what runs, so those scripts are inert too. The root
+`stryker` script stays, for people.
+
+**Every shard on the pinned runtime and one commit** (`tools/stryker/runtime.ts`, `tools/stryker/canary/verdict.ts`,
+`tools/stryker/gate.ts`). The pins are the Node, Unicode and ICU that `tools/stryker/unicode.json`'s `checkedOn` names
+and the pnpm the root `packageManager` names, read by `^pnpm@(\d+\.\d+\.\d+)(\+sha(?:1|224|256|384|512)\.[0-9a-f]+)?$`;
+any other form fails, naming the value.
+- Each canary verdict records the pnpm that ran it (from the user agent pnpm sets for the step) and the commit its
+  shard checked out (read from `.git` as files, a detached `HEAD`, a loose or packed ref, or a worktree's, with no
+  process), and prints both.
+- The gate fails every shard, not only one scoring Unicode-bound equivalents, whose Node, Unicode, ICU or pnpm is not
+  the pinned one, naming both; and every shard whose commit differs from another shard's or, on Actions, from
+  `GITHUB_SHA`. Off Actions it holds the commits equal to each other and says so. Part 4's message for the
+  Unicode-bound equivalents stays, after those failures, since it alone names the equivalents and their remedy. Each
+  shard's own view prints its runtime and commit first.
+- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts --pnpm "$(pnpm --version)" --commit "$GITHUB_SHA"`
+  after its install and before it decides, and the gate job runs the same step after its install and before it reads a
+  report, whenever it runs (N55); each also fails unless the commit it checked out, read from `.git` as a canary
+  verdict reads it, is `GITHUB_SHA`. On a runner (`GITHUB_ACTIONS`) both flags are required, so a run line that drops
+  either fails rather than checking less. Both run through the same pnpm and tsx shims as every later step, so a `node`
+  bin a dependency links, or another pnpm, fails the pull request's `mutation` whatever the classifier decided. Its pnpm
+  has two legs, each held to `packageManager` (N54): the user agent, which an `.npmrc` `user-agent` or a workspace
+  `userAgent` can write (both global inputs, so such a change runs every shard), and what the pnpm on the step's `PATH`
+  prints for `pnpm --version`, run by the step's shell before `pnpm exec` puts any `node_modules/.bin` first. A canary
+  verdict's pnpm is the user agent alone; the setting that could write it is global.
+
+A pin-only change is then proved on the runner, a leg for each step a pin moves: setup-node by Node, Unicode and ICU,
+pnpm/action-setup by pnpm, the checkout by the commit, which on a pull request must be the merge commit GitHub tests.
+
+**Guards that keep the inert rows inert** (`tools/test/workflows.test.ts`).
+- Every `run:` of `mutation.yml` is a whole command on a list: the frozen install, a tooling file run by tsx, and the
+  gate job's shell script, verbatim. No `pnpm <script>`, `pnpm run`, `node --run`, npm, npx or corepack.
+- Over the global closure and the four package closures, no file names `child_process` but `affected.ts` (spawning
+  `git` alone) and `stryker.ts` (`process.execPath` on Stryker's bin alone), each spawn read from the source.
+- No such file names `package.json`, `pnpm-workspace.yaml`, `mutation.yml`, `read-pkg`, `read-package-up`, `pkg-up`,
+  `@npmcli/package-json` or `npm_package_` but those listed with what each reads: `affected.ts`, `manifests.ts`,
+  `workspace.ts`, `stryker.ts`, `runtime.ts`, `tools/screening-capacity/watched.ts`, `vitest.mutation.config.ts`, and
+  the canary's Stryker configuration for a comment.
+- Every entry must still hold its literal, so the lists cannot go stale.
+
+**A correction.** The series' design said Dependabot's `browser-tests` group reaches no money closure. Before Part 3 it
+did: `tools/package.json` was a manifest of pricing's closure, so #38's `playwright-core` line ran pricing's three
+shards. After Part 3 that line is `catalog:`, and the catalog edit ran every shard. Under this part both run none,
+since no closure imports `playwright-core`.
+
+### Measured (2026-11-01 and 2026-11-02)
+
+- **The replay.** Every pull request into the build branch to #95 (64, listed on 2026-11-02 at 01:03 UTC), each judged
+  from its fork point to its head by Part 4's rule (`affected.ts` at 43565235) and by this part's own `affected()`,
+  closures and global inputs taken on both sides:
+  - on the 58 to #89 (37 merged, 12 closed unmerged, 9 open): full runs 22 → 15, partial 8 → 12, none 28 → 31, and
+    no package widened or lost on any;
+  - seven run less: #2 and #4 (a root script) the ledger alone; #3 (`db:domain-model` in the root and `packages/db`)
+    none; #6 (`lint`) pricing and the ledger; #25 and #43 (scripts) none; #31 (`screening:capacity`, and
+    `tools/package.json`'s `exports`) pricing and packets;
+  - saved at their final heads: about 296.9 runner-minutes at the shard means of push runs 40339580137 to
+    41330911489 (294.3 at those of 40316928522 to 40646308297);
+  - none of the pull requests since the series' design runs less (#48 and #49 at their final heads, and #50 to #95):
+    each full run there comes from the mutation tooling, `runs-on`, `packageManager`, the artifact actions, the test
+    tooling's lockfile entries or a lockfile move of vitest's tree, each global here too.
+  - these figures predate the review's fixes (N51 to N56) and are re-measured before the push: #46, whose only global
+    or money-path change is adding the root `.gitattributes` (linguist and eol attributes on
+    `packages/db/functions/*.sql`), now runs every shard (N56), so its "none" becomes a full run.
+- **A shard's time on CI** (the seven shards before #84; #84, merged after this part, split packets' three shards into
+  thirteen, so the totals below are dated 2026-11-04 and are re-measured on the push runs after it), the mean over the
+  12 push runs since `stryker/shards.json` last changed (40324477819 to
+  41348076075, each job from its start to its completion): money-ledger 4.49 minutes, packets-scan 7.23, packets-rest
+  12.59, packets-explain 11.86, pricing-engine 7.41, pricing-recompute 4.15, pricing-rest 5.63; 53.36 for the shards and
+  54.24 with the changes and gate jobs. By package: money and the ledger 4.49, pricing 17.19, packets 31.68.
+- **A week, projected** at the ten runs' means: Dependabot's `actions` group without an artifact-action move 53.88 →
+  4.54 (plus the changes and gate jobs either way); `next` and `browser-tests` 53.88 → 0 each; a release-age or trust
+  exclude alone 53.88 → 0; a catalog `zod` line 53.88 → 49.34. Up to about 157 runner-minutes in a week when
+  `actions`, `next` and `browser-tests` all open. Each "→ 0" holds only while the lockfile move reaches no closure
+  import and no test-tooling snapshot: #87 (`@anthropic-ai/sdk`) ran every shard because it moved an optional peer
+  inside vitest's snapshot key.
+- **Locally**, on Node v24.22.0 and pnpm 10.34.8: the changes job's check prints `runtime: Node v24.22.0 (Unicode
+  17.0, ICU 78.3) and pnpm 10.34.8` and passes. Two shards run by path, pricing-recompute and money-ledger, gave every
+  file the same counts as the base's push run (jobs 124972787739 and 124972787830), with no `> therapy-platform@
+  stryker` line.
+- **This part's own pull request** changes the tooling and `mutation.yml`, so it runs every shard: the live proof of
+  Stryker by path and of the runtime and commit legs, compared per file with the push run of the commit it merges into.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| List the global fields and treat the rest as inert | A field pnpm adds later (it gained `devEngines` and the trust and release-age keys) would be inert until someone noticed. Listing the inert fields fails closed |
+| The test scripts global, as the series' brief listed | No mutation step and no closure file runs a script, and two guards hold that; global would only cost runs (#43's `typecheck` and `lint`). The Stryker script is taken out of the path instead |
+| Specifiers inert, on the frozen install alone | No run is saved: a specifier that moves an imported package moves the lockfile, and the lockfile rule names the same packages. The mirror rule keeps the rule sound if a later pnpm stops checking specifiers on a frozen install |
+| The release-age and trust keys global | A full run for every exclude a person adds or lets expire, for keys pnpm 10.34.8 reads only to resolve; they can fail an install, never change a score |
+| A pin-only change runs nothing, or a canary-only job | Nothing would stop a broken pin merging green and failing the next push run; a canary-only job needs a gate mode of its own. `money-ledger` uses the existing jobs, takes about 4.5 minutes, and keeps "all or none" |
+| A pin-only change also proves transport (`money-ledger` and packets' three shards, four artifacts, about 36 minutes) | It proves a merge of several artifacts but not pricing's upload. An artifact-action move runs every shard instead, a full run only in the weeks those two move |
+| The runtime held only on pin-only runs | One rule with no mode to test; it fails only a runner that ignored the workflow's pins |
+| Closure manifests left whole | #3's only pricing reason was a script in `packages/db/package.json`, and lane pull requests add scripts to `packages/db`, `packages/rules` and `tools` |
+| A glob over `tools/stryker/canary/**` for what a shard loads by path | It would also take `verdict.test.ts`, which no shard loads. A named list held to the loads by a test stays true |
+| Matching reads rather than literals in the guard | A read can be built in ways a pattern misses; a literal scan fails closed, and a short reviewed list stays true |
+| Diff a pull request from the merge's first parent, not its fork point | It changes the rule for every file (proposed separately, P30). From the fork point a pull request is charged for base commits since it forked, a superset of what its merge changes, so this part stays sound |
+| Decide a pull request's mutation with the base's classifier | It changes how every pull request is judged (proposed separately, P43). Today and under this part a pull request runs its own `affected.ts` |
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N43.** The root manifest, `pnpm-workspace.yaml`, `mutation.yml` and every workspace manifest are read field by
+  field on both sides, failing closed: a field neither listed as inert nor read by a closure, a side not read, a file
+  that does not parse, and a key or path holding a control character affect every package.
+- **N44.** Every script but an install script is inert for mutation, in the root and in every workspace manifest, held
+  by the `run:` list and the closure scan; the test scripts are not global, as the series' brief listed them.
+- **N45.** The release-age and trust keys are inert for mutation: the one place this part rests on the frozen install
+  alone.
+- **N46.** A change to `mutation.yml` that moves only step SHAs, each of the same action, runs `money-ledger` alone; a
+  move of either artifact action runs every shard.
+- **N47.** Every shard is held to the pinned Node, Unicode, ICU and pnpm, and every shard to one commit, `GITHUB_SHA` on
+  Actions; the changes job holds its own runtime before it decides.
+- **N48.** Stryker runs by path from the root's own install; the root `stryker` script stays, for people.
+- **N49.** The mutation tooling's own package's module fields, install scripts, unlisted keys and tsconfig, the `name`
+  and `exports` of a manifest whose name a global file imports, and a manifest another global glob holds, count for
+  every package.
+- **N50.** `.github/workflows/actions.lock`, `$/` references, `**/package.yaml`, `**/package.json5`, `.pnp.cjs` and
+  `.github/actions/**` are global, though none exists.
+- **N51** (the review of #96 at 50029e64). typescript is test tooling. `@stryker-mutator/core` 10.1.1 does not declare
+  it, yet `dist/src/sandbox/ts-config-preprocessor.js` runs `import('typescript')` on every run that is not in place,
+  to parse and rewrite the root tsconfig in the sandbox, and it resolves to the root's own typescript. At 50029e64 a
+  catalog or root move of typescript, with the lockfile moved to match, ran no shard (at the base, all seven), and a
+  stub typescript failed the canary. It is the hoisting limit below, met in the tooling itself: a move of typescript in
+  the catalog, a manifest or the lockfile now runs every shard, and a test now fails on any other undeclared import
+  of the installed tooling that resolves outside the tooling's lockfile closure.
+- **N52** (the review of #96). Any changed path holding a control character affects every package and is printed
+  JSON-quoted. At 50029e64 such a path was printed raw, so `packages/money/src/a\n::warning ...` started a workflow
+  command in the log and summary, and one under `tools/stryker/**`, `patches/**` or a data glob such as
+  `fixtures/golden/**` affected no package, since a trailing `**` compiled to a `.` that does not match a line break.
+  Both predate this part; it had quoted manifest paths only. A closure problem's line and a lockfile entry a reason
+  names are JSON-quoted the same way when they hold one. The first repair still passed git's stderr through: a gitlink
+  at `packages/a\n::warning ...` made `git show` print its path raw, and a second line started the command (the
+  verdict was right, all four). Every `git` now runs through `runGit`, its stderr captured, and the command line prints
+  what it throws, its own, git's or Node's, through `printable`; a test runs it as a child process on such a gitlink.
+- **N53** (the review of #96, N1). Stryker's core must be the root's direct link. At 50029e64 the check asked only that
+  the resolved core lie under `<root>/node_modules`, and the tsx and stryker shims set `NODE_PATH` to
+  `<root>/node_modules/.pnpm/node_modules`, which is inside it, so with the root's own `@stryker-mutator/core` removed a
+  hoisted copy would have run. `strykerBin` now also requires `node_modules/@stryker-mutator/core/package.json` to
+  exist and to be the manifest it resolved; a child-process test sets that `NODE_PATH` and is refused.
+- **N54** (the review of #96, N2). The changes job's pnpm leg read only the user agent, which pnpm settings write. It
+  now also holds `pnpm --version`, printed by the step's own shell, to `packageManager`. npm_execpath is no leg, since
+  `pnpm exec` leaves it unset; a test holds the workspace `userAgent` global.
+- **N55** (the review of #96, N3). The gate job checks its own runtime and checkout. At 50029e64 only the changes job
+  checked its runtime, and the shards were held by their canary verdicts, so a pin-only move of the gate job's own
+  setup steps or checkout was "proved" on money-ledger, which never ran that job's setup. Now both jobs run the same
+  check, and it holds the checkout to `GITHUB_SHA` as well (the safer of the review's two severities). N47 reads:
+  every shard, the changes job and the gate job are held to the pinned Node, Unicode, ICU and pnpm, and to one commit.
+  Round 2 of the fix checks: run with neither flag, `runtime.ts` exited 0 and held neither the pnpm on `PATH` nor the
+  checkout, so only the workflows test held the run line; on a runner each missing flag is now an error.
+- **N56** (the completeness critic of #96's reviews, C-G1). `.gitattributes` and `**/.gitattributes` are global
+  inputs. At 50029e64 neither was, so a pull request adding only `packages/pricing/src/*.ts text eol=crlf` or a
+  `docs/product/unpriced-reasons.md` line printed "shards: none", though every later checkout rewrites the bytes the
+  pricing and packets tests and their mutants read. It predates this part, which set out to list what the runner reads
+  on every step. `.gitmodules` stays outside: the checkouts fetch no submodules. Every `.gitattributes` edit counts,
+  a `linguist-*`, `diff`, `merge` or `export-ignore` one included, since the file is not read attribute by attribute:
+  replayed, #46's root `.gitattributes`, which rewrites only `packages/db/functions/*.sql`, now runs every shard.
+
+### Consequences
+
+- A pull request that adds or edits a script no install runs, a dependency or catalog line no closure and none of the
+  tooling imports, or a release-age or trust exclude runs no shard. `mutation` passes in about a minute ("No money path
+  changed"), and the changes job's log lists each such field as read and affecting no package.
+- A Dependabot actions pull request that moves no artifact action runs `money-ledger`, about 4.5 minutes, and proves
+  the new pins on its runner. The first push run after its merge runs every shard on the same pins.
+- A move of `mutation.yml`'s Node or of `packageManager` affects every package, and is now also a change of the pins:
+  `unicode.json`'s `checkedOn` follows the Node, as Part 4 already requires, and `packageManager` is the pnpm pin.
+- Each fail-closed rule of the field rule has a test of its own that turns red when the rule is dropped (the review of
+  #96, S2): each of the nine install scripts, written out in the test, at the root, in packages/db and in a workspace
+  manifest added with it; a key holding U+2028 or U+2029; the root manifest, the workspace file and the workflow
+  added or deleted; a step pin moved with its scalar re-quoted; a runner-proof shard that does not hold its packages
+  whole; a byte-order mark, a `%YAML` directive, a warning and a merge key; and a specifier of 257 characters. Each was
+  shown killing a mutant that drops that rule. So do the completeness critic's seven (C-G2): a catalog `node` entry,
+  `tools/package.json`'s `@tp/stryker-canary` moved between `workspace:` forms, a dependency value that is not a
+  string, a workflow scalar rewritten to the same value (`5` as `0x5`), a key holding U+0085, a workspace manifest a
+  synthetic data entry lists (read whole), and a re-quoted `packages` entry.
+- A new file a shard loads by path fails `GLOBAL_LOADED`'s test until it is listed. A new tooling file that runs a
+  process or names a manifest fails the guard until it is listed with what it reads.
+- A local shard run needs the pinned Node and `packageManager`'s pnpm, and every shard on one commit
+  (`docs/runbooks/ci.md`, "Running it locally").
+- Rollback is a revert: nothing holds state, and there is no migration.
+
+**What it does not bound.**
+- **The lockfile rule's limit, unchanged.** pnpm hoists every package into `node_modules/.pnpm/node_modules`, so a new
+  root dependency can change what an imported package reaches through an undeclared require, which the lockfile rule
+  (declared dependencies only) does not see. Part 4's whole-file root rule happened to cover that. It is now the
+  lockfile rule's limit, as it already was for every other manifest. For the test tooling's own code it is guarded
+  (N51): `tools/stryker/affected.test.ts` walks the installed tooling from the root's and the mutation tooling's
+  manifests (every dependency and installed peer below it, about 200 packages) and fails on a bare import, by literal,
+  that its package does not declare, that resolves, and that neither `TEST_TOOLING` nor the tooling's lockfile closure
+  holds, so a Stryker or Vitest upgrade that adds one fails until it is listed. At 50029e64 it names typescript alone.
+  The import graph reads an import call quoted in a comment as an import, which over-reads (toward more shards), so
+  `TEST_TOOLING`'s own comment names none: one did, which held typescript through the global imports and hid the
+  entry's removal from the guard and the lockfile test. That test now also takes every import of typescript out.
+  The undeclared requires of the third-party packages a money closure imports, and a specifier built at run time,
+  stay outside it.
+- **The pnpm version, not its bytes.** pnpm/action-setup self-updates by version, and no mutation runner checks
+  `packageManager`'s hash (proposed separately, P44).
+- **A pull request still decides its own `mutation`** with its own classifier (P43).
+
+### Revisit when
+
+- pnpm 11, whose frozen install checks the release age and trust policy, or a later pnpm that stops checking
+  specifiers on a frozen install.
+- pnpm reads a new workspace key, manifest form or install-time script.
+- A shards rebalance splits money or the ledger (the `RUNNER_PROOF_SHARD` test fails first).
+- The repository adopts `.github/workflows/actions.lock`: pin-only must then read its entries for `mutation.yml` as it
+  reads step SHAs.
+- A new file a shard loads by path.
+- A phantom require's target moves unseen (the hoisting limit above).

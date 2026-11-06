@@ -53,6 +53,9 @@ const NAMES: Readonly<Record<SeedOrganization, string>> = {
 
 const KINDS: Readonly<Record<SeedOrganization, 'group' | 'firm' | 'internal'>> = { group: 'group', other_group: 'group', firm: 'firm', internal: 'internal' };
 
+/** Who invites a person into each organization: its administrator (the console's user.invite and organization.manage). */
+const INVITING_ROLE: Readonly<Record<SeedOrganization, MembershipRole>> = { group: 'practice_admin', other_group: 'practice_admin', firm: 'firm_principal', internal: 'platform_admin' };
+
 /** A stand-in for a signed document's hash: the SHA-256 of a synthetic label. */
 function documentHash(label: string): string {
   return createHash('sha256').update(`synthetic signed document ${label}`).digest('hex');
@@ -70,8 +73,18 @@ export async function seedSyntheticTenancy(client: OwnerClient, people: readonly
       throw new SeedError(`the ${group} needs an active practice administrator`);
     }
   }
+  // Each invited person is invited by their organization's administrator, who must be seeded active (docs/adr/0088, D3).
+  const inviterOf = (invited: SeedPerson): SeedPerson => {
+    const inviter = people.find((candidate) => candidate.organization === invited.organization && candidate.role === INVITING_ROLE[invited.organization] && !candidate.invited);
+    if (inviter === undefined) {
+      throw new SeedError(`the ${invited.organization} needs an active ${INVITING_ROLE[invited.organization]} to invite ${invited.key}`);
+    }
+    return inviter;
+  };
+  const inviters = new Map(people.filter((person) => person.invited).map((person) => [person, inviterOf(person)]));
   const organizations = Object.fromEntries(Object.keys(NAMES).map((key) => [key, randomUUID()])) as Record<SeedOrganization, string>;
   const users: Record<string, string> = {};
+  const memberships: Record<string, string> = {};
   await asOwner(client, [], async () => {
     for (const key of Object.keys(NAMES) as SeedOrganization[]) {
       await client.query('INSERT INTO organization (id, kind, name) VALUES ($1, $2, $3)', [organizations[key], KINDS[key], NAMES[key]]);
@@ -87,7 +100,18 @@ export async function seedSyntheticTenancy(client: OwnerClient, people: readonly
         person.organization === 'internal',
         person.invited ? 'invited' : 'active',
       ]);
-      await client.query('INSERT INTO membership (organization_id, user_id, role) VALUES ($1, $2, $3)', [organizations[person.organization], id, person.role]);
+      const membership = randomUUID();
+      memberships[person.key] = membership;
+      await client.query('INSERT INTO membership (id, organization_id, user_id, role) VALUES ($1, $2, $3, $4)', [membership, organizations[person.organization], id, person.role]);
+    }
+    // The owner has no actor, so the membership trigger records no invitation: the seed records each one itself, live
+    // for seven days, as the console's invitation is. Without one an invitee could not enrol a second factor.
+    for (const [invited, inviter] of inviters) {
+      await client.query(
+        `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
+         VALUES ($1, $2, $3, $4, now(), now() + interval '7 days', $4)`,
+        [organizations[invited.organization], memberships[invited.key], users[invited.key], users[inviter.key]],
+      );
     }
   });
   const administrator = (organization: SeedOrganization): string => {

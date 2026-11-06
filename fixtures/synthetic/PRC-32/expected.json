@@ -1,0 +1,17 @@
+{
+  "case": "PRC-32",
+  "module": "PRC",
+  "title": "A run's cut-off and creation, to the microsecond",
+  "assertion": "A service line whose created_at equals the run's own created_at (loaded at the instant of the transaction that creates the run) is the run's at creation and in the price job alike: its period is not refused as holding no service line, nor as nothing mapped (MAP-07), and creation judges exactly the plans and dates the job prices. Every time a run is judged against is compared in Postgres, to the microsecond, never as a millisecond JS Date: a mapping made at the run's own instant is not a reason to re-run it, while one made after is, and a complete run with no line created before the location's last save, within the same millisecond, is listed as priced before the location changed",
+  "synthetic": true,
+  "completesIn": 3,
+  "assertedBy": ["apps/worker/src/price/cut-off.db.test.ts","apps/web/src/lib/pricing/location.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "No file of its own: PRC-19's file, with lines and times the tests set.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -47,10 +47,13 @@ export const MUTATE = {
   ledger: ['packages/ledger/src/**/*.ts', '!packages/ledger/src/**/*.test.ts'],
   packets: [
     // The packet verifier: its check, and the reading of a narrative it rests on (what the text shows, the figures it
-    // holds, the payer and plan as the payer's copy names them, the placeholders).
+    // holds, the role each figure's words give it, the payer and plan as the payer's copy names them, the placeholders).
     'packages/packets/src/verifier/**/*.ts',
     'packages/packets/src/readable.ts',
     'packages/packets/src/scan.ts',
+    'packages/packets/src/roles.ts',
+    'packages/packets/src/roles-reader/**/*.ts',
+    'packages/packets/src/roles-words/**/*.ts',
     'packages/packets/src/facts.ts',
     'packages/packets/src/payer.ts',
     'packages/packets/src/placeholders.ts',
@@ -66,6 +69,10 @@ export const MUTATE = {
     'packages/packets/src/explain/**/*.ts',
     'packages/packets/src/explain.ts',
     'packages/packets/src/words-version.ts',
+    // A packet narrative's figures as fact tokens rendered by code: the facts' catalog, its words and the renderer.
+    'packages/packets/src/fact-catalog.ts',
+    'packages/packets/src/fact-words.ts',
+    'packages/packets/src/render.ts',
     '!packages/packets/src/**/*.test.ts',
     '!packages/packets/src/test-support.ts',
     '!packages/packets/src/explain/__golden__/**',

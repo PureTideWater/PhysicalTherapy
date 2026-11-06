@@ -1,0 +1,22 @@
+{
+  "case": "SGN-02",
+  "module": "SGN",
+  "title": "The warning before a step closes",
+  "assertion": "At one minute left (two on a step of ten minutes or more) one polite status, never an alert and never focused, says the step closes within a minute, what Start again costs and keeps, and on enrolment that it gives a new setup key; it is said once and never each second, the limit sentence above the work shows the same state in place and stays in view on a phone with its keyboard up, nothing above it moves, and the focus and what was typed stay, Start again's too; a tab that slept, was hidden, or had its clock set back or forward shows the right state when it is visible again, and says it then; a re-render keeps the count; at the limit the same status says once that the step has closed, nothing redirects and the form stays usable; nothing animates",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/step-limits.test.ts",
+    "apps/web/src/components/step-timer.test.tsx",
+    "apps/web/src/components/step-timer.browser.test.tsx",
+    "apps/web/e2e/sign-in-time.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The step timer runs in the browser harness and on synthetic sign-ins, on a clock the test moves; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

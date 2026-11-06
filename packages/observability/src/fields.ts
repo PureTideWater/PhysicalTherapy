@@ -38,15 +38,29 @@ export const ALLOWED_LOG_FIELDS = [
   'rate_record_id',
   'release_no',
   'screening_run_id',
+  // The mail record's (audit #76, docs/adr/0065): a dunning notice's invoice, an undelivered invitation, and a mail
+  // event's queue message (SQS's own ID, logged when the event cannot be read). Opaque IDs, never an address.
+  'invoice_id',
+  'invitation_id',
+  'queue_message_id',
+  // A probe's recorded event (the review of 2026-10-27; docs/runbooks/deliverability.md, section 2): SES's message ID and
+  // the codes the platform read and recorded (the stream, SES's event type, the state and the bounce's subtype), each
+  // from a closed list. Logged only for a probe, which goes to SES's simulator or the operator's synthetic mailbox.
+  'ses_message_id',
+  'mail_stream_code',
+  'ses_event_type',
+  'mail_state_code',
+  'bounce_subtype_code',
   'error_code',
 ] as const;
 
 /**
  * Fields that hold a number and nothing else: a phase's elapsed milliseconds and the count of records it read or
- * wrote (docs/adr/0062, the screening's phase timings). The runtime logger drops one whose value is not a finite,
- * non-negative number, so neither can carry text.
+ * wrote (docs/adr/0062, the screening's phase timings), and a job's largest live heap and the heap limit in mebibytes
+ * (docs/adr/0083, the worker's `job heap` line). The runtime logger drops one whose value is not a finite,
+ * non-negative number, so none can carry text.
  */
-export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count'] as const;
+export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib'] as const;
 
 export type IdentifierLogField = (typeof ALLOWED_LOG_FIELDS)[number];
 export type NumericLogField = (typeof NUMERIC_LOG_FIELDS)[number];

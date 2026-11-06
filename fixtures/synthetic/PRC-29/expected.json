@@ -1,0 +1,17 @@
+{
+  "case": "PRC-29",
+  "module": "PRC",
+  "title": "A re-run of a month priced around a plan with no mapping, after the plan is mapped",
+  "assertion": "The re-run prices the same lines (the original's cut-off), the plan's lines under the mapping and every other line as the original did, unless something else changed since. Its page lists exactly the lines whose pricing in effect changes. Accepted, it is the run in effect and the plan's lines leave `NO_MAPPING`; `recompute(trace)` holds on every priced line; triaged from Cases, the plan's short lines reach validated",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": ["apps/web/src/lib/pricing/mapped-plan.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "No file of their own: MAP-06's file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
