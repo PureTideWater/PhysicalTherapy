@@ -78,7 +78,8 @@ quarter, double, triple, once (`STRICT_NUMBER_WORDS`); the plurals of the cardin
 fractions third to millionth, halves and quarters, but not "firsts" or "seconds" (`STRICT_PLURALS`); dollar, dollars,
 cent, cents, penny, pennies (`CURRENCY_WORDS`); a zero amount after a payment or allowance verb ("paid nothing",
 "allowed none", "made no payment", "nothing was paid": `ZERO_AMOUNT_PHRASES`); and any leftover `\p{N}` character or
-`$ % § # ¢`. Scanning without the option is unchanged for every importer (ADR 0086's reader, the facts, the assembly,
+`$ % § # ¢`: a digit of another script (`٣`) and a numeral NFKC leaves as it is, letter-like or other (`ↀ`, `௰`,
+`〡`), not only a decimal digit, each a `free_figure` beside its `unreadable_figure` (pinned, review round 5). Scanning without the option is unchanged for every importer (ADR 0086's reader, the facts, the assembly,
 the catalog, the gateway's figures, the evidence requests, the evaluation's faults and score); their tests pass
 unchanged.
 
@@ -219,7 +220,10 @@ prints only rendered text: a /3 template exported by today's worker would print 
   all-lines fact fails unless covering; a total cue beside a part fact fails; serialization keeps the sentence
   count). Each ran under 40 seeds before the pull request. The code draft (`draft.ts`) is mutated in the
   packets-template shard with the template's check and its serialization (review round 3); its interest guard's
-  conjunction made a disjunction is killed by the $0.00 case, not recorded as equivalent (review round 4).
+  conjunction made a disjunction is killed by the $0.00 case, not recorded as equivalent (review round 4); the two
+  records of that guard that stay (its first two checks, or its second, replaced by true) argue only their own
+  replacement, which leaves `interestStated` false wherever interest or its total is null, and a test keeps the
+  disjunction out of their reasons (review round 5).
 
 ## Not covered
 

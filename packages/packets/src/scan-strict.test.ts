@@ -95,14 +95,18 @@ describe('strict scanning reads every figure of free text (section 2.4)', () => 
     ]);
   });
 
-  it('reads every sign and number character left over: $, %, §, #, ¢ and digits of other scripts', () => {
-    expect(read('The $ and % and § and # and ¢ signs, and ٣.')).toEqual([
+  it('reads every sign and number character left over: $, %, §, #, ¢, digits of other scripts and numerals NFKC keeps', () => {
+    expect(read('The $ and % and § and # and ¢ signs, and ٣, ↀ, ௰ and 〡.')).toEqual([
       ['$', 'identifier', 'symbols'],
       ['%', 'identifier', 'symbols'],
       ['§', 'identifier', 'symbols'],
       ['#', 'identifier', 'symbols'],
       ['¢', 'identifier', 'symbols'],
       ['٣', 'identifier', 'symbols'],
+      // A letter-like (Nl) and two other (No) number characters with no NFKC decomposition: any leftover \p{N}, not only Nd.
+      ['ↀ', 'identifier', 'symbols'],
+      ['௰', 'identifier', 'symbols'],
+      ['〡', 'identifier', 'symbols'],
     ]);
   });
 

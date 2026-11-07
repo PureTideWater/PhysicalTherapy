@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -170,6 +173,23 @@ describe('the code draft', () => {
     expect(content.interest?.total_cents).toBe('0');
     expect(draftNarrative(content)).not.toContain('interest');
     expect(draftNarrative(content, V3)).not.toContain('interest');
+  });
+
+  it('leaves the disjunction this case kills out of the interest guard’s equivalent records (docs/adr/0089)', () => {
+    const records = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tools/stryker/equivalent/packets.json', import.meta.url)), 'utf8')) as {
+      file: string;
+      mutator: string;
+      original: string;
+      reason: string;
+    }[];
+    const guard = records.filter((record) => record.file === 'packages/packets/src/draft.ts' && record.original.includes('interest'));
+    expect(guard.map((record) => [record.mutator, record.original])).toEqual([
+      ['ConditionalExpression', 'interest !== null && interest.total_cents !== null'],
+      ['ConditionalExpression', 'interest.total_cents !== null'],
+    ]);
+    for (const record of guard) {
+      expect(record.reason, record.original).not.toMatch(/disjunction/);
+    }
   });
 
   it('cites the last of two rule releases at /3, as /2 does', () => {

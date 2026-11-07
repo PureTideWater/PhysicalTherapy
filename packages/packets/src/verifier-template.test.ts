@@ -127,12 +127,14 @@ describe('CAS-52: free text holds no figure; tokens, a person’s markers and id
     }
   });
 
-  it('fails a number in other digits as unreadable and as a free figure', () => {
-    const template = around('for ٣ lines');
-    expect(found(template, verify(template))).toEqual([
-      ['free_figure', 'identifier', '٣'],
-      ['unreadable_figure', null, '٣'],
-    ]);
+  it('fails a number in other digits, or a numeral NFKC keeps (Nl, No), as unreadable and as a free figure', () => {
+    for (const numeral of ['٣', 'ↀ', '௰', '〡']) {
+      const template = around(`for ${numeral} lines`);
+      expect(found(template, verify(template)), numeral).toEqual([
+        ['free_figure', 'identifier', numeral],
+        ['unreadable_figure', null, numeral],
+      ]);
+    }
   });
 
   it('fails each number written in words at its span (number_word): “one”, “zero”, “thousands”, “paid nothing”, a percent in words', () => {
