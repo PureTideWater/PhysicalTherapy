@@ -102,6 +102,18 @@ Effect: any PR's unit job can go red at random.
   synthetic letters; it reproduces the round-3 PHI and code-damage rows) is measuring the baseline; the run is restarted at the
   gate's result with the edited script (archived as `workflow-scripts/lane-b-redact-range-glued-judge-wf_5d1aedda-db5.js` at the
   end). The leak hunt stays held (weekly limit).
+- 2026-11-07T07:15Z: **gate baseline** (975,489 seeded synthetic letters, 5,292 patients, the real prepare path, deterministic;
+  `rg-judge/gate/baseline.md` in the scratchpad). vs cc3dd7f6, HEAD 3fcb9359 sends SSN 38,604 / phone 33,965 letters the base
+  protected (about 65k are the glued-own-name-cuts-the-label class), DOB 95, name parts 648, initials 357, and damages 3,615
+  code/unit letters; 6fc88092 sends name parts 15,064, DOB 6,036, initials 3,455, member 2,465, claim 1,511, SSN 7,495. Neither
+  ships. Candidate B started with the orchestrator's strict bar (zero PHI regressions per identifier kind vs the base on the
+  gate; no must-stay damage beyond base).
+- 2026-11-07T07:20Z: **the orchestrator's ruling on SSN-shaped amount classes** (in advance): (1) fail closed: where the rule
+  cannot tell at run time whether digits at a range end are an amount or an identifier fragment, refuse as the base did (no
+  regression on either bar); (2) a class may be sent only if, per the gate's ground truth, in every letter the sent digits match
+  no identifier of any kind for any patient in the call, AND the rule decides it from structure at run time, not surface text;
+  (3) report every such class with counts as sent-exempt or refused-as-base, in the PR description and here; ask only if a class
+  meets neither. Added to B's prompt verbatim; B restarted from its progress file (07:22Z).
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
