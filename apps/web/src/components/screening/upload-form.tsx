@@ -212,10 +212,12 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
   // A press waits for the chosen file's read before it sends: it is pending from the press.
   const [preparing, startPreparing] = useTransition();
   const pending = guarded.pending || preparing;
-  // A press with no file chosen: the file input's own message, shown by the summary as a field's (until a file is
-  // chosen, or the next press sends).
+  // A press with no file chosen: the file input's own message, shown by the summary as a field's. Numbered from the same
+  // count as the server's answers, so the newer of the two is shown and an older state never comes back: a file chosen
+  // while it is shown replaces it with a state that refuses nothing (so nothing is shown and nothing takes the focus),
+  // and the next press's answer, numbered after it, replaces that.
   const [noFile, setNoFile] = useState<FormState | null>(null);
-  const shown = noFile ?? guarded.state;
+  const shown = noFile !== null && (noFile.seq ?? 0) > (guarded.state.seq ?? 0) ? noFile : guarded.state;
   const [parsed, setParsed] = useState<ScreeningParse | null>(null);
   const [reading, setReading] = useState(false);
   const chosen = useRef<File | null>(null);
@@ -229,7 +231,11 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
 
   const choose = (file: File | null): void => {
     chosen.current = file;
-    setNoFile(null);
+    // Only this browser's own message is cleared; a server refusal shown stays until the next press is answered.
+    if (noFile !== null && shown === noFile) {
+      seq.current += 1;
+      setNoFile({ seq: seq.current });
+    }
     setParsed(null);
     if (file === null) {
       chosenRead.current = Promise.resolve(NOTHING_CHOSEN);
@@ -288,7 +294,6 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
         body.set('outsideContentRows', String(result.outsideContent.rows));
         body.set('outsideContentClaimLines', String(result.outsideContent.claimLines));
         body.set('outsideContentAllowedCents', result.outsideContent.allowedCents.toString());
-        setNoFile(null);
         guarded.send(body);
         sent = true;
       } finally {
@@ -323,7 +328,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
          * own web address instead. A retry on this page cannot pass the origin check; the values stay only so the person
          * can copy them into the page at appOrigin.
          */}
-        <RefusalSummary state={shown} fromBrowser={noFile !== null || guarded.fromBrowser} submit="Screen the file" formRef={formRef} renderMessage={refusalSentence} stale="origin" appOrigin={appOrigin} />
+        <RefusalSummary state={shown} fromBrowser={shown === noFile || guarded.fromBrowser} submit="Screen the file" formRef={formRef} renderMessage={refusalSentence} stale="origin" appOrigin={appOrigin} />
         <noscript>
           <p data-slot="no-javascript" className="rounded-md border px-4 py-3 text-sm">
             {NO_SCRIPT}

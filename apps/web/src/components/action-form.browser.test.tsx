@@ -1177,6 +1177,48 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
+  it('FRM-04: choosing a file after a press with no file shows nothing, never the server’s earlier refusal, and leaves the focus on the file input', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await refusedWith(page, invalid(ZIP), SCREEN);
+    expect(await focused(page)).toBe('field-zip');
+    // A file chosen while the server's refusal is shown leaves that refusal shown, and announces nothing again.
+    const refusedOnce = await shown(page);
+    await page.setInputFiles('#screening-file', screeningFile(2));
+    await page.waitForSelector('[data-state="file-ready"]');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual([`ZIP code: ${ZIP[1]}`]);
+    expect(await shown(page)).toBe(refusedOnce);
+    await page.setInputFiles('#screening-file', []);
+    await send(page, SCREEN);
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['File to screen: choose the file to screen']);
+    expect(await focused(page)).toBe('screening-file');
+    const before = await shown(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await page.waitForTimeout(200);
+    expect({ shown: (await shown(page)) - before, summary: await page.locator(`${SUMMARY} li`).allTextContents(), focus: await focused(page) }).toEqual({
+      shown: 0,
+      summary: [],
+      focus: 'screening-file',
+    });
+    expect(await page.getAttribute('#field-zip', 'aria-invalid')).toBeNull();
+    // The next press shows nothing older while it waits for its answer, and the answer is the one shown.
+    await script(page, { hold: invalid(ZIP) });
+    await page.getByRole('button', { name: SCREEN, exact: true }).click();
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.release !== null);
+    expect({ shown: (await shown(page)) - before, summary: await page.locator(`${SUMMARY} li`).allTextContents() }).toEqual({ shown: 0, summary: [] });
+    expect(await focused(page)).not.toBe('field-zip');
+    await page.evaluate(() => {
+      (window as unknown as { harness: Control }).harness.release?.();
+    });
+    await shownCount(page, before + 1);
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual([`ZIP code: ${ZIP[1]}`]);
+    expect(await focused(page)).toBe('field-zip');
+    await page.close();
+  });
+
   it('FRM-01: a dropped connection while sending a screening keeps every value and the chosen file, and says it is not confirmed', async () => {
     const page = await harness.open('screeningUpload');
     await fillProspect(page);
