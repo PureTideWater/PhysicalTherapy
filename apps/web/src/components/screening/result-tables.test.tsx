@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { ActionState } from '../../lib/http/next';
-import { ANOMALY_RULE, unpricedReasonLabel } from '../../lib/screening/labels';
+import { ANOMALY_RULE, DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL, unpricedReasonLabel } from '../../lib/screening/labels';
 import type { ScreeningResultData } from '../../lib/screening/routes';
 import { type StackedRow, brandOrderProblems, repeatedIds } from '../stacked-rows';
 import {
@@ -717,6 +717,22 @@ describe('the screening result’s words (TBL-08)', () => {
     }
     // True to every difference on the page: the 97110 group, $368.40 less $340.00, and $314.50 less $340.00.
     expect(text(copies(LATER).table)).toMatch(/\$368\.40 \$314\.50 \$340\.00 \$28\.40 -\$25\.50/);
+  });
+
+  it('names each difference by its subtraction, in both copies and the summary (TBL-08; UX-042)', () => {
+    const differences = ['Medicare figure less allowed, before the reduction across codes', 'Medicare figure less allowed, fully reduced across codes'];
+    expect([DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL]).toEqual(differences);
+    for (const html of [LATER, TOP]) {
+      const { table, rows } = copies(html);
+      expect(headers(table)).toEqual(expect.arrayContaining(differences));
+      for (const item of items(rows)) {
+        expect(fields(item.body).map((field) => field.term), item.key).toEqual(expect.arrayContaining(differences));
+      }
+    }
+    const summary = renderToStaticMarkup(<ScreeningSummary summary={SUMMARY} />);
+    expect(/data-figure="priced-difference"><dt[^>]*>([^<]*)<\/dt>/.exec(summary)?.[1]).toBe(differences[0]);
+    expect(/data-figure="priced-reduced-difference"><dt[^>]*>([^<]*)<\/dt>/.exec(summary)?.[1]).toBe(differences[1]);
+    expect(text(summary)).not.toMatch(/\bDifference, /);
   });
 
   it('says what PaidWhole prices for the top rows, for one row and for several', () => {

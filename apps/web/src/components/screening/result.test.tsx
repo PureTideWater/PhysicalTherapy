@@ -277,7 +277,7 @@ describe('the screening summary', () => {
     for (const slot of ['priced-expected', 'priced-difference']) {
       expect(html.match(new RegExp(`data-figure="${slot}"[^>]*><dt[^>]*>([^<]*)</dt>`))?.[1], slot).toContain(BEFORE_REDUCTION);
     }
-    expect(html).toMatch(/data-figure="priced-difference"><dt[^>]*>Difference, before the reduction across codes</);
+    expect(html).toMatch(/data-figure="priced-difference"><dt[^>]*>Medicare figure less allowed, before the reduction across codes</);
     // The note says what the figures are: two for a code in the reduction across codes, and every one before sequestration.
     expect(MEDICARE_FIGURE_NOTE).toMatch(/before Medicare’s sequestration, because the allowed amount in a payer’s remittance is normally reported before it/);
     expect(MEDICARE_FIGURE_NOTE).not.toMatch(/after Medicare’s sequestration/);
@@ -564,7 +564,9 @@ describe('the coverage', () => {
   it('lists every row’s outcome by payer product, with the engine’s reason and a labelled chip', () => {
     expect(html.match(/<tr [^>]*data-coverage=/g)).toHaveLength(4);
     expect(tableCopy(html)).toMatch(/data-coverage="commercial:contract_required"[\s\S]*?Cannot be priced without a contract[\s\S]*?\$6,543\.21/);
-    expect(tableCopy(html)).toMatch(/data-coverage="medicare_ffs:unpriced" data-reason="ENGINE_ERROR"[\s\S]*?The place of service is not in the approved place-of-service split/);
+    expect(tableCopy(html)).toMatch(
+      /data-coverage="medicare_ffs:unpriced" data-reason="ENGINE_ERROR"[\s\S]*?This place of service is in neither the facility nor the non-facility list a screening prices by, so the row has no Medicare figure/,
+    );
     expect(tableCopy(html)).toMatch(/data-coverage="medicaid:not_screened"[\s\S]*?Not screened/);
     expect(text(html)).toContain('33% of the rows (2 of 6) cannot be priced without a contract');
     expect(html).not.toContain('data-tone="whole"');

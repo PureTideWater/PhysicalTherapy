@@ -7,9 +7,11 @@ import * as labels from './labels';
 
 /**
  * The result page's words under their version (audit #57; the founder's rulings of 2026-10-20): a kept summary names
- * the version its result was shown under (screening_lead.labels_version), so a label changes only under a new
- * version. This pins a SHA-256 of every label to SCREENING_LABELS_VERSION; a changed label fails here until the
- * version moves (here, in labels.ts and in screening_labels_version(), whose database test holds the two equal).
+ * the version its result was shown under (screening_lead.labels_version), so a released version's labels never
+ * change; an unreleased one may be re-pinned under its name (the rule in VERSIONS below). This pins a SHA-256 of every
+ * label to SCREENING_LABELS_VERSION; a changed label fails here until the version moves (here, in labels.ts and in
+ * screening_labels_version(), whose database test holds the two equal) or, while no release tag contains the
+ * version, until its hash is re-pinned.
  */
 
 /** Every word the module gives the screens: its strings and lists, and what its functions say of each value they take. */
@@ -37,13 +39,23 @@ const VERSIONS: Readonly<Record<string, string>> = {
   // content (the founder's answers of 2026-10-21 to Q6 (a) and Q12). Unreleased until PR 6b merges, so the version
   // keeps the name its migration's screening_labels_version() returns. PR 6b-2's review round reworded two of them
   // (a ZIP that spans "more than one" locality, not "two"; the Medicare products priced "for the quarters PaidWhole has
-  // loaded"), still unreleased.
-  'screening-labels/2026-11-05': '831c2772c6b20ef9aeda827d592568daee46020af78b71e641c140a787c1f6d0',
+  // loaded"), still unreleased. UX PR 4b re-pinned it, still unreleased (Lane A's ruling of 2026-10-28; design 12.1),
+  // for three changed strings: DIFFERENCE_LABEL and REDUCED_DIFFERENCE_LABEL name their subtraction ("Medicare figure
+  // less allowed, before the reduction across codes" and "Medicare figure less allowed, fully reduced across codes",
+  // UX-042); DETAIL_LABELS.place_of_service_unmapped says in words the lists a screening prices by ("This place of
+  // service is in neither the facility nor the non-facility list a screening prices by, so the row has no Medicare
+  // figure", UX-132); and DISPOSITION_NOTES, which no screen read, is gone. Lane A's rule:
+  // a version may be re-pinned under its name only while no release tag contains it (the founder creates tags; the first tag releases it).
+  'screening-labels/2026-11-05': '46fe0a0219cd8f2af30e46bf23f355bd96e12c81b60a5b8934508a4f5d37bec0',
 };
 
 describe('the labels of PR 6b (docs/adr/0064)', () => {
-  it('labels the three ZIP+4 details an engine gives a screening row, and labels no detail the engine does not have', () => {
+  it('labels the three ZIP+4 details an engine gives a screening row and the place of service a screening does not price by, and labels no detail the engine does not have', () => {
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'locality_needs_zip_plus_four')).toBe('The ZIP spans more than one Medicare locality and no ZIP+4 was given');
+    // The lists a screening prices by, in words a prospect can read (UX-132), never the split's own name.
+    expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'place_of_service_unmapped')).toBe(
+      'This place of service is in neither the facility nor the non-facility list a screening prices by, so the row has no Medicare figure',
+    );
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'zip_plus_four_not_in_locality_map')).toBe('Medicare’s ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day');
     // No ZIP+4 list of the ZIP in force is PaidWhole's content to load, never the prospect's ZIP+4 to check.
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'no_locality_plus_four')).toBe('PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day');
@@ -68,6 +80,14 @@ describe('the labels of PR 6b (docs/adr/0064)', () => {
     expect(`${many.lead}$41,200.00${many.tail}`).toBe('12 rows ($41,200.00) in quarters before 2026-Q1 were not screened: PaidWhole has not loaded the Medicare content for them.');
     const one = labels.outsideContentNote(1, null);
     expect(`${one.lead}$500.00${one.tail}`).toBe('1 row ($500.00) in a quarter outside the loaded content was not screened: PaidWhole has not loaded the Medicare content for it.');
+  });
+});
+
+describe('the labels of UX PR 4b', () => {
+  it('names each difference by its subtraction (UX-042), and keeps no notes that no screen reads', () => {
+    expect(labels.DIFFERENCE_LABEL).toBe('Medicare figure less allowed, before the reduction across codes');
+    expect(labels.REDUCED_DIFFERENCE_LABEL).toBe('Medicare figure less allowed, fully reduced across codes');
+    expect('DISPOSITION_NOTES' in labels).toBe(false);
   });
 });
 
