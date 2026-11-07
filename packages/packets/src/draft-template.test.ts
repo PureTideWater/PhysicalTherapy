@@ -181,8 +181,15 @@ describe('the code draft', () => {
       mutator: string;
       original: string;
       reason: string;
+      reviewedBy: string;
+      reviewedOn: string;
     }[];
-    const guard = records.filter((record) => record.file === 'packages/packets/src/draft.ts' && record.original.includes('interest'));
+    // The full gate refuses an unsigned record of a package that ran in full, and the per-visit sentence's optional chain
+    // is killed by the no-codes case, so it has no record (review round 2 of 2026-11-07).
+    const drafts = records.filter((record) => record.file === 'packages/packets/src/draft.ts');
+    expect(drafts.filter((record) => record.reviewedBy === '' || record.reviewedOn === '')).toEqual([]);
+    expect(drafts.filter((record) => record.mutator === 'OptionalChaining')).toEqual([]);
+    const guard =records.filter((record) => record.file === 'packages/packets/src/draft.ts' && record.original.includes('interest'));
     expect(guard.map((record) => [record.mutator, record.original])).toEqual([
       ['ConditionalExpression', 'interest !== null && interest.total_cents !== null'],
       ['ConditionalExpression', 'interest.total_cents !== null'],
@@ -198,6 +205,15 @@ describe('the code draft', () => {
     const rendered = renderFacts(draftNarrative(content, V3), content);
     expect(rendered.ok && rendered.text).toContain('release 900002');
     expect(rendered.ok && rendered.text).not.toContain('900001');
+  });
+
+  it('drafts the per-visit sentence for a per-visit content with no codes, at /2 and /3, without throwing', () => {
+    // An empty pattern.codes is a value of the declared type, though assemblePacket never builds one: the /2 draft reads
+    // no first code's amount and cites the rate's page instead (review round 2 of 2026-11-07).
+    const perVisit = FACT_CONTENTS.perVisit();
+    const content = { ...perVisit, pattern: { ...perVisit.pattern, codes: [] } };
+    expect(draftNarrative(content)).toMatch(/^The contract, version \d+, pays a visit at the rate cited on page \d+ \[1\]\. /);
+    expect(draftNarrative(content, V3)).toMatch(/^\{\{fact:citation\.version\}\} /);
   });
 
   it('renders its tokens with the figures the /2 draft states', () => {

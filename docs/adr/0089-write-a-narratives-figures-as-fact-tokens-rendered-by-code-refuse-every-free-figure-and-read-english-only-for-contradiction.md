@@ -223,7 +223,10 @@ prints only rendered text: a /3 template exported by today's worker would print 
   conjunction made a disjunction is killed by the $0.00 case, not recorded as equivalent (review round 4); the two
   records of that guard that stay (its first two checks, or its second, replaced by true) argue only their own
   replacement, which leaves `interestStated` false wherever interest or its total is null, and a test keeps the
-  disjunction out of their reasons (review round 5).
+  disjunction out of their reasons (review round 5); an independent review signed those two, and the per-visit
+  sentence's optional chain on the first code's amount is not recorded as equivalent, since an empty `pattern.codes`
+  is a value of the declared type (ADR 0066's rule counts no assembly invariant) and a per-visit content with no codes
+  drafts the page's sentence at /2 and /3 where the mutant throws (review round 6).
 
 ## Not covered
 

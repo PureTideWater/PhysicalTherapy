@@ -51,8 +51,8 @@
     "replacement": "true",
     "reason": "With the guard's first two checks (interest !== null && interest.total_cents !== null) replaced by true, interestStated(interest) is the only condition left; interestStated(section) (interest.ts) is section !== null && section.total_cents !== null && parseCents(section.total_cents) > 0n, so it is false wherever interest or its total is null, and the two checks only narrow the type for dollars(interest.total_cents): the sentence is written exactly where it was (the /2 draft's interest line, unchanged by this slice).",
     "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "review round 2 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedOn": "2026-11-07"
   },
   {
     "file": "packages/packets/src/draft.ts",
@@ -62,19 +62,8 @@
     "replacement": "true",
     "reason": "With the guard's second check (interest.total_cents !== null) replaced by true, interest !== null && interestStated(interest) is the condition left; interestStated(section) (interest.ts) is section !== null && section.total_cents !== null && parseCents(section.total_cents) > 0n, so it is false wherever interest's total is null, and the check only narrows the type for dollars(interest.total_cents): the sentence is written exactly where it was (the /2 draft's interest line, unchanged by this slice).",
     "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/packets/src/draft.ts",
-    "mutator": "OptionalChaining",
-    "original": "pattern.codes[0]?.contract_amount_cents",
-    "occurrence": 1,
-    "replacement": "pattern.codes[0].contract_amount_cents",
-    "reason": "A packet has at least one line (assemblePacket throws a PacketAssemblyError on none, and pattern.codes holds each of its lines' codes), so pattern.codes[0] always exists and the optional chain never short-circuits; the per-visit sentence of the /2 draft reads the same amount either way (code that was there before this slice).",
-    "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "review round 2 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedOn": "2026-11-07"
   },
   {
     "file": "packages/packets/src/facts.ts",
