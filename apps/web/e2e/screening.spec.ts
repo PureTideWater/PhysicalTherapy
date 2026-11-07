@@ -516,7 +516,7 @@ screeningTest('a specialist approves the split; a file with patient information 
       [CONTACT],
     )).rows[0]?.n);
     await expect(page.getByRole('table', { name: 'Anomalies by code and payer product' }).locator('tbody tr')).toHaveCount(Number(groups));
-    await expect(page.locator('[data-section="anomalies"] [data-slot="status-chip"]').first()).toBeVisible();
+    await expect(page.locator('[data-section="anomalies"] [data-stacked-copy="table"] [data-slot="status-chip"]').first()).toBeVisible();
     // The fully reduced total under its label: each priced row's lowest figure, summed by the database.
     const lowest = await withDatabase(async (client) => (await client.query<{ lowest: string }>(
       `SELECT sum(coalesce(s.reduced_cents, s.expected_cents))::text AS lowest
