@@ -655,14 +655,14 @@ describe('the SOC 2 Type I evidence checklist', () => {
     ok(await call(recordEvidence, platformAdmin, {}, { kind: 'policy_approval', policy: 'access-control', occurredOn: today, documentRef: 'records:policies/access-control-0.1', sha256: sha('approval') }));
     ok(await call(recordEvidence, platformAdmin, {}, { kind: 'training_attestation', member: supportEngineer, occurredOn: today, documentRef: 'records:training/2026', sha256: sha('training') }));
     expect((await call(recordEvidence, platformAdmin, {}, { kind: 'training_attestation', member: world.adminUserId, occurredOn: today, documentRef: 'records:x', sha256: sha('x') })).status).toBe('invalid');
-    expect((await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: '2099-01-01', documentRef: 'records:x', sha256: sha('x') })).status).toBe('invalid');
+    expect(await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: '2099-01-01', documentRef: 'records:x', sha256: sha('x') })).toEqual({ status: 'invalid', issues: [{ field: 'occurredOn', message: 'the date is after today; enter the day it happened, today or earlier' }] });
     // A reference outside its format is refused with the format in words, as its hint says it, never bare punctuation.
     expect(await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: today, documentRef: 'records x', sha256: sha('x') })).toEqual({
       status: 'invalid',
       issues: [
         {
           field: 'documentRef',
-          message: 'where the record is kept, never a person’s name: use only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026',
+          message: 'say where the record is kept, never a person’s name, using only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026',
         },
       ],
     });
