@@ -1,0 +1,16 @@
+# i126d skeptic R2M2-2 (mayYetHold condition (b) unpinned)
+- status: started 2026-11-07; clone r4-sk-money-R2M2-2 pending
+- clone r4-sk-money-R2M2-2 at origin head 9c68a4be (unchanged); install ok (log -install.log)
+- read: reviewer notes rv-money-2.md + logs (mutb 144 pass, mutTrue 1 fail, short-head 0/360, short-nob 600/360), R2M2-1 skeptic (real=true; dropping (b) is NOT a fix for R2M2-1 since it breaks cash bound)
+- remittances.ts:1149 at head = chainLines.set(... mayYetHold: unlinkedReversals || caseLineChains) - line cited correctly; (b) added in 8ea33e13 (this PR)
+- other tests touching interest outside reviewer's 6: reconcile.large (take-back L6 alone, written whole -> (b) moot), chain.db (LED-25), e2e (LED-23 paired/reported-only, no take-back). To run mutant over all interest/PLB db files.
+- stryker shards.json: money-ledger mutates packages/ledger only; no apps/worker file (confirmed)
+- HEAD short pool reproduced (db tp_i126d_skr2m22_1, dropped; log scratchpad/sk-r2m2-2/short-head.log): s then x -> L1 +133 L2 +167 L1 -133 L2 -167; interest 0 cash 360 (B waits). matches reviewer.
+- next: mutant (b) dropped -> short shape + all db files touching interest/PLB (excl. *.large)
+- mutant applied (sed line 1149, (b) dropped); running 19 db files (all reconcile/*.db except *.large, ledger-interest, recon/remittances/workbench/export-attempts routes, packets, payer-copy, report-ledger) + zz short -> sk-r2m2-2/mutb.log (bg)
+- precedent: i126d-sk-db-RV-DB2-2 (same mutant, other shape: out-of-order claims-only/two-chains/later-l6) VERDICT real=true; 154 tests passed under mutant.
+- MUTANT RESULT (log sk-r2m2-2/mutb.log): 18 committed db files 278 tests pass; only scratch short test fails: interest 600 vs cash 360 (L1 +133 L2 +167 L3 +600 L1 -133 L2 -167). Finding reproduced.
+- unit project (apps/worker/src/reconcile, packages/ledger) under mutant: 18 files 317 tests pass.
+- (b) added by this PR: merge-base 8a722f80 has no caseLineChains/mayYetHold; first in 8ea33e13 (git log -S). ADR 0084:132-134 documents (b) as behaviour.
+- mutant reverted; DBs tp_i126d_skr2m22_1/2 dropped; clone and sk-r2m2-2 removed; logs kept progress/i126d-sk-money-R2M2-2-{short-head,mutb,install}.log
+- VERDICT: real=true (should-fix test gap). Reproduced at 9c68a4be: head 0 vs 360; (b) dropped 600 vs 360 above cash; 278 committed db tests + 317 unit tests green under the mutant. Agrees with independent RV-DB2-2 skeptic (real=true, other shape). DONE

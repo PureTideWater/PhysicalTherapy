@@ -1,0 +1,14 @@
+# i126d skeptic RV-DB2-1
+- started; cloning to scratchpad/r4-sk-db-RV-DB2-1
+- clone at 9c68a4be, installed. Read interest.ts interestWrites/interestOutOfReach and remittances.ts recordInterest (1099-1200): composition in script matches (outOfReachOf drops lines from paid; mayYetHold = unlinkedReversals||caseLineChains).
+- pure script (copy at scratchpad/sk-db2-1-scripts/partial-head.mts, run with tsx against clone's interest.ts): in order 600, out of order 0. Reproduces.
+- ADR 0084 D5 (lines ~128-134) claims 'outcome is the one the remittances give uploaded in order'; 'Payments that wait for good' lists only never-uploaded reversal / lines with nothing remaining. test-matrix LED-24 row: 'outcome same whichever uploaded first'.
+- next: DB-level repro via LED-24 fixture variants
+- building DB repro: fixtures in clone fixtures/synthetic/ZZSK (Z = paired variant, correction 002 on L1 only + other-patient claim, L6 names 002 -1.00; Y = later-l6 style naming 002 -4.40 dated 0705; X = two-chains variant with rev002 one SVC). test apps/worker/src/reconcile/zz-skdb2.db.test.ts; admin db tp_i126d_skdb2_1.
+- run script scratchpad/sk-db2-1-scripts/run.sh (drops db after)
+- DB run 1 (head): B matched only L1 (no_change), so chain b had no line beyond a's: in order 0, out of order 0 (no divergence in this variant; variant's fault: L2 not reached by B). Investigating why B not matched to L2.
+- variant 2: correction 002 on both lines but L2 paid as original (no_change), so chain a's paid lines = approved L1 only; B approves L2. Re-running as label v2.
+- v2 DB result (real reconcile, head 9c68a4be): in order Z,Y,X = 600 (L1 +100 +440 -540, L2 +600) = cash; all loaded then one reconcile = 600; out of order Z,X,Y = 0 (X -100 L1 waits; Y's 4.40 kept off L1, lands on L2 via 002's no_change match, X takes it back there; b's 6.00 finds no unreached line) for good. Log progress/i126d-sk-db-RV-DB2-1-v2.{log,out}. Divergence confirmed.
+- base claude/build-platform has no interest.ts; F1 waiting (8ea33e13) and MONEY-R4-1 (1fda5637) are this PR's.
+- cleanup: tp_i126d_skdb2_1 dropped (none left), clone removed; test + fixtures saved as progress/i126d-sk-db-RV-DB2-1-zz-*.txt
+- VERDICT: real=true (could not refute). Should-fix. Mechanism note: in DB variant v2 Y's 4.40 lands on L2 and is taken back there (002 has a no_change match on L2), not 'nowhere' as in the critic's pure shape; final outcome 0 vs 600 either way.

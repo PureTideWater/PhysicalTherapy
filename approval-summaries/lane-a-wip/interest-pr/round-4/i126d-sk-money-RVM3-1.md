@@ -1,0 +1,14 @@
+# RVM3-1 skeptic progress
+- started; cloning
+- head now 98bb9c00 (moved past 9824f4e9). Code cited still present: remittances.ts:1186, interest.ts:414/402.
+- ADR 0084 D5 (l.136-137) says unlinked reversal incl "one the loader cannot link" -> may yet hold; payments wait "in this reconcile or a later one".
+- ADR renumbered bullet: "Beside its correction and another claim in one exact pool ... the PLB L6's payments wait (D5): no new interest"
+- test-matrix LED-23: "so the interest paid in the same PLB L6 waits" (all of it); workflow.ts note "the PLB L6's payments, the correction's 5.40 among them, wait"
+- reportedInterest shows K's AMT I 2.00 on K's line if K were on a case line -> "nothing shows it" partly false
+- next: pnpm install, run scratch interestWrites with K paid line
+- scratch unit repro: draws c+540 v-540 k+200; with waiting -> []; without -> c 240+300 and k 200 (7.40 vs 2.00 cash). Mechanics hold.
+- loader not in PR diff; waiting rule is.
+- K on no case line is the LED-23 convention across all variants (unnamed, netZeroBeside), not special
+- cited unit test (interest.test.ts renumbered) passes at head 98bb9c00.
+- VERDICT: real=false. Mechanics reproduce but are the documented, accepted design: ADR D5 names "one the loader cannot link" and says payments wait "in this reconcile or a later one"; renumbered bullet names "another claim in one exact pool" and says "the PLB L6's payments wait: no new interest"; matrix row "the interest paid in the same PLB L6 waits"; workflow note "the PLB L6's payments, the correction's 5.40 among them, wait". To the reconcile a renumbered reversal is a reversal whose claim never arrives (root status 22, never linked) = "Payments that wait for good" first item. Errs low, never above cash. "Nothing shows it" false: reportedInterest shows K's AMT I 2.00 on K's line. K-on-no-case-line is LED-23's convention in every variant. Proposed cap not computable (an unlinked reversal's future lines unknown; LED-24 two-chains shows two chains on the same lines). Root cause the loader (not in PR; handed to Lane B). Residual: wording nit only.
+- clone removed

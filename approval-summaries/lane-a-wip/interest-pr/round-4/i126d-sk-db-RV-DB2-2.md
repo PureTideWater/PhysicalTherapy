@@ -1,0 +1,14 @@
+# i126d-sk-db-RV-DB2-2 progress
+- started 2026-11-07T09:39:46Z
+- clone at scratchpad/r4-sk-db-RV-DB2-2, head 9c68a4be (origin head confirmed via ls-remote). install ok.
+- mutation applied: remittances.ts:1149 drops `|| interest.caseLineChains.has(draw.chain)`.
+- running 7 cited db files with mutation -> sk-db2-2/mut7.log
+- mut7 (7 cited files, mutation):       Tests  154 passed (154) rc=0 50s
+- built probe: fixtures LED-24/sk-claims-only.835 (paired minus PLB) + sk-later-l6.835 (L6 naming C, 2026-07-01) + two-chains; test apps/worker/src/reconcile/sk-condb.db.test.ts (clone only)
+- probe under mutation: in order total 0 (240/-240, 300/-300); out of order (claims-only, two-chains, later-l6): 267/333 written, total 600 (and 600 vs cash 60 after two-chains). C's claim matches stay standing throughout.
+- reverted mutation; running probe at head -> sk-db2-2/probe-head.out
+- probe at head: in order total 0; out of order: after two-chains nothing written (payments wait via (b)), after later L6 240/-240, 300/-300, total 0. Same as in order.
+- (b) introduced in this PR (8ea33e13); merge-base 8a722f80 has no mayYetHold/caseLineChains.
+- other test files: LED-23/24 fixtures used only by the 7 cited files + e2e (paired, reported-only: no take-back); reconcile.large take-back L6s are single negative draws written whole. No committed test exercises the (b)-deciding path.
+- VERDICT: real=true (reproduced: mutant survives 154 tests; mutant changes a real outcome end to end; 600 vs cash 60 transiently and 600 vs 0 final out of order).
+- probe test and fixtures kept at scratchpad/sk-db2-2/ (sk-condb.db.test.ts, sk-*.835); clone removed.

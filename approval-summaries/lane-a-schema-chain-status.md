@@ -10,6 +10,21 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 16:25 UTC (acting Lane A): #126 round 4 stopped by decision at head 75cb2b70; round 5 running.** Round 4
+  fixed F-M2-1 (3/3 judges), MONEY-R4-1, R2M2-1/RV-DB2-1 (a partly written take-back: interestUnplaced, unplacedCents),
+  R2M2-2/RV-DB2-2 and RVM3-2/RV-DB3-2 (tests pinning mayYetHold's condition (b) and the out-of-reach invalidation),
+  RVM3-3 (two take-backs of one chain) and nits; base d4f52071 (#133) merged (75cb2b70); domain model now bb7662c6…
+  (the migration header changed). Its third round's fix found **a per-reconcile overshoot:** with two take-backs of one
+  chain and a payment dated after both, the figure can be above the cash for one reconcile (169 vs 168; 7 vs 6) before the
+  next corrects it; the settled figure never exceeded the cash in 300k runs. Stopped before CAS-42.5 and verification on a
+  head that must change. **Decision (acting Lane A; money: the safer, more accurate option):** re-walk the interest path
+  within a reconcile until a walk writes nothing (bounded; keeps the settled outcomes), not "count only the judged
+  take-back's own lines" (it understates stable cases). **Base red since #133:** packages/model-gateway/src/
+  redact.property.test.ts (MOD-16) fails on claude/build-platform; CI's unit job on #126 will show it until the base is
+  fixed (Lane B's "first thing" in the 11-05 handoff). **Running: wf_5da61191-99a** (script archived): the overshoot fix
+  (failing-first: the property asserts the bound after every reconcile), the matrix rows, the widened lookup's plan at
+  size (an index beyond 10.1 would go to the founder, not be added), review until dry, base merge once, full suite once,
+  push, CAS-42.5, body, verification.
 - **2026-11-07 11:15 UTC (acting Lane A): #126 round 4 in its review loop; head 9c68a4be.** F-M2-1 upheld by 3 of 3 judges
   (LED-R1's widening, 84534029, mis-split a PLB L6 naming the latest correction; c49367c5 was right) and fixed (c7f152cc);
   F-M2-2/DB2-4 (8a6d0f26), DB-C1 (migration header wording, marker route), a brand-colour scan test, matrix rows; base

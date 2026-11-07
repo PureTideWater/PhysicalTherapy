@@ -1,0 +1,15 @@
+# RVM3-6 skeptic progress
+- started: cloning
+- clone at origin head 98bb9c00 (base merge on top of 9824f4e9)
+- verified: no code reads outcome.variants / interestAllocated (grep). Claim factually true.
+- precedent: pre-existing outcome fields unread by any test: LED-14 claimLevelShort/claimLevelBoth/withheldOnePass/raisedAgain/afterReversal/recoveredBeforeReversalCents, LED-12 aloneCash, LED-09 caseShareCents, LED-16 twoLines. Convention (ADR 0023): expected.json records; assertedBy tests assert (hard-coded allowed). synth-fixture skill: "expected outcome in expected.json and a test that asserts it".
+- every LED-23 variant (13) and LED-24 variant (18) has an interest.db.test.ts case asserting it.
+- leaning: real=false (test-coverage nit, no defect, no reproducible wrong behaviour; follows repo convention)
+- side note: LED-23 variants unnamed/namedNet/identifiers/zeroL6/namedOriginal reuse `interest` labelled 'paired.835 PLB L6' (workflow.ts:1258) though the PLB L6 is in their own file; amounts match tests. Label-only; not this finding's claim.
+- next: try running ledger-oracle.db.test.ts (cited) for completeness
+- ADR 0084 test table (line ~1220-1222): interest.db.test.ts asserts "the LED-23 variants as their expected outcomes" (by hand); oracle cases "checked against expected.json as the harness checks every case ... the harness itself is unchanged" -> PR meets its own spec; no promise of a variant reader.
+- fixtures.test.ts: assertedBy checked to exist; expected.json byte-identical to generator. Same mechanism as pre-existing LED-14/LED-12/LED-16 unread variant fields.
+- running ledger-oracle.db.test.ts (bg)
+- ran at 98bb9c00: ledger-oracle.db.test.ts 12/12 pass; interest.db.test.ts 42/42 pass (variant amounts agree with behaviour today; finding concedes this).
+- VERDICT: real=false. Claim "no test reads outcome.variants" is factually true, but it is not a defect in this PR: every variant is asserted by interest.db.test.ts by hand, which is the repo's convention (ADR 0023 assertedBy; synth-fixture skill; pre-existing unread variant fields in LED-12/14/16) and exactly what ADR 0084's test table promises ("the harness itself is unchanged"). No wrong number, no failing or reproducible misbehaviour; drift is hypothetical; the fix is an optional hardening.
+- clone removed.

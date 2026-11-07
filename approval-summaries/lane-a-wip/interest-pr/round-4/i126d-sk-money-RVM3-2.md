@@ -1,0 +1,13 @@
+# RVM3-2 skeptic progress
+- started 2026-11-07; cloning
+- clone at r4-sk-money-RVM3-2, head 98bb9c00 (branch moved past 9824f4e9); installed
+- code read: cache outOfReach set in outOfReachOf (:1068), deleted at :1236 after L6 writes; walk order bpr16_date. Mechanism plausible: netted L6's unplacedOf caches its own (empty) outOfReach before it writes
+- existing one-line tests all date rest-paid (07-01) before netted (08-03) -> delete never exercised in those
+- next: mutant run of interest.db + ledger-oracle + chain.db + reconciliation-routes; probe with re-dated rest-paid
+- PROBE REPRODUCED: rest-paid re-dated 2026-09-01 (loadVariant 260701->260901), uploaded with netted, one reconcile, then another: head L1 [100,-100] L2 [600] = 600/600; mutant A (delete line removed) L1 [100,-100,440] L2 [] = 440/600. Uploaded after netted (separate reconcile): 600 both.
+- next: committed tests under mutant (probe removed)
+- cache + delete introduced by this PR (1fda5637, MONEY-R4-1); base has no outOfReach. Stryker configs: ledger/money/packets/pricing only (apps/worker none).
+- property interest.test.ts:1118: reconcile walks Z,Y,X so X always last; computes interestOutOfReach fresh (no cache) - confirmed
+- running mutant suite: interest, ledger-oracle, chain, ledger, payment-terms, reconciliation-routes, chain.large, reconcile.large (log rvm32-mut-suite.log)
+- mutant A suite: 8 files, 165/165 pass (interest.db, ledger-oracle.db, chain.db, ledger.db, payment-terms.db, reconciliation-routes.db, chain.large.db, reconcile.large.db) -> no committed test kills it
+- VERDICT: real=true (test gap on a money-deciding line this PR introduced; head correct 600/600; mutant 440/600 reproduced). Probe text kept at progress/rvm32-interest-with-probe.db.test.ts.txt

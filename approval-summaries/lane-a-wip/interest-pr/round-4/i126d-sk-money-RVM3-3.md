@@ -1,0 +1,22 @@
+# RVM3-3 skeptic progress
+- started: cloning
+- clone at r4-sk-money-RVM3-3, HEAD 98bb9c00 (branch moved past 9824f4e9; finding cites unplacedOf ~1116-1124 which exists). install ok.
+- hand-walk of finding scenario on head code: date order 6.00, Y2-last 0.00 (both <= 10.00 cash); B2 Y2-last 12.00 (> cash). Scenario needs uploads paying chain a 5.40 < 7.40 taken back (the "holds back for good" regime).
+- next: read ADR D5, find tests, run mutant B2 against DB tests
+- ADR 0084 D5 (lines ~135-150) claims "outcome is the one they give uploaded in order" while weights same; short carve-out is per take-back ("uploads pay the chain less than it takes back"); X1 (3.00 < 5.40) not in carve-out literally -> contradiction plausible.
+- NOTE: proposed fix (subtract only take-backs walked before) looks UNSAFE across reconciles: X1 (later-dated) deemed whole and writes K1 in an earlier reconcile; X0 dated earlier uploaded later subtracts nothing -> 12.00 vs 10.00. Head rule (subtract all others) safe there.
+- next: run B2 mutant vs interest.db.test.ts + ledger-oracle.db.test.ts
+- pure model (clone packages/ledger/src/zz-rvm33-model.test.ts, composes interestWrites/interestUnplaced/interestOutOfReach like recordInterest; all 24 upload orders, one reconcile each):
+  - head S1: 6.00 in 18 orders, 0.00 in 6 (all with Y2 last); never > 10.00 cash. CONFIRMS order dependence.
+  - B2 S1: 12.00 in 10 orders (> 10.00 cash). CONFIRMS subtraction is load-bearing.
+  - finding's proposed fix (subtract only take-backs walked before): 12.00 in Y1X2Y2X1, X2Y1Y2X1 (S1) and Y1X1Y2X0, X1Y1Y2X0 (S2) -> proposed fix UNSAFE.
+- B2 DB run of cited tests in background (progress/rvm33/b2-cited.log)
+- DB repro built in clone: fixtures/synthetic/LED-24/zz-x1.835 (rev 240002 AMT I -3.00 + corr 240091; P2 rev 240014 + corr 240019 AMT I 6.00; PLB L6 -3.00) and zz-x2.835 (rev 240091 AMT I -4.40 + corr 240092; P2 rev 240019 + corr 240093 AMT I 6.00; PLB -1.60); test apps/worker/src/reconcile/zz-rvm33.db.test.ts (date order vs rest-paid last). Queued (progress/rvm33/chain.sh): b2-cited -> zz under B2 -> restore head -> zz at head. Outputs progress/rvm33/{b2-cited.log,zz-b2.jsonl,zz-head.jsonl}
+- lock held by RVM3-2 skeptic's long run at 12:59
+- aside S3 (second take-back L6 with no payment): head date order 6.00 vs cash 4.00 — design-accepted (holds nothing back; per-line floor), not this finding. B2's 12.00 vs 10.00 is the R2M2-2 class the design explicitly prevents (short-paid test: "6.00 against 3.60").
+- waiting for DB runs (Monitor bfwnu0sgl)
+- 13:17 replaced separate queued runs with progress/rvm33/combined.sh (one lock hold: migrate; B2 cited+zz -> b2-cited.log, zz-b2.jsonl; restore head; zz -> zz-head.log/jsonl; drop db). Background bpvayk135.
+- RESULTS (13:22): DB repro through the worker at head 98bb9c00: date order 6.00, rest-paid.835 last 0.00 (cash 10.00). Under B2: 6.00 / 12.00 (> cash). interest.db.test.ts + ledger-oracle.db.test.ts all pass under B2 (54 tests of those files; 56 with my 2 scratch tests). Copies of fixtures/tests in progress/rvm33/*.txt.
+- VERDICT: real=true (order dependence contradicts D5/LED-24 row; wiring of the subtraction unpinned; B2 over-credits). BUT the finding's primary fix (subtract only take-backs walked before) is UNSAFE: model gives 12.00 > 10.00 in orders Y1,X2,Y2,X1 / X2,Y1,Y2,X1. Use the alternative: keep subtraction of all others, pin it with DB test (fails under B2), extend property with a 2nd take-back asserting <= cash, and state order dependence in D5 + LED-24 row.
+- cleanup: DB dropped; clone to remove.
+- clone removed

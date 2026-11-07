@@ -1,0 +1,11 @@
+# i126d-sk-money-MONEY-R4-1 (skeptic)
+- started; read reviewer evidence (h1 log, zz-h1 test, two 835 twins)
+- clone at r4-sk-money-MONEY-R4-1, HEAD 0755a533 (= origin head); copied reviewer zz-h1 test + 2 fixtures; admin db tp_i126d_skmoney_1
+- clone at r4-sk-money-MONEY-R4-1, HEAD 0755a533 (= origin head); copied reviewer zz-h1 test + 2 fixtures; admin db tp_i126d_skmoney_1
+- REPRODUCED at 0755a533: zz-h1 db test fails, interest 1140 vs cash 600 after person matches C by hand (log progress/i126d-sk-money-R4-1-h1.log). before manual match 600/600.
+- control zz-h1b (person matches C right after P, before X): interest 0 vs cash 600 (errs low, as designed). Same evidence, the person's later timing gives 1140 vs 600 -> outcome depends on when a person matches; overstatement.
+- route: apps/web routes/reconciliation.ts matchClaimAction -> matchClaimByHand; manual.ts allows a reversed (non-22) freq-7 claim; unmatched.ts lists it with L1/L2 candidates.
+- PR's own change: base 8a722f80 has no interestWrites/mayYetHold; mayYetHold added by 8ea33e13 (this PR). ADR 0084:129,273,278 + interestWrites docstring claim never above the cash.
+- property interest.test.ts:921-943 hardcodes mayYetHold true both passes (confirmed).
+- VERDICT: real=true (should-fix; narrow shape but the PR's docs claim it cannot happen).
+- cleanup: db tp_i126d_skmoney_1 dropped; clone removed. DONE

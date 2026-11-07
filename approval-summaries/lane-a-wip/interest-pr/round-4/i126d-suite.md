@@ -1,0 +1,14 @@
+# i126d final round: base merge, full suite, push (PR #126)
+- start 2026-11-07; worktree /home/user/interest; pulled: head 75cb2b70 (as expected), clean, no marker
+- step 1 base merge: origin/claude/build-platform = d4f52071, already merged in 75cb2b70 (git merge: "Already up to date"); no merge commit, nothing to regenerate (dm --check on fresh db in suite confirms)
+- step 2 suite: scripts in scratchpad/i126d-suite (suite.sh = part A non-Stryker; stryker.sh = shards in parts + gate); logs scratchpad/i126d-suite/logs/summary.txt
+  - affected.ts (base d4f52071): 19 shards = money-ledger, packets-scan, -roles, -roles-cues, -roles-numbers, -words-labels, -words-amounts, -words-days, -words-dates, -words-prose, -verifier, -facts, -rest, -explain, -figures, -template, pricing-engine, -recompute, -rest
+  - part A launched
+  - remote co-001/ledger-interest-once and co-001/wip-interest-fix both at 75cb2b70 at start
+  - part A fast checks all rc=0 (typecheck, lint 1,890 files 0/0, lint:copy, lint:logs, check:fixtures, synth --all 0 written/773 unchanged, synth diff clean, verify-content, actions:check (1 warning: buildkit v0.34.2 available), engine-freeze (no problems), toolchain:check (1 warning: pnpm 10.34.9))
+  - dm on fresh tp_i126d_dm_1 (dropped): --check rc=0, --check --strict rc=0, --require-approval rc=1 as expected (approval line blank); SHA-256 bb7662c681fbcc658b9845b83da6a1b8a0df13759a685849cde58d48fb456bf8, approval line 7469 (blank name/date)
+  - unit 489 files, 10269 passed / 4 skipped (434 s); infra 29 files 798 passed; golden 5 files 381 passed; synth --large ok; oracle 733 fixtures agree (722 valid, 11 malformed rejected); ledger oracle 12 passed
+  - test:db 4 shards (fresh tp_test_* dbs each): db-1 38 files 3306 passed/1 skipped; db-2 38 files 2287 passed; db-3 38 files 3309 passed; db-4 38 files 1026 passed (total 152 files, 9928 passed, 1 skipped)
+  - build rc=0 (Turbopack cache warm), stamp 75cb2b70; e2e running (port 4981, tp_i126d_e2e_1)
+  - e2e 86 passed (10.8 m), tp_i126d_e2e_1 dropped; status clean after every phase; part A DONE 16:07Z
+  - Stryker part B launched: money-ledger .. packets-words-prose (fresh reports/mutation, .stryker-tmp cleared)

@@ -1,0 +1,11 @@
+# RV-DB3-1 skeptic\n- clone created
+- head 98bb9c00 checked out in clone
+- code read: claims (1)-(5) of the finding match the code (interest-chains.ts:220, remittances.ts:1186, interest.ts:402-414)
+- ADR 0084 D5 (lines ~131-150) says: "the PLB L6 writes none of its payments ... A chain may yet hold interest when its root is a reversal the moment links to no claim (its claim not uploaded yet, or one the loader cannot link)"; "A take-back that no interest arriving completes ... holds the payments back for good". LED-23 matrix row: "so the interest paid in the same PLB L6 waits". expected.json: "the PLB L6's payments, the correction's 5.40 among them, wait"
+- leaning: real=false (documented design; the finding omits D5)
+- next: pnpm install, scratch unit run to confirm numbers
+- scratch unit run at 98bb9c00 (synthetic, removed): draws c +540, v -540, k +200; with (a) interestWrites = []; without (a) = c 240 L1 + 300 L2, k 200 L3 = 740 vs cash 200 (C2's 5.40 counted again)
+- existing interest.test.ts + scratch: 77 passed
+- design doc R2-4 / section 14: renumbered reversal is the handed-on loader defect; once linked, O chain nets 0 and the L6 draws only K +200
+- VERDICT: real=false. Reproduces, but it is the documented D5 rule (all payments of the L6 wait; "or one the loader cannot link"; "for good" when uploads pay the chain less than it takes back), LED-23 row and expected.json say the L6's payments wait ("the correction's 5.40 among them"); errs low, order-independent; root cause handed-on loader defect; proposed narrowing cannot tell renumbered from not-yet-uploaded reversal without that fix and dropping (a) overstates by 5.40.
+- clone removed

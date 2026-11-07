@@ -1,0 +1,14 @@
+# RV-DB3-4 skeptic; started
+- clone at head 98bb9c00 (branch moved past 9824f4e9)
+- Confirmed: LED-23/24 outcome.variants names appear only in packages/synth/src/cases/workflow.ts; ledger-oracle reads only entries/recoveredCents/postedEntries/matches.
+- Pre-existing convention: LED-14 outcome at merge base 8a722f80 already had ~17 per-variant figures (claimLevelAbsorbed, withheldOnePass, afterReversal, raisedAgain, ...) read by no test (grep -> only workflow.ts); LED-12/15/16/17 same. So pattern predates PR.
+- synth-fixture skill: "Add the expected outcome ... and a test that asserts it" -> assertedBy tests (interest.db.test.ts) hard-code same outcomes.
+- Cross-checked matchedByHand, renumberedReversal, takenBack, twoChains vs interest.db.test.ts: consistent today (no actual drift).
+- Design table (ops design line 1220-1222) says interest.db.test.ts asserts "the ten LED-23 variants as their expected outcomes" and oracle harness "unchanged", checked against expected.json "as the harness checks every case" -> PR does exactly that.
+- Leaning real=false: pre-existing repo convention (ADR 0023: outcome recorded, assertedBy names tests asserting it; no rule that tests read expected.json).
+- Next: pnpm install, mutate a variant in workflow.ts, regen, run oracle test to confirm nothing fails (cited-test rerun).
+- Mutated workflow.ts in clone (LED-24 matchedByHand interestTotalCents 600->601; LED-23 renumberedReversal interest [] -> [999]); regenerated via pnpm synth --case. Now running synth unit tests + ledger-oracle db test.
+- Ran on mutated tree: synth fixtures.test.ts 23/23 pass; ledger-oracle.db.test.ts 12/12 pass -> gap reproducible (no test reads variants).
+- At merge base 8a722f80, LED-14 per-variant dollar figures (claimLevelAbsorbed, withheldOnePass, afterReversal, raisedAgain, recoveredBeforeReversalCents, aloneCash, claimLevelShort; LED-15 raisedLower) are likewise read by no test (git grep -> only workflow.ts).
+- VERDICT: real=false. Gap is the repo's pre-existing fixture design (ADR 0023: expected.json records outcomes, assertedBy names tests that assert them with their own figures), which this PR follows and its design specified; no current drift; not a defect of this PR's change.
+- Cleanup: db tp_i126d_skdb4_1 dropped; clone removed.

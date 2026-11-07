@@ -1,0 +1,11 @@
+# RV-DB3-2 skeptic
+- started; clone pending
+- clone at 98bb9c00 ok, install ok; line 1236 added by this PR (1fda5637 MONEY-R4-1)
+- scratch twin zz-late-rest-paid.835 + appended RVDB32 describe in clone; running head
+- head scratch: 3/3 pass (together, later reconcile, twin-first): L1 [100,-100], L2 [600], 600/600
+- mutant scratch: together and twin-first FAIL: L1 [100,-100,440], L2 [], 440/600 (matches finding); separate-reconcile passes. Scenario REPRODUCES. Next: run all candidate test files with mutant
+- stryker shards: apps/worker count above; restored test, twin saved to progress dir; running broad mutant batch 1
+- mutant broad1 (interest, ledger-oracle, ledger, reconciliation-routes, payment-terms, packages/db ledger-interest): 6 files 153 tests PASS -> mutant survives. Next: large files
+- registry variants (workflow.ts LED-24): all sequences; no later-dated payment with its netting L6 in one reconcile. Waiting large run
+- mutant broad2 (reconcile.large, chain.large): 2/2 PASS -> mutant survives all 8 interest-touching db files (155 tests). e2e ledger-interest.spec covers LED-23 payments only (no take-back), cannot reach the line. apps/worker in no Stryker shard (0 refs).
+- clone removed. VERDICT: real=true (could not refute): scenario reproduces at 98bb9c00 (head L1 [100,-100] L2 [600] 600/600; mutant L1 [100,-100,440] L2 [] 440/600), mutant survives every interest-touching db file, line is the PR's own (1fda5637).

@@ -1,0 +1,17 @@
+# i126d skeptic RV-DB2-6
+- started; cloning
+- head 9c68a4be (moved past 9824f4e9). Runbook lines 333-337 added by 9824f4e9 (PR's own).
+- pass.ts: one tx after loadExports; reconcileRemittances reads ledger_entry (ledgerEntries) before matchClaims; candidatesFor byPatient reads ledger_match -> ACCESS SHARE on both held to commit.
+- ADR 0083 records F 2,000-line reconcile 615.7/526.3/730.8 s at 0.5 vCPU; byPatient 403.5 s = 72-75% of pass (DB-side). PR body l.204: F's reconcile 603.0 s (run 42307508461 on d2fdd106).
+- CAS-42.3 55-58 s on 4 CPUs, "posts only; approvals in earlier setup passes" -> not representative.
+- daily monitoring_schedule 05:10 UTC queues a reconcile per active practice (i.e., the "quieter hour" is when reconciles run).
+- leaning real=true (nit). Next: lock probe during CAS-42.3 run.
+- CI run 42307508461 job 128200474644 log confirms "F reconcile | completed | 1 | ... | 603.0 s" (2,000 lines, worker 0.5 vCPU, on d2fdd106).
+- installed; DB tp_i126d_skdb6_1 migrated; running CAS-42.3 + lock probe (scripts in scratchpad/skdb6-scripts, logs progress/skdb6-*.log). DROP DB + rm clone when done.
+- run 1: CAS-42.3 passed; "2000 lines; setup 121.3 s; pass 33.1 s" (4 CPUs). Probe missed (test uses its own tp_test_<uuid> scratch DB). Rerun with probe that follows the newest tp_test_ DB.
+- run 2: pass 37.4 s; probe missed again (practice name is 'SYNTHETIC PRACTICE CAS-42.3 ...'); run 3 fixed
+- run 3: pass 36.5 s; probe refused continuously t+13..end (133 tries) incl. setup; adv=1 constant. run 4 logs lock holders + xact age.
+- run 4: pass 29.7 s. Probe (the migration's own two LOCK ... NOWAIT tries, once a second) refused at every try during the measured pass; one backend held both ledger tables, xact age 0->28 s = the pass. The setup's approving reconcile (2,000 lines, approvals = step 7b's shape) held both tables in ONE transaction for ~91 s on 4 CPUs (t+10..t+100), the take-back reconcile 24 s.
+- VERDICT: real=true (nit). Runbook l.333-336 (added by 9824f4e9, PR's own) cites CAS-42.3's post-only 4-CPU pass ("most of a minute"); the PR's own CI record at the deployed worker size is 603.0 s for a 2,000-line reconcile (run 42307508461), > the loop's 300 s; a pass holds both tables for its whole transaction (reproduced). So one running reconcile alone fails every try; "reconciles back to back" + "no reconcile queued" understates. Caveat: the slowness is mostly DB-side (byPatient, ADR 0083), not only worker vCPU, but measured at deployed shape regardless; prod DB db.t4g.medium.
+- cleanup: DB dropped, clone removed (see below).
+- cleanup done: tp_i126d_skdb6_1 dropped, clone removed

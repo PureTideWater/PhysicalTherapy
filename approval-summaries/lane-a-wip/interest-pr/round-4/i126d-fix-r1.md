@@ -1,0 +1,24 @@
+# i126d fix round 1 (MONEY-R4-1, RV-DB1-1)
+- start: worktree /home/user/interest at 0755a533 (= origin). round1-confirmed.json written and read back (2 findings).
+- Decision MONEY-R4-1: not the flag widening (a prediction: the route accepts any non-reversal claim pairing a case line by code+date, a written-off line can reopen, a later correction can be placed; widening by the route's set would hold payments back in common netted L6s). Instead a guard at the point of harm: a payment of chain C never goes to a line on which another PLB L6 still owes a take-back of C that it can no longer write there (it has an entry on that line; one entry per L6 and line). Pure fn interestOutOfReach in interest.ts; worker filters paid lines (remittances.ts). Reviewer's shape then ends interest == cash (600/600); match-before-netting order stays 0/600 (errs low, as two-chains). F1 flag unchanged.
+- Scripts: scratchpad/i126d-fix-r1/{run-db.sh,stryker.sh}, logs in i126d-fix-r1/logs. DBs tp_i126d_fixr1_<n>.
+- Synth: LED-24 unplaced.835 + unplaced-two-chains.835 (variant matchedByHand; outcome afterNetting/interest 2.67+3.33, total 600; matchedFirst 0), pnpm synth --case LED-24 (3 files; no other fixture changed). Same bytes as the reviewer's twins but ISA/TRN/bank numbers and the reversal's REF F8.
+- RED MONEY-R4-1 db test (interest.db.test.ts it.each 'MONEY-R4-1'): after-netting case fails at head (L1 267+240, L2 333+300); matched-first case passes (0/600). logs/r4-red.log.
+- FIX MONEY-R4-1: interest.ts leftOf/owed (shared with interestWrites) + interestOutOfReach (exported, index.ts); remittances.ts InterestState.takeBacksOf, writtenOf, paid lines filtered by other L6s' out-of-reach lines (positive draws). Unit: interest.test.ts describe interestOutOfReach (3 its) + property (mayYetHold false then true, both orders); property fails with the guard removed (counterexample [1,0,1,L1,L1,false,2]) -> meaningful. ledger unit 91/91 green.
+- GREEN db: interest+oracle+chain+ledger+payment-terms 5 files 136/136 (logs/r4-green.log).
+- RV-DB1-1: migrate.test.ts lockLoopFailures (whitespace/case/format-arg independent), NOWAIT-lock guard, failureLine (% placeholders). RED: unit case vs old regex failed ([] vs [msg]); GREEN 24/24; probe two-line migration now fails the quote check (removed).
+- Docs: ADR 0084 status + D5 paragraph + consequence "A claim matched by hand after the netting"; interestWrites/interestOutOfReach/recordInterest/remittances.ts header docstrings; LED-24 row (test-matrix.md + matrix.ts, same words; synth regenerated); led24 docstring.
+- Checks so far: eslint changed files rc0; unit touched (ledger, synth, migrate, worker reconcile, tools/stryker, verify-content) 48 files 806 passed; fast (lint:copy, lint:logs, check:fixtures, verify-content, synth --all clean) all 0. Stryker money-ledger running (logs/stryker.log).
+- remittances.ts: per-pass cache InterestState.outOfReach (each take-back L6's out-of-reach lines, dropped when it writes) + outOfReachOf helper.
+- Stryker money-ledger (interest.ts final): canary rc0, verdict rc0, shard rc0, gate rc0; interest.ts 100.00% (356/356).
+- db rerun after cache (interest, oracle, chain, chain.large, ledger, payment-terms) running -> logs/r4-green2.log. Commit msgs drafted in i126d-fix-r1/msg1.txt, msg2.txt.
+- db rerun after cache: 6 files 137/137 (incl. chain.large) rc0. eslint remittances.ts/interest.ts rc0.
+- COMMITS: 1fda5637 (MONEY-R4-1), 5a78e33f (RV-DB1-1). Base origin/claude/build-platform 8a722f80 already merged (no merge needed). Remote branches both at 0755a533.
+- Full suite started on 5a78e33f (i126d-fix-r1/suite.sh -> logs/suite-summary.log; e2e port 4983, dbs tp_i126d_fixr1_*).
+- COMMIT 9c68a4be (ADR 0084 consequence: a take-back owed for good also keeps a later payment of its chain off its L6's lines) made while the suite ran typecheck (md only; fast/unit/... run on 9c68a4be's tree).
+- Suite (final tree 9c68a4be; typecheck ran at 5a78e33f, md-only diff): typecheck 0, lint 0, fast 0, unit 0 (480 files, 10,062 passed, 4 skipped), golden 0 (381), oracle 0, dm --check --strict 0, db1 0 (3291+1 skip), db2 0 (2287); CAS-42.3 pass 29.6 s (budget 150 s). db3/db4/build/e2e running.
+- db3 0 (3305), db4 0 (1022), build 0. e2e running (port 4983).
+- e2e 0 (83 passed, 10.8 m). Suite done 09:20:43, all EXIT 0 (build stamped 9c68a4be).
+- PUSHED (hook: 3 commits checked, gitleaks no secret): co-001/ledger-interest-once 0755a533..9c68a4be and co-001/wip-interest-fix 0755a533..9c68a4be (fast-forward). No tp_i126d_fixr1_* databases left; no marker file used (no migration change).
+- Open: PR body (body step) should add MONEY-R4-1 and RV-DB1-1; founder's APPROVED review of 9c68a4be (domain model unchanged); CI pending.
+- DONE except StructuredOutput.

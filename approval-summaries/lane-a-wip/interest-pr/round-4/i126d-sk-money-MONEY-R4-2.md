@@ -1,0 +1,12 @@
+# i126d-sk-money-MONEY-R4-2 (skeptic)
+- started; read reviewer evidence (zz-fb.test.ts.txt, rv-money-1.md)
+- clone at r4-sk-money-MONEY-R4-2, HEAD 0755a533 (branch head); install ok
+- ADR 0084:270-273 'Payments that wait for good' documents: reversal never uploaded, chain landed on lines with nothing remaining; general rule 'take-back may never be written whole -> payments never written: understatement, never overstatement'
+- unit test zz-fb rerun at 0755a533: B never written over 4 passes (passes: see below); reproduces at unit level
+- PR body line 74 + 226: partly-written take-backs held 'on purpose'; cost 'a take-back never written in full holds its PLB L6's payments back for good' disclosed; ADR D5 (0084:129-136) states the rule generally
+- prior third pass M3-1/DB3-1 (PR body 234): similar screen state judged not a defect (disclosed understatement; label 'Reported on the claim (AMT I), not counted')
+- no count/log of waits confirmed (remittances.ts 1104-1156)
+- COUNTER (unit, zz-shortpool.test.ts.txt, at 0755a533): cut short with nothing more to arrive, no specialist: R1 L6 +3.00 vs T AMT I 5.40 (t draws 300); X L6 +0.60 (B +6.00, T -5.40). Head: writes t L1 -300, B waits: ledger 0 vs cash 3.60. Without the wait (mayYetHold false, = a "nothing more can arrive" narrowing): B +600 -> ledger 6.00 vs cash 3.60, ABOVE the cash. interestWrites' inputs identical to the finding's specialist world (held 300, due 540, mayYetHold true). So the wait is load-bearing for the cut-short class; finding's fix would break never-above-cash.
+- specialist sub-case = instance of the disclosed general cost (PR body 74/226, ADR D5); silent wait consistent with unattributed interest (D4 step 5) also unrecorded; screen claim adjudicated before (M3-1/DB3-1).
+- VERDICT: real=false (residual doc nit at most: ADR 'wait for good' examples could name cut-short shapes)
+- clone removed; no db used

@@ -1,0 +1,100 @@
+{
+ "head": "9824f4e98938e27d8006f79811197cac6316939e",
+ "pushed": true,
+ "fixed": [
+  "F1 and MONEY-R2-1, one defect with one fix (commit 8ea33e13). Before the fix: if LED-24 two-chains.835 was uploaded before paired.835, the PLB L6's payment landed on the case lines first, and its later take-back of the interest paired.835 put there could never be written. That left 11.40 of interest on the lines against 6.00 of cash. Now interestWrites in packages/ledger/src/interest.ts holds back all of a PLB L6's payments while any of its take-backs is not written in full for a chain that may still come to hold interest on a case line. This applies in the same reconcile and in every later one, and it is set by a new ChainInterestLines.mayYetHold flag. The reconcile sets the flag in two cases: (a) the chain's root is a reversal that the moment links to no claim (ATTRIBUTION_CLAIMS now returns root_reversal, exposed as InterestReading.unlinkedReversals in apps/worker/src/reconcile/interest-chains.ts); (b) a claim of the chain has a standing claim match on a case line (InterestState.caseLineChains in remittances.ts). A take-back of a chain that can never hold interest on a case line holds nothing back, as in the mirror of both-ways.835. Upload order no longer matters: both orders end at +2.40/+3.00, then -2.40/-3.00, so 0 on the lines against 6.00 of cash. One deliberate change from the proposed fix: the proposal held payments only while a take-back found no line at all. I made it hold them until the take-back is written in full, because a take-back that is only partly written can be overstated across passes in the same way. A unit test covers that case.",
+  "Tests for F1, each failing before the fix: interest.db.test.ts now runs two-chains.835 then paired.835 two ways, reconciling between the uploads (failed before the fix: L1 got 267 after the first pass) and loading both before one reconcile (a control). interest.test.ts adds a block with three cases: the take-back finds no line; the take-back is cut short; and what holds nothing back (take-back written in full, nothing more owed, or a chain that can never hold interest on a case line). It also adds a property test that both upload orders write the same; this failed with the fix disabled. The existing property test now generates mayYetHold and checks the new rule. Test helpers and literals now carry mayYetHold (interest.test.ts, rules.test.ts).",
+  "LED-23 renumbered-reversal.835 changes with the fix. The unlinked reversal's take-back finds no line, so the correction's 5.40 is no longer counted twice: no new interest. This updates the db test, the unit test and the synth outcome; LED-24 also gains a twoChainsOutOfOrder variant, and both LED-23 and LED-24 fixtures were regenerated with pnpm synth --case. The LED-23 and LED-24 rows in docs/product/test-matrix.md and packages/synth/src/cases/matrix.ts are updated with the same words. ADR 0084 is updated: its status (amended 2026-11-07), the D5 rule, three consequences (a renumbered reversal adds no interest; payments that may wait for good; two chains, both upload orders), the renumbered-reversal hand-on and the revisit list. No migration change.",
+  "F2 (commit 9824f4e9): docs/runbooks/deploy-and-rollback.md has a new section, \"The ledger's lock for interest credited once (ADR 0084)\". It says what 20261110090000's loop takes (ACCESS EXCLUSIVE on ledger_entry and ledger_match, NOWAIT, once a second, 300 tries), that any open reader refuses a try (unlike 0083's loop), and that page reads and reconciles wait while the rest of the migration runs. It quotes the exact log line and 55P03, says nothing changed and no service moved, and tells the operator to deploy again at a quieter hour and never take the locks by hand or end sessions. A new guard test in packages/db/src/migrate.test.ts checks that the runbook quotes every migration's lock_not_available failure as the deploy log prints it. It failed for 0084 before the runbook change and passes now."
+ ],
+ "checks": [
+  {
+   "command": "vitest --project db interest.db.test.ts -t 'review F1' (before the fix)",
+   "passed": false,
+   "note": "Failed first as intended: after pass 1, L1 got 267 (B's payment). The variant that loads both files before one reconcile passed; it is the control."
+  },
+  {
+   "command": "vitest --project unit packages/ledger/src/interest.test.ts (before the fix)",
+   "passed": false,
+   "note": "Failed first as intended: 2 new cases (take-back finds no line; take-back cut short). The new order-independence property also failed with the fix disabled (counterexample [1n,1n,L1/1,L1/1])."
+  },
+  {
+   "command": "vitest --project unit packages/db/src/migrate.test.ts (before the runbook change)",
+   "passed": false,
+   "note": "Failed first as intended: the runbook did not quote 0084's lock-loop message."
+  },
+  {
+   "command": "pnpm typecheck",
+   "passed": true
+  },
+  {
+   "command": "pnpm lint",
+   "passed": true,
+   "note": "First run found 1 error in my new property test (no-unsafe-unary-minus); fixed with negateCents, and the rerun passed: 1,865 files, 0 errors."
+  },
+  {
+   "command": "pnpm lint:copy",
+   "passed": true
+  },
+  {
+   "command": "pnpm lint:logs",
+   "passed": true
+  },
+  {
+   "command": "pnpm check:fixtures",
+   "passed": true
+  },
+  {
+   "command": "pnpm synth --all, then git status --porcelain",
+   "passed": true,
+   "note": "Wrote 0 files and changed nothing beyond the committed LED-23 and LED-24 expected.json, which were regenerated with pnpm synth --case."
+  },
+  {
+   "command": "pnpm verify-content",
+   "passed": true
+  },
+  {
+   "command": "vitest --project unit packages/ledger packages/synth packages/db/src/migrate.test.ts apps/worker/src/reconcile",
+   "passed": true,
+   "note": "33 files, 524 tests"
+  },
+  {
+   "command": "vitest --project db apps/worker/src/reconcile packages/db/src/ledger-interest.db.test.ts apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+   "passed": true,
+   "note": "14 files, 169 tests: the ledger oracle, interest, chain, chain.large, reconcile.large, ledger and payment-terms db tests among them."
+  },
+  {
+   "command": "tsx tools/stryker/affected.ts --event pull_request --base d2fdd106",
+   "passed": true,
+   "note": "Only ledger is affected, so only the money-ledger shard runs."
+  },
+  {
+   "command": "money-ledger shard: canary, verdict, stryker on money and ledger, then gate.ts --shard money-ledger",
+   "passed": true,
+   "note": "Canary 5 of 5. Stryker exit 0 and gate exit 0. interest.ts scored 100.00% (328 of 328 mutants killed)."
+  },
+  {
+   "command": "pnpm -s db:domain-model --check (and --check --strict) on fresh database tp_i126c_dm_1, since dropped",
+   "passed": true,
+   "note": "Migration unchanged. The domain model matches the schema at 20261110090000; the text SHA-256 is f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7."
+  },
+  {
+   "command": "pnpm -s db:domain-model --check --require-approval",
+   "passed": false,
+   "note": "Fails only because the approval line (line 7469) is blank, as expected: it is the founder's to fill. It was not written."
+  },
+  {
+   "command": "git push origin co-001/ledger-interest-once HEAD:refs/heads/co-001/wip-interest-fix",
+   "passed": true,
+   "note": "Pushed through the pre-push hook (2 commits checked, gitleaks found no secret). Both branches fast-forwarded d2fdd106..9824f4e9."
+  }
+ ],
+ "domain_model_sha256": "f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7",
+ "approval_line_number": 7469,
+ "open_items": [
+  "The design text is outside my write scope. /home/user/ops/designs/ledger-interest-once.md should say the following. (1) Section 4 D5: a PLB L6's payments wait, in that reconcile and later ones, while its take-back of a chain that may still hold interest on a case line is not written in full. Such a chain has a root that is a reversal the moment links to no claim, or a claim with a standing claim match on a case line. A take-back of a chain that can never hold interest on a case line holds nothing back. (2) Section 4.1, worked case 'A renumbered reversal (R2-4)': the outcome becomes nothing new. V's -540 finds no line and V is an unlinked reversal, so C2's +540 waits. Also add a worked case for two chains uploaded out of order: after two-chains.835 nothing is written; after paired.835, +240/+300 then -240/-300, so 0 against 600. (3) Sections 6.1 and 6.2: ChainInterestLines.mayYetHold, ATTRIBUTION_CLAIMS returning root_reversal into InterestReading.unlinkedReversals, and InterestState.caseLineChains. (4) Section 8.1: the LED-23 and LED-24 rows exactly as now in docs/product/test-matrix.md. (5) Section 8.2: renumbered-reversal.835 no longer 'a known gap pinned' but 'no new interest'; LED-24 gains the variant twoChainsOutOfOrder: two-chains.835, then paired.835. (6) Section 8.3: the out-of-order two-chains db test. (7) Section 12, risk 8: the renumbered reversal's interest is no longer counted twice; the principal gap remains. Add a risk that payments may wait for good when a take-back can never be written in full (for example a reversal whose claim is never uploaded): an understatement of up to those payments, never an overstatement. (8) Section 14 and the summary at line 48: the loader link fix leaves LED-23's interest at none and changes only its links. (9) Section 11 Files: add docs/runbooks/deploy-and-rollback.md and packages/db/src/migrate.test.ts, both outside the freeze.",
+  "A trade-off for the founder to know: when a PLB L6 nets a payment against the take-back of a reversal whose original claim is never uploaded (for example, one paid before the practice used the product), that payment is never credited. The figure stays low by up to the payment and is never above the cash. ADR 0084 records this under 'Payments that wait for good'.",
+  "The founder's APPROVED review of the new head 9824f4e9 is still needed under CO-02. The domain model text is unchanged, so its SHA-256 is the same: f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7, approval line 7469. I wrote no approval line or approvers.json, and posted no review.",
+  "The full local suite was not run on 9824f4e9. Not run: the e2e tests, the golden tests, test:oracle, db shards outside the touched areas, build, the other Stryker shards, actions:check and toolchain:check (no workflow, manifest or lockfile changed). CAS-42.5 last ran on d2fdd106; CI on 9824f4e9 is pending."
+ ]
+}
