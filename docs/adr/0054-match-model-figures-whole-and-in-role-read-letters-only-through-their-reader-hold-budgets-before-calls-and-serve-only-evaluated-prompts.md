@@ -670,18 +670,31 @@ above stays as it was decided; where it differs, this amendment holds.
     joiner alone between ("150.00DANIEL [PATIENT_NAME]" for DANIELLE LE; the glued property's seed 2026110710, now a fixed
     run: GATEWAYJ1-4), never an initial (a unit's letters before a name whose rest is one, "Session 30min [PATIENT_NAME]"
     for MINA ALI, and "Seen 150.00MIN [PATIENT_NAME] [PATIENT_NAME] paid" for "150.00MIN A ALI", are sent as at
-    cc3dd7f6); an ordinal's suffix that fits the whole number glued before it ("1st", "2nd", "3rd", "4th", "11th" to
-    "13th", "21st"; the number of one to four digits after no digit, decimal point, comma, slash, currency sign, dash or
-    colon) and "am" or "pm" after an hour from 1 to 12 or a time h:mm are no head, whatever part they begin ("On March
-    10th, [PATIENT_NAME]" for THOMAS, "at 9am [PATIENT_NAME]" for AMANDA: 5b8ed30f refused them, 84 of 28,428 natural
+    cc3dd7f6); a number's own letters are no head, whatever part they begin: an ordinal's suffix that fits the whole
+    number glued before it ("1st", "2nd", "3rd", "4th", "11th" to "13th", "21st"), a unit's letters after a whole number
+    (min, mins, hr, hrs, sec, secs, wk, wks, mo, mos, yr, yrs, yo, in, ft, cm, mm, kg, lb, lbs, deg: "30min", "6mo",
+    "5in"), "am" or "pm" after an hour from 1 to 12, a time h:mm or h.mm, or a time hhmm after a space or "@", and two
+    letters after a procedure code of five characters (five digits, or a letter and four digits), its modifier
+    ("97110CO", "G0283CO"). The whole number, hour or time has one to four digits after no digit, decimal point, comma,
+    slash, currency sign, dash or colon, or stands after a range's first end and its dash or slash, that end a whole
+    number, an ordinal or an hour with "am" or "pm" after it, or a time ("3rd-4th", "3rd/4th", "1-30min", "9-10am",
+    "9am-10am", "10:00-11:00am", "1400-1500am"; a number after another number's slash is no hhmm, "01/2020PM"). Each was
+    refused before it was read so ("On March 10th, [PATIENT_NAME]" for THOMAS, "at 9am [PATIENT_NAME]" for AMANDA: 5b8ed30f refused them, 84 of 28,428 natural
     sentences for 199 first names and 6 surnames, the judge's review round 2, GATEWAYJ2-2; "Seen on the 4th
     [PATIENT_NAME]." for NGUYEN THANH ANH, "Since the 1st [PATIENT_NAME] [PATIENT_NAME]" for TRAN STAN AN, "Appointment at
     9am [PATIENT_NAME]" for AMAL AL ZEPHYRA, "On the 4th [PATIENT_NAME]" for THAI AI: 3cf4d8cf refused them with the
     "min" letters above, 86 of 306 natural sentences for 17 patients with a first name MINA, MINH, MING, MINO, STAN,
-    AMAL or THAI, four of them controls, and the reviewer's THANH ANH rows, the judge's review round 3, GATEWAYJ3-1; all
-    sent at cc3dd7f6 and again now); after an amount the same
-    letters are a head ("Paid 150.00ST AN Zephyra" for STAN AN ZEPHYRA is refused, a fail-safe: cc3dd7f6 sends "ST" of
-    STAN in clear there, and a bare whole number glued to a head stays refused, "1Daniel Le"); an
+    AMAL or THAI, four of them controls, and the reviewer's THANH ANH rows, the judge's review round 3, GATEWAYJ3-1;
+    "Seen 9-10am [PATIENT_NAME]", "Appointment at 9.30am [PATIENT_NAME]" and "at 0930am" for AMAL AL HASSAN, "Seen on
+    March 3rd-4th [PATIENT_NAME] [PATIENT_NAME]" for NGUYEN THANH ANH, "Session 30min [PATIENT_NAME]" for MINSEO SEO,
+    "Measured 5in [PATIENT_NAME]" for INES ES, "Billed 97110CO [PATIENT_NAME]" for COLIN LIN: 69a3a2fe refused them, 66 of
+    312 natural sentences for 13 patients, 10 of them with a part that is a unit's, an hour's or an ordinal's letters
+    and another part (30 units, 24 times, 12 ordinal ranges; none of the 3 controls), and the review's and its skeptic's
+    time, unit and modifier rows, the judge's review round 4, GATEWAYJ4-1; all sent at cc3dd7f6 and again now); after
+    an amount the same letters are a head ("Paid 150.00ST AN Zephyra" for STAN AN ZEPHYRA and "Seen 150.00MIN HO paid" for
+    MINHO HO are refused, fail-safes: cc3dd7f6 sends "ST" of STAN and "MIN" of MINHO in clear there), and a bare whole
+    number or a range's second end glued to a head stays refused ("1Daniel Le", "Seen 9-10Daniel Le", "Seen
+    3rd-4Daniel Le"); an
     initial alone with a digit right before it, before
     the name's placeholder (or a number's that a part of the name is written as), a whole part or another such initial
     ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"), never before another placeholder or a word that only begins like a part
@@ -724,17 +737,32 @@ above stays as it was decided; where it differs, this amendment holds.
     round 3, PHIJ3-1, one rule read on the letter as runs of digits and runs of letters in one pass, where round 2 read
     only the two-digit year first with "/", ".", white space or a dash between, and 4,479 of 64,944 letters of every
     order, year length, padding and separator in 12 held frames were sent): its year (four digits or two), month (a
-    number in any padding, or its word) and day in any order, at most four characters of any kind between each ("80-03-14",
-    "80_03_14", "80|03|14", "80\03\14", "80⁃03⁃14", "1980-14-03", "03/80/14", "14/80/03", "80 March 14", "Mar., '80, 14",
-    "14TH OF MARCH '80", "198014thMarch"), its month's word beside one run that is its year and day ("Mar8014",
+    number in any padding, or its word) and day in any order, at most four characters of any kind between each, or any
+    number of them where only white space, date separators, commas, full stops, apostrophes and "OF" stand there, as
+    `datesIn` takes them between a date's parts at any length ("80-03-14", "80_03_14", "80|03|14", "80\03\14",
+    "80⁃03⁃14", "1980-14-03", "03/80/14", "14/80/03", "80 March 14", "Mar., '80, 14", "14TH OF MARCH '80",
+    "198014thMarch", "80  /  03  /  14", "80     March     14", "80-03-⏎        14", "14     80     March": the judge's
+    review round 4, PHIJ4-1, found 1,140 of 4,992 letters of wider gaps in 12 held frames sent, two spaces around a
+    separator, five spaces or more, a separator then a line break and indentation, CRLF, and 216 more with the month's
+    word last that no rule read; none is since), its month's word beside one run that is its year and day ("Mar8014",
     "141980March"), and all three as one run of six to eight digits with the four-digit year or of six with the two-digit
     year padded ("19801403", "801403", "196133", "1121975"); not a run inside a longer one ("TIN 198003145"), and so for
     a patient born 1980-03-14 "Total 80.03 14 units" is refused (cc3dd7f6 refused it too: a fail-safe of a held letter,
     sent in round 2); a part of the date of birth beside the date of birth's placeholder, where redaction read only some
     of a written date ("Seen 19'[DATE_OF_BIRTH]" for "19'February 1941", which cc3dd7f6 sends so in any letter with no
-    range); and a part of two or three letters written letter
-    by letter, each letter alone ("Seen 01/01/2020-150.00A L Paid" for AL, "T Y" for TY; no form reads it, a space splitting
-    a part only two letters or more from each end; with no range both trees send it, "Seen 150.00T Y Paid");
+    range), four characters apart or past a gap of any length of white space and separators ("[DATE_OF_BIRTH]     20"
+    for "May/2009     20", redaction reading "May/2009" as May 20, 2009: round 4's widened property found 28 in 30,000
+    runs, none in 60,000 since); and a part of two or three letters written letter
+    by letter, each letter alone, or split anywhere by up to three spaces, line breaks, full stops or joiners ("Seen
+    01/01/2020-150.00A L Paid" for AL, "T Y" for TY, "Bo b" for BOB, "An⏎n" for ANN: the judge's review round 4,
+    PHIJ4-2, found 105 of 1,920 letters of a three-letter part split by a space or a bare line break sent, none since;
+    no form reads it, a space splitting a part only two letters or more from each end; with no range both trees send
+    it, "Seen 150.00T Y Paid"); two or more of a name's initials written together as one run of letters, in any order
+    and case, for a name of any number of parts, each letter of the run counted against the initials' ("…2020JZ
+    $0,000.00" and "Re: [PATIENT_NAME] (JZ)." for JANE ZEPHYRA, "SV" for SIMONE VANTREE, "QJZ" and "ZJQ" for JANE Q
+    ZEPHYRA, "AG" for a name of seven parts: PHIJ4-2 found 2,024 of 6,808 letters in 296 held frames sent, none since;
+    no form reads them, and with no range both trees send them, cc3dd7f6 "Re: [PATIENT_NAME] (JZ)." too, a named case
+    for co-001/redact-ssn-phone-leaks's design beside ruling A' below);
   - a masked SSN glued to a word ("PaidXXX-XX-3456", "Paid***-**-3456"); and a held range's end does not stand when a
     word and a mask's characters glue the group after it ("01/01/2020-150.00PaidXXX-XX-3456"), as for a word or a mask
     alone, while a word and a gap glue nothing ("Service 01/01/2020-150.00Paid 97110 3 1234.56", MOD-16's own letter).
@@ -759,7 +787,7 @@ above stays as it was decided; where it differs, this amendment holds.
   chain whole and stands); a range of either kind written right after an amount and a full stop with no word between
   ("Paid $0,000.00.January 1, 2020-2020-01-02Paid") is refused, as at cc3dd7f6.
   Measured by the differential gate (975,489 synthetic letters; cc3dd7f6 against this head; the runs of the judge's
-  review rounds 1 to 3, 2026-11-07, the same counts in each): the call's own identifiers that cc3dd7f6 redacted or refused and this head sends: no initial, date
+  review rounds 1 to 4, 2026-11-07, the same counts in each): the call's own identifiers that cc3dd7f6 redacted or refused and this head sends: no initial, date
   of birth, member ID or claim number, and 5 name letters (ruling B, below); SSNs 385 and phones 171 letters, all in
   letters whose chain only held barriers hold (ruling A, below). The round's own harnesses put every own-identifier shape
   in such letters (30,570 letters of short, month-word and initial parts glued to words; 342 and 3,420 of the shapes
@@ -775,7 +803,14 @@ above stays as it was decided; where it differs, this amendment holds.
   and none is since (above); of 22,329 in forms no rule reads, 135 are still sent, the two-digit-year compacts of four
   or five digits (ruling A', below). Its sentences of a unit, an ordinal or a time before the patient's name
   (GATEWAYJ3-1: 306 natural sentences for 17 patients, 15 and 11 unit rows) are all sent as at cc3dd7f6 but one fail-safe
-  refusal ("Paid 150.00ST AN Zephyra", above). Codes, units, amounts, IDs and
+  refusal ("Paid 150.00ST AN Zephyra", above). The judge's review round 4 found 66 more natural sentences of 312 refused
+  that cc3dd7f6 sent (a range of hours or of ordinals, a time h.mm or hhmm, a unit before a part whose rest is another
+  part: GATEWAYJ4-1) and a code's modifier before such a part: all sent since, but the amount's letters ("Seen
+  150.00MIN HO paid", a fail-safe, above); of 756 letters that split the name at such a number's letters, none that
+  cc3dd7f6 refused is sent. Its harnesses wrote, in held letters, the date of birth with gaps of any length (1,356 of
+  4,992 letters sent), two or more initials together (2,024 of 6,808) and a three-letter part split (105 of 1,920):
+  none is sent since (above), and the round's other harnesses (5,760 own-identifier writings, 2,516 numeric IDs, 33,326
+  range letters for clean-letter refusals, 2,040 short parts) find nothing more. Codes, units, amounts, IDs and
   references this head changes that cc3dd7f6 sent: none; dates 4, a number and a word 1 each, all in one reviewer
   fuzzer's letters of two patients' dates of birth, where a second written form of the date of birth is redacted that
   cc3dd7f6 left inside the date beside it (more redacted). Fail-safe refusals of letters cc3dd7f6 sent: 60 must-stay
@@ -845,7 +880,9 @@ above stays as it was decided; where it differs, this amendment holds.
     harness letters, and PHIJ2-2's inputs); the gate holds none (an OCR and homoglyph fold of the 23,500 gate letters
     cc3dd7f6 refused and this head sends finds no own identifier). Owned by co-001/redact-ssn-phone-leaks: its design
     reads the call's own identifiers through an OCR and homoglyph fold (NFKC, a TR39-style confusable skeleton, and the
-    O/0, l/1, I/1, S/5, B/8 digit map before matching), its must-stay damage measured on the differential gate; its
+    O/0, l/1, I/1, S/5, B/8 digit map before matching), and the name's initials written together and a short part
+    split, which this head refuses only in such a letter (the judge's review round 4, PHIJ4-2, above), its must-stay
+    damage measured on the differential gate; its
     acceptance test is that every pinned row of (A) and (A') flips to redacted or refused, and it lands before any real
     PHI is processed.
   - (B) the patient's name part that is a month's or a common word, next to a date (`Seen May 2020|June 103 /
@@ -857,7 +894,8 @@ above stays as it was decided; where it differs, this amendment holds.
   often a code's or a unit's letter; cc3dd7f6 refused it only for the range's digits, and sends it with no range ("Seen
   150.00Q Paid in full"). Pinned in `loneInitial` (938 rows: those letters, deduplicated, and PHIJ2-1's, `…150.00J Paid
   in full`), each asserted as sent with its initial (`token`); a part of two or three letters written letter by letter
-  there is refused since the judge's review round 2 (above).
+  there is refused since the judge's review round 2, and one split anywhere or two initials or more written together
+  since round 4 (above).
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the
@@ -869,9 +907,15 @@ above stays as it was decided; where it differs, this amendment holds.
   once (the judge's review round 2, PHIJ2-4: two 100 kB rows of them far apart are in the time rows), and one check
   builds each folded view of a text and reads its dates once, where it built the same four views up to nine times: the
   slowest of the gate's timing letters takes 530 ms (100 kB of a digit and a bare line break; cc3dd7f6 445 ms in the same
-  run; 592 ms before round 2). The held date-of-birth rule reads the letter's runs of digits and letters in one pass,
+  run; 592 ms before round 2; 525 ms in the judge's review round 4's run, cc3dd7f6 443 ms). The held date-of-birth rule
+  reads the letter's runs of digits and letters in one pass,
   each against the two before it, and each date-of-birth placeholder once (the judge's review round 3, PHIJ3-1,
-  PHIJ3-2: three 100 kB rows of near misses and glued labels are in the time rows).
+  PHIJ3-2: three 100 kB rows of near misses and glued labels are in the time rows). It tests each gap between two runs
+  once for one that only white space and separators fill, reads each such gap beside a date-of-birth placeholder once
+  from the placeholder it touches, and the held initials rule reads each run of letters once per name; a number's own
+  letters are read in the 24 characters before them (the judge's review round 4, PHIJ4-1, PHIJ4-2, GATEWAYJ4-1: three
+  100 kB rows, near misses of the held rules, the date of birth redacted again and again past wide gaps, and times,
+  units and codes before the name, are in the time rows).
 - **No new prompt version.** `[SSN]` and `[PHONE]` are identifiers in square brackets, which the prompt and the user
   message already describe; no field the reader returns is an SSN or a phone.
 - **Tests.** Test matrix MOD-15 (every form redacted, the survivors refused) and MOD-16 (what stays, the call's own
