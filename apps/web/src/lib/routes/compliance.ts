@@ -139,7 +139,7 @@ export const recordEvidence = platformRoute({
     documentRef: z
       .string()
       .trim()
-      .regex(/^[A-Za-z0-9:/._-]{1,200}$/, 'where the record is kept, never a person’s name: use only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026'),
+      .regex(/^[A-Za-z0-9:/._-]{1,200}$/, 'say where the record is kept, never a person’s name, using only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026'),
     sha256: z
       .string()
       .trim()
@@ -149,7 +149,7 @@ export const recordEvidence = platformRoute({
   audit: { action: 'compliance_evidence_recorded', objectType: 'compliance_record' },
   handle: async ({ scope, input, services }): Promise<MutationResult> => {
     if (input.occurredOn > utcDate(services.now())) {
-      throw new InputError([{ field: 'occurredOn', message: 'the date is after today: enter the day it happened, today or earlier' }]);
+      throw new InputError([{ field: 'occurredOn', message: 'the date is after today; enter the day it happened, today or earlier' }]);
     }
     let subject: string;
     if (input.kind === 'policy_approval') {
@@ -213,7 +213,7 @@ export const sendEvidence = platformRoute({
   handle: async ({ scope, services }): Promise<MutationResult> => {
     const platform = services.compliancePlatform;
     if (platform === null) {
-      throw new InputError([{ field: 'platform', message: 'no compliance platform is connected yet: download the export and give it to the platform' }]);
+      throw new InputError([{ field: 'platform', message: 'no compliance platform is connected yet; download the export and upload it to your compliance platform yourself' }]);
     }
     const { checklist } = await readEvidence(scope.client, services);
     const evidence = buildExport(checklist, { environment: services.environment, generatedAt: services.now() });
