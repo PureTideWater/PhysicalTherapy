@@ -35,7 +35,7 @@ import { parseScreeningBytes } from './parse';
 import { screeningRateAccount } from './rate';
 import { type AddressCheckServices, type MailboxVerdicts, localAddressChecks } from './validation';
 import { pageRequest } from './test-support/page-services';
-import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
+import { ScreeningWorld, SCREENING_HEADERS, SCREENING_ORIGIN, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
 /**
  * The free screening's routes against a scratch database (Change Order 001, CO-04; docs/adr/0062):
@@ -1487,5 +1487,15 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     expect(SCREENING_BOUNCE_BUDGET).toBe(
       'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.',
     );
+  });
+});
+
+describe('the address the page names when the origin check refuses an upload', () => {
+  it('is the application’s configured origin, the one the origin check compares, never anything the request says', async () => {
+    const page = ok(await world.call(screeningPage));
+    // The upload form's origin lead names it ("Open {appOrigin}/screening"): a translated, proxied or saved copy's own
+    // address would send the person back to the copy.
+    expect(page.appOrigin).toBe(world.services.origin);
+    expect(page.appOrigin).toBe(SCREENING_ORIGIN);
   });
 });

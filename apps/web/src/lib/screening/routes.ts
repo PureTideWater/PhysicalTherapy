@@ -172,6 +172,12 @@ export interface ScreeningPageData {
    * browser leaves a Medicare row of any other quarter out. None while screening is closed.
    */
   readonly contentQuarters: readonly ContentQuarterRun[];
+  /**
+   * The application's own origin (APP_ORIGIN, services.origin): the address the origin check compares a post with. The
+   * upload form names it when that check refuses an upload ("Open {appOrigin}/screening"), never the browser's own
+   * location, which on a translated, proxied or saved copy names the copy. Configuration, never a person's data.
+   */
+  readonly appOrigin: string;
 }
 
 async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
@@ -216,6 +222,7 @@ export const screeningPage = publicRoute({
       serverTime: now.toISOString(),
       sources: PROSPECT_SOURCE_OPTIONS,
       contentQuarters: releaseNo === null ? [] : await withClient(services.pool, (client) => contentQuarters(client, releaseNo, now)),
+      appOrigin: services.origin,
     };
   },
 });
