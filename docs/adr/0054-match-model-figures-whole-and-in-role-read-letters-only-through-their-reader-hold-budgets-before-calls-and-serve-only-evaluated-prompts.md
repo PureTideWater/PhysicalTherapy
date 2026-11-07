@@ -432,8 +432,10 @@ Still not covered, recorded as residuals (none is new): nicknames (Bob for Rober
 `a`: a payer letter's text is not adversarial, and OCR in Latin mode does not emit them); digits of other scripts
 (`٣`); a name in a script other than the records'; a date of birth in a form `datesIn` does not read (`1961 March 3`); a
 name glued to another word by a lost space with no digit beside its run of letters (`DEARJANE`, `DearJane`,
-`ZephyraPaid in full`), which is not a whole word (a name, initial, date of birth, member ID or claim number glued to
-text where a digit touches it is refused by the check since review round 3 of the range fix, 2026-11-07, below); a
+`ZephyraPaid in full`), which is not a whole word (where a digit touches it, a name part its run sets apart, an initial
+alone before the name, a date of birth, and a member ID or claim number that holds letters are refused by the check
+since review round 3 of the range fix, 2026-11-07, below; a member ID or claim number of digits alone glued to a word is
+not, nor a name glued with no digit beside it, except in a letter whose chain only that fix's barriers hold, below); a
 call's member ID or claim number inside a longer token, a letter glued to its letter or a digit to its digit
 (`ZZ12345678` for ZZ1234567, `2020PaidZZ7654321`, `ZZ7654321150.00-1/2/20`), which redaction keeps as another
 identifier for the screen and the check refuses when the number holds letters (no boundary can be known), and a
@@ -656,12 +658,20 @@ above stays as it was decided; where it differs, this amendment holds.
   MARIA). Review round 3 reverted it: redaction reads the call's identifiers at word boundaries again, as cc3dd7f6 read
   them, and the self-check refuses (`identifier_left`) a letter that holds one of them glued to text across a boundary no
   pattern reads (`ownIdentifierGlued`), where no boundary can be known and the letter goes to a person:
-  - a part of the patient's name of four letters or more that is no month's word, folded, anywhere in a run of letters
-    a digit touches, or written with joiners or a space inside as its form reads it ("01/01/2020-150.00Zephyra",
-    "Jane0.00-01/02/2020", "2020PAIDZEPHYRATODAY", "150.00ZEP HYRA"); letters between a digit and the name's placeholder
-    with only invisible characters between (a part the placeholder cut); an initial alone with a digit right before it,
-    before the name or a placeholder ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"), never with a digit after it, where it
-    is a code's letter ("ZEPHYRA G0283", "MARIA M54.50");
+  - a part of the patient's name of four letters or more that is no month's word, folded, in a run of letters a digit
+    touches, where the run sets it apart (from the run's start or a change of case, to the run's end, a digit or a change
+    of case) or anywhere in a run of one case, or written with joiners or a space inside as its form reads it
+    ("01/01/2020-150.00Zephyra", "Jane0.00-01/02/2020", "2020PAIDZEPHYRATODAY", "150.00ZEP HYRA"); never inside a word
+    that goes on in its own case ("2020Billed" for a part BILL, "0.00Coverage" for VERA, "Remark1" for MARK: read anywhere,
+    the judge's review round 1 found it refused 867 of 71,689 of the gate's MOD-16 and range letters that cc3dd7f6 sent,
+    for a patient Bill, GATEWAYJ1-1); letters between a digit and the name's placeholder with only invisible characters
+    between (a part the placeholder cut), and a part's head glued to a digit before the placeholder, where redaction read
+    the rest of a part written with a space inside as a shorter part ("150.00DANIEL [PATIENT_NAME]" for DANIELLE LE; the
+    glued property's seed 2026110710, now a fixed run: GATEWAYJ1-4); an initial alone with a digit right before it, before
+    the name's placeholder (or a number's that a part of the name is written as), a whole part or another such initial
+    ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"), never before another placeholder or a word that only begins like a part
+    ("Suite 2A, [PHONE]", "Suite 2A, Albany" for AL: 4,696 of 67,392 address and row letters were refused so,
+    GATEWAYJ1-3), and never with a digit after it, where it is a code's letter ("ZEPHYRA G0283", "MARIA M54.50");
   - a member ID or claim number of letters with a digit beside it, and one of letters and digits inside any longer token
     ("Seen 150.00SYNCLAIM0001", "2020PaidZZ7654321");
   - a date of birth in any form `datesIn` reads with a letter or a digit beside it ("DOB03/14/1980", "114-Mar-1980-150.00",
@@ -669,10 +679,31 @@ above stays as it was decided; where it differs, this amendment holds.
     number written as a word of a written date of birth is that date's ("DOB June 1, 2002Paid" for a patient June), and a
     date a birth label introduces that reads as no date of birth takes the digits an invisible character joins to it.
   A part of two or three letters, a month's word or an initial set apart in a glued run is as often a code, a unit or a
-  date's month ("Remark: MA04", "97110XU", "45min", "June1", "Seen 0.00-$20Al"): it is refused only in a letter whose
-  chain only the range fix's barriers hold, which cc3dd7f6 refused for the range's own digits ("01/01/2020-150.00Al",
-  "0.00-01/02/2020PAIDMa", "01/01/2020-150.00J. Ma"), and sent elsewhere, as at cc3dd7f6. The survivor scan tells such a
-  letter (`survivorIn`, step 5): it reads the letter again with the barriers cc3dd7f6 read alone ("kept": a currency
+  date's month ("Remark: MA04", "97110XU", "45min", "June1", "Seen 0.00-$20Al"): it is sent elsewhere, as at cc3dd7f6,
+  and refused in a letter whose chain only the range fix's barriers hold, which cc3dd7f6 refused for the range's own
+  digits (of the gate's 46,956 such letters it refused 46,955; the other holds no name). There no boundary is worth
+  reading, and the check refuses (the judge's review round 1, 2026-11-07: PHIJ1-1, PHIJ1-3, PHIJ1-4, PHIJ1-5,
+  GATEWAYJ1-4):
+  - a part of the name of any length, a month's word too, folded, anywhere in any run of letters, beside a date too
+    ("01/01/2020-150.00Al", "DEARAL,", "ALPAID", "dearal.", "DEARALPAID", "DEARJUNE," and "JUNE01/01/2020-150.00" for a
+    part JUNE), and beside the name's placeholder any run glued to a digit or the head or tail of a part ("ANGE
+    [PATIENT_NAME]", "OR [PATIENT_NAME]" for ORLA);
+  - an initial at the end of a run, unless it is written small at the end of a word that holds a capital ("Dear
+    [PATIENT_NAME]" for an initial R stays sent), before a placeholder, a word that begins with a part, another initial or
+    a full stop ("01/01/2020-150.00J. Ma", "DEARQ Zephyra", "DEARJ. Zephyra", "JQ Zephyra", "MsQ.");
+  - the call's identifiers read blind to their separators, on the letter's letters and digits alone: a member ID or claim
+    number ("ZZ.765.4321", "C2026/000417", "Paid76543210", "CLAIMNO99887766", "Claim 123456780.00" for claim 12345678,
+    "Total $555001.00" for 555001, "Seen 03-15-61" for member 031561, "1234ー5678"), a part of four letters or more ("Z E P
+    H Y R A", "jo ann"), the initials of a name of three parts or more in order ("JQZ", "J.Q.Z."), a date of birth's
+    eight digits in an order a date is written ("03⏎14⏎1980", "0 3 / 0 3 / 1 9 6 1"; not inside a longer run of digits,
+    and no six-digit form, which a letter's random ICN, TIN and amount digits would hold by chance), its month's word
+    within 24 characters of its year ("1961 March 3", "MARCH THIRD 1961"), and a birth label whose date redaction did not
+    read ("DOB 1961/3", "DOB March 3rd, nineteen sixty-one");
+  - a masked SSN glued to a word ("PaidXXX-XX-3456", "Paid***-**-3456"); and a held range's end does not stand when a
+    word and a mask's characters glue the group after it ("01/01/2020-150.00PaidXXX-XX-3456"), as for a word or a mask
+    alone, while a word and a gap glue nothing ("Service 01/01/2020-150.00Paid 97110 3 1234.56", MOD-16's own letter).
+  The survivor scan tells such a letter (`survivorIn`, step 5): it reads the letter again with the barriers cc3dd7f6
+  read alone ("kept": a currency
   amount, and a date read as cc3dd7f6 read dates or an unsigned amount, alone or in a range of its own kind joined by a
   hyphen, a dash or the minus sign), and a chain that survives there is a survivor unless the barriers the range fix
   added ("held": a range of a date and an amount or of an amount and a currency amount, a date read only with a glued
@@ -680,7 +711,7 @@ above stays as it was decided; where it differs, this amendment holds.
   date of one separator or a month word with its day and year apart, an amount with cents, a currency amount), no SSN
   or phone label before it, and nothing beside it that may be the other part of an identifier whose part the range
   holds (a short group no barrier holds, joined as a chain joins; an unsigned amount so; a held range that does not stand
-  on that side; after it, any group glued by a word or a mask's characters, and a run of plain short groups in an SSN's
+  on that side; after it, any group glued by a word, a mask's characters or both, and a run of plain short groups in an SSN's
   or phone's shape after a word and white space). Where a range's end cannot be told from an identifier's fragment, the
   letter is refused as cc3dd7f6 refused it (the orchestrator's ruling of 2026-11-07): "Paid 01/01/2020-900.12 3456",
   "Paid $1-900.12 3456", "Paid 202 555 01.23-1/3/20", "Paid 0,900-12-19.85", "SSN 2,900-12-19.85-1/3/20", "Call 202 555
@@ -691,31 +722,57 @@ above stays as it was decided; where it differs, this amendment holds.
   and its class stay sent ("Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00": the held range holds its
   chain whole and stands); a range of either kind written right after an amount and a full stop with no word between
   ("Paid $0,000.00.January 1, 2020-2020-01-02Paid") is refused, as at cc3dd7f6.
-  Measured by the differential gate of review round 3 (975,489 synthetic letters; cc3dd7f6 against this head): the call's
-  own identifiers that cc3dd7f6 redacted or refused and this head sends: no initial, date of birth, member ID or claim
-  number, and 5 name letters (below); SSNs 385 and phones 171 letters, all in letters whose chain only held barriers hold
-  (below). Codes, units, amounts, IDs and references this head changes that cc3dd7f6 sent: none; dates 4, a number and a
-  word 1 each, all in one reviewer fuzzer's letters of two patients' dates of birth, where a second written form of the
-  date of birth is redacted that cc3dd7f6 left inside the date beside it (more redacted). Fail-safe refusals of letters
-  cc3dd7f6 sent: 60 must-stay letters by the gate's oracle, each holding the call's own date of birth glued digit to digit
-  ("Seen $10.00-1980/03/14150.00", one reviewer harness), refused as a glued date of birth; 602 letters whose identifiers
-  cc3dd7f6 redacted (415 by the scan, as at 6fc88092; 187 by the glued check: a name, initial, date of birth or number
-  glued to a digit, which cc3dd7f6 sent in clear beside the redacted ones); 7,014 must-stay letters after an SSN or phone
-  word, the class GATEWAY2-1 narrowed (6fc88092 8,455). MOD-16's property, its seed 1034253323 and the three CI seeds
-  hold; 100,000 generated MOD-16 letters on five seeds are all sent unchanged.
-  Still sent, needing the orchestrator's ruling (neither a range end that cannot be told, nor a class whose sent digits
-  are no identifier): an SSN or phone written elsewhere in a letter whose chain only held barriers hold, in a shape no
-  pattern or chain rule reads and cc3dd7f6 sends when no range is in the letter (385 SSN and 171 phone letters of the
-  gate, all from reviewers' fuzzers and data files: after a word glued to a range's end and white space, `Re:
-  01/01/2020-4th of March, 2020St 90012-3456`, `…2020Paid. 900.12 3456`; amount-shaped, five-four or odd groupings,
-  `1900.11-02–16–2028.`, `511.51⁃973.61, Ref 97447.74.58`; a label behind its own number, `01/01/2020-150.00 Call 1:
-  555-0123Paid`); cc3dd7f6 refused each only because the range's own digits chained (A3). Closing the class means refusing
-  every such letter with another short run of digits, which MOD-16's must-stay letters hold too: reading every unsigned
-  amount as no barrier there refused 297 of 20,000 generated MOD-16 letters, and reading a word and white space after a
-  range as joined refused about 10 of 20,000 (`2029Rd. 9 92956`, `2028TIN 56-0000465`, `2022-07-02Row 02 28 2030`). And
-  a month-word name part read as a date's month (`Seen May 2020|June 103 / 1961-03-03/03.03.61` for patients May and
-  June: 5 letters of one fuzzer), in letters cc3dd7f6 refused only because its own redaction missed a date of birth
-  this head redacts.
+  Measured by the differential gate (975,489 synthetic letters; cc3dd7f6 against this head; the run of the judge's review
+  round 1, 2026-11-07): the call's own identifiers that cc3dd7f6 redacted or refused and this head sends: no initial, date
+  of birth, member ID or claim number, and 5 name letters (ruling B, below); SSNs 385 and phones 171 letters, all in
+  letters whose chain only held barriers hold (ruling A, below). The round's own harnesses put every own-identifier shape
+  in such letters (30,570 letters of short, month-word and initial parts glued to words; 342 and 3,420 of the shapes
+  recorded above as sent with no range; 41,496 of every kind at a range's ends; 12,705 SSNs and phones glued there): none
+  is sent but ruling A's class and a lone initial with no name beside it (below). Codes, units, amounts, IDs and
+  references this head changes that cc3dd7f6 sent: none; dates 4, a number and a word 1 each, all in one reviewer
+  fuzzer's letters of two patients' dates of birth, where a second written form of the date of birth is redacted that
+  cc3dd7f6 left inside the date beside it (more redacted). Fail-safe refusals of letters cc3dd7f6 sent: 60 must-stay
+  letters by the gate's oracle, each holding the call's own date of birth glued digit to digit ("Seen
+  $10.00-1980/03/14150.00", one reviewer harness), refused as a glued date of birth; 598 letters whose identifiers
+  cc3dd7f6 redacted (415 by the scan, as at 6fc88092; 183 by the glued check: a name part, initial, date of birth or
+  number glued where no boundary can be read, which cc3dd7f6 sent in clear beside the redacted ones); 7,014 must-stay
+  letters after an SSN or phone word, the class GATEWAY2-1 narrowed (6fc88092 8,455). The gate's letters name few
+  patients, so the round measured the name rules for others too: the gate's 71,689 MOD-16, range and code letters re-run
+  for patients whose name stands inside a payer's words are refused where cc3dd7f6 sent them for none of BILL, VERA,
+  ALAN, MARK, AL, ED, MA and 14 short or month-word parts, and, as a fail-safe where a part is the whole word glued to a
+  digit or in a run of capitals a digit touches, 128 for PAGE ("335.00Page 2 of 5"), 42 for RANGE and 1,459 for PAID;
+  of 431 common name parts, 2 for "<Word>150.00" (PAGE, WEEKS; "BALANCE24.00" for ALAN, all capitals, too); of 40,000
+  MOD-16 letters for 14 such patients, 118, all a whole word (Page, Total, Noted, Range); of 67,392 suite and line letters,
+  none; an initial alone after a digit before the patient's own name ("Room 4L, Lee Hall" for LEE) is refused. The
+  gate's 243 fail-safe letters are pinned in `src/redact.residuals.json`, the round's in the tests. MOD-16's property,
+  its seed 1034253323 and the three CI seeds hold; 40,000 generated MOD-16 letters on two seeds are all sent unchanged,
+  the 3,050 of them cc3dd7f6 refused included; the property file's MOD-13, MOD-15 and MOD-16 properties hold on 200 more
+  seeds each (the glued property failed on seed 55 before this round, "2020-01-02AUGU ST" for a part AUGUST, a month's
+  word written with a space inside, now read; and on seed 2026110710, now a fixed run).
+  Accepted residuals, by the orchestrator's rulings of 2026-11-07 (10:53), every row pinned in `src/redact.residuals.json`
+  and asserted exactly as it is today by `src/redact.residuals.test.ts`:
+  - (A) an SSN or phone written elsewhere in a letter whose chain only held barriers hold, in a shape no pattern or chain
+    rule reads (385 SSN and 171 phone letters of the gate, all from reviewers' fuzzers and data files: after a word glued
+    to a range's end and white space, `Re: 01/01/2020-4th of March, 2020St 90012-3456`, `…2020Paid. 900.12 3456`;
+    amount-shaped, five-four or odd groupings, `1900.11-02–16–2028.`, `511.51⁃973.61, Ref 97447.74.58`; a label behind
+    its own number, `01/01/2020-150.00 Call 1: 555-0123Paid`): the leak shape cc3dd7f6 already sends in a letter with no
+    range, which this fix exposes and does not create; cc3dd7f6 refused each only because the range's own digits chained
+    (A3). Closing the class here means refusing every such letter with another short run of digits, which MOD-16's
+    must-stay letters hold too: reading every unsigned amount as no barrier there refused 297 of 20,000 generated MOD-16
+    letters, and reading a word and white space after a range as joined refused about 10 of 20,000 (`2029Rd. 9 92956`,
+    `2028TIN 56-0000465`, `2022-07-02Row 02 28 2030`). Owned by co-001/redact-ssn-phone-leaks (MOD-21, MOD-22): its
+    acceptance test is that every pinned row flips to redacted or refused, with its generator and patterns changed
+    together, and it lands before any real PHI is processed. The table holds the gate's 556 rows (SSN digits written
+    900-xx-xxxx and phone digits 202/555-01xx where that keeps the row's outcome; 26 rows whose shape that mapping changes
+    keep their 9xx digits, never issued) and 141 of the judge's round 1 (its two SSN and phone fuzzers found 729 and 53
+    such letters of 13,395 and 12,705, all of the class).
+  - (B) the patient's name part that is a month's or a common word, next to a date (`Seen May 2020|June 103 /
+    1961-03-03/03.03.61` for patients May and June: 5 letters of one fuzzer), in letters cc3dd7f6 refused only because its
+    own redaction missed a date of birth this head redacts: a named case for co-001/redact-ssn-phone-leaks's design (an
+    own name part that equals a month or a common word, next to a date).
+  Not an identifier, and sent: a lone letter that is one of the name's initials glued to a range's end, with no name,
+  part, label or full stop beside it ("Seen 01/01/2020-150.00Q Paid in full"; 959 of the round's 41,496 letters), as
+  often a code's or a unit's letter; cc3dd7f6 refused it only for the range's digits.
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the
