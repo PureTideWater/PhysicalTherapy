@@ -69,19 +69,71 @@ describe('readMigrations', () => {
   });
 });
 
+/**
+ * The messages a migration's lock loops give up with: each RAISE EXCEPTION with ERRCODE lock_not_available, however it is
+ * laid out (on one line or two, in any case, with format arguments or none; PR 126 review RV-DB1-1).
+ */
+function lockLoopFailures(sql: string): string[] {
+  return [...sql.matchAll(/RAISE\s+EXCEPTION\s+'((?:[^']|'')*)'\s*(?:,[^;]*?)?\s*USING\s+ERRCODE\s*=\s*'lock_not_available'/gi)].map((match) => (match[1] as string).replaceAll("''", "'"));
+}
+
+/** A migration's SQL without its comments, so a lock named in prose is not read as one taken. */
+const withoutComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '');
+
+/** Whether the migration takes a table lock with NOWAIT: the lock loop's try. */
+const locksWithNowait = (sql: string) => /\bLOCK\s+TABLE\b[^;]*\bNOWAIT\b/i.test(withoutComments(sql));
+
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The deploy log's line for a migration's lock-loop failure: each % of the message stands for the value RAISE puts there, and %% for a %. */
+const failureLine = (name: string, message: string) =>
+  new RegExp(`db:migrate: ${escaped(name)} failed: ${message
+    .split('%%')
+    .map((part) => part.split('%').map(escaped).join('.+?'))
+    .join('%')}`);
+
 describe('the deploy runbook (docs/runbooks/deploy-and-rollback.md)', () => {
   /** Each migration's lock loop: a NOWAIT loop that gives up with lock_not_available, and the message it ends with. */
-  const loops = readMigrations(MIGRATIONS_DIR).flatMap(({ name, sql }) =>
-    [...sql.matchAll(/RAISE EXCEPTION '((?:[^']|'')*)' USING ERRCODE = 'lock_not_available'/g)].map((match) => ({ name, message: (match[1] as string).replaceAll("''", "'") })),
-  );
+  const loops = readMigrations(MIGRATIONS_DIR).flatMap(({ name, sql }) => lockLoopFailures(sql).map((message) => ({ name, message })));
   const runbook = readFileSync(path.resolve(MIGRATIONS_DIR, '../../../docs/runbooks/deploy-and-rollback.md'), 'utf8');
 
   it('reads every migration that ends a lock loop with lock_not_available', () => {
     expect(loops.map((loop) => loop.name)).toEqual(expect.arrayContaining(['20261109090000_line_status_heads.sql', '20261110090000_ledger_interest_once.sql']));
   });
 
+  it('finds a lock loop’s failure however its RAISE is laid out (PR 126 review RV-DB1-1)', () => {
+    const message = 'claim stayed in use for five minutes; run the deploy again (docs/adr/0083)';
+    expect(lockLoopFailures(`  RAISE EXCEPTION '${message}' USING ERRCODE = 'lock_not_available';`)).toEqual([message]);
+    // The two-line style of this repository's preflight raises, and lower case.
+    expect(lockLoopFailures(`  RAISE EXCEPTION '${message}'\n      USING ERRCODE = 'lock_not_available';`)).toEqual([message]);
+    expect(lockLoopFailures(`  raise exception '${message}' using errcode = 'lock_not_available';`)).toEqual([message]);
+    // With a format argument, and a quote doubled inside the message.
+    expect(lockLoopFailures(`  RAISE EXCEPTION 'claim stayed in use for % minutes', 5\n    USING ERRCODE = 'lock_not_available';`)).toEqual(['claim stayed in use for % minutes']);
+    expect(lockLoopFailures(`  RAISE EXCEPTION 'the reconcile''s locks stayed held' USING ERRCODE = 'lock_not_available';`)).toEqual(["the reconcile's locks stayed held"]);
+    // Another error code is no lock loop's failure.
+    expect(lockLoopFailures(`  RAISE EXCEPTION '${message}'\n      USING ERRCODE = 'check_violation';`)).toEqual([]);
+  });
+
+  it('finds a lock loop’s failure in every migration that takes a lock with NOWAIT, so no lock loop escapes the runbook (PR 126 review RV-DB1-1)', () => {
+    const nowait = readMigrations(MIGRATIONS_DIR)
+      .filter(({ sql }) => locksWithNowait(sql))
+      .map(({ name }) => name);
+    expect(nowait).toEqual(expect.arrayContaining(['20261109090000_line_status_heads.sql', '20261110090000_ledger_interest_once.sql']));
+    expect(nowait.filter((name) => !loops.some((loop) => loop.name === name))).toEqual([]);
+    expect(locksWithNowait('-- LOCK TABLE claim IN SHARE MODE NOWAIT\nSELECT 1;')).toBe(false);
+    expect(locksWithNowait('/* LOCK TABLE claim NOWAIT */ SELECT 1;')).toBe(false);
+    expect(locksWithNowait('      lock table claim in share mode\n        nowait;')).toBe(true);
+    expect(locksWithNowait('LOCK TABLE claim IN SHARE MODE; SELECT 1 NOWAIT;')).toBe(false);
+  });
+
+  it('reads the deploy log’s line for a failure with format arguments as RAISE fills them in', () => {
+    expect('db:migrate: 20270101000000_x.sql failed: claim stayed in use for 5 minutes (100% of tries)').toMatch(failureLine('20270101000000_x.sql', 'claim stayed in use for % minutes (100%% of tries)'));
+    expect('db:migrate: 20270101000000_x.sql failed: claim stayed in use for minutes').not.toMatch(failureLine('20270101000000_x.sql', 'claim stayed in use for % minutes'));
+    expect('db:migrate: 20270101000000_xsql failed: (a)').not.toMatch(failureLine('20270101000000_x.sql', '(a)'));
+  });
+
   it.each(loops)('quotes $name’s lock-loop failure as the deploy log shows it, so whoever deploys knows what it means and what to do', ({ name, message }) => {
-    expect(runbook).toContain(`db:migrate: ${name} failed: ${message}`);
+    expect(runbook).toMatch(failureLine(name, message));
   });
 });
 
