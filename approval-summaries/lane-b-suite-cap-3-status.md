@@ -130,6 +130,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-07 06:50 UTC: orchestrator: 7-day limit at warning again (resets 2026-11-13 19:00 UTC); take this item to its merge with no stage skipped but nothing spent that does not change the outcome (no repeated suites on an unchanged head, no review loops past dry, no follow-on); keep WIP refs and this file current.
 - 2026-11-07 06:40 UTC: build stopped by the limit in slice 1; WIP snapshot a3e77a72; PG fixed; resumed.
 - 2026-11-07 02:17 UTC: build go; branch at 31a7345f; build workflow wf_f2526ebe-769 launched.
 - 2026-11-07 02:25 UTC: design reviewed (7 rounds, 31 of 46 findings applied), verdict BUILD; committed; waiting for the build go.
