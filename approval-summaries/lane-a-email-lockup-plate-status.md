@@ -121,6 +121,12 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   wf_464a574d-f04 (archived) merges it once, regenerates, runs the fast checks and touched tests, and checks the merge
   twice. Next: push, CI, the fresh-clone verification reading CI, ready, merge.
 
+- 2026-11-07T00:40Z: the account's 5-hour limit stopped wf_464a574d-f04 after its merge commit; setup re-run, the workflow resumed.
+  f4fef908 merges 31a7345f (#130) with no conflicts (SGN-13 and SEC-24 both kept; synth 0 written); fast checks, 52 files
+  and 799 tests on #130's and this PR's packages, infra 798, domain-model check: all pass; two merge checks clean. Pushed
+  f4fef908 to co-001/email-lockup-plate (up to date with the base); the description updated for it.
+  - Next: CI green on f4fef908, the fresh-clone verification reading CI, ready, approval-of-record's re-run, merge.
+
 ## Waiting on someone
 - None.
 
