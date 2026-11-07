@@ -127,12 +127,12 @@ export const reconciliationPage = practiceRoute({
 /** What a refusal of @tp/worker/ledger says on the form: the field, never a value. */
 export const REFUSALS: Readonly<Record<Exclude<ReconciliationRefusal, 'not_found'>, { readonly field: string; readonly message: string }>> = {
   already_matched: { field: 'match', message: 'this evidence is already matched to something else; reverse that match first' },
-  not_open: { field: 'serviceLineId', message: 'the case line is not open: it was written off, or its case is closed' },
+  not_open: { field: 'serviceLineId', message: 'the case line is not open, because it was written off or its case is closed; open the case to see where it stands' },
   not_comparable: { field: 'claimId', message: 'the payment has no line of the case line’s code and date of service' },
   amount_mismatch: { field: 'remittanceId', message: 'the amounts do not agree to the cent; a match has a tolerance of zero' },
   not_standing: { field: 'matchId', message: 'the match was already reversed' },
   reverse_postings_first: { field: 'matchId', message: 'the payment’s posting or deposit matches stand on this approval; reverse them first' },
-  no_change_in_amount: { field: 'amount', message: 'an adjustment changes the amount' },
+  no_change_in_amount: { field: 'amount', message: 'an adjustment changes the amount; enter a different amount' },
 };
 
 /** Runs a step of @tp/worker/ledger in the request's scope, its refusals said on the form (field and words, never a value). */
@@ -245,7 +245,7 @@ export const reverseMatchAction = practiceRoute({
   params: z.object({ practiceId: opaqueId }),
   input: z.object({
     matchId: opaqueId,
-    reason: z.string().trim().min(1, 'say why the match is reversed').max(2000, 'at most 2,000 characters'),
+    reason: z.string().trim().min(1, 'say why the match is reversed').max(2000, 'enter at most 2,000 characters'),
     confirm: z.literal('on', 'confirm what a reversal does'),
   }),
   audit: { action: 'reconciliation_reversal', objectType: 'ledger_match' },

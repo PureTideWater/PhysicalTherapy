@@ -215,10 +215,10 @@ const fileSchema = z.strictObject({
 /** The request's message when an ERA export names no format, or another kind names one. */
 export function formatProblem(kind: DocumentKind, formatId: EraFormatId | undefined, position: number): string | null {
   if (kind === 'era_export' && formatId === undefined) {
-    return `File ${String(position)} is an ERA export: choose which system's export it is.`;
+    return `file ${String(position)} is an ERA export; choose which system’s export it is`;
   }
   if (kind !== 'era_export' && formatId !== undefined) {
-    return `File ${String(position)} has an export format but is not an ERA export.`;
+    return `file ${String(position)} is not an ERA export, so it takes no export format; choose its kind again`;
   }
   return null;
 }
@@ -232,7 +232,7 @@ export function formatProblem(kind: DocumentKind, formatId: EraFormatId | undefi
 const filesSchema = z
   .array(fileSchema)
   .min(1, 'choose at least one file')
-  .max(MAX_FILES_PER_BATCH, `at most ${String(MAX_FILES_PER_BATCH)} files at once; zip the rest`)
+  .max(MAX_FILES_PER_BATCH, `choose at most ${String(MAX_FILES_PER_BATCH)} files at once; zip the rest and upload the zip`)
   .superRefine((files, context) => {
     files.forEach((file, index) => {
       if (!allowedContentType(file.kind, file.contentType)) {

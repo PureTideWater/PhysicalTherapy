@@ -297,7 +297,7 @@ describe('the password and TOTP steps', () => {
     // FRM-07: two passwords that differ, and a weak one, are issues on their own fields.
     expect(await step(chooseNewPassword, browser, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2027' })).toEqual({
       status: 'invalid',
-      issues: [{ field: 'confirm', message: 'the two passwords do not match: type the same password in both fields' }],
+      issues: [{ field: 'confirm', message: 'the two passwords do not match; type the same password in both fields' }],
     });
     expect(await step(chooseNewPassword, browser, { password: '', confirm: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'password', message: 'fill this in' }] });
     expect(await step(chooseNewPassword, browser, { password: 'weakpassword', confirm: 'weakpassword' })).toEqual({
@@ -839,7 +839,7 @@ const CODE_SENT = { status: 'ok', data: { redirect: '/sign-in/forgot-password?re
 /** Where a closed reset step goes: the forgot page's first phase, which says so (4.5). */
 const RESET_CLOSED = { status: 'ok', data: { redirect: '/sign-in/forgot-password?reason=step_expired' } };
 /** Every code problem's one refusal, on the code field (4.4). */
-const CODE_REFUSED = { status: 'ok', data: { error: 'That did not match.', issues: [{ field: 'code', message: 'the code did not match, or it has expired: check it, or send a new code' }] } };
+const CODE_REFUSED = { status: 'ok', data: { error: 'That did not match.', issues: [{ field: 'code', message: 'the code did not match, or it has expired; check it, or send a new code' }] } };
 const PHASE_ONE = { status: 'ok', data: { phase: 'request', reason: null } };
 
 /** Spends an address's `sign_in` count, as password attempts and reset requests spend it. */
@@ -965,7 +965,7 @@ describe('the forgotten password (UX-006; SGN-05 to SGN-07)', () => {
       status: 'ok',
       data: { error: 'Choose a stronger password.', issues: [{ field: 'password', message: 'it still needs an uppercase letter, a digit and a symbol' }] },
     });
-    expect(await confirm({ confirm: 'Chosen-Pass-2027' })).toEqual({ status: 'invalid', issues: [{ field: 'confirm', message: 'the two passwords do not match: type the same password in both fields' }] });
+    expect(await confirm({ confirm: 'Chosen-Pass-2027' })).toEqual({ status: 'invalid', issues: [{ field: 'confirm', message: 'the two passwords do not match; type the same password in both fields' }] });
     // A hidden email changed from the sealed one: the same refusal, and the provider is never asked.
     const asked = vi.spyOn(services.provider, 'confirmPasswordReset');
     expect(await confirm({ email: `${randomUUID()}@synthetic.test` })).toEqual(CODE_REFUSED);
