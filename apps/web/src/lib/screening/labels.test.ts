@@ -44,9 +44,10 @@ const VERSIONS: Readonly<Record<string, string>> = {
   // less allowed, before the reduction across codes" and "Medicare figure less allowed, fully reduced across codes",
   // UX-042); DETAIL_LABELS.place_of_service_unmapped says in words the lists a screening prices by ("This place of
   // service is in neither the facility nor the non-facility list a screening prices by, so the row has no Medicare
-  // figure", UX-132); and DISPOSITION_NOTES, which no screen read, is gone. With them, the UX review's P5: the four
-  // figure labels say "Medicare figure, …" for "Expected under Medicare, …" (MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL,
-  // and the lines' MEDICARE_LINE_LABEL and REDUCED_LINE_LABEL, "Medicare figure for one claim line, …"). Lane A's rule:
+  // figure", UX-132); and DISPOSITION_NOTES, which no screen read, is gone. With them, proposal P5 of the
+  // `co-001/ux-screening-result-tables` design: the four figure labels say "Medicare figure, …" for "Expected under
+  // Medicare, …" (MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, and the lines' MEDICARE_LINE_LABEL and REDUCED_LINE_LABEL,
+  // "Medicare figure for one claim line, …"). Lane A's rule:
   // a version may be re-pinned under its name only while no release tag contains it (the founder creates tags; the first tag releases it).
   'screening-labels/2026-11-05': '7e533a5e6ade4ea5b6b5cee6c3a91e389fdc3c122e8f0b34c23462957890c968',
 };

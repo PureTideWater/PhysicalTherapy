@@ -1569,19 +1569,20 @@ SEC-18.
 ## Amendment (UX PR 4b): the labels' words
 
 *2026-11-07, `co-001/ux-screening-result-words`, the UX baseline review's follow-on to the screening result's tables
-(UX-042, UX-132, and the review's P5).* The figures are labelled "Medicare figure, before the reduction across codes"
-and "Medicare figure, fully reduced across codes", each line's "Medicare figure for one claim line, before the
-reduction across codes" and "Medicare figure for one claim line, fully reduced across codes", since an expected amount
-traces to a signed-off contract version (BRAND.md section 6), which a screening never has. Each difference is
-labelled by its subtraction, "Medicare figure less allowed, before the reduction across codes" and "Medicare figure
-less allowed, fully reduced across codes". The labels change together in both tables, their stacked items, the
-summary and the public screening page, so a header says what the sentence above each table says. A row whose place
-of service the split does not map reads "This place of service is in neither the facility nor the non-facility list
-a screening prices by, so the row has no Medicare figure". `DISPOSITION_NOTES`, which no screen read, leaves the
-labels module.
+(UX-042, UX-132, and proposal P5 of the `co-001/ux-screening-result-tables` design).* The figures are labelled
+"Medicare figure, before the reduction across codes" and "Medicare figure, fully reduced across codes", each line's
+"Medicare figure for one claim line, before the reduction across codes" and "Medicare figure for one claim line, fully
+reduced across codes", since an expected amount traces to a signed-off contract version (BRAND.md section 6), which a
+screening never has. Each difference is labelled by its subtraction, "Medicare figure less allowed, before the
+reduction across codes" and "Medicare figure less allowed, fully reduced across codes". The labels change together in
+both tables, their stacked items, the summary and the public screening page, so a header says what the sentence above
+each table says. A row whose place of service the split does not map reads "This place of service is in neither the
+facility nor the non-facility list a screening prices by, so the row has no Medicare figure". `DISPOSITION_NOTES`,
+which no screen read, leaves the labels module.
 
 The words are re-pinned under `screening-labels/2026-11-05`, with no migration: no release tag contains that version,
 so no environment has kept a summary under it, and a version may be re-pinned under its name only while no release tag
-contains it (the founder creates tags; the first tag releases it). Lane A's orchestrator agreed on 2026-10-28, with
-PR 6b-2's review round (dfec40dc) as the precedent; `labels.test.ts` records the rule beside the hash. Audit #57's
-rule, that a label changes only under a new version, holds for every released version.
+contains it (the founder creates tags; the first tag releases it). Lane A's orchestrator agreed on 2026-10-28 for the
+differences, the place of service and `DISPOSITION_NOTES`, and acting Lane A on 2026-11-07 for the four figure labels,
+with PR 6b-2's review round (dfec40dc) as the precedent; `labels.test.ts` records the rule beside the hash.
+Audit #57's rule, that a label changes only under a new version, holds for every released version.
