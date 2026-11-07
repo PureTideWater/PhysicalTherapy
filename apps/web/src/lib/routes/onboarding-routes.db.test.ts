@@ -195,14 +195,22 @@ describe('the audit request (J1)', () => {
     for (const locations of ['0', '1001', '2.5', 'three']) {
       expect(await refused({ locations }), locations).toEqual({ status: 'invalid', issues: [{ field: 'locations', message: 'enter a whole number from 1 to 1,000' }] });
     }
-    const payers = 'name 1 to 50 payers, each at most 120 characters';
-    for (const list of ['', ' , ', Array.from({ length: 51 }, (_, index) => `Synthetic Payer ${String(index)}`).join('\n'), 'P'.repeat(121)]) {
-      expect(await refused({ payers: list }), list.slice(0, 20)).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: payers }] });
-    }
-    expect(await refused({ payers: 'P,'.repeat(3001) })).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: 'enter at most 6,000 characters' }] });
     expect(await refused({ referringFirm: 'F'.repeat(201) })).toEqual({ status: 'invalid', issues: [{ field: 'referringFirm', message: 'enter at most 200 characters' }] });
     expect(await refused({ contactName: '' })).toEqual({ status: 'invalid', issues: [{ field: 'contactName', message: 'fill this in' }] });
     expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name = 'Synthetic Words Clinic'")).rows).toEqual([]);
+  });
+
+  it('refuses the payer list on its own field, payers, never payers.N, which no control carries (ADR 0077)', async () => {
+    // SYNTHETIC values only; each refusal records nothing.
+    const input = { contactName: 'Synthetic Payers', contactEmail: 'payers@synthetic.test', organizationName: 'Synthetic Payers Clinic', locations: '1', payers: 'Synthetic Payer', billingArrangement: 'in_house' };
+    let host = 150;
+    const refused = async (extra: Record<string, string>) => call(requestAudit, null, {}, { ...input, ...extra }, { clientAddress: `203.0.113.${String((host += 1))}` });
+    const payers = 'name 1 to 50 payers, each at most 120 characters';
+    for (const list of ['P'.repeat(121), '', ' , ', Array.from({ length: 51 }, (_, index) => `Synthetic Payer ${String(index)}`).join('\n')]) {
+      expect(await refused({ payers: list }), list.slice(0, 20)).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: payers }] });
+    }
+    expect(await refused({ payers: 'P,'.repeat(3001) })).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: 'enter at most 6,000 characters' }] });
+    expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name = 'Synthetic Payers Clinic'")).rows).toEqual([]);
   });
 
   it('counts requests from one address against the public form’s limit, refused ones included', async () => {
