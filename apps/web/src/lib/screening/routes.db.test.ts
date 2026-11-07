@@ -35,7 +35,7 @@ import { parseScreeningBytes } from './parse';
 import { screeningRateAccount } from './rate';
 import { type AddressCheckServices, type MailboxVerdicts, localAddressChecks } from './validation';
 import { pageRequest } from './test-support/page-services';
-import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
+import { ScreeningWorld, SCREENING_HEADERS, SCREENING_ORIGIN, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
 /**
  * The free screening's routes against a scratch database (Change Order 001, CO-04; docs/adr/0062):
@@ -119,8 +119,8 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     const outcome = await submitted(input);
     expect(outcome.status).toBe('invalid');
     expect(issuesOf(outcome)).toEqual([
-      { field: 'upload', message: 'Column 4 holds member IDs; remove it and upload again' },
-      { field: 'upload', message: 'Column 10 holds dates of service; remove it and upload again' },
+      { field: 'upload', message: 'column 4 holds member IDs; remove the column, then choose the file again' },
+      { field: 'upload', message: 'column 10 holds dates of service; remove the column, then choose the file again' },
     ]);
     // The messages never echo a header or a cell.
     expect(JSON.stringify(outcome)).not.toMatch(/Subscriber|DOS\b|SYNTHETIC-CELL/);
@@ -155,10 +155,10 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     const issues = issuesOf(outcome);
     expect(issues).toHaveLength(20);
     expect(issues.slice(0, 2)).toEqual([
-      { field: 'upload', message: 'Column 25 holds dates of service; remove it and upload again' },
-      { field: 'upload', message: 'Column 26 holds member IDs; remove it and upload again' },
+      { field: 'upload', message: 'column 25 holds dates of service; remove the column, then choose the file again' },
+      { field: 'upload', message: 'column 26 holds member IDs; remove the column, then choose the file again' },
     ]);
-    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'And 7 more problems like these' });
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 7 more problems like these; fix them too, then screen the file again' });
     expect(issues.find((issue) => /rename/.test(issue.message))).toBeUndefined();
     const { rows } = await world.owner.query<{ rejection_reasons: { code: string }[] }>(
       'SELECT u.rejection_reasons FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
@@ -176,9 +176,9 @@ describe('SCR-01: an upload holding patient information is refused with its colu
       submitInput({ contactEmail: email, rows: ['SMITH\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t100\t11', 'MARIA\t\t1\t11\tcommercial\t2026-Q1\t100\t11', '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t12345678900\t24'].join('\n') }),
     );
     expect(issuesOf(outcome)).toEqual([
-      { field: 'upload', message: 'Row 1: the procedure code is not in the screening’s format' },
-      { field: 'upload', message: 'Row 2: the procedure code is not in the screening’s format' },
-      { field: 'upload', message: 'Row 3: the allowed total is not in the screening’s format' },
+      { field: 'upload', message: 'row 1 has a value in the procedure code column that is not in the screening’s format; correct it, or leave the row out' },
+      { field: 'upload', message: 'row 2 has a value in the procedure code column that is not in the screening’s format; correct it, or leave the row out' },
+      { field: 'upload', message: 'row 3 has a value in the allowed total column that is not in the screening’s format; correct it, or leave the row out' },
     ]);
     const stored = await storedText();
     expect(stored).not.toContain('SMITH');
@@ -188,13 +188,13 @@ describe('SCR-01: an upload holding patient information is refused with its colu
 
   it('checks every row again on the server, whatever the browser said, and refuses a row count that does not match', async () => {
     const tampered = await submitted(submitInput({ rows: '97110\tGP\t2\t11\tmedicare_ffs\t2026-01-15\t100\t11' }));
-    expect(issuesOf(tampered)).toEqual([{ field: 'upload', message: 'Row 1: the service band is not in the screening’s format' }]);
+    expect(issuesOf(tampered)).toEqual([{ field: 'upload', message: 'row 1 has a value in the service band column that is not in the screening’s format; correct it, or leave the row out' }]);
     const short = await submitted(submitInput({ rowCount: '99' }));
-    expect(issuesOf(short)).toEqual([{ field: 'upload', message: 'The rows sent do not match the file; choose the file again' }]);
+    expect(issuesOf(short)).toEqual([{ field: 'upload', message: 'the rows sent do not match the file; choose the file again' }]);
     const repeated = await submitted(submitInput({ rows: [SAMPLE_ROWS[0] ?? screeningRow('97110', 'medicare_ffs'), SAMPLE_ROWS[0] ?? screeningRow('97110', 'medicare_ffs')] }));
-    expect(issuesOf(repeated)).toEqual([{ field: 'upload', message: 'Row 2 repeats row 1; add the two into one row' }]);
+    expect(issuesOf(repeated)).toEqual([{ field: 'upload', message: 'row 2 repeats row 1; add the two into one row' }]);
     const future = await submitted(submitInput({ rows: [screeningRow('97110', 'medicare_ffs', { band: '2099-Q1' })] }));
-    expect(issuesOf(future)).toEqual([{ field: 'upload', message: 'Row 1: the service band’s quarter has not started yet' }]);
+    expect(issuesOf(future)).toEqual([{ field: 'upload', message: 'row 1’s service band is a quarter that has not started yet; leave it out' }]);
     const unreadable = await submitted({ ...submitInput(), headers: 'not json' });
     expect(issuesOf(unreadable)).toEqual([{ field: 'upload', message: 'the file could not be read here; choose it again' }]);
   });
@@ -214,7 +214,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
       'prospect@-clinic.synthetic.test',
       'pro spect@clinic.synthetic.test',
     ]) {
-      expect(issuesOf(await submitted(submitInput({ contactEmail }))), contactEmail).toEqual([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
+      expect(issuesOf(await submitted(submitInput({ contactEmail }))), contactEmail).toEqual([{ field: 'contactEmail', message: 'enter an email address; the result’s link is sent there' }]);
     }
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect')).rows).toEqual(before.rows);
     expect(await storedText()).not.toContain('Jane Synthetic');
@@ -227,12 +227,53 @@ describe('SCR-01: an upload holding patient information is refused with its colu
       expect(message.length, code).toBeGreaterThan(10);
     }
   });
+
+  it('words every reason as one lower-case sentence after "File to screen:", with no colon of its own and its step (ADR 0077)', () => {
+    for (const code of SCREENING_REJECTION_CODES) {
+      for (const reason of [{ code, column: 3, row: 12, first_row: 2, field: 'allowed_total', phi: 'name' } as const, { code }]) {
+        const message = screeningReasonMessage(reason);
+        const said = JSON.stringify(reason);
+        expect(message, said).not.toContain(': ');
+        expect(message, said).toMatch(/^[a-z]/);
+        expect(message, said).not.toMatch(/\.$/);
+        // The page says the file is never uploaded: one action, one verb.
+        expect(message, said).not.toContain('upload again');
+        expect(message, said).not.toMatch(/\ba a |\ba allowed|\bthe units is/);
+      }
+    }
+    const words = (reason: Parameters<typeof screeningReasonMessage>[0]) => screeningReasonMessage(reason);
+    expect(words({ code: 'phi_column', column: 4, phi: 'member_id' })).toBe('column 4 holds member IDs; remove the column, then choose the file again');
+    expect(words({ code: 'phi_column' })).toBe('a column holds patient information; remove the column, then choose the file again');
+    expect(words({ code: 'unknown_column', column: 9 })).toBe('column 9 is not one of the eight screening columns; remove it');
+    expect(words({ code: 'duplicate_column', column: 9, field: 'units' })).toBe('column 9 is a second units column; keep one');
+    expect(words({ code: 'missing_column', field: 'claim_count' })).toBe('the file has no claim count column; add it');
+    expect(words({ code: 'row_shape', row: 4 })).toBe('row 4 does not have one cell for each column; save the file again as CSV, then choose it again');
+    expect(words({ code: 'invalid_value', row: 3, field: 'allowed_total' })).toBe('row 3 has a value in the allowed total column that is not in the screening’s format; correct it, or leave the row out');
+    expect(words({ code: 'invalid_value', row: 3, field: 'units' })).toBe('row 3 has a value in the units column that is not in the screening’s format; correct it, or leave the row out');
+    expect(words({ code: 'invalid_value', row: 3 })).toBe('row 3 has a value that is not in the screening’s format; correct it, or leave the row out');
+    expect(words({ code: 'invalid_value' })).toBe('a row has a value that is not in the screening’s format; correct it, or leave the row out');
+    expect(words({ code: 'band_holds_date', row: 2, column: 6 })).toBe('row 2’s column 6 holds dates of service; a screening takes a calendar quarter, such as 2026-Q1');
+    expect(words({ code: 'band_holds_date', row: 2 })).toBe('row 2’s service band column holds dates of service; a screening takes a calendar quarter, such as 2026-Q1');
+    expect(words({ code: 'band_in_future', row: 1 })).toBe('row 1’s service band is a quarter that has not started yet; leave it out');
+    expect(words({ code: 'band_outside_content' })).toBe(
+      'every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter',
+    );
+    expect(words({ code: 'duplicate_row', row: 2, first_row: 1 })).toBe('row 2 repeats row 1; add the two into one row');
+    expect(words({ code: 'duplicate_row', row: 2 })).toBe('row 2 repeats a row above; add the two into one row');
+    expect(words({ code: 'no_rows' })).toBe('the file has no rows under its header; add the rows, then choose the file again');
+    expect(words({ code: 'too_many_rows' })).toBe('a screening takes at most 50,000 rows; split the file and screen each part');
+    expect(words({ code: 'row_count_mismatch' })).toBe('the rows sent do not match the file; choose the file again');
+    expect(words({ code: 'too_few_claim_lines', row: 1_234 })).toBe('row 1,234 sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out');
+    expect(words({ code: 'too_few_claim_lines' })).toBe(
+      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care',
+    );
+  });
 });
 
 describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient’s service line', () => {
   const FLOOR_MESSAGE = (row: number) => ({
     field: 'upload',
-    message: `Row ${String(row)} sums fewer than 11 claim lines; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care: leave it out`,
+    message: `row ${String(row)} sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out`,
   });
 
   it('refuses a direct POST around the browser with a row of one claim line, by its row number, and stores nothing of the row, nor any hash', async () => {
@@ -316,7 +357,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient�
     const crowded = submitInput({ rows: [...Array.from({ length: 22 }, () => 'x'), encodeScreeningRows([at(3, '97140')]), encodeScreeningRows([at(10, '97530')])].join('\n') });
     const issues = issuesOf(await submitted(crowded));
     expect(issues.slice(0, 2)).toEqual([FLOOR_MESSAGE(23), FLOOR_MESSAGE(24)]);
-    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'And 5 more problems like these' });
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 5 more problems like these; fix them too, then screen the file again' });
   });
 
   it('stores what the browser left out as three numbers, and the result says so apart from every figure', async () => {
@@ -430,7 +471,7 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
     expect(issuesOf(await submitted(submitInput({ zip: '00099' })))).toEqual([{ field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' }]);
     // Not a ZIP code at all: the form's own field.
     for (const zip of ['0001', '00011-12', '00011 1234']) {
-      expect(issuesOf(await submitted(submitInput({ zip }))), zip).toEqual([{ field: 'zip', message: 'the practice’s ZIP code: five digits, or ZIP+4 such as 27601-1234' }]);
+      expect(issuesOf(await submitted(submitInput({ zip }))), zip).toEqual([{ field: 'zip', message: 'enter five digits, or a ZIP+4 such as 27601-1234' }]);
     }
   });
 
@@ -475,7 +516,7 @@ describe('SCR-16: a Medicare row in a quarter outside the loaded content (Q6 (a)
     const email = 'prospect.outside@clinic-outside.synthetic.test';
     const rows = [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'] }), screeningRow('97140', 'ma_noncontracted', { band: '2025-Q4', claims: 20 })];
     expect(issuesOf(await submitted(submitInput({ contactEmail: email, rows })))).toEqual([
-      { field: 'upload', message: 'Row 2: the service band’s quarter is outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out' },
+      { field: 'upload', message: 'row 2’s service band is a quarter outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out' },
     ]);
     const refused = await world.owner.query('SELECT u.status, u.rejection_reasons FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email]);
     // The code, row and field, never the quarter.
@@ -945,12 +986,16 @@ describe('SCR-06: the conversion from screening to an audit request is an audit 
     expect(issuesOf(await world.call(screeningConvert, { input }))).toEqual([{ field: 'input', message: 'an audit was already requested from this screening' }]);
     expect((await world.call(screeningConvert, { input: { ...input, resultId: 'b'.repeat(32) } })).status).toBe('not_found');
     expect((await world.call(screeningConvert, { input: { ...input, resultId: 'not-a-token' } })).status).toBe('not_found');
-    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: '', payers: '', locations: '0', billingArrangement: 'x' } })).map((issue) => issue.field)).toEqual([
-      'contactName',
-      'locations',
-      'payers',
-      'billingArrangement',
+    // The convert form's words are the public forms' (ADR 0077): an instruction after the field's name, no colon of its own.
+    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: '', payers: '', locations: '0', billingArrangement: 'x' } }))).toEqual([
+      { field: 'contactName', message: 'fill this in' },
+      { field: 'locations', message: 'enter a whole number from 1 to 1,000' },
+      { field: 'payers', message: 'name 1 to 50 payers, each at most 120 characters' },
+      { field: 'billingArrangement', message: 'choose how you bill' },
     ]);
+    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: 'N'.repeat(201) } }))).toEqual([{ field: 'contactName', message: 'enter at most 200 characters' }]);
+    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: 'SYNTHETIC 555-201-3344' } }))).toEqual([{ field: 'contactName', message: NO_PATIENT_INFORMATION }]);
+    expect(NO_PATIENT_INFORMATION).toBe('this form takes no patient information; remove anything that looks like an identifier, a date or a phone number, then send it again');
     // The token is the link's alone: only its hash is stored.
     expect(await storedText()).not.toContain(token);
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_run WHERE result_token_sha256 = $1', [screeningTokenHash(token)])).rows).toEqual([{ n: 1 }]);
@@ -1066,7 +1111,9 @@ describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened 
     for (const [extra, issue] of [
       [{ heardFrom: 'friend' }, { field: 'heardFrom', message: 'choose one of the listed answers, or leave it blank' }],
       [{ referringFirm: 'Synthetic Billing 555-201-3344' }, { field: 'referringFirm', message: NO_PATIENT_INFORMATION }],
-      [{ referringFirm: 'x'.repeat(201) }, { field: 'referringFirm', message: 'the firm’s name, at most 200 characters' }],
+      [{ referringFirm: 'x'.repeat(201) }, { field: 'referringFirm', message: 'enter at most 200 characters' }],
+      [{ practiceName: '' }, { field: 'practiceName', message: 'fill this in' }],
+      [{ practiceName: 'P'.repeat(201) }, { field: 'practiceName', message: 'enter at most 200 characters' }],
     ] as const) {
       const email = `refused.field.${randomUUID().slice(0, 8)}@clinic-fields.synthetic.test`;
       const outcome = await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), ...extra } });
@@ -1440,5 +1487,15 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     expect(SCREENING_BOUNCE_BUDGET).toBe(
       'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.',
     );
+  });
+});
+
+describe('the address the page names when the origin check refuses an upload', () => {
+  it('is the application’s configured origin, the one the origin check compares, never anything the request says', async () => {
+    const page = ok(await world.call(screeningPage));
+    // The upload form's origin lead names it ("Open {appOrigin}/screening"): a translated, proxied or saved copy's own
+    // address would send the person back to the copy.
+    expect(page.appOrigin).toBe(world.services.origin);
+    expect(page.appOrigin).toBe(SCREENING_ORIGIN);
   });
 });

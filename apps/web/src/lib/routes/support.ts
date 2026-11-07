@@ -246,7 +246,7 @@ function screened(fields: Readonly<Record<'subject' | 'message', string>>): void
       refused.map(([field]) => ({
         field,
         message:
-          'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+          'a ticket takes no patient information; remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
       })),
     );
   }
@@ -376,7 +376,7 @@ export const consoleStatusPage = platformRoute({
 function publicText<K extends string>(fields: Readonly<Record<K, string>>): Readonly<Record<K, string>> {
   const refused = Object.entries<string>(fields).filter(([, text]) => writtenPhiFindings(text).length > 0);
   if (refused.length > 0) {
-    throw new InputError(refused.map(([field]) => ({ field, message: 'the status page is public: write no identifier, date of birth or phone number' })));
+    throw new InputError(refused.map(([field]) => ({ field, message: 'the status page is public; write no identifier, date of birth or phone number' })));
   }
   return fields;
 }

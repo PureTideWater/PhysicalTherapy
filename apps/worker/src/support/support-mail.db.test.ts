@@ -96,6 +96,11 @@ describe('support mail', () => {
         },
         { requester_id: requester, screen: 'email', category: 'other', subject: WITHHELD_SUBJECT, message: WITHHELD_MESSAGE, source: 'mail', mail_ref: mailRef('2-patient.eml') },
     ]);
+    // What the withheld ticket asks for, in the words /support and the ticket form use ("the record’s ID").
+    expect(WITHHELD_MESSAGE).toBe(
+      'A message came to the support address from this person, and its text was withheld because it looked like it held patient information (a name, a date, a member ID, a claim number or another identifier). ' +
+        'Ask them to write again through the in-app form, naming the screen and the record’s ID only.',
+    );
     // Nothing the patient-like message said reached the database.
     const everything = JSON.stringify(await asOwner(owner, [], async () => (await owner.query<Record<string, unknown>>('SELECT * FROM support_ticket')).rows));
     expect(everything).not.toContain('Quillon');
