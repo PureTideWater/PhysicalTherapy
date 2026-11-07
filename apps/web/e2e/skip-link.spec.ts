@@ -30,6 +30,12 @@ function onFirstControlInMain(): { readonly inMain: boolean; readonly first: boo
   return { inMain: true, first: stops[0] === active };
 }
 
+/** Whether the element is clipped to nothing, as sr-only draws it: `clip: rect(0 0 0 0)` or a clip-path of inset(50%). */
+function clippedAway(element: Element): boolean {
+  const style = getComputedStyle(element);
+  return /^rect\(0px,? 0px,? 0px,? 0px\)$/.test(style.clip) || style.clipPath === 'inset(50%)';
+}
+
 async function expectSkipLink(page: Page, what: string): Promise<void> {
   for (const width of WIDTHS) {
     await test.step(`${what} at ${String(width)} px`, async () => {
@@ -37,11 +43,12 @@ async function expectSkipLink(page: Page, what: string): Promise<void> {
       await page.reload();
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       const link = page.getByRole('link', { name: 'Skip to the content', exact: true });
-      // Hidden until it has focus: sr-only's one clipped pixel.
-      expect((await link.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
+      // Hidden until it has focus: sr-only clips it to nothing (its padding still gives it a box).
+      expect(await link.evaluate(clippedAway)).toBe(true);
       await page.locator('body').focus();
       await page.keyboard.press('Tab');
       await expect(link).toBeFocused();
+      expect(await link.evaluate(clippedAway)).toBe(false);
       await expect(link).toBeVisible();
       await expect(link).toBeInViewport();
       await expectAccessible(page, `${what}, the skip link focused at ${String(width)} px`);
