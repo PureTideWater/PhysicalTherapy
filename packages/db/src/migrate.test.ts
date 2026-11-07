@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -146,6 +146,28 @@ describe('the deploy runbook (docs/runbooks/deploy-and-rollback.md)', () => {
 
   it.each(loops)('quotes $name’s lock-loop failure as the deploy log shows it, so whoever deploys knows what it means and what to do', ({ name, message }) => {
     expect(runbook).toMatch(failureLine(name, message));
+  });
+
+  /** A text's words, its comment markers and line breaks read as single spaces. */
+  const words = (text: string) => text.replace(/^\s*--/gm, ' ').replace(/\s+/g, ' ');
+  /** The runbook's section on migration 20261110090000's lock, up to the next heading. */
+  const interestSection = () => /## The ledger’s lock for interest credited once \(ADR 0084\)[\s\S]*?(?=\n## )/.exec(runbook.replaceAll("'", '’'))?.[0] ?? '';
+
+  it('says alike, in the interest migration’s header, the runbook and ADR 0084, which REPEATABLE READ page reads ledger_match as empty once: one whose snapshot began before the migration committed, the locks held or not (PR 126 review RV-DB2-5)', () => {
+    const header = words(readMigrations(MIGRATIONS_DIR).find((migration) => migration.name === '20261110090000_ledger_interest_once.sql')?.sql.split('\n\nDO $$')[0] ?? '');
+    const adrs = path.resolve(MIGRATIONS_DIR, '../../../docs/adr');
+    const adr = words(readFileSync(path.join(adrs, readdirSync(adrs).find((name) => name.startsWith('0084-')) ?? ''), 'utf8'));
+    for (const text of [header, words(interestSection()), adr]) {
+      expect(text).toContain('snapshot began before the migration committed (before the locks were taken or while they were held)');
+      expect(text).not.toContain('began before the locks were taken');
+    }
+  });
+
+  it('tells whoever deploys the interest migration that one reconcile running can hold the ledger’s tables past the lock loop’s five minutes, so to deploy again with none queued or running (PR 126 review RV-DB2-6)', () => {
+    const section = words(interestSection());
+    expect(section).toContain('one reconcile running holds both tables from its first read to its commit');
+    expect(section).toContain('with no reconcile queued or running');
+    expect(section).not.toContain('takes most of a minute');
   });
 });
 

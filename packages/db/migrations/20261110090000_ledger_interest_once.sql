@@ -49,11 +49,12 @@
 --   deploy again (docs/adr/0084)", before any service moves, and the deploy is run again.
 -- - Once held, to the end of this migration (adding seq rewrites ledger_match, and the two CHECKs validate), a
 --   reconcile, a person's ledger action or a page reading the ledger waits, then proceeds (well under a second at
---   launch size; no customer data exists before launch). A reconcile and a ledger action read at READ COMMITTED and
---   proceed on the new rows. A page that reads at one snapshot (REPEATABLE READ: Reconciliation among them) whose
---   snapshot began before the locks were taken reads ledger_match as empty once, because the rewrite gives every row
---   this migration's transaction, and reads it whole on reload; ledger_entry is not rewritten, so that one view shows
---   entries with no matches. Such a page writes nothing.
+--   launch size, longer as ledger_match grows; no customer data exists before launch). A reconcile and a ledger action
+--   read at READ COMMITTED and proceed on the new rows. A page that reads at one snapshot (REPEATABLE READ:
+--   Reconciliation among them) whose snapshot began before the migration committed (before the locks were taken or
+--   while they were held) reads ledger_match as empty once, because the rewrite gives every row this migration's
+--   transaction, and reads it whole on reload; ledger_entry is not rewritten, so that one view shows entries with no
+--   matches. Such a page writes nothing.
 -- - ledger_match_rules() is replaced in place, under the lock CREATE OR REPLACE takes on the function; the new trigger
 --   is created under ledger_entry's lock above.
 

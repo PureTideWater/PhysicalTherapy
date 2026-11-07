@@ -320,10 +320,11 @@ stage lock loop above, which only stage writes and 835 loads refuse, any open tr
 refuses a try, a plain read included: a page that reads the ledger (Reconciliation, the ROI statement), a reconcile, a
 statement being built, and a person's ledger action. A refused try holds and queues nothing, so all of them go on.
 Once it holds both locks, those reads and writes wait for the rest of the migration (rewriting `ledger_match` for `seq`
-and validating the two CHECKs: well under a second at launch size), then proceed. A page that reads at one snapshot
-(REPEATABLE READ: Reconciliation among them) and began before the locks were taken then reads `ledger_match` as empty
-once, since the rewrite gives every row the migration's transaction, and shows the ledger's entries with no matches; it
-writes nothing, and a reload reads it whole. If no try finds both tables free in
+and validating the two CHECKs: well under a second at launch size, longer as `ledger_match` grows), then proceed. A
+page that reads at one snapshot (REPEATABLE READ: Reconciliation among them) whose snapshot began before the migration
+committed (before the locks were taken or while they were held) then reads `ledger_match` as empty once, since the
+rewrite gives every row the migration's transaction, and shows the ledger's entries with no matches; it writes nothing,
+and a reload reads it whole. If no try finds both tables free in
 five minutes, the deploy fails: cdk reports "the migration task … stopped without migrating (exit code 1, …)", and the
 migration's log group `/tp/<env>/migration` ends with
 
@@ -331,10 +332,12 @@ migration's log group `/tp/<env>/migration` ends with
 
 (`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing (a migration before it in
 the same deploy stays applied: each commits on its own), and no service moved (step 4). It means no try in the five
-minutes found both tables free: steady page traffic on Reconciliation or the ROI statement, or reconciles back to back
-(one practice's pass at 2,000 lines takes most of a minute, CAS-42.3). Run the deploy again at a quieter hour, outside
-the practices' working hours and with no reconcile queued; never take the locks by hand, and never end another
-session's transaction or cancel a reconcile to make room.
+minutes found both tables free: steady page traffic on Reconciliation or the ROI statement, or a reconcile: one
+reconcile running holds both tables from its first read to its commit, and one practice's pass at 2,000 lines took
+603.0 s at the deployed worker's size (CAS-42.5; 333.2 s for 2,084 lines, ADR 0083), past the five minutes by itself.
+Run the deploy again at a quieter hour, outside the practices' working hours, with no reconcile queued or running (the
+daily monitoring schedule queues every practice's reconcile at 05:10 UTC); never take the locks by hand, and never end
+another session's transaction or cancel a reconcile to make room.
 
 ## Rollback
 
