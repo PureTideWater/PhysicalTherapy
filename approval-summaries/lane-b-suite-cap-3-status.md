@@ -138,6 +138,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-07 17:45 UTC: #134 is `dirty`: the base (now d4f52071: #131, #132, #133) conflicts in docs/product/test-matrix.md, packages/synth/src/cases/{matrix,registry}.ts only (shared documents, rule 6: keep both sides' rows, then pnpm synth --all). Resolved in the fix round's single base merge right before its push (speed rule 2); CI cannot run on #134 until then.
 - 2026-11-07 17:45 UTC: draft PR #134 opened at ee1dbb7d; subscribed; reviews wf_d54190e6-262 running.
 - 2026-11-07 17:30 UTC: built (6 slices, head ee1dbb7d, pushed); CAS-49.2 missing for the fix round; PR workflow wf_14d1cdf1-4dc running.
 - 2026-11-07 17:02 UTC: slices 3-5 committed (c8b99fc6, 9d0c8192, ca9436ba); D16 gate passed; slice 5a building.
