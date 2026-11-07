@@ -2372,3 +2372,46 @@ ce95546d; the orchestrator's notes from 09:40 to 12:38 UTC.
 - Records: LANES.md claim rows (Forms, closed; packet-figure-placeholders; MOD-16; #126; SUITE-CAP-3; the SSN and phone
   leaks) and Queues item 22 (the leaks PR: must land before any real PHI is processed; next for S1 after MOD-16; exempt
   from the cap hold); the rolling handoff, now current as of 12:40 UTC.
+
+### 2026-11-07 15:40 UTC (Lane B's orchestrator)
+Heads from the sessions' reports (not re-checked live: the weekly cap at its warning); `claude/build-platform` fetched at
+d4f52071; the orchestrator's notes from 14:05 to 15:37 UTC.
+
+- **#133 (packet-figure-placeholders slice 2) merged as d4f52071** (14:34 UTC; head 79d7e1bb). The second mutation red
+  (14:05 UTC) was CI load: a static `facts.ts` equivalent timed out while its twin survived in the same job. S4 fixed it
+  by removing the redundant array branch that mutant described (behaviour-identical; two equivalent records gone; no test
+  or timeout changed); if one flips again: one job re-run, recorded. Every check green; the fresh-clone verification
+  passed; approval-of-record green after ready; the base ce95546d an ancestor. Its push runs on d4f52071 are green (ci,
+  mutation, screening-capacity; 14:50 UTC). **S4 stopped clean** (unsubscribed, worktree removed, no check-in; status
+  file current) and takes no new item under the cap. Next for the item: slice 3, Lane A's schema queue item 2.
+- **Queued as a CI item (not started under the cap): static-mutant timeouts under load.** About 14 other recorded static
+  packets equivalents sit at the same timeout margin and share this CI-load exposure with the base. Close the class at CI
+  level: the mutation jobs' Stryker concurrency below the vCPUs, or a timeout factor for static mutants. **The design picks
+  the option, preferring the one that never turns a real kill into a survivor.** Details in S4's status file. LANES.md
+  Queues item 23.
+- **For Lane A, slice 3 (`tp-packet-verifier/3`, the schema queue's item 2):** /3 reports carry six new codes,
+  `free_figure`, `number_word`, `unknown_fact`, `fact_not_canonical`, `fact_contradicted` and `fact_not_separated`, all of
+  kind `'fact'`; the key `canonical` appears on `fact_not_canonical` only. **The `VERIFIER_FORMAT` flip ships with or after
+  slice 4's export render.**
+- **S1, MOD-16: fix round 1 on B committed as 2a5ed43b** (15:26 UTC; WIP `co-001/wip-redact-range-glued-b`). The gate is at
+  the bar except the ruled residuals: initials, DOB, member ID and claim number 0; name parts 5 (ruling B); SSN 385 and
+  phone 171 (ruling A, pinned). 1,717 redaction tests; an 800-run seed sweep clean; MOD-16 stress 0 bad. Review round 2
+  found bookkeeping (8 class-A rows mis-pinned; the lone-initial residual unpinned; 2 new clean-letter refusals; a
+  quadratic check) and PHIJ2-2.
+  - **The orchestrator's ruling (A'), 15:26 UTC: yes.** The call's own name, member ID, claim number or DOB in forms no
+    rule reads (OCR confusions, homoglyphs, date writings no rule reads), sent in held letters, is a recorded residual,
+    pinned with counts per kind. ADR 0054 names the leaks PR, whose design gets an OCR/homoglyph fold (NFKC, then the TR39
+    confusable skeleton, then an O/0, l/1, I/1, S/5, B/8 map, before own-identifier matching; the must-stay damage
+    measured on the gate). The leaks PR's acceptance: the pinned A and A' rows flip. "Must land before any real PHI is
+    processed" covers A'. The fixer closes the forms a rule reads and the bookkeeping; the quadratic check is bounded under
+    the 587 ms slowest.
+  - S1 acknowledged at 15:27 UTC: (A') written into fix round 2 and later, the round-3 reviews and skeptics, the final
+    stage and the critic; the run restarts when fixer round 2 starts (completed rounds cached). No PR yet.
+- **The check-in at 15:37 UTC:** no failed sessions. Running: S1 (fixer round 2 on B; its own check-in 16:09 UTC), S2
+  (#126's two money findings; its own check-in 16:11 UTC), SUITE-CAP-3 (slice 3 building; slices 1 and 2 committed). Idle
+  by design: #129 (waits on MOD-16), P2 (held), S3, S4 and S5 (done; no new items under the weekly cap). #126's line is
+  not posted yet; no answer yet on PR 5's freeze ask. `claude/build-platform` d4f52071. Merged 2026-11-07: #131 8a722f80,
+  #132 ce95546d, #133 d4f52071.
+- **Counters:** none allocated. Next free unchanged.
+- Records: LANES.md claim rows (packet-figure-placeholders; MOD-16), Queues item 22 (the OCR/homoglyph fold; acceptance
+  includes the A' rows) and item 23 (the static-mutant timeout CI item); the rolling handoff, now current as of 15:40 UTC.
