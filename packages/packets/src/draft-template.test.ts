@@ -12,7 +12,7 @@ import { factPlaceholder, placeholder } from './placeholders';
 import { renderFacts } from './render';
 import { totalCues } from './roles-reader/cues';
 import { CURRENCY_WORDS, MULTIPLES, MULTIPLIERS, ORDINALS, SCALES, STRICT_NUMBER_WORDS, STRICT_PLURALS, TEENS, TENS, UNITS, scanText } from './scan';
-import { REGULATION, assemblyInput, contractCitation, line, roleContents } from './test-support';
+import { REGULATION, SHA, assemblyInput, contractCitation, line, promptPayRecord, roleContents } from './test-support';
 import { type Mismatch, verifyTemplate } from './verifier';
 
 /**
@@ -42,9 +42,10 @@ const twoCodes = (): PacketContent =>
 
 /**
  * Contents at the draft's edges, each a branch no other named content reaches: a fixed schedule or a per-visit rate with
- * no amount, a percentage of Medicare with no locked year or no percentage, a regulation with no rule release or with a
- * reference in braces (no reference fact), and a
- * pattern of off-shape codes only (no code token).
+ * no amount, a percentage of Medicare with no locked year or no percentage, a regulation with no rule release, with two
+ * (the draft cites the last, as /2 does) or with a reference in braces (no reference fact), a pattern of off-shape codes
+ * only (no code token), and interest computed at $0.00 because every line was paid on time (nothing said of interest:
+ * the founder's ruling of 2026-10-20, Q4 (a); interestStated()).
  */
 const EDGES = {
   fixedNoRate: () => assemblePacket(assemblyInput({ citation: contractCitation({ parameters: {} }) })),
@@ -52,8 +53,26 @@ const EDGES = {
   percentNoYear: () => assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percent: '112.5' } }) })),
   percentNone: () => assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: {} }) })),
   regulationNoRelease: () => assemblePacket(assemblyInput({ citation: REGULATION, releases: [] })),
+  regulationTwoReleases: () =>
+    assemblePacket(
+      assemblyInput({
+        citation: REGULATION,
+        releases: [
+          { release_no: 900001, manifest_sha256: SHA },
+          { release_no: 900002, manifest_sha256: SHA },
+        ],
+      }),
+    ),
   regulationBraced: () => assemblePacket(assemblyInput({ citation: { ...REGULATION, reference: '42 CFR {{422.214}}' } })),
   offShapeOnly: () => assemblePacket(assemblyInput({ lines: [line(1, { procedureCode: '9701' }), line(2, { procedureCode: '9701' })] })),
+  interestZero: () =>
+    assemblePacket(
+      assemblyInput({
+        asOf: '2026-03-10',
+        lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-03-09' })],
+        interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() },
+      }),
+    ),
 } as const;
 
 /** Every content the packets tests name: the facts' and the role reader's, and the draft's edges. */
@@ -135,11 +154,30 @@ describe('the code draft', () => {
         EDGES.regulationBraced(),
         `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay [1]. The Medicare fee schedule in effect for those service dates, {{fact:release.no.1}}, sets that amount [2]. ${medicare}`,
       ],
+      [
+        EDGES.regulationTwoReleases(),
+        `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay under {{fact:citation.reference}} [1]. The Medicare fee schedule in effect for those service dates, {{fact:release.no.2}}, sets that amount [2]. ${medicare}`,
+      ],
       [EDGES.regulationNoRelease(), `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay under {{fact:citation.reference}} [1]. ${medicare}`],
     ];
     for (const [content, expected] of cases) {
       expect(draftNarrative(content, V3)).toBe(expected);
     }
+  });
+
+  it('says nothing of interest computed at $0.00 (every line paid on time), at /2 or at /3', () => {
+    const content = EDGES.interestZero();
+    expect(content.interest?.total_cents).toBe('0');
+    expect(draftNarrative(content)).not.toContain('interest');
+    expect(draftNarrative(content, V3)).not.toContain('interest');
+  });
+
+  it('cites the last of two rule releases at /3, as /2 does', () => {
+    const content = EDGES.regulationTwoReleases();
+    expect(draftNarrative(content)).toContain('release 900002');
+    const rendered = renderFacts(draftNarrative(content, V3), content);
+    expect(rendered.ok && rendered.text).toContain('release 900002');
+    expect(rendered.ok && rendered.text).not.toContain('900001');
   });
 
   it('renders its tokens with the figures the /2 draft states', () => {

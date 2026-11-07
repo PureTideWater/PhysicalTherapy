@@ -676,7 +676,7 @@ checks above.
 | `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | 6 min 7 s (local, 2026-11-04) |
 | `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | 8 min 40 s (local, 2026-11-04) |
 | `packets-figures` | a narrative's facts' catalog and renderer (`fact-catalog.ts`, `fact-words.ts`, `render.ts`) | 5 min 46 s (local, 2026-11-05) |
-| `packets-template` | a narrative template's check at verifier format /3 (`verifier/template.ts`, `verifier/contradiction.ts`) and its serialization (`serialize.ts`; docs/adr/0089) | 1 min 51 s (local, 2026-11-06) |
+| `packets-template` | a narrative template's check at verifier format /3 (`verifier/template.ts`, `verifier/contradiction.ts`), its serialization (`serialize.ts`) and the code's draft at /2 and /3 (`draft.ts`; docs/adr/0089) | 2 min 57 s (local, 2026-11-07) |
 | `pricing-engine` | pricing's `engine.ts` | 7 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 4 min 9 s |
 | `pricing-rest` | the rest of pricing | 5 min 38 s |

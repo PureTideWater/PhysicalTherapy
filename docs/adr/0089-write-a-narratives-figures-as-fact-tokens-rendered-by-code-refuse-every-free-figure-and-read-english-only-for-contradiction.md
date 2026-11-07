@@ -207,7 +207,9 @@ prints only rendered text: a /3 template exported by today's worker would print 
   stating what the /2 draft states (its amounts, interest exactly where /2 states it, every code the catalog holds, and
   every other figure /2 writes: the version, page, percentage, year, reference, release, counts and dates, but a code
   of another shape or a reference in braces, which have no fact), the /3 draft's text for each method and edge (no rate,
-  no year or percentage, no release, a braced reference, off-shape codes only), the zero-amount table and the set-off signs pinned
+  no year or percentage, no release or two (the last cited, as /2 cites it), a braced reference, off-shape codes only),
+  interest computed at $0.00 because every line was paid on time (no interest stated at /2 and no `interest.total` at
+  /3; the founder's ruling of 2026-10-20, Q4 (a)), the zero-amount table and the set-off signs pinned
   from literal lists, a claim or a patient read as a part from exactly two, the separation check's time on
   100,000-character templates,
   pass 1's spans in template offsets after a hidden character or a lengthening normalization, and the properties of
@@ -216,7 +218,8 @@ prints only rendered text: a /3 template exported by today's worker would print 
   token's span; a part-naming token beside an
   all-lines fact fails unless covering; a total cue beside a part fact fails; serialization keeps the sentence
   count). Each ran under 40 seeds before the pull request. The code draft (`draft.ts`) is mutated in the
-  packets-template shard with the template's check and its serialization (review round 3).
+  packets-template shard with the template's check and its serialization (review round 3); its interest guard's
+  conjunction made a disjunction is killed by the $0.00 case, not recorded as equivalent (review round 4).
 
 ## Not covered
 
