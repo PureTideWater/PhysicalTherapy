@@ -1384,14 +1384,19 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
  *   an amount or a currency amount (where `spanned` holds) is read through, and so is any other digit until a letter or
  *   such a span has been read: the amount's own run of plain numbers ("SSN 9001 2.34 56"), never a number past a word or
  *   a span, as a phone word's own is to the amount in "TTY 711. Paid 150.00 2026" and to 120.00 in "TTY 711\n150.00
- *   120.00" (re-review GATEWAY1-1);
+ *   120.00" (re-review GATEWAY1-1); with `spansOnly` as well, no plain digit is read through (review GATEWAY2-1);
  * - with `placeholders`, past placeholders glued to a digit the window has read, nothing between: where the call's own
  *   identifier was glued to the number by a lost space ("SSN Zephyra900.12 3456", "SSN Jane202 555 01.23", "SSN
  *   Zephyra01/01/2020-900.12 3456"), the label before the identifier is the number's, as the scan read it when the
  *   identifier was not redacted (review PHI2-1).
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly placeholders?: boolean } = {}): string {
-  const { spanned, placeholders = false } = read;
+function labelWindow(
+  text: string,
+  start: number,
+  stops: (index: number) => boolean,
+  read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly placeholders?: boolean } = {},
+): string {
+  const { spanned, spansOnly = false, placeholders = false } = read;
   let from = start;
   let breaks = 0;
   // Whether a letter, or a digit where `spanned` holds, has been read since the start: past one, a plain digit ends the window.
@@ -1405,7 +1410,7 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
     }
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
-    if (stops(index) || character === BARRIER || (digit && !inSpan && (spanned === undefined || passed))) {
+    if (stops(index) || character === BARRIER || (digit && !inSpan && (spanned === undefined || passed || spansOnly))) {
       break;
     }
     if (inSpan || (!digit && /\p{L}/u.test(character))) {
@@ -1679,6 +1684,8 @@ const SCAN_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
 const SCAN_DIGIT = /^[0-9]$/u;
 const CURRENCY_AMOUNT = /\p{Sc}[ \t]?[0-9][0-9,]*(?:\.[0-9]{1,2})?/gu;
 const UNSIGNED_AMOUNT = /(?<![0-9])(?:[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+[.,][0-9]{1,2})(?![0-9])/gu;
+/** A money amount as a service-line row writes one: dollars with no leading zero (or 0), comma thousands or none, and cents. */
+const MONEY_AMOUNT = /^(?:0|[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]*)\.[0-9]{2}$/u;
 
 /** Whether a non-white joiner joins the text at a position to a digit group on its left (A3). */
 function joinedLeft(text: string, at: number): boolean {
@@ -1843,12 +1850,13 @@ function survivorIn(text: string): boolean {
   for (const span of [...dates, ...currency, ...amounts]) {
     spanned.fill(1, span.start, span.end);
   }
-  const labeledOver = new Map<number, ScanLabel>();
-  const labeledOverNumbers = (start: number): ScanLabel => {
-    let held = labeledOver.get(start);
+  const labeledOver = new Map<string, ScanLabel>();
+  const labeledOverNumbers = (start: number, spansOnly = false): ScanLabel => {
+    const key = `${String(start)}${spansOnly ? 's' : 'n'}`;
+    let held = labeledOver.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, placeholders: true }).replace(/[0-9]/gu, ' '));
-      labeledOver.set(start, held);
+      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, placeholders: true }).replace(/[0-9]/gu, ' '));
+      labeledOver.set(key, held);
     }
     return held;
   };
@@ -1858,10 +1866,20 @@ function survivorIn(text: string): boolean {
   // under an SSN or phone label stays no barrier (SEC-5): the label read before the amount, or before its range's first
   // end, over the numbers between too ("SSN January 1, 2020-900.12 3456", "Phone $45-$97-985.37 8257": review
   // GATEWAY1-2); a chain whose first group starts that amount is read under the label.
+  //
+  // An amount labeled only over plain numbers of its own run (a money amount, two decimals), where neither labeledAt nor a
+  // read over spans alone finds the label, starts a chain under the label too, but it ends a chain that already holds a
+  // group of five digits or more with a shorter group just before the amount: a code column and a units column before
+  // the amount of a service-line row ("Contact us.⏎97110 1 150.00": review GATEWAY2-1), as the unlabeled rule reads a code
+  // column. A five-digit group right before it is no units column ("SSN 90012 34.56", "Line 1 97110 600.50" stay refused).
   const personAmounts = new Set<number>();
+  const ownRunAmounts = new Set<number>();
   for (const span of wholeRanges(text, [...dates, ...currency, ...amounts])) {
-    if (span.amount && (labeledAt(span.start) === 'person' || labeledOverNumbers(span.start) === 'person' || labeledOverNumbers(span.rangeStart) === 'person')) {
+    if (span.amount && (labeledAt(span.start) === 'person' || labeledOverNumbers(span.start, true) === 'person' || labeledOverNumbers(span.rangeStart, true) === 'person')) {
       personAmounts.add(span.start);
+    } else if (span.amount && (labeledOverNumbers(span.start) === 'person' || labeledOverNumbers(span.rangeStart) === 'person')) {
+      personAmounts.add(span.start);
+      if (MONEY_AMOUNT.test(text.slice(span.start, span.end))) ownRunAmounts.add(span.start);
     } else {
       mark(span.start, span.end);
     }
@@ -1889,7 +1907,8 @@ function survivorIn(text: string): boolean {
     for (let count = 1; (label !== null || count <= 4) && digits.length <= 11 && first + count <= groups.length; count += 1) {
       const group = groups[first + count - 1];
       const previous = groups[first + count - 2];
-      if (group === undefined || group.blocked || (count > 1 && (previous === undefined || !(label === 'person' ? SCAN_LABELED_GAP : SCAN_GAP).test(text.slice(previous.end, group.start))))) {
+      const unitsBefore = ownRunAmounts.has(group?.start ?? -1) && long && (previous?.digits.length ?? 0) < 5;
+      if (group === undefined || group.blocked || (count > 1 && (unitsBefore || previous === undefined || !(label === 'person' ? SCAN_LABELED_GAP : SCAN_GAP).test(text.slice(previous.end, group.start))))) {
         break;
       }
       digits += group.digits;

@@ -872,6 +872,14 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a labeled SSN glued to a one-digit amount, ten digits in a run', 'SSN 900 12 34561.00'],
     // The labeled twin of an unlabeled amount-shaped phone at the start of a range, which is sent (re-review PHI1-1).
     ['a labeled amount-shaped phone that starts a range to a date', 'Phone 202 555 01.23-1/3/20'],
+    // Review GATEWAY2-1: a labeled SSN or phone split with a group of five digits or more and an amount-shaped piece is
+    // still one chain under its label (only a units column, a group under five digits, before the amount ends it).
+    ['a labeled SSN of a five-digit group and cents', 'SSN 90012 34.56'],
+    ['a labeled SSN of a five-digit group and an amount of four digits', 'SSN 90012 3456.00'],
+    ['a labeled SSN with a five-digit group in the middle', 'SSN 900 12345 6.00'],
+    ['a labeled phone with a five-digit group and cents', 'Phone 202 55501 23.45'],
+    ['a labeled phone of a five-digit group and an amount', 'Phone 20255 501.23'],
+    ['a labeled fax number of a five-digit group and an amount', 'Fax: 95274 588.97 1234'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -957,6 +965,12 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a row of small amounts after "TTY 711"', 'TTY 711\n150.00 12.00 3.00'],
     ['a date and amounts on the line after "Call 711"', 'Call 711\n01/02/2026 150.00 120.00'],
     ['a date and amounts after a fax line', 'Fax 2; 03/19/2026 150.00 120.00'],
+    // Review GATEWAY2-1: a service-line row's code column and units column before its amount, after a phone or contact
+    // sentence, end the own-run read's chain at the amount (cc3dd7f6 sent these; 435f0a68 to 6fc88092 refused them).
+    ['a code and units row after a contact sentence', 'If you have questions, please contact us.\n97110 1 150.00 120.00'],
+    ['a code and units row after a call sentence', 'Questions? Call us.\n97110 2 150.00'],
+    ['a code and units row after a toll-free line', 'Call us toll free.\n97161 3 34.20'],
+    ['a code and units row after "Contact us." on one line', 'Contact us. 97110 1 150.00'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);
@@ -991,9 +1005,17 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     expect(holdsIdentifier(redactLetter('Seen 01/01/2020-01/02/2020-900-1-2-3456Paid', A, AC).text, A, AC)).toBe(true);
   });
 
-  it('refuses amounts a phone label is nearest, read over the numbers before them, as SEC-5 refuses "Call us about 150.00 1234" (review GATEWAY1-2, re-review GATEWAY1-1: the fail-safe side)', () => {
+  it('refuses amounts a phone label is nearest, read over the numbers before them, as SEC-5 refuses "Call us about 150.00 1234" (review GATEWAY1-2, re-review GATEWAY1-1, review GATEWAY2-1: the fail-safe side)', () => {
     // The chain's first group under the label, or an amount right after the phone word's own number with nothing between.
-    for (const letter of ['Call us about 150.00 1234', 'Call us about 150.00-120.00', 'Call us about 150.00 120.00', 'Contact us. 97110 1 150.00', 'TTY 711\n150.00 1234']) {
+    // cc3dd7f6 refused only the first; it sent the others, which 435f0a68's read over the numbers before an amount refuses
+    // (docs/adr/0054 gives the measured share).
+    for (const letter of ['Call us about 150.00 1234', 'Call us about 150.00-120.00', 'Call us about 150.00 120.00', 'TTY 711\n150.00 1234', 'Contact us. 150.00-120.00 total']) {
+      expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
+    }
+    // Refused by design, as an SSN's five-digit first group would be (review GATEWAY2-1): a code right before the amount
+    // with no units column, a units number after the label's own number, an HCPCS letter code (a letter ends the chain's
+    // code column, so the units and the amount chain from the label).
+    for (const letter of ['Calls are free.\nLine 1 97110 600.50', 'Hearing impaired: TTY 711\n1 150.00 0.00', 'Questions? Call us.\nG0283 1 150.00']) {
       expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
     }
   });
@@ -1032,6 +1054,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
     ['an SSN glued to an amount after the label’s number, a word and a range', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00'],
     ['an amount-shaped SSN after the label’s number, a word and a range', 'SSN 1: is 01/01/2020-900.12 3456', 'SSN 1: is 01/01/2020-900.12 3456'],
+    // A labeled SSN or phone split five, one, then an amount with one decimal digit before the cents: the units column
+    // before a money amount ends the chain, as a service-line row's does (review GATEWAY2-1; cc3dd7f6 sent it too).
+    ['a labeled SSN split five, one and an amount', 'Soc Sec 93798 4 1.46', 'Soc Sec 93798 4 1.46'],
     // An amount followed by a dash and a year-first date, read as [SSN]: over-redaction, never a leak (review GATEWAY1-5).
     ['an amount and a year-first date joined by a hyphen', 'Service 150.00-2020-04-05 billed', 'Service [SSN]-04-05 billed'],
   ])('pins a recorded residual: %s', (_case, letter, sent) => {

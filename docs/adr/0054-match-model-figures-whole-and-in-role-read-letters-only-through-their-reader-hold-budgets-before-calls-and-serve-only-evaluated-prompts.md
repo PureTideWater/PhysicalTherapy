@@ -623,10 +623,21 @@ above stays as it was decided; where it differs, this amendment holds.
   GATEWAY1-n) narrowed that read: a plain number, one in no date, amount or currency amount, is read over only in the
   amount's own run, before any word or such span ("SSN 9001 2.34 56", "SSN (2) 900.12 3456", "Phone 711 900.12 3456" are
   refused), and one after a word or a span ends the read, as a digit ends every label window, so a phone word's own
-  number keeps the amounts after it ("TTY 711. Paid 150.00 2026", "TTY 711⏎150.00 120.00 30.00", "Fax 3 pages: 150.00
-  120.00" are sent, as at cc3dd7f6). On the fail-safe side, as "Call us about 150.00 1234" was, a chain is refused whose
-  first group a phone label is nearest ("Call us about 150.00-120.00", "Contact us. 97110 1 150.00") or that starts at
-  an amount right after the label's own number with nothing between ("TTY 711⏎150.00 1234").
+  number keeps the amounts after it when a word, a date or an amount stands between ("TTY 711. Paid 150.00 2026", "TTY
+  711⏎150.00 120.00 30.00", "Fax 3 pages: 150.00 120.00" are sent, as at cc3dd7f6), but not when a units number starts
+  the row ("Hearing impaired: TTY 711⏎1 150.00 0.00" is refused). On the fail-safe side a chain is refused whose first
+  group a phone label is nearest ("Call us about 150.00-120.00", "Contact us. 150.00-120.00 total") or that starts at an
+  amount right after the label's own number with nothing between ("TTY 711⏎150.00 1234"). Of these cc3dd7f6 refused only
+  "Call us about 150.00 1234": the rest are refusals new since 435f0a68, and its review round 2 (GATEWAY2-1, 2026-11-07)
+  measured them, 3,429 of 20,000 synthetic letters that a phone or contact sentence leads, all sent at cc3dd7f6, refused
+  at 6fc88092. That round ends such a chain at a money amount (two decimals) that the label reaches only over the plain
+  numbers of its own run, where the chain already holds a group of five digits or more and the group just before the
+  amount is shorter: a service line's code and units columns ("Contact us. 97110 1 150.00", "Questions? Call
+  us.⏎97110 2 150.00" are sent, as at cc3dd7f6). A five-digit group right before the amount keeps the chain, as an SSN's
+  or a phone's would ("SSN 90012 34.56", "Phone 202 55501 23.45", and so "Calls are free.⏎Line 1 97110 600.50" are
+  refused), as do a units number after the label's own number and a letter code ("Questions? Call us.⏎G0283 1
+  150.00"): 2,247 of those 20,000 letters are still refused (1,182 kept again), a refusal, never a leak; the SEC fuzz of
+  60,000 labeled letters is unchanged.
   Review round 2 of the fix (2026-11-07: PHI2-1, PHI2-2) found that the barrier sent the call's own identifiers that
   cc3dd7f6 refused only because the range then joined the next group (A3), in the shapes redaction never read: a date of
   birth glued to a word, and a name, member ID or claim number glued to a digit ("Paid $0,000.00. Service
@@ -704,7 +715,10 @@ only because the range then joined the next group, A3 (`SSN 900 12 345615.00-01/
 PHI1-2; a proposal: refuse it under a label); an amount-shaped SSN whose first group a date reading joins to the number
 before it (`SSN $10-9.00 12 3456`, where `10-9.00` reads as a date); an amount-shaped SSN or phone after a range and
 white space with its label more than 24 characters before it (`Phone March 11, 2029−2,866.66  960.58 4433`: GATEWAY1-2);
-an amount followed by a dash and a year-first date, whose last integer digits, cents and year are written `[SSN]`
+a labeled SSN or phone split into a group of five digits or more, a group under five and a money amount (`Soc Sec 93798
+4 1.46`, `Fax: 99299 3 8.10`), which that units column ends as it ends a service line's (review GATEWAY2-1; cc3dd7f6
+sent it too; 4 of 20,000 letters of the split fuzz); an amount followed by a dash and a year-first date, whose last
+integer digits, cents and year are written `[SSN]`
 (`Service 150.00-2020-04-05` is `Service [SSN]-04-05`: over-redaction, never a leak, GATEWAY1-5); a person's nine or ten
 written bare in a list a keep-noun names
 (`Claims 900123456 and 900551234`), kept as the keep-noun keeps the first; a ten-digit chain of short groups with an
