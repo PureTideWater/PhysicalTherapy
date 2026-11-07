@@ -1,0 +1,1 @@
+Narrative figures as placeholders, slice 2: verifier format /3 behind an explicit format, the code draft's tokens and ADR 0089 (served text unchanged; /2 now refuses stray braces)

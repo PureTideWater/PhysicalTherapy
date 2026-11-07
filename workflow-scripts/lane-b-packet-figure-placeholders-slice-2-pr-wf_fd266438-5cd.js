@@ -1,0 +1,10 @@
+export const meta = {
+  name: 'lane-b-packet-figure-placeholders-slice-2-pr',
+  description: 'Open slice 2 draft PR from the prepared title and body, prove the body byte for byte',
+  phases: [{ title: 'Open' }, { title: 'Prove' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/c2e93384-1207-544a-bf87-57602f4a49c5/scratchpad'
+const open = await agent(`Open a DRAFT pull request in PureTideWater/PhysicalTherapy with the GitHub MCP create_pull_request tool (load it with ToolSearch "select:mcp__github__create_pull_request"): head co-001/packet-figure-placeholders-2, base claude/build-platform, draft true, title = the first line of ${SP}/pr-title.txt exactly, body = the whole of ${SP}/pr-body.md exactly (read the file with the Read tool; copy it verbatim, no edits). Request no reviewers. If the call is refused, do not retry another way: return opened=false with the exact refusal text. Do not write any file in the repository and do not comment.`, { label: 'open-pr', phase: 'Open', schema: { type: 'object', required: ['opened', 'number', 'detail'], properties: { opened: { type: 'boolean' }, number: { type: 'number' }, detail: { type: 'string' } } } })
+let proof = null
+if (open?.opened) proof = await agent(`Prove PR #${open.number} in PureTideWater/PhysicalTherapy has exactly the prepared title and body. Run \`gh api repos/PureTideWater/PhysicalTherapy/pulls/${open.number} --jq .body > ${SP}/pr-body.remote.md\` and \`--jq .title\`, and compare with ${SP}/pr-body.md and the first line of ${SP}/pr-title.txt (diff; a trailing newline difference from jq is acceptable, report it). Also report draft state, head sha and base. If the body differs beyond that, fix it with the MCP update_pull_request tool (ToolSearch "select:mcp__github__update_pull_request") using the file's text verbatim, then compare again. Do not comment.`, { label: 'prove-body', phase: 'Prove', schema: { type: 'object', required: ['identical', 'draft', 'headSha', 'base', 'detail'], properties: { identical: { type: 'boolean' }, draft: { type: 'boolean' }, headSha: { type: 'string' }, base: { type: 'string' }, detail: { type: 'string' } } } })
+return { open, proof }
