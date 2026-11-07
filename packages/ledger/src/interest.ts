@@ -507,8 +507,13 @@ export function interestUnplaced({
       continue;
     }
     const left = leftOf(draws, written).get(1n) as bigint;
-    // What its other payments could take of that, each written whole.
-    const others = total(draws.filter((item) => item !== draw && item.cents / size(item.cents) === 1n).map((item) => owed(item, 1n, written, left)));
+    // What its other payments still owe their chains, each taken to be written whole first: read once, in one pass over
+    // its entries, so a check paying many chains reads each take-back of them in time linear in its size.
+    const given = new Map<string | null, bigint>();
+    for (const entry of written) {
+      given.set(entry.chain, (given.get(entry.chain) ?? 0n) + maxCents(entry.cents, ZERO_CENTS));
+    }
+    const others = total(draws.filter((item) => item !== draw && item.cents / size(item.cents) === 1n).map((item) => maxCents(ZERO_CENTS, cents(item.cents - (given.get(item.chain) ?? 0n)))));
     const due = owed(draw, 1n, written, maxCents(ZERO_CENTS, cents(left - others)));
     const lines = paidLinesOf(draw, paid, new Set(written.map((entry) => entry.serviceLineId)));
     const weights = lines.map((line) => line.weightCents);
