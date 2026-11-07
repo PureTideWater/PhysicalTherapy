@@ -1497,7 +1497,7 @@ export function led24(b: CaseBuilder): void {
   // C's interest paid 0.01 before both take-backs, which lands on line 2 alone, and the rest by a check dated after both:
   // within one reconcile, netted-second.835 counts the share netted-first.835 keeps off line 2 as interest no line can
   // take, and that share reaches line 2 once netted-first.835 is whole; the reconcile walks the PLB L6s again until a
-  // walk writes nothing, so it ends with that share taken back, never above the cash (#126, the per-reconcile bound).
+  // walk writes nothing, so it ends with that share taken back, never above the cash (PR 126 review round 4).
   b.add835(
     'cent-paid.835',
     ledRemittance(b, base, 29, adjustedOn, [reversalOf(original), correction], interestPlb(base, [{ reference: ccn, amount: dollars('-0.01') }])).file,

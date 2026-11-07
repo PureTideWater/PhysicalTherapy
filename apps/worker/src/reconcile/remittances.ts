@@ -880,8 +880,8 @@ function namedLines(hash: string, lines: readonly CaseLine[], claimHashes: Reado
  * and whom each PLB L6 is for are read as of one moment (interest-chains.ts, D17): the walk visits exactly the rows
  * statement 1 returned, and an L6 with no reference is read too, an L6 of zero is not.
  *
- * Then the PLB L6s alone are walked again, in the same order, until a walk writes nothing (#126, the per-reconcile
- * bound). One walk can leave interest a later walk takes back: a take-back counted whole by interest another PLB L6
+ * Then the PLB L6s alone are walked again, in the same order, until a walk writes nothing (PR 126 review round 4, the
+ * per-reconcile bound). One walk can leave interest a later walk takes back: a take-back counted whole by interest another PLB L6
  * keeps off a line (interestUnplaced) is walked before the payment dated after it, which lands on that line once the
  * other take-back is whole; the next walk takes it back. A walk that writes nothing is the state every later reconcile
  * would keep, so each reconcile ends where the reconciles after it would, and none ends above the cash. The WOs are
