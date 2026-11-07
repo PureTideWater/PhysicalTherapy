@@ -63,11 +63,15 @@ The entry: tools/stryker/equivalent/packets.json, the one with reviewedBy "" (ve
 ${SAVE('pfp2r2-equiv.md', 'what you tried')}
 ${RULES}`, { label: 'equivalent-review', phase: 'Carry-over', schema: { type: 'object', required: ['equivalent', 'renumberOk', 'reason', 'killingTest'], properties: { equivalent: { type: 'boolean' }, renumberOk: { type: 'boolean' }, reason: { type: 'string' }, killingTest: { type: 'string' } } } }),
 ])
-const carryConfirmed = (carryJudged ?? []).filter((f) => f.confirmed)
+// Session decision (2026-11-07, skeptics split 1-1 on both): NEW-1 is fixed (the safer option: a sign before a token,
+// set off by whitespace, brackets or quotes, or the word 'negative' and kin, fails closed); NEW-2 is recorded in ADR 0089
+// as an accepted reading (two phrases one space apart; each figure is code's, none changes). EQUIV was applied in d96a053a.
+const carryConfirmed = (carryJudged ?? []).filter((f) => f.confirmed || f.id === 'NEW-1')
+carryConfirmed.push({ id: 'NEW-2-ADR', severity: 'nit', file: 'docs/adr/0089-*.md', title: 'Record NEW-2 as an accepted reading', detail: 'Two fact tokens one space apart print two code-computed phrases side by side (e.g. "of line 1 2 units for line 1"); neither figure changes. Decided: accepted reading, not a refusal.', reproduction: "verifyTemplate('The schedule shows {{fact:line.1.paid_on}} {{fact:line.1.units}} [1].', FACT_CONTENTS.base(), []).passed === true", fix: "Add it to ADR 0089's accepted readings with its reason, beside the glued-token rule; a test pinning that it passes." })
 const equivTask = equiv?.equivalent && equiv?.renumberOk
   ? [{ id: 'EQUIV', severity: 'should fix', file: 'tools/stryker/equivalent/packets.json', title: 'Record the independent review of the proposed equivalent', detail: `An independent reviewer found it equivalent: ${equiv.reason}`, reproduction: 'reviewedBy is empty', fix: 'Set reviewedBy to "review round 2 of 2026-11-06 (Lane B, packet-figure-placeholders slice 2)" and reviewedOn to "2026-11-06" on that entry only; run the gate for its shard.' }]
   : [{ id: 'EQUIV', severity: 'should fix', file: 'tools/stryker/equivalent/packets.json', title: 'The proposed equivalent is not equivalent (or the renumbering is wrong)', detail: JSON.stringify(equiv), reproduction: equiv?.killingTest ?? '', fix: 'Remove the entry and add the killing test; or correct the renumbered occurrences; run the shard and its gate.' }]
-let state = await fixAndRecheck([...carryConfirmed, ...equivTask], 'carry')
+let state = await fixAndRecheck([...carryConfirmed, { ...equivTask[0], fix: equivTask[0].fix + ' (already applied in d96a053a: confirm and move on)' }], 'carry')
 const history = [{ round: 'carry', confirmed: [...carryConfirmed, ...equivTask].map((f) => f.id), ...state }]
 
 phase('Review')
