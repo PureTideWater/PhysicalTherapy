@@ -1,0 +1,15 @@
+# scout-words progress
+- started 2026-11-07; tree 31a7345f (/home/user/ux-forms-after-42)
+- [ ] read design 7.8 / 10.3 / 3.4 ; status "Left for others"
+- [ ] ZIP wording grep
+- [ ] screening NO_PATIENT_INFORMATION / contactName
+- [ ] other server messages
+- [ ] brand rules
+- [x] design 7.8/10.3/5.4/11.2 read; status read
+- [x] ZIP grep: ZIP_CODE_FORMAT lib/zip.ts:32; users settings.ts:664,690; console.ts:506,516; screening/routes.ts:348 (prefix "the practice’s ZIP code: " -> doubled name); settings.ts:443 address_zip own words; packets/correspondence.ts:77 same. tests: settings-routes.db.test.ts:275, console-routes.db.test.ts:165, screening/routes.db.test.ts:433 (7.8 said :427), fields.test.tsx:36, action-form.browser.test.tsx:127,604,608, e2e/onboarding.spec.ts:573. hints: settings/pricing/page.tsx:106, console/organizations/[id]/page.tsx:104, console/practices/[id]/page.tsx:102
+- [x] screening: NO_PATIENT_INFORMATION :294 (7.8 said :280), used :320,:340,:1274,:1284; contactName :1272 (7.8 :1181) 'your name, at most 200 characters'; onboarding.ts:34 has ", then send it again"
+- [x] #126/#129 files: see below; 4b branch per scout-upload (ux-screening-result-words, unpushed)
+- [x] other msgs: screening :338 practiceName, :316 firm (+onboarding.ts:83), :352/:614 email, :1272 contactName, :1278 locations, :1282 payers; onboarding :40,:47,:113 noun-phrase messages; console.ts :721,:724,:727,:835,:975; support-mail.ts:57 "opaque ID" (no test literal); correspondence.ts:77 + settings.ts:443 address_zip
+- [x] brand: brand.md silent on words; reviewer Words (:76-86): next step (PRD:256), no validator text, one name per thing; CO-11 (change-order-001.md:95); lint:copy reads apps/web/src, packages/packets/src, support-mail.ts
+- [x] #126: no word file (only watched-paths.txt, which lists zip.ts/screening routes/onboarding.ts -> capacity gate runs, no edit needed). #129: .claude/agents/ux-brand-reviewer.md, docs/brand/BRAND.md (rules read at merged head)
+- STATUS: report drafted and returned (2026-11-07)
