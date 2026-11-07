@@ -1,0 +1,17 @@
+# i126 final round
+- start: HEAD 23369ae6 clean
+- step1: WIP ref already at 23369ae6 (up to date)
+- step2: no findings ([])
+- step3: merged origin/claude/build-platform cc3dd7f6 (#128) -> e81cd5af, no conflicts. Regen: install up to date; watched 580 no change; fresh tp_i126_regen_1 (48 migrations) dm --out --strict: provenance line only (not committed, as prior rounds), 382 fn 0 written 0 removed; synth --all 321 cases 0 written. db dropped.
+- suite: copied to scratchpad/i126-suite (L set; dbs tp_i126_*; e2e 4981; + synth-diff, engine-freeze, synth --large, ledger-oracle explicit; 18 shards incl. packets-figures from affected.ts). Started in bg.
+- suite fast phase on e81cd5af: typecheck, lint, lint:copy 595, lint:logs 1171, check:fixtures 372/4263, synth 0 written + diff clean, verify-content, actions:check, engine-freeze (no problems), toolchain 0 err 1 warn, dm --check 0, --strict 0, --require-approval 1 (blank line only, expected), SHA f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7 line 7469; summary 15 changes.
+- unit 478 files 10001 passed 4 skipped (pre-existing env-conditional skipIf); infra 29/793; golden 5/381; oracle 717 agree; ledger-oracle 12 passed
+- test:db 4 shards: 152 files, 9899 passed, 1 skipped (shard 1)
+- build ok, stamp ok, e2e 83 passed (12.3m), status clean. Stryker started 20:35.
+- stryker: 9 shards rc=0 by 21:23
+- suite process killed at 2h background limit during packets-verifier (no failure); resuming remaining 8 shards + gate via suite-resume.sh
+- stryker resumed: verifier, facts, rest, explain, figures rc=0 by 22:21
+- stryker gate FAILED: 2 unexplained survivors ledger interest.ts:353 (sign filter in interestWrites, from 6ca6b8c8 LED-R2). Root cause: no test had a paying chain whose own lines hold its interest beside another chain take-back. Added interest.test.ts case; kills both mutants (red with each mutation applied, green on original). Re-running money-ledger shard + gate.
+- stryker run 1: 18 shards rc=0; full gate failed only on 2 ledger survivors (interest.ts:353). Fix d2fdd106 (test only). Rerun on d2fdd106: typecheck rc0, money-ledger shard rc0, 0 unexplained, interest.ts 317 mutants 100%, ledger 98.69%. Full gate not re-run on mixed commits (gate holds every shard to one commit); CI runs 18 shards on one commit.
+- push next
+- pushed: co-001/ledger-interest-once c49367c5..d2fdd106 (hook: gitleaks clean); wip-interest-fix ff to d2fdd106. DONE.
