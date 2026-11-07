@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -66,6 +66,22 @@ describe('readMigrations', () => {
 
   it('finds the repository migrations, starting with the rule content tables', () => {
     expect(readMigrations(MIGRATIONS_DIR)[0]?.name).toBe('20261015120000_rule_content.sql');
+  });
+});
+
+describe('the deploy runbook (docs/runbooks/deploy-and-rollback.md)', () => {
+  /** Each migration's lock loop: a NOWAIT loop that gives up with lock_not_available, and the message it ends with. */
+  const loops = readMigrations(MIGRATIONS_DIR).flatMap(({ name, sql }) =>
+    [...sql.matchAll(/RAISE EXCEPTION '((?:[^']|'')*)' USING ERRCODE = 'lock_not_available'/g)].map((match) => ({ name, message: (match[1] as string).replaceAll("''", "'") })),
+  );
+  const runbook = readFileSync(path.resolve(MIGRATIONS_DIR, '../../../docs/runbooks/deploy-and-rollback.md'), 'utf8');
+
+  it('reads every migration that ends a lock loop with lock_not_available', () => {
+    expect(loops.map((loop) => loop.name)).toEqual(expect.arrayContaining(['20261109090000_line_status_heads.sql', '20261110090000_ledger_interest_once.sql']));
+  });
+
+  it.each(loops)('quotes $name’s lock-loop failure as the deploy log shows it, so whoever deploys knows what it means and what to do', ({ name, message }) => {
+    expect(runbook).toContain(`db:migrate: ${name} failed: ${message}`);
   });
 });
 
