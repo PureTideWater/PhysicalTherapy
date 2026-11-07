@@ -122,12 +122,12 @@ describe('every ledger refusal is a LedgerError that names the rule broken', () 
     ['the draws of two PLB L6s at once', () => interestWrites({ draws: [draw('a', 'c'), draw('b', 'd')], written: [], lines: new Map() }), "interest is written from one PLB L6's draws, each chain once"],
     [
       'one line twice in a chain’s list',
-      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [paidLine('l'), paidLine('l')], takenBack: [] }]]) }),
+      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [paidLine('l'), paidLine('l')], takenBack: [], mayYetHold: true }]]) }),
       "interest reaches a line once in each chain's list",
     ],
     [
       'a negative approval remaining',
-      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [{ ...paidLine('l'), weightCents: cents(-1n) }], takenBack: [] }]]) }),
+      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [{ ...paidLine('l'), weightCents: cents(-1n) }], takenBack: [], mayYetHold: true }]]) }),
       'interest is split by approvals remaining of zero or more',
     ],
   ])('refuses %s with its own message', (_name, run, message) => {

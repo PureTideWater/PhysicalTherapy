@@ -2,7 +2,8 @@
 
 - **Status:** accepted (Lane A, `co-001/ledger-interest-once`, the interest fix, handed to Lane A by PR 15b (#51) on
   2026-10-26; one migration, `20261110090000_ledger_interest_once.sql`, so the founder's approval of the regenerated
-  domain model, CO-02); under the founder's ledger freeze exception of 2026-10-27 (below); amends
+  domain model, CO-02); under the founder's ledger freeze exception of 2026-10-27 (below); amended in review on
+  2026-11-07 (the payments of a PLB L6 wait for its take-backs, #126 review F1); amends
   [0042](0042-keep-recovery-in-a-signed-append-only-ledger-of-matched-evidence-and-move-lines-to-recovered-only-from-its-entries.md)
   (where an interest entry comes from) and
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -11,7 +12,8 @@
 - **Deciders:** the founder, Tyler Williams, who granted the ledger freeze exception (relayed by the co-founder,
   2026-10-27 20:49 UTC) and approves the schema by the domain model's SHA-256 (CO-02; ADR 0063); the build (Lane A)
   under the founder's standing rule of 2026-10-18 (recommend and build only the best option); the design's two
-  adversarial reviews, every finding of which was taken (F1 to F8 and N1 to N3; R2-1 to R2-9)
+  adversarial reviews, every finding of which was taken (F1 to F8 and N1 to N3; R2-1 to R2-9); the pull request's
+  reviews (#126), every confirmed finding of which was fixed
 - **PRD sections:** 13 (Recoupments and reversals: its one sentence on interest replaced under the exception), 20
   ("recovered principal and interest, net"); test matrix LED-16 and LED-23 to LED-25; ADRs
   [0021](0021-balance-835s-under-the-x12-sign-convention-and-allocate-claim-patient-share.md), 0042, 0067,
@@ -121,8 +123,15 @@ as a whole (every chain's, and a match's that names none, together, net of corre
 meets `ledger_interest_line_floor` when a specialist lowered another chain's entry on the line. One PLB L6 writes one
 entry on a line, so its take-backs are written before its payments: a payment reaches the lines the take-backs left,
 and when two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
-unwritten, so the figure errs low, never above the cash (LED-24 `two-chains.835`). A line whose weight is zero takes
-nothing now; a later reconcile credits it once it has a weight.
+unwritten, so the figure errs low, never above the cash (LED-24 `two-chains.835`). The payments also wait for the
+take-backs (#126 review F1): while a take-back of a chain that may yet hold interest on a case line is not written
+whole, the PLB L6 writes none of its payments, in this reconcile or a later one. A chain may yet hold interest when its
+root is a reversal the moment links to no claim (its claim not uploaded yet, or one the loader cannot link) or a claim
+of it has a standing claim match on a case line. The interest such a take-back is still to find arrives with a later
+upload (a remittance dated earlier and uploaded later), and the take-back reaches the lines it lands on before any
+payment of the L6 can, so the outcome is the one the remittances give uploaded in order (LED-24
+`two-chains.835` then `paired.835`). A take-back of a chain that can come to hold no interest on a case line holds
+nothing back. A line whose weight is zero takes nothing now; a later reconcile credits it once it has a weight.
 
 **Once (D6; `interestWrites`, pure).** For each L6 and sign, what is left is its draws under the current attribution
 less the entries of that sign already written from it, gross (reversed ones included); for each L6 and chain, the
@@ -246,16 +255,23 @@ check by reading it.
 - **Rows written before the change** keep their double counts; only regenerated synthetic data holds them.
 - **Negative interest** is read as a signed sum by the totals and the ROI statement; `<Money>` prints the minus. The
   totals note and the ROI statement's explanation say "net of any it took back" and "less any it took back".
-- **The take-back and the netting need the chain linked.** A reversal the payer gives its own control number, naming
-  the original in REF F8, is left unlinked by the loader, so beside its correction and another claim in one exact pool
-  the correction's interest counts again, as it did before this change. LED-23 `renumbered-reversal.835` pins it until
-  the loader links such a reversal (handed on below). Its principal has the same gap today.
+- **A renumbered reversal adds no interest, though it stays unlinked.** A reversal the payer gives its own control
+  number, naming the original in REF F8, is left unlinked by the loader, so it is a chain of its own. Beside its
+  correction and another claim in one exact pool, the correction draws its interest again, but the reversal's take-back
+  finds no line, so the PLB L6's payments wait (D5): no new interest, the chain's net. LED-23
+  `renumbered-reversal.835` pins it. Its principal still has the gap (handed on below).
+- **Payments that wait for good.** A take-back of a reversal whose claim is never uploaded (paid before the practice
+  used the product, say), or of a chain whose interest landed on lines with nothing remaining, may never be written
+  whole, so the payments its PLB L6 nets against it are never written: an understatement by up to those payments,
+  never an overstatement, and each line still shows the interest its claims report.
 - **Two chains on one line, netted in one PLB L6.** A correction the payer sends under its own control number with no
   REF F8, before the reversal it would follow, is left unlinked by the loader, so it is a chain of its own on the same
   case lines. When one PLB L6 nets its interest paid against the linked chain's interest taken back, the take-back is
   written there and the payment, which only those lines could take, is not: an understatement by up to the payment,
-  never an overstatement, and a later take-back of the unlinked chain finds nothing to take. LED-24 `two-chains.835`
-  pins it; a loader that links such a correction lets the payment reach the lines.
+  never an overstatement, and a later take-back of the unlinked chain finds nothing to take. Uploaded before the
+  remittance paying the linked chain's interest, the PLB L6 writes nothing until that interest is on the lines, and
+  then the same. LED-24 `two-chains.835` pins both orders; a loader that links such a correction lets the payment
+  reach the lines.
 - **At size.** The reconcile walks every PLB L6 of the practice's history on every pass, so its interest path reads
   each claim's standing claim matches, each PLB L6's entries and each line's holdings through lookups built once a pass
   and kept current as it writes, never every case line against every match for each draw. CAS-42.3's 2,000-line pass
@@ -276,8 +292,9 @@ check by reading it.
   reads a status-22 claim's REF F8 and the loader looks a reversal up by its own control number alone. The fix links
   such a reversal into the chain its REF F8 names when its own number reaches no claim, never REF F8 first. It is a
   separate defect in `packages/edi835` and `apps/worker/src/parse`, needs no migration, changes recouped principal
-  (frozen here), and needs no change to this PR, only LED-23 `renumbered-reversal.835`'s expectation. Recommended as
-  the next Lane B item, its design asking the founder whether the freeze reaches the loader's links.
+  (frozen here), and needs no change to this PR: LED-23 `renumbered-reversal.835`'s interest is already none, and only
+  its links change. Recommended as the next Lane B item, its design asking the founder whether the freeze reaches the
+  loader's links.
 - **A WO's reference** is still hashed whole; reading its identifiers changes the WO rule, a follow-up ledger item if a
   payer's WO carries several.
 - **`provider_adjustment.reference` is stored in plain text** although ADR 0027 calls a claim reference PHI: an
@@ -287,7 +304,8 @@ check by reading it.
 
 ## Revisit when
 
-- The loader links a renumbered reversal: LED-23 `renumbered-reversal.835` flips to "no new interest".
+- The loader links a renumbered reversal: LED-23 `renumbered-reversal.835`'s links change and its interest stays none,
+  now as one chain's net.
 - The loader links a correction with no REF F8 that comes before its reversal: LED-24 `two-chains.835`'s payment then
   reaches the lines as one chain's net.
 - A payer's PLB03-2 is seen naming a claim by something other than CLP07 or with identifiers run together.

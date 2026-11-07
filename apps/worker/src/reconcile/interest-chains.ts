@@ -108,6 +108,11 @@ export interface InterestReading {
   readonly draws: ReadonlyMap<string, readonly InterestDraw[]>;
   /** The chain (root) of every claim read: those of the remittances holding a PLB L6, those the references reach, and those claim and interest matches name. */
   readonly chainOf: ReadonlyMap<string, string>;
+  /**
+   * The chains among them whose root is a reversal the moment links to no claim: its claim is not uploaded yet (or the
+   * loader cannot link it), so that claim's interest may yet arrive on a case line (#126 review F1).
+   */
+  readonly unlinkedReversals: ReadonlySet<string>;
 }
 
 const CLAIM_COLUMNS = 'c.id, c.remittance_id, coalesce(c.interest_cents, 0)::text AS interest_cents, c.payer_claim_control_number_hash AS hash, r.payer_id::text AS payer_id';
@@ -115,7 +120,9 @@ const CLAIM_COLUMNS = 'c.id, c.remittance_id, coalesce(c.interest_cents, 0)::tex
 /**
  * interestAttribution's statement: $1 the practice, $2 the moment's remittances (S), $3 those holding a PLB L6, $4 the
  * reference candidates' hashes. Every claim of $3, every claim of S a hash reaches and every claim a claim or interest
- * match names, each with its root walked within S.
+ * match names, each with its root walked within S and whether that root is a reversal (claim status 22): the walk goes
+ * back from a reversal to the claim it reverses whenever that claim is in S, so a root that is a reversal is one the
+ * moment links to no claim.
  */
 export const ATTRIBUTION_CLAIMS = `WITH RECURSIVE wanted AS (
        SELECT ${CLAIM_COLUMNS} FROM claim c JOIN remittance r ON r.id = c.remittance_id
@@ -127,7 +134,8 @@ export const ATTRIBUTION_CLAIMS = `WITH RECURSIVE wanted AS (
        SELECT ${CLAIM_COLUMNS} FROM claim c JOIN remittance r ON r.id = c.remittance_id
         WHERE c.practice_id = $1 AND c.remittance_id = ANY ($2::uuid[])
           AND c.id IN (SELECT m.claim_id FROM ledger_match m WHERE m.practice_id = $1 AND m.kind IN ('claim', 'interest') AND m.claim_id IS NOT NULL)), ${WALK_BACK}
-     SELECT w.id, w.remittance_id, w.interest_cents, w.hash, w.payer_id, roots.root FROM wanted w JOIN roots ON roots.start = w.id ORDER BY w.remittance_id, w.id`;
+     SELECT w.id, w.remittance_id, w.interest_cents, w.hash, w.payer_id, roots.root, rc.claim_status_code = '22' AS root_reversal
+       FROM wanted w JOIN roots ON roots.start = w.id JOIN claim rc ON rc.id = roots.root AND rc.practice_id = $1 ORDER BY w.remittance_id, w.id`;
 
 interface ClaimRow {
   readonly id: string;
@@ -136,6 +144,7 @@ interface ClaimRow {
   readonly hash: string;
   readonly payer_id: string;
   readonly root: string;
+  readonly root_reversal: boolean;
 }
 
 /**
@@ -151,7 +160,7 @@ interface ClaimRow {
 export async function interestAttribution(scope: Scope, cipher: PracticeCipher, practiceId: string, moment: AdjustmentMoment): Promise<InterestReading> {
   const l6s = moment.adjustments.filter((row) => row.category === 'interest');
   if (l6s.length === 0) {
-    return { attribution: { draws: [], unattributed: [] }, draws: new Map(), chainOf: new Map() };
+    return { attribution: { draws: [], unattributed: [] }, draws: new Map(), chainOf: new Map(), unlinkedReversals: new Set() };
   }
   const candidates = new Map(
     l6s.map((row) => {
@@ -199,7 +208,7 @@ export async function interestAttribution(scope: Scope, cipher: PracticeCipher, 
   for (const draw of attribution.draws) {
     draws.set(draw.adjustmentId, [...(draws.get(draw.adjustmentId) ?? []), draw]);
   }
-  return { attribution, draws, chainOf };
+  return { attribution, draws, chainOf, unlinkedReversals: new Set(rows.filter((row) => row.root_reversal).map((row) => row.root)) };
 }
 
 /** One remittance in which a chain a case line is matched to reports interest (AMT I) netting to other than zero. */

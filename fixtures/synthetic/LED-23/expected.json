@@ -2,7 +2,7 @@
   "case": "LED-23",
   "module": "LED",
   "title": "A remittance's interest reported on its claims (AMT I) and paid at the provider level (PLB L6)",
-  "assertion": "Credited once per line, from the PLB L6: to the claim of its own payer that its reference names, whole or among other identifiers, or shared by the remittance's AMT I netted per claim and its reversals and corrections, exactly when the PLB L6s equal that AMT I and never past what each reports otherwise; a named PLB L6 above its claim's AMT I first pays the remittance's other reported interest. A PLB L6 of zero moves nothing and the reconcile completes. AMT I with no PLB L6 in its check counts nowhere and is shown as reported. A reversal and correction linked as one claim's chain whose AMT I nets to zero add no interest, beside another claim or not; a reversal the payer renumbered, which the loader does not link, still lets its correction's interest count again (a known gap, pinned until the link is built). A PLB L6 in a later remittance naming the claim is credited once",
+  "assertion": "Credited once per line, from the PLB L6: to the claim of its own payer that its reference names, whole or among other identifiers, or shared by the remittance's AMT I netted per claim and its reversals and corrections, exactly when the PLB L6s equal that AMT I and never past what each reports otherwise; a named PLB L6 above its claim's AMT I first pays the remittance's other reported interest. A PLB L6 of zero moves nothing and the reconcile completes. AMT I with no PLB L6 in its check counts nowhere and is shown as reported. A reversal and correction linked as one claim's chain whose AMT I nets to zero add no interest, beside another claim or not; a reversal the payer renumbered, which the loader does not link, adds no interest beside its correction either: its interest taken back finds no line, so the interest paid in the same PLB L6 waits. A PLB L6 in a later remittance naming the claim is credited once",
   "synthetic": true,
   "completesIn": 9,
   "assertedBy": [
@@ -5043,7 +5043,7 @@
       "sha256": "734eb078841db31bd08f7bf79b7cdd9bfda37a3dd0f5179501e10c69f93c2bf2",
       "bytes": 1788,
       "kind": "x12",
-      "description": "After paired.835, a known gap pinned: C reversed under its own new CLP07 (SYNCCNLED230006) with REF F8 naming C (paid -160.00, AMT I -5.40), which the loader leaves unlinked; its correction (SYNCCNLED230007, REF F8 naming C) paying 97110 2.00 more on an allowed 102.00, AMT I 5.40; K paying 150.00 with AMT I 2.00; one PLB L6 of -2.00 naming nothing: BPR02 154.00.",
+      "description": "After paired.835: C reversed under its own new CLP07 (SYNCCNLED230006) with REF F8 naming C (paid -160.00, AMT I -5.40), which the loader leaves unlinked; its correction (SYNCCNLED230007, REF F8 naming C) paying 97110 2.00 more on an allowed 102.00, AMT I 5.40; K paying 150.00 with AMT I 2.00; one PLB L6 of -2.00 naming nothing: BPR02 154.00.",
       "x12": {
         "oracle": {
           "valid": true,
@@ -6414,9 +6414,9 @@
       },
       "renumberedReversal": {
         "approvedL1": "200",
-        "interest": [{"stage":"interest","amountCents":"540","evidence":"renumbered-reversal.835 PLB L6"}],
+        "interest": [],
         "links": {"reversalOfClaim":null,"supersededBy":"SYNCCNLED230007"},
-        "note": "a known gap: the unlinked reversal's -5.40 reaches no line, so the correction's 5.40 counts again; the pull request that links a renumbered reversal changes this to no new interest"
+        "note": "no new interest: the unlinked reversal is a chain of its own whose -5.40 finds no line, so the PLB L6's payments, the correction's 5.40 among them, wait; K's 2.00 on no case line"
       },
       "namedOriginal": {
         "interest": [

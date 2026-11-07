@@ -47,14 +47,17 @@ const paid = (claimId = 'C', weights: readonly [bigint, bigint] = [2400n, 3000n]
     { serviceLineId: on[1], claimId, approved, weightCents: cents(weights[1]) },
   ],
   takenBack: [],
+  mayYetHold: true,
 });
 
+/** A chain holding interest on L1 and L2; it may yet hold more, as a chain matched to a case line may. */
 const holding = (held1: bigint, held2: bigint, claimId = 'C'): ChainInterestLines => ({
   paid: [],
   takenBack: [
     { serviceLineId: 'L1', claimId, heldCents: cents(held1) },
     { serviceLineId: 'L2', claimId, heldCents: cents(held2) },
   ],
+  mayYetHold: true,
 });
 
 const part = (chain: string, serviceLineId: string, claimId: string, amount: bigint, allocated: boolean): InterestPart => ({ chain, serviceLineId, claimId, cents: cents(amount), allocated });
@@ -163,6 +166,7 @@ describe('the worked cases (designs/ledger-interest-once.md section 4.1)', () =>
         { serviceLineId: 'L2', claimId: 'C3', approved: true, weightCents: cents(3000n) },
       ],
       takenBack: [],
+      mayYetHold: true,
     };
     expect(interestWrites({ draws: [drawOf('A', 'c', 540n, ['C', 'C3'])], written: [wrote('c', 'L1', 540n)], lines: new Map([['c', later]]) })).toEqual([]);
   });
@@ -205,7 +209,7 @@ describe('the worked cases (designs/ledger-interest-once.md section 4.1)', () =>
     expect(first).toEqual([part('k', 'L1', "K'", 240n, true), part('k', 'L2', "K'", 300n, true)]);
     const after = attribute([claim("K'", 'k', 540n)], [l6('A', 540n, { chain: 'z', claims: ['Z'] })]);
     expect(after.draws).toEqual([drawOf('A', 'z', 540n, ['Z'])]);
-    const caseTwo: ChainInterestLines = { paid: [{ serviceLineId: 'L9', claimId: 'Z', approved: true, weightCents: cents(5000n) }], takenBack: [] };
+    const caseTwo: ChainInterestLines = { paid: [{ serviceLineId: 'L9', claimId: 'Z', approved: true, weightCents: cents(5000n) }], takenBack: [], mayYetHold: true };
     expect(interestWrites({ draws: after.draws, written: first.map((item) => wrote(item.chain, item.serviceLineId, item.cents)), lines: new Map([['z', caseTwo]]) })).toEqual([]);
   });
 
@@ -217,11 +221,16 @@ describe('the worked cases (designs/ledger-interest-once.md section 4.1)', () =>
     });
   });
 
-  it('a renumbered reversal, a known gap: the unlinked reversal is a chain of its own, and the correction draws its 5.40 again', () => {
-    expect(attribute([claim("V'", 'v', -540n), claim('C2', 'c', 540n), claim('K', 'k', 200n)], [l6('A', 200n)])).toEqual({
-      draws: [drawOf('A', 'c', 540n, ['C2']), drawOf('A', 'v', -540n, ["V'"]), drawOf('A', 'k', 200n, ['K'])],
-      unattributed: [],
-    });
+  it('a renumbered reversal: the unlinked reversal is a chain of its own, so the correction draws its 5.40 again, and the reversal’s take-back, finding no line, holds it back', () => {
+    const { draws } = attribute([claim("V'", 'v', -540n), claim('C2', 'c', 540n), claim('K', 'k', 200n)], [l6('A', 200n)]);
+    expect(draws).toEqual([drawOf('A', 'c', 540n, ['C2']), drawOf('A', 'v', -540n, ["V'"]), drawOf('A', 'k', 200n, ['K'])]);
+    // v's root is a reversal linked to no claim, so its interest may yet arrive: nothing is written (LED-23
+    // renumbered-reversal.835).
+    const lines = new Map<string, ChainInterestLines>([
+      ['v', { paid: [], takenBack: [], mayYetHold: true }],
+      ['c', paid('C2')],
+    ]);
+    expect(interestWrites({ draws, written: [], lines })).toEqual([]);
   });
 });
 
@@ -390,6 +399,7 @@ describe('interestWrites (D5, D6, D10)', () => {
         { serviceLineId: 'L3', claimId: 'K', approved: true, weightCents: cents(9000n) },
       ],
       takenBack: [],
+      mayYetHold: true,
     };
     expect(interestWrites({ draws: [drawOf('A', 'c', 540n, ['C'])], written: [], lines: new Map([['c', mixed]]) })).toEqual([part('c', 'L2', 'C', 540n, false)]);
     // A restatement matched "no change" on both lines: every such line.
@@ -407,6 +417,7 @@ describe('interestWrites (D5, D6, D10)', () => {
         { serviceLineId: 'L2', claimId: 'C', approved: false, weightCents: cents(3000n) },
       ],
       takenBack: [],
+      mayYetHold: true,
     };
     expect(interestWrites({ draws: [drawOf('A', 'c', 540n, ['C'])], written: [wrote('c', 'L1', 100n)], lines: new Map([['c', mixed]]) })).toEqual([]);
   });
@@ -452,7 +463,7 @@ describe('interestWrites (D5, D6, D10)', () => {
 
   it('reaches a line once per PLB L6, even when two chains’ lists hold it', () => {
     const lines = new Map<string, ChainInterestLines>([
-      ['c', { paid: [{ serviceLineId: 'L1', claimId: 'C', approved: true, weightCents: cents(2400n) }], takenBack: [] }],
+      ['c', { paid: [{ serviceLineId: 'L1', claimId: 'C', approved: true, weightCents: cents(2400n) }], takenBack: [], mayYetHold: true }],
       [
         'k',
         {
@@ -461,6 +472,7 @@ describe('interestWrites (D5, D6, D10)', () => {
             { serviceLineId: 'L2', claimId: 'K', approved: true, weightCents: cents(0n) },
           ],
           takenBack: [],
+          mayYetHold: true,
         },
       ],
     ]);
@@ -471,7 +483,7 @@ describe('interestWrites (D5, D6, D10)', () => {
     // b's payment could reach both lines; a's take-back only the lines holding a's interest.
     const lines = (held: ChainInterestLines['takenBack']) =>
       new Map<string, ChainInterestLines>([
-        ['a', { paid: [], takenBack: held }],
+        ['a', { paid: [], takenBack: held, mayYetHold: true }],
         ['b', paid('B', [2400n, 3000n], false)],
       ]);
     for (const draws of [
@@ -485,10 +497,10 @@ describe('interestWrites (D5, D6, D10)', () => {
     }
     // Two take-backs, then two payments, each sign in draw order.
     const four = new Map<string, ChainInterestLines>([
-      ['a', { paid: [], takenBack: holding(100n, 0n).takenBack.slice(0, 1) }],
-      ['c', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'K', heldCents: cents(50n) }] }],
-      ['b', { paid: [{ serviceLineId: 'L4', claimId: 'B', approved: true, weightCents: cents(1n) }], takenBack: [] }],
-      ['k', { paid: [{ serviceLineId: 'L5', claimId: 'K', approved: true, weightCents: cents(1n) }], takenBack: [] }],
+      ['a', { paid: [], takenBack: holding(100n, 0n).takenBack.slice(0, 1), mayYetHold: true }],
+      ['c', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'K', heldCents: cents(50n) }], mayYetHold: true }],
+      ['b', { paid: [{ serviceLineId: 'L4', claimId: 'B', approved: true, weightCents: cents(1n) }], takenBack: [], mayYetHold: true }],
+      ['k', { paid: [{ serviceLineId: 'L5', claimId: 'K', approved: true, weightCents: cents(1n) }], takenBack: [], mayYetHold: true }],
     ]);
     expect(interestWrites({ draws: [drawOf('A', 'b', 70n, ['B']), drawOf('A', 'a', -100n, ['V']), drawOf('A', 'k', 30n, ['K']), drawOf('A', 'c', -50n, ['K'])], written: [], lines: four })).toEqual([
       part('a', 'L1', 'C', -100n, false),
@@ -501,8 +513,8 @@ describe('interestWrites (D5, D6, D10)', () => {
   it('writes each draw under its own sign only: a paying chain whose lines hold its interest is never taken back from by another chain’s take-back', () => {
     // c is paid 5.40 and its line L7 holds 2.00 of c's interest; a takes back 1.00 from L3. Only a's take-back is a take-back.
     const lines = new Map<string, ChainInterestLines>([
-      ['c', { paid: paid().paid, takenBack: [{ serviceLineId: 'L7', claimId: 'C', heldCents: cents(200n) }] }],
-      ['a', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'K', heldCents: cents(100n) }] }],
+      ['c', { paid: paid().paid, takenBack: [{ serviceLineId: 'L7', claimId: 'C', heldCents: cents(200n) }], mayYetHold: true }],
+      ['a', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'K', heldCents: cents(100n) }], mayYetHold: true }],
     ]);
     for (const draws of [
       [drawOf('A', 'c', 540n, ['C']), drawOf('A', 'a', -100n, ['V'])],
@@ -510,6 +522,48 @@ describe('interestWrites (D5, D6, D10)', () => {
     ]) {
       expect(interestWrites({ draws, written: [], lines })).toEqual([part('a', 'L3', 'K', -100n, false), part('c', 'L1', 'C', 240n, true), part('c', 'L2', 'C', 300n, true)]);
     }
+  });
+
+  describe('holds a PLB L6’s payments while a take-back of a chain that may yet hold interest is not written whole (#126 review F1)', () => {
+    // LED-24 two-chains.835 uploaded before paired.835: b is paid 6.00 and a, C's reversal, takes 5.40 back.
+    const draws = [drawOf('A', 'b', 600n, ['B']), drawOf('A', 'a', -540n, ['V'])];
+    const lines = (held: ChainInterestLines['takenBack'], mayYetHold = true) =>
+      new Map<string, ChainInterestLines>([
+        ['a', { paid: [], takenBack: held, mayYetHold }],
+        ['b', paid('B', [2400n, 3000n], false)],
+      ]);
+    const asWritten = (parts: readonly InterestPart[]) => parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents));
+
+    it('writes nothing while the take-back finds no line, then takes back the interest that arrives, so the order of uploads changes nothing', () => {
+      // Reconcile 1: a's reversal reverses a claim not yet uploaded, so a holds nothing; b's payment waits.
+      expect(interestWrites({ draws, written: [], lines: lines([]) })).toEqual([]);
+      // Reconcile 2: paired.835's 5.40 of a's interest is on both lines: taken back, and b's payment, which only they
+      // could take, is not written, exactly as when paired.835 is uploaded first.
+      const second = interestWrites({ draws, written: [], lines: lines(holding(240n, 300n).takenBack) });
+      expect(second).toEqual([part('a', 'L1', 'C', -240n, true), part('a', 'L2', 'C', -300n, true)]);
+      // Reconcile 3: the take-back is whole and b's lines are reached: nothing more.
+      expect(interestWrites({ draws, written: asWritten(second), lines: lines(holding(0n, 0n).takenBack) })).toEqual([]);
+    });
+
+    it('holds them while the take-back is cut to what the lines hold, until the rest is taken back', () => {
+      // a holds 1.00 on line 1 only: 1.00 is taken back there and 4.40 is still owed, so b's payment waits.
+      const first = interestWrites({ draws, written: [], lines: lines(holding(100n, 0n).takenBack) });
+      expect(first).toEqual([part('a', 'L1', 'C', -100n, false)]);
+      // a's other 4.40 arrives on line 2: taken back there, and b's payment finds no line the L6 has not reached.
+      const second = interestWrites({ draws, written: asWritten(first), lines: lines(holding(0n, 440n).takenBack) });
+      expect(second).toEqual([part('a', 'L2', 'C', -440n, false)]);
+      expect(interestWrites({ draws, written: asWritten([...first, ...second]), lines: lines(holding(0n, 0n).takenBack) })).toEqual([]);
+    });
+
+    it('holds nothing back for a take-back written whole, owed no more, or of a chain that can come to hold no interest on a case line', () => {
+      // Written whole on line 1: b's payment goes to line 2.
+      expect(interestWrites({ draws, written: [], lines: lines(holding(540n, 0n).takenBack.slice(0, 1)) })).toEqual([part('a', 'L1', 'C', -540n, false), part('b', 'L2', 'B', 600n, false)]);
+      // The L6's draws of that sign already spent on another chain: nothing of the take-back is owed.
+      expect(interestWrites({ draws, written: [wrote('x', 'L9', -540n)], lines: lines([]) })).toEqual([part('b', 'L1', 'B', 267n, true), part('b', 'L2', 'B', 333n, true)]);
+      // A chain on no case line (both-ways.835's mirror): b's payment is written beside the take-back, missing or cut.
+      expect(interestWrites({ draws, written: [], lines: lines([], false) })).toEqual([part('b', 'L1', 'B', 267n, true), part('b', 'L2', 'B', 333n, true)]);
+      expect(interestWrites({ draws, written: [], lines: lines(holding(100n, 0n).takenBack, false) })).toEqual([part('a', 'L1', 'C', -100n, false), part('b', 'L2', 'B', 600n, false)]);
+    });
   });
 
   it('flags a part allocated when its draw was a share of a short pool or two or more lines took a part', () => {
@@ -521,11 +575,11 @@ describe('interestWrites (D5, D6, D10)', () => {
     refuses(() => interestWrites({ draws: [drawOf('A', 'c', 1n, ['C']), drawOf('B', 'k', 1n, ['K'])], written: [], lines: new Map() }), "interest is written from one PLB L6's draws, each chain once");
     refuses(() => interestWrites({ draws: [drawOf('A', 'c', 1n, ['C']), drawOf('A', 'c', -1n, ['C'])], written: [], lines: new Map() }), "interest is written from one PLB L6's draws, each chain once");
     const twice = (lines: ChainInterestLines) => () => interestWrites({ draws: [drawOf('A', 'c', 1n, ['C'])], written: [], lines: new Map([['k', lines]]) });
-    refuses(twice({ paid: [...paid().paid, ...paid().paid.slice(1)], takenBack: [] }), "interest reaches a line once in each chain's list");
-    refuses(twice({ paid: [], takenBack: [...holding(1n, 1n).takenBack, ...holding(1n, 1n).takenBack.slice(0, 1)] }), "interest reaches a line once in each chain's list");
+    refuses(twice({ paid: [...paid().paid, ...paid().paid.slice(1)], takenBack: [], mayYetHold: true }), "interest reaches a line once in each chain's list");
+    refuses(twice({ paid: [], takenBack: [...holding(1n, 1n).takenBack, ...holding(1n, 1n).takenBack.slice(0, 1)], mayYetHold: true }), "interest reaches a line once in each chain's list");
     refuses(twice(paid('C', [2400n, -1n])), 'interest is split by approvals remaining of zero or more');
     // The same line in a chain's paid and take-back lists, or in two chains' lists, is not a repeat.
-    expect(interestWrites({ draws: [drawOf('A', 'c', 540n, ['C'])], written: [], lines: new Map([['c', { paid: paid().paid, takenBack: holding(1n, 1n).takenBack }], ['k', paid()]]) })).toHaveLength(2);
+    expect(interestWrites({ draws: [drawOf('A', 'c', 540n, ['C'])], written: [], lines: new Map([['c', { paid: paid().paid, takenBack: holding(1n, 1n).takenBack, mayYetHold: true }], ['k', paid()]]) })).toHaveLength(2);
   });
 });
 
@@ -724,6 +778,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
       held: fc.bigInt({ min: -300n, max: 3000n }),
       approved: fc.boolean(),
       pick: fc.nat(),
+      mayYetHold: fc.boolean(),
     }),
     { maxLength: 12 },
   );
@@ -743,9 +798,9 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           const own = draws.filter((item) => item.adjustmentId === 'a0');
           const drawn = bySign(own.map((item) => item.cents));
           largest = { paid: drawn.paid > largest.paid ? drawn.paid : largest.paid, taken: drawn.taken > largest.taken ? drawn.taken : largest.taken };
-          const lines = new Map<string, { paid: ChainInterestLines['paid'][number][]; takenBack: ChainInterestLines['takenBack'][number][] }>();
+          const lines = new Map<string, { paid: ChainInterestLines['paid'][number][]; takenBack: ChainInterestLines['takenBack'][number][]; mayYetHold: boolean }>();
           for (const spec of step.lines) {
-            const entry = lines.get(spec.chain) ?? { paid: [], takenBack: [] };
+            const entry = lines.get(spec.chain) ?? { paid: [], takenBack: [], mayYetHold: spec.mayYetHold };
             lines.set(spec.chain, entry);
             const candidates = [...namedClaims(relinked, spec.chain), 'other'];
             const claimId = candidates[spec.pick % candidates.length] as string;
@@ -772,6 +827,14 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           }
           written = [...written, ...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents))];
           const total = bySign(written.map((item) => item.cents));
+          // A payment is written only once every take-back of a chain that may yet hold interest is whole: the chain has
+          // been given all of its draw, or the L6's draws of that sign are spent (#126 review F1).
+          if (parts.some((item) => item.cents > 0n)) {
+            for (const draw of own.filter((item) => item.cents < 0n && lines.get(item.chain)?.mayYetHold === true)) {
+              const given = bySign(written.filter((item) => item.chain === draw.chain).map((item) => item.cents)).taken;
+              expect(given >= negateCents(draw.cents) || total.taken >= drawn.taken).toBe(true);
+            }
+          }
           const limit = bound(claims, target.cash);
           expect(total.paid).toBeLessThanOrEqual(largest.paid);
           expect(total.taken).toBeLessThanOrEqual(largest.taken);
@@ -779,6 +842,30 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           expect(total.taken).toBeLessThanOrEqual(limit.taken);
           expect(interestWrites({ draws: own, written, lines })).toEqual([]);
         }
+      }),
+      { numRuns: 1000 },
+    );
+  });
+
+  it('writes the same whichever is uploaded first: a PLB L6 netting two chains, or the earlier PLB L6 paying the chain it takes back from (#126 review F1)', () => {
+    const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 4 });
+    fc.assert(
+      fc.property(fc.bigInt({ min: 1n, max: 1000n }), fc.bigInt({ min: 1n, max: 1000n }), someLines, someLines, (taken, payment, aLines, bLines) => {
+        // Y pays chain a's interest on the lines a's claim is matched to; X takes it back and pays chain b's, whose claim
+        // may be matched to the same lines.
+        const paidOn = (claimId: string, specs: typeof aLines) => specs.map((spec) => ({ serviceLineId: spec.line, claimId, approved: true, weightCents: cents(spec.weight) }));
+        const y = interestWrites({ draws: [drawOf('Y', 'a', taken, ['A'])], written: [], lines: new Map([['a', { paid: paidOn('A', aLines), takenBack: [], mayYetHold: true }]]) });
+        const x = [drawOf('X', 'b', payment, ['B']), drawOf('X', 'a', -taken, ['V'])];
+        const linesOfX = (held: readonly InterestPart[]) =>
+          new Map<string, ChainInterestLines>([
+            ['a', { paid: [], takenBack: held.map((item) => ({ serviceLineId: item.serviceLineId, claimId: 'A', heldCents: item.cents })), mayYetHold: true }],
+            ['b', { paid: paidOn('B', bLines), takenBack: [], mayYetHold: true }],
+          ]);
+        const inOrder = interestWrites({ draws: x, written: [], lines: linesOfX(y) });
+        // X first: a holds nothing yet, so X writes nothing until Y's interest is on the lines.
+        const before = interestWrites({ draws: x, written: [], lines: linesOfX([]) });
+        const after = interestWrites({ draws: x, written: before.map((item) => wrote(item.chain, item.serviceLineId, item.cents)), lines: linesOfX(y) });
+        expect([...before, ...after]).toEqual(inOrder);
       }),
       { numRuns: 1000 },
     );

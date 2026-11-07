@@ -1211,7 +1211,7 @@ export function led23(b: CaseBuilder): void {
   b.add835(
     'renumbered-reversal.835',
     ledRemittance(b, base, 11, restatedOn, [renumbered, renumberedCorrection, other], pool(negateCents(OTHER_INTEREST))).file,
-    `After paired.835, a known gap pinned: C reversed under its own new CLP07 (${renumbered.payerClaimControlNumber}) with REF F8 naming C (paid -160.00, AMT I -5.40), which the loader leaves unlinked; its correction (${renumberedCorrection.payerClaimControlNumber}, REF F8 naming C) paying 97110 2.00 more on an allowed 102.00, AMT I 5.40; K paying 150.00 with AMT I 2.00; one PLB L6 of -2.00 naming nothing: BPR02 154.00.`,
+    `After paired.835: C reversed under its own new CLP07 (${renumbered.payerClaimControlNumber}) with REF F8 naming C (paid -160.00, AMT I -5.40), which the loader leaves unlinked; its correction (${renumberedCorrection.payerClaimControlNumber}, REF F8 naming C) paying 97110 2.00 more on an allowed 102.00, AMT I 5.40; K paying 150.00 with AMT I 2.00; one PLB L6 of -2.00 naming nothing: BPR02 154.00.`,
   );
   // The original's control number, which its reversal carries too: no claim match names either claim, so the PLB L6
   // reaches the case lines through the claim match of C, the chain's correction.
@@ -1269,9 +1269,9 @@ export function led23(b: CaseBuilder): void {
       zeroL6: { interest, reconciles: 3, note: 'the PLB L6 of zero moves nothing and every reconcile completes' },
       renumberedReversal: {
         approvedL1: centsToString(dollars('2.00')),
-        interest: [ledEntry('interest', LED_INTEREST, 'renumbered-reversal.835 PLB L6')],
+        interest: [],
         links: { reversalOfClaim: null, supersededBy: renumberedCorrection.payerClaimControlNumber },
-        note: "a known gap: the unlinked reversal's -5.40 reaches no line, so the correction's 5.40 counts again; the pull request that links a renumbered reversal changes this to no new interest",
+        note: "no new interest: the unlinked reversal is a chain of its own whose -5.40 finds no line, so the PLB L6's payments, the correction's 5.40 among them, wait; K's 2.00 on no case line",
       },
       namedOriginal: { interest, note: "named by the original's control number: credited to the lines a claim of its chain (C) is matched to" },
       laterL6Original: {
@@ -1292,7 +1292,9 @@ export function led23(b: CaseBuilder): void {
  * Z, correcting a second patient's case line, that is uploaded last: the first patient's lines keep their 5.40 and the
  * second patient's line gets nothing (triage groups both patients' lines into one case, by payer pattern).
  * two-chains.835 nets an unlinked chain's interest paid against C's taken back, on the same two lines, in one PLB L6:
- * the take-back is written and the payment is not, so the figure errs low, never above the cash.
+ * the take-back is written and the payment is not, so the figure errs low, never above the cash; uploaded before
+ * paired.835 (twoChainsOutOfOrder), its payment waits for the take-back, which reaches the lines once paired.835's
+ * interest is on them, so the outcome is the same.
  */
 export function led24(b: CaseBuilder): void {
   const { base, original, correction, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
@@ -1373,6 +1375,7 @@ export function led24(b: CaseBuilder): void {
       short: ['short.835'],
       outOfOrder: { original: 'out-of-order-original.835', files: ['out-of-order-2.835', 'out-of-order-1.835'] },
       twoChains: ['paired.835', 'two-chains.835'],
+      twoChainsOutOfOrder: ['two-chains.835', 'paired.835'],
     },
   });
   const takenBack = [ledEntry('interest', negateCents(firstInterest), 'taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'taken-back.835 PLB L6')];
@@ -1406,6 +1409,18 @@ export function led24(b: CaseBuilder): void {
         interest: [ledEntry('interest', negateCents(firstInterest), 'two-chains.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'two-chains.835 PLB L6')],
         interestTotalCents: '0',
         note: "the take-back is written first on the lines holding C's interest; B's 6.00 would land on the same lines, which hold one entry of each PLB L6, so it is not written: the figure errs low, never above the cash",
+      },
+      twoChainsOutOfOrder: {
+        afterTwoChains: [],
+        interest: [
+          ledEntry('interest', firstInterest, 'paired.835 PLB L6'),
+          ledEntry('interest', secondInterest, 'paired.835 PLB L6'),
+          ledEntry('interest', negateCents(firstInterest), 'two-chains.835 PLB L6'),
+          ledEntry('interest', negateCents(secondInterest), 'two-chains.835 PLB L6'),
+        ],
+        interestTotalCents: '0',
+        reconciles: 3,
+        note: "two-chains.835 first: C's reversal is linked to nothing yet and its take-back finds no line, so B's payment waits and nothing is written; once paired.835 links it and pays C's 5.40 on the lines, the take-back is written there and B's payment is not, as in twoChains",
       },
     },
   });

@@ -105,6 +105,12 @@ export interface HeldInterestLine {
 export interface ChainInterestLines {
   readonly paid: readonly PaidInterestLine[];
   readonly takenBack: readonly HeldInterestLine[];
+  /**
+   * The chain may yet come to hold interest on a case line: its root is a reversal the moment links to no claim (its
+   * claim not uploaded yet), or a claim of it has a standing claim match on a case line. A take-back of such a chain
+   * that is not written whole holds back the PLB L6's payments (#126 review F1).
+   */
+  readonly mayYetHold: boolean;
 }
 
 /** One interest match and entry to write: the PLB L6's, for the claim on the line. */
@@ -321,6 +327,13 @@ export function attributeInterest({ remittances, adjustments }: { readonly remit
  * chain's interest and a payment any line matched to a claim it is for, so a payment goes to the lines the take-backs
  * left. When two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
  * unwritten, so the figure errs low and never above the cash (LED-24 two-chains.835).
+ *
+ * The payments also wait for the take-backs (#126 review F1): while a take-back of a chain that may yet hold interest
+ * on a case line is not written whole, the L6 writes none of its payments, now or in a later reconcile. The interest
+ * that chain is still to hold arrives with a later upload (a remittance dated earlier, uploaded later), and the
+ * take-back then reaches the lines it lands on before any payment of the L6 can, so the outcome does not depend on the
+ * order the remittances were uploaded in. A take-back of a chain that can come to hold no interest on a case line holds
+ * nothing back.
  */
 export function interestWrites({
   draws,
@@ -350,6 +363,8 @@ export function interestWrites({
   const left = new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
   const reached = new Set(written.map((entry) => entry.serviceLineId));
   const parts: InterestPart[] = [];
+  // A take-back of a chain that may yet hold interest is not written whole: the payments wait (#126 review F1).
+  let waiting = false;
   for (const [sign, draw] of [-1n, 1n].flatMap((ofSign) => draws.filter((item) => item.cents / size(item.cents) === ofSign).map((item) => [ofSign, item] as const))) {
     const chainLines = lines.get(draw.chain);
     if (chainLines === undefined) {
@@ -364,6 +379,9 @@ export function interestWrites({
     let weights: Cents[];
     let amount: Cents;
     if (sign === 1n) {
+      if (waiting) {
+        continue;
+      }
       const forDraw = chainLines.paid.filter((line) => draw.claimIds.includes(line.claimId));
       const approved = forDraw.filter((line) => line.approved);
       const paidLines = (approved.length > 0 ? approved : forDraw).filter((line) => !reached.has(line.serviceLineId));
@@ -375,6 +393,7 @@ export function interestWrites({
       chosen = heldLines;
       weights = heldLines.map((line) => maxCents(line.heldCents, ZERO_CENTS));
       amount = minCents(due, cents(total(weights)));
+      waiting ||= chainLines.mayYetHold && amount < due;
     }
     if (total(weights) === 0n) {
       continue;
