@@ -1262,6 +1262,8 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.setInputFiles('#screening-file', screeningFile(1));
     await page.waitForSelector('[data-state="file-ready"]');
     await refusedWith(page, STALE, SCREEN);
+    // No single field to reach, so focus lands on the summary, as on every other form-wide refusal (FRM-05).
+    expect(await focused(page)).toBe('refusal-summary');
     expect(await page.textContent(TITLE)).toBe('Not done');
     expect(await page.textContent(`${DESCRIPTION} > p`)).toBe(
       `PaidWhole could not confirm that this page came from PaidWhole’s own web address (for example, a translated or saved copy cannot send a file), so nothing was sent. Open ${SCREENING_ORIGIN}/screening, fill in the form again, then screen the file.`,
