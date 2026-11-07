@@ -1,0 +1,78 @@
+import { A, B, run } from './lib.mts';
+const HELD = 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. ';
+const RANGE = 'Paid $0,000.00. Service 01/01/2020-01/02/2020';
+const VANTREE = { datesOfBirth: ['1975-11-02'] };
+const rows: [string, string[], string, object][] = [
+  // PHIJ4-1
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80  /  03  /  14 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 1980  /  14  /  03 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80     March     14 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80-03-\n        14 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 /\n    03 /\n    14 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80  -  03  -  14 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80/\r\n   03/\r\n   14 today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 14     80     March today.`, {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 \r\n   14 \r\n   March today.`, {}],
+  ['PHIJ4-1', ['SIMONE Q VANTREE'], `${HELD}Seen 75  .  02  .  11 today.`, VANTREE],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'DOB 80  /  03  /  14 today.', {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'DOB 80     March     14 today.', {}],
+  ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'Seen 80  /  03  /  14 today.', {}],
+  // PHIJ4-2
+  ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE}JZ $0,000.00`, {}],
+  ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE}ZJ $0,000.00`, {}],
+  ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE}Jz $0,000.00`, {}],
+  ['PHIJ4-2', ['JANE ZEPHYRA'], `${HELD}Re: Jane Zephyra (JZ).`, {}],
+  ['PHIJ4-2', ['JANE ZEPHYRA'], `${HELD}Initials: JZ`, {}],
+  ['PHIJ4-2', ['SIMONE VANTREE'], `${RANGE}SV $0,000.00`, VANTREE],
+  ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE}QJZ $0,000.00`, {}],
+  ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE}JZQ $0,000.00`, {}],
+  ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE}ZJQ $0,000.00`, {}],
+  ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE}QZ $0,000.00`, {}],
+  ['PHIJ4-2', ['ANA BEA CORA DINA ELLA FAYE GIA'], `${RANGE}AG $0,000.00`, {}],
+  ['PHIJ4-2', ['ANA BEA CORA DINA ELLA FAYE GIA'], `${RANGE}BF $0,000.00`, {}],
+  ['PHIJ4-2', ['BOB XU'], `${RANGE}Bo b $0,000.00`, {}],
+  ['PHIJ4-2', ['ANN Q VANTREE'], `${RANGE}An\nn $0,000.00`, VANTREE],
+  ['PHIJ4-2', ['JANE ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', {}],
+  ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
+  // GATEWAYJ4-1
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9-10am Amal Al Hassan tolerated treatment.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Session 9am-10am Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment 10:00-11:00am Amal Al Hassan arrived on time.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment at 9.30am Amal Al Hassan arrived on time.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment at 0930am Amal Al Hassan arrived on time.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9AM-10AM Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9:00am-10:30am Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9–10am Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9 - 10am Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 1400-1500am Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'On 02/14/2026 9-10am Amal Al Hassan attended.', {}],
+  ['GATEWAYJ4-1', ['AMAN AN ZEPHYRA'], 'Seen 8-9am Aman An Zephyra.', {}],
+  ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen on March 3rd-4th Thanh Anh attended both visits.', {}],
+  ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen on the 3rd/4th Thanh Anh attended.', {}],
+  ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen 3-4th Thanh Anh attended.', {}],
+  ['GATEWAYJ4-1', ['THANH ANH'], 'Seen 3rd–4th Thanh Anh attended.', {}],
+  ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30min Minseo Seo attended.', {}],
+  ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30min Minseo attended.', {}],
+  ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 1-30min Minseo Seo attended.', {}],
+  ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30mins Minseo Seo attended.', {}],
+  ['GATEWAYJ4-1', ['MINJI JI'], 'Session 30min Minji Ji attended.', {}],
+  ['GATEWAYJ4-1', ['MINHO HO'], 'Treatment time 45min Minho Ho tolerated treatment.', {}],
+  ['GATEWAYJ4-1', ['MINSU SU'], 'Therapeutic exercise 15min Minsu Su.', {}],
+  ['GATEWAYJ4-1', ['MINJUN JUN'], 'Session 30min Minjun Jun attended.', {}],
+  ['GATEWAYJ4-1', ['MOANA ANA'], 'Follow-up in 6mo Moana Ana agreed.', {}],
+  ['GATEWAYJ4-1', ['INES ES'], 'Measured 5in Ines Es tolerated.', {}],
+  ['GATEWAYJ4-1', ['COLIN LIN'], 'Billed 97110CO Colin Lin tolerated treatment.', {}],
+  ['GATEWAYJ4-1', ['COLIN LIN'], 'Line 2: 97530CO Colin Lin 02/14/2026 $38.00', {}],
+  ['GATEWAYJ4-1', ['COLIN LIN'], 'Billed G0283CO Colin Lin.', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Billed 97110AM Amal Al Hassan.', {}],
+  ['GATEWAYJ4-1', ['MINHO HO'], 'Seen 150.00MIN HO paid', {}],
+  ['GATEWAYJ4-1', ['DANIELLE LE'], '1Daniel Le', {}],
+  ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 9-10Daniel Le', {}],
+  ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 3rd-4Daniel Le', {}],
+  ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Service 01/2020PM Al Hassan attended.', {}],
+];
+for (const [id, names, letter, more] of rows) {
+  const a = run(A, letter, names, more), b = run(B, letter, names, more);
+  const tag = a === b ? 'SAME' : b === null ? 'B-REF' : a === null ? 'A-REF' : 'DIFF';
+  console.log(`${tag}\t${id}\t${JSON.stringify(names)}\t${JSON.stringify(letter)}\tA=${JSON.stringify(a)}\tB=${JSON.stringify(b)}`);
+}
