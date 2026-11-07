@@ -136,6 +136,20 @@ Effect: any PR's unit job can go red at random.
   case for the leaks PR's design (an own name part equal to a month or common word, next to a date). 10:58Z: the rulings added
   to the reviewers, skeptics, fixers, final stage and critic; the workflow restarted at review round 1 (the gate and B replay
   from cache).
+- 2026-11-07T14:55Z: judge review round 1 on B (9 blocking, all confirmed: a new random MOD-13 failure; clean letters refused
+  for a patient named Bill and before suite/line words; own short parts, month words, initials, digits-only member/claim and
+  masked SSNs still sent in held letters; rulings A/B not yet carried out). Fix round 1: 5b8ed30f, ea4160c2 (the residual
+  table), 2a5ed43b (WIP `co-001/wip-redact-range-glued-b` = 2a5ed43b). Gate at the bar apart from the ruled residuals (PHI
+  initial/DOB/member/claim 0; name 5 = B; SSN 385 / phone 171 = A, pinned); 1,717 redaction tests; 800-run seed sweep clean;
+  MOD-16 stress 0 bad; slowest 642 ms.
+- 2026-11-07T15:26Z: judge review round 2: bookkeeping (8 class-A rows pinned with the wrong outcome; the lone-initial residual
+  unpinned; two new clean-letter refusals, GATEWAYJ2-2; a quadratic check, PHIJ2-4) and PHIJ2-2. **The orchestrator's ruling
+  (A') at 15:27 UTC:** own name, member, claim or DOB in forms no rule reads (OCR letter-digit confusions, homoglyphs, unread
+  date writings), sent in held letters, is a recorded residual on the same terms as (A): every gate row pinned with its correct
+  outcome, counts per identifier kind in the PR description, "the base sends the same forms in any letter without a range", ADR
+  0054 naming the leaks PR (whose design gets an NFKC + TR39-style confusable skeleton + O/0, l/1, I/1, S/5, B/8 fold for
+  own-identifier matching; acceptance: the pinned A and A' rows flip; it must land before any real PHI is processed). The fixer
+  still closes every form a rule reads. Added to fix round 2 onward; the run restarted at fix round 2 (15:52Z).
 
 ## Waiting on someone
 - None: classes (A) and (B) ruled 2026-11-07 10:53 UTC.
