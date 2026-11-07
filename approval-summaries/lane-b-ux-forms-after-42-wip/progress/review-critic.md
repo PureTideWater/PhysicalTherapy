@@ -1,0 +1,16 @@
+# review-critic: completeness of review-UX and review-SEC (#132, head 76da396a)
+Status: started 2026-11-07; read-only. Plan: (1) base merge with #131 (8a722f80) via merge-tree; (2) CI-30 consistency; (3) shots the UX review did not view; (4) changed strings not read; (5) design 9/10 checklist items skipped.
+## Gap 1: base merge with #131 (neither review did it) - CHECKED, no finding
+- `git merge-tree --write-tree 8a722f80 76da396a` = 31b02d23, clean (no conflict). Shared files: e2e/screening.spec.ts (PR hunks :242,:266-276; #131 :509,:519, same test, disjoint steps), test-matrix.md / matrix.ts (PR CI-30, FRM-04, FRM-06; #131 TBL-08), registry.ts (CI-30, FRM-04 vs TBL-08). Fixtures expected.json per case, no aggregate file.
+- Semantic: PR's separator guard (lib/routes/messages.test.ts) scans lib/screening incl. #131's labels.ts: #131's new literals are capitalised exported constants (pageCopy, exempt), none in a message position, none "upload again" -> guard stays green by reading. PR adds no "expected under Medicare"/"Difference"/old place-of-service words that #131 relabelled. ADR 0062/0078 amendments by #131 do not touch replacement semantics (SEC ruling) or the users-page ScrollTable.
+- Not run: the merged suite (planned in the fix round; not repeated here).
+## Gap 2: CI-30 consistency - CHECKED, no finding
+- No "FRM-<" left at 76da396a or in the design; CI-30 in skip-link.spec.ts, synthetic-personas.ts, shell.tsx, ADR 0077, test-matrix.md, CI-30/expected.json, matrix.ts, registry.ts. skip-link.spec.ts asserts every clause of the row (clipped, first Tab, 12/8 px, >=24 px, in view, axe, Enter -> main#content, next Tab first control in main) at 1280/390 on cases, users, console orgs; both tests passed in R2-e2e-all.log (84 passed) at 76da396a.
+## Gap 3: keyboard paths (UX review relied on probe) - CHECKED
+- Upload form: press while reading/two presses/file chosen mid-press/unreadable/no file -> action-form.browser.test.tsx:1053-1180 (focus asserted: button kept, file input focused); refused file focus in e2e screening.spec.ts:270-274. Stale origin (:1259) asserts words, link, no refresh, values kept, but NOT the focus; by code the core focuses the summary for any refused state with no single field target (form-issues.tsx:596). -> CRIT-2 nit (pin).
+## Gap 4: shots not viewed by UX review - VIEWED: screening.error-member-id.390, p.cases.skip-link-focused.1280-dark, screening.error-zip.1280-dark: no defect. Head shots predate #131: after the merge the upload page's "What each payer product gets" card says "Medicare figure ..." (#131's labels), not the shots' "Expected under Medicare" (no new review needed; this PR adds no such words).
+## Gap 5: changed strings outside screening (W2 sweep) - READ all added literals in lib/routes, lib/packets, lib/triage, lib/reconciliation, worker billing/support/rerun, packages/packets: each one sentence, step after semicolon; mapping.ts:421 "the run of {from} to {to} {message}" composes grammatically with every RerunRefusedError text (rerun.ts:123-364). Sign-in: punctuation only (confirmed). No finding.
+## Findings
+- CRIT-1 should: merged suite unrun (planned in the fix round): run full suite on the merge with 8a722f80 before the one push.
+- CRIT-2 nit: pin focus after the screening stale-origin refusal.
+Status: DONE.

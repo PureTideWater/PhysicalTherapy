@@ -350,7 +350,7 @@ changes), and **sees** (what a person sees).
 #### `app/console/support/page.tsx`
 - **Now:** :57 is `<Field label="Ticket" name="ticket" required pattern="[A-Za-z0-9-]{1,64}" />`, with no hint and no
   `maxLength`. :39 says "company staff" and uses straight apostrophes ("practice's data", "practice's contracts").
-- **Change:** `<Field label="Ticket" name="ticket" required maxLength={64} pattern="[A-Za-z0-9-]{1,64}" hint="The ticket’s number, as Tickets shows it, such as 1042. Letters, digits and hyphens only." />`.
+- **Change:** `<Field label="Ticket" name="ticket" required maxLength={64} pattern="[A-Za-z0-9-]{1,64}" hint="The ticket’s number, as Support tickets shows it, such as 1042. Letters, digits and hyphens only." />`.
   At :39, change "company staff" to "PaidWhole staff" (the product's phrase: `sign-in/notice.tsx:204`,
   `terms/page.tsx:46`) and use curly apostrophes.
 - **Why 1042 and not 7.8's "as in SYN-1234":** tickets are now numbered by the help desk: a ticket's number is a
@@ -359,7 +359,7 @@ changes), and **sees** (what a person sees).
   will copy. The field itself still writes `support_grant.ticket`, free text checked only by
   `CHECK (ticket ~ '^[A-Za-z0-9-]{1,64}$')` (`20261015140000_tenancy.sql:125`) and not linked to `support_ticket.number`;
   grants made before the help desk, and both e2e specs (`SYN-CON-E2E`, `SYN-E2E-1`), use other references. So the hint
-  says what to enter ("The ticket’s number, as Tickets shows it") and the rule the field checks ("letters, digits and
+  says what to enter ("The ticket’s number, as Support tickets shows it") and the rule the field checks ("letters, digits and
   hyphens only"); it claims no link the database does not enforce. UX PR 74 (`co-001/ux-console-support-page`) makes
   the field a choice of an open ticket, which will replace this hint (section 8).
 - **Tests:** FRM-04's `form-hints.test.ts` (2.1) fails if the entry stays without a hint. `getByLabel('Ticket')`
@@ -510,7 +510,7 @@ stop and no colon of its own.
 | `contactEmail` (:352, :614) | an email address: the result’s link is sent there | **enter an email address; the result’s link is sent there** |
 | `locations` (:1278; `onboarding.ts:113`, three messages) | a whole number of locations from 1 to 1,000 / … | **enter a whole number from 1 to 1,000** (all four) |
 | `payers` (`onboarding.ts:40,47`) | name at least one payer / … | **name 1 to 50 payers, each at most 120 characters**; the 6,000 cap reads **enter at most 6,000 characters** |
-| `screening/routes.ts:370` (upload overflow) | And N more problems like these | `` `and ${n} more ${n === 1 ? 'problem' : 'problems'} like these; fix ${n === 1 ? 'it' : 'them'} too, then screen the file again` `` (so it reads "File to screen: and 7 more problems like these; fix them too, then screen the file again"; the count stays a `toLocaleString` number, in mono wherever it renders); `routes.db.test.ts:161,319` follow, changed first so they fail red |
+| `screening/routes.ts:370` (upload overflow) | And N more problems like these | `` `and ${n} more ${n === 1 ? 'problem' : 'problems'} like these; fix ${n === 1 ? 'it' : 'them'} too, then choose the file again` `` (so it reads "File to screen: and 7 more problems like these; fix them too, then choose the file again"; the count stays a `toLocaleString` number, in mono wherever it renders); `routes.db.test.ts:161,319` follow, changed first so they fail red |
 
 - **Tests:**
   - `screening/routes.db.test.ts:217` (contactEmail), `:1069` (firm), `:433` (ZIP), `:161`, `:319`;
@@ -549,15 +549,15 @@ The summary joins `${name}: ${message}` (`form-issues.tsx:608`, `:676`), so a me
 | — `row_shape` | `` `${row} does not have one cell for each column; save the file again as CSV, then choose it again` `` |
 | — `invalid_value`, with a field | `` `${row} has a value in the ${field} column that is not in the screening’s format; correct it, or leave the row out` `` (no article before the field name, so never "a allowed total" or "the units is") |
 | — `invalid_value`, with no field | `` `${row} has a value that is not in the screening’s format; correct it, or leave the row out` `` (its own words: `fieldName`'s "a column" default never reaches this case, so never "a a column") |
-| — `band_holds_date` | `` `row ${n}’s ${column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1` `` |
-| — `band_in_future` | `` `row ${n}’s service band is a quarter that has not started yet; leave it out` `` |
+| — `band_holds_date` | `` `row ${n}’s ${column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again` `` (fix round, UX-UX-2: its step, the browser twin's verb) |
+| — `band_in_future` | `` `row ${n}’s service band is a quarter that has not started yet; leave the row out` `` (fix round, UX-UX-4) |
 | — `band_outside_content` (row branch) | `` `row ${n}’s service band is a quarter outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out` `` |
 | — `band_outside_content` (no row) | **every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter** |
 | — `duplicate_row` | `` `${row} repeats row ${first}; add the two into one row` `` |
 | — `no_rows` | **the file has no rows under its header; add the rows, then choose the file again** |
-| — `too_many_rows` | `` `a screening takes at most ${max} rows; split the file and screen each part` `` |
+| — `too_many_rows` | `` `a screening takes at most ${max} rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until ${max} or fewer remain, then choose the file again` `` (fix round, UX-UX-1: never a second screening, since a later one replaces the earlier; the browser's `messages.ts` twin says the same) |
 | — `row_count_mismatch` | **the rows sent do not match the file; choose the file again** |
-| — `too_few_claim_lines` (both branches) | `` `row ${n} sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out` `` and **every row sums fewer than 11 claim lines, so there is nothing to screen; …** (the rest of today's step kept) |
+| — `too_few_claim_lines` (both branches) | `` `row ${n} sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out` `` and **every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care; choose a file with rows of at least 11 claim lines** (fix round, UX-UX-2: its step; the browser twin ends "Choose a file with rows of at least 11 claim lines.") |
 | — the overflow line | lower-cased with a step by 2.6 (routes.ts:370) |
 | `lib/screening/messages.ts:83`, `:95` **(U)**, the browser's "Not sent" twins of `phi_column` and `band_holds_date` | sentences, so they keep their capital and full stop, but take the same verb: "…; remove the column, then choose the file again. A screening takes totals only, never patient information." and "…; remove the dates, then choose the file again." (`messages.ts:92`'s `invalid_value` sentence, "Row 3, units: it must be …", has no article fault and is a list sentence; left alone) |
 | `support.ts:249` **(W1)** | a ticket takes no patient information; remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead (keeps "record’s ID", so 2.5's `WITHHELD_MESSAGE` row still matches `/support`) |
@@ -712,7 +712,7 @@ The founder's standing rule (2026-10-18) applies: build the best option, never w
    colon-joined wordings are superseded by semicolons (the ADR amendment records this). *Alternative rejected:* changing
    the summary's joiner (for example to an en dash) would touch every e2e that reads "Name: message" and break the shared
    "Error:" pattern.
-6. **The Ticket example is "1042", not "SYN-1234"** (2.2): it matches what Tickets shows.
+6. **The Ticket example is "1042", not "SYN-1234"** (2.2): it matches what Support tickets shows.
 7. **The email message names the staff "PaidWhole staff"** and the step names the card and button the person will use
    ("create a support grant from the ticket under Support"). Of the two drafts, "to give support access" is kept,
    because it names what the administrator was trying to do.
