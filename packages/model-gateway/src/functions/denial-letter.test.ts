@@ -348,7 +348,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
-    const redacted = redactLetter(text, who, claim(...claimNumbers));
+    // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5).
+    const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
     expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers))).toBe(false);
     expect(mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] })).toBe(false);
     const seconds = (performance.now() - started) / 1000;
@@ -370,10 +371,18 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // other part, so the letter is refused, as at cc3dd7f6.
     ['amounts after a range, each read for a label over the numbers before it', ['JANE Q VANTREE'], fill('Billed 01/01/2020-150.00-120.00 1.00 '), true],
     ['ranges then an SSN label glued to a word', ['JANE Q VANTREE'], fill('01/01/2020-150.00-PaidSSN 9 '), true],
+    // The judge's review round 1: with a held chain, every run read for a part anywhere and the letter read blind to its
+    // separators; a held range's end glued to a run of mask characters; heads of parts before the name's placeholder.
+    ['held letters, every run read for a part of the name anywhere (PHIJ1-1)', ['AL MAY Q'], fill('Seen 01/01/2020-150.00Paid in full '), false],
+    ['held letters, read blind to their separators for the call’s identifiers (PHIJ1-3)', ['JANE Q VANTREE'], fill('Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 1 2 '), false],
+    ['a held range’s end glued to a word as long as the letter, then a dash and a digit (PHIJ1-5)', ['JANE Q VANTREE'], `Seen 01/01/2020-150.00Paid${'X'.repeat(N - 30)}-a1`, false],
+    ['a held range’s end glued to lower-case letters as long as the letter (PHIJ1-5)', ['JANE Q VANTREE'], `Seen 01/01/2020-150.00${'x'.repeat(N - 30)}-a1`, false],
+    ['runs glued to a digit before the name, each read as a part’s head (GATEWAYJ1-4)', ['DANIELLE LE'], fill('1Dan Le '), true],
+    ['birth labels in a held letter, each read for a date redaction did not take (PHIJ1-3)', ['JANE Q VANTREE'], fill('DOB on file 01/01/2020-150.00 '), true],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
     const who = patient([...names]);
     const started = performance.now();
-    const redacted = redactLetter(text, who, claim('SYN555001'));
+    const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
     expect(holdsIdentifier(redacted.text, who, claim('SYN555001'))).toBe(refused);
     const seconds = (performance.now() - started) / 1000;
     expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
@@ -1189,6 +1198,113 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     const who = round3([...names]);
     const redacted = redactLetter(letter, who, AC);
     expect(holdsIdentifier(redacted.text, who, AC)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  // The judge's review round 1 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // cc3dd7f6 refused every row refused here but GATEWAYJ1-1's three fail-safe rows (sent unchanged there), GATEWAYJ1-4's last
+  // and GATEWAYJ1-3's last three (sent there with a fragment of the name or an initial in clear), and sent every other row
+  // as written here.
+  const judge1 = (names: string[], more: { readonly datesOfBirth?: readonly string[]; readonly memberIds?: readonly string[]; readonly claimNumbers?: readonly string[] }) => ({
+    patient: { pseudonym: 'synthetic-patient-15', names, datesOfBirth: [...(more.datesOfBirth ?? ['1980-03-14'])], memberIds: [...(more.memberIds ?? ['SYNMEMBER0042', 'ZZ7654321'])] },
+    claims: [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-15', claimNumbers: [...(more.claimNumbers ?? ['SYNCLAIM0001', 'C2026000417'])] }],
+  });
+  it.each([
+    // PHIJ1-1: in a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's own digits), a
+    // part of the name of any length anywhere in a run of letters, and an initial at a run's end before the name, a part,
+    // another initial or a full stop.
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARAL,', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Seen 01/01/2020-150.00 ALPAID in full.', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Service 2020-01-01-150.00 Paid. dearal.', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Seen 01/01/2020-150.00 DEARALPAID', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARQ ZEPHYRA', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARQ.', null, {}],
+    ['PHIJ1-1', ['JUNE Q VANTREE'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARJUNE,', null, {}],
+    ['PHIJ1-1', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DEARJ. ZEPHYRA', null, {}],
+    ['PHIJ1-1', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient JQ ZEPHYRA', null, {}],
+    // PHIJ1-3: the shapes cc3dd7f6 sends with no range (docs/adr/0054's residuals), in such a letter, read blind to their
+    // separators: a member ID or claim number, a part of four letters or more, the name's initials, a date of birth's eight
+    // digits, its month's word beside its year, and a birth label whose date redaction did not read.
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 1961 March 3 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Born MARCH THIRD 1961 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 0 3 / 0 3 / 1 9 6 1 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 1961/3 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB March 3rd, nineteen sixty-one Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 03\n14\n1980 on file.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Member ZZ.765.4321 on file.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Claim C2026/000417 on file.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Seen 03-15-61 Thank you.', null, { memberIds: ['031561'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Claim 123456780.00 Thank you.', null, { claimNumbers: ['12345678'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Ref 1234ー5678 Thank you.', null, { claimNumbers: ['12345678'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Total $555001.00 Thank you.', null, { claimNumbers: ['555001'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient JQZ.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient J.Q.Z.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient Z E P H Y R A', null, {}],
+    ['PHIJ1-3', ['JOANN ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Dear jo ann,', null, {}],
+    // PHIJ1-4: a member ID or claim number of digits alone glued to a word, in such a letter.
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid76543210 in full.', null, { memberIds: ['76543210'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. MemberID76543210.', null, { memberIds: ['76543210'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 76543210Paid in full.', null, { memberIds: ['76543210'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Service 2020-01-01-150.00 Paid. Dear88776655.', null, { claimNumbers: ['88776655'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. CLAIMNO99887766 Thank you.', null, { claimNumbers: ['99887766'] }],
+    // PHIJ1-5: a masked SSN glued to a word glued to a held range's end, or anywhere in such a letter; a word and a gap
+    // alone glue nothing (MOD-16's own letter is sent).
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidXXX-XX-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020PaidXXX-XX-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00Paid***-**-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00Paidxxx-xx-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidXXX XX 3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidXXX-XX-3456 thanks', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 PaidXXX-XX-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Service 01/01/2020-150.00Paid 97110   3   1234.56', 'Service 01/01/2020-150.00Paid 97110   3   1234.56', {}],
+    // GATEWAYJ1-4: a part's head before the name's placeholder where redaction read the rest of a part written with a space
+    // inside as a shorter part (seed 2026110710's shape): with a held chain any run, elsewhere a head glued to a digit.
+    ['GATEWAYJ1-4', ['DANIELLE LE'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020DANIEL LE $0,000.00', null, {}],
+    ['GATEWAYJ1-4', ['DANIELLE LE'], 'Billed 01/02/2020-150.00Daniel Le, seen', null, {}],
+    ['GATEWAYJ1-4', ['ANGELA Q LA'], 'Seen 01/01/2020-150.00ANGE LA, Paid', null, {}],
+    ['GATEWAYJ1-4', ['STELLA LA'], 'Service 01/01/2020-150.00STEL LA paid', null, {}],
+    ['GATEWAYJ1-4', ['CLAIM LA ORLA'], 'Seen 01/01/2020-150.00OR LA, CL AIM LA, ', null, { datesOfBirth: ['1970-01-01'], memberIds: ['19900101'], claimNumbers: ['19900101'] }],
+    ['GATEWAYJ1-4', ['ANGELA Q LA'], 'Seen 150.00ANGE LA, Paid', null, {}],
+    // GATEWAYJ1-1: outside such a letter, a part of four letters or more only where its run sets it apart (from the run's
+    // start or a change of case, to its end, a digit or a change of case) or anywhere in a run of one case: an ordinary word
+    // around a part is sent as at cc3dd7f6; the part as a whole word glued to a digit, and a run of capitals, are refused
+    // (fail-safe: "Page" for PAGE, "BALANCE24.00" for ALAN). A part's tail after the placeholder is sent ("CY2026").
+    ['GATEWAYJ1-1', ['BILL Q ZEPHYRA'], 'Paid 96.00 2020Billed 150.00', 'Paid 96.00 2020Billed 150.00', {}],
+    ['GATEWAYJ1-1', ['VERA Q ZEPHYRA'], 'Paid 0.00Coverage 01/01/2020-12/31/2020', 'Paid 0.00Coverage 01/01/2020-12/31/2020', {}],
+    ['GATEWAYJ1-1', ['MARK Q ZEPHYRA'], 'CO-45 Remark1: N130', 'CO-45 Remark1: N130', {}],
+    ['GATEWAYJ1-1', ['ROSS Q ZEPHYRA'], 'Gross150.00 Net120.00', 'Gross150.00 Net120.00', {}],
+    ['GATEWAYJ1-1', ['TATE Q ZEPHYRA'], 'Statement1 of 2', 'Statement1 of 2', {}],
+    ['GATEWAYJ1-1', ['MINA Q ZEPHYRA'], 'Determination01/15/2026', 'Determination01/15/2026', {}],
+    ['GATEWAYJ1-1', ['WARD Q ZEPHYRA'], 'Forwarded2 claims', 'Forwarded2 claims', {}],
+    ['GATEWAYJ1-1', ['BILL Q ZEPHYRA'], 'Service 6 March 2020—8 March 2020Billed0.00 paid.', 'Service 6 March 2020—8 March 2020Billed0.00 paid.', {}],
+    ['GATEWAYJ1-1', ['PAGE Q ZEPHYRA'], '93359   5   335.00Page 2 of 5   95870 2   58.00', null, {}],
+    ['GATEWAYJ1-1', ['ALAN Q ZEPHYRA'], 'BILLED 150.00 ALLOWED 120.00 PAID 96.00 BALANCE24.00', null, {}],
+    ['GATEWAYJ1-1', ['PAGE Q ZEPHYRA'], 'Paid 150.00Page 2 of 3', null, {}],
+    ['GATEWAYJ1-1', ['NANCY VANTREE'], 'Patient: Nancy Vantree CY2026 1 150.00', 'Patient: [PATIENT_NAME] CY2026 1 150.00', {}],
+    // GATEWAYJ1-3: outside such a letter, an initial alone after a digit only before the name's placeholder (or a number's
+    // that a part of the name is written as), a whole part or another initial: suite and line letters before a word that
+    // begins like a part, or before another placeholder, are sent as at cc3dd7f6. Before the name it is refused (fail-safe:
+    // "Room 4L, Lee Hall" for LEE).
+    ['GATEWAYJ1-3', ['AL Q ZEPHYRA'], 'Suite 2A, Albany, NY 12207', 'Suite 2A, Albany, NY 12207', {}],
+    ['GATEWAYJ1-3', ['AL Q ZEPHYRA'], 'Line 1A Allowed 120.00', 'Line 1A Allowed 120.00', {}],
+    ['GATEWAYJ1-3', ['JANE A MA'], 'Suite 3A, Main Street, Baltimore MD 21201', 'Suite 3A, Main Street, Baltimore MD 21201', {}],
+    ['GATEWAYJ1-3', ['ED Q LI'], 'Box 1E, Edison NJ 08817', 'Box 1E, Edison NJ 08817', {}],
+    ['GATEWAYJ1-3', ['ED Q LI'], 'Room 4L, Lincoln Hall', 'Room 4L, Lincoln Hall', {}],
+    ['GATEWAYJ1-3', ['TY Q ZEPHYRA'], 'Apt 2T, Tyler TX 75701', 'Apt 2T, Tyler TX 75701', {}],
+    ['GATEWAYJ1-3', ['ANNA Q ZEPHYRA'], 'Suite 2A, Annapolis, MD 21401', 'Suite 2A, Annapolis, MD 21401', {}],
+    ['GATEWAYJ1-3', ['ANNA Q ZEPHYRA'], 'Appeals Unit, Suite 2A, 202-555-0143', 'Appeals Unit, Suite 2A, [PHONE]', {}],
+    ['GATEWAYJ1-3', ['BEN Q ZEPHYRA'], 'Floor 3B, 202-555-0143', 'Floor 3B, [PHONE]', {}],
+    ['GATEWAYJ1-3', ['CARL Q ZEPHYRA'], 'Building 4C - 202-555-0143', 'Building 4C - [PHONE]', {}],
+    ['GATEWAYJ1-3', ['ANNA Q ZEPHYRA'], 'Line 1A: SYNCLAIM0001 denied CO-45', 'Line 1A: [CLAIM_1] denied CO-45', {}],
+    ['GATEWAYJ1-3', ['ZEPHYRA Q LEE'], 'Room 4L, Lee Hall', null, {}],
+    ['GATEWAYJ1-3', ['JANE Q ZEPHYRA'], 'Seen 150.00Q Zephyra', null, {}],
+    ['GATEWAYJ1-3', ['JANE Q ZEPHYRA'], 'Seen 150.00J. Q. Zephyra', null, {}],
+  ] as const)('handles the judge’s round 1 input (%s): %s %s', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
     if (sent !== null) {
       expect(redacted.text).toBe(sent);
     }

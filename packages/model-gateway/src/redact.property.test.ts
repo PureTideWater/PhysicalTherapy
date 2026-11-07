@@ -422,6 +422,13 @@ const gluedLetterCase: fc.Arbitrary<Case> = fc.tuple(letterCase, fc.array(fc.nat
   return { ...letter, segments };
 });
 
+/**
+ * The seed on which the glued letters' property failed (the judge's review round 1, GATEWAYJ1-4): patient CLAIM LA ORLA,
+ * "Seen 01/01/2020-150.00OR LA, CL AIM LA, ". Redaction read the short part LA inside ORLA written with a space ("OR LA"),
+ * and the check did not read the head "OR" left before the name's placeholder. Pinned as a fixed run of the property.
+ */
+const GLUED_SEED = 2026110710;
+
 /** The glued letters' property: the check refuses the letter, or no letter or digit of an identifier is sent (noIdentifierSent). */
 const gluedRefusedOrRedacted = (letter: Case) => {
   const { text } = assemble(letter.segments);
@@ -437,6 +444,10 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
 
   it('refuses, or sends none of them, with the identifiers glued by a lost space: to a digit on the left at a range’s or an amount’s end, a date of birth to a word on the right (property; review PHI2-1, review round 3)', () => {
     fc.assert(fc.property(gluedLetterCase, gluedRefusedOrRedacted), { numRuns: 400 });
+  }, 60_000);
+
+  it(`refuses, or sends none of them, on seed ${String(GLUED_SEED)}, where a part written with a space inside was sent cut by the shorter part redaction read (a fixed run of the property; the judge's review round 1, GATEWAYJ1-4)`, () => {
+    fc.assert(fc.property(gluedLetterCase, gluedRefusedOrRedacted), { numRuns: 400, seed: GLUED_SEED });
   }, 60_000);
 
   it(`holds on seed ${String(YEAR_BELOW_1900_SEED)}, where a claim number written like a date with a year below 1900 was first found (a fixed run of the property)`, () => {
@@ -1793,6 +1804,36 @@ describe('MOD-16: what must stay is sent unchanged; the call’s identifiers kee
   it(`holds on seed ${String(RANGE_GLUED_SEED)}, where a service period glued to the next word was refused (a fixed run of the property)`, () => {
     fc.assert(keepsWhatMustStay, { numRuns: 300, seed: RANGE_GLUED_SEED });
   }, 60_000);
+
+  // MOD-16's own letters (its generator, seed 1616) for patients whose name is a part of one of its words (the judge's review
+  // round 1, GATEWAYJ1-1): sent unchanged where cc3dd7f6 sent them, the part inside a word that goes on in its own case
+  // ("Billed" for BILL, "Coverage" for VERA); refused where the part is the whole word glued to a digit ("Page", "Total",
+  // "Noted": a fail-safe refusal, docs/adr/0054), and in a letter whose chain only held barriers hold (refused at cc3dd7f6),
+  // where any part anywhere is read.
+  it.each([
+    ['BILL Q ZEPHYRA', 'DCN 1619035765296Billed $0,069.06 2030-12-21', false],  // cc3dd7f6: sent
+    ['BILL Q ZEPHYRA', 'Control 44120273925247Billed 2022 02 21', false],  // cc3dd7f6: sent
+    ['BILL Q ZEPHYRA', 'Date $777.81Billed $721.47', false],  // cc3dd7f6: sent
+    ['VERA Q ZEPHYRA', 'Codes 98188 97140 97530 G0283Coverage 10/07/24—10/05/25; EFT 1677682922', false],  // cc3dd7f6: sent
+    ['VERA Q ZEPHYRA', 'Los Synth, CA 94112Coverage 02/16/2029--09/24/2029', false],  // cc3dd7f6: sent
+    ['VERA Q ZEPHYRA', 'DCN 38667138726148Coverage 08/26/2020-16th March 2021', false],  // cc3dd7f6: sent
+    ['ANGE Q ZEPHYRA', 'Paid 2191312372Range 09.22.2023−04.22.2024TH', false],  // cc3dd7f6: sent
+    ['ANGE Q ZEPHYRA', 'Control 12570495343. Control 684587150790Range 08/02/2025—25th August 2025', false],  // cc3dd7f6: sent
+    ['OVID Q ZEPHYRA', 'Billed 20301025\n2Provider 2264328230. Item N323', false],  // cc3dd7f6: sent
+    ['OVID Q ZEPHYRA', 'ZIP 92104Provider 1297617874', false],  // cc3dd7f6: sent
+    ['PAGE Q ZEPHYRA', 'Contact your provider, NPI 2985888223Page 2 of 6   91655 5   165.00', true],  // cc3dd7f6: sent
+    ['TOTAL Q ZEPHYRA', 'Control 01241498187563Total $6,781.78', true],  // cc3dd7f6: sent
+    ['NOTED Q ZEPHYRA', 'check 2186099307Noted $841.47', true],  // cc3dd7f6: sent
+    ['BILL Q ZEPHYRA', 'From February 8, 2024--2024-11-10Rd. 9\nTotal 96714-93671Billed CO-81', true],  // cc3dd7f6: refused
+    ['VERA Q ZEPHYRA', 'TIN 87-0008978. Total 4,654.00 2020Coverage 2027-12-10-21st of August, 2028Paid $4,465.46', true],  // cc3dd7f6: refused
+  ] as const)('handles MOD-16’s letter for a patient named inside its words (%s): %j refused %s', (name, text, refused) => {
+    const who: PatientIdentifiers = { ...patient, names: [name] };
+    const screened = redactLetterForScreen(text, who, claims);
+    expect(holdsIdentifier(screened.text, who, claims)).toBe(refused);
+    if (!refused) {
+      expect(screened).toMatchObject({ text, replaced: 0 });
+    }
+  });
 
   it('keeps the call’s nine-digit member ID and ten-digit claim number their placeholders in every SSN and phone shape, never [SSN] or [PHONE], and never offers them (property)', () => {
     fc.assert(

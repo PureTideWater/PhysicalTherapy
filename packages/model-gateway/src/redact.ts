@@ -1867,7 +1867,7 @@ function survivorIn(text: string): Survivor {
       const neighbor = groups[index];
       const gap = neighbor === undefined ? '' : side === 'left' ? text.slice(neighbor.end, at) : text.slice(end, neighbor.start);
       // After it, a word glued to its end, or a mask's characters ("2020th90012-3456", "150.00XXX-XX-3456").
-      const glued = side === 'right' && /^(?:\p{L}+|(?:[X*#_\u2022\u25CF]+[\p{Pd}\u2212 .]?)+)$/u.test(gap);
+      const glued = side === 'right' && GLUED_AFTER_RANGE.test(gap);
       if (side === 'right' && neighbor !== undefined && !glued && personShaped(index, gap)) {
         held = false;
       } else if (neighbor === undefined || !(glued || SCAN_LABELED_GAP.test(gap)) || neighbor.range === at) {
@@ -1943,6 +1943,14 @@ function survivorIn(text: string): Survivor {
   const gluedLabel = (start: number) => start >= 0 && (labeledAt(start, true) === 'person' || labeledOverNumbers(start, false, true) === 'person');
   return survives((group) => group.blocked && !(amountAt[group.start] === 1 && gluedLabel(amountStarts[group.start] ?? -1)), () => false, true) ? 'survivor' : 'held';
 }
+
+/**
+ * What, after a held range's end, glues the next group to it (survivorIn's sideStands): a word, or a mask's groups with or
+ * without a word before them ("2020th90012-3456", "150.00XXX-XX-3456", "150.00PaidXXX-XX-3456", "150.00Paid***-**-3456"),
+ * never a word and a gap alone ("Paid ", "Paid-": MOD-16's "Service 01/01/2020-150.00Paid 97110 3 1234.56"). Each mask group
+ * is bounded, so a long run of letters is read in linear time.
+ */
+const GLUED_AFTER_RANGE = /^(?:\p{L}+|\p{L}*\.?[\p{Pd}\u2212 .]?(?:[Xx]{2,5}|[*#_\u2022\u25CF]{1,5})(?:[\p{Pd}\u2212 .]?(?:[Xx]{2,5}|[*#_\u2022\u25CF]{1,5})){0,3}[\p{Pd}\u2212 .]?)$/u;
 
 /** What the words before a chain say it is to the scan: a person's number (an SSN or phone label), a nine after "Medicare", or nothing. */
 type ScanLabel = 'person' | 'medicare' | null;
@@ -2145,19 +2153,24 @@ const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`
  * at word boundaries only: review round 3 of co-001/redact-range-glued reverted the glued reading of round 2). No boundary
  * can be known there, so the letter is refused (identifier_left, a fixed message with no number) and goes to a person.
  * `held` says the survivor scan found a chain that only the range fix's barriers hold, in a letter cc3dd7f6 refused for the
- * range's own digits; there the shapes that are as often a code, a unit or a date's month are refused too:
- * - a part of the patient's name of four letters or more that is no month's word, folded (so in any case), anywhere in a
- *   run of letters that a digit touches ("01/01/2020-150.00Zephyra", "Jane0.00-01/02/2020", "2020PAIDZEPHYRATODAY",
- *   "Seen JaneSeen0.00"), or written with joiners or a space inside as its form reads it ("150.00ZEP HYRA"); with `held`,
- *   anywhere, and a part of two or three letters or a month's word where a digit stands right before or after it, a change
- *   of case or the end of a run a digit touches sets it apart ("01/01/2020-150.00Al", "0.00-01/02/2020PAIDMa"); elsewhere
- *   such a part is sent as at cc3dd7f6 ("Remark: MA04", "97110XU", "45min", "June1", "Seen 0.00-$20Al"); none is read
- *   inside another date ("12May2020") or a word no digit touches ("Albuquerque" for a part AL);
- * - letters between a digit and the name's placeholder, only invisible characters between: a part the placeholder cut;
- * - an initial of the name, a letter alone with a digit right before it, before the name or a placeholder past up to three
- *   other characters ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"); with `held`, one set apart in its run too
- *   ("PaidJ. Zephyra", "PAIDJ. Zephyra"); never with a digit after it, where it is a code's letter ("ZEPHYRA G0283",
- *   "MARIA M54.50", "JANE Q ZEPHYRA⏎J3301");
+ * range's own digits (of the gate's 46,956 such letters it refused 46,955; docs/adr/0054): there no boundary is worth
+ * reading, and the shapes that are as often a code, a unit or a date's month elsewhere are refused too (heldOwnIdentifier,
+ * MASKED_SSN_GLUED and the `held` branches of nameGlued and spacedNameGlued: the judge's review round 1). Everywhere:
+ * - a part of the patient's name of four letters or more that is no month's word, folded (so in any case), in a run of
+ *   letters a digit touches, where the run sets it apart (from the run's start or a change of case, to the run's end, a
+ *   digit or a change of case: "01/01/2020-150.00Zephyra", "Jane0.00-01/02/2020", "Seen JaneSeen0.00") or anywhere in a
+ *   run of one case ("2020PAIDZEPHYRATODAY"), never inside a word that goes on in its own case ("2020Billed" for a part BILL,
+ *   "0.00Coverage" for VERA); or written with joiners or a space inside as its form reads it ("150.00ZEP HYRA", a month's
+ *   word too: "2020-01-02AUGU ST"); none inside another date ("12May2020"); a part of two or three letters or a month's
+ *   word is sent as at cc3dd7f6 ("Remark: MA04", "97110XU", "45min", "June1", "Seen 0.00-$20Al");
+ * - letters between a digit and the name's placeholder, only invisible characters between: a part the placeholder cut; and
+ *   a part's head glued to a digit before the placeholder past up to three other characters, where redaction read the rest
+ *   of a part written with a space inside as a shorter part ("150.00DANIEL [PATIENT_NAME]" for DANIELLE LE);
+ * - an initial of the name, a letter alone with a digit right before it, past up to three other characters before the
+ *   name's placeholder (or a number's that a part of the name is written as), a whole part or another such initial
+ *   ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"); never before another placeholder or a word that only begins like a
+ *   part ("Suite 2A, [PHONE]", "Suite 2A, Albany" for AL), nor with a digit after it, where it is a code's letter
+ *   ("ZEPHYRA G0283", "MARIA M54.50", "JANE Q ZEPHYRA⏎J3301");
  * - a member ID or claim number of letters with a digit right before or after it, and one of letters and digits inside any
  *   longer token ("Seen 150.00SYNCLAIM0001", "2020PaidZZ7654321", "ZZ12345678" for ZZ1234567); one of digits alone glued
  *   to a digit is another number, as at cc3dd7f6;
@@ -2167,19 +2180,121 @@ const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`
  */
 function ownIdentifierGlued(normal: string, subject: Subject, held: boolean): boolean {
   const { inOtherDate } = datesOf(normal, subject);
-  return numberGlued(normal, subject) || birthGlued(normal, subject, inOtherDate) || nameGlued(normal, subject, inOtherDate, held) || spacedNameGlued(normal, subject, inOtherDate, held);
+  return (
+    numberGlued(normal, subject) ||
+    birthGlued(normal, subject, inOtherDate) ||
+    nameGlued(normal, subject, inOtherDate, held) ||
+    spacedNameGlued(normal, subject, inOtherDate, held) ||
+    (held && (heldOwnIdentifier(normal, subject) || MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text)))
+  );
+}
+
+/**
+ * A masked SSN glued to the word before it ("PaidXXX-XX-3456", "Paid***-**-3456"), read on the folded digits view: three
+ * mask characters and two, or five, then four digits. In a letter whose chain only held barriers hold (cc3dd7f6 refused
+ * it), the letter is refused; elsewhere it is the follow-on leak PR's class (docs/adr/0054).
+ */
+const MASKED_SSN_GLUED = /\p{L}\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
+
+/** A modifier letter (\p{Lm}): no letter of a name or number for heldOwnIdentifier's stream. */
+const MODIFIER_LETTER = /^\p{Lm}$/u;
+
+/** A birth label on the folded view (heldOwnIdentifier). */
+const HELD_BIRTH_LABEL = /(?<![\p{L}\p{N}])(?:D\.?\s?O\.?\s?B|DATE\s+OF\s+BIRTH|BIRTH\s*DATE|BORN|BIRTHDAY)(?!\p{L})/gu;
+
+/** After a birth label, a date redaction did not read: no placeholder first, and a digit or a month's word before any placeholder. */
+const UNREAD_BIRTH = new RegExp(`^[\\s:#=.*\\p{Pd}\\u2212]*(?:(?:ON|IS)\\s+)?[^${BARRIER}${NAME_MARK}]*?(?:[0-9]|(?<!\\p{L})${MONTH_WORD.toUpperCase()})`, 'u');
+
+/** A four-digit year standing alone (no digit, and no decimal point and digit, beside it): what a written date of birth's year is. */
+const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0-9]|[.,][0-9])`, 'gu');
+
+/**
+ * Whether masked text whose chain only held barriers hold (a letter cc3dd7f6 refused for the range's own digits) holds one of
+ * the call's identifiers written with separators that no form reads, read blind to them (ownIdentifierGlued): the letters
+ * and digits alone, folded, hold a member ID or claim number ("ZZ.765.4321", "C2026/000417", "Paid76543210", "Claim
+ * 123456780.00" for claim 12345678, "Seen 03-15-61" for member 031561), a part of the name of four letters or more ("Z E
+ * P H Y R A", "jo ann"), a name's initials of three parts or more in order ("JQZ", "J.Q.Z."), or a date of birth's eight
+ * digits in any order a date is written ("03⏎14⏎1980", "0 3 / 0 3 / 1 9 6 1"), not inside a longer run of digits; or the
+ * date of birth's month word and its year stand within 24 characters of each other ("1961 March 3", "MARCH THIRD 1961").
+ * No six-digit form of a date of birth is read: random digits of a letter's ICNs, TINs and amounts would hold one by chance.
+ */
+function heldOwnIdentifier(normal: string, subject: Subject): boolean {
+  const view = viewOf(normal, 'drop', true);
+  const at: number[] = [];
+  let stream = '';
+  for (let i = 0; i < view.text.length; ) {
+    const codePoint = codePointAt(view.text, i);
+    // A modifier letter (the katakana prolonged sound mark, a modifier apostrophe) joins as a separator would.
+    if (WORD_CHARACTER.test(codePoint) && !MODIFIER_LETTER.test(codePoint)) {
+      stream += codePoint;
+      for (let k = 0; k < codePoint.length; k += 1) at.push(i + k);
+    }
+    i += codePoint.length;
+  }
+  for (const form of formsOf(subject)) {
+    if ((form.kind === 'claim' || form.kind === 'member') && stream.includes(form.compact)) {
+      return true;
+    }
+  }
+  for (const name of subject.names) {
+    const parts = nameWords(name).flat();
+    if ((parts.length >= 3 && stream.includes(parts.map((part) => [...part][0] ?? '').join(''))) || parts.some((part) => [...part].length >= 4 && stream.includes(part))) {
+      return true;
+    }
+  }
+  const digit = (index: number) => /^[0-9]$/u.test(view.text[index] ?? '');
+  // A birth label whose date redaction did not read: what follows it, before any placeholder, holds a digit or a month's
+  // word ("DOB 1961/3", "DOB March 3rd, nineteen sixty-one", "DOB 3 Mar sixty-one").
+  if ((subject.datesOfBirth ?? []).length > 0) {
+    for (const label of view.text.matchAll(HELD_BIRTH_LABEL)) {
+      const after = view.text.slice(label.index + label[0].length, label.index + label[0].length + 32);
+      if (UNREAD_BIRTH.test(after)) {
+        return true;
+      }
+    }
+  }
+  for (const birth of subject.datesOfBirth ?? []) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(birth);
+    if (match === null) {
+      continue;
+    }
+    const [, year = '', month = '', day = ''] = match;
+    for (const form of new Set([`${year}${month}${day}`, `${month}${day}${year}`, `${day}${month}${year}`])) {
+      for (let found = stream.indexOf(form); found !== -1; found = stream.indexOf(form, found + 1)) {
+        const first = at[found] ?? 0;
+        const last = at[found + form.length - 1] ?? 0;
+        // Eight digits written together inside a longer number are that number's ("TIN 198003145").
+        const together = last - first === form.length - 1;
+        if (!together || !(digit(first - 1) || digit(last + 1))) {
+          return true;
+        }
+      }
+    }
+    const months = new RegExp(`(?<!\\p{L})(?:${monthWords(Number.parseInt(month, 10)).toUpperCase()})`, 'gu');
+    const words = [...view.text.matchAll(months)].map((word) => word.index);
+    if (words.length > 0) {
+      for (const written of view.text.matchAll(yearAlone(year))) {
+        if (words.some((word) => Math.abs(word - written.index) <= 24)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**
  * Whether a part of the patient's name written with joiners or spaces inside it, as its form reads it ("ZEP HYRA",
- * "Zeph-yra"), stands with a digit right before or after it (ownIdentifierGlued): a part of four letters or more that is no
- * month's word, or with a held chain any part.
+ * "Zeph-yra"), stands with a digit right before or after it (ownIdentifierGlued): a part of four letters or more, a
+ * month's word too (seed 55 of the glued property: "2020-01-02AUGU ST" for AUGUST), or with a held chain any part. The part
+ * written whole is nameGlued's ("2020Billed" for BILL is no part).
  */
 function spacedNameGlued(normal: string, subject: Subject, inOtherDate: (range: Range) => boolean, held: boolean): boolean {
   const view = viewOf(normal, 'join');
   for (const part of new Set(subject.names.flatMap((name) => nameWords(name).flat()))) {
     const form = nameForm([part]);
-    if (form === null || (!held && ([...part].length < 4 || MONTH_PART.test(part)))) {
+    // A month's word written with a joiner or a space inside is no date's month ("2020-01-02AUGU ST" for AUGUST).
+    if (form === null || (!held && [...part].length < 4)) {
       continue;
     }
     const core = coreOf(form);
@@ -2188,7 +2303,8 @@ function spacedNameGlued(normal: string, subject: Subject, inOtherDate: (range: 
       const start = match.index;
       const end = start + match[0].length;
       pattern.lastIndex = start + codePointAt(view.text, start).length;
-      if (spacedPiecesPass(form, view, normal, start, end) && !inOtherDate(inNormal(view, start, end))) {
+      // A match of letters alone is the part written whole, nameGlued's to read where its run sets it apart.
+      if (!/^\p{L}+$/u.test(match[0]) && spacedPiecesPass(form, view, normal, start, end) && !inOtherDate(inNormal(view, start, end))) {
         return true;
       }
     }
@@ -2272,18 +2388,28 @@ function birthGlued(normal: string, subject: Subject, inOtherDate: (range: Range
 /** A part of a name that is a month's word: glued to a digit, as often a date's month as the name ("June1", "12thMay"). */
 const MONTH_PART = new RegExp(`^${MONTH_WORD}$`, 'iu');
 
+/** What may stand between a name's fragment and the name's placeholder before it (nameGlued): INITIAL_TO_NAME read backwards. */
+const NAME_TO_FRAGMENT = new RegExp(`[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}$`, 'u');
+
 /** Whether a part of the patient's name or an initial stands glued (ownIdentifierGlued), on the view with invisible characters dropped. */
 function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range) => boolean, held: boolean): boolean {
   const view = viewOf(normal, 'drop');
   const text = view.text;
   const parts = [...new Set(subject.names.flatMap((name) => nameWords(name).flat()))].filter((part) => [...part].length >= 2);
+  const longParts = parts.filter((part) => [...part].length >= 4);
   const initials = initialsOf(subject.names);
+  // A placeholder other than the name's stands for the name only where a part of it is written as one of the call's member
+  // IDs or claim numbers ("CLAIM" for a claim CLAIM), which redaction then writes as that number's placeholder.
+  const numbers = new Set(formsOf(subject).flatMap((form) => (form.kind === 'claim' || form.kind === 'member' ? [form.compact] : [])));
+  const numberedName = parts.some((part) => numbers.has(part));
   const small = (codePoint: string) => codePoint !== codePoint.toUpperCase() && codePoint === codePoint.toLowerCase();
   const large = (codePoint: string) => codePoint !== codePoint.toLowerCase();
   const isLetter = (index: number) => index < text.length && /^\p{L}$/u.test(codePointAt(text, index));
   const isDigit = (codePoint: string) => /^\p{N}$/u.test(codePoint);
-  /** Whether a name part begins at a view position (a run of letters starting there). */
-  const partAt = (at: number) => parts.some((part) => text.startsWith(part, at));
+  /** Whether a name part begins at a view position: the whole part, no letter after it, or with a held chain any word that begins with one. */
+  const partAt = (at: number) => parts.some((part) => text.startsWith(part, at) && (held || !isLetter(at + part.length)));
+  /** Whether the name's placeholder stands at a view position (or a number's that a part of the name is written as, or with a held chain any placeholder). */
+  const nameAt = (at: number) => text[at] === NAME_MARK || (text[at] === BARRIER && (held || numberedName));
   for (let i = 0; i < text.length; ) {
     if (!isLetter(i)) {
       i += codePointAt(text, i).length;
@@ -2300,6 +2426,25 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
     const digitBefore = isDigit(codePointBefore(text, start));
     const digitAfter = isDigit(codePointAt(text, end));
     const glued = digitBefore || digitAfter;
+    const run = text.slice(start, end);
+    // The name's placeholder past up to three other characters after the run, or before it.
+    const nameAfter = text[end + (INITIAL_TO_NAME.exec(text.slice(end, end + 24))?.[0].length ?? 0)] === NAME_MARK;
+    const nameBefore = text[start - (NAME_TO_FRAGMENT.exec(text.slice(Math.max(0, start - 24), start))?.[0].length ?? 0) - 1] === NAME_MARK;
+    // Letters between a digit and the name's placeholder, invisible characters alone between: a part the placeholder cut
+    // ("2020SS<ZWJ>[PATIENT_NAME]" for a part SSN read as an initial N).
+    if (glued && (text[end] === NAME_MARK || text[start - 1] === NAME_MARK)) {
+      return true;
+    }
+    // A part's head before the name's placeholder, where redaction read the rest of a part written with a space inside as a
+    // shorter part ("150.00DANIEL [PATIENT_NAME]" for DANIELLE LE, "OR [PATIENT_NAME]" for ORLA LA): glued to a digit on its
+    // other side, the head of a part of four letters or more, the run no month's word; with a held chain, any run glued so
+    // on either side of the placeholder, or the head or tail of any part. A tail after the placeholder glued to a digit is
+    // sent elsewhere, as at cc3dd7f6: there it is as often a code after the name ("[PATIENT_NAME] CY2026" for NANCY).
+    const head = (part: string) => part.length > run.length && run.length >= 2 && part.startsWith(run);
+    const tail = (part: string) => part.length > run.length && run.length >= 2 && part.endsWith(run);
+    if (held ? (nameAfter && (digitBefore || parts.some(head))) || (nameBefore && (digitAfter || parts.some(tail))) : nameAfter && digitBefore && !MONTH_PART.test(run) && longParts.some(head)) {
+      return true;
+    }
     if (!glued && !held) {
       continue;
     }
@@ -2311,12 +2456,8 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
       const after = letters[k + 1]?.written ?? '';
       if (k > 0 && large(letter.written) && (small(before) || (large(before) && small(after)))) words.add(letter.at);
     });
-    // Letters between a digit and the name's placeholder, invisible characters alone between: a part the placeholder cut
-    // ("2020SS<ZWJ>[PATIENT_NAME]" for a part SSN read as an initial N).
-    if (glued && (text[end] === NAME_MARK || text[start - 1] === NAME_MARK)) {
-      return true;
-    }
-    const run = text.slice(start, end);
+    // A run of one case has no boundary to read inside it.
+    const oneCase = !(letters.some((letter) => small(letter.written)) && letters.some((letter) => large(letter.written)));
     for (const part of parts) {
       const long = [...part].length >= 4 && !MONTH_PART.test(part);
       if (!held && !long) {
@@ -2325,31 +2466,41 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
       for (let at = run.indexOf(part); at !== -1; at = run.indexOf(part, at + 1)) {
         const from = start + at;
         const to = from + part.length;
-        // A part of four letters or more anywhere (in a run a digit touches, or anywhere in a letter whose chain only held
-        // barriers hold); with a held chain, a shorter part or a month's word too where a digit, a change of case or a
-        // glued run's end sets it apart.
-        const set = long || (from === start && digitBefore) || (to === end && digitAfter) || (words.has(from) && words.has(to)) || (glued && (from === start || to === end));
-        if (set && !inOtherDate(inNormal(view, from, to))) {
+        // With a held chain, any part anywhere (cc3dd7f6 refused the letter: no boundary is worth reading). Elsewhere, in a
+        // run a digit touches, a part of four letters or more that is no month's word, set apart in its run (from the run's
+        // start or a change of case to the run's end, a digit or a change of case: "Paid 150.00Zephyra", "JaneSeen0.00"),
+        // or anywhere in a run of one case ("2020PAIDZEPHYRATODAY"); never inside a word that goes on in its own case
+        // ("2020Billed" for BILL, "Coverage01/01/2020" for VERA), nor inside another date.
+        if (held || ((oneCase || (words.has(from) && words.has(to))) && !inOtherDate(inNormal(view, from, to)))) {
           return true;
         }
       }
     }
-    // An initial alone after a digit, or with a held chain one set apart in its run (by a change of case, "PaidJ.
-    // Zephyra", or at the end of a run a digit touches before a full stop, "PAIDJ. Zephyra"), before the name: past a full
-    // stop and a gap, a placeholder (the name's, or a number's that a part of the name is written as), a part, or another
-    // such initial ("150.00J. Q. Zephyra").
+    // An initial at a run's end before the name: past up to three other characters, the name's placeholder (or a number's
+    // that a part of the name is written as), a whole part, or another such initial ("150.00J. Q. Zephyra"). Outside a
+    // held chain, an initial alone with a digit right before it ("150.00Q Zephyra"); with a held chain, the last letter of
+    // any run, unless it is written small at the end of a word that holds a capital ("DEARQ Zephyra", "PaidJ. Zephyra",
+    // "JQ Zephyra", but "Dear Zephyra" for an initial R), before another initial too ("DEARJ.Q."), or before a full stop.
     const last = letters.at(-1);
     const alone = letters.length === 1 && digitBefore;
-    if (last !== undefined && initials.has(text.slice(last.at, end)) && (alone || (held && (words.has(last.at) || (glued && text[end] === '.'))))) {
+    const ended = held && last !== undefined && !(small(last.written) && letters.some((letter) => large(letter.written)));
+    if (last !== undefined && initials.has(text.slice(last.at, end)) && (alone || ended)) {
+      // With a held chain, an initial's full stop marks it one ("DEARQ.", "MsQ.").
+      if (ended && text[end] === '.') {
+        return true;
+      }
       let next = end;
       for (let k = 0; k < 4; k += 1) {
         next += INITIAL_TO_NAME.exec(text.slice(next, next + 24))?.[0].length ?? 0;
-        if (text[next] === NAME_MARK || text[next] === BARRIER || partAt(next)) {
+        if (nameAt(next) || partAt(next)) {
           return true;
         }
         const initial = codePointAt(text, next);
         if (!initials.has(initial) || isLetter(next + initial.length)) {
           break;
+        }
+        if (held) {
+          return true;
         }
         next += initial.length;
       }
