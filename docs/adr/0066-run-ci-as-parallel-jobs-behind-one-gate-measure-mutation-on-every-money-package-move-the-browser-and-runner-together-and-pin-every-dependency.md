@@ -84,7 +84,9 @@ two jobs' step times and logs:
 - The database step was two thirds of it (15:40 and 23:54), and one file set its wall:
   `apps/web/src/lib/routes/route-tests.db.test.ts`, 865 to 1,336 s for about 6,900 tests. Its cost was building 688
   synthetic worlds one after another, two thirds of each world being three worker-thread reads of the same
-  deterministic synthetic contract PDF (`readDocumentPages` starts a bounded Worker for every read); the 53-statement
+  deterministic synthetic contract PDF (`readDocumentPages` started a bounded Worker for every read; a bounded child
+  process since [ADR 0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md)'s
+  amendment of 2026-11-05); the 53-statement
   snapshot behind each persona's check was 8%.
 - The next file was `apps/worker/src/screening/consumer.db.test.ts`, 206 to 227 s, nearly all of it SCR-19's
   kill-and-recover lease test (about 190 s).

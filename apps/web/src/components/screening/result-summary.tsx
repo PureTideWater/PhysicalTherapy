@@ -40,7 +40,7 @@ export interface ScreeningGroupTotals {
 
 export interface ScreeningPricedTotals extends ScreeningGroupTotals {
   readonly expectedCents: Cents;
-  /** Expected less allowed: above zero, the file's allowed total is below the figure before the reduction across codes. */
+  /** The Medicare figure less allowed: above zero, the file's allowed total is below the figure before the reduction across codes. */
   readonly differenceCents: Cents;
   /** Rows of a code in the reduction across codes. */
   readonly pooledRows: number;

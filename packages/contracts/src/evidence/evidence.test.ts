@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { syntheticPdf } from '../testing/synthetic-pdf';
 import { syntheticXlsx, zipParts } from '../testing/synthetic-xlsx';
-import { CSV_ROWS_PER_PAGE, csvRows, csvText, decodeXml, readPagesHere, sharedStrings, sheetText, workbookSheets } from './page-thread';
+import { CSV_ROWS_PER_PAGE, csvRows, csvText, decodeXml, readPagesHere, sharedStrings, sheetText, workbookSheets } from './page-reader';
 import { normalizePageText, pageTextHash, quoteOnPage } from './page-text';
 import { PAGE_READ_LIMITS, documentFormat, documentPages, looksLikePdf, readDocumentPages } from './pages';
 import { type DocumentSource, EvidenceResolver, type PageSource } from './resolve';
@@ -76,7 +76,7 @@ const ok = (pages: Awaited<ReturnType<typeof readDocumentPages>>): readonly stri
 };
 
 describe('the bounded page reader (ADR 0033)', () => {
-  it('reads each PDF page’s text layer in its own thread, and an empty string for a page without one', async () => {
+  it('reads each PDF page’s text layer in its own process, and an empty string for a page without one', async () => {
     const pages = ok(await readDocumentPages({ bytes: syntheticPdf([PAGE_ONE, PAGE_TWO, { scanned: true }]), contentType: 'application/pdf' }));
     expect(pages.map(normalizePageText)).toEqual([PAGE_ONE.join(' '), PAGE_TWO.join(' '), '']);
   });
@@ -122,7 +122,7 @@ describe('the bounded page reader (ADR 0033)', () => {
     expect(await readDocumentPages({ bytes: workbook, contentType: XLSX }, { limits: { maxPages: 1 } })).toEqual({ ok: false, problem: 'unsupported_document' });
   });
 
-  it('stops the reading thread when a decompression bomb passes the memory cap, and this thread is untouched', async () => {
+  it('stops the reader when a decompression bomb passes the memory cap, and this process is untouched', async () => {
     const before = process.memoryUsage().heapUsed;
     const started = Date.now();
     expect(await readDocumentPages({ bytes: deflateBombPdf(160), contentType: 'application/pdf' }, { limits: { maxMemoryBytes: 64 * 1024 * 1024 } })).toEqual({ ok: false, problem: 'unsupported_document' });
@@ -160,6 +160,8 @@ describe('the bounded page reader (ADR 0033)', () => {
     expect(csvRows('')).toEqual([]);
     expect(csvText(new Uint8Array([0x63, 0x61, 0x66, 0xe9]))).toBe('café');
     expect(await readPagesHere({ format: 'csv', bytes: new TextEncoder().encode('a\n'), maxPages: 0, maxTextCharacters: 10, maxInflatedBytes: 10 })).toEqual({ kind: 'refused', problem: 'unsupported_document' });
+    // Past the character cap with pages to spare: refused by the reader itself, never read in part (test matrix SEC-24).
+    expect(await readPagesHere({ format: 'csv', bytes: new TextEncoder().encode('SYNTHETIC,TEXT\n'), maxPages: 10, maxTextCharacters: 5, maxInflatedBytes: 10 })).toEqual({ kind: 'refused', problem: 'unsupported_document' });
   });
 
   it('escapes what a PDF string needs and refuses text it cannot write', () => {

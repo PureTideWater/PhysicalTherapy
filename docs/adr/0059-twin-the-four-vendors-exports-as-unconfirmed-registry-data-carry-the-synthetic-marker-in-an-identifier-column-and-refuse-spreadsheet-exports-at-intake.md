@@ -34,7 +34,7 @@ What the repository held, and what constrains the design:
   parentheses).
 - An `.xlsx` posting export passed intake (`apps/worker/src/intake/classify.ts`) but the reconcile step reads
   an export as text (`apps/worker/src/reconcile/exports.ts`), so it was stored and then unreadable. The one
-  workbook reader in the repository, `sheetText` in `packages/contracts/src/evidence/page-thread.ts`, drops
+  workbook reader in the repository, `sheetText` in `packages/contracts/src/evidence/page-reader.ts`, drops
   empty cells and ignores cell references, so it loses the column positions a template maps; changing it
   would change contract evidence page text and the hashes stored over it. `pnpm-lock.yaml` holds no other
   sheet reader.

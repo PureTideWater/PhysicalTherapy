@@ -547,6 +547,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'infra/test/monitoring.test.ts',
     'apps/web/src/lib/auth/sign-in.db.test.ts',
   ]),
+  // The page reader in a child process of its own (docs/adr/0033's amendment of 2026-11-05; docs/adr/0071).
+  'SEC-24': none(1, 'Every document is SYNTHETIC and built in memory by the tests (PDFs, a deflate bomb, workbooks, CSVs); the stand-in readers send frames, not files; no file.', [
+    'packages/contracts/src/evidence/pages.test.ts',
+    'packages/contracts/src/evidence/evidence.test.ts',
+    'infra/test/heap.test.ts',
+    'infra/test/compute.test.ts',
+    'apps/worker/src/bundle.test.ts',
+  ]),
   'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
     'apps/worker/src/screening/format.test.ts',
     'apps/web/src/lib/screening/parse.test.ts',
@@ -986,6 +994,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'TBL-07': none(1, 'The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', ['apps/web/e2e/screening-phone.spec.ts']),
   'TBL-08': none(1, 'The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.', [
     'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/src/lib/screening/labels.test.ts',
     'apps/web/e2e/screening-phone.spec.ts',
     'tools/brand-copy/scan.test.ts',
   ]),

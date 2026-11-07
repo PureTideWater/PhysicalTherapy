@@ -126,11 +126,12 @@ which only a row PaidWhole could not price has); the table keeps the column. In 
 do: the synthetic screening result's anomalies fit at 1280 px and where the cards' content is exactly 54rem (994 px
 without a classic scrollbar), and a result whose figures run past about ten characters scrolls in its region with the
 cue. Where another pull request's test pins a cell's tone for a time, the rows copy may take the right tone first: the
-screening's anomaly is unpriced (ADR 0056's investigatory line; UX-040) in the rows copy now and in the table copy with
-the review's follow-on, once #42's tests may change. The switch is proved in the browser at 390, 820 and 1280 px and
-where the cards' content is exactly 54rem (the viewport 994 px plus any classic scrollbar's width, measured), and
-without script, by `e2e/screening-phone.spec.ts` (TBL-05 to TBL-07), and `atPhoneWidth` checks a stacked list's values
-the way its `tables` option checks a table (`lists`).
+screening's anomaly took the unpriced tone (ADR 0056's investigatory line; UX-040) in the rows copy first and in the
+table copy with the review's follow-on (UX PR 4b, 2026-11-07), once #42's tests could change, so both copies show it.
+The switch is proved in the browser at 390, 820 and 1280 px and where the cards' content is exactly 54rem (the
+viewport 994 px plus any classic scrollbar's width, measured), and without script, by `e2e/screening-phone.spec.ts`
+(TBL-05 to TBL-07), and `atPhoneWidth` checks a stacked list's values the way its `tables` option checks a table
+(`lists`).
 
 **6. The guard.** A unit test (`apps/web/src/app/tables.test.ts`) parses every `.ts` and `.tsx` in `apps/web/src` but
 tests and test support, and fails on a `<table>` whose parent is not `ScrollTable`, on a `ScrollTable` whose children

@@ -47,7 +47,8 @@ import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLi
  *    quarantined and nothing is queued (PAR-28). Otherwise every clean 835 entry is queued for parse,
  *    and the zip is expanded.
  * 7. A clean contract, exhibit or payer letter (a top-level upload or a zip entry) has its page text
- *    read in a bounded thread and sealed beside it before it is stored (pages.ts; docs/adr/0033), so
+ *    read in a child process of its own with its own heap limit and sealed beside it before it is stored
+ *    (pages.ts; docs/adr/0033), so
  *    the web app cites pages from that text and never parses an uploaded document itself. A clean
  *    posting or EFT export, once stored, queues the reconcile step, which reads it (docs/adr/0042).
  *
