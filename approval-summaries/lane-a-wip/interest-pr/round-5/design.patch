@@ -1,0 +1,343 @@
+--- a/designs/ledger-interest-once.md	2026-11-07 16:47:48.892745259 +0000
++++ b/designs/ledger-interest-once.md	2026-11-07 16:47:48.894198923 +0000
+@@ -46,7 +46,9 @@
+   lets one L6 carry the net interest of a whole remittance) is shared among that remittance's claims by their AMT I,
+   netted per chain, so a reversal and its correction cancel and another patient's interest is never taken (when the
+   loader has linked the reversal to its claim; a reversal the payer renumbered is not linked today, section 12 risk 8,
+-  and its link is handed on in section 14). When the remittance's L6s equal its AMT I, as the guide requires, each
++  and its link is handed on in section 14: its take-back finds no line, so the payments of its PLB L6 wait (D5) and
++  its correction's interest is not counted again; the loader's link leaves that interest at none and changes only the
++  links). When the remittance's L6s equal its AMT I, as the guide requires, each
+   claim gets exactly its AMT I. Today such an L6 is never credited. A reference that carries several identifiers names
+   the claim whose control number is among them.
+ - One PLB L6 is never credited past what it moved, however many reconciles run and whatever later uploads change about
+@@ -395,8 +397,11 @@
+ 
+ **D5. Lines.** A chain's draw is split over its case lines by `allocateByWeight`:
+ - **Paid** (a positive draw): the lines with a standing claim match to a claim the draw is for (the claims the L6
+-  names, in steps 1, 2 and 4; the chain's non-reversal claims in R, in step 3); those whose match is approved when
+-  there are any, otherwise every such line (a restatement matched "no change"). Weights: each line's
++  names and those that reverse or correct them later in the chain, in steps 1, 2 and 4: a reference to the original,
++  whose control number its reversal carries too, reaches the lines its correction is matched to, and a reference to
++  the latest correction that correction's lines alone, never a line only an earlier claim of the chain is matched to
++  (#126 reviews LED-R1 and F-M2-1); the chain's non-reversal claims in R, in step 3); those whose match is approved
++  when there are any, otherwise every such line (a restatement matched "no change"). Weights: each line's
+   `approvedRemaining` (`rled:253`), unchanged from ADR 0067. The match names the claim of the line's standing claim
+   match.
+ - **Taken back** (a negative draw): the lines that hold interest of the chain, that is their interest entries from
+@@ -408,6 +413,39 @@
+   match of the chain.
+ - A line whose weight is 0 takes nothing; when every weight is 0 nothing is credited now (ADR 0067:234), and a later
+   reconcile credits it once a line has a weight.
++- **Take-backs first, and the payments wait** (#126 reviews LED-R2 and F1). One PLB L6 writes one entry on a line, so
++  its take-backs are written before its payments: a payment reaches the lines the take-backs left, and when two
++  chains' draws of opposite signs meet on a line no other line can take, the payment is the one left unwritten, so the
++  figure errs low, never above the cash. A PLB L6's payments wait, in that reconcile and in every later one, while its
++  take-back of a chain that may still hold interest on a case line is not written in full. Such a chain has a root
++  that is a reversal the moment links to no claim (its claim not uploaded yet, or one the loader cannot link), or a
++  claim with a standing claim match on a case line. A take-back of a chain that can never hold interest on a case line
++  holds nothing back, and neither does one short of whole by no more than the chain's interest other PLB L6s paid and
++  can pay to no line, less what other PLB L6s still owe of take-backs of it (`interestUnplaced`, #126 review R2M2-1):
++  that interest was never credited, so there is nothing more for the take-back to find. The interest a take-back is
++  still to find arrives with a later upload; landing on lines it has not reached, it is taken back there before any
++  payment of the L6 is written, and landing nowhere it completes the take-back as unplaced. So for one take-back of a
++  chain the outcome is the one the remittances give uploaded in date order, while the later payment is split by the
++  same weights in either order or can reach no line; when the chain's lines change weight between the uploads (a later
++  approval, or a recoupment of only some of them) the payment can be split differently and the take-back reach other
++  lines (LED-24 `two-chains.835` and `paired.835`; `netted-elsewhere.835` after, between or with `partly-paid.835` and
++  `rest-paid.835`; the `one-line-*.835` files; `reported-only.835` and `later-paid.835`).
++- **A payment never goes where a take-back still owed cannot follow** (#126 reviews MONEY-R4-1, RV-DB2-1, RVM3-2). A
++  chain can come to a case line after the PLB L6 that takes its interest back wrote its payments (a person's match by
++  hand, a written-off line reopened). So a payment of a chain never writes on a line on which another PLB L6 still owes
++  a take-back of that chain and has an entry already (`interestOutOfReach`): that L6 never writes on the line again.
++  Such a line stays among the payment's lines when the approved ones are chosen and the draw is split, and its share is
++  written nowhere, so a payment is never moved onto a line it would not reach uploaded in order (LED-24 `unplaced.835`,
++  `unplaced-two-chains.835` and the person's match: 6.00, the cash, never 11.40). The reconcile reads those lines once a
++  pass for each PLB L6 that takes interest back, and again once that L6 writes, so a payment walked after it in the same
++  reconcile finds the lines it has just reached (`one-line-late-paid.835` with `one-line-netted.835`).
++- **Two take-backs of one chain** (#126 review RVM3-3). Each counts the chain's interest that can reach no line less
++  what the other still owes: that interest can complete what one of them owes, not both. So when the uploads pay the
++  chain less than the two take back together, which of them is whole, if either, can depend on the order, and the figure
++  errs low either way (`netted-first.835` and `netted-second.835`: 6.00 in date order, 0.00 with `rest-paid.835` last,
++  against 10.00 of cash; counted for both, 12.00). Counting it in the order the reconcile walks them would give one
++  outcome in every order but is not safe: payments once written stay, so a take-back dated before another but uploaded
++  after it would count the same interest again. Counted this way, one walk can leave a reconcile above the cash (D18).
+ 
+ **D6. Once.** For each L6 and each sign, what is left is its draws of that sign under the current attribution less
+ the interest entries of that sign already written from it, gross (reversed ones included: a person's reversal is
+@@ -486,7 +524,12 @@
+ over, and again after any rollback of the image, the previous worker's reconcile runs whole: `ledger_match_rules`
+ skips its one-record interest matches (3.8 (b)), so it writes no interest entry and everything else it does (claims,
+ recoupments, postings, deposits, stages, notices, statements) is written as before. Its INSERTs leave `seq` to the
+-identity and its reads order by `matched_at, id` as before. The current image then credits the interest once.
++identity and its reads order by `matched_at, id` as before. The current image then credits the interest once. While
++the migration holds the two ACCESS EXCLUSIVE locks, the ledger's readers and writers wait, then proceed: a reconcile
++and a ledger action read at READ COMMITTED and proceed on the new rows; a page that reads at one snapshot (REPEATABLE
++READ: Reconciliation among them) whose snapshot began before the locks were taken reads `ledger_match` as empty once,
++because adding `seq` rewrites it, and reads it whole on reload; `ledger_entry` is not rewritten, so that one view
++shows entries with no matches (#126 review DB-C1).
+ 
+ **D17. One moment's rows.** The reconcile's transaction runs at READ COMMITTED (`packages/db/src/authz/scope.ts:196`:
+ "A step that writes stays at READ COMMITTED"; `pass.ts:38-51`), and a load takes only its trace locks
+@@ -511,6 +554,27 @@
+ no line, write nothing, and are written by the next reconcile, as D5 already allows. Nothing here takes a lock, so a
+ load never waits for a reconcile.
+ 
++**D18. Walks within a reconcile** (#126 review round 4). One walk of the PLB L6s can leave a reconcile above the cash:
++a take-back counted whole by the share of a payment the other take-back keeps off a line (D5) is walked before that
++payment, dated after both, which lands on the line once the other take-back is whole, and only a later walk takes it
++back (LED-24 `cent-paid.835`, `netted-first.835`, `netted-second.835`, `paid-after-both.835`: 19.50 against 18.11 of cash
++for one reconcile, in date order or uploaded before one reconcile). So after D13's walk the reconcile walks the PLB L6s
++alone again, in the same order, until a walk writes no entry. Each reconcile then ends where the reconciles after it
++would (18.11 there), and every outcome the reconciles settled on before stands. The WOs are not walked again: their
++recoupments are written whole the first time, and the weights the later walks split by are those the next reconcile
++would read. The pass's lookups are kept current across the walks. Counting for each take-back only the lines it keeps
++payments off itself bounds every reconcile too but understates cases that settle at the cash today, so it is not taken.
++
++The walks are bounded by one more than the pass's room: for each PLB L6 with draws, the case lines its draws can reach
++that it has not reached (a payment: the lines with a standing claim match to a claim it is for; a take-back: the lines
++holding the chain's interest as the pass begins, and those a payment of the chain can land on through a claim of it).
++Every walk but the last writes an entry, and each entry is a PLB L6 on a line it has never reached, among those lines
++(`interestWrites` never writes a line its L6 reached; `ledger_match_standing` holds one standing match per L6 and line),
++so the walks that write number at most the room. A walk that still writes at the bound is a defect: the reconcile is
++refused (`InterestUnsettled`, error code `RECONCILE_INTEREST_UNSETTLED`), its one transaction rolls back so nothing is
++half-written, the attempt fails and is retried (the third failure raises the operator's alert), and one log line names
++the job, the practice and the walks made (`record_count`), never an amount, line or claim.
++
+ ### 4.1 Worked cases (cents; LED-16's two lines, weights 2400 and 3000 unless stated)
+ 
+ C is the correction on the case lines; K is another patient's claim on no case line; X the claim a reversal V reverses.
+@@ -540,7 +604,12 @@
+ | A take-back past what a line holds | after A: L6 +600 naming C | 1080 stays | -240 and -300 (what the lines hold of C's chain); the other 60 taken from no case line |
+ | Pooled first, named later (F1, R2-2) | L6 -540 referencing "Z" in R2, where K' (a correction on a line of case 1) reports AMT I 540; later the remittance holding claim Z is uploaded, Z being a correction (of the same payer) that approves a line of case 2 | K' 540 from AMT I; after the upload, Z reports no interest and the L6 never matched | K' 540 from the L6 on case 1; after the upload the L6 names Z's chain (no claim in R2, so step 1 gives Z's chain the whole 540), but the L6's paid interest is 540 of 540 already, so nothing is written to case 2 and the reconcile completes. Keyed per chain alone, case 2 would get 540 more and Postgres would refuse the practice's reconcile on every run |
+ | A torn read (R2-3) | R commits while a reconcile runs: C2 (AMT I 540, a correction of C1, which approved the case lines) and K (AMT I 200) and one L6 -740 naming C's control number | 1280 (740 from the L6 to C's lines, 540 from C2's AMT I), torn or not | The reconcile either read R in statement 1 (C 540, K 200) or not at all (R's L6 waits for the next reconcile); never 740 to C's lines |
+-| A renumbered reversal (R2-4; a known gap) | after A: V reverses C under its own control number with REF F8 naming C's (the loader leaves V unlinked), AMT I -540; C2 corrects C (REF F8, linked) paying line 1 2.00 more, AMT I 540; K reports 200; one L6 -200 naming nothing | C2's 540 from AMT I again | P 200 = -540 + 540 + 200, exact: C's chain draws +540 onto line 1 (C2's approved line) and V's -540 reaches no line, so the case gains 5.40 again, as today. Closed when the loader links V (section 14); pinned by LED-23 `renumbered-reversal.835` until then |
++| A renumbered reversal (R2-4) | after A: V reverses C under its own control number with REF F8 naming C's (the loader leaves V unlinked), AMT I -540; C2 corrects C (REF F8, linked) paying line 1 2.00 more, AMT I 540; K reports 200; one L6 -200 naming nothing | C2's 540 from AMT I again | Nothing new. P 200 = -540 + 540 + 200, exact: C's chain draws +540 and V's chain -540. V's -540 finds no line and V is an unlinked reversal, so its chain may yet hold interest and C2's +540 waits (D5): no new interest, the chain's net. LED-23 `renumbered-reversal.835`; the loader's link (section 14) changes only the links |
++| Two chains, uploaded out of order (#126 review F1) | LED-24 `two-chains.835` (B, a correction the loader links to nothing, AMT I 600, paid as C; C reversed, AMT I -540; one L6 -60 naming nothing) uploaded before `paired.835` (A) | | After `two-chains.835`: nothing (C's reversal is linked to nothing yet, its -540 finds no line, so B's +600 waits). After `paired.835`: A's +240 and +300, then the take-back -240 and -300; B's payment, which only those lines could take, stays unwritten: 0 on the lines against 600 of cash, the same as uploaded in order |
++| Named by the original (#126 review LED-R1) | A's shape, the L6 -540 naming the original's control number (its reversal carries it too); no claim match names either | the L6 never credited | 240 + 300 on C's lines: the reference reaches the original and its reversal, and the L6 is for them and the claims that correct them later in the chain |
++| Named by the latest correction (#126 review F-M2-1) | after A: V reverses C (AMT I -540) and C2 corrects C carrying line 1 alone as C paid it; K paid; one L6 -300 naming C2 | | 300 on line 1, matched to C2, not allocated; nothing on line 2, which C's standing claim match still names (a reversal beside its correction recoups nothing). Before the fix: 133 + 167, both through C |
++| A payment dated after two take-backs (#126 review round 4) | out-of-order-original's lines; L6s naming C of -1 (Y1) and later -1350 (Y2, dated after both take-backs); X1 takes back 300 of C and pays K 600, X2 takes back 440 and pays K 600 (`cent-paid.835`, `netted-first.835`, `netted-second.835`, `paid-after-both.835`) | | Y1's 1 on line 2, taken back by X1, which then keeps C off line 2; X2 counts Y2's 750 for line 2, less X1's 299, so it is whole; Y2's 600 on line 1. Walked once: 1800 or 1200, then 1950 against 1811 of cash, then 1811. Walked until a walk writes nothing: -299 and -301 on line 1, 750 on line 2, -139 there: 1811 when the reconcile ends |
++
+ | The previous image, during the deploy | any of the above | | no interest written by it; the current image writes the "After" column once |
+ 
+ ---
+@@ -828,14 +897,26 @@
+   - `interestWrites({ draws, written, lines })`, for one L6 at a time: `draws` are that L6's (from
+     `attributeInterest`); `written` every interest entry already written from it, in earlier reconciles or earlier in
+     this pass (`chain`, `serviceLineId`, `cents`, gross: reversed ones included); `lines`, per chain, the lines a paid
+-    draw may reach (`serviceLineId`, `claimId`, `weight` = `approvedRemaining`) and the lines a take-back may reach
+-    (`serviceLineId`, `claimId`, `held`). It applies D6 (what is left per sign, gross; then per chain), skips lines
+-    already matched to the L6, splits by `allocateByWeight` (a take-back first cut to what the lines hold), and flags
+-    each part `allocated` when the draw was `shared` or two or more lines took nonzero parts (D10). Returns the parts
+-    to write (`chain`, `serviceLineId`, `claimId`, `cents`, `allocated`). The worker writes exactly those.
++    draw may reach (`serviceLineId`, `claimId`, `weight` = `approvedRemaining`, `outOfReach`: another L6's take-back
++    keeps the chain's payments off it) and the lines a take-back may reach (`serviceLineId`, `claimId`, `held`),
++    `mayYetHold`: the chain may still come to hold interest on a case line (#126 review F1), and `unplacedCents`
++    (`interestUnplaced`'s count). It applies D6 (what is left per sign, gross; then per chain), skips lines already
++    matched to the L6, writes the take-backs first and splits by `allocateByWeight` (a take-back first cut to what the
++    lines hold; a line out of reach keeps its share, written nowhere), holds every payment back while a take-back of a
++    chain with `mayYetHold` is short of whole by more than `unplacedCents` (D5), and flags each part
++    `allocated` when the draw was `shared` or two or more lines took nonzero parts (D10). Returns the parts to write
++    (`chain`, `serviceLineId`, `claimId`, `cents`, `allocated`). The worker writes exactly those.
++  - `interestOutOfReach({ draws, written })` (#126 review MONEY-R4-1): for each chain an L6 still owes a take-back of,
++    the lines it has an entry on, which a payment of that chain must not reach.
++  - `interestUnplaced({ chain, payments, takeBacks })` (#126 reviews R2M2-1, RVM3-3): what of the chain's interest other
++    L6s paid and can pay to no line (no line of the payment has a weight, or the share of a line out of reach), less
++    what other L6s still owe of take-backs of it, never below zero.
+   - `interestHeld(entries, chainOfMatch)`: what each line holds of each chain, its interest entries from matches naming
+     a claim of the chain, net of their corrections (`correctedEntry`) and of take-backs, floored at zero; the `held`
+-    of a take-back's lines.
++    of a take-back's lines. It is built on `addInterestHeld(sums, entries, chainOfMatch)`, which adds entries to the
++    sums before the floor (by chain, then line, in the order the entries first reach them), and `interestHeldOf(sums,
++    chain)` and `interestHeldOn(sums, chain, line)`, which read them floored, so the reconcile builds the holdings once
++    a pass and adds each entry it writes (#126 review F-M2-2).
+ - **`stages.ts`.** `STAGE_SIGN.interest` becomes `'signed'`. In `entryProblems`, a zero signed amount reads "an
+   adjustment changes an amount" for an adjustment, as today, and "an interest entry moves an amount" for interest.
+   `STAGE_EVIDENCE.interest`'s comment: "A PLB L6, paid or taken back; a claim (AMT I) only on entries written before
+@@ -863,17 +944,36 @@
+     `claim_by_payer_claim_control_number`, joined to `remittance` for D2's `r.payer_id = <the L6's payer>`), with their
+     chain roots. These are at most two statements after statement 1. It takes statement 1's result (S and its L6
+     rows) as its argument rather than reading it, so a test can hand it an earlier moment (section 8.3). It calls
+-    `attributeInterest` once and keeps the draws by L6.
++    `attributeInterest` once and keeps the draws by L6. Its statement (`ATTRIBUTION_CLAIMS`) also reads every claim a
++    claim or interest match names (#126 review LED-R1; read by `ledger_match_by_remittance`, 0.77 to 0.91 s at 50,000
++    claims of one practice, all matched, beside 500,000 matches of other practices, against 0.58 to 0.65 s for interest
++    matches alone, most of it the walk back; an index on `(practice_id, kind, claim_id)` went unused, so none is asked
++    for), and returns with each claim whether its root is a reversal
++    (claim status 22, so one the moment links to no claim; `InterestReading.unlinkedReversals`, #126 review F1) and the
++    claims its walk back passes (`back`). A named L6's claims are the claims of the named chain whose walk back passes
++    a claim the reference reaches: the claims it reaches and those later in the chain from them (#126 review F-M2-1).
+   - In the loop, an L6 calls a new `recordInterest` in place of today's (`rem:836-841`, `rem:863-910`): it builds
+     `interestWrites`' input (its draws; what it has written, from the entries read at the start and those this pass
+     wrote, each entry's chain from its match's claim; per chain, the paid lines from `matches` with their outcomes and
+-    `approvedRemaining`, and the take-back lines with `interestHeld`), calls it, and writes each part it returns with
++    `approvedRemaining`, and the take-back lines from the pass's holdings, each cut to the line's interest as a whole,
++    with `mayYetHold` when the chain is among `unlinkedReversals` or `InterestState.caseLineChains`, the chains a claim
++    of which has a standing claim match on a case line), calls it, and writes each part it returns with
+     `insertMatch({ kind: 'interest', claimId, providerAdjustmentId, remittanceId: <the L6's>, serviceLineId,
+     allocated, matchedBy: null })` (a `NewInterestMatch`, which requires both IDs) and `insertEntry({ stage: 'interest',
+     amountCents, evidenceKind: 'provider_adjustment', evidenceId: <the L6>, matchId, allocated, createdBy: null })`. It
+-    keeps what it wrote, so a later L6 of the same pass counts it. It decides no amount itself.
++    keeps what it wrote, so a later L6 of the same pass counts it. It decides no amount itself. Every lookup it reads
++    is built once a pass in `InterestState` and kept current as it writes (#126 reviews INT-REL-2 and F-M2-2): each
++    claim's standing claim matches on a case line, each L6's entries, each match's chain, each line's latest standing
++    interest match of a chain, and the holdings (`held`, by chain and line, and `lineHeld`, each line's interest as a
++    whole), so no L6 reads every case line, match or entry. It returns the entries it wrote.
++  - After the loop, `providerAdjustments` walks the L6s with draws again, in the same order, until a walk writes no
++    entry (D18), within `interestWalkLimit.of(room)`, room + 1 (`interestRoom`, computed before the loop from the pass's
++    lookups); a walk that writes at the limit throws `InterestUnsettled` (code `RECONCILE_INTEREST_UNSETTLED`, the walks
++    made, no amount), which rolls the reconcile's transaction back. `interestWalkLimit` is an object so a test can lower
++    it and force the refusal.
+   - `claimInterest` (`rem:845-860`) is removed: AMT I credits nothing by itself (D1).
+-  - `Counts` gains `interestTakenBack` (entries below zero); `interest` counts the positive ones. The job logs no new
++  - `Counts` gains `interestTakenBack` (entries below zero) and `interestWalks` (D18); `interest` counts the positive
++    ones. The job logs no new
+     field (`job.ts:61-65` logs no counts), so `packages/observability/src/fields.ts`, a #42 file, is untouched.
+   - `CHAIN_ORDER` orders by `m.seq` alone and still returns `matched_at`, which `reversalRule` compares with a
+     reversal's load time (`rem:400`, `:488`). Its comment says the order is the ledger's own.
+@@ -882,7 +982,10 @@
+   as its `evidence_id`, so `ON CONFLICT (kind, evidence_id, service_line_id)` is still the arbiter.
+ - **`statement-html.ts:114`**: the printed statement's interest sentence (section 7), with its assertion in
+   `apps/worker/src/report/brand.test.ts:144`.
+-- **`pass.ts`**: the summary type carries `interestTakenBack`.
++- **`pass.ts`**: the summary type carries `interestTakenBack` and `interestWalks`. A reconcile refused with
++  `InterestUnsettled` is logged once, after its transaction rolled back: "reconcile refused: its interest did not settle
++  within the walks allowed", with `job_id`, `practice_id`, `error_code` and `record_count` (the walks), fields the
++  allowlist already holds.
+ - No reference, token, claim number or amount is logged; the job's log fields are unchanged (`pnpm lint:logs`).
+ 
+ ### 6.3 The web
+@@ -1139,8 +1242,8 @@
+ 
+ | ID | Case | Expected |
+ |---|---|---|
+-| LED-23 | A remittance's interest reported on its claims (AMT I) and paid at the provider level (PLB L6) | Credited once per line, from the PLB L6: to the claim of its own payer that its reference names, whole or among other identifiers, or shared by the remittance's AMT I netted per claim and its reversals and corrections, exactly when the PLB L6s equal that AMT I and never past what each reports otherwise; a named PLB L6 above its claim's AMT I first pays the remittance's other reported interest. A PLB L6 of zero moves nothing and the reconcile completes. AMT I with no PLB L6 in its check counts nowhere and is shown as reported. A reversal and correction linked as one claim's chain whose AMT I nets to zero add no interest, beside another claim or not; a reversal the payer renumbered, which the loader does not link, still lets its correction's interest count again (a known gap, pinned until the link is built). A PLB L6 in a later remittance naming the claim is credited once |
+-| LED-24 | One PLB L6 over lines approved at different times, or attributed again after a later upload; then interest taken back | Its entries of each sign never sum past what its first attribution gives it, however many reconciles run and whatever a later upload changes about the claim it names (a claim on another case named later gets nothing), and every reconcile completes; whom each PLB L6 is for is read as of one moment, so an upload during a reconcile changes nothing halfway. An entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split. Interest taken back, by a reversal alone, after a restatement, or netted in one PLB L6 with interest paid, is a negative interest entry against the lines holding that claim's interest, never below zero on a line, and the interest total is net of it. Postgres refuses an interest match without its PLB L6 and claim, an entry past its PLB L6's bound either way, and a line's interest below zero; it skips the reconcile job's interest match that carries only one of them |
++| LED-23 | A remittance's interest reported on its claims (AMT I) and paid at the provider level (PLB L6) | Credited once per PLB L6 and line, from the PLB L6: to the lines of the claim of its own payer that its reference names, whole or, when the whole reaches no claim, by one of the identifiers in it (a reference reaching claims of two chains, or none, names nothing), and of the claims that reverse or correct it later in its chain (a reference to the original reaches its correction's lines, and one to the latest correction that correction's lines alone, never a line only an earlier claim of the chain is matched to); or, naming nothing, shared by the remittance's AMT I netted per claim and its reversals and corrections, exactly when the PLB L6s equal that AMT I, otherwise only in the net's direction and never past what each reports; a named PLB L6 above its claim's AMT I first pays the remittance's other reported interest, and what no claim takes is counted nowhere. Interest paid is split over the lines with a standing claim match to a claim it is for, the approved ones when there are any, by their approvals remaining (a line with none remaining takes no share). A PLB L6 of zero moves nothing and the reconcile completes. AMT I with no PLB L6 in its check counts nowhere and is shown as reported. A reversal and correction linked as one claim's chain whose AMT I nets to zero add no interest, beside another claim or not; a reversal the payer renumbered, which the loader does not link, adds no interest beside its correction either: its interest taken back finds no line, so the interest paid in the same PLB L6 waits. A PLB L6 in a later remittance naming the claim is credited once |
++| LED-24 | One PLB L6 over lines approved at different times, or attributed again after a later upload; then interest taken back | Its entries of each sign never sum past what its attribution gives it of that sign (the most any reconcile's attribution of it gave) nor its Postgres bound, however many reconciles run; when a later upload changes whom it is for, what it gave stands and it writes only what is left of that sign (a claim on another case named later gets nothing); whom each PLB L6 is for is read as of one moment, so an upload during a reconcile changes nothing halfway. An entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split. Interest taken back, by a reversal alone, after a restatement, or netted in one PLB L6 with interest paid, is a negative interest entry against the lines holding that claim's interest, split by what each holds, never below zero on a line, and the interest total is net of it; where that PLB L6's interest paid could reach only the lines its interest taken back reaches, the take-back is written and the payment is not, so the figure errs low, never above the cash. Its interest paid waits while the interest it takes back from a claim whose interest may yet arrive on a case line (its reversal linked to no claim yet, or the claim matched to a case line) is not taken back whole, unless the rest is interest other PLB L6s paid that claim that can reach no line, less what other PLB L6s still owe of take-backs of it; for one take-back of a claim, the outcome is then the same whichever remittance is uploaded first, the netting PLB L6 before, between or with the PLB L6s paying that claim's interest, dated before it or after it, while the later payment is split by the same weights in either order or can reach no line (when the claim's lines change weight between the uploads, by a later approval or a recoupment of only some of them, the payment can be split differently and the take-back reach other lines). When two PLB L6s take back one claim's interest and the uploads pay it less than they take back together, which of them is taken back whole, and so whether its interest paid is written, can depend on the order, and the figure errs low either way. Interest paid for a claim never goes to a line on which another PLB L6 still owes a take-back of that claim's interest that it can no longer write there, nor moves to another of the claim's lines for it, so a person who matches the claim to that line by hand afterwards adds nothing. Each reconcile walks the PLB L6s again until a walk writes nothing, so it ends where the reconciles after it would: interest paid by a check dated after two take-backs of its claim, landing on a line once one of them is whole, is taken back in the same reconcile, never above the cash until the next; a reconcile whose PLB L6s still write on the last walk the entries they can write allow, which no real ledger reaches, is refused whole and retried, and every other reconcile completes. Postgres refuses an interest match without its PLB L6 and claim, an entry past its PLB L6's bound either way, and a line's interest below zero; it skips the reconcile job's interest match that carries only one of them |
+ | LED-25 | A line's chain read back | Its matches in the order the ledger made them, within one reconcile and across reconciles, never by their IDs; the claims a correction supersedes found by index at 50,000 claims |
+ 
+ ### 8.2 `packages/synth` cases (module 6, LED; `registry.ts` and the generated `fixtures/synthetic`)
+@@ -1170,13 +1273,20 @@
+     Expected: 2.40 and 3.00, dated by the later remittance.
+   - `zero-l6.835`: as `paired.835` with a second `PLB L6:<its CLP07>*0` (BPR02 unchanged, 59.40). Expected: 2.40 and
+     3.00 only; the reconcile completes, a second and a third too; the remittance page lists both L6s (the review's R2-1).
+-  - `renumbered-reversal.835` after `paired.835`, a known gap pinned: the correction reversed under its own new CLP07
+-    with `REF*F8*<the correction's CLP07>` (AMT I -5.40), its correction with the same REF F8 paying line 1 2.00 more,
++  - `renumbered-reversal.835` after `paired.835`: the correction reversed under its own new CLP07 with
++    `REF*F8*<the correction's CLP07>` (AMT I -5.40), its correction with the same REF F8 paying line 1 2.00 more,
+     allowed 2.00 more (AMT I 5.40), another patient's claim reporting AMT I 2.00, and one `PLB L6*-2.00` naming
+     nothing. Asserted before the reconcile: the reversal's `reversal_of_claim_id` is null and the paired correction's
+-    `superseded_by_claim_id` is the new correction. Expected today and after this PR: line 1 approved 2.00 more and
+-    5.40 more interest (the correction's chain draws its 5.40 and the unlinked reversal's -5.40 reaches no line). The
+-    PR that links a renumbered reversal (section 14) changes this expectation to "no new interest".
++    `superseded_by_claim_id` is the new correction. Expected: line 1 approved 2.00 more and no new interest (the
++    unlinked reversal's -5.40 finds no line, so the correction's 5.40 waits, D5). The PR that links a renumbered
++    reversal (section 14) changes only the links.
++  - `named-original.835`: as `paired.835`, the L6 naming the original's control number, which its reversal carries
++    too; `later-l6-original.835` after `reported-only.835`: a later check's L6 naming the original. Expected: 2.40
++    and 3.00 on the lines its correction is matched to (#126 review LED-R1).
++  - `named-latest.835` after `paired.835` (variant `namedLatest`): the correction reversed (AMT I -5.40) and corrected
++    again by C2, which carries line 1 alone as C paid it, beside another patient's claim, and `PLB L6:<C2's CLP07>*-3.00`
++    (BPR02 73.00). Expected: 3.00 on line 1, matched to C2, not allocated; nothing on line 2, which C's claim match
++    still names (#126 review F-M2-1).
+ - **LED-24** (`workflow.led24`):
+   - `first.835` then `second.835`, probe R's shape: the first raises line 1's payment and line 2's allowed amount but
+     not its payment, with `PLB L6:<CLP07>*-5.40`; a month later the second, a correction of the first's correction
+@@ -1204,6 +1314,14 @@
+     `out-of-order-1.835` the L6 names Z's chain, the second case's line holds no interest, the first case's stays 5.40,
+     and the reconcile completes, a second and a third too. A worker that kept "what is left" per chain only would give
+     the second case 5.40 and Postgres would refuse every reconcile of the practice; this case fails on it.
++  - `paired.835` then `two-chains.835` (`twoChains`), and the same two uploaded the other way round
++    (`twoChainsOutOfOrder`; #126 reviews LED-R2 and F1): B, a correction with no REF F8 before C's reversal, which the
++    loader links to nothing, paying as C with AMT I 6.00; C reversed (AMT I -5.40); one `PLB L6*-0.60` naming nothing.
++    Expected in either order: 2.40 and 3.00 from `paired.835`, then -2.40 and -3.00; B's 6.00 is not written (errs
++    low, never above the cash); in the out-of-order upload nothing is written after `two-chains.835`.
++  - `first.835`, `second.835`, then `later-named-latest.835` (`laterNamedLatest`): a later check's `PLB
++    L6:<F2's CLP07>*-5.40` beside another patient's claim. Expected: 5.40 on line 2, which F2 approved, matched to F2,
++    not allocated; line 1 keeps first.835's 5.40 only (#126 review F-M2-1; review DB2-1's shape).
+ - **LED-25**: a registry entry with no file (`none(9, ...)`): database tests.
+ - **LED-16's fixture** takes its own design's shape (lane-b-pr15b.md section 3.5): `two-lines-adjusted.835` gains
+   `PLB L6:<the corrected claim's CLP07>*-5.40` and BPR02 59.40. Its expected interest (2.40 and 3.00, allocated) is
+@@ -1218,7 +1336,11 @@
+ | Mutation, `money-ledger` shard | LED-23, LED-24 | `interest.ts` at 100% (every surviving mutant killed or recorded as equivalent) | new file |
+ | `packages/ledger/src/stages.test.ts`, `rules.test.ts` | LED-24 | `STAGE_SIGN.interest` is `'signed'`; a negative interest entry has no problem, a zero one has "an interest entry moves an amount" | fails today (positive) |
+ | `apps/worker/src/reconcile/interest.db.test.ts` (new) | LED-23 | The ten LED-23 variants as their expected outcomes (the zero L6's reconcile completing three times; the renumbered reversal's link asserted absent and its known outcome pinned); every interest match the reconcile wrote carries the L6 and a claim, and every entry's evidence is the L6 (the guard that the skip of D16 can never hide the current image's own match) | fails today: 1080, 540 credited from AMT I alone, +540 on net zero, 1080 for the later L6, the reference with identifiers never credited, 1080 beside the zero L6 |
++| `interest.db.test.ts`, added in review (#126) | LED-23, LED-24 | `named-original.835` and `later-l6-original.835` credit the correction's lines (LED-R1); `two-chains.835` writes the take-back and not the payment (LED-R2); uploaded before `paired.835`, reconciled between the uploads and loaded together, it writes the same (F1); `named-latest.835` and `later-named-latest.835` credit the latest correction's lines alone (F-M2-1) | failed before each fix: nothing for the named original; 11.40 against 6.00 out of order (L1 267 after the first pass); 133 + 167 and 240 + 300 |
++| `apps/worker/src/reconcile/reconcile.large.db.test.ts` (CAS-42.3) | LED-23, LED-24 | At 2,000 lines, every correction reports AMT I and each check pays it by one unnamed PLB L6; a later check takes each claim's interest back by a PLB L6 naming its correction. The measured pass walks all 2,100 PLB L6s, writes no more interest and stays within 150 s (#126 reviews INT-REL-2 and F-M2-2) | 161 s before INT-REL-2's lookups; with the take-backs, 33.7 s before F-M2-2's holdings and 26.9 s after, the same 8,000 rows; with D18's walks (#126 review round 4) the measured pass walks once, 28.5 s (29.6 s before), and the take-backs' reconcile twice, 15.9 to 23.1 s (21.6 to 22.8 s before); a take-back-heavy shape (a second take-back of each chain, then a later payment of each: 6,100 PLB L6s) settles in one reconcile of three walks, 19.3 s, where before it ended 1,000.00 above the cash for one reconcile |
+ | `interest.db.test.ts` | LED-24 | The six LED-24 variants, each link asserted before the reconcile it feeds (the second correction supersedes the first; Z supersedes the second case's claim); a second and third reconcile write nothing and complete; across the three reconciles of every variant, each L6's entries of each sign stay within its first attribution's draws, read through `interestAttribution` after the first; after `out-of-order-1.835` the second case's line holds no interest. D17 by hand: `interestAttribution` given the loaded remittances of a moment before an upload (R1 and R2), after that upload (R3, whose loader linked a claim of R1 and which holds the claim R2's L6 names) has committed, returns exactly the attribution it returned before R3 was loaded. Then by hand: as the job, a claim-only and an L6-only interest match return no row and no error; as the billing manager, a claim-only one is refused; an L6 of another remittance, a claim the line has no standing match to, a positive entry past its L6's bound, a negative entry on an L6 whose remittance reports no paid interest and an entry whose evidence is a claim are refused; a claim reached through a standing interest match after a person reversed the line's approval is accepted; and, as a specialist through `adjustEntry`, an adjustment taking a line below zero after a take-back is refused with its sentence | fails today: 840, allocated on one line, every take-back dropped, every refusal accepted |
++| `interest.db.test.ts`, the per-reconcile bound (#126 review round 4) | LED-24 | `cent-paid.835`, `netted-first.835`, `netted-second.835` and `paid-after-both.835`, uploaded before one reconcile and in date order with a reconcile after each: interest at most the cash after every reconcile, the walks of each reconcile (4, then 1; 2, 2, 1, 4, then 1), the entries, 18.11 against 18.11; with the walk limit lowered to 2 (a defect's stand-in), the reconcile is refused with `InterestUnsettled`, the ledger's entries, matches and line stages are as before it, the one log line carries only the job, the practice, the code and the walks, and the retry under the real limit writes the cash | fails before D18 (19.50 against 18.11) |
++| `interest.test.ts`, the two take-backs' property (#126 reviews RVM3-3 and round 4) | LED-24 | Two L6s paying a chain and two netting take-backs of it, any dates, upload orders and breaks: interest at most the cash after every reconcile, each reconcile walking until a walk writes nothing within one more than the entries the L6s can write, and the next reconcile writing nothing; round 4's two counterexamples as examples | fails walked once (169 against 168; 7 against 6) |
+ | `apps/worker/src/reconcile/ledger-oracle.db.test.ts` | LED-23, LED-24 | Two appended cases, each opened from its fixture's `original.835` with `adjusted.835` (`paired.835`'s content) loaded, as the harness does for every case, and a Known stated by hand and checked against the synth `expected.json` as the harness checks every case: LED-23, the step `eft-export.csv`: approved 5400, posted 0, deposited 5400, recouped 0, interest 540, recovered 5400, posted entries 0, the first line `recovered` (the deposit proves principal only, as LED-16's does, and interest stays beside it); LED-24, the steps `eft-export.csv` then `taken-back.835`: approved 5400, posted 0, deposited 5400, recouped -5400, interest 0, recovered 0, posted entries 0, the first line `actionable` (the reversal alone takes back both approvals after the deposit, as LED-14's takes back its one). The original six and LED-14 to LED-17 unchanged; the harness itself is unchanged. The oracle's LED-16 case reads `original.835` and `adjusted.835`, which carry no interest, so LED-16's corrected two-line fixture is checked in `payment-terms.db.test.ts`, not here | appended |
+ | `payment-terms.db.test.ts:537-552`, `ledger.db.test.ts:279-294` (LED-06's PAR-18 block) | LED-16, PAR-18 | Same amounts; the evidence and the match's claim asserted | updated |
+ | `apps/worker/src/reconcile/chain.db.test.ts` | LED-25 | Two matches inserted in one transaction whose UUIDs sort against their order read back in insertion order from `ledgerMatches`, `CHAIN_ORDER` and the web's line query; an update of `seq` is refused; an INSERT that names no `seq` (the previous image's) is numbered next | fails today: UUID order |
+@@ -1391,7 +1513,11 @@
+ `matrix.ts`; `fixtures/synthetic/LED-16/two-lines-adjusted.835` and its `expected.json` (generated);
+ `docs/product/domain-model.md` and `packages/db/functions/ledger_match_rules.sql` (generated);
+ `docs/product/test-matrix.md`, `docs/product/reconciliation-001.md`, `docs/product/PRD.md`, `docs/adr/0042-….md`,
+-`docs/adr/0067-….md`; `tools/screening-capacity/watched-paths.txt` (regenerated by `watched.ts --write`).
++`docs/adr/0067-….md`; `tools/screening-capacity/watched-paths.txt` (regenerated by `watched.ts --write`). Added in
++review (#126), outside the freeze: `docs/runbooks/deploy-and-rollback.md` (the migration's lock loop, its failure line
++and what a page sees while the locks are held) and `packages/db/src/migrate.test.ts` (the runbook quotes every
++migration's lock failure); `apps/worker/src/reconcile/reconcile.large.db.test.ts` (CAS-42.3's interest and take-back
++shape).
+ 
+ **#42's files among them** (`scratchpad/progress/interest-author-42files-run2.txt`, 212 files at 6f23c42b):
+ `docs/product/domain-model.md`, `docs/product/test-matrix.md`, `docs/product/reconciliation-001.md`,
+@@ -1431,7 +1557,9 @@
+    it is counted nowhere: 0 where today shows 540, an understatement by design, and the remittance page lists the L6.
+    A payer that folds interest into CLP04 has it counted once, as principal (section 14).
+ 4. **The deploy window and a rollback** (D16): the previous worker credits no interest until the current one runs.
+-   Nothing fails and nothing is written twice; the interest figure lags by at most the window.
++   Nothing fails and nothing is written twice; the interest figure lags by at most the window. While the migration
++   holds its locks, a page reading at one snapshot that began before them shows the ledger's entries with no matches
++   once; a reload reads them whole (#126 review DB-C1).
+ 5. **The first attribution stands** (D6): when a later upload changes whom an L6 names, what it already gave stays
+    where it went, visible on the line. No screen reverses an interest match (`page:84`, kept). If a person judges the
+    entry wrong, the correction is a contract specialist's adjustment on the ledger review (`ledger.adjust`), which
+@@ -1453,13 +1581,21 @@
+    correction links through its REF F8 (`loader.ts:547-556`; section 8.0's probe). The reversal is then a chain of its
+    own. Alone, it takes nothing back through AMT I (a take-back L6 that names the claim still works). Beside its
+    correction and another claim in one exact pool (worked case "a renumbered reversal"), the correction's chain draws
+-   its AMT I again while the reversal's take-back reaches no line: the case lines gain that interest a second time.
+-   This is today's double count in that shape, not a new one (today credits the correction's AMT I again), Postgres
+-   accepts it (it is within the L6's bound, which counts the reversal's reported take-back), and LED-23
+-   `renumbered-reversal.835` pins it until the loader links such a reversal (section 14). Its principal has the same
+-   gap today: an unlinked lone reversal recoups nothing.
++   its AMT I again while the reversal's take-back reaches no line; the reversal is an unlinked reversal, so its chain
++   may yet hold interest and the PLB L6's payments wait (D5): the correction's interest is no longer counted a second
++   time (#126 review F1; LED-23 `renumbered-reversal.835`). Its principal still has the gap: an unlinked lone reversal
++   recoups nothing, until the loader links such a reversal (section 14).
+ 9. **Lock alignment with SUITE-CAP-1.** The new trigger takes `'ledger:' || practice_id`, the key every ledger writer
+    already holds and the key SUITE-CAP-1 moves the other two ledger triggers to.
++10. **Payments that wait for good** (#126 review F1). When a PLB L6's take-back can never be written in full (a reversal
++   whose claim is never uploaded, paid before the practice used the product, or a chain whose interest landed on lines
++   with nothing remaining), the payments the L6 nets against it are never written: an understatement of up to those
++   payments, never an overstatement, and each line still shows the interest its claims report. ADR 0084 records it.
++11. **Walks within a reconcile** (D18, #126 review round 4). A reconcile that writes interest walks the PLB L6s at least
++   twice, and more when a take-back's completion opens a line to a later payment; one that writes none walks them once,
++   as before. The cost is measured at CAS-42.3's size and in a take-back-heavy shape (ADR 0084, At size). A walk that
++   still writes at the bound refuses the practice's reconcile on every attempt until the defect is fixed (the operator's
++   alert on the third): no figure moves and nothing is half-written meanwhile.
+ 
+ ---
+ 
+@@ -1498,7 +1634,8 @@
+ - **A reversal the payer renumbered** (its own CLP07, with REF F8 naming an earlier claim of the chain; the review's
+   R2-4): the loader leaves it unlinked (section 12 risk 8; section 8.0's probe), so neither its principal nor its
+   interest is taken back through the chain, and beside its correction and another claim the correction's interest
+-  counts again, as it does today. The cause is in the parser and the loader, not the ledger: a status-22 claim's
++  would count again but for D5's wait (its take-back finds no line, so its PLB L6's payments wait). The cause is in
++  the parser and the loader, not the ledger: a status-22 claim's
+   REF F8 is never read (`transaction.ts:797-800`) and the loader looks a reversal up by its own control number alone
+   (`loader.ts:533-542`). The fix is to link such a reversal into the chain its REF F8 names when its own control
+   number reaches no claim, never REF F8 first (LED-14's `reversal.835` carries the reversed correction's number as
+@@ -1508,7 +1645,7 @@
+   `packages/edi835` and `apps/worker/src/parse`, with the EDI reviewer, golden and property tests); it changes
+   recouped principal (a lone renumbered reversal starts recouping), which this exception keeps frozen, so it would
+   widen an interest exception into principal; and this PR needs no change when it lands (a linked reversal nets in
+-  its chain, D3), only LED-23 `renumbered-reversal.835`'s expectation, which that PR flips to "no new interest".
++  its chain, D3): LED-23 `renumbered-reversal.835`'s interest stays none and only its links change.
+   That PR's design asks the founder whether reconciliation-001's freeze reaches the loader's links and, if it does,
+   for its own narrow exception. Recommended as the next Lane B item.
+ - **A WO's reference** is still hashed whole (D14). Reading its identifiers as D2 reads an L6's changes the WO rule,

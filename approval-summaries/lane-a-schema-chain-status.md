@@ -10,6 +10,14 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 18:50 UTC (acting Lane A): #126 round 5 resumed after a container restart (~18:40).** Its fix is pushed:
+  **head 87ce6146** (re-walk of the PLB L6s within a reconcile until a walk writes nothing, bounded at entries + 1, the
+  refusal retryable and logged by IDs; the property now asserts interest <= cash after EVERY reconcile, red first with
+  169 > 168 and 7 > 6; db tests for both shapes; LED-23/24 matrix rows match the code; ADR 0084 D18). Cost (CAS-42.3
+  shape): 28.5 s vs 29.6 s with one walk; take-back reconciles 15.9-23.1 s vs 21.6-22.8 s. **LED-R1's widened lookup needs no
+  index** (0.77-0.91 s at 50,000 matched claims; an extra index went unused): nothing beyond 10.1 to ask. Domain model
+  unchanged: bb7662c6…6bf8. Review round 1 confirmed findings; its fix was cut by the restart and re-runs from its progress
+  file (resumeFromRunId; the finished agents replay from cache). Setup re-run (OK).
 - **2026-11-07 16:35 UTC: the orchestrator's word on round 5** (16:15 UTC): the re-walk is agreed, BOUNDED: at most the
   chain's ledger-entry count + 1 walks; at the cap the reconcile is refused with a retryable error (the transaction rolls
   back; nothing half-written), IDs and counts logged only; the 169-vs-168 case pinned first. **Correction:** the base is
