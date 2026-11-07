@@ -20,6 +20,7 @@ import { type ResponseLetterFieldProps, type ResponseLetters, ResponseLetterFiel
 import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
 import { ScreeningSplitForm } from '../screening/split-form';
+import { ScreeningUploadForm } from '../screening/upload-form';
 import { ArrivalNotice } from '../arrival-focus';
 import { StepTimer } from '../step-timer';
 
@@ -384,6 +385,23 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
   ),
   /** The screening's split form itself: it shows its own problems and sends nothing while it has any. */
   screening: (page) => <ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={<Keys page={page} />} />,
+  /**
+   * The screening's upload form on the shared core, with the harness's action in the public route's place: no FormKeys,
+   * since the route is public. Its quarters are dated by the page's serverTime, so the test's SYNTHETIC rows of 2026 are
+   * screened whatever the machine's clock says; its web address is a SYNTHETIC one.
+   */
+  screeningUpload: () => (
+    <ScreeningUploadForm
+      action={action}
+      states={[{ value: 'NC', label: 'NC' }]}
+      maxRows={50_000}
+      minClaimLines={11}
+      serverTime="2026-10-18T12:00:00.000Z"
+      contentQuarters={[{ from: '2026-Q1', to: '2026-Q4' }]}
+      sources={[{ value: '', label: 'Choose one (optional)' }]}
+      appOrigin="https://app.synthetic.test"
+    />
+  ),
   /** The hardware-key sign-in, whose ceremony calls the test answers with page.route (its own form, not ActionForm). */
   hardwareKey: () => <HardwareKeySignIn />,
   /**

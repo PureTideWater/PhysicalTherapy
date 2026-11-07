@@ -172,10 +172,10 @@ export const writeVersionAction = practiceRoute({
     z.object({
       caseId: opaqueId,
       basedOnVersionId: optionalText(opaqueId),
-      narrative: optionalText(z.string().max(NARRATIVE_MAX_LENGTH, `at most ${String(NARRATIVE_MAX_LENGTH)} characters`)),
+      narrative: optionalText(z.string().max(NARRATIVE_MAX_LENGTH, `enter at most ${String(NARRATIVE_MAX_LENGTH)} characters`)),
       useDraft: optionalText(z.literal('on')),
       promptPayState: optionalText(STATE_CODE),
-      attachments: z.array(opaqueId).max(20, 'at most 20 attached documents'),
+      attachments: z.array(opaqueId).max(20, 'attach at most 20 documents'),
     }),
   ),
   audit: { action: 'packet_version_written', objectType: 'packet_version' },

@@ -42,7 +42,7 @@ export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
 };
 
 /** What a number with no word for what it counts is asked for, with examples a person writes (the UX review of 2026-10-28). */
-export const SAY_WHAT_IT_COUNTS = 'say what it counts or names: 3 claims, 6 units, page 2, 3650 days';
+export const SAY_WHAT_IT_COUNTS = 'say what it counts or names, such as 3 claims, 6 units, page 2 or 3,650 days';
 
 /**
  * What a figure in its role is asked for when its words must say more (docs/adr/0086): rule 2, an amount or a count of

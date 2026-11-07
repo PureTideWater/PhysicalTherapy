@@ -1,7 +1,11 @@
 # 0037. Re-run a complete run for the same lines, diff it from the traces, accept it by hand, and roll content back by withdrawal
 
 - **Status:** accepted; amended 2026-10-26 (`co-001/superseded-rerun`, combined audit #10): a re-run is accepted only
-  while nothing in effect for its service dates is newer than it, and only the run in effect is re-run ("Amendment", below)
+  while nothing in effect for its service dates is newer than it, and only the run in effect is re-run ("Amendment", below);
+  amended 2026-11 by `co-001/ux-forms-after-42`: the pricing route no longer ends a re-run refusal with a full stop,
+  each is one sentence with no full stop of its own under the separator rule of
+  [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
+  (its "Amended (co-001/ux-forms-after-42, 2026-11)", item 1)
 - **Date:** 2026-10-19
 - **Deciders:** founder (engineering)
 - **PRD sections:** 5 (J6, J17), 7 (Pricing runs: "compare two runs; re-run under a new release with a diff";
@@ -207,7 +211,7 @@ the acceptance would replace is not what the person's diff was against: another 
 its lines) and `not_in_effect` (creation).
 `release_withdrawn` stays ahead of `superseded`, because its remedy is the more basic one; `diff_changed` comes last,
 after the refusals that say the re-run cannot be accepted at all. Each message names the state, never a value, and
-reads after the form's label ("This re-run: ...", "This run: ...", the route ending it with a full stop); the older refusals (`not_found`, `not_rerun`,
+reads after the form's label ("This re-run: ...", "This run: ..."), one sentence with no full stop of its own; the older refusals (`not_found`, `not_rerun`,
 `not_complete`, `release_withdrawn`) are reworded to read the same way. `rerunBlock` exports the pages' acceptance
 state too (`RERUN_ACCEPTANCE`: `release_withdrawn`, `superseded`, `newer_run_pending` or `awaiting`, in that order),
 so no badge says "awaiting acceptance" beside a withdrawn release.

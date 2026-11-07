@@ -163,7 +163,7 @@ export const logSubmissionAction = practiceRoute({
     versionId: opaqueId,
     submittedOn: isoDate,
     channel: z.enum(SUBMISSION_CHANNELS, 'choose the channel'),
-    reference: optionalText(z.string().max(200, 'at most 200 characters')),
+    reference: optionalText(z.string().max(200, 'enter at most 200 characters')),
     followUpOn: optionalText(isoDate),
     /** The person's confirmation that an export never attested (its pricing went stale after the export) went to the payer without sign-off. */
     sentWithoutSignOff: optionalText(z.literal('on')),
@@ -273,7 +273,7 @@ export const recordResponseAction = practiceRoute({
       .refine((value) => value !== '', RECEIVED_ON_EMPTY),
     denialCategory: optionalText(z.enum(DENIAL_CATEGORIES)),
     reopensCase: optionalText(z.literal('on')),
-    notes: optionalText(z.string().max(2000, 'at most 2000 characters')),
+    notes: optionalText(z.string().max(2000, 'enter at most 2,000 characters')),
   }),
   audit: { action: 'payer_response_recorded', objectType: 'payer_response' },
   handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {

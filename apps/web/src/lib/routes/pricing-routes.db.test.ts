@@ -224,7 +224,7 @@ describe('creating a run through the Pricing runs screen', () => {
     // Every plan of each period is unmapped (February MAP-05's, March MAP-01's, April MAP-04's): a run would price nothing.
     // F2: the words say a month is priced once any one of its plans is mapped, never only once every plan is.
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }))).toBe(`fromMonth: ${NOTHING_MAPPED}`);
-    expect(NOTHING_MAPPED).toMatch(/or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again\.$/);
+    expect(NOTHING_MAPPED).toMatch(/or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again\)$/);
     expect(NOTHING_MAPPED).not.toMatch(/priced once every plan it holds is mapped$/);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-03', releaseNo: '900001' }))).toBe(`fromMonth: ${NOTHING_MAPPED}`);
     // The MA plan's mapping completes February, whose lines are that plan's alone (D2b): the request queues monitoring of
@@ -233,7 +233,7 @@ describe('creating a run through the Pricing runs screen', () => {
     expect(ok(await call(mapPlanAction, manager, P(), { planId: ma, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01' })).redirect).toBe(`/p/${practiceId}/mapping/${ma}?notice=mapped_pricing`);
     const monitorFebruary = { type: 'monitor', payload: { practice_id: practiceId, request_id: expect.any(String) as unknown, months: ['2026-02-01'] } };
     expect(queue.jobs).toEqual([monitorFebruary]);
-    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', releaseNo: '900002' }))).toMatch(/^releaseNo: rule-release mismatch: release 900002 was asked for and release 900001 is the one loaded/);
+    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', releaseNo: '900002' }))).toBe('releaseNo: release 900002 was asked for, and release 900001 is the one in force; reload the page to price under the release in force');
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-04', toMonth: '2026-02', releaseNo: '900001' }))).toMatch(/^toMonth:/);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2025-01', releaseNo: '900001' }))).toMatch(/^fromMonth: a period that holds at least one service line/);
     expect((await call(createPricingRunAction, viewer, P(), { fromMonth: '2026-02', releaseNo: '900001' })).status).toBe('forbidden');

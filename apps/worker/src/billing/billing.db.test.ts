@@ -662,7 +662,9 @@ describe('billing with the local Stripe test-mode simulator', () => {
     await billing.settle();
     expect(await one<{ status: string }>('SELECT status FROM invoice WHERE stripe_invoice_id = $1', [invoice])).toEqual({ status: 'paid' });
     const bare = await createTenantWorld(owner, 'no method');
-    await expect(issueAuditInvoice(services(), bare.organizationId, randomUUID())).rejects.toThrow(/no payment method on file/);
+    await expect(issueAuditInvoice(services(), bare.organizationId, randomUUID())).rejects.toThrow(
+      'the organization has no payment method on file; ask its administrator to add one under Billing, then issue the invoice',
+    );
     await expect(subscribe(services(), bare.organizationId, 'monthly', randomUUID())).rejects.toThrow(/add a payment method/);
     const id = (await one<{ id: string }>('SELECT id FROM invoice WHERE stripe_invoice_id = $1', [invoice])).id;
     await expect(payOpenInvoice(services(), world.organizationId, id, randomUUID())).rejects.toThrow(/only an unpaid invoice/);

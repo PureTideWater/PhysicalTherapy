@@ -153,8 +153,9 @@ const INVALID_LEAD = 'Fix the fields listed here, then try again.';
  * A page out of date (a CSRF token its session has overtaken, or a missing or garbled request key): nothing was saved,
  * and the form reads the page again, which renders a fresh token and key in place, so what was typed stays (ADR 0077).
  * The flag marks it: a form that reads the page again (ActionForm's summary, the version and export forms) writes its
- * own next step, which depends on whether the person's own press sent the post, in place of these words. These are for
- * a form that does not (the screening upload, a #42 file, until it does), so its refusal still has a next step.
+ * own next step, which depends on whether the person's own press sent the post, in place of these words. The words stay
+ * for a post made without JavaScript; every form with JavaScript replaces them with RefusalLead's, and the screening
+ * upload, which never posts to an action, with its own origin lead.
  */
 const STALE: ActionState = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
 

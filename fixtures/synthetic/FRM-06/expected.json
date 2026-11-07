@@ -2,7 +2,7 @@
   "case": "FRM-06",
   "module": "FRM",
   "title": "A refused form without JavaScript",
-  "assertion": "The post reaches the action once; the page shows the summary and each field's own message, and no key; a success redirects with its notice",
+  "assertion": "The post reaches the action once; the page shows the summary and each field's own message, and no key; a success redirects with its notice; the screening upload, which posts to no action, puts no field value in a URL and screens nothing",
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": ["apps/web/src/components/fields.test.tsx","apps/web/e2e/forms-keep-input.spec.ts"],
