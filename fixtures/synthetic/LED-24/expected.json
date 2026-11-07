@@ -2,7 +2,7 @@
   "case": "LED-24",
   "module": "LED",
   "title": "One PLB L6 over lines approved at different times, or attributed again after a later upload; then interest taken back",
-  "assertion": "Its entries of each sign never sum past what its first attribution gives it, however many reconciles run and whatever a later upload changes about the claim it names (a claim on another case named later gets nothing), and every reconcile completes; whom each PLB L6 is for is read as of one moment, so an upload during a reconcile changes nothing halfway. An entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split. Interest taken back, by a reversal alone, after a restatement, or netted in one PLB L6 with interest paid, is a negative interest entry against the lines holding that claim's interest, never below zero on a line, and the interest total is net of it; that PLB L6's interest paid waits while the interest it takes back from a claim whose interest may yet arrive is not taken back whole, so the outcome is the same whichever remittance is uploaded first. Postgres refuses an interest match without its PLB L6 and claim, an entry past its PLB L6's bound either way, and a line's interest below zero; it skips the reconcile job's interest match that carries only one of them",
+  "assertion": "Its entries of each sign never sum past what its first attribution gives it, however many reconciles run and whatever a later upload changes about the claim it names (a claim on another case named later gets nothing), and every reconcile completes; whom each PLB L6 is for is read as of one moment, so an upload during a reconcile changes nothing halfway. An entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split. Interest taken back, by a reversal alone, after a restatement, or netted in one PLB L6 with interest paid, is a negative interest entry against the lines holding that claim's interest, never below zero on a line, and the interest total is net of it; where that PLB L6's interest paid could reach only the lines its interest taken back reaches, the take-back is written and the payment is not, so the figure errs low, never above the cash; and its interest paid waits while the interest it takes back from a claim whose interest may yet arrive is not taken back whole, so the outcome is the same whichever remittance is uploaded first. Postgres refuses an interest match without its PLB L6 and claim, an entry past its PLB L6's bound either way, and a line's interest below zero; it skips the reconcile job's interest match that carries only one of them",
   "synthetic": true,
   "completesIn": 9,
   "assertedBy": [
@@ -6428,6 +6428,253 @@
           }
         }
       }
+    },
+    {
+      "path": "later-named-latest.835",
+      "sha256": "bbacd3f348dbdcf2f66a1ecde71f656b53a042effc1f3a23657bf8576e8853bc",
+      "bytes": 948,
+      "kind": "x12",
+      "description": "After second.835: a later remittance whose PLB L6 of -5.40 names F2 (SYNCCNLED240004), the latest correction, which approved line 2 and left line 1 as F1 paid it, beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260803",
+                "isa12": "00501",
+                "isa13": "060240014",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "060240014",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-08-03",
+                    "gs06": "60240014",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "60240014",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "24",
+                        "se02": "0001",
+                        "segmentCount": 24,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "15540",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-08-03"
+                        },
+                        "trn": {"trace":"SYNEFTLED24014","originator":"1SYN00000L","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-08-02",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER L",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERL"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9991389872",
+                          "refs": [["TJ","999989751"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24017",
+                            "clp02": "1",
+                            "chargeCents": "22500",
+                            "paidCents": "15000",
+                            "patientResponsibilityCents": "0",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240017",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "22500",
+                                "paidCents": "15000",
+                                "revenueCode": null,
+                                "units": "3",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-05-11",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"7500"},
+                                "refs": [],
+                                "amounts": [["B6","15000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [
+                          {
+                            "provider": "9991389872",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "L6",
+                            "reference": "SYNCCNLED240004",
+                            "amountCents": "-540"
+                          }
+                        ],
+                        "balance": {
+                          "claimsPaidCents": "15000",
+                          "plbTotalCents": "-540",
+                          "paymentCents": "15540",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "060240014",
+              "gs06": "60240014",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9991389872",
+                "isa13": "060240014",
+                "trn02": "SYNEFTLED24014",
+                "bpr02Cents": "15540"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-08-03",
+              "payerName": "SYNTHETIC PAYER L",
+              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
+              "balance": {
+                "claimsPaidCents": "15000",
+                "plbTotalCents": "-540",
+                "paymentCents": "15540",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":1,"lines":1,"reversals":0,"plbItems":1},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNLED24017",
+                  "payerClaimControlNumber": "SYNCCNLED240017",
+                  "status": "1",
+                  "chargeCents": "22500",
+                  "paidCents": "15000",
+                  "patientResponsibilityCents": "0",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-05-11",
+                  "serviceTo": "2026-05-11",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 21,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "22500",
+                      "paidCents": "15000",
+                      "units": "3",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-05-11",
+                      "serviceTo": "2026-05-11",
+                      "lineAllowedCents": "15000",
+                      "observedAllowed": {"cents":"15000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "0",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "7500",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 23
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [
+                {
+                  "segmentIndex": 25,
+                  "providerId": "9991389872",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "L6",
+                  "reference": "SYNCCNLED240004",
+                  "amountCents": "-540",
+                  "category": "interest",
+                  "counted": true
+                }
+              ],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 1,
+            "lines": 1,
+            "reversals": 0,
+            "plbTotalCents": "-540",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":1,"lines":1}
+          }
+        }
+      }
     }
   ],
   "generated": [],
@@ -6447,6 +6694,7 @@
     ],
     "variants": {
       "approvedLater": ["first.835","second.835"],
+      "laterNamedLatest": ["first.835","second.835","later-named-latest.835"],
       "takenBack": ["paired.835","taken-back.835"],
       "restatedTakenBack": ["paired.835","restated.835","restated-taken-back.835"],
       "bothWays": ["paired.835","both-ways.835"],
@@ -6478,6 +6726,12 @@
         "allocated": false,
         "reconciles": 3,
         "note": "never split again when line 2 gains an approval: 5.40 on line 1, not 8.40"
+      },
+      "laterNamedLatest": {
+        "L1": [{"stage":"interest","amountCents":"540","evidence":"first.835 PLB L6"}],
+        "L2": [{"stage":"interest","amountCents":"540","evidence":"later-named-latest.835 PLB L6"}],
+        "allocated": false,
+        "note": "named by F2, the latest correction: credited to line 2, which F2 approved, never split onto line 1 through F1's claim match"
       },
       "takenBack": {
         "interest": [

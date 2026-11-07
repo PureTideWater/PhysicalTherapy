@@ -1226,6 +1226,14 @@ export function led23(b: CaseBuilder): void {
     ledRemittance(b, base, 13, calendarDate(2026, 8, 3), [otherClaim(b, 8)], interestPlb(base, [{ reference: occn, amount: negateCents(LED_INTEREST) }])).file,
     `After reported-only.835: a later remittance whose PLB L6 of -5.40 names the original (${occn}), not C, beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.`,
   );
+  // C2 corrects C and carries line 1 alone, as C paid it; C's claim match on line 2 stands, since a reversal beside its
+  // correction recoups nothing. A PLB L6 naming C2 is for C2 and what follows it in the chain, not C (#126 review F-M2-1).
+  const latest = correctionOf(b, 9, correction, [shareLine(b, 10000n, 'coinsurance')]);
+  b.add835(
+    'named-latest.835',
+    ledRemittance(b, base, 14, restatedOn, [reversalOf(correction), latest, otherClaim(b, 10)], interestPlb(base, [{ reference: latest.payerClaimControlNumber, amount: dollars('-3.00') }])).file,
+    `After paired.835: C reversed (paid -160.00, AMT I -5.40) and corrected again by C2 (${latest.payerClaimControlNumber}, REF F8 naming C), which carries line 1 alone as C paid it (97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00), beside another patient's claim paying 150.00, and one PLB L6 of -3.00 naming C2: BPR02 73.00.`,
+  );
   recoveryScenario(b);
   const caseLines = [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line }));
   b.scenario({
@@ -1243,6 +1251,7 @@ export function led23(b: CaseBuilder): void {
       renumberedReversal: ['paired.835', 'renumbered-reversal.835'],
       namedOriginal: ['named-original.835'],
       laterL6Original: ['reported-only.835', 'later-l6-original.835'],
+      namedLatest: ['paired.835', 'named-latest.835'],
     },
   });
   const interest = [ledEntry('interest', firstInterest, 'paired.835 PLB L6'), ledEntry('interest', secondInterest, 'paired.835 PLB L6')];
@@ -1279,6 +1288,12 @@ export function led23(b: CaseBuilder): void {
         effectiveOn: '2026-08-03',
         note: "named by the original's control number in a later check: credited to the lines a claim of its chain (C) is matched to",
       },
+      namedLatest: {
+        L1: [ledEntry('interest', firstInterest, 'paired.835 PLB L6'), ledEntry('interest', dollars('3.00'), 'named-latest.835 PLB L6')],
+        L2: [ledEntry('interest', secondInterest, 'paired.835 PLB L6')],
+        allocated: false,
+        note: "named by C2, the latest correction, which carries line 1 alone: credited to C2's line, never to line 2, which C's claim match still names",
+      },
     },
   });
 }
@@ -1294,7 +1309,8 @@ export function led23(b: CaseBuilder): void {
  * two-chains.835 nets an unlinked chain's interest paid against C's taken back, on the same two lines, in one PLB L6:
  * the take-back is written and the payment is not, so the figure errs low, never above the cash; uploaded before
  * paired.835 (twoChainsOutOfOrder), its payment waits for the take-back, which reaches the lines once paired.835's
- * interest is on them, so the outcome is the same.
+ * interest is on them, so the outcome is the same. later-named-latest.835 names F2 in a later check: line 2, which F2
+ * approved, takes it whole, never line 1 through F1's claim match.
  */
 export function led24(b: CaseBuilder): void {
   const { base, original, correction, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
@@ -1364,11 +1380,19 @@ export function led24(b: CaseBuilder): void {
     ledRemittance(b, base, 13, laterOn, [unlinked, reversalOf(correction)], pool(dollars('-0.60'))).file,
     `After paired.835: B (${unlinked.payerClaimControlNumber}), a correction with no REF F8 that comes before the reversal, so the loader links it to nothing, paying as C (paid 160.00) with AMT I 6.00, then C reversed (paid -160.00, AMT I -5.40), and one PLB L6 of -0.60 naming nothing, netting B's 6.00 paid against C's 5.40 taken back on the same two lines: BPR02 0.60.`,
   );
+  // After first.835 and second.835: F2 approved line 2 and left line 1 as F1 paid it, so a PLB L6 naming F2 is for F2's
+  // approved line, not line 1 through F1's claim match (#126 review F-M2-1).
+  b.add835(
+    'later-named-latest.835',
+    ledRemittance(b, base, 14, laterOn, [otherClaim(b, 17)], interestPlb(base, [{ reference: f2.payerClaimControlNumber, amount: negateCents(LED_INTEREST) }])).file,
+    `After second.835: a later remittance whose PLB L6 of -5.40 names F2 (${f2.payerClaimControlNumber}), the latest correction, which approved line 2 and left line 1 as F1 paid it, beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.`,
+  );
   recoveryScenario(b);
   b.scenario({
     caseLines: [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line })),
     variants: {
       approvedLater: ['first.835', 'second.835'],
+      laterNamedLatest: ['first.835', 'second.835', 'later-named-latest.835'],
       takenBack: ['paired.835', 'taken-back.835'],
       restatedTakenBack: ['paired.835', 'restated.835', 'restated-taken-back.835'],
       bothWays: ['paired.835', 'both-ways.835'],
@@ -1396,6 +1420,12 @@ export function led24(b: CaseBuilder): void {
     postedEntries: 0,
     variants: {
       approvedLater: { L1: [ledEntry('interest', LED_INTEREST, 'first.835 PLB L6')], L2: [], allocated: false, reconciles: 3, note: 'never split again when line 2 gains an approval: 5.40 on line 1, not 8.40' },
+      laterNamedLatest: {
+        L1: [ledEntry('interest', LED_INTEREST, 'first.835 PLB L6')],
+        L2: [ledEntry('interest', LED_INTEREST, 'later-named-latest.835 PLB L6')],
+        allocated: false,
+        note: "named by F2, the latest correction: credited to line 2, which F2 approved, never split onto line 1 through F1's claim match",
+      },
       takenBack: { interest: takenBack, interestTotalCents: '0' },
       restatedTakenBack: { interest: [ledEntry('interest', negateCents(firstInterest), 'restated-taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'restated-taken-back.835 PLB L6')] },
       bothWays: { interest: [ledEntry('interest', negateCents(firstInterest), 'both-ways.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'both-ways.835 PLB L6')], note: "the other claim's 2.00 on no case line" },

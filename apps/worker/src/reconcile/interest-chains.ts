@@ -120,9 +120,9 @@ const CLAIM_COLUMNS = 'c.id, c.remittance_id, coalesce(c.interest_cents, 0)::tex
 /**
  * interestAttribution's statement: $1 the practice, $2 the moment's remittances (S), $3 those holding a PLB L6, $4 the
  * reference candidates' hashes. Every claim of $3, every claim of S a hash reaches and every claim a claim or interest
- * match names, each with its root walked within S and whether that root is a reversal (claim status 22): the walk goes
- * back from a reversal to the claim it reverses whenever that claim is in S, so a root that is a reversal is one the
- * moment links to no claim.
+ * match names, each with its root walked within S, whether that root is a reversal (claim status 22) and the claims its
+ * walk back passes (itself among them): the walk goes back from a reversal to the claim it reverses whenever that claim
+ * is in S, so a root that is a reversal is one the moment links to no claim.
  */
 export const ATTRIBUTION_CLAIMS = `WITH RECURSIVE wanted AS (
        SELECT ${CLAIM_COLUMNS} FROM claim c JOIN remittance r ON r.id = c.remittance_id
@@ -133,9 +133,11 @@ export const ATTRIBUTION_CLAIMS = `WITH RECURSIVE wanted AS (
        UNION
        SELECT ${CLAIM_COLUMNS} FROM claim c JOIN remittance r ON r.id = c.remittance_id
         WHERE c.practice_id = $1 AND c.remittance_id = ANY ($2::uuid[])
-          AND c.id IN (SELECT m.claim_id FROM ledger_match m WHERE m.practice_id = $1 AND m.kind IN ('claim', 'interest') AND m.claim_id IS NOT NULL)), ${WALK_BACK}
-     SELECT w.id, w.remittance_id, w.interest_cents, w.hash, w.payer_id, roots.root, rc.claim_status_code = '22' AS root_reversal
-       FROM wanted w JOIN roots ON roots.start = w.id JOIN claim rc ON rc.id = roots.root AND rc.practice_id = $1 ORDER BY w.remittance_id, w.id`;
+          AND c.id IN (SELECT m.claim_id FROM ledger_match m WHERE m.practice_id = $1 AND m.kind IN ('claim', 'interest') AND m.claim_id IS NOT NULL)), ${WALK_BACK},
+  walked AS (SELECT start, array_agg(DISTINCT id::text) AS back FROM up GROUP BY start)
+     SELECT w.id, w.remittance_id, w.interest_cents, w.hash, w.payer_id, roots.root, rc.claim_status_code = '22' AS root_reversal, walked.back
+       FROM wanted w JOIN roots ON roots.start = w.id JOIN walked ON walked.start = w.id JOIN claim rc ON rc.id = roots.root AND rc.practice_id = $1
+      ORDER BY w.remittance_id, w.id`;
 
 interface ClaimRow {
   readonly id: string;
@@ -145,6 +147,8 @@ interface ClaimRow {
   readonly payer_id: string;
   readonly root: string;
   readonly root_reversal: boolean;
+  /** The claims its walk back passes within S, itself among them: those it follows in its chain. */
+  readonly back: readonly string[];
 }
 
 /**
@@ -152,10 +156,12 @@ interface ClaimRow {
  * remittance in S holding a PLB L6, the claims of S whose control number a PLB L6's reference candidates hash to
  * (@tp/ledger referenceCandidates; the whole reference first, then its identifiers), and the claims the practice's
  * claim and interest matches name, each with its chain root walked within S. A reference names a chain only when the
- * claims of the PLB L6's own payer it reaches are of exactly one chain; the PLB L6 is then for every claim of that chain
- * read, so a draw for it reaches the lines matched to any of them (D5), whichever claim of the chain the reference
- * carries: a reference to the original, whose control number its reversal carries too, reaches the lines its correction
- * is matched to. It takes statement 1's result as its argument, so a test can hand it an earlier moment.
+ * claims of the PLB L6's own payer it reaches are of exactly one chain; the PLB L6 is then for the claims it reaches and
+ * those that reverse or correct them later in the chain (each claim read whose walk back passes one it reaches), so a
+ * draw for it reaches the lines matched to any of them (D5): a reference to the original, whose control number its
+ * reversal carries too, reaches the lines its correction is matched to, and a reference to the latest correction only
+ * that correction's lines, never a line only an earlier claim of the chain is matched to (#126 review F-M2-1). It takes
+ * statement 1's result as its argument, so a test can hand it an earlier moment.
  */
 export async function interestAttribution(scope: Scope, cipher: PracticeCipher, practiceId: string, moment: AdjustmentMoment): Promise<InterestReading> {
   const l6s = moment.adjustments.filter((row) => row.category === 'interest');
@@ -194,13 +200,15 @@ export async function interestAttribution(scope: Scope, cipher: PracticeCipher, 
     const reached = byWhole.length > 0 ? byWhole : ofPayer(tokens);
     const chains = [...new Set(reached.map((claim) => claim.root))];
     const namedChain = chains.length === 1 ? (chains[0] as string) : null;
+    const reachedIds = new Set(reached.map((claim) => claim.id));
     return {
       id: row.id,
       remittanceId: row.remittance_id,
       position: row.position,
       cashCents: negateCents(parseCents(row.amount_cents)),
       namedChain,
-      namedClaimIds: namedChain === null ? [] : [...new Set((byChain.get(namedChain) ?? []).map((claim) => claim.id))],
+      // The claims reached and those later in the chain from them, never the chain's earlier claims (#126 review F-M2-1).
+      namedClaimIds: namedChain === null ? [] : [...new Set((byChain.get(namedChain) ?? []).filter((claim) => claim.back.some((id) => reachedIds.has(id))).map((claim) => claim.id))],
     };
   });
   const attribution = attributeInterest({ remittances, adjustments });

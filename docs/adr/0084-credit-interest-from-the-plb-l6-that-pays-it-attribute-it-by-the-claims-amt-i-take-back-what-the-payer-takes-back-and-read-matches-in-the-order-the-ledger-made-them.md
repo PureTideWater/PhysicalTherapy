@@ -3,7 +3,8 @@
 - **Status:** accepted (Lane A, `co-001/ledger-interest-once`, the interest fix, handed to Lane A by PR 15b (#51) on
   2026-10-26; one migration, `20261110090000_ledger_interest_once.sql`, so the founder's approval of the regenerated
   domain model, CO-02); under the founder's ledger freeze exception of 2026-10-27 (below); amended in review on
-  2026-11-07 (the payments of a PLB L6 wait for its take-backs, #126 review F1); amends
+  2026-11-07 (the payments of a PLB L6 wait for its take-backs, #126 review F1; a named PLB L6 reaches forward in its
+  chain only, #126 review F-M2-1); amends
   [0042](0042-keep-recovery-in-a-signed-append-only-ledger-of-matched-evidence-and-move-lines-to-recovered-only-from-its-entries.md)
   (where an interest entry comes from) and
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -114,9 +115,11 @@ names. (5) The rest is attributed to no chain and counted nowhere; the remittanc
 with no L6 draws nothing.
 
 **Lines (D5).** A paid draw is split by `approvedRemaining` over the lines with a standing claim match to a claim the
-draw is for, the approved ones when there are any: for a PLB L6 that names a chain, a claim of the named chain,
-whichever of its claims the reference carries (a reference to the original, whose control number its reversal carries
-too, reaches the lines its correction is matched to); for the pool, the chain's claims in the L6's remittance. A
+draw is for, the approved ones when there are any: for a PLB L6 that names a chain, the claims its reference reaches
+and those that reverse or correct them later in the chain (a reference to the original, whose control number its
+reversal carries too, reaches the lines its correction is matched to; a reference to the latest correction reaches
+that correction's lines alone, never a line only an earlier claim of the chain is matched to, #126 review F-M2-1); for
+the pool, the chain's claims in the L6's remittance. A
 taken-back draw is split over the lines holding the chain's interest, by what each holds (a holding below zero counts
 as zero), never more than they hold; a take-back is cut to both what a line holds of the chain and the line's interest
 as a whole (every chain's, and a match's that names none, together, net of corrections and take-backs), so it never

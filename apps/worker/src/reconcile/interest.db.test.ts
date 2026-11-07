@@ -337,6 +337,24 @@ describe('a remittance’s interest reported on its claims and paid by a PLB L6,
     await replayed(practice);
   });
 
+  it('credits a PLB L6 naming the latest correction to that correction’s lines, never to a line only an earlier claim of its chain is matched to (named-latest.835; #126 review F-M2-1)', async () => {
+    const { practice, lines } = await opened('LED-23');
+    const [l1, l2] = lines as [Line, Line];
+    await upload(practice, 'LED-23', 'paired.835', 'named-latest.835');
+    // C2 corrects C and carries line 1 alone; C's claim match on line 2 stands (a reversal beside its correction recoups nothing).
+    const c = await claimOf(practice, 'SYNEFTLED23002', 2);
+    const c2 = await claimOf(practice, 'SYNEFTLED23014', 2);
+    expect(c.superseded_by_claim_id).toBe(c2.id);
+    expect(await w.rows(practice, "SELECT claim_id FROM ledger_match WHERE kind = 'claim' AND reversed_at IS NULL AND service_line_id = $1", [l2.serviceLineId])).toEqual([{ claim_id: c.id }]);
+    // The PLB L6 naming C2 is for C2 and what follows it, not C: line 1 takes its whole 3.00, matched to C2; line 2 nothing.
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0], { amountCents: '300', allocated: false }]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1]]);
+    const [l6] = await l6sOf(practice, 'SYNEFTLED23014');
+    expect(await w.rows(practice, "SELECT claim_id, service_line_id FROM ledger_match WHERE kind = 'interest' AND provider_adjustment_id = $1", [l6])).toEqual([{ claim_id: c2.id, service_line_id: l1.serviceLineId }]);
+    await expectInterestFromItsL6(practice);
+    await replayed(practice);
+  });
+
   it.each([
     ['later-l6.835', 'naming the claim'],
     ['later-l6-original.835', 'naming the original, whose chain the claim corrects'],
@@ -407,6 +425,20 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     await expectInterestFromItsL6(practice);
     await replayed(practice);
     await expectWithinFirst(practice, first);
+  });
+
+  it('credits a later PLB L6 naming the latest correction to the line that correction approved, never split onto a line through an earlier claim of its chain (later-named-latest.835; #126 review F-M2-1)', async () => {
+    const { practice, lines } = await opened('LED-24');
+    const [l1, l2] = lines as [Line, Line];
+    await upload(practice, 'LED-24', 'first.835', 'second.835', 'later-named-latest.835');
+    // F1 approved both lines; F2 left line 1 as F1 paid it and approved line 2: the PLB L6 naming F2 pays line 2 alone.
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([{ amountCents: '540', allocated: false }]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([{ amountCents: '540', allocated: false }]);
+    const [l6] = await l6sOf(practice, 'SYNEFTLED24014');
+    const f2 = await claimOf(practice, 'SYNEFTLED24004', 2);
+    expect(await w.rows(practice, "SELECT claim_id, service_line_id FROM ledger_match WHERE kind = 'interest' AND provider_adjustment_id = $1", [l6])).toEqual([{ claim_id: f2.id, service_line_id: l2.serviceLineId }]);
+    await expectInterestFromItsL6(practice);
+    await replayed(practice);
   });
 
   it.each([
