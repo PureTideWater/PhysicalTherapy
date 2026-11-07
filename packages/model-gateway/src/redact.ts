@@ -335,6 +335,27 @@ const DECIMAL_DIGIT = /^\p{Nd}$/u;
  * scan read (docs/adr/0054, amendment of 2026-11-04, R3).
  */
 function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = false): View {
+  if (viewsOfCheck === null) {
+    return buildView(normal, invisible, digits);
+  }
+  const key = `${invisible}${digits ? '#' : ''}`;
+  const known = viewsOfCheck.find((each) => each.key === key && each.normal === normal);
+  if (known !== undefined) {
+    return known.view;
+  }
+  const view = buildView(normal, invisible, digits);
+  viewsOfCheck.push({ normal, key, view });
+  return view;
+}
+
+/**
+ * The views built during one check (holdsIdentifier), each text's reading built once however many of the check's readers ask
+ * for it (the judge's review round 2: the check built the same four views up to nine times). Null outside a check, and
+ * emptied when the check returns, so no letter's text is held past it.
+ */
+let viewsOfCheck: { readonly normal: string; readonly key: string; readonly view: View }[] | null = null;
+
+function buildView(normal: string, invisible: 'join' | 'drop' | 'space', digits: boolean): View {
   // The units are collected and joined once, and whether the last one is a VANISHED of its own run is kept beside them:
   // reading the end of a string built by concatenation flattens it, which made a letter of invisible runs quadratic.
   const units: string[] = [];
@@ -769,7 +790,31 @@ function within(ranges: Range[]): (range: Range) => boolean {
 /** Invisible characters and the digits after them. */
 const BIRTH_TAIL = /^[\p{Cf}\p{Default_Ignorable_Code_Point}]+\p{N}+/u;
 
-function datesOf(normal: string, subject: Subject): { readonly births: Range[]; readonly inOtherDate: (range: Range) => boolean; readonly inDateAsRead: (range: Range) => boolean } {
+interface DatesOf {
+  readonly births: readonly Range[];
+  readonly inOtherDate: (range: Range) => boolean;
+  readonly inDateAsRead: (range: Range) => boolean;
+}
+
+/** The dates of a text (readDatesOf), read once per check for each text and set of dates of birth (viewsOfCheck). */
+function datesOf(normal: string, subject: Subject): DatesOf {
+  if (datesOfCheck === null) {
+    return readDatesOf(normal, subject);
+  }
+  const key = JSON.stringify(subject.datesOfBirth);
+  const known = datesOfCheck.find((each) => each.key === key && each.normal === normal);
+  if (known !== undefined) {
+    return known.dates;
+  }
+  const dates = readDatesOf(normal, subject);
+  datesOfCheck.push({ normal, key, dates });
+  return dates;
+}
+
+/** As viewsOfCheck, for datesOf: the check reads the dates of its two masked texts, which are one text when no name was redacted. */
+let datesOfCheck: { readonly normal: string; readonly key: string; readonly dates: DatesOf }[] | null = null;
+
+function readDatesOf(normal: string, subject: Subject): DatesOf {
   const births: Range[] = [];
   const otherDates: Range[] = [];
   const asRead: Range[] = [];
@@ -2132,13 +2177,20 @@ const masked = (text: string, claims = 0, name = BARRIER) =>
  * docs/adr/0054, amendment of 2026-11-04, R7).
  */
 export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
-  const scanned = masked(text, claims.length);
-  const subject = letterSubject(patient, claims);
-  if (matchesIn(scanned, subject).length > 0) {
-    return true;
+  viewsOfCheck = [];
+  datesOfCheck = [];
+  try {
+    const scanned = masked(text, claims.length);
+    const subject = letterSubject(patient, claims);
+    if (matchesIn(scanned, subject).length > 0) {
+      return true;
+    }
+    const survivor = survivorLeft(scanned);
+    return survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held');
+  } finally {
+    viewsOfCheck = null;
+    datesOfCheck = null;
   }
-  const survivor = survivorLeft(scanned);
-  return survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held');
 }
 
 /** The patient's name placeholder as the glued check reads it (ownIdentifierGlued): no letter, digit or joiner, kept by the fold. */
@@ -2164,8 +2216,9 @@ const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`
  *   word too: "2020-01-02AUGU ST"); none inside another date ("12May2020"); a part of two or three letters or a month's
  *   word is sent as at cc3dd7f6 ("Remark: MA04", "97110XU", "45min", "June1", "Seen 0.00-$20Al");
  * - letters between a digit and the name's placeholder, only invisible characters between: a part the placeholder cut; and
- *   a part's head glued to a digit before the placeholder past up to three other characters, where redaction read the rest
- *   of a part written with a space inside as a shorter part ("150.00DANIEL [PATIENT_NAME]" for DANIELLE LE);
+ *   a part's head glued to a digit before the placeholder past up to three spaces or joiners, where redaction read the rest
+ *   of a part written with a space inside as a shorter part, the rest a part or an initial ("150.00DANIEL [PATIENT_NAME]"
+ *   for DANIELLE LE; never an ordinal's or a time's letters before the whole name, "10th, [PATIENT_NAME]" for THOMAS);
  * - an initial of the name, a letter alone with a digit right before it, past up to three other characters before the
  *   name's placeholder (or a number's that a part of the name is written as), a whole part or another such initial
  *   ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"); never before another placeholder or a word that only begins like a
@@ -2199,8 +2252,8 @@ const MASKED_SSN_GLUED = /\p{L}\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_
 /** A modifier letter (\p{Lm}): no letter of a name or number for heldOwnIdentifier's stream. */
 const MODIFIER_LETTER = /^\p{Lm}$/u;
 
-/** A birth label on the folded view (heldOwnIdentifier). */
-const HELD_BIRTH_LABEL = /(?<![\p{L}\p{N}])(?:D\.?\s?O\.?\s?B|DATE\s+OF\s+BIRTH|BIRTH\s*DATE|BORN|BIRTHDAY)(?!\p{L})/gu;
+/** A birth label on the folded view (heldOwnIdentifier), "D/O/B" too (PHIJ2-2). */
+const HELD_BIRTH_LABEL = /(?<![\p{L}\p{N}])(?:D[./]?\s?O[./]?\s?B|DATE\s+OF\s+BIRTH|BIRTH\s*DATE|BORN|BIRTHDAY)(?!\p{L})/gu;
 
 /** After a birth label, a date redaction did not read: no placeholder first, and a digit or a month's word before any placeholder. */
 const UNREAD_BIRTH = new RegExp(`^[\\s:#=.*\\p{Pd}\\u2212]*(?:(?:ON|IS)\\s+)?[^${BARRIER}${NAME_MARK}]*?(?:[0-9]|(?<!\\p{L})${MONTH_WORD.toUpperCase()})`, 'u');
@@ -2215,8 +2268,11 @@ const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0
  * 123456780.00" for claim 12345678, "Seen 03-15-61" for member 031561), a part of the name of four letters or more ("Z E
  * P H Y R A", "jo ann"), a name's initials of three parts or more in order ("JQZ", "J.Q.Z."), or a date of birth's eight
  * digits in any order a date is written ("03⏎14⏎1980", "0 3 / 0 3 / 1 9 6 1"), not inside a longer run of digits; or the
- * date of birth's month word and its year stand within 24 characters of each other ("1961 March 3", "MARCH THIRD 1961").
- * No six-digit form of a date of birth is read: random digits of a letter's ICNs, TINs and amounts would hold one by chance.
+ * date of birth's month word and its year stand within 24 characters of each other ("1961 March 3", "MARCH THIRD 1961");
+ * or a part of two or three letters written letter by letter ("A L"), or the date of birth year first with a two-digit
+ * year, as a date or six digits on their own ("80-03-14", "800314"), forms redaction reads after a birth label (the
+ * judge's review round 2). No six-digit form is read blind to separators: random digits of a letter's ICNs, TINs and
+ * amounts would hold one by chance.
  */
 function heldOwnIdentifier(normal: string, subject: Subject): boolean {
   const view = viewOf(normal, 'drop', true);
@@ -2241,6 +2297,14 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
     if ((parts.length >= 3 && stream.includes(parts.map((part) => [...part][0] ?? '').join(''))) || parts.some((part) => [...part].length >= 4 && stream.includes(part))) {
       return true;
     }
+    // A part of two or three letters written letter by letter, each letter alone ("150.00A L Paid" for AL, "T Y" for TY: the
+    // judge's review round 2, GATEWAYJ2-3), which no form reads (a space splits a part only two letters or more from each end).
+    for (const part of parts) {
+      const letters = [...part];
+      if (letters.length >= 2 && letters.length <= 3 && new RegExp(`(?<!\\p{L})${letters.map(escapeRegExp).join(`[${NAME_JOINERS}\\s.]{1,3}`)}(?!\\p{L})`, 'u').test(view.text)) {
+        return true;
+      }
+    }
   }
   const digit = (index: number) => /^[0-9]$/u.test(view.text[index] ?? '');
   // A birth label whose date redaction did not read: what follows it, before any placeholder, holds a digit or a month's
@@ -2259,6 +2323,13 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
       continue;
     }
     const [, year = '', month = '', day = ''] = match;
+    // Its two-digit year first, written as a date ("80-03-14", "75/11/02", "80 3 14") or compact on its own ("800314"): a
+    // form redaction reads after a birth label as the date it introduces (PHIJ2-2), the same separator twice, not inside a
+    // longer number or an amount.
+    const loose = (padded: string) => (padded.startsWith('0') ? `0?${padded.slice(1)}` : padded);
+    if (new RegExp(`(?<![0-9]|[0-9][.,])(?:${year.slice(2)}(?<gap>[\\s./\\p{Pd}\\u2212]{1,3})${loose(month)}\\k<gap>${loose(day)}|${year.slice(2)}${month}${day})(?![0-9]|[.,][0-9])`, 'u').test(view.text)) {
+      return true;
+    }
     for (const form of new Set([`${year}${month}${day}`, `${month}${day}${year}`, `${day}${month}${year}`])) {
       for (let found = stream.indexOf(form); found !== -1; found = stream.indexOf(form, found + 1)) {
         const first = at[found] ?? 0;
@@ -2270,13 +2341,15 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
         }
       }
     }
+    // Both lists in the order the text writes them, walked together once (the judge's review round 2, PHIJ2-4: a letter of
+    // month words and years far apart was read in time quadratic in its length).
     const months = new RegExp(`(?<!\\p{L})(?:${monthWords(Number.parseInt(month, 10)).toUpperCase()})`, 'gu');
     const words = [...view.text.matchAll(months)].map((word) => word.index);
-    if (words.length > 0) {
-      for (const written of view.text.matchAll(yearAlone(year))) {
-        if (words.some((word) => Math.abs(word - written.index) <= 24)) {
-          return true;
-        }
+    let next = 0;
+    for (const written of words.length > 0 ? view.text.matchAll(yearAlone(year)) : []) {
+      while (next < words.length && (words[next] ?? 0) < written.index - 24) next += 1;
+      if (next < words.length && (words[next] ?? 0) <= written.index + 24) {
+        return true;
       }
     }
   }
@@ -2388,6 +2461,9 @@ function birthGlued(normal: string, subject: Subject, inOtherDate: (range: Range
 /** A part of a name that is a month's word: glued to a digit, as often a date's month as the name ("June1", "12thMay"). */
 const MONTH_PART = new RegExp(`^${MONTH_WORD}$`, 'iu');
 
+/** A space or joiner, one to three, then the name's placeholder: a part written with a space inside after its head (nameGlued). */
+const SPACE_TO_NAME = new RegExp(`^[${NAME_JOINERS}\\s.]{1,3}${NAME_MARK}`, 'u');
+
 /** What may stand between a name's fragment and the name's placeholder before it (nameGlued): INITIAL_TO_NAME read backwards. */
 const NAME_TO_FRAGMENT = new RegExp(`[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}$`, 'u');
 
@@ -2437,12 +2513,16 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
     }
     // A part's head before the name's placeholder, where redaction read the rest of a part written with a space inside as a
     // shorter part ("150.00DANIEL [PATIENT_NAME]" for DANIELLE LE, "OR [PATIENT_NAME]" for ORLA LA): glued to a digit on its
-    // other side, the head of a part of four letters or more, the run no month's word; with a held chain, any run glued so
-    // on either side of the placeholder, or the head or tail of any part. A tail after the placeholder glued to a digit is
-    // sent elsewhere, as at cc3dd7f6: there it is as often a code after the name ("[PATIENT_NAME] CY2026" for NANCY).
+    // other side, the head of a part of four letters or more whose rest is a part of the name or an initial, the run no
+    // month's word, only a space or a joiner between it and the placeholder (the part written with a space inside); an
+    // ordinal's or a time's letters before the whole name read as the name are no head ("March 10th, [PATIENT_NAME]" for
+    // THOMAS, "at 9am [PATIENT_NAME]" for AMANDA: the judge's review round 2, GATEWAYJ2-2). With a held chain, any run glued
+    // so on either side of the placeholder, or the head or tail of any part. A tail after the placeholder glued to a digit
+    // is sent elsewhere, as at cc3dd7f6: there it is as often a code after the name ("[PATIENT_NAME] CY2026" for NANCY).
     const head = (part: string) => part.length > run.length && run.length >= 2 && part.startsWith(run);
     const tail = (part: string) => part.length > run.length && run.length >= 2 && part.endsWith(run);
-    if (held ? (nameAfter && (digitBefore || parts.some(head))) || (nameBefore && (digitAfter || parts.some(tail))) : nameAfter && digitBefore && !MONTH_PART.test(run) && longParts.some(head)) {
+    const restRead = (part: string) => head(part) && (parts.includes(part.slice(run.length)) || initials.has(part.slice(run.length)));
+    if (held ? (nameAfter && (digitBefore || parts.some(head))) || (nameBefore && (digitAfter || parts.some(tail))) : digitBefore && SPACE_TO_NAME.test(text.slice(end, end + 4)) && !MONTH_PART.test(run) && longParts.some(restRead)) {
       return true;
     }
     if (!glued && !held) {
