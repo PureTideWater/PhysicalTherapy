@@ -270,7 +270,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
         ? `${row} has a value that is not in the screening’s format; correct it, or leave the row out`
         : `${row} has a value in the ${FIELD_NAMES[reason.field]} column that is not in the screening’s format; correct it, or leave the row out`;
     case 'band_holds_date':
-      return `${row}’s ${reason.column === undefined ? 'service band column' : column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1`;
+      return `${row}’s ${reason.column === undefined ? 'service band column' : column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again`;
     case 'band_in_future':
       return `${row}’s service band is a quarter that has not started yet; leave it out`;
     case 'band_outside_content':
@@ -291,7 +291,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
       return reason.row === undefined
-        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care`
+        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least ${floor}`
         : `${row} sums fewer than ${floor} claim lines; a screening takes rows of at least ${floor}, because fewer can describe one patient’s care, so leave it out`;
     }
   }

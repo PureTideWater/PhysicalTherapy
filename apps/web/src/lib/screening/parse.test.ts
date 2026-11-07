@@ -241,11 +241,11 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient�
   it('sends nothing when every row is left out, and says what it left out', async () => {
     // The reason is given once, in the left-out line.
     expect(await messages(csv(HEADER, '97110,GP,1,11,medicare_ffs,2026-Q1,45.00,1', '97140,GP,1,11,ma_noncontracted,2026-Q2,"1,234.56",10'))).toEqual([
-      'Every row sums fewer than 11 claim lines, so nothing is left to screen.',
+      'Every row sums fewer than 11 claim lines, so nothing is left to screen. Choose a file with rows of at least 11 claim lines.',
       'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,279.56 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care.',
     ]);
     expect(await messages(csv(HEADER, '97110,GP,1,11,medicare_ffs,2026-Q1,45.00,1'))).toEqual([
-      'Every row sums fewer than 11 claim lines, so nothing is left to screen.',
+      'Every row sums fewer than 11 claim lines, so nothing is left to screen. Choose a file with rows of at least 11 claim lines.',
       'Left out: 1 row of fewer than 11 claim lines, 1 claim line and $45.00 allowed in your file. It is not sent, and no figure includes it: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care.',
     ]);
     expect(reasonMessage({ code: 'too_few_claim_lines', row: 3, field: 'claim_count' })).toBe(

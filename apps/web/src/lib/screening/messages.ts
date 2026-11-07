@@ -114,7 +114,7 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
     case 'too_few_claim_lines':
       return reason.row === undefined
         ? // The left-out line that follows it gives the reason, once.
-          `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen.`
+          `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen. Choose a file with rows of at least ${String(SCREENING_MIN_CLAIM_LINES)} claim lines.`
         : `${rowName(reason.row)} sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines: ${CLAIM_FLOOR_REASON}. Leave the row out.`;
   }
 }

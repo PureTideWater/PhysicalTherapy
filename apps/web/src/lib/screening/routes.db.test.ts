@@ -261,8 +261,8 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     expect(words({ code: 'invalid_value', row: 3, field: 'units' })).toBe('row 3 has a value in the units column that is not in the screening’s format; correct it, or leave the row out');
     expect(words({ code: 'invalid_value', row: 3 })).toBe('row 3 has a value that is not in the screening’s format; correct it, or leave the row out');
     expect(words({ code: 'invalid_value' })).toBe('a row has a value that is not in the screening’s format; correct it, or leave the row out');
-    expect(words({ code: 'band_holds_date', row: 2, column: 6 })).toBe('row 2’s column 6 holds dates of service; a screening takes a calendar quarter, such as 2026-Q1');
-    expect(words({ code: 'band_holds_date', row: 2 })).toBe('row 2’s service band column holds dates of service; a screening takes a calendar quarter, such as 2026-Q1');
+    expect(words({ code: 'band_holds_date', row: 2, column: 6 })).toBe('row 2’s column 6 holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again');
+    expect(words({ code: 'band_holds_date', row: 2 })).toBe('row 2’s service band column holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again');
     expect(words({ code: 'band_in_future', row: 1 })).toBe('row 1’s service band is a quarter that has not started yet; leave it out');
     expect(words({ code: 'band_outside_content' })).toBe(
       'every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter',
@@ -276,7 +276,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     expect(words({ code: 'row_count_mismatch' })).toBe('the rows sent do not match the file; choose the file again');
     expect(words({ code: 'too_few_claim_lines', row: 1_234 })).toBe('row 1,234 sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out');
     expect(words({ code: 'too_few_claim_lines' })).toBe(
-      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care',
+      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least 11',
     );
   });
 });
