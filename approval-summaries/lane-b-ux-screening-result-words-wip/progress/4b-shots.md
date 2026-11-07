@@ -1,0 +1,48 @@
+# 4b shots progress (PR #131)
+- 2026-11-07 run 1 started. Nothing taken yet.
+- Step 0 done: context read (README, archived spec+harness, PR body, 4b plan/build/check, p4-finish-shots precedent). PG 5433 up, lock free, port 3297 free, /home/user/screens clean (at a4efd583).
+- Decisions: setup via own setup-local.sh (no fetch into /home/user/PhysicalTherapy; /home/user/screens already exists, checkout --detach only). TOUR_SKIP_POPULATE=1 (screening needs no populate; p4 precedent). My spec does its OWN two live sends (one-anomaly = tour clean(); no-anomaly = clean() less 97140 ma_noncontracted), because the tour converts its result (screening-result.converted) before my spec runs.
+- Step 1a: copied archived spec + harness + tsconfig.harness.json to scratchpad/4b-capture/.
+- Step 2 done: 4b-capture/ holds screening-result-harness.mts (+ "others" = LATER_GROUPS on LATER_PAGE; fixtures identical at base and head), pr131-screening-words-capture.spec.ts (3 tests: two own sends; live shots; harness shots), setup-local.sh, side.sh, run-both.sh, tsconfig.harness.json. Harness dry-run on head worktree OK (several 5 groups, one-other 51 groups p1/2, others 20,507 p2/411); spec lists 3 tests.
+- Step 3: run-both.sh launched in background (before, then after). Each side appends "[side time]" lines below.
+- [before 01:36:18] setup start (ref 31a7345fe07f0f8e5eb03084ad644db79f5c219a)
+- [before 01:36:21] setup done (ready at 31a7345fe07f0f8e5eb03084ad644db79f5c219a); build-only queued on the lock
+- [before 01:37:40] build: lock acquired for build at 01:36:21 / build done; lock released at 01:37:40 (serve it with reserve.sh)
+- [before 01:38:10] server ready (lock acquired for re-serve at 01:37:40)
+- [before 01:38:11] harness exit 0: {"several":{"bytes":75322,"groups":5,"pageOf":"1 of 1","others":0},"one-other":{"bytes":257730,"groups":51,"pageOf":"1 of 2","others":1},"others":{"bytes":80257,"groups":20507,"pageOf":"2 of 411","others":20457}}
+- [before 01:39:48] pr131 spec exit 0:  3 passed (1.6m);
+- [manual 01:41] FOUND: the before spec's one-anomaly link answered 404: submit_screening replaces an earlier screening of the same practice name+ZIP or email, so my second send (no-anomaly, same name) replaced the first. Only no-anomaly.1280/.390 were taken; every other pr131 id skipped. FIX: sends use distinct practice names (SYNTHETIC SCREENING CLINIC A for one anomaly, B for no anomaly). Killed run-both.sh and side.sh (not the server nor the tour's run.sh); the before server and tour keep running. Next: finish-before.sh (wait for the tour, re-run the fixed spec on the same server, stop, checks, cleanup, tile), then side.sh after.
+- [before 01:41:11] tour run.sh ended: capture exit 0 at 01:40:53; 01:40:53 DONE 34 shots taken this run; shots.json holds 36 shots and 28 skipped
+- [before 01:42:04] pr131 spec (fixed) exit 0:  3 passed (52.6s);
+- [before 01:42:08] serve ended: server stopped at 01:42:05
+- [before 01:42:08] port 3297 free
+- [before 01:42:08] tp_e2e_screens count after drop: 0; tmp dirs left: 0
+- [before 01:42:16] tiled: 56 shots tiled into 397 tiles
+- [before 01:42:16] SIDE DONE
+- [after 01:42:16] setup start (ref c2725961d720ac437bf61a1686e22a5b6124eaf1)
+- [after 01:42:22] setup done (ready at c2725961d720ac437bf61a1686e22a5b6124eaf1); build-only queued on the lock
+- [manual 01:43] before side DONE (tour 34 shots + pr131 fixed spec 24 shots; 56 tiled into 397 tiles). Skipped on before: screening-result.chip-below-2x.1280 (the live result has no group below by $5 or less) and screening-result.anomalies-description-2x.1280 (same step, so skipped after it). Spec edited (each 2x shot its own step; a clear reason for the missing below chip; PR131_ONLY filter for a retake). After side running with the edited spec. TODO after it: a before retake of anomalies-description-2x.1280 (rebuild 31a7345f, PR131_ONLY).
+- [after 01:42:47] build: lock acquired for build at 01:42:30 / build done; lock released at 01:42:47 (serve it with reserve.sh)
+- [after 01:43:20] server ready (lock acquired for re-serve at 01:42:49)
+- [after 01:43:21] harness exit 0: {"several":{"bytes":76435,"groups":5,"pageOf":"1 of 1","others":0},"one-other":{"bytes":263442,"groups":51,"pageOf":"1 of 2","others":1},"others":{"bytes":81397,"groups":20507,"pageOf":"2 of 411","others":20457}}
+- [after 01:44:17] pr131 spec exit 0:  3 passed (55.7s);
+- [after 01:45:22] tour run.sh exit 0: 01:45:22 DONE 34 shots taken this run; shots.json holds 57 shots and 7 skipped
+- [after 01:45:24] serve ended: server stopped at 01:45:24
+- [after 01:45:24] port 3297 free
+- [after 01:45:24] tp_e2e_screens count after drop: 0; tmp dirs left: 0
+- [after 01:45:32] tiled: 57 shots tiled into 401 tiles
+- [after 01:45:32] SIDE DONE
+- [manual 01:46] after side DONE: 57 shots, 7 skipped (loading-reading x2, closed x2, pager x2 = the tour's not-reached; chip-below-2x.1280 = no below group on the live result), 401 tiles. Next: before retake (rebuild 31a7345f; PR131_ONLY=anomalies-description-2x.1280,chip-below-2x.1280) via 4b-capture/retake-before.sh.
+- [before-retake 01:45:55] setup start (ref 31a7345fe07f0f8e5eb03084ad644db79f5c219a)
+- [before-retake 01:46:14] build: lock acquired for build at 01:45:57 / build done; lock released at 01:46:14 (serve it with reserve.sh)
+- [before-retake 01:46:44] server ready (lock acquired for re-serve at 01:46:14)
+- [before-retake 01:46:56] pr131 spec retake exit 0:  3 passed (11.4s);
+- [before-retake 01:46:58] serve ended: server stopped at 01:46:58
+- [before-retake 01:46:58] port 3297 free
+- [before-retake 01:46:59] tp_e2e_screens count after drop: 0; tmp dirs left: 0
+- [before-retake 01:47:06] tiled: 57 shots tiled into 398 tiles
+- [before-retake 01:47:06] RETAKE DONE
+- [manual 01:50] before retake DONE (anomalies-description-2x.1280 taken; chip-below-2x.1280 skipped with its clear reason). Both sides: 57 shots, same ids; 7 skipped each (6 tour not-reached + chip-below-2x). Tiles: before 398, after 401.
+- Final checks: lock free, port 3297 free, databases postgres/template0/template1 only, /tmp/tp-e2e-tp_e2e_screens-* none, /home/user/screens clean (left at 31a7345f), PR worktree and /home/user/PhysicalTherapy clean; nothing committed or pushed.
+- NOTE: the PR branch moved to 03ec41f5 during the run (another session; comment and test-title only, "#121" -> "PR 121"); after shots are of c2725961 and render the same.
+- Step 4 DONE: 4b-shots-index.md written (4b-capture/write-index.py). Dark shots checked by mean brightness (27-29 vs 246 light). ALL STEPS DONE.

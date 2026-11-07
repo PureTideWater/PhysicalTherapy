@@ -39,23 +39,41 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
   - e2e screening and screening-phone: 3 of 3.
   - synth and watched-paths unchanged. 0 tags.
 - **Decision, P5 in the re-pin (2026-11-07):** taken. Lane A's rule is general (re-pin while no release tag contains the version), and its reasons hold for the four figure labels as for §11.3's three. The VERSIONS comment names all seven changes. **CONFIRMED by the orchestrator, acting Lane A, 2026-11-07 01:31 UTC** (same reasons: the rule is general, 0 tags, no migration, the comment names all seven). Its conditions: re-check `git ls-remote --tags origin` is empty right before the merge; the one UX and brand review covers the four new strings, and the verification greps every place the old strings could appear (exports, packets, help text, tests) for a leftover "Expected under Medicare"; record the ruling in #131's description (next update) and here. 86a85511 stays as is.
-- **Running:** wf_5e44d8cf-109 (from 01:40 UTC; script archived):
-  - before and after shots: base 31a7345f, head c2725961;
-  - the one UX and brand review (words and tones lens, plus Lane A's conditions and the description's calls), each finding put to three skeptics;
-  - the fix round;
-  - the full local suite once.
-  - Safety check-in trig_01FxaPbwBtsYBNbRQHn41pQs at 05:44 UTC.
+- **CI events:**
+  - c2725961: unit red on tools/brand-colors. "#121", written in comments, read as a hex colour; this PR's; fixed in 03ec41f5.
+  - 03ec41f5: unit red once on MOD-16, the known base defect in model-gateway (seed 383403599). S1 is fixing it on co-001/redact-range-glued. One comment posted on #131; the re-run passed, and every check went green.
+- **Review and fix round** (wf_5e44d8cf-109, 01:40-03:00 UTC):
+  - The review step was switched from the custom agentType to a default agent applying the checklist (the orchestrator's lesson) and resumed after the shots.
+  - Shots: 57 ids, before and after.
+  - The one UX and brand review: "pass with fixes".
+  - 3 findings, all confirmed:
+    - 4B-UX-01: the description's P5 paragraph;
+    - 4B-UX-02: ADR 0062's amendment says who ruled on what and when;
+    - 4B-UX-03: a one-group result states no order (the review overruled the build's call).
+  - Calls confirmed: the line labels, the descriptions' mono $5, TBL-08.
+  - Fixes: e01d96bc, 9e577017.
+- **Full local suite on 9e577017:** all pass.
+  - unit: 479 files, 9,950 passed, 4 skipped;
+  - db: 149 files (equal to the list), 9,863 passed;
+  - e2e: 81 of 81;
+  - golden 381, oracle 689, stryker none.
+  - Table: `approval-summaries/lane-b-ux-screening-result-words-suite.md`; shots index `…-shots.md`.
+- **Pushed 9e577017** (03:05 UTC; base 31a7345f unchanged, 0 tags).
+- **Running:** wf_a6153b93-653, started 03:05 UTC:
+  - the description (suite, CI, rulings; claim-checked; read back);
+  - the fresh-clone verification reading CI on 9e577017, including acting Lane A's grep for leftover old strings.
 - **Next:**
-  1. one push;
-  2. the description (the reviewer table, the suite, the calls' rulings);
-  3. the fresh-clone verification;
-  4. git ls-remote --tags (condition 2);
-  5. merge under 2a.
+  1. git ls-remote --tags (condition 2);
+  2. the up-to-date check (2a);
+  3. mark ready;
+  4. approval-of-record's re-run;
+  5. merge.
 
 ## Waiting on someone
 - Nothing.
 
 ## Log
+- 2026-11-07 03:05 UTC: review passed with fixes (3 confirmed, fixed); full suite green on 9e577017; pushed; describe-and-verify workflow started.
 - 2026-11-07 02:05 UTC: CI unit red on c2725961: tools/brand-colors read "#121" (a PR number in three comments) as a hex colour; this PR's. Fixed as 03ec41f5 ("PR 121"), brand-colors and the 7 screening unit files (93 tests) green; pushed. The review step was switched from a custom agentType to a default agent applying .claude/agents/ux-brand-reviewer.md (the orchestrator's standing lesson, 01:33 UTC); wf_5e44d8cf-109 stopped after its shots (57 ids, both sides) and resumed from the edited script (archived).
 - 2026-11-07 01:31 UTC: acting Lane A confirmed P5 in the re-pin (conditions recorded under Current state).
 - 2026-11-07 01:40 UTC: build done; pushed c2725961; draft PR #131; subscribed; review-and-fix workflow wf_5e44d8cf-109 started.
