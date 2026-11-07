@@ -10,6 +10,8 @@ module). No migration timestamp and no fixture release are reserved; this item o
 written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcile.md`.
 
 ## Now
+**2026-11-07 17:02 UTC:** build running (wf_f2526ebe-769). Committed, each skeptic-verified (WIP copy `co-001/wip-suite-cap-3-build`): slice 1 c9c93ca7, slice 2 b39bf9ae, slice 3 c8b99fc6 (D1, D2, D16, D11; **D16's array-form gate PASSED, no fallback**: at F 30,795 lines the search totals 5.55 s against the candidate's 4.84 s, heap 276 MiB, counts and decrypts equal), slice 4 9d0c8192 (D5-D7, D15's EXCEPT form), slice 5 ca9436ba (CAS-49.4, CAS-50, CAS-51, ADR 0087). Slice 5a (D14: CAS-42.3 budget, release-capacity F at 10,000, Known gap words, ci.md) uncommitted in the worktree. Next check-in ~22:10 UTC.
+
 **2026-11-07 11:51 UTC:** build running (wf_f2526ebe-769). Slice 1 committed c9c93ca7 (per-line reference, CAS-49 harness, import guard; verifier found 7 issues, all fixed; CAS-49 put in SLOW_FIRST, its CI time still to measure); slice 2 committed b39bf9ae (D3: one ordered stage insert with the 40P01 savepoint retry; CAS-49.3, CAS-49.6; retry mutants covered). WIP copy `co-001/wip-suite-cap-3-build`. Slice 3 (D1, D2, D16, D11 and the D16 gate) in progress. Next check-in 2026-11-07 ~17:00 UTC.
 
 **2026-11-07 06:40 UTC:** the 5-hour limit (reset 05:30 UTC) stopped the build in slice 1's builder; the machine restarted and /root had become mode 700, so both shared PostgreSQL clusters were down (chmod 755 /root, setup re-run: OK). Slice 1's uncommitted work (per-line.ts reference, the import guard green, CAS-49's harness files, 17 of 25 runs green before a world-build fix) snapshotted as WIP ref `co-001/wip-suite-cap-3-build-s1` = a3e77a72. Build resumed from wf_f2526ebe-769 with a RESUMED note (the script now stops cleanly when an agent is lost). Check-in 11:49 UTC (trig_01ReBFnaRk4C4wYbvpVdC9bN).
@@ -132,6 +134,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-07 17:02 UTC: slices 3-5 committed (c8b99fc6, 9d0c8192, ca9436ba); D16 gate passed; slice 5a building.
 - 2026-11-07 11:51 UTC: slices 1 and 2 committed (c9c93ca7, b39bf9ae); slice 3 building.
 - 2026-11-07 06:50 UTC: orchestrator: 7-day limit at warning again (resets 2026-11-13 19:00 UTC); take this item to its merge with no stage skipped but nothing spent that does not change the outcome (no repeated suites on an unchanged head, no review loops past dry, no follow-on); keep WIP refs and this file current.
 - 2026-11-07 06:40 UTC: build stopped by the limit in slice 1; WIP snapshot a3e77a72; PG fixed; resumed.
