@@ -141,6 +141,12 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   Also checked (orchestrator's 01:33Z lesson): wf_5ac1f379-e54's three ux-brand-reviewer rounds each returned a real result
   with shots (UXS-R1-01; then none, at r2 and r3), so no review round of this item is empty.
 
+- 2026-11-07T06:41Z: still waiting on `co-001/redact-range-glued` (not merged; its session hit the 5-hour limit ~04:45). The base moved
+  to 8a722f80 (#131): merged once, after the fix lands. #129 unchanged at f4fef908 (WIP s5 = f4fef908). Setup re-run after
+  the restart; PG16 needed its stale postmaster.pid removed (its PID was reused by PG18). Check-in 08:37Z is the third: if
+  no change, check-ins stop and a message brings this session back. Orchestrator 06:50Z: spend nothing that does not change
+  the outcome; no follow-on after the merge.
+
 ## Waiting on someone
 - `co-001/redact-range-glued` to merge (the base's MOD-16 flake reds every unit run of #129).
 
