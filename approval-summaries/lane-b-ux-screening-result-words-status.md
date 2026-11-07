@@ -38,7 +38,7 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
   - Unit: 140 files, 1,992 tests. db (screening): 4 files, 59 tests.
   - e2e screening and screening-phone: 3 of 3.
   - synth and watched-paths unchanged. 0 tags.
-- **Decision, P5 in the re-pin (2026-11-07):** taken. Lane A's rule is general (re-pin while no release tag contains the version), and its reasons hold for the four figure labels as for §11.3's three. The VERSIONS comment names all seven changes. Confirmation asked of the orchestrator (acting Lane A); if it declines, 86a85511 reverts alone.
+- **Decision, P5 in the re-pin (2026-11-07):** taken. Lane A's rule is general (re-pin while no release tag contains the version), and its reasons hold for the four figure labels as for §11.3's three. The VERSIONS comment names all seven changes. **CONFIRMED by the orchestrator, acting Lane A, 2026-11-07 01:31 UTC** (same reasons: the rule is general, 0 tags, no migration, the comment names all seven). Its conditions: re-check `git ls-remote --tags origin` is empty right before the merge; the one UX and brand review covers the four new strings, and the verification greps every place the old strings could appear (exports, packets, help text, tests) for a leftover "Expected under Medicare"; record the ruling in #131's description (next update) and here. 86a85511 stays as is.
 - **Running:** wf_5e44d8cf-109 (from 01:40 UTC; script archived):
   - before and after shots: base 31a7345f, head c2725961;
   - the one UX and brand review (words and tones lens, plus Lane A's conditions and the description's calls), each finding put to three skeptics;
@@ -56,6 +56,7 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
 - Nothing.
 
 ## Log
+- 2026-11-07 01:31 UTC: acting Lane A confirmed P5 in the re-pin (conditions recorded under Current state).
 - 2026-11-07 01:40 UTC: build done; pushed c2725961; draft PR #131; subscribed; review-and-fix workflow wf_5e44d8cf-109 started.
 - 2026-11-07 00:35 UTC: the worker restarted after the status push; worktree intact; PostgreSQL restored; build workflow wf_efec3b83-f5b started.
 - 2026-11-06 22:57 UTC: the orchestrator's GO (S5). 23:00: branch cut at 31a7345f; 0 release tags.
