@@ -816,3 +816,18 @@ Low to moderate. Small.
 
 **Approval cycles:** this grouping uses 10 founder approval cycles for about 22 queued items, against about 18 if each shipped alone. The batches that save the most: D11 on its first carrier; the words version and words_changed on PR 3; F4 on PR 4; the ledger items on PR 5; A6 and SEC-N5 on PR 6; #32 and SS-08 on PR 7.
 
+
+## Orchestrator rulings on this plan (2026-11-07 02:20 UTC; the co-founder: decide without asking)
+- (a) **Skip-ahead: yes.** One schema PR open at a time; when the next PR's gate is unmet, the next ready one opens. Each skip
+  is recorded here and in the PR description (which, why, the gate).
+- (b) **Queue both (security and privacy: the safer option).** SEC-N5 in PR 6, conditional as planned (only if staging
+  shows Cognito's auth_time records the sign-in's start for a challenge answered after the reset; otherwise left out with
+  the reason). provider_adjustment.reference in PR 8 with #120's F3 (ADR 0027 calls it PHI; it is stored in plain text).
+- (c) **PR 5's combined freeze ask: written now** and relayed to the founder early.
+- (d) **D11's deploy fact** is the founder's statement; asked through the co-founder. Until it is stated, D11 does not ride
+  PR 1; it rides the first non-ledger carrier after the fact is stated.
+- (e) **#38 section 2.2's heading governs only the stored worksheet;** the words version is recommended to Lane A, not
+  founder-gated, and stays in PR 3.
+
+## Skips taken
+- None yet.

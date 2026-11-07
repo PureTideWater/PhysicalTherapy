@@ -10,6 +10,13 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 02:25 UTC: the orchestrator's rulings on the plan** (recorded in the plan): skip-ahead yes; SEC-N5 (PR 6,
+  conditional) and provider_adjustment.reference (PR 8) queued; PR 5's combined freeze ask written now; D11 waits on the
+  founder's deploy fact; #38's words version stays in PR 3 (not founder-gated).
+  **For LANES.md "Handed to Lane A" (the orchestrator records them):** (1) SEC-N5: a reset ends any sign-in step begun
+  before it, if staging shows Cognito's auth_time records the sign-in's start for a challenge answered after the reset
+  (schema PR 6, conditional); (2) provider_adjustment.reference is PHI (ADR 0027) stored in plain text: a keyed hash,
+  encrypted storage and a definer screen, as #120's F3 (schema PR 8).
 - **2026-11-07 02:10 UTC (acting Lane A): the schema queue's batching plan** (wf_255f9403-721, read-only; critic and skeptic,
   three revisions): `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` (+ `.json`). 10 schema PRs for ~22 items:
   (1) password-changed-notice (+ SS-01 D11's REVOKE only on the founder's deploy fact); (2) the granted SUITE-CAP-3 ledger
