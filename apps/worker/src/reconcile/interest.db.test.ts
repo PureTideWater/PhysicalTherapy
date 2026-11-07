@@ -3,12 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { Practice } from '../price/test-support/pricing-world';
+import { attemptErrorCode } from '../worker';
 import { type InterestReading, adjustmentMoment, interestAttribution, reportedInterest } from './interest-chains';
 import type { Scope } from './ledger';
 import { adjustEntry, matchClaimByHand, reverseMatch } from './manual';
+import { reconcilePractice } from './pass';
+import { InterestUnsettled, interestWalkLimit } from './remittances';
 import { LedgerWorld, ledSettings } from './test-support/ledger-world';
 
 /**
@@ -747,6 +750,96 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
       await replayed(practice);
     },
   );
+
+  /** One reconcile of the practice, after which its interest written is never above the cash its PLB L6s paid, net. */
+  async function reconciledWithinCash(practice: Practice): Promise<number> {
+    const summary = await w.reconcile(practice);
+    const [interest, cash] = await interestAndCash(practice);
+    expect(interest).toBeLessThanOrEqual(cash as bigint);
+    return summary.remittances.interestWalks;
+  }
+
+  it.each([
+    ['before one reconcile', [['cent-paid.835', 'netted-first.835', 'netted-second.835', 'paid-after-both.835']]],
+    ['in date order, each reconciled', [['cent-paid.835'], ['netted-first.835'], ['netted-second.835'], ['paid-after-both.835']]],
+  ])(
+    'never credits interest above the cash after any reconcile when two PLB L6s take back C’s interest and a check dated after both pays the rest, uploaded %s: the reconcile walks the PLB L6s again until a walk writes nothing (cent-paid.835, netted-first.835, netted-second.835, paid-after-both.835; PR 126, the per-reconcile bound)',
+    async (_, each) => {
+      const { practice, lines } = await opened('LED-24', 'out-of-order-original.835');
+      const [l1, l2, other] = lines as [Line, Line, Line];
+      const walks: number[] = [];
+      for (const files of each) {
+        for (const file of files) {
+          await w.load(practice, `LED-24/${file}`);
+        }
+        walks.push(await reconciledWithinCash(practice));
+      }
+      // The reconciles after the last upload, as the daily schedule runs them: each within the cash, and nothing more written.
+      const settled = await w.entries(practice);
+      walks.push(await reconciledWithinCash(practice), await reconciledWithinCash(practice));
+      expect(await w.entries(practice)).toEqual(settled);
+      // cent-paid.835's 0.01 lands on line 2 alone, and netted-first.835 (dated before netted-second.835, so walked first)
+      // takes it back there and still owes 2.99, so it keeps C's payments off line 2. In the reconcile that reads
+      // paid-after-both.835, netted-second.835 counts its 7.50 for line 2 as interest no line can take, less those 2.99,
+      // so it is whole and its 6.00 is written (uploaded in date order, netted-first.835 counts it too, less the 4.40
+      // netted-second.835 owes), and paid-after-both.835's 6.00 for line 1 lands there. The second walk takes 2.99 and 3.01
+      // back on line 1, every 6.00 is written, and, line 2 no longer kept off, the 7.50 lands there; the third takes the
+      // 1.39 netted-second.835 still owes back on line 2; the fourth writes nothing. Walked once, that reconcile would end at
+      // 12.00 or 18.00 and the next at 19.50 against 18.11 of cash, the one after taking 1.39 back.
+      expect(walks).toEqual(each.length === 1 ? [4, 1, 1] : [2, 2, 1, 4, 1, 1]);
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual([at('600', true), at('-299', false), at('-301', false)]);
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual([at('1', false), at('-1', false), at('750', false), at('-139', false)]);
+      expect(await interestOf(practice, other.serviceLineId)).toEqual([at('600', false), at('600', false)]);
+      expect(await interestAndCash(practice)).toEqual([1811n, 1811n]);
+      await expectInterestFromItsL6(practice);
+    },
+  );
+
+  it('refuses a reconcile whose PLB L6s still write on the last walk allowed, rolling all of it back and logging only IDs and the walks, and the retry writes the cash (PR 126, the per-reconcile bound)', async () => {
+    const { practice } = await opened('LED-24', 'out-of-order-original.835');
+    for (const file of ['cent-paid.835', 'netted-first.835', 'netted-second.835', 'paid-after-both.835']) {
+      await w.load(practice, `LED-24/${file}`);
+    }
+    const ledger = async () => ({
+      entries: await w.entries(practice),
+      matches: await w.rows(practice, 'SELECT id, kind, seq::text FROM ledger_match ORDER BY seq'),
+      statuses: await w.rows(practice, 'SELECT service_line_id, stage, seq::text FROM line_status ORDER BY seq'),
+    });
+    const before = await ledger();
+    // The reconcile reading these four needs four walks (above); a limit of two stands in for a defect that writes on
+    // every walk, which a real ledger's room never allows.
+    const limit = vi.spyOn(interestWalkLimit, 'of').mockReturnValue(2);
+    const logs: Record<string, unknown>[] = [];
+    const context = w.jobContext(practice, logs);
+    try {
+      const refused = await reconcilePractice(context, w.services, practice.practiceId).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(refused).toBeInstanceOf(InterestUnsettled);
+      expect(refused).toMatchObject({ code: 'RECONCILE_INTEREST_UNSETTLED', walks: 2 });
+      expect(attemptErrorCode(refused)).toBe('RECONCILE_INTEREST_UNSETTLED');
+      // Nothing half-written: the claims' approvals, the recoupments and the interest of the first two walks rolled back with it.
+      expect(await ledger()).toEqual(before);
+      // One line, naming the job, the practice and the walks made: no amount, line, claim or reference.
+      expect(logs).toEqual([
+        { level: 'error', time: expect.any(String), msg: 'reconcile refused: its interest did not settle within the walks allowed', job_id: context.jobId, practice_id: practice.practiceId, error_code: 'RECONCILE_INTEREST_UNSETTLED', record_count: 2 },
+      ]);
+    } finally {
+      limit.mockRestore();
+    }
+    // The retry, under the real limit: the room the four PLB L6s have is far above the four walks the reconcile makes.
+    const real = vi.spyOn(interestWalkLimit, 'of');
+    try {
+      expect((await w.reconcile(practice)).remittances.interestWalks).toBe(4);
+      const [[room]] = real.mock.calls as [[number]];
+      expect(room).toBeGreaterThanOrEqual(4);
+    } finally {
+      real.mockRestore();
+    }
+    expect(await interestAndCash(practice)).toEqual([1811n, 1811n]);
+    await replayed(practice);
+  });
 
   it('shares a short PLB L6 by AMT I, the correction’s part split by payment and flagged allocated (short.835)', async () => {
     const { practice, lines } = await opened('LED-24');

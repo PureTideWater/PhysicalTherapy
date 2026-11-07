@@ -7,7 +7,9 @@
   chain only, #126 review F-M2-1; a payment never goes where a take-back still owed cannot follow, #126 review
   MONEY-R4-1; a take-back is whole once the rest of what it owes is interest that can reach no line, and a line kept
   off a payment keeps its share of it, #126 review R2M2-1 and RV-DB2-1; two take-backs of one chain each count that
-  interest less what the other still owes, so which is whole can depend on the order, #126 review RVM3-3); amends
+  interest less what the other still owes, so which is whole can depend on the order, #126 review RVM3-3; a reconcile
+  walks the PLB L6s again until a walk writes nothing, within a bound, so none ends above the cash, #126 review round
+  4); amends
   [0042](0042-keep-recovery-in-a-signed-append-only-ledger-of-matched-evidence-and-move-lines-to-recovered-only-from-its-entries.md)
   (where an interest entry comes from) and
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -157,7 +159,14 @@ the order: LED-24 `netted-first.835` and `netted-second.835` credit 6.00 uploade
 4.40 no line can take would complete both, 12.00. Counting it for the take-backs in the order the reconcile walks them
 would give one outcome in every order but is not safe: payments once written stay, so a take-back made whole in an
 earlier reconcile keeps them, and one dated before it but uploaded after it would count the same interest again
-(12.00). A take-back that no interest arriving completes,
+(12.00). Counted that way, one walk of the PLB L6s can leave a reconcile above the cash: a take-back counted whole by
+the share of a payment the other take-back keeps off a line is walked before that payment, dated after both, which
+lands on the line once the other take-back is whole, and only a later walk takes it back (LED-24 `cent-paid.835`,
+`netted-first.835`, `netted-second.835` and `paid-after-both.835`: 19.50 against 18.11 of cash for one reconcile). So
+each reconcile walks the PLB L6s again until a walk writes nothing (D18): it ends where the reconciles after it would,
+18.11 there whether the four are uploaded in date order or before one reconcile, and every outcome the reconciles
+settled on before stands. Counting for each take-back only the lines it keeps off itself would bound every reconcile too
+but understate cases that settle at the cash today, so it was not taken. A take-back that no interest arriving completes,
 because the uploads pay the chain less than it takes back, holds the payments back for good (`short-paid.835` and
 `netted-elsewhere.835`, in either order: 0.00 against 3.60 of cash; Consequences). A take-back of a chain that can come
 to hold no interest on a case line holds nothing back. A chain can also come to a case line with no upload, after the
@@ -237,6 +246,20 @@ every later read of the attribution keeps only claims of those remittances and l
 remittance is not given gets no draw. A remittance that commits during the reconcile changes nothing halfway, and no
 lock is taken, so a load never waits for a reconcile.
 
+**Walks within a reconcile (D18; #126 review round 4).** After the walk of D13, the reconcile walks the PLB L6s alone
+again, in the same order, until a walk writes no entry; the WOs are not walked again (their recoupments are written
+whole the first time, and the weights the later walks split by are the ones the next reconcile would read). The lookups
+of the pass (D5) are kept current across the walks, and what a take-back keeps payments off is read again once it
+writes. The walks are bounded: one more than the room, the interest entries the pass's PLB L6s can still write (for each,
+the case lines its draws can reach that it has not reached: for a payment, the lines matched to a claim it is for; for a
+take-back, the lines holding the chain's interest as the pass begins and those a payment of the chain can land on).
+Every walk but the last writes an entry, and each entry is a PLB L6 on a line it has never reached among those, so a
+real ledger's last walk comes within the bound. A walk that still writes at the bound is a defect: the reconcile is
+refused (`InterestUnsettled`, error code `RECONCILE_INTEREST_UNSETTLED`), its one transaction rolls back so nothing is
+half-written, the job's attempt fails and is retried (the third failure raises the operator's alert), and the log line
+names the job, the practice and the walks made, never an amount, line or claim. The reconcile reports its walks
+(`interestWalks`).
+
 **PRD 13** now reads, under the exception: "Interest the payer pays (PLB L6) is recorded as its own entry category
 `interest`, against the case lines of the claims it is for (the claims the PLB L6 names, or, when it names none, those
 its remittance reports interest on in AMT I, a claim's reversal and correction netted), positive when paid and negative
@@ -266,6 +289,11 @@ PLB L6 pays is shown as reported and counted nowhere."
   **Chosen: net per chain, exact when the pool equals the AMT I, otherwise only the net.**
 - **Once per what.** Once per L6 and claim: a later upload re-attributes, Postgres refuses, and the practice's whole
   reconcile fails every day (review F1). **Chosen: once per L6 and sign, gross, with each chain's part as a second cap.**
+- **A reconcile above the cash for one run (#126 review round 4).** Count for each take-back only the lines it keeps
+  payments off itself: bounds every reconcile, but understates cases that settle at the cash today. Leave it to the next
+  reconcile: the figure, and a quarter's ROI statement the daily reconcile generates after it, are above the cash
+  until then. **Chosen: walk the PLB L6s again within the reconcile until a walk writes nothing, bounded by the
+  entries they can write (D18).**
 - **The previous image.** Refusing its one-record match fails every reconcile with an AMT I claim on a case line until
   roll-forward (review F4). **Chosen: skip exactly that shape when the job writes it.**
 - **A reference with several identifiers.** Hashing whole never reads "CLP01 CLP07 TRN02"; searching every claim's
@@ -340,7 +368,26 @@ check by reading it.
   for each PLB L6 that takes interest back (#126 review F-M2-2). CAS-42.3's 2,000-line pass carries the implementation
   guide's interest shape (AMT I on every correction, one PLB L6 per check) and a later check taking each claim's
   interest back by a PLB L6 naming its correction, so it walks 2,100 PLB L6s, 2,000 of them take-backs, and stays
-  within its 150 s budget (26.9 s locally; 33.7 s when each take-back rebuilt the holdings).
+  within its 150 s budget (26.9 s locally; 33.7 s when each take-back rebuilt the holdings). The walks of D18 add one
+  walk to a reconcile that writes interest and none to one that writes nothing. Measured locally on that shape (one run
+  each; runs differ by a few seconds): the measured pass walks once, 28.5 s (29.6 s before D18); the reconcile writing
+  the 2,000 take-backs walks twice, 15.9 and 23.1 s (21.6 and 22.8 s before); a reconcile writing nothing, 10.7 to
+  12.7 s either way. A take-back-heavy shape of the same size (then a second take-back of each chain, owing for good,
+  and a later check paying each chain dated after both: 6,100 PLB L6s, 4,000 of them take-backs) writes the late
+  payments and takes them back in one reconcile of three walks, 19.3 s, ending at the cash; before D18 that reconcile
+  took 16.7 s and ended 1,000.00 above the cash, and the next, 16.6 s, took it back. The attribution is read once a
+  reconcile, not once a walk. Its statement's third branch (every claim a claim or interest match names, #126 review
+  LED-R1) reads the practice's matches by `ledger_match_by_remittance`: at 50,000 claims of one practice, every one
+  matched to a case line (one in ten a reversal taking interest back, one in ten reporting AMT I, one in twenty
+  superseded), 60,001 matches with 500,000 of other practices beside them, 500 remittances holding PLB L6s and 2,500
+  named references, the statement takes 0.77 to 0.91 s (EXPLAIN ANALYZE; 0.58 to 0.65 s with the branch narrowed to
+  interest matches), most of it the walk back of the 50,000 claims; an index on `ledger_match (practice_id, kind,
+  claim_id)`, tried on a scratch database only, went unused or saved nothing, so none is asked for.
+- **A reconcile walks its PLB L6s more than once** (D18). One that writes interest walks them at least twice, the last
+  writing nothing, and one more time for each walk a take-back's completion or a payment's landing makes necessary; one
+  that writes none walks them once, as before. Should a walk still write at the bound, which no real ledger reaches, the
+  practice's reconcile is refused on every attempt until the defect is fixed (the operator's alert on the third): no
+  figure moves meanwhile and nothing is half-written.
 - **Lock alignment.** The new trigger takes the practice's `ledger:` key, the key SUITE-CAP-1b moved the other two
   ledger triggers to, so a writer holding `lockLedger` takes no new lock slot.
 

@@ -1135,9 +1135,9 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           // is matched to; X (dated third) takes back what they and W paid and `short` more, and pays chain b's, whose claim
           // may be matched to the same lines; W (dated last; nothing when `after` is zero) pays a's interest too. When
           // `recouped`, X's reversal leaves a's lines nothing remaining once X is uploaded; otherwise every weight stays.
-          // Each reconcile walks the uploaded PLB L6s by date, as the reconcile does, reading each one's lines as
-          // recordInterest builds them: the lines X keeps a's payments off are read once a reconcile and read again once
-          // X writes, as the reconcile keeps them (outOfReachOf; PR 126 review RVM3-2).
+          // Each reconcile walks the uploaded PLB L6s by date until a walk writes nothing, as the reconcile does, reading
+          // each one's lines as recordInterest builds them: the lines X keeps a's payments off are read once a reconcile and
+          // read again once X writes, as the reconcile keeps them (outOfReachOf; PR 126 review RVM3-2).
           const draws: Record<Who, InterestDraw[]> = {
             Z: early > 0n ? [drawOf('Z', 'a', early, ['A'])] : [],
             Y: [drawOf('Y', 'a', late, ['A'])],
@@ -1186,13 +1186,19 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
                     ],
                   ])
                 : new Map<string, ChainInterestLines>([['a', { paid: linesOfA(), takenBack: [], mayYetHold: true, unplacedCents: cents(0n) }]]);
+            // One reconcile: walks until one writes nothing, as providerAdjustments does.
             const reconcile = () => {
               keptOff = undefined;
-              for (const who of (['Z', 'Y', 'X', 'W'] as const).filter((item) => uploaded.has(item))) {
-                const parts = interestWrites({ draws: draws[who], written: written[who], lines: linesOf(who) });
-                written[who].push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
-                if (who === 'X' && parts.length > 0) {
-                  keptOff = undefined;
+              let entries = 1;
+              while (entries > 0) {
+                entries = 0;
+                for (const who of (['Z', 'Y', 'X', 'W'] as const).filter((item) => uploaded.has(item))) {
+                  const parts = interestWrites({ draws: draws[who], written: written[who], lines: linesOf(who) });
+                  written[who].push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+                  entries += parts.length;
+                  if (who === 'X' && parts.length > 0) {
+                    keptOff = undefined;
+                  }
                 }
               }
             };
@@ -1222,7 +1228,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
     );
   });
 
-  it('never writes interest above the cash when two PLB L6s each net a take-back of one chain against a payment of another, whatever order they and the PLB L6s paying the chain are uploaded in: once the reconciles settle, whatever the dates, and after every reconcile when the payments are dated before the take-backs (PR 126 review RVM3-3)', () => {
+  it('never writes interest above the cash when two PLB L6s each net a take-back of one chain against a payment of another, whatever order they and the PLB L6s paying the chain are dated and uploaded in, after every reconcile, each walking the PLB L6s until a walk writes nothing (PR 126 review RVM3-3; the per-reconcile bound)', () => {
     const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 3 });
     type Who = 'Y1' | 'Y2' | 'X1' | 'X2';
     const WHO: readonly Who[] = ['Y1', 'Y2', 'X1', 'X2'];
@@ -1244,7 +1250,11 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           // walks the uploaded PLB L6s by date, reading each one's lines as recordInterest builds them: a payment of a kept
           // off the lines either take-back has reached while it still owes, and a take-back's unplaced interest less what
           // the other take-back still owes (unplacedOf passes every other take-back of the chain; without that, interest
-          // no line can take completes both: above the cash). Every weight stays.
+          // no line can take completes both: above the cash). Every weight stays. Each reconcile walks them again until a
+          // walk writes nothing, as providerAdjustments does, never past one walk more than the entries they can write (one
+          // per PLB L6 and line): walked once, a take-back counted whole by the share the other keeps off a line is walked
+          // before a payment dated after it, which lands there once the other is whole, and that reconcile ends above the
+          // cash until the next takes it back (the examples, round 4's counterexamples: 169 against 168, and 7 against 6).
           const draws: Record<Who, InterestDraw[]> = {
             Y1: [drawOf('Y1', 'a', y1, ['A'])],
             Y2: [drawOf('Y2', 'a', y2, ['A'])],
@@ -1283,18 +1293,29 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           const total = () => WHO.flatMap((who) => written[who]).reduce((sum, item) => sum + item.cents, 0n);
           // The cash of what is uploaded: what Y1 and Y2 pay, and each netting PLB L6's net, which is never below zero.
           const cash = () => [...uploaded].reduce((sum, who) => sum + draws[who].reduce((net, draw) => net + draw.cents, 0n), 0n);
-          const paymentsFirst = dated.slice(0, 2).every((who) => who === 'Y1' || who === 'Y2');
-          // One reconcile; whether it wrote anything.
-          const reconcile = (): boolean => {
-            let wroteAny = false;
+          // One walk of the uploaded PLB L6s; the entries it wrote.
+          const walk = (): number => {
+            let entries = 0;
             for (const who of dated.filter((item) => uploaded.has(item))) {
               const parts = interestWrites({ draws: draws[who], written: written[who], lines: linesOf(who) });
               written[who].push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
-              wroteAny ||= parts.length > 0;
+              entries += parts.length;
             }
-            if (paymentsFirst) {
-              expect(total()).toBeLessThanOrEqual(cash());
+            return entries;
+          };
+          // One reconcile: walks until one writes nothing, within the most entries the PLB L6s can write, plus one; whether it wrote anything.
+          const room = () => [...uploaded].reduce((sum, who) => sum + aLines.length + 1 - new Set(written[who].map((entry) => entry.serviceLineId)).size, 0);
+          const reconcile = (): boolean => {
+            const limit = room() + 1;
+            let walks = 1;
+            let entries = walk();
+            const wroteAny = entries > 0;
+            while (entries > 0) {
+              expect(walks).toBeLessThan(limit);
+              walks += 1;
+              entries = walk();
             }
+            expect(total()).toBeLessThanOrEqual(cash());
             return wroteAny;
           };
           for (const [index, who] of uploads.entries()) {
@@ -1303,15 +1324,19 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
               reconcile();
             }
           }
-          let settled = false;
-          for (let pass = 0; pass < 8 && !settled; pass += 1) {
-            settled = !reconcile();
-          }
-          expect(settled).toBe(true);
+          // Each reconcile ended where the reconciles after it would: the next writes nothing.
+          expect(reconcile()).toBe(false);
           expect(total()).toBeLessThanOrEqual(cash());
         },
       ),
-      { numRuns: 2000 },
+      {
+        numRuns: 2000,
+        examples: [
+          // A payment of a dated after both take-backs: uploaded together, and in date order (round 4's counterexamples).
+          [[1n, 167n], [1n, 84n], [0n, 0n], [{ line: 'L1', weight: 42n }, { line: 'L2', weight: 42n }], ['Y1', 'X2', 'X1', 'Y2'], ['X1', 'X2', 'Y1', 'Y2'], [false, false, false]],
+          [[1n, 5n], [1n, 3n], [0n, 0n], [{ line: 'L1', weight: 1n }, { line: 'L2', weight: 1n }], ['X2', 'X1', 'Y1', 'Y2'], ['X2', 'X1', 'Y1', 'Y2'], [true, true, true]],
+        ],
+      },
     );
   });
 

@@ -1323,7 +1323,9 @@ export function led23(b: CaseBuilder): void {
  * netting, whose later payment is never moved to line 2 (RV-DB2-1), and one-line-late-paid.835 pays the rest dated after
  * the netting, which keeps it off line 1 when both are reconciled at once (RVM3-2); and netted-first.835 and
  * netted-second.835 take back 3.00 and 4.40 of C's 5.40, each netted against the second patient's 6.00, so which of
- * them is whole, and so the figure, depends on the order rest-paid.835 is uploaded in (RVM3-3).
+ * them is whole, and so the figure, depends on the order rest-paid.835 is uploaded in (RVM3-3); cent-paid.835 and
+ * paid-after-both.835 pay C's interest before both of them and after both, which one walk of the PLB L6s would leave
+ * above the cash for a reconcile, so each reconcile walks them until a walk writes nothing (the per-reconcile bound).
  */
 export function led24(b: CaseBuilder): void {
   const { base, original, correction, ccn, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
@@ -1492,6 +1494,20 @@ export function led24(b: CaseBuilder): void {
     ledRemittance(b, base, 28, lateOn, [reversedWith(restatedOnce, dollars('-4.40')), restatedTwice, reversalOf(elsewhere), elsewhereAgain], pool(dollars('-1.60'))).file,
     `After netted-first.835: C' reversed (paid -160.00, AMT I -4.40) and restated as C'' (${restatedTwice.payerClaimControlNumber}, REF F8 naming C') with the same amounts and no AMT I; the second patient's correction reversed (paid -80.00, AMT I -6.00) and corrected again (${elsewhereAgain.payerClaimControlNumber}, REF F8 naming it) with the same amounts and AMT I 12.00, on line 3; and one PLB L6 of -1.60 naming nothing, netting the second patient's 6.00 more paid against 4.40 of C's interest taken back: BPR02 1.60.`,
   );
+  // C's interest paid 0.01 before both take-backs, which lands on line 2 alone, and the rest by a check dated after both:
+  // within one reconcile, netted-second.835 counts the share netted-first.835 keeps off line 2 as interest no line can
+  // take, and that share reaches line 2 once netted-first.835 is whole; the reconcile walks the PLB L6s again until a
+  // walk writes nothing, so it ends with that share taken back, never above the cash (#126, the per-reconcile bound).
+  b.add835(
+    'cent-paid.835',
+    ledRemittance(b, base, 29, adjustedOn, [reversalOf(original), correction], interestPlb(base, [{ reference: ccn, amount: dollars('-0.01') }])).file,
+    `As paired.835, its PLB L6 naming C (${ccn}) paying 0.01 of C's AMT I 5.40: BPR02 54.01.`,
+  );
+  b.add835(
+    'paid-after-both.835',
+    ledRemittance(b, base, 30, calendarDate(2026, 10, 1), [otherClaim(b, 28)], interestPlb(base, [{ reference: ccn, amount: dollars('-13.50') }])).file,
+    `After netted-second.835 and dated after it: a later check whose PLB L6 of -13.50 names C (${ccn}), beside another patient's claim paying 150.00 with no AMT I: BPR02 163.50.`,
+  );
   b.scenario({
     caseLines: [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line })),
     variants: {
@@ -1516,6 +1532,7 @@ export function led24(b: CaseBuilder): void {
       oneLineLate: ['one-line-paid.835', 'one-line-netted.835', 'one-line-late-paid.835'],
       takenBackTwice: { original: 'out-of-order-original.835', files: ['partly-paid.835', 'rest-paid.835', 'netted-first.835', 'netted-second.835'] },
       takenBackTwiceRestLast: { original: 'out-of-order-original.835', files: ['partly-paid.835', 'netted-first.835', 'netted-second.835', 'rest-paid.835'] },
+      takenBackTwicePaidAfter: { original: 'out-of-order-original.835', files: ['cent-paid.835', 'netted-first.835', 'netted-second.835', 'paid-after-both.835'] },
     },
   });
   const takenBack = [ledEntry('interest', negateCents(firstInterest), 'taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'taken-back.835 PLB L6')];
@@ -1677,6 +1694,15 @@ export function led24(b: CaseBuilder): void {
         cashCents: '1000',
         reconciles: 3,
         note: "rest-paid.835 last: netted-first.835 takes back the 1.00 on the lines, netted-second.835 finds nothing left, and both wait; rest-paid.835's 4.40 can then go to neither line (netted-first.835 has reached both), so it is interest credited nowhere, and each take-back counts it less what the other still owes (4.40 less 4.40, and 4.40 less 2.00), so neither is whole and neither 6.00 is written: the outcome depends on the order, 0.00 here and 6.00 in date order, and errs low either way, never above the cash. Counted for both, it would credit 12.00",
+      },
+      takenBackTwicePaidAfter: {
+        L1: [ledEntry('interest', dollars('6.00'), 'paid-after-both.835 PLB L6'), ledEntry('interest', dollars('-2.99'), 'netted-first.835 PLB L6'), ledEntry('interest', dollars('-3.01'), 'netted-second.835 PLB L6')],
+        L2: [ledEntry('interest', dollars('0.01'), 'cent-paid.835 PLB L6'), ledEntry('interest', dollars('-0.01'), 'netted-first.835 PLB L6'), ledEntry('interest', dollars('7.50'), 'paid-after-both.835 PLB L6'), ledEntry('interest', dollars('-1.39'), 'netted-second.835 PLB L6')],
+        L3: [ledEntry('interest', dollars('6.00'), 'netted-first.835 PLB L6'), ledEntry('interest', dollars('6.00'), 'netted-second.835 PLB L6')],
+        interestTotalCents: '1811',
+        cashCents: '1811',
+        reconciles: 3,
+        note: "cent-paid.835's 0.01 lands on line 2 alone and netted-first.835 takes it back there, still owing 2.99, so it keeps C's payments off line 2; netted-second.835 counts paid-after-both.835's 7.50 for line 2 as interest no line can take, less those 2.99, so it is whole and its 6.00 is written, and paid-after-both.835's 6.00 for line 1 lands there. The reconcile walks the PLB L6s again until a walk writes nothing: 2.99 and 3.01 are taken back on line 1, netted-first.835's 6.00 is written, the 7.50 lands on line 2 once netted-first.835 no longer keeps it off, and the 1.39 netted-second.835 still owes is taken back there: 18.11, the cash, when that reconcile ends, uploaded in date order or before one reconcile. Walked once, it would end at 12.00 or 18.00 and the next reconcile at 19.50, above the cash",
       },
     },
   });

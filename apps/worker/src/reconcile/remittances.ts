@@ -87,8 +87,9 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
  *   the lines holding that chain's interest; its payments wait while a take-back of a chain that may yet
  *   hold interest on a case line is not written whole, and a payment of a chain never goes to a line on
  *   which another PLB L6 still owes a take-back of it that it can no longer write there (@tp/ledger
- *   interestOutOfReach). A claim's AMT I alone credits nothing. An entry is allocated only when it is one of
- *   two or more parts of a pro-rata split.
+ *   interestOutOfReach). The PLB L6s are walked again, within the reconcile, until a walk writes nothing, so no
+ *   reconcile ends with interest a later walk would take back (providerAdjustments). A claim's AMT I alone credits
+ *   nothing. An entry is allocated only when it is one of two or more parts of a pro-rata split.
  * - A forward balance (PLB FB) is never an entry: it counts nothing until a recoupment resolves it.
  *
  * A claim that cannot be compared (no line of the case line's code and date) is left for a person: it
@@ -119,6 +120,11 @@ export interface RemittanceOutcome {
   readonly interest: number;
   /** Interest entries below zero this pass wrote: interest a PLB L6 took back (docs/adr/0084). */
   readonly interestTakenBack: number;
+  /**
+   * The walks of the PLB L6s this pass made (providerAdjustments): none when no PLB L6 draws on a chain, one when the
+   * first wrote nothing, and one more for each walk that wrote, up to the first that wrote nothing.
+   */
+  readonly interestWalks: number;
   /** The recouped entries this pass wrote, by case: each tells the case's owner. */
   readonly recouped: readonly { readonly caseId: string; readonly entryId: string; readonly serviceLineId: string; readonly amountCents: Cents }[];
 }
@@ -699,6 +705,7 @@ interface Counts {
   recoupments: number;
   interest: number;
   interestTakenBack: number;
+  interestWalks: number;
 }
 
 interface Recouped {
@@ -872,6 +879,23 @@ function namedLines(hash: string, lines: readonly CaseLine[], claimHashes: Reado
  * (interest credited once, docs/adr/0084), walked in today's order: by payment date, load and position (D13). The rows
  * and whom each PLB L6 is for are read as of one moment (interest-chains.ts, D17): the walk visits exactly the rows
  * statement 1 returned, and an L6 with no reference is read too, an L6 of zero is not.
+ *
+ * Then the PLB L6s alone are walked again, in the same order, until a walk writes nothing (#126, the per-reconcile
+ * bound). One walk can leave interest a later walk takes back: a take-back counted whole by interest another PLB L6
+ * keeps off a line (interestUnplaced) is walked before the payment dated after it, which lands on that line once the
+ * other take-back is whole; the next walk takes it back. A walk that writes nothing is the state every later reconcile
+ * would keep, so each reconcile ends where the reconciles after it would, and none ends above the cash. The WOs are
+ * not walked again: their recoupments are written whole in the first walk, and the weights the later walks split by are
+ * the ones the next reconcile would read.
+ *
+ * The walks are bounded by interestWalkLimit.of(room), room + 1, where room is the most interest entries the pass's
+ * PLB L6s can still write (interestRoom). Proof that a real ledger ends below it: every walk but the last writes at
+ * least one entry; every entry is a PLB L6 on a line it has not reached before (interestWrites never writes a line its
+ * L6 reached, and ledger_match_standing holds one standing match per L6 and line) among the lines its draws can reach
+ * this pass, which interestRoom counts; so the walks that write number at most room, and walk room + 1, if made,
+ * writes nothing. A walk that writes at the limit is a defect: the reconcile is refused with InterestUnsettled, its
+ * whole transaction rolls back, nothing is half-written, and the job is retried (pass.ts logs the job, the practice
+ * and the walks, never an amount).
  */
 async function providerAdjustments(
   scope: Scope,
@@ -890,6 +914,9 @@ async function providerAdjustments(
   const reading = await interestAttribution(scope, cipher, practiceId, moment);
   const interest = await interestState(scope, practiceId, lines, matches, reading);
   const claimHashes = await hashesOf(scope, matches);
+  const l6s = moment.adjustments.filter((adjustment) => adjustment.category === 'interest' && reading.draws.has(adjustment.id));
+  const limit = interestWalkLimit.of(interestRoom(interest, reading, l6s));
+  let wrote = 0;
   for (const adjustment of moment.adjustments) {
     if (adjustment.category === 'recoupment') {
       // A WO is read only with a reference, which it names whole (unchanged; docs/adr/0084 D14).
@@ -929,8 +956,85 @@ async function providerAdjustments(
       }
       continue;
     }
-    await recordInterest(scope, practiceId, adjustment, reading, { ledgers, counts, interest });
+    wrote += await recordInterest(scope, practiceId, adjustment, reading, { ledgers, counts, interest });
   }
+  counts.interestWalks = l6s.length === 0 ? 0 : 1;
+  while (wrote > 0) {
+    if (counts.interestWalks >= limit) {
+      throw new InterestUnsettled(counts.interestWalks);
+    }
+    counts.interestWalks += 1;
+    wrote = 0;
+    for (const adjustment of l6s) {
+      wrote += await recordInterest(scope, practiceId, adjustment, reading, { ledgers, counts, interest });
+    }
+  }
+}
+
+/**
+ * The most walks of the PLB L6s one reconcile makes, given its room (interestRoom): room + 1, which a real ledger never
+ * reaches writing (providerAdjustments). An object, so a test can lower it to force the refusal; nothing else changes it.
+ */
+export const interestWalkLimit = { of: (room: number): number => room + 1 };
+
+/**
+ * A reconcile whose PLB L6s still wrote interest on the last walk interestWalkLimit allows (providerAdjustments): a
+ * defect, since a real ledger's walks end with one that writes nothing first. Thrown inside the reconcile's
+ * transaction, so all of it rolls back and the job is retried; it carries the walks made and names no amount, line or
+ * claim.
+ */
+export class InterestUnsettled extends Error {
+  override readonly name = 'InterestUnsettled';
+  /** The attempt's error code in the worker's log (worker.ts attemptErrorCode). */
+  readonly code = 'RECONCILE_INTEREST_UNSETTLED';
+
+  constructor(readonly walks: number) {
+    super('the reconcile was refused: its interest still changed on the last walk allowed, so nothing was written; it is retried');
+  }
+}
+
+/**
+ * The most interest entries the PLB L6s `l6s` can write in this pass, before its first walk (providerAdjustments' bound):
+ * for each, the case lines its draws can reach that it has not reached. A paid draw reaches only the lines with a
+ * standing claim match to a claim it is for (paidLinesOf). A take-back of a chain reaches only lines holding that
+ * chain's interest (interestHeldOf): those holding it as the pass begins, and those a payment of the chain lands on
+ * during the pass, each a line a paid draw reaches through a claim of that chain (its entry's match names the line's
+ * claim, whose chain the holdings count it under).
+ */
+function interestRoom(interest: InterestState, reading: InterestReading, l6s: readonly AdjustmentRow[]): number {
+  const draws = l6s.flatMap((adjustment) => reading.draws.get(adjustment.id) ?? []);
+  const paidReach = (draw: InterestDraw) => [...new Set(draw.claimIds)].flatMap((claimId) => (interest.claimMatches.get(claimId) ?? []).map((item) => ({ claimId, line: item.match.serviceLineId as string })));
+  const ofChain = new Map<string, Set<string>>();
+  const reach = (chain: string): Set<string> => {
+    const lines = ofChain.get(chain) ?? new Set<string>();
+    ofChain.set(chain, lines);
+    return lines;
+  };
+  for (const draw of draws.filter((item) => item.cents < ZERO_CENTS)) {
+    for (const holding of interestHeldOf(interest.held, draw.chain)) {
+      reach(draw.chain).add(holding.serviceLineId);
+    }
+  }
+  for (const draw of draws.filter((item) => item.cents > ZERO_CENTS)) {
+    for (const { claimId, line } of paidReach(draw)) {
+      const chain = reading.chainOf.get(claimId);
+      if (chain !== undefined) {
+        reach(chain).add(line);
+      }
+    }
+  }
+  let room = 0;
+  for (const adjustment of l6s) {
+    const lines = new Set<string>();
+    for (const draw of reading.draws.get(adjustment.id) ?? []) {
+      for (const line of draw.cents > ZERO_CENTS ? paidReach(draw).map((item) => item.line) : reach(draw.chain)) {
+        lines.add(line);
+      }
+    }
+    const reached = new Set(writtenOf(interest, adjustment.id).map((entry) => entry.serviceLineId));
+    room += [...lines].filter((line) => !reached.has(line)).length;
+  }
+  return room;
 }
 
 /** An interest match as the interest path reads it: whom it names on which line, and whether it stands. */
@@ -1154,11 +1258,12 @@ async function recordInterest(
   adjustment: AdjustmentRow,
   reading: InterestReading,
   pass: { readonly ledgers: ReadonlyMap<string, LineLedger>; readonly counts: Counts; readonly interest: InterestState },
-): Promise<void> {
+): Promise<number> {
   const draws = reading.draws.get(adjustment.id) ?? [];
   if (draws.length === 0) {
-    return;
+    return 0;
   }
+  let wrote = 0;
   const { ledgers, counts, interest } = pass;
   const written = writtenOf(interest, adjustment.id);
   const chainLines = new Map<string, ChainInterestLines>();
@@ -1234,6 +1339,7 @@ async function recordInterest(
       addInterestHeld(interest.lineHeld, [withMatch(entry)], new Map([[matchId, LINE_TOTAL]]));
       // What the L6 keeps payments off is read again once it has written.
       interest.outOfReach.delete(adjustment.id);
+      wrote += 1;
     }
     if (part.cents > ZERO_CENTS) {
       counts.interest += 1;
@@ -1241,6 +1347,7 @@ async function recordInterest(
       counts.interestTakenBack += 1;
     }
   }
+  return wrote;
 }
 
 /** Whether the evidence was ever matched to the line, standing or since reversed: a match a person reversed is never made again automatically. */
@@ -1266,7 +1373,7 @@ async function hashesOf(scope: Scope, matches: readonly StoredMatch[]): Promise<
 /** Step 1, recoupments and interest (credited from each PLB L6 only, docs/adr/0084), for the practice (inside the reconcile step's locked transaction). */
 export async function reconcileRemittances(scope: Scope, cipher: PracticeCipher, practiceId: string, recordNoChange: RecordReprocessedNoChange): Promise<RemittanceOutcome> {
   const lines = await caseLines(scope, cipher, practiceId);
-  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0, interestTakenBack: 0 };
+  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0, interestTakenBack: 0, interestWalks: 0 };
   const recouped: Recouped[] = [];
   if (lines.length === 0) {
     return { ...counts, recouped };
