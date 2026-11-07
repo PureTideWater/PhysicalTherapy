@@ -6,8 +6,9 @@ import { practiceId, registerKeyAndSignIn, signInWithTotp, withDatabase } from '
 
 /**
  * The shell's skip link (test matrix CI-30; WCAG 2.4.1, Bypass Blocks). On a practice page, a console page and the
- * settings users page, at 1280 and 390 px, the first Tab from the top of the page shows "Skip to the content" in view,
- * Enter moves focus to main#content, and the next Tab lands on the first control inside main, past the header and the
+ * settings users page, at 1280 and 390 px, the link is clipped from view until focused; the first Tab from the top of
+ * the page shows "Skip to the content" in view, with 12 px inline and 8 px block padding and at least 24 px tall (WCAG
+ * 2.5.8), Enter moves focus to main#content, and the next Tab lands on the first control inside main, past the header and the
  * rail. axe-core runs on the focused state. Each persona signs in here only (scripts/synthetic-personas.ts), so no
  * sign-in or hardware key is shared with a test that runs at once. Synthetic data only.
  */

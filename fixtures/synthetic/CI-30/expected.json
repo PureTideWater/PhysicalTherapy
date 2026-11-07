@@ -2,7 +2,7 @@
   "case": "CI-30",
   "module": "CI",
   "title": "The shell's skip link",
-  "assertion": "On a practice page, a console page and the settings users page, at 1280 and 390 px, the first Tab shows 'Skip to the content' in view, Enter moves focus to main#content, and the next Tab lands on the first control inside main; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation in the focused state (WCAG 2.4.1)",
+  "assertion": "On a practice page, a console page and the settings users page, at 1280 and 390 px, the link is clipped from view until focused; the first Tab shows 'Skip to the content' in view with 12 px inline and 8 px block padding and at least 24 px tall, Enter moves focus to main#content, and the next Tab lands on the first control inside main; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation in the focused state (WCAG 2.4.1, 2.5.8)",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": ["apps/web/e2e/skip-link.spec.ts","apps/web/e2e/a11y.ts"],
