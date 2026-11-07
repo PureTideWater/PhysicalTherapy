@@ -158,7 +158,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
       { field: 'upload', message: 'Column 25 holds dates of service; remove it and upload again' },
       { field: 'upload', message: 'Column 26 holds member IDs; remove it and upload again' },
     ]);
-    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'And 7 more problems like these' });
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 7 more problems like these; fix them too, then screen the file again' });
     expect(issues.find((issue) => /rename/.test(issue.message))).toBeUndefined();
     const { rows } = await world.owner.query<{ rejection_reasons: { code: string }[] }>(
       'SELECT u.rejection_reasons FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
@@ -214,7 +214,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
       'prospect@-clinic.synthetic.test',
       'pro spect@clinic.synthetic.test',
     ]) {
-      expect(issuesOf(await submitted(submitInput({ contactEmail }))), contactEmail).toEqual([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
+      expect(issuesOf(await submitted(submitInput({ contactEmail }))), contactEmail).toEqual([{ field: 'contactEmail', message: 'enter an email address; the result’s link is sent there' }]);
     }
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect')).rows).toEqual(before.rows);
     expect(await storedText()).not.toContain('Jane Synthetic');
@@ -316,7 +316,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient�
     const crowded = submitInput({ rows: [...Array.from({ length: 22 }, () => 'x'), encodeScreeningRows([at(3, '97140')]), encodeScreeningRows([at(10, '97530')])].join('\n') });
     const issues = issuesOf(await submitted(crowded));
     expect(issues.slice(0, 2)).toEqual([FLOOR_MESSAGE(23), FLOOR_MESSAGE(24)]);
-    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'And 5 more problems like these' });
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 5 more problems like these; fix them too, then screen the file again' });
   });
 
   it('stores what the browser left out as three numbers, and the result says so apart from every figure', async () => {
@@ -945,12 +945,16 @@ describe('SCR-06: the conversion from screening to an audit request is an audit 
     expect(issuesOf(await world.call(screeningConvert, { input }))).toEqual([{ field: 'input', message: 'an audit was already requested from this screening' }]);
     expect((await world.call(screeningConvert, { input: { ...input, resultId: 'b'.repeat(32) } })).status).toBe('not_found');
     expect((await world.call(screeningConvert, { input: { ...input, resultId: 'not-a-token' } })).status).toBe('not_found');
-    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: '', payers: '', locations: '0', billingArrangement: 'x' } })).map((issue) => issue.field)).toEqual([
-      'contactName',
-      'locations',
-      'payers',
-      'billingArrangement',
+    // The convert form's words are the public forms' (ADR 0077): an instruction after the field's name, no colon of its own.
+    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: '', payers: '', locations: '0', billingArrangement: 'x' } }))).toEqual([
+      { field: 'contactName', message: 'fill this in' },
+      { field: 'locations', message: 'enter a whole number from 1 to 1,000' },
+      { field: 'payers', message: 'name 1 to 50 payers, each at most 120 characters' },
+      { field: 'billingArrangement', message: 'choose how you bill' },
     ]);
+    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: 'N'.repeat(201) } }))).toEqual([{ field: 'contactName', message: 'enter at most 200 characters' }]);
+    expect(issuesOf(await world.call(screeningConvert, { input: { ...input, contactName: 'SYNTHETIC 555-201-3344' } }))).toEqual([{ field: 'contactName', message: NO_PATIENT_INFORMATION }]);
+    expect(NO_PATIENT_INFORMATION).toBe('this form takes no patient information; remove anything that looks like an identifier, a date or a phone number, then send it again');
     // The token is the link's alone: only its hash is stored.
     expect(await storedText()).not.toContain(token);
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_run WHERE result_token_sha256 = $1', [screeningTokenHash(token)])).rows).toEqual([{ n: 1 }]);
@@ -1066,7 +1070,9 @@ describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened 
     for (const [extra, issue] of [
       [{ heardFrom: 'friend' }, { field: 'heardFrom', message: 'choose one of the listed answers, or leave it blank' }],
       [{ referringFirm: 'Synthetic Billing 555-201-3344' }, { field: 'referringFirm', message: NO_PATIENT_INFORMATION }],
-      [{ referringFirm: 'x'.repeat(201) }, { field: 'referringFirm', message: 'the firm’s name, at most 200 characters' }],
+      [{ referringFirm: 'x'.repeat(201) }, { field: 'referringFirm', message: 'enter at most 200 characters' }],
+      [{ practiceName: '' }, { field: 'practiceName', message: 'fill this in' }],
+      [{ practiceName: 'P'.repeat(201) }, { field: 'practiceName', message: 'enter at most 200 characters' }],
     ] as const) {
       const email = `refused.field.${randomUUID().slice(0, 8)}@clinic-fields.synthetic.test`;
       const outcome = await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), ...extra } });

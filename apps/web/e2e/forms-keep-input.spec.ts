@@ -107,7 +107,7 @@ function borderAndDanger(control: Locator): Promise<{ readonly width: string; re
 }
 
 const ORGANIZATION_REFUSED =
-  'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number, then send it again';
+  'this form takes no patient information; remove anything that looks like an identifier, a date or a phone number, then send it again';
 
 /** The audit request's fields, filled with synthetic values; Organization holds a date's shape, which the form refuses. */
 async function fillAuditRequest(page: Page, organization: string): Promise<void> {

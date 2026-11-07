@@ -45,7 +45,7 @@ import { type Environment, SCREENING_LEGAL_SURFACES, showsLegalSurfaces } from '
 import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
-import { optionalText } from '../routes/schemas';
+import { FILL_THIS_IN, NO_PATIENT_INFORMATION, atMostCharacters, optionalText } from '../routes/schemas';
 import type { ScreeningLaunch } from '../server/config';
 import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { ADDRESS_REFUSED, MAILBOX_UNCONFIRMED, addressHint } from './address';
@@ -120,7 +120,7 @@ import { checkScreeningAddress } from './validation';
 export const SCREENING_EMAIL = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** A form field as the wrapper receives it: bounded text, blank when missing, so the rate limit counts first. */
-const field = (max: number) => z.string().max(max, `at most ${String(max)} characters`).default('');
+const field = (max: number) => z.string().max(max, atMostCharacters(max)).default('');
 
 export interface ScreeningLimits {
   readonly maxRows: number;
@@ -290,8 +290,14 @@ interface ProspectFields {
   readonly referringFirm: string | null;
 }
 
-/** The message a form gives text that looks like an identifier, a date or a phone number. */
-export const NO_PATIENT_INFORMATION = 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number';
+/** The message a form gives text that looks like an identifier, a date or a phone number: the public forms' one (schemas.ts). */
+export { NO_PATIENT_INFORMATION };
+
+/** A name or firm over its 200 characters: requiredText(200)'s words, as the audit request says them. */
+const AT_MOST_200 = atMostCharacters(200);
+
+/** An address the mail service cannot send to: what to enter, and why it matters. */
+const CONTACT_EMAIL = 'enter an email address; the result’s link is sent there';
 
 /** How the prospect heard of us, as the form sent it: blank is none; anything off the list is an issue. */
 export function heardFromField(text: string, issues: Issue[]): ProspectSource | null {
@@ -313,7 +319,7 @@ export function referringFirmField(text: string, issues: Issue[]): string | null
     return null;
   }
   if (value.length > 200) {
-    issues.push({ field: 'referringFirm', message: 'the firm’s name, at most 200 characters' });
+    issues.push({ field: 'referringFirm', message: AT_MOST_200 });
     return null;
   }
   if (textPhiFindings(value).length > 0) {
@@ -335,7 +341,7 @@ function prospectFields(input: {
   const issues: Issue[] = [];
   const practiceName = input.practiceName.trim();
   if (practiceName === '' || practiceName.length > 200) {
-    issues.push({ field: 'practiceName', message: 'the practice’s name, at most 200 characters' });
+    issues.push({ field: 'practiceName', message: practiceName === '' ? FILL_THIS_IN : AT_MOST_200 });
   } else if (textPhiFindings(practiceName).length > 0) {
     issues.push({ field: 'practiceName', message: NO_PATIENT_INFORMATION });
   }
@@ -349,7 +355,7 @@ function prospectFields(input: {
   }
   const contactEmail = input.contactEmail.trim().toLowerCase();
   if (!SCREENING_EMAIL.test(contactEmail) || contactEmail.length > 254 || contactEmail.indexOf('@') > 64) {
-    issues.push({ field: 'contactEmail', message: 'an email address: the result’s link is sent there' });
+    issues.push({ field: 'contactEmail', message: CONTACT_EMAIL });
   }
   const heardFrom = heardFromField(input.heardFrom, issues);
   const referringFirm = referringFirmField(input.referringFirm, issues);
@@ -367,7 +373,8 @@ function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Is
   }
   const kept = issues.slice(0, SCREENING_MAX_REASONS - 1);
   const more = total - kept.length;
-  return [...kept, { field: 'upload', message: `And ${more.toLocaleString('en-US')} more ${more === 1 ? 'problem' : 'problems'} like these` }];
+  const one = more === 1;
+  return [...kept, { field: 'upload', message: `and ${more.toLocaleString('en-US')} more ${one ? 'problem' : 'problems'} like these; fix ${one ? 'it' : 'them'} too, then screen the file again` }];
 }
 
 const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };
@@ -611,7 +618,7 @@ export const screeningSubmit = publicRoute({
     // address or the domain (the database sums the account's rows of the day by it; the founder's Q7).
     const account = screeningRateAccount(input.contactEmail);
     if (account === null) {
-      throw new InputError([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
+      throw new InputError([{ field: 'contactEmail', message: CONTACT_EMAIL }]);
     }
     const rateAccountSubject = rateSubjectHash(services.sealer, 'screening', 'account', account);
     // The client the rate limiter counts, as it keeps it: its keyed hash, or null where no trusted proxy names one. The
@@ -1269,13 +1276,13 @@ export const screeningConvert = publicRoute({
     const issues: Issue[] = [];
     const contactName = input.contactName.trim();
     if (contactName === '' || contactName.length > 200) {
-      issues.push({ field: 'contactName', message: 'your name, at most 200 characters' });
+      issues.push({ field: 'contactName', message: contactName === '' ? FILL_THIS_IN : AT_MOST_200 });
     } else if (textPhiFindings(contactName).length > 0) {
       issues.push({ field: 'contactName', message: NO_PATIENT_INFORMATION });
     }
     const locations = /^[0-9]{1,4}$/.test(input.locations.trim()) ? Number(input.locations.trim()) : 0;
     if (locations < 1 || locations > 1000) {
-      issues.push({ field: 'locations', message: 'a whole number of locations from 1 to 1,000' });
+      issues.push({ field: 'locations', message: 'enter a whole number from 1 to 1,000' });
     }
     const payers = input.payers;
     if (payers.length < 1 || payers.length > 50 || payers.some((name) => name.length > 120)) {

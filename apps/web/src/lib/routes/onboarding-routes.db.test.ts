@@ -182,8 +182,27 @@ describe('the audit request (J1)', () => {
       payers: 'Synthetic Payer One',
       billingArrangement: 'in_house',
     });
-    expect(refused.status).toBe('invalid');
+    expect(refused).toEqual({ status: 'invalid', issues: [{ field: 'organizationName', message: 'this form takes no patient information; remove anything that looks like an identifier, a date or a phone number, then send it again' }] });
     expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name LIKE 'Clinic for patient%'")).rows).toEqual([]);
+  });
+
+  it('says what to enter in each field it refuses, one sentence after the field’s name with no colon of its own (ADR 0077)', async () => {
+    // SYNTHETIC values only; each refusal records nothing.
+    const input = { contactName: 'Synthetic Words', contactEmail: 'words@synthetic.test', organizationName: 'Synthetic Words Clinic', locations: '1', payers: 'Synthetic Payer', billingArrangement: 'in_house' };
+    // Each from its own documentation address, so the public form's rate limit never answers first.
+    let host = 100;
+    const refused = async (extra: Record<string, string>) => call(requestAudit, null, {}, { ...input, ...extra }, { clientAddress: `203.0.113.${String((host += 1))}` });
+    for (const locations of ['0', '1001', '2.5', 'three']) {
+      expect(await refused({ locations }), locations).toEqual({ status: 'invalid', issues: [{ field: 'locations', message: 'enter a whole number from 1 to 1,000' }] });
+    }
+    const payers = 'name 1 to 50 payers, each at most 120 characters';
+    for (const list of ['', ' , ', Array.from({ length: 51 }, (_, index) => `Synthetic Payer ${String(index)}`).join('\n'), 'P'.repeat(121)]) {
+      expect(await refused({ payers: list }), list.slice(0, 20)).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: payers }] });
+    }
+    expect(await refused({ payers: 'P,'.repeat(3001) })).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: 'enter at most 6,000 characters' }] });
+    expect(await refused({ referringFirm: 'F'.repeat(201) })).toEqual({ status: 'invalid', issues: [{ field: 'referringFirm', message: 'enter at most 200 characters' }] });
+    expect(await refused({ contactName: '' })).toEqual({ status: 'invalid', issues: [{ field: 'contactName', message: 'fill this in' }] });
+    expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name = 'Synthetic Words Clinic'")).rows).toEqual([]);
   });
 
   it('counts requests from one address against the public form’s limit, refused ones included', async () => {
