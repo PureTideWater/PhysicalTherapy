@@ -1,15 +1,15 @@
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../../components/action-form';
-import { CheckboxField, Field, SelectField } from '../../../../../components/field';
+import { Field, SelectField } from '../../../../../components/field';
 import { FormKeys } from '../../../../../components/form-keys';
 import { roleName } from '../../../../../components/format';
 import { ScrollTable } from '../../../../../components/scroll-table';
+import { InvitationItem, InvitationRow, MemberRow } from '../../../../../components/settings/user-rows';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import { InvitationStateText } from '../../../../../components/settings/invitations';
-import { INVITATION_HELD_BACK, type InvitationView, usersSettingsPage } from '../../../../../lib/routes/settings';
+import { usersSettingsPage } from '../../../../../lib/routes/settings';
 import { changeRole, endMembership, inviteUser, resendInvitation } from './actions';
 
 export const metadata: Metadata = { title: 'Users and roles' };
@@ -64,34 +64,7 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
               </thead>
               <tbody>
                 {members.map((member) => (
-                  <tr key={member.membershipId} className="border-t align-top" data-member-role={member.role}>
-                    <td className="py-1 pr-3">
-                      {member.email}
-                      {member.self ? <span className="text-xs text-muted-foreground"> (you)</span> : null}
-                    </td>
-                    <td className="py-1 pr-3">{roleName(member.role)}</td>
-                    <td className="py-1 pr-3">
-                      <Badge variant="outline">{member.status === 'invited' ? 'invited' : member.mfaEnrolled ? member.status : `${member.status}, no MFA`}</Badge>
-                    </td>
-                    <td className="py-1">
-                      {member.self ? null : (
-                        <div className="flex flex-wrap gap-2">
-                          <ActionForm action={changeRole} submit="Change role" variant="outline" className="flex items-end gap-2">
-                            <FormKeys />
-                            <input type="hidden" name="organizationId" value={organization.id} />
-                            <input type="hidden" name="membershipId" value={member.membershipId} />
-                            <SelectField label="Role" id={`role-${member.membershipId}`} name="role" options={roleOptions} defaultValue={member.role} />
-                          </ActionForm>
-                          <ActionForm action={endMembership} submit="End membership" variant="destructive" className="flex items-end gap-2">
-                            <FormKeys />
-                            <input type="hidden" name="organizationId" value={organization.id} />
-                            <input type="hidden" name="membershipId" value={member.membershipId} />
-                            <CheckboxField id={`confirm-${member.membershipId}`} name="confirm" errorName="Confirmation" required label="They lose access now. End their membership." />
-                          </ActionForm>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+                  <MemberRow key={member.membershipId} member={member} organizationId={organization.id} roleOptions={roleOptions} changeRole={changeRole} endMembership={endMembership} />
                 ))}
               </tbody>
             </table>
@@ -124,12 +97,7 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
               {/* Below the sm breakpoint each invitation is a list item, so the page never scrolls sideways (WCAG 1.4.10). */}
               <ul className="flex flex-col sm:hidden" aria-label="Invitations">
                 {invitations.map((invitation) => (
-                  <li key={invitation.id} className="flex flex-col gap-1 border-t py-2 text-sm" data-invitation={invitationState(invitation)}>
-                    <span className="break-all font-medium">{invitation.email}</span>
-                    <span className="text-muted-foreground">{roleName(invitation.role)}</span>
-                    <InvitationStateText invitation={invitation} />
-                    <ResendForm invitation={invitation} organizationId={organization.id} />
-                  </li>
+                  <InvitationItem key={invitation.id} invitation={invitation} organizationId={organization.id} resend={resendInvitation} />
                 ))}
               </ul>
               {/* The condition sits on a wrapper outside ScrollTable, so no empty region renders below sm (docs/adr/0078). */}
@@ -148,16 +116,7 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
                     </thead>
                     <tbody>
                       {invitations.map((invitation) => (
-                        <tr key={invitation.id} className="border-t" data-invitation={invitationState(invitation)}>
-                          <td className="py-1 pr-3">{invitation.email}</td>
-                          <td className="py-1 pr-3">{roleName(invitation.role)}</td>
-                          <td className="py-1 pr-3">
-                            <InvitationStateText invitation={invitation} />
-                          </td>
-                          <td className="py-1">
-                            <ResendForm invitation={invitation} organizationId={organization.id} />
-                          </td>
-                        </tr>
+                        <InvitationRow key={invitation.id} invitation={invitation} organizationId={organization.id} resend={resendInvitation} />
                       ))}
                     </tbody>
                   </table>
@@ -168,23 +127,5 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
         </CardContent>
       </Card>
     </AppShell>
-  );
-}
-
-function invitationState(invitation: InvitationView): string {
-  return invitation.acceptedAt !== null ? 'accepted' : invitation.undeliveredAt !== null ? 'undelivered' : invitation.expired ? 'expired' : 'pending';
-}
-
-/** Send again, for an invitation not accepted, unless SES would hold the email back (INVITATION_HELD_BACK). */
-function ResendForm({ invitation, organizationId }: { readonly invitation: InvitationView; readonly organizationId: string }) {
-  if (invitation.acceptedAt !== null || (invitation.undeliveredReason !== null && INVITATION_HELD_BACK.includes(invitation.undeliveredReason))) {
-    return null;
-  }
-  return (
-    <ActionForm action={resendInvitation} submit="Send again" variant="outline" className="flex flex-col gap-1">
-      <FormKeys />
-      <input type="hidden" name="organizationId" value={organizationId} />
-      <input type="hidden" name="invitationId" value={invitation.id} />
-    </ActionForm>
   );
 }
