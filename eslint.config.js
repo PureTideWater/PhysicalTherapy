@@ -38,6 +38,19 @@ const restrictedImports = {
   patterns: [{ group: MODEL_SDK_PATTERNS.flatMap((pattern) => [pattern, `${pattern}/**`]), message: MODEL_SDK_MESSAGE }, googleFontImports],
 };
 
+/**
+ * The per-line reconcile pass (apps/worker/src/reconcile/test-support/per-line.ts) is CAS-49's reference and nothing
+ * else (SUITE-CAP-3 D13; docs/adr/0087): a production file importing it would bring back the per-line candidate queries
+ * and their decrypts with no failing check. Refused by its path however it is written (./, ../ or through the package,
+ * with or without an extension) in every file but tests and test support, which the override below allows; no other
+ * test-support module is named, so the packages' existing test-support imports are untouched.
+ */
+const PER_LINE_MESSAGE = 'The per-line reconcile pass is CAS-49’s reference only (docs/adr/0087): import it from tests and test support, never from production code.';
+const perLineImports = { regex: String.raw`(^|/)test-support/per-line(\.[cm]?[jt]s)?$`, message: PER_LINE_MESSAGE };
+
+/** Outside tests and test support, the per-line reference is refused beside the rest. */
+const productionImports = { patterns: [...restrictedImports.patterns, perLineImports] };
+
 const googleFontSyntax = [
   { selector: `ImportExpression[source.value=${GOOGLE_FONT_SOURCE}]`, message: GOOGLE_FONT_MESSAGE },
   { selector: `CallExpression[callee.name='require'][arguments.0.value=${GOOGLE_FONT_SOURCE}]`, message: GOOGLE_FONT_MESSAGE },
@@ -122,7 +135,7 @@ export default defineConfig(
     },
     linterOptions: { reportUnusedDisableDirectives: 'error' },
     rules: {
-      '@typescript-eslint/no-restricted-imports': ['error', restrictedImports],
+      '@typescript-eslint/no-restricted-imports': ['error', productionImports],
       'no-restricted-syntax': ['error', ...restrictedSyntax],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
@@ -133,6 +146,13 @@ export default defineConfig(
   {
     files: ['**/*.{js,mjs,cjs}'],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    // Tests and test support may import the per-line reference (CAS-49); a later block replaces a rule's options, so
+    // the rule is declared again with the patterns that hold everywhere. Before packages/model-gateway's block, which
+    // still replaces it there.
+    files: ['**/*.test.{ts,tsx}', '**/test-support/**'],
+    rules: { '@typescript-eslint/no-restricted-imports': ['error', restrictedImports] },
   },
   {
     files: [`{${MONEY_PACKAGES.join(',')}}/**/*.{ts,tsx,js,mjs}`],
