@@ -320,7 +320,10 @@ stage lock loop above, which only stage writes and 835 loads refuse, any open tr
 refuses a try, a plain read included: a page that reads the ledger (Reconciliation, the ROI statement), a reconcile, a
 statement being built, and a person's ledger action. A refused try holds and queues nothing, so all of them go on.
 Once it holds both locks, those reads and writes wait for the rest of the migration (rewriting `ledger_match` for `seq`
-and validating the two CHECKs: well under a second at launch size), then proceed. If no try finds both tables free in
+and validating the two CHECKs: well under a second at launch size), then proceed. A page that reads at one snapshot
+(REPEATABLE READ: Reconciliation among them) and began before the locks were taken then reads `ledger_match` as empty
+once, since the rewrite gives every row the migration's transaction, and shows the ledger's entries with no matches; it
+writes nothing, and a reload reads it whole. If no try finds both tables free in
 five minutes, the deploy fails: cdk reports "the migration task … stopped without migrating (exit code 1, …)", and the
 migration's log group `/tp/<env>/migration` ends with
 

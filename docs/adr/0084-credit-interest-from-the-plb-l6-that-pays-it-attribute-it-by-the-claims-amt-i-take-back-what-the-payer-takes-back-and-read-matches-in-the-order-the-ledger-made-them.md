@@ -185,7 +185,11 @@ together with NOWAIT, once a second, up to five minutes, as SUITE-CAP-1b's migra
 refused try holds and queues nothing, so a reconcile caught between its read of `ledger_entry` and its read of
 `ledger_match`, or a page reading them the other way round, goes on and is never deadlocked (40P01) or queued behind
 it; if the tables stay in use for five minutes the migration fails before any service moves and the deploy is run
-again.
+again. Once it holds both locks, the ledger's readers and writers wait for the rest of the migration (well under a
+second at launch size), then proceed: a reconcile and a ledger action read at READ COMMITTED and proceed on the new
+rows, while a page that reads at one snapshot (REPEATABLE READ: Reconciliation among them) whose snapshot began before
+the locks were taken reads `ledger_match` as empty once, because adding `seq` rewrites it, and reads it whole on reload
+(#126 review DB-C1).
 
 **One moment's rows (D17).** One statement reads the practice's loaded remittances with their WO and nonzero L6 rows;
 every later read of the attribution keeps only claims of those remittances and links between them, and an L6 whose
