@@ -108,6 +108,11 @@ ready; only conflicting PRs keep the section-6 order.
   decrypt counts, logs, with 1a's concurrency-and-capacity lens).
 
 ## Decisions taken (recommended option, with reasons)
+- **Known gap words (the orchestrator, 2026-11-07 17:41 UTC), for the fix round:** Orchestrator's approved Known gap words for tools/release-capacity/checks.ts (:40 and :43), 2026-11-07 17:41 UTC. Apply verbatim in the fix round; update any test pinning the old strings; code comments may keep "Lane A"; a brand-copy or reviewer wording rule may be fixed within these facts without asking.
+  
+  KNOWN_GAP_FIGURE = 'Known gap: reconcile at A’s full month waits on the ledger trigger fixes (docs/adr/0087). Step 7b reconciles F, a practice of its own, at 10,000 lines (fewer at the smoke size), sized for its first attempt to finish within 360 s; A keeps its full month for triage and reports. A’s full month was last measured at 30,795 lines in 1,653 s, past a job’s 15-minute attempt, 89% of it in the ledger triggers.'
+  KNOWN_GAP_REVISIT = 'Revisit when the ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).'
+  
 - **D14, ruled by the orchestrator 2026-11-06 22:31 UTC:** step 7b stays on practice F, raised to 10,000 lines, for now
   (practice A's month measures 1,653 s against the 900 s attempt until Lane A's trigger fixes land, so moving it now would fail
   the gate on work outside this PR; F at 10,000 is a real-size measurement that passes on the candidate). Condition, recorded in
@@ -138,6 +143,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-07 17:41 UTC: orchestrator approved the Known gap words with an edit (no lane named; exact figure); applied in the fix round.
 - 2026-11-07 17:45 UTC: #134 is `dirty`: the base (now d4f52071: #131, #132, #133) conflicts in docs/product/test-matrix.md, packages/synth/src/cases/{matrix,registry}.ts only (shared documents, rule 6: keep both sides' rows, then pnpm synth --all). Resolved in the fix round's single base merge right before its push (speed rule 2); CI cannot run on #134 until then.
 - 2026-11-07 17:45 UTC: draft PR #134 opened at ee1dbb7d; subscribed; reviews wf_d54190e6-262 running.
 - 2026-11-07 17:30 UTC: built (6 slices, head ee1dbb7d, pushed); CAS-49.2 missing for the fix round; PR workflow wf_14d1cdf1-4dc running.
