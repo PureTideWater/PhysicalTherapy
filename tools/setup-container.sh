@@ -477,6 +477,11 @@ start_server() {
   else
     if checking; then ERR="not running (start: su postgres -c \"$bindir/pg_ctl -D $data -o '-p $port -k $SOCK' -l $logfile start\")"; return 1; fi
     if port_busy "$port"; then ERR="port $port is taken by another process, so the cluster at $data cannot start"; return 1; fi
+    # A restarted machine can come back with /root at 0700 (seen 2026-11-07), which leaves the postgres user unable to
+    # reach a cluster created earlier; reopen it the same way init_cluster does before starting.
+    if [ "$(dirname "$data")" = "$P/root" ] && ! pg_can_reach "$(dirname "$data")"; then
+      chmod 755 "$(dirname "$data")" || { ERR="could not set $(dirname "$data") to 0755 so postgres can reach $data"; return 1; }
+    fi
     mkdir -p "$(dirname "$logfile")"
     if [ "$(dirname "$logfile")" = "$P/tmp" ] && [ -n "$P" ]; then chmod 1777 "$P/tmp"; fi
     if ! as_pg "$bindir/pg_ctl" -D "$data" -o "-p $port -k $SOCK" -l "$logfile" -w -t 90 start >"$LOG_DIR/pg_ctl-$name.log" 2>&1; then
