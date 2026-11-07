@@ -53,7 +53,12 @@ describe('the screening upload form', () => {
     expect(NO_SCRIPT).toBe(
       'Screening a file needs JavaScript, because the file is read in this browser and never uploaded: only its rows of totals are sent. Turn JavaScript on before you fill in the form.',
     );
-    expect(html).toMatch(new RegExp(`<noscript><p data-slot="no-javascript" class="[^"]*">${NO_SCRIPT}</p></noscript>`));
+    // The app's notice (Alert), titled, with role note: it is there from the first paint, so it is no alert.
+    expect(html).toMatch(
+      new RegExp(
+        `<noscript><div data-slot="no-javascript" role="note" class="[^"]*rounded-lg border[^"]*"><div data-slot="alert-title" class="[^"]*">JavaScript is off</div><div data-slot="alert-description" class="[^"]*">${NO_SCRIPT}</div></div></noscript>`,
+      ),
+    );
     expect(html.indexOf('<noscript>')).toBeLessThan(html.indexOf('About your practice'));
     expect(plain).toContain('It is read in this browser and never uploaded: only its rows of totals are sent');
   });

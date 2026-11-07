@@ -330,9 +330,11 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
          */}
         <RefusalSummary state={shown} fromBrowser={shown === noFile || guarded.fromBrowser} submit="Screen the file" formRef={formRef} renderMessage={refusalSentence} stale="origin" appOrigin={appOrigin} unconfirmed="mails-again" />
         <noscript>
-          <p data-slot="no-javascript" className="rounded-md border px-4 py-3 text-sm">
-            {NO_SCRIPT}
-          </p>
+          {/* The app's notice, titled; role note, since it is there from the first paint and announces nothing. */}
+          <Alert role="note" data-slot="no-javascript">
+            <AlertTitle>JavaScript is off</AlertTitle>
+            <AlertDescription>{NO_SCRIPT}</AlertDescription>
+          </Alert>
         </noscript>
         <Card>
           <CardHeader>
