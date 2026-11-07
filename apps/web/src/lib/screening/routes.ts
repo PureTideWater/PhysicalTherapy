@@ -281,8 +281,11 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
       return `${row} repeats ${reason.first_row === undefined ? 'a row above' : `row ${reason.first_row.toLocaleString('en-US')}`}; add the two into one row`;
     case 'no_rows':
       return 'the file has no rows under its header; add the rows, then choose the file again';
-    case 'too_many_rows':
-      return `a screening takes at most ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows; split the file and screen each part`;
+    case 'too_many_rows': {
+      // Never a second screening: a later one replaces the earlier (the upload form's About card), so the step fits one file.
+      const max = SCREENING_MAX_ROWS.toLocaleString('en-US');
+      return `a screening takes at most ${max} rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out (fewer quarters or payer products) until ${max} or fewer remain, then choose the file again`;
+    }
     case 'row_count_mismatch':
       return 'the rows sent do not match the file; choose the file again';
     case 'too_few_claim_lines': {

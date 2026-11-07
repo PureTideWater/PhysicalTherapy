@@ -413,7 +413,9 @@ describe('the rows (CO-04)', () => {
     expect(await messages(csv(HEADER))).toEqual(['The file has no rows under its header.']);
     expect(await messages(bytes('\r\n\r\n'))).toEqual(['The file has no rows under its header.']);
     const many = Array.from({ length: 50_001 }, (_, index) => `97110,GP,${String((index % 999) + 1)},${String((Math.floor(index / 999) % 99) + 1)},medicare_ffs,2026-Q1,1.00,1`);
-    expect((await messages(csv(HEADER, ...many)))[0]).toMatch(/^The file has more than 50,000 rows/);
+    expect((await messages(csv(HEADER, ...many)))[0]).toBe(
+      'The file has more than 50,000 rows. Add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until 50,000 or fewer remain; then choose the file again.',
+    );
   });
 });
 

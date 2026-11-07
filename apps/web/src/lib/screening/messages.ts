@@ -104,8 +104,11 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
       return `${rowName(reason.row)} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}: the same code, modifiers, units, place of service, payer product and quarter. Add the two into one row.`;
     case 'no_rows':
       return 'The file has no rows under its header.';
-    case 'too_many_rows':
-      return `The file has more than ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows. Combine rows that share a code, modifiers, units, place of service, payer product and quarter, or screen the rest separately.`;
+    case 'too_many_rows': {
+      // Never "screen the rest separately": a later screening replaces the earlier one, so the step fits one file.
+      const max = SCREENING_MAX_ROWS.toLocaleString('en-US');
+      return `The file has more than ${max} rows. Add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until ${max} or fewer remain; then choose the file again.`;
+    }
     case 'row_count_mismatch':
       return 'The rows sent do not add up to the file’s row count. Choose the file again.';
     case 'too_few_claim_lines':
