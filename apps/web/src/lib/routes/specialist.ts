@@ -126,7 +126,7 @@ export const ledgerReviewPage = practiceRoute({
 
 /** What an adjustment does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
 export const ADJUSTMENT_CONSEQUENCE =
-  'Adjusting writes a new entry in your name with your reason that changes this entry’s amount by what you enter; the entry itself never changes, and an adjustment is undone only by reversing its match. The ledger keeps it between zero and what the entry’s evidence shows (the row’s amount for a posting or a deposit, the entry’s own amount for an approval, a recoupment or interest), and a line’s posted and deposited never above what was approved for it. The totals and the line’s stage follow the ledger.';
+  'Adjusting writes a new entry in your name with your reason that changes this entry’s amount by what you enter; the entry itself never changes, and an adjustment is undone only by reversing its match. The ledger keeps it between zero and what the entry’s evidence shows (the row’s amount for a posting or a deposit, the entry’s own amount for an approval, a recoupment or interest), a line’s posted and deposited never above what was approved for it, and a line’s interest, net of what the payer took back, never below zero. The totals and the line’s stage follow the ledger.';
 
 const DOLLARS = /^-?\d{1,9}(?:\.\d{1,2})?$/;
 

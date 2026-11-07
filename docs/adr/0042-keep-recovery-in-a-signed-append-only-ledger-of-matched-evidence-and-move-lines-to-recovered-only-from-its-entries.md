@@ -1,7 +1,8 @@
 # 0042. Keep recovery in a signed, append-only ledger of matched evidence, and move lines to recovered only from its entries
 
 - **Status:** accepted (amends 0038 for the stages payer approved and recovered, 0039 for the reconcile step and the
-  daily schedule, and 0041 for the case state a recoupment leaves)
+  daily schedule, and 0041 for the case state a recoupment leaves); amended by [0084](0084-credit-interest-from-the-plb-l6-that-pays-it-attribute-it-by-the-claims-amt-i-take-back-what-the-payer-takes-back-and-read-matches-in-the-order-the-ledger-made-them.md)
+  (interest, by a dated amendment of 2026-10-28 below its text)
 - **Date:** 2026-10-23
 - **Deciders:** founder (engineering)
 - **PRD sections:** 1 ("nothing is called recovered until the money has posted"), 5 (J10, J11), 6 (Recovery ledger and
@@ -93,8 +94,13 @@ a case with a line moved back from payer approved or recovered, and none still r
 the payer answered before. It is never `open` again (triage's state for gathering a pattern's lines, one per pattern). To
 dispute the take-back at the next level, the person records the payer's notice as a denial that reopens the case (ADR
 0041's rule). The reconcile then tells the case's owner in the app, or the practice's people when the case has no reachable
-owner (notification kind `recoupment`, counts and totals only; the web links it to the case). A PLB L6, or a claim's
-AMT I (now loaded into `claim.interest_cents`), writes an interest entry beside principal. A PLB FB writes no entry.
+owner (notification kind `recoupment`, counts and totals only; the web links it to the case). A PLB L6 writes an
+interest entry beside principal, positive when it pays interest and negative when it takes interest back, for the case
+lines of the claims it is for: those of its payer it names, or, when it names none, those whose AMT I reports interest
+in its remittance, a claim's reversal and correction netted (docs/adr/0084). A PLB FB writes no entry.
+*Amended 2026-10-28 (Lane A, `co-001/ledger-interest-once`; docs/adr/0084, under the founder's ledger freeze exception
+of 2026-10-27):* this read "A PLB L6, or a claim's AMT I (now loaded into `claim.interest_cents`), writes an interest
+entry beside principal.", which credited one payment of interest twice when a payer sent both, as the 835 guide asks.
 
 **Manual matching.** `unmatchedItems` lists the posting rows, the EFT rows and the adjusted payments that nothing
 matched, each with its evidence and its candidates. A person with `posting.reconcile` matches by hand

@@ -27,10 +27,11 @@ import { collect } from '../storage/documents';
 import { todayUtc } from '../triage/execute';
 import { triageHandler } from '../triage/job';
 import { type RunningWorker, startWorker } from '../worker';
-import { type Scope, ledgerEntries } from './ledger';
+import { type Scope, ledgerEntries, ledgerMatches } from './ledger';
 import { matchPostingByHand, reverseMatch } from './manual';
 import { STATEMENT_COLUMNS, roiStatementHandler, storedStatement } from './print';
 import { reconcileHandler } from './job';
+import { chainContext } from './remittances';
 import { generateRoiStatement } from './statements';
 import { LED_PLAN, LedgerWorld, ledSettings } from './test-support/ledger-world';
 import { unmatchedItems } from './unmatched';
@@ -358,5 +359,58 @@ describe('the ledger through the job chain (J10, J11)', () => {
     await expect(asManager('UPDATE roi_statement SET recovered_cents = 0 WHERE id = $1')).rejects.toMatchObject({ code: '42501' });
     await expect(asManager("UPDATE roi_statement SET document_key = document_key || 'x' WHERE id = $1")).rejects.toMatchObject({ code: '23514' });
     await expect(asManager('DELETE FROM roi_statement WHERE id = $1')).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('a line’s chain read back (LED-25; docs/adr/0084)', () => {
+  it('reads its matches in the order the ledger made them, within one transaction and across, never by their IDs, and never renumbers one', async () => {
+    const practice = await w.practice(`LED-25 chain ${randomUUID().slice(0, 8)}`, ledSettings());
+    const practiceId = practice.practiceId;
+    await w.caseFor(practice, 'LED-16/two-lines-original.835');
+    const lines = (await w.rows<{ service_line_id: string }>(practice, 'SELECT cl.service_line_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id ORDER BY l.line_no')).map(
+      (line) => line.service_line_id,
+    );
+    expect(lines).toHaveLength(2);
+    await w.load(practice, 'LED-16/two-lines-adjusted.835');
+    const [correction] = await w.rows<{ id: string; remittance_id: string }>(
+      practice,
+      "SELECT c.id, c.remittance_id FROM claim c WHERE c.claim_status_code <> '22' AND EXISTS (SELECT 1 FROM claim o WHERE o.superseded_by_claim_id = c.id)",
+    );
+    const [reversal] = await w.rows<{ id: string }>(practice, "SELECT id FROM claim WHERE claim_status_code = '22' AND remittance_id = $1", [correction?.remittance_id]);
+    // IDs that sort against the order they are made in.
+    const made = ['ffffffff-ffff-4fff-bfff-ffffffffffff', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000000'];
+    const insert = 'INSERT INTO ledger_match (id, practice_id, kind, claim_id, remittance_id, service_line_id, outcome) VALUES ($1, $2, $3, $4, $5, $6, $7)';
+    const asJob = <T>(run: (scope: Scope) => Promise<T>) => withJobScope(w.app, { jobId: randomUUID(), practiceId }, (scope) => run(scope as Scope));
+    // One transaction, as one reconcile, whose matches share matched_at: line 1's claim match, then line 2's.
+    await asJob(async (scope) => {
+      await scope.client.query(insert, [made[0], practiceId, 'claim', correction?.id, correction?.remittance_id, lines[0], 'approved']);
+      await scope.client.query(insert, [made[1], practiceId, 'claim', correction?.id, correction?.remittance_id, lines[1], 'approved']);
+    });
+    // A later one: the reversal's take-back on line 1.
+    await asJob((scope) => scope.client.query(insert, [made[2], practiceId, 'recoupment', reversal?.id, correction?.remittance_id, lines[0], null]));
+    const read = await asJob(async (scope) => ({
+      ledger: (await ledgerMatches(scope, practiceId)).map((match) => match.id),
+      chain: (await chainContext(scope, practiceId, [correction?.id ?? ''], [])).matches.map((match) => match.id),
+    }));
+    expect(read).toEqual({ ledger: made, chain: made });
+    expect((await w.rows<{ id: string }>(practice, 'SELECT id FROM ledger_match ORDER BY seq')).map((match) => match.id)).toEqual(made);
+    // Never renumbered: the application role may not update seq, and the owner's renumbering is refused as any change of a match.
+    await expect(w.rows(practice, 'UPDATE ledger_match SET seq = DEFAULT WHERE id = $1', [made[0]])).rejects.toMatchObject({ code: '42501' });
+    await expect(asOwner(w.owner, [practiceId], () => w.owner.query('UPDATE ledger_match SET seq = DEFAULT WHERE id = $1', [made[0]]))).rejects.toThrow('a match never changes; it is reversed');
+    // Nor chosen by an insert: the identity numbers every one, the previous image's included (its column list names no seq).
+    await expect(
+      asOwner(w.owner, [practiceId], () =>
+        w.owner.query("INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id, seq) VALUES ($1, 'recoupment', $2, $3, $4, 1)", [
+          practiceId,
+          reversal?.id,
+          correction?.remittance_id,
+          lines[1],
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: '428C9' });
+    await asJob((scope) => scope.client.query("INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id) VALUES ($1, 'recoupment', $2, $3, $4)", [practiceId, reversal?.id, correction?.remittance_id, lines[1]]));
+    const numbered = await w.rows<{ seq: string; claim_id: string; service_line_id: string }>(practice, 'SELECT seq::text AS seq, claim_id, service_line_id FROM ledger_match ORDER BY seq');
+    expect(numbered).toHaveLength(4);
+    expect(numbered.at(-1)).toMatchObject({ claim_id: reversal?.id, service_line_id: lines[1] });
   });
 });

@@ -141,7 +141,7 @@ describe('a statement’s cover', () => {
     expect(html).toContain('Fees paid to PaidWhole:');
     expect(html).toContain('<title>ROI statement | PaidWhole</title>');
     expect(html).toContain('<p>Billing records no fees paid in the period, so no ratio to the fees is given.</p>');
-    expect(html).toContain('Interest the payer paid in the period, shown apart from principal.');
+    expect(html).toContain('Interest the payer paid in the period, less any it took back, shown apart from principal.');
   });
 
   it('says "recovered" only with posted or deposited: the ratio, the empty figure, each proof level (CO-11)', () => {

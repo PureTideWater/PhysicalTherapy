@@ -9,9 +9,14 @@ import {
   type PaymentChain,
   type PaymentEvent,
   type PaymentOutcome,
+  type ChainInterestLines,
+  type InterestDraw,
+  type InterestHeldSums,
+  type InterestWritten,
+  type PaidInterestLine,
   type ReversalTakeBack,
-  allocateByWeight,
   claimLinePayments,
+  correctedEntry,
   countedStage,
   keptClaimPart,
   entriesById,
@@ -23,10 +28,17 @@ import {
   paymentStep,
   preferredCandidates,
   reversalTakeBack,
+  addInterestHeld,
+  interestHeldOf,
+  interestHeldOn,
+  interestOutOfReach,
+  interestUnplaced,
+  interestWrites,
   takeInOrder,
 } from '@tp/ledger';
-import { type Cents, ZERO_CENTS, cents, negateCents, parseCents } from '@tp/money';
+import { type Cents, ZERO_CENTS, cents, minCents, negateCents, parseCents } from '@tp/money';
 
+import { type AdjustmentRow, type InterestReading, adjustmentMoment, interestAttribution } from './interest-chains';
 import { EMPTY_LINE_LEDGER, type LineLedger, type Scope, type StoredEntry, type StoredMatch, approvedRemaining, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers } from './ledger';
 import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
 
@@ -67,8 +79,16 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
  *   stands, nothing while a later claim of the line stands; a recouped entry, at once). A PLB WO naming
  *   the line's claim takes back what it names, from the lines with an approval standing, in order, never
  *   more than each has.
- * - Interest the payer paid on a claim attached to a case line, a PLB L6 naming it or the claim's own
- *   AMT I, is an interest entry, split by the lines' approvals when it covers several (allocated).
+ * - Interest is credited only from a PLB L6, once (docs/adr/0084): whom each PLB L6 is for is read as of one
+ *   moment (interest-chains.ts: the claim of its own payer its reference names, else its remittance's AMT I
+ *   netted per chain), and @tp/ledger interestWrites decides what it writes now, never past what its
+ *   attribution gives it of each sign however often the reconcile runs: interest paid on the lines matched to
+ *   the claims it is for, split by their approvals remaining, and interest taken back, a negative entry, on
+ *   the lines holding that chain's interest; its payments wait while a take-back of a chain that may yet
+ *   hold interest on a case line is not written whole, and a payment of a chain never goes to a line on
+ *   which another PLB L6 still owes a take-back of it that it can no longer write there (@tp/ledger
+ *   interestOutOfReach). A claim's AMT I alone credits nothing. An entry is allocated only when it is one of
+ *   two or more parts of a pro-rata split.
  * - A forward balance (PLB FB) is never an entry: it counts nothing until a recoupment resolves it.
  *
  * A claim that cannot be compared (no line of the case line's code and date) is left for a person: it
@@ -95,7 +115,10 @@ export interface RemittanceOutcome {
   readonly decreasedNoEntry: number;
   readonly noChange: number;
   readonly recoupments: number;
+  /** Interest entries above zero this pass wrote: interest a PLB L6 paid. */
   readonly interest: number;
+  /** Interest entries below zero this pass wrote: interest a PLB L6 took back (docs/adr/0084). */
+  readonly interestTakenBack: number;
   /** The recouped entries this pass wrote, by case: each tells the case's owner. */
   readonly recouped: readonly { readonly caseId: string; readonly entryId: string; readonly serviceLineId: string; readonly amountCents: Cents }[];
 }
@@ -364,15 +387,15 @@ export interface ChainContext {
 }
 
 /**
- * The practice's claim and recoupment matches in chain order. A reconcile's matches share one matched_at
- * (the transaction's), so within it they are ordered as the reconcile made them: claims first, in the
- * order their candidates were paid, then reversals in theirs, then provider adjustments in theirs.
+ * The practice's claim and recoupment matches in chain order: the order the ledger made them (ledger_match.seq;
+ * docs/adr/0084), within a reconcile and across reconciles, with when each was made (matched_at, the
+ * transaction's time, which a reversal's load time is compared with).
  */
 const CHAIN_ORDER = `
   SELECT m.id, (extract(epoch FROM m.matched_at) * 1000000)::bigint::text AS matched_at
-    FROM ledger_match m JOIN remittance r ON r.id = m.remittance_id LEFT JOIN claim c ON c.id = m.claim_id LEFT JOIN provider_adjustment a ON a.id = m.provider_adjustment_id
+    FROM ledger_match m
    WHERE m.practice_id = $1 AND m.kind IN ('claim', 'recoupment')
-   ORDER BY m.matched_at, CASE WHEN m.kind = 'claim' THEN 0 WHEN m.claim_id IS NOT NULL THEN 1 ELSE 2 END, r.bpr16_date, coalesce(c.created_at, a.created_at), a.position, coalesce(c.id, a.id), m.id`;
+   ORDER BY m.seq`;
 
 /** The practice's claim and recoupment matches in chain order, and when each was made. */
 async function chainMatches(scope: Scope, practiceId: string): Promise<Pick<ChainContext, 'matches' | 'matchedAt'>> {
@@ -675,6 +698,7 @@ interface Counts {
   noChange: number;
   recoupments: number;
   interest: number;
+  interestTakenBack: number;
 }
 
 interface Recouped {
@@ -834,25 +858,21 @@ async function recoupReversals(scope: Scope, practiceId: string, lines: readonly
   }
 }
 
-interface AdjustmentRow {
-  readonly id: string;
-  readonly remittance_id: string;
-  readonly reference: string;
-  readonly amount_cents: string;
-  readonly paid_on: string;
-  readonly category: 'recoupment' | 'interest';
-}
-
 /** The case lines a claim control number names: by the line's own claim or a claim matched to it with an approval. */
-function namedLines(hash: string, lines: readonly CaseLine[], claimHashes: ReadonlyMap<string, string>, matches: readonly StoredMatch[], approvedOnly: boolean): CaseLine[] {
+function namedLines(hash: string, lines: readonly CaseLine[], claimHashes: ReadonlyMap<string, string>, matches: readonly StoredMatch[]): CaseLine[] {
   return lines.filter(
     (line) =>
-      (!approvedOnly && line.claimHash === hash) ||
+      line.claimHash === hash ||
       matches.some((match) => match.kind === 'claim' && match.standing && match.outcome === 'approved' && match.serviceLineId === line.serviceLineId && claimHashes.get(match.claimId as string) === hash),
   );
 }
 
-/** PLB WO and L6 naming a claim of a case line: recoupments (in line order, at most what each has approved) and interest (split by the lines' approvals). */
+/**
+ * PLB WO naming a claim of a case line (recoupments, in line order, at most what each has approved) and PLB L6
+ * (interest credited once, docs/adr/0084), walked in today's order: by payment date, load and position (D13). The rows
+ * and whom each PLB L6 is for are read as of one moment (interest-chains.ts, D17): the walk visits exactly the rows
+ * statement 1 returned, and an L6 with no reference is read too, an L6 of zero is not.
+ */
 async function providerAdjustments(
   scope: Scope,
   cipher: PracticeCipher,
@@ -863,22 +883,19 @@ async function providerAdjustments(
   counts: Counts,
   recouped: Recouped[],
 ): Promise<void> {
-  const { rows } = await scope.client.query<AdjustmentRow>(
-    `SELECT a.id, a.remittance_id, a.reference, a.amount_cents::text AS amount_cents, r.bpr16_date::text AS paid_on, a.category
-       FROM provider_adjustment a JOIN remittance r ON r.id = a.remittance_id
-      WHERE a.practice_id = $1 AND r.status = 'loaded' AND a.category IN ('recoupment', 'interest') AND a.reference IS NOT NULL
-      ORDER BY r.bpr16_date, a.created_at, a.position`,
-    [practiceId],
-  );
-  if (rows.length === 0) {
+  const moment = await adjustmentMoment(scope, practiceId);
+  if (moment.adjustments.length === 0) {
     return;
   }
+  const reading = await interestAttribution(scope, cipher, practiceId, moment);
+  const interest = await interestState(scope, practiceId, lines, matches, reading);
   const claimHashes = await hashesOf(scope, matches);
-  for (const adjustment of rows) {
-    const hash = cipher.lookupHash('claim.payer_claim_control_number', adjustment.reference);
-    const amount = parseCents(adjustment.amount_cents);
+  for (const adjustment of moment.adjustments) {
     if (adjustment.category === 'recoupment') {
-      const named = namedLines(hash, lines, claimHashes, matches, false).filter((line) => !everMatched(matches, 'recoupment', adjustment.id, line.serviceLineId));
+      // A WO is read only with a reference, which it names whole (unchanged; docs/adr/0084 D14).
+      const hash = cipher.lookupHash('claim.payer_claim_control_number', adjustment.reference as string);
+      const amount = parseCents(adjustment.amount_cents);
+      const named = namedLines(hash, lines, claimHashes, matches).filter((line) => !everMatched(matches, 'recoupment', adjustment.id, line.serviceLineId));
       const takenBefore = cents(-sumEntries(await entriesOfEvidence(scope, practiceId, adjustment.id)));
       const left = cents(amount - takenBefore);
       if (named.length === 0 || left <= ZERO_CENTS) {
@@ -912,77 +929,317 @@ async function providerAdjustments(
       }
       continue;
     }
-    // L6: a negative adjustment pays the provider; the interest is its opposite.
-    const interest = negateCents(amount);
-    const named = namedLines(hash, lines, claimHashes, matches, true);
-    await recordInterest(scope, practiceId, matches, named, ledgers, interest, { kind: 'provider_adjustment', id: adjustment.id, remittanceId: adjustment.remittance_id, paidOn: adjustment.paid_on }, counts);
+    await recordInterest(scope, practiceId, adjustment, reading, { ledgers, counts, interest });
   }
 }
 
-/** A claim's own interest (AMT I), for the lines it approved. */
-async function claimInterest(scope: Scope, practiceId: string, lines: readonly CaseLine[], ledgers: Map<string, LineLedger>, matches: readonly StoredMatch[], counts: Counts): Promise<void> {
-  const approving = matches.filter((match) => match.kind === 'claim' && match.standing && match.outcome === 'approved');
-  if (approving.length === 0) {
+/** An interest match as the interest path reads it: whom it names on which line, and whether it stands. */
+interface InterestMatch {
+  readonly id: string;
+  readonly claimId: string | null;
+  readonly serviceLineId: string | null;
+  readonly standing: boolean;
+}
+
+/**
+ * What the interest path carries through one pass: the practice's interest matches and the entries of the interest
+ * they hold (every interest entry with its corrections, gross), read at the start and added to as the pass writes, so a
+ * later PLB L6 of the same pass counts what an earlier one wrote; and the lookups each PLB L6 reads them through, built
+ * once a pass and kept current as it writes (review INT-REL-2), so a draw reads only its own claims' lines and an L6's
+ * own entries, never every case line against every match:
+ * - claimMatches: each claim's standing claim matches on a case line, with their place in the pass's ledger order;
+ * - caseLines and lineOrder: each case line by its service line, and its place among the case lines;
+ * - entriesOf: each PLB L6's interest entries (its own, not their corrections), in ledger order;
+ * - chainOfMatch: each interest match's chain, by its claim (a match naming no claim is in none);
+ * - latestOf: each line's latest standing interest match of each chain;
+ * - caseLineChains: the chains a claim of which has a standing claim match on a case line;
+ * - takeBacksOf and paysOf: each chain's PLB L6s that take interest back from it, and that pay it, under the moment's
+ *   attribution; and outOfReach, each such take-back's lines a payment of the chain must not reach (@tp/ledger
+ *   interestOutOfReach), read once and dropped when the L6 writes;
+ * - held and lineHeld: what each line holds of each chain's interest, and of its interest as a whole (every chain's,
+ *   and a match's that names none, together, under LINE_TOTAL), net of corrections and take-backs: @tp/ledger
+ *   addInterestHeld's sums, which a take-back reads floored (PR 126 review F-M2-2).
+ */
+interface InterestState {
+  readonly matches: InterestMatch[];
+  readonly entries: StoredEntry[];
+  readonly claimMatches: ReadonlyMap<string, readonly { readonly at: number; readonly match: StoredMatch }[]>;
+  readonly caseLineChains: ReadonlySet<string>;
+  readonly takeBacksOf: ReadonlyMap<string, readonly string[]>;
+  readonly paysOf: ReadonlyMap<string, readonly string[]>;
+  readonly outOfReach: Map<string, ReadonlyMap<string, readonly string[]>>;
+  readonly caseLines: ReadonlyMap<string, CaseLine>;
+  readonly lineOrder: ReadonlyMap<string, number>;
+  readonly entriesOf: Map<string, StoredEntry[]>;
+  readonly chainOfMatch: Map<string, string>;
+  readonly latestOf: Map<string, InterestMatch>;
+  readonly held: InterestHeldSums;
+  readonly lineHeld: InterestHeldSums;
+}
+
+/** The key of a line's holding of a chain in InterestState.latestOf. */
+const lineAndChain = (serviceLineId: string, chain: string) => `${serviceLineId}|${chain}`;
+
+/** The key InterestState.lineHeld keeps each line's interest as a whole under: no chain's root is empty. */
+const LINE_TOTAL = '';
+
+/** An entry as @tp/ledger addInterestHeld reads it: an entry with no match has the match '', which is in no chain. */
+const withMatch = (entry: StoredEntry) => ({ ...entry, matchId: entry.matchId ?? '' });
+
+async function interestState(scope: Scope, practiceId: string, lines: readonly CaseLine[], matches: readonly StoredMatch[], reading: InterestReading): Promise<InterestState> {
+  const entries = await ledgerEntries(scope, practiceId);
+  const byId = entriesById(entries);
+  const state: InterestState = {
+    matches: [],
+    entries: entries.filter((entry) => correctedEntry(entry, byId).stage === 'interest'),
+    claimMatches: new Map(),
+    caseLineChains: new Set(),
+    takeBacksOf: new Map(),
+    paysOf: new Map(),
+    outOfReach: new Map(),
+    caseLines: new Map(lines.map((line) => [line.serviceLineId, line])),
+    lineOrder: new Map(lines.map((line, index) => [line.serviceLineId, index])),
+    entriesOf: new Map(),
+    chainOfMatch: new Map(),
+    latestOf: new Map(),
+    held: new Map(),
+    lineHeld: new Map(),
+  };
+  const claimMatches = state.claimMatches as Map<string, { readonly at: number; readonly match: StoredMatch }[]>;
+  for (const [at, match] of matches.entries()) {
+    if (match.kind === 'claim' && match.standing && match.serviceLineId !== null && state.lineOrder.has(match.serviceLineId)) {
+      claimMatches.set(match.claimId as string, [...(claimMatches.get(match.claimId as string) ?? []), { at, match }]);
+    }
+  }
+  const caseLineChains = state.caseLineChains as Set<string>;
+  for (const claimId of claimMatches.keys()) {
+    const chain = reading.chainOf.get(claimId);
+    if (chain !== undefined) {
+      caseLineChains.add(chain);
+    }
+  }
+  for (const draw of [...reading.draws.values()].flat()) {
+    const byChain = (draw.cents < ZERO_CENTS ? state.takeBacksOf : state.paysOf) as Map<string, string[]>;
+    byChain.set(draw.chain, [...(byChain.get(draw.chain) ?? []), draw.adjustmentId]);
+  }
+  for (const match of matches) {
+    if (match.kind === 'interest') {
+      addInterestMatch(state, reading, { id: match.id, claimId: match.claimId, serviceLineId: match.serviceLineId, standing: match.standing });
+    }
+  }
+  for (const entry of state.entries) {
+    addInterestEntry(state, entry);
+  }
+  // What each line holds, of each chain and as a whole: built once a pass here, added to as the pass writes. A
+  // correction counts under the entry it corrects (interestHeld); its own match is never read.
+  const matched = state.entries.map(withMatch);
+  addInterestHeld(state.held, matched, state.chainOfMatch);
+  addInterestHeld(state.lineHeld, matched, new Map(state.matches.map((match) => [match.id, LINE_TOTAL])));
+  return state;
+}
+
+/** An interest match read or written: kept in the pass's list and lookups. */
+function addInterestMatch(state: InterestState, reading: InterestReading, match: InterestMatch): void {
+  state.matches.push(match);
+  const chain = match.claimId === null ? undefined : reading.chainOf.get(match.claimId);
+  if (chain === undefined) {
     return;
   }
-  const { rows } = await scope.client.query<{ id: string; remittance_id: string; interest_cents: string; paid_on: string }>(
-    `SELECT c.id, c.remittance_id, c.interest_cents::text AS interest_cents, r.bpr16_date::text AS paid_on
-       FROM claim c JOIN remittance r ON r.id = c.remittance_id
-      WHERE c.practice_id = $1 AND c.id = ANY ($2::uuid[]) AND c.interest_cents > 0 ORDER BY r.bpr16_date, c.id`,
-    [practiceId, [...new Set(approving.map((match) => match.claimId as string))]],
-  );
-  for (const claim of rows) {
-    const named = lines.filter((line) => approving.some((match) => match.claimId === claim.id && match.serviceLineId === line.serviceLineId));
-    await recordInterest(scope, practiceId, matches, named, ledgers, parseCents(claim.interest_cents), { kind: 'claim', id: claim.id, remittanceId: claim.remittance_id, paidOn: claim.paid_on }, counts);
+  state.chainOfMatch.set(match.id, chain);
+  if (match.standing && match.serviceLineId !== null) {
+    state.latestOf.set(lineAndChain(match.serviceLineId, chain), match);
   }
 }
 
-/** Interest across the lines it covers, split by their approvals and flagged allocated when it covers more than one. */
+/** Every interest entry a PLB L6 has written, as @tp/ledger reads it: the chain of its match's claim, its line and its amount. */
+function writtenOf(interest: InterestState, adjustmentId: string): InterestWritten[] {
+  return (interest.entriesOf.get(adjustmentId) ?? []).map((entry) => ({
+    chain: entry.matchId === null ? null : (interest.chainOfMatch.get(entry.matchId) ?? null),
+    serviceLineId: entry.serviceLineId as string,
+    cents: entry.amountCents,
+  }));
+}
+
+/**
+ * The lines a payment of `chain` must not reach (PR 126 review MONEY-R4-1): those on which another PLB L6 still owes a
+ * take-back of the chain that it can no longer write there, having written an entry on them. An L6 draws once on a
+ * chain, so a payment's own L6 is never among those it reads.
+ */
+function outOfReachOf(interest: InterestState, reading: InterestReading, chain: string): Set<string> {
+  const lines = new Set<string>();
+  for (const other of interest.takeBacksOf.get(chain) ?? []) {
+    const byChain = interest.outOfReach.get(other) ?? interestOutOfReach({ draws: reading.draws.get(other) ?? [], written: writtenOf(interest, other) });
+    interest.outOfReach.set(other, byChain);
+    for (const line of byChain.get(chain) ?? []) {
+      lines.add(line);
+    }
+  }
+  return lines;
+}
+
+/**
+ * The lines a paid draw may reach (D5): a line with a standing claim match to a claim the draw is for, through the latest
+ * such match, an approving one first, in case-line order, weighted by its approvals remaining; each out of reach where
+ * another PLB L6 still owes a take-back of the draw's chain that it can no longer write there (outOfReachOf; PR 126
+ * review MONEY-R4-1), which @tp/ledger counts among the draw's lines and writes nothing on (PR 126 review RV-DB2-1).
+ */
+function paidLinesOf(interest: InterestState, reading: InterestReading, ledgers: ReadonlyMap<string, LineLedger>, draw: InterestDraw): PaidInterestLine[] {
+  const outOfReach = outOfReachOf(interest, reading, draw.chain);
+  // The draw's claims' standing claim matches, by line, in ledger order; the lines in case-line order.
+  const byLine = new Map<string, { readonly at: number; readonly match: StoredMatch }[]>();
+  for (const claimId of new Set(draw.claimIds)) {
+    for (const item of interest.claimMatches.get(claimId) ?? []) {
+      const line = item.match.serviceLineId as string;
+      byLine.set(line, [...(byLine.get(line) ?? []), item]);
+    }
+  }
+  return [...byLine]
+    .sort(([a], [b]) => (interest.lineOrder.get(a) as number) - (interest.lineOrder.get(b) as number))
+    .map(([serviceLineId, items]) => {
+      const standing = [...items].sort((a, b) => a.at - b.at).map((item) => item.match);
+      const match = (standing.filter((item) => item.outcome === 'approved').at(-1) ?? standing.at(-1)) as StoredMatch;
+      return {
+        serviceLineId,
+        claimId: match.claimId as string,
+        approved: match.outcome === 'approved',
+        weightCents: approvedRemaining(ledgers.get(serviceLineId) ?? EMPTY_LINE_LEDGER),
+        outOfReach: outOfReach.has(serviceLineId),
+      };
+    });
+}
+
+/**
+ * What of `chain`'s interest PLB L6s other than `adjustmentId` paid and can pay to no line, less what other PLB L6s
+ * still owe of take-backs of it (@tp/ledger interestUnplaced; PR 126 review R2M2-1): each paying L6 read with its draw's
+ * lines as it would read them now.
+ */
+function unplacedOf(interest: InterestState, reading: InterestReading, ledgers: ReadonlyMap<string, LineLedger>, adjustmentId: string, chain: string): Cents {
+  const others = (byChain: ReadonlyMap<string, readonly string[]>) => (byChain.get(chain) ?? []).filter((other) => other !== adjustmentId);
+  const payments = others(interest.paysOf).map((other) => {
+    const draws = reading.draws.get(other) ?? [];
+    const draw = draws.find((item) => item.chain === chain) as InterestDraw;
+    return { draws, written: writtenOf(interest, other), paid: paidLinesOf(interest, reading, ledgers, draw) };
+  });
+  const takeBacks = others(interest.takeBacksOf).map((other) => ({ draws: reading.draws.get(other) ?? [], written: writtenOf(interest, other) }));
+  return interestUnplaced({ chain, payments, takeBacks });
+}
+
+/** An entry of the interest the pass holds, read or written: a PLB L6's own interest entry is kept under it too. */
+function addInterestEntry(state: InterestState, entry: StoredEntry): void {
+  if (entry.stage === 'interest' && entry.serviceLineId !== null) {
+    state.entriesOf.set(entry.evidenceId, [...(state.entriesOf.get(entry.evidenceId) ?? []), entry]);
+  }
+}
+
+/**
+ * A PLB L6 (designs/ledger-interest-once.md D5, D6, D10): its draws under the moment's attribution, what it has written
+ * already (in earlier reconciles and earlier in this pass, reversed matches included) and, per chain, the lines its draws
+ * may reach, handed to @tp/ledger interestWrites, which decides every amount; then each part it returns written as an
+ * interest match carrying the PLB L6 and the claim, and its entry. The paid lines are those with a standing claim match
+ * to a claim the draw is for (for a PLB L6 that names a chain, the claims its reference reaches and those later in the
+ * chain from them; the latest such match, an approving one first), weighted by approvals remaining; the lines a
+ * take-back may reach are those holding the chain's interest, each through its latest standing interest match of the
+ * chain, holding no more than the line's interest as a whole. A chain may yet hold interest when its root is a reversal
+ * the moment links to no claim or a claim of it has a standing claim match on a case line; for a take-back of such a
+ * chain, what other PLB L6s paid the chain and can pay to no line is read too (unplacedOf; PR 126 review R2M2-1). A paid
+ * draw writes nothing on a line on which another PLB L6 still owes a take-back of its chain that it can no longer write
+ * there (@tp/ledger interestOutOfReach; PR 126 review MONEY-R4-1): the line keeps its share of the split, written
+ * nowhere (PR 126 review RV-DB2-1), so interest of a chain that comes to a case line after that L6 wrote, through a
+ * person's match by hand, say, goes only where the take-back can follow it. Each is read through the pass's lookups
+ * (InterestState), the holdings among them.
+ */
 async function recordInterest(
   scope: Scope,
   practiceId: string,
-  matches: readonly StoredMatch[],
-  named: readonly CaseLine[],
-  ledgers: ReadonlyMap<string, LineLedger>,
-  interest: Cents,
-  evidence: { readonly kind: 'provider_adjustment' | 'claim'; readonly id: string; readonly remittanceId: string; readonly paidOn: string },
-  counts: Counts,
+  adjustment: AdjustmentRow,
+  reading: InterestReading,
+  pass: { readonly ledgers: ReadonlyMap<string, LineLedger>; readonly counts: Counts; readonly interest: InterestState },
 ): Promise<void> {
-  const weights = named.map((line) => approvedRemaining(ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER));
-  if (interest <= ZERO_CENTS || !weights.some((weight) => weight > ZERO_CENTS)) {
+  const draws = reading.draws.get(adjustment.id) ?? [];
+  if (draws.length === 0) {
     return;
   }
-  const parts = allocateByWeight(interest, weights);
-  const allocated = named.length > 1;
-  for (const [index, line] of named.entries()) {
-    const part = parts[index] as Cents;
-    if (part <= ZERO_CENTS || everMatched(matches, 'interest', evidence.id, line.serviceLineId)) {
-      continue;
-    }
+  const { ledgers, counts, interest } = pass;
+  const written = writtenOf(interest, adjustment.id);
+  const chainLines = new Map<string, ChainInterestLines>();
+  for (const draw of draws) {
+    // A payment's lines, each out of reach where a take-back of its chain still owed can no longer follow it (PR 126
+    // review MONEY-R4-1, RV-DB2-1).
+    const paid = draw.cents > ZERO_CENTS ? paidLinesOf(interest, reading, ledgers, draw) : [];
+    // The lines holding the chain's interest, each cut to its interest as a whole (Postgres's line floor; D8), read only
+    // for a take-back: a chain can hold more on a line than the line holds when a specialist lowered another chain's entry.
+    const takenBack =
+      draw.cents < ZERO_CENTS
+        ? interestHeldOf(interest.held, draw.chain)
+            .filter((holding) => interest.caseLines.has(holding.serviceLineId))
+            .flatMap((holding) => {
+              const match = interest.latestOf.get(lineAndChain(holding.serviceLineId, draw.chain));
+              return match === undefined
+                ? []
+                : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: minCents(holding.heldCents, interestHeldOn(interest.lineHeld, LINE_TOTAL, holding.serviceLineId)) }];
+            })
+        : [];
+    // A take-back of a chain that may yet hold interest on a case line, not written whole, holds the L6's payments
+    // back (@tp/ledger interestWrites; PR 126 review F1): its root a reversal of a claim not uploaded yet, or a claim
+    // of it matched to a case line; unless the rest is interest other L6s paid the chain and can pay to no line (PR 126
+    // review R2M2-1).
+    const mayYetHold = reading.unlinkedReversals.has(draw.chain) || interest.caseLineChains.has(draw.chain);
+    const unplacedCents = draw.cents < ZERO_CENTS && mayYetHold ? unplacedOf(interest, reading, ledgers, adjustment.id, draw.chain) : ZERO_CENTS;
+    chainLines.set(draw.chain, { paid, takenBack, mayYetHold, unplacedCents });
+  }
+  for (const part of interestWrites({ draws, written, lines: chainLines })) {
+    const line = interest.caseLines.get(part.serviceLineId) as CaseLine;
     const matchId = await insertMatch(scope, practiceId, {
       kind: 'interest',
-      ...(evidence.kind === 'claim' ? { claimId: evidence.id } : { providerAdjustmentId: evidence.id }),
-      remittanceId: evidence.remittanceId,
-      serviceLineId: line.serviceLineId,
-      allocated,
+      claimId: part.claimId,
+      providerAdjustmentId: adjustment.id,
+      remittanceId: adjustment.remittance_id,
+      serviceLineId: part.serviceLineId,
+      allocated: part.allocated,
       matchedBy: null,
     });
     if (matchId === null) {
       continue;
     }
-    await insertEntry(scope, practiceId, {
+    const entryId = await insertEntry(scope, practiceId, {
       caseId: line.caseId,
-      serviceLineId: line.serviceLineId,
+      serviceLineId: part.serviceLineId,
       stage: 'interest',
-      amountCents: part,
-      evidenceKind: evidence.kind,
-      evidenceId: evidence.id,
+      amountCents: part.cents,
+      evidenceKind: 'provider_adjustment',
+      evidenceId: adjustment.id,
       matchId,
-      allocated,
-      effectiveOn: evidence.paidOn,
+      allocated: part.allocated,
+      effectiveOn: adjustment.paid_on,
       createdBy: null,
     });
-    counts.interest += 1;
+    addInterestMatch(interest, reading, { id: matchId, claimId: part.claimId, serviceLineId: part.serviceLineId, standing: true });
+    if (entryId !== null) {
+      const entry: StoredEntry = {
+        id: entryId,
+        caseId: line.caseId,
+        serviceLineId: part.serviceLineId,
+        stage: 'interest',
+        amountCents: part.cents,
+        evidenceKind: 'provider_adjustment',
+        evidenceId: adjustment.id,
+        matchId,
+        allocated: part.allocated,
+        effectiveOn: adjustment.paid_on,
+      };
+      interest.entries.push(entry);
+      addInterestEntry(interest, entry);
+      // The holdings kept current: the entry is its own root, on its line, of its match's chain and of the line's whole.
+      addInterestHeld(interest.held, [withMatch(entry)], interest.chainOfMatch);
+      addInterestHeld(interest.lineHeld, [withMatch(entry)], new Map([[matchId, LINE_TOTAL]]));
+      // What the L6 keeps payments off is read again once it has written.
+      interest.outOfReach.delete(adjustment.id);
+    }
+    if (part.cents > ZERO_CENTS) {
+      counts.interest += 1;
+    } else {
+      counts.interestTakenBack += 1;
+    }
   }
 }
 
@@ -1006,10 +1263,10 @@ async function hashesOf(scope: Scope, matches: readonly StoredMatch[]): Promise<
   return new Map(rows.map((row) => [row.id, row.hash]));
 }
 
-/** Step 1, recoupments and interest, for the practice (inside the reconcile step's locked transaction). */
+/** Step 1, recoupments and interest (credited from each PLB L6 only, docs/adr/0084), for the practice (inside the reconcile step's locked transaction). */
 export async function reconcileRemittances(scope: Scope, cipher: PracticeCipher, practiceId: string, recordNoChange: RecordReprocessedNoChange): Promise<RemittanceOutcome> {
   const lines = await caseLines(scope, cipher, practiceId);
-  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0 };
+  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0, interestTakenBack: 0 };
   const recouped: Recouped[] = [];
   if (lines.length === 0) {
     return { ...counts, recouped };
@@ -1019,6 +1276,5 @@ export async function reconcileRemittances(scope: Scope, cipher: PracticeCipher,
   const matches = await ledgerMatches(scope, practiceId);
   await recoupReversals(scope, practiceId, lines, ledgers, matches, counts, recouped);
   await providerAdjustments(scope, cipher, practiceId, lines, ledgers, await ledgerMatches(scope, practiceId), counts, recouped);
-  await claimInterest(scope, practiceId, lines, ledgers, await ledgerMatches(scope, practiceId), counts);
   return { ...counts, recouped };
 }
