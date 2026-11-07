@@ -785,6 +785,9 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     const de: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['DE ZEPHYRA'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
     expect(redactLetter('Seen 150.00Deductible', de, []).text).toBe('Seen 150.00[PATIENT_NAME]ductible');
     expect(redactLetter('Seen Deductible, BlueCross', de, []).text).toBe('Seen Deductible, BlueCross');
+    // And a part that is a word of a name written in camel case its own (docs/adr/0054).
+    const cross: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE CROSS'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
+    expect(redactLetter('Blue Cross BlueCross BlueShield', cross, []).text).toBe('Blue [PATIENT_NAME] Blue[PATIENT_NAME] BlueShield');
   });
 
   it('pins a recorded residual: the call’s own name glued to another word that nothing sets apart is sent (docs/adr/0054)', () => {
@@ -798,7 +801,7 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     }
   });
 
-  it('keeps a patient named for a month whose name is the month word of a second date read from the first date’s year (re-review PHI1-3; docs/adr/0054: a name that is the month word of a separated date is not taken)', () => {
+  it('keeps a patient named for a month whose name is the month word of a second date read from the first date’s year, and a claim or member number written as such a date (re-review PHI1-3, review PHI2-5; docs/adr/0054: a name that is the month word of a separated date is not taken)', () => {
     // "1 Jan 01" is read, and from its two-digit year "01 May-12" (2012-05-01) and "01 / June⏎01" too, since datesIn tries
     // each form at every number (MOD-16 seed 1034253323); cc3dd7f6 replaced the name there only because the first match
     // had taken the "01". Alone, such a date keeps the name at cc3dd7f6 too.
@@ -815,6 +818,16 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     }
     // Where no calendar reading holds the month word, the name is replaced.
     expect(redactLetter('Dear May, seen 1 Jan 01', may, []).text).toBe('Dear [PATIENT_NAME], seen 1 Jan 01');
+    // So does a digits-only claim or member number written as a whole separated date after an amount and a full stop, as
+    // "Paid 01-01-2020" keeps it at cc3dd7f6 too (review PHI2-5); with no space after the full stop, redaction and the
+    // check read it apart and the letter is refused.
+    const numbered: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1961-03-03'], memberIds: ['11022019'] };
+    const dated: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['01012020'] }];
+    for (const letter of ['Paid 0.00. 01-01-2020', 'Paid 0.00. 11-02-2019', 'Paid 01-01-2020']) {
+      expect(redactLetter(letter, numbered, dated).text, letter).toBe(letter);
+      expect(holdsIdentifier(letter, numbered, dated), letter).toBe(false);
+    }
+    expect(holdsIdentifier(redactLetter('Paid 0.00.11-02-2019', numbered, dated).text, numbered, dated)).toBe(true);
   });
 
   it('joins a number over grouping apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 (review finding R5-1)', () => {

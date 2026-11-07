@@ -872,6 +872,8 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a labeled SSN glued to a one-digit amount, ten digits in a run', 'SSN 900 12 34561.00'],
     // The labeled twin of an unlabeled amount-shaped phone at the start of a range, which is sent (re-review PHI1-1).
     ['a labeled amount-shaped phone that starts a range to a date', 'Phone 202 555 01.23-1/3/20'],
+    // The twin with the label set apart from the word before it (review PHI2-3).
+    ['an amount-shaped SSN at a range’s end after "Patient SSN"', 'Patient SSN 01/01/2020-900.12 3456'],
     // Review GATEWAY2-1: a labeled SSN or phone split with a group of five digits or more and an amount-shaped piece is
     // still one chain under its label (only a units column, a group under five digits, before the amount ends it).
     ['a labeled SSN of a five-digit group and cents', 'SSN 90012 34.56'],
@@ -1043,9 +1045,26 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['an unlabeled amount-shaped SSN at the end of a range from a date', 'Paid 01/01/2020-900.12 3456', 'Paid 01/01/2020-900.12 3456'],
     ['an unlabeled amount-shaped SSN at the end of a range from a currency amount with no cents', 'Paid $1-900.12 3456', 'Paid $1-900.12 3456'],
     ['an unlabeled amount-shaped phone at the start of a range to a date', 'Paid 202 555 01.23-1/3/20', 'Paid 202 555 01.23-1/3/20'],
+    // A label glued to the word before it by a lost space is no label, so the amount-shaped number is read as unlabeled,
+    // alone (sent at cc3dd7f6 too) and at a range's end (refused there at cc3dd7f6 only by A3): review PHI2-3; owned by the
+    // follow-on leak PR.
+    ['an amount-shaped SSN after an SSN label glued to the word before it', 'PatientSSN 900.12 3456', 'PatientSSN 900.12 3456'],
+    ['an amount-shaped phone after a phone label glued to the word before it', 'PaidPhone 202 555 01.23', 'PaidPhone 202 555 01.23'],
+    ['an amount-shaped SSN at a range’s end after a glued SSN label', 'PatientSSN 01/01/2020-900.12 3456', 'PatientSSN 01/01/2020-900.12 3456'],
+    ['an amount-shaped phone starting a range after a glued phone label', 'PaidPhone 202 555 01.23-1/3/20', 'PaidPhone 202 555 01.23-1/3/20'],
+    // Read as an amount and a date joined by a dash, a range (review PHI2-4): an SSN with a comma after its first digit,
+    // or a digit and a comma before it, and a point in its last four; a phone's last group and the next number read as a
+    // date that starts a range; cc3dd7f6 refused each only because the range then joined the next group (A3).
+    ['an SSN read as an amount and a date after its label', 'SSN 1,900-12-19.85', 'SSN 1,900-12-19.85'],
+    ['an SSN read as an amount and a date', 'Paid 0,900-12-19.85', 'Paid 0,900-12-19.85'],
+    ['an SSN read as an amount and a date that starts a range', 'SSN 2,900-12-19.85-1/3/20', 'SSN 2,900-12-19.85-1/3/20'],
+    ['an amount-shaped phone whose last group and the next number read as a date starting a range', 'Call 202 555 01.23-12-150.00', 'Call 202 555 01.23-12-150.00'],
+    // A masked SSN glued after a range's end: the follow-on leak PR's masked-glued class, which the range barrier extends.
+    ['a masked SSN glued after a range’s end', '01/01/2020-150.00XXX-XX-3456Paid', '01/01/2020-150.00XXX-XX-3456Paid'],
     // An SSN or phone glued digit to digit to an amount or a year, which the scan reads as one long group (review
-    // GATEWAY1-3); spaced and labeled, it is refused only where a run of its groups under the label holds 9 or 10 digits
-    // (re-review GATEWAY1-2), and next to a range as well (re-review PHI1-2).
+    // GATEWAY1-3); spaced and labeled, it is refused only where a run of its groups from the label's first group, or from
+    // the amount the label reaches, holds 9 or 10 digits (re-review GATEWAY1-2, review PHI2-6), and next to a range as well
+    // (re-review PHI1-2).
     ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
     ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
     ['a spaced labeled SSN glued to a two-digit amount', 'SSN 900 12 345615.00', 'SSN 900 12 345615.00'],
