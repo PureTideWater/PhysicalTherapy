@@ -267,6 +267,11 @@ screeningTest('a specialist approves the split; a file with patient information 
     await expect(refused).not.toContainText('SYNTHMBR');
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(refused).toContainText('Nothing was sent.');
+    // The refused file is marked, described by the "Not sent" list, and takes the focus after the press.
+    const fileInput = page.getByLabel('File to screen');
+    await expect(fileInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(fileInput).toHaveAttribute('aria-describedby', /(?:^| )screening-file-problems(?: |$)/);
+    await expect(fileInput).toBeFocused();
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: dateOfServiceCsv() });
     await expect(refused).toContainText('Column 6 (“DOS”) holds dates of service; remove the column, then choose the file again.');
     await page.getByRole('button', { name: 'Screen the file' }).click();
