@@ -56,6 +56,10 @@ export const EXCLUDED: readonly { readonly glob: string; readonly reason: string
     reason: "reads the engine's source text, which Stryker's instrumentation rewrites, so it fails on every run",
   },
   {
+    glob: 'packages/packets/src/verifier-template.performance.test.ts',
+    reason: "asserts only time: a template's check under a wall-clock bound, which instrumentation on a runner's shared CPUs passes or fails by load, so a mutant it covers would be killed or not by the runner rather than by what it does",
+  },
+  {
     glob: 'packages/packets/src/explain/purity.test.ts',
     reason: "reads the calculation words' source text for its imports and arithmetic, which Stryker's instrumentation rewrites, so it fails on every run",
   },

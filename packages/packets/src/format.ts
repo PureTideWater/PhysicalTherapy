@@ -27,6 +27,15 @@ export const PACKET_FORMAT = 'tp-packet/2';
 export const PACKET_FORMATS = ['tp-packet/1', 'tp-packet/2'] as const;
 export type PacketFormat = (typeof PACKET_FORMATS)[number];
 export const VERIFIER_FORMAT = 'tp-packet-verifier/2';
+/**
+ * The template format (design lane-b-packet-figure-placeholders, section 4; docs/adr/0089): a narrative's figures are fact
+ * tokens code renders, its free text holds none, and its report adds rendered_sha256. Reached only by asking for it
+ * (verifyAtFormat, verifyTemplate) until the database accepts its reports; VERIFIER_FORMAT is what every write uses.
+ */
+export const VERIFIER_FORMAT_V3 = 'tp-packet-verifier/3';
+/** The verifier formats @tp/packets can check a narrative at. */
+export const VERIFIER_FORMATS = [VERIFIER_FORMAT, VERIFIER_FORMAT_V3] as const;
+export type VerifierFormat = (typeof VERIFIER_FORMATS)[number];
 
 /** Kinds of payer response a submission can receive (Data dictionary, `payer_response.kind`). */
 export const PAYER_RESPONSE_KINDS = ['accepted', 'partial', 'denied', 'info_requested', 'reprocessed_no_change'] as const;
