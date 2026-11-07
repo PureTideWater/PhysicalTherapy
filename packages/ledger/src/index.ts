@@ -27,6 +27,7 @@ export {
   interestHeld,
   interestHeldOf,
   interestHeldOn,
+  interestOutOfReach,
   interestWrites,
   referenceCandidates,
 } from './interest';

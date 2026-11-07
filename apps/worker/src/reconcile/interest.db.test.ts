@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Practice } from '../price/test-support/pricing-world';
 import { type InterestReading, adjustmentMoment, interestAttribution, reportedInterest } from './interest-chains';
 import type { Scope } from './ledger';
-import { adjustEntry, reverseMatch } from './manual';
+import { adjustEntry, matchClaimByHand, reverseMatch } from './manual';
 import { LedgerWorld, ledSettings } from './test-support/ledger-world';
 
 /**
@@ -522,6 +522,56 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
       const interest = await w.sum(practice, "SELECT coalesce(sum(amount_cents), 0)::text AS total FROM ledger_entry WHERE stage = 'interest'");
       const cash = await w.sum(practice, "SELECT coalesce(-sum(amount_cents), 0)::text AS total FROM provider_adjustment WHERE category = 'interest'");
       expect([interest, cash]).toEqual([0n, 600n]);
+      await expectInterestFromItsL6(practice);
+      await replayed(practice);
+    },
+  );
+
+  it.each([
+    ['after the PLB L6 netting its take-back against B’s payment is written: the figure stays the cash', true],
+    ['before that PLB L6 is uploaded: its take-back is written on the lines and B’s payment is not, as in two-chains.835', false],
+  ])(
+    'never credits interest above the cash when a person matches by hand a claim whose interest a PLB L6 takes back, %s (unplaced.835, unplaced-two-chains.835; PR 126 review MONEY-R4-1)',
+    async (_, afterNetting) => {
+      const { practice, lines } = await opened('LED-24');
+      const [l1, l2] = lines as [Line, Line];
+      await upload(practice, 'LED-24', 'unplaced.835');
+      // C is on no case line, so its PLB L6's 5.40 finds no line; the reconciliation screen lists C for a person to match.
+      const c = await claimOf(practice, 'SYNEFTLED24015', 1);
+      expect(await w.rows(practice, "SELECT id FROM ledger_match WHERE kind = 'claim' AND claim_id = $1", [c.id])).toEqual([]);
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual([]);
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual([]);
+      const byHand = async () => {
+        for (const line of [l1, l2]) {
+          await w.manual(practice, (context) => matchClaimByHand(context, { practiceId: practice.practiceId, claimId: c.id, serviceLineId: line.serviceLineId }));
+        }
+        await w.reconcile(practice);
+      };
+      if (!afterNetting) {
+        await byHand();
+        expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0]]);
+        expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1]]);
+      }
+      await upload(practice, 'LED-24', 'unplaced-two-chains.835');
+      // C's reversal is linked to C, and B is matched to both lines: the PLB L6 draws B's 6.00 paid and C's 5.40 taken back.
+      expect((await claimOf(practice, 'SYNEFTLED24016', 2)).reversal_of_claim_id).toBe(c.id);
+      const [l6] = await l6sOf(practice, 'SYNEFTLED24016');
+      expect(((await attributionNow(practice)).draws.get(l6 as string) ?? []).map((draw) => draw.cents)).toEqual([600n, -540n]);
+      if (afterNetting) {
+        // C holds nothing on a case line and is matched to none, so the take-back finds no line and B's 6.00 goes to both.
+        const written = [[{ amountCents: '267', allocated: true }], [{ amountCents: '333', allocated: true }]];
+        expect([await interestOf(practice, l1.serviceLineId), await interestOf(practice, l2.serviceLineId)]).toEqual(written);
+        // A person matches C to both lines. The netting PLB L6 has an entry on each and still owes C's take-back, which it
+        // can no longer write there, so unplaced.835's 5.40 for C goes to neither line: nothing more is written.
+        await byHand();
+        expect([await interestOf(practice, l1.serviceLineId), await interestOf(practice, l2.serviceLineId)]).toEqual(written);
+      } else {
+        expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0], { amountCents: '-240', allocated: true }]);
+        expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1], { amountCents: '-300', allocated: true }]);
+      }
+      const interest = await w.sum(practice, "SELECT coalesce(sum(amount_cents), 0)::text AS total FROM ledger_entry WHERE stage = 'interest'");
+      const cash = await w.sum(practice, "SELECT coalesce(-sum(amount_cents), 0)::text AS total FROM provider_adjustment WHERE category = 'interest'");
+      expect([interest, cash]).toEqual([afterNetting ? 600n : 0n, 600n]);
       await expectInterestFromItsL6(practice);
       await replayed(practice);
     },

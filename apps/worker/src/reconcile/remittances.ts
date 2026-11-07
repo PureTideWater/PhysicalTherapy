@@ -29,6 +29,7 @@ import {
   addInterestHeld,
   interestHeldOf,
   interestHeldOn,
+  interestOutOfReach,
   interestWrites,
   takeInOrder,
 } from '@tp/ledger';
@@ -81,8 +82,10 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
  *   attribution gives it of each sign however often the reconcile runs: interest paid on the lines matched to
  *   the claims it is for, split by their approvals remaining, and interest taken back, a negative entry, on
  *   the lines holding that chain's interest; its payments wait while a take-back of a chain that may yet
- *   hold interest on a case line is not written whole. A claim's AMT I alone credits nothing. An entry is
- *   allocated only when it is one of two or more parts of a pro-rata split.
+ *   hold interest on a case line is not written whole, and a payment of a chain never goes to a line on
+ *   which another PLB L6 still owes a take-back of it that it can no longer write there (@tp/ledger
+ *   interestOutOfReach). A claim's AMT I alone credits nothing. An entry is allocated only when it is one of
+ *   two or more parts of a pro-rata split.
  * - A forward balance (PLB FB) is never an entry: it counts nothing until a recoupment resolves it.
  *
  * A claim that cannot be compared (no line of the case line's code and date) is left for a person: it
@@ -947,6 +950,9 @@ interface InterestMatch {
  * - chainOfMatch: each interest match's chain, by its claim (a match naming no claim is in none);
  * - latestOf: each line's latest standing interest match of each chain;
  * - caseLineChains: the chains a claim of which has a standing claim match on a case line;
+ * - takeBacksOf: each chain's PLB L6s that take interest back from it under the moment's attribution, and
+ *   outOfReach, each such L6's lines a payment of a chain must not reach (@tp/ledger interestOutOfReach), read once and
+ *   dropped when the L6 writes;
  * - held and lineHeld: what each line holds of each chain's interest, and of its interest as a whole (every chain's,
  *   and a match's that names none, together, under LINE_TOTAL), net of corrections and take-backs: @tp/ledger
  *   addInterestHeld's sums, which a take-back reads floored (PR 126 review F-M2-2).
@@ -956,6 +962,8 @@ interface InterestState {
   readonly entries: StoredEntry[];
   readonly claimMatches: ReadonlyMap<string, readonly { readonly at: number; readonly match: StoredMatch }[]>;
   readonly caseLineChains: ReadonlySet<string>;
+  readonly takeBacksOf: ReadonlyMap<string, readonly string[]>;
+  readonly outOfReach: Map<string, ReadonlyMap<string, readonly string[]>>;
   readonly caseLines: ReadonlyMap<string, CaseLine>;
   readonly lineOrder: ReadonlyMap<string, number>;
   readonly entriesOf: Map<string, StoredEntry[]>;
@@ -982,6 +990,8 @@ async function interestState(scope: Scope, practiceId: string, lines: readonly C
     entries: entries.filter((entry) => correctedEntry(entry, byId).stage === 'interest'),
     claimMatches: new Map(),
     caseLineChains: new Set(),
+    takeBacksOf: new Map(),
+    outOfReach: new Map(),
     caseLines: new Map(lines.map((line) => [line.serviceLineId, line])),
     lineOrder: new Map(lines.map((line, index) => [line.serviceLineId, index])),
     entriesOf: new Map(),
@@ -1001,6 +1011,12 @@ async function interestState(scope: Scope, practiceId: string, lines: readonly C
     const chain = reading.chainOf.get(claimId);
     if (chain !== undefined) {
       caseLineChains.add(chain);
+    }
+  }
+  const takeBacksOf = state.takeBacksOf as Map<string, string[]>;
+  for (const draw of [...reading.draws.values()].flat()) {
+    if (draw.cents < ZERO_CENTS) {
+      takeBacksOf.set(draw.chain, [...(takeBacksOf.get(draw.chain) ?? []), draw.adjustmentId]);
     }
   }
   for (const match of matches) {
@@ -1032,6 +1048,32 @@ function addInterestMatch(state: InterestState, reading: InterestReading, match:
   }
 }
 
+/** Every interest entry a PLB L6 has written, as @tp/ledger reads it: the chain of its match's claim, its line and its amount. */
+function writtenOf(interest: InterestState, adjustmentId: string): InterestWritten[] {
+  return (interest.entriesOf.get(adjustmentId) ?? []).map((entry) => ({
+    chain: entry.matchId === null ? null : (interest.chainOfMatch.get(entry.matchId) ?? null),
+    serviceLineId: entry.serviceLineId as string,
+    cents: entry.amountCents,
+  }));
+}
+
+/**
+ * The lines a payment of `chain` must not reach (PR 126 review MONEY-R4-1): those on which another PLB L6 still owes a
+ * take-back of the chain that it can no longer write there, having written an entry on them. An L6 draws once on a
+ * chain, so a payment's own L6 is never among those it reads.
+ */
+function outOfReachOf(interest: InterestState, reading: InterestReading, chain: string): Set<string> {
+  const lines = new Set<string>();
+  for (const other of interest.takeBacksOf.get(chain) ?? []) {
+    const byChain = interest.outOfReach.get(other) ?? interestOutOfReach({ draws: reading.draws.get(other) ?? [], written: writtenOf(interest, other) });
+    interest.outOfReach.set(other, byChain);
+    for (const line of byChain.get(chain) ?? []) {
+      lines.add(line);
+    }
+  }
+  return lines;
+}
+
 /** An entry of the interest the pass holds, read or written: a PLB L6's own interest entry is kept under it too. */
 function addInterestEntry(state: InterestState, entry: StoredEntry): void {
   if (entry.stage === 'interest' && entry.serviceLineId !== null) {
@@ -1048,8 +1090,11 @@ function addInterestEntry(state: InterestState, entry: StoredEntry): void {
  * chain from them; the latest such match, an approving one first), weighted by approvals remaining; the lines a
  * take-back may reach are those holding the chain's interest, each through its latest standing interest match of the
  * chain, holding no more than the line's interest as a whole. A chain may yet hold interest when its root is a reversal
- * the moment links to no claim or a claim of it has a standing claim match on a case line. Each is read through the
- * pass's lookups (InterestState), the holdings among them.
+ * the moment links to no claim or a claim of it has a standing claim match on a case line. A paid draw never reaches a
+ * line on which another PLB L6 still owes a take-back of its chain that it can no longer write there (@tp/ledger
+ * interestOutOfReach; PR 126 review MONEY-R4-1), so interest of a chain that comes to a case line after that L6 wrote,
+ * through a person's match by hand, say, goes only where the take-back can follow it. Each is read through the pass's
+ * lookups (InterestState), the holdings among them.
  */
 async function recordInterest(
   scope: Scope,
@@ -1063,19 +1108,19 @@ async function recordInterest(
     return;
   }
   const { ledgers, counts, interest } = pass;
-  const written: InterestWritten[] = (interest.entriesOf.get(adjustment.id) ?? []).map((entry) => ({
-    chain: entry.matchId === null ? null : (interest.chainOfMatch.get(entry.matchId) ?? null),
-    serviceLineId: entry.serviceLineId as string,
-    cents: entry.amountCents,
-  }));
+  const written = writtenOf(interest, adjustment.id);
   const chainLines = new Map<string, ChainInterestLines>();
   for (const draw of draws) {
+    // A payment never reaches a line a take-back of its chain still owed can no longer follow it to (PR 126 review MONEY-R4-1).
+    const outOfReach = draw.cents > ZERO_CENTS ? outOfReachOf(interest, reading, draw.chain) : new Set<string>();
     // The draw's claims' standing claim matches, by line, in ledger order; the lines in case-line order.
     const byLine = new Map<string, { readonly at: number; readonly match: StoredMatch }[]>();
     for (const claimId of new Set(draw.claimIds)) {
       for (const item of interest.claimMatches.get(claimId) ?? []) {
         const line = item.match.serviceLineId as string;
-        byLine.set(line, [...(byLine.get(line) ?? []), item]);
+        if (!outOfReach.has(line)) {
+          byLine.set(line, [...(byLine.get(line) ?? []), item]);
+        }
       }
     }
     const paid = [...byLine]
@@ -1148,6 +1193,8 @@ async function recordInterest(
       // The holdings kept current: the entry is its own root, on its line, of its match's chain and of the line's whole.
       addInterestHeld(interest.held, [withMatch(entry)], interest.chainOfMatch);
       addInterestHeld(interest.lineHeld, [withMatch(entry)], new Map([[matchId, LINE_TOTAL]]));
+      // What the L6 keeps payments off is read again once it has written.
+      interest.outOfReach.delete(adjustment.id);
     }
     if (part.cents > ZERO_CENTS) {
       counts.interest += 1;

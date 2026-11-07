@@ -1311,7 +1311,10 @@ export function led23(b: CaseBuilder): void {
  * the take-back is written and the payment is not, so the figure errs low, never above the cash; uploaded before
  * paired.835 (twoChainsOutOfOrder), its payment waits for the take-back, which reaches the lines once paired.835's
  * interest is on them, so the outcome is the same. later-named-latest.835 names F2 in a later check: line 2, which F2
- * approved, takes it whole, never line 1 through F1's claim match.
+ * approved, takes it whole, never line 1 through F1's claim match. unplaced.835 pays C's interest while C is on no case
+ * line, and unplaced-two-chains.835 nets B's payment against C's take-back: a person who then matches C to the lines by
+ * hand moves nothing, since C's interest never goes to a line on which a take-back of it still owed can no longer be
+ * written, so the figure stays the cash.
  */
 export function led24(b: CaseBuilder): void {
   const { base, original, correction, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
@@ -1389,6 +1392,19 @@ export function led24(b: CaseBuilder): void {
     `After second.835: a later remittance whose PLB L6 of -5.40 names F2 (${f2.payerClaimControlNumber}), the latest correction, which approved line 2 and left line 1 as F1 paid it, beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.`,
   );
   recoveryScenario(b);
+  // C under a patient control number of its own and with no REF F8: the reconcile places it on no case line, and the
+  // reconciliation screen lists it among the adjusted payments for a person to match by hand (PR 126 review MONEY-R4-1).
+  const unplaced: Claim = { ...correction, patientControlNumber: `SYNPCN${caseKey(b.info.id)}099`, refs: (correction.refs ?? []).filter((ref) => ref.qualifier !== 'F8') };
+  b.add835(
+    'unplaced.835',
+    ledRemittance(b, base, 15, adjustedOn, [unplaced], interestPlb(base, [{ reference: unplaced.payerClaimControlNumber, amount: negateCents(LED_INTEREST) }])).file,
+    `C (${unplaced.payerClaimControlNumber}) alone, under a patient control number of its own (${unplaced.patientControlNumber}) and with no REF F8, so the reconcile places it on no case line, paying 160.00 with AMT I 5.40, and a PLB L6 of -5.40 naming it: BPR02 165.40.`,
+  );
+  b.add835(
+    'unplaced-two-chains.835',
+    ledRemittance(b, base, 16, laterOn, [unlinked, reversalOf(unplaced)], pool(dollars('-0.60'))).file,
+    `After unplaced.835: B (${unlinked.payerClaimControlNumber}) as in two-chains.835, matched to both case lines, paying as C (paid 160.00) with AMT I 6.00, then unplaced.835's C reversed (paid -160.00, AMT I -5.40), which the loader links to it, and one PLB L6 of -0.60 naming nothing, netting B's 6.00 paid against C's 5.40 taken back: BPR02 0.60.`,
+  );
   b.scenario({
     caseLines: [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line })),
     variants: {
@@ -1401,6 +1417,7 @@ export function led24(b: CaseBuilder): void {
       outOfOrder: { original: 'out-of-order-original.835', files: ['out-of-order-2.835', 'out-of-order-1.835'] },
       twoChains: ['paired.835', 'two-chains.835'],
       twoChainsOutOfOrder: ['two-chains.835', 'paired.835'],
+      matchedByHand: ['unplaced.835', 'unplaced-two-chains.835'],
     },
   });
   const takenBack = [ledEntry('interest', negateCents(firstInterest), 'taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'taken-back.835 PLB L6')];
@@ -1452,6 +1469,22 @@ export function led24(b: CaseBuilder): void {
         interestTotalCents: '0',
         reconciles: 3,
         note: "two-chains.835 first: C's reversal is linked to nothing yet and its take-back finds no line, so B's payment waits and nothing is written; once paired.835 links it and pays C's 5.40 on the lines, the take-back is written there and B's payment is not, as in twoChains",
+      },
+      matchedByHand: {
+        afterNetting: [ledEntry('interest', dollars('2.67'), 'unplaced-two-chains.835 PLB L6'), ledEntry('interest', dollars('3.33'), 'unplaced-two-chains.835 PLB L6')],
+        interest: [ledEntry('interest', dollars('2.67'), 'unplaced-two-chains.835 PLB L6'), ledEntry('interest', dollars('3.33'), 'unplaced-two-chains.835 PLB L6')],
+        interestTotalCents: '600',
+        matchedFirst: {
+          interest: [
+            ledEntry('interest', firstInterest, 'unplaced.835 PLB L6'),
+            ledEntry('interest', secondInterest, 'unplaced.835 PLB L6'),
+            ledEntry('interest', negateCents(firstInterest), 'unplaced-two-chains.835 PLB L6'),
+            ledEntry('interest', negateCents(secondInterest), 'unplaced-two-chains.835 PLB L6'),
+          ],
+          interestTotalCents: '0',
+        },
+        reconciles: 3,
+        note: "C is on no case line when the PLB L6 netting B's 6.00 paid against C's 5.40 taken back is written, so its take-back finds no line and B's 6.00 goes to both lines; a person then matches C to both lines by hand, and unplaced.835's 5.40 for C never goes to a line on which that PLB L6 still owes C's take-back and can write nothing more: the figure stays the cash, 6.00, never 11.40. Matched by hand before unplaced-two-chains.835 is uploaded (matchedFirst), C's 5.40 is paid and taken back on the lines and B's payment is not written, as in twoChains",
       },
     },
   });

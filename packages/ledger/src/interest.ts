@@ -334,6 +334,11 @@ export function attributeInterest({ remittances, adjustments }: { readonly remit
  * take-back then reaches the lines it lands on before any payment of the L6 can, so the outcome does not depend on the
  * order the remittances were uploaded in. A take-back of a chain that can come to hold no interest on a case line holds
  * nothing back.
+ *
+ * A chain can also come to a case line with no upload, after the L6 wrote its payments (PR 126 review MONEY-R4-1): a
+ * person matches a claim of it by hand, or a written-off line is reopened. The take-back it still owes then follows that
+ * chain's interest only to the lines it has not reached, so the reconcile keeps every other L6's payment of the chain
+ * off the lines it has (interestOutOfReach).
  */
 export function interestWrites({
   draws,
@@ -358,9 +363,7 @@ export function interestWrites({
     }
   }
 
-  const drawn = draws.map((draw) => draw.cents as bigint);
-  const done = written.map((entry) => entry.cents as bigint);
-  const left = new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
+  const left = leftOf(draws, written);
   const reached = new Set(written.map((entry) => entry.serviceLineId));
   const parts: InterestPart[] = [];
   // A take-back of a chain that may yet hold interest is not written whole: the payments wait (PR 126 review F1).
@@ -370,11 +373,7 @@ export function interestWrites({
     if (chainLines === undefined) {
       continue;
     }
-    const given = towards(
-      written.filter((entry) => entry.chain === draw.chain).map((entry) => entry.cents),
-      sign,
-    );
-    const due = maxCents(ZERO_CENTS, minCents(cents(size(draw.cents) - given), cents(left.get(sign) as bigint)));
+    const due = owed(draw, sign, written, left.get(sign) as bigint);
     let chosen: readonly { readonly serviceLineId: string; readonly claimId: string }[];
     let weights: Cents[];
     let amount: Cents;
@@ -411,6 +410,38 @@ export function interestWrites({
     left.set(sign, (left.get(sign) as bigint) - total(split));
   }
   return parts;
+}
+
+/** What a PLB L6 has left to write of each sign (1n and -1n): its draws of that sign less its entries of that sign, gross (D6). */
+function leftOf(draws: readonly InterestDraw[], written: readonly InterestWritten[]): Map<bigint, bigint> {
+  const drawn = draws.map((draw) => draw.cents as bigint);
+  const done = written.map((entry) => entry.cents as bigint);
+  return new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
+}
+
+/** What a PLB L6 still owes its draw of `sign` (D6): the draw less what it has given the draw's chain that way, within `left`, what it has left of that sign. */
+function owed(draw: InterestDraw, sign: bigint, written: readonly InterestWritten[], left: bigint): Cents {
+  const given = towards(
+    written.filter((entry) => entry.chain === draw.chain).map((entry) => entry.cents),
+    sign,
+  );
+  return maxCents(ZERO_CENTS, minCents(cents(size(draw.cents) - given), cents(left)));
+}
+
+/**
+ * Where a payment of each chain must not go, read from one PLB L6 (PR 126 review MONEY-R4-1): for each chain the L6
+ * takes interest back from and still owes (its draw less what it has taken back from that chain, within what is left of
+ * its take-backs, as interestWrites reads them), the lines it has written an entry on, in the order it first reached
+ * them. It never writes on those lines again, so interest of that chain landing there could never be taken back by it.
+ * The reconcile keeps every other PLB L6's payment of the chain off them, whatever brought the chain to those lines
+ * after the L6 wrote (a person's match by hand, a written-off line reopened, a later upload), so the chain's interest
+ * goes only where the take-back can still follow it. A take-back written whole, or owed no more because the L6's
+ * take-backs are spent, keeps nothing off.
+ */
+export function interestOutOfReach({ draws, written }: { readonly draws: readonly InterestDraw[]; readonly written: readonly InterestWritten[] }): Map<string, string[]> {
+  const left = leftOf(draws, written).get(-1n) as bigint;
+  const reached = [...new Set(written.map((entry) => entry.serviceLineId))];
+  return new Map(draws.filter((draw) => draw.cents / size(draw.cents) === -1n && owed(draw, -1n, written, left) > ZERO_CENTS).map((draw) => [draw.chain, reached]));
 }
 
 /**

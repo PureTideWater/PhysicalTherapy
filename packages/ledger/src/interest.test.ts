@@ -16,6 +16,7 @@ import {
   interestHeld,
   interestHeldOf,
   interestHeldOn,
+  interestOutOfReach,
   interestWrites,
   referenceCandidates,
 } from './interest';
@@ -587,6 +588,47 @@ describe('interestWrites (D5, D6, D10)', () => {
   });
 });
 
+describe('interestOutOfReach: where a payment of a chain must not go (PR 126 review MONEY-R4-1)', () => {
+  // LED-24 unplaced-two-chains.835: X pays b 6.00 and takes 5.40 back from a, whose claim C is on no case line yet.
+  const draws = [drawOf('X', 'b', 600n, ['B']), drawOf('X', 'a', -540n, ['V'])];
+  const asWritten = (parts: readonly InterestPart[]) => parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents));
+
+  it('names, for each chain the PLB L6 still owes a take-back of, every line it has an entry on, in the order it first reached them', () => {
+    // b's 6.00 written on both lines while a held nothing: all of a's 5.40 is owed, and X never writes on those lines again.
+    expect(interestOutOfReach({ draws, written: [wrote('b', 'L2', 333n), wrote('b', 'L1', 267n)] })).toEqual(new Map([['a', ['L2', 'L1']]]));
+    // 1.00 of a taken back on line 3 and an entry of a match naming no claim on line 1: 4.40 is still owed.
+    expect(interestOutOfReach({ draws, written: [wrote('a', 'L3', -100n), wrote(null, 'L1', 50n), wrote('a', 'L3', -100n)] })).toEqual(new Map([['a', ['L3', 'L1']]]));
+    // Interest X once paid a, under an earlier attribution, takes nothing back.
+    expect(interestOutOfReach({ draws, written: [wrote('a', 'L4', 540n)] })).toEqual(new Map([['a', ['L4']]]));
+    // X has written nothing: no line is out of its reach.
+    expect(interestOutOfReach({ draws, written: [] })).toEqual(new Map([['a', []]]));
+  });
+
+  it('names none for a take-back written whole, one owed no more because the L6’s take-backs are spent, or a payment', () => {
+    expect(interestOutOfReach({ draws, written: [wrote('a', 'L1', -240n), wrote('a', 'L2', -300n)] })).toEqual(new Map());
+    expect(interestOutOfReach({ draws, written: [wrote('x', 'L9', -540n)] })).toEqual(new Map());
+    expect(interestOutOfReach({ draws: [drawOf('X', 'b', 600n, ['B'])], written: [wrote('b', 'L1', 267n), wrote('b', 'L2', 333n)] })).toEqual(new Map());
+  });
+
+  it('keeps a later payment of the chain off those lines, so a person’s match by hand after the netting PLB L6 moves nothing: the figure stays the cash', () => {
+    // X wrote b's 6.00 on both lines while a was on no case line, so a could come to hold no interest there and nothing waited.
+    const x = interestWrites({ draws, written: [], lines: new Map([['a', { paid: [], takenBack: [], mayYetHold: false }], ['b', paid('B', [2400n, 3000n])]]) });
+    expect(x).toEqual([part('b', 'L1', 'B', 267n, true), part('b', 'L2', 'B', 333n, true)]);
+    // A person matches C to both lines: Y's 5.40 for a would land where X can no longer take it back, so it goes nowhere.
+    const y = [drawOf('Y', 'a', 540n, ['C'])];
+    const out = interestOutOfReach({ draws, written: asWritten(x) }).get('a') ?? [];
+    const kept = (lines: ChainInterestLines): ChainInterestLines => ({ ...lines, paid: lines.paid.filter((line) => !out.includes(line.serviceLineId)) });
+    expect(interestWrites({ draws: y, written: [], lines: new Map([['a', kept(paid('C'))]]) })).toEqual([]);
+    // Matched to a line X has not reached as well, Y's 5.40 goes there whole, and X takes it back there.
+    const third = { serviceLineId: 'L3', claimId: 'C', approved: true, weightCents: cents(1000n) };
+    const paidThere = interestWrites({ draws: y, written: [], lines: new Map([['a', kept({ ...paid('C'), paid: [...paid('C').paid, third] })]]) });
+    expect(paidThere).toEqual([part('a', 'L3', 'C', 540n, false)]);
+    const back = interestWrites({ draws, written: asWritten(x), lines: new Map([['a', { paid: [], takenBack: [{ serviceLineId: 'L3', claimId: 'C', heldCents: cents(540n) }], mayYetHold: true }], ['b', paid('B')]]) });
+    expect(back).toEqual([part('a', 'L3', 'C', -540n, false)]);
+    expect(interestOutOfReach({ draws, written: [...asWritten(x), ...asWritten(back)] })).toEqual(new Map());
+  });
+});
+
 describe('interestHeld (D5)', () => {
   const entry = (id: string, matchId: string, serviceLineId: string | null, stage: MatchedLedgerEntry['stage'], amount: bigint, evidenceId = 'L6'): MatchedLedgerEntry => ({
     id,
@@ -938,6 +980,75 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
         const after = interestWrites({ draws: x, written: before.map((item) => wrote(item.chain, item.serviceLineId, item.cents)), lines: linesOfX(y) });
         expect([...before, ...after]).toEqual(inOrder);
       }),
+      { numRuns: 1000 },
+    );
+  });
+
+  it('never writes interest above the cash when the chain a PLB L6 takes back from comes to a case line only after the L6 wrote its payments, a person matching it by hand (mayYetHold false, then true; PR 126 review MONEY-R4-1)', () => {
+    const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 4 });
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 1000n }),
+        fc.bigInt({ min: 0n, max: 1000n }),
+        fc.bigInt({ min: 1n, max: 1000n }),
+        someLines,
+        someLines,
+        fc.boolean(),
+        fc.integer({ min: 1, max: 3 }),
+        (taken, more, payment, aLines, bLines, yFirst, matchedFrom) => {
+          // Y pays chain a's interest, at least what X takes back; X pays chain b's and takes a's back. a's claim is matched
+          // to aLines from reconcile `matchedFrom` on (1: from the start; later: by hand, after X wrote b's payment on
+          // bLines). The reconcile keeps Y's payment off the lines X has reached while it still owes a's take-back.
+          // The cash: Y's, and X's net.
+          const cash = taken + more + (payment - taken);
+          const y = [drawOf('Y', 'a', taken + more, ['A'])];
+          const x = [drawOf('X', 'b', payment, ['B']), drawOf('X', 'a', -taken, ['V'])];
+          const ofY: InterestWritten[] = [];
+          const ofX: InterestWritten[] = [];
+          const paidOn = (claimId: string, specs: typeof aLines) => specs.map((spec) => ({ serviceLineId: spec.line, claimId, approved: true, weightCents: cents(spec.weight) }));
+          const write = (into: InterestWritten[], parts: readonly InterestPart[]) => into.push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+          // What each line holds of a: Y's payments and X's take-backs there.
+          const held = () => {
+            const sums = new Map<string, bigint>();
+            for (const item of [...ofY, ...ofX].filter((entry) => entry.chain === 'a')) {
+              sums.set(item.serviceLineId, (sums.get(item.serviceLineId) ?? 0n) + item.cents);
+            }
+            return [...sums].map(([serviceLineId, sum]) => ({ serviceLineId, claimId: 'A', heldCents: cents(sum > 0n ? sum : 0n) }));
+          };
+          const total = () => [...ofY, ...ofX].reduce((sum, item) => sum + item.cents, 0n);
+          for (let reconcile = 1; reconcile <= 4; reconcile += 1) {
+            const matched = reconcile >= matchedFrom;
+            const payY = () => {
+              const out = interestOutOfReach({ draws: x, written: ofX }).get('a') ?? [];
+              const lines = matched ? paidOn('A', aLines).filter((line) => !out.includes(line.serviceLineId)) : [];
+              write(ofY, interestWrites({ draws: y, written: ofY, lines: new Map([['a', { paid: lines, takenBack: [], mayYetHold: matched }]]) }));
+            };
+            const netX = () =>
+              write(
+                ofX,
+                interestWrites({
+                  draws: x,
+                  written: ofX,
+                  lines: new Map<string, ChainInterestLines>([
+                    ['a', { paid: [], takenBack: held(), mayYetHold: matched }],
+                    ['b', { paid: paidOn('B', bLines), takenBack: [], mayYetHold: true }],
+                  ]),
+                }),
+              );
+            if (yFirst) {
+              payY();
+              netX();
+              // In payment order (Y's check, then X's), every reconcile ends within the cash.
+              expect(total()).toBeLessThanOrEqual(cash);
+            } else {
+              netX();
+              payY();
+            }
+          }
+          // In either order, once the take-back has followed: never above the cash.
+          expect(total()).toBeLessThanOrEqual(cash);
+        },
+      ),
       { numRuns: 1000 },
     );
   });
