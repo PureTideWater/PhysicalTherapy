@@ -396,8 +396,13 @@ const stateText = (state: ViewState): string =>
  * there, the shot fails with the numbers (a retake keeps the earlier shot) rather than being saved wrong.
  */
 async function toTop(page: Page, id: string): Promise<{ readonly blurred: boolean }> {
+  // Two animation frames, bounded: a page with JavaScript off (screening.no-javascript) never runs a frame callback, and
+  // the unbounded wait stalled that step until attempt() gave it up at 240 s.
   const frames = (): Promise<void> =>
-    page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))).catch(() => undefined);
+    Promise.race([
+      page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))),
+      new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+    ]).catch(() => undefined);
   const before = await viewState(page);
   let blurred = false;
   const steps: (readonly [string, () => Promise<unknown>])[] = [
