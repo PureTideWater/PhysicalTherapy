@@ -1,6 +1,6 @@
 # Lane B's handoff to Lane A (for 2026-11-10)
 
-**Rolling: current as of 2026-11-07 00:35 UTC; finalized at stand-down.**
+**Rolling: current as of 2026-11-07 03:35 UTC; finalized at stand-down.**
 
 Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) brings this file up to date at every records commit, so a
 handoff exists whenever Lane B stops. Last week the 7-day cap stopped the orchestrator itself, and the planned refresh
@@ -30,7 +30,9 @@ Read in this order:
 2. `LANES.md`:
    - the claims, each row's sentence of 2026-11-06 21:30 UTC or later;
    - the notes at the top of "Claims";
-   - "Handed to Lane A", its 2026-11-06 22:45 UTC entry first.
+   - "Handed to Lane A", its 2026-11-07 03:35 UTC entry (the schema queue plan and the rulings on it) first, then
+     2026-11-06 22:45 UTC;
+   - Queues items 20 (the UX PRs struck by ux-forms-after-42) and 21 (the web owner's try-lock item).
 3. This file.
 4. `lanes/acting-lane-b-2026-11-04.md`: the speed rules for both lanes, 2a (the up-to-date rule) included.
 5. `lanes/lane-b.md` from 2026-11-06 19:40 UTC on. Lane A's own entries of 2026-11-03 14:20 to 2026-11-05 07:55 UTC are
@@ -45,30 +47,32 @@ Check every head live first (`git ls-remote origin`, the open PRs). Sessions pus
 | --- | --- |
 | 2026-11-05 ~07:55 UTC to 2026-11-06 22:54 UTC | None. Both accounts were out of weekly usage until 2026-11-06 19:00 UTC. |
 | 2026-11-06 22:55 UTC | **#130**, contract pages read in their own process (SEC-24; ADR 0033 and ADR 0071 amended), as **31a7345f** from 43a81626, by S3 (session_01FcouKQJppM8BdCui7NVQUa). CI green (38 check runs); fresh-clone verification wf_1edda650-2ad passed. Its push runs on 31a7345f are green (ci 42308243590, mutation 42308243735, screening-capacity 42308243690). `infra/lib/heap.ts`'s `--max-old-space-size=560` on the worker task is now unblocked. S3's proposals, not in #130: a step in ci.yml's images job reading one synthetic PDF through `dist/page-reader.js` in the built worker image; the core-crash test run in CI; the child's network reach revisited with Node 26 LTS (`approval-summaries/lane-a-pages-child-process-status.md`). |
+| 2026-11-07 03:27 UTC | **#131**, UX PR 4b: the screening result's words and tones (UX-040, UX-206, #121's P1; TBL-08 reworded, no new number; the labels re-pinned under `screening-labels/2026-11-05` with no migration, P5's four figure labels included by the 01:31 UTC ruling, its three conditions met), as **8a722f80** from 9e577017, by S5 (session_01FcouKRDfoFAeXZK4Thp8M8). CI green on 9e577017 (22 runs: unit 9,952; db 9,864; e2e 81); fresh-clone verification wf_a6153b93-653 passed; 0 tags right before the merge. One nit not taken: `lib/screening/routes.ts:836`'s doc comment "Expected less allowed" (`approval-summaries/lane-b-ux-screening-result-words-status.md`). |
 
-`claude/build-platform` is 31a7345f (checked 2026-11-07 00:33 UTC).
+`claude/build-platform` is 8a722f80 (checked 2026-11-07 03:36 UTC).
 
 Nothing went into `main` (220f2b4e, unmoved since 2026-10-20), and there are no tags.
 
 ## 2. In flight
 
-Heads were checked live at 2026-11-07 00:33 UTC, status files read to 00:36 UTC. The account's 5-hour limit stopped every
-workflow between ~22:58 and 00:10 UTC; each resumed in its same run at 00:35 UTC (what each lost is below). Each item's exact next step is in its status file's RESUME-BLOCK, or in
+Heads were checked live at 2026-11-07 03:36 UTC, status files read to 03:36 UTC. The account's 5-hour limit stopped every
+workflow between ~22:58 and 00:10 UTC; each resumed in its same run at 00:35 UTC. **Every review in a workflow now runs
+as a default agent reading `.claude/agents/<type>.md`** (the lesson of 01:33 UTC, section 7). Each item's exact next step is in its status file's RESUME-BLOCK, or in
 its log while the session runs. A branch "not on origin" has only a WIP ref.
 
 | Item | Session | Branch, WIP ref, PR | Stage | Resume from |
 | --- | --- | --- | --- | --- |
-| **MOD-16: a range glued to a word** (`co-001/redact-range-glued`; CI flake, PHI) | S1, session_01FcouKP1U2GGDFhhZT9CaUV | Branch = cc3dd7f6; WIP `co-001/wip-redact-range-glued` 6fc88092; no PR | Built (2861bc0f, 89fb3193); gateway round 1 fixed (21e67bba, 435f0a68, e0cf46e0). Round 1's PHI review was lost and its notes showed regressions against the base, so wf_bca3d2b3-77c was resumed with a base-against-head differential PHI review. The re-run differential (350,000 letters) found no digit the base redacts sent at e0cf46e0. The re-review's fixes: 9ecbe6c9 (GATEWAY1-1) and 6fc88092 (PHI1-1 to PHI1-3, GATEWAY1-2, GATEWAY1-4). The 5-hour stop lost round 2's reviews, the final fixer, the suite and the critic; resumed 00:35 UTC. It merges only with zero regressions against the base. Next: the base 31a7345f merged once, the full suite once, the push, the PR. | `approval-summaries/lane-b-redact-range-glued-status.md` |
+| **MOD-16: a range glued to a word** (`co-001/redact-range-glued`; CI flake, PHI) | S1, session_01FcouKP1U2GGDFhhZT9CaUV | Branch = cc3dd7f6; WIP `co-001/wip-redact-range-glued` 3fcb9359; no PR | Built (2861bc0f, 89fb3193); gateway round 1 fixed; the re-run base-against-head differential (350,000 letters) found no digit the base redacts sent at e0cf46e0; the re-review's fixes 9ecbe6c9 and 6fc88092. **Review round 2 found PHI2-1 (blocking):** the call's own DOB, name part, member ID or claim number glued at a range end was sent where cc3dd7f6 refused only by chance (6,602 of 21,600 targeted letters). Fix round 2 (8d98b8bb to 3fcb9359; 632 of 632 gateway tests) reads the call's own identifiers across glued boundaries. **Review round 3 (03:35 UTC) found that fix itself regressed** (PHI3-1 and PHI3-2, blocking: a glued own name between an SSN or phone label and the number cuts the label, so SSNs the base redacted are sent; PHI3-3, PHI3-4; GATEWAY3-1 to GATEWAY3-3), the third round running in which a fix traded one regression for another. So **a judge workflow, wf_5d1aedda-db5,** runs: one base-against-candidate differential gate (at least 200,000 seeded letters plus every finding's inputs); candidates A (patch the glued reading) and B (revert it and refuse an own identifier glued across a boundary the patterns do not read); two judges (PHI first; correctness and over-refusal); reviews with skeptics on the winner until dry. **MOD-16's three seeds** (1034253323 from #128, -1074798020 from #129, 383403599 from #131) are then pinned failing at cc3dd7f6 and passing at HEAD before the one full suite. It merges only with zero regressions against the base. **The critical path for #129.** Next: the base (8a722f80) merged once, the full suite once, the push, the PR. | `approval-summaries/lane-b-redact-range-glued-status.md` |
 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; PHI; MOD-21, MOD-22) | S1, next | Not cut; no PR | Mapped, not built. The read-only hunt wf_8da6dd19-398 found 52 candidate classes at cc3dd7f6 in round 1. The 5-hour stop lost its round-2 skeptics, rounds 3 and 4 and the synthesis; S1 holds it until range-glued's build ends, then reruns it. The synthesis (the design input) goes to build-ops before any stand-down. | The range-glued status file, until its own exists; LANES.md row |
 | **Packets verifier identifier fold** (MOD-19, MOD-20) | S1, third | `co-001/packets-verifier-identifier-fold` not on origin, no commits; no PR | Three scouts done; design next. It shares verifier files with slice 2 and the /3 migration. | `approval-summaries/lane-b-packets-verifier-identifier-fold-status.md` RESUME-BLOCK |
-| **Interest credited once** (schema, acting Lane A) | S2, session_01FcouKQthXdmDnPmwhFepxW | `co-001/ledger-interest-once` d2fdd106 (= WIP `co-001/wip-interest-fix`); draft #126 | Pushed at d2fdd106 (~22:48 UTC): cc3dd7f6 merged once (e81cd5af), the full suite once, the mutation gate's two survivors killed. **The second review round is not done** (its reviewers were cut off by the 5-hour limit, ~23:55 UTC): wf_29adffb1-b27 redoes it, then CAS-42.5, the re-shots, the description and the verification. CI on d2fdd106: e2e green (INT-REL-1 fixed); red on the domain model (the blank approval line) and `unit` (cancelled at its 20-minute timeout). Behind 31a7345f, merged once right before the merge. Then ready, and the suggested line as one comment. The batching plan wf_255f9403-721 (read-only) resumed beside it. | `approval-summaries/lane-a-schema-chain-status.md` (its 19:50 UTC section, then the RESUME-BLOCK) |
-| **password-changed-notice** (schema; ADR 0091, SGN-16) | S2, after #126 | Not started | Designed (`designs/lane-a-auth-emails.md`). Its PR opens only after #126 merges; it may be batched with related queue items (section 4). | `approval-summaries/lane-a-auth-emails-status.md` RESUME-BLOCK |
-| **Email lockup plate** (O-5, O-8) | session_01FcouKRo5iee5QFtPT8UimZ (S3's second item, run in parallel) | `co-001/email-lockup-plate` f4fef908; draft #129 | Fix round 2 done and verified (61169d8b; description citations fixed in 34927fd0). Every CI check green on 34927fd0 (22:56 UTC). The base moved to 31a7345f, which shares `test-matrix.md` and the synth registry, so wf_464a574d-f04 merged it once (f4fef908, no conflicts, its checks pass) and pushed it at ~00:40 UTC, after a 5-hour-limit stop. Next: CI on f4fef908, the fresh-clone verification that reads CI, ready, the merge. | `approval-summaries/lane-a-email-lockup-plate-status.md` |
-| **Packet figures as placeholders, slice 2** (ADR 0089, CAS-52 to CAS-54) | S4, session_01FcouKPkXdRW5ntz6ye92pL | `co-001/packet-figure-placeholders-2` not on origin; WIP `co-001/wip-packet-figure-placeholders-2` d96a053a; no PR | Built in two parts (0fc43dcd, a3d234ce). wf_445df00c-8d3 done: 9 findings confirmed, two blocking (MONEY-A-1, MONEY-B-1), all fixed in d21f4577 (new code `fact_not_separated`). Round 2 (wf_db15c2a6-888) was stopped at 22:58 UTC after the carry-over verdicts and the equivalent's review: the `template.ts` equivalent signed in d96a053a; NEW-1 fixed (fails closed); NEW-2 an accepted reading in ADR 0089. Resumed 00:35 UTC: loop-until-dry reviews, a completeness critic. Then the full suite, the push and the PR. Its /3 codes for Lane A: section 4, item 3. | `approval-summaries/lane-b-packet-figure-placeholders-status.md` (the SLICE-2 section) |
-| **SUITE-CAP-3, the design review** | session_01FcouKP4ekrT97eyDtLe4Rd | `co-001/suite-cap-3-reconcile` 83d71fd6 (stale); WIP `co-001/wip-suite-cap-3` 0b6e90eb (cc3dd7f6 merged); no PR | wf_9dd7a743-340 done: step 7b at 2,000 lines on practice F 620 s -> 21.5 s, spread R 159 -> 46 s, writes identical row for row. D14 ruled 22:31 UTC (section 4). The freeze-exception ask was granted 22:40 UTC. The review loop wf_d171f0f0-948 finished round 1 (15 findings, 9 upheld; both lenses BUILD WITH CHANGES, nothing blocking; applied in f795bf28, design §18). Round 2 and the completeness critic, stopped by the 5-hour limit, resumed at 00:35 UTC. The ask gained the 360 s wording and two proof items (a cross-practice test; a plan test); the two granted bodies are unchanged. The build (worker-side fixes only) is S5's second item. | `approval-summaries/lane-b-suite-cap-3-status.md` |
-| **UX PR 4b: the screening result's words** (TBL-08 reworded; no migration) | S5, session_01FcouKRDfoFAeXZK4Thp8M8 | `co-001/ux-screening-result-words` cut at 31a7345f, not on origin; no PR | Started 22:57 UTC, when #130 merged. The build workflow wf_efec3b83-f5b started at 00:35 UTC. Next: the push and the draft PR; one review (UX and brand, with shots and skeptics); the full suite once; the merge under rule 2a. | `approval-summaries/lane-b-ux-screening-result-words-status.md` |
-| **ux-forms-after-42** (design 7.8) | S3, session_01FcouKQJppM8BdCui7NVQUa (moved from S5's queue at 22:57 UTC) | `co-001/ux-forms-after-42` cut locally at 31a7345f, not on origin; no PR | Claimed 23:00 UTC. The design refresh of 7.8 against the base (wf_8ed4a036-bce: one reviewer and a critic) was stopped at its start by the 5-hour limit and resumed at 00:35 UTC. Then the build, the shots, the draft PR, the UX and brand review, the fix round with the full suite once, the push, CI, the verification, the merge. | `approval-summaries/lane-b-ux-forms-after-42-status.md` |
-| **S5's queue after 4b** | S5 | None cut | In order: SUITE-CAP-3's worker-side fixes; P2; P5; UX PR 8 (ADR 0090, SGN-09 to SGN-12); dark-mode-ship. | Each item's LANES.md row |
+| **Interest credited once** (schema, acting Lane A) | S2, session_01FcouKQthXdmDnPmwhFepxW | `co-001/ledger-interest-once` 9824f4e9 (= WIP `co-001/wip-interest-fix`); draft #126 | **CAS-42.5 PASSED on d2fdd106** (run 42307508461: working set 668.3 of 921.6 MiB; F's reconcile 603.0 s of 900 s). CI on d2fdd106 green except the domain model (the blank approval line) and `unit` (a degraded runner; re-run once). The second review round is redone with default agents (wf_a71650bd-ea2), after the custom reviewer types never returned three rounds running; it includes **candidate F1 (money):** an out-of-order upload across two reconcile passes might hold 11.40 of interest where 6.00 was paid. The branch moved to 9824f4e9 at 03:18 UTC: 8ea33e13 ("#126 review F1, MONEY-R2-1": a PLB L6's payments wait while a take-back of a chain that may yet hold interest is not written whole) and 9824f4e9 (F2: the runbook's lock loop); S2's status file has not recorded it yet. Next: the re-shots, the body, the verification reading CI, the base (8a722f80) merged once, ready, the suggested line. | `approval-summaries/lane-a-schema-chain-status.md` (its 19:50 UTC section, then the RESUME-BLOCK) |
+| **password-changed-notice** (schema PR 1 of the plan; ADR 0091, SGN-16) | S2, beside #126 | `co-001/password-changed-notice` 7b38c9c5 (stacked on #126); no PR | **Building since 02:20 UTC** (wf_5cf101cd-7ab): a design addendum with a reviewer and skeptics; migration 20261111090000 through the marker route; the worker, infra, ADR 0091, SGN-16 and the runbooks; the full suite; three reviews (security and sign-in; database, mail and deploy; UX and brand with renders) with skeptics and a critic; the fix round. No PR until #126 merges. D11 and ADR 0081 A6 do not ride. Its renders show #129's White plate: #129 should merge first, or PR 1 renders again after it. | `approval-summaries/lane-a-auth-emails-status.md` (its 02:20 UTC section) |
+| **Email lockup plate** (O-5, O-8) | session_01FcouKRo5iee5QFtPT8UimZ (S3's second item, run in parallel) | `co-001/email-lockup-plate` f4fef908; draft #129 | **Waits on `co-001/redact-range-glued`.** CI on f4fef908 green but `unit`: MOD-16, seed -1074798020 (the base's defect; #129 changes no gateway file); its one re-run failed the same way. Nothing more is pushed meanwhile. Its three ux-brand-reviewer rounds each returned a real result (none empty). When range-glued merges: the base (8a722f80) merged once, the fast checks and the generators, the push, CI green, the fresh-clone verification, ready, the merge. | `approval-summaries/lane-a-email-lockup-plate-status.md` |
+| **Packet figures as placeholders, slice 2** (ADR 0089, CAS-52 to CAS-54) | S4, session_01FcouKPkXdRW5ntz6ye92pL | `co-001/packet-figure-placeholders-2` not on origin; WIP `co-001/wip-packet-figure-placeholders-2` 0b5ca610; no PR | Built in two parts (0fc43dcd, a3d234ce); round 1's nine findings (two blocking) fixed in d21f4577 (new code `fact_not_separated`); the `template.ts` equivalent signed in d96a053a. Round 2 (wf_db15c2a6-888) runs its loop-until-dry review rounds: NEW-1 fixed in code (3d44aff7: a sign set off before a fact token fails it), NEW-2 an accepted reading in ADR 0089 (c3a2743e), then 2f3726ad (the separation check in linear time) and 0b5ca610 ($0.00 interest and two releases pinned; 03:16 UTC). Then the completeness critic, the full suite, the push and the PR. Its /3 codes for Lane A: section 4, PR 3. | `approval-summaries/lane-b-packet-figure-placeholders-status.md` (the SLICE-2 section) |
+| **SUITE-CAP-3, the worker-side build** (CAS-49 to CAS-51, ADR 0087) | session_01FcouKP4ekrT97eyDtLe4Rd (its own; not S5) | `co-001/suite-cap-3-reconcile` 31a7345f (fast-forwarded; no commits of its own yet); WIP `co-001/wip-suite-cap-3-build`; no PR | **Design reviewed** (b27a9861): seven rounds of default agents (payment-engine and security checklists), three skeptics per finding: 46 findings, 31 applied, 15 refuted; verdict BUILD. **Corrections to the granted ask's text** (38123394; the two bodies unchanged, so the grant stands; the founder informed through the co-founder): the 360 s is a sizing bound no release check enforces; A's month was compared on totals, not row for row (row for row holds at F 10,000 and R 2,000). D14 written into the design (§0, D9, D14, 8.4, 14.1). **BUILD GO 02:15 UTC, worker-side only:** slices 1 to 6 and 5a, step 7b on F at 10,000 lines; no migration, index or table. wf_f2526ebe-769 (each slice red first, a skeptic verifier); check-in 07:27 UTC. Next: the push, the draft PR, two reviews. The web owner's item (LANES.md Queues item 21) comes from its §14.4 item 14. | `approval-summaries/lane-b-suite-cap-3-status.md` |
+| **ux-forms-after-42** (design 7.8; test-matrix CI-30) | S3, session_01FcouKQJppM8BdCui7NVQUa | `co-001/ux-forms-after-42` local at 31a7345f; WIP `co-001/wip-ux-forms-after-42` dab7d237 (slices on `-u`, `-c`, `-w1`, `-w2`); no PR | **Designed** 01:20 UTC (wf_8ed4a036-bce; 27 findings applied; `designs/lane-b-ux-forms-after-42.md`). **CI-30 allocated** 01:19 UTC (the shell's skip link). **Building** since 01:30 UTC (wf_24fdaecd-29b: slices U, C, W1, W2 in parallel worktrees, integration with E, adversarial checks with skeptics, head shots; tour states on claude/build-ops). Next: the draft PR, two reviews (UX and brand; security and privacy), the fix round with the full suite once, the push, CI, the verification, the merge. It covers parts of queued UX PRs 67, 68, 74, 75 and 84 (struck in LANES.md Queues item 20). | `approval-summaries/lane-b-ux-forms-after-42-status.md` |
+| **S5's queue** (4b merged as #131) | S5, session_01FcouKRDfoFAeXZK4Thp8M8 | None cut | In order: P2; P5; UX PR 8 (ADR 0090, SGN-09 to SGN-12); dark-mode-ship, each on the orchestrator's go. SUITE-CAP-3's build left the list (it runs in its own session). | Each item's LANES.md row |
+| **No web request waits on a reconcile pass** (for the web owner; no migration) | Not assigned | Not cut | Queued 02:15 UTC from SUITE-CAP-3's design §14.4 item 14: the reopen, the write-off and the five manual reconciliation actions take the `ledger:` lock with `pg_try_advisory_xact_lock` and refuse at once with an identifier-free, retryable refusal, never a blocking wait. On the base today each can hold one of the web's 10 connections for a whole pass. | LANES.md Queues item 21 |
 | **Kept and idle** | session_01FcouKNB2TyuPCAha9BaEjQ (#48, the narrative draft; ADR 0076, CAS-35 to CAS-37); session_01FcouKNP2XtaombFLueKLnu (ci-pin-age; P2 is now in S5's queue) | — | #48 waits for slice 2. Not started this week. | `approval-summaries/lane-b-unmapped-plan-status.md`, `approval-summaries/lane-b-ci-deps-status.md` |
 | **Dependabot #122, #123, #124** | None | Open, behind the base | Untriaged. Never merged as they stand; one replacement PR, like #94. | LANES.md rule 7 |
 
@@ -81,55 +85,77 @@ One thing is not yet allowed:
 ## 3. The first item for Lane A
 
 **Take the schema chain back from S2 (session_01FcouKQthXdmDnPmwhFepxW) at its RESUME-BLOCK** in
-`approval-summaries/lane-a-schema-chain-status.md`. This section is rolling; at 2026-11-07 00:35 UTC that means #126:
+`approval-summaries/lane-a-schema-chain-status.md`. This section is rolling; at 2026-11-07 03:35 UTC that means #126:
 - **First check** whether the founder has committed #126's approval line, and whether every required check is green on
   the latest commit.
 - **If both hold,** merge #126 under rule 2a (the base merged right before, with one CI re-run if the base moved). Then
-  start password-changed-notice from its RESUME-BLOCK, on a migration timestamp after 20261110090000.
+  open schema PR 1, password-changed-notice, from S2's build (`co-001/password-changed-notice`, stacked on #126;
+  migration 20261111090000; `approval-summaries/lane-a-auth-emails-status.md`), and follow the batching plan
+  (section 4) under its rulings.
 - **If #126 still waits on the founder,** relay its link and open no other schema PR.
 
 Then take back the counters (section 6). Lane B keeps its own items, its sessions and the PHI leak PR.
 
-## 4. The schema queue (one at a time, each with the founder's committed line)
+## 4. The schema queue: the batching plan (one at a time, each with the founder's committed line)
+
+**The plan of record:** `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` (acting Lane A, S2; read-only
+wf_255f9403-721, three rounds of a critic and a risk skeptic). **10 schema PRs for about 22 queued items** (about 18
+founder approval cycles if each shipped alone). Still one schema PR open at a time, each regenerating `domain-model.md` and
+`packages/db/functions` and carrying the founder's committed line. A batch never widens a grant.
 
 0. **#126, the interest fix.**
-   - Draft at d2fdd106 (= the WIP), pushed ~22:48 UTC after one base merge (cc3dd7f6) and the full suite once.
-   - **Its second review round is not done:** the 5-hour limit cut its reviewers off (~23:55 UTC). wf_29adffb1-b27
-     redoes it, then CAS-42.5, the re-shots, the description and the verification.
-   - CI on d2fdd106: e2e green (INT-REL-1 fixed); red on the blank approval line and on `unit`, cancelled at its
-     20-minute timeout.
-   - Behind the base again (31a7345f): merged once right before the merge, with `unit` green on that head. Then ready.
+   - Draft; the branch is at 9824f4e9 (03:18 UTC; review F1 and F2, section 2). CAS-42.5 passed on d2fdd106.
+   - Next: the re-shots, the body, the verification reading CI, the base (8a722f80) merged once right before the merge,
+     with `unit` green on that head. Then ready, and the suggested line as one comment.
    - The suggested approval line is not yet posted. The domain model's hash moves with the base merge, so it is taken
      on the final head.
-1. **password-changed-notice.** Not started; S2 takes it next. ADR 0091, SGN-16.
-2. **The ledger-function migration: new bodies of `ledger_line_net` and `ledger_entry_rules`.** The founder granted the
-   freeze exception at ~22:40 UTC, exactly as written in `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`.
-   - One migration, after #126. It carries exactly the two granted bodies.
+1. **password-changed-notice** (ADR 0091, SGN-16). Building in S2 (section 2); no PR until #126 merges. SS-01's D11
+   REVOKE rides it only if the founder states the deploy fact before its database review (ruling (d), below).
+2. **The granted SUITE-CAP-3 bodies of `ledger_line_net` and `ledger_entry_rules`, alone.** The founder granted the freeze
+   exception at ~22:40 UTC, exactly as written in `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`.
+   - One migration. It carries exactly the two granted bodies; at build start the build diffs them against the ask at the
+     grant, and any difference stops the build for a new ruling. Nothing else rides it.
    - Every amount, stage, refusal and recovered total stays unchanged, proved by LED-01 to LED-18, LED-23 to LED-25, the
      ledger oracle, the refusal tests and the write-equality dumps (F at 10,000 lines, R at 2,000).
+   - The ask's text was corrected after the grant (the bodies unchanged, so the grant stands): the 360 s is a sizing bound
+     no release check enforces; A's month was compared on totals, not row for row.
    - Measure again on #126's base, which adds one index on the matches.
-   - **D14's condition (ruled 22:31 UTC):** the weekly run's step 7b stays on practice F at 10,000 lines until this
-     merges. Then it moves back to practice A's month, as SUITE-CAP-1b's hand-off asked; SUITE-CAP-3's PR amends ADR
-     0083 with this condition. Measure on Lane A's own base before the move: A's month is 1,653 s against the 900 s
-     attempt today, and 310 s with both bodies.
-3. **#84's `tp-packet-verifier/3` migration** (packet-figure-placeholders slice 3).
-   - **Ordering: slice 3's `VERIFIER_FORMAT` flip must ship with or after slice 4's export render.** This is S4's finding
-     of 2026-11-06: flipping the constant stores token templates, which the export prints only once slice 4 renders
-     them.
-   - Slice 2 reaches /3 only by an explicit format argument, so nothing served changes before then.
-   - **The /3 reports carry six new codes (S4, 2026-11-06 22:36 UTC; ADR 0089):** `free_figure`, `number_word`,
-     `unknown_fact`, `fact_not_canonical`, `fact_contradicted` and `fact_not_separated`. All six are of kind `'fact'`.
-     The mismatch key `canonical` appears on `fact_not_canonical` only.
-   - The ordering note is also in LANES.md "Handed to Lane A"; the codes are in the slice's claim row too.
-4. **#85's design §7.2, items 1 to 5.**
-5. **#93's F9:** `roi_links_valid()`'s fifth key.
-6. **Relinking an app row to a new Cognito subject** (#125's stuck-invitee note).
-7. **The rest of LANES.md "Handed to Lane A".**
-   - SUITE-CAP-3's index or table part, if its design review needs one.
+   - **D14 (ruled 2026-11-06 22:31 UTC):** the weekly run's step 7b stays on practice F at 10,000 lines. The move back to
+     practice A's month is a no-migration follow-up after both this PR and Lane B's SUITE-CAP-3 worker PR merge, measured
+     on that tree; if A's month is over 360 s, step 7b stays on F and the Known gap line is reworded, never removed. A's
+     month is 1,653 s against the 900 s attempt today, and 310 s with both bodies.
+3. **`tp-packet-verifier/3`** (packet-figure-placeholders slice 3), with #38's stored words version and `words_changed`.
+   - Gated on slice 4 and the verifier identifier fold. **The `VERIFIER_FORMAT` flip ships with or after slice 4's export
+     render** (S4's finding of 2026-11-06: flipping it stores token templates, which the export prints only once slice 4
+     renders them). Slice 2 reaches /3 only by an explicit format argument, so nothing served changes before then.
+   - **The /3 reports carry six new codes (ADR 0089):** `free_figure`, `number_word`, `unknown_fact`,
+     `fact_not_canonical`, `fact_contradicted` and `fact_not_separated`, all of kind `'fact'`. The mismatch key
+     `canonical` appears on `fact_not_canonical` only.
+4. **#85's design §7.2, items 1 to 5**, with F4 if it is designed in time.
+5. **The ledger-freeze batch:** #93's F9 (a fifth `roi_links_valid()` key), plus every other queued ledger item the founder
+   grants in the same ask (`ledger_entry_within_evidence`, `ledger_line_stage`, the interest branch, whichever are designed
+   by then). #93's open question 3 (the live `case.actionable_cents`) is a product ruling, not part of it.
+6. **Sign-in identity:** the Cognito relink (#125's stuck-invitee note), ADR 0081 A6 (moved from PR 1), and **SEC-N5**
+   (conditional: only if staging shows Cognito's `auth_time` records the sign-in's start for a challenge answered after
+   the reset; otherwise left out with the reason).
+7. **Mail to role holders:** SS-01 D15's suspension and reinstatement mail with Q13, and #32's unmapped-plan notice.
+8. **PHI identifier lookups:** #120's F3, with **`provider_adjustment.reference`** (PHI under ADR 0027, stored in plain
+   text: a keyed hash, encrypted storage and a definer screen).
+9. **Triage's stored waiting patterns** (SUITE-CAP-1 design §14).
+10. **Release-content health:** `operator_content_coverage()` for #59's daily `content_due` job.
 
-**Batching (from 22:40 UTC).** S2 batches related schema items into fewer PRs, to cut the founder's approval cycles. Still
-one schema PR open at a time, each regenerating `domain-model.md` and `packages/db/functions` and carrying the founder's
-committed line. A batch never widens a grant, and keeps item 3's ordering.
+**The orchestrator's rulings on the plan (2026-11-07 02:20 UTC; the co-founder: decide without asking):**
+- (a) **Skip-ahead: yes.** When the next PR's gate is unmet (PR 3's slice 4 and identifier fold, PR 5's grant, PR 6's
+  design), the next ready one opens and the waiting one keeps its place. Each skip is recorded in the plan's "Skips taken"
+  and the PR description. Likely first uses: PR 4 ahead of PR 3; PR 2 ahead of PR 1 if PR 1's review is still open when
+  #126 merges (D14 makes PR 2's delay costly).
+- (b) **SEC-N5 and `provider_adjustment.reference` queued** (the safer option), in PR 6 and PR 8.
+- (c) **PR 5's combined freeze ask is written now** and relayed to the founder early, so PR 5 is not idle at its turn (no
+  ask file on build-ops yet at 03:36 UTC).
+- (d) **D11's deploy fact is the founder's statement,** asked through the co-founder (section 5). **Pending.** Until it is
+  stated, D11 does not ride PR 1; it rides the first non-ledger carrier after the fact (never PR 2 or PR 5), with its
+  rollback floor (never roll back past #104).
+- (e) **#38 §2.2's heading governs only the stored worksheet;** the words version is not founder-gated and stays in PR 3.
 
 Cognito PR 2 (the confidential client and cutover; ADR 0088) is not a schema PR. It waits for two things: #113 deployed to
 staging, and the founder's F1 to F5 and ruling 16.
@@ -139,13 +165,20 @@ staging, and the founder's F1 to F5 and ruling 16.
 - **#126's approval line:** https://github.com/PureTideWater/PhysicalTherapy/pull/126
   - S2 posts it as one suggested change on the domain model's approval line; the founder clicks "Commit suggestion", as
     for #104 and #110.
-  - It is not posted as of 2026-11-07 00:35 UTC.
+  - It is not posted as of 2026-11-07 03:35 UTC.
   - password-changed-notice's line follows.
 - **SUITE-CAP-3's ledger freeze exception: granted** by the founder, relayed by the co-founder at ~22:40 UTC, as written in
   https://github.com/PureTideWater/PhysicalTherapy/blob/claude/build-ops/approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md
   (the new bodies of `ledger_line_net` and `ledger_entry_rules`; section 4, item 2). Its PR still needs the founder's
   approval of record. The design review's round 1 (f795bf28) added the 360 s wording and two proof items to the ask; the
-  two granted bodies are unchanged.
+  two granted bodies are unchanged. Two statements in the granted text were corrected after the grant (the founder
+  informed through the co-founder, 2026-11-07): the 360 s is a sizing bound no release check enforces; A's month was
+  compared on totals, not row for row. The grant stands.
+- **D11's deploy fact (asked through the co-founder, 2026-11-07 02:20 UTC; pending):** does every environment run an
+  image that contains #104 (SS-01), so that any rollback lands on an image that contains #104? GitHub shows no
+  deployments or tags. It is a fact to state, not a ruling; until it is stated, D11's REVOKE waits (section 4, (d)).
+- **PR 5's combined ledger freeze ask** (ruling (c)): one ask for #93's F9 and the other ledger items designed by then,
+  relayed early through the co-founder with its exact text.
 - **A documented PHI residual,** if the leak hunt marks any class one (obfuscation beyond pattern reach). It would go
   through the co-founder with the exact text, and be fixed meanwhile as the safer option. There is none yet.
 - **Staging steps:**
@@ -174,11 +207,12 @@ staging, and the founder's F1 to F5 and ruling 16.
 
 ## 6. Counters (Lane B allocates until Lane A returns)
 
-Next free, as of 2026-11-06 21:04 UTC (unchanged at 2026-11-07 00:35 UTC: 4b rewords TBL-08 and takes no new number):
+Next free, as of 2026-11-07 01:19 UTC (CI-30 to `co-001/ux-forms-after-42`, the shell's skip link; unchanged at 03:35
+UTC; #131 reworded TBL-08 and took no new number):
 - **ADR 0092.** 0089 is slice 2's, 0090 UX PR 8's, 0091 password-changed-notice's.
 - **Test-matrix MOD-23.** MOD-19 and MOD-20 are the verifier fold's; MOD-21 and MOD-22 are redact-ssn-phone-leaks'.
-- **Test-matrix CAS-56, SEC-25, SGN-17**, and in the other series LED-26, BIL-11, CI-30, MAP-11, PRC-33, HOM-05, TBL-09,
-  DLR-05, SCR-23, JOB-06, FRM-09, RCC-09 and DBF-06.
+- **Test-matrix CAS-56, SEC-25, SGN-17, CI-31** (CI-30 is ux-forms-after-42's; CI-24 to CI-26 stay P2's), and in the
+  other series LED-26, BIL-11, MAP-11, PRC-33, HOM-05, TBL-09, DLR-05, SCR-23, JOB-06, FRM-09, RCC-09 and DBF-06.
 - **Synth module 21.**
 - **Fixture release 900008.**
 
@@ -203,6 +237,13 @@ The record of each allocation is LANES.md rule 4's counters line.
   - If one still waits, the person types "go" in it.
 - **A scratchpad is not durable.** Workflow progress and syntheses (such as the leak hunt's) live in a session's
   scratchpad. Commit what a successor needs to `claude/build-ops` before any stand-down.
+- **Custom reviewer agent types never return in workflows** (the orchestrator's lesson, broadcast 2026-11-07 01:33 UTC).
+  - #126's second review round lost every reviewer of a custom type (payment-engine-reviewer, security-reviewer,
+    ux-brand-reviewer) three rounds running (wf_29adffb1-b27): each ended without returning its result.
+  - Run every review as a default agent that reads `.claude/agents/<type>.md` and applies that checklist.
+  - **Never count an empty review as passed.** A reviewer, hunter or round that returned nothing is not a clean or dry
+    round (the leak hunt's "two dry rounds" were false for the same reason); re-run it.
+  - In `lanes/lane-b-session-brief.md` §5 since 2026-11-07 03:35 UTC.
 - **Two agents at a time per workflow on these machines.** When findings are many, batch the skeptics per angle, not per
   finding.
 - **The 5-hour limit stops a session's workflows too** (2026-11-06 ~22:58 to 00:10 UTC: every workflow on Lane B's
@@ -229,5 +270,7 @@ The founder types it, so that the flag takes.
 > CLAUDE.md, LANES.md, `lanes/lane-b-handoff-to-lane-a-2026-11-10.md`, `lanes/acting-lane-b-2026-11-04.md` (the speed
 > rules, 2a included) and `lanes/lane-b.md` from 2026-11-06 19:40 UTC, then each item's status file and RESUME-BLOCK.
 > Check every head live. Take back the schema chain from Lane B's S2 at its RESUME-BLOCK (section 3), and the counters
-> (section 6). One schema PR at a time; decide without asking, as the co-founder instructed on 2026-11-06, and leave
-> the founder-only acts to the founder. Write your entries in HANDOFF.md.
+> (section 6). One schema PR at a time, in the batching plan's order under its rulings (section 4); decide without
+> asking, as the co-founder instructed on 2026-11-06, and leave the founder-only acts to the founder. In workflows, run
+> every reviewer as a default agent that reads `.claude/agents/<type>.md`, and never count an empty review as passed.
+> Write your entries in HANDOFF.md.

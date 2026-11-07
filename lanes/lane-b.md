@@ -2066,3 +2066,112 @@ Heads checked live at 00:33 UTC (`git ls-remote origin`; REST, read-only); statu
      rolling handoff's §5).
   5. **Already in place:** schema batching, the speed rules (`lanes/acting-lane-b-2026-11-04.md`), the rolling handoff,
      and about five sessions in parallel.
+
+### 2026-11-07 03:35 UTC (Lane B's orchestrator): schema batching plan; rulings; the reviewer lesson
+Heads checked live at 03:36 UTC (`git ls-remote origin`; no tags); status files read to 03:36 UTC; the orchestrator's
+notes from 00:32 UTC.
+
+- **The reviewer lesson (broadcast to every session at 01:33 UTC).**
+  - **Custom reviewer agent types never return in workflows.** #126's second review round lost every reviewer of a
+    custom type (payment-engine-reviewer, security-reviewer, ux-brand-reviewer) three rounds running (wf_29adffb1-b27):
+    each ended without returning its result.
+  - **The rule:** every review agent in a workflow is a default agent that reads `.claude/agents/<type>.md` and applies
+    that checklist.
+  - **Never count an empty review as passed.** A round whose reviewers returned nothing is not a dry round; it is re-run.
+    (The same shape as the leak hunt's false "two dry rounds" of 2026-11-07 00:35 UTC: failed hunters returned nothing.)
+  - Applied since: #126's round redone as wf_a71650bd-ea2; 4b's review step switched to a default agent and wf_5e44d8cf-109
+    resumed; SUITE-CAP-3's review rounds ran as default agents with three skeptics each; #129 checked (wf_5ac1f379-e54's
+    three ux-brand-reviewer rounds each returned a real result with shots).
+  - Added to `lanes/lane-b-session-brief.md` §5 and the rolling handoff §7.
+- **#131 merged (UX PR 4b, the screening result's words and tones):** 2026-11-07 03:27 UTC as **8a722f80**, from 9e577017,
+  by S5 (session_01FcouKRDfoFAeXZK4Thp8M8). `claude/build-platform` is 8a722f80.
+  - **The 4b ruling (01:31 UTC, acting Lane A):** the re-pin under `screening-labels/2026-11-05` also takes P5's four
+    figure labels ("Medicare figure, ..."). Conditions: 0 tags at the merge; the UX review covers every occurrence; the
+    ruling recorded in #131 and the status file. All three met: the `labels.test.ts` VERSIONS comment names all seven
+    changed strings; 0 tags right before the merge; the verifier's grep found no leftover.
+  - The path: draft #131 at c2725961 (01:40 UTC); CI fix 03ec41f5 (`tools/brand-colors` read "#121" as a hex colour);
+    `unit` on 03ec41f5 failed on MOD-16, seed 383403599 (job 128259888791; the base's flake, forwarded to S1); the UX and
+    brand review passed with fixes (4B-UX-02, 4B-UX-03); the full local suite once; the fix round pushed at 9e577017.
+  - CI on 9e577017: 22 runs green (unit 9,952; db 9,864; e2e 81). Fresh-clone verification wf_a6153b93-653: PASS. One nit
+    not taken: `lib/screening/routes.ts:836`'s doc comment "Expected less allowed", for the next change to that file.
+  - S5 next: P2, P5, UX PR 8, dark-mode-ship. SUITE-CAP-3's build runs in its own session (below), so it leaves S5's list.
+- **The schema batching plan** (acting Lane A, S2; read-only wf_255f9403-721; three rounds of a critic and a risk skeptic):
+  `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`. **10 schema PRs for about 22 queued items**, about 18 founder
+  approval cycles if each shipped alone. One schema PR open at a time, as before.
+  1. password-changed-notice (ADR 0091, SGN-16); D11's REVOKE only on the founder's deploy fact.
+  2. The granted SUITE-CAP-3 bodies, alone (an exact grant is never widened).
+  3. `tp-packet-verifier/3` (slice 3) with #38's stored words version and `words_changed`.
+  4. #85's design §7.2, items 1 to 5 (+ F4 if designed in time).
+  5. The ledger-freeze batch: #93's F9 plus the other ledger items, under one combined founder ask.
+  6. Identity: the Cognito relink, ADR 0081 A6 (moved from PR 1), SEC-N5 (conditional).
+  7. SS-01 D15's suspension mail with Q13, and #32's notice.
+  8. PHI identifier lookups: #120's F3 with `provider_adjustment.reference`.
+  9. Triage's stored waiting patterns.
+  10. Release-content health (`operator_content_coverage()`).
+  - **PR 1 is building** in S2 since 02:20 UTC (wf_5cf101cd-7ab): `co-001/password-changed-notice` (origin 7b38c9c5)
+    stacked on #126, migration 20261111090000; no PR until #126 merges. D11 and A6 do not ride.
+- **The orchestrator's rulings on the plan (02:20 UTC; the co-founder: decide without asking):**
+  - (a) Skip-ahead: yes. When the next PR's gate is unmet, the next ready one opens; each skip recorded.
+  - (b) Both queued (the safer option): SEC-N5 in PR 6, conditional on staging evidence of Cognito's `auth_time`;
+    `provider_adjustment.reference` (PHI under ADR 0027, stored in plain text) in PR 8 with #120's F3. Both recorded in
+    LANES.md "Handed to Lane A", 2026-11-07 03:35 UTC, from S2's 02:25 UTC entry.
+  - (c) PR 5's combined freeze ask written now and relayed to the founder early (no ask file on build-ops yet at 03:36 UTC).
+  - (d) D11's deploy fact is the founder's statement (below).
+  - (e) #38 §2.2's heading governs only the stored worksheet; the words version is not founder-gated and stays in PR 3.
+- **The D11 deploy fact, asked of the founder through the co-founder:** does every environment run an image that contains
+  #104 (SS-01), so that any rollback lands on an image that contains #104? GitHub shows no deployments or tags. Until it is
+  stated, D11's REVOKE does not ride PR 1; it rides the first non-ledger carrier after the fact (never PR 2 or PR 5), with
+  its rollback floor (never roll back past #104). **Pending.**
+- **SUITE-CAP-3** (session_01FcouKP4ekrT97eyDtLe4Rd):
+  - **Design reviewed** (b27a9861): seven rounds of default agents (payment-engine and security checklists), three skeptics
+    per finding: 46 findings, 31 applied, 15 refuted; two completeness checks and a final consistency check. Verdict BUILD.
+  - **Corrections to the granted ask's text (38123394), the two bodies unchanged:** (1) the 360 s is a sizing bound only;
+    no release check enforces it. (2) A's month was compared on totals (counts and cents), not row for row; row for row
+    holds at F 10,000 and R 2,000. The grant's scope is the two bodies, which are byte-identical to the granted text, so
+    **the grant stands**. The founder was informed through the co-founder.
+  - **D14** (ruled 2026-11-06 22:31 UTC) is now in design §0, D9, D14, 8.4 and 14.1. The build keeps step 7b on practice F
+    at 10,000 lines. The plan keeps D14's move out of PR 2: a no-migration follow-up after PR 2 and this worker PR both
+    merge, measured on that tree; if A's month is over 360 s, step 7b stays on F and the Known gap line is reworded, never
+    removed.
+  - **BUILD GO 02:15 UTC, worker-side only:** slices 1 to 6 and 5a; CAS-49 to CAS-51; ADR 0087; no migration, index or
+    table. wf_f2526ebe-769 runs in the item's own session (branch fast-forwarded to 31a7345f; WIP
+    `co-001/wip-suite-cap-3-build`; check-in 07:27 UTC).
+  - **For the web owner (LANES.md Queues item 21):** the reopen, the write-off and the five manual reconciliation actions
+    can wait on a reconcile pass for minutes, each holding one of the web's 10 connections; the fix is a `ledger:`
+    try-lock with an identifier-free, retryable refusal, never a blocking wait.
+- **#126** (S2): **CAS-42.5 PASSED on d2fdd106** (run 42307508461: working set 668.3 of 921.6 MiB; F's reconcile 603.0 s of
+  900 s). CI on d2fdd106 green except the domain model (the blank line only) and `unit` (a degraded runner; re-run once).
+  The second review round is redone with default agents (wf_a71650bd-ea2), including **candidate F1 (money):** an
+  out-of-order upload across two reconcile passes might hold 11.40 of interest where 6.00 was paid. Live at 03:36 UTC the
+  branch is at 9824f4e9 (03:18 UTC), whose commits name review F1 (MONEY-R2-1, 8ea33e13: a PLB L6's payments wait while a
+  take-back of a chain that may yet hold interest is not written whole) and F2 (the runbook's lock loop); S2's status file
+  has not recorded it yet.
+- **S1, `co-001/redact-range-glued`, and MOD-16's seeds:**
+  - Review round 2 found **PHI2-1 (blocking):** the fix let the call's own DOB, name part, member ID or claim number glued
+    at a range end through, where cc3dd7f6 refused only by chance (6,602 of 21,600 targeted letters). Fix round 2
+    (8d98b8bb to 3fcb9359; WIP = 3fcb9359; 632 of 632 gateway tests) reads the call's own identifiers across glued
+    boundaries.
+  - **Review round 3 (03:35 UTC) found that fix itself regressed:** PHI3-1 and PHI3-2 (blocking: a glued or camel-case own
+    name between an SSN or phone label and the number cuts the label, so SSNs that cc3dd7f6 redacted are sent), PHI3-3
+    and PHI3-4 (own-DOB shapes still sent), GATEWAY3-1 to GATEWAY3-3. The third round running in which a fix traded one
+    regression for another, so S1 stopped the build before its final fixer and runs **a judge workflow, wf_5d1aedda-db5:**
+    one base-against-candidate differential gate (at least 200,000 seeded letters plus every finding's inputs), two
+    candidates from 3fcb9359 (A patches the glued reading; B reverts it and refuses an own identifier glued across a
+    boundary the patterns do not read), two judges (PHI first; correctness and over-refusal), then reviews with skeptics
+    on the winner until dry. The bar: zero base-redacted or base-refused inputs sent, zero must-stay changes, except
+    classes recorded in ADR 0054 with a pinned row.
+  - **The three MOD-16 seeds** (forwarded 01:54 UTC): 1034253323 (#128's CI), -1074798020 (#129, run 42319584132) and
+    383403599 (#131, job 128259888791). The winner pins each failing at cc3dd7f6 and passing at HEAD before the one full
+    local suite.
+  - range-glued is the critical path for #129. #131 did not wait: its `unit` was green on 9e577017.
+- **#129** waits on range-glued: CI on f4fef908 green but `unit` (MOD-16, seed -1074798020, the same on its one re-run).
+  Nothing more is pushed meanwhile; then the base (8a722f80) merged once, CI, the verification, the merge.
+- **S3, ux-forms-after-42:** designed (wf_8ed4a036-bce; 27 findings applied); **CI-30 allocated** at 01:19 UTC (the shell's
+  skip link; next free CI-31); building in wf_24fdaecd-29b (slices U, C, W1, W2 in parallel worktrees, integration with E
+  into `co-001/wip-ux-forms-after-42`). It covers parts of queued UX PRs 67, 68, 74, 75 and 84: struck in LANES.md Queues
+  item 20 (UX PR 68's AppShell skip link; UX PR 74's Ticket hint; UX PR 75's users-page tables in `ScrollTable`; UX PR 84's
+  upload form on the shared core and UX-087's file-field part; UX PR 67 nothing struck).
+- **S4, slice 2:** round 2 (wf_db15c2a6-888) runs its loop-until-dry review rounds: NEW-1 fixed in code (3d44aff7), NEW-2 an
+  accepted reading (c3a2743e), then 2f3726ad and 0b5ca610; WIP = 0b5ca610 (03:16 UTC). No PR yet.
+- **Counters:** CI-30 to `co-001/ux-forms-after-42`. Next free: ADR 0092, synth module 21, fixture release 900008;
+  test-matrix MOD-23, CAS-56, SEC-25, SGN-17, CI-31 (the other series as at 2026-11-06 19:40 UTC).
