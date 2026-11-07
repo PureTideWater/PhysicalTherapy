@@ -36,6 +36,15 @@ function clippedAway(element: Element): boolean {
   return /^rect\(0px,? 0px,? 0px,? 0px\)$/.test(style.clip) || style.clipPath === 'inset(50%)';
 }
 
+/** The element's padding as drawn: inline (left and right) and block (top and bottom), or "mixed" when the two sides differ. */
+function padding(element: Element): { readonly inline: string; readonly block: string } {
+  const style = getComputedStyle(element);
+  return {
+    inline: style.paddingLeft === style.paddingRight ? style.paddingLeft : 'mixed',
+    block: style.paddingTop === style.paddingBottom ? style.paddingTop : 'mixed',
+  };
+}
+
 async function expectSkipLink(page: Page, what: string): Promise<void> {
   for (const width of WIDTHS) {
     await test.step(`${what} at ${String(width)} px`, async () => {
@@ -43,12 +52,15 @@ async function expectSkipLink(page: Page, what: string): Promise<void> {
       await page.reload();
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       const link = page.getByRole('link', { name: 'Skip to the content', exact: true });
-      // Hidden until it has focus: sr-only clips it to nothing (its padding still gives it a box).
+      // Hidden until it has focus: sr-only clips it to nothing, with no padding (its box styles apply only on focus).
       expect(await link.evaluate(clippedAway)).toBe(true);
       await page.locator('body').focus();
       await page.keyboard.press('Tab');
       await expect(link).toBeFocused();
       expect(await link.evaluate(clippedAway)).toBe(false);
+      // Shown with its padding, so the ring sits clear of the words and the link is a target at least 24 px tall.
+      expect(await link.evaluate(padding)).toEqual({ inline: '12px', block: '8px' });
+      expect((await link.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(24);
       await expect(link).toBeVisible();
       await expect(link).toBeInViewport();
       await expectAccessible(page, `${what}, the skip link focused at ${String(width)} px`);

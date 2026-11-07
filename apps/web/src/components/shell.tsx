@@ -322,13 +322,15 @@ const CONTENT_ID = 'content';
  * The first tab stop on every page in the shell (WCAG 2.4.1; test matrix CI-30): hidden until it has focus, then shown
  * at the top left above the sticky header, so a keyboard user passes the header and the rail with one Enter. The main
  * it names takes focus with tabIndex -1 and draws no outline of its own (a ring round the whole page would say
- * nothing): the page moves to it, and the next Tab reaches the first control inside main.
+ * nothing): the page moves to it, and the next Tab reaches the first control inside main. Every box style is on the
+ * focus variant: not-sr-only sets the padding to 0 after the plain utilities, so a plain px-3 would pad only the hidden
+ * link and the shown one would have none.
  */
 function SkipLink() {
   return (
     <a
       href={`#${CONTENT_ID}`}
-      className="sr-only rounded-md bg-background px-3 py-2 text-sm font-medium ring-2 ring-ring focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50"
+      className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:ring-2 focus:ring-ring"
     >
       Skip to the content
     </a>
