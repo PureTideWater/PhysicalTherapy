@@ -287,6 +287,24 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       'A response naming a document still in intake, held, a duplicate, a zip or one of its entries, of a kind other than a payer letter or other document, of another practice, or a contract version’s source is refused on the letter with one sentence, and nothing is recorded; the letters offered are grouped, those no response names first, this person’s uploads before another person’s, then this case’s responses’, listed whole, then other cases’, and a response with another case’s letter is still recorded; a letter a response names leaves Documents to tag and Documents awaiting abstraction, and tagging it, or naming it in an amendment or a correction, is refused with what to tag instead; a tag and a response of the same letter at the same time cannot both pass; a payer’s terms letter that no response names stays in both lists; the Contracts panel names its payer letter kind a payer’s terms or policy letter and says where a payer’s answer goes',
   },
   {
+    id: 'CAS-49',
+    title: 'A reconcile pass writes what the per-line pass wrote',
+    assertion:
+      'On generated passes at the posted and at the deposited proof level with corrections, reversals, recoupments, payer responses, partial postings, EFT deposits, patient share and reopens, and on LED-01 to LED-18\'s worlds, the pass writes the same ledger matches, entries, stage events, payer responses, notifications and audit events, in the same order where order is observable and with the same text in every encrypted note, as the per-line pass; a line\'s payer approved and recovered written in one statement keep their order and checks',
+  },
+  {
+    id: 'CAS-50',
+    title: 'A reconcile pass\'s reads do not grow per line',
+    assertion:
+      'Between 200 and 800 lines the pass\'s candidate searches and claim-line reads stay a fixed number of statements, none of them reads the ledger\'s matches, its stage events are one statement, and it decrypts each claim\'s patient control number at most once per phase',
+  },
+  {
+    id: 'CAS-51',
+    title: 'A reconcile pass at real size',
+    assertion:
+      'A step-7b pass of 2,000 lines, spread over cases, in one case and on few service dates (more on the weekly run) approves and posts every line within its time budget, its own part (the pass less the ledger\'s entry inserts) within its own budget and at most 1.5 times as slow a line at 2,000 as at 500, under 75% of the worker\'s heap',
+  },
+  {
     id: 'CAS-55',
     title: 'Render, approval and export of a narrative’s fact tokens',
     assertion:

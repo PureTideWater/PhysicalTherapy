@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type DatabaseClient, type DatabasePool, PracticeCipher, databaseClient, openPool, withJobScope, workerDevLoginUrl } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, PracticeCipher, appDevLoginUrl, databaseClient, loadPracticeCipher, openPool, withJobScope, withPracticeScope, workerDevLoginUrl } from '@tp/db';
 import { endPool } from '@tp/db/testing';
 import { partialShare } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents } from '@tp/money';
@@ -10,6 +10,7 @@ import { createLogger } from '@tp/observability';
 import type { JobContext } from '../../jobs/handlers';
 import type { Practice } from '../../price/test-support/pricing-world';
 import { type Scope, ledgerEntries, ledgerMatches } from '../ledger';
+import { type ManualContext, ReconciliationError } from '../manual';
 import type { ReconcileServices, ReconcileSummary } from '../pass';
 import { chainContext } from '../remittances';
 import type { BuiltWorld } from './pass-world';
@@ -46,6 +47,10 @@ import { lineChain } from './per-line';
  *   held to the first two only (CompareOptions.postingsDecryptOnce), since the per-line postings decrypt a remittance's
  *   claims once for every row that names it.
  *
+ * CAS-49.4 (pass-equality-manual.db.test.ts) runs a person's manual actions on two clones the same way (runManualSide:
+ * each action in its own request scope through the same proxy, its refusal kept by code) and compares their writes as
+ * above, without the pass's own decrypt checks (CompareOptions.passDecrypts), since an action runs no search.
+ *
  * A difference names its table, the row's ordinal and the column, never a value: no identifier, plaintext or hash is
  * logged or printed.
  */
@@ -81,10 +86,10 @@ interface Decrypt {
   readonly ciphertext: string;
 }
 
-/** What one side of a comparison ran and wrote. */
-export interface SideResult {
+/** What one side of a comparison ran and wrote: a pass's summary, or (CAS-49.4) what each of a person's actions returned. */
+export interface SideResult<S = ReconcileSummary> {
   readonly name: string;
-  readonly summary: ReconcileSummary;
+  readonly summary: S;
   readonly statements: readonly Statement[];
   readonly decrypts: readonly Decrypt[];
   /** Each practice table's rows after the pass, as JSON text. */
@@ -286,6 +291,64 @@ export async function runSide(
   }
 }
 
+/** One of a person's actions on a side (CAS-49.4): who acts, and what they do with the request's manual context. */
+export interface ManualStep {
+  readonly actorId: string;
+  readonly run: (context: ManualContext) => Promise<unknown>;
+}
+
+/** What a person's action came to: what it returned, or the refusal's code (another error by its class's name only). */
+export type ManualOutcome = { readonly returned: unknown } | { readonly refused: string } | { readonly failed: string };
+
+/**
+ * CAS-49.4: runs a person's actions, one after another, each in its own request scope on the app's login (as the web's
+ * Reconciliation routes run them through @tp/worker/ledger), on the database at `url`, through the same statement
+ * proxy as runSide; then reads the practice's rows. Each action's request ID is fixed by its place, so the audit events
+ * both sides write compare equal. A refusal rolls its request back, as the web's does; its code is kept.
+ */
+export async function runManualSide(name: string, url: string, built: WorldOf, steps: readonly ManualStep[]): Promise<SideResult<readonly ManualOutcome[]>> {
+  wrapDecrypt();
+  const pool: DatabasePool = openPool(appDevLoginUrl(url), 2);
+  const superuser = databaseClient(url);
+  await superuser.connect();
+  const statements: Statement[] = [];
+  const decrypts: Decrypt[] = [];
+  const outcomes: ManualOutcome[] = [];
+  const { practiceId } = built.practice;
+  try {
+    for (const [index, step] of steps.entries()) {
+      const outcome = await recording.run({ decrypts, phase: () => 'before' }, () =>
+        withPracticeScope(pool, { actorId: step.actorId, practiceIds: [practiceId] }, async (scope) => {
+          const client = scope.client;
+          const proxied = new Proxy(client, {
+            get(target, property, receiver) {
+              if (property === 'query') {
+                return async (text: string | { text: string; values?: unknown[] }, values?: unknown[]) => {
+                  const [sql, args] = typeof text === 'string' ? [text, values ?? []] : [text.text, text.values ?? []];
+                  const result = await client.query(sql, args);
+                  statements.push({ text: sql, values: args, rows: /^\s*INSERT/i.test(sql) && /RETURNING/i.test(sql) ? (result.rows as Record<string, unknown>[]) : [] });
+                  return result;
+                };
+              }
+              const value: unknown = Reflect.get(target, property, receiver);
+              return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+            },
+          });
+          Object.defineProperty(scope, 'client', { value: proxied, configurable: true, writable: true });
+          const cipher = await loadPracticeCipher(scope, built.world.keys, practiceId);
+          return { returned: await step.run({ scope, cipher, keys: built.world.keys, requestId: `cas-49.4-${String(index)}` }) };
+        }).catch((error: unknown): ManualOutcome => (error instanceof ReconciliationError ? { refused: error.code } : { failed: error instanceof Error ? error.name : 'error' })),
+      );
+      outcomes.push(outcome);
+    }
+    const after = await rowsOf(superuser, practiceId);
+    return { name, summary: outcomes, statements, decrypts, after, replay: [] };
+  } finally {
+    await superuser.end();
+    await endPool(pool);
+  }
+}
+
 /** A remittance's check-level allocated posting matches (the partial ones) written by a pass. */
 function partialChecks(after: ReadonlyMap<string, readonly Record<string, unknown>[]>, before: ReadonlyMap<string, ReadonlySet<string>>): Set<string> {
   const newMatches = (after.get('ledger_match') ?? []).filter((row) => !(before.get('ledger_match')?.has(String(row.id)) ?? false));
@@ -367,7 +430,7 @@ async function replayPartialChecks(pool: DatabasePool, practice: Practice, after
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** Each new row's label on one side: by seq, by export row, or by the order its insert returned its id. */
-function labels(side: SideResult, before: ReadonlyMap<string, ReadonlySet<string>>): Map<string, string> {
+function labels(side: SideResult<unknown>, before: ReadonlyMap<string, ReadonlySet<string>>): Map<string, string> {
   const label = new Map<string, string>();
   const isNew = (table: string, row: Record<string, unknown>) => !(before.get(table)?.has(String(row.id)) ?? false);
   for (const [table, rows] of side.after) {
@@ -457,10 +520,15 @@ export interface CompareOptions {
    * own proof), whose postings decrypt a remittance's claims once for every row that names it, as the base does.
    */
   readonly postingsDecryptOnce?: boolean;
+  /**
+   * Whether the pass's decrypts are compared (the search's set, the postings' bound): true unless the sides are a
+   * person's actions (CAS-49.4), which run no search and no postings phase; their writes are compared all the same.
+   */
+  readonly passDecrypts?: boolean;
 }
 
 /** Compares a side with the reference (design section 7, CAS-49.1; CAS-49.6 with seqByOrder). */
-export function compare(reference: SideResult, side: SideResult, before: ReadonlyMap<string, ReadonlySet<string>>, practice: Practice, options: CompareOptions = {}): Comparison {
+export function compare(reference: SideResult<unknown>, side: SideResult<unknown>, before: ReadonlyMap<string, ReadonlySet<string>>, practice: Practice, options: CompareOptions = {}): Comparison {
   const differences: string[] = [];
   const refLabel = labels(reference, before);
   const sideLabel = labels(side, before);
@@ -528,22 +596,25 @@ export function compare(reference: SideResult, side: SideResult, before: Readonl
   }
 
   // Multi-row inserts without RETURNING (audit_event, the recoupment notification): the same statements in the same order.
-  const multiRow = (result: SideResult, label: ReadonlyMap<string, string>) =>
+  const multiRow = (result: SideResult<unknown>, label: ReadonlyMap<string, string>) =>
     result.statements
       .filter((statement) => /^\s*INSERT\s+INTO\s+"?(audit_event|notification)\b/i.test(statement.text) && !/RETURNING/i.test(statement.text))
       .map((statement) => `${statement.text} ${JSON.stringify(statement.values, (_key, value: unknown) => (typeof value === 'bigint' ? String(value) : value))}`.replace(UUID, (id) => label.get(id) ?? id));
   compareLists('multi-row inserts (issue order)', multiRow(reference, refLabel), multiRow(side, sideLabel), differences);
 
   // The summary counts.
-  const summary = (result: SideResult, label: ReadonlyMap<string, string>) => JSON.stringify(result.summary, (_key, value: unknown) => (typeof value === 'bigint' ? String(value) : value)).replace(UUID, (id) => label.get(id) ?? id);
+  const summary = (result: SideResult<unknown>, label: ReadonlyMap<string, string>) => JSON.stringify(result.summary, (_key, value: unknown) => (typeof value === 'bigint' ? String(value) : value)).replace(UUID, (id) => label.get(id) ?? id);
   if (summary(reference, refLabel) !== summary(side, sideLabel)) {
     differences.push('the pass summary differs');
   }
 
+  if (options.passDecrypts === false) {
+    return { differences, partialCheck: partial.size > 0, strictSettleWouldDiffer };
+  }
   // The claims whose patient control numbers were decrypted: in the search, the same set; in the postings, within the
   // reference's and never more often.
   const claimOf = new Map((reference.after.get('claim') ?? []).map((row) => [String(row.patient_control_number), String(row.id)]));
-  const claimsIn = (result: SideResult, phase: Phase) => {
+  const claimsIn = (result: SideResult<unknown>, phase: Phase) => {
     const counted = new Map<string, number>();
     for (const decrypt of result.decrypts) {
       if (decrypt.phase === phase && decrypt.column === 'claim.patient_control_number') {
@@ -577,7 +648,7 @@ export function compare(reference: SideResult, side: SideResult, before: Readonl
 }
 
 /** The settle entries in seq order follow this side's ledgerMatches order (matched_at, id): the rule both sides hold. */
-function settleOrder(result: SideResult, before: ReadonlyMap<string, ReadonlySet<string>>): string[] {
+function settleOrder(result: SideResult<unknown>, before: ReadonlyMap<string, ReadonlySet<string>>): string[] {
   const matches = (result.after.get('ledger_match') ?? []).filter((row) => row.reversed_at === null);
   // matched_at as row_to_json writes it, its fraction padded to microseconds; then the id, compared as PostgreSQL compares UUIDs.
   const at = (row: Record<string, unknown>) => String(row.matched_at).replace(/^([^.+]*)(?:\.(\d+))?/, (_whole, head: string, fraction: string | undefined) => `${head}.${(fraction ?? '').padEnd(6, '0')}`);

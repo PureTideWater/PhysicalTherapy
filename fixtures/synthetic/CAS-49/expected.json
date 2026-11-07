@@ -1,0 +1,17 @@
+{
+  "case": "CAS-49",
+  "module": "CAS",
+  "title": "A reconcile pass writes what the per-line pass wrote",
+  "assertion": "On generated passes at the posted and at the deposited proof level with corrections, reversals, recoupments, payer responses, partial postings, EFT deposits, patient share and reopens, and on LED-01 to LED-18's worlds, the pass writes the same ledger matches, entries, stage events, payer responses, notifications and audit events, in the same order where order is observable and with the same text in every encrypted note, as the per-line pass; a line's payer approved and recovered written in one statement keep their order and checks",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["apps/worker/src/reconcile/pass-equality.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Generated passes and LED worlds, compared with the per-line pass: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

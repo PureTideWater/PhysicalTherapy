@@ -35,7 +35,8 @@ const CHROMIUM_ON_CI = ['tools/test/ci-chromium.ts'];
  * SUITE-CAP-1a, docs/adr/0083) and CAS-42's real-size jobs (triage's and the report's at 100,000 lines, and the
  * reconcile pass at size: about 11 minutes and about 5 minutes locally; SUITE-CAP-1b, docs/adr/0083) and CAS-49's
  * generated passes (25 generated worlds, each reconciled on one clone by the per-line reference and on another by the
- * pass: about 10 minutes locally; SUITE-CAP-3 D13, docs/adr/0087). Each shard
+ * pass: about 10 minutes locally; SUITE-CAP-3 D13, docs/adr/0087) and CAS-51's real-size passes (three shapes, each
+ * seeded and reconciled at 500 and 2,000 lines: about 4 minutes locally; docs/adr/0087). Each shard
  * starts its slowest files first, by the durations in the results cache
  * (node_modules/.vite/vitest, which CI restores per shard); a file with no recorded duration falls back to its size,
  * which would start these last. So, without a recorded duration, these start first.
@@ -47,6 +48,7 @@ export const SLOW_FIRST: readonly RegExp[] = [
   /^apps\/worker\/src\/report\/streamed\.db\.test\.ts$/,
   /^apps\/worker\/src\/triage\/triage\.large\.db\.test\.ts$/,
   /^apps\/worker\/src\/reconcile\/reconcile\.large\.db\.test\.ts$/,
+  /^apps\/worker\/src\/reconcile\/pass\.large\.db\.test\.ts$/,
   /^apps\/worker\/src\/reconcile\/pass-equality\.db\.test\.ts$/,
 ];
 
