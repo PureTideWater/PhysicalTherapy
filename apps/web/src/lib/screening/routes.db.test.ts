@@ -73,6 +73,13 @@ const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
 
 /** Where an accepted upload lands while a slot is free (the world counts so many slots that one always is). */
 const SENT = screeningSentPath('soon');
+/**
+ * Result mails after a re-send once the first screening was priced and mailed: two, one per screening, the first's link
+ * no longer opening. A re-send before pricing sends one. Recorded, not ruled: whether the upload form's "Not confirmed"
+ * lead must say a second press can send a second email is for the security reviewer (co-001/ux-forms-after-42's
+ * design, section 8).
+ */
+const RESEND_LATE_MAILS = 2;
 
 const sha256 = (text: string | Uint8Array) => createHash('sha256').update(text).digest('hex');
 
@@ -447,6 +454,50 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     expect(held.rows).toEqual([{ claim_count: 11 }]);
     await world.price();
     expect((await world.call(screeningResult, { params: { resultId: world.tokenFor(secondEmail) } })).status).toBe('ok');
+  });
+
+  // The upload form's "Not confirmed" (docs/adr/0077, amended by co-001/ux-forms-after-42): a dropped connection after
+  // the server stored the screening leaves the person pressing "Screen the file" again with the same values and file.
+  describe('a second identical send after a dropped first one', () => {
+    const mailsTo = (email: string) => world.mail.sent.filter((sent) => sent.to.includes(email) && sent.subject === 'Your screening is ready').length;
+    /** The screenings of the practice that hold a result (a result is one row per priced line, so its runs are counted). */
+    const resultsOf = async (name: string) =>
+      (
+        await world.owner.query<{ n: number }>(
+          `SELECT count(DISTINCT r.id)::int AS n FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id
+             JOIN screening_prospect p ON p.id = u.prospect_id WHERE screening_practice_key(p.practice_name) = screening_practice_key($1)`,
+          [name],
+        )
+      ).rows[0]?.n;
+
+    it('before the first is priced: one result, and one result mail', async () => {
+      const name = practiceName();
+      const email = `prospect.resend.early.${randomUUID().slice(0, 6)}@clinic-resend.synthetic.test`;
+      const input = submitInput({ practiceName: name, contactEmail: email });
+      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: SENT } });
+      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: SENT } });
+      await world.price();
+      await world.price();
+      expect(await resultsOf(name)).toBe(1);
+      expect(mailsTo(email)).toBe(1);
+      expect((await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } })).status).toBe('ok');
+    });
+
+    it('after the first is priced and mailed: one result held, its link in the second of two result mails', async () => {
+      const name = practiceName();
+      const email = `prospect.resend.late.${randomUUID().slice(0, 6)}@clinic-resend.synthetic.test`;
+      const input = submitInput({ practiceName: name, contactEmail: email });
+      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: SENT } });
+      await world.price();
+      const first = world.tokenFor(email);
+      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: SENT } });
+      await world.price();
+      expect(await resultsOf(name)).toBe(1);
+      // The first link stops opening; the second mail's link opens the one result held.
+      expect((await world.call(screeningResult, { params: { resultId: first } })).status).toBe('not_found');
+      expect((await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } })).status).toBe('ok');
+      expect(mailsTo(email)).toBe(RESEND_LATE_MAILS);
+    });
   });
 });
 
