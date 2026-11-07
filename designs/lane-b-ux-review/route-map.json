@@ -223,7 +223,7 @@
    "Account menu in the header (AccountMenu, shell.tsx: header [data-slot='account-menu']; before PR #77, summary[aria-label='Account menu']) for the signed-in platform administrator.",
    "Kind select (page.tsx:36-43): 'Practice group' / 'Billing firm' (open the select for a shot only if the review wants native select styling; it is a native <select>)."
   ],
-  "notes": "This is the console's landing: page.goto('/') as platform-admin redirects here (apps/web/src/app/page.tsx:23-25); tour shot 23-console-home.png. Table 'Organizations' lists name links to /console/organizations/<id>, kind, status badge and created date. Do not submit a real create during the capture unless a shot of the new organization is wanted (it adds an organization row that later shots then list)."
+  "notes": "This is the console's landing: page.goto('/') as platform-admin redirects here (apps/web/src/app/page.tsx:23-25); tour shot 23-console-home.png. Table 'Organizations' lists name links to /console/organizations/<id>, kind, status badge and created date. Do not submit a real create during the capture unless a shot of the new organization is wanted (it adds an organization row that later shots then list). [co-001/ux-forms-after-42, 2026-11-07] Tour state interaction:skip-link-focused: the first Tab shows the shell's 'Skip to the content' (skipped on a ref before it)."
  },
  {
   "file": "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
@@ -433,6 +433,29 @@
    "Rail for a specialist: Internal console shows 'Specialist queue' and 'Place-of-service split' only (shell.tsx:269-279)."
   ],
   "notes": "Four stat cards in a sm:grid-cols-4 grid, then an eight-column table without a scroll wrapper (390 px overflow candidate). Counts only; no PHI. Grants last four hours from creation, so capture within four hours of populate or the rows lose their links."
+ },
+ {
+  "file": "apps/web/src/app/console/mail/page.tsx",
+  "route": "/console/mail",
+  "personas": [
+   "platform-admin"
+  ],
+  "permission": "feature_flag.manage (apps/web/src/lib/routes/console-mail.ts, consoleMailPage, platformRoute); the pause and the resume take the same permission. Every other persona gets the Forbidden state with next step 'The mail streams are paused and resumed by platform administrators.' The rail shows it as section console_mail (apps/web/src/components/shell.tsx). Added [co-001/ux-forms-after-42, 2026-11-07]; from #42 (mail streams).",
+  "segments": [],
+  "populateSpecs": [],
+  "reachable": "seed",
+  "notReachableReason": "",
+  "states": {
+   "empty": "The 'Undelivered in the last 7 days' card reads 'Nothing undelivered.' on a database where no customer message bounced; it is inside the default shot.",
+   "loading": "none: no loading.tsx for console/mail or its parents.",
+   "error": "The Resume form's reason select is required, so a press without a reason is stopped by the browser; no refusal a person can meet on synthetic data. Permission state: any non-platform-admin persona.",
+   "notFound": "none (no dynamic segment)."
+  },
+  "interactions": [
+   "Pause the screening stream (writes; one press, destructive, no confirmation): taken in the writes test, which shoots the paused card's Resume form (tour id console.mail.resume.*), resumes it on screen with 'It was a false alarm' and puts the stream's row back as it was before the pause, so the screening page stays open.",
+   "Resume form: 'Why it can resume' select and the SES review note (data-copy resume-review)."
+  ],
+  "notes": "Tour ids console.mail.default.* and console.mail.resume.* [co-001/ux-forms-after-42, 2026-11-07]."
  },
  {
   "file": "apps/web/src/app/console/status/page.tsx",
@@ -849,7 +872,7 @@
    "'Triage the run' (writes: triage) and 'Open the case' on a ready waiting pattern (triage.spec.ts only) - capture, do not press.",
    "?notice=materiality shows the saved notice without a save (pure URL)."
   ],
-  "notes": "Tour shoots PACKETS cases as packet-approver (13-cases.png) and probes LAYOUT. The deadline chip colours (Deadline component) show best on MONITORING (deadline in 7 days)."
+  "notes": "Tour shoots PACKETS cases as packet-approver (13-cases.png) and probes LAYOUT. The deadline chip colours (Deadline component) show best on MONITORING (deadline in 7 days). [co-001/ux-forms-after-42, 2026-11-07] Tour state interaction:skip-link-focused: the first Tab shows the shell's 'Skip to the content' (skipped on a ref before it)."
  },
  {
   "file": "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
@@ -2338,7 +2361,7 @@
    "Region 'Correspondence contact' form: 'Name or office', 'Phone', 'Extension (optional)', 'Email (optional)', fieldset 'Mailing address' (Street, Suite or floor, City, State select, ZIP), 'Save the contact'",
    "?notice=saved shows [data-notice=\"saved\"] (settings.ts:467); URL-only"
   ],
-  "notes": "Three shots cover it: set (practice-admin, NORTH), missing (other-admin, SYNTHETIC OTHER PRACTICE), read-only (pricing-manager, LAYOUT)."
+  "notes": "Three shots cover it: set (practice-admin, NORTH), missing (other-admin, SYNTHETIC OTHER PRACTICE), read-only (pricing-manager, LAYOUT). [co-001/ux-forms-after-42, 2026-11-07] The tour's error id is now a seven-digit phone and a four-digit ZIP (p.correspondence.error.*); the earlier @ in Name or office is p.correspondence.error-at-name.*."
  },
  {
   "file": "apps/web/src/app/p/[practiceId]/settings/data/page.tsx",
@@ -2653,7 +2676,7 @@
    "'Download the column template' triggers a download only (paidwhole-screening-template.csv); no visual state.",
    "At 390 px the 'The screening columns' table sits in a ScrollTable region: check the sideways scroller is visible in the shot."
   ],
-  "notes": "Already in the tour as 20-screening, 21-screening-form (1280), screening-sent (probe) and 29-phone-screening (390). Missing: the refusal states, the server ZIP error, the four sent wordings and 390 px of the form with a file chosen. A send for the same practice name and ZIP, or the same email, replaces the earlier screening and closes its link (upload-form.tsx:163), so send exactly once per capture run and reuse that link for both widths of the result page. Sends need the local screening consumer running (startLocalScreeningConsumer, apps/web/e2e/screening.ts:127) or the email never arrives."
+  "notes": "Already in the tour as 20-screening, 21-screening-form (1280), screening-sent (probe) and 29-phone-screening (390). Missing: the refusal states, the server ZIP error, the four sent wordings and 390 px of the form with a file chosen. A send for the same practice name and ZIP, or the same email, replaces the earlier screening and closes its link (upload-form.tsx:163), so send exactly once per capture run and reuse that link for both widths of the result page. Sends need the local screening consumer running (startLocalScreeningConsumer, apps/web/e2e/screening.ts:127) or the email never arrives. [co-001/ux-forms-after-42, 2026-11-07] New tour ids: screening.error-unconfirmed.* (the upload's POST aborted by page.route as a lost connection; nothing reaches the server) and screening.no-javascript.* (a javaScriptEnabled:false context, the <noscript> line; skipped on a ref before it); screening.loading's busy pattern also accepts the core's 'Working\u2026' status line."
  },
  {
   "file": "apps/web/src/app/screening/results/[resultId]/page.tsx",
@@ -2802,7 +2825,7 @@
    "Firm layout: as firm-principal on SYNTHETIC BILLING FIRM the role options are the firm's (Firm principal, Firm analyst, Billing manager, Analyst, Viewer).",
    "How a person gets here: from /p/<NORTH id>/settings as practice-admin click the section link 'Users and roles' (worth a flow shot)."
   ],
-  "notes": "Organization routes render the shell with no current practice (shellFor(scope, null), apps/web/src/lib/http/invoke.ts:220-227), so the rail loses the Practice nav and the switcher reads 'Choose a practice' while the person came from a practice's Settings: a flows item shared with /settings/billing and /account/*. Each member row holds a select, two buttons and a checkbox in a four-column table without a scroll wrapper: a 390 px candidate."
+  "notes": "Organization routes render the shell with no current practice (shellFor(scope, null), apps/web/src/lib/http/invoke.ts:220-227), so the rail loses the Practice nav and the switcher reads 'Choose a practice' while the person came from a practice's Settings: a flows item shared with /settings/billing and /account/*. Each member row holds a select, two buttons and a checkbox in a four-column table without a scroll wrapper: a 390 px candidate. [co-001/ux-forms-after-42, 2026-11-07] Tour state interaction:skip-link-focused: the first Tab shows the shell's 'Skip to the content' (skipped on a ref before it)."
  },
  {
   "file": "apps/web/src/app/sign-in/page.tsx",

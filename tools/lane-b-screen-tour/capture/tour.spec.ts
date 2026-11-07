@@ -1050,6 +1050,23 @@ const SWITCHER = async (page: Page): Promise<void> => {
 const MENU = async (page: Page): Promise<void> => {
   await page.locator('header summary').filter({ hasText: /^Menu$/ }).first().click();
 };
+/**
+ * The shell's skip link (co-001/ux-forms-after-42, designs/lane-b-ux-forms-after-42.md 2.8; test matrix CI-30): the first
+ * Tab from the top of the page shows "Skip to the content" at the top left. A ref before it has no skip link, so the step
+ * fails with that reason and the shot is skipped, never faked.
+ */
+const SKIP_LINK = async (page: Page): Promise<void> => {
+  const link = page.getByRole('link', { name: 'Skip to the content', exact: true });
+  if ((await link.count()) === 0) throw new Error('no skip link on this ref (it comes with co-001/ux-forms-after-42): not taken');
+  await settle(page);
+  await page.keyboard.press('Tab');
+  await expect(link.first()).toBeFocused();
+  await expect(link.first()).toBeVisible();
+};
+/** The skip link focused on one AppShell page, at each width (the dark one when TOUR_ONLY names it). */
+function skipLinkShot(browser: Browser, c: { key: string; route: string; persona: string; path: string | (() => string) }): Promise<void> {
+  return cap(browser, { ...c, state: 'interaction:skip-link-focused', act: SKIP_LINK, note: 'The first Tab from the top of the page: the shell’s skip link, focused and shown.' });
+}
 
 /** The shell's own controls the map names on a route: Help with this screen, the Account menu, the 390 px Menu. */
 async function shellControls(browser: Browser, c: { key: string; route: string; persona: string; path: string | (() => string); help?: boolean; account?: boolean; menu?: boolean }): Promise<void> {
@@ -1716,6 +1733,10 @@ async function registerKeyShots(browser: Browser): Promise<void> {
   }
 }
 
+/** The screening form's <noscript> line, word for word (co-001/ux-forms-after-42, designs/lane-b-ux-forms-after-42.md 2.1 change 13). */
+const SCREENING_NOSCRIPT =
+  'Screening a file needs JavaScript, because the file is read in this browser and never uploaded: only its rows of totals are sent. Turn JavaScript on before you fill in the form.';
+
 async function screeningShots(browser: Browser): Promise<void> {
   const route = '/screening';
   const tag = randomBytes(4).toString('hex');
@@ -1790,8 +1811,60 @@ async function screeningShots(browser: Browser): Promise<void> {
     path: route,
     prepare: (page) => fill(page, { email: `screening-held-${tag}@clinic-e2e.synthetic.test`, file: clean() }),
     submit: (page) => page.getByRole('button', { name: 'Screen the file' }).click(),
-    busy: /^Sending/,
+    // "Sending…" on the button before co-001/ux-forms-after-42; from it the button keeps "Screen the file" and the shared
+    // core's status line says "Working…" (designs/lane-b-ux-forms-after-42.md 2.1 and 7).
+    busy: /^(Sending|Working)/,
   });
+  // A dropped connection with the form filled (co-001/ux-forms-after-42, design 7, as support.error-unconfirmed does): the
+  // upload's POST is aborted by page.route as a lost connection, so nothing reaches the server and nothing is screened.
+  await cap(browser, {
+    key: 'screening',
+    route,
+    persona: null,
+    path: route,
+    ready,
+    state: 'error',
+    variant: 'error-unconfirmed',
+    note: 'The connection dropped before an answer came back: the upload’s POST aborted by page.route as a lost connection (nothing reached the server).',
+    act: async (page, width) => {
+      await fill(page, { email: `screening-unconfirmed-${tag}-${String(width)}@clinic-e2e.synthetic.test`, file: clean() });
+      await expect(page.locator('[data-state="file-ready"]')).toBeVisible();
+      const post = (url: URL): boolean => url.pathname === route;
+      const drop = async (r: Route): Promise<void> => {
+        if (r.request().method() === 'POST') await r.abort('internetdisconnected').catch(() => undefined);
+        else await r.continue().catch(() => undefined);
+      };
+      await page.route(post, drop);
+      try {
+        await page.getByRole('button', { name: 'Screen the file' }).click();
+        // From co-001/ux-forms-after-42 the form says "Not confirmed" and keeps what was typed; before it, the error page shows.
+        await expect(page.getByText(/^(Not confirmed|Something went wrong)$/).first()).toBeVisible({ timeout: 15_000 });
+      } finally {
+        await page.unroute(post, drop).catch(() => undefined);
+      }
+    },
+  });
+  // Without JavaScript (co-001/ux-forms-after-42, design 2.1 change 13): the <noscript> line above the first card. A ref
+  // before it has no such line, so the step fails with that reason and the shot is skipped, never faked.
+  {
+    const meta: Meta = { key: 'screening', variant: 'no-javascript', state: 'interaction:no-javascript', route, role: 'public', note: 'JavaScript off in the browser (javaScriptEnabled: false): the <noscript> line; nothing is filled or sent.' };
+    for (const width of WIDTHS) {
+      await attempt(andDark([idOf(meta, width)]), route, async () => {
+        const context = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), javaScriptEnabled: false });
+        try {
+          const page = await context.newPage();
+          await page.goto(route);
+          await ready(page);
+          const line = page.getByText(SCREENING_NOSCRIPT, { exact: true });
+          if ((await line.count()) === 0) throw new Error('no <noscript> line on this ref (it comes with co-001/ux-forms-after-42): not taken');
+          await expect(line.first()).toBeVisible();
+          await snap(page, meta);
+        } finally {
+          await context.close();
+        }
+      });
+    }
+  }
   notReached('screening', 'loading-reading', route, "'Reading the file in this browser...' is a FileReader step inside the browser that page.route cannot hold; with the small fixture it lasts milliseconds");
 
   // The one real send of the run, then the result its email links to.
@@ -1799,6 +1872,8 @@ async function screeningShots(browser: Browser): Promise<void> {
     ...['sent-soon', 'sent-minutes', 'sent-waiting', 'sent-sent'].flatMap((variant) => WIDTHS.map((width) => `screening.${variant}.${String(width)}`)),
     ...['default', 'error-name', 'loading', 'converted'].flatMap((variant) => WIDTHS.map((width) => `screening-result.${variant}.${String(width)}`)),
     'screening-result.default.1280-dark',
+    // The convert form's refusal in the dark set (co-001/ux-forms-after-42, design 7): taken when TOUR_ONLY names it.
+    'screening-result.error-name.1280-dark',
   ];
   const contact = `screening-tour-${tag}@clinic-e2e.synthetic.test`;
   if (resultIds.some(wanted)) {
@@ -1955,6 +2030,7 @@ test('console and account', async ({ browser }) => {
   });
   await cap(browser, { key: 'console.organizations', route: orgs, persona: 'contract-specialist', path: orgs, state: 'error', variant: 'error-forbidden', ready: denied });
   await shellControls(browser, { key: 'console.organizations', route: orgs, persona: A, path: orgs, account: true, menu: true });
+  await skipLinkShot(browser, { key: 'console.organizations', route: orgs, persona: A, path: orgs });
   notReached('console.organizations', 'empty', orgs, 'the seed always holds four organizations, so No organizations yet never shows');
 
   // /console/organizations/[organizationId]
@@ -2134,6 +2210,11 @@ test('console and account', async ({ browser }) => {
   });
   await shellControls(browser, { key: 'console.support', route: su, persona: A, path: su, menu: true });
   notReached('console.support', 'empty', su, "'No support grants' shows only before populate; the journeys' grants always fill the table");
+
+  // /console/mail (from #42, mail streams; co-001/ux-forms-after-42, design 7). The paused stream and its Resume form are
+  // taken in the writes test, which pauses the screening stream on screen and restores it at once.
+  const ml = '/console/mail';
+  await cap(browser, { key: 'console.mail', route: ml, persona: A, path: ml, note: 'The streams as the prepared database leaves them; the screening stream’s Pause button (not pressed here).' });
 
   // /console/terms
   const ct = '/console/terms';
@@ -2323,6 +2404,7 @@ test('console and account', async ({ browser }) => {
   // Users and roles
   const us = '/settings/organizations/[organizationId]/users';
   await cap(browser, { key: 'settings.users', route: us, persona: 'practice-admin', path: () => `/settings/organizations/${need('group')}/users` });
+  await skipLinkShot(browser, { key: 'settings.users', route: us, persona: 'practice-admin', path: () => `/settings/organizations/${need('group')}/users` });
   await cap(browser, {
     key: 'settings.users',
     route: us,
@@ -2516,6 +2598,7 @@ test('practice workflow', async ({ browser }) => {
   // Cases
   const cs = '/p/[practiceId]/cases';
   await cap(browser, { key: 'p.cases', route: cs, persona: 'packet-approver', path: () => PK('/cases'), note: 'Legacy tour shot 13-cases.' });
+  await skipLinkShot(browser, { key: 'p.cases', route: cs, persona: 'packet-approver', path: () => PK('/cases') });
   await cap(browser, { key: 'p.cases', route: cs, persona: 'billing-manager', path: () => N('/cases'), state: 'empty' });
   await cap(browser, {
     key: 'p.cases',
@@ -3719,7 +3802,8 @@ test('practice set-up', async ({ browser }) => {
     persona: 'other-admin',
     path: () => P('other', '/settings/correspondence'),
     state: 'error',
-    note: 'An @ in Name or office (refused; nothing written).',
+    variant: 'error-at-name',
+    note: 'An @ in Name or office (refused; nothing written). Until co-001/ux-forms-after-42 this state was p.correspondence.error.',
     act: async (page) => {
       await page.getByLabel('Name or office').fill('SYNTHETIC@OFFICE');
       await page.getByLabel('Phone', { exact: true }).fill('(919) 555-0100');
@@ -3727,6 +3811,26 @@ test('practice set-up', async ({ browser }) => {
       await page.getByLabel('City').fill('SYNTHETIC CITY');
       await page.getByLabel('State', { exact: true }).selectOption({ index: 1 });
       await page.getByLabel('ZIP', { exact: true }).fill('27601');
+      await press(page.getByRole('button', { name: 'Save the contact' }));
+      await refused(page);
+    },
+  });
+  // A refused phone and ZIP, so the correspondence form's field messages show (co-001/ux-forms-after-42, design 2.4, 2.5
+  // and 7). Both values pass the browser's own checks (no pattern on either field), so the server refuses them.
+  await cap(browser, {
+    key: 'p.correspondence',
+    route: co,
+    persona: 'other-admin',
+    path: () => P('other', '/settings/correspondence'),
+    state: 'error',
+    note: 'A seven-digit phone and a four-digit ZIP (refused; nothing written).',
+    act: async (page) => {
+      await page.getByLabel('Name or office').fill('SYNTHETIC CLAIMS OFFICE');
+      await page.getByLabel('Phone', { exact: true }).fill('555-0100');
+      await page.getByLabel('Street').fill('1 SYNTHETIC WAY');
+      await page.getByLabel('City').fill('SYNTHETIC CITY');
+      await page.getByLabel('State', { exact: true }).selectOption({ index: 1 });
+      await page.getByLabel('ZIP', { exact: true }).fill('2760');
       await press(page.getByRole('button', { name: 'Save the contact' }));
       await refused(page);
     },
@@ -3982,6 +4086,65 @@ test('writes last, each undone', async ({ browser }) => {
       },
     });
   });
+
+  // The screening stream paused on screen, its Resume form shot, then resumed on screen with a reason and restored at once
+  // (co-001/ux-forms-after-42, design 7: the select's description). A resume leaves the stream waiting for SES's
+  // confirmation and its probes, which no worker gives during a capture, so the stream's row is then put back as it was
+  // before the pause (as e2e/mail.ts's screeningStreamSending() leaves it after mail-cutoff.spec.ts): the screening page stays open.
+  const cm = '/console/mail';
+  const mailIds = ['console.mail.resume.1280', 'console.mail.resume.390'];
+  if (mailIds.some(wanted) || wanted('console.mail.resume.1280-dark')) {
+    // A ref before #42 has no mail_stream: the step then says so.
+    const before = await withDatabase(async (client) => (await client.query<{ row: unknown }>("SELECT row_to_json(m) AS row FROM mail_stream m WHERE stream = 'screening'")).rows[0]?.row).catch(() => undefined);
+    await attempt(andDark(mailIds), cm, async () => {
+      if (before === undefined) throw new Error('no screening mail stream on this ref');
+      const page = await (await desktopOf(browser, A)).newPage();
+      try {
+        await go(page, A, cm);
+        const screening = page.locator('[data-stream="screening"]');
+        if ((await screening.getAttribute('data-state')) === 'paused') throw new Error('the screening stream is already paused on this database: retake on a fresh prepare');
+        await screening.getByRole('button', { name: 'Pause the screening stream' }).click();
+        await expect(page).toHaveURL(/\/console\/mail\?notice=paused$/);
+        log('WRITE screening mail stream paused');
+        try {
+          await go(page, A, cm);
+          await expect(screening.getByLabel('Why it can resume')).toBeVisible();
+          await snap(page, { key: 'console.mail', variant: 'resume', state: 'interaction:resume', route: cm, role: A, note: 'The screening stream paused by hand, its Resume form shown (resumed and restored at once).' });
+          await cap(browser, { key: 'console.mail', route: cm, persona: A, path: cm, state: 'interaction:resume', widths: [390], note: 'The screening stream paused by hand, its Resume form shown (resumed and restored at once).', ready: async (p) => expect(p.locator('[data-stream="screening"]').getByLabel('Why it can resume')).toBeVisible() });
+        } finally {
+          await go(page, A, cm);
+          const resume = page.locator('[data-stream="screening"]').getByRole('button', { name: 'Resume the screening stream' });
+          if ((await resume.count()) > 0) {
+            await page.locator('[data-stream="screening"]').getByLabel('Why it can resume').selectOption('false_alarm');
+            await resume.click();
+            await expect(page).toHaveURL(/\/console\/mail\?notice=resumed$/);
+            log('WRITE screening mail stream resumed (false alarm)');
+          }
+          await withDatabase(async (client) => {
+            await client.query('BEGIN');
+            try {
+              await client.query('SET LOCAL ROLE tp_owner');
+              await client.query(
+                `UPDATE mail_stream m SET (paused_at, paused_reason, paused_by, pause_sends, pause_bounces, pause_complaints, window_starts_at, resumed_at,
+                                          ses_enabled_confirmed_at, probe_sent_at, first_probe_sent_at, probe_delivered_at, probe_bounced_at)
+                                      = (b.paused_at, b.paused_reason, b.paused_by, b.pause_sends, b.pause_bounces, b.pause_complaints, b.window_starts_at, b.resumed_at,
+                                         b.ses_enabled_confirmed_at, b.probe_sent_at, b.first_probe_sent_at, b.probe_delivered_at, b.probe_bounced_at)
+                   FROM json_populate_record(NULL::mail_stream, $1::json) b WHERE m.stream = 'screening'`,
+                [JSON.stringify(before)],
+              );
+              await client.query('COMMIT');
+            } catch (error) {
+              await client.query('ROLLBACK');
+              throw error;
+            }
+          });
+          log('WRITE screening mail stream restored as before the pause');
+        }
+      } finally {
+        await page.close();
+      }
+    });
+  }
 
   // Maintenance on, the screens it changes, then off at once (the flag is cached up to 5 s per server process).
   const cs = '/console/status';
