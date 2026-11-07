@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '../redact';
+import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '../redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -389,6 +389,11 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['held letters, the date of birth’s month words, then its years far from them (PHIJ2-4)', ['JANE Q VANTREE'], `${HELD}${half('Mar. ')} filler words here and there. ${half('1961/')}`, false],
     ['held letters, the date of birth’s years, then its month words far from them (PHIJ2-4)', ['JANE Q VANTREE'], `${HELD}${half('1961/')} filler words here and there. ${half('March ')}`, false],
     ['held letters, a short part’s letters each alone and two-digit-year dates, near misses (GATEWAYJ2-3, PHIJ2-2)', ['AL Q VANTREE'], `${HELD}${fill('A Lx 61-03-0 6103034 ')}`, false],
+    // The judge's review round 3: the date of birth's parts read as runs in one pass, each compared with the two before it,
+    // and its placeholder read for a part beside it (PHIJ3-1, PHIJ3-2), near misses all; glued birth labels, each read.
+    ['held letters, the date of birth’s numbers, compacts and month words, near misses (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('61 03 04 Mar 6104 610304 ')}`, false],
+    ['held letters, the date of birth redacted again and again with another number beside it (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961 5 ')}`, false],
+    ['held letters, birth labels glued to the words beside them, no date after them (PHIJ3-2)', ['JANE Q VANTREE'], `${HELD}${fill('PaidDOBon file, see the enclosed record. ')}`, false],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
     const who = patient([...names]);
     const started = performance.now();
@@ -1324,7 +1329,8 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
   // GATEWAYJ2-2's sent rows are sent as at cc3dd7f6 (5b8ed30f refused them; its last row, a head whose rest is a part, stays
   // refused, cc3dd7f6 sending "Daniel" in clear); GATEWAYJ2-3's and PHIJ2-2's refused rows cc3dd7f6 refused for the range's
   // own digits (2a5ed43b sent them), and it sends their rows with no range as here; "Total 80.03 14 units" it refused for
-  // the range too, a must-stay amount and units no date reading takes; GATEWAYJ2-4's are fail-safe refusals of letters
+  // the range too, an amount and units that write the date of birth's three numbers, refused since the judge's review round
+  // 3 (PHIJ3-1, a fail-safe of a held letter: below); GATEWAYJ2-4's are fail-safe refusals of letters
   // cc3dd7f6 sent, beside GATEWAYJ1-1's "BALANCE24.00", and title case is sent as there.
   const HELD = 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. ';
   it.each([
@@ -1359,7 +1365,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}80-03-14`, null, {}],
     ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}800314`, null, {}],
     ['PHIJ2-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid. 80 3 14', null, {}],
-    ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}Total 80.03 14 units`, `${HELD}Total 80.03 14 units`, {}],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}Total 80.03 14 units`, null, {}],
     ['PHIJ2-2', ['JANE Q ZEPHYRA'], 'Dear Patient, re 80-03-14, thank you.', 'Dear Patient, re 80-03-14, thank you.', {}],
     ['PHIJ2-2', ['JANE Q ZEPHYRA'], 'Dear Patient, re 800314, thank you.', 'Dear Patient, re 800314, thank you.', {}],
     // GATEWAYJ2-4: outside a held letter a part of four letters or more anywhere in a run of one case a digit touches is
@@ -1380,7 +1386,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
 
   // The judge's review round 3 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
   // GATEWAYJ3-1's sent rows cc3dd7f6 sends as here (3cf4d8cf refused them), and "Paid 150.00ST AN Zephyra" is a fail-safe
-  // refusal of a letter it sent with "ST" of STAN in clear.
+  // refusal of a letter it sent with "ST" of STAN in clear; PHIJ3-1's and PHIJ3-2's refused rows it refused for the range's
+  // own digits (3cf4d8cf sent them), and with no range both trees send or redact them as here.
+  const VANTREE = { datesOfBirth: ['1975-11-02'] };
   it.each([
     // GATEWAYJ3-1: a unit's letters before a name part whose rest is an initial, and an ordinal's suffix that fits the whole
     // number before it or "am"/"pm" after an hour, before a part whose rest is another part, are no head of a part.
@@ -1400,6 +1408,47 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['GATEWAYJ3-1', ['AMAL AL ZEPHYRA'], 'Appointment at 9am Amal arrived on time.', 'Appointment at 9am [PATIENT_NAME] arrived on time.', {}],
     ['GATEWAYJ3-1', ['MINA ALI'], 'Seen 150.00MIN A ALI paid', 'Seen 150.00MIN [PATIENT_NAME] [PATIENT_NAME] paid', {}],
     ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'Paid 150.00ST AN Zephyra', null, {}],
+    // PHIJ3-1: the date of birth's year, month and day in any order, whatever joins them, compact, or with its month's
+    // word, in a held letter; with no range a birth label's date is redacted and an unlabeled one sent, by both trees.
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80_03_14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80|03|14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80\\03\\14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80⁃03⁃14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 1980-14-03`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 19801403`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 801403`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 03/80/14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 14/80/03`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 March 14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Mar., '80, 14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 198014thMarch`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Mar8014`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid. Seen 80|03|14', null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00March 80 14 in full.', null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00DOB 1980-14-03', null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 196133`, null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'DOB 80|03|14 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'DOB 1980-14-03 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 80|03|14 today.', 'Seen 80|03|14 today.', {}],
+    // PHIJ3-2: a birth label glued to a range's end, to a word or to the date after it, in a held letter, before a date
+    // redaction did not read (ruling A' forms: alone they are pinned as sent in src/redact.residuals.json).
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOB 2-XI-1975', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOB: 2-XI-1975', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020DOB 2-XI-1975 $0,000.00', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOB November second, nineteen seventy-five', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00Born 1975/11', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00D/O/B 2-XI-1975', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00Birthdate 1975/11', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOBNovember second, nineteen seventy-five in full.', null, VANTREE],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidDOB 1961/3', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020DOB March 14th, nineteen eighty', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Birthdate 14-III-1980', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020D/O/B 14-III-1980', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidBorn 14-III-1980 in full.', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00DOBMar 14th in full.', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidDOBIII/14/1980 in full.', null, {}],
+    // "D O B" written with spaces alone is read between word edges only: "and obtain" before a number is no label.
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid. AND OBTAIN 2 copies.', 'Seen 01/01/2020-150.00 Paid. AND OBTAIN 2 copies.', {}],
   ] as const)('handles the judge’s round 3 input (%s): %s %s', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);
@@ -1407,6 +1456,81 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     if (sent !== null) {
       expect(redacted.text).toBe(sent);
     }
+  });
+
+  // PHIJ3-1: a held letter never sends the date of birth written with each of datesIn's separators (DATE_SEPARATOR, a dash
+  // of each kind among them), white space, and gaps of two or three characters, in every order of its year, month and
+  // day, with a four- or two-digit year, padded or not (one row per separator and order): it is refused, or redaction
+  // reads the form as the date of birth and the letter is sent with that form alone replaced ("03/14/1980").
+  const neverInClear = (letter: string, form: string, who: PatientIdentifiers, claims: readonly LetterClaim[]) => {
+    const screened = redactLetterForScreen(letter, who, claims);
+    const refused = holdsIdentifier(screened.text, who, claims);
+    expect(refused || screened.text === letter.normalize('NFKC').replace(form.normalize('NFKC'), '[DATE_OF_BIRTH]'), JSON.stringify(letter)).toBe(true);
+  };
+  const HELD_FRAMES = [`${HELD}Seen {T}`, 'Seen 01/01/2020-150.00 Paid. {T}', '{T}\nSeen 01/01/2020-150.00Paid in full.', 'Re: {T}. Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00'];
+  const SEPARATORS = ['/', '\\', '.', '-', '‐', '‑', '‒', '–', '—', '―', '−', '⁃', '_', '|', ' ', '\n', ' / ', '--', ', ', ' | '];
+  const ORDERS = ['ymd', 'ydm', 'mdy', 'dmy', 'myd', 'dym'] as const;
+  const writtenAs = (birth: string, order: string, separator: string, short: boolean, padded: boolean) => {
+    const [year = '', month = '', day = ''] = birth.split('-');
+    const parts: Record<string, string> = { y: short ? year.slice(2) : year, m: padded ? month : month.replace(/^0/u, ''), d: padded ? day : day.replace(/^0/u, '') };
+    return [...order].map((part) => parts[part] ?? '').join(separator);
+  };
+  it.each(SEPARATORS.flatMap((separator) => ORDERS.map((order) => [separator, order] as const)))('never sends the date of birth in a held letter written with %j in the order %s', (separator, order) => {
+    for (const [names, birth] of [
+      [['JANE Q ZEPHYRA'], '1980-03-14'],
+      [['SIMONE Q VANTREE'], '1975-11-02'],
+    ] as const) {
+      const { patient: who, claims } = judge1([...names], { datesOfBirth: [birth] });
+      for (const short of [false, true]) {
+        for (const padded of [true, false]) {
+          for (const frame of HELD_FRAMES) {
+            const form = writtenAs(birth, order, separator, short, padded);
+            neverInClear(frame.replace('{T}', form), form, who, claims);
+          }
+        }
+      }
+    }
+  });
+
+  it.each([
+    ['1980-03-14', ['19800314', '19801403', '03141980', '14031980', '03198014', '14198003', '1980314', '3141980', '800314', '801403', '031480', '140380', '038014', '148003']],
+    ['1975-11-02', ['1121975', '2111975', '1975112', '1975211', '19751102', '751102', '021175']],
+    ['1961-03-03', ['19610303', '196133', '331961', '319613', '1961033', '610303', '030361']],
+  ] as const)('never sends the date of birth %s written compact in a held letter, in any order', (birth, forms) => {
+    const { patient: who, claims } = judge1(['JANE Q ZEPHYRA'], { datesOfBirth: [birth] });
+    for (const form of forms) {
+      for (const frame of HELD_FRAMES) {
+        neverInClear(frame.replace('{T}', form), form, who, claims);
+      }
+    }
+  });
+
+  it('never sends the date of birth in clear in a held letter, whatever separators, order, year length, padding or month word write it (property, PHIJ3-1)', () => {
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const gap = fc.array(fc.constantFrom('/', '\\', '.', '-', '–', '−', '⁃', '_', '|', ' ', ',', '\n', "'"), { minLength: 1, maxLength: 3 }).map((characters) => characters.join(''));
+    const property = fc.property(
+      fc.date({ min: new Date('1925-01-01T00:00:00Z'), max: new Date('2009-12-31T00:00:00Z'), noInvalidDate: true }),
+      fc.constantFrom(...HELD_FRAMES),
+      fc.constantFrom(...ORDERS),
+      gap,
+      gap,
+      fc.boolean(),
+      fc.boolean(),
+      fc.nat(4),
+      (date, frame, order, first, second, short, padded, word) => {
+        const birth = date.toISOString().slice(0, 10);
+        const [year = '', month = '', day = ''] = birth.split('-');
+        const name = MONTH_NAMES[Number.parseInt(month, 10) - 1] ?? 'May';
+        // The month as a number, or as its word, its first three letters, those with a full stop, or the word in capitals.
+        const monthAs = [padded ? month : month.replace(/^0/u, ''), name, name.slice(0, 3), `${name.slice(0, 3)}.`, name.toUpperCase()][word] ?? month;
+        const parts: Record<string, string> = { y: short ? year.slice(2) : year, m: monthAs, d: padded ? day : day.replace(/^0/u, '') };
+        const [a = '', b = '', c = ''] = [...order].map((part) => parts[part] ?? '');
+        const form = `${a}${first}${b}${second}${c}`;
+        const { patient: who, claims } = judge1(['JANE Q ZEPHYRA'], { datesOfBirth: [birth] });
+        neverInClear(frame.replace('{T}', form), form, who, claims);
+      },
+    );
+    fc.assert(property, { numRuns: 300 });
   });
 
   it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {

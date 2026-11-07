@@ -17,8 +17,8 @@ import residuals from './redact.residuals.json' with { type: 'json' };
  *   sends the same shape in a letter with no range, so the fix exposes the leak and does not create it. `number` is the
  *   number as the head sends it, in clear.
  * - ownIdentifierA (ruling A', 15:27): the call's own name, member ID, claim number or date of birth in such a letter, in a
- *   form no rule reads (OCR letter/digit confusions, homoglyphs, a Roman or CJK month, unpadded digits, a year in words),
- *   `token` sent in clear; cc3dd7f6 sends the same forms in any letter with no range.
+ *   form no rule reads (OCR letter/digit confusions, homoglyphs, a Roman or CJK month, a two-digit-year compact of four or
+ *   five digits, a year in words), `token` sent in clear; cc3dd7f6 sends the same forms in any letter with no range.
  *   co-001/redact-ssn-phone-leaks (MOD-21, MOD-22) owns both classes: its acceptance test flips every row of both to
  *   redacted or refused, with its generator and patterns (and an OCR/homoglyph fold for the call's own identifiers)
  *   changed together, and it lands before any real PHI is processed.

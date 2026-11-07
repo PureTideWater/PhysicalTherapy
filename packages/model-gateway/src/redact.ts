@@ -2186,7 +2186,7 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
       return true;
     }
     const survivor = survivorLeft(scanned);
-    return survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held');
+    return survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held') || (survivor === 'held' && birthBesideItsPlaceholder(text, subject));
   } finally {
     viewsOfCheck = null;
     datesOfCheck = null;
@@ -2254,11 +2254,162 @@ const MASKED_SSN_GLUED = /\p{L}\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_
 /** A modifier letter (\p{Lm}): no letter of a name or number for heldOwnIdentifier's stream. */
 const MODIFIER_LETTER = /^\p{Lm}$/u;
 
-/** A birth label on the folded view (heldOwnIdentifier), "D/O/B" too (PHIJ2-2). */
-const HELD_BIRTH_LABEL = /(?<![\p{L}\p{N}])(?:D[./]?\s?O[./]?\s?B|DATE\s+OF\s+BIRTH|BIRTH\s*DATE|BORN|BIRTHDAY)(?!\p{L})/gu;
+/**
+ * A birth label on the folded view (heldOwnIdentifier), "D/O/B" too (PHIJ2-2), with anything before or after it: a label
+ * glued to a range's end or to a word ("150.00DOB", "2020Born", "PaidDOB") or to the date after it ("DOBMar 14th",
+ * "DOBIII/14/1980") has no boundary to read, so none is asked for (the judge's review round 3, PHIJ3-2); a word that holds
+ * one ("NEWBORN 3", "BORNE BY 2020") refuses only a held letter, which cc3dd7f6 refused. "D O B" written with spaces
+ * alone is read between word edges, where "AND OBTAIN" is no label.
+ */
+const HELD_BIRTH_LABEL = /(?:DOB|D[./]\s?O[./]?\s?B|DO[./]\s?B|(?<!\p{L})D\s?O\s?B(?!\p{L})|DATE\s*OF\s*BIRTH|BIRTH\s*DATE|BORN|BIRTHDAY)/gu;
 
 /** After a birth label, a date redaction did not read: no placeholder first, and a digit or a month's word before any placeholder. */
 const UNREAD_BIRTH = new RegExp(`^[\\s:#=.*\\p{Pd}\\u2212]*(?:(?:ON|IS)\\s+)?[^${BARRIER}${NAME_MARK}]*?(?:[0-9]|(?<!\\p{L})${MONTH_WORD.toUpperCase()})`, 'u');
+
+/** A run of digits or a run of letters on a folded view: birthInTokens's tokens (a letter beside a digit ends a run). */
+const DATE_TOKEN = /[0-9]+|\p{L}+/gu;
+
+/** An ordinal's suffix at the head of a run of letters: glued to a number, part of it ("14TH"). */
+const ORDINAL_HEAD = /^(?:ST|ND|RD|TH)/u;
+
+/** The most characters birthInTokens reads between two parts of a written date ("., '": "Mar., '80, 14"). */
+const DATE_GAP = 4;
+
+/**
+ * Whether the folded view of a held letter writes a date of birth (its year, month and day as written in ISO) in a form some
+ * rule reads, blind to what joins its parts (heldOwnIdentifier; the judge's review round 3, PHIJ3-1). The view is read once
+ * as runs of digits and runs of letters (an ordinal's suffix glued to a number is part of it, "OF" between parts is skipped):
+ * - three runs in a row, at most four other characters between each, are the year (its four digits or its last two), the
+ *   month (a number in any padding, or its word: "MARCH", "MAR", "SEPT") and the day (a number in any padding), in any
+ *   order, whatever the characters between ("80_03_14", "80|03|14", "80⁃03⁃14", "1980-14-03", "03/80/14", "14/80/03",
+ *   "80 March 14", "14TH OF MARCH '80"); a month's word may end a run of letters before the numbers or begin one after
+ *   them ("PaidMarch 14 80"), no boundary being readable there;
+ * - the month's word beside one run of digits that is the year and the day, either first ("MARCH198014", "Mar8014",
+ *   "141980March");
+ * - one run of digits that is all three in any order: the four-digit year with the month and the day in any padding (six
+ *   to eight digits: "19801403", "196133", "1980314"), or the two-digit year with both padded (six: "801403", "140380").
+ * A run of digits inside a longer one is never read ("TIN 198003145"). Linear: each run is compared with the two before it.
+ */
+function birthInTokens(text: string, year: string, month: string, day: string): boolean {
+  const short = year.slice(2);
+  const m = Number.parseInt(month, 10);
+  const d = Number.parseInt(day, 10);
+  const words = monthWords(m).toUpperCase().split('|');
+  const months = [...new Set([month, String(m)])];
+  const days = [...new Set([day, String(d)])];
+  const number = (token: string, value: number) => /^[0-9]{1,2}$/u.test(token) && Number.parseInt(token, 10) === value;
+  const isYear = (token: string) => token === year || token === short;
+  // The month's word: the whole run, or (first of the parts) a run's end, or (last of them) a run's start.
+  const isMonth = (token: string, at: 'first' | 'middle' | 'last') =>
+    number(token, m) || words.some((word) => (at === 'first' ? token.endsWith(word) : at === 'last' ? token.startsWith(word) : token === word));
+  const monthWord = (token: string, at: 'first' | 'last') => /^\p{L}/u.test(token) && isMonth(token, at);
+  const yearDay = new Set(days.flatMap((written) => [`${year}${written}`, `${short}${written}`, `${written}${year}`, `${written}${short}`]));
+  const compact = new Set<string>();
+  for (const [y, ms, ds] of [
+    [year, months, days],
+    [short, [month], [day]],
+  ] as const) {
+    for (const mm of ms) {
+      for (const dd of ds) {
+        for (const order of [`${y}${mm}${dd}`, `${y}${dd}${mm}`, `${mm}${dd}${y}`, `${dd}${mm}${y}`, `${mm}${y}${dd}`, `${dd}${y}${mm}`]) {
+          compact.add(order);
+        }
+      }
+    }
+  }
+  const orders = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+  ] as const;
+  const where = ['first', 'middle', 'last'] as const;
+  // The last three runs read, each with the count of other characters between it and the run before it.
+  const last: { value: string; gap: number }[] = [];
+  let end = -1;
+  let skipped = 0;
+  let digitsEnd = -1;
+  for (const token of text.matchAll(DATE_TOKEN)) {
+    // An ordinal's suffix glued to a number is part of it, and the letters glued after the suffix begin a run of their own
+    // ("198014THMARCH": "198014TH", then "MARCH").
+    const suffix = token.index === digitsEnd ? ORDINAL_HEAD.exec(token[0])?.[0] : undefined;
+    const value = suffix === undefined ? token[0] : token[0].slice(suffix.length);
+    const index = token.index + (suffix?.length ?? 0);
+    if (value === '') {
+      end = index;
+      continue;
+    }
+    if (value === 'OF') {
+      skipped += value.length;
+      continue;
+    }
+    const gap = end < 0 ? Number.POSITIVE_INFINITY : index - end - skipped;
+    end = index + value.length;
+    skipped = 0;
+    digitsEnd = /^[0-9]/u.test(value) ? end : -1;
+    last.push({ value, gap });
+    if (last.length > 3) {
+      last.shift();
+    }
+    if (digitsEnd >= 0 && compact.has(value)) {
+      return true;
+    }
+    const [one, two, three] = last.length === 3 ? last : [undefined, ...last.slice(-2)];
+    if (two !== undefined && three !== undefined && three.gap <= DATE_GAP) {
+      if ((monthWord(two.value, 'first') && yearDay.has(three.value)) || (yearDay.has(two.value) && monthWord(three.value, 'last'))) {
+        return true;
+      }
+      if (one !== undefined && two.gap <= DATE_GAP) {
+        const runs = [one.value, two.value, three.value];
+        if (orders.some(([y, mo, da]) => isYear(runs[y] ?? '') && isMonth(runs[mo] ?? '', where[mo]) && number(runs[da] ?? '', d))) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** The run of digits (an ordinal's suffix after them) or of letters that ends a text, then at most DATE_GAP characters that are no letter, digit or bracket. */
+const PART_BEFORE = /(?:([0-9]+)(?:ST|ND|RD|TH)?|(\p{L}+))[^\p{L}\p{N}[\]]{0,4}$/u;
+
+/** At most DATE_GAP characters that are no letter, digit or bracket, then the run of digits or of letters that starts a text. */
+const PART_AFTER = /^[^\p{L}\p{N}[\]]{0,4}(?:([0-9]+)|(\p{L}+))/u;
+
+/**
+ * Whether a letter whose chain only held barriers hold (cc3dd7f6 refused it for the range's own digits) holds a part of the
+ * date of birth beside the date of birth's placeholder, where redaction read only some of a written date as it: its day,
+ * month (a number or its word) or year, at most four characters that are no letter or digit between ("19, [DATE_OF_BIRTH]"
+ * and "19'[DATE_OF_BIRTH]" for "19'February 1941", "[DATE_OF_BIRTH] 19" for "February 1941 19": the judge's review round 3,
+ * PHIJ3-1's property). cc3dd7f6 sends the same in a letter with no range; here no boundary of the date can be known.
+ */
+function birthBesideItsPlaceholder(text: string, subject: Subject): boolean {
+  const births = (subject.datesOfBirth ?? []).flatMap((birth) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(birth);
+    return match === null ? [] : [{ year: match[1] ?? '', month: Number.parseInt(match[2] ?? '', 10), day: Number.parseInt(match[3] ?? '', 10) }];
+  });
+  if (births.length === 0) {
+    return false;
+  }
+  const upper = text.normalize('NFKC').toUpperCase();
+  const isPart = (digits: string | undefined, letters: string | undefined) =>
+    births.some(({ year, month, day }) =>
+      digits !== undefined
+        ? digits === year || digits === year.slice(2) || (digits.length <= 2 && [month, day].includes(Number.parseInt(digits, 10)))
+        : letters !== undefined && monthWords(month).toUpperCase().split('|').includes(letters),
+    );
+  const placeholder = PLACEHOLDERS.birth;
+  for (let at = upper.indexOf(placeholder); at !== -1; at = upper.indexOf(placeholder, at + placeholder.length)) {
+    const before = PART_BEFORE.exec(upper.slice(Math.max(0, at - 24), at));
+    const after = PART_AFTER.exec(upper.slice(at + placeholder.length, at + placeholder.length + 24));
+    if ((before !== null && isPart(before[1], before[2])) || (after !== null && isPart(after[1], after[2]))) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** A four-digit year standing alone (no digit, and no decimal point and digit, beside it): what a written date of birth's year is. */
 const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0-9]|[.,][0-9])`, 'gu');
@@ -2271,10 +2422,11 @@ const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0
  * P H Y R A", "jo ann"), a name's initials of three parts or more in order ("JQZ", "J.Q.Z."), or a date of birth's eight
  * digits in any order a date is written ("03⏎14⏎1980", "0 3 / 0 3 / 1 9 6 1"), not inside a longer run of digits; or the
  * date of birth's month word and its year stand within 24 characters of each other ("1961 March 3", "MARCH THIRD 1961");
- * or a part of two or three letters written letter by letter ("A L"), or the date of birth year first with a two-digit
- * year, as a date or six digits on their own ("80-03-14", "800314"), forms redaction reads after a birth label (the
- * judge's review round 2). No six-digit form is read blind to separators: random digits of a letter's ICNs, TINs and
- * amounts would hold one by chance.
+ * or a part of two or three letters written letter by letter ("A L"), or the date of birth in any form redaction reads
+ * after a birth label, its year, month and day in any order whatever joins them, or compact ("80-03-14", "80|03|14",
+ * "1980-14-03", "801403", "80 March 14": birthInTokens; the judge's review rounds 2 and 3); or a birth label, glued to
+ * anything, before a date redaction did not read. No six-digit form is read blind to separators: random digits of a
+ * letter's ICNs, TINs and amounts would hold one by chance.
  */
 function heldOwnIdentifier(normal: string, subject: Subject): boolean {
   const view = viewOf(normal, 'drop', true);
@@ -2325,11 +2477,10 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
       continue;
     }
     const [, year = '', month = '', day = ''] = match;
-    // Its two-digit year first, written as a date ("80-03-14", "75/11/02", "80 3 14") or compact on its own ("800314"): a
-    // form redaction reads after a birth label as the date it introduces (PHIJ2-2), the same separator twice, not inside a
-    // longer number or an amount.
-    const loose = (padded: string) => (padded.startsWith('0') ? `0?${padded.slice(1)}` : padded);
-    if (new RegExp(`(?<![0-9]|[0-9][.,])(?:${year.slice(2)}(?<gap>[\\s./\\p{Pd}\\u2212]{1,3})${loose(month)}\\k<gap>${loose(day)}|${year.slice(2)}${month}${day})(?![0-9]|[.,][0-9])`, 'u').test(view.text)) {
+    // Its year, month and day as numbers or words in any order, whatever stands between, or compact (birthInTokens): every
+    // form redaction reads after a birth label as the date it introduces ("80-03-14", "80_03_14", "80|03|14", "1980-14-03",
+    // "19801403", "801403", "03/80/14", "80 March 14": the judge's review rounds 2 and 3, PHIJ2-2, PHIJ3-1).
+    if (birthInTokens(view.text, year, month, day)) {
       return true;
     }
     for (const form of new Set([`${year}${month}${day}`, `${month}${day}${year}`, `${day}${month}${year}`])) {
