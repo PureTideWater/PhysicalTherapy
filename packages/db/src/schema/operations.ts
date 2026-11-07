@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { screeningProspect } from './screening';
 import { practice, user } from './tenancy';
@@ -123,6 +123,7 @@ export type MailStream = (typeof MAIL_STREAMS)[number];
 export const MAIL_KINDS = [
   'cognito',
   'digest',
+  'password_changed',
   'dunning',
   'support_grant_opened',
   'support_grant_closed',
@@ -135,7 +136,7 @@ export const MAIL_KINDS = [
 export type MailKind = (typeof MAIL_KINDS)[number];
 /** The kinds each stream carries (mail_send_stream_kind). */
 export const MAIL_STREAM_KINDS: Readonly<Record<MailStream, readonly MailKind[]>> = {
-  transactional: ['cognito', 'digest', 'probe'],
+  transactional: ['cognito', 'digest', 'password_changed', 'probe'],
   notices: ['support_grant_opened', 'support_grant_closed', 'dunning', 'probe'],
   screening: ['screening_result', 'screening_failed', 'screening_reminder', 'screening_withdrawal', 'probe'],
 };
@@ -305,6 +306,56 @@ export const screeningBounceMark = pgTable(
   ],
 );
 
+/**
+ * The password-changed notice's outbox (Schema PR 1; migration 20261111090000; docs/adr/0091; test matrix SGN-16): one
+ * row per completed reset, written by the database in the reset's own transaction (the AFTER INSERT trigger on
+ * audit_event, for the account's own password_reset_completed alone), sent once by the platform's password_notices job
+ * on the transactional stream. Global and the owner's alone: no practice, no address, no name; the address is read
+ * only by operator_password_notice_claim() for a pending, due notice inside the cutoff.
+ */
+export const PASSWORD_NOTICE_STATES = ['pending', 'sent', 'delivered', 'undelivered', 'failed'] as const;
+export type PasswordNoticeState = (typeof PASSWORD_NOTICE_STATES)[number];
+/** A pending notice this many hours after the change is never sent: it fails as PASSWORD_NOTICE_STALE_CODE and is reported. */
+export const PASSWORD_NOTICE_CUTOFF_HOURS = 24;
+/** Minutes before each retry of a send that threw; failed after the fifth try, or at once for a permanent SES error. */
+export const PASSWORD_NOTICE_RETRY_MINUTES = [1, 5, 15, 60] as const;
+/** The error code of a notice failed by the cutoff (error_code). */
+export const PASSWORD_NOTICE_STALE_CODE = 'NoticeStale';
+
+export const passwordNotice = pgTable(
+  'password_notice',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    /** The reset's password_reset_completed event: the idempotency key (password_notice_once). */
+    auditEventId: uuid('audit_event_id').notNull(),
+    /** The event's time: the reset's transaction. */
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull(),
+    state: text('state', { enum: PASSWORD_NOTICE_STATES }).notNull().default('pending'),
+    attempts: smallint('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Set only by operator_password_notice_sent(): the message SES accepted. */
+    sesMessageId: text('ses_message_id').unique(),
+    /** Set exactly when failed: the SES error's name, Unrecognized, or PASSWORD_NOTICE_STALE_CODE. Never a message. */
+    errorCode: text('error_code'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    /** When it was reported undelivered: once a notice. */
+    undeliveredReportedAt: timestamp('undelivered_reported_at', { withTimezone: true }),
+    /** changed_at plus 90 days; operator_mail_expire() deletes it after, never while pending. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('password_notice_once').on(table.auditEventId),
+    index('password_notice_pending')
+      .on(table.nextAttemptAt)
+      .where(sql`state = 'pending'`),
+    index('password_notice_by_expiry').on(table.expiresAt),
+  ],
+);
+
 export type AuditEventRow = typeof auditEvent.$inferSelect;
 export type NotificationRow = typeof notification.$inferSelect;
 export type DigestRow = typeof digest.$inferSelect;
@@ -314,3 +365,4 @@ export type MailStreamRow = typeof mailStream.$inferSelect;
 export type MailSendRow = typeof mailSend.$inferSelect;
 export type ScreeningMailRefusalRow = typeof screeningMailRefusal.$inferSelect;
 export type ScreeningBounceMarkRow = typeof screeningBounceMark.$inferSelect;
+export type PasswordNoticeRow = typeof passwordNotice.$inferSelect;

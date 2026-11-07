@@ -161,7 +161,7 @@
       "id": "operations",
       "title": "Operations",
       "dictionary": "Operations (no PHI by design)",
-      "about": "The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger.",
+      "about": "The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the password-changed notices' outbox (a user's ID and the change's time, no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger.",
       "tables": [
         "audit_event",
         "job_run",
@@ -178,6 +178,7 @@
         "support_mail_receipt",
         "mail_stream",
         "mail_send",
+        "password_notice",
         "mail_recipient_key",
         "screening_mail_refusal",
         "screening_bounce_mark",
