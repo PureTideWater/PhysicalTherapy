@@ -145,7 +145,10 @@ describe('the console’s mail streams (SCR-21)', () => {
   });
 
   it('resumes it only with a reason, and it reads unconfirmed until the platform reads SES sending', async () => {
-    expect(await run(resumeMailStream, admin.token, { stream: 'screening' })).toMatchObject({ status: 'invalid', issues: [{ field: 'reason' }] });
+    expect(await run(resumeMailStream, admin.token, { stream: 'screening' })).toMatchObject({
+      status: 'invalid',
+      issues: [{ field: 'reason', message: 'choose why it can resume; the cause is fixed, or it was a false alarm' }],
+    });
     expect(await run(resumeMailStream, admin.token, { stream: 'screening', reason: 'because' })).toMatchObject({ status: 'invalid', issues: [{ field: 'reason' }] });
     expect(await run(resumeMailStream, admin.token, { stream: 'screening', reason: 'false_alarm' })).toMatchObject({ status: 'ok', data: { redirect: '/console/mail?notice=resumed' } });
     expect(await run(resumeMailStream, admin.token, { stream: 'screening', reason: 'false_alarm' })).toMatchObject({ status: 'ok', data: { redirect: '/console/mail?notice=unchanged' } });
