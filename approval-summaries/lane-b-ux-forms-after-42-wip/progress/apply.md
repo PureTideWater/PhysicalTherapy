@@ -1,0 +1,15 @@
+# apply progress (ux-forms-after-42)
+- started 2026-11-07; design read pending
+- findings applied: (none yet)
+- verified critic C1-C11 against tree 31a7345f: all confirmed (C4 also: UX PR 68 ux-skip-and-rail plans the skip link + public-header; UX PR 84 the screening file field)
+- decisions: W1 owns settings.ts, screening/routes.ts, support.ts, forms-keep-input.spec, onboarding-routes.db.test (C9); skip-link counter FRM-<1> placeholder (series for orchestrator, rec. CI a11y); R1 no-JS step cited under FRM-06 (row text edit, no counter)
+- next: python edit of design sections 1-9, then add section 10 Review dispositions
+- 2.1 rewritten (R1,R9,R10,R11,R12,R14,R15,R16b,C3,C6)
+- 2.2 (C11), 2.3 (C1,C10 th), 2.4 (R6 note), 2.5 (R5, C8 console:116) done
+- 2.6 (R8,C3), 2.7 (R2,R3,R4,R7,C7,C8,C10 wording, guard rules R5/R16) done
+- 2.6 (R8,C3), 2.7 (R2,R3,R4,R7,C7,C8,C10 wording, guard rules R5/R16) done
+- 2.8 (R13,R15,R17a), 3 decisions (1,4,9,11-14), 4 rows (R17,C10,C3) done
+- 5.1 (R13,C2,R1 FRM-06), 5.2 (R16a,R1,R9,C3) done
+- 3.10, 6 (C9,C1,C2) done; next 7, 8, 9, 10
+- 7 (R8,C5), 8 (R8,R15,C2,C4), 9 (R1,R9,C3) done; next: section 10 + residual grep
+- 1.1 row, section 10 dispositions written. DONE

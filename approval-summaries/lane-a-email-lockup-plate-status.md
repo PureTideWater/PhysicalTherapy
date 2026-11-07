@@ -121,8 +121,28 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   wf_464a574d-f04 (archived) merges it once, regenerates, runs the fast checks and touched tests, and checks the merge
   twice. Next: push, CI, the fresh-clone verification reading CI, ready, merge.
 
+- 2026-11-07T00:40Z: the account's 5-hour limit stopped wf_464a574d-f04 after its merge commit; setup re-run, the workflow resumed.
+  f4fef908 merges 31a7345f (#130) with no conflicts (SGN-13 and SEC-24 both kept; synth 0 written); fast checks, 52 files
+  and 799 tests on #130's and this PR's packages, infra 798, domain-model check: all pass; two merge checks clean. Pushed
+  f4fef908 to co-001/email-lockup-plate (up to date with the base); the description updated for it.
+  - Next: CI green on f4fef908, the fresh-clone verification reading CI, ready, approval-of-record's re-run, merge.
+
+- 2026-11-07T01:17Z: CI on f4fef908: every job green but `unit` (and so `all green`): one test, MOD-16's unseeded property in
+  packages/model-gateway/src/redact.property.test.ts, seed -1074798020, counterexample "Paid $0,000.00. Service
+  01/01/2020-01/02/2020Paid $0,000.00": the base's known defect (handoff 2026-11-05 section 2; its fix is in flight as
+  `co-001/redact-range-glued`, session_01FcouKP1U2GGDFhhZT9CaUV, not yet merged; this PR changes no gateway file). Decision:
+  one re-run of the failed jobs (run 42319584132), as the rules allow to confirm a failure is not this PR's; porting the fix
+  is not possible (an unreviewed PHI change). If green, verify and merge; if red again, wait for the fix to merge.
+
+- 2026-11-07T01:34Z: the re-run of `unit` (job 128252577494) failed the same way: MOD-16, the same counterexample. Everything else is
+  green on f4fef908. **Ready; waiting on `co-001/redact-range-glued`** (the base's MOD-16 fix, session_01FcouKP1U2GGDFhhZT9CaUV).
+  Nothing more is pushed to #129 meanwhile. When it merges: merge claude/build-platform once (rule 6), fast checks and the
+  generators, push, CI green on that head, the fresh-clone verification that reads CI, ready, merge with expectedHeadSha.
+  Also checked (orchestrator's 01:33Z lesson): wf_5ac1f379-e54's three ux-brand-reviewer rounds each returned a real result
+  with shots (UXS-R1-01; then none, at r2 and r3), so no review round of this item is empty.
+
 ## Waiting on someone
-- None.
+- `co-001/redact-range-glued` to merge (the base's MOD-16 flake reds every unit run of #129).
 
 ## Next step
 The suite on f62265dc, the push and the description, CI, then the merge. Then the follow-on.

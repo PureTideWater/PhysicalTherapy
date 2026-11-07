@@ -1,0 +1,21 @@
+# critic progress (completeness)
+- started; reading design
+- read design (590 lines), status file, #42 file list. Not in design: invitations.tsx, support-access page, screening/page.tsx (paused alert), practice.ts noticeStatus, console/mail/actions.ts, address.ts/validation.ts (screening address checks -> messages?)
+- users page: empty <th/> action column (Members + Invitations), (you) text-xs, Invite Email no hint; hidden invitationId refusal lead OK (summaryLead null)
+- tour: screening capHeld busy:/^Sending/ (tour.spec.ts:1789-1795) -> at head PendingStatus words, loading shot not in list & matcher not updated; screening.error-unconfirmed reachable via page.route abort (support's :2180 precedent) but design says not reachable
+- 11.2.4 persistent live region in app/layout.tsx not dispositioned
+- BIG: app/tables.test.ts:33 AFTER_42 users/page.tsx {tables:2, removedBy UX PR 75}; design wraps Members only -> count 1 fails; not planned. Invitations table stays bare.
+- queued UX review PRs overlap (lane-b-ux-review.md): 67 shell.tsx header menus, 74 console support page (Ticket as a choice, UX-077), 75 users page (rows stack, tables.test entry), 78 console.ts/support page/users page confirm, 83 settings.ts messages, 85 screening messages.ts/routes.ts ZIP sentences. Design lists none.
+- BIG: fixtures.test.ts:33 requires matrix.ts word-for-word with test-matrix.md; design edits FRM-04/CI-19 text but says matrix.ts untouched; #126 and #129 both edit matrix.ts -> shared file not listed
+- #129 head 8? (fetch failed for rev-parse; R15 has f4fef908); #129 sign-in-time.spec.ts:408 pins 'the two passwords do not match' (exact:false, survives) - list as reader
+- shot list: console.mail has no tour state; support.error (support.ts:249) missing; screening.loading matcher; screening.error-unconfirmed
+- settings.ts:902 new words "release it, then send the invitation again" wrong actor: ResendForm hidden for held; support sends (comment in settings.ts)
+- address.ts (#42) ADDRESS_REFUSED, MAILBOX_UNCONFIRMED, suggestion/ending messages: sentence-case two-sentence contactEmail issues -> "Work email: We cannot send..." breaks the new ADR rule; legal-surface? not dispositioned
+- console-mail.ts:200 'say why' for a select; Pause stream w/o confirm not placed
+- legal surfaces: upload-form.tsx:74 marker comment data-legal-surface="screening-kept-upload" must survive rewrite (tools/test/legal-surfaces.test.ts); address.ts messages are legal surface screening-mail-address (counsel) -> must be left + ADR rule exception
+- renderMessage before placement read: targets null -> every item looks form-wide -> field messages rewritten on first render; form-issues.test.ts is .ts (design says .tsx)
+- tests missing from move lists: sign-in-routes.db.test.ts:300,842,968; suspension-card.test.tsx:79 + console-routes.db.test.ts:769 (console.ts:116); reruns-routes.db.test.ts:316,317,354 (/^runId: the pricing run in effect/ breaks with 'choose the'); view.test.ts:86,101; invitations.test.tsx:37 (support sends)
+- slices not disjoint: forms-keep-input.spec.ts in W1 and W2 (:310 mismatch); settings.ts and screening/routes.ts rows in W2 table but files are W1's; e2e/sign-in.spec.ts pins neither literal (real: sign-in-routes.db.test.ts:300,842,968, forms-keep-input:310); onboarding-routes.db.test.ts pins status page (support.ts:379)
+- 4b also edits test-matrix.md+matrix.ts (TBL-08) -> shared with this PR's FRM-04/CI-19 edits; design says only screening.spec shared
+- support_grant.ticket is free text CHECK regex (tenancy.sql:125), not support_ticket.number; e2e uses SYN-CON-E2E
+- DONE: compiling 12 findings N1..N12 into StructuredOutput
