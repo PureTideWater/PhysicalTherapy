@@ -127,6 +127,13 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   f4fef908 to co-001/email-lockup-plate (up to date with the base); the description updated for it.
   - Next: CI green on f4fef908, the fresh-clone verification reading CI, ready, approval-of-record's re-run, merge.
 
+- 2026-11-07T01:17Z: CI on f4fef908: every job green but `unit` (and so `all green`): one test, MOD-16's unseeded property in
+  packages/model-gateway/src/redact.property.test.ts, seed -1074798020, counterexample "Paid $0,000.00. Service
+  01/01/2020-01/02/2020Paid $0,000.00": the base's known defect (handoff 2026-11-05 section 2; its fix is in flight as
+  `co-001/redact-range-glued`, session_01FcouKP1U2GGDFhhZT9CaUV, not yet merged; this PR changes no gateway file). Decision:
+  one re-run of the failed jobs (run 42319584132), as the rules allow to confirm a failure is not this PR's; porting the fix
+  is not possible (an unreviewed PHI change). If green, verify and merge; if red again, wait for the fix to merge.
+
 ## Waiting on someone
 - None.
 
