@@ -1,0 +1,33 @@
+export const meta = {
+  name: 'lane-b-suite-cap-3-pr',
+  description: 'SUITE-CAP-3: write the draft PR description from the template, have a skeptic check every claim against the branch, open the draft PR and prove the body byte for byte',
+  phases: [
+    { title: 'Write', detail: 'the description from the template and the build records' },
+    { title: 'Check', detail: 'a skeptic checks each claim against the diff, records and limits' },
+    { title: 'Open', detail: 'open the draft PR with the MCP tool and read the body back' },
+  ],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad'
+const WT = '/home/user/suite-cap-3-reconcile'
+const BODY = `${SP}/pr-body.md`
+const CTX = `Context: SUITE-CAP-3, "reconcile at real size", a no-migration Lane B item of the PaidWhole build. Branch co-001/suite-cap-3-reconcile (pushed; head ee1dbb7d; 6 commits on claude/build-platform 31a7345f; worktree ${WT}). Design: /home/user/ops/designs/lane-b-suite-cap-3-reconcile.md (reviewed in 7 rounds, verdict build). Status: /home/user/ops/approval-summaries/lane-b-suite-cap-3-status.md. Build records: ${SP}/progress/build-*.md, verify-*.md, fix-*.md, build-check.md, and the build workflow's result ${SP}/../tasks/wko4ctzk0.output. The house model for a description: /home/user/ops/approval-summaries/lane-b-suite-cap-1a-pr81-description.md. Rulings: D14 (the orchestrator, 2026-11-06 22:31 UTC: step 7b stays on practice F at 10,000 lines until Lane A's ledger_line_net and ledger_entry_rules fixes merge, then moves back to practice A's month); the founder granted a freeze exception (2026-11-06 ~22:40 UTC) for those two Lane A function fixes, which this PR does NOT contain (worker-side only; no ledger semantics change here, so this PR's own Freeze exception answer is "No: it changes none of them", naming the Lane A grant as context); the co-founder's scope: worker-side fixes only. Known open items to state honestly: CAS-49.2 (old against new on LED-01 to LED-18's worlds) is not built yet and comes in the fix round; the build's search is 15-16% slower than the probed candidate's (8.4's restatement); CAS-49 and CAS-51 may share a 2-CPU CI db shard under its 20-minute timeout (to be measured on this PR's CI); the exact Known gap sentence awaits the orchestrator's approval; the deviations the build check listed (claimLines' TypeScript body uses pushTo with its SQL unchanged; byPayment rewritten as chainOrder; pass-equality in SLOW_FIRST; mutants injected at the statement boundary; fixtures/synthetic/CAS-49..51/expected.json added; CAS-51's F shape from LED-06; stages.test.ts extra). Reviews have not run yet: the Reviewer agents' findings table says they are pending (payment-engine and security checklists, applied by default workflow agents with skeptics). No model name or identifier anywhere; synthetic data only; name records by IDs. Under 65,536 characters (aim under 40,000). End the body with exactly these lines after a blank line:
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01FcouKP4ekrT97eyDtLe4Rd`
+
+phase('Write')
+const w = await agent(`${CTX}
+Your task: write the draft PR description to ${BODY}, following ${WT}/.github/pull_request_template.md exactly: every section, in its order, "None" rather than omitted, keeping the template's fixed text (the required-checks line and "The founder's approval" paragraph) as it is, and dropping the HTML comments. What changes (plain words: a reconcile pass reads per pass, not per open line; the measured before and after on the base: practice F 2,000 lines 620 s -> about 21-24 s, spread R 159 s -> about 46-66 s, decrypts, heap); Why (SUITE-CAP-3, LANES.md claim, 1b's hand-off); What it does not change (each line); Checks (a table of the commands the build ran on ee1dbb7d and their results, from build-check.md: typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all, unit and db tests touched, CAS-49 28/28, etc.; say the full local suite runs once in the fix round); Reviewer agents' findings (pending, as above); Freeze exception; Domain model ("No migration; the document is unchanged."); The founder's approval (template text). Add after "Why" a short "Decisions" list (D1-D7, D11, D14 with the ruling, D15, D16 with the gate result) and an "Open items" list (the known open items above). Return the character count and a summary.`, { label: 'write', phase: 'Write', schema: { type: 'object', properties: { chars: { type: 'number' }, summary: { type: 'string' } }, required: ['chars', 'summary'] } })
+
+phase('Check')
+let chk = null
+for (let i = 0; i < 2; i++) {
+  chk = await agent(`${CTX}
+SKEPTIC: check ${BODY} against the branch (git -C ${WT} log/diff 31a7345f..HEAD), the records and the template. Every number must come from a record; every file and test named must exist; every template section present in order with its fixed text; no model identifier (grep for model names and ids); no PHI or document text; under 65,536 characters; the footer exact. Fix any error directly in ${BODY} and list what you fixed; default to pass=false if anything was wrong before your fixes and say so.`, { label: `check:${i}`, phase: 'Check', schema: { type: 'object', properties: { pass: { type: 'boolean' }, fixed: { type: 'array', items: { type: 'string' } } }, required: ['pass', 'fixed'] } })
+  if (chk && chk.pass && !chk.fixed.length) break
+}
+
+phase('Open')
+const open = await agent(`${CTX}
+Your task: open the DRAFT pull request. Load the GitHub MCP tools with ToolSearch ("select:mcp__github__create_pull_request,mcp__github__pull_request_read"). Call mcp__github__create_pull_request with owner PureTideWater, repo PhysicalTherapy, head co-001/suite-cap-3-reconcile, base claude/build-platform (NEVER main), draft true, title "SUITE-CAP-3: a reconcile pass reads per pass, not per open line, so a real-size month reconciles (ADR 0087)", and body = the exact contents of ${BODY} (read it with the Read tool and pass it verbatim). Then prove the body byte for byte: gh api repos/PureTideWater/PhysicalTherapy/pulls/<n> --jq .body > ${SP}/pr-body.readback.md and compare with ${BODY} (allow only a trailing newline difference; if they differ otherwise, fix it with mcp__github__update_pull_request and compare again). Never write files through the connector; never approve or review. Return the PR number, URL, head sha and whether the body matched.`, { label: 'open', phase: 'Open', schema: { type: 'object', properties: { number: { type: 'number' }, url: { type: 'string' }, head: { type: 'string' }, matched: { type: 'boolean' } }, required: ['number', 'url', 'head', 'matched'] } })
+return { w, chk, open }
