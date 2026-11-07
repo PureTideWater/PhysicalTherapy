@@ -147,6 +147,14 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   no change, check-ins stop and a message brings this session back. Orchestrator 06:50Z: spend nothing that does not change
   the outcome; no follow-on after the merge.
 
+- 2026-11-07T08:38Z: third check-in with no change: `co-001/redact-range-glued` not merged (base 8a722f80). Check-ins stopped; a
+  message to session_01FcouKRo5iee5QFtPT8UimZ brings it back. The exact next step when the fix merges: in /home/user/email-plate
+  (WIP s5 = f4fef908), merge claude/build-platform once (it will hold #131 and the fix), run the fast checks and pnpm synth
+  with no diff, the tests of the packages the merge brings in, two adversarial merge checks; push to co-001/email-lockup-plate;
+  update #129's description (the scratchpad draft pr-body.md, via a helper that reads it back byte for byte; no `<img src=` in
+  the body); CI green on that head; the fresh-clone verification that reads CI; ready; approval-of-record's re-run; merge
+  with method merge and expectedHeadSha. No follow-on item after it (orchestrator, 06:50Z).
+
 ## Waiting on someone
 - `co-001/redact-range-glued` to merge (the base's MOD-16 flake reds every unit run of #129).
 
