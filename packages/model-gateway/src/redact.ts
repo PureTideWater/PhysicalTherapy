@@ -447,6 +447,9 @@ interface Form {
   /** For a claim, its number in the call (1 for [CLAIM_1]). */
   readonly claim: number;
   readonly pattern: RegExp;
+  /** The pattern's source without its edges, and its edge after (formEdges): what the glued readings build on. */
+  readonly core: string;
+  readonly after: string;
   /** For a name, whether each gap is inside a part (where a space must leave capitalized pieces of two letters or more). */
   readonly insidePart: readonly boolean[];
   /** A number of digits only: only such a number may be a claim's amount, or the digits whose own written form is a whole separated calendar date (writtenAsDate). */
@@ -456,10 +459,34 @@ interface Form {
    * (IDENTIFIER_LABEL), where "Claim 1955/07/14" or "ICN 1234.5678" is the number and not a date or an amount.
    */
   readonly labeled: RegExp | null;
+  readonly labeledCore: string | null;
 }
 
-function patternOf(characters: readonly string[], gaps: readonly string[]): RegExp {
-  return new RegExp(`${BEFORE}${characters.map((character, i) => `${escapeRegExp(character)}${gaps[i] ?? ''}`).join('')}${AFTER}`, 'gu');
+/** A letter or a digit (any script), as a form's edges read the characters beside it. */
+const LETTER = /^\p{L}$/u;
+const NUMBER = /^\p{N}$/u;
+
+/**
+ * A form's edges (review PHI2-1, PHI2-2, 2026-11-07). Where a form begins or ends with a letter, no letter may stand
+ * beside it there, but a digit may: a letter written against a digit is a lost space ("150.00Zephyra", "01/02/2020Jane",
+ * "RE: Vantree900-12-3456", "2020SYNMEMBER0042"), never one word. Where a form that holds letters and digits begins or ends
+ * with a digit, no digit may stand beside it there, but a letter may ("SYNCLAIM0001Paid"). A form of digits alone stands
+ * as a whole word (BEFORE, AFTER). So a longer token holding the call's number ("ZZ12345678" for ZZ1234567, "Room
+ * AB99887766", "PaidZZ7654321") is no match: another identifier, which the one-patient screen reads; the check refuses a
+ * letter that holds the call's number of letters and digits so (ownNumberWithin).
+ */
+function formEdges(characters: readonly string[]): { readonly before: string; readonly after: string } {
+  const digitsOnly = characters.every((character) => NUMBER.test(character));
+  const edge = (character: string | undefined, letter: string, digit: string, whole: string) => (LETTER.test(character ?? '') ? letter : digitsOnly ? whole : digit);
+  return { before: edge(characters[0], '(?<!\\p{L})', '(?<!\\p{N})', BEFORE), after: edge(characters.at(-1), '(?!\\p{L})', '(?!\\p{N})', AFTER) };
+}
+
+const coreOf = (characters: readonly string[], gaps: readonly string[]) => characters.map((character, i) => `${escapeRegExp(character)}${gaps[i] ?? ''}`).join('');
+
+function patternOf(characters: readonly string[], gaps: readonly string[]): { readonly pattern: RegExp; readonly core: string; readonly after: string } {
+  const { before, after } = formEdges(characters);
+  const core = coreOf(characters, gaps);
+  return { pattern: new RegExp(`${before}${core}${after}`, 'gu'), core, after };
 }
 
 /** A member ID's or claim number's form, compacted from its folded value, or null under two letters or digits. */
@@ -472,7 +499,8 @@ function numberForm(value: string, kind: 'claim' | 'member', claim: number): For
   const letter = (character: string | undefined) => character !== undefined && /\p{L}/u.test(character);
   const gaps = characters.slice(1).map((next, i) => (letter(characters[i]) || letter(next) ? GAP.numberNearLetter : GAP.number));
   const digitsOnly = /^\p{N}+$/u.test(compact);
-  return { compact, kind, claim, pattern: patternOf(characters, gaps), insidePart: [], digitsOnly, labeled: digitsOnly ? patternOf(characters, gaps.map(() => GAP.labeledNumber)) : null };
+  const labeled = digitsOnly ? patternOf(characters, gaps.map(() => GAP.labeledNumber)) : null;
+  return { compact, kind, claim, ...patternOf(characters, gaps), insidePart: [], digitsOnly, labeled: labeled?.pattern ?? null, labeledCore: labeled?.core ?? null };
 }
 
 /** A name's parts, each compacted from its folded value, grouped by word. */
@@ -504,7 +532,7 @@ function nameForm(parts: readonly string[]): Form | null {
   if (characters.length < 2) {
     return null;
   }
-  return { compact: characters.join(''), kind: 'name', claim: 0, pattern: patternOf(characters, gaps), insidePart, digitsOnly: false, labeled: null };
+  return { compact: characters.join(''), kind: 'name', claim: 0, ...patternOf(characters, gaps), insidePart, digitsOnly: false, labeled: null, labeledCore: null };
 }
 
 /** What is matched: names, member IDs and the claims' numbers, and whether dates of birth and initials are taken too. */
@@ -745,6 +773,138 @@ interface Found extends Range {
   readonly compacts?: readonly string[];
 }
 
+/** A month word at the end of a run of letters and digits, the date's day or year after it ("DOBMarch 14, 1980", "2020March 14, 1980"). */
+const MONTH_AT_END = new RegExp(`${MONTH_WORD}$`, 'iu');
+const DAY_OR_YEAR_NEXT = new RegExp(`^\\.?[\\s${DATE_SEPARATOR}]*['‘’ʼ\`´]?[0-9]`, 'u');
+
+/**
+ * Text with the letters and digits glued before a month word read as blanks (WORD_BLANK, one unit for one), where a day
+ * or a year follows the month word: a date written in words glued to the word or the number before it ("DOBMarch 14,
+ * 1980", "01/01/2020March 14, 1980"), which datesIn reads against no letter or digit (review PHI2-1). Each run is read once.
+ */
+function monthsSetApart(text: string): string {
+  let apart = '';
+  let kept = 0;
+  for (const run of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const tail = MONTH_AT_END.exec(run[0].slice(-9));
+    const end = run.index + run[0].length;
+    if (tail !== null && run[0].length > tail[0].length && DAY_OR_YEAR_NEXT.test(text.slice(end, end + 24))) {
+      const glued = run.index + run[0].length - tail[0].length;
+      apart += text.slice(kept, run.index) + WORD_BLANK.repeat(glued - run.index);
+      kept = glued;
+    }
+  }
+  return kept === 0 ? text : apart + text.slice(kept);
+}
+
+/** A run of letters of a view where a word may begin inside it, or that a digit touches (letterRuns). */
+interface LetterRun extends Range {
+  /** Whether a digit touches it on either side: text that lost its spaces. */
+  readonly glued: boolean;
+  /** Where a word begins inside it: at each change of case that starts one ("PaidJane", "PAIDJane"). */
+  readonly words: readonly number[];
+}
+
+/**
+ * The runs of letters of a view in which a word other than the run may be written (review PHI2-1): those a digit touches
+ * on either side, text that lost its spaces as the survivor scan's glued readings read it ("01/02/2020ZephyraPaid",
+ * "JaneSeen0.00-01/02/2020"), and those where the case as written changes to start a word: a small letter then a capital
+ * ("DearJane", "ZephyraPaid"), or a capital then a capital and a small letter ("PAIDJane").
+ */
+function letterRuns(view: View, normal: string): LetterRun[] {
+  const runs: LetterRun[] = [];
+  const text = view.text;
+  const small = (codePoint: string) => codePoint !== codePoint.toUpperCase() && codePoint === codePoint.toLowerCase();
+  const large = (codePoint: string) => codePoint !== codePoint.toLowerCase();
+  for (let i = 0; i < text.length; ) {
+    if (!LETTER.test(codePointAt(text, i))) {
+      i += codePointAt(text, i).length;
+      continue;
+    }
+    const start = i;
+    // The run's letters, each where it starts in the view and as the letter wrote it (one written letter may be two units: "ß" is "SS").
+    const letters: { readonly at: number; readonly written: string }[] = [];
+    while (i < text.length && LETTER.test(codePointAt(text, i))) {
+      if (i === start || view.from[i] !== view.from[i - 1]) letters.push({ at: i, written: writtenAt(view, normal, i) });
+      i += codePointAt(text, i).length;
+    }
+    const words: number[] = [];
+    letters.forEach((letter, k) => {
+      const before = letters[k - 1]?.written ?? '';
+      const after = letters[k + 1]?.written ?? '';
+      if (k > 0 && large(letter.written) && (small(before) || (large(before) && small(after)))) words.push(letter.at);
+    });
+    const glued = NUMBER.test(codePointBefore(text, start)) || (i < text.length && NUMBER.test(codePointAt(text, i)));
+    if (glued || words.length > 0) runs.push({ start, end: i, glued, words });
+  }
+  return runs;
+}
+
+/**
+ * The patient's names read inside runs of letters (letterRuns; review PHI2-1), where the letters beside a name may be
+ * another word's. A word may begin or end in a run at its two ends, at a change of case that starts a word, and where a
+ * name already read in it ends or begins. A name part is read between two such places ("DearJane", "ZephyraPaid",
+ * "2020PaidJaneToday"), and in a run a digit touches also where it begins or ends at the run's two ends or a name's,
+ * whatever letters follow or come before it ("01/02/2020ZephyraPaid", "150.00PaidZephyra", "JaneSeen0.00",
+ * "01/02/2020ZEPHYRAJANEQ150.00"); an initial of the name between two such places, beside a name read in the run. Read
+ * to a fixed point, each place once. In a run a digit touches, a short part may so take letters of another word
+ * ("150.00Deductible" for a part "DE"): more redacted, never less. A name glued to another word that nothing sets apart
+ * ("DEARJANE", "2020PAIDZEPHYRATODAY", "Zephyrapaid") is not read: a recorded residual.
+ */
+function namesInRuns(view: View, forms: readonly Form[], runs: readonly LetterRun[], initials: ReadonlySet<string>): Range[] {
+  const names = forms.filter((form) => form.kind === 'name').map((form) => ({ length: form.compact.length, sticky: new RegExp(form.core, 'uy') }));
+  const text = view.text;
+  const matches: Range[] = [];
+  for (const run of runs) {
+    // Where a word may begin or end; of those, where any letters may follow or come before it (a glued run's ends and a
+    // name's); and where a name read in the run begins or ends.
+    const bounds = new Set<number>([run.start, run.end, ...run.words]);
+    const open = new Set<number>(run.glued ? [run.start, run.end] : []);
+    const named = new Set<number>();
+    const queue = [...bounds];
+    const add = (at: number) => {
+      if (run.glued) open.add(at);
+      named.add(at);
+      if (at > run.start && at < run.end && !bounds.has(at)) {
+        bounds.add(at);
+        queue.push(at);
+      }
+    };
+    const take = (range: Range) => {
+      matches.push(range);
+      add(range.start);
+      add(range.end);
+    };
+    for (let head = 0; head < queue.length; head += 1) {
+      const at = queue[head] ?? run.start;
+      for (const { length, sticky } of names) {
+        // Beginning here; and ending here, where a match within the run is as long as the form.
+        for (const from of new Set([at, at - length])) {
+          if (from < run.start || from >= run.end) continue;
+          sticky.lastIndex = from;
+          const match = sticky.exec(text);
+          const end = from + (match?.[0].length ?? 0);
+          // Past the run, a name's own edge: no letter after it.
+          const ends = (place: number) => bounds.has(place) || (place > run.end && !LETTER.test(codePointAt(text, place)));
+          if (match !== null && (from === at ? open.has(at) || ends(end) : end === at && (open.has(at) || bounds.has(from)))) {
+            take({ start: from, end });
+          }
+        }
+      }
+      // An initial of the name between two such places, beside a name read in the run.
+      const letter = codePointAt(text, at);
+      if (at < run.end && initials.has(letter) && bounds.has(at + letter.length) && (named.has(at) || named.has(at + letter.length))) {
+        take({ start: at, end: at + letter.length });
+      }
+      const before = codePointBefore(text, at);
+      if (at > run.start && initials.has(before) && bounds.has(at - before.length) && (named.has(at) || named.has(at - before.length))) {
+        take({ start: at - before.length, end: at });
+      }
+    }
+  }
+  return matches;
+}
+
 /**
  * Every match in NFKC text, as NFKC ranges, all found on the text as it is before anything is replaced:
  * the dates of birth, the claims' numbers and member IDs, the names and (when asked) the initials next
@@ -757,14 +917,24 @@ function matchesIn(normal: string, subject: Subject): Found[] {
   const births = new Set(subject.datesOfBirth ?? []);
   for (const invisible of ['drop', 'space'] as const) {
     const view = viewOf(normal, invisible);
-    for (const span of datesIn(view.text)) {
-      const range = inNormal(view, span.start, span.end);
-      if (subject.datesOfBirth !== null && (span.dates.some((date) => births.has(date)) || BIRTH_LABEL.test(view.text.slice(Math.max(0, span.start - 40), span.start)))) {
-        found.push({ ...range, kind: 'birth', claim: 0 });
-      } else if (span.separated && span.dates.length > 0) {
-        otherDates.push(range);
+    // A date of birth glued to a word ("DOB03/14/1980", "Born 03/14/1980Paid", "DOBMarch 14, 1980") is read on the survivor
+    // scan's glued readings too (gluedReadings: each word glued to a digit read as blanks, one unit for one, so a span is
+    // where it was), and with a month word set apart from what is glued before it (monthsSetApart) too, and its label on the
+    // text as written (review PHI2-1, re-review GATEWAY1-4). Only a date of birth is taken there: a date read on those
+    // readings alone keeps no name or number in it.
+    const readings = gluedReadings(view.text);
+    const apart = monthsSetApart(view.text);
+    if (apart !== view.text) readings.push(...gluedReadings(apart));
+    readings.forEach((reading, index) => {
+      for (const span of datesIn(reading)) {
+        const range = inNormal(view, span.start, span.end);
+        if (subject.datesOfBirth !== null && (span.dates.some((date) => births.has(date)) || BIRTH_LABEL.test(view.text.slice(Math.max(0, span.start - 40), span.start)))) {
+          found.push({ ...range, kind: 'birth', claim: 0 });
+        } else if (index === 0 && span.separated && span.dates.length > 0) {
+          otherDates.push(range);
+        }
       }
-    }
+    });
   }
   otherDates.sort((a, b) => a.start - b.start);
   const reach: number[] = [];
@@ -772,7 +942,9 @@ function matchesIn(normal: string, subject: Subject): Found[] {
   const inOtherDate = (range: Range) => (reach[firstIndex(otherDates, (date) => date.start > range.start) - 1] ?? -1) >= range.end;
   const view = viewOf(normal, 'join');
   const names: Range[] = [];
-  for (const form of formsOf(subject)) {
+  const runs = letterRuns(view, normal);
+  const forms = formsOf(subject);
+  for (const form of forms) {
     const pattern = new RegExp(form.pattern.source, form.pattern.flags);
     for (let match = pattern.exec(view.text); match !== null; match = pattern.exec(view.text)) {
       const start = match.index;
@@ -810,11 +982,11 @@ function matchesIn(normal: string, subject: Subject): Found[] {
       // "№99887766": review finding phi-numero-glued), which BEFORE alone never reads: a letter stands before it. It is
       // read as after a label of that kind, over "." and "/" too for digits alone, a whole written date only after a
       // label of the number's kind.
-      for (const source of [form.pattern, form.labeled]) {
-        if (source === null) {
+      for (const core of [form.core, form.labeledCore]) {
+        if (core === null) {
           continue;
         }
-        const glued = new RegExp(`(?<=\\p{L})${source.source.slice(BEFORE.length)}`, source.flags);
+        const glued = new RegExp(`(?<=\\p{L})${core}${form.after}`, 'gu');
         for (let match = glued.exec(view.text); match !== null; match = glued.exec(view.text)) {
           const range = inNormal(view, match.index, match.index + match[0].length);
           const label = gluedLabelBefore(view.text, match.index, (index) => writtenAt(view, normal, index));
@@ -824,6 +996,13 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           }
         }
       }
+    }
+  }
+  for (const match of namesInRuns(view, forms, runs, subject.initials ? initialsOf(subject.names) : new Set())) {
+    const range = inNormal(view, match.start, match.end);
+    if (!inOtherDate(range)) {
+      names.push(match);
+      found.push({ ...range, kind: 'name', claim: 0 });
     }
   }
   if (subject.initials) {
@@ -845,8 +1024,8 @@ const GAP_CHARACTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD,]$/u;
 
 /**
  * The initials of the patient's name written next to a name (view ranges), to a fixed point, so
- * "J. Q. Vantree" takes both. An initial is a letter standing alone as a word, the first letter of a
- * part of the name, either
+ * "J. Q. Vantree" takes both. An initial is a letter with no letter beside it (a digit may be: a lost space,
+ * "150.00Q Zephyra", review PHI2-1), the first letter of a part of the name, either
  * - before a name or a taken initial, past an optional "." and only white space, apostrophes or dashes
  *   ("J.Vantree", "J. Q. Vantree", "O’Brien"), or
  * - after one, past an optional comma, when "." follows it or no word written in lower case does
@@ -858,7 +1037,7 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
   for (let i = 0; i < view.text.length; ) {
     const codePoint = codePointAt(view.text, i);
     const end = i + codePoint.length;
-    if (letters.has(codePoint) && !WORD_CHARACTER.test(codePointBefore(view.text, i)) && (end >= view.text.length || !WORD_CHARACTER.test(codePointAt(view.text, end)))) {
+    if (letters.has(codePoint) && !LETTER.test(codePointBefore(view.text, i)) && (end >= view.text.length || !LETTER.test(codePointAt(view.text, end)))) {
       candidates.push({ start: i, end });
     }
     i = end;
@@ -1199,14 +1378,20 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
  * The label window before a bare number at a view position (3.4): up to LABEL_WINDOW characters back, ending at a
- * position `stops` (the last match already found), a BARRIER, a digit, or a second line break. With `spanned` (the scan's
- * reading of SEC-5's label over the numbers before an amount: review GATEWAY1-2), a digit of a date, an amount or a
- * currency amount (where `spanned` holds) is read through, and so is any other digit until a letter or such a span has
- * been read: the amount's own run of plain numbers ("SSN 9001 2.34 56"), never a number past a word or a span, as a
- * phone word's own is to the amount in "TTY 711. Paid 150.00 2026" and to 120.00 in "TTY 711\n150.00 120.00"
- * (re-review GATEWAY1-1).
+ * position `stops` (the last match already found), a BARRIER, a digit, or a second line break. The survivor scan reads it
+ * further (`read`):
+ * - with `spanned` (its reading of SEC-5's label over the numbers before an amount: review GATEWAY1-2), a digit of a date,
+ *   an amount or a currency amount (where `spanned` holds) is read through, and so is any other digit until a letter or
+ *   such a span has been read: the amount's own run of plain numbers ("SSN 9001 2.34 56"), never a number past a word or
+ *   a span, as a phone word's own is to the amount in "TTY 711. Paid 150.00 2026" and to 120.00 in "TTY 711\n150.00
+ *   120.00" (re-review GATEWAY1-1);
+ * - with `placeholders`, past placeholders glued to a digit the window has read, nothing between: where the call's own
+ *   identifier was glued to the number by a lost space ("SSN Zephyra900.12 3456", "SSN Jane202 555 01.23", "SSN
+ *   Zephyra01/01/2020-900.12 3456"), the label before the identifier is the number's, as the scan read it when the
+ *   identifier was not redacted (review PHI2-1).
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean, spanned?: (index: number) => boolean): string {
+function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly placeholders?: boolean } = {}): string {
+  const { spanned, placeholders = false } = read;
   let from = start;
   let breaks = 0;
   // Whether a letter, or a digit where `spanned` holds, has been read since the start: past one, a plain digit ends the window.
@@ -1214,6 +1399,10 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
   while (from > 0 && start - from < LABEL_WINDOW) {
     const index = from - 1;
     const character = text[index] ?? '';
+    if (placeholders && character === BARRIER && DIGIT.test(text[index + 1] ?? '')) {
+      while (from > 0 && text[from - 1] === BARRIER) from -= 1;
+      continue;
+    }
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
     if (stops(index) || character === BARRIER || (digit && !inSpan && (spanned === undefined || passed))) {
@@ -1529,6 +1718,26 @@ const GLUED_WORD = /(?<=[0-9])(?!(?:st|nd|rd|th)(?![\p{L}\p{N}]))\p{L}+|(?<!\p{L
  */
 const GLUED_ANY = /(?<=[0-9])\p{L}+|(?<!\p{L})\p{L}+(?=[0-9])/gu;
 
+/**
+ * A text and its glued readings, where a date glued to a word ("2020-01-01Paid", extracted text that lost its space) is
+ * read: datesIn reads no date against a letter. Only a word glued to a digit is blanked (GLUED_WORD), so a month word
+ * stays one ("2 January 2020Paid"), and a blank is WORD_BLANK, never a space, so a word between two numbers never reads as
+ * the white space of one date (MOD-16 seed 1034253323); each blank is one unit for one, so a span is where it was. A third
+ * reading blanks an ordinal-like suffix as well ("2020St. Joseph": GLUED_ANY), where it differs. The survivor scan reads
+ * its barriers on them, and redaction and the check a date of birth (matchesIn).
+ */
+function gluedReadings(text: string): string[] {
+  const readings = [text];
+  if (/[0-9]\p{L}|\p{L}[0-9]/u.test(text)) {
+    const blank = (word: string) => WORD_BLANK.repeat(word.length);
+    const ordinalsKept = text.replace(GLUED_WORD, blank);
+    const allBlanked = text.replace(GLUED_ANY, blank);
+    readings.push(ordinalsKept);
+    if (allBlanked !== ordinalsKept) readings.push(allBlanked);
+  }
+  return readings;
+}
+
 /** One or two dashes and nothing else (any dash the scan joins over: SCAN_DASH): what joins the two ends of a range ("10/01/2026-10/15/2026", "150.00-120.00"). */
 const RANGE_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]{1,2}$/u;
 
@@ -1611,25 +1820,15 @@ function survivorIn(text: string): boolean {
   const labeledAt = (start: number): ScanLabel => {
     let held = labeled.get(start);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false));
+      held = scanLabeled(labelWindow(text, start, () => false, { placeholders: true }));
       labeled.set(start, held);
     }
     return held;
   };
-  // A date glued to a word ("2020-01-01Paid", extracted text that lost its space) is read with that word as blanks too:
-  // datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16, check round 1).
-  // Only a word glued to a digit is blanked (GLUED_WORD), so a month word stays one ("2 January 2020Paid"), and a blank
-  // is WORD_BLANK, never a space, so a word between two numbers never reads as the white space of one date (MOD-16 seed
-  // 1034253323). A third reading blanks an ordinal-like suffix as well ("2020St. Joseph": GLUED_ANY), where it differs.
-  const unglued = [text];
-  if (/[0-9]\p{L}|\p{L}[0-9]/u.test(text)) {
-    const blank = (word: string) => WORD_BLANK.repeat(word.length);
-    const ordinalsKept = text.replace(GLUED_WORD, blank);
-    const allBlanked = text.replace(GLUED_ANY, blank);
-    unglued.push(ordinalsKept);
-    if (allBlanked !== ordinalsKept) unglued.push(allBlanked);
-  }
-  const dates = unglued.flatMap((reading) => datesIn(reading).filter((span) => span.separated && span.dates.length > 0)).map((span) => ({ start: span.start, end: span.end, amount: false }));
+  // A date glued to a word ("2020-01-01Paid", extracted text that lost its space) is read on the glued readings too
+  // (gluedReadings): datesIn reads no date against a letter, and its digits would chain with a group before it (MOD-16,
+  // check round 1).
+  const dates = gluedReadings(text).flatMap((reading) => datesIn(reading).filter((span) => span.separated && span.dates.length > 0)).map((span) => ({ start: span.start, end: span.end, amount: false }));
   const currency = [...text.matchAll(CURRENCY_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: false }));
   const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
   for (const span of currency) {
@@ -1648,7 +1847,7 @@ function survivorIn(text: string): boolean {
   const labeledOverNumbers = (start: number): ScanLabel => {
     let held = labeledOver.get(start);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, (index) => spanned[index] === 1).replace(/[0-9]/gu, ' '));
+      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, placeholders: true }).replace(/[0-9]/gu, ' '));
       labeledOver.set(start, held);
     }
     return held;
@@ -1875,7 +2074,20 @@ const masked = (text: string, claims = 0) => text.normalize('NFKC').replace(PLAC
  */
 export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
   const scanned = masked(text, claims.length);
-  return matchesIn(scanned, letterSubject(patient, claims)).length > 0 || survivorLeft(scanned);
+  const subject = letterSubject(patient, claims);
+  return matchesIn(scanned, subject).length > 0 || ownNumberWithin(scanned, subject) || survivorLeft(scanned);
+}
+
+/**
+ * Whether masked text holds the call's member ID or claim number of letters and digits inside a longer token, which
+ * redaction keeps as another identifier (formEdges): a letter glued to its letter or a digit to its digit
+ * ("2020PaidZZ7654321", "ZZ7654321150.00-1/2/20", "ZZ12345678" for ZZ1234567). Where it is the call's own number glued
+ * to another word or number by a lost space, no boundary can be known, so the letter is refused (review PHI2-1); a digits-only
+ * number glued so is read as another number (a date's or an amount's digits), and a name inside a word as that word.
+ */
+function ownNumberWithin(scanned: string, subject: Subject): boolean {
+  const view = viewOf(scanned, 'join');
+  return formsOf(subject).some((form) => form.kind !== 'name' && !form.digitsOnly && /\p{L}/u.test(form.compact) && /\p{N}/u.test(form.compact) && new RegExp(form.core, 'u').test(view.text));
 }
 
 /**

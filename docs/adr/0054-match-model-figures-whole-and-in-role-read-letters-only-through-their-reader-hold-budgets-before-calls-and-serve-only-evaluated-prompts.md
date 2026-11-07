@@ -431,12 +431,16 @@ runs, the five properties were run once over 60 seeds at 400 runs each with no f
 Still not covered, recorded as residuals (none is new): nicknames (Bob for Robert); homoglyphs (Cyrillic `а` for Latin
 `a`: a payer letter's text is not adversarial, and OCR in Latin mode does not emit them); digits of other scripts
 (`٣`); a name in a script other than the records'; a date of birth in a form `datesIn` does not read (`1961 March 3`); a
-name glued to the word before it by a lost space (`DearJane` from PDF text), which is not a whole word; a date of birth
-glued to a word by a lost space on either side (`DOB03/14/1980`, `Born 03/14/1980Paid`, `Born March 14, 1980Paid`),
-which `datesIn` does not read against a letter (re-review GATEWAY1-4, 2026-11-06; a proposal: read it on the survivor
-scan's glued readings, in redaction and in the check); a bare monogram (`JQV`); an identifier split into more than three
-tokens, which the screen does not join (the contract screen's runs are
-not limited to three); another patient's identifier the screen sees only with a digit and five characters or more,
+name glued to another word by a lost space that nothing sets apart, no digit beside its run of letters and no change of
+case (`DEARJANE`, `Zephyrapaid`, `2020PAIDZEPHYRATODAY`, `0.00-01/02/2020PaidzephyraToday`), which is not a whole word
+(cc3dd7f6 refused such a letter beside a range only because the range then joined the next group, A3; since review
+PHI2-1 of the range fix, 2026-11-07, a name glued to a digit or set apart by a change of case is read, below); a call's
+member ID or claim number inside a longer token, a letter glued to its letter or a digit to its digit (`ZZ12345678` for
+ZZ1234567, `2020PaidZZ7654321`, `ZZ7654321150.00-1/2/20`), which redaction keeps as another identifier for the screen and
+the check refuses when the number holds letters and digits (no boundary can be known), and a digits-only one glued so
+(`Room AB99887766`, `Claim 123456780.00` for claim 12345678), read as another number and sent; a bare monogram (`JQV`);
+an identifier split into more than three tokens, which the screen does not join (the contract screen's runs are not
+limited to three); another patient's identifier the screen sees only with a digit and five characters or more,
 while the stored side keeps values from two; another patient's name, which the screen does not look for; and addresses,
 phone numbers and Social Security numbers, which PRD 14 does not list for redaction. Recorded with the review round
 (each the cost of keeping what the task reads, or not new): a digits-only member ID or claim number that is itself a
@@ -600,8 +604,9 @@ above stays as it was decided; where it differs, this amendment holds.
   there too and an unsigned amount is no barrier ("Phone: 202-5550123", "SSN 90012-3456", "SSN 9 0 0 1 2 3 4 5 6", "SSN
   900.12 3456" are refused, "Please call about CPT 97110 97140." and "Call our office, TIN 12-3456789" sent). Review
   round 1 (2026-11-05: SEC-1, SEC-2, SEC-4, SEC-5, SEC-6, corr-ssn-1) widened the scan so. The refusal is
-  `identifier_left`, the fixed sentence that names no number. A letter that glues the patient's name to a pattern span
-  ("RE: Vantree900-12-3456") is refused the same way. Since 2026-11-06 (MOD-16 seed 1034253323, where "Paid $0,000.00.
+  `identifier_left`, the fixed sentence that names no number. A letter that glued the patient's name to a pattern span
+  ("RE: Vantree900-12-3456") was refused the same way (design 7.4) until review PHI2-1 of the range fix (2026-11-07),
+  since which the name is redacted with it ("RE: [PATIENT_NAME][SSN]", below). Since 2026-11-06 (MOD-16 seed 1034253323, where "Paid $0,000.00.
   Service 01/01/2020-01/02/2020Paid $0,000.00" was refused) a range's two ends may be read on either reading and may be
   a date and an amount (with or without a currency sign), the glued reading blanks only a word glued to a digit and
   never as white space, and `datesIn` tries each date form at every number, so a match that reads as no date never hides
@@ -622,6 +627,24 @@ above stays as it was decided; where it differs, this amendment holds.
   120.00" are sent, as at cc3dd7f6). On the fail-safe side, as "Call us about 150.00 1234" was, a chain is refused whose
   first group a phone label is nearest ("Call us about 150.00-120.00", "Contact us. 97110 1 150.00") or that starts at
   an amount right after the label's own number with nothing between ("TTY 711⏎150.00 1234").
+  Review round 2 of the fix (2026-11-07: PHI2-1, PHI2-2) found that the barrier sent the call's own identifiers that
+  cc3dd7f6 refused only because the range then joined the next group (A3), in the shapes redaction never read: a date of
+  birth glued to a word, and a name, member ID or claim number glued to a digit ("Paid $0,000.00. Service
+  01/01/2020-01/02/2020Zephyra $0,000.00", "DOB 150.00-03/14/1980Paid", "Seen 0.00-01/02/2020SYNCLAIM0001"; 6,602 of
+  21,600 letters in its seeded differential), some sent at cc3dd7f6 as well ("Seen 2020SYNMEMBER0042", "Paid
+  150.00Zephyra"). Redaction and the check now read the call's identifiers as the scan reads glued text: a date of birth
+  on the scan's glued readings, and with a month word set apart from what is glued before it ("DOB03/14/1980", "Born
+  03/14/1980St. Mary", "DOBMarch 14, 1980", any date a birth label introduces too); a form's letter edge reads a digit
+  beside it as a lost space, and a number's digit edge a letter beside it ("150.00Q Zephyra", "RE: Vantree900-12-3456",
+  "SYNCLAIM0001Paid"); in a run of letters a digit touches, a name part at either end of the run, beside a name read
+  there, or between changes of case, whatever letters it is glued to ("01/02/2020ZephyraPaid", "150.00PaidZephyra",
+  "01/02/2020ZEPHYRAJANEQ150.00"), and in any run a name part between changes of case ("DearJane", "ZephyraPaid"), so a
+  short part may take letters of another word glued to a digit ("150.00Deductible" for a part "DE": more redacted, never
+  less); and the check refuses the call's number of letters and digits inside a longer token. Its differentials (21,600,
+  864 and 47,754 letters, the own identifiers at or beside a range end, glued on either side) send none that cc3dd7f6
+  refused but the recorded class of a name glued to another word that nothing sets apart (162 of 47,754, a lower-case name
+  glued between words). A date read on a glued reading alone keeps no name or number in it: only a date of birth is taken
+  there.
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the

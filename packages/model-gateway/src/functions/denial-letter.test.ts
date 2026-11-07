@@ -146,8 +146,10 @@ describe('PHI minimization reads every form a letter writes an identifier in (PR
       const redacted = redactLetter(`SYNTHETIC: member ${written}, claim SYNCLM 55501 and synclm55501.`, patient, claims);
       expect(redacted.text, written).toBe('SYNTHETIC: member [MEMBER_ID], claim [CLAIM_1] and [CLAIM_1].');
     }
-    // A longer number holding the ID is not the ID.
+    // A longer number holding the ID is not the ID to redaction (another identifier, which the screen reads); the check
+    // refuses it, since the ID glued to another number by a lost space has no boundary to read (review PHI2-1).
     expect(redactLetter('SYNTHETIC: account ZZ12345678', patient, claims).text).toBe('SYNTHETIC: account ZZ12345678');
+    expect(holdsIdentifier('SYNTHETIC: account ZZ12345678', patient, claims)).toBe(true);
   });
 
   it('refuses a call with no patient identifier or no claim to strip: with nothing to strip, the letter would go as it is', () => {
@@ -1038,11 +1040,14 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
   });
 
-  it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
-    for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456']) {
+  it('refuses a hand-made redacted text that holds a surviving form (identifier_left, a fixed message with no number), and redacts the patient’s name glued to one (review PHI2-1)', () => {
+    for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456', 'RE: Vantree[SSN]']) {
       expect(holdsIdentifier(text, A, AC), text).toBe(true);
     }
-    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'RE: Vantree900-12-3456' })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'SSN 900 12 34 56' })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+    // A name's letter edge reads a digit beside it as a lost space, so the name glued to an SSN is redacted with it, where
+    // the letter was refused before (design 7.4, docs/adr/0054).
+    expect(denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'RE: Vantree900-12-3456' }).user).toContain('RE: [PATIENT_NAME][SSN]');
   });
 
   it('rejects a claim reference that holds a placeholder without being one of the call’s claims (R10b)', () => {
