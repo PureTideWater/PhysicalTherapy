@@ -7,11 +7,15 @@ import {
   type InterestAdjustment,
   type InterestClaim,
   type InterestDraw,
+  type InterestHeldSums,
   type InterestPart,
   type InterestWritten,
   type MatchedLedgerEntry,
+  addInterestHeld,
   attributeInterest,
   interestHeld,
+  interestHeldOf,
+  interestHeldOn,
   interestWrites,
   referenceCandidates,
 } from './interest';
@@ -629,6 +633,73 @@ describe('interestHeld (D5)', () => {
       { chain: 'c', serviceLineId: 'L3', heldCents: 0n },
       { chain: 'k', serviceLineId: 'L1', heldCents: 50n },
     ]);
+  });
+
+  /** The sums as arrays, so their order is compared too. */
+  const ordered = (sums: InterestHeldSums) => [...sums].map(([chain, ofChain]) => [chain, [...ofChain]] as const);
+
+  it('keeps the sums before the floor, each chain and line in the order the entries first reach it, and adds entries in parts as in one (#126 review F-M2-2)', () => {
+    const entries = [
+      entry('e1', 'm1', 'L1', 'interest', 240n),
+      entry('e2', 'm2', 'L2', 'interest', 300n),
+      entry('e3', 'm4', 'L1', 'interest', 50n),
+      entry('e4', 'm2', 'L2', 'adjusted', -100n, 'e2'),
+      entry('e5', 'm3', 'L3', 'interest', 100n),
+      entry('e6', 'm3', 'L3', 'adjusted', -130n, 'e5'),
+      entry('e7', 'm5', 'L1', 'interest', 70n),
+    ];
+    const chains = new Map([
+      ['m1', 'c'],
+      ['m2', 'c'],
+      ['m3', 'c'],
+      ['m4', 'k'],
+    ]);
+    const whole: InterestHeldSums = new Map();
+    addInterestHeld(whole, entries, chains);
+    const sums = [
+      ['c', [['L1', 240n], ['L2', 200n], ['L3', -30n]]],
+      ['k', [['L1', 50n]]],
+    ];
+    expect(ordered(whole)).toEqual(sums);
+    // In parts, each correction with the entry it corrects: the same sums in the same order.
+    const parts: InterestHeldSums = new Map();
+    for (const part of [entries.slice(0, 1), entries.slice(1, 4), entries.slice(4)]) {
+      addInterestHeld(parts, part, chains);
+    }
+    expect(ordered(parts)).toEqual(sums);
+    // Read floored, chain by chain or line by line; a chain or line holding nothing holds zero.
+    expect(interestHeldOf(whole, 'c')).toEqual([
+      { chain: 'c', serviceLineId: 'L1', heldCents: 240n },
+      { chain: 'c', serviceLineId: 'L2', heldCents: 200n },
+      { chain: 'c', serviceLineId: 'L3', heldCents: 0n },
+    ]);
+    expect(interestHeldOf(whole, 'x')).toEqual([]);
+    expect([interestHeldOn(whole, 'c', 'L2'), interestHeldOn(whole, 'c', 'L3'), interestHeldOn(whole, 'k', 'L1'), interestHeldOn(whole, 'k', 'L2'), interestHeldOn(whole, 'x', 'L1')]).toEqual([200n, 0n, 50n, 0n, 0n]);
+    expect(interestHeld(entries, chains)).toEqual([...interestHeldOf(whole, 'c'), ...interestHeldOf(whole, 'k')]);
+  });
+
+  it('gives the same sums, in the same order, whether a pass adds the entries it writes one at a time or reads them all at once (#126 review F-M2-2)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ line: fc.constantFrom('L1', 'L2', 'L3'), match: fc.constantFrom('m1', 'm2', 'm3', 'm4'), amount: fc.bigInt({ min: -500n, max: 500n }) }), { maxLength: 12 }),
+        (written) => {
+          const chains = new Map([
+            ['m1', 'c'],
+            ['m2', 'k'],
+            ['m3', 'c'],
+          ]);
+          const entries = written.map((item, index) => entry(`e${String(index)}`, item.match, item.line, 'interest', item.amount));
+          const once: InterestHeldSums = new Map();
+          addInterestHeld(once, entries, chains);
+          const oneByOne: InterestHeldSums = new Map();
+          for (const item of entries) {
+            addInterestHeld(oneByOne, [item], chains);
+          }
+          expect(ordered(oneByOne)).toEqual(ordered(once));
+          expect([...once.keys()].flatMap((chain) => interestHeldOf(once, chain))).toEqual(interestHeld(entries, chains));
+        },
+      ),
+    );
   });
 
   it('counts a correction toward the chain of the entry it corrects, whatever match it carries', () => {

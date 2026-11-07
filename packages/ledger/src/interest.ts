@@ -414,23 +414,50 @@ export function interestWrites({
 }
 
 /**
- * What each line holds of each chain's interest (D5), chain by chain: its interest entries from matches naming a claim
- * of the chain (`chainOfMatch`, by match), net of their corrections and of take-backs, floored at zero. A match that
- * names no claim (one written before docs/adr/0084 from the PLB L6 alone) is in no chain. `entries` holds every entry
- * a correction among them corrects.
+ * What lines hold of each chain's interest, net and before the floor: by chain, then by line, each in the order the
+ * entries first reach it (addInterestHeld). A reconcile pass builds it once from the entries it reads and adds each
+ * entry it writes, so a take-back reads its chain's lines without reading every entry again (#126 review F-M2-2).
  */
-export function interestHeld(entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>): InterestHolding[] {
+export type InterestHeldSums = Map<string, Map<string, bigint>>;
+
+/**
+ * Adds `entries` to `sums` (D5): each interest entry from a match naming a claim of a chain (`chainOfMatch`, by match),
+ * and each correction under the entry it corrects, to that chain's line. A match that names no claim (one written
+ * before docs/adr/0084 from the PLB L6 alone) is in no chain. `entries` holds every entry a correction among them
+ * corrects.
+ */
+export function addInterestHeld(sums: InterestHeldSums, entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>): void {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const held = new Map<string, Map<string, bigint>>();
   for (const entry of entries) {
     const root = correctedEntry(entry, byId) as MatchedLedgerEntry;
     const chain = chainOfMatch.get(root.matchId);
     if (root.stage !== 'interest' || root.serviceLineId === null || chain === undefined) {
       continue;
     }
-    const ofChain = held.get(chain) ?? new Map<string, bigint>();
-    held.set(chain, ofChain);
+    const ofChain = sums.get(chain) ?? new Map<string, bigint>();
+    sums.set(chain, ofChain);
     ofChain.set(root.serviceLineId, (ofChain.get(root.serviceLineId) ?? 0n) + entry.amountCents);
   }
-  return [...held].flatMap(([chain, ofChain]) => [...ofChain].map(([serviceLineId, amount]) => ({ chain, serviceLineId, heldCents: maxCents(cents(amount), ZERO_CENTS) })));
+}
+
+/** What each line holds of the chain's interest in `sums`, in their order, floored at zero (D5). */
+export function interestHeldOf(sums: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string): InterestHolding[] {
+  return [...(sums.get(chain) ?? [])].map(([serviceLineId, amount]) => ({ chain, serviceLineId, heldCents: maxCents(cents(amount), ZERO_CENTS) }));
+}
+
+/** What one line holds of the chain's interest in `sums`, floored at zero: zero when it holds none (D5). */
+export function interestHeldOn(sums: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string, serviceLineId: string): Cents {
+  return maxCents(cents(sums.get(chain)?.get(serviceLineId) ?? 0n), ZERO_CENTS);
+}
+
+/**
+ * What each line holds of each chain's interest (D5), chain by chain: its interest entries from matches naming a claim
+ * of the chain (`chainOfMatch`, by match), net of their corrections and of take-backs, floored at zero. A match that
+ * names no claim (one written before docs/adr/0084 from the PLB L6 alone) is in no chain. `entries` holds every entry
+ * a correction among them corrects.
+ */
+export function interestHeld(entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>): InterestHolding[] {
+  const sums: InterestHeldSums = new Map();
+  addInterestHeld(sums, entries, chainOfMatch);
+  return [...sums.keys()].flatMap((chain) => interestHeldOf(sums, chain));
 }

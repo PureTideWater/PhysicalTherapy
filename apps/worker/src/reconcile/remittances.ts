@@ -10,6 +10,7 @@ import {
   type PaymentEvent,
   type PaymentOutcome,
   type ChainInterestLines,
+  type InterestHeldSums,
   type InterestWritten,
   type ReversalTakeBack,
   claimLinePayments,
@@ -25,7 +26,9 @@ import {
   paymentStep,
   preferredCandidates,
   reversalTakeBack,
-  interestHeld,
+  addInterestHeld,
+  interestHeldOf,
+  interestHeldOn,
   interestWrites,
   takeInOrder,
 } from '@tp/ledger';
@@ -943,7 +946,10 @@ interface InterestMatch {
  * - entriesOf: each PLB L6's interest entries (its own, not their corrections), in ledger order;
  * - chainOfMatch: each interest match's chain, by its claim (a match naming no claim is in none);
  * - latestOf: each line's latest standing interest match of each chain;
- * - caseLineChains: the chains a claim of which has a standing claim match on a case line.
+ * - caseLineChains: the chains a claim of which has a standing claim match on a case line;
+ * - held and lineHeld: what each line holds of each chain's interest, and of its interest as a whole (every chain's,
+ *   and a match's that names none, together, under LINE_TOTAL), net of corrections and take-backs: @tp/ledger
+ *   addInterestHeld's sums, which a take-back reads floored (#126 review F-M2-2).
  */
 interface InterestState {
   readonly matches: InterestMatch[];
@@ -955,10 +961,18 @@ interface InterestState {
   readonly entriesOf: Map<string, StoredEntry[]>;
   readonly chainOfMatch: Map<string, string>;
   readonly latestOf: Map<string, InterestMatch>;
+  readonly held: InterestHeldSums;
+  readonly lineHeld: InterestHeldSums;
 }
 
 /** The key of a line's holding of a chain in InterestState.latestOf. */
 const lineAndChain = (serviceLineId: string, chain: string) => `${serviceLineId}|${chain}`;
+
+/** The key InterestState.lineHeld keeps each line's interest as a whole under: no chain's root is empty. */
+const LINE_TOTAL = '';
+
+/** An entry as @tp/ledger addInterestHeld reads it: an entry with no match has the match '', which is in no chain. */
+const withMatch = (entry: StoredEntry) => ({ ...entry, matchId: entry.matchId ?? '' });
 
 async function interestState(scope: Scope, practiceId: string, lines: readonly CaseLine[], matches: readonly StoredMatch[], reading: InterestReading): Promise<InterestState> {
   const entries = await ledgerEntries(scope, practiceId);
@@ -973,6 +987,8 @@ async function interestState(scope: Scope, practiceId: string, lines: readonly C
     entriesOf: new Map(),
     chainOfMatch: new Map(),
     latestOf: new Map(),
+    held: new Map(),
+    lineHeld: new Map(),
   };
   const claimMatches = state.claimMatches as Map<string, { readonly at: number; readonly match: StoredMatch }[]>;
   for (const [at, match] of matches.entries()) {
@@ -995,6 +1011,11 @@ async function interestState(scope: Scope, practiceId: string, lines: readonly C
   for (const entry of state.entries) {
     addInterestEntry(state, entry);
   }
+  // What each line holds, of each chain and as a whole: built once a pass here, added to as the pass writes. A
+  // correction counts under the entry it corrects (interestHeld); its own match is never read.
+  const matched = state.entries.map(withMatch);
+  addInterestHeld(state.held, matched, state.chainOfMatch);
+  addInterestHeld(state.lineHeld, matched, new Map(state.matches.map((match) => [match.id, LINE_TOTAL])));
   return state;
 }
 
@@ -1023,11 +1044,12 @@ function addInterestEntry(state: InterestState, entry: StoredEntry): void {
  * already (in earlier reconciles and earlier in this pass, reversed matches included) and, per chain, the lines its draws
  * may reach, handed to @tp/ledger interestWrites, which decides every amount; then each part it returns written as an
  * interest match carrying the PLB L6 and the claim, and its entry. The paid lines are those with a standing claim match
- * to a claim the draw is for (for the chain a PLB L6 names, any claim of it; the latest such match, an approving one
- * first), weighted by approvals remaining; the lines a take-back may reach are those holding the chain's interest
- * (@tp/ledger interestHeld), each through its latest standing interest match of the chain, holding no more than the
- * line's interest as a whole. A chain may yet hold interest when its root is a reversal the moment links to no claim or
- * a claim of it has a standing claim match on a case line. Each is read through the pass's lookups (InterestState).
+ * to a claim the draw is for (for a PLB L6 that names a chain, the claims its reference reaches and those later in the
+ * chain from them; the latest such match, an approving one first), weighted by approvals remaining; the lines a
+ * take-back may reach are those holding the chain's interest, each through its latest standing interest match of the
+ * chain, holding no more than the line's interest as a whole. A chain may yet hold interest when its root is a reversal
+ * the moment links to no claim or a claim of it has a standing claim match on a case line. Each is read through the
+ * pass's lookups (InterestState), the holdings among them.
  */
 async function recordInterest(
   scope: Scope,
@@ -1046,8 +1068,6 @@ async function recordInterest(
     serviceLineId: entry.serviceLineId as string,
     cents: entry.amountCents,
   }));
-  // What each line holds, of each chain and as a whole, read only for a take-back.
-  const holdings = draws.some((draw) => draw.cents < ZERO_CENTS) ? heldInterest(interest) : null;
   const chainLines = new Map<string, ChainInterestLines>();
   for (const draw of draws) {
     // The draw's claims' standing claim matches, by line, in ledger order; the lines in case-line order.
@@ -1065,12 +1085,19 @@ async function recordInterest(
         const match = (standing.filter((item) => item.outcome === 'approved').at(-1) ?? standing.at(-1)) as StoredMatch;
         return { serviceLineId, claimId: match.claimId as string, approved: match.outcome === 'approved', weightCents: approvedRemaining(ledgers.get(serviceLineId) ?? EMPTY_LINE_LEDGER) };
       });
-    const takenBack = (holdings?.held ?? [])
-      .filter((holding) => holding.chain === draw.chain && interest.caseLines.has(holding.serviceLineId))
-      .flatMap((holding) => {
-        const match = interest.latestOf.get(lineAndChain(holding.serviceLineId, draw.chain));
-        return match === undefined ? [] : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: minCents(holding.heldCents, holdings?.lineHeld.get(holding.serviceLineId) ?? ZERO_CENTS) }];
-      });
+    // The lines holding the chain's interest, each cut to its interest as a whole (Postgres's line floor; D8), read only
+    // for a take-back: a chain can hold more on a line than the line holds when a specialist lowered another chain's entry.
+    const takenBack =
+      draw.cents < ZERO_CENTS
+        ? interestHeldOf(interest.held, draw.chain)
+            .filter((holding) => interest.caseLines.has(holding.serviceLineId))
+            .flatMap((holding) => {
+              const match = interest.latestOf.get(lineAndChain(holding.serviceLineId, draw.chain));
+              return match === undefined
+                ? []
+                : [{ serviceLineId: holding.serviceLineId, claimId: match.claimId as string, heldCents: minCents(holding.heldCents, interestHeldOn(interest.lineHeld, LINE_TOTAL, holding.serviceLineId)) }];
+            })
+        : [];
     // A take-back of a chain that may yet hold interest on a case line, not written whole, holds the L6's payments
     // back (@tp/ledger interestWrites; #126 review F1): its root a reversal of a claim not uploaded yet, or a claim of
     // it matched to a case line.
@@ -1118,6 +1145,9 @@ async function recordInterest(
       };
       interest.entries.push(entry);
       addInterestEntry(interest, entry);
+      // The holdings kept current: the entry is its own root, on its line, of its match's chain and of the line's whole.
+      addInterestHeld(interest.held, [withMatch(entry)], interest.chainOfMatch);
+      addInterestHeld(interest.lineHeld, [withMatch(entry)], new Map([[matchId, LINE_TOTAL]]));
     }
     if (part.cents > ZERO_CENTS) {
       counts.interest += 1;
@@ -1125,21 +1155,6 @@ async function recordInterest(
       counts.interestTakenBack += 1;
     }
   }
-}
-
-/**
- * What each line holds of each chain's interest (@tp/ledger interestHeld), and each line's interest as a whole, every
- * chain's (and a match's that names none) together, net of corrections and take-backs: Postgres's line floor
- * (ledger_entry_within_interest). A chain can hold more on a line than the line holds when a specialist lowered another
- * chain's entry there, so a take-back is cut to both and never meets the floor (D8). A correction's own match is never
- * read: interestHeld counts it under the entry it corrects.
- */
-function heldInterest(interest: InterestState): { readonly held: ReturnType<typeof interestHeld>; readonly lineHeld: ReadonlyMap<string, Cents> } {
-  const matched = interest.entries.map((entry) => ({ ...entry, matchId: entry.matchId ?? '' }));
-  return {
-    held: interestHeld(matched, interest.chainOfMatch),
-    lineHeld: new Map(interestHeld(matched, new Map(interest.matches.map((match) => [match.id, '']))).map((holding) => [holding.serviceLineId, holding.heldCents])),
-  };
 }
 
 /** Whether the evidence was ever matched to the line, standing or since reversed: a match a person reversed is never made again automatically. */

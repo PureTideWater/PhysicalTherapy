@@ -277,9 +277,11 @@ check by reading it.
   reach the lines.
 - **At size.** The reconcile walks every PLB L6 of the practice's history on every pass, so its interest path reads
   each claim's standing claim matches, each PLB L6's entries and each line's holdings through lookups built once a pass
-  and kept current as it writes, never every case line against every match for each draw. CAS-42.3's 2,000-line pass
-  carries the implementation guide's interest shape (AMT I on every correction, one PLB L6 per check) and stays within
-  its 150 s budget.
+  and kept current as it writes, never every case line against every match for each draw, nor every interest entry
+  for each PLB L6 that takes interest back (#126 review F-M2-2). CAS-42.3's 2,000-line pass carries the implementation
+  guide's interest shape (AMT I on every correction, one PLB L6 per check) and a later check taking each claim's
+  interest back by a PLB L6 naming its correction, so it walks 2,100 PLB L6s, 2,000 of them take-backs, and stays
+  within its 150 s budget (26.9 s locally; 33.7 s when each take-back rebuilt the holdings).
 - **Lock alignment.** The new trigger takes the practice's `ledger:` key, the key SUITE-CAP-1b moved the other two
   ledger triggers to, so a writer holding `lockLedger` takes no new lock slot.
 
