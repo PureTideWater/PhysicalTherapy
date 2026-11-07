@@ -117,6 +117,11 @@ export const DATA_FILES: Readonly<Record<MutationPackage, readonly DataEntry[]>>
       why: "explain/golden.test.ts words the golden claims' traces and compares the words with their pins (docs/adr/0072)",
       readers: ['packages/packets/src/explain/golden.test.ts'],
     },
+    {
+      glob: 'tools/stryker/equivalent/packets.json',
+      why: "draft-template.test.ts keeps the disjunction its $0.00 case kills out of the reasons of the draft's interest-guard equivalents (docs/adr/0089)",
+      readers: ['packages/packets/src/draft-template.test.ts'],
+    },
   ],
 };
 

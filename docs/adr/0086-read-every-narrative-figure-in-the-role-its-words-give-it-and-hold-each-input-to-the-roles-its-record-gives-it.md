@@ -4,7 +4,9 @@
   (docs/adr/0063). Amends [0047](0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md)
   (what the verifier holds a figure to), [0054](0054-match-model-figures-whole-and-in-role-read-letters-only-through-their-reader-hold-budgets-before-calls-and-serve-only-evaluated-prompts.md)
   (the role check moves into `@tp/packets`) and [0061](0061-verify-a-deadline-only-from-signed-off-evidence-refuse-an-unverified-export-in-sql-and-attest-the-export-over-its-hashes.md)
-  (the tp-packet/2 facts); reverses none of their rulings.
+  (the tp-packet/2 facts); reverses none of their rulings. Amended by
+  [0089](0089-write-a-narratives-figures-as-fact-tokens-rendered-by-code-refuse-every-free-figure-and-read-english-only-for-contradiction.md)
+  (format /3: a narrative's figures are fact tokens rendered by code, and this reader checks only for contradiction).
 - **Date:** 2026-10-28; one cue's role per figure, quoted figures in their own role and the gateway's proof against
   the base, 2026-11-01 (the review of 2026-11-01's fix round); a stored version read again at each step and on each
   screen, and the editor's words, 2026-11-01 (the same fix round, its second part); the reader and its words split
@@ -439,4 +441,6 @@ packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/ru
 - The narrative's figures become placeholders bound to the facts by code (written and checked by role and scope as
   data, rendered to text only at export), with any free-text number in a model's narrative refused. This closes the
   known limit above without reading English, and keeps every figure computed by code (CLAUDE.md rule 1). Decided
-  2026-11-04 as its own item (`co-001/packet-figure-placeholders`, after this one); not this decision.
+  2026-11-04 as its own item (`co-001/packet-figure-placeholders`, after this one); not this decision. **Done
+  (2026-11-06):** [0089](0089-write-a-narratives-figures-as-fact-tokens-rendered-by-code-refuse-every-free-figure-and-read-english-only-for-contradiction.md)
+  decides it; format /3 is built behind an explicit format, and served once Lane A's migration flips `VERIFIER_FORMAT`.

@@ -1,6 +1,6 @@
 import { vocabulary } from './roles-words';
 import { type Figure, canonicalNumber } from './scan';
-import type { FigureReading, QuotedText, ReadKind, ReadText, Token } from './roles-reader/kinds';
+import type { FigureReading, QuotedText, ReadKind, ReadText, Scope, Token } from './roles-reader/kinds';
 import { NumberReader } from './roles-reader/numbers';
 import { type Cued, type Family, type NumberRole, tokenize } from './roles-reader/walk';
 
@@ -164,6 +164,46 @@ class Reader extends NumberReader {
         return reading(figure.kind, figure.value, 'none');
     }
   }
+
+  /**
+   * What each word token names of the lines (ADR 0086's closed trigger list, NumberReader.wordPart(), with "one of"),
+   * and the scope of each phrase of the closed list that stands beside no figure (astray()); none for a figure or an
+   * edge. Asked once every figure is read, so each scope phrase beside a figure is known.
+   */
+  wordParts(): readonly WordRead[] {
+    // A figure or an edge is no word of either list, so each reads as none.
+    return this.tokens.map((token, at) => ({ part: this.wordPart(at) ?? (token.text === 'one' && this.word(at, 1) === 'of' ? 'line' : null), astray: this.astray(at) }));
+  }
+}
+
+/** What a word names of the lines: a part of them, of the claims or of the patients, or each claim's or patient's. */
+export type WordPart = 'line' | 'claim' | 'patient' | 'each_claim' | 'each_patient';
+
+/** A token as the template's contradiction check reads it (./verifier/contradiction.ts): what a word names of the lines. */
+export interface WordRead {
+  readonly part: WordPart | null;
+  readonly astray: Scope | null;
+}
+
+/** A text read for the template's contradiction check: its tokens, each figure in its role, and what each word names of the lines. */
+export interface TextAround {
+  readonly tokens: readonly Token[];
+  readonly readings: readonly FigureReading[];
+  readonly words: readonly WordRead[];
+}
+
+/**
+ * Reads a text for format /3's pass 2 (docs/adr/0089; ./verifier/contradiction.ts): each figure in the role its words
+ * give it, exactly as readFigures() does, and what each word names of the lines by ADR 0086's closed list. Each fact's
+ * phrase is given to it as a stand-in figure, so the phrase's own words are never read again.
+ */
+export function readAround(text: string): TextAround {
+  const vocab = vocabulary();
+  const tokens = tokenize(text, vocab);
+  const reader = new Reader(text, tokens, vocab);
+  const figures = tokens.map((token, index) => ({ token, index })).filter(({ token }) => token.figure !== undefined);
+  const readings = figures.map(({ token, index }) => reader.read(index, token.figure as Figure));
+  return { tokens, readings, words: reader.wordParts() };
 }
 
 /** Reads every figure of `text` (as readableText gives it) in its role, and its tokens as quotedHolds() compares them. */
