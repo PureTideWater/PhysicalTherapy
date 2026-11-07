@@ -145,6 +145,7 @@ describe('migrate', () => {
           'packet',
           'packet_version',
           'parse_report',
+          'password_notice',
           'patient_ref',
           'payer',
           'payer_plan_mapping',

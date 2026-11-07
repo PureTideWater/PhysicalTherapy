@@ -396,6 +396,15 @@ describe('the mail tables and their grants (SEC-18)', () => {
       'operator_support_notice_sent(uuid,uuid,text,text)': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_support_notice_failed(uuid,uuid,text,boolean,text)': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_due_support_notices(integer)': { definer: true, grantees: [OPERATOR_ROLE] },
+      // The password-changed notice's outbox (migration 20261111090000; docs/adr/0091): its helper and its trigger function
+      // granted to no role, its five steps to the platform's operator.
+      'password_notice_report_undelivered(uuid,text)': { definer: false, grantees: [] },
+      'audit_event_password_notice()': { definer: true, grantees: [] },
+      'operator_password_notices_stale(integer,text)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'operator_password_notices_due(integer)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'operator_password_notice_claim(uuid)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'operator_password_notice_sent(uuid,text,text)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'operator_password_notice_failed(uuid,text,boolean,text)': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)': {
         definer: true,
         grantees: [OPERATOR_ROLE],
