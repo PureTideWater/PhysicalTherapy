@@ -38,13 +38,17 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
   3. recorded in the description and here.
   - Acting Lane A's P5 conditions are met: the review covered the four strings, and the verifier's grep found no leftover outside record documents and negative pins.
 - **Cleaned up:** unsubscribed from #131; the check-in deleted; worktree /home/user/ux-screening-result-words removed.
-- **Push runs on 8a722f80:** see the Log.
-- **Next for this session (S5, the orchestrator's queue):** SUITE-CAP-3's worker-side build only if its session has not taken it, then P2, P5 ci-catalog, UX PR 8, dark-mode-ship, each on the orchestrator's confirmation.
+- **Push runs on 8a722f80:**
+  - screening-capacity 42334067713: success.
+  - mutation 42334067405: success.
+  - ci 42334067464: attempt 1 red only on unit, MOD-16, the known model-gateway base defect (seed -460602131, the same counterexample; #131 does not touch model-gateway). The failed jobs were re-run once; attempt 2 passed.
+- **Session stopped at a clean point** (the orchestrator, 06:37 UTC): P2 went back to its own session, and nothing more is queued here. No check-ins, no workflows, no worktrees. Proposal kept: routes.ts:836's comment "Expected less allowed" becomes "The Medicare figure less allowed" at the next change to that file.
 
 ## Waiting on someone
 - Nothing.
 
 ## Log
+- 2026-11-07 06:45 UTC: the push run on 8a722f80 is green after one re-run (MOD-16 base flake). DONE; the session stops here.
 - 2026-11-07 03:27 UTC: #131 MERGED as 8a722f80. Verification PASS; tags 0; base unmoved; approval-of-record re-ran green after ready.
 - 2026-11-07 03:05 UTC: review passed with fixes (3 confirmed, fixed); full suite green on 9e577017; pushed; describe-and-verify workflow started.
 - 2026-11-07 02:05 UTC: CI unit red on c2725961: tools/brand-colors read "#121" (a PR number in three comments) as a hex colour; this PR's. Fixed as 03ec41f5 ("PR 121"), brand-colors and the 7 screening unit files (93 tests) green; pushed. The review step was switched from a custom agentType to a default agent applying .claude/agents/ux-brand-reviewer.md (the orchestrator's standing lesson, 01:33 UTC); wf_5e44d8cf-109 stopped after its shots (57 ids, both sides) and resumed from the edited script (archived).
