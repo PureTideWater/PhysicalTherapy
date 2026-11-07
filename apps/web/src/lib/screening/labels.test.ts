@@ -44,9 +44,11 @@ const VERSIONS: Readonly<Record<string, string>> = {
   // less allowed, before the reduction across codes" and "Medicare figure less allowed, fully reduced across codes",
   // UX-042); DETAIL_LABELS.place_of_service_unmapped says in words the lists a screening prices by ("This place of
   // service is in neither the facility nor the non-facility list a screening prices by, so the row has no Medicare
-  // figure", UX-132); and DISPOSITION_NOTES, which no screen read, is gone. Lane A's rule:
+  // figure", UX-132); and DISPOSITION_NOTES, which no screen read, is gone. With them, the UX review's P5: the four
+  // figure labels say "Medicare figure, …" for "Expected under Medicare, …" (MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL,
+  // and the lines' MEDICARE_LINE_LABEL and REDUCED_LINE_LABEL, "Medicare figure for one claim line, …"). Lane A's rule:
   // a version may be re-pinned under its name only while no release tag contains it (the founder creates tags; the first tag releases it).
-  'screening-labels/2026-11-05': '46fe0a0219cd8f2af30e46bf23f355bd96e12c81b60a5b8934508a4f5d37bec0',
+  'screening-labels/2026-11-05': '7e533a5e6ade4ea5b6b5cee6c3a91e389fdc3c122e8f0b34c23462957890c968',
 };
 
 describe('the labels of PR 6b (docs/adr/0064)', () => {
@@ -84,6 +86,15 @@ describe('the labels of PR 6b (docs/adr/0064)', () => {
 });
 
 describe('the labels of UX PR 4b', () => {
+  it('names every figure the Medicare figure, never expected, which BRAND.md section 6 keeps for a contract amount (P5)', () => {
+    expect(labels.MEDICARE_FIGURE_LABEL).toBe('Medicare figure, before the reduction across codes');
+    expect(labels.REDUCED_FIGURE_LABEL).toBe('Medicare figure, fully reduced across codes');
+    expect(labels.MEDICARE_LINE_LABEL).toBe('Medicare figure for one claim line, before the reduction across codes');
+    expect(labels.REDUCED_LINE_LABEL).toBe('Medicare figure for one claim line, fully reduced across codes');
+    const words = Object.values(labels).filter((value): value is string => typeof value === 'string');
+    expect(words.filter((value) => /\bexpected\b/i.test(value))).toEqual([]);
+  });
+
   it('names each difference by its subtraction (UX-042), and keeps no notes that no screen reads', () => {
     expect(labels.DIFFERENCE_LABEL).toBe('Medicare figure less allowed, before the reduction across codes');
     expect(labels.REDUCED_DIFFERENCE_LABEL).toBe('Medicare figure less allowed, fully reduced across codes');

@@ -6,8 +6,9 @@ import { unpricedReasonText } from '../contracts/remedies';
 /**
  * The words a free screening's screens show (Change Order 001, CO-04 and CO-11; reconciliation-001, D19 and D20).
  * A screening never says owed, underpaid or recovered (the copy lint refuses them in any screening file): a row's
- * Medicare figure is "expected under Medicare", the prospect's own figure is "allowed in your file", and what lies
- * between is the "difference". Plain data, safe to import in the browser.
+ * figure is the "Medicare figure" (never "expected", which BRAND.md section 6 keeps for an amount under a signed-off
+ * contract version), the prospect's own figure is "allowed in your file", and each difference is the Medicare figure
+ * less the allowed amount. Plain data, safe to import in the browser.
  */
 
 /**
@@ -32,16 +33,16 @@ export const FULLY_REDUCED = 'fully reduced across codes';
  * unchanged engine, so the multiple procedure payment reduction across the codes of one visit is not applied, and
  * the figure can be higher than a visit with several codes would price at.
  */
-export const MEDICARE_FIGURE_LABEL = `Expected under Medicare, ${BEFORE_REDUCTION}`;
+export const MEDICARE_FIGURE_LABEL = `Medicare figure, ${BEFORE_REDUCTION}`;
 
 /** The fully reduced figure's label, for a code in the reduction across codes (the owner's ruling of 2026-10-18). */
-export const REDUCED_FIGURE_LABEL = `Expected under Medicare, ${FULLY_REDUCED}`;
+export const REDUCED_FIGURE_LABEL = `Medicare figure, ${FULLY_REDUCED}`;
 
 /** The engine's figure for one claim line of a row: as much a Medicare figure, and as much before the reduction. */
-export const MEDICARE_LINE_LABEL = `One claim line, expected under Medicare, ${BEFORE_REDUCTION}`;
+export const MEDICARE_LINE_LABEL = `Medicare figure for one claim line, ${BEFORE_REDUCTION}`;
 
 /** The fully reduced figure for one claim line of a row. */
-export const REDUCED_LINE_LABEL = `One claim line, expected under Medicare, ${FULLY_REDUCED}`;
+export const REDUCED_LINE_LABEL = `Medicare figure for one claim line, ${FULLY_REDUCED}`;
 
 /** The Medicare figure less the allowed amount in the file, as its header says (UX-042): worked out from the figure, so qualified as it is. */
 export const DIFFERENCE_LABEL = `Medicare figure less allowed, ${BEFORE_REDUCTION}`;

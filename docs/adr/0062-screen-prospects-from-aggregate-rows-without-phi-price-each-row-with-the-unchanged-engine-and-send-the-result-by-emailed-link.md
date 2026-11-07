@@ -242,7 +242,7 @@ Medicare, fully reduced across codes") and its difference ("Difference, fully re
 that every figure is before Medicare's sequestration, because payers normally report allowed amounts before it (for
 the specialist to confirm, Q21). MA contracted and commercial rows are
 never priced: their allowed totals are "the dollars that cannot be priced without a contract". (UX PR 4b relabelled
-each difference by its subtraction: "Amendment (UX PR 4b)" below.)
+these figures and their differences: "Amendment (UX PR 4b)" below.)
 
 **A platform job prices and emails (D21 a).** The web app sends `screening_price` with the run's ID (singleton key
 `screening_price:<id>`); every minute the same job sweeps runs queued over 30 seconds and runs whose pricing is ten
@@ -1569,11 +1569,16 @@ SEC-18.
 ## Amendment (UX PR 4b): the labels' words
 
 *2026-11-07, `co-001/ux-screening-result-words`, the UX baseline review's follow-on to the screening result's tables
-(UX-042, UX-132).* Each difference is labelled by its subtraction, "Medicare figure less allowed, before the reduction
-across codes" and "Medicare figure less allowed, fully reduced across codes", in both tables, their stacked items and
-the summary, so a header says what the sentence above each table says. A row whose place of service the split does
-not map reads "This place of service is in neither the facility nor the non-facility list a screening prices by, so
-the row has no Medicare figure". `DISPOSITION_NOTES`, which no screen read, leaves the labels module.
+(UX-042, UX-132, and the review's P5).* The figures are labelled "Medicare figure, before the reduction across codes"
+and "Medicare figure, fully reduced across codes", each line's "Medicare figure for one claim line, before the
+reduction across codes" and "Medicare figure for one claim line, fully reduced across codes", since an expected amount
+traces to a signed-off contract version (BRAND.md section 6), which a screening never has. Each difference is
+labelled by its subtraction, "Medicare figure less allowed, before the reduction across codes" and "Medicare figure
+less allowed, fully reduced across codes". The labels change together in both tables, their stacked items, the
+summary and the public screening page, so a header says what the sentence above each table says. A row whose place
+of service the split does not map reads "This place of service is in neither the facility nor the non-facility list
+a screening prices by, so the row has no Medicare figure". `DISPOSITION_NOTES`, which no screen read, leaves the
+labels module.
 
 The words are re-pinned under `screening-labels/2026-11-05`, with no migration: no release tag contains that version,
 so no environment has kept a summary under it, and a version may be re-pinned under its name only while no release tag
