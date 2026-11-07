@@ -1,6 +1,6 @@
 # 0062. Screen prospects from aggregate rows without PHI, price each row with the unchanged engine, and send the result by emailed link
 
-- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b); amended 2026-10-26 by [0066](0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md), Part 2 (the release restores no cache, in "Amendment (ADR 0066, Part 2)" below); and by [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md) (the screening's mail stream: its sender, cut-off, readiness, address checks, refusal list and bounce budget, PR 6b-4; in "Amendment (PR 6b-4)" below)
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b); amended 2026-10-26 by [0066](0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md), Part 2 (the release restores no cache, in "Amendment (ADR 0066, Part 2)" below); and by [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md) (the screening's mail stream: its sender, cut-off, readiness, address checks, refusal list and bounce budget, PR 6b-4; in "Amendment (PR 6b-4)" below); amended 2026-11-07 by UX PR 4b (`co-001/ux-screening-result-words`; the labels' words, in "Amendment (UX PR 4b)" below)
 - **Date:** 2026-10-18
 - **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001) and its review of 2026-10-20
 - **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17; SCR-07 added by the founder's ruling), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
@@ -241,7 +241,8 @@ second is "Expected under Medicare, fully reduced across codes", with its line (
 Medicare, fully reduced across codes") and its difference ("Difference, fully reduced across codes"). The page says
 that every figure is before Medicare's sequestration, because payers normally report allowed amounts before it (for
 the specialist to confirm, Q21). MA contracted and commercial rows are
-never priced: their allowed totals are "the dollars that cannot be priced without a contract".
+never priced: their allowed totals are "the dollars that cannot be priced without a contract". (UX PR 4b relabelled
+these figures and their differences: "Amendment (UX PR 4b)" below.)
 
 **A platform job prices and emails (D21 a).** The web app sends `screening_price` with the run's ID (singleton key
 `screening_price:<id>`); every minute the same job sweeps runs queued over 30 seconds and runs whose pricing is ten
@@ -1564,3 +1565,24 @@ the rate limit refuse, the client subject and the budget), `packages/db/src/scre
 (`apps/web/e2e/mail-cutoff.spec.ts`: a seventh hard bounce in a week pauses the stream, the page says so, a platform
 administrator resumes it, and the screening opens once SES and the probes confirm); test matrix SCR-21, SCR-22 and
 SEC-18.
+
+## Amendment (UX PR 4b): the labels' words
+
+*2026-11-07, `co-001/ux-screening-result-words`, the UX baseline review's follow-on to the screening result's tables
+(UX-042, UX-132, and proposal P5 of the `co-001/ux-screening-result-tables` design).* The figures are labelled
+"Medicare figure, before the reduction across codes" and "Medicare figure, fully reduced across codes", each line's
+"Medicare figure for one claim line, before the reduction across codes" and "Medicare figure for one claim line, fully
+reduced across codes", since an expected amount traces to a signed-off contract version (BRAND.md section 6), which a
+screening never has. Each difference is labelled by its subtraction, "Medicare figure less allowed, before the
+reduction across codes" and "Medicare figure less allowed, fully reduced across codes". The labels change together in
+both tables, their stacked items, the summary and the public screening page, so a header says what the sentence above
+each table says. A row whose place of service the split does not map reads "This place of service is in neither the
+facility nor the non-facility list a screening prices by, so the row has no Medicare figure". `DISPOSITION_NOTES`,
+which no screen read, leaves the labels module.
+
+The words are re-pinned under `screening-labels/2026-11-05`, with no migration: no release tag contains that version,
+so no environment has kept a summary under it, and a version may be re-pinned under its name only while no release tag
+contains it (the founder creates tags; the first tag releases it). Lane A's orchestrator agreed on 2026-10-28 for the
+differences, the place of service and `DISPOSITION_NOTES`, and acting Lane A on 2026-11-07 for the four figure labels,
+with PR 6b-2's review round (dfec40dc) as the precedent; `labels.test.ts` records the rule beside the hash.
+Audit #57's rule, that a label changes only under a new version, holds for every released version.
