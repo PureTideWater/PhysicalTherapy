@@ -94,6 +94,14 @@ Effect: any PR's unit job can go red at random.
 - 2026-11-07T~04:45Z: **the 5-hour limit stopped the judge workflow again** (reset 05:30 UTC) before any agent returned (the
   gate was part-built; its progress file is kept). 05:46Z: setup re-run (PostgreSQL restarted), the workflow resumed as the same
   run wf_5d1aedda-db5. Check-in ~10:57Z.
+- 2026-11-07T06:45Z: two more MOD-16 seeds from CI (-460602131, #131's push run on 8a722f80; -594136649, S3's integration run):
+  five to pin (1034253323, 383403599, -1074798020, -460602131, -594136649); the base's own push runs are going red. The
+  orchestrator: the 7-day limit is at its warning level, "spend nothing that does not change the outcome". Decision: candidate A
+  and the two judges are dropped (A's approach regressed three rounds running, and the ruling picks B when close); B is built
+  alone and must meet THE BAR on the gate; if it cannot, back to the orchestrator before any spend on A. The gate (2.18 M seeded
+  synthetic letters; it reproduces the round-3 PHI and code-damage rows) is measuring the baseline; the run is restarted at the
+  gate's result with the edited script (archived as `workflow-scripts/lane-b-redact-range-glued-judge-wf_5d1aedda-db5.js` at the
+  end). The leak hunt stays held (weekly limit).
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
