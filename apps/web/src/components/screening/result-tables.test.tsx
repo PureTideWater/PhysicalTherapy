@@ -876,11 +876,12 @@ describe('the screening result’s words (TBL-08)', () => {
     const order = `${ANOMALY_RULE} Largest difference from the lowest figure first.`;
     const its = 'within the range of the reduction across codes: between its two figures, which is not an anomaly.';
     const their = 'within the range of the reduction across codes: between their two figures, which is not an anomaly.';
-    // [groups, anomalies, within the range, what the card says]: design 3.4's closed set, and its digits grouped.
+    // [groups, anomalies, within the range, what the card says]: design 3.4's closed set, and its digits grouped. One
+    // group ends at the rule: an order for a table of one row would be a vacuous fact (4B-UX-03).
     const cases: readonly (readonly [number, number, number, string])[] = [
-      [1, 1, 0, `The only group is an anomaly. ${order}`],
-      [1, 0, 1, `The only group is ${its} ${order}`],
-      [1, 0, 0, `The only group is not an anomaly. ${order}`],
+      [1, 1, 0, `The only group is an anomaly. ${ANOMALY_RULE}`],
+      [1, 0, 1, `The only group is ${its} ${ANOMALY_RULE}`],
+      [1, 0, 0, `The only group is not an anomaly. ${ANOMALY_RULE}`],
       [2, 0, 0, `Neither group is an anomaly. ${order}`],
       [2, 0, 2, `Neither group is an anomaly. 2 groups are ${their} ${order}`],
       [2, 2, 0, `Both groups are anomalies. ${order}`],

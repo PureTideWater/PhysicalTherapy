@@ -230,9 +230,10 @@ function anomalyCount(groups: number, anomalies: number, within: number): string
 /**
  * What the anomalies card says above its table, from the database's counts over every group (never the page's): how
  * many groups are anomalies, the count on its noun (UX-206), and how many are within the range of the reduction across
- * codes, both before the rule; with more than one page, which groups this page shows and what its last entry sums (the
- * table's last row and the list's last item, UXR-08), one other group named as one (with 50 groups a page, that is
- * page 1 of a result of 51, and the next page lists it).
+ * codes, both before the rule; then, with more than one group, their order (one group has none to state); with more
+ * than one page, which groups this page shows and what its last entry sums (the table's last row and the list's last
+ * item, UXR-08), one other group named as one (with 50 groups a page, that is page 1 of a result of 51, and the next
+ * page lists it).
  */
 export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | 'anomalyGroups' | 'withinReductionGroups' | 'pages' | 'firstGroup' | 'lastGroup' | 'others'>): string {
   if (page.groups === 0) {
@@ -251,8 +252,9 @@ export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | '
     page.others.groups === 1
       ? 'the last entry is the one other group, its rows summed, and the next page lists it'
       : `the last entry sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them`;
+  const order = page.groups === 1 ? '' : ' Largest difference from the lowest figure first.';
   const shown = page.pages <= 1 ? '' : ` This page lists groups ${range}; ${rest}.`;
-  return `${first}${second} ${ANOMALY_RULE} Largest difference from the lowest figure first.${shown}`;
+  return `${first}${second} ${ANOMALY_RULE}${order}${shown}`;
 }
 
 /** The page's own address with another page of groups, back at the anomalies card. */
