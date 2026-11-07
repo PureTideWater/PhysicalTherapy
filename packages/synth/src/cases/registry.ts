@@ -969,6 +969,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'TBL-07': none(1, 'The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', ['apps/web/e2e/screening-phone.spec.ts']),
   'TBL-08': none(1, 'The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.', [
     'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/src/lib/screening/labels.test.ts',
     'apps/web/e2e/screening-phone.spec.ts',
     'tools/brand-copy/scan.test.ts',
   ]),
