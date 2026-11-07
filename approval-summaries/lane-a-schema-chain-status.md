@@ -10,8 +10,8 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
-- **FOUNDER DECISION, 2026-11-07 ~18:46 UTC (relayed by the co-founder as "Tyler approves"; recorded by the orchestrator
-  19:27 UTC):** PR 5's ledger freeze ask GRANTED: Q1, Q2, Q3 yes; exactly Appendix A (roi_links_valid, body
+- **FOUNDER DECISION, 2026-11-07, relayed at 19:26 UTC by the co-founder as "Tyler approves" (time corrected by the
+  orchestrator):** PR 5's ledger freeze ask GRANTED: Q1, Q2, Q3 yes; exactly Appendix A (roi_links_valid, body
   13c4dd46b9203095) and Appendix D (roi_statement_rules, body ba8293836b9cd5aa), for schema PR 5 only, never widened; the
   ask's lapse and fault rules apply. Recorded in the ask's "Decided" section. Queue order unchanged.
 - **2026-11-07 18:50 UTC (acting Lane A): #126 round 5 resumed after a container restart (~18:40).** Its fix is pushed:
