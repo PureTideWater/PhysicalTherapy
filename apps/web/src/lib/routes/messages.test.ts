@@ -61,6 +61,10 @@ const ALLOWED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     endingSuggestionMessage: 'legal surface screening-mail-address; until counsel rules',
     unknownEndingMessage: 'legal surface screening-mail-address; until counsel rules',
   },
+  [`${WEB}/lib/packets/pricing.ts`]: {
+    PRICING_BLOCKED_TEXT:
+      'a step’s refusal sentences while a version’s pricing is not current: beside a disabled button, or as "Refused: …" (lib/cases/refusals.ts), never after a field’s name',
+  },
   [`${WEB}/lib/packets/export-attempts.ts`]: {
     NOT_APPROVED_ALONE_TEXT:
       'an export refusal’s sentences, like EXPORT_REFUSAL_TEXT’s: under the refusal’s code, which no control carries, so the summary shows them as a sentence of their own',
