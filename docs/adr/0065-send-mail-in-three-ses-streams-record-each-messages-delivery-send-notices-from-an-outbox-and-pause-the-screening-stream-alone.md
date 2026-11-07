@@ -361,3 +361,18 @@ request adds (DNS and SES validation, run together after the row checks, at most
 pull request's time advisory and a release's binding, is a decision the founder took on 2026-10-23 to save cost, not as
 the best option; it is to be revisited before the screening opens and once production has traffic, by measuring on AWS
 staging or on an organization's 8-core runner, and then the sizing question O9 (GitHub issue #41; ADR 0062).
+
+## Note (`co-001/password-changed-notice`, 2026-11-07): the password-changed notice on the transactional stream
+
+Recorded in [0091](0091-tell-an-accounts-address-when-its-password-changes-from-an-outbox-the-database-writes-in-the-changes-own-transaction.md)
+(migration `20261111090000_password_changed_notice.sql`). The transactional stream also carries one kind the platform
+sends, `password_changed`: the email that tells an account's address its password was changed, one message to the
+account's own address, from an outbox (`password_notice`) the database writes in the reset's own transaction, with
+this decision's retries. `mail_send_kind` and `mail_send_stream_kind` widen to admit it on the transactional stream
+alone. The operator role, until now a real-recipient sender on the notices set alone (`NoticeEmail`), also sends on the
+transactional set through its own statement, `PasswordNoticeEmail` (`ses:SendEmail` on MailFromAddress's identity and
+that set alone, from MailFromAddress); `NoticeEmail` is unchanged. `operator_record_mail_event()` returns a seventh
+column, `password_notice_undelivered`, last, so a caller that selects the six by name is unchanged; and
+`operator_mail_expire()` also deletes notices 90 days after the change, never one still pending. A notice not
+delivered, or not sent within 24 hours, logs `PASSWORD_NOTICE_UNDELIVERED`, which pages as every mail code does; a
+complaint changes nothing, as for the support and dunning notices. The transactional stream still never pauses.

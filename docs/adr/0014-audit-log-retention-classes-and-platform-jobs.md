@@ -157,3 +157,25 @@ jobs call and 0050 the dunning outbox.
 
 Tests: `apps/worker/src/platform/mail-events.db.test.ts`, `apps/worker/src/platform/support-notices.db.test.ts`,
 `apps/worker/src/billing/billing.db.test.ts`, `apps/worker/src/jobs/platform.test.ts`.
+
+## Amendment (`co-001/password-changed-notice`, 2026-11-07): the password-changed notices' job
+
+Recorded in [0091](0091-tell-an-accounts-address-when-its-password-changes-from-an-outbox-the-database-writes-in-the-changes-own-transaction.md)
+(migration `20261111090000_password_changed_notice.sql`).
+
+- **`password_notices`, every minute** (`apps/worker/src/platform/password-notices.ts`), payload `{}`, as `tp_operator`
+  with no practice in scope. It sends the email that tells an account's address its password was changed, from the
+  `password_notice` outbox the database writes in the reset's own transaction. Each run first fails every notice still
+  pending 24 hours after its change (`operator_password_notices_stale()`: `NoticeStale`, never sent), then sends each
+  due notice in its own transaction: `operator_password_notice_claim()`, the only read of the account's address, one
+  message on the transactional stream, and `operator_password_notice_sent()` with SES's message ID, before the commit.
+  A send that throws is recorded in a new transaction (`operator_password_notice_failed()`): tried again after 1, 5, 15
+  and 60 minutes, failed at the fifth try or at once on a permanent error. It logs IDs and codes only:
+  `PASSWORD_NOTICE_UNDELIVERED` (with the notice's and the user's IDs and the reason's code) once for each notice
+  failed, stale, or found bounced, held back or rejected; `mail_events` logs the same code when a later SES event
+  makes a sent notice undelivered.
+- **`mail_expiry`** also deletes, through `operator_mail_expire()`, notices 90 days after their change that are not
+  pending.
+
+Tests: `apps/worker/src/platform/password-notices.db.test.ts`, `apps/worker/src/platform/mail-events.db.test.ts`,
+`apps/worker/src/jobs/platform.test.ts`, `packages/db/src/password-notice.db.test.ts`.

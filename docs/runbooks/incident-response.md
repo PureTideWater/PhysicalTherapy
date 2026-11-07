@@ -9,7 +9,8 @@ a real file, a key or a token into the incident record, a ticket, a chat or a se
 
 A security event alarm (failed-MFA burst, sign-in burst, WAF block surge, GuardDuty finding, a bulk export, a grant
 change or role escalation outside a ticket, a refused second-factor enrolment, a refused client credential, one
-account's reset requests reaching five in an hour), a finding of the weekly sign-in review below, a customer's or a
+account's reset requests reaching five in an hour, a password reset whose sessions were not ended), a finding of the
+weekly sign-in review below, a customer's or a
 vendor's report, a lost device, a leaked credential, or anything that suggests PHI reached someone it should not.
 
 ## 1. Open the record (within one hour)
@@ -146,6 +147,34 @@ nobody can name: then open the record (section 1).
    checks the budget again. Never raise `max_connections` in the console or by hand: the parameter group is code, and a
    value the budget does not know leaves the alarm and the check measuring the wrong limit.
 
+## A password reset whose sessions were not ended (`PasswordResetSessionsNotEnded`; docs/adr/0091, D15)
+
+A security event alarm, unlike the two sections before it. It fires (on the operator topic, at one in five minutes) on
+the web's line `security event: password reset sessions not ended`.
+
+1. **What it means.** A reset was completed with the code sent to the account's mailbox, so Cognito holds the new
+   password; but the transaction that ends the app's sessions of that account and records the reset failed twice, so
+   those sessions were not ended, the reset was not recorded (no `password_reset_completed`), and no password-changed
+   email was queued (docs/adr/0091). The person was answered "could not continue". The second factor still guards the
+   account (docs/adr/0081 A5).
+2. **Read the line**; the alarm names no user. In Logs Insights on `/tp/<env>/web`, for the alarm's period:
+
+   ```
+   fields @timestamp, user_id, request_id
+   | filter msg = "security event: password reset sessions not ended"
+   ```
+
+   Keep the user IDs and request IDs only.
+3. **Contain at once** (section 2, "A user or session"): disable the user and end their sessions, by user ID. This does
+   what the failed transaction did not.
+4. **Tell the person another way**, through their organization's administrator or the account contact, working by user
+   ID: their password was changed at the line's time. If it was not them, open the record (section 1) and follow
+   docs/runbooks/support-mail.md's "Password changed, not by me"; if it was, re-enable the user once the administrator
+   confirms it, and the person signs in with the new password.
+5. **Find the cause.** The line carries no error code (the flow's retry drops it), so read the web's and the database's
+   errors and alarms in the same minutes (the database's connections, above, for example).
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
 ## Weekly sign-in review
 
 The reset and enrolment alarms (docs/adr/0088, D7; test matrix SEC-23) tell the operator within the hour; this review
@@ -170,7 +199,8 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
    (section 2).
 4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
-   `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`): each one raised that no ticket or incident record already explains gets one.
+   `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
+   `PasswordResetSessionsNotEnded`): each one raised that no ticket or incident record already explains gets one.
 5. Record the review in its ticket: the date, the environment, the number of rows, and the user IDs, never an address
    or a name.
 

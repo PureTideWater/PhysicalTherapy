@@ -9,7 +9,8 @@ a synthetic mailbox you control, and reads IDs and counts.
 ## 1. What is set up
 
 - **Three streams**, one SES configuration set each (`<p>` is `tp-<env>`):
-  - `<p>-transactional`: Cognito's invitations and codes (from phase 2), and the digests;
+  - `<p>-transactional`: Cognito's invitations and codes (from phase 2), the digests, and the password-changed
+    notices (docs/adr/0091);
   - `<p>-notices`: the support-access (break-glass) notices and dunning;
   - `<p>-screening`: the screening's results and failure notices (PR 6e adds its reminders and withdrawal
     confirmations).
@@ -63,6 +64,10 @@ a synthetic mailbox you control, and reads IDs and counts.
   not delivered to every administrator is reported once: the grant's page and the console's support list say "Not
   delivered to n of m administrators", each administrator gets a notification linked to the grant, and the operator is
   paged (`NOTICE_UNDELIVERED`). A practice with no administrator gets no message (`NOTICE_UNDELIVERABLE`).
+  A password-changed notice (docs/adr/0091) goes one message to the account's own address, from an outbox the database
+  writes in the reset's own transaction, with the same retries; it is never sent 24 hours after the change. One
+  bounced, held back, rejected, refused or not sent within those 24 hours is reported once and pages
+  (`PASSWORD_NOTICE_UNDELIVERED`); a complaint follows a delivery, so it reports nothing.
 - **Probes.** Once the identities are verified (phase 2), the platform sends each stream a message to SES's simulator
   (`success@` and `bounce@simulator.amazonses.com`) daily, and at once after a resume. Staging and production open the
   screening only while its delivered and bounced probes came back within 48 hours and since the last resume. A stream
@@ -74,7 +79,7 @@ a synthetic mailbox you control, and reads IDs and counts.
   the counts that paused it, or resumed and not yet confirmed), the window's sends, bounces and complaints, the last
   probes, whether the screening is ready to open, its bounce marks, and the last 7 days' undelivered customer messages
   (the screening's counted, never listed). It pauses the screening by hand and resumes it with a reason.
-- **Alarms**, all to the operator topic (17):
+- **Alarms**, all to the operator topic (20: the 18 mail alarms and the user pool's 2):
 
   | Alarm | Fires at | Section |
   | --- | --- | --- |
@@ -91,6 +96,7 @@ a synthetic mailbox you control, and reads IDs and counts.
   | `NOTICE_UNDELIVERED` | a notice not delivered to every recipient (platform log) | 3.3 |
   | `NOTICE_UNDELIVERABLE` | a notice with no recipient (platform log) | 3.3 |
   | `INVITATION_UNDELIVERED` | an invitation's email undelivered (platform log) | 3.4 |
+  | `PASSWORD_NOTICE_UNDELIVERED` | a password-changed email not delivered, or not sent within 24 hours (platform log) | 3.10 |
   | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses, or none back an hour after the first since a resume; raised until both come back (platform log) | 3.7 |
   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
@@ -409,6 +415,51 @@ Every email the user pool sends goes through its CustomMessage trigger, `/tp/<en
   - `no_request`, `no_response` or `error`: the event's shape changed; compare it with AWS's documentation.
 
   Work by these codes and the request IDs alone: the trigger never logs an address.
+
+### 3.10 A password-changed email undelivered (`PASSWORD_NOTICE_UNDELIVERED`)
+
+A reset changed an account's password, and the email that tells the account's address did not reach it, or was not
+sent within 24 hours of the change (docs/adr/0091, D7 to D9), so the person may not know. The platform never sends that
+notice again. The alarm names no one; the platform's line `password notice not delivered`, logged once a notice, names
+the notice (`password_notice_id`), the user (`user_id`) and the reason (`undelivered_reason_code`). Read the alarm's
+period in Logs Insights on `/tp/<env>/platform`:
+
+```
+fields @timestamp, password_notice_id, user_id, undelivered_reason_code
+| filter error_code = "PASSWORD_NOTICE_UNDELIVERED"
+```
+
+- `bounced`, `suppressed`, `rejected`, or `sent_undelivered` (one of those, recorded before the send's own record): the
+  address that took the reset code no longer takes mail, or SES holds it back. The console's mail page lists the
+  message among the undelivered customer messages, by kind `password_changed`.
+- `NoticeStale`: the platform service did not send the notice within 24 hours. Check that the platform service runs and
+  that its `password_notices` job logs (`password notices sent`, `password notice send failed`). After an outage or a
+  rollback several page at once, one line a notice: work through each; after a rollback, roll forward
+  (docs/runbooks/deploy-and-rollback.md, "Password-changed notices").
+- An SES error's name (`MessageRejected` and the other permanent errors at once, any other after its fifth try): SES
+  refused the send. Check the account's sending and the identity (3.7, `MAIL_PROBE_UNSENT`'s checks 1 and 2) and,
+  after a deploy, the operator role's `PasswordNoticeEmail` statement (`ses:SendEmail` on MailFromAddress's identity and
+  `<p>-transactional` alone, from MailFromAddress), with 3.7's `simulate-principal-policy` for that identity, that set
+  and that sender.
+
+In every case:
+
+1. Reach the person another way, through their organization's administrator or the account contact, working by user
+   ID: say their password was changed at the time the audit log records. In a session as the operator role, that is
+   the latest `password_reset_completed` of that user before the line, or, for `NoticeStale`, the latest at least 24
+   hours before it:
+
+   ```sql
+   SELECT at FROM audit_event
+   WHERE action = 'password_reset_completed' AND object_id = '<user_id>' AND at <= '<line time>'::timestamptz
+   ORDER BY at DESC LIMIT 5;
+   ```
+
+   (for `NoticeStale`, write `'<line time>'::timestamptz - interval '24 hours'`).
+2. If it was not them, follow docs/runbooks/support-mail.md's "Password changed, not by me".
+3. For a held-back address (`suppressed`), release it only as 3.4 says, once the person confirms the mailbox is theirs
+   and works.
+4. Record it in the support ticket by the notice's ID and the user's ID, never an address or a name.
 
 ## 4. Rules
 

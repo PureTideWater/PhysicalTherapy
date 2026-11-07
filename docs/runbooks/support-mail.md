@@ -56,6 +56,19 @@ account's name. Work from the ticket ID and the user ID only, never the message'
   ID to the founder.
 - **Mail from an address that is not the account's own.** Never act on it. The job already refuses it as
   `unknown_sender` (above); ask the person to write from the address they sign in with.
+- **Password changed, not by me.** The password-changed email (docs/adr/0091) tells an account's address that a reset
+  changed its password, and asks the person to write to the support address from that address if it was not them. The
+  operator also brings a person here after telling them another way (docs/runbooks/deliverability.md, 3.10;
+  docs/runbooks/incident-response.md, "A password reset whose sessions were not ended").
+  1. Treat it as a mailbox compromise: someone read the code sent to that mailbox. A changed password nobody asked for
+     is a security event: open the record (docs/runbooks/incident-response.md, section 1).
+  2. With the organization's administrator, end the account's access: disable the user and end their sessions
+     (docs/runbooks/incident-response.md, section 2, "A user or session"). The second factor still guards the account
+     meanwhile, because a reset never removes it (docs/adr/0081 A5).
+  3. Ask the person to secure the mailbox. Once the administrator confirms the mailbox is the person's alone again,
+     re-enable the user (a disabled account is sent no reset code), and the person resets the password again.
+  4. Work by the ticket ID and the user ID only: the audit log's `password_reset_completed` for that user gives the
+     change's time. Never copy an address or a name into the ticket or the record.
 - **A password set, but no second factor ever enrolled, and the reset sends nothing.** A code goes only to an account
   with an enrolled second factor, so this person cannot reset, and a second factor is set up only inside a live
   invitation (docs/adr/0088 D3). Check with the organization's administrator that the request is genuine. If the person

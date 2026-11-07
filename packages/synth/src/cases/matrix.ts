@@ -828,6 +828,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       'The development provider’s invitation and reset outboxes hold each message’s subject, text and HTML from `@tp/auth-mail`, and the e2e journeys read the temporary password and the reset code from the message’s own text, with no remote asset and no link but the sign-in address; the text is the HTML’s with its tags stripped, since Cognito sends the HTML alone, with no text part',
   },
   {
+    id: 'SGN-16',
+    title: "A password change is told to the account's address",
+    assertion:
+      "A completed reset writes one pending notice in its own transaction, by the database, only for the account's own `password_reset_completed` (the actor a person and the object that person), and a refused, invalid or rolled-back reset, the invitation's first password or any other action none; a completed reset whose sessions could not be ended queues none and its line pages the operator (`PasswordResetSessionsNotEnded`); the platform job sends one message on the transactional stream (kind `password_changed`, subject the notice, recipient the user) to the account's address, once however many runs race, read only by the claim of a pending, due notice under 24 hours old, with the change's time in UTC, the four lines, the support route and no link, from MailFromAddress through the operator role's transactional statement alone, and records `password_notice_sent`; it retries after 1, 5, 15 and 60 minutes, fails at the fifth try or at once on a permanent error, and fails a notice not sent within 24 hours as `NoticeStale`; a bounce, suppression or rejection, recorded before or after the send, makes it undelivered, reported once (`password_notice_undelivered`, and `PASSWORD_NOTICE_UNDELIVERED` by IDs, which pages), a complaint changes nothing, and the end state is the same in any order of the send and its events, concurrent ones included; no payload, log or error holds the address; the reset is never blocked or undone by the notice, and a provider sign-out that fails still sends the same four lines",
+  },
+  {
     id: 'HOM-01',
     title: 'One actionable figure everywhere',
     assertion:

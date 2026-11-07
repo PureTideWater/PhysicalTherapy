@@ -311,6 +311,54 @@ trigger a large month's report would take the worker down with a heap out-of-mem
 forward with a fix instead. If the trigger itself had to be undone, a later migration restores the earlier body; the
 head table can stay, unused, since it is derived from `line_status`.
 
+## Password-changed notices (ADR 0091; Schema PR 1)
+
+**The migration's lock loop.** `20261111090000_password_changed_notice.sql` takes `"user"`'s SHARE ROW EXCLUSIVE lock and
+`audit_event`'s and `mail_send`'s ACCESS EXCLUSIVE locks together with `NOWAIT`, once a second, up to 300 tries, before
+any of its DDL. A refused try holds and queues nothing, so sign-ins (which write `audit_event` and then `"user"`),
+audited mutations and the mail record go on while it waits for a moment with none of the three in use. Once it holds
+them, every write of `"user"`, every audited mutation, every read of `audit_event` and every read or write of `mail_send`
+waits for the DDL and one scan of `mail_send` (at most about 91 days of messages), then proceeds. If no such moment comes
+in five minutes, the deploy fails: cdk reports "the migration task … stopped without migrating (exit code 1, …)", and
+`/tp/<env>/migration` ends with
+
+> db:migrate: 20261111090000_password_changed_notice.sql failed: "user", audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0091)
+
+(`lock_not_available`, 55P03). The migration changed nothing and no service moved (step 4). Run the deploy again, at a
+quieter hour if it repeats; never take the locks by hand or end another session's transaction to make room.
+
+**The forward deploy.** The migration runs before any service moves (step 4). From its commit, every completed reset
+queues a notice in its own transaction, and the notices wait, pending, for the new platform task, which sends them
+within a minute of starting; one not sent within 24 hours of its change is never sent, and pages
+(`PASSWORD_NOTICE_UNDELIVERED`; docs/runbooks/deliverability.md, 3.10). The web is unchanged. The previous platform
+task, while it still runs, selects `operator_record_mail_event()`'s six columns by name and calls the new
+`operator_mail_expire()`, so its mail jobs keep working. The same deploy gives the operator role its
+`PasswordNoticeEmail` statement and the platform task `SUPPORT_EMAIL` (from the stack's `SupportEmail` parameter);
+while IAM propagates, a refused first send is retried a minute later.
+
+**The rolling platform deploy.** The platform service rolls with a minimum of 100% and a maximum of 200%
+(`infra/lib/environments.ts`), so an old and a new platform task overlap, and an old task cannot read an SES event of
+kind `password_changed` (it logs `MAIL_EVENT_UNREADABLE` and leaves the event, which moves to `tp-<env>-mail-events-dlq`
+after five receives and raises `EventsDeadLetter`). After each deploy, check that queue, and redrive it once only new
+tasks run (docs/runbooks/deliverability.md, 3.6).
+
+**Rollback across Schema PR 1** (to an earlier image, below) keeps the migration: every object it made is added and its
+CHECKs only widen, so the previous image runs on it, and it sets no rollback floor of its own (the floors the sections
+above state stay). What the previous image cannot do:
+
+- send the notices: it has no `password_notices` job, so every reset's notice waits pending, unsent and unreported (the
+  previous web is the current web, so resets still queue them);
+- read an SES event of kind `password_changed`: each moves to the dead-letter queue as above, so a notice already sent
+  stays `sent`, its delivery or bounce unrecorded, until the events are redriven.
+
+The operator role's statement and both of ADR 0091's alarms stay with the stack; `PasswordResetSessionsNotEnded` counts
+a line the current web already writes (docs/runbooks/incident-response.md), so it keeps paging. Roll forward with a fix
+rather than staying back. After rolling forward, the new job sends every pending notice inside the cutoff, and every
+one older than 24 hours fails as `NoticeStale` and pages one by one (tell each person another way: deliverability.md,
+3.10); then redrive `tp-<env>-mail-events-dlq`, so the delivered and bounced states, and any
+`PASSWORD_NOTICE_UNDELIVERED` they raise, are recorded. The schema is never rolled back; undoing the trigger would be a
+later migration.
+
 ## Rollback
 
 Redeploy the previous image, without migrating:

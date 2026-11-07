@@ -1,0 +1,27 @@
+{
+  "case": "SGN-16",
+  "module": "SGN",
+  "title": "A password change is told to the account's address",
+  "assertion": "A completed reset writes one pending notice in its own transaction, by the database, only for the account's own `password_reset_completed` (the actor a person and the object that person), and a refused, invalid or rolled-back reset, the invitation's first password or any other action none; a completed reset whose sessions could not be ended queues none and its line pages the operator (`PasswordResetSessionsNotEnded`); the platform job sends one message on the transactional stream (kind `password_changed`, subject the notice, recipient the user) to the account's address, once however many runs race, read only by the claim of a pending, due notice under 24 hours old, with the change's time in UTC, the four lines, the support route and no link, from MailFromAddress through the operator role's transactional statement alone, and records `password_notice_sent`; it retries after 1, 5, 15 and 60 minutes, fails at the fifth try or at once on a permanent error, and fails a notice not sent within 24 hours as `NoticeStale`; a bounce, suppression or rejection, recorded before or after the send, makes it undelivered, reported once (`password_notice_undelivered`, and `PASSWORD_NOTICE_UNDELIVERED` by IDs, which pages), a complaint changes nothing, and the end state is the same in any order of the send and its events, concurrent ones included; no payload, log or error holds the address; the reset is never blocked or undone by the notice, and a provider sign-out that fails still sends the same four lines",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/db/src/password-notice.db.test.ts",
+    "packages/db/src/mail.db.test.ts",
+    "packages/db/src/hardening.db.test.ts",
+    "apps/worker/src/platform/mail-events.db.test.ts",
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/e2e/sign-in.spec.ts",
+    "infra/test/operator-role.test.ts",
+    "infra/test/mail-streams.test.ts",
+    "infra/test/monitoring.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The notices are queued and sent against a synthetic database, to an in-memory sender or the local outbox; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

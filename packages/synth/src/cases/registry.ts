@@ -1075,6 +1075,18 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/onboarding.spec.ts',
     'apps/web/e2e/sign-in.spec.ts',
   ]),
+  // The password-changed email (co-001/password-changed-notice; docs/adr/0091).
+  'SGN-16': none(1, 'The notices are queued and sent against a synthetic database, to an in-memory sender or the local outbox; no file.', [
+    'packages/db/src/password-notice.db.test.ts',
+    'packages/db/src/mail.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+    'infra/test/operator-role.test.ts',
+    'infra/test/mail-streams.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
   'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [
