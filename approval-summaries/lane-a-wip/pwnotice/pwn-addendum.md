@@ -1,0 +1,14 @@
+# pwn-addendum progress
+- 02:2x read design 3.x/6/9/10, status, plan section 1. Next: repo reads (base, d2fdd106, #129).
+- read: mail_streams migration (mail_send, support notice outbox fns, record_mail_event, mail_expire), suspension_refusal audit policy, sign-in.ts confirm, words.ts (passwordChangedLines 4 lines, PASSWORD_CHANGED_SUBJECT, utcMinute), template.ts, #129 diff (template.ts/test, mail.test.ts, words.ts reset para, matrix SGN-13). Decision: advisory lock on message id in _sent + mirror for true order independence.
+- read: worker support-notices/platform/config/wiring/streams/mail-events; infra operator-role, mail.ts, monitoring loop, compute platform env; infra tests (mail-streams :82 :319 eight filters->nine; operator-role NoticeEmail); runbooks (deliverability table says (17) over 19 rows -> 20; deploy-and-rollback sections; support-mail sign-in help); synth none() SGN rows; catalog rules; domain-model (extra table informational).
+- DRIFT: log fields notice_id / reason not on packages/observability allowlist (runtime drops; regex ^..._(id|no|type|code)$) -> add password_notice_id, undelivered_reason_code. mail-streams.test 'has seventeen mail alarms' -> eighteen; runbook (17)->(20: 18 + user pool 2).
+- research done 02:5x; decisions: advisory lock on message id (A), expire excludes pending, fn sigs with at_most, log fields, SUPPORT_EMAIL prod-required dev-default, single ALTER for CHECK swap. NEXT: write addendum sections 0-14.
+- WROTE sections header, 0 (drift), 1, 2. Next: 3 (migration).
+- WROTE section 3 (migration 3.0-3.14).
+- WROTE sections 4 (worker) and 5 (infra).
+- WROTE section 6 (tests).
+- WROTE sections 7 (ADR) and 8 (matrix).
+- WROTE sections 9 (runbooks), 10 (rollback), 11 (#129).
+- WROTE sections 12-14. DONE writing; next: self-check and StructuredOutput.
+- COMPLETE 2026-11-07: addendum at scratchpad/pwnotice/design-addendum.md (sections 0-14). Scratch exports base/ and i126/ under scratchpad/pwnotice are read-only copies.

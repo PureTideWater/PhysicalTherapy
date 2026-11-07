@@ -1,0 +1,17 @@
+# pwn-addendum revision (round 1 findings)
+- started 2026-11-07. Findings in task: PWN-R1-01 (sessions-not-ended alarm), PWN-R1-02 (T13b + 6.4 race), PWN-R1-03 (set_updated_at.sql). Task text truncated mid R1-03; no further findings visible.
+- next: verify infra/lib/security-events.ts, monitoring.ts, sign-in.ts:532-546, sign-in.db.test.ts:590, support-notices.db.test.ts:195, functions.ts header in base snapshot.
+- R1-01 verified: security-events.ts RESET_AND_ENROLMENT_COUNTS (7, literal-pinned in infra/test/monitoring.test.ts:120 and :479 "seven"); monitoring.ts resetAndEnrolmentDescriptions Record (needs key); monitoring.test.ts:262 total filters 31 (addendum MISSED: +1 PASSWORD_NOTICE_UNDELIVERED, +1 new = 33); incident-response.md 0 triggers, 2 contain ("A user or session"), weekly review step 4 lists alarms; ADR 0081 over-floor precedent: new ADR states it, 0088's table untouched, SEC-23 row untouched; monitoring.ts docblock says "five metric filters" over seven (drift).
+- R1-02 verified (support-notices.db.test.ts:195 three Promise.all runs). R1-03 verified (functions.ts header: trigger lines + called-by-policy only; only set_updated_at.sql among existing files gains a line; audit_event_record keeps name -> app_actor_id unchanged).
+- PLAN of edits: 0 (drift 0.14 filters 31->33, 0.15 docblock five), 2 (note), 3.6 failure profile, 3.11 caller lines, 3.12 A-3 tests, 4.2 claim lasts thru send, 5.3 new alarm, 6.1 T13b, 6.4 race, 6.6 failing twice, 6.8 monitoring.test, 7 D15 + not covered, 8 SGN-16 + registry, 9.4 incident-response, 12 file list 41->45, 13 build, 14 reviews.
+- DONE: header revision note; drift 0.14, 0.15
+- DONE: 2 note, 3.6 AFTER bullet, 3.11 caller lines (set_updated_at), 3.12 lock-position bullet
+- DONE: 4.2 claim note; 5.3 new section
+- DONE: T13 note, T13b, 6.4 race, 6.6 failing twice, 6.8 monitoring.test
+- DONE: 7 ADR D15, departures, not covered
+- DONE: 8 SGN-16 + registry; 9.4 incident-response
+- DONE: 12 file list (45), 13.1 step4/5c, 13.2 step7
+- DONE: 13.3 four runbooks, 14 reviews
+- DONE: 10 rollback bullet. NEXT: self-check consistency (grep D1-D14, 41, T13b refs)
+- DONE: wording fixes (9.4 heading matches alarm description)
+- COMPLETE 2026-11-07: all three findings fixed in design-addendum.md; extra drift 0.14 (monitoring.test.ts filters 31->33), 0.15 (docblock five->eight).

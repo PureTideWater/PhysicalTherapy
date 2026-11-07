@@ -1,0 +1,46 @@
+# pwn-D (builder D, database) progress
+- started 2026-11-07; branch co-001/password-changed-notice at 7b38c9c5; worktree /home/user/pwnotice
+- read design addendum (spec) fully
+- context read: mail_streams migration (support notice fns, record_mail_event 955-1116, mail_expire 1191-1214), suspension_refusal audit_event_record 383-391, #126 lock loop, mail.db.test grant map (:399-447), migrate owners (:100), hardening reserved (:356), line-status lockLoop pattern, operations.ts MAIL_KINDS
+- marker route plan: draft migration in scratchpad/pwnotice-D/, then ONE bash: touch marker; trap rm EXIT; cp draft -> migrations/; marker gone after
+- PG18 up on /tmp:5433 (psql = /usr/bin/psql)
+- PLAN: (1) schema+areas+index (2) tests (password-notice.db.test.ts + mail/migrate/hardening lists) -> RED (3) migration via marker (4) GREEN (5) domain-model regen (6) checks (7) commits a/b/c + push
+- DONE (uncommitted): schema operations.ts (MAIL_KINDS, MAIL_STREAM_KINDS, PASSWORD_NOTICE_* consts, passwordNotice, PasswordNoticeRow), index.ts exports, areas.json (+about phrase)
+- DONE (uncommitted): packages/db/src/password-notice.db.test.ts written (T1-T22)
+- next: mail/migrate/hardening list edits; RED run
+- DONE: list edits (mail.db grant map +7, migrate owners +password_notice, hardening reserved +2)
+- RED (before migration; log progress/pwn-D-red.log): 3 files, 27 failed | 43 passed: all 25 password-notice.db tests, hardening reserved-actions, mail.db grant map + CHECK literals. tsc db clean.
+- migration draft: scratchpad/pwnotice-D/20261111090000_password_changed_notice.sql
+- next: marker-route copy into packages/db/migrations; GREEN run
+- DONE: migration written via marker route (marker created+trap-removed in one shell; confirmed gone); identical to scratch draft
+- DONE: tp_pwn_d_1 created, pnpm db:migrate applied all 49 incl. 20261111090000 (fresh; keep for domain-model regen, drop after)
+- running GREEN1 (log progress/pwn-D-green1.log)
+- GREEN1: 3 files 70/70 passed (password-notice.db, hardening.db, mail.db)
+- first dm regen (provenance had uncommitted inputs): 10 function files (7 new + 3 changed: operator_mail_expire, operator_record_mail_event, set_updated_at), 0 removed, 101 tables
+- header decisions line fixed via marker route (so 0065/0049/0009 parse); tp_pwn_d_1 dropped
+- COMMITTED (a) 1436e1c3 migration+schema+index+areas; (b) tests
+- next: fresh tp_pwn_d_2, migrate, dm --out --strict, commit (c); then checks
+- COMMITTED (c) 1baa872e domain-model.md + 7 new + 3 changed function files (regen on fresh tp_pwn_d_2: 0 written beyond those; approval line = generator blank form)
+- running: pnpm typecheck, pnpm lint (logs pwn-D-typecheck.log, pwn-D-lint.log)
+## Hazard review (function diffs)
+- all 9 new/changed definers+helper: search_path 'pg_catalog','public','pg_temp' (pg_catalog first, pg_temp last); none sets app.practice_ids/app.actor_id; no EXECUTE of built SQL; no LEAKPROOF; no STRICT removed; no owner change (tp_owner); no PUBLIC grant; no scope-function overload; none called by a policy
+- SECURITY DEFINER: audit_event_password_notice (trigger fn, no grantee), operator_password_notices_stale/_due/_claim/_sent/_failed (new, GRANT tp_operator), operator_record_mail_event (DROP/CREATE, re-granted tp_operator only, operator_assert_scope kept), operator_mail_expire (CREATE OR REPLACE, ACL restated tp_operator)
+- INVOKER: password_notice_report_undelivered (no grantee)
+- tenant scope: none reads app.practice_ids; password_notice global; claim the only reader of "user".email
+- set_updated_at.sql: + trigger caller line password_notice.password_notice_updated_at only
+## Interfaces
+- operator_password_notices_stale(at_most integer, request text) RETURNS TABLE(notice_id uuid, user_id uuid) plpgsql VOLATILE DEFINER
+- operator_password_notices_due(at_most integer) RETURNS TABLE(notice_id uuid, user_id uuid) sql STABLE DEFINER
+- operator_password_notice_claim(notice uuid) RETURNS TABLE(user_id uuid, email text, changed_at timestamptz) plpgsql VOLATILE DEFINER
+- operator_password_notice_sent(notice uuid, message_id text, request text) RETURNS boolean; 23514 password_notice_message_id / password_notice_sent
+- operator_password_notice_failed(notice uuid, error_name text, permanent boolean, request text) RETURNS boolean
+- operator_record_mail_event(14 args unchanged) RETURNS TABLE(recorded, state, notice_undelivered, invoice_undelivered, invitation_undelivered, stream_paused, password_notice_undelivered uuid)
+- operator_mail_expire(at_most integer) RETURNS integer (unchanged signature)
+- CHECK pnpm typecheck: passed (23 projects); pnpm lint: passed (1,876 files, 0 errors 0 warnings)
+- running: dm --check (tp_pwn_d_2), unit packages/db + worker mail, db suite packages/db + worker mail-events/support-notices + web sign-in (log pwn-D-checks.log)
+- CHECKS: dm --check rc0, --check --strict rc0 (389 function names; matches schema at 20261111090000); --check --require-approval rc1 only for the blank approval (expects SHA-256 bb2672b0122db22a133a075bf5b913326054ca035718c7d5f8a70c2c2726cf47) — founder's line, not written
+- unit (packages/db + apps/worker/src/mail): 22 files 317 passed
+- db (all 26 packages/db db files + worker mail-events, support-notices + web sign-in): 29 files 1654 passed
+- tp_pwn_d_2 dropped; no tp_pwn_* left
+- PUSHED 7b38c9c5..1baa872e (pre-push hook passed)
+- DONE; next: StructuredOutput

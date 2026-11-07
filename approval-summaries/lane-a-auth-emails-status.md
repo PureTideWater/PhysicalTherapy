@@ -1,5 +1,29 @@
 ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW, acting Lane A, S2) holds part 2 (password-changed-notice, schema PR 1 of the queue) from 2026-11-07 02:20 UTC; Lane A: read lanes/lane-b.md's latest entries before resuming.
 
+## RESUME-BLOCK: password-changed-notice (schema PR 1) HELD at a clean point, 2026-11-07 06:55 UTC (acting Lane A, S2)
+On the orchestrator's pacing word (06:50 UTC; the 7-day limit at warning, resets 2026-11-13 19:00 UTC): held until #126 has
+the founder's line; it cannot open before #126 merges.
+- **Heads:** branch `co-001/password-changed-notice` = f110efd9 (D, M and W pushed); **WIP ref `co-001/wip-pwnotice` =
+  c0ced87f** (the base 8a722f80 merged as 7fdbc71a; the integrator's fix I-1/I-2 c0ced87f: sign-in.db.test.ts and the
+  reset journey assert the queued notice; e2e/mail.ts sendPasswordNoticesOnce; SGN-16 assertedBy; password-notices unit and
+  db tests registered). Stacked on #126's d2fdd106 (not yet on #126's current head).
+- **Built:** migration 20261111090000_password_changed_notice.sql (marker route; marker removed), schema, 25 db tests (T1-T22,
+  T13b), grant pins; the worker's password_notices job (every minute), mail-events' seventh column, the operator role's
+  transactional send, the alarm; ADR 0091, SGN-16 rows, runbooks (deliverability, support-mail, deploy-and-rollback), ADR
+  0081/0065/0014 notes. Design addendum and its review: scratchpad `pwnotice/design-addendum.md` (copied to
+  `approval-summaries/lane-a-wip/pwnotice/`). Domain model at D's head: bb2672b0…cf47 (provisional; changes when #126's final
+  head and the base are merged).
+- **Checks so far:** D's db tests 70/70 and 1,654 db tests in its areas; W's typecheck, lint, lint:logs, worker unit 912,
+  infra 804; M's link check and verify-content; the integrator's unit run on c0ced87f: 10,065 passed + 4 skipped. **Not run:**
+  test:db shards, build, e2e (with the trigger-disabled red run), Stryker (17 shards), actions/toolchain checks, the three
+  reviews (security and sign-in; database, mail and deploy; UX and brand with renders), the fix round.
+- **Exact next step (after #126 has the founder's line):** fast-forward the branch to c0ced87f; merge #126's final head (and
+  later the base after #126 merges); regenerate with the tools on a fresh database; a NEW workflow (not a resume of
+  wf_5cf101cd-7ab: its stopped integrator returned a forced result) from the integrator's progress (`pwn-I.md`): the seam
+  read's remaining steps and the full local suite once; then the three reviews with skeptics and a completeness critic
+  (default agents reading .claude/agents checklists: the custom agent types do not return in workflows; findings passed by
+  file); the fix round; the PR (draft) once #126 merges.
+
 ## 2026-11-07 02:20 UTC (acting Lane A, S2): part 2 building
 - Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 1 (its decisions refine the design: 24-hour cutoff;
   four-caller undelivered helper; PASSWORD_NOTICE_UNDELIVERED pages; complained leaves the notice; the trigger's guard;

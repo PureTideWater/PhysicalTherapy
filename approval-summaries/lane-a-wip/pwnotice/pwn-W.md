@@ -1,0 +1,22 @@
+# pwn-W progress (builder W, worker+infra)
+- start 2026-11-07; HEAD 1baa872e
+- pulled: already up to date at 1baa872e (D's head)
+- read addendum fully; scope (task text): worker job + registration/schedule, mail-events 7th col, send via 'account' variant, infra (operator role PasswordNoticeEmail, alarm code+description, compute SUPPORT_EMAIL, 5.3 sessions-not-ended count since it's infra on monitoring.ts), unit/db/infra tests. Web tests/e2e (6.6/6.7) not in task's ownership list -> open item.
+- [resume 2] re-read addendum (4.x, 5.x, 6.3-6.5, 6.8, 13.2); origin head still 1baa872e; worktree clean. M also works in this worktree: stage only own paths.
+- plan: (1) tests first: fields? (unchanged test), streams.test, platform.test, wiring.test, worker.test, config.test, password-notices.test (unit), password-notices.db.test, mail-events.db.test, infra tests -> RED; (2) impl; (3) GREEN; (4) watched.ts --write; (5) checks; (6) commits d/e/f; push
+- tests written (uncommitted): streams.test, platform.test, wiring.test, worker.test (4 maps), config.test, password-notices.test.ts (new unit), password-notices.db.test.ts (new db). RED by typecheck (hook). next: mail-events.db.test ext, then impl
+- impl (worker) done uncommitted: fields.ts (+2), streams.ts (code+docs), password-notices.ts (new), jobs/platform.ts, config.ts (SUPPORT_EMAIL), wiring.ts, runtime.ts, mail-events.ts (7th col); supportEmail added to restore-drill/support-notices/support-mail db tests (compile)
+- worker tsc clean; unit GREEN: 7 files 169 passed (password-notices.test, platform.test, wiring.test, config.test, streams.test, worker.test, fields.test)
+- infra tests written (operator-role, mail-streams 9/18 + new alarm test, monitoring 8 counts/33 filters/web line, compute SUPPORT_EMAIL); RED queued (progress/pwn-W-infra-red.log); worker db RED queued (progress/pwn-W-red.log, old mail-events.ts swapped in then restored)
+- DO NOT edit infra/lib until infra RED finished
+- RED (db): old mail-events.ts vs new mail-events.db.test: 1 failed (password notice line missing) | 14 passed; restored new file (diff verified). watched.ts --write: +apps/worker/src/platform/password-notices.ts
+- RED (infra): 4 files, 20 failed | 273 passed (operator-role x3, mail-streams 9 filters/new alarm/18 alarms x3 each, monitoring pins+web line+33 filters, compute x3)
+- infra impl applied (operator-role PasswordNoticeEmail, mail.ts code, monitoring descriptions+docblocks, security-events PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE + 8th count, compute SUPPORT_EMAIL on platform); infra tsc clean
+- GREEN infra: 4 files 293 passed
+- GREEN worker db (fresh tp_pwn_w_2; dropped w_1,w_2): 5 files 41 passed | 1 skipped (restore drill: pg_dump not in /opt/pg18/bin, the test's own skip)
+- next: full checks script (typecheck, lint, lint:logs, worker unit, infra unit) -> progress/pwn-W-checks.log
+- lint failed 2x no-unsafe-return in the two new tests (expect.objectContaining); fixed with ': unknown'; an accidental prettier run reformatted them, files rewritten in house style. Rerunning lint+unit+db (pwn-W-final.log)
+- FINAL checks: pnpm typecheck rc0 (23 projects); pnpm lint:logs rc0 (1180 files); pnpm lint rc0 after fix (1,879 files); worker+observability unit 70 files 912 passed; infra unit 29 files 804 passed; tools/screening-capacity unit 8 files 214 passed; password-notices.test 12 passed; worker db (fresh tp_pwn_w_3) 5 files 41 passed | 1 skipped (pg_dump drill); no tp_pwn_w_* left
+- COMMITTED (d) 93a28f70, (e) 8f98990e, (f) f110efd9 on top of M's a42e33d7; marker absent before each
+- PUSHED a42e33d7..f110efd9 (pre-push hook passed)
+- open: web tests/e2e (sign-in.db.test.ts 6.6, e2e/mail.ts sendPasswordNoticesOnce + sign-in.spec.ts 6.7) not in W's task ownership

@@ -1,0 +1,17 @@
+# pwn-M (builder M, records) progress
+- [start] worktree /home/user/pwnotice at 1baa872e; pulling origin co-001/password-changed-notice
+- [resume] 2026-11-07: pulled (already at 1baa872e). Reading addendum (1170 lines).
+- scope decided: listed files + (per addendum 13.3, records builder) incident-response.md 9.4, ADR 0065 note, ADR 0014 bullet; ADR 0081 edit limited to line 381 (keep 382 unchanged: #129 edits 383+)
+- registry assertedBy: only tests existing on branch at commit time (W's password-notices*.test.ts if pushed)
+- W is working concurrently in the same worktree (uncommitted worker test edits seen): commit only my paths
+- DONE (uncommitted): docs/adr/0091-...md written (D1-D15, A-1..A-5, departures, alternatives, consequences, not covered, revisit)
+- next: test-matrix SGN-16, matrix.ts, registry.ts, synth --all; runbooks; ADR 0081 line 381; ADR 0065 note; ADR 0014 amendment
+- DONE (uncommitted): test-matrix intro + SGN-16 row; matrix.ts SGN-16; registry.ts SGN-16 (9 committed tests; W's password-notices.test.ts / .db.test.ts uncommitted -> excluded unless W commits before my commit)
+- CHECK synth --all: 1 written (SGN-16/expected.json), 753 unchanged, 0 removed; vitest unit packages/synth: 14 files 192 passed
+- next: runbooks (support-mail, deliverability, deploy-and-rollback, incident-response), ADR 0081 line 381, ADR 0065 note, ADR 0014 amendment
+- DONE (uncommitted): support-mail.md item (steps adjusted: incident record per weekly-review rule; containment via incident-response s2; re-enable before reset again since disabled accounts get no code); deliverability.md (s1 transactional + outbox sentence, alarms (20), row, 3.10); deploy-and-rollback.md section; incident-response.md (trigger, section, weekly step 4)
+- next: ADR 0081 line 381; ADR 0065 note; ADR 0014 amendment; link check; commit
+- DONE: ADR 0081 line 381 (merge-file trial vs #129: 0 conflicts for 0081, test-matrix, matrix.ts); ADR 0065 Note; ADR 0014 Amendment
+- CHECKS: link check 0 bad; eslint matrix.ts/registry.ts rc0; verify-content rc0 (every content set passes); lint:copy n/a (docs/synth not read)
+- COMMITTED a42e33d7 (12 files, only mine; marker absent before/after). next: push
+- PUSHED 1baa872e..a42e33d7 (pre-push: fixture guard + gitleaks passed). DONE; next StructuredOutput
