@@ -189,6 +189,7 @@ apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
 apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
+apps/worker/src/platform/password-notices.ts
 apps/worker/src/platform/pg-dump-restorer.ts
 apps/worker/src/platform/rds-restorer.ts
 apps/worker/src/platform/restore-drill.ts

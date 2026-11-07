@@ -29,6 +29,7 @@ describe('platform job registry', () => {
       'mail_events',
       'mail_expiry',
       'dunning_notices',
+      'password_notices',
     ]);
     // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts): the platform neither schedules nor works it.
     expect(PLATFORM_JOB_TYPES).not.toContain('screening_price');
@@ -62,12 +63,18 @@ describe('platform job registry', () => {
       assertNoPhi('job_payload', parsePlatformPayload(type, {}));
       expect(() => parsePlatformPayload(type, { recipient: 'someone@synthetic.test' })).toThrow(ZodError);
     }
+    // The password-changed notices (docs/adr/0091): nothing about the person rides in pg-boss; the claim reads the address.
+    expect(parsePlatformPayload('password_notices', {})).toEqual({});
+    assertNoPhi('job_payload', parsePlatformPayload('password_notices', {}));
+    for (const payload of [{ email: 'someone@synthetic.test' }, { user_id: JOB }, { password_notice_id: JOB }]) {
+      expect(() => parsePlatformPayload('password_notices', payload)).toThrow(ZodError);
+    }
   });
 
-  it('records mail events and sends the dunning notices due again every minute, and expires the mail records nightly at 03:50 UTC', () => {
+  it('records mail events and sends the dunning notices due again and the password-changed notices every minute, and expires the mail records nightly at 03:50 UTC', () => {
     const boss = new PgBoss('postgres://nobody@localhost:1/none');
     const from = new Date('2026-10-15T00:00:30Z');
-    for (const type of ['mail_events', 'dunning_notices'] as const) {
+    for (const type of ['mail_events', 'dunning_notices', 'password_notices'] as const) {
       expect(boss.previewSchedule(PLATFORM_SCHEDULES[type], { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T00:01:00Z'), new Date('2026-10-15T00:02:00Z')]);
     }
     expect(boss.previewSchedule(PLATFORM_SCHEDULES.mail_expiry, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T03:50:00Z'), new Date('2026-10-16T03:50:00Z')]);
@@ -147,7 +154,7 @@ function memoryStore(): ObjectStore & { puts: PutImmutableRequest[] } {
 describe('platform handlers', () => {
   const now = () => new Date('2026-10-15T01:20:00Z');
   const neverRestored = { restoreLatest: () => Promise.reject(new Error('not used')) };
-  const notices = { mail: new MemoryMailSender(), appOrigin: 'http://localhost:3000' };
+  const notices = { mail: new MemoryMailSender(), appOrigin: 'http://localhost:3000', supportEmail: 'support@synthetic.test' };
 
   it('copies yesterday by default, a named day when given, and logs IDs only', async () => {
     const store = memoryStore();
@@ -308,5 +315,49 @@ describe('platform handlers', () => {
     expect(lines.at(-1)).toMatchObject({ msg: 'mail expiry deleted expired mail records', job_id: JOB, record_count: 3012 });
     expect([...roles]).toEqual(['SET LOCAL ROLE tp_operator']);
     await expect(handlers.mail_events({}, { jobId: JOB, logger })).rejects.toThrow(NoMailEventsError);
+  });
+
+  it('sends the password-changed notices as the operator with no practice in scope, stale first, and logs the count and IDs only (docs/adr/0091)', async () => {
+    const NOTICE = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e01';
+    const USER = '3d4e5f6a-7b8c-4d9e-8f0a-1b2c3d4e5f02';
+    const statements: string[] = [];
+    const { pool, released } = operator((text) => {
+      statements.push(text);
+      if (text.includes('operator_password_notices_due')) {
+        return [{ notice_id: NOTICE, user_id: USER }];
+      }
+      if (text.includes('operator_password_notice_claim')) {
+        return [{ user_id: USER, email: `${USER}@synthetic.test`, changed_at: new Date('2026-11-05T14:32:59Z') }];
+      }
+      if (text.includes('operator_password_notice_sent')) {
+        return [{ undelivered: false }];
+      }
+      return [];
+    });
+    const mail = new MemoryMailSender();
+    const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, ...notices, mail });
+    const { lines, logger } = capture();
+    await handlers.password_notices({}, { jobId: JOB, logger });
+    // Each transaction as tp_operator, no practice in scope; the stale sweep before the due list.
+    expect(statements.slice(0, 3)).toEqual(['BEGIN', 'SET LOCAL ROLE tp_operator', "SELECT set_config('app.practice_ids', '{}', true)"]);
+    expect(statements.findIndex((text) => text.includes('operator_password_notices_stale'))).toBeLessThan(statements.findIndex((text) => text.includes('operator_password_notices_due')));
+    expect(statements.filter((text) => text.startsWith('SELECT set_config')).every((text) => text.includes("'{}'"))).toBe(true);
+    expect(mail.sent.map((message) => [message.to, message.subject, message.identity])).toEqual([
+      [[`${USER}@synthetic.test`], 'Your password was changed', { stream: 'transactional', kind: 'password_changed', subjectId: NOTICE, recipientUserId: USER }],
+    ]);
+    expect(lines).toEqual([
+      expect.objectContaining({ level: 'info', msg: 'password notice sent', job_id: JOB, password_notice_id: NOTICE, user_id: USER }),
+      expect.objectContaining({ level: 'info', msg: 'password notices sent', job_id: JOB, record_count: 1 }),
+    ]);
+    expect(JSON.stringify(lines)).not.toContain('@');
+    expect(released).toEqual([false]);
+  });
+
+  it('logs nothing when no password-changed notice is due', async () => {
+    const { pool } = operator();
+    const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, ...notices });
+    const { lines, logger } = capture();
+    await handlers.password_notices({}, { jobId: JOB, logger });
+    expect(lines).toEqual([]);
   });
 });

@@ -4,7 +4,8 @@
  * the worker loop, the intake job, the parse_835 job (the parser and the loader), the monitoring chain
  * (monitor, price, triage, reconcile), the digest job, the audit report job, the ROI statement job and the report document job as they run in
  * production, wired to their local implementations; and the mail record's (docs/adr/0065): the local sender and its
- * simulator-shaped events, the platform's handlers with the mail_events job's local source and SES control in memory.
+ * simulator-shaped events, the platform's handlers with the mail_events job's local source and SES control in memory;
+ * and the password-changed notices' job (docs/adr/0091), which the e2e suite runs once after a reset.
  */
 export { type IntakeConfig, type NotificationConfig, readIntakeConfig, readNotificationConfig } from './config';
 export { type DigestServices, digestHandler, digestLink, digestMessage, prepareDigest } from './digest/job';
@@ -23,6 +24,7 @@ export {
   runMailEvents,
 } from './platform/mail-events';
 export { type SupportNoticeOptions, type SupportNoticeResult, sendSupportGrantNotices } from './platform/support-notices';
+export { PASSWORD_NOTICE_RUN, type PasswordNoticeOptions, type PasswordNoticeResult, passwordNoticeMessage, sendPasswordNotices } from './platform/password-notices';
 export { type MailEventsDependencies, type PlatformDependencies, type PlatformHandlers, createPlatformHandlers } from './jobs/platform';
 export { createdByMonitoring, notifyRun, runFigures } from './monitor/chain';
 export { monitorHandler } from './monitor/job';

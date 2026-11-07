@@ -51,6 +51,10 @@ export const ALLOWED_LOG_FIELDS = [
   'ses_event_type',
   'mail_state_code',
   'bounce_subtype_code',
+  // The password-changed notice (docs/adr/0091, A-1): the notice row's opaque ID, and why it was not delivered, a code from
+  // a closed set (bounced, suppressed, rejected, sent_undelivered, NoticeStale, or an SES error's name, letters only).
+  'password_notice_id',
+  'undelivered_reason_code',
   'error_code',
 ] as const;
 

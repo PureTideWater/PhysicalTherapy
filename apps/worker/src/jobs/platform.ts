@@ -7,6 +7,7 @@ import { copyAuditDay, previousDay } from '../platform/audit-copy';
 import type { MailSender } from '../mail/mail';
 import { type MailControl, type MailEventSource, expireMail, runMailEvents } from '../platform/mail-events';
 import { queueMonitoringSchedule } from '../platform/monitoring-schedule';
+import { sendPasswordNotices } from '../platform/password-notices';
 import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
 import { sendSupportGrantNotices } from '../platform/support-notices';
 import { expireScreenings } from '../screening/expiry';
@@ -33,7 +34,9 @@ import type { JobSender } from './enqueue';
  * by its message ID (IDs and codes; the destination address only to resolve a Cognito user and to hash a refused
  * screening address, never kept); mail_expiry deletes the expired mail records; dunning_notices sends each billing owner
  * a stage notice whose send is due again (as tp_billing). The support-grant notices and the dunning notices each go one
- * message per recipient from a recorded outbox. They run on the operator connection, every
+ * message per recipient from a recorded outbox. The password-changed notices (docs/adr/0091) go one message per
+ * completed reset from the outbox the database writes in the reset's own transaction, the account's address read only by
+ * the claim of a pending, due notice under 24 hours old. They run on the operator connection, every
  * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
  * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
  * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
@@ -50,6 +53,7 @@ export const PLATFORM_JOB_TYPES = [
   'mail_events',
   'mail_expiry',
   'dunning_notices',
+  'password_notices',
 ] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
@@ -70,6 +74,8 @@ export const PLATFORM_JOB_PAYLOADS = {
   mail_events: z.strictObject({}),
   mail_expiry: z.strictObject({}),
   dunning_notices: z.strictObject({}),
+  /** Nothing about the person: the notice, its user and the address are read from the outbox (docs/adr/0091). */
+  password_notices: z.strictObject({}),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -86,8 +92,10 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * the dunning notices daily at 14:10 (a morning in the United States); the usage snapshot nightly at 00:40;
  * support mail every five minutes, well inside the published response target (docs/adr/0055); the screening
  * expiry nightly at 03:35 (docs/adr/0062); the mail events every minute, so a pause disables the screening's set within a
- * minute and a notice's delivery is recorded within one; the mail expiry nightly at 03:50; and the dunning notices' sends
- * every minute, so a send that threw is tried again after 1, 5, 15 and 60 minutes (docs/adr/0065).
+ * minute and a notice's delivery is recorded within one; the mail expiry nightly at 03:50; the dunning notices' sends
+ * every minute, so a send that threw is tried again after 1, 5, 15 and 60 minutes (docs/adr/0065); and the
+ * password-changed notices every minute, from the database's outbox, so the account's address is told within a minute of
+ * a reset and a refused send is tried again on the same steps (docs/adr/0091).
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
@@ -101,6 +109,7 @@ export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   mail_events: '* * * * *',
   mail_expiry: '50 3 * * *',
   dunning_notices: '* * * * *',
+  password_notices: '* * * * *',
 };
 
 export interface PlatformContext {
@@ -123,6 +132,8 @@ export interface PlatformDependencies {
   readonly mail: MailSender;
   /** The application's origin, for the notices' links. */
   readonly appOrigin: string;
+  /** The support address the password-changed email says to write to (SUPPORT_EMAIL; docs/adr/0091). */
+  readonly supportEmail: string;
   /** Where the monitoring schedule queues each practice's jobs (pg-boss). */
   readonly queue?: JobSender;
   /** Where mail to the support address waits (SES's bucket, or a local directory). */
@@ -278,6 +289,16 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
       );
       if (result.recorded > 0) {
         context.logger.info('mail events recorded', { job_id: context.jobId, record_count: result.recorded });
+      }
+    },
+    password_notices: async (_payload, context) => {
+      // A notice not delivered, failed for good or past its 24 hours is PASSWORD_NOTICE_UNDELIVERED, by the notice's and
+      // the user's IDs (logged as they are found): the operator tells the person another way (docs/adr/0091, D9).
+      const result = await withOperator(dependencies.operator, (client) =>
+        sendPasswordNotices({ client, mail: dependencies.mail, supportEmail: dependencies.supportEmail, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) }),
+      );
+      if (result.sent > 0) {
+        context.logger.info('password notices sent', { job_id: context.jobId, record_count: result.sent });
       }
     },
     mail_expiry: async (_payload, context) => {
