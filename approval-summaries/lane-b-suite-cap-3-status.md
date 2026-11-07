@@ -10,6 +10,8 @@ module). No migration timestamp and no fixture release are reserved; this item o
 written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcile.md`.
 
 ## Now
+**2026-11-07 02:25 UTC: DESIGN REVIEWED, verdict BUILD.** Committed with this entry: `designs/lane-b-suite-cap-3-reconcile.md` and the ask. Seven review rounds (default workflow agents applying the payment-engine and security checklists, three skeptics per finding): 46 findings, 31 survived and applied (each with a disposition row in section 18), 15 refuted; two completeness checks and a final consistency check (sections 17, 19). Not dry at the cap: rounds 6 and 7 changed only the web-owner hand-off text (14.4 item 14), nothing this item builds; stopped there (speed rule 3, diminishing). Build summary: worker-side only, no migration, index or table; D1-D7, D15, D16 change how often the pass reads; D3 writes the stage events in one statement under a savepoint with a 40P01 retry; rules, amounts, write order, recovered total unchanged. Tests: CAS-49 (writes equal to the per-line reference, encrypted text compared by decrypted hash, runs at posted and deposited proof levels), CAS-50 (statement and decrypt bounds), CAS-51 (real size: R, F, spread A); ADR 0087. Builder slices 1-6 and 5a. **Waiting on the orchestrator's build go.** Handed to the web owner: the reopen, the write-off and the manual reconciliation actions can each wait on a pass (14.4 item 14: a `ledger:` try-lock with a retryable refusal).
+
 **2026-11-07 01:50 UTC:** review loop wf_d171f0f0-948 finished 4 rounds (cap) without a dry round: 36 findings, 24 survived three skeptics each and were applied (9, 3, 6, 6), 12 refuted; dispositions in design section 18; completeness check 2 (section 19) wrote the D14 ruling and the founder's grant into sections 0, D9, D14, 8.4 and 14.1. Committed (build-ops ae22c8cc). Main round 2-4 changes: the patient search returns only the indexes of matching lines (no other patients' codes or dates read); CAS-49 compares encrypted text by decrypted hash, exercises "seen control-number candidates stop the search", and uses defined ordinals; D16's matched set limited to the open lines' pairs; the web reopen recommendation is a non-blocking `pg_try_advisory_xact_lock` refusal; the ask's plan guard tests the deployed function, and states the trigger rule its equality rests on. **For the orchestrator to relay to the founder:** two statements in the ask the founder granted (38123394 text) were corrected after the grant (the 360 s is a sizing bound no check enforces; A's month was compared on totals, not row for row); the function bodies are unchanged.
 Now running: delta review wf_44d7c772-605 (`workflow-scripts/lane-b-suite-cap-3-review-delta-wf_44d7c772-605.js`): round 4's changes and section 19 only (speed rule 3), two lenses, three skeptics per finding, until dry (max 3 rounds), then a consistency check. Next: commit, report, wait for the build go.
 
@@ -104,19 +106,19 @@ ready; only conflicting PRs keep the section-6 order.
   (`approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`) is being relayed to the co-founder by the orchestrator.
 
 ## For Lane A
-- **Founder freeze exception GRANTED (relayed by the orchestrator 2026-11-06 ~22:40 UTC)** for the corrected `ledger_line_net`
-  and the `ledger_entry_rules` primary-key lookup, as in `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` (design
-  section 14.1). Lane A's schema queue (S2 this week) builds it after #126 and password-changed-notice. This item's PR stays
-  worker-side only and merges on its own. D14's condition stands: step 7b moves back to practice A's month once that migration
-  merges. To be written into design section 14.1 when the review loop finishes. (The entries below predate the critic's
-  correction: the figures that hold are design 14.1's: F 10,000 lines 219 -> 85 s; A's month 1,653 -> 310 s.)
-- **`ledger_line_net` rewrite** (design section 14.1, exact DDL there; a ledger function, so it needs a founder freeze
-  exception). The two LEFT JOINs on reversal/adjustment targets become one correlated subquery per row; same answer for every
-  line and stage. Measured on top of this item's worker fix (step 7b, state (c) -> (m)): 2,000 lines 60.2 -> 21.6 s, 6,000
-  378.3 -> 101.2 s, 10,000 1,058.4 -> 263.3 s; writes identical to the base at 2,000. `ledger_line_stage()` has the same two
-  joins and takes the same rewrite in the same migration (not measured apart; 1-5 s a pass after D3).
-- Measured and rejected: `ledger_entry (service_line_id, stage)` index (no gain).
-- Nothing else beyond 1b's D15 (`claim_by_superseded`), cited.
+- **Founder freeze exception GRANTED (2026-11-06 ~22:40 UTC)** for the corrected `ledger_line_net` (a line's entries read
+  through `ledger_entry_by_line`) and `ledger_entry_rules`' match lookups by primary key: one migration, after #126, Lane A's
+  schema queue (S2). DDL, tests (plan guard on the deployed function, cross-tenant, refusals) and figures: design section 14.1 and
+  `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`. Measured on top of this item's worker fix: practice F 10,000
+  lines 219 -> 85 s; practice A's month (30,795 lines) 1,653 -> 310 s; writes identical row for row at F 10,000 and R 2,000
+  (A's month compared on counts and cents). This PR stays worker-side and merges on its own. D14: step 7b moves back to A's
+  month once that migration merges.
+- **To relay to the founder (sent to the orchestrator 2026-11-07 01:50 UTC):** two statements in the granted text (38123394)
+  were corrected after the grant: the 360 s is a sizing bound no check enforces; A's month was compared on totals, not row for
+  row. The function bodies are byte-identical to the granted text.
+- Proposals only (design 14.4): `ledger_entry_within_evidence`'s posted-so-far sum (75.6 of the 310 s left at A's month, cause
+  not found); #126's `ledger_match_rules` interest-branch lookup (same plan risk); a fillx CAS-42 variant. Measured and
+  rejected: a `ledger_entry (service_line_id, stage)` index.
 
 ## Waiting on someone
 - (Done 2026-11-06 ~22:40 UTC: the founder granted the ledger freeze exception for Lane A's part.)
@@ -124,6 +126,7 @@ ready; only conflicting PRs keep the section-6 order.
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-07 02:25 UTC: design reviewed (7 rounds, 31 of 46 findings applied), verdict BUILD; committed; waiting for the build go.
 - 2026-11-07 01:50 UTC: review rounds 1-4 applied (24 of 36); design ae22c8cc; delta review wf_44d7c772-605 launched.
 - 2026-11-07 00:35 UTC: review round 1 applied (9 of 15 survived); round 2 + critic stopped by the limit; resumed.
 - 2026-11-06 22:40 UTC: founder granted the freeze exception for Lane A's ledger_line_net + ledger_entry_rules fix (Lane A builds it after #126).

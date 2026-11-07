@@ -612,7 +612,8 @@ The pass-level search computes the same per line:
 ### 5.2 Order, locks and concurrency
 
 - One transaction under `lockLedger`, as today; no new lock, no lock removed. The manual actions (`manual.ts`) take the
-  same `ledger:` lock first, so they never interleave with a pass. The screens read committed rows only and see the
+  same `ledger:` lock first, so they never interleave with a pass; they run in web requests, which wait for the pass
+  (on the base as well; handed to the web owner, 14.4 item 14, review round 6). The screens read committed rows only and see the
   pass whole or not at all.
 - **Lock order (corrected in review round 1).** `line_status_rules()` (BEFORE ROW) takes each event line's
   `line_status_head` row (`line_status_rules.sql:21-28`); `line_status_refresh_cases()` (AFTER STATEMENT) then updates
@@ -773,10 +774,21 @@ in memory and never logged (CAS-49.1; review round 4).
    so comparing it byte for byte fails spuriously and comparing it as set or not (the probe's `dump.py:12`, section 15
    T2) would pass a wrong note: `REOPEN_NOTES.reversal`, `.proofLevel` and `.recoupment` all look alike as "set". The
    plaintext and its hash are never logged or printed; a failure names the table, the row's ordinal and the column
-   only. The generator's recovered line moved back is made both ways in every run's world: once by a reversal written
-   after it reached recovered (the reversal note) and once by the practice's proof level raised from posted to
-   deposited (the proof-level note), since D3 moves `moveBackNote` ahead of every insert (`stages.ts:118`, one
-   `insertStages` at :123 at 0b6e90eb).
+   only. **The proof level is split across the runs (review round 5).** The level is one setting for the whole practice
+   (`setLedgerSettings`, `settings.ts:27-35`), read for every line by `ledger_line_stage` (`ledger_proof_level`,
+   `ledger_line_stage.sql:15`), so a world that raises it computes every stage of its pass at deposited, and the
+   product default is posted (`packages/ledger/src/stages.ts:18`). The level is therefore fixed by the run's index,
+   never drawn: the 13 even-indexed runs keep posted through history and pass, so claim-level, line-level and partial
+   check-level postings matched in the pass move lines to recovered, among them a line's payer approved and recovered
+   from a posted entry in one `insertStages` (D3's order), and the posted-level recovered total is compared; the 12
+   odd-indexed runs raise the level from posted to deposited through `setLedgerSettings` after the history and before
+   the pass, and each such world moves a recovered line back both ways: one line with no reversal (the proof-level
+   note) and one whose deposit match a person reversed while its posting stood, so it stayed recovered at posted (the
+   reversal note; `reverseMatch`, `manual.ts:180-215`, then `finish()`'s sync), since D3 moves `moveBackNote` ahead of
+   every insert (`stages.ts:118`, one `insertStages` at :123 at 0b6e90eb). The harness asserts, after the 25 runs, that
+   both levels ran, that some posted run moved a line to recovered from a posted entry matched in the pass, and that
+   run index 1 (a fixed CI seed) holds both move-backs written by the pass; the sixth mutant below is checked against
+   that run.
    **Fails
    first** with D1 written without step 3 of 5.1
    (one round's patient read reused without taking off the known claims), with the patient search's `created_at`
@@ -852,10 +864,22 @@ scope's client (the probe's method) and a counting wrapper over `PracticeCipher.
   `loadedAt` read is gone, review round 2) and the search's own `claimLines` calls (`passCandidates`, one per round with unread candidates) are at most
   `2 + 2 × rounds` (review round 3) and do not change between 200 and 800 lines; the pass's other `claimLines` calls are
   exactly the base's three practice-wide ones (`chainContext` in `matchClaims` and in `recoupReversals`, `remittances.ts:907` and :978 at 0b6e90eb, and in
-  `shares`, `postings.ts:285`), counted apart and
+  `shares`, `postings.ts:285`, through `settleMatches` at :335), counted apart and
   asserted equal to 3 at both sizes (completeness check 2: a test that bounded every `claimLines` call by
   `2 + 2 × rounds` would fail the build's correct code; the candidate measured 4 calls in all, 3 + 1 round with
-  candidates, against the base's 2N + 3);
+  candidates, against the base's 2N + 3). **How the calls are told apart (review round 5).** Every caller issues the
+  same `claimLines` text (`remittances.ts:425-435`), and `passCandidates` calls it inside its own module, so neither
+  the text nor a spy on the export can attribute a call; the proxy attributes by position in the issued statements.
+  Each round of `passCandidates` issues `controlCandidates` and then, if it has unread candidates, `claimLines`
+  (:351, :363), and the loop ends on a round with no candidates (:377), so the search's own calls are exactly those
+  issued between the first and the last `controlCandidates` statement; `rounds` is the count of `controlCandidates`
+  statements; `matchClaims`' `chainContext` comes before the first, and `recoupReversals`' and `shares`' after the
+  last, where a per-line fallback in `reprocessingOf` (:797) would also land and fail the count of 3. The count of 3
+  holds because the world holds a standing approved claim match when `recoupReversals` runs (the step-7b shape writes
+  the approvals in the pass, and its matches are re-read after `matchClaims`, :1190-1192): without one,
+  `recoupReversals` returns before its `chainContext` (:974-977) and the correct count is 2, on the base as well; the
+  test asserts that precondition (a standing approved claim match after `matchClaims`) before it asserts 3, so a
+  later change of world fails on the precondition, not on correct code;
 - the patient search's statement selects no `service_line` column (review round 2: the test parses its outer select
   list, which names only `c.id`, `c.remittance_id`, the `to_char` payment date, the load time and
   `c.patient_control_number`; no `ARRAY(…)` over `service_line`); `patientPairs` selects only the pair's claim and
@@ -935,7 +959,7 @@ the review (T1 and R1 ran the worker's); run in the completeness check on 0b6e90
 
 | ID | Title | Expected |
 | --- | --- | --- |
-| CAS-49 | A reconcile pass writes what the per-line pass wrote | On generated passes with corrections, reversals, recoupments, payer responses, partial postings, EFT deposits, patient share and reopens, and on LED-01 to LED-18's worlds, the pass writes the same ledger matches, entries, stage events, payer responses, notifications and audit events, in the same order where order is observable and with the same text in every encrypted note, as the per-line pass; a line's payer approved and recovered written in one statement keep their order and checks |
+| CAS-49 | A reconcile pass writes what the per-line pass wrote | On generated passes at the posted and at the deposited proof level with corrections, reversals, recoupments, payer responses, partial postings, EFT deposits, patient share and reopens, and on LED-01 to LED-18's worlds, the pass writes the same ledger matches, entries, stage events, payer responses, notifications and audit events, in the same order where order is observable and with the same text in every encrypted note, as the per-line pass; a line's payer approved and recovered written in one statement keep their order and checks |
 | CAS-50 | A reconcile pass's reads do not grow per line | Between 200 and 800 lines the pass's candidate searches and claim-line reads stay a fixed number of statements, none of them reads the ledger's matches, its stage events are one statement, and it decrypts each claim's patient control number at most once per phase |
 | CAS-51 | A reconcile pass at real size | A step-7b pass of 2,000 lines, spread over cases, in one case and on few service dates (more on the weekly run) approves and posts every line within its time budget, its own part (the pass less the ledger's entry inserts) within its own budget and at most 1.5 times as slow a line at 2,000 as at 500, under 75% of the worker's heap |
 
@@ -1199,7 +1223,7 @@ files (`stage-head.db.test.ts`, migration 20261109090000), and every file #126 c
 | Memory: the pass's claim-line map and candidate lists live for the pass. | Peak heap measured at each size (section 8.3), under 75% of 560 MiB at 10,000; CAS-51 asserts it. D16's `matched` set is filtered to the open lines' pairs (review round 4), so it does not grow with the practice's claim-match history (the measured runs had none; unfiltered it would hold about 65 MiB after a year at A's rate). |
 | The interest fix (#126) lands first and its `seq` order exposes an order difference. | The insert order is today's (5.2); the merged tree already passes LED-23 to LED-25 and the oracle (R5); whoever merges second re-runs CAS-49 with LED-23 to LED-25 and the `seq` order (section 12.2). |
 | D16's patient-search arrays grow with a practice's reversed claim matches and get a poor plan. | They hold only the matched pairs `known` does not already exclude; slice 3's gate measures 2,000 of them; the fallback is the candidate's correlated `NOT EXISTS`, once per pass (37-60 ms in all five statistics states, 1.7), never a TypeScript-only patient exclusion, which would widen decrypts (review round 1). |
-| D3's one statement takes all event lines' head rows before their cases, the reverse of the web reopen and triage, which take case then head outside the `ledger:` lock (review round 1). | A savepoint around `insertStages` re-issues the same statement on `40P01` (section 4, 5.2); CAS-49.6 crosses a reopen with the pass both ways; the reopen taking the `ledger:` lock by `pg_try_advisory_xact_lock` and refusing while a pass holds it (never a blocking wait in a web request, review round 4) is handed to the web owner (14.4 item 14). |
+| D3's one statement takes all event lines' head rows before their cases, the reverse of the web reopen and triage, which take case then head outside the `ledger:` lock (review round 1). | A savepoint around `insertStages` re-issues the same statement on `40P01` (section 4, 5.2); CAS-49.6 crosses a reopen with the pass both ways; the reopen taking the `ledger:` lock by `pg_try_advisory_xact_lock` and refusing while a pass holds it (the reopen never makes a blocking wait, review round 4) is handed to the web owner (14.4 item 14); other web writers of rows a running pass locks, the line's write-off among them, still can wait for the length of a pass (on the base as well), handed on with it (review round 5); so can the web's five manual reconciliation actions, which take the blocking `ledger:` lock in the request (`manual.ts` `begin()`), handed on with the same remedy and a `55P03` mapping wherever `lock_timeout` is the floor (review round 6); the floor is set only in those writers, around the statement that waits, never in `withPracticeScope`, which the gateway, the capacity harness and the worker's test worlds also use, and the try-lock's refusal is worded generally, since another person's manual action also holds the key (review round 7). |
 | The chain's claim order compares the payment date as text, which sorts as the date only under an ISO `DateStyle` (review round 1). | The two search statements select `to_char(r.bpr16_date, 'YYYY-MM-DD')` (section 4); the base's other `::text` dates share the assumption, handed on (14.4 item 13). |
 | Step 7b at F 10,000 adds setup time and disk to the weekly run. | Measured on the first weekly run and recorded; F at 10,000 is 220 s of the pass, 24.5% of the attempt; the smoke size keeps 600. |
 | The weekly run's step 7b stays off A's full month after this item, against ADR 0083's "acceptance step". | Measured (8.3a): A's month fails the attempt whatever the worker does; the Known gap line says so with the figure, and Lane A's trigger PR carries the move back; the orchestrator rules on the split in the review (8.4). |
@@ -1218,7 +1242,7 @@ files (`stage-head.db.test.ts`, migration 20261109090000), and every file #126 c
    allocated check-level postings in one pass; the generator must produce one) run 20 times on the base against
    itself without a failure, which proves the rule absorbs the base's random order. CAS-49.1's generator includes the
    control-number candidate that pairs with nothing beside a pairing patient claim (review round 3), and the harness's
-   six self-check mutants are written here, with the comparison of encrypted text by decrypted hash (review round 4: never by presence; the generator's proof-level and reversal move-backs; the sixth mutant gives the proof-level move-back the reversal note). The import guard on `per-line` (`eslint.config.js` and
+   six self-check mutants are written here, with the comparison of encrypted text by decrypted hash (review round 4: never by presence; the generator's proof-level and reversal move-backs; the sixth mutant gives the proof-level move-back the reversal note), with the proof level fixed by run index (review round 5: even runs at posted, odd runs raised to deposited before the pass; the harness checks that both levels ran, that a posted run moved a line to recovered from a posted entry matched in the pass, and that run 1 holds both move-backs). The import guard on `per-line` (`eslint.config.js` and
    `per-line-import.test.ts`, section 4; review round 3), `pnpm lint` green.
 2. D3 (`insertStages`, under its savepoint with the `40P01` retry, section 4; review round 1) with CAS-49.3 and
    CAS-49.6 (the two-session reopen, both victims; `seq` compared by order there, review round 3); CAS-49 green.
@@ -1251,7 +1275,7 @@ files (`stage-head.db.test.ts`, migration 20261109090000), and every file #126 c
    2,000 and 6,000 re-run with the `EXCEPT` form in the pass's own trap state (the candidate's TypeScript form took
    `postings.rows` 0.6 / 5.6 s on the base's anti-join, 1.6, and the candidate's TypeScript form 8-10 ms at 2,000 and
    34 ms at 10,000; the `EXCEPT` form must stay linear and within twice the candidate's figures, writes equal).
-5. CAS-50 and CAS-51 (all three shapes: spread R, F and spread A, review round 3), `pass.large` in `SLOW_FIRST` with `tools/test/db-shards.test.ts` re-run (12.1; completeness check 2); CAS-49.4 (manual actions) and CAS-49.5 (`lineChain`'s
+5. CAS-50 (its `claimLines` calls attributed by position between the `controlCandidates` statements, with the standing approved claim match asserted before the count of 3; review round 5) and CAS-51 (all three shapes: spread R, F and spread A, review round 3), `pass.large` in `SLOW_FIRST` with `tools/test/db-shards.test.ts` re-run (12.1; completeness check 2); CAS-49.4 (manual actions) and CAS-49.5 (`lineChain`'s
    index); the matrix rows and the registry; `pnpm synth --all` if needed; ADR 0087 and ADR 0083's dated note.
 5a. D14 (1b has landed): CAS-42.3's `PASS_BUDGET_MS` and comment in `reconcile.large.db.test.ts`; in
    `tools/release-capacity`, `FULL_SIZE.reconcileLines` 10,000 and the comments in `scenario.ts` and `run.ts`, the Known
@@ -1654,16 +1678,79 @@ Each is outside SUITE-CAP-3's claim; the orchestrator decides where it goes.
    the lock for its whole transaction (219 s at F 10,000, 310 s at A's month with Lane A's fixes), so each reopen on that
    practice during a pass would hold a web request and one of the application pool's 10 connections
    (`apps/web/src/lib/server/pools.ts:10`), shared by every practice's requests, for minutes: a few such clicks could
-   starve every tenant. The worker's manual actions take the lock inside jobs, so they are no precedent. The
+   starve every tenant. The manual reconciliation actions are no precedent for the blocking form: they run in web
+   requests and already make this wait today (corrected in review round 6; the last paragraph of this item). The
    recommendation: at the start of the handler, inside its practice-scoped transaction, `SELECT
    pg_try_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0))` (the same key as `lockLedger`); if it is not
    granted, refuse at once with a retryable refusal that carries no identifier (the web owner words it, e.g. that
-   reconciliation is running and to try again shortly, through the ux-brand review), writing nothing; if granted, the
-   reopen holds the lock to its commit, so it serializes with the pass and the manual actions and never waits. A
+   the ledger is busy and to try again shortly, through the ux-brand review), writing nothing; if granted, the
+   reopen holds the lock to its commit, so it serializes with the pass and the manual actions and never waits. The
+   lock is held by a pass or by another person's manual action on the practice (the last paragraph of this item), so
+   the refusal is general and never says that a reconciliation is running (review round 7). A
    `SET LOCAL lock_timeout` of a few seconds before a blocking lock is the lesser form (it still holds a connection for
-   those seconds and turns a wait into an error just the same). Its test: CAS-49.6's two-session shape with the ledger
+   those seconds and turns a wait into an error just the same; set and set back around that one wait, as the last
+   paragraph of this item says). Its test: CAS-49.6's two-session shape with the ledger
    lock held by session A, asserting the reopen returns the refusal within a second and writes nothing, and a reopen
    with the lock free succeeds. D3's savepoint retry stays either way (a triage job still takes case then head).
+   **The reopen is one of a class (review round 5).** The same starvation reaches every web writer that updates a
+   `case`, `case_line` or `submission` row a running pass can hold locked to its commit. The pass locks case rows
+   through its stage insert (the AFTER STATEMENT case refresh, `line_status_refresh_cases.sql:14-15`) and through a
+   payer response it writes (`pass.ts:41` hands `recordReprocessedNoChange` to `reconcileRemittances`, which calls
+   `recordPayerResponse`, `responses.ts:127`; its insert fires `payer_response_refresh_case`, which updates the case).
+   `writeOffLineAction` (`apps/web/src/lib/routes/triage.ts:474-512`) runs `UPDATE case_line`, whose statement trigger
+   `case_line_refresh_updated` (`case_line_refresh_cases()`) updates the same case row, so a write-off on a case the
+   pass has touched waits, with no `lock_timeout`, for the rest of the pass, holding one of the 10 connections. The
+   base behaves the same and this item changes neither when nor how long those case locks are held, beyond D3's order.
+   For the web owner: inventory the practice-scoped web mutations that update those rows (the write-off and the
+   reopen at least) and give each the same `ledger:` try-lock refusal, or, as the floor for all of them, a
+   `SET LOCAL lock_timeout` of a few seconds set in each of those handlers just before its first statement that can
+   wait on the pass and set back (`SET LOCAL lock_timeout = 0`) just after it, never in `withPracticeScope` itself
+   (the last paragraph of this item, review round 7), so no web request waits on a pass; the reopen's test shape above, with the write-off in place of the reopen, is its test. Nothing changes in
+   this item's build.
+   **The most direct members of the class wait on the `ledger:` lock itself (review round 6).** No job calls the
+   manual actions (outside `apps/worker/src/reconcile/manual.ts`, only `public.ts:12` names them); the web runs them
+   inside its requests. `matchPostingAction`, `matchDepositAction`, `matchClaimAction` and `reverseMatchAction`
+   (`apps/web/src/lib/routes/reconciliation.ts:3`, :182, :203, :228, :260) and `adjustEntryAction`
+   (`apps/web/src/lib/routes/specialist.ts:3`, :154) call `matchPostingByHand`, `matchDepositByHand`,
+   `matchClaimByHand`, `reverseMatch` and `adjustEntry` through the routes' `manual()` helper
+   (`reconciliation.ts:139-159`) in the request's practice-scoped transaction (`withPracticeScope`,
+   `apps/web/src/lib/http/invoke.ts:497`), and each action's `begin()` (`manual.ts:46-49`) calls the blocking
+   `lockLedger`. So today, on the base as on the candidate, every manual match, unmatch or adjustment on a practice
+   during its pass holds a web request and one of the 10 application connections for the rest of the pass. These five
+   actions join the web owner's inventory beside the reopen and the write-off, with the same remedy. The preferred
+   form leaves `manual.ts` as it is: `manual()` takes `pg_try_advisory_xact_lock` on the same `ledger:` key before it
+   runs the action and, if not granted, refuses at once with the same identifier-free retryable refusal, writing
+   nothing; if granted, `begin()`'s `lockLedger` returns at once (a session holding an advisory lock is granted it
+   again). **The try-lock also refuses between two people (review round 7).** Every manual action's `begin()` holds
+   the `ledger:` key to its commit, so with the try-lock a second person's manual action, or a reopen or write-off,
+   on the same practice is refused while a first person's action of a few milliseconds holds it, where today it
+   waits briefly and succeeds. A retry runs against the state the wait would have seen and the refused action writes
+   nothing, so no amount, stage or total changes; the cost is a refusal a person can see, which is why its words are
+   general ("the ledger is busy, try again") and never say that a reconciliation is running. The floor keeps
+   manual-against-manual serialization (the second action waits milliseconds and succeeds) and bounds the wait on a
+   pass; it is the lesser form for the reasons the reopen's paragraph gives. **Where the floor goes (review round 7).**
+   The `SET LOCAL lock_timeout` of a few seconds is set only in the affected writers, never in `withPracticeScope`
+   (`packages/db`), which the web's other routes, the model gateway for user actors
+   (`packages/model-gateway/src/postgres-store.ts:68, :231`), the capacity harness (`tools/release-capacity/run.ts:357,
+   :366`; `scenario.ts:372, :524, :567, :584, :593, :657`) and the worker's test worlds
+   (`apps/worker/src/reconcile/test-support/ledger-world.ts:114, :141, :154, :181, :217`, which CAS-49 builds on) also
+   use, and never in `withJobScope` (`apps/worker/src/jobs/runs.ts:43, :52`), which the reconcile pass runs under, so
+   the pass never gives up its own wait. In `manual()` it is set before a blocking `lockLedger` that `manual()` itself
+   takes before `run()`, and set back (`SET LOCAL lock_timeout = 0`) once the lock is granted, so the action's
+   `begin()` re-acquires it at once and nothing after it runs under the timeout; in the reopen and the write-off it is
+   set just before the first `case` or `case_line` update and set back just after it. A transaction-wide timeout would
+   also cut short the web's own blocking advisory waits, which map no `55P03` (`case_owner` and `packet`,
+   `apps/web/src/lib/cases/workbench.ts:93, :120`; `document_use`, `apps/web/src/lib/contracts/tagging.ts:48`;
+   `plan_months`, `apps/web/src/lib/pricing/mapped-plan.ts:61`), and would reach the harness and the test worlds when
+   they overlap a pass. Wherever the floor is used (the manual actions, the reopen and the write-off), the same place
+   maps SQLSTATE `55P03` (`lock_not_available`) to that refusal: `manual()` maps only `ReconciliationError` today, so
+   a timeout would otherwise surface as a generic server error. Their test: CAS-49.6's two-session shape, session A
+   holding the `ledger:` lock, asserting `reverseMatchAction` and `adjustEntryAction` each return the refusal within a
+   second and write nothing, and succeed with the lock free; two concurrent `reverseMatchAction` requests on different
+   matches of one practice, where under the try-lock the second gets the general refusal and its retry succeeds (under
+   the floor both succeed); and, under the floor, a web step waiting on `plan_months` or `case_owner` longer than the
+   floor still completes, not cut short. No amount changes: each action is atomic and writes the same rows when it
+   runs. Nothing changes in this item's build.
 
 ---
 
@@ -1919,7 +2006,7 @@ unchanged). No change to the matching rules, any amount, the order of any write,
 
 | Round | Finding | Lens | Rating | Skeptics (upheld) | What was checked | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| 4 | Every equality proof compares encrypted text only as present or absent, so a wrong move-back note passes, and D3 moves the code that chooses the note. | payment engine | should-fix | 3 of 3 | `cap3-probe/dump.py:12` (`CIPHER`, `canon()` → `v is not None`) and T2; CAS-49 had no decrypted comparison; `cipher.ts` is AES-256-GCM with a fresh nonce, so byte equality fails spuriously; candidate `stages.ts:35-45` (`moveBackNote`), :118 (chosen per line before any insert), :123 (one `insertStages`); the only encrypted write in the pass is `line_status.reason` (`stages.ts:119`), the manual actions add `ledger_entry.reason` and `ledger_match.reversal_reason` (`manual.ts:196, 253`). A skeptic's narrowing: LED-07 (`ledger.db.test.ts:632`) decrypts and expects `REOPEN_NOTES.reversal`, so a full reversal/proof-level swap already fails; no test checks the proof-level text. | **Taken, corrected.** Section 7's intro and CAS-49.1's new paragraph: every encrypted column the pass writes is compared by the SHA-256 of its decrypted plaintext, in memory, never logged, never by presence; 49.2, 49.4 and 49.6 the same; the generator makes both move-backs in every world. The sixth mutant is `moveBackNote` always returning the reversal note (the proof-level note lost), which LED-07 does not catch, not the full swap it does. Section 6, CAS-49's matrix row ("the same text in every encrypted note"), T2 and 14.1 (presence only, harmless for F and R, which write no note), section 17's dump fallback, slice 1. The ask: one sentence that encrypted text was compared by presence only in the row-for-row runs. |
+| 4 | Every equality proof compares encrypted text only as present or absent, so a wrong move-back note passes, and D3 moves the code that chooses the note. | payment engine | should-fix | 3 of 3 | `cap3-probe/dump.py:12` (`CIPHER`, `canon()` → `v is not None`) and T2; CAS-49 had no decrypted comparison; `cipher.ts` is AES-256-GCM with a fresh nonce, so byte equality fails spuriously; candidate `stages.ts:35-45` (`moveBackNote`), :118 (chosen per line before any insert), :123 (one `insertStages`); the only encrypted write in the pass is `line_status.reason` (`stages.ts:119`), the manual actions add `ledger_entry.reason` and `ledger_match.reversal_reason` (`manual.ts:196, 253`). A skeptic's narrowing: LED-07 (`ledger.db.test.ts:632`) decrypts and expects `REOPEN_NOTES.reversal`, so a full reversal/proof-level swap already fails; no test checks the proof-level text. | **Taken, corrected.** Section 7's intro and CAS-49.1's new paragraph: every encrypted column the pass writes is compared by the SHA-256 of its decrypted plaintext, in memory, never logged, never by presence; 49.2, 49.4 and 49.6 the same; the generator makes both move-backs in every world (superseded in round 5: only in the runs that raise the proof level; the others stay at posted). The sixth mutant is `moveBackNote` always returning the reversal note (the proof-level note lost), which LED-07 does not catch, not the full swap it does. Section 6, CAS-49's matrix row ("the same text in every encrypted note"), T2 and 14.1 (presence only, harmless for F and R, which write no note), section 17's dump fallback, slice 1. The ask: one sentence that encrypted text was compared by presence only in the row-for-row runs. |
 | 4 | Round 1's plan guard for the new ledger function bodies can pass without testing the deployed function. | payment engine | should-fix | 3 of 3 | 14.1, the ask's "A plan test" bullet and section 16's row 1: EXPLAIN of copied statement text, no tie to `pg_get_functiondef`, no step that keeps the ledger unanalyzed (`autovacuum_enabled = false` only in CAS-49.1), no fail-first run; C1 measured the bad plans on a never-analyzed ledger only. A skeptic could not confirm that autoanalyze fires within CI's window or that the old body picks `ledger_entry_by_line` with statistics; the copy-versus-catalog point stands alone. | **Taken, corrected** (the catalog form, not auto_explain). 14.1: the migration marks each of the three statements with a `-- plan-guard: …` comment; the test cuts them from `pg_get_functiondef`, fails on a missing marker, sets `autovacuum_enabled = false` on `ledger_entry` and `ledger_match` and asserts `reltuples = -1` and null `last_analyze` and `last_autoanalyze` before planning, and the PR records it failing on #126's base against today's bodies. auto_explain on a real insert rejected: it needs a superuser's `LOAD` and the server log. The ask's bullet says the same in plain words. Lane A's PR carries it; nothing in this item's build. |
 | 4 | The ask says the new `ledger_line_net` gives the same answer unconditionally, but the trigger rule it rests on is skipped for out-of-scope inserts and no foreign key backs it. | payment engine | nit | 2 of 3 | `ledger_entry_rules` returns early when `NOT practice_in_scope(NEW.practice_id)`; `ledger_entry` has single-column keys only (migration `20261023120000`:173-185). The refuting skeptic, confirmed: the early return leaves the row to `ledger_entry_tenant`'s `WITH CHECK` (`20261023120000`:733-735; `practice_in_scope`'s comment, `20261016090000`:119-120), and every role, the owner included, is `NOBYPASSRLS` (`migrate.test.ts`:138-148), so only a superuser can store a mismatched row, and a superuser could equally disable the triggers; run as the owner, the proposed count reads nothing under the forced policy and would prove nothing. | **Taken, corrected** (wording only). 14.1 and the ask's "Why the answer is the same" now say the rule holds for every entry any non-superuser role can store, and why (the rules in scope, the tenant policy outside it). The migration precondition is **not taken**: as the owner it is vacuous under forced RLS, and the ask would offer it as evidence. |
 | 4 | Section 4 tells the build to apply `d1-ts-exclusion.diff`, whose patient-search hunk is the TypeScript-only exclusion D16 rejects. | security | should-fix | 3 of 3 | Design section 4's last line of the patient bullet; the diff's three hunks (`controlCandidates` at @@ -228, the patient statement's `NOT EXISTS` deleted with nothing in its place at @@ -276, `passCandidates` at @@ -348); D16, 1.7, slice 3 and round 1's row reject that form; 1.7 and section 15 present the diff as "the D16 TypeScript form". Skeptics: slice 3's "TypeScript form" is a timing baseline, not an instruction; nit or should-fix. | **Taken.** Section 4: from the diff the build takes only the control-search hunk and `passCandidates`' call site, never the patient hunk; the patient statements get D16's arrays or the correlated fallback. 1.7, section 15 and slice 3 name the diff "a measured reference, not a patch"; slice 3 says its "TypeScript form" is a timing baseline. |
@@ -1935,6 +2022,82 @@ and its sixth mutant; slice 3 takes only the control-search hunk of `d1-ts-exclu
 the open lines' pairs; Lane A's PR carries the catalog-tied, statistics-checked, fail-first plan test; the web owner's
 hand-off (14.4 item 14) is a try-lock with a retryable refusal, never a blocking wait. The ask changed in proof wording
 only; the bodies the founder granted are unchanged.
+
+
+Round 5 (the delta only, by speed rule 3: round 4's applied rows and completeness check 2's changes, diffed against
+the copies taken before check 2; the same two lenses, three skeptics per finding; both verdicts BUILD, with changes,
+nothing blocking). The payment-engine lens re-checked the delta's money claims and found them holding: the ask's SQL
+equals the granted text at 38123394, the ask's figures equal 8.3a and 14.1, the `matched` filter keeps the exclusion,
+the sixth mutant can fail, and CAS-50's split catches a per-line fallback in `reprocessingOf`. Three findings
+survived, each checked against the candidate (cap3-rev, 0b6e90eb) and the base's migrations and functions by reading;
+no probe was run. Applied in section 7 (CAS-49.1's encrypted-text paragraph, CAS-50's first bullet, CAS-49's matrix
+row, which `matrix.ts` copies word for word), 10 (the D3 risks row), 11 (slices 1 and 5) and 14.4 (item 14). The ask
+is unchanged: none of the three concerns it. No change to a matching rule, an amount, the order of any write, the
+recovered total, a budget, `packages/ledger/src`, the schema, the files of section 9 or ADR 0087's text.
+
+| Round | Finding | Lens | Rating | Skeptics (upheld) | What was checked | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| 5 | Round 4's rule to make the proof-level move-back in every generated world puts every CAS-49.1 pass at the deposited level, so no generated pass is compared at the default posted level. | payment engine | should-fix | 3 of 3 | `setLedgerSettings` writes `practice.settings` for the whole practice (`settings.ts:27-35`); `ledger_line_stage` reads `ledger_proof_level(l.practice_id)` for every line and counts only entries at that level (`ledger_line_stage.sql:15`, `proved`, `last_proof`); `DEFAULT_PROOF_LEVEL` is `'posted'` (`packages/ledger/src/stages.ts:18`); LED worlds other than LED-06 set posted (`ledger.db.test.ts:188`); `moveBackNote` (`stages.ts:35-46`) gives the proof-level note only when a recovered line falls short with no reversal since, so the compared pass must run raised. Skeptics: CAS-49.2 and 49.3 still cover posted in fixed worlds, and deposited entries still exercise D3's order, so the loss is generated posted-level variety, not a money error. | **Taken.** CAS-49.1: the level is fixed by run index, never drawn; the 13 even runs stay at posted (postings in the pass move lines to recovered, payer approved and recovered from a posted entry in one `insertStages`, the posted recovered total compared); the 12 odd runs raise to deposited after the history and make both move-backs (no reversal: the proof-level note; a deposit match reversed by a person while the posting stood, as round 5's refuted finding's skeptics traced: the reversal note); the harness asserts both levels ran, a posted run recovered a line from a posted entry in the pass, and fixed CI run 1 holds both move-backs, against which the sixth mutant is checked. CAS-49's matrix row names both levels; slice 1 builds it. |
+| 5 | CAS-50's "other `claimLines` calls exactly 3" names no way to tell the calls apart, and 3 holds only if `recoupReversals` finds a standing approved claim match. | payment engine | nit | 3 of 3 | Every caller issues the same text (`remittances.ts:425-435`; callers :363, :595, :616, :649, :797); `passCandidates` calls it inside the module; each round issues `controlCandidates` then `claimLines` (:351, :363) and the loop ends on an empty round (:377); `matchClaims`' `chainContext` (:907) runs first; `recoupReversals` returns before its `chainContext` without a standing approved claim match (:974-977), its matches re-read after `matchClaims` (:1190-1192); `shares` calls `chainContext` before its own early return (`postings.ts:285`, via `settleMatches` :335). | **Taken.** CAS-50: the proxy attributes by position (the search's calls are those between the first and last `controlCandidates` statement; `rounds` is their count; the practice-wide calls fall before and after, where a per-line `reprocessingOf` fallback would also land), and the test asserts the world's standing approved claim match after `matchClaims` before asserting 3 (otherwise 2 is correct, on the base too). Slice 5 names both. |
+| 5 | 14.4 item 14 and the risks row treat a web request's wait on a pass as a reopen-only problem, but the write-off waits on the same case row. | security | nit | 3 of 3 | `pass.ts:41` hands `recordReprocessedNoChange` to `reconcileRemittances`, which calls `recordPayerResponse` (`responses.ts:127`); its insert fires `payer_response_refresh_case` (`UPDATE "case"`); the stage insert's AFTER STATEMENT case refresh (`line_status_refresh_cases.sql:14-15`) does the same; `writeOffLineAction` (`apps/web/src/lib/routes/triage.ts:474-512`) runs `UPDATE case_line`, whose statement trigger `case_line_refresh_updated` (migration `20261019160000`:545) updates the same case; no `lock_timeout` anywhere in apps or packages; the application pool has 10 connections (`pools.ts:10`). The base behaves the same. | **Taken** (hand-off wording only). 14.4 item 14 names the class (every web writer of a `case`, `case_line` or `submission` row a running pass can hold, the write-off and the reopen at least), recommends the same `ledger:` try-lock refusal in each, or a `SET LOCAL lock_timeout` of a few seconds in the practice-scoped mutation transaction as the floor (superseded in round 7: set only in the affected writers around the statement that waits, never transaction-wide), with the reopen's test shape for the write-off; the risks row now says the reopen never makes a blocking wait and other web writers of case rows still can, handed on with it. Nothing in this item's build. |
+
+**Refuted in round 5 (not taken):**
+- *CAS-49.1 asks the pass to write a reversal-note move-back, which no product path lets the pass write* (payment engine, 0 of 3): a reversal written while another proof keeps the line recovered (a deposit match reversed under posted while the posting stands, or one of two posting matches) leaves `finish()`'s sync with nothing to move; a later proof-level raise makes the next pass move the line back, and `moveBackNote` (`stages.ts:35-45`) returns the reversal note, since it asks only whether a reversal is newer than the line's last recovered row; settings write no stages (`syncLineStages` is called only from `pass.ts:45` and `manual.ts:65, :255`). Round 5's first finding now builds the case this way.
+- *The ask still says the answer is the same with no condition, and files the tenant-policy dependence as a rewording* (security, 1 of 3): the conclusion the founder read still holds for every non-superuser role, only its reason changed (the tenant policy outside the trigger's scope, every role `NOBYPASSRLS`), the ask's header and "Why the answer is the same" already disclose it, and round 4 settled it as wording only with the precondition left out.
+
+**Verdict after round 5:** the design stands; slice 1 carries CAS-49.1's proof level fixed by run index (posted and
+deposited runs, both move-backs in the raised runs, the harness's level and seed checks); slice 5 carries CAS-50's
+attribution by position and its precondition; the web owner's hand-off (14.4 item 14) covers every web writer of case
+rows a pass can hold, not only the reopen. Nothing in the ask changed.
+
+Round 6 (the delta only, by speed rule 3: round 4's applied rows, completeness check 2's changes and round 5's
+applied rows; the same two lenses, three skeptics per finding; both verdicts BUILD, with changes, nothing blocking).
+The payment-engine lens re-checked the ask's SQL against the granted text at 38123394, the ask's figures against 8.3a,
+8.4 and 14.1, CAS-49.1's proof level by run index, CAS-50's attribution by position and its precondition, and D16's
+fallback in both patient statements, and found them holding; the security lens found D16's fallback keeps
+`m.practice_id = $1` per alias and widens no decrypt. Two findings survived; they are one fault seen through two
+lenses (round 4's sentence in 14.4 item 14), applied once. Checked against the candidate (cap3-rev, 0b6e90eb) by
+reading; no probe was run. Applied in 5.2 (the first bullet), 10 (the D3 risks row) and 14.4 (item 14: the "no
+precedent" sentence and a new last paragraph). The ask is unchanged: neither finding concerns it. No change to a
+matching rule, an amount, the order of any write, the recovered total, a test of section 7, a budget, a slice,
+`packages/ledger/src`, the schema, the files of section 9 or ADR 0087's text.
+
+| Round | Finding | Lens | Rating | Skeptics (upheld) | What was checked | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6 | 14.4 item 14 says the manual actions take the ledger lock only inside jobs, but the web runs them with a blocking lock. | payment engine | nit | 3 of 3 | `manual.ts` `begin()` (:46-49) calls `lockLedger`, the blocking `pg_advisory_xact_lock` (`ledger.ts:16-18`); every action calls `begin()` first (:71, :101, :136, :178, :229 with `ledger.adjust`); outside `manual.ts` only `public.ts:12` names them, no job calls them; `reconciliation.ts:3` imports four of them and runs them through `manual()` (:139-159) from `practiceRoute` handlers (:182, :203, :228, :260); `specialist.ts:3, :154` does the same for `adjustEntry`; the request runs in `withPracticeScope` (`invoke.ts:497`); section 7 already said the routes run the manual actions through `@tp/worker/ledger`. | **Taken.** The sentence corrected (the manual actions run in web requests and already make the blocking wait); a new last paragraph of item 14 adds the five web actions to the class with the same remedy (the `ledger:` try-lock in `manual()` before the action, `manual.ts` unchanged, or the `lock_timeout` floor set before `begin()`), the floor in `withPracticeScope` only, never `withJobScope` (superseded in round 7: only in the affected writers, never in `withPracticeScope` or `withJobScope`), and their test (CAS-49.6's shape, the lock held: the refusal within a second, nothing written). Nothing in this item's build. |
+| 6 | Item 14 says the manual ledger actions only lock inside jobs, but the web's Reconciliation routes already wait on the `ledger:` lock for a whole pass, and round 5's list of affected writers leaves them out. | security | should-fix | 3 of 3 | As the row above; also: no `lock_timeout` in any `.ts` under apps or packages; `manual()` maps only `ReconciliationError` to a refusal and rethrows the rest (:150-157), so a `55P03` would surface as a generic server error; `WEB_POOL_CONNECTIONS.application` 10 (`pools.ts:10`); the pass runs under `withJobScope` (`jobs/runs.ts:43, :52`), which only the worker uses. The base behaves the same; this item does not lengthen the lock. | **Taken, with the row above** (one paragraph). Item 14 also says that wherever `lock_timeout` is the floor (the manual actions, the reopen, the write-off), the route maps SQLSTATE `55P03` to the identifier-free retryable refusal, since `manual()` would otherwise return a generic error. The D3 risks row names the manual actions with the same remedy and the `55P03` mapping; 5.2's first bullet says they run in web requests and wait for the pass, handed on. A hand-off text change only. |
+
+**Refuted in round 6 (not taken):**
+- *CAS-49.1's harness checks less than the round-5 text says the posted and deposited runs cover* (payment engine, 0 of 3): the third mutant (events grouped by stage) changes the seq order whenever one line's recovered event precedes another line's payer-approved event in one statement, which ordinary posted runs produce, so the approved-and-recovered pair is not required; all six mutants are in the file's own self-check over the fixed runs, so a generator drift that removed a mutant's shape fails loudly; CAS-49.3 pins the pair in a fixed world and CAS-49.2 runs LED-06 at deposited; only the sixth mutant needs a pinned world (run 1). At most a wording nit about what the even runs "include".
+
+**Verdict after round 6:** the design stands; nothing in the build, the tests, the budgets or the slices changed; the
+web owner's hand-off (14.4 item 14) now covers the five manual reconciliation actions, the most direct waiters on the
+`ledger:` lock, beside the reopen and the write-off. Nothing in the ask changed.
+
+Round 7 (the delta only, by speed rule 3: round 4's applied rows, completeness check 2's changes and the rows rounds 5
+and 6 applied; the same two lenses, three skeptics per finding; verdicts BUILD (payment engine) and BUILD WITH CHANGES
+(security), nothing blocking). The payment-engine lens found the ask's two bodies byte-identical to the bak-critic2
+copy and equal to 14.1's, CAS-50's attribution by position buildable and able to fail on a per-line fallback in
+`reprocessingOf`, CAS-49.1's proof level by run index able to produce both move-back notes, and round 6's try-lock
+re-entrant with `begin()`'s `lockLedger`; the security lens found D16's fallback, CAS-50 and CAS-49.1 widen no decrypt
+and add no logged field, and the affected routes check permission in `practiceRoute` before `manual()`. Two findings
+survived, both on round 6's last paragraph of 14.4 item 14 (hand-off text only); none was refuted. Checked against
+the candidate (cap3-rev, 0b6e90eb) by reading; no probe was run. Applied in 10 (the D3 risks row) and 14.4 item 14
+(the reopen's refusal wording, round 5's floor sentence and round 6's last paragraph). The ask is unchanged: neither
+finding concerns it. No change to a matching rule, an amount, the order of any write, the recovered total, a test of
+section 7, a budget, a slice, `packages/ledger/src`, the schema, the files of section 9 or ADR 0087's text.
+
+| Round | Finding | Lens | Rating | Skeptics (upheld) | What was checked | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| 7 | Round 6's try-lock in `manual()` also refuses when another person's manual action holds the `ledger:` lock, not only during a pass, and the refusal's example wording says a reconciliation is running. | payment engine | nit | 3 of 3 | `begin()` (`manual.ts:46-49`) calls the blocking `lockLedger` (`ledger.ts:16-18`) for every action (:71, :101, :136, :178, :229); the only other caller is the pass (`pass.ts:39`); so two people's manual actions on one practice serialize and both succeed today; the reopen's example wording ("reconciliation is running") is what round 6's "the same … refusal" points to; the handed-on test covered only a held lock in CAS-49.6's shape; a refused action rolls back whole. | **Taken** (hand-off text only). 14.4 item 14: the reopen's example wording is now general ("the ledger is busy"), with the reason (a pass or another person's manual action holds the key); round 6's paragraph names the manual-against-manual refusal, its cost (a visible, retryable refusal; no amount, stage or total), that the floor keeps manual-against-manual serialization, and adds the test assertion (two concurrent `reverseMatchAction` requests on different matches: the second refused and its retry succeeds under the try-lock, both succeed under the floor). The try-lock stays the preferred form (rounds 4-6). Nothing in this item's build. |
+| 7 | Round 6 puts the `lock_timeout` floor in `withPracticeScope`, "which only web requests use", but the gateway, the capacity harness and the worker's test worlds use it, and a transaction-wide timeout would cut short the web's own advisory waits. | security | should-fix | 3 of 3 | `withPracticeScope` callers at 0b6e90eb: `packages/model-gateway/src/postgres-store.ts:68, :231`; `tools/release-capacity/run.ts:357, :366`, `scenario.ts:372, :524, :567, :584, :593, :657`; `apps/worker/src/reconcile/test-support/ledger-world.ts:114, :141, :154, :181, :217`; the web's blocking advisory waits `workbench.ts:93` (`case_owner`), :120 (`packet`), `tagging.ts:48` (`document_use`), `mapped-plan.ts:61` (`plan_months`), none mapping `55P03` (no `lock_timeout` or `55P03` under `apps/web/src`); round 5's floor sentence said "in the practice-scoped mutation transaction". One skeptic noted the D3 risks row did not carry the false phrase (it is in item 14 only) and one rated it nit-or-should-fix, since round 6 already said "set before `begin()`". | **Taken** (hand-off text only). 14.4 item 14: the false clause deleted; the floor is set only in the affected writers (in `manual()` around a `lockLedger` it takes before `run()`, set back with `SET LOCAL lock_timeout = 0` once granted; in the reopen and the write-off around the first `case` or `case_line` update), never in `withPracticeScope` or `withJobScope`, with the callers and the web's own waits named; the `55P03` mapping in the same places; the test adds that a web step waiting on `plan_months` or `case_owner` longer than the floor still completes. Round 5's floor sentence says the same; the D3 risks row now says where the floor goes and that the refusal is general. Nothing in this item's build. |
+
+**Refuted in round 7 (not taken):** none.
+
+**Verdict after round 7:** the design stands; nothing in the build, the tests of section 7, the budgets or the slices
+changed; the web owner's hand-off (14.4 item 14) now scopes the `lock_timeout` floor to the affected writers, never
+the shared `withPracticeScope`, and words the try-lock's refusal generally, since another person's manual action also
+holds the `ledger:` key. Nothing in the ask changed.
 
 ---
 
@@ -1996,3 +2159,27 @@ write order, budget or file in section 9 changed.
 - CAS-51's CI time is an estimate until slice 5 (item 7).
 - The status file's "For Lane A" entries still carry the first form's figures (it says so itself). The status file is
   the item session's to update.
+
+**After the delta rounds (5-7; consistency check, 2026-11-07).** The three delta rounds were checked against each
+other and against sections 0, 3, 4, 5, 7, 8, 9, 10, 11, 14 and 18, by reading the design and the ask only; no probe
+was run. One disposition row stands for each surviving finding: 3 + 2 + 2 = 7, so 31 of 46 findings over seven rounds
+survived; the refuted lines number 2, 1 and 0. Small gaps fixed in place:
+
+1. **Superseded floor placements marked.** Round 5's third row ("in the practice-scoped mutation transaction") and
+   round 6's first row ("in `withPracticeScope` only") now say that round 7 superseded them: the `lock_timeout` floor
+   is set only in the affected writers, around the one statement that waits, never in `withPracticeScope` or
+   `withJobScope`.
+2. **The reopen's lesser form points to that placement (14.4 item 14).** Its `lock_timeout` sentence now says the
+   floor is set and set back around that one wait, as the item's last paragraph says.
+3. **Slice 1 names all three of CAS-49.1's harness checks.** The checks are that both proof levels ran, that a posted
+   run moved a line to recovered from a posted entry matched in the pass, and that run 1 holds both move-backs. The
+   slice had named only the first and the third.
+
+Checked and found consistent: CAS-49.1's 13 even runs and 12 odd runs make the 25 runs, and run index 1 is an odd
+(raised) run. CAS-49's matrix row names both levels, and section 9 and slice 5 copy it word for word into `matrix.ts`.
+5.2's first bullet, the D3 risks row (10) and 14.4 item 14 agree on four points: the manual actions run in web requests
+and wait for a pass, on the base as well; the remedy is the try-lock, with the floor as the lesser form; the refusal is
+worded generally; and `55P03` is mapped wherever the floor is used. Section 0, D3 and D4 are untouched by the delta
+and agree with it, because rounds 5 to 7 added no lock, write or order to this item's build. The ask is byte-identical
+to its copy taken before round 5, and its figures still equal 8.3a and 14.1: the 24% and 76 s in its table and text
+are 24.3% and 75.6 s rounded. Rounds 5 to 7 changed nothing in its header's account of what changed since the grant.
