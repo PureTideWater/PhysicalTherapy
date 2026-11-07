@@ -38,11 +38,12 @@ import { ScreeningResultView } from './result-view';
 
 /**
  * The screening result's three tables, each with its stacked rows for a phone (docs/adr/0078; test matrix TBL-05,
- * TBL-06 and TBL-08; UX-005, UX-042, UX-043, UX-132): one list of columns per table read in order for the table's
- * headers, each row's cells and the stacked fields; the table's hooks in the table copy alone; the status wrapping
- * above its floor in a cell; the words this change writes; and, since the stacked rows make a phone's page long, the
- * link under the heading to the audit request (UX-134). The switch between the copies in a real browser is
- * e2e/screening-phone.spec.ts's. result.test.tsx (#42's) pins the table copy's markup and words as they were.
+ * TBL-06 and TBL-08; UX-005, UX-040, UX-042, UX-043, UX-132, UX-206): one list of columns per table read in order for
+ * the table's headers, each row's cells and the stacked fields; the table's hooks in the table copy alone; the status
+ * wrapping above its floor in a cell; the result's words and tones, the same in both copies (UX PR 4 and its follow-on,
+ * UX PR 4b); and, since the stacked rows make a phone's page long, the link under the heading to the audit request
+ * (UX-134). The switch between the copies in a real browser is e2e/screening-phone.spec.ts's. result.test.tsx pins the
+ * table copy's markup.
  * SYNTHETIC figures, written by hand from G01's codes as SYNTHETIC release 900001 prices them before sequestration
  * (97110 GP: $36.84 alone, $31.45 fully reduced; 97140 GP: $24.58 and $18.20; 97161 GP: $59.17, one figure).
  */

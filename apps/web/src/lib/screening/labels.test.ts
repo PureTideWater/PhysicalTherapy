@@ -91,7 +91,7 @@ describe('the labels of UX PR 4b', () => {
     expect(labels.REDUCED_FIGURE_LABEL).toBe('Medicare figure, fully reduced across codes');
     expect(labels.MEDICARE_LINE_LABEL).toBe('Medicare figure for one claim line, before the reduction across codes');
     expect(labels.REDUCED_LINE_LABEL).toBe('Medicare figure for one claim line, fully reduced across codes');
-    const words = Object.values(labels).filter((value): value is string => typeof value === 'string');
+    const words = Object.values(labels).flatMap((value): string[] => (typeof value === 'string' ? [value] : []));
     expect(words.filter((value) => /\bexpected\b/i.test(value))).toEqual([]);
   });
 
