@@ -315,22 +315,47 @@ function ShellNav({ shell, section }: { readonly shell: Shell; readonly section:
   );
 }
 
+/** The id of the shell's main, which the skip link moves focus to. */
+const CONTENT_ID = 'content';
+
+/**
+ * The first tab stop on every page in the shell (WCAG 2.4.1; test matrix CI-30): hidden until it has focus, then shown
+ * at the top left above the sticky header, so a keyboard user passes the header and the rail with one Enter. The main
+ * it names takes focus with tabIndex -1 and draws no outline of its own (a ring round the whole page would say
+ * nothing): the page moves to it, and the next Tab reaches the first control inside main.
+ */
+function SkipLink() {
+  return (
+    <a
+      href={`#${CONTENT_ID}`}
+      className="sr-only rounded-md bg-background px-3 py-2 text-sm font-medium ring-2 ring-ring focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50"
+    >
+      Skip to the content
+    </a>
+  );
+}
+
 /**
  * The application shell (PRD 7; docs/brand/BRAND.md, section 7): a header with the PaidWhole lockup on the
  * left and the practice switcher and the account on the right; under it the navigation rail, whose active
- * item carries the single brass underline. Below the md breakpoint the rail folds into the header's Menu.
+ * item carries the single brass underline. Below the md breakpoint the rail folds into the header's Menu. Each
+ * branch starts with SkipLink, and its main is the link's target.
  */
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
   if (shell === undefined) {
     return (
       <div className="flex min-h-screen flex-col">
+        <SkipLink />
         <PublicHeader />
-        <main className="mx-auto w-full max-w-3xl px-4 py-8 md:p-10">{children}</main>
+        <main id={CONTENT_ID} tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-8 focus:outline-none md:p-10">
+          {children}
+        </main>
       </div>
     );
   }
   return (
     <div className="flex min-h-screen flex-col">
+      <SkipLink />
       <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background px-4 md:px-6" data-slot="app-header">
         <Link href="/" className="shrink-0 no-underline">
           <PaidWholeLockup size={20} />
@@ -350,7 +375,7 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
         <aside className="hidden w-64 shrink-0 flex-col gap-4 border-r bg-sidebar p-4 text-sidebar-foreground md:flex" aria-label="Navigation">
           <ShellNav shell={shell} section={section} />
         </aside>
-        <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 py-6 md:p-8">
+        <main id={CONTENT_ID} tabIndex={-1} className="flex min-w-0 flex-1 flex-col gap-6 px-4 py-6 focus:outline-none md:p-8">
           <details className="self-end text-sm" data-help={section}>
             <summary className="cursor-pointer text-muted-foreground underline">Help with this screen</summary>
             <div className="mt-2 flex max-w-md flex-col gap-2 rounded-md border bg-background p-3">
