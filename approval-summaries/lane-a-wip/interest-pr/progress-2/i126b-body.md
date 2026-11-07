@@ -1,0 +1,9 @@
+# i126b body update (PR #126 head d2fdd106): add 2nd review round + CAS-42.5 + UX re-shots (null)
+- start 2026-11-07; no prior i126b-body progress. work dir scratchpad/i126b-body
+- step 1: body read via pull_request_read: 51,089 chars sha 25aa90c2... (= i126 final); head still d2fdd106 -> no summary regen; saved body-before.md
+- step 2: CAS-42.5 facts verified in i126b-cap/capacity-job.log (summary.md lines 976-1047); measureWindows restarts PG (run.ts:350, step 8 doc line 105). next: check CI state, then edit body
+- step 3: CI on d2fdd106 (run 42307413104, attempt 1) DONE: all green FAILED. domain model failed = expected (--require-approval, blank line). unit CANCELLED at its 20-min limit after 17 test failures in 7 files, all timing-looking (model-gateway redact x2 files, denial-letter, web tables, stryker affected, packets export, verifier); PR touches none of those files. Logs: i126b-body/ci-unit.log, ci-dm.log. Not re-run (not this step). Will update CI row factually.
+- step 4: body-new.md 53,566 chars sha 1fdf0fca...; edits: CI row (did not pass: unit cancelled, dm expected), CAS-42.5 passed para, 2nd-round-on-head row (no defects), did-not-see bullet, re-shots not taken, '(the mutation gate's row)'. next: update_pull_request
+- step 5: about to send update_pull_request with body-new.md (53,566 chars, sha 1fdf0fca...); then read back via gh api
+- step 6: update_pull_request sent (ok); next read back
+- DONE: PR #126 body updated (update_pull_request) at head d2fdd106; read back by gh api pulls/126: 53,566 chars (53,627 bytes), sha256 1fdf0fcac9d71c94b1b9382177f4ee56cb02dd4e302a15f89888e1ed03374f63, EQUAL to i126b-body/body-new.md. Summary block unchanged (head unchanged, no regen). Added: 2nd round on head row (no defects), CAS-42.5 passed, re-shots not taken, CI row (did not pass). No comment, review or approval line posted.
