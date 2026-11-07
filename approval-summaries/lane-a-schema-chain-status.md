@@ -10,6 +10,21 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 01:45 UTC (acting Lane A): #126 at d2fdd106; the second review round STILL not done.** wf_29adffb1-b27:
+  every reviewer of a custom agent type (payment-engine-reviewer, security-reviewer, ux-brand-reviewer) ended without
+  returning its result, three rounds running (a workflow defect with those types: use default agents that read the
+  .claude/agents checklist instead). Their notes hold **candidate F1 (money):** LED-R2 orders take-backs only within one
+  interestWrites call, so an out-of-order upload across two reconcile passes might hold 11.40 of interest where 6.00 was
+  paid (an overstatement); and a db note: 20261110090000's lock loop takes ACCESS EXCLUSIVE (20261109090000's took SHARE /
+  SHARE ROW EXCLUSIVE). **CAS-42.5 PASSED on d2fdd106** (run 42307508461: 22 jobs on attempt 1; working set 668.3 of 921.6
+  MiB; F's reconcile 603.0 s of 900 s; at most 22 advisory locks per backend; the artifact download is refused by the
+  proxy, summary read from the job log). **CI on d2fdd106** (run 42307413104): green except domain model (the blank line
+  only), all green, and **unit, cancelled at its 20-minute limit on a degraded runner** (17 timing-bound tests in 7 files the
+  PR does not touch ran ~4x slower; an I/O error on the runner; unit green on both bases and on c49367c5): failed jobs
+  re-run once (01:45 UTC). Body refreshed (53,566 characters). Base 31a7345f is not an ancestor: merged once right before
+  the merge. **Running: wf_a71650bd-ea2** (script archived): the round with default agents: an F1 prover (a two-pass db
+  test), payment-engine and db/security lenses, skeptics, completeness critic, loop until dry; fixes if confirmed; UX
+  re-shots; the body. Then the fresh-clone verification reading CI, ready, the suggested line.
 - **2026-11-07 00:40 UTC (acting Lane A): #126 pushed d2fdd106** (fast-forward of c49367c5 through the hook; also
   `co-001/wip-interest-fix`): base cc3dd7f6 (#128) merged once as e81cd5af (no conflict; provenance only); the full local
   suite once on that tree: unit 10,001 + 4 skipped, infra 793, golden 381, oracle 717, ledger oracle 12, test:db 9,899 + 1

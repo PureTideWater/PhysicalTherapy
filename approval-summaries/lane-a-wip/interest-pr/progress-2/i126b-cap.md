@@ -1,0 +1,14 @@
+# i126b CAS-42.5 (release-capacity on PR #126 head d2fdd1060c9b23e7e5bf5d2560db99f8a7826d46)
+- 2026-11-07: existing run found for d2fdd106: 42307508461 (workflow_dispatch, attempt 1, completed/success, created 2026-11-06T22:49:03Z) -> reused, no dispatch
+- next: download artifact into scratchpad/i126b-cap/ (prior note: blob host may be refused by proxy; fallback = summary.md printed in job log)
+- artifact download: refused, proxy 403 CONNECT productionresultssa15.blob.core.windows.net (policy); artifact id 13549870345 (8926 B) exists; falling back to job log 128200474644
+- job log saved: scratchpad/i126b-cap/capacity-job.log (job 128200474644, success; notify job 128218385882 success). summary.md read from the log (run.ts prints it); release-capacity.json not readable (only in the artifact)
+- VERDICT: pass ("Every check passed."), commit d2fdd106, release 900110 (4172393 records)
+- runner: 4 CPUs, 15983 MiB, docker; worker 0.5 vCPU/1024 MiB on CPU 3, node --max-old-space-size=560; harness CPUs 0-1; ubuntu-26.04 20261101.186.1, centralus
+- all 22 jobs completed on attempt 1; max live heap 283 of 560 MiB
+- advisory locks: max 22 of 64 by one backend (first during F's reconcile; 2175 samples)
+- working set max 668.3 MiB vs 921.6 MiB line (2685 samples); memory.peak 724.2 MiB; OOM 0; restarts 0
+- F reconcile job 603.0 s of 900 s (297.0 s spare); phase 612.2 s (prior run 41966650378 on 650a3108: 627.4 s / 636.9 s)
+- advisory only: windows query 48730 ms cold > 5000 ms budget (prior: 50877 ms)
+- 3 QUEUE_ERROR worker log lines at 23:32:19 (x2) and 23:34:54: step 8 restarts Postgres for the cold windows query (run.ts:349-351); prior run had 2 at the same point; not judged
+- DONE
