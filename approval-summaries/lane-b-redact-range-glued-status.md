@@ -6,8 +6,9 @@ Counters (allocated by the orchestrator 2026-11-06 21:03 UTC): MOD-21 and MOD-22
 Session: session_01FcouKP1U2GGDFhhZT9CaUV (https://claude.ai/code/session_01FcouKP1U2GGDFhhZT9CaUV). GitHub login: PureTideWater.
 Claimed by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) 2026-11-06 19:40 UTC: "GO on the MOD-16 follow-up (Lane A
 handoff 2026-11-05 §2, first item for Lane B) ... no new ADR/MOD expected; COUNTER REQUEST if one is".
-Follow-ons, in order (orchestrator 2026-11-06 21:03 UTC: PHI first): (1) `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22; the week's top PHI
-item; two reviews with skeptics; refuse where a boundary is unknowable); (2) (orchestrator ~19:50 UTC, this session is S1) the packets
+Follow-ons, in order (orchestrator 2026-11-06 21:03 UTC: PHI first; 2026-11-07 10:53 UTC: the very next item, exempt from the
+weekly-cap hold, must land before any real PHI is processed): (1) `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22; the week's top PHI
+item; acceptance includes flipping every pinned row of this PR's class (A) residual table; two reviews with skeptics; refuse where a boundary is unknowable); (2) (orchestrator ~19:50 UTC, this session is S1) the packets
 verifier identifier fold (`approval-summaries/lane-b-packets-verifier-identifier-fold-status.md`, MOD-19/20; RESUME-BLOCK first;
 claim row and live heads; it shares verifier files with S4's packet-figure-placeholders slice 2 and the tp-packet-verifier/3
 migration: check S4's branch first, rule 6).
@@ -125,9 +126,19 @@ Effect: any PR's unit job can go red at random.
   sends the same shapes without a range (the leaks PR's class); closing it here refuses MOD-16 must-stay letters (297 or ~10 per
   20k) and so re-creates the CI flake; recommended: a recorded residual here, closed in co-001/redact-ssn-phone-leaks.
   (B) name 5 (month-word patient names); recommended: accept and record. The reviews of B run meanwhile.
+- 2026-11-07T10:53Z: **the orchestrator's rulings.** (A) ACCEPTED as a recorded residual on conditions: every row of the class
+  pinned in a residual table; an ADR 0054 entry naming `co-001/redact-ssn-phone-leaks` (MOD-21/22) as the fix, whose acceptance
+  test is that each pinned row flips to redacted or refused with the generator and patterns changed together; never weaken MOD-16
+  or skip a test; the PR description says the class is the pre-existing leak shape the base already sends without a range (this
+  PR exposes it, does not create it), with the counts. **The leaks PR is this session's very next item after this merges, ahead of
+  the verifier identifier fold, exempt from the weekly-cap hold (PHI safety), and "must land before any real PHI is processed"**
+  (the orchestrator records it in LANES.md and the handoff; the founder owns the launch). (B) ACCEPTED and recorded; a named
+  case for the leaks PR's design (an own name part equal to a month or common word, next to a date). 10:58Z: the rulings added
+  to the reviewers, skeptics, fixers, final stage and critic; the workflow restarted at review round 1 (the gate and B replay
+  from cache).
 
 ## Waiting on someone
-- The orchestrator: a ruling on classes (A) and (B) (asked 2026-11-07 10:55 UTC). The reviews continue meanwhile.
+- None: classes (A) and (B) ruled 2026-11-07 10:53 UTC.
 - Previously: none. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
 meanwhile as the safer option.)
 
