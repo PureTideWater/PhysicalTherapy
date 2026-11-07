@@ -205,6 +205,27 @@ describe('properties of format /3 (section 8)', () => {
     );
   });
 
+  it('fails a sign or a sign’s word set off before any token of the draft, at that token’s span', () => {
+    const signs = ['- ', '−(', '+ "', '$ ', 'negative ', 'minus (', 'Negative “'];
+    fc.assert(
+      fc.property(factPackets, fc.nat(), fc.nat(), (content, pick, char) => {
+        const draft = draftNarrative(content, V3);
+        const tokens = [...draft.matchAll(/\{\{fact:[^}]+\}\}/g)];
+        const token = tokens[pick % tokens.length] as RegExpMatchArray & { index: number };
+        const typed = signs[char % signs.length] as string;
+        const template = `${draft.slice(0, token.index)}${typed}${draft.slice(token.index)}`;
+        const start = token.index + typed.length;
+        const report = verifyTemplate(template, content, []);
+        expect(report.passed, template).toBe(false);
+        expect(
+          report.mismatches.some((mismatch) => mismatch.code === 'fact_not_separated' && mismatch.start === start && mismatch.end === start + token[0].length),
+          template,
+        ).toBe(true);
+      }),
+      { numRuns: 60 },
+    );
+  });
+
   it('fails an all-lines fact in a sentence with a part-naming token, unless the part-naming tokens cover every line', () => {
     const parts = (content: PacketContent) => {
       const catalog = factCatalog(content);

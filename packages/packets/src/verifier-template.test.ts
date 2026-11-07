@@ -243,6 +243,50 @@ describe('CAS-52: a fact token stands apart, so nothing typed against it prints 
     }
   });
 
+  it('fails a sign, a currency sign or a sign’s word set off before a token by whitespace, brackets or quotation marks, at the token’s span', () => {
+    const token = '{{fact:pattern.units}}';
+    const cases: readonly string[] = [
+      `The payer allowed − ${token} [1].`,
+      `The payer allowed - ${token} [1].`,
+      `The payer allowed -(${token}) [1].`,
+      `The payer allowed -"${token}" [1].`,
+      `The payer allowed - “${token}” [1].`,
+      `The payer allowed + ${token} [1].`,
+      `The payer allowed – ${token} [1].`,
+      `The payer allowed $ ${token} [1].`,
+      `The payer allowed €(${token}) [1].`,
+      `The payer allowed negative ${token} [1].`,
+      `The payer allowed Negative (${token}) [1].`,
+      `The payer allowed minus ${token} [1].`,
+      `The payer allowed plus ${token} [1].`,
+      `The payer allowed Positive ${token} [1].`,
+      `The payer allowed negatively ${token} [1].`,
+      `The payer allowed - ( ${token}) [1].`,
+      `The payer allowed MINUS “(${token}) [1].`,
+    ];
+    for (const template of cases) {
+      const report = verify(template);
+      expect(report.passed, template).toBe(false);
+      expect(glued(template), template).toEqual([['fact', token]]);
+      expect(report.mismatches.find((mismatch) => mismatch.code === 'fact_not_separated')?.start, template).toBe(template.indexOf(token));
+    }
+    expect(glued('The schedule lists code - {{fact:line.1.code}} [1].', content('severalCodes'))).toEqual([['fact', '{{fact:line.1.code}}']]);
+    expect(glued('The payer counted negative {{fact:line.1.units}} [1].')).toEqual([['fact', '{{fact:line.1.units}}']]);
+  });
+
+  it('passes a token after an em dash between clauses, or after a word that only ends in a sign’s word', () => {
+    for (const template of [
+      'The payer paid less — {{fact:pattern.paid}} — than the contract allows [1].',
+      'The remittances show nonnegative ({{fact:pattern.allowed}}) [1].',
+      'The follow-up visit shows {{fact:pattern.allowed}} [1].',
+      'The re-billed lines show (minus none) {{fact:pattern.allowed}} [1].',
+      'The payer paid {{fact:pattern.allowed}}, {{fact:pattern.paid}} [1].',
+      '“{{fact:pattern.allowed}}” [1].',
+    ]) {
+      expect(glued(template), template).toEqual([]);
+    }
+  });
+
   it('fails two tokens glued together, or joined by a point, each at its span', () => {
     expect(glued('The schedule shows {{fact:line.1.paid_on}}{{fact:line.1.units}} [1].')).toEqual([
       ['fact', '{{fact:line.1.paid_on}}'],

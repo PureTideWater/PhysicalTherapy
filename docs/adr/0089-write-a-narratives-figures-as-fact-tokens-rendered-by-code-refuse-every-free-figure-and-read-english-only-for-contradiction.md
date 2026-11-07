@@ -104,11 +104,17 @@ fix is a space, not another figure; the editor says so. Accepted false refusals:
 against a token ("97110’s rate", "{{fact:pattern.lines}}-line"), which the person rewords. Accepted readings (review
 round 2): two tokens one space apart pass ("{{fact:line.1.paid_on}} {{fact:line.1.units}}" prints the two phrases side
 by side), because each phrase is printed whole by code, the space keeps the figures apart and neither changes; the
-sentence may read awkwardly, which is wording for the person, not a figure. And the rule reads only the character
-against a token: a sign set off from it by a space, an opening bracket or a quotation mark ("- {{fact:pattern.units}}",
-"-({{fact:pattern.units}})"), or the word "negative" before it, is not refused here, as /2 does not refuse it before a
-typed figure; an amount's phrase begins with words, so it cannot print a signed dollar figure, and reading "negative"
-and its kin as a sign is ADR 0086's reader, which /2 and /3 share (Revisit when). /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
+sentence may read awkwardly, which is wording for the person, not a figure. A sign set off from a token fails it too
+(review round 2): reading back past whitespace, opening brackets and quotation marks before a token, a sign (the
+hyphen-minus, the minus, plus, plus-minus and minus-plus signs, the tilde, the hyphens, the figure and en dashes) or a
+currency sign there fails it ("- {{fact:pattern.units}}", "-({{fact:pattern.units}})", -"{{fact:pattern.units}}",
+"$ {{fact:code.97110}}"), and so does a sign's word there ("negative", "negatively", "minus", "plus", "positive", in any
+case), each as `fact_not_separated` at the token's span, because each would print beside the phrase's bare figure as a
+signed one ("- 6 units", "negative 6 units"). The rule is /3's own, in the separation check, so /2 and ADR 0086's
+shared reader are unchanged and nothing served changes; "minus" before an all-lines fact also stays
+`fact_contradicted` as a part word. Accepted false refusals: a token after "plus" or "positive" used as a conjunction
+or an adjective, which the person rewords. The em dash and the horizontal bar are punctuation between clauses, not a
+sign, so a token after one set off by a space passes. /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
 placeholders naming no kind or row, markers naming no source, sentences with no marker, an empty template. Sentences
 are counted with each token read as a word, so a token can stand alone as a sentence and the dots inside an id never
 end one.
@@ -192,7 +198,8 @@ prints only rendered text: a /3 template exported by today's worker would print 
   stating what the /2 draft states (its amounts, interest exactly where /2 states it, every code the catalog holds),
   pass 1's spans in template offsets after a hidden character or a lengthening normalization, and the properties of
   section 8 this slice owns (the code draft passes /3; a digit or a word of the scanner's tables inserted fails at its
-  span; a sign, a point or a letter typed against any token fails at that token's span; a part-naming token beside an
+  span; a sign, a point or a letter typed against any token, or a sign or a sign's word set off before it, fails at that
+  token's span; a part-naming token beside an
   all-lines fact fails unless covering; a total cue beside a part fact fails; serialization keeps the sentence
   count). Each ran under 40 seeds before the pull request.
 
@@ -212,8 +219,6 @@ prints only rendered text: a /3 template exported by today's worker would print 
 - The evaluation's `fact_contradicted` rate (slice 7) shows careful drafts refused by cues beside phrases: consider a
   short phrase form per fact (design section 10), never a looser check.
 - People's narratives show an accepted false refusal often enough to cost more than its rewording.
-- A draft sets a sign or "negative" apart before a count or code token (accepted above): refuse it in ADR 0086's
-  shared reader, for /2 and /3 together, never in /3 alone.
 - A free figure in letters outside the scanner's one list (a Roman numeral spelled in letters outside level, appeal or
   tier; a Han numeral) is seen in a draft: widen the list in the design first, then strict mode.
 - A patient subset is needed beyond rows (it needs `tp-packet/3`).

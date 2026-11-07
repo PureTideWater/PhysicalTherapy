@@ -23,7 +23,9 @@ import { DATED, type Mismatch, type MismatchCode, type NarrativeCheck, identifie
  *   other than as the text shows it (a brace or letter that normalizes to one), which the renderer would not read;
  * - every fact token with anything but whitespace, an opening bracket or quotation mark before it, or anything but
  *   closing punctuation and then whitespace after it (`fact_not_separated`): a sign, a point, a letter, a digit or another
- *   token typed against it would print as part of its phrase's figure ("-6 units", "line 12 units");
+ *   token typed against it would print as part of its phrase's figure ("-6 units", "line 12 units"); and every fact
+ *   token with a sign, a currency sign or a sign's word ("negative", "minus") set off before it by whitespace, opening
+ *   brackets or quotation marks ("- 6 units", "-(6 units)", "negative 6 units");
  * - every number character of the template as typed that normalization reads as letters ("Ⅻ" as "XII"), which the
  *   renderer prints as typed (`free_figure`);
  * - every well-formed id that names its set of lines by a lower subject than the catalog's (`fact_not_canonical`), its
@@ -46,14 +48,33 @@ const NUMERAL = /\p{N}/gu;
 const BEFORE_TOKEN = /[\s(“‘"]/u;
 /** What may follow a fact token before whitespace or the text's end: closing punctuation, brackets and quotation marks. */
 const AFTER_TOKEN = /^[.,;:!?)”’"]*(?:\s|$)/u;
+/**
+ * A sign or a currency sign, read past whitespace, opening brackets and quotation marks before a token: the hyphen-minus
+ * and the minus, plus and plus-minus signs, the tilde, the hyphens and the figure and en dashes (each read as a minus),
+ * and every currency sign. Its phrase would print beside it as a signed figure ("- 6 units", "-(6 units)", "$ 97110").
+ * The em dash and the horizontal bar are punctuation between clauses, not a sign (docs/adr/0089).
+ */
+const SIGN = /[-−+±∓~‐‑‒–\p{Sc}]$/u;
+/** A word that writes a sign, read past the same characters before a token (docs/adr/0089). */
+const SIGN_WORDS: ReadonlySet<string> = new Set(['negative', 'negatively', 'minus', 'plus', 'positive']);
+/** Whitespace, opening brackets and quotation marks at the end of the text before a token: what a sign may be set off by. */
+const SET_OFF = /[\s(“‘"]+$/u;
+/** The letters at the end of the text before a token, after what sets them off: a sign's word, or none. */
+const LAST_WORD = /\p{L}*$/u;
 
 /**
  * Whether a fact token stands apart in the text as read: whitespace, an opening bracket or quotation mark (or the
- * text's start) before it, and whitespace (or the text's end) after it, with only closing punctuation between.
+ * text's start) before it, and whitespace (or the text's end) after it, with only closing punctuation between; and no
+ * sign, currency sign or word of SIGN_WORDS set off before it by whitespace, opening brackets and quotation marks.
  */
 function separated(text: string, token: TextSpan): boolean {
   const before = text[token.start - 1];
-  return (before === undefined || BEFORE_TOKEN.test(before)) && AFTER_TOKEN.test(text.slice(token.end, token.end + 16));
+  if (!((before === undefined || BEFORE_TOKEN.test(before)) && AFTER_TOKEN.test(text.slice(token.end, token.end + 16)))) {
+    return false;
+  }
+  const lead = text.slice(0, token.start).replace(SET_OFF, '');
+  const word = (LAST_WORD.exec(lead) as RegExpExecArray)[0];
+  return !SIGN.test(lead) && !SIGN_WORDS.has(word.toLowerCase());
 }
 
 /** A template read once: the check, and the template rendered (null when a token renders nothing). */
