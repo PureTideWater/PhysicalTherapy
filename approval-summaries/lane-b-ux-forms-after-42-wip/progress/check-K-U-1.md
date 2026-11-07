@@ -1,0 +1,16 @@
+# check-K-U-1 (adversarial checker round 1, slice U)
+- [ ] clone /home/user/ux42-K-U-1, fetch co-001/wip-ux-forms-after-42 (dab7d237)
+- [ ] read design (U slice)
+- [ ] inspect upload form + tests
+- [ ] install under lock, run tests
+- [ ] findings
+- [ ] remove clone
+- done: clone at dab7d237; read design 2.1; read upload-form.tsx, form-issues.tsx diff, messages.ts diff; legal marker identical to base; red log U2-red-browser shows all 12 browser cases red.
+- next: install under lock; run upload-form + browser harness; scratch adversarial tests (stale summary reappears after noFile cleared; press over pending boundary)
+- done: install under lock; scratch browser tests (saved at /tmp/claude-0/-home-user-PhysicalTherapy/88c94db6-fc7b-5c57-a2b7-5dda4f5b392f/scratchpad/ufa42/ku1/ku1-scratch-tests.tsx.txt), logs KU1-scratch.log, KU1-scratch-verbose.log.
+  - KU1-A (spam presses across prepare->send, held request): one request. PASS
+  - KU1-B (server ZIP refusal, clear file, press -> no-file summary, choose file): older ZIP refusal re-inserted as a new response and focus jumps to ZIP. FAIL -> finding
+  - KU1-C (press after unconfirmed sends again): PASS
+  - KU1-D (origin lead names appOrigin, no reload words): PASS
+- done: legal marker word for word vs base; no old wording left; form-hints maps empty; clone removed.
+- status: DONE

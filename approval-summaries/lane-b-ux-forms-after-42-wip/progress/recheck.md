@@ -1,2 +1,7 @@
 # recheck progress (light re-review, ux-brand-reviewer role, read only)
 - started 2026-11-07; read apply.md, critic.md, review.md; reading design next
+- design read whole (895 lines at ops 00e99aa3); apply.md, critic.md, review.md read; no commits (read only)
+- evidence checked at /home/user/ux-forms-after-42 (31a7345f): screening/routes.ts:224-276 (columnName "Column n", FIELD_NAMES incl. "allowed total"), :370 overflow "And"; messages.ts:199-207 FILE_MESSAGES; upload-form.tsx:298-389 (card says "read in this browser and never uploaded: only its rows of totals are sent"); form-issues.tsx:499-660 (core stale lead); invoke.ts:382 + csrf.ts:52 (origin/fetch-site); users page :52-58, :75, :81, :174 (column holds Change role + End membership); view.ts:38 "3650"
+- ops origin/claude/build-ops status file: COUNTER ALLOCATED CI-30 (01:19 UTC) -> design still says FRM-<1>
+- findings drafted: K1 stale lead (address ambiguity, step loses typed values), K2 invalid_value article ("a allowed total", "a a column"), K3 "upload again" vs "never uploaded", K4 clauses with no step (row_shape, band_in_future, reconciliation:130), K5 rule text "one clause" vs semicolon (ADR/BRAND/FRM-04/1.3), K6 CI-30 not applied, K7 noscript words, K8 sr-only th words, K9 read-failure under "Fix the file", K10 noFile/new constant vs allowlist, K11 overflow wording + 2.7/2.6 contradiction, K12 small words (727, 442, 496, compliance 142/216, view 3650, correspondence line1/city), K13 5.2 numbering / 3.2 refs
+- DONE: returning via StructuredOutput
