@@ -136,11 +136,18 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                 <ActionForm action={resumeMailStreamAction} submit="Resume the screening stream" className="grid max-w-md gap-3">
                   <FormKeys />
                   <input type="hidden" name="stream" value="screening" />
-                  <SelectField label="Why it can resume" id="resume-reason" name="reason" required options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]} />
+                  <SelectField
+                    label="Why it can resume"
+                    id="resume-reason"
+                    name="reason"
+                    required
+                    describedBy="resume-review"
+                    options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]}
+                  />
                   {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review; an
                       account-rate alarm pauses it only as the alarm goes into ALARM, so one still raised does not (the
-                      review of 2026-10-27). */}
-                  <p className="text-sm text-muted-foreground" data-copy="resume-review">
+                      review of 2026-10-27). The select reads this note as its description. */}
+                  <p id="resume-review" className="text-sm text-muted-foreground" data-copy="resume-review">
                     If SES still has the account under review, the platform pauses it again within a minute. Resume only once the account’s bounce and complaint rates are under their warnings: a
                     warning still raised does not pause it again.
                   </p>

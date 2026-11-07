@@ -83,7 +83,7 @@ describe('the words for a figure in the wrong role', () => {
     for (const text of [...Object.values(MISMATCH_TEXT), ...Object.values(FIGURE_KIND_TEXT), SAY_WHAT_IT_COUNTS]) {
       expect(text).not.toMatch(/role its words|release|input records/);
     }
-    expect(SAY_WHAT_IT_COUNTS).toBe('say what it counts or names: 3 claims, 6 units, page 2, 3650 days');
+    expect(SAY_WHAT_IT_COUNTS).toBe('say what it counts or names, such as 3 claims, 6 units, page 2 or 3,650 days');
     expect(readAsText(['claims'])).toBe('read as a count of claims');
     expect(readAsText(['lines', 'claims'])).toBe('read as a count of lines or a count of claims');
     expect(readAsText(['lines', 'claims', 'patients'])).toBe('read as a count of lines, a count of claims or a count of patients');

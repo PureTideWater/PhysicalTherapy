@@ -869,6 +869,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-27': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/manifests.test.ts', 'tools/stryker/affected.test.ts', 'tools/test/workflows.test.ts']),
   'CI-28': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/affected.test.ts', 'tools/stryker/gate.test.ts']),
   'CI-29': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/runtime.test.ts', 'tools/stryker/gate.test.ts', 'tools/stryker/canary/verdict.test.ts', 'tools/stryker/stryker.test.ts', 'tools/stryker/shards.test.ts', 'tools/test/workflows.test.ts']),
+  // The shell's skip link (WCAG 2.4.1; docs/adr/0077, amended by co-001/ux-forms-after-42).
+  'CI-30': none(0, "The skip-link journey reads the shell's first tab stop and the focus after Enter in the browser; no file.", ['apps/web/e2e/skip-link.spec.ts', 'apps/web/e2e/a11y.ts']),
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
   'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
@@ -920,6 +922,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/form-issues.test.ts',
     'apps/web/src/components/form-hints.test.ts',
     'apps/web/src/components/fields.test.tsx',
+    'apps/web/src/lib/routes/messages.test.ts',
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),
   'FRM-05': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),

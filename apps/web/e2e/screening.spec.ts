@@ -239,7 +239,7 @@ screeningTest('a specialist approves the split; a file with patient information 
     await expect(rules.locator('[data-rule="claim-floor"]')).toContainText('tells you how many rows, claim lines and dollars it left out');
     await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('Leave denied lines out of every total');
     await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('A denial is not a rate variance');
-    await expect(page.locator('[data-slot="template-hint"]')).toContainText(
+    await expect(page.locator('#screening-template-hint')).toContainText(
       'The template’s first lines state its rules: each row sums at least 11 claim lines, and denied lines are left out of every total and claim count.',
     );
     // The template file states them too, as note lines above its header, in plain ASCII so a spreadsheet shows them as written.
@@ -263,12 +263,17 @@ screeningTest('a specialist approves the split; a file with patient information 
     await expect(page.getByLabel('File to screen')).not.toHaveAttribute('name', /.*/);
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: memberIdCsv() });
     const refused = page.locator('[data-state="file-refused"]');
-    await expect(refused).toContainText('Column 4 (“Member ID”) holds member IDs; remove it and upload again.');
+    await expect(refused).toContainText('Column 4 (“Member ID”) holds member IDs; remove the column, then choose the file again.');
     await expect(refused).not.toContainText('SYNTHMBR');
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(refused).toContainText('Nothing was sent.');
+    // The refused file is marked, described by the "Not sent" list, and takes the focus after the press.
+    const fileInput = page.getByLabel('File to screen');
+    await expect(fileInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(fileInput).toHaveAttribute('aria-describedby', /(?:^| )screening-file-problems(?: |$)/);
+    await expect(fileInput).toBeFocused();
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: dateOfServiceCsv() });
-    await expect(refused).toContainText('Column 6 (“DOS”) holds dates of service; remove it and upload again.');
+    await expect(refused).toContainText('Column 6 (“DOS”) holds dates of service; remove the column, then choose the file again.');
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(refused).toBeVisible();
     expect(posted, 'a refused file sends nothing').toEqual([]);

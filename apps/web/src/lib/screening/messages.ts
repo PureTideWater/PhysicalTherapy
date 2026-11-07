@@ -80,7 +80,7 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
   const header = reason.column === undefined ? undefined : headers?.[reason.column - 1];
   switch (reason.code) {
     case 'phi_column':
-      return `${columnName(reason.column, header)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again. A screening takes totals only, never patient information.`;
+      return `${columnName(reason.column, header)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove the column, then choose the file again. A screening takes totals only, never patient information.`;
     case 'unknown_column':
       return `${columnName(reason.column, header)} is not one of the eight screening columns; remove it.`;
     case 'duplicate_column':
@@ -92,7 +92,7 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
     case 'invalid_value':
       return `${rowName(reason.row)}, ${fieldName(reason.field)}: it must be ${reason.field === undefined ? 'in the column’s format' : FIELD_RULES[reason.field]}.`;
     case 'band_holds_date':
-      return `${rowName(reason.row)}: ${reason.column === undefined ? 'the service band column' : columnName(reason.column, header).replace(/^Column/, 'column')} holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.`;
+      return `${rowName(reason.row)}: ${reason.column === undefined ? 'the service band column' : columnName(reason.column, header).replace(/^Column/, 'column')} holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates, then choose the file again.`;
     case 'band_in_future':
       return `${rowName(reason.row)}, service band: that quarter has not started yet.`;
     case 'band_outside_content':
@@ -104,14 +104,17 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
       return `${rowName(reason.row)} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}: the same code, modifiers, units, place of service, payer product and quarter. Add the two into one row.`;
     case 'no_rows':
       return 'The file has no rows under its header.';
-    case 'too_many_rows':
-      return `The file has more than ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows. Combine rows that share a code, modifiers, units, place of service, payer product and quarter, or screen the rest separately.`;
+    case 'too_many_rows': {
+      // Never "screen the rest separately": a later screening replaces the earlier one, so the step fits one file.
+      const max = SCREENING_MAX_ROWS.toLocaleString('en-US');
+      return `The file has more than ${max} rows. Add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until ${max} or fewer remain; then choose the file again.`;
+    }
     case 'row_count_mismatch':
       return 'The rows sent do not add up to the file’s row count. Choose the file again.';
     case 'too_few_claim_lines':
       return reason.row === undefined
         ? // The left-out line that follows it gives the reason, once.
-          `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen.`
+          `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen. Choose a file with rows of at least ${String(SCREENING_MIN_CLAIM_LINES)} claim lines.`
         : `${rowName(reason.row)} sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines: ${CLAIM_FLOOR_REASON}. Leave the row out.`;
   }
 }
@@ -195,7 +198,7 @@ export function reasonMessages(reasons: readonly ScreeningRejection[], headers?:
   return [...kept, `And ${(all - kept.length).toLocaleString('en-US')} more ${all - kept.length === 1 ? 'problem' : 'problems'} like these.`];
 }
 
-/** The browser's refusals of the file itself, before any row is read. */
+/** The browser's refusals of the file itself, before any row is read: sentences of the "Not sent" list. */
 export const FILE_MESSAGES = {
   empty: 'The file is empty. Choose the CSV you saved.',
   tooLarge: 'The file is larger than 25 MiB. A screening takes at most 50,000 rows of totals; combine rows and choose it again.',
@@ -203,8 +206,12 @@ export const FILE_MESSAGES = {
   notText: 'The file is not UTF-8 text. Save it as CSV (comma-separated, UTF-8) and choose it again.',
   unclosedQuote: 'The file ends inside a quoted cell: a quote is never closed. Save it again as CSV and choose it again.',
   textAfterQuote: 'A cell has text after its closing quote. Save it again as CSV and choose it again.',
-  noFile: 'Choose the file to screen.',
+  /** The browser could not read the file's bytes (a NotReadableError: the file moved, or its permission changed). */
+  unreadable: 'This browser could not read the file. Choose it again.',
 } as const;
+
+/** The file input's own field message when a press finds no file chosen: never a sentence of the "Not sent" list. */
+export const NO_FILE_CHOSEN = 'choose the file to screen';
 
 /**
  * What the screening says while its mail stream is paused (audit #76; docs/adr/0065, D7; the founder's Q12 of

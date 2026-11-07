@@ -27,7 +27,7 @@ import { ATTRIBUTION_COOKIE } from '../http/attribution';
 import { DECLINED_REASON_LABELS, convertProspect, prospectsPage, publishTerms, resendInvitationFromConsole, reviewProspect, uploadAgreement } from './console-onboarding';
 import { ESIGN_WEBHOOK_MAX_BYTES, acceptTerms, agreementWebhook, requestAudit, termsPage } from './onboarding';
 import { practiceHome } from './practice';
-import { EMAIL_IN_USE, accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
+import { EMAIL_IN_USE, INVITATION_RESEND_HELD, accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
 import { signInWithPassword } from './sign-in';
 import { consoleStatusPage, createTicket, maintenancePage, openIncident, setMaintenance, setTicketStatus, statusPage, supportRequestPage, ticketsPage, updateIncident } from './support';
 
@@ -182,8 +182,35 @@ describe('the audit request (J1)', () => {
       payers: 'Synthetic Payer One',
       billingArrangement: 'in_house',
     });
-    expect(refused.status).toBe('invalid');
+    expect(refused).toEqual({ status: 'invalid', issues: [{ field: 'organizationName', message: 'this form takes no patient information; remove anything that looks like an identifier, a date or a phone number, then send it again' }] });
     expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name LIKE 'Clinic for patient%'")).rows).toEqual([]);
+  });
+
+  it('says what to enter in each field it refuses, one sentence after the field’s name with no colon of its own (ADR 0077)', async () => {
+    // SYNTHETIC values only; each refusal records nothing.
+    const input = { contactName: 'Synthetic Words', contactEmail: 'words@synthetic.test', organizationName: 'Synthetic Words Clinic', locations: '1', payers: 'Synthetic Payer', billingArrangement: 'in_house' };
+    // Each from its own documentation address, so the public form's rate limit never answers first.
+    let host = 100;
+    const refused = async (extra: Record<string, string>) => call(requestAudit, null, {}, { ...input, ...extra }, { clientAddress: `203.0.113.${String((host += 1))}` });
+    for (const locations of ['0', '1001', '2.5', 'three']) {
+      expect(await refused({ locations }), locations).toEqual({ status: 'invalid', issues: [{ field: 'locations', message: 'enter a whole number from 1 to 1,000' }] });
+    }
+    expect(await refused({ referringFirm: 'F'.repeat(201) })).toEqual({ status: 'invalid', issues: [{ field: 'referringFirm', message: 'enter at most 200 characters' }] });
+    expect(await refused({ contactName: '' })).toEqual({ status: 'invalid', issues: [{ field: 'contactName', message: 'fill this in' }] });
+    expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name = 'Synthetic Words Clinic'")).rows).toEqual([]);
+  });
+
+  it('refuses the payer list on its own field, payers, never payers.N, which no control carries (ADR 0077)', async () => {
+    // SYNTHETIC values only; each refusal records nothing.
+    const input = { contactName: 'Synthetic Payers', contactEmail: 'payers@synthetic.test', organizationName: 'Synthetic Payers Clinic', locations: '1', payers: 'Synthetic Payer', billingArrangement: 'in_house' };
+    let host = 150;
+    const refused = async (extra: Record<string, string>) => call(requestAudit, null, {}, { ...input, ...extra }, { clientAddress: `203.0.113.${String((host += 1))}` });
+    const payers = 'name 1 to 50 payers, each at most 120 characters';
+    for (const list of ['P'.repeat(121), '', ' , ', Array.from({ length: 51 }, (_, index) => `Synthetic Payer ${String(index)}`).join('\n')]) {
+      expect(await refused({ payers: list }), list.slice(0, 20)).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: payers }] });
+    }
+    expect(await refused({ payers: 'P,'.repeat(3001) })).toEqual({ status: 'invalid', issues: [{ field: 'payers', message: 'enter at most 6,000 characters' }] });
+    expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name = 'Synthetic Payers Clinic'")).rows).toEqual([]);
   });
 
   it('counts requests from one address against the public form’s limit, refused ones included', async () => {
@@ -340,6 +367,13 @@ describe('inviting an address the identity provider already knows (SEC-22)', () 
       issues: [{ field: 'email', message: EMAIL_IN_USE }],
     });
     expect(EMAIL_IN_USE).not.toMatch(/identity/);
+    // A held invitation is support's to release (the console sends it again, settings.ts); one colon per refusal line.
+    expect(INVITATION_RESEND_HELD).toBe('our mail service is holding this address back; ask PaidWhole support to release it and send the invitation again');
+    // A firm's role in a practice group: the form lists only the group's roles, so the step is to choose one, never the raw kind.
+    expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'firm_principal' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'role', message: 'choose one of the roles listed' }],
+    });
     expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
     expect(invitations).toHaveLength(sent);
   });
@@ -462,13 +496,21 @@ describe('agreements', () => {
     expect(readFileSync(path.join(scratch, 'agreements', 'agreements', world.organizationId, `${recorded.objectId ?? ''}.pdf`))).toEqual(Buffer.from(PDF));
     expect((await call(uploadAgreement, platformAdmin, {}, { ...input, kind: 'data_rights' }, upload(new TextEncoder().encode('not a pdf')))).status).toBe('invalid');
     expect((await call(uploadAgreement, platformAdmin, {}, { ...input, kind: 'data_rights' })).status).toBe('invalid');
+    // The day it was signed is refused in the words the recorded agreement's form uses (console.ts, recordAgreement).
+    expect(await call(uploadAgreement, platformAdmin, {}, { ...input, signedOn: '2026-13-01' }, upload(PDF))).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'signedOn', message: 'enter the day it was signed' }],
+    });
   });
 
   it('lets the practice administrator confirm the chain only once it is complete, recorded in the audit log', async () => {
     const admin = world.adminUserId;
     const before = ok(await call(agreementsSettingsPage, admin, { practiceId: world.practiceId }));
     expect(before.missing).toEqual(['data_rights']);
-    expect((await call(confirmAgreementsAction, admin, { practiceId: world.practiceId }, { confirm: 'on' })).status).toBe('invalid');
+    expect(await call(confirmAgreementsAction, admin, { practiceId: world.practiceId }, { confirm: 'on' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'confirm', message: 'the chain is not complete; Data-rights addendum not on file, and a platform administrator records it when it is signed' }],
+    });
     await asOwner(owner, [world.practiceId], () =>
       owner.query("INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, $2, 'data_rights', '1', now(), 'SYNTHETIC SIGNER', 'agreements/data-rights', $3)", [
         world.organizationId,
@@ -535,7 +577,7 @@ describe('support', () => {
     const refusal = (field: string) => ({
       field,
       message:
-        'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+        'a ticket takes no patient information; remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
     });
     expect(await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).toEqual({
       status: 'invalid',
@@ -580,7 +622,7 @@ describe('the status page and maintenance', () => {
     expect((await call(updateIncident, platformAdmin, {}, { incidentId: opened.objectId, status: 'monitoring', message: 'Again.' })).status).toBe('invalid');
     expect((await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'x' })).status).toBe('invalid');
     // Both fields at once: each is named, so both are fixed before the next press.
-    const publicRule = 'the status page is public: write no identifier, date of birth or phone number';
+    const publicRule = 'the status page is public; write no identifier, date of birth or phone number';
     expect(await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'Or 919-555-0135.' })).toEqual({
       status: 'invalid',
       issues: [
@@ -626,14 +668,14 @@ describe('the SOC 2 Type I evidence checklist', () => {
     ok(await call(recordEvidence, platformAdmin, {}, { kind: 'policy_approval', policy: 'access-control', occurredOn: today, documentRef: 'records:policies/access-control-0.1', sha256: sha('approval') }));
     ok(await call(recordEvidence, platformAdmin, {}, { kind: 'training_attestation', member: supportEngineer, occurredOn: today, documentRef: 'records:training/2026', sha256: sha('training') }));
     expect((await call(recordEvidence, platformAdmin, {}, { kind: 'training_attestation', member: world.adminUserId, occurredOn: today, documentRef: 'records:x', sha256: sha('x') })).status).toBe('invalid');
-    expect((await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: '2099-01-01', documentRef: 'records:x', sha256: sha('x') })).status).toBe('invalid');
+    expect(await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: '2099-01-01', documentRef: 'records:x', sha256: sha('x') })).toEqual({ status: 'invalid', issues: [{ field: 'occurredOn', message: 'the date is after today; enter the day it happened, today or earlier' }] });
     // A reference outside its format is refused with the format in words, as its hint says it, never bare punctuation.
     expect(await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: today, documentRef: 'records x', sha256: sha('x') })).toEqual({
       status: 'invalid',
       issues: [
         {
           field: 'documentRef',
-          message: 'where the record is kept, never a person’s name: use only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026',
+          message: 'say where the record is kept, never a person’s name, using only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026',
         },
       ],
     });
