@@ -30,7 +30,6 @@ const SCROLL_TABLE = 'components/scroll-table';
  */
 const AFTER_42: Readonly<Record<string, { readonly tables: number; readonly removedBy: string }>> = {
   'app/console/support/page.tsx': { tables: 1, removedBy: 'UX PR 74 (co-001/ux-console-support-page)' },
-  'app/settings/organizations/[organizationId]/users/page.tsx': { tables: 2, removedBy: 'UX PR 75 (co-001/ux-users-page)' },
   'app/p/[practiceId]/support-access/[supportGrantId]/page.tsx': { tables: 1, removedBy: 'UX PR 76 (co-001/ux-support-access)' },
 };
 
