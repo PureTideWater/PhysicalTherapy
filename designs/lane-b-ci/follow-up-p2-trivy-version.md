@@ -11,7 +11,8 @@ choice; for security, the safer one). No migration. Reserved: ADR 0066 **Part 6*
 Cites: `6ddd587:` is the build branch, `ci-deps:` is `/home/user/ci-deps` at 19e3d98e (the one commit since 2d86bb0e
 touches only `tools/test/workflows.test.ts:7, 1901-1912`; no cite below moved). (12) Every cite is re-mapped to bce57f16
 in 12.2, and §12 governs where it and §1 to §11 differ; 12.10 folds the re-read's review, 12.11 the completeness
-critic's gaps, and §13 lists each finding's and each gap's disposition. The network facts were read on 2026-10-26
+critic's gaps, and §13 lists each finding's and each gap's disposition. (14) §14 re-reads the plan on 8a722f80
+(2026-11-07) and governs where it and §1 to §13 differ; §15 lists its review's dispositions. The network facts were read on 2026-10-26
 between 01:40 and 02:55 UTC with `git ls-remote`, `curl` against github.com release downloads,
 raw.githubusercontent.com, ghcr.io and mirror.gcr.io (anonymous), `npm view`, and a local run of `@sigstore/verify`
 against the real bundle (`scratchpad/p2rev/run/v2.mjs`).
@@ -27,13 +28,13 @@ that SHA-256 was written. A tag hijack like March 2026's cannot change what CI r
 | # | Target | How measured |
 |---|---|---|
 | T1 | Every scan and the SBOM run Trivy **v0.76.1** (or a newer release at least three days old when the branch is cut), never trivy-action's default v0.70.0 | the `images` and release-dry-run logs' `trivy --version` line; `workflows.test.ts` |
-| T2 | One source of record: `tools/trivy/release.txt` holds the version, the tag's commit, the signing time and the Linux x64 tarball's SHA-256. No workflow, Dockerfile, README or CLAUDE.md line repeats the version | `no-duplicated-versions.test.ts` |
-| T3 | The installed bytes equal the committed SHA-256 before anything runs them, whether downloaded or restored from cache. A mismatch fails the job, naming both digests | `tools/trivy/install.test.ts`, which runs the script against stub downloads |
-| T4 | A pull request that changes `release.txt` (or the checker) proves five things: the tag still names the recorded commit; the tarball's Sigstore bundle verifies, against Sigstore's trust root, as signed by trivy's own release workflow at that tag and commit; the signed digest equals the committed SHA-256 and the release's `checksums.txt` line; the release was signed at least three days ago; the version is not one CVE-2026-33634 names. (12) Also: a `vX.Y.0` commit is on the default branch, and a later patch's on `release/v<X.Y>`, which holds `vX.Y.0`'s (12.10, S6); the certificate's repository and owner IDs, runner, trigger and calling workflow are Trivy's, and its SAN matches exactly (12.10, S1, N12); the version is at least 0.72.0 and, on CI, no reviewed advisory names it; on CI the release is immutable and its `published_at` three days old (12.5) | `pnpm actions:check` in `static`; `tools/check-action-pins/trivy.test.ts` |
+| T2 | One source of record: `tools/trivy/release.txt` holds the version, the tag's commit, the signing time and the Linux x64 tarball's SHA-256. No workflow, Dockerfile, README or CLAUDE.md line repeats the version. (14) It holds each Linux archive's SHA-256 (x64 and arm64), and the signing time is that of the release's checksums file (14.8, E18, E19) | `no-duplicated-versions.test.ts` |
+| T3 | The installed bytes equal the committed SHA-256 before anything runs them, whether downloaded or restored from cache. A mismatch fails the job, naming both digests. (14) No Trivy archive is cached, so every job downloads (14.8, E22) | `tools/trivy/install.test.ts`, which runs the script against stub downloads |
+| T4 | A pull request that changes `release.txt` (or the checker) proves five things: the tag still names the recorded commit; the tarball's Sigstore bundle verifies, against Sigstore's trust root, as signed by trivy's own release workflow at that tag and commit; the signed digest equals the committed SHA-256 and the release's `checksums.txt` line; the release was signed at least three days ago; the version is not one CVE-2026-33634 names. (12) Also: a `vX.Y.0` commit is on the default branch, and a later patch's on `release/v<X.Y>`, which holds `vX.Y.0`'s (12.10, S6); the certificate's repository and owner IDs, runner, trigger and calling workflow are Trivy's, and its SAN matches exactly (12.10, S1, N12); the version is at least 0.72.0 and, on CI, no reviewed advisory names it; on CI the release is immutable and its `published_at` three days old (12.5). (14) The signed object is the release's checksums file, not the tarball, and each committed archive digest must equal its line in that file (14.8, E18, E19); the age is the youngest of every time 14.3 item 3 reads | `pnpm actions:check` in `static`; `tools/check-action-pins/trivy.test.ts` |
 | T5 | On every push run, warnings and never a failure: (12) the pinned release withdrawn (deleted, the expected case) or not immutable, or its tag moved (rare under an immutable release), or an advisory now naming it; a newer release that passes every check is at least three days old; (12) a newer release past the floor fails a check of a pin, named (12.10, S5); any of those reads failed | the same, push mode |
 | T6 | No `aquasecurity/*` action runs in any workflow (trivy-action and setup-trivy retired, §7 C1) | `workflows.test.ts` |
 | T7 | The vulnerability database is downloaded once per job, from the publisher's registry (ghcr.io) only, before any scan; it is under 48 hours old; its repository, `UpdatedAt` and `DownloadedAt` are printed in the job summary; the scans read that database, and (12) neither it nor the Java database is updated by a scan (`--skip-db-update`, `--skip-java-db-update`; 12.10, S3) | `tools/trivy/db.sh`; the summary; `workflows.test.ts` |
-| T8 | Telemetry and Trivy's update check are off in every run | `workflows.test.ts` (the env on every job that runs Trivy) |
+| T8 | Telemetry and Trivy's update check are off in every run | `workflows.test.ts` (the env on every job that runs Trivy; (14) on every step that runs Trivy, 14.8, E30) |
 | T9 | (12) No file in the checkout changes a verdict: every `trivy` command, (12) the scripts' own included, passes `--config ''`, every scan `--ignorefile ''`, `--secret-config ''` and `--scanners vuln,secret`, and no other `TRIVY_*` variable is set (12.10, S4; 12.11, G1) | `tools/check-action-pins/trivy.test.ts`; `workflows.test.ts`; (12) the stub `trivy` of `install.test.ts` and `db.test.ts` |
 
 ## 2. The facts this rests on
@@ -442,7 +443,9 @@ Dependabot cannot, and Renovate is not used. A person bumps it at the weekly tri
 - **C8. The archive is cached in `ci.yml` only, (12) keyed by `release.txt`'s hash and saved by the build branch's push
   runs alone.** It keeps pull-request lanes up through a release-host outage and saves 52 MB a job, and it is safe
   because the script re-hashes what is restored; (12) a pull request never writes the cache (12.7, E11), and the restore
-  has no `restore-keys` (12.10, N6). The release workflows stay cache-free by ci-deps' rule.
+  has no `restore-keys` (12.10, N6). The release workflows stay cache-free by ci-deps' rule. (14) Reversed: no Trivy
+  archive is cached anywhere, as #107 has it; a restore can write outside its path, and a cache would keep running a
+  release withdrawn because it is bad (14.8, E22).
 
 ## 8. Tests (failing first) and the test-matrix rows
 
@@ -536,7 +539,7 @@ pull request's `static` too. The embedded seed root does verify v0.76.1 (§2), s
 | v0.76.1 reports findings v0.70.0 did not, and `images` goes red | That is the point. The PR's own `images` run shows them before merge; the runbook's triage fixes them in the PR |
 | ghcr.io rate-limits or is down | `db.sh` tries three times, then fails naming ghcr.io; the remedy is a re-run. There is no fallback by choice (C3); a lasting problem is a Revisit, never a silent mirror |
 | A database older than 48 h because Aqua's build stalls | `db.sh` fails with the times. The remedy is a re-run, or a founder-ruled raise of the floor, never a skip |
-| Aqua withdraws (12) (deletes) the pinned release, or the release host is down; (12) under an immutable release a re-cut under the same tag cannot happen (`immutable-releases.md:22-23`) | Pull-request lanes run from the hash-checked cache (C8). A push run warns on (12) the release's 404 first. `release.yml` and the dry run fail at download; the runbook re-pins to a verified release (§6 step 4), never to a mirror |
+| Aqua withdraws (12) (deletes) the pinned release, or the release host is down; (12) under an immutable release a re-cut under the same tag cannot happen (`immutable-releases.md:22-23`) | Pull-request lanes run from the hash-checked cache (C8). (14) No cache: `images` fails at the download too, until the re-pin (14.8, E22). A push run warns on (12) the release's 404 first. `release.yml` and the dry run fail at download; the runbook re-pins to a verified release (§6 step 4), never to a mirror |
 | Sigstore's TUF root or Rekor unreachable on a pin PR | It fails closed after three tries, naming the host. Only `release.txt`/checker PRs read it |
 | `@sigstore/*` change their API | Exact versions in the lockfile; bumps come through Dependabot's npm group and the checker's tests catch them |
 | Fulcio stops issuing .1.13/.1.14 | (3) fails closed on a missing extension, and `pnpm trivy:pin` names it |
@@ -544,7 +547,7 @@ pull request's `static` too. The embedded seed root does verify v0.76.1 (§2), s
 | (12) Sigstore moves Trivy's signatures to Rekor v2, whose entries carry no inclusion promise | `signed_at` falls back to the one verified RFC 3161 time (12.10, S5), so pins still pass; any other lasting upstream change warns on a push, naming the check a newer release fails |
 | (12) A scanned image gains a JAR | The scan fails with Trivy's first-run message rather than downloading the Java database mid-scan (12.10, S3); the remedy is a reviewed `db.sh` step for the Java database with its own checks |
 | (12) A `trivy.yaml`, `.trivyignore` or `trivy-secret.yaml` is committed, or a `TRIVY_*` variable is set | No scan reads the files (`--config ''`, `--ignorefile ''`, `--secret-config ''`), and the offline rule refuses the variable (12.10, S4) |
-| (12) A bad archive-cache entry | `install.sh` refuses it and every `images` run fails until a reviewed bump of `trivy-v1-` in `ci.yml`, or the founder deletes the entry (12.10, N6) |
+| (12) A bad archive-cache entry | `install.sh` refuses it and every `images` run fails until a reviewed bump of `trivy-v1-` in `ci.yml`, or the founder deletes the entry (12.10, N6). (14) Does not arise: no archive cache (14.8, E22) |
 
 Rollback is one revert commit. Trivy's verdict is unchanged in kind: the same severities, the same `ignore-unfixed`,
 the same exit codes.
@@ -732,7 +735,7 @@ The floor is `pnpm-workspace.yaml`'s `minimumReleaseAge`, read through `releaseA
 
 | Fact | Value |
 |---|---|
-| Release | **v0.76.1**, still the newest stable tag; no `-rc` tag; v0.77.0 pending as `refs/heads/release-please--branches--main` 586c9563 (2026-10-30T13:50:56Z), untagged |
+| Release | **v0.76.1**, still the newest stable tag; no `-rc` tag; v0.77.0 pending as `refs/heads/release-please--branches--main` 586c9563 (2026-10-30T13:50:56Z), untagged. (14) No longer: v0.76.2 (`3f6334d2`, signed 2026-11-05) is the newest tag, and v0.77.0 is pending at `f96377a4`, untagged (`git ls-remote`, 2026-11-07T06:58:20Z); 14.4 chooses the release |
 | Tag | lightweight, naming `e713f67f7d54decdcd9b3132c9751833dcced698` ("release: v0.76.1 [release/v0.76] (#11445)", committed 2026-10-21T10:20:32Z) |
 | Ancestry (17:43Z) | v0.76.1 `e713f67` is an ancestor of `release/v0.76` (whose head it is) and not of `main` (e2c05f7); v0.76.0 `531360e` ("release: v0.76.0 [main]") of both; v0.75.0 `591e979` of `main` and of `release/v0.75`, whose head it is; v0.69.3 `6fb20c8` of `release/v0.69` only. v0.69.4's `1885610c` is on neither `main` nor `release/v0.69` (which ends at v0.69.3), but GHSA-69fq says it was "also committed to a v0.70.0 branch" (12.10, S6). At 20:01Z every `vX.Y.0` from v0.65.0 to v0.76.0 is on `main`, every patch on its `release/vX.Y`, and each `release/vX.Y` holds its `.0` (`release/v0.69` holds v0.69.0) |
 | Archive | `trivy_0.76.1_Linux-64bit.tar.gz`, 52,676,794 bytes, SHA-256 `c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0`, equal to its `checksums.txt` line and to the bundle's `messageDigest`; served by a 302 to `release-assets.githubusercontent.com/github-production-release-asset/180687624/…` |
@@ -745,7 +748,9 @@ The floor is `pnpm-workspace.yaml`'s `minimumReleaseAge`, read through `releaseA
 | March 2026 | v0.69.4 was built and signed by Trivy's own release pipeline from an attacker-pushed tag on `1885610c` (an impostor `actions/checkout`, goreleaser with `--skip=validate`), exposed 2026-03-19 18:22Z to about 21:42Z; 0.69.5 and 0.69.6 were Docker Hub images only, with no GitHub tag or release (2026-03-22 15:43Z to 2026-03-23 about 01:40Z). The v0.69.4 Linux-64bit archive's SHA-256 is `385d498d18a3a7c67878ca7322716f9da25683eb1a4bf9e9592da0d5f2ab09f6` |
 | Upstream release workflow | `reusable-release.yaml:137-141` at v0.76.1 runs `actions/attest` (v4.2.2) over `checksums.txt`; whether it ran for v0.76.1 is not verified |
 
-**npm** (scout-pins §3; registry.npmjs.org at 17:25Z; a scratch `pnpm install` with pnpm 10.34.8, `minimumReleaseAge:
+**npm** ((14) the rows marked latest are no longer the newest: `@sigstore/verify` 4.1.3, `@sigstore/tuf` 5.0.1,
+`@sigstore/bundle` 5.0.1, `tuf-js` 6.0.2 and `@tufjs/models` 5.0.2 were published since, 14.4; scout-pins §3;
+registry.npmjs.org at 17:25Z; a scratch `pnpm install` with pnpm 10.34.8, `minimumReleaseAge:
 4320` and `trustPolicy: no-downgrade`: 14 packages resolved, both gates passed; nine are new to the lockfile, which
 holds none of them at bce57f16):
 
@@ -787,8 +792,9 @@ ghcr's anonymous limits are not verified either.
 **P4's facts** (the replay totals, runner-minutes and Stryker's pins) are not this item's; P4's re-read
 (wf_c5d11a6c-419) records them in its own design.
 
-**What the pull request is expected to print on CI** (its first run, after 2026-11-01T18:27:09Z if the lockfile takes
-`tuf-js` 6.0.1):
+**What the pull request is expected to print on CI** ((14) superseded by 14.7's list: the base now has #107's
+`release.txt` and its age rule's release notes, and the signed object and `signed_at` are the checksums file's; its first
+run, after 2026-11-01T18:27:09Z if the lockfile takes `tuf-js` 6.0.1):
 - `static`, "Action pins":
   - The verify loop reads every ref again, because the change edits `tools/check-action-pins` (`base.ts:67-69`): 12 refs
     of 11 commits, P1's 13 refs of 12 (`follow-up-p1-pin-age.md` 14.3) less trivy-action.
@@ -823,8 +829,11 @@ ghcr's anonymous limits are not verified either.
 
 ### 12.4 Overlaps and merge order
 
-The order (the status file's RESUME-BLOCK and the session's item): #86 (ci-images-digest) merges next, then #75, #84,
-#83 and #85; P2, then P4, each after its own pipeline; P5 (ci-catalog) is not this session's. (G7) #83 merged out of that
+(14) This is history: every pull request in the table below has merged or closed (#42 on 2026-11-02; #86, and #96, P4,
+before P2, on 2026-11-04; #87 to #89 closed unmerged; `gh api`, 2026-11-07T07:08Z), and 14.6 lists the overlaps at
+8a722f80. The order (the status file's RESUME-BLOCK and the session's item): #86 (ci-images-digest) merges next, then
+#75, #84, #83 and #85; P2, then P4, each after its own pipeline; P5 (ci-catalog) is not this session's. (G7) #83
+merged out of that
 order at 2026-11-01T20:40:34Z, so `claude/build-platform` is 43565235 (`git ls-remote` at 20:51:57Z), 16 commits past
 bce57f16; its hunks lie after P2's places (`test-matrix.md:342`, `matrix.ts:464, :476`, `registry.ts:717`,
 `watched-paths.txt:52`) and it touches no other file P2 cites, so every bce57f16 cite here holds at 43565235 (12.11,
@@ -927,14 +936,19 @@ safer one. None is a founder-kept matter; the one place a founder ruling could a
 11. **Small items in P2's files:** `controls.ts:261, :264` (E14); `README.md:44-45` gains `pnpm trivy:pin X.Y.Z`;
     `static`'s "Action pins" comment (`ci.yml:82-88`), the permissions comment (`ci.yml:13-14`, "reads public facts
     about the pinned actions", now also Trivy's release and its advisories) and `release.yml`'s no-cache comment
-    (`:21-29`) name the new check and the CLI; ADR 0062 is not edited (12.4); `pnpm trivy:pin` stays a root script.
+    (`:21-29`) name the new check and the CLI; ADR 0062 is not edited (12.4; (14) now wrong: #42 merged on 2026-11-02,
+    so P2 edits ADR 0062's bullet, P38, 14.3); `pnpm trivy:pin` stays a root script.
     Mutation runs all four shards on P2's pull request either way, because `tools/package.json` changes
-    (`affected.ts:27, :373`); P4 narrows that.
+    (`affected.ts:27, :373`); P4 narrows that. (14) P4 has merged (#96) and reads manifests field by field (CI-27), so
+    this no longer holds as stated; `affected.ts` on the final tree decides, not verified here (14.7).
 
 ### 12.6 Build plan on this base
 
-**The branch.** `co-001/ci-trivy-version` is re-cut from `claude/build-platform` after #86 merges (12.4; the fallback
-there if it does not), in the worktree `/home/user/ci-trivy-version`, installed with `pnpm install` under the lock.
+**The branch.** (14) Superseded by 14.7: the branch is at 8a722f80, and #107 already made `tools/trivy/release.txt` and
+`install.sh`, which this plan creates, and `base.ts`' `PINNED_RELEASES` with the base's text, which this plan's
+`TRIVY_RELEASE` would duplicate. `co-001/ci-trivy-version` is re-cut from `claude/build-platform` after #86 merges
+(12.4; the fallback there if it does not), in the worktree `/home/user/ci-trivy-version`, installed with `pnpm install`
+under the lock.
 Before the first commit, `git ls-remote --tags https://github.com/aquasecurity/trivy` is run again: if a newer release
 is at least three days old by its bundle's verified signing time (12.10, S5), T1 takes it and 12.3's values are
 re-measured for it. Two builders work in parallel on disjoint files, and the integrator follows. Every builder runs its
@@ -1180,16 +1194,25 @@ plans P29 to P37 for its own (`/home/user/laneb-sp/p4reread/progress/revise.prog
 start at P38, which keeps the two clear whichever is committed first. Each is reversible and recommended.
 - **P38.** When #42 has merged, ADR 0062's 2026-10-26 bullet (`:1376`, "both trivy-action steps set `cache: false`…")
   gains a pointer to ADR 0066 Part 6, which supersedes it. It cannot be edited while #42 is open (B1 of the
-  2026-10-26 review).
+  2026-10-26 review). (14) #42 merged on 2026-11-02 (22789493), so P2 makes this edit, now at ADR 0062 `:1393` (14.3).
 - **P39.** For #86's owner: a test that each `BOUNDED_VALUES` `bound` cite (`file:line`) still holds the producer it
   names. P1's and P2's line shifts move them (83167b8f `workflows.test.ts:3213-3289` cites `ci.yml:683-694`,
-  `release.yml:168-196` and others), and no test notices today.
+  `release.yml:168-196` and others), and no test notices today. (14) Moot: #86 merged with rows that name each producer
+  by step and script fingerprint, never by line (`workflows.test.ts:4007-4027` at 8a722f80). (14) The number now
+  holds this proposal, for P1's owner (14.5; 15, S4): `advisoryProblems` drops a vulnerability whose range is not a
+  string (`age.ts:771`) and judges the rest with `ghsaRangeHolds`, which reads a constraint it cannot parse as holding
+  nothing (`age.ts:708`, `:719-721`), so a security-fix exclude whose own version sits in a range that does not parse
+  passes the "covers … itself" check (`age.ts:780`). A range that does not parse, null included, should fail the
+  exclude, as it fails `trivy.ts`' read (14.3, item 3 (8)).
 - **P40.** gitleaks' installer downloads with `curl -fsSL --retry 3` (`tools/gitleaks/install.sh:53`) and no
   `--proto '=https' --tlsv1.2`, which P2's `install.sh` has. Add them, and move `tools/hooks/hooks.test.ts:462, :466`
-  (`GITLEAKS_DOWNLOAD_BASE: 'file:///nonexistent'`) to a stub `curl`, since `--proto` refuses `file:`.
+  (`GITLEAKS_DOWNLOAD_BASE: 'file:///nonexistent'`) to a stub `curl`, since `--proto` refuses `file:`. (14) Partly done
+  by #107: gitleaks' curl has `--proto '=https,file' --proto-redir '=https'` (`tools/gitleaks/install.sh:53` at
+  8a722f80); `--tlsv1.2`, a time bound and dropping `file:` with that test move remain.
 - **P26, widened (not a new number).** P1's P26 holds gitleaks' release to the floor by `published_at`. Once P2 has
   merged, `trivy.ts`'s helpers give it the tag, ancestry, `immutable` and advisory reads too; gitleaks' own signature
-  form is not verified here.
+  form is not verified here. (14) Partly done by #107: gitleaks' `release.txt` is aged by the age rule (`base.ts:31` at
+  8a722f80).
 - **P41.** After four weeks of `images` runs, read the database ages `db.sh` wrote to the job summaries. That measures
   the 48-hour floor, which no history could be read for here (12.3); a breach rate above none is a Revisit for C3.
 - **P42** (the completeness critic's). Give the five `@sigstore/*` packages a Dependabot group of their own, so a bump of
@@ -1239,8 +1262,10 @@ edits in §1 to §8 marked "12.11, G n", and edits 12.4, 12.6 to 12.10 marked "(
 - The transitive `tuf-js` and `@tufjs/models` versions pnpm resolves. (Closed by 12.10: the release branch's timing, S6;
   Trivy's `--skip-db-update` first-run refusal and `@sigstore/tuf`'s option names, N7.)
 - That mutation runs all four shards because `tools/package.json` changes (`affected.ts:27, :373`), not proved by a run.
+  (14) P4's field-by-field rule (CI-27) has replaced that reading; which shards run is not verified (14.7). (14)
+  Predicted since: none (14.7; 15, N11).
 - The P-numbers P38 to P41, chosen clear of P4's planned P29 to P37; if P4 goes past P37, the one committed second
-  renumbers.
+  renumbers. (14) Settled: P4 took P43 and P44, so P38 to P42 stay P2's (`lanes/lane-b.md:1240-1241`).
 
 ### 12.10 The re-read's review, folded (2026-11-01)
 
@@ -1644,7 +1669,8 @@ The critic's "+12" for #91's shift of `dependency-upgrades.md` is +10 for #91 al
 - **The numbering.**
   - #86 renumbers its N29 to N32 (`approval-summaries/lane-b-ci-images-digest-status.md:71-73`).
   - P4 numbers Part 7's from N33, provisionally, and renumbers them after Part 6 merges
-    (`follow-up-p4-mutation-trigger.md:1216-1217`, E6).
+    (`follow-up-p4-mutation-trigger.md:1216-1217`, E6). (14) P4 merged first, with Part 7's notices at N43 to N56 (ADR
+    0066 `:2152-2202` at 8a722f80), so nothing renumbers.
   - Part 6 takes N33 to N42, so P4's Part 7 starts at N43.
   - If #86's number moves, Part 6's move in their own commit, as #86 renumbers its N29.
 - **Part 6's notices**, in Part 5's form:
@@ -1743,3 +1769,782 @@ The critic's two notes for the session:
   20:50Z. They are trivial and hold no key. The session removes them with `rm /index.txt /sct.hex /serial /leaf-b.ext`.
 - **The Dependabot group.** Its proposal of a Dependabot group for `@sigstore/*` is recorded as P42 (12.8), outside
   P2.
+
+## 14. Delta on #107 and #106 at 8a722f80 (2026-11-07)
+
+Written 2026-11-07 between 06:54Z and 07:18Z, after the orchestrator's ruling of 06:40 UTC: a short delta re-read that
+covers only what #107 and #106 leave undone, then a build of only that. Where this section and §1 to §13 differ, this
+section governs. In §12 a "(14)" marks only a fact that is now wrong; plan text that this section replaces is governed
+by it without a mark. After its review (§15), "(14)" pointers also mark the header, §1's T2, T3, T4 and T8, §7's C8
+and two rows of §10, where a reader of those lines would otherwise miss a change (14.9). Cites are `file:line` at
+`8a722f804ad63daf3c2c3254eabeb5f989ee0fe7` unless a time or another commit is given; "the S1 verifier" and the like name
+the skeptics of §15, whose reads are cited there.
+
+### 14.1 Sources and method
+
+The scout (`/home/user/laneb-sp/p2delta/scout.md`, 06:40Z to 06:54Z) read #107 and #106 commit by commit (`git log
+4846f043..41818ac4`; `gh api pulls/107/files`, `pulls/106/files`), every Trivy line of the base in the worktree
+`/home/user/ci-trivy-version` (clean before and after), the base's push run 42334067464 and its `images` job
+128329221698's log, Trivy's tags and branches by `git ls-remote` and a treeless fetch (06:43Z to 06:45:41Z), both
+v0.76.1 and v0.76.2 releases' assets and bundles verified with `@sigstore/verify` 4.1.2 under the root embedded in
+`@sigstore/tuf` 5.0.0 (06:45:16Z, 06:45:22Z), github/advisory-database at `7cb4e6a7` through git, npm, anonymous OCI
+reads of ghcr.io (06:46:38Z), the open pull requests (06:47:14Z), and the scoped unit run under the lock (06:43:08Z to
+06:44:05Z). This revision then re-read every cite it uses at 8a722f80 in the same worktree (`git status` clean), and
+made four new reads: `git ls-remote` of aquasecurity/trivy's tags and branches (06:58:20Z); both releases'
+`checksums.txt` and its Sigstore bundle, downloaded from github.com and verified with the same library and root, the
+anchored SAN and the seven certificate values (06:58:52Z; scratch under `/home/user/laneb-sp/p2delta/tmp`, removed
+afterwards); npm's dist-tags and dependency ranges (07:03:12Z); and the open pull requests' files and the states of
+every pull request 12.4 names (`gh api`, 07:00Z to 07:08Z). The GitHub API for `aquasecurity/*` and `/advisories`
+answers 403 from this session (06:43:08Z, 06:45:55Z), so the release's `immutable` and `published_at` are not
+verified here.
+
+### 14.2 What #107 and #106 already did
+
+#107 (`co-001/ci-trivy-pin-2026-11-04`, merged 2026-11-04T05:58:40Z as 7bf7b252) has five commits, not two: 6ee142ce
+(`tools/trivy/release.txt`, `install.sh`, gitleaks' curl), 38a6cb79 (the install step in three jobs, `skip-setup-trivy`),
+de7438c8 (`releases.ts`: the age rule ages a new `release.txt` version), 44a0fa5c (`workflows.test.ts:3116-3247`) and
+41818ac4 (ADR 0066's Part 2 Amendment `:768-849`, ci.md). #106 (merged 2026-11-04T08:06:41Z) added the private-repository
+guards and rewrote CI-11 and CI-21. Each design item against the base:
+
+| Design item | At 8a722f80 | Evidence |
+|---|---|---|
+| C2, the gitleaks form (`key value` lines read with `awk`, a hash before `tar`, the message naming both digests) | **Wholly** | `release.txt:5-7`; `install.sh:17, :26`, `:48-52` (the message `:50`), `tar … trivy` alone `:54` |
+| The binary from GitHub's release host, never get.trivy.dev | **Wholly** | `install.sh:41`; `workflows.test.ts:3141, :3150-3151` |
+| T3, the bytes hashed before anything runs them | **Wholly**, now that nothing is restored (E22): every run downloads and hashes before `tar` | `install.sh:48-52`; one argument (`:11-14`) |
+| The installed binary reports the pinned version | **Partly**: without `--config ''` (T9, G1) | `install.sh:56-60` |
+| An atomic move | **Not**: `mv -f` from `mktemp -d` into `<dir>` crosses file systems | `install.sh:42, :61-63`; gitleaks renames in place, `tools/gitleaks/install.sh:64-67` |
+| E12, no download-base override; curl https only, TLS 1.2, a time bound | **Not**: an override and `file:` admitted, no `--tlsv1.2`, no `--max-time`; the string is held for both installers | `install.sh:7, :41, :44`; `workflows.test.ts:3156-3160` |
+| T2, one source of record with `commit` and `signed_at`, no copy elsewhere | **Partly**: the one file exists and nothing repeats its version, but it has no `commit` or `signed_at`, and no `no-duplicated-versions` case holds it | `release.txt:1-7`; `no-duplicated-versions.test.ts:71-139` (eight cases) |
+| The base's text of `release.txt` (F6, S2; the design's `TRIVY_RELEASE`) | **Wholly, in #107's form** | `base.ts:24-32` (`PINNED_RELEASES`), `:51-52`, `:83-87`; named once, `check.test.ts:185-187` |
+| T4, the pin-time proofs | **Partly**: the tag must be listed (three tries, then fail closed), and its commit is aged three days with a time GitHub recorded on CI. The ancestry is the default branch's, which refuses every patch release (below). No Sigstore, identity, digest against a signed list, `signed_at`, `HIJACKED`, 0.72.0 floor or advisory check; `immutable` counts only as a recorded time, never required | `releases.ts:50-63`; `check.ts:234-256`; `age.ts:525, :600-613, :647-660` |
+| T5, push-run warnings | **Not**: an unchanged release version is not read, and the push tag re-read covers workflow pins only | `releases.ts:45-49`; `check.ts:264-301` |
+| T1, the newest release three days old | **Not**: 0.70.0 runs | `release.txt:5`; job 128329221698 log `:1240` ("Version 0.76.2 of Trivy is now available, current version is 0.70.0") |
+| T6, no `aquasecurity/*` action | **Not**: five trivy-action steps; the runner still downloads setup-trivy at "Set up job" | `ci.yml:711-723, :737-750`; `release.yml:144-154, :156-165`; `release-dry-run.yml:158-167`; job 128329221698 log `:34, :37` |
+| T7, the database from ghcr.io only, under 48 hours, before any scan | **Not** | log `:1206` (`repo="mirror.gcr.io/aquasec/trivy-db:2"`); ADR 0066 `:789-793` ("a separate decision, not taken here") |
+| T8, telemetry and the update check off | **Not** | log `:1240` |
+| T9, no checkout file changes a verdict | **Not**: no `--config ''`, `--ignorefile ''` or `--secret-config ''` anywhere | the five steps above; `install.sh:56` |
+| E1, install and database right after the checkout | **Partly**: the install step is there, with no `id` and no database step | `ci.yml:679-683`; `release.yml:77-81`; `release-dry-run.yml:90-94` |
+| `tools/trivy/**` in the dry run's paths | **Wholly** | `release-dry-run.yml:31-32, :46-47`; `workflows.test.ts:2794-2795` |
+| 12.5 item 10, the dry run scans | **Not** | `release-dry-run.yml:63-66` ("with no scan"); `workflows.test.ts:2865` |
+| C8, the archive cache in `ci.yml` | **Not**, and dropped (E22): #107's "keeps no cache" stands | `ci.yml:668-750`; `install.sh:5-6` |
+| ADR 0066 Part 2's Revisit (§5) | Rewritten by #107 to point at `release.txt` | ADR 0066 `:743` |
+| P38 | **Unblocked**: #42 merged 2026-11-02T07:34:57Z (22789493) | `gh api pulls/42` (07:08Z); ADR 0062 `:1393` |
+| P39 | **Moot**: #86's rows name each producer by step and script fingerprint, never by line | `workflows.test.ts:4007-4027` |
+| P40 | **Partly**: gitleaks' curl has `--proto '=https,file' --proto-redir '=https'` | `tools/gitleaks/install.sh:53` |
+| P26, widened | **Partly**: gitleaks' `release.txt` is aged by the age rule | `base.ts:31` |
+
+**What binds P2 from #106 and #86.**
+- No shell script under `tools/` or `.github/` may match `REMOTE_READ` or run `gh` (`workflows.test.ts:2934-2942`,
+  `:3006-3008`). A curl of `github.com/$…` would match, so `install.sh` keeps the address in a variable.
+- Only `tools/check-action-pins/network.ts` may hold git's remote verbs among the TypeScript a step reaches
+  (`:3037`, `:3052`), and a file that names GitHub's API needs the job's token in its step (`:3038`, `:3045-3047`);
+  "Action pins" has it (`ci.yml:89-92`).
+- Every tracked file outside the workflows that names `GITHUB_ENV` or `GITHUB_PATH` in any case is one of a closed
+  list (`workflows.test.ts:4531-4540`): ADR 0066, ci.md, `tools/engine-freeze/check.test.ts` and `workflows.test.ts`. No
+  file P2 adds or edits outside those four may name either.
+
+**The conflict.** The age rule requires a pin's commit to be on the upstream's default branch (`age.ts:525`), and
+refuses one off it unless an off-default-branch exclude admits it (`age.ts:647-660`, the message `:655`). v0.76.1
+(`e713f67f`) and v0.76.2 (`3f6334d2`) are on `release/v0.76` alone (scout, 06:45:41Z; `release/v0.76`'s head is
+`3f6334d2`, 06:58:20Z). So a pull request that sets `version 0.76.1` fails `static` as "not on main", and the rule's own
+escape for Trivy would be a release-age exclude, which is the founder's. E17 resolves it.
+
+### 14.3 What P2 still builds
+
+Only the remainder, on #107's files. Every item keeps #107's shape where one exists.
+
+1. **Trivy held by its own rule, not the action pins' age rule** (E17). `PINNED_RELEASES` (`base.ts:29-32`) keeps both
+   entries, so `baseState` still returns the base's text of each (`:83-87`) and the named-once test stays; each entry
+   gains `heldBy` (`'age'` for gitleaks, `'trivy'` for Trivy), and `releasePins` (`releases.ts:37`) skips Trivy's with a
+   note naming `trivy.ts`. `trivy.ts` reads the base's text from `state.releases['tools/trivy/release.txt']`. No
+   `age-exceptions.json` entry. The doc comments that say each `release.txt` is aged as an action pin
+   (`base.ts:24-28`, `releases.ts:7-13`) say instead that gitleaks' is, and that Trivy's is held by `trivy.ts`. For
+   Trivy this reverses #107's de7438c8 (E17).
+2. **`tools/trivy/release.txt`, extended, not replaced.** Five keys: #107's `version`, `linux_x64` and `linux_arm64`, plus
+   `commit` (the tag's commit) and `signed_at` (the verified signing time of the release's checksums file, E18). Written
+   by `pnpm trivy:pin`, never by hand; its header names Part 6 and says the two digests are the two Linux archives'
+   (§3's "the one archive" no longer holds). Every reader of today's three keys reads the new file
+   unchanged (`install.sh:17, :26`; `releases.ts:16-18`; `workflows.test.ts:3146-3148`; `base.ts:83-87`).
+3. **The networked checks** in `tools/check-action-pins/trivy.ts` (new), on a pin new against the base, a change to the
+   checker, a change to the locked version of any `@sigstore/*`, `tuf-js` or `@tufjs/*` package against the merge base
+   (E32), or no base, after the age rule and under its deadline (`check.ts:215-262`):
+   - (1) the tag `v<version>` names `commit` (`tagCommit`, `network.ts:377`);
+   - (2) the release's `trivy_<v>_checksums.txt` and its `.sigstore.json` bundle, read with `getBytes`, verify under the
+     injected trusted root with `Verifier` at the library's defaults, the anchored SAN of
+     `reusable-release.yaml@refs/tags/v<v>`, the issuer and seven certificate values in the policy's `oids` (`.1.11`, `.1.13`, `.1.14`, `.1.15`, `.1.17`, `.1.18`,
+     `.1.20`; 12.10 S1, N12);
+   - (3) the SAN, the issuer and the seven values compared again by exact equality from the verified signer;
+   - (4) `linux_x64` and `linux_arm64` each equal to their archive's one line in that signed file (E18);
+   - (5) exactly one tlog entry; the verified signing time equal to `signed_at`; the youngest time read (below) at
+     least `releaseAgeMinutes` old;
+   - (6) the ancestry of 12.10 S6: a `vX.Y.0` commit on the default branch; a patch's on `release/vX.Y`, which holds
+     `vX.Y.0`'s commit, itself on the default branch; the branch listed before it is fetched;
+   - (7) on CI, the release read with the job's token: `immutable: true`, and `published_at` at least the floor old (it
+     joins the youngest time);
+   - (8) on CI, the advisories of `github.com/aquasecurity/trivy` read by package, every page, judged locally with
+     `ghsaRangeHolds` (`age.ts:709`), with E8's control. First, each unwithdrawn advisory's `vulnerable_version_range`
+     for that package is parsed strictly: comma-separated constraints, each `<`, `<=`, `>`, `>=` or `=` and a version
+     of one to three numeric parts with an optional `-` pre-release, the grammar `ghsaRangeHolds` reads
+     (`age.ts:711`, `:719`). A range that does not parse (null, empty, `||`, `+incompatible`, a fourth numeric part,
+     two constraints without a comma) fails the read naming the advisory: an error on a pull request, a warning on a
+     push (E31).
+   - **The youngest time** (E17): the latest of `signed_at`; the tag commit's committer and author dates, read from the
+     commit (6) fetches; and, on CI, `published_at` (7), the commit's `verification.verified_at` (as P1 reads it,
+     `age.ts:585-598`) and the commit's arrival on the branch (6) names: the default branch for a `.0`, as P1 reads
+     it, and `release/vX.Y` for a patch, a signal P1 never read (its read names only the default branch,
+     `age.ts:424-470`, `:617`; `network.ts:35-36`). The arrival is best effort with P1's note, as at
+     `age.ts:621-623`: a failed read or no push found is a note, never an error. A time in the future fails, as P1's
+     does (`age.ts:663-665`).
+4. **The offline rules** in `trivy.ts`, joining the offline errors (`check.ts:123-130`): `release.txt`'s five keys and
+   forms; `HIJACKED` (0.69.4, 0.69.5, 0.69.6) and both of v0.69.4's archive digests from GHSA-69fq-xp46-6x23,
+   `385d498d18a3a7c67878ca7322716f9da25683eb1a4bf9e9592da0d5f2ab09f6` (Linux-64bit) and
+   `e401ae1e6d2442fa9a0c79dc0f3b0457ecfebf74a9c0a920159c49437f663aef` (Linux-ARM64), each refused on either line
+   whatever the version; the 0.72.0 floor; no `aquasecurity/` action; the install and database steps before any `trivy`
+   step; every scan gated on both; the flags and refused flags of 12.10 S3 and S4; the five literal variables in the
+   own `env` of every Trivy step (a `run` that invokes `trivy` or `tools/trivy/`), and no `TRIVY_*` at a workflow or job
+   level, on any other step, or other than the five (E30); no `release.txt` only when nothing runs `trivy` or
+   `tools/trivy/`.
+5. **Push-run warnings** (T5; 12.7 E9, E10; 12.10 S5): the pinned tag read again; the pinned release read (a 404 warns
+   "withdrawn", not immutable warns); newer stable releases, newest first and at most three, each run through every
+   check, a passing one past the floor warning with `pnpm trivy:pin X.Y.Z`, one past the floor that fails warning with
+   the check; every failure a warning.
+6. **The checker's supporting code**: `api.ts` (new; `apiGet`, `apiRefusal`, `apiProblem`, `verificationRefusal`,
+   `pinIn`, `nextPage` and `arrival`, with their narrow context, moved from `age.ts:332-470`, `age.ts` importing them;
+   `arrival` takes the repository, the commit, the floor and the branch in place of P1's `Facts`, and P1's calls keep
+   their behaviour, so `age.test.ts` stays green unchanged); `network.ts`' `getBytes` (E18's cap; it also returns the
+   answer's `Last-Modified`, E25) and `fetchRefs`' `extra = { branches?, tags? }` (12.11 G6); `base.ts`' merge-base read
+   of `pnpm-lock.yaml`, named once beside `AGE_EXCEPTIONS` (E32); `fixtures.ts`' `bytes` option and `branches`;
+   `index.ts`' `--offline-root` (refused on CI); `check.ts`' call; `pin-trivy.ts` (its boundary, E25) and the root
+   `trivy:pin` script; `testdata/trivy/make.sh` and its outputs (12.10 B1, signing a synthetic checksums file, E18).
+7. **`tools/trivy/install.sh`, extended** (E20, E21, E22): #107's one argument, `<dir>`, and no archive directory;
+   `trivy --version --config ''`; an atomic rename within `<dir>`; curl `-fsSL --proto '=https' --proto-redir '=https'
+   --tlsv1.2 --retry 3 --max-time 120`; no `TRIVY_DOWNLOAD_BASE`. Its usage, platform map, forms, hash check and
+   messages stay #107's. Its header (`install.sh:1-8`) names Part 6 beside Part 2 and loses the `TRIVY_DOWNLOAD_BASE`
+   sentence (`:7-8`); "It keeps no cache" (`:5-6`) stays true. The step, not the script, writes the directory onto the
+   path.
+8. **`tools/trivy/db.sh`** (new), as §3 and 12.10/12.11 have it: `trivy image --download-db-only --config ''
+   --cache-dir "$1"` three times with 10 s and 30 s pauses, failing naming ghcr.io and
+   `pkg-containers.githubusercontent.com`; the exact `repo="ghcr.io/aquasecurity/trivy-db:<digits>"` line; `trivy version
+   --format json --config '' --cache-dir "$1"` read with `jq -r`, `VulnerabilityDB` present and `UpdatedAt` under 48
+   hours; the version, repository, `UpdatedAt` and `DownloadedAt` in the step summary; no curl, no git, never `--quiet`.
+9. **The workflows** (exact steps in 14.7): the five trivy-action steps become CLI steps; the install step gains
+   `id: trivy` and loses the `TRIVY_CMD` line, and stays word for word the same in all three jobs; a database step
+   `id: trivy-db` follows it in all three jobs; every step that runs Trivy (the install, the database step, the scans
+   and the SBOM) has the five literal variables in its own `env`, and no job or workflow has an `env` (E30); every scan
+   is gated on both steps; the release builds pass `--image-src docker "$IMAGE_REF"`; the dry run keeps the scan; no
+   step caches Trivy's archive (E22).
+10. **Tests**: `trivy.test.ts`, `install.test.ts`, `db.test.ts` (new); `network.test.ts`, `check.test.ts`,
+    `age.test.ts` (#107's Trivy fixture moves to gitleaks, plus one case); `workflows.test.ts` (every trivy-action
+    assertion, #107's describe, #86's two rows and write cases);
+    `no-duplicated-versions.test.ts` case 9; `collection.test.ts`; `controls.ts:261, :264`.
+11. **`@sigstore/*`** in `tools/package.json` `devDependencies`, exact (E27), and the lockfile `pnpm install` writes.
+12. **Documents**: ADR 0066 Part 6 with N33 to N42 and its header lines; ADR 0010 `:19, :30`; ADR 0062 `:1393` (P38);
+    ci.md; `dependency-upgrades.md`; reconciliation-001; the matrix's intro, CI-21's row and CI-24 to CI-26; `README.md`.
+
+**Not built, because #107 or #106 did it:** the download from GitHub's release host, the hash before `tar`, the
+extraction of `trivy` alone, the version check (extended only by `--config ''`), the platform map, the base's text of
+`release.txt`, the install step's place right after the checkout, the dry run's path filters, the tag-listed refusal
+(which `trivy.ts`' check (1) keeps for Trivy).
+
+**Founder-kept, and none arises:** the 48-hour database floor is unchanged; Trivy gets no release-age exclude (C7; E17
+replaces the rule that would have needed one); no migration; no release tag; no owner-admin setting. There is no
+archive cache, so no cache entry for the founder to delete (E22). **Named for the founder:** P2 reverses #107's
+de7438c8 for Trivy. At the base a Trivy patch pin passes only with a per-release off-default-branch exclude
+(`age.ts:651-656`); under P2 it passes by S6's branch rule with none. Whether that exclude is the founder-kept "Trivy
+release-age exclude" is disputed (E17), so the integrator records the reversal in the status file (14.7).
+
+### 14.4 Versions and facts measured today
+
+**The Trivy release chosen: v0.76.1.** It is the newest release whose signing time is at least three days old at
+07:00Z. v0.76.2 cannot pass CI before 2026-11-08T12:50:24Z: its assets' latest `Last-Modified`, 12:50:24 GMT, plus
+the floor, since `published_at` follows the last upload; on CI it passes from `published_at` plus three days, not
+verified here (the release API answers 403). `pnpm trivy:pin` takes it from 2026-11-08T13:50:24Z, an hour later (E25).
+
+| Fact | v0.76.1 (pinned) | v0.76.2 (`pnpm trivy:pin` from 2026-11-08T13:50:24Z) |
+|---|---|---|
+| Tag (lightweight) | `e713f67f7d54decdcd9b3132c9751833dcced698`, committed 2026-10-21T10:20:32Z | `3f6334d223b52188324af3b9923b4249cd206652`, committed 2026-11-05T11:50:03Z, the head of `release/v0.76` |
+| Branch | `release/v0.76` only; that branch holds v0.76.0 `531360e5`, which is on `main` | the same |
+| `linux_x64` (`trivy_<v>_Linux-64bit.tar.gz`) | `c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0` (52,676,794 B) | `bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf` (52,714,130 B) |
+| `linux_arm64` (`trivy_<v>_Linux-ARM64.tar.gz`) | `e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f` | `ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3` |
+| `checksums.txt` | 2,121 B, SHA-256 `885debc41b570179e81af560e5f393a66be29b9ff8c52915674f3eb2304c535d`; its two Linux lines are the two above | 2,121 B, `802e4ac1418ed967cd3c4b901f4f71ca00b7363ede67778665a22d9f13f58c83`; the same |
+| Its bundle | v0.3; one tlog entry, logIndex 3355009825, promise and proof; one RFC 3161 timestamp | v0.3; logIndex 3693536154, promise and proof; one RFC 3161 |
+| `signed_at` (the entry's `integratedTime`) | **2026-10-21T11:16:00Z** (1792581360); 16 d 19 h 44 m old at 07:00Z | **2026-11-05T12:47:43Z** (1793882863); 1 d 18 h 12 m old at 07:00Z |
+| Verification (06:58:52Z) | OK with the anchored SAN, the issuer and the seven values; `UNTRUSTED_SIGNER_ERROR` for the SAN of `v0.76.0`; `UNTRUSTED_SIGNER_ERROR … missing OID 1.3.6.1.4.1.57264.1.13` for v0.76.0's commit; `SIGNATURE_ERROR` for the file less one byte | OK |
+| The archive bundles (for comparison; scout 06:45Z) | x64 2026-10-21T11:14:36Z, arm64 11:14:16Z, both verify | x64 2026-11-05T12:47:20Z |
+| `immutable`, `published_at` | not verified (403); the bundle asset's `Last-Modified` was 11:18:30 GMT (12.3) | not verified (403, 07:50:24Z); every asset's and bundle's `Last-Modified` 12:50:01 to 12:50:24 GMT, the checksums file 12:50:18 and its bundle 12:50:24 (`curl -sSIL`, 07:51:54Z to 07:52:10Z); Trivy's release runs goreleaser v2.16.0 (`d76fb400`, read 07:50:56Z), which uploads to a draft and publishes after the last upload (`internal/client/github.go:513-515`, `internal/pipe/release/release.go:177-193`), so `published_at` is 12:50:24Z or later |
+
+Also: v0.77.0 is pending as `release-please--branches--main` `f96377a4`, untagged; `main` is `c22582a1` (06:58:20Z).
+#107's v0.70.0 (`8a3177ae`) is on `main`. Advisories (advisory-database `7cb4e6a7`, 2025 and 2026 read): only
+GHSA-69fq-xp46-6x23 (= 0.69.4), GHSA-q3fv-x8vg-qqm4 (< 0.71.0), GHSA-mcj4-mphf-j9ff (< 0.71.1) and
+GHSA-8rc5-4fr6-64pw (< 0.72.0); none withdrawn, none new since 2026-11-01, none naming 0.76.x. A scan of every year
+of github-reviewed at the same commit (07:48Z) adds GHSA-xcq4-m2r3-cmrj (2024, fixed 0.51.2), which leaves the 0.72.0
+floor as it is; all five use range forms the strict parse accepts (E31). GHSA-69fq lists both of v0.69.4's Linux
+archive digests, x64 `385d498d…09f6` and ARM64 `e401ae1e…3aef` (its JSON at 7cb4e6a7, read 08:07Z); `HIJACKED`
+refuses both. trivy-action's newest tag is still v0.36.0 (`ed142fd0`); setup-trivy v0.3.1 still runs `contrib/install.sh` at
+`75c4dc0f`, so C1's reasons hold (scout, 06:46:09Z).
+
+**`@sigstore/*`** (npm, 07:03:12Z; every version with provenance and a trusted publisher, scout 06:43:49Z):
+
+| Package | Pinned now | Newest | Newest is three days old from |
+|---|---|---|---|
+| `@sigstore/verify` | 4.1.2 (2026-08-04T21:34:43Z) | 4.1.3 (2026-11-05T00:19:17Z) | 2026-11-08T00:19:17Z |
+| `@sigstore/tuf` | 5.0.0 (needs `tuf-js ^6.0.0`) | 5.0.1 (needs `tuf-js ^6.0.2`) | about 2026-11-08T00:19Z |
+| `@sigstore/bundle` | 5.0.0 | 5.0.1 | about 2026-11-08T00:19Z |
+| `@sigstore/protobuf-specs` | 0.5.2 | 0.5.2 | old enough |
+| `@sigstore/core` | 4.0.1 | 4.0.1 | old enough |
+
+`tuf-js` 6.0.2 (2026-11-04T20:44:35Z) and `@tufjs/models` 5.0.2 are three days old from about 20:44Z today; before
+then the gate resolves 6.0.1 and 5.0.1. No advisory names any pinned version; `npm audit` shows only
+GHSA-g3hv-75wg-m249 (minimatch, moderate, through `@tufjs/models`), so they stay development dependencies (12.1).
+
+**The database** (anonymous, 06:46:38Z): `ghcr.io/aquasecurity/trivy-db:2` is `sha256:40be1d48…37c4`, created
+2026-11-07T00:53:51Z (5 h 53 m old), layer `db.tar.gz` `sha256:1fadb75c…ac91`, 139,059,920 B; `trivy-java-db:1` was
+created 01:09:47Z. A blob read answers 307 to `pkg-containers.githubusercontent.com`, which this session cannot reach.
+Unsigned as of 12.3 (not re-read). Today's `images` reads `mirror.gcr.io` (job 128329221698 log `:1206`).
+
+**The base's counts.** Push run 42334067464, unit job 128329220727 (attempt 2; attempt 1 failed on a MOD-16 property
+flake, not P2's): **479 files, 9,952 passed, 2 skipped**. Locally, the scoped run of `tools/test`, both checkers and
+`tools/trivy` under the lock: 32 files, 484 tests (06:43:08Z to 06:44:05Z).
+
+### 14.5 Numbers
+
+- **CI-24 to CI-26: free and P2's.** No match in `test-matrix.md`, `matrix.ts` or `registry.ts`, and no
+  `fixtures/synthetic/CI-24` to `CI-26` (07:00Z); LANES.md rule 4's 2026-11-07 01:19 UTC line keeps them P2's and gives
+  CI-30 to ux-forms-after-42 (next free CI-31).
+- **N33 to N42: free.** ADR 0066 holds N1 to N32 and N43 to N56 (07:00Z); its Status line reserves Part 6 for P2 before
+  Part 7 (`:6-7`); P4 merged first with Part 7's notices at N43 (`:2152`), so nothing renumbers.
+- **P38 to P42: P2's.** `lanes/lane-b.md:1240-1241` ("P2 notices N33-N42, proposals P38-P42; P4 … P29-P37, P43, P44");
+  P4's design renumbered its own to P43 and P44 (`follow-up-p4-mutation-trigger.md:1402-1404, :1554-1557`). After this
+  delta: P38 is built in P2 (14.3, item 12); P39's old text is moot (14.2), so, Part 6 being unpublished, the number
+  now holds the proposal for P1's advisory range read (12.8; E31); P40's remainder for gitleaks is `--tlsv1.2`, a time
+  bound and dropping `file:` with `tools/hooks/hooks.test.ts:462, :466` moved to a stub `curl`; P41 and P42 stand; P26's
+  remainder is the signature, ancestry, `immutable` and advisory reads for gitleaks.
+- **No ADR number**: Part 6 of 0066.
+
+### 14.6 Overlaps
+
+Open at 07:00:21Z: #129, #126, #124, #123 and #122, the same as the scout's list. None touches the three workflows,
+`tools/trivy`, `tools/check-action-pins`, `tools/test`, ADR 0066, 0062 or 0010, ci.md, `dependency-upgrades.md` or
+`controls.ts` (`gh api pulls/<n>/files`, 07:05Z).
+
+| Pull request | What it shares with P2 | Resolution |
+|---|---|---|
+| #129 `co-001/email-lockup-plate` (`f4fef908`, draft) | Root `package.json`: one line after `lint:copy` (`:15`). `test-matrix.md` and `matrix.ts` SGN-13, far from CI | P2 puts `"trivy:pin"` after `"gitleaks:install"` (`:18`), three unchanged lines (`:16-18`) from #129's line, so both merge cleanly. The second merged keeps both |
+| #126 `co-001/ledger-interest-once` (`9824f4e9`, draft) | `reconciliation-001.md:465-472` (P2 appends at the end, after `:698`); LED rows, `matrix.ts:310`, `registry.ts:457` | Clean |
+| #122, #123, #124 (Dependabot; #122 also root `package.json`'s `globals`) | `pnpm-lock.yaml` | Never merged by this session. The one merged second regenerates the lockfile with `pnpm install` (LANES.md rule 6) |
+| WIP `co-001/wip-ux-forms-after-42` (no PR; `09377f21` at 07:00:16Z) | CI-30 after CI-29 (`test-matrix.md:349`, `matrix.ts:668`, `registry.ts:872`, scout's read) | P2's rows go after CI-23 (`test-matrix.md:345`, `matrix.ts:664`, `registry.ts:867`), three unchanged rows (CI-27 to CI-29) away: clean |
+
+Every pull request §12.4 names has merged or closed (14.9's mark). Under speed rule 2 the base is merged once, right
+before the push that precedes the merge, and under rule 2a again if the base moves after the last CI run.
+
+### 14.7 Build plan on this base
+
+**The branch.** `co-001/ci-trivy-version` at 8a722f80 in `/home/user/ci-trivy-version`, installed. Two builders work in
+parallel on disjoint files, each in its own worktree cut from 8a722f80; the integrator stacks their commits on the
+branch in the order below with `git cherry-pick` (nothing is pushed before the integrator's first push) and writes the
+documents. B2's suites need B1's five-key `release.txt`, so B2 runs them only on a tree that holds B1's commit 2: before
+its commit-4 run it cherry-picks B1's commits 1 and 2 into its own worktree, under its own (the integrator takes only
+B2's commits from it), and the integrator runs B2's suites again at commit 4 on the stacked branch.
+Every heavy command runs under `flock /tmp/laneb-heavy.lock`. Before B1's commit 2, `git ls-remote --tags
+https://github.com/aquasecurity/trivy` runs again, and `pnpm trivy:pin` takes the newest stable release it accepts
+(E25).
+
+**The exact workflow form**, which B1's offline rules accept and B2 writes. No workflow or job has an `env`; every step
+that runs Trivy carries the same five lines, in this order, in its own `env` (E30). No step caches Trivy's archive
+(E22). In `ci.yml` `images`, right after the checkout (`:673-674`) and before setup-buildx (`:688`):
+
+```yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: The pinned Trivy
+        id: trivy
+        env:
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
+          TRIVY_DISABLE_TELEMETRY: "true"
+          TRIVY_SKIP_VERSION_CHECK: "true"
+          TRIVY_NO_PROGRESS: "true"
+        run: |
+          trivy="$(tools/trivy/install.sh "$RUNNER_TEMP/trivy-bin")"
+          dirname "$trivy" >> "$GITHUB_PATH"
+      - name: The vulnerability database (ghcr.io, under 48 hours)
+        id: trivy-db
+        env:
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
+          TRIVY_DISABLE_TELEMETRY: "true"
+          TRIVY_SKIP_VERSION_CHECK: "true"
+          TRIVY_NO_PROGRESS: "true"
+        run: tools/trivy/db.sh "$RUNNER_TEMP/trivy"
+```
+
+The scans, each right after its build:
+
+```yaml
+      - name: Scan the web image (fails on HIGH or CRITICAL)
+        if: ${{ steps.trivy.outcome == 'success' && steps.trivy-db.outcome == 'success' }}
+        env:
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
+          TRIVY_DISABLE_TELEMETRY: "true"
+          TRIVY_SKIP_VERSION_CHECK: "true"
+          TRIVY_NO_PROGRESS: "true"
+        run: trivy image --input "$RUNNER_TEMP/image/web.tar" --config '' --cache-dir "$RUNNER_TEMP/trivy" --skip-db-update --skip-java-db-update --ignorefile '' --secret-config '' --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --format table
+      - name: Scan the worker image (fails on HIGH or CRITICAL)
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' && steps.trivy.outcome == 'success' && steps.trivy-db.outcome == 'success' }}
+        env: … (the same five lines)
+        run: trivy image --input "$RUNNER_TEMP/image/worker.tar" … (the same flags)
+```
+
+In `release.yml` `build` and the dry run's `build`: the same install step, word for word as in `images` (#107's
+command, one argument), and the same database step; then, in place of `release.yml:144-165` and
+`release-dry-run.yml:158-167`:
+
+```yaml
+      - name: Scan the image (fails on HIGH or CRITICAL)
+        if: ${{ steps.trivy.outcome == 'success' && steps.trivy-db.outcome == 'success' }}
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
+          TRIVY_DISABLE_TELEMETRY: "true"
+          TRIVY_SKIP_VERSION_CHECK: "true"
+          TRIVY_NO_PROGRESS: "true"
+        run: trivy image --image-src docker --config '' --cache-dir "$RUNNER_TEMP/trivy" --skip-db-update --skip-java-db-update --ignorefile '' --secret-config '' --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --format table "$IMAGE_REF"
+      - name: Write the software bill of materials
+        if: ${{ steps.trivy.outcome == 'success' && steps.trivy-db.outcome == 'success' }}
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+          SBOM: sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
+          TRIVY_DISABLE_TELEMETRY: "true"
+          TRIVY_SKIP_VERSION_CHECK: "true"
+          TRIVY_NO_PROGRESS: "true"
+        run: trivy image --image-src docker --config '' --cache-dir "$RUNNER_TEMP/trivy" --skip-db-update --skip-java-db-update --format spdx-json --output "$SBOM" --exit-code 0 "$IMAGE_REF"
+```
+
+The dry run's copies are release.yml's cut by `asDryRun` (its `SBOM` is `sbom-${{ matrix.image }}-dry-run.spdx.json`,
+the name its SPDX read already uses, `release-dry-run.yml:170`). The comments above each step say what it does and name
+Part 6 (`ci.yml:13-14, :82-88, :675-678, :720-721, :747-748`; `release.yml:21-29, :73-76`; `release-dry-run.yml:3-14,
+:63-66, :86-89, :156-157`). No step writes `TRIVY_CMD`.
+
+**B1: `tools/check-action-pins`, `release.txt` and the manifests.** Files: `tools/check-action-pins/{network.ts,
+network.test.ts, base.ts, releases.ts, check.ts, check.test.ts, index.ts, fixtures.ts, age.ts, age.test.ts}` (changed),
+`{trivy.ts, trivy.test.ts, pin-trivy.ts, api.ts}` and `testdata/trivy/` (new), `tools/trivy/release.txt`,
+`tools/package.json`, the root `package.json` and `pnpm-lock.yaml`.
+- **Commit 1, red.** The five packages (E27) and the lockfile `pnpm install` writes, the resolved transitive versions
+  recorded. `testdata/trivy/make.sh`, run once by hand, and its outputs (12.10 B1, with E18's change: each variant signs
+  a synthetic `trivy_0.99.1_checksums.txt` listing two synthetic archive names and digests; no archive is made); gitleaks
+  runs over the outputs before the commit. `trivy.test.ts`' twelve ★ cases (marked below), each through
+  `checkActionPins` and asserting its own message, with the file's own `workflow()`, `repository()` and testdata reader
+  (12.11 G4). In `age.test.ts`, the describe at `:660-703` moves its fixture to `tools/gitleaks/release.txt` and
+  `gitleaks/gitleaks` (the same three cases), and gains the ★ case A1. Red: the checker says nothing of Trivy, and the
+  age rule ages Trivy's file.
+- **Commit 2, green.** `api.ts` (with `arrival`, `pinIn` and `verificationRefusal`; `age.ts` importing them, 14.3 item
+  6); `network.ts` (`getBytes` with its `Last-Modified`) and `fixtures.ts`; `base.ts`' `heldBy`, its lockfile read
+  (E32) and its doc comment (`:24-28`); `releases.ts`' skip and its doc comment (`:7-13`); `trivy.ts`; `check.ts`;
+  `index.ts`; `pin-trivy.ts`; the root script after `gitleaks:install`; `release.txt` as `pnpm trivy:pin 0.76.1
+  --offline-root` writes it (or the newer release E25 takes), its values checked against 14.4; the rest of
+  `trivy.test.ts`, `network.test.ts` and `check.test.ts`. `pnpm actions:check` on the real tree turns red here (the
+  offline rule refuses the five trivy-action steps) and first green at commit 4; no unit test runs the checker on the
+  real tree (12.10 S2).
+
+**B2: `tools/trivy`'s scripts, the workflows and their tests.** Files: `tools/trivy/{install.sh, db.sh, install.test.ts,
+db.test.ts}`, the three workflows, `tools/test/{workflows.test.ts, no-duplicated-versions.test.ts, collection.test.ts}`
+and `packages/compliance/src/controls.ts`. B2 writes against this section's form; its commits stack after B1's commit 2,
+because `workflows.test.ts` reads the five-key `release.txt`, which only B1's commit 2 writes (at 8a722f80 it has three
+keys, `release.txt:5-7`); B2 runs its suites on B1's commits, as the branch paragraph says.
+- **Commit 3, red.** `install.test.ts` and `db.test.ts`, which run the scripts by path with stub `curl`, `uname`, `sleep`
+  and `trivy` on `PATH` in a temporary directory (`tools/check-toolchain/install-pnpm.test.ts`'s form), each stub
+  refusing a `trivy` call without `--config ''` (and, in `db.test.ts`, without `--cache-dir <the argument>`).
+  `workflows.test.ts`: the CLI assertions, #107's describe rewritten, #86's rows and write cases. #107's fourth test
+  (`:3210-3246`) is not kept as a case of its own: its good install and its wrong-version refusal become I8's, its
+  wrong-hash refusal I3's, and its check that the directory holds only `trivy` (`:3234`, with `README.md` in the
+  archive) I9's. `no-duplicated-versions.test.ts`' case 9, a guard. `controls.ts:264`'s evidence `trivy image
+  --input`, which `controls.test.ts:221-228` then fails to find.
+- **Commit 4, green.** `install.sh` (its header as 14.3 item 7 says) and `db.sh` (100755), the three workflows and their
+  comments, `scanned()` gaining `tools/trivy/install.sh` and `db.sh` in its `repositoryRoot` list
+  (`no-duplicated-versions.test.ts:41`, beside `install-pnpm.sh`), never in the `CI_ROOT` list (`:39-40`): the
+  simulated rewrite copies only `CI_FILES` into its `CI_TREE` (`workflows.test.ts:6081, :6115, :6144`), and §8's
+  merge-base archive has no `db.sh`; `collection.test.ts`' `testsIn('tools/trivy')`, `controls.ts:261`'s `what` (E14).
+
+**The integrator: commit 5, documents, matrix and synth.**
+- ADR 0066: Part 6 between Part 5's end and Part 7 (`:1944-1945`), in Part 5's form (Context, Decision, Measured,
+  Alternatives, Notices N33 to N42 as 12.11 G8 words them with 14.8's changes: N33 adds that #107's install is kept and
+  extended, with no archive cache, so "downloaded or restored" and "Only `ci.yml` caches it" go (E22); N36 adds, in
+  plain words, that the action pins' age rule no longer ages Trivy's `release.txt`, that a patch pin passes by S6's
+  branch rule with no per-release off-default-branch exclude, which #107's rule required, and that Trivy's age counts
+  the commit's dates, its `verified_at` and its arrival on the branch S6 names (E17); N37 adds that an advisory range
+  that does not parse fails the read (E31); N39 names the checksums file as the signed object; Consequences;
+  Revisit). The header: Status (`:3-7`, Part 6 listed and the reservation clause dropped), Date (`:37`), Deciders and
+  PRD lines in Part 5's form. Part 6 states, without editing them, that it answers Part 2's no-cache text
+  (`:406-416`), its pin table's trivy-action row (`:363`), Part 2's Revisit (`:743`), #107's Amendment (the install
+  step's `TRIVY_CMD` for trivy-action's entrypoint `:783-786`, the curl's `file:` for the tests' mirror `:787-788`, the
+  database `:789-793`, the `file://` mirror test `:802-803`, the age bullet `:822-827`, "every line copied" `:828-829`,
+  the follow-up `:830-833`, "Run `trivy` directly" `:838-842`), N32's `TRIVY_CMD` (`:1233`) and Part 5's "Trivy and
+  its database" (`:1928`); that the library's SAN rule is a pattern, which the checker anchors; `signed_at`'s
+  definition; what the ancestry rule leaves (12.10 S6); and why no archive is cached (E22).
+- ADR 0010 `:19, :30` and an appended note naming Part 6 (§5). ADR 0062 `:1393` gains "(superseded by ADR 0066, Part 6:
+  Trivy runs as the CLI with `--cache-dir` under `runner.temp`, and the release keeps no cache)".
+- ci.md: the `static` row `:26`; the `images` row `:33` (install, database, CLI scans); the "Action pins" bullet
+  `:160-179`, with every Trivy refusal and its remedy as 12.11 G3 words them; the `images` triage `:221-228` (a SHA-256
+  mismatch never re-run past, re-pin with `pnpm trivy:pin`; a withdrawn release, the download's 404, re-pin; a stale
+  database; ghcr or `pkg-containers.githubusercontent.com` unreachable; a JAR; "a CVE is never ignored by file, only
+  fixed"); the cache paragraph `:360-372` (no Trivy archive cache, and why, E22; the database from ghcr only and under
+  48 hours); the local-run bullet `:507-514` (the tag, branch, checksums and bundle reads; `--offline-root`; `pnpm
+  trivy:pin`'s hour past the floor, E25). The value-rule bullet `:550` stays true (its one path entry is still the
+  pinned Trivy's directory); ci.md names no `TRIVY_CMD` (grep, about 07:10Z), so the scout's `:550` item needs no edit.
+- `dependency-upgrades.md`: a "Trivy" section after "Actions" (`:419`ff: §6's bump, a withdrawn release, no exclude),
+  and step 5 (`:148`) gains both push warnings. It must not name either runner file-command variable (14.2).
+- reconciliation-001: an entry after `:698`, in P1's form.
+- The status file (`/home/user/ops/approval-summaries/lane-b-ci-deps-status.md`) gains, for the founder: "P2 reverses
+  #107's de7438c8 for Trivy: the action pins' age rule no longer ages tools/trivy/release.txt; trivy.ts holds it, and a
+  Trivy patch release passes by its release-branch rule with no per-release off-default-branch exclude (ADR 0066 Part
+  6, N36). Whether that exclude was the founder's is the founder's to say." (E17).
+- `test-matrix.md`: the intro (`:311-318`) gains "CI-24 to CI-26 hold the Trivy release to verified bytes, its
+  signer, branch and age, and its database to its publisher and 48 hours (Part 6)"; CI-21's row (`:343`) reads "a
+  tools/gitleaks release.txt version" in place of "a tools/trivy or tools/gitleaks release.txt version"; CI-24 to CI-26
+  after CI-23 (`:345`), as 14.8's rows. `matrix.ts` the same (`:662`, after `:664`). `registry.ts` after CI-23 (`:867`)
+  under `// Trivy from verified bytes (docs/adr/0066, Part 6).`, in CI-21's form:
+  - `'CI-24': none(0, 'The workflows and tools/trivy/release.txt are read; the install script runs against stub downloads in a temporary directory; no file.', ['tools/trivy/install.test.ts', 'tools/test/workflows.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/check-action-pins/trivy.test.ts'])`;
+  - `'CI-25': none(0, "Tags, branches, GitHub's answers and checksums files are synthetic and recorded; the trust root, certificates and bundles are the synthetic ones tools/check-action-pins/testdata/trivy/make.sh made; no file.", ['tools/check-action-pins/trivy.test.ts', 'tools/check-action-pins/check.test.ts', 'tools/check-action-pins/network.test.ts', 'tools/check-action-pins/age.test.ts'])`;
+  - `'CI-26': none(0, "The workflows' env is read; the database script runs against a stub trivy; no file.", ['tools/trivy/db.test.ts', 'tools/test/workflows.test.ts', 'tools/check-action-pins/trivy.test.ts'])`.
+  `pnpm synth --all` then writes `fixtures/synthetic/CI-24/expected.json` to `CI-26/expected.json` and rewrites
+  `CI-21/expected.json`, and changes nothing else.
+- `README.md:44-45`: `pnpm trivy:pin X.Y.Z   # pin a Trivy release past the floor, its checksums file's signature and tag
+  verified (networked; --offline-root)`, with no version literal.
+
+**The exact case list.** ★ marks a commit-1 or commit-3 case that fails first on behaviour.
+
+`trivy.test.ts`, 63 tests:
+- Offline (16): O1 ★ an `aquasecurity/` action in any workflow; O2 ★ a `trivy` step before the install step, and one
+  before the database step; O3 ★ a scan whose `if:` lacks either step's success (the worker's `!cancelled() && …` form
+  accepted); O4 ★ `TRIVY_DB_REPOSITORY` with `:2`; O5 either repository with a digest, a comma, another registry, or
+  absent from a step that runs Trivy; O6 a step that runs Trivy without one of the three switches, each named; O7 any
+  `TRIVY_*` variable at the workflow or job level, on a step that runs no Trivy, or other than the five on a Trivy step
+  (`TRIVY_IGNOREFILE`, `TRIVY_CACHE_DIR`, `TRIVY_DOWNLOAD_BASE`); O8 ★ a `trivy` command without `--cache-dir
+  "$RUNNER_TEMP/trivy"`; O9 ★ a scan or the SBOM without `--config ''` or `--skip-java-db-update`; O10 a scan without
+  `--skip-db-update`, `--ignorefile ''`, `--secret-config ''` or `--scanners vuln,secret`, each named; O11 each refused
+  flag on any `trivy` command; O12 ★ `trivy` or `tools/trivy/` run with no `release.txt` (and with neither, nothing said
+  and nothing read); O13 a `release.txt` missing, repeating or adding a key, or breaking a form; O14 ★ 0.71.1 under
+  0.72.0, naming the three advisories; O15 0.69.4, 0.69.5 and 0.69.6 (CVE-2026-33634), and each of v0.69.4's two
+  archive digests (Linux-64bit, Linux-ARM64) on either line whatever the version; O16 14.7's exact form passes.
+- A changed pin (38): N1 the good pin passes, with exactly its reads (the tag and its peel; `fetchRefs` with
+  `release/v0.99` and `v0.99.0`; the checksums file and bundle; on CI the release, the commit's verification, the
+  arrival read and the advisories); N2 ★ a tag that names another commit, and one not listed; N3 ★ the SAN
+  `…@refs/tags/v0.99.10` with every value right; N4 the SAN `…-rc.1`, another workflow, another issuer; N5 (seven
+  tests) each of `.1.11`, `.1.13`, `.1.14`, `.1.15`, `.1.17`, `.1.18`, `.1.20` different; N6 (two) `.1.13` absent,
+  `.1.14` absent; N7 a verifier that ignores `oids`, caught by the explicit compare; N8 a leaf under a CA the root does
+  not name; N9 ★ `linux_x64` unequal to its signed line; N10 `linux_arm64` unequal, an asset's line absent, an asset's
+  line twice; N11 the checksums file one byte off what was signed; N12 two tlog entries, and none; N13 ★ signed 4,319
+  minutes before `now` fails, 4,320 passes; N14 `signed_at` unequal to the verified time; N15 a promise-less entry
+  timed by its one RFC 3161 time passes, with none or two fails; N16 a `.0` on the default branch passes, off it fails;
+  N17 a patch on `release/vX.Y` holding the `.0` passes, a branch lacking the `.0`, a `.0` off the default branch and
+  an unlisted branch (named) each fail; N18 on CI, not immutable, a `published_at` under the floor, and a 404 each
+  fail; N19 (two tests) on CI, an advisory whose range holds the version fails, a withdrawn one is ignored, every page
+  is read; and an unwithdrawn advisory whose range does not parse (null, empty, `< 0.80.0 || >= 1.0.0`, `< 0.80.0+incompatible`)
+  fails naming it on a pull request and warns on a push; N20 the control missing GHSA-69fq for 0.69.4, or GHSA-mcj4
+  for 0.71.0, fails closed; N21 off CI, the release and advisory reads are skipped with one note; N22 three failed
+  reads fail closed naming the host, and three failed trust-root reads name tuf-repo-cdn.sigstore.dev; N23 an unchanged
+  `release.txt`, checker and verifier lock read nothing for Trivy (a guard); N24 a change to the checker alone: a
+  verdict on the bytes fails, a moved tag or a failed read warns (E5); N25 reads the deadline stopped are one error on
+  a pull request and one warning on a push; N26 the two-byte UTF8String encoder round-trips through `ASN1Obj` and
+  refuses 128 bytes; N27 `--offline-root` reads the embedded root with no fetch and is refused when `GITHUB_ACTIONS` is
+  `true`; N28 on CI, a `.0` whose arrival on the default branch, and a patch whose arrival on `release/vX.Y`, is under
+  the floor fails naming the arrival, and a committer date, an author date or a `verified_at` under the floor fails
+  the same way; N29 an arrival read that fails, or finds no push, is P1's note and no error; N30 a lockfile change to
+  an `@sigstore/*`, `tuf-js` or `@tufjs/*` version reads Trivy as a checker change does, and one to any other package
+  reads nothing for Trivy (E32).
+- A push (7): P1 an unchanged pin's tag moved or gone warns; P2 the release's 404 warns "withdrawn", not immutable warns;
+  P3 a newer release three days old that passes warns naming `pnpm trivy:pin`, two days old says nothing; P4 an `-rc`
+  tag is ignored, candidates newest first and at most three; P5 a newer release past the floor that fails a check warns
+  naming it, and one with no bundle or a malformed one warns; P6 every read failing gives warnings and no error; P7 a
+  changed pin's findings on a push are warnings.
+- `pnpm trivy:pin` (2), through the exported function with the synthetic root and recorded reads: K1 it writes exactly
+  the five keys `trivy.ts` accepts, in order, under the Part 6 header, and the offline rules pass the file it wrote;
+  K2 off CI it refuses a release whose checksums file or bundle was last modified less than the floor plus one hour
+  ago, naming the time it can be pinned and that `published_at` is CI's to read, and takes it from that time (E25).
+
+`network.test.ts`, 7: `getBytes` returns a body with a gzip header and invalid UTF-8 unchanged, with its
+`Last-Modified`; retries three times, then a `NetworkError` naming the host; refuses a `content-length` over the cap
+before reading; aborts a streamed body past the cap; sends no request header; `fetchRefs` fetches a listed branch and
+returns an unlisted one as absent, unfetched; an extra tag is listed and fetched with its peeled commit, an unlisted
+one absent.
+
+`check.test.ts`, 2: a head with no `release.txt` and no Trivy step reads nothing for Trivy; Trivy's networked check runs
+after the age rule under its deadline, and its offline rules join the offline errors. The named-once test
+(`:182-187`) changes for `heldBy` and names `pnpm-lock.yaml` once (E32).
+
+`age.test.ts`, 1: A1 ★ a `tools/trivy/release.txt` version new against the base, on a release branch, draws no "not on"
+error from the age rule, and its note names `trivy.ts` (the three gitleaks cases are changed, not new; the rest of the
+file passes unchanged with `arrival` in `api.ts`).
+
+`install.test.ts`, 7 (I4 and I5 withdrawn with the archive cache, E22; #107's fourth test absorbed into I3, I8 and I9):
+I1 ★ `install.sh` and `db.sh` committed 100755 (`git ls-files -s`); I2 no argument, or two, exits 2; I3 a downloaded
+archive whose SHA-256 differs fails before extraction naming both digests and installs nothing; I6 ★ curl runs with
+exactly `-fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time 120 -o <file>
+https://github.com/aquasecurity/trivy/releases/download/v<v>/<asset>`, and `TRIVY_DOWNLOAD_BASE` set changes nothing;
+I7 Linux arm64 takes `linux_arm64`, and macOS or another architecture is refused naming the file; I8 ★ the version is
+read with `--version --config ''`: the stub, which answers only that call, lets a matching binary install, and one
+that reports another version is refused; I9 the binary arrives by a rename within the directory: the archive's other
+files (a `README.md`) are not extracted, so the directory holds only `trivy`; a failed install leaves no `trivy` and
+no temporary file there; and a second install replaces the first.
+
+`db.test.ts`, 8, all ★ (the script is absent at commit 3): D1 47 hours passes and writes the four values to the summary;
+D2 48 hours and one second fails naming both times; D3 no `repo=` line fails; D4 a line naming
+`mirror.gcr.io/aquasec/trivy-db:2`, or another ghcr repository, fails; D5 three failed downloads fail naming ghcr.io and
+`pkg-containers.githubusercontent.com`, after pauses of 10 s and 30 s; D6 JSON with no `VulnerabilityDB` fails; D7 both
+calls' arguments are exactly `image --download-db-only --config '' --cache-dir <dir>` and `version --format json
+--config '' --cache-dir <dir>`, never `--quiet`; D8 no argument exits 2.
+
+`workflows.test.ts`, 3 net (four new, one moved out; W3 withdrawn with the archive cache, E22): W1 ★ the Trivy jobs,
+found by their "The pinned Trivy" step (as `trivyJobs` found them by the action, `:3121`), are exactly `ci.yml
+images`, `release-dry-run.yml build` and `release.yml build`; in each, the four steps that run Trivy (in `images` the
+install, the database step and two scans; in each build the install, the database step, the scan and the SBOM) carry
+the five literal variables in their own `env`, and no workflow, no job and no other step sets a `TRIVY_*`; W2 ★ first
+asserts the four scan sites (`ci.yml images` twice, `release-dry-run.yml build`, `release.yml build`), so it cannot
+pass on none, then every scan gated on both steps; W4 ★ the dry run runs release.yml's scan on both legs; W5 ★ no
+`aquasecurity/` action in any workflow, and no line but a comment names trivy-action. Changed, not new: `isScan`
+(`:256`, a `run` starting `trivy image` with `--exit-code 1`), `:682-687`, `:925-929`, `:2242-2262`, `:2295-2296`,
+`:2863-2869` (the equality drops only the SBOM upload, and `asDryRun` cuts `env`), `:2903-2914`, #107's three remaining
+tests (install and database right after the checkout with their ids; five keys; Trivy's curl string apart from
+gitleaks', which keeps #107's; the step run with a stub curl writes one path line and no `GITHUB_ENV` line),
+`TRIVY_CMD`'s row removed (`:4007-4018`), `trivy-bin`'s row given its own sites, one new fingerprint shared by the
+three install steps (word for word the same, `env` included) and the rewritten test's title (`:4020-4027`), and the
+write cases (`:4811-4822`, `TRIVY_CMD`'s line dropped). No `BOUNDED_VALUES` row changes: a step's own `env` changes
+only that step's fingerprint (`:5252-5258`), and no row cites a step that gains one (E30).
+
+`no-duplicated-versions.test.ts`, 1: case 9, a guard: Trivy's version only in `release.txt`, with `scanned()` gaining the
+two scripts, read from `repositoryRoot`, in commit 4.
+
+**The counts.** N = 63 + 7 + 2 + 1 + 7 + 8 + 3 + 1 = **92**. The target is **482 files** (479 plus `trivy.test.ts`,
+`install.test.ts` and `db.test.ts`), **10,044 passed and 2 skipped** if the list is built as written; the integrator
+records the exact numbers, and the local count equals CI's. The generator and its outputs are outside the count.
+
+**Checks, the draft and the fix round.** On each green commit, the builder's unit suites, `pnpm typecheck` and `pnpm
+lint` (B2's on B1's commits, as above). After commit 5 the integrator runs, under the lock: the fast checks of speed
+rule 1 (`pnpm typecheck`, `pnpm lint`, `pnpm lint:copy`, `pnpm lint:logs`, `pnpm check:fixtures`, `pnpm synth --all`
+with `git diff --exit-code`); the tests the change touches (`pnpm exec vitest run --project unit tools/test
+tools/check-action-pins tools/check-toolchain tools/trivy tools/gitleaks packages/compliance packages/synth`); `pnpm
+actions:check --offline`; `BASE=origin/claude/build-platform pnpm actions:check --offline-root` (every networked check
+but the live TUF root and the API reads, which are CI's); `BASE=origin/claude/build-platform pnpm toolchain:check`;
+`pnpm verify-content`. It then pushes the branch through the pre-push hook and opens the draft pull request with
+`.github/pull_request_template.md`'s description (the red commits' failing tests, the real tree's `pnpm actions:check`
+first green at commit 4, the release chosen), and reads its CI. The two adversarial reviews (CI and test
+infrastructure; security and supply chain; speed rule 3) read the draft, each finding checked by a skeptic. The fix
+round fixes, runs the full local suite once on its final tree (unit; golden; oracle; `test:db` in shards one after
+another; build, stamp, then e2e with `E2E_PREBUILT=1`; the mutation shards `tools/stryker/affected.ts` selects on that
+tree, none expected, below), runs `pnpm actions:check` and `pnpm toolchain:check` again, re-checks the Trivy release
+(E25), merges the base once (speed rule 2), and makes the single fix-round push; the merge follows rule 2a.
+
+**What the pull request should print on CI** (its draft records the job ids of the first live reads):
+- `static`, "Action pins": every pin read ("this change edits tools/check-action-pins"); the age rule's note that
+  gitleaks' version is the base's and that `tools/trivy/release.txt` is held by `trivy.ts`; then Trivy: the tag v0.76.1
+  names `e713f67f…`; the commit is on `release/v0.76`, which holds v0.76.0's `531360e5`, on `main`; the bundle of
+  `trivy_0.76.1_checksums.txt` verifies under the root read from tuf-repo-cdn.sigstore.dev (the first live read) as
+  exactly `reusable-release.yaml@refs/tags/v0.76.1` with its issuer and seven values; both archive lines equal; one tlog
+  entry at 2026-10-21T11:16:00Z, equal to `signed_at`; the commit's committer and author dates, its `verified_at` and
+  its arrival on `release/v0.76`, or P1's note that no push was found (the first live reads), with the youngest time
+  read named; the release immutable with `published_at` three days old (the first live read; if it reads false, the
+  pull request is red and the session decides, 12.5 item 5); the advisory read with its control and every range parsed
+  (the first live read).
+- `static`, "Toolchain": the lockfile's new versions, each three days old.
+- `images`: "The pinned Trivy" prints `Version: 0.76.1`; the database step's summary names
+  `ghcr.io/aquasecurity/trivy-db`, `UpdatedAt` under 48 hours and `DownloadedAt`; the CLI scans; no cache restored; no
+  setup-trivy download at "Set up job". Whether 0.76.1 finds HIGH or CRITICAL issues that 0.70.0 did not is not
+  verified; if so, `images` is red and the runbook's triage fixes them in the pull request (§10).
+- release-dry-run: on both legs the install, `db.sh` on ubuntu-24.04, the scan and the SBOM from the local daemon.
+- screening-capacity (root `package.json` and the lockfile are watched, `watched-paths.txt:20, :23`); approval-of-record.
+- mutation: the changes job prints `shards: none (no money path changed)` (`affected.ts:941`): the root
+  `trivy:pin` script and the five `@sigstore/*` entries are inert (`tools/stryker/manifests.ts:279-288`, `:275`), and
+  the lockfile moves no package of any closure (`affected.ts:566-611`, `:745-758`), as the N11 verifier's run of
+  `affected()` over the planned change found (08:05:58Z).
+- The merge's push run: every finding a warning; the push reads.
+
+### 14.8 Engineering choices
+
+Each is the recommended option under the co-founder's ruling (for security, the safer one), reversible, and recorded
+in the pull request.
+
+- **E17. Trivy is held by `trivy.ts`, not the action pins' age rule.** The age rule's default-branch requirement
+  (`age.ts:525, :647-660`) refuses every Trivy patch release, since Trivy cuts patches on `release/vX.Y` (12.10 S6;
+  v0.76.1 and v0.76.2 are there only). The alternatives: (a) an off-default-branch exclude, which is a Trivy
+  release-age exclude and the founder's, not taken; (b) a per-entry branch rule inside `releases.ts` and `age.ts`, which
+  would put S6 in P1's rule and age one pin by two rules with two messages; (c) pin v0.76.0, the newest release on
+  `main`, which fails T1 and meets the same wall at every patch. Taken: Trivy leaves the age rule, which keeps
+  gitleaks. `heldBy` on each `PINNED_RELEASES` entry keeps the base's text read once and the named-once test whole.
+  CI-21's row drops "tools/trivy".
+  - **What this loosens, in plain words.** At the base a Trivy patch pin passes the age rule only with a per-release
+    off-default-branch exclude (`age.ts:651-656`; one exact pin, a 7-day expiry, `age-exceptions.json:2`), and that
+    exclude waives the branch rule whole. Under P2 a patch passes with no exclude, by S6's rule: narrower than the base
+    with an exclude (the branch must be `release/vX.Y`, holding a `.0` that is on the default branch), but looser than
+    the base without one, and S6's own residual says a credential that can push to an existing release branch still
+    passes (12.10, S6). So P2 reverses #107's de7438c8 for Trivy. N36 and Part 6 say so, and the status file names it
+    for the founder (14.7). Whether that exclude is the founder-kept "Trivy release-age exclude" is disputed: (a)
+    above treats it as one, while C7 and 12.5 item 9 define that exclude as one admitting a release under the floor.
+  - **What holds the age.** The same floor (`releaseAgeMinutes`), by the youngest of every time `trivy.ts` reads
+    (14.3, item 3): the verified signing time, which comes after the commit (v0.76.1: committed 10:20:32Z, signed
+    11:16:00Z); the commit's committer and author dates; and, on CI, an immutable release's `published_at` (the time
+    GitHub recorded that the age rule also reads, `age.ts:600-613`), the commit's `verified_at` (`age.ts:585-598`),
+    and its arrival on the branch S6 names. P1 reads the arrival on the default branch alone (`age.ts:424-470`,
+    `:617`; `network.ts:35-36`), so for a `.0` `trivy.ts` keeps P1's signal, and for a patch its read of
+    `release/vX.Y` is a signal P1 never had. The web-flow signature's own time is not read: on CI `verified_at` is
+    GitHub's record of that signature, and the committer date it signs is counted. `trivy.ts` adds the S6 ancestry,
+    the signature, the tag and the advisories.
+- **E18. The signed object is the release's checksums file, not the x64 archive.** One signature covers both archive
+  lines #107 pins, so `linux_arm64` is verified too; no 52 MB archive is read at pin time, on a changed pin or for a
+  push candidate (12.7 E9's cost becomes two reads of about 2 KB and 10 KB each); and it is what #107's Amendment names
+  as its follow-up (`:830-833`). The identity is the same workflow, tag and commit (06:58:52Z: both releases verify with
+  the seven values; a wrong tag or commit and a changed byte are refused). Run-time bytes are still held by
+  `install.sh`'s hash, and the pull request's own `images` and dry run download and hash the x64 archive. So
+  `signed_at` is the checksums bundle's time (v0.76.1: 11:16:00Z, not the archive's 11:14:36Z of §3 and 12.3);
+  `getBytes` caps a read at 1 MiB with the 30 s limit `get` has (`network.ts:98`), not 128 MiB and 60 s (12.10 N8 keeps
+  its form: `content-length` first, then a running count); the generator signs a synthetic checksums file. Its SHA-256
+  is not recorded in `release.txt`: it is verified each time it is read, and the two lines it vouches for are.
+- **E19. `linux_arm64` stays.** #107's format, `install.sh:20` and `workflows.test.ts:3147-3148` use it, E18 verifies it
+  at no cost, and dropping it would break an install on a Linux ARM64 machine for no gain. T2's "the Linux x64
+  tarball's SHA-256" reads "each Linux archive's SHA-256".
+- **E20. `install.sh` loses `TRIVY_DOWNLOAD_BASE` and `file:` (12.7 E12 kept).** The variable exists only for #107's
+  tests (`install.sh:7`, "a mirror"; `workflows.test.ts:3154-3155`, "a file:// mirror is the tests'"), and it sits in
+  Trivy's own variable namespace, which T9 closes in the workflows. The tests move to a stub `curl` on `PATH`, as
+  `install-pnpm.test.ts` does. The curl is `-fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time
+  120`: four tries then end inside `images`' and the dry run's 20 minutes (`ci.yml:671`, `release-dry-run.yml:70`),
+  and 120 s still admits 0.44 MB/s for a 52.7 MB archive. Gitleaks' installer keeps #107's string (P40's remainder),
+  so the shared assertion (`workflows.test.ts:3156-3160`) splits per tool.
+- **E21. An atomic install.** The binary is extracted in a temporary directory, moved to `<dir>/trivy.$$`, made
+  executable, and renamed onto `<dir>/trivy`, as gitleaks' installer does (`tools/gitleaks/install.sh:64-67`); a failed
+  version check removes the temporary file.
+- **E22. No archive cache (C8 reversed; 12.10 N6 and N10 no longer arise).** `install.sh <dir>` keeps #107's one
+  argument and its "keeps no cache" (`install.sh:5-6`): every Trivy job downloads the pinned archive and hashes it
+  before `tar`, as #107's does. Weighed against C8's reasons:
+  - The surface. `images` restores nothing today (`ci.yml:668-800`), and the pinned actions/cache (`55cc8345`,
+    v6.1.0, bundling @actions/cache 6.1.0) extracts with `tar -xf <archive> -P -C $GITHUB_WORKSPACE` and lists the
+    entries only in debug mode (its `dist/restore-only/index.js:94082`, `:94507-94510`, read 08:00:03Z). GNU tar 1.35
+    with `-P` writes a `../` member outside the directory (the N8 verifier's test, 08:00:27Z). So an entry under the
+    predictable key `trivy-v1-<hashFiles>` could rewrite `tools/trivy/install.sh` in the checkout before the step that
+    hashes runs, and "safe because the script re-hashes what is restored" (C8) would not hold for it. Only the build
+    branch's own runs write that scope (ci.md `:361-362`), and other jobs restore their own caches the same way, so it
+    is a new target, not a new capability.
+  - The benefit, a cost. C8 keeps pull-request lanes up when the pinned release is withdrawn or the host is down. When
+    the release is withdrawn because it is bad, the cache would keep running it on every pull request while a push run
+    only warns "withdrawn"; with no cache `images` fails at the download, as the release and the dry run already do,
+    and the runbook re-pins.
+  - The rest. 52 MB a job is small, and GitHub's release host is already the release's dependency.
+  So no cache, the safer option. T3's "restored", the archive directory, the key, the push-only save, its
+  `BOUNDED_VALUES` row and the founder's deletion of a bad entry all go.
+- **E23. The path write stays in the step; `TRIVY_CMD` goes.** No step left after P2 reads `TRIVY_CMD` (trivy-action
+  v0.36.0's `entrypoint.sh:5` did), so its write and #86's row go (`workflows.test.ts:4007-4018`); the `GITHUB_PATH`
+  line stays in the step (`trivy-bin`'s row, `:4020-4027`), never in the script, which would join the closed list
+  (`:4531-4540`). The scans and `db.sh` run `trivy` from that path. That it is the first `trivy` there holds at today's
+  pins and inputs: in the base's push run (job 128329221698, log `:161`, `:269`, `:1099`, `:2593`, read 07:57:24Z) no
+  action after the install added a directory but trivy-action, which P2 retires; setup-buildx used the runner's
+  buildx and downloaded nothing; actions/cache `55cc8345` defines `addPath` and never calls it. No test reads an
+  action's own `addPath` (`workflows.test.ts:3995-3998`), so for a later version of any action it is not verified. No
+  check is added for it: a `command -v trivy` check in the database step would cover only the steps before it, while
+  setup-buildx and build-push run after it, and an action able to put a `trivy` first on `PATH` can as well replace
+  `$RUNNER_TEMP/trivy-bin/trivy` itself, so the guard is the actions' SHA pins and their age rule.
+- **E24. The database step's place.** After the install, before setup-buildx, in all three jobs, with `id: trivy-db`; it
+  needs no `if:`, since nothing before it but the checkout and the install can fail (E1).
+- **E25. The release pinned, and when it moves.** Off CI, `pnpm trivy:pin` reads no API, so it cannot read
+  `published_at`, which CI's check (7) counts. Trivy's release tool uploads every asset to a draft and publishes after
+  the last upload (14.4), so `published_at` is at least the last asset's `Last-Modified`. `pnpm trivy:pin` therefore
+  takes a release only when its checksums bundle's verified signing time is at least the floor old and the later
+  `Last-Modified` of its checksums file and bundle (returned by `getBytes` with them) is at least the floor plus one
+  hour old, and it notes that `published_at` is CI's to read. The hour covers the other assets' uploads (v0.76.2's took
+  23 s, 12:50:01 to 12:50:24), the publish call and CI's 20 to 25 s from a run's creation to "Action pins" (six
+  pull-request runs, read 07:53:04Z). So: v0.76.1 before 2026-11-08T13:50:24Z, v0.76.2 from then; CI's own boundary,
+  `published_at` plus three days, is not verified here and is not before 12:50:24Z. B1's commit 2 takes the newest
+  release it accepts. The fix round runs the same read before its single push and, when a newer release is accepted,
+  re-pins in one commit of `release.txt` alone, so the merge's push run does not open with a "newer release" warning.
+  Only a person bumps Trivy; the npm packages are left to Dependabot's npm group (E27), each bump re-reading Trivy
+  live (E32).
+- **E26. CI-11's row is unchanged.** "every Trivy step runs the Trivy whose archive matches tools/trivy/release.txt's
+  SHA-256, never setup-trivy's install" stays true; #107's describe is renamed "(CI-11, CI-24; docs/adr/0066, Parts 2
+  and 6)".
+- **E27. The `@sigstore/*` pins.** Exact, in `devDependencies`, at the newest version of each that is three days old
+  when B1's commit 1 is made: before 2026-11-08T00:19:17Z `@sigstore/verify` 4.1.2, `@sigstore/tuf` 5.0.0,
+  `@sigstore/bundle` 5.0.0, `@sigstore/protobuf-specs` 0.5.2 and `@sigstore/core` 4.0.1; from then 4.1.3, 5.0.1 and 5.0.1
+  for the first three. The repository's gates (`minimumReleaseAge`, `trustPolicy`) hold the transitive versions.
+- **E28. The root script's place.** `"trivy:pin": "tsx tools/check-action-pins/pin-trivy.ts"` after
+  `"gitleaks:install"` (`package.json:18`), three unchanged lines from #129's line (14.6).
+- **E29. What the generator signs.** `make.sh` signs a synthetic `trivy_0.99.1_checksums.txt` (two lines, synthetic
+  digests) for each variant of 12.10 B1, plus the variants E18 adds (a line changed, a line missing, a line twice);
+  nothing of Aqua's is committed beyond the five values in `release.txt`.
+- **E30. The five variables in each Trivy step's own `env`, never the job's.** `workflows.test.ts`' fingerprint hashes
+  a run step's env merged over its job's and the workflow's (`:5252-5258`), and a change fails "re-check the bound"
+  (`:5379-5381`). A job-level block in release.yml's and the dry run's `build` re-fingerprints the identity and image
+  steps and fails 24 `BOUNDED_VALUES` rows (`:5023-5031`, `:5034-5048`; the S1 verifier's run, 07:45:14Z to
+  07:45:17Z: exactly 24 problems). A step's own `env` changes only that step, and of the steps that gain one only the
+  install step is a row's site (`trivy-bin`, `:4020-4027`), which this plan rewrites anyway. The install step carries
+  the five too, since `install.sh` runs `trivy --version --config ''` (`install.sh:56`); whether that call makes the
+  update check is not verified. The five lines repeat on four steps a job; that is the price of leaving every other
+  row's bound as it stands.
+- **E31. An advisory range that does not parse fails the read.** GitHub documents `vulnerable_version_range` as a
+  nullable string with no grammar (github/rest-api-description, read 07:49:17Z), and nine Go event values in
+  github-reviewed at `7cb4e6a7` fall outside `ghsaRangeHolds`' grammar (07:48Z; for example GHSA-q99m-qcv4-fpm7's
+  `11.0.6+security-01`). `ghsaRangeHolds` reads such a constraint as holding nothing (`age.ts:708`, `:719-721`), so a
+  judge built on it alone passes the pin. `trivy.ts` parses each range first and fails the read naming the advisory:
+  an error on a pull request, a warning on a push (14.3, item 3 (8)). Trivy's five advisories parse today. P1's own use
+  (`age.ts:771`, `:777-780`) is not P2's to change: it is P39 (12.8).
+- **E32. A verifier bump re-reads Trivy.** `everyPin` follows only changes under `tools/check-action-pins`
+  (`base.ts:77-80`), so a Dependabot bump of `@sigstore/*` would verify nothing live (the N10 verifier's run,
+  08:03:19Z). `base.ts` names `pnpm-lock.yaml` once among its merge-base reads, and `trivy.ts` compares the locked
+  versions of `@sigstore/*`, `tuf-js` and `@tufjs/*` at the base and the head; a difference reads Trivy as a checker
+  change does (N24's verdicts), so the bump's own pull request verifies the real pinned release under the new library.
+  `everyPin` is unchanged: the action pins' reads do not use the library. P42's Dependabot group (12.8) still stands.
+
+The CI-24 to CI-26 rows, for the matrix and `matrix.ts` word for word:
+
+| ID | Title | Assertion |
+|---|---|---|
+| CI-24 | Trivy from verified bytes | Every scan and bill of materials runs the Trivy release `tools/trivy/release.txt` names, installed only after its downloaded archive's SHA-256 matched, with no Trivy action in any workflow and its version written nowhere else, reading no configuration or ignore file from the checkout |
+| CI-25 | A hijacked or young Trivy release refused | A changed pin needs a `.0`'s commit on the default branch, or a patch's on its release branch holding that `.0`; a Sigstore signature over the release's checksums file from Trivy's release workflow at exactly that tag, commit, repository, owner, runner, trigger and calling workflow under Sigstore's trust root; each committed archive digest equal to its line in that file; one tlog entry; a verified signing time and the commit's dates at least three days old, and on CI its verification time and its arrival on that branch too; and on CI an immutable release three days old that no reviewed advisory names, every advisory's range read; a CVE-2026-33634 version or digest, or a version under 0.72.0, fails; on a push a moved tag, a withdrawn release, a newer three-day-old release, or a newer release past the floor that fails a check warns, and a failed read only warns |
+| CI-26 | Trivy's database fresh and from its publisher | Each job downloads the database once, from ghcr.io only and untagged, before any scan, with telemetry and the update check off; a database over 48 hours old, or one from any other repository, fails the job, and the scans update neither database |
+
+### 14.9 In-place edits
+
+Fourteen "(14)" marks in twelve edits in §12, each where a fact is now wrong; each old and new text is in
+`/home/user/laneb-sp/p2delta/revise.md`: 12.3's "Release" row, its npm paragraph and its expected-print heading; 12.4's
+lead; 12.5 item 11 (ADR 0062, and the mutation shards); 12.6's lead; 12.8's P38, P39, P40 and P26; 12.9's mutation and
+P-number items; 12.11 G8's P4 line. Nothing in §1 to §11 or §13 is edited.
+
+The fold of this section's review (§15) adds ten "(14)" marks in ten edits outside §14 (24 in all before §14), each a
+pointer where a reader of that line would otherwise miss a change: the header (§14 and §15 named); §1's T2 (E18,
+E19), T3 (E22), T4 (E18, E19 and the youngest time) and T8 (E30); §7's C8 (E22); §10's withdrawn-release row and its
+bad-cache row (E22); 12.8's P39 (the number reused, E31); and 12.9's mutation item (none predicted). Each edit only
+adds its "(14)" text and leaves the old text in place; §15 names each edit's finding.
+
+**Not verified here:** the release's `immutable` and `published_at` (CI's; v0.76.2's is 12:50:24Z or later, E25), and
+the live advisory, TUF, `verified_at` and arrival reads (CI's, as in 12.9); whether 0.76.1 finds issues 0.70.0 did
+not; whether `trivy --version` makes the update check (E30); whether a later version of any action in the three jobs
+puts a directory before the pinned Trivy's (E23); ghcr's anonymous limits under our load.
+
+## 15. Review of the delta (2026-11-07)
+
+**Totals:** 19 findings (5 S, 14 N), each checked by a skeptic: 17 fixed (S1, S3, S4, S5; N1 to N8, N10 to N14), 2 not
+taken, refuted (S2, N9); the case count moves from 89 to 92 (`trivy.test.ts` +6, `install.test.ts` −2,
+`workflows.test.ts` −1), so the target is 10,044 passed and 2 skipped.
+
+| Finding | Disposition |
+|---|---|
+| S1 (S) 14.7's job `env` re-fingerprints 24 `BOUNDED_VALUES` rows, so commit 4 is red | **Fixed.** The five variables sit in the own `env` of every step that runs Trivy (the install, the database step, the scans and the SBOM), never a job's or a workflow's; O5 to O7 and W1 read step `env`; no `BOUNDED_VALUES` row changes (14.3 items 4 and 9; 14.7; E30). The verifier's run with job `env` gave exactly 24 "re-check the bound" problems (07:45:14Z to 07:45:17Z). The install step carries them too, since `install.sh:56` runs `trivy --version`, whose update check is not verified |
+| S3 (S) E17's "Nothing is loosened" is wrong | **Fixed, with the skeptic's corrections.** E17 now says what is loosened: a patch pin passes by S6's branch rule with no per-release off-default-branch exclude, which #107's de7438c8 required (`age.ts:651-656`), so P2 reverses de7438c8 for Trivy; N36 and Part 6 say so, and the integrator puts a line in the status file for the founder (14.7). Whether that exclude is the founder-kept one is recorded as disputed. The youngest time now counts the commit's committer and author dates and, on CI, `verified_at` and the arrival on the branch S6 names: P1's default-branch read kept for a `.0`, and `release/vX.Y` read for a patch as a signal P1 never had (its read names only the default branch, `age.ts:424-470`, `:617`). `arrival`, `pinIn` and `verificationRefusal` move to `api.ts` (14.3 items 3 and 6). +2 tests (N28, N29) |
+| S4 (S) A range `ghsaRangeHolds` cannot parse reads as not holding, so the pin passes | **Fixed.** `trivy.ts` parses each unwithdrawn advisory's range strictly first; one that does not parse, null and empty included, fails the read naming the advisory, an error on a pull request and a warning on a push (14.3 item 3 (8); E31). N19 gains a second test (+1). P1's own use (`age.ts:771`, `:777-780`) is recorded as P39, the number its moot #86 text left free (12.8; 14.5). The skeptic's side note is taken: GHSA-xcq4-m2r3-cmrj (2024, fixed 0.51.2) joins 14.4, with no effect on the floor |
+| S5 (S) v0.76.2's boundary uses `signed_at` alone, while CI also counts `published_at` | **Fixed, with the skeptic's corrections.** `pnpm trivy:pin`, which reads no API, takes a release only when `signed_at` is past the floor and the later `Last-Modified` of its checksums file and bundle (returned by `getBytes`) is past the floor plus one hour; the hour covers the remaining uploads, the publish call after them (goreleaser `d76fb400`, read by the verifier) and CI's 20 to 25 s to "Action pins". 14.4 says v0.76.2 cannot pass CI before 2026-11-08T12:50:24Z, CI's own `published_at` boundary not verified, and `pnpm trivy:pin` takes it from 13:50:24Z; E25 uses that. K2 (+1) |
+| N1 (N) W2, and W1 by scans, pass on none at commit 3 | **Fixed.** W1 finds the Trivy jobs by "The pinned Trivy" step and asserts exactly the three; W2 first asserts the four scan sites; both fail at commit 3 (the verifier's vitest run, about 07:52:02Z) |
+| N2 (N) Which I-case #107's fourth test becomes is unsaid | **Fixed.** It is not a case of its own: its good install and wrong-version refusal are I8's, its wrong hash I3's, and its "only `trivy` extracted" check (`workflows.test.ts:3234`, the skeptic's side gap) I9's (14.7, commit 3) |
+| N3 (N) Case 9 must read the scripts from `repositoryRoot` | **Fixed.** `scanned()` gains both scripts in its `repositoryRoot` list (`no-duplicated-versions.test.ts:41`), never the `CI_ROOT` list; the verifier's copy run threw ENOENT from `CI_ROOT` (07:54:53Z) |
+| N4 (N) Part 6's list omits ADR 0066 `:783-788` | **Fixed.** The list adds `:783-786` (`TRIVY_CMD` for trivy-action), `:787-788` (`file:`) and, from the skeptic's side note, `:802-803` (the `file://` mirror test). With no archive cache, `:783`'s "word for word the same" holds again |
+| N5 (N) E23's "first entry on `PATH`" rests on unread action code | **Fixed.** E23 says it holds at today's pins and inputs (job 128329221698's log, read 07:57:24Z) and is not verified for a later action version, and no longer says no trivy-action reads `TRIVY_CMD`. The optional `command -v` check is not taken: in the database step it would cover only the steps before it, while setup-buildx and build-push come after, and an action able to shadow `trivy` can replace the binary itself |
+| N6 (N) T2 and T4 have no "(14)" pointer | **Fixed.** "(14)" pointers on T2 and T4, and also on the header, T3, T8, C8 and two rows of §10, which the other fixes change (14.9) |
+| N7 (N) No test for `pin-trivy.ts`, which writes the source of record | **Fixed.** K1: it writes exactly the five keys under the Part 6 header, and the offline rules accept the file (+1) |
+| N8 (N) The archive cache's restore extracts with `tar -P` into `images` | **Fixed, by dropping the cache** (E22; C8 reversed). Weighed against C8's reason: the restore could rewrite `install.sh` before it hashes, and a cache would keep running a release withdrawn because it is bad while a push only warns. No cache is the safer option and keeps #107's "keeps no cache". W3, I4, I5, the archive directory, the cache key's row and the founder's deletion of a bad entry go (−3 tests) |
+| N10 (N) A `@sigstore/*` bump re-runs no live verification | **Fixed, the optional taken.** A change to the locked version of any `@sigstore/*`, `tuf-js` or `@tufjs/*` package reads Trivy as a checker change does (E32; 14.3 items 3 and 6). N30 (+1); N23 widened |
+| N11 (N) Which mutation shards run can be predicted | **Fixed.** None: the changes job prints "shards: none (no money path changed)", with `trivy:pin` and the five `@sigstore/*` entries inert and the lockfile moving no closure's package, as the verifier's `affected()` run found (08:05:58Z) (14.7; 12.9) |
+| N12 (N) B2 cannot be green alone | **Fixed.** B2 runs its suites on B1's commits 1 and 2, cherry-picked under its own, and the integrator re-runs them at commit 4 on the stacked branch (14.7) |
+| N13 (N) Comments P2 makes false are in no builder's list | **Fixed for three of four.** B1's commit 2 rewords `base.ts:24-28` and `releases.ts:7-13`; B2's commit 4 rewrites `install.sh`'s header (`:7-8`'s `TRIVY_DOWNLOAD_BASE` goes; `:5-6`'s "keeps no cache" stays true). `release.txt`'s header was already `pnpm trivy:pin`'s (the skeptic refuted that part); §3's "the one archive" becomes the two Linux archives (14.3 items 1, 2 and 7) |
+| N14 (N) `HIJACKED` refuses only v0.69.4's x64 digest | **Fixed.** It also refuses the ARM64 digest `e401ae1e6d2442fa9a0c79dc0f3b0457ecfebf74a9c0a920159c49437f663aef` from GHSA-69fq, on either line (14.3 item 4; O15; 14.4) |
+| S2 (S) E27 leaves `@sigstore/verify` 4.1.3's tlog hardening to Dependabot | **Not taken, refuted.** 4.1.3 hardens only thresholds of two or more (upstream 2af33f8's tests all use `tlogThreshold: 2`), while P2 uses the defaults and requires exactly one tlog entry (12.10; 14.3 item 3 (5); N12), so the promise-less path proves the same under 4.1.2; E27 already takes 4.1.3, 5.0.1 and 5.0.1 from 2026-11-08; no advisory names the pinned versions (npm, 07:45:23Z). The 16 s by which E27's cutoff precedes `@sigstore/bundle` 5.0.1's three days (00:19:33.074Z) is real but loud, since `minimumReleaseAge` refuses an under-age exact pin at install (`pnpm-workspace.yaml:44-45`); left as E27 has it |
+| N9 (N) A ghcr-only database loses Trivy's fallback | **Not taken, refuted.** The design already states the trade and its remedy: C3 ("a ghcr outage or rate limit turns `images` and the release's `build` red until a re-run"), §10's ghcr row, §5's ci.md triage ("re-run; never add a mirror"), N34, 14.3 item 8 and 14.7's triage. Trivy falls back only on 408, 429, 5xx or BLOB_UNKNOWN anyway (`pkg/oci/artifact.go:287-340` at `e713f67f`) |

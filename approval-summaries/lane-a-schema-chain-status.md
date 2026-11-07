@@ -10,6 +10,13 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 08:45 UTC (acting Lane A): PR 5's freeze ask READY, sent to the orchestrator for the founder:**
+  `approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md` (rewrite wf_c7d47053-463: four check rounds, issues
+  16, 12, 9, 7; final confirmation wf_6870adec-1eb: scope and founder-reader clean twice, accuracy's two measurement-wording
+  points fixed). Three independent yes/no questions, each a ledger-frozen function body in an appendix: Q1 roi_links_valid
+  accepts actionable_open_lines (four-key rows stay accepted); Q2 roi_statement_rules checks a new statement's figure
+  against the lines it lists (only with Q1); Q3 roi_links_valid refuses an empty links object. Lane A recommends yes to all
+  three. The writer and readers are built alongside, outside the grant. SUITE-CAP-3's further ledger items: ask later.
 - **2026-11-07 06:25 UTC (acting Lane A): PR 5's freeze ask, first draft done but not relayed** (wf_2c1376ed-a7d; kept as
   `approval-summaries/lane-a-wip/pr5-ask/draft-v1-long.md` with its tested SQL). It asks only #93's F9 (roi_links_valid
   accepting a fifth key actionable_open_lines; roi_statement_rules checking the figure against the lines it names) and a
