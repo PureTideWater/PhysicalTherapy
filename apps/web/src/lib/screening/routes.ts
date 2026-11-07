@@ -272,7 +272,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
     case 'band_holds_date':
       return `${row}’s ${reason.column === undefined ? 'service band column' : column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again`;
     case 'band_in_future':
-      return `${row}’s service band is a quarter that has not started yet; leave it out`;
+      return `${row}’s service band is a quarter that has not started yet; leave the row out`;
     case 'band_outside_content':
       return reason.row === undefined
         ? 'every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter'
@@ -394,7 +394,7 @@ function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Is
   const kept = issues.slice(0, SCREENING_MAX_REASONS - 1);
   const more = total - kept.length;
   const one = more === 1;
-  return [...kept, { field: 'upload', message: `and ${more.toLocaleString('en-US')} more ${one ? 'problem' : 'problems'} like these; fix ${one ? 'it' : 'them'} too, then screen the file again` }];
+  return [...kept, { field: 'upload', message: `and ${more.toLocaleString('en-US')} more ${one ? 'problem' : 'problems'} like these; fix ${one ? 'it' : 'them'} too, then choose the file again` }];
 }
 
 const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };

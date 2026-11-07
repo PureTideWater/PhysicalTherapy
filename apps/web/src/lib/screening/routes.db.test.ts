@@ -167,7 +167,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
       { field: 'upload', message: 'column 25 holds dates of service; remove the column, then choose the file again' },
       { field: 'upload', message: 'column 26 holds member IDs; remove the column, then choose the file again' },
     ]);
-    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 7 more problems like these; fix them too, then screen the file again' });
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 7 more problems like these; fix them too, then choose the file again' });
     expect(issues.find((issue) => /rename/.test(issue.message))).toBeUndefined();
     const { rows } = await world.owner.query<{ rejection_reasons: { code: string }[] }>(
       'SELECT u.rejection_reasons FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
@@ -203,7 +203,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     const repeated = await submitted(submitInput({ rows: [SAMPLE_ROWS[0] ?? screeningRow('97110', 'medicare_ffs'), SAMPLE_ROWS[0] ?? screeningRow('97110', 'medicare_ffs')] }));
     expect(issuesOf(repeated)).toEqual([{ field: 'upload', message: 'row 2 repeats row 1; add the two into one row' }]);
     const future = await submitted(submitInput({ rows: [screeningRow('97110', 'medicare_ffs', { band: '2099-Q1' })] }));
-    expect(issuesOf(future)).toEqual([{ field: 'upload', message: 'row 1’s service band is a quarter that has not started yet; leave it out' }]);
+    expect(issuesOf(future)).toEqual([{ field: 'upload', message: 'row 1’s service band is a quarter that has not started yet; leave the row out' }]);
     const unreadable = await submitted({ ...submitInput(), headers: 'not json' });
     expect(issuesOf(unreadable)).toEqual([{ field: 'upload', message: 'the file could not be read here; choose it again' }]);
   });
@@ -263,7 +263,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     expect(words({ code: 'invalid_value' })).toBe('a row has a value that is not in the screening’s format; correct it, or leave the row out');
     expect(words({ code: 'band_holds_date', row: 2, column: 6 })).toBe('row 2’s column 6 holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again');
     expect(words({ code: 'band_holds_date', row: 2 })).toBe('row 2’s service band column holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again');
-    expect(words({ code: 'band_in_future', row: 1 })).toBe('row 1’s service band is a quarter that has not started yet; leave it out');
+    expect(words({ code: 'band_in_future', row: 1 })).toBe('row 1’s service band is a quarter that has not started yet; leave the row out');
     expect(words({ code: 'band_outside_content' })).toBe(
       'every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter',
     );
@@ -368,7 +368,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient�
     const crowded = submitInput({ rows: [...Array.from({ length: 22 }, () => 'x'), encodeScreeningRows([at(3, '97140')]), encodeScreeningRows([at(10, '97530')])].join('\n') });
     const issues = issuesOf(await submitted(crowded));
     expect(issues.slice(0, 2)).toEqual([FLOOR_MESSAGE(23), FLOOR_MESSAGE(24)]);
-    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 5 more problems like these; fix them too, then screen the file again' });
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'and 5 more problems like these; fix them too, then choose the file again' });
   });
 
   it('stores what the browser left out as three numbers, and the result says so apart from every figure', async () => {
