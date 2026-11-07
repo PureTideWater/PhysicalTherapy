@@ -24,13 +24,14 @@ const ROOTS = [`${WEB}/lib/routes`, `${WEB}/lib/screening`, `${WEB}/lib/packets`
 const FILES = [`${WEB}/lib/zip.ts`, 'apps/worker/src/billing/account.ts', 'packages/packets/src/correspondence.ts'];
 
 /**
- * Where a message must also start with a verb from VERBS: the field-rule maps (`*_FIELD_RULES`), the correspondence
- * form's zod messages and every message in @tp/packets' correspondence rules, whose old form was a validator's
+ * Where a message must also start with a verb from VERBS: the field-rule maps (`*_FIELD_RULES`), the settings forms'
+ * own field schemas (the correspondence form's, and the defaults form's `minutes` and `dollars`: the design's 2.7
+ * "settings zod messages") and every message in @tp/packets' correspondence rules, whose old form was a validator's
  * description ("a 10-digit phone number…"). Keyed by file, then by declaration ('*' for the whole file). The wider
  * files keep reason-first sentences such as "the chain is not complete; …".
  */
 const VERB_FIRST: Readonly<Record<string, readonly string[]>> = {
-  [`${WEB}/lib/routes/settings.ts`]: ['correspondenceForm', 'NO_AT'],
+  [`${WEB}/lib/routes/settings.ts`]: ['correspondenceForm', 'NO_AT', 'minutes', 'dollars'],
   'packages/packets/src/correspondence.ts': ['*'],
 };
 const VERBS = new Set(['enter', 'choose', 'use', 'write', 'name', 'leave', 'remove', 'fix', 'ask', 'sign', 'try', 'fill', 'open']);

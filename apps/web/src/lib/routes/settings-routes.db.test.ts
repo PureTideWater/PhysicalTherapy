@@ -564,9 +564,10 @@ describe('the settings forms’ refusals, each an instruction after the field’
     expect(await contact({ ...MAILING, address_zip: '2760' })).toEqual(refused('address_zip', 'enter five digits, or a ZIP+4 such as 27601-1234'));
   });
 
-  it('names the most minutes the pursuit-cost defaults take', async () => {
-    expect(await call(settingsPursuitAction, world.adminUserId, P(), { staffRatePerHour: '40.00', minutesPerPacket: '10001', minutesPerFollowUp: '15' })).toEqual(
-      refused('minutesPerPacket', 'enter at most 10,000 minutes'),
-    );
+  it('names the most minutes the pursuit-cost defaults take, and their form, in one sentence', async () => {
+    const pursuit = (input: Record<string, string>) => call(settingsPursuitAction, world.adminUserId, P(), { staffRatePerHour: '40.00', minutesPerPacket: '45', minutesPerFollowUp: '15', ...input });
+    expect(await pursuit({ minutesPerPacket: '10001' })).toEqual(refused('minutesPerPacket', 'enter a whole number of minutes, at most 10,000'));
+    expect(await pursuit({ minutesPerFollowUp: '1.5' })).toEqual(refused('minutesPerFollowUp', 'enter a whole number of minutes, at most 10,000'));
+    expect(await pursuit({ staffRatePerHour: '40.5.0' })).toEqual(refused('staffRatePerHour', 'enter dollars and cents, such as 5.00'));
   });
 });

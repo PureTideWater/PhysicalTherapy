@@ -274,14 +274,15 @@ export const confirmAgreementsAction = practiceRoute({
 const dollars = z
   .string()
   .trim()
-  .regex(/^\d{1,9}(\.\d{1,2})?$/, 'dollars and cents, such as 5.00')
+  .regex(/^\d{1,9}(\.\d{1,2})?$/, 'enter dollars and cents, such as 5.00')
   .transform((text) => parseAmount(text));
 const minutes = z
   .string()
   .trim()
-  .regex(/^\d{1,5}$/, 'whole minutes')
+  .regex(/^\d{1,5}$/, 'enter a whole number of minutes, at most 10,000')
   .transform((text) => Number.parseInt(text, 10))
-  .pipe(z.number().int().min(0).max(10_000, 'enter at most 10,000 minutes'));
+  // The pattern admits only whole, unsigned numbers, so the minimum and the integer check never refuse.
+  .pipe(z.number().int().min(0).max(10_000, 'enter a whole number of minutes, at most 10,000'));
 
 export const defaultsSettingsPage = practiceRoute({
   id: 'practice.settings.defaults',
