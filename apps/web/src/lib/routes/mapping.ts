@@ -35,7 +35,7 @@ import {
   priceAgainSets,
 } from '../pricing/mapped-plan';
 import { type PayerOption, payerOptions } from '../remittances/queries';
-import { LOCATION_WAITING } from './pricing';
+import { LOCATION_WAITING, releaseMismatchMessage } from './pricing';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -408,19 +408,20 @@ const runIds = z
   .pipe(z.array(opaqueId).min(1).max(PRICE_AGAIN_LIMIT));
 
 /** What the form says when its months are not the months now (design 4.2 step 3, months_changed): nothing was created. */
-export const MONTHS_CHANGED = 'the months changed since this page was shown: review them below and try again';
+export const MONTHS_CHANGED = 'the months changed since this page was shown; review them below and try again';
 
 /**
  * A refusal of a month's re-run, as the field the form names it against (finding 7): createRerun's refusals on runIds,
- * naming the month by its dates (the service's messages read after "This run:" and read the same after the dates), the
- * release mismatch and the location's wait on releaseNo. Dates and states only, never PHI.
+ * naming the month as the run's subject ("the run of {from} to {to}", which the service's messages, written to read after
+ * "This run:", follow as their verb; never "{dates}: {message}", which stacked a second colon), the release mismatch and
+ * the location's wait on releaseNo. Dates and states only, never PHI.
  */
 export function priceAgainRefusal(error: unknown, month: { readonly periodFrom: string; readonly periodTo: string }): InputError | undefined {
   if (error instanceof RerunRefusedError) {
-    return new InputError([{ field: 'runIds', message: `${month.periodFrom} to ${month.periodTo}: ${error.message}.` }]);
+    return new InputError([{ field: 'runIds', message: `the run of ${month.periodFrom} to ${month.periodTo} ${error.message}` }]);
   }
   if (error instanceof RuleReleaseMismatchError) {
-    return new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the release in force.` }]);
+    return new InputError([{ field: 'releaseNo', message: releaseMismatchMessage(error) }]);
   }
   if (error instanceof PricingLocationWaiting) {
     return new InputError([{ field: 'releaseNo', message: LOCATION_WAITING }]);
