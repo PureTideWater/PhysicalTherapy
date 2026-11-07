@@ -553,6 +553,12 @@ export interface RefusalSummaryProps {
   readonly stale?: 'origin';
   /** The app's configured web address (services.origin), which the origin lead names; never the browser's location. */
   readonly appOrigin?: string;
+  /**
+   * What a press again after a dropped connection may do on this form: "mails-again" for the screening upload, where a
+   * first press that reached PaidWhole is mailed, so a second press sends a second email whose link alone opens
+   * (RefusalLead).
+   */
+  readonly unconfirmed?: 'mails-again';
 }
 
 /**
@@ -563,7 +569,7 @@ export function RefusalSummary(props: RefusalSummaryProps) {
   return <Summary key={`${props.state.otherPerson === true ? 'cleared' : 'response'}:${String(props.state.seq ?? 0)}`} {...props} />;
 }
 
-function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, appOrigin }: RefusalSummaryProps) {
+function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, appOrigin, unconfirmed }: RefusalSummaryProps) {
   const itemId = useId();
   const summaryRef = useRef<HTMLDivElement>(null);
   // Each issue's target, read from the page for the state it was read for (null before: the server render), the name
@@ -612,6 +618,7 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
           secrets={read?.secrets === true}
           stale={stale}
           appOrigin={appOrigin}
+          unconfirmed={unconfirmed}
         />
         {state.issues === undefined || state.issues.length === 0 ? null : (
           <ul className="mt-1 list-disc pl-5">
@@ -657,6 +664,7 @@ export function RefusalLead({
   secrets = false,
   stale,
   appOrigin,
+  unconfirmed,
 }: {
   readonly state: FormState;
   readonly placed: number | null;
@@ -665,6 +673,7 @@ export function RefusalLead({
   readonly secrets?: boolean;
   readonly stale?: 'origin';
   readonly appOrigin?: string;
+  readonly unconfirmed?: 'mails-again';
 }) {
   if (state.otherPerson === true) {
     // Nothing typed stays and no press is invited: it would be sent as the person signed in now (docs/adr/0077, D10).
@@ -680,7 +689,10 @@ export function RefusalLead({
     return secrets ? (
       <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here, except passwords and codes: check your connection, type them again, then press “{submit}” again.</p>
     ) : (
-      <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.</p>
+      <p>
+        The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.
+        {unconfirmed === 'mails-again' ? ' If the first press reached PaidWhole, a second email follows, and only the newer email’s link opens the screening.' : null}
+      </p>
     );
   }
   if (state.stale === true && stale === 'origin') {

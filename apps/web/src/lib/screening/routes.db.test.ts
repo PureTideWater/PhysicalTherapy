@@ -75,9 +75,9 @@ const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
 const SENT = screeningSentPath('soon');
 /**
  * Result mails after a re-send once the first screening was priced and mailed: two, one per screening, the first's link
- * no longer opening. A re-send before pricing sends one. Recorded, not ruled: whether the upload form's "Not confirmed"
- * lead must say a second press can send a second email is for the security reviewer (co-001/ux-forms-after-42's
- * design, section 8).
+ * no longer opening. A re-send before pricing sends one. The upload form's "Not confirmed" lead says so (RefusalLead's
+ * `unconfirmed="mails-again"`: a second email follows, and only the newer email's link opens). Recorded, not ruled:
+ * whether two mails are accepted is for the security reviewer (co-001/ux-forms-after-42's design, sections 8 and 9).
  */
 const RESEND_LATE_MAILS = 2;
 

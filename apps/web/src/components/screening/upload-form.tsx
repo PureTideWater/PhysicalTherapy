@@ -328,7 +328,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
          * own web address instead. A retry on this page cannot pass the origin check; the values stay only so the person
          * can copy them into the page at appOrigin.
          */}
-        <RefusalSummary state={shown} fromBrowser={shown === noFile || guarded.fromBrowser} submit="Screen the file" formRef={formRef} renderMessage={refusalSentence} stale="origin" appOrigin={appOrigin} />
+        <RefusalSummary state={shown} fromBrowser={shown === noFile || guarded.fromBrowser} submit="Screen the file" formRef={formRef} renderMessage={refusalSentence} stale="origin" appOrigin={appOrigin} unconfirmed="mails-again" />
         <noscript>
           <p data-slot="no-javascript" className="rounded-md border px-4 py-3 text-sm">
             {NO_SCRIPT}

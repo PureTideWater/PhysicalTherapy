@@ -6,7 +6,7 @@ import type { ActionState } from '../../lib/http/next';
 import { PROSPECT_SOURCE_OPTIONS } from '../../lib/routes/onboarding';
 import { ABOUT_PRACTICE, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
 import { FILE_MESSAGES, NO_FILE_CHOSEN, SCREENING_BOUNCE_BUDGET, SCREENING_PAUSED } from '../../lib/screening/messages';
-import { FormIssues, RefusalSummary } from '../form-issues';
+import { FormIssues, type FormState, RefusalSummary } from '../form-issues';
 import { NO_SCRIPT, ScreeningUploadForm, ZIP_HINT, refusalSentence } from './upload-form';
 
 /**
@@ -175,6 +175,27 @@ describe('the upload’s refusal, on the shared summary', () => {
     expect(words(html)).toBe('Not doneFix the field listed here, then try again.This ZIP code is not in the Medicare locality map in force; check it, or request an audit');
     expect(html).not.toContain('href="/request-audit"');
     expect(render({})).toBe('<form></form>');
+  });
+
+  it('leads a dropped connection with the shared words, and says a press again may send a second email whose link alone opens', () => {
+    const unconfirmed: FormState = { unconfirmed: true };
+    const summary = (props: { readonly unconfirmed?: 'mails-again' }) =>
+      words(
+        renderToStaticMarkup(
+          <FormIssues state={unconfirmed}>
+            <form>
+              <RefusalSummary state={unconfirmed} fromBrowser submit="Screen the file" formRef={createRef<HTMLFormElement>()} {...props} />
+            </form>
+          </FormIssues>,
+        ),
+      );
+    expect(summary({ unconfirmed: 'mails-again' })).toBe(
+      'Not confirmedThe connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Screen the file” again. If the first press reached PaidWhole, a second email follows, and only the newer email’s link opens the screening.',
+    );
+    // Every other form keeps the shared lead.
+    expect(summary({})).toBe(
+      'Not confirmedThe connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Screen the file” again.',
+    );
   });
 
   it('leads a page that failed the origin check with the app’s own web address, never a refresh, and never “address” alone', () => {
