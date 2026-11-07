@@ -1319,8 +1319,11 @@ export function led23(b: CaseBuilder): void {
  * the second, the figure is the cash, since interest of C that can then reach no line completes the take-back (PR 126
  * review R2M2-1); short-paid.835 pays C 3.00 of the 5.40 taken back, so the second patient's payment waits in either
  * order (R2M2-2); reported-only.835 matches C first and later-paid.835 pays its interest after two-chains.835 or before
- * it, the same either way (RV-DB2-2); and the one-line-*.835 files pay a correction of line 1 alone twice around the
- * netting, whose later payment is never moved to line 2 (RV-DB2-1).
+ * it, the same either way (RV-DB2-2); the one-line-*.835 files pay a correction of line 1 alone twice around the
+ * netting, whose later payment is never moved to line 2 (RV-DB2-1), and one-line-late-paid.835 pays the rest dated after
+ * the netting, which keeps it off line 1 when both are reconciled at once (RVM3-2); and netted-first.835 and
+ * netted-second.835 take back 3.00 and 4.40 of C's 5.40, each netted against the second patient's 6.00, so which of
+ * them is whole, and so the figure, depends on the order rest-paid.835 is uploaded in (RVM3-3).
  */
 export function led24(b: CaseBuilder): void {
   const { base, original, correction, ccn, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
@@ -1462,6 +1465,33 @@ export function led24(b: CaseBuilder): void {
     ledRemittance(b, base, 25, laterOn, [unlinked, withInterest(reversalOf(lineOne), negateCents(LED_INTEREST))], pool(dollars('-0.60'))).file,
     `After one-line-paid.835: B (${unlinked.payerClaimControlNumber}) as in two-chains.835, paying both lines 80.00 with AMT I 6.00 (line 1 as C1 paid it, line 2 30.00 more), then C1 reversed (paid -130.00, AMT I -5.40), and one PLB L6 of -0.60 naming nothing, netting B's 6.00 paid against C1's 5.40 taken back: BPR02 30.60.`,
   );
+  // The rest of C1's interest paid by a check dated after the netting PLB L6, uploaded after it or with it before one
+  // reconcile (PR 126 review RVM3-2, RV-DB3-2).
+  const lateOn = calendarDate(2026, 9, 1);
+  b.add835(
+    'one-line-late-paid.835',
+    ledRemittance(b, base, 26, lateOn, [otherClaim(b, 24)], interestPlb(base, [{ reference: lineOneCcn, amount: dollars('-4.40') }])).file,
+    `After one-line-netted.835 and dated after it: a later check whose PLB L6 of -4.40 names C1 (${lineOneCcn}), beside another patient's claim paying 150.00 with no AMT I: BPR02 154.40.`,
+  );
+  // Two PLB L6s each taking back part of C's interest, netted against the second patient's interest on line 3: C
+  // restated by C' and C' by C'' with the same amounts, so no line's weight changes (PR 126 review RVM3-3).
+  const reversedWith = (claim: Claim, amount: Cents): Claim => {
+    const reversal = reversalOf(claim);
+    return withInterest({ ...reversal, amounts: (reversal.amounts ?? []).filter((item) => item.qualifier !== 'I') }, amount);
+  };
+  const restatedOnce = correctionOf(b, 25, correction, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]);
+  b.add835(
+    'netted-first.835',
+    ledRemittance(b, base, 27, laterOn, [reversedWith(correction, dollars('-3.00')), restatedOnce, reversalOf(secondPatient), elsewhere], pool(dollars('-3.00'))).file,
+    `After out-of-order-original.835 and partly-paid.835: C reversed (paid -160.00, AMT I -3.00) and restated as C' (${restatedOnce.payerClaimControlNumber}, REF F8 naming C) with the same amounts and no AMT I; the second patient's claim reversed (paid -56.00) and corrected (${elsewhere.payerClaimControlNumber}) as in netted-elsewhere.835, with AMT I 6.00, on line 3; and one PLB L6 of -3.00 naming nothing, netting the correction's 6.00 paid against 3.00 of C's interest taken back: BPR02 27.00.`,
+  );
+  const restatedTwice = correctionOf(b, 26, restatedOnce, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]);
+  const elsewhereAgain = withInterest(correctionOf(b, 27, elsewhere, [shareLine(b, 10000n, 'coinsurance')]), dollars('12.00'));
+  b.add835(
+    'netted-second.835',
+    ledRemittance(b, base, 28, lateOn, [reversedWith(restatedOnce, dollars('-4.40')), restatedTwice, reversalOf(elsewhere), elsewhereAgain], pool(dollars('-1.60'))).file,
+    `After netted-first.835: C' reversed (paid -160.00, AMT I -4.40) and restated as C'' (${restatedTwice.payerClaimControlNumber}, REF F8 naming C') with the same amounts and no AMT I; the second patient's correction reversed (paid -80.00, AMT I -6.00) and corrected again (${elsewhereAgain.payerClaimControlNumber}, REF F8 naming it) with the same amounts and AMT I 12.00, on line 3; and one PLB L6 of -1.60 naming nothing, netting the second patient's 6.00 more paid against 4.40 of C's interest taken back: BPR02 1.60.`,
+  );
   b.scenario({
     caseLines: [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line })),
     variants: {
@@ -1483,6 +1513,9 @@ export function led24(b: CaseBuilder): void {
       laterPaidAfterNetting: ['reported-only.835', 'two-chains.835', 'later-paid.835'],
       oneLine: ['one-line-paid.835', 'one-line-rest-paid.835', 'one-line-netted.835'],
       oneLineBetween: ['one-line-paid.835', 'one-line-netted.835', 'one-line-rest-paid.835'],
+      oneLineLate: ['one-line-paid.835', 'one-line-netted.835', 'one-line-late-paid.835'],
+      takenBackTwice: { original: 'out-of-order-original.835', files: ['partly-paid.835', 'rest-paid.835', 'netted-first.835', 'netted-second.835'] },
+      takenBackTwiceRestLast: { original: 'out-of-order-original.835', files: ['partly-paid.835', 'netted-first.835', 'netted-second.835', 'rest-paid.835'] },
     },
   });
   const takenBack = [ledEntry('interest', negateCents(firstInterest), 'taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'taken-back.835 PLB L6')];
@@ -1618,6 +1651,32 @@ export function led24(b: CaseBuilder): void {
         cashCents: '600',
         reconciles: 3,
         note: "one-line-netted.835 between them: it takes back the 1.00 on line 1 and its payment waits; one-line-rest-paid.835's 4.40 belongs on line 1, which C1 approved, where the take-back can write nothing more, so it is written nowhere, never moved to line 2, which C1 left as it was; the take-back is then whole and B's 6.00 goes to line 2, as uploaded in order",
+      },
+      oneLineLate: {
+        L1: [ledEntry('interest', dollars('1.00'), 'one-line-paid.835 PLB L6'), ledEntry('interest', dollars('-1.00'), 'one-line-netted.835 PLB L6')],
+        L2: [ledEntry('interest', dollars('6.00'), 'one-line-netted.835 PLB L6')],
+        interestTotalCents: '600',
+        cashCents: '600',
+        reconciles: 3,
+        note: "one-line-late-paid.835, dated after one-line-netted.835: its 4.40 belongs on line 1, where the netting PLB L6 has written and can write nothing more, so it is written nowhere, the take-back is then whole and B's 6.00 goes to line 2; the same when the two are uploaded before one reconcile, in either order: the netting PLB L6, dated first, is walked first, and once it has written on line 1 the later payment in the same reconcile reads line 1 as out of its reach",
+      },
+      takenBackTwice: {
+        L1: [ledEntry('interest', dollars('0.44'), 'partly-paid.835 PLB L6'), ledEntry('interest', dollars('1.96'), 'rest-paid.835 PLB L6'), ledEntry('interest', dollars('-1.33'), 'netted-first.835 PLB L6'), ledEntry('interest', dollars('-1.07'), 'netted-second.835 PLB L6')],
+        L2: [ledEntry('interest', dollars('0.56'), 'partly-paid.835 PLB L6'), ledEntry('interest', dollars('2.44'), 'rest-paid.835 PLB L6'), ledEntry('interest', dollars('-1.67'), 'netted-first.835 PLB L6'), ledEntry('interest', dollars('-1.33'), 'netted-second.835 PLB L6')],
+        L3: [ledEntry('interest', dollars('6.00'), 'netted-first.835 PLB L6')],
+        interestTotalCents: '600',
+        cashCents: '1000',
+        reconciles: 3,
+        note: "C's 5.40 is paid on lines 1 and 2 by two PLB L6s; netted-first.835 takes 3.00 of it back there, whole, and the second patient's 6.00 it nets is written on line 3; netted-second.835 takes back 4.40, finds the 2.40 left, and the 2.00 more is interest no upload pays, so its 6.00 for the second patient waits for good: the figure errs low, never above the cash",
+      },
+      takenBackTwiceRestLast: {
+        L1: [ledEntry('interest', dollars('0.44'), 'partly-paid.835 PLB L6'), ledEntry('interest', dollars('-0.44'), 'netted-first.835 PLB L6')],
+        L2: [ledEntry('interest', dollars('0.56'), 'partly-paid.835 PLB L6'), ledEntry('interest', dollars('-0.56'), 'netted-first.835 PLB L6')],
+        L3: [],
+        interestTotalCents: '0',
+        cashCents: '1000',
+        reconciles: 3,
+        note: "rest-paid.835 last: netted-first.835 takes back the 1.00 on the lines, netted-second.835 finds nothing left, and both wait; rest-paid.835's 4.40 can then go to neither line (netted-first.835 has reached both), so it is interest credited nowhere, and each take-back counts it less what the other still owes (4.40 less 4.40, and 4.40 less 2.00), so neither is whole and neither 6.00 is written: the outcome depends on the order, 0.00 here and 6.00 in date order, and errs low either way, never above the cash. Counted for both, it would credit 12.00",
       },
     },
   });

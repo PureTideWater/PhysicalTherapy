@@ -2,7 +2,7 @@
   "case": "LED-24",
   "module": "LED",
   "title": "One PLB L6 over lines approved at different times, or attributed again after a later upload; then interest taken back",
-  "assertion": "Its entries of each sign never sum past what its first attribution gives it, however many reconciles run and whatever a later upload changes about the claim it names (a claim on another case named later gets nothing), and every reconcile completes; whom each PLB L6 is for is read as of one moment, so an upload during a reconcile changes nothing halfway. An entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split. Interest taken back, by a reversal alone, after a restatement, or netted in one PLB L6 with interest paid, is a negative interest entry against the lines holding that claim's interest, never below zero on a line, and the interest total is net of it; where that PLB L6's interest paid could reach only the lines its interest taken back reaches, the take-back is written and the payment is not, so the figure errs low, never above the cash; and its interest paid waits while the interest it takes back from a claim whose interest may yet arrive is not taken back whole, unless the rest is interest another PLB L6 paid that claim that can reach no line, so the outcome is the same whichever remittance is uploaded first, the netting PLB L6 before, between or with the PLB L6s paying that claim's interest; and interest paid for a claim never goes to a line on which another PLB L6 still owes a take-back of that claim's interest that it can no longer write there, nor moves to another of the claim's lines for it, so a person who matches the claim to that line by hand afterwards adds nothing. Postgres refuses an interest match without its PLB L6 and claim, an entry past its PLB L6's bound either way, and a line's interest below zero; it skips the reconcile job's interest match that carries only one of them",
+  "assertion": "Its entries of each sign never sum past what its first attribution gives it, however many reconciles run and whatever a later upload changes about the claim it names (a claim on another case named later gets nothing), and every reconcile completes; whom each PLB L6 is for is read as of one moment, so an upload during a reconcile changes nothing halfway. An entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split. Interest taken back, by a reversal alone, after a restatement, or netted in one PLB L6 with interest paid, is a negative interest entry against the lines holding that claim's interest, never below zero on a line, and the interest total is net of it; where that PLB L6's interest paid could reach only the lines its interest taken back reaches, the take-back is written and the payment is not, so the figure errs low, never above the cash; and its interest paid waits while the interest it takes back from a claim whose interest may yet arrive is not taken back whole, unless the rest is interest another PLB L6 paid that claim that can reach no line, so the outcome is the same whichever remittance is uploaded first, the netting PLB L6 before, between or with the PLB L6s paying that claim's interest, dated before it or after it; when two PLB L6s take back one claim's interest and the uploads pay it less than they take back together, which of them is taken back whole, and so whether its interest paid is written, can depend on the order, and the figure errs low either way; and interest paid for a claim never goes to a line on which another PLB L6 still owes a take-back of that claim's interest that it can no longer write there, nor moves to another of the claim's lines for it, so a person who matches the claim to that line by hand afterwards adds nothing. Postgres refuses an interest match without its PLB L6 and claim, an entry past its PLB L6's bound either way, and a line's interest below zero; it skips the reconcile job's interest match that carries only one of them",
   "synthetic": true,
   "completesIn": 9,
   "assertedBy": [
@@ -11127,6 +11127,1591 @@
           }
         }
       }
+    },
+    {
+      "path": "one-line-late-paid.835",
+      "sha256": "d48d11c0699ffdb08e428405aac6e3b087fe2e59afcef82a64566d6ae0ca06e7",
+      "bytes": 948,
+      "kind": "x12",
+      "description": "After one-line-netted.835 and dated after it: a later check whose PLB L6 of -4.40 names C1 (SYNCCNLED240022), beside another patient's claim paying 150.00 with no AMT I: BPR02 154.40.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260901",
+                "isa12": "00501",
+                "isa13": "060240026",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "060240026",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-09-01",
+                    "gs06": "60240026",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "60240026",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "24",
+                        "se02": "0001",
+                        "segmentCount": 24,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "15440",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-09-01"
+                        },
+                        "trn": {"trace":"SYNEFTLED24026","originator":"1SYN00000L","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-08-31",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER L",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERL"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9991389872",
+                          "refs": [["TJ","999989751"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24024",
+                            "clp02": "1",
+                            "chargeCents": "22500",
+                            "paidCents": "15000",
+                            "patientResponsibilityCents": "0",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240024",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "22500",
+                                "paidCents": "15000",
+                                "revenueCode": null,
+                                "units": "3",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-05-11",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"7500"},
+                                "refs": [],
+                                "amounts": [["B6","15000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [
+                          {
+                            "provider": "9991389872",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "L6",
+                            "reference": "SYNCCNLED240022",
+                            "amountCents": "-440"
+                          }
+                        ],
+                        "balance": {
+                          "claimsPaidCents": "15000",
+                          "plbTotalCents": "-440",
+                          "paymentCents": "15440",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "060240026",
+              "gs06": "60240026",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9991389872",
+                "isa13": "060240026",
+                "trn02": "SYNEFTLED24026",
+                "bpr02Cents": "15440"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-09-01",
+              "payerName": "SYNTHETIC PAYER L",
+              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
+              "balance": {
+                "claimsPaidCents": "15000",
+                "plbTotalCents": "-440",
+                "paymentCents": "15440",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":1,"lines":1,"reversals":0,"plbItems":1},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNLED24024",
+                  "payerClaimControlNumber": "SYNCCNLED240024",
+                  "status": "1",
+                  "chargeCents": "22500",
+                  "paidCents": "15000",
+                  "patientResponsibilityCents": "0",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-05-11",
+                  "serviceTo": "2026-05-11",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 21,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "22500",
+                      "paidCents": "15000",
+                      "units": "3",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-05-11",
+                      "serviceTo": "2026-05-11",
+                      "lineAllowedCents": "15000",
+                      "observedAllowed": {"cents":"15000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "0",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "7500",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 23
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [
+                {
+                  "segmentIndex": 25,
+                  "providerId": "9991389872",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "L6",
+                  "reference": "SYNCCNLED240022",
+                  "amountCents": "-440",
+                  "category": "interest",
+                  "counted": true
+                }
+              ],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 1,
+            "lines": 1,
+            "reversals": 0,
+            "plbTotalCents": "-440",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":1,"lines":1}
+          }
+        }
+      }
+    },
+    {
+      "path": "netted-first.835",
+      "sha256": "8e7966b8f12da0f6fc8c88db3e925bb0268434c45975385f0fb99ff7e6745693",
+      "bytes": 2107,
+      "kind": "x12",
+      "description": "After out-of-order-original.835 and partly-paid.835: C reversed (paid -160.00, AMT I -3.00) and restated as C' (SYNCCNLED240025, REF F8 naming C) with the same amounts and no AMT I; the second patient's claim reversed (paid -56.00) and corrected (SYNCCNLED240019) as in netted-elsewhere.835, with AMT I 6.00, on line 3; and one PLB L6 of -3.00 naming nothing, netting the correction's 6.00 paid against 3.00 of C's interest taken back: BPR02 27.00.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260803",
+                "isa12": "00501",
+                "isa13": "060240027",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "060240027",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-08-03",
+                    "gs06": "60240027",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "60240027",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "67",
+                        "se02": "0001",
+                        "segmentCount": 67,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "2700",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-08-03"
+                        },
+                        "trn": {"trace":"SYNEFTLED24027","originator":"1SYN00000L","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-08-02",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER L",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERL"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9991389872",
+                          "refs": [["TJ","999989751"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24001",
+                            "clp02": "22",
+                            "chargeCents": "-30000",
+                            "paidCents": "-16000",
+                            "patientResponsibilityCents": "-4000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240002",
+                            "clp08": "11",
+                            "clp09": "8",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240001"]],
+                            "dates": [],
+                            "amounts": [["I","-300"]],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "-15000",
+                                "paidCents": "-8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"-5000","PR-2":"-2000"},
+                                "refs": [],
+                                "amounts": [["B6","-10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              },
+                              {
+                                "procedure": "HC:97110:59",
+                                "chargeCents": "-15000",
+                                "paidCents": "-8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"-5000","PR-3":"-2000"},
+                                "refs": [],
+                                "amounts": [["B6","-10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24001",
+                            "clp02": "1",
+                            "chargeCents": "30000",
+                            "paidCents": "16000",
+                            "patientResponsibilityCents": "4000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240025",
+                            "clp08": "11",
+                            "clp09": "7",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240002"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "15000",
+                                "paidCents": "8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"5000","PR-2":"2000"},
+                                "refs": [],
+                                "amounts": [["B6","10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              },
+                              {
+                                "procedure": "HC:97110:59",
+                                "chargeCents": "15000",
+                                "paidCents": "8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"5000","PR-3":"2000"},
+                                "refs": [],
+                                "amounts": [["B6","10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24014",
+                            "clp02": "22",
+                            "chargeCents": "-15000",
+                            "paidCents": "-5600",
+                            "patientResponsibilityCents": "-1400",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240014",
+                            "clp08": "11",
+                            "clp09": "8",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "-15000",
+                                "paidCents": "-5600",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"-8000","PR-2":"-1400"},
+                                "refs": [],
+                                "amounts": [["B6","-7000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24014",
+                            "clp02": "1",
+                            "chargeCents": "15000",
+                            "paidCents": "8000",
+                            "patientResponsibilityCents": "2000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240019",
+                            "clp08": "11",
+                            "clp09": "7",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240014"]],
+                            "dates": [],
+                            "amounts": [["I","600"]],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "15000",
+                                "paidCents": "8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"5000","PR-2":"2000"},
+                                "refs": [],
+                                "amounts": [["B6","10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [
+                          {
+                            "provider": "9991389872",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "L6",
+                            "reference": null,
+                            "amountCents": "-300"
+                          }
+                        ],
+                        "balance": {
+                          "claimsPaidCents": "2400",
+                          "plbTotalCents": "-300",
+                          "paymentCents": "2700",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "060240027",
+              "gs06": "60240027",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9991389872",
+                "isa13": "060240027",
+                "trn02": "SYNEFTLED24027",
+                "bpr02Cents": "2700"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-08-03",
+              "payerName": "SYNTHETIC PAYER L",
+              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
+              "balance": {
+                "claimsPaidCents": "2400",
+                "plbTotalCents": "-300",
+                "paymentCents": "2700",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":4,"lines":6,"reversals":2,"plbItems":1},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNLED24001",
+                  "payerClaimControlNumber": "SYNCCNLED240002",
+                  "status": "22",
+                  "chargeCents": "-30000",
+                  "paidCents": "-16000",
+                  "patientResponsibilityCents": "-4000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "8",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 23,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "-15000",
+                      "paidCents": "-8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "-10000",
+                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "-2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "-5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 25
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "-2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 26
+                        }
+                      ]
+                    },
+                    {
+                      "lineNo": 2,
+                      "segmentIndex": 28,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": ["59"],
+                      "revenueCode": null,
+                      "chargeCents": "-15000",
+                      "paidCents": "-8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "-10000",
+                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "-2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "-5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 30
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "3",
+                          "amountCents": "-2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 31
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 1,
+                  "segmentIndex": 33,
+                  "patientControlNumber": "SYNPCNLED24001",
+                  "payerClaimControlNumber": "SYNCCNLED240025",
+                  "status": "1",
+                  "chargeCents": "30000",
+                  "paidCents": "16000",
+                  "patientResponsibilityCents": "4000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "7",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 38,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "15000",
+                      "paidCents": "8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "10000",
+                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 40
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 41
+                        }
+                      ]
+                    },
+                    {
+                      "lineNo": 2,
+                      "segmentIndex": 43,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": ["59"],
+                      "revenueCode": null,
+                      "chargeCents": "15000",
+                      "paidCents": "8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "10000",
+                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 45
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "3",
+                          "amountCents": "2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 46
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 2,
+                  "segmentIndex": 48,
+                  "patientControlNumber": "SYNPCNLED24014",
+                  "payerClaimControlNumber": "SYNCCNLED240014",
+                  "status": "22",
+                  "chargeCents": "-15000",
+                  "paidCents": "-5600",
+                  "patientResponsibilityCents": "-1400",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "8",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 52,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "-15000",
+                      "paidCents": "-5600",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "-7000",
+                      "observedAllowed": {"cents":"-7000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "-1400",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "-8000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 54
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "-1400",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 55
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 3,
+                  "segmentIndex": 57,
+                  "patientControlNumber": "SYNPCNLED24014",
+                  "payerClaimControlNumber": "SYNCCNLED240019",
+                  "status": "1",
+                  "chargeCents": "15000",
+                  "paidCents": "8000",
+                  "patientResponsibilityCents": "2000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "7",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 63,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "15000",
+                      "paidCents": "8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "10000",
+                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 65
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 66
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [
+                {
+                  "segmentIndex": 68,
+                  "providerId": "9991389872",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "L6",
+                  "reference": null,
+                  "amountCents": "-300",
+                  "category": "interest",
+                  "counted": true
+                }
+              ],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 4,
+            "lines": 6,
+            "reversals": 2,
+            "plbTotalCents": "-300",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":4,"lines":6}
+          }
+        }
+      }
+    },
+    {
+      "path": "netted-second.835",
+      "sha256": "baf524d8cd16b7dcca085c4027794d21a451aa8063cccf6fbe7ea31c7f23b953",
+      "bytes": 2143,
+      "kind": "x12",
+      "description": "After netted-first.835: C' reversed (paid -160.00, AMT I -4.40) and restated as C'' (SYNCCNLED240026, REF F8 naming C') with the same amounts and no AMT I; the second patient's correction reversed (paid -80.00, AMT I -6.00) and corrected again (SYNCCNLED240027, REF F8 naming it) with the same amounts and AMT I 12.00, on line 3; and one PLB L6 of -1.60 naming nothing, netting the second patient's 6.00 more paid against 4.40 of C's interest taken back: BPR02 1.60.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260901",
+                "isa12": "00501",
+                "isa13": "060240028",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "060240028",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-09-01",
+                    "gs06": "60240028",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "60240028",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "69",
+                        "se02": "0001",
+                        "segmentCount": 69,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "160",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-09-01"
+                        },
+                        "trn": {"trace":"SYNEFTLED24028","originator":"1SYN00000L","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-08-31",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER L",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERL"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9991389872",
+                          "refs": [["TJ","999989751"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24001",
+                            "clp02": "22",
+                            "chargeCents": "-30000",
+                            "paidCents": "-16000",
+                            "patientResponsibilityCents": "-4000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240025",
+                            "clp08": "11",
+                            "clp09": "8",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240002"]],
+                            "dates": [],
+                            "amounts": [["I","-440"]],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "-15000",
+                                "paidCents": "-8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"-5000","PR-2":"-2000"},
+                                "refs": [],
+                                "amounts": [["B6","-10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              },
+                              {
+                                "procedure": "HC:97110:59",
+                                "chargeCents": "-15000",
+                                "paidCents": "-8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"-5000","PR-3":"-2000"},
+                                "refs": [],
+                                "amounts": [["B6","-10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24001",
+                            "clp02": "1",
+                            "chargeCents": "30000",
+                            "paidCents": "16000",
+                            "patientResponsibilityCents": "4000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240026",
+                            "clp08": "11",
+                            "clp09": "7",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240025"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "15000",
+                                "paidCents": "8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"5000","PR-2":"2000"},
+                                "refs": [],
+                                "amounts": [["B6","10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              },
+                              {
+                                "procedure": "HC:97110:59",
+                                "chargeCents": "15000",
+                                "paidCents": "8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"5000","PR-3":"2000"},
+                                "refs": [],
+                                "amounts": [["B6","10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24014",
+                            "clp02": "22",
+                            "chargeCents": "-15000",
+                            "paidCents": "-8000",
+                            "patientResponsibilityCents": "-2000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240019",
+                            "clp08": "11",
+                            "clp09": "8",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240014"]],
+                            "dates": [],
+                            "amounts": [["I","-600"]],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "-15000",
+                                "paidCents": "-8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"-5000","PR-2":"-2000"},
+                                "refs": [],
+                                "amounts": [["B6","-10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNLED24014",
+                            "clp02": "1",
+                            "chargeCents": "15000",
+                            "paidCents": "8000",
+                            "patientResponsibilityCents": "2000",
+                            "clp06": "12",
+                            "clp07": "SYNCCNLED240027",
+                            "clp08": "11",
+                            "clp09": "7",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED240019"]],
+                            "dates": [],
+                            "amounts": [["I","1200"]],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "15000",
+                                "paidCents": "8000",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-09",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"5000","PR-2":"2000"},
+                                "refs": [],
+                                "amounts": [["B6","10000"]],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [
+                          {
+                            "provider": "9991389872",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "L6",
+                            "reference": null,
+                            "amountCents": "-160"
+                          }
+                        ],
+                        "balance": {
+                          "claimsPaidCents": "0",
+                          "plbTotalCents": "-160",
+                          "paymentCents": "160",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "060240028",
+              "gs06": "60240028",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9991389872",
+                "isa13": "060240028",
+                "trn02": "SYNEFTLED24028",
+                "bpr02Cents": "160"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-09-01",
+              "payerName": "SYNTHETIC PAYER L",
+              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
+              "balance": {
+                "claimsPaidCents": "0",
+                "plbTotalCents": "-160",
+                "paymentCents": "160",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":4,"lines":6,"reversals":2,"plbItems":1},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNLED24001",
+                  "payerClaimControlNumber": "SYNCCNLED240025",
+                  "status": "22",
+                  "chargeCents": "-30000",
+                  "paidCents": "-16000",
+                  "patientResponsibilityCents": "-4000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "8",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 23,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "-15000",
+                      "paidCents": "-8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "-10000",
+                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "-2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "-5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 25
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "-2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 26
+                        }
+                      ]
+                    },
+                    {
+                      "lineNo": 2,
+                      "segmentIndex": 28,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": ["59"],
+                      "revenueCode": null,
+                      "chargeCents": "-15000",
+                      "paidCents": "-8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "-10000",
+                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "-2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "-5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 30
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "3",
+                          "amountCents": "-2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 31
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 1,
+                  "segmentIndex": 33,
+                  "patientControlNumber": "SYNPCNLED24001",
+                  "payerClaimControlNumber": "SYNCCNLED240026",
+                  "status": "1",
+                  "chargeCents": "30000",
+                  "paidCents": "16000",
+                  "patientResponsibilityCents": "4000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "7",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 38,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "15000",
+                      "paidCents": "8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "10000",
+                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 40
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 41
+                        }
+                      ]
+                    },
+                    {
+                      "lineNo": 2,
+                      "segmentIndex": 43,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": ["59"],
+                      "revenueCode": null,
+                      "chargeCents": "15000",
+                      "paidCents": "8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "10000",
+                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 45
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "3",
+                          "amountCents": "2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 46
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 2,
+                  "segmentIndex": 48,
+                  "patientControlNumber": "SYNPCNLED24014",
+                  "payerClaimControlNumber": "SYNCCNLED240019",
+                  "status": "22",
+                  "chargeCents": "-15000",
+                  "paidCents": "-8000",
+                  "patientResponsibilityCents": "-2000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "8",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 54,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "-15000",
+                      "paidCents": "-8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "-10000",
+                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "-2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "-5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 56
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "-2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 57
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 3,
+                  "segmentIndex": 59,
+                  "patientControlNumber": "SYNPCNLED24014",
+                  "payerClaimControlNumber": "SYNCCNLED240027",
+                  "status": "1",
+                  "chargeCents": "15000",
+                  "paidCents": "8000",
+                  "patientResponsibilityCents": "2000",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "7",
+                  "planRef": "SYNPLAN-FIX-LED",
+                  "serviceFrom": "2026-03-09",
+                  "serviceTo": "2026-03-09",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 65,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "15000",
+                      "paidCents": "8000",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-09",
+                      "serviceTo": "2026-03-09",
+                      "lineAllowedCents": "10000",
+                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "2000",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "5000",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 67
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "2000",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 68
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [
+                {
+                  "segmentIndex": 70,
+                  "providerId": "9991389872",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "L6",
+                  "reference": null,
+                  "amountCents": "-160",
+                  "category": "interest",
+                  "counted": true
+                }
+              ],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 4,
+            "lines": 6,
+            "reversals": 2,
+            "plbTotalCents": "-160",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":4,"lines":6}
+          }
+        }
+      }
     }
   ],
   "generated": [],
@@ -11168,7 +12753,16 @@
       "laterPaid": ["reported-only.835","later-paid.835","two-chains.835"],
       "laterPaidAfterNetting": ["reported-only.835","two-chains.835","later-paid.835"],
       "oneLine": ["one-line-paid.835","one-line-rest-paid.835","one-line-netted.835"],
-      "oneLineBetween": ["one-line-paid.835","one-line-netted.835","one-line-rest-paid.835"]
+      "oneLineBetween": ["one-line-paid.835","one-line-netted.835","one-line-rest-paid.835"],
+      "oneLineLate": ["one-line-paid.835","one-line-netted.835","one-line-late-paid.835"],
+      "takenBackTwice": {
+        "original": "out-of-order-original.835",
+        "files": ["partly-paid.835","rest-paid.835","netted-first.835","netted-second.835"]
+      },
+      "takenBackTwiceRestLast": {
+        "original": "out-of-order-original.835",
+        "files": ["partly-paid.835","netted-first.835","netted-second.835","rest-paid.835"]
+      }
     }
   },
   "outcome": {
@@ -11389,6 +12983,51 @@
         "cashCents": "600",
         "reconciles": 3,
         "note": "one-line-netted.835 between them: it takes back the 1.00 on line 1 and its payment waits; one-line-rest-paid.835's 4.40 belongs on line 1, which C1 approved, where the take-back can write nothing more, so it is written nowhere, never moved to line 2, which C1 left as it was; the take-back is then whole and B's 6.00 goes to line 2, as uploaded in order"
+      },
+      "oneLineLate": {
+        "L1": [
+          {"stage":"interest","amountCents":"100","evidence":"one-line-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"-100","evidence":"one-line-netted.835 PLB L6"}
+        ],
+        "L2": [{"stage":"interest","amountCents":"600","evidence":"one-line-netted.835 PLB L6"}],
+        "interestTotalCents": "600",
+        "cashCents": "600",
+        "reconciles": 3,
+        "note": "one-line-late-paid.835, dated after one-line-netted.835: its 4.40 belongs on line 1, where the netting PLB L6 has written and can write nothing more, so it is written nowhere, the take-back is then whole and B's 6.00 goes to line 2; the same when the two are uploaded before one reconcile, in either order: the netting PLB L6, dated first, is walked first, and once it has written on line 1 the later payment in the same reconcile reads line 1 as out of its reach"
+      },
+      "takenBackTwice": {
+        "L1": [
+          {"stage":"interest","amountCents":"44","evidence":"partly-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"196","evidence":"rest-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"-133","evidence":"netted-first.835 PLB L6"},
+          {"stage":"interest","amountCents":"-107","evidence":"netted-second.835 PLB L6"}
+        ],
+        "L2": [
+          {"stage":"interest","amountCents":"56","evidence":"partly-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"244","evidence":"rest-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"-167","evidence":"netted-first.835 PLB L6"},
+          {"stage":"interest","amountCents":"-133","evidence":"netted-second.835 PLB L6"}
+        ],
+        "L3": [{"stage":"interest","amountCents":"600","evidence":"netted-first.835 PLB L6"}],
+        "interestTotalCents": "600",
+        "cashCents": "1000",
+        "reconciles": 3,
+        "note": "C's 5.40 is paid on lines 1 and 2 by two PLB L6s; netted-first.835 takes 3.00 of it back there, whole, and the second patient's 6.00 it nets is written on line 3; netted-second.835 takes back 4.40, finds the 2.40 left, and the 2.00 more is interest no upload pays, so its 6.00 for the second patient waits for good: the figure errs low, never above the cash"
+      },
+      "takenBackTwiceRestLast": {
+        "L1": [
+          {"stage":"interest","amountCents":"44","evidence":"partly-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"-44","evidence":"netted-first.835 PLB L6"}
+        ],
+        "L2": [
+          {"stage":"interest","amountCents":"56","evidence":"partly-paid.835 PLB L6"},
+          {"stage":"interest","amountCents":"-56","evidence":"netted-first.835 PLB L6"}
+        ],
+        "L3": [],
+        "interestTotalCents": "0",
+        "cashCents": "1000",
+        "reconciles": 3,
+        "note": "rest-paid.835 last: netted-first.835 takes back the 1.00 on the lines, netted-second.835 finds nothing left, and both wait; rest-paid.835's 4.40 can then go to neither line (netted-first.835 has reached both), so it is interest credited nowhere, and each take-back counts it less what the other still owes (4.40 less 4.40, and 4.40 less 2.00), so neither is whole and neither 6.00 is written: the outcome depends on the order, 0.00 here and 6.00 in date order, and errs low either way, never above the cash. Counted for both, it would credit 12.00"
       }
     }
   },

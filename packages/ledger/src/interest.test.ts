@@ -1115,42 +1115,50 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
     );
   });
 
-  it('writes the same whichever is uploaded first when two PLB L6s pay the chain a third takes back from, the third uploaded between them or with the second, and never above the cash (PR 126 review R2M2-1, RV-DB2-1)', () => {
+  it('writes the same whichever is uploaded first when two PLB L6s pay the chain a third takes back from, the third uploaded between them or with the second, or a fourth paying the chain dated after the third and uploaded after it or with it, and never above the cash (PR 126 review R2M2-1, RV-DB2-1, RVM3-2)', () => {
     const lineSpecs = fc.uniqueArray(
       fc.record({ line: fc.constantFrom<string>(...LINES), ofA: fc.boolean(), approvedA: fc.boolean(), ofB: fc.boolean(), approvedB: fc.boolean(), weight: fc.bigInt({ min: 0n, max: 3000n }) }),
       { selector: (item) => item.line, maxLength: 4 },
     );
-    type Who = 'Z' | 'Y' | 'X';
+    type Who = 'Z' | 'Y' | 'X' | 'W';
     fc.assert(
       fc.property(
         fc.bigInt({ min: 0n, max: 1000n }),
         fc.bigInt({ min: 1n, max: 1000n }),
+        fc.bigInt({ min: 0n, max: 1000n }),
         fc.bigInt({ min: 0n, max: 500n }),
         fc.bigInt({ min: 1n, max: 1000n }),
         lineSpecs,
         fc.boolean(),
-        (early, late, short, payment, specs, recouped) => {
+        (early, late, after, short, payment, specs, recouped) => {
           // Z (dated first; nothing when `early` is zero) and Y (dated second) pay chain a's interest on the lines a's claim
-          // is matched to; X (dated last) takes back what they paid and `short` more, and pays chain b's, whose claim may
-          // be matched to the same lines. When `recouped`, X's reversal leaves a's lines nothing remaining once X is
-          // uploaded; otherwise every weight stays. Each reconcile walks the uploaded PLB L6s by date, as the reconcile
-          // does, reading each one's lines as recordInterest builds them.
+          // is matched to; X (dated third) takes back what they and W paid and `short` more, and pays chain b's, whose claim
+          // may be matched to the same lines; W (dated last; nothing when `after` is zero) pays a's interest too. When
+          // `recouped`, X's reversal leaves a's lines nothing remaining once X is uploaded; otherwise every weight stays.
+          // Each reconcile walks the uploaded PLB L6s by date, as the reconcile does, reading each one's lines as
+          // recordInterest builds them: the lines X keeps a's payments off are read once a reconcile and read again once
+          // X writes, as the reconcile keeps them (outOfReachOf; PR 126 review RVM3-2).
           const draws: Record<Who, InterestDraw[]> = {
             Z: early > 0n ? [drawOf('Z', 'a', early, ['A'])] : [],
             Y: [drawOf('Y', 'a', late, ['A'])],
-            X: [drawOf('X', 'b', payment, ['B']), drawOf('X', 'a', -(early + late + short), ['V'])],
+            X: [drawOf('X', 'b', payment, ['B']), drawOf('X', 'a', -(early + late + after + short), ['V'])],
+            W: after > 0n ? [drawOf('W', 'a', after, ['A'])] : [],
           };
           const run = (steps: readonly (readonly Who[])[]) => {
-            const written: Record<Who, InterestWritten[]> = { Z: [], Y: [], X: [] };
+            const written: Record<Who, InterestWritten[]> = { Z: [], Y: [], X: [], W: [] };
             const uploaded = new Set<Who>();
+            let keptOff: Map<string, string[]> | undefined;
             const weightOf = (spec: (typeof specs)[number]) => cents(recouped && spec.ofA && uploaded.has('X') ? 0n : spec.weight);
             const linesOfA = (): ChainInterestLines['paid'] => {
-              const out = uploaded.has('X') ? (interestOutOfReach({ draws: draws.X, written: written.X }).get('a') ?? []) : [];
+              if (uploaded.has('X')) {
+                keptOff ??= interestOutOfReach({ draws: draws.X, written: written.X });
+              }
+              const out = keptOff?.get('a') ?? [];
               return specs.filter((spec) => spec.ofA).map((spec) => ({ serviceLineId: spec.line, claimId: 'A', approved: spec.approvedA, weightCents: weightOf(spec), outOfReach: out.includes(spec.line) }));
             };
             const held = () => {
               const sums = new Map<string, bigint>();
-              for (const item of [...written.Z, ...written.Y, ...written.X].filter((entry) => entry.chain === 'a')) {
+              for (const item of [...written.Z, ...written.Y, ...written.X, ...written.W].filter((entry) => entry.chain === 'a')) {
                 sums.set(item.serviceLineId, (sums.get(item.serviceLineId) ?? 0n) + item.cents);
               }
               return [...sums].map(([serviceLineId, sum]) => ({ serviceLineId, claimId: 'A', heldCents: cents(sum > 0n ? sum : 0n) }));
@@ -1164,7 +1172,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
                         paid: [],
                         takenBack: held(),
                         mayYetHold: true,
-                        unplacedCents: interestUnplaced({ chain: 'a', payments: (['Z', 'Y'] as const).filter((other) => uploaded.has(other)).map((other) => ({ draws: draws[other], written: written[other], paid: linesOfA() })), takeBacks: [] }),
+                        unplacedCents: interestUnplaced({ chain: 'a', payments: (['Z', 'Y', 'W'] as const).filter((other) => uploaded.has(other)).map((other) => ({ draws: draws[other], written: written[other], paid: linesOfA() })), takeBacks: [] }),
                       },
                     ],
                     [
@@ -1179,8 +1187,13 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
                   ])
                 : new Map<string, ChainInterestLines>([['a', { paid: linesOfA(), takenBack: [], mayYetHold: true, unplacedCents: cents(0n) }]]);
             const reconcile = () => {
-              for (const who of (['Z', 'Y', 'X'] as const).filter((item) => uploaded.has(item))) {
-                written[who].push(...interestWrites({ draws: draws[who], written: written[who], lines: linesOf(who) }).map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+              keptOff = undefined;
+              for (const who of (['Z', 'Y', 'X', 'W'] as const).filter((item) => uploaded.has(item))) {
+                const parts = interestWrites({ draws: draws[who], written: written[who], lines: linesOf(who) });
+                written[who].push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+                if (who === 'X' && parts.length > 0) {
+                  keptOff = undefined;
+                }
               }
             };
             for (const step of steps) {
@@ -1189,20 +1202,116 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
             }
             reconcile();
             reconcile();
-            const all = [...written.Z, ...written.Y, ...written.X];
+            const all = [...written.Z, ...written.Y, ...written.X, ...written.W];
             const byLine = [...new Set(all.map((item) => item.serviceLineId))].sort().map((serviceLineId) => [serviceLineId, all.filter((item) => item.serviceLineId === serviceLineId).reduce((sum, item) => sum + item.cents, 0n)]);
             return { total: all.reduce((sum, item) => sum + item.cents, 0n), byLine: byLine.filter(([, sum]) => sum !== 0n) };
           };
-          const inOrder = run([['Z'], ['Y'], ['X']]);
+          const inOrder = run([['Z'], ['Y'], ['X'], ['W']]);
           // X between Z and Y: X takes back what Z paid, and Y's interest, landing where X can follow it or nowhere,
-          // completes the take-back either way. X with Y in one reconcile: Y is walked first, as dated.
-          expect(run([['Z'], ['X'], ['Y']])).toEqual(inOrder);
-          expect(run([['Z'], ['X', 'Y']])).toEqual(inOrder);
-          const cash = early + late + payment - (early + late + short);
+          // completes the take-back either way. X with Y in one reconcile: Y is walked first, as dated. W with X in one
+          // reconcile: X is walked first, as dated, and once it writes, W reads the lines X has reached as kept off it (PR
+          // 126 review RVM3-2).
+          expect(run([['Z'], ['X'], ['Y'], ['W']])).toEqual(inOrder);
+          expect(run([['Z'], ['X', 'Y'], ['W']])).toEqual(inOrder);
+          expect(run([['Z'], ['Y'], ['X', 'W']])).toEqual(inOrder);
+          const cash = early + late + after + payment - (early + late + after + short);
           expect(inOrder.total).toBeLessThanOrEqual(cash > 0n ? cash : 0n);
         },
       ),
       { numRuns: 1000 },
+    );
+  });
+
+  it('never writes interest above the cash when two PLB L6s each net a take-back of one chain against a payment of another, whatever order they and the PLB L6s paying the chain are uploaded in: once the reconciles settle, whatever the dates, and after every reconcile when the payments are dated before the take-backs (PR 126 review RVM3-3)', () => {
+    const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 3 });
+    type Who = 'Y1' | 'Y2' | 'X1' | 'X2';
+    const WHO: readonly Who[] = ['Y1', 'Y2', 'X1', 'X2'];
+    const order = fc.shuffledSubarray([...WHO], { minLength: 4, maxLength: 4 });
+    fc.assert(
+      fc.property(
+        fc.tuple(fc.bigInt({ min: 1n, max: 1000n }), fc.bigInt({ min: 1n, max: 1000n })),
+        fc.tuple(fc.bigInt({ min: 1n, max: 1000n }), fc.bigInt({ min: 1n, max: 1000n })),
+        fc.tuple(fc.bigInt({ min: 0n, max: 1000n }), fc.bigInt({ min: 0n, max: 1000n })),
+        someLines,
+        order,
+        order,
+        fc.tuple(fc.boolean(), fc.boolean(), fc.boolean()),
+        ([y1, y2], [t1, t2], [more1, more2], aLines, dated, uploads, breaks) => {
+          // Y1 and Y2 pay chain a's interest on the lines a's claim is matched to; X1 and X2 each take back part of it and
+          // pay chains k1 and k2 on lines of their own, at least what they take back, as netted-first.835 and
+          // netted-second.835 do. The four are dated in the order `dated` and uploaded in the order `uploads`, reconciled
+          // after each upload where `breaks` says so and at the end, then until a reconcile writes nothing. Each reconcile
+          // walks the uploaded PLB L6s by date, reading each one's lines as recordInterest builds them: a payment of a kept
+          // off the lines either take-back has reached while it still owes, and a take-back's unplaced interest less what
+          // the other take-back still owes (unplacedOf passes every other take-back of the chain; without that, interest
+          // no line can take completes both: above the cash). Every weight stays.
+          const draws: Record<Who, InterestDraw[]> = {
+            Y1: [drawOf('Y1', 'a', y1, ['A'])],
+            Y2: [drawOf('Y2', 'a', y2, ['A'])],
+            X1: [drawOf('X1', 'k1', t1 + more1, ['K1']), drawOf('X1', 'a', -t1, ['V1'])],
+            X2: [drawOf('X2', 'k2', t2 + more2, ['K2']), drawOf('X2', 'a', -t2, ['V2'])],
+          };
+          const written: Record<Who, InterestWritten[]> = { Y1: [], Y2: [], X1: [], X2: [] };
+          const uploaded = new Set<Who>();
+          const takeBacks = (but?: Who) => (['X1', 'X2'] as const).filter((who) => who !== but && uploaded.has(who));
+          const linesOfA = (): ChainInterestLines['paid'] => {
+            const out = takeBacks().flatMap((who) => interestOutOfReach({ draws: draws[who], written: written[who] }).get('a') ?? []);
+            return aLines.map((spec) => ({ serviceLineId: spec.line, claimId: 'A', approved: true, weightCents: cents(spec.weight), outOfReach: out.includes(spec.line) }));
+          };
+          const held = () => {
+            const sums = new Map<string, bigint>();
+            for (const item of WHO.flatMap((who) => written[who]).filter((entry) => entry.chain === 'a')) {
+              sums.set(item.serviceLineId, (sums.get(item.serviceLineId) ?? 0n) + item.cents);
+            }
+            return [...sums].map(([serviceLineId, sum]) => ({ serviceLineId, claimId: 'A', heldCents: cents(sum > 0n ? sum : 0n) }));
+          };
+          const linesOf = (who: Who): Map<string, ChainInterestLines> => {
+            if (who === 'Y1' || who === 'Y2') {
+              return new Map([['a', { paid: linesOfA(), takenBack: [], mayYetHold: true, unplacedCents: cents(0n) }]]);
+            }
+            const k = who === 'X1' ? 'k1' : 'k2';
+            const unplacedCents = interestUnplaced({
+              chain: 'a',
+              payments: (['Y1', 'Y2'] as const).filter((other) => uploaded.has(other)).map((other) => ({ draws: draws[other], written: written[other], paid: linesOfA() })),
+              takeBacks: takeBacks(who).map((other) => ({ draws: draws[other], written: written[other] })),
+            });
+            return new Map<string, ChainInterestLines>([
+              ['a', { paid: [], takenBack: held(), mayYetHold: true, unplacedCents }],
+              [k, { paid: [{ serviceLineId: k.toUpperCase(), claimId: k.toUpperCase(), approved: true, weightCents: cents(1000n), outOfReach: false }], takenBack: [], mayYetHold: true, unplacedCents: cents(0n) }],
+            ]);
+          };
+          const total = () => WHO.flatMap((who) => written[who]).reduce((sum, item) => sum + item.cents, 0n);
+          // The cash of what is uploaded: what Y1 and Y2 pay, and each netting PLB L6's net, which is never below zero.
+          const cash = () => [...uploaded].reduce((sum, who) => sum + draws[who].reduce((net, draw) => net + draw.cents, 0n), 0n);
+          const paymentsFirst = dated.slice(0, 2).every((who) => who === 'Y1' || who === 'Y2');
+          // One reconcile; whether it wrote anything.
+          const reconcile = (): boolean => {
+            let wroteAny = false;
+            for (const who of dated.filter((item) => uploaded.has(item))) {
+              const parts = interestWrites({ draws: draws[who], written: written[who], lines: linesOf(who) });
+              written[who].push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+              wroteAny ||= parts.length > 0;
+            }
+            if (paymentsFirst) {
+              expect(total()).toBeLessThanOrEqual(cash());
+            }
+            return wroteAny;
+          };
+          for (const [index, who] of uploads.entries()) {
+            uploaded.add(who);
+            if (index === uploads.length - 1 || breaks[index] === true) {
+              reconcile();
+            }
+          }
+          let settled = false;
+          for (let pass = 0; pass < 8 && !settled; pass += 1) {
+            settled = !reconcile();
+          }
+          expect(settled).toBe(true);
+          expect(total()).toBeLessThanOrEqual(cash());
+        },
+      ),
+      { numRuns: 2000 },
     );
   });
 
