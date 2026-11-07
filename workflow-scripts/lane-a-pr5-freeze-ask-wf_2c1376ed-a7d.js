@@ -1,0 +1,40 @@
+export const meta = {
+  name: 'pr5-freeze-ask',
+  description: 'Acting Lane A, read-only: draft the combined ledger freeze ask for schema PR 5 (#93 F9 plus the SUITE-CAP-3 ledger items that are designed and measured), adversarially checked for accuracy and for never asking wider than the change',
+  phases: [
+    { title: 'Scout', detail: 'F9 from #93; SUITE-CAP-3 section 14.4 items 7, 11, 12: designed body? measured? proof set' },
+    { title: 'Draft', detail: 'the ask in the SUITE-CAP-3 ask format' },
+    { title: 'Check', detail: 'accuracy skeptic, scope skeptic, completeness critic; revise until dry' },
+  ],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad'
+const OPS = '/home/user/ops'
+const OUT = `${SP}/pr5-ask/lane-a-ledger-freeze-ask-pr5.md`
+const SAVE = (f, what) => `Save as you go in ${SP}/progress/${f} (${what}); continue from it if it exists. When done you MUST call StructuredOutput; it is your only way to return.`
+const COMMON = `Repository PureTideWater/PhysicalTherapy (PaidWhole). READ-ONLY on every worktree and on GitHub (gh api reads only); write only under ${SP}/pr5-ask/. Base: origin/claude/build-platform (read in /home/user/PhysicalTherapy with git show / git grep after git fetch). Docs: ${OPS}. Context: acting Lane A (S2) writes the founder's combined ledger freeze ask for schema PR 5 (the plan ${OPS}/approval-summaries/lane-a-schema-queue-plan-2026-11-07.md, section 5, and its orchestrator rulings at the end). The ledger freeze (reconciliation-001.md "Ledger semantics"; LANES.md) forbids changing ledger tables, functions, amounts, stages or the definition of recovered without a founder exception; an exception covers exactly its own text and is never widened. The template for an ask: ${OPS}/approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md (granted 2026-11-06: what changes, why, measurements, what proves amounts unchanged, the yes/no question). Plain words, for the founder; synthetic data only; no model identifier.`
+
+phase('Scout')
+const [f9, sc3] = await parallel([
+  () => agent(`${COMMON}\n\nScout #93's F9: read #93 (gh api repos/PureTideWater/PhysicalTherapy/pulls/93 and its review comments; LANES.md; lanes/lane-b.md mentions), the finding's text, roi_links_valid(jsonb) at the base (20261023120000_recovery_ledger.sql:231, its CHECK on roi_statement :255, later redefinitions), the ROI statement writer (apps/worker/src/report/... statement), and #93's open question 3 (case.actionable_cents live figure: NOT part of the ask). Report: the exact defect (what a stored statement cannot prove today), the exact DDL change (the function body; old four-key rows still accepted; a fifth key actionable_open_lines on new rows), the writer change, what stays unchanged (recovered total, proof level, amounts), the tests that prove it (which LED/ROI rows), and the risk.`, { label: 'scout F9', phase: 'Scout', schema: { type: 'object', properties: { defect: { type: 'string' }, ddl: { type: 'string' }, writer: { type: 'string' }, unchanged: { type: 'string' }, proof: { type: 'string' }, risk: { type: 'string' }, sources: { type: 'array', items: { type: 'string' } } }, required: ['defect', 'ddl', 'unchanged', 'proof', 'sources'] } }),
+  () => agent(`${COMMON}\n\nScout SUITE-CAP-3's further ledger items: ${OPS}/designs/lane-b-suite-cap-3-reconcile.md section 14.4 items 7 (ledger_line_stage), 11 (ledger_match_rules' interest branch) and 12 (ledger_entry_within_evidence; 76 s of A's 310 s), plus any index or table part; ${OPS}/approval-summaries/lane-b-suite-cap-3-status.md and its wip dir; WIP co-001/wip-suite-cap-3. For EACH: is a new body written (quote it or point to it)? measured (which shape, which run, seconds before/after; synthetic data, on which head)? which proof set shows amounts and refusals unchanged? Does it touch #126's 20261110090000 objects (ledger_match_rules' interest branch is #126's own new code: say whether changing it before #126 merges is even possible)? Report readiness: ready to ask now / ask later / not needed.`, { label: 'scout SUITE-CAP-3 items', phase: 'Scout', schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, body_written: { type: 'boolean' }, body_ref: { type: 'string' }, measured: { type: 'string' }, proof: { type: 'string' }, interacts_with_126: { type: 'string' }, readiness: { type: 'string', enum: ['ask now', 'ask later', 'not needed'] }, why: { type: 'string' } }, required: ['item', 'body_written', 'measured', 'readiness', 'why'] } } }, required: ['items'] } }),
+])
+
+phase('Draft')
+const draft = await agent(`${COMMON}\n\nWrite the ask to ${OUT} (mkdir -p). Follow the SUITE-CAP-3 ask's format. Include F9 (scout: ${JSON.stringify(f9).slice(0, 8000)}) and ONLY the SUITE-CAP-3 items whose readiness is "ask now" (scout: ${JSON.stringify(sc3).slice(0, 8000)}); list the others under "Not asked now" with the reason and when they would come. For each asked item: what changes (exact objects; CREATE OR REPLACE or DDL; no other table, column, index, amount, stage or rule change), why, measurements (only real ones, with shape, run and head; never invented), what proves amounts and refusals unchanged (the LED rows, the ledger oracle, the refusal tests, write-equality dumps), risk and rollback. End with one yes/no question per item (so the founder can grant one and refuse another), and a line that a grant covers exactly the text above. Note that PR 5 opens only after PRs 1-4 (or by skip-ahead) and never batches a non-granted item. ${SAVE('pr5-draft.md', 'sections')}`, { label: 'draft ask', phase: 'Draft', schema: { type: 'object', properties: { path: { type: 'string' }, asked: { type: 'array', items: { type: 'string' } }, not_asked: { type: 'array', items: { type: 'string' } } }, required: ['path', 'asked'] } })
+
+phase('Check')
+const seen = new Set()
+let round = 0
+while (round < 3) {
+  round++
+  const checks = await parallel([
+    () => agent(`${COMMON}\n\nAccuracy skeptic: verify every factual claim in ${OUT} against the base code, #93, and the SUITE-CAP-3 sources (line numbers, function names, measurements, test names). Report each wrong or unverifiable claim with evidence. Already raised: ${JSON.stringify([...seen]).slice(0, 3000)}`, { label: `accuracy r${round}`, phase: 'Check', schema: { type: 'object', properties: { issues: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['what', 'evidence', 'fix'] } } }, required: ['issues'] } }),
+    () => agent(`${COMMON}\n\nScope skeptic and completeness critic: does ${OUT} ask for anything wider than the change it describes (a grant that would cover more objects or behaviour than needed), bundle items so one refusal blocks another, omit a proof the founder needs, leave the yes/no question ambiguous, or miss a ledger item the plan's section 5 says should be asked now? Report each with evidence. Already raised: ${JSON.stringify([...seen]).slice(0, 3000)}`, { label: `scope r${round}`, phase: 'Check', schema: { type: 'object', properties: { issues: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['what', 'evidence', 'fix'] } } }, required: ['issues'] } }),
+  ])
+  const fresh = checks.filter(Boolean).flatMap(c => c.issues || []).filter(x => !seen.has(x.what))
+  log(`round ${round}: ${fresh.length} issues`)
+  if (!fresh.length) break
+  fresh.forEach(x => seen.add(x.what))
+  await agent(`${COMMON}\n\nRevise ${OUT} for these issues (verify each; reject with a reason in ${SP}/pr5-ask/rejected.md if wrong): ${JSON.stringify(fresh).slice(0, 12000)}`, { label: `revise r${round}`, phase: 'Check', schema: { type: 'object', properties: { changed: { type: 'array', items: { type: 'string' } } }, required: ['changed'] } })
+}
+return { f9, sc3, draft, rounds: round, issues: [...seen], out: OUT }

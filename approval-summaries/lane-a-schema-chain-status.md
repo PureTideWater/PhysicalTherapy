@@ -10,6 +10,24 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 06:05 UTC (acting Lane A): #126's second review round DONE (default agents, three rounds) and its blocking
+  finding fixed: head 9824f4e9.** wf_a71650bd-ea2: **F1 / MONEY-R2-1 (blocking, money), confirmed by a red db test:**
+  with two-chains.835 uploaded before paired.835, a PLB L6's payment written in pass 1 blocked its own take-back in pass 2,
+  leaving 11.40 of interest on the lines against 6.00 of cash. **Fixed in 8ea33e13:** interestWrites holds a PLB L6's
+  payments while any of its take-backs of a chain that may still hold interest on a case line (an unlinked reversal root,
+  or a claim with a standing case-line match) is not written in full; both upload orders now end at 0 on the lines; LED-23's
+  renumbered reversal no longer adds 5.40 (the known gap closes); failing-first db, unit and property tests; interest.ts
+  100% (328 mutants); no migration change; domain model unchanged (f1b603ca…01ef7, line 7469). **Trade-off for the founder:**
+  a payment netted against a take-back of a reversal whose claim is never uploaded is never credited (low by up to that
+  payment, never above the cash); ADR 0084 records it. F2/DB-C2 (runbook for the lock loop's 55P03, with a guard test) in
+  9824f4e9. **Not yet fixed** (the fix prompt was cut at 14,000 characters: lesson, pass findings by file): DB-C1, F-M2-2,
+  DB2-4 (nits), F-M2-1 (should-fix; its database twin DB2-1 was refuted: adjudicating), F-M2-3/DB2-3 (the PR body). UX-INT-1
+  re-shots HOLD (1280, 390, 1280 dark). Material: `approval-summaries/lane-a-wip/interest-pr/round-2/`.
+  **Running: wf_d944494b-d50:** three judges on F-M2-1; the remaining fixes; a third review round on everything since
+  d2fdd106 (two lenses, skeptics, critic, loop until dry, fixing as found); base merged once; the full local suite once;
+  push; CAS-42.5 on the final head (required: the interest code changed); the body rewritten; the fresh-clone verification.
+  Beside it: wf_5cf101cd-7ab resumed (PR 1: builder D pushed 1baa872e, the migration 20261111090000 and 25 db tests, dm
+  bb2672b0…cf47 provisional; W and M next) and wf_2c1376ed-a7d resumed (PR 5's ask: its third check round).
 - **2026-11-07 02:25 UTC: the orchestrator's rulings on the plan** (recorded in the plan): skip-ahead yes; SEC-N5 (PR 6,
   conditional) and provider_adjustment.reference (PR 8) queued; PR 5's combined freeze ask written now; D11 waits on the
   founder's deploy fact; #38's words version stays in PR 3 (not founder-gated).
