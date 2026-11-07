@@ -60,7 +60,7 @@ export default async function SupportPage() {
                 required
                 maxLength={64}
                 pattern="[A-Za-z0-9-]{1,64}"
-                hint="The ticket’s number, as Tickets shows it, such as 1042. Letters, digits and hyphens only."
+                hint="The ticket’s number, as Support tickets shows it, such as 1042. Letters, digits and hyphens only."
               />
               <Field label="Reason" name="reason" required maxLength={500} hint="What the ticket needs. No patient details." />
             </ActionForm>
