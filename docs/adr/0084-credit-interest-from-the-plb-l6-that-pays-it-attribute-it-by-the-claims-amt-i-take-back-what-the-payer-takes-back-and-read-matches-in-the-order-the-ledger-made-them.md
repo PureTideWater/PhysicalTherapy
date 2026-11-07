@@ -278,7 +278,8 @@ check by reading it.
 - **Payments that wait for good.** A take-back of a reversal whose claim is never uploaded (paid before the practice
   used the product, say), or of a chain whose interest landed on lines with nothing remaining, may never be written
   whole, so the payments its PLB L6 nets against it are never written: an understatement by up to those payments,
-  never an overstatement, and each line still shows the interest its claims report.
+  never an overstatement, and each line still shows the interest its claims report. While it stays owed, a later
+  PLB L6's payment of that chain never goes to the lines its own PLB L6 has reached (D5): the same understatement.
 - **A claim matched by hand after the netting.** When a person matches a claim to case lines after a PLB L6 netted
   its interest taken back against another chain's interest paid on them, the interest a PLB L6 pays that claim never
   goes to those lines, which hold the netting L6's entry already: its take-back could not follow it there. The figure
