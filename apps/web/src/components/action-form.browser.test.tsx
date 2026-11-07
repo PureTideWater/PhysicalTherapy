@@ -1227,7 +1227,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await script(page, { drop: true });
     await send(page, SCREEN);
     expect(await page.textContent(TITLE)).toBe('Not confirmed');
-    expect(await page.textContent(DESCRIPTION)).toContain('If PaidWhole had already emailed you the first screening, a second email follows, and only the newer email’s link opens the screening.');
+    expect(await page.textContent(DESCRIPTION)).toContain('If PaidWhole has already emailed you the result, a second email follows, and only that newer email’s link opens the screening.');
     expect(await page.locator('[data-boundary]').count()).toBe(0);
     expect(await prospectValues(page)).toEqual(['SYNTHETIC Practice', 'NC', '27601', 'prospect@synthetic.test']);
     expect(await page.locator('#screening-file').evaluate((input) => (input as HTMLInputElement).files?.[0]?.name)).toBe('totals.csv');

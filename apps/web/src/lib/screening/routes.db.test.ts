@@ -77,8 +77,8 @@ const SENT = screeningSentPath('soon');
  * Result mails after a re-send once the first screening was priced and mailed: two, one per screening, the first's link
  * no longer opening ('after the first is priced and mailed…'). A re-send before pricing sends one, and its link opens
  * ('before the first is priced…'). The upload form's "Not confirmed" lead holds in both (RefusalLead's
- * `unconfirmed="mails-again"`: "If PaidWhole had already emailed you the first screening, a second email follows, and
- * only the newer email's link opens the screening."). Recorded, not ruled:
+ * `unconfirmed="mails-again"`: "If PaidWhole has already emailed you the result, a second email follows, and only that
+ * newer email's link opens the screening."). Recorded, not ruled:
  * whether two mails are accepted is for the security reviewer (co-001/ux-forms-after-42's design, sections 8 and 9).
  */
 const RESEND_LATE_MAILS = 2;

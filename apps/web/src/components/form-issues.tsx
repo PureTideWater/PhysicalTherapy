@@ -555,8 +555,8 @@ export interface RefusalSummaryProps {
   readonly appOrigin?: string;
   /**
    * What a press again after a dropped connection may do on this form: "mails-again" for the screening upload, where a
-   * second press sends a second email, whose link alone opens, only when the first screening was already priced and
-   * mailed; before that, one email goes out and its link opens (RefusalLead; routes.db.test.ts's two re-send cases).
+   * second press is followed by a second email, whose link alone opens, only when the first screening was already priced
+   * and mailed; before that, one email goes out and its link opens (RefusalLead; routes.db.test.ts's two re-send cases).
    */
   readonly unconfirmed?: 'mails-again';
 }
@@ -691,7 +691,7 @@ export function RefusalLead({
     ) : (
       <p>
         The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.
-        {unconfirmed === 'mails-again' ? ' If PaidWhole had already emailed you the first screening, a second email follows, and only the newer email’s link opens the screening.' : null}
+        {unconfirmed === 'mails-again' ? ' If PaidWhole has already emailed you the result, a second email follows, and only that newer email’s link opens the screening.' : null}
       </p>
     );
   }

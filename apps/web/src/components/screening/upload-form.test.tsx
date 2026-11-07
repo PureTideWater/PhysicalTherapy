@@ -193,7 +193,7 @@ describe('the upload’s refusal, on the shared summary', () => {
         ),
       );
     expect(summary({ unconfirmed: 'mails-again' })).toBe(
-      'Not confirmedThe connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Screen the file” again. If PaidWhole had already emailed you the first screening, a second email follows, and only the newer email’s link opens the screening.',
+      'Not confirmedThe connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Screen the file” again. If PaidWhole has already emailed you the result, a second email follows, and only that newer email’s link opens the screening.',
     );
     // Every other form keeps the shared lead.
     expect(summary({})).toBe(
