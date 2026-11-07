@@ -66,6 +66,15 @@ Effect: any PR's unit job can go red at random.
   "two dry rounds" were false: failed hunters returned nothing). 00:35Z: setup re-run (both clusters started), WIP pushed
   (6fc88092), the build workflow resumed (wf_bca3d2b3-77c). **The leak hunt is held until the build workflow ends** (two heavy
   workflows together burned the 5-hour window in ~4.7 h; this PR unblocks every PR's CI, so it goes first). Check-in ~05:45Z.
+- 2026-11-07T01:05Z: review round 2. PHI2-1 (blocking, confirmed): the call's own DOB, name part, member ID or claim number glued
+  at a range end was sent where cc3dd7f6 refused only by chance (6,602 of 21,600 targeted letters); PHI2-2 the same glued
+  boundary without a range (present at base); PHI2-3..6 unrecorded classes and wording; GATEWAY2-1/2. Fix round 2: own
+  identifiers read across glued boundaries (letters-only edges accept a digit; DOB on the glued readings; the scan on the same
+  readings), 8d98b8bb, d9ae7b30, 6be7976f, 5a13c9d9, 3fcb9359 (WIP = 3fcb9359; 632/632 gateway tests).
+- 2026-11-07T01:53Z: the orchestrator: MOD-16 also failed #131 (seed 383403599, job 128259888791) and #129 (seed -1074798020, run
+  42319584132) on the same shape; pin both beside 1034253323; #129 and #131 wait on this PR (critical path for three PRs). Stopped
+  the workflow at 02:40Z after fix round 2 and resumed it with the final fixer told to pin both seeds (shown failing at cc3dd7f6,
+  passing at HEAD) before the one full local suite; round-3 reviews re-run.
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
