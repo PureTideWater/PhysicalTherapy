@@ -1,18 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
-import { readDatabaseUrl } from '@tp/db';
-import { afterAll, describe, expect, it } from 'vitest';
+import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { Scope } from './ledger';
 import { reconcilePractice } from './pass';
-import { REOPEN_NOTES } from './stages';
-import { type Comparison, type Middleware, type Pass, type QueryResult, type SideResult, clone, compare, idsBefore, runSide, template } from './test-support/pass-compare';
+import { REOPEN_NOTES, type StageEvent, insertStages } from './stages';
+import { type Comparison, type Middleware, type Pass, type SideResult, clone, compare, idsBefore, runSide, template } from './test-support/pass-compare';
 import { type BuiltWorld, buildWorld, worldPlan } from './test-support/pass-world';
 import { referencePass } from './test-support/per-line';
+import { type StageTrio, type StageWorld, buildStageWorld } from './test-support/stage-world';
 
 /**
  * CAS-49.1 (SUITE-CAP-3; design section 7; docs/adr/0087): a reconcile pass writes what the per-line pass wrote. Each run
  * draws a world from a fixed seed (test-support/pass-world.ts: a practice's history and one pass of new evidence, 40 to
- * 400 case lines in two or three cases, two to five checks, every shape section 7 names), builds it once through the
+ * 400 case lines in two or three cases, two to five payments, every shape section 7 names), builds it once through the
  * job code and clones it: the per-line reference (test-support/per-line.ts) runs on one clone, the shipped pass on
  * another, and the reference again on a third, and each pair's writes are compared (test-support/pass-compare.ts):
  * matches, entries, stage events, payer responses, notifications and audit events in the same order where order is
@@ -70,6 +72,8 @@ interface Mutant {
 const CANDIDATE_SEARCH = /FROM claim c JOIN remittance r ON r\.id = c\.remittance_id\s+WHERE\s+c\.practice_id = \$1 AND r\.status = 'loaded'/;
 const BY_PATIENT = /EXISTS \(SELECT 1 FROM service_line s WHERE s\.claim_id = c\.id/;
 const BY_CONTROL = /payer_claim_control_number_hash IN \(SELECT k\.payer_claim_control_number_hash/;
+/** insertStages' one statement (D3): the pass's stage events as arrays, in order. */
+const STAGE_EVENTS = /^\s*INSERT INTO line_status\b[\s\S]*\bunnest\(/;
 
 const rewrite = (match: RegExp, from: string, to: string) => (applied: () => void) => (next: Parameters<Middleware>[0]) => (text: string, values: readonly unknown[]) => {
   if (match.test(text) && text.includes(from)) {
@@ -100,31 +104,21 @@ const MUTANTS: readonly Mutant[] = [
     differs: (difference) => difference.startsWith('search decrypts'),
   },
   {
-    // D3 writing the events grouped by stage: every payer approved, then every recovered (the same rows, another seq order).
+    // D3 writing the events grouped by stage: every payer approved, then every recovered (the same rows, another seq
+    // order). Aimed at insertStages' one statement (slice 2): its event arrays permuted, stably, by stage.
     name: 'the stage events written grouped by stage',
-    middleware: (applied) => (next) => {
-      const held: { text: string; values: readonly unknown[] }[] = [];
-      const rank = (values: readonly unknown[]) => (values[2] === 'payer_approved' ? 0 : values[2] === 'recovered' ? 1 : 2);
-      const flush = async () => {
-        const ordered = held.splice(0).map((item, index) => ({ ...item, index }));
-        ordered.sort((a, b) => rank(a.values) - rank(b.values) || a.index - b.index);
-        if (ordered.some((item, index) => item.index !== index)) {
-          applied();
-        }
-        for (const item of ordered) {
-          await next(item.text, item.values);
-        }
-      };
-      return async (text, values) => {
-        if (/^\s*INSERT INTO line_status\b/.test(text)) {
-          held.push({ text, values });
-          return { rows: [], rowCount: 1 } satisfies QueryResult;
-        }
-        if (!text.includes("e.stage = 'reversed'")) {
-          await flush();
-        }
+    middleware: (applied) => (next) => (text, values) => {
+      if (!STAGE_EVENTS.test(text)) {
         return next(text, values);
-      };
+      }
+      const [practiceId, setBy, lines, stages, reasons, from] = values as [unknown, unknown, readonly unknown[], readonly unknown[], readonly unknown[], readonly unknown[]];
+      const rank = (stage: unknown) => (stage === 'payer_approved' ? 0 : stage === 'recovered' ? 1 : 2);
+      const order = stages.map((_stage, index) => index).sort((a, b) => rank(stages[a]) - rank(stages[b]) || a - b);
+      if (order.some((at, index) => at !== index)) {
+        applied();
+      }
+      const permuted = (list: readonly unknown[]) => order.map((index) => list[index]);
+      return next(text, [practiceId, setBy, permuted(lines), permuted(stages), permuted(reasons), permuted(from)]);
     },
   },
   {
@@ -331,4 +325,125 @@ describe('a reconcile pass writes what the per-line pass wrote (CAS-49.1)', () =
       }
     }
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// CAS-49.3: stage events in one statement
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** line_status_rules()' refusal of a stage set again or an earlier one without a reopen, word for word as today. */
+const FORWARD_ONLY = 'line stages move forward only; setting a stage again or an earlier one is an explicit reopen with a reason';
+
+/**
+ * CAS-49.3 (SUITE-CAP-3 D3; design section 7): insertStages writes a pass's stage events in one statement, in the order
+ * given, under the base's line_status_rules() (SUITE-CAP-1b's head-row body; the pre-1b body is gone from the base, so
+ * there is one body to hold, 12.1). Each row draws its seq as it is formed and its BEFORE triggers see the rows before
+ * it, so a line's payer approved and then its recovered are written with ascending seq and both pass their checks, the
+ * head row holds the last, another line's event between them changes nothing, and a recovered line's move back carries
+ * its note; the same events given recovered first are refused with today's message, the statement issued once (only a
+ * deadlock is retried; stages.test.ts proves the retry's bounds), and nothing is written. Once as the reconcile job (in
+ * no one's name) and once as a person (the manual actions' finish()). Synthetic data only.
+ */
+describe('stage events in one statement (CAS-49.3)', () => {
+  let stage: StageWorld | undefined;
+
+  beforeAll(async () => {
+    stage = await buildStageWorld(adminUrl);
+  }, 600_000);
+
+  afterAll(async () => {
+    await stage?.world.close();
+  });
+
+  const eventsOf = async (built: StageWorld, trio: StageTrio) =>
+    built.world.rows<{ service_line_id: string; stage: string; reopened_from: string | null; set_by: string | null; reason: string | null; seq: string }>(
+      built.practice,
+      // Ordered by the column, not the text alias (which would sort "32" before "4").
+      'SELECT s.service_line_id, s.stage, s.reopened_from, s.set_by, s.reason, s.seq::text AS seq FROM line_status s WHERE s.service_line_id = ANY ($1::uuid[]) ORDER BY s.seq',
+      [[trio.p, trio.q, trio.r]],
+    );
+  const headsOf = async (built: StageWorld, trio: StageTrio) =>
+    new Map(
+      (
+        await built.world.rows<{ service_line_id: string; stage: string; seq: string }>(built.practice, 'SELECT service_line_id, stage, seq::text FROM line_status_head WHERE service_line_id = ANY ($1::uuid[])', [
+          [trio.p, trio.q, trio.r],
+        ])
+      ).map((row) => [row.service_line_id, `${row.stage}@${row.seq}`]),
+    );
+
+  for (const writer of ['job', 'person'] as const) {
+    it(`writes a line's payer approved then recovered, another line's event and a move back in one statement, in order (${writer === 'job' ? 'the reconcile job' : 'a person'})`, async () => {
+      const built = stage as StageWorld;
+      const { practice } = built;
+      const trio = built[writer];
+      const setBy = writer === 'job' ? null : practice.manager;
+      // Every statement insertStages issues, recorded in issue order (the stage write as one word).
+      let statements: string[] = [];
+      const recorded = (scope: Scope): Scope => ({
+        ...scope,
+        client: {
+          query: (text: string, values?: unknown[]) => {
+            statements.push(/^\s*INSERT INTO line_status\b/.test(text) ? 'write' : text);
+            return scope.client.query(text, values);
+          },
+          release: (destroy) => scope.client.release(destroy),
+        },
+      });
+      const write = (events: readonly StageEvent[]) => {
+        statements = [];
+        return writer === 'job'
+          ? withJobScope(built.world.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => insertStages(recorded(scope as Scope), practice.practiceId, events, null))
+          : withPracticeScope(built.world.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
+              insertStages(recorded(scope as Scope), practice.practiceId, events, practice.manager),
+            );
+      };
+      const before = await eventsOf(built, trio);
+      const headsBefore = await headsOf(built, trio);
+
+      // Given recovered first, the line's payer approved is a step back: refused with today's message, nothing written.
+      await expect(
+        write([
+          { serviceLineId: trio.p, stage: 'recovered' },
+          { serviceLineId: trio.p, stage: 'payer_approved' },
+        ]),
+      ).rejects.toMatchObject({ code: '23514', message: FORWARD_ONLY });
+      // Issued once and left to stand: only a deadlock is retried under the savepoint (section 4).
+      expect(statements).toEqual(['SAVEPOINT stage_events', 'write']);
+      expect(await eventsOf(built, trio)).toEqual(before);
+      expect(await headsOf(built, trio)).toEqual(headsBefore);
+
+      // In order, with q's event between p's two and r's move back last: every row written as given, seq ascending.
+      const note = practice.cipher.encrypt('line_status.reason', REOPEN_NOTES.proofLevel);
+      await write([
+        { serviceLineId: trio.p, stage: 'payer_approved' },
+        { serviceLineId: trio.q, stage: 'payer_approved' },
+        { serviceLineId: trio.p, stage: 'recovered' },
+        { serviceLineId: trio.r, stage: 'payer_approved', reopen: { from: 'recovered', reason: note } },
+      ]);
+      expect(statements).toEqual(['SAVEPOINT stage_events', 'write', 'RELEASE SAVEPOINT stage_events']);
+      const after = await eventsOf(built, trio);
+      expect(after.slice(0, before.length)).toEqual(before);
+      const written = after.slice(before.length);
+      const name = new Map([
+        [trio.p, 'p'],
+        [trio.q, 'q'],
+        [trio.r, 'r'],
+      ]);
+      expect(written.map((row) => [name.get(row.service_line_id), row.stage, row.reopened_from, row.set_by])).toEqual([
+        ['p', 'payer_approved', null, setBy],
+        ['q', 'payer_approved', null, setBy],
+        ['p', 'recovered', null, setBy],
+        ['r', 'payer_approved', 'recovered', setBy],
+      ]);
+      expect(written.every((row, index) => index === 0 || BigInt(row.seq) > BigInt((written[index - 1] as { seq: string }).seq))).toBe(true);
+      // The move back's note, by its decrypted text (never logged).
+      expect(practice.cipher.decrypt('line_status.reason', (written[3] as { reason: string }).reason)).toBe(REOPEN_NOTES.proofLevel);
+      // Each line's head row holds its last event.
+      const heads = await headsOf(built, trio);
+      const last = (line: string) => [...written].reverse().find((row) => row.service_line_id === line) as { stage: string; seq: string };
+      for (const line of [trio.p, trio.q, trio.r]) {
+        expect(heads.get(line)).toBe(`${last(line).stage}@${last(line).seq}`);
+      }
+    }, 120_000);
+  }
 });

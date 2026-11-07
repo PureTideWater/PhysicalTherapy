@@ -326,6 +326,12 @@ const CHARGE_CENTS = 15000n;
 
 const line = (code: string, date: string | null, paidCents: bigint, chargeCents = CHARGE_CENTS): LineText => ({ code, date, chargeCents, paidCents, allowedCents: paidCents });
 
+/** Loads one interchange of `checks` (ISA13 `control`, unique within the practice) through the parse job, as intake leaves an 835. */
+export async function loadChecks(w: LedgerWorld, target: Practice, control: number, checks: readonly CheckText[]): Promise<void> {
+  const documentId = await w.triage.pricing.stage(target, 'CAS-49/generated.835', interchange(control, checks));
+  await parseHandler(w.triage.pricing.parseServices)({ practice_id: target.practiceId, document_id: documentId }, w.jobContext(target));
+}
+
 /** Builds the plan's world through the job code, up to (not including) the measured pass. */
 export async function buildWorld(adminUrl: string, plan: WorldPlan): Promise<BuiltWorld> {
   const w = await LedgerWorld.open(adminUrl);
@@ -343,12 +349,10 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   await w.manual(practice, async ({ scope }) => {
     await setLedgerSettings(scope, { practiceId: practice.practiceId, proofLevel: 'posted', postingTemplate: SYNTHETIC_PM_EXPORT_V1, requestId: `test-${randomUUID()}` });
   }, practice.world.adminUserId);
-  const parse = parseHandler(w.triage.pricing.parseServices);
   let control = 490_000_000 + plan.run * 1_000;
   const load = async (target: Practice, checks: readonly CheckText[]) => {
     control += 1;
-    const documentId = await w.triage.pricing.stage(target, 'CAS-49/generated.835', interchange(control, checks));
-    await parse({ practice_id: target.practiceId, document_id: documentId }, w.jobContext(target));
+    await loadChecks(w, target, control, checks);
   };
 
   // The case lines: the main case on the first code, the responded case on the second, the closed case on the third.
@@ -674,5 +678,5 @@ export async function writeOff(w: LedgerWorld, practice: Practice, serviceLineId
   );
 }
 
-export { checkPayment, eftExport, interchange, postingExport };
-export type { CheckText, ClaimText, EftRowText, PostingRowText };
+export { checkPayment, eftExport, interchange, line, postingExport };
+export type { CheckText, ClaimText, EftRowText, LineText, PostingRowText };

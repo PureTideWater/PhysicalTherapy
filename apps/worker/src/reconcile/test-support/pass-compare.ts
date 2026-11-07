@@ -94,6 +94,9 @@ export interface SideResult {
 
 export type Pass = (context: JobContext, services: ReconcileServices, practiceId: string) => Promise<ReconcileSummary>;
 
+/** What a side needs of a built world: its database, services and practice (a generated world, or CAS-49.6's fixed one). */
+export type WorldOf = Pick<BuiltWorld, 'world' | 'practice'>;
+
 /**
  * The side the decrypt wrapper is recording for, carried by the side's own async context rather than a module variable:
  * a side whose test timed out keeps running after vitest moves on, and its decrypts must never land in a later side's
@@ -145,7 +148,7 @@ async function practiceTables(client: DatabaseClient): Promise<string[]> {
  * connection of the world's own closed (a template takes no other session), and returns the database to clone from.
  * The world's key provider and document store live in memory and stay usable.
  */
-export async function template(built: BuiltWorld): Promise<Database> {
+export async function template(built: WorldOf): Promise<Database> {
   const pricing = built.world.triage.pricing;
   for (const table of await practiceTables(pricing.owner)) {
     await pricing.owner.query(`ALTER TABLE public."${table}" SET (autovacuum_enabled = false)`);
@@ -230,7 +233,7 @@ const POSTING_ROWS = /\b(FROM|JOIN)\s+posting_row\b/;
 export async function runSide(
   name: string,
   url: string,
-  built: BuiltWorld,
+  built: WorldOf,
   jobId: string,
   pass: Pass,
   options: { readonly middleware?: Middleware; readonly before?: (client: DatabaseClient) => Promise<void> } = {},
@@ -435,11 +438,34 @@ export interface Comparison {
   readonly strictSettleWouldDiffer: boolean;
 }
 
-/** Compares a side with the reference (design section 7, CAS-49.1). */
-export function compare(reference: SideResult, side: SideResult, before: ReadonlyMap<string, ReadonlySet<string>>, practice: Practice): Comparison {
+/**
+ * CAS-49.6's view of a side's stage rows (design section 7, review round 3): each line_status row the pass wrote has its
+ * seq replaced by its label (its ordinal in seq order), and each head row pointing at one of them by that same label. A
+ * statement rolled back keeps the sequence values it drew (the rows' defaults and the head rows' nextval; 5.2), so after
+ * a deadlock's retry the values differ from the reference's while the order must not: the order is what is compared.
+ */
+function seqAsOrder(after: ReadonlyMap<string, readonly Record<string, unknown>[]>, label: ReadonlyMap<string, string>, before: ReadonlyMap<string, ReadonlySet<string>>): Map<string, readonly Record<string, unknown>[]> {
+  const events = after.get('line_status') ?? [];
+  const ordinal = new Map(events.filter((row) => !(before.get('line_status')?.has(String(row.id)) ?? false)).map((row) => [String(row.seq), label.get(String(row.id)) ?? '']));
+  const bySeq = (row: Record<string, unknown>) => (ordinal.has(String(row.seq)) ? { ...row, seq: ordinal.get(String(row.seq)) } : row);
+  const next = new Map(after);
+  next.set('line_status', events.map(bySeq));
+  next.set('line_status_head', (after.get('line_status_head') ?? []).map(bySeq));
+  return next;
+}
+
+export interface CompareOptions {
+  /** CAS-49.6: line_status and line_status_head compared by their seq order, not their seq values (seqAsOrder). */
+  readonly seqByOrder?: boolean;
+}
+
+/** Compares a side with the reference (design section 7, CAS-49.1; CAS-49.6 with seqByOrder). */
+export function compare(reference: SideResult, side: SideResult, before: ReadonlyMap<string, ReadonlySet<string>>, practice: Practice, options: CompareOptions = {}): Comparison {
   const differences: string[] = [];
   const refLabel = labels(reference, before);
   const sideLabel = labels(side, before);
+  const refAfter = options.seqByOrder === true ? seqAsOrder(reference.after, refLabel, before) : reference.after;
+  const sideAfter = options.seqByOrder === true ? seqAsOrder(side.after, sideLabel, before) : side.after;
   const isNew = (table: string, row: Record<string, unknown>) => !(before.get(table)?.has(String(row.id)) ?? false);
   const partial = partialChecks(reference.after, before);
   const inPartial = (row: Record<string, unknown>, after: ReadonlyMap<string, readonly Record<string, unknown>[]>) => {
@@ -450,8 +476,8 @@ export function compare(reference: SideResult, side: SideResult, before: Readonl
 
   const tables = new Set([...reference.after.keys(), ...side.after.keys()]);
   for (const table of tables) {
-    const refRows = reference.after.get(table) ?? [];
-    const sideRows = side.after.get(table) ?? [];
+    const refRows = refAfter.get(table) ?? [];
+    const sideRows = sideAfter.get(table) ?? [];
     if (table === 'ledger_entry') {
       const ordered = (rows: readonly Record<string, unknown>[], label: ReadonlyMap<string, string>) =>
         rows
