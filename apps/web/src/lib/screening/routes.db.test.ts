@@ -277,7 +277,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     expect(words({ code: 'row_count_mismatch' })).toBe('the rows sent do not match the file; choose the file again');
     expect(words({ code: 'too_few_claim_lines', row: 1_234 })).toBe('row 1,234 sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out');
     expect(words({ code: 'too_few_claim_lines' })).toBe(
-      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care; choose a file with rows of at least 11 claim lines',
+      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least 11 claim lines',
     );
   });
 });

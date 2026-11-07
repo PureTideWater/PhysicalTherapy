@@ -291,7 +291,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
       return reason.row === undefined
-        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care; choose a file with rows of at least ${floor} claim lines`
+        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least ${floor} claim lines`
         : `${row} sums fewer than ${floor} claim lines; a screening takes rows of at least ${floor}, because fewer can describe one patient’s care, so leave it out`;
     }
   }
