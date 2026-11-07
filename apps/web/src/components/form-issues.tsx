@@ -470,7 +470,10 @@ function emptySecrets(form: HTMLFormElement): boolean {
 
 /**
  * Marks a control no shared field renders (a hand-written control): aria-invalid, and the summary item first in its
- * description. A control its component already marks is left alone. Returns the undo, for the next state.
+ * description. A control its component already marks is left alone. Returns the undo, for the next state. A control
+ * that React renders with aria-describedby must set aria-invalid itself, or sit in a [data-invalid] wrapper, when it
+ * reads a field issue: otherwise this writes over the attribute React owns, and React's next render undoes it (the
+ * screening's file input keys aria-invalid on its own problems and the server's).
  */
 function markByHand(control: Control, itemId: string): (() => void) | null {
   if (control.getAttribute('aria-invalid') === 'true' || control.closest('[data-invalid]') !== null) {
@@ -540,6 +543,16 @@ export interface RefusalSummaryProps {
   /** The form's button words, which a dropped connection or an out-of-date page invites the person to press again. */
   readonly submit: ReactNode;
   readonly formRef: RefObject<HTMLFormElement | null>;
+  /**
+   * Renders a form-wide item's message, in place of its words capitalised: an item whose key never names a field
+   * (`input`), or, once the page is read, one the form places nowhere and no hidden field names. A field's item never
+   * takes it, on the first render or after, so a field's message is never rewritten (the screening's audit link).
+   */
+  readonly renderMessage?: (message: string) => ReactNode;
+  /** What `stale` means on this form: "origin" for a public route, whose only `stale` is a failed origin check (RefusalLead). */
+  readonly stale?: 'origin';
+  /** The app's configured web address (services.origin), which the origin lead names; never the browser's location. */
+  readonly appOrigin?: string;
 }
 
 /**
@@ -550,7 +563,7 @@ export function RefusalSummary(props: RefusalSummaryProps) {
   return <Summary key={`${props.state.otherPerson === true ? 'cleared' : 'response'}:${String(props.state.seq ?? 0)}`} {...props} />;
 }
 
-function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
+function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, appOrigin }: RefusalSummaryProps) {
   const itemId = useId();
   const summaryRef = useRef<HTMLDivElement>(null);
   // Each issue's target, read from the page for the state it was read for (null before: the server render), the name
@@ -597,15 +610,27 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
           fromBrowser={fromBrowser}
           submit={submit}
           secrets={read?.secrets === true}
+          stale={stale}
+          appOrigin={appOrigin}
         />
         {state.issues === undefined || state.issues.length === 0 ? null : (
           <ul className="mt-1 list-disc pl-5">
             {state.issues.map((issue, index) => {
               const target = targets?.[index] ?? null;
               const hidden = read?.hidden[index] ?? null;
+              // Decidable before the page is read only for a key that never names a field.
+              const formWide = NO_FIELD.has(issue.field) || (targets !== null && target === null && hidden === null);
               return (
                 <li key={`${issue.field}:${String(index)}`} id={`${itemId}-${String(index)}`}>
-                  {target !== null ? <ItemLink target={target} message={issue.message} /> : hidden === null ? capitalised(issue.message) : `${hidden}: ${issue.message}`}
+                  {target !== null ? (
+                    <ItemLink target={target} message={issue.message} />
+                  ) : hidden !== null ? (
+                    `${hidden}: ${issue.message}`
+                  ) : formWide && renderMessage !== undefined ? (
+                    renderMessage(issue.message)
+                  ) : (
+                    capitalised(issue.message)
+                  )}
                 </li>
               );
             })}
@@ -619,7 +644,10 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
 /**
  * The summary's lead: a form cleared for another person, the connection, the out-of-date page, or the action's error
  * as summaryLead chooses it. Exported for a form with a summary of its own (the export form), so its leads read the
- * same. `secrets`: the form held a password or a code, which a dropped connection's lead says it emptied.
+ * same. `secrets`: the form held a password or a code, which a dropped connection's lead says it emptied. `stale`
+ * "origin": the form's route is public, with no token or request key to renew, so `stale` means only that the page
+ * failed the origin check (invoke.ts, publicRoute's csrf_refused when the request is not same-origin), which no refresh
+ * repairs: its lead claims no refresh, does not blame the page's age, and names the app's own web address to open.
  */
 export function RefusalLead({
   state,
@@ -627,12 +655,16 @@ export function RefusalLead({
   fromBrowser,
   submit,
   secrets = false,
+  stale,
+  appOrigin,
 }: {
   readonly state: FormState;
   readonly placed: number | null;
   readonly fromBrowser: boolean;
   readonly submit: ReactNode;
   readonly secrets?: boolean;
+  readonly stale?: 'origin';
+  readonly appOrigin?: string;
 }) {
   if (state.otherPerson === true) {
     // Nothing typed stays and no press is invited: it would be sent as the person signed in now (docs/adr/0077, D10).
@@ -651,6 +683,9 @@ export function RefusalLead({
       <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.</p>
     );
   }
+  if (state.stale === true && stale === 'origin') {
+    return <OriginLead appOrigin={appOrigin} />;
+  }
   if (state.stale === true) {
     // The flag, never the server's words, which end in a reload for the forms that do not read the page again (next.ts).
     // Only a press the person just made on this page may be invited again: any other post may not be theirs.
@@ -662,6 +697,29 @@ export function RefusalLead({
   }
   const lead = summaryLead(state, placed);
   return lead === null ? null : <p>{lead}</p>;
+}
+
+/**
+ * The screening upload's lead for a page that failed the origin check: a translated, proxied or saved copy of the page
+ * posts from another web address, so nothing was sent, and a retry from it fails the same way. It names the app's
+ * configured address (never "address" alone, which the page uses for the work email) as a link set in mono, or, with
+ * none given, says where in words.
+ */
+function OriginLead({ appOrigin }: { readonly appOrigin: string | undefined }) {
+  const page = `${appOrigin ?? ''}/screening`;
+  return (
+    <p>
+      PaidWhole could not confirm that this page came from PaidWhole’s own web address (for example, a translated or saved copy cannot send a file), so nothing was sent. Open{' '}
+      {appOrigin === undefined ? (
+        'the screening page at PaidWhole’s own web address'
+      ) : (
+        <a href={page} className="font-mono underline underline-offset-2">
+          {page}
+        </a>
+      )}
+      , fill in the form again, then screen the file.
+    </p>
+  );
 }
 
 /** An item's link to its field: the focus goes to the control, and its label or legend scrolls into view; the URL stays. */

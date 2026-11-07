@@ -318,18 +318,18 @@ describe('a file holding patient information (CO-04: refused, the column named, 
     const header = HEADER.split(',');
     header.splice(3, 0, 'Member ID');
     const found = await messages(csv(header.join(','), '97110,GP,1,SYNTHMBR0001,11,ma_noncontracted,2026-Q1,600.00,40'));
-    expect(found).toEqual(['Column 4 (“Member ID”) holds member IDs; remove it and upload again. A screening takes totals only, never patient information.']);
+    expect(found).toEqual(['Column 4 (“Member ID”) holds member IDs; remove the column, then choose the file again. A screening takes totals only, never patient information.']);
     expect(found.join(' ')).not.toContain('SYNTHMBR0001');
   });
 
   it('refuses a date-of-service column by its header, and a date in the quarter column as a date of service', async () => {
     const header = HEADER.replace('service_band', 'Date of Service');
     expect(await messages(csv(header, ROW_A.replace('2026-Q1', '2026-02-03')))).toEqual([
-      'Column 6 (“Date of Service”) holds dates of service; remove it and upload again. A screening takes totals only, never patient information.',
+      'Column 6 (“Date of Service”) holds dates of service; remove the column, then choose the file again. A screening takes totals only, never patient information.',
       'The file has no service band column; add it.',
     ]);
     const dated = await messages(csv(HEADER, ROW_A.replace('2026-Q1', '02/03/2026')));
-    expect(dated).toEqual(['Row 1: column 6 (“service_band”) holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.']);
+    expect(dated).toEqual(['Row 1: column 6 (“service_band”) holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates, then choose the file again.']);
   });
 
   it.each([
@@ -341,7 +341,7 @@ describe('a file holding patient information (CO-04: refused, the column named, 
   ])('refuses each common header for %s, naming its kind', async (kind, spellings) => {
     for (const spelling of spellings) {
       const found = await messages(csv(`${HEADER},${spelling}`, `${ROW_A},x`));
-      expect(found[0], spelling).toBe(`Column 9 (“${spelling}”) holds ${kind}; remove it and upload again. A screening takes totals only, never patient information.`);
+      expect(found[0], spelling).toBe(`Column 9 (“${spelling}”) holds ${kind}; remove the column, then choose the file again. A screening takes totals only, never patient information.`);
     }
   });
 
@@ -359,16 +359,16 @@ describe('a file holding patient information (CO-04: refused, the column named, 
     const found = await messages(csv(header.join(','), [...others.map(() => 'x'), '2026-01-05', 'SYNTHMBR0001', 'SYNTHETIC', ...ROW_A.split(',')].join(',')));
     expect(found).toHaveLength(20);
     expect(found.slice(0, 3)).toEqual([
-      'Column 23 (“DOS”) holds dates of service; remove it and upload again. A screening takes totals only, never patient information.',
-      'Column 24 (“Member ID”) holds member IDs; remove it and upload again. A screening takes totals only, never patient information.',
-      'Column 25 (“Patient Name”) holds names; remove it and upload again. A screening takes totals only, never patient information.',
+      'Column 23 (“DOS”) holds dates of service; remove the column, then choose the file again. A screening takes totals only, never patient information.',
+      'Column 24 (“Member ID”) holds member IDs; remove the column, then choose the file again. A screening takes totals only, never patient information.',
+      'Column 25 (“Patient Name”) holds names; remove the column, then choose the file again. A screening takes totals only, never patient information.',
     ]);
     expect(found.at(-1)).toBe('And 6 more problems like these.');
     expect(found.join(' ')).not.toContain('SYNTHMBR0001');
     // Past the 64th column, by its real position.
     const far = [...HEADER.split(','), ...Array.from({ length: 57 }, () => 'Charge'), 'Member ID'];
     expect((await messages(csv(far.join(','), [...ROW_A.split(','), ...Array.from({ length: 57 }, () => '1'), 'SYNTHMBR0001'].join(','))))[0]).toBe(
-      'Column 66 (“Member ID”) holds member IDs; remove it and upload again. A screening takes totals only, never patient information.',
+      'Column 66 (“Member ID”) holds member IDs; remove the column, then choose the file again. A screening takes totals only, never patient information.',
     );
   });
 
@@ -406,7 +406,7 @@ describe('the rows (CO-04)', () => {
     expect(found).toHaveLength(20);
     expect(found.at(-1)).toBe('And 11 more problems like these.');
     const dated = await messages(csv(HEADER, ...rows, ROW_A.replace('2026-Q1', '5-Jan-26')));
-    expect(dated[0]).toBe('Row 31: column 6 (“service_band”) holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.');
+    expect(dated[0]).toBe('Row 31: column 6 (“service_band”) holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates, then choose the file again.');
   });
 
   it('refuses a header with no rows, a file with no header, and more than 50,000 rows', async () => {
@@ -434,7 +434,7 @@ describe('the file itself', () => {
 
 describe('a refusal’s messages', () => {
   it('name a column by its position alone where no header is given (the server’s), never a value', () => {
-    expect(reasonMessage({ code: 'phi_column', column: 4, phi: 'member_id' })).toBe('Column 4 holds member IDs; remove it and upload again. A screening takes totals only, never patient information.');
+    expect(reasonMessage({ code: 'phi_column', column: 4, phi: 'member_id' })).toBe('Column 4 holds member IDs; remove the column, then choose the file again. A screening takes totals only, never patient information.');
     expect(reasonMessage({ code: 'duplicate_column', column: 3, field: 'units' }, ['a', 'b', 'Unit'])).toBe('Column 3 (“Unit”) is a second units column; keep one.');
     expect(reasonMessage({ code: 'missing_column', field: 'claim_count' })).toBe('The file has no claim count column; add it.');
     expect(reasonMessage({ code: 'row_count_mismatch' })).toMatch(/Choose the file again/);
