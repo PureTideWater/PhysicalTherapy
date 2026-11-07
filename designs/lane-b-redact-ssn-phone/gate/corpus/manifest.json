@@ -1,0 +1,1036 @@
+{
+ "built": "gen/build-corpus.mts",
+ "letters": 975489,
+ "timingHarvest": 60,
+ "patients": 5292,
+ "shards": 8,
+ "sha256": "89a133ca67449143b8654186766d1c35064a1aa1a3007c74c5aea57779c72bfe",
+ "dataFiles": 294,
+ "sources": {
+  "findings/PHI3-1": {
+   "offered": 10,
+   "kept": 10,
+   "cap": null
+  },
+  "findings/PHI3-2": {
+   "offered": 9,
+   "kept": 9,
+   "cap": null
+  },
+  "findings/PHI3-3": {
+   "offered": 5,
+   "kept": 5,
+   "cap": null
+  },
+  "findings/PHI3-4": {
+   "offered": 5,
+   "kept": 5,
+   "cap": null
+  },
+  "findings/PHI3-5": {
+   "offered": 5,
+   "kept": 5,
+   "cap": null
+  },
+  "findings/PHI2-1": {
+   "offered": 6,
+   "kept": 6,
+   "cap": null
+  },
+  "findings/PHI2-2": {
+   "offered": 3,
+   "kept": 3,
+   "cap": null
+  },
+  "findings/MOD-16": {
+   "offered": 1,
+   "kept": 1,
+   "cap": null
+  },
+  "findings/GATEWAY3-1": {
+   "offered": 4,
+   "kept": 4,
+   "cap": null
+  },
+  "findings/GATEWAY3-2": {
+   "offered": 11,
+   "kept": 11,
+   "cap": null
+  },
+  "T1/name": {
+   "offered": 38874,
+   "kept": 38874,
+   "cap": null
+  },
+  "T1/dob": {
+   "offered": 6688,
+   "kept": 6688,
+   "cap": null
+  },
+  "T1/member": {
+   "offered": 2090,
+   "kept": 2090,
+   "cap": null
+  },
+  "T1/claim": {
+   "offered": 1672,
+   "kept": 1672,
+   "cap": null
+  },
+  "T2/label-own-number": {
+   "offered": 80000,
+   "kept": 79998,
+   "cap": null
+  },
+  "T3/clean": {
+   "offered": 6060,
+   "kept": 6060,
+   "cap": null
+  },
+  "T3/after-name": {
+   "offered": 45450,
+   "kept": 45450,
+   "cap": null
+  },
+  "T4/mod16-shape": {
+   "offered": 6000,
+   "kept": 5998,
+   "cap": null
+  },
+  "T5/MOD-13 letterCase@3fcb9359": {
+   "offered": 2300,
+   "kept": 2300,
+   "cap": null
+  },
+  "T5/MOD-13 gluedLetterCase@3fcb9359": {
+   "offered": 2300,
+   "kept": 1958,
+   "cap": null
+  },
+  "T5/MOD-13 letterCase@cc3dd7f6": {
+   "offered": 1300,
+   "kept": 500,
+   "cap": null
+  },
+  "T5/MOD-15 ssnPhoneCase@3fcb9359": {
+   "offered": 1800,
+   "kept": 1800,
+   "cap": null
+  },
+  "T5/MOD-15 ssnPhoneCase@cc3dd7f6": {
+   "offered": 600,
+   "kept": 600,
+   "cap": null
+  },
+  "T5/MOD-16 seeds@cc3dd7f6": {
+   "offered": 900,
+   "kept": 888,
+   "cap": null
+  },
+  "T5/MOD-16 seeds@3fcb9359": {
+   "offered": 900,
+   "kept": 184,
+   "cap": null
+  },
+  "T5/MOD-16 keptSegment@3fcb9359": {
+   "offered": 10000,
+   "kept": 9914,
+   "cap": null
+  },
+  "T5/MOD-16 keptSegment@cc3dd7f6": {
+   "offered": 5000,
+   "kept": 4941,
+   "cap": null
+  },
+  "harness/rg-fixer-2__labkeep2.mts__default": {
+   "offered": 19901,
+   "kept": 19901,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__ownid.mts__default": {
+   "offered": 21600,
+   "kept": 20040,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__ownid2.mts__default": {
+   "offered": 868,
+   "kept": 867,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__ownid2c.mts__default": {
+   "offered": 868,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__ownidc.mts__default": {
+   "offered": 21600,
+   "kept": 1560,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__probe1.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__probe2.mts__default": {
+   "offered": 9,
+   "kept": 9,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__probe3.mts__default": {
+   "offered": 30,
+   "kept": 29,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__probe4.mts__default": {
+   "offered": 20,
+   "kept": 20,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__probe5.mts__default": {
+   "offered": 19,
+   "kept": 19,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__secfill.mts__4242": {
+   "offered": 30000,
+   "kept": 20051,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__secfill.mts__9191": {
+   "offered": 30000,
+   "kept": 19863,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__splitfuzz.mts__default": {
+   "offered": 3822,
+   "kept": 3822,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__sweep.mts__default": {
+   "offered": 993564,
+   "kept": 20084,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__time-final.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-fixer-2__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__cat.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__fuzzord.mts__keep": {
+   "offered": 19972,
+   "kept": 19972,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__fuzzord.mts__sec": {
+   "offered": 20387,
+   "kept": 20011,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__keepforms-all.mts__default": {
+   "offered": 993564,
+   "kept": 397,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__keepforms.mts__default": {
+   "offered": 993564,
+   "kept": 7,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__labkeep2.mts__default": {
+   "offered": 19901,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__secfill.mts__4242": {
+   "offered": 30000,
+   "kept": 9949,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__secfill.mts__9191": {
+   "offered": 30000,
+   "kept": 10137,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__timer.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__timex.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__timey.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__timez.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__tok.mts__default": {
+   "offered": 18360,
+   "kept": 18360,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__tok2.mts__default": {
+   "offered": 18360,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-3__tok3.mts__default": {
+   "offered": 18360,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__attr.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__cmpfix.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__fuzz4.mts__11": {
+   "offered": 18238,
+   "kept": 18237,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__fuzz4.mts__22": {
+   "offered": 18204,
+   "kept": 18195,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__june.mts__default": {
+   "offered": 12,
+   "kept": 12,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__labname.mts__default": {
+   "offered": 19791,
+   "kept": 19790,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__lbl.mts__default": {
+   "offered": 24,
+   "kept": 24,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__lbl2.mts__default": {
+   "offered": 7,
+   "kept": 7,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__ord.mts__default": {
+   "offered": 336960,
+   "kept": 19861,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__ownid3.mts__default": {
+   "offered": 858240,
+   "kept": 70235,
+   "cap": 70000
+  },
+  "harness/rg-review-phi-3__scale.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__sweep1.mts__default": {
+   "offered": 165984,
+   "kept": 165943,
+   "cap": 170000
+  },
+  "harness/rg-review-phi-3__sweep1fix.mts__default": {
+   "offered": 165984,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__sweep2.mts__default": {
+   "offered": 48384,
+   "kept": 46687,
+   "cap": 50000
+  },
+  "harness/rg-review-phi-3__sweep2fix.mts__default": {
+   "offered": 48384,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__sweep3.mts__default": {
+   "offered": 279900,
+   "kept": 20019,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__t0.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-phi-3__timing.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__glueinit.mts__default": {
+   "offered": 36288,
+   "kept": 19917,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__glueshort.mts__default": {
+   "offered": 165888,
+   "kept": 20077,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__probe.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__tok.mts__default": {
+   "offered": 18360,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__tokc.mts__default": {
+   "offered": 18360,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-gateway__r4__tokrev.mts__default": {
+   "offered": 30175,
+   "kept": 20072,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-phi__r3__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-phi__r3__cmp4.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-skeptic-phi__r3__dobcheck.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 20000
+  },
+  "harness/rg-review-gateway-2__cat.mts__default": {
+   "offered": 19901,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__dob.mts__default": {
+   "offered": 15,
+   "kept": 15,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__fuzzord.mts__keep": {
+   "offered": 19972,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__fuzzord.mts__sec": {
+   "offered": 20387,
+   "kept": 376,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__keepforms-all.mts__default": {
+   "offered": 993564,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__keepforms.mts__default": {
+   "offered": 993564,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__keepformsE.mts__default": {
+   "offered": 993564,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__labkeep2.mts__default": {
+   "offered": 19901,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__labkeep2d.mts__default": {
+   "offered": 19901,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__phi13.mts__default": {
+   "offered": 8,
+   "kept": 8,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__secfill.mts__4242": {
+   "offered": 30000,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__secfill.mts__9191": {
+   "offered": 30000,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__timex.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-gateway-2__timexE.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__alone.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__bynoise.mjs__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__claimdate.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__classify2.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__classify3.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__dates.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__dob.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__dob2.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__fuzz3.mts__101": {
+   "offered": 19971,
+   "kept": 6020,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__fuzz3.mts__202": {
+   "offered": 19973,
+   "kept": 6092,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__fuzz3.mts__303": {
+   "offered": 19974,
+   "kept": 5973,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__fuzz3.mts__404": {
+   "offered": 19972,
+   "kept": 6119,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__fuzz3.mts__505": {
+   "offered": 19967,
+   "kept": 5930,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__ownid.mts__default": {
+   "offered": 21600,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__ownid2.mts__default": {
+   "offered": 868,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__residue2.mjs__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__show.mjs__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__sweep.mts__default": {
+   "offered": 279900,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-review-phi-2__timing.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__labkeep2.mts__default": {
+   "offered": 19901,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__probe.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__secfill.mts__4242": {
+   "offered": 30000,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__secfill.mts__9191": {
+   "offered": 30000,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__splitfuzz.mts__default": {
+   "offered": 3822,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__sweepE3.mts__default": {
+   "offered": 993564,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-gateway__r3__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-phi__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-phi__own.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-phi__own2.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-phi__ownid.mts__default": {
+   "offered": 21600,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-phi__ownid2.mts__default": {
+   "offered": 868,
+   "kept": 0,
+   "cap": 6000
+  },
+  "harness/rg-skeptic-phi__pins.mts__default": {
+   "offered": 9,
+   "kept": 9,
+   "cap": 6000
+  },
+  "harness/rg-fixer-1__combos.mts__default": {
+   "offered": 15246,
+   "kept": 2977,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__dbg.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__fuzz.mts__keep": {
+   "offered": 20471,
+   "kept": 2907,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__fuzz.mts__sec": {
+   "offered": 20526,
+   "kept": 3048,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__fuzz2.mts__keep": {
+   "offered": 4997,
+   "kept": 2975,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__fuzz2.mts__sec": {
+   "offered": 5000,
+   "kept": 3018,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__probe.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1b__fuzz.mts__keep": {
+   "offered": 20471,
+   "kept": 545,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1b__fuzz.mts__sec": {
+   "offered": 20526,
+   "kept": 554,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1b__fuzzK.mts__keep_4242": {
+   "offered": 13452,
+   "kept": 3005,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1b__fuzzK.mts__sec_4242": {
+   "offered": 34851,
+   "kept": 2978,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1b__probe.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-fixer-1b__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__amtdate.mts__default": {
+   "offered": 1120,
+   "kept": 1120,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__dbg.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzz.mts__keep": {
+   "offered": 19903,
+   "kept": 2942,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzz.mts__sec": {
+   "offered": 20526,
+   "kept": 1399,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzzfix.mts__keep": {
+   "offered": 19903,
+   "kept": 2777,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzzfix.mts__sec": {
+   "offered": 20526,
+   "kept": 190,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzzord.mts__keep": {
+   "offered": 19972,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzzord.mts__sec": {
+   "offered": 20387,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzzx.mts__keep": {
+   "offered": 19903,
+   "kept": 431,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__fuzzx.mts__sec": {
+   "offered": 20526,
+   "kept": 33,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__keepforms.mts__default": {
+   "offered": 270338,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__keepformsfix.mts__default": {
+   "offered": 270338,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__labkeep.mts__default": {
+   "offered": 120,
+   "kept": 116,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__one.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__onefix.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__onex.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__rx.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__shieldpre.mts__default": {
+   "offered": 5880,
+   "kept": 2922,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-gateway-1__timex.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__classify.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__cmpname.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz.mts__1": {
+   "offered": 1118,
+   "kept": 1118,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz.mts__2": {
+   "offered": 1730,
+   "kept": 681,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2.mts__11": {
+   "offered": 22557,
+   "kept": 2988,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2.mts__22": {
+   "offered": 22580,
+   "kept": 2946,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2.mts__33": {
+   "offered": 22667,
+   "kept": 3061,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2.mts__44": {
+   "offered": 22649,
+   "kept": 2989,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2l.mts__101": {
+   "offered": 22607,
+   "kept": 3011,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2l.mts__202": {
+   "offered": 22583,
+   "kept": 2957,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzz2l.mts__303": {
+   "offered": 22652,
+   "kept": 3026,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzzdob.mts__1": {
+   "offered": 19785,
+   "kept": 3022,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__fuzzdob.mts__2": {
+   "offered": 19783,
+   "kept": 2878,
+   "cap": 3000
+  },
+  "harness/rg-review-phi-1__timing.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__fuzz.mts__keep": {
+   "offered": 20471,
+   "kept": 159,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__fuzz.mts__sec": {
+   "offered": 20526,
+   "kept": 68,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__fuzz2.mts__keep": {
+   "offered": 4997,
+   "kept": 2022,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__fuzz2.mts__sec": {
+   "offered": 5000,
+   "kept": 1982,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__probe.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__probe2.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__probe3.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__probe4.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__r2__fuzzK.mts__keep_4242": {
+   "offered": 13452,
+   "kept": 831,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__r2__fuzzK.mts__sec_4242": {
+   "offered": 34851,
+   "kept": 277,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__r2__incid.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__r2__labkeep.mts__default": {
+   "offered": 120,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__r2__probe.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__r2__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__rows.mts__default": {
+   "offered": 13,
+   "kept": 13,
+   "cap": 3000
+  },
+  "harness/rg-skeptic-gateway__time.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-sweep__cmp.mts__default": {
+   "offered": 0,
+   "kept": 0,
+   "cap": 3000
+  },
+  "harness/rg-sweep__sweep.mts__keep": {
+   "offered": 311806,
+   "kept": 2978,
+   "cap": 3000
+  },
+  "harness/rg-sweep__sweep.mts__sec": {
+   "offered": 80496,
+   "kept": 2904,
+   "cap": 3000
+  },
+  "data/reviewer-files": {
+   "offered": 559074,
+   "kept": 36951,
+   "cap": 40000
+  }
+ }
+}
