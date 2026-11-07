@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   type ChainInterestLines,
+  type HeldInterestLine,
   type InterestAdjustment,
   type InterestClaim,
   type InterestDraw,
@@ -11,6 +12,7 @@ import {
   type InterestPart,
   type InterestWritten,
   type MatchedLedgerEntry,
+  type PaidInterestLine,
   addInterestHeld,
   attributeInterest,
   interestHeld,
@@ -1340,7 +1342,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
     );
   });
 
-  it('never writes interest above the cash when the chain a PLB L6 takes back from comes to a case line only after the L6 wrote its payments, a person matching it by hand (mayYetHold false, then true; PR 126 review MONEY-R4-1)', () => {
+  it('never writes interest above the cash when the chain a PLB L6 takes back from comes to a case line only after the L6 wrote its payments, a person matching it by hand (mayYetHold false, then true; PR 126 review MONEY-R4-1), after every reconcile, whichever is walked first, each walking the PLB L6s until a walk writes nothing (PR 126 review RVM5-2)', () => {
     const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 4 });
     fc.assert(
       fc.property(
@@ -1354,15 +1356,22 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
         (taken, more, payment, aLines, bLines, yFirst, matchedFrom) => {
           // Y pays chain a's interest, at least what X takes back; X pays chain b's and takes a's back. a's claim is matched
           // to aLines from reconcile `matchedFrom` on (1: from the start; later: by hand, after X wrote b's payment on
-          // bLines). The reconcile keeps Y's payment off the lines X has reached while it still owes a's take-back.
-          // The cash: Y's, and X's net.
+          // bLines). The reconcile keeps Y's payment off the lines X has reached while it still owes a's take-back. Y and X
+          // are walked in the order they are dated (`yFirst`: Y's check first), and each reconcile walks them again until a
+          // walk writes nothing, as providerAdjustments does, never past one walk more than the entries they can still write
+          // (interestRoom). Walked once, X dated first reads no line holding a's interest yet, so Y's payment then ends the
+          // reconcile above the cash until the next takes it back. The cash: Y's, and X's net.
           const cash = taken + more + (payment - taken);
           const y = [drawOf('Y', 'a', taken + more, ['A'])];
           const x = [drawOf('X', 'b', payment, ['B']), drawOf('X', 'a', -taken, ['V'])];
           const ofY: InterestWritten[] = [];
           const ofX: InterestWritten[] = [];
           const paidOn = (claimId: string, specs: typeof aLines) => specs.map((spec) => ({ serviceLineId: spec.line, claimId, approved: true, weightCents: cents(spec.weight), outOfReach: false }));
-          const write = (into: InterestWritten[], parts: readonly InterestPart[]) => into.push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+          // Writes the parts; how many entries they are.
+          const write = (into: InterestWritten[], parts: readonly InterestPart[]) => {
+            into.push(...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents)));
+            return parts.length;
+          };
           // What each line holds of a: Y's payments and X's take-backs there.
           const held = () => {
             const sums = new Map<string, bigint>();
@@ -1393,21 +1402,249 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
                   ]),
                 }),
               );
-            if (yFirst) {
-              payY();
-              netX();
-              // In payment order (Y's check, then X's), every reconcile ends within the cash.
-              expect(total()).toBeLessThanOrEqual(cash);
-            } else {
-              netX();
-              payY();
+            // One walk, in date order; the entries it wrote.
+            const walk = () => (yFirst ? payY() + netX() : netX() + payY());
+            // The most entries Y and X can still write, as interestRoom counts them before the first walk: the lines each
+            // one's draws can reach that it has not reached. Y's payment reaches a's lines once a is matched; X's payment b's
+            // lines, and its take-back the lines holding a's interest and those Y's payment can land on.
+            const ofYReach = matched ? aLines.map((spec) => spec.line) : [];
+            const ofXReach = [...bLines.map((spec) => spec.line), ...held().map((line) => line.serviceLineId), ...ofYReach];
+            const unreached = (reach: readonly string[], written: readonly InterestWritten[]) => new Set(reach.filter((line) => !written.some((entry) => entry.serviceLineId === line))).size;
+            const limit = unreached(ofYReach, ofY) + unreached(ofXReach, ofX) + 1;
+            let walks = 1;
+            while (walk() > 0) {
+              expect(walks).toBeLessThan(limit);
+              walks += 1;
             }
+            // Whichever is walked first, every reconcile ends within the cash.
+            expect(total()).toBeLessThanOrEqual(cash);
           }
-          // In either order, once the take-back has followed: never above the cash.
-          expect(total()).toBeLessThanOrEqual(cash);
         },
       ),
       { numRuns: 1000 },
+    );
+  });
+});
+
+describe('interest over any uploads, matches by hand and reconciles, as the reconcile composes these functions (property; PR 126 review RVM5-2)', () => {
+  const LINES = ['L1', 'L2', 'L3', 'L4'] as const;
+  /** Each claim's chain: A2 corrects A, B is another chain, and K0 to K4 are each paid by one PLB L6 alone. */
+  const CHAIN_OF: Readonly<Record<string, string>> = { A: 'a', A2: 'a', B: 'b', K0: 'k0', K1: 'k1', K2: 'k2', K3: 'k3', K4: 'k4' };
+  const chainOf = (claimId: string): string => CHAIN_OF[claimId] as string;
+  /** A claim match on a case line, standing from step `from` to step `to` (a person's match by hand, then its reversal), approved from `approvedFrom`. */
+  interface ClaimMatch {
+    readonly claim: string;
+    readonly line: string;
+    readonly from: number;
+    readonly to: number;
+    readonly approvedFrom: number;
+  }
+  const amount = fc.oneof(fc.constant(0n), fc.bigInt({ min: 1n, max: 1000n }), fc.bigInt({ min: -1000n, max: -1n }));
+  const scenarios = fc
+    .record({
+      l6s: fc.array(
+        fc.record({ a: amount, aClaims: fc.constantFrom<readonly string[]>(['A', 'A2'], ['A2'], ['A']), b: amount, k: fc.oneof(fc.constant(0n), fc.bigInt({ min: 1n, max: 1000n })) }),
+        { minLength: 2, maxLength: 5 },
+      ),
+      matches: fc.array(
+        fc.record({
+          claim: fc.constantFrom(...Object.keys(CHAIN_OF)),
+          line: fc.constantFrom<string>(...LINES),
+          from: fc.oneof(fc.constant(0), fc.integer({ min: 0, max: 6 })),
+          to: fc.oneof(fc.constant(99), fc.integer({ min: 1, max: 12 })),
+          approvedFrom: fc.oneof(fc.constant(0), fc.integer({ min: 0, max: 8 })),
+        }),
+        { minLength: 1, maxLength: 10 },
+      ),
+      weights: fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }), recoupedAt: fc.oneof(fc.constant(99), fc.integer({ min: 1, max: 12 })) }), {
+        selector: (item) => item.line,
+        maxLength: 4,
+      }),
+      dateKey: fc.array(fc.nat(), { minLength: 5, maxLength: 5 }),
+      uploadKey: fc.array(fc.nat(), { minLength: 5, maxLength: 5 }),
+      stepsAt: fc.array(fc.nat({ max: 5 }), { maxLength: 6 }),
+      breaks: fc.array(fc.boolean(), { minLength: 16, maxLength: 16 }),
+    })
+    .map(({ l6s, matches, weights, dateKey, uploadKey, stepsAt, breaks }) => {
+      const ids = l6s.map((_l6, index) => `P${index}`);
+      const draws = new Map<string, InterestDraw[]>();
+      for (const [index, l6] of l6s.entries()) {
+        const id = ids[index] as string;
+        // A PLB L6 takes interest back from one chain at most: one taking back two chains' interest held on one line
+        // writes the first only (PR 126 review RVM5-1), a shape kept out of this property until the founder's ruling on it.
+        const b = l6.a < 0n && l6.b < 0n ? -l6.b : l6.b;
+        const list: InterestDraw[] = [];
+        if (l6.a !== 0n) {
+          list.push(drawOf(id, 'a', l6.a, l6.a > 0n ? [...l6.aClaims] : ['VA']));
+        }
+        if (b !== 0n) {
+          list.push(drawOf(id, 'b', b, b > 0n ? ['B'] : ['VB']));
+        }
+        if (l6.k > 0n) {
+          list.push(drawOf(id, `k${index}`, l6.k, [`K${index}`]));
+        }
+        draws.set(id, list);
+      }
+      const ordered = (key: readonly number[]) => [...ids].sort((p, q) => (key[ids.indexOf(p)] as number) - (key[ids.indexOf(q)] as number) || ids.indexOf(p) - ids.indexOf(q));
+      // Uploads in their order, with steps between them (null: matches made or reversed by hand, approvals, recoupments).
+      const events: { readonly upload: string | null; readonly reconcile: boolean }[] = [];
+      for (const [index, id] of ordered(uploadKey).entries()) {
+        for (let steps = stepsAt.filter((at) => at === index).length; steps > 0; steps -= 1) {
+          events.push({ upload: null, reconcile: breaks[events.length % 16] === true });
+        }
+        events.push({ upload: id, reconcile: breaks[events.length % 16] === true });
+      }
+      return { draws, matches: matches.filter((match) => match.from < match.to), weights, dated: ordered(dateKey), events };
+    });
+
+  it('never ends a reconcile above the cash once the uploads pay each chain on a case line at least what they take back, and never walks past one walk more than the entries the PLB L6s can write', () => {
+    fc.assert(
+      fc.property(scenarios, ({ draws, matches, weights, dated, events }) => {
+        // Up to five PLB L6s, each paying or taking back chains a and b's interest and paying a chain of its own, dated
+        // and uploaded in any order; claim matches made and reversed by a person, approvals and recoupments of some
+        // lines between the uploads; reconciled after some uploads and steps, at the end, and at eight steps more. Each
+        // PLB L6 reads its lines as recordInterest builds them, and each reconcile walks the uploaded PLB L6s by date
+        // until a walk writes nothing, as providerAdjustments does, within interestRoom + 1 walks.
+        const entries: { readonly l6: string; readonly written: InterestWritten }[] = [];
+        const uploaded = new Set<string>();
+        const everOnALine = new Set<string>();
+        let step = 0;
+        const drawsOf = (l6: string): readonly InterestDraw[] => draws.get(l6) ?? [];
+        const writtenOf = (l6: string): InterestWritten[] => entries.filter((entry) => entry.l6 === l6).map((entry) => entry.written);
+        // The claim matches standing at this step, in the order the ledger made them.
+        const standing = (): ClaimMatch[] =>
+          matches
+            .map((match, index) => ({ match, index }))
+            .filter(({ match }) => match.from <= step && step < match.to)
+            .sort((p, q) => p.match.from - q.match.from || p.index - q.index)
+            .map(({ match }) => match);
+        // A line's approvals remaining: zero once recouped.
+        const weightOf = (line: string): bigint => {
+          const spec = weights.find((item) => item.line === line);
+          return spec === undefined ? 1000n : spec.recoupedAt <= step ? 0n : spec.weight;
+        };
+        // The uploaded PLB L6s paying (1n) or taking back (-1n) the chain's interest.
+        const ofChain = (chain: string, sign: bigint): string[] => [...uploaded].filter((l6) => drawsOf(l6).some((draw) => draw.chain === chain && draw.cents * sign > 0n));
+        // What each take-back keeps payments off, read once a reconcile and again once its PLB L6 writes (outOfReachOf).
+        let keptOff = new Map<string, Map<string, string[]>>();
+        const outOfReachOf = (chain: string): Set<string> =>
+          new Set(
+            ofChain(chain, -1n).flatMap((other) => {
+              const byChain = keptOff.get(other) ?? interestOutOfReach({ draws: drawsOf(other), written: writtenOf(other) });
+              keptOff.set(other, byChain);
+              return byChain.get(chain) ?? [];
+            }),
+          );
+        const paidLinesOf = (draw: InterestDraw): PaidInterestLine[] => {
+          const out = outOfReachOf(draw.chain);
+          const ofDraw = standing().filter((match) => draw.claimIds.includes(match.claim));
+          return LINES.filter((line) => ofDraw.some((match) => match.line === line)).map((line) => {
+            const onLine = ofDraw.filter((match) => match.line === line);
+            const match = (onLine.filter((item) => item.approvedFrom <= step).at(-1) ?? onLine.at(-1)) as ClaimMatch;
+            return { serviceLineId: line, claimId: match.claim, approved: match.approvedFrom <= step, weightCents: cents(weightOf(line)), outOfReach: out.has(line) };
+          });
+        };
+        // What each line holds of the chain, floored, cut to the line's interest as a whole.
+        const heldOf = (chain: string): HeldInterestLine[] => {
+          const sumOn = (line: string, ofIt: boolean) => entries.filter(({ written }) => written.serviceLineId === line && (!ofIt || written.chain === chain)).reduce((sum, { written }) => sum + written.cents, 0n);
+          const floor = (value: bigint) => (value > 0n ? value : 0n);
+          const lines = [...new Set(entries.filter(({ written }) => written.chain === chain).map(({ written }) => written.serviceLineId))];
+          return lines.map((line) => {
+            const held = floor(sumOn(line, true));
+            const whole = floor(sumOn(line, false));
+            return { serviceLineId: line, claimId: chain.toUpperCase(), heldCents: cents(held < whole ? held : whole) };
+          });
+        };
+        // recordInterest: the PLB L6's lines read, interestWrites' parts written; the entries written.
+        const record = (l6: string): number => {
+          const lines = new Map<string, ChainInterestLines>();
+          for (const draw of drawsOf(l6)) {
+            const mayYetHold = standing().some((match) => chainOf(match.claim) === draw.chain);
+            const payments = ofChain(draw.chain, 1n)
+              .filter((other) => other !== l6)
+              .map((other) => ({ draws: drawsOf(other), written: writtenOf(other), paid: paidLinesOf(drawsOf(other).find((item) => item.chain === draw.chain) as InterestDraw) }));
+            const takeBacks = ofChain(draw.chain, -1n)
+              .filter((other) => other !== l6)
+              .map((other) => ({ draws: drawsOf(other), written: writtenOf(other) }));
+            lines.set(draw.chain, {
+              paid: draw.cents > 0n ? paidLinesOf(draw) : [],
+              takenBack: draw.cents < 0n ? heldOf(draw.chain) : [],
+              mayYetHold,
+              unplacedCents: draw.cents < 0n && mayYetHold ? interestUnplaced({ chain: draw.chain, payments, takeBacks }) : cents(0n),
+            });
+          }
+          const parts = interestWrites({ draws: drawsOf(l6), written: writtenOf(l6), lines });
+          entries.push(...parts.map((item) => ({ l6, written: wrote(item.chain, item.serviceLineId, item.cents) })));
+          if (parts.length > 0) {
+            keptOff.delete(l6);
+          }
+          return parts.length;
+        };
+        // interestRoom: for each PLB L6, the lines its draws can reach that it has not reached; a take-back reaches the
+        // lines holding its chain's interest and those a payment of the chain can land on.
+        const room = (): number => {
+          const all = [...uploaded].flatMap((l6) => drawsOf(l6));
+          const paidReach = (draw: InterestDraw) => standing().filter((match) => draw.claimIds.includes(match.claim));
+          const reach = new Map<string, Set<string>>();
+          const reachOf = (chain: string) => reach.get(chain) ?? reach.set(chain, new Set()).get(chain) ?? new Set<string>();
+          for (const draw of all.filter((item) => item.cents < 0n)) {
+            for (const { written } of entries.filter((entry) => entry.written.chain === draw.chain)) {
+              reachOf(draw.chain).add(written.serviceLineId);
+            }
+          }
+          for (const draw of all.filter((item) => item.cents > 0n)) {
+            for (const match of paidReach(draw)) {
+              reachOf(chainOf(match.claim)).add(match.line);
+            }
+          }
+          return [...uploaded].reduce((sum, l6) => {
+            const lines = new Set(drawsOf(l6).flatMap((draw) => (draw.cents > 0n ? paidReach(draw).map((match) => match.line) : [...reachOf(draw.chain)])));
+            const reached = new Set(writtenOf(l6).map((item) => item.serviceLineId));
+            return sum + [...lines].filter((line) => !reached.has(line)).length;
+          }, 0);
+        };
+        const total = () => entries.reduce((sum, { written }) => sum + written.cents, 0n);
+        // The cash of what is uploaded, counting the chains that have been on a case line.
+        const cash = () => [...uploaded].flatMap((l6) => drawsOf(l6)).reduce((sum, draw) => sum + (everOnALine.has(draw.chain) ? draw.cents : 0n), 0n);
+        // The uploads pay each of a and b that has been on a case line at least what they take back; otherwise a
+        // take-back no upload completes leaves the figure low and the cash lower still.
+        const covered = () =>
+          ['a', 'b'].every((chain) => {
+            const sizes = (sign: bigint) => [...uploaded].flatMap((l6) => drawsOf(l6)).reduce((sum, draw) => sum + (draw.chain === chain && draw.cents * sign > 0n ? draw.cents * sign : 0n), 0n);
+            return !everOnALine.has(chain) || sizes(1n) >= sizes(-1n);
+          });
+        const reconcile = () => {
+          for (const match of standing()) {
+            everOnALine.add(chainOf(match.claim));
+          }
+          keptOff = new Map();
+          const limit = room() + 1;
+          const walk = () => dated.filter((l6) => uploaded.has(l6)).reduce((sum, l6) => sum + record(l6), 0);
+          let walks = 1;
+          while (walk() > 0) {
+            expect(walks).toBeLessThan(limit);
+            walks += 1;
+          }
+          if (covered()) {
+            expect(total()).toBeLessThanOrEqual(cash());
+          }
+        };
+        for (const [index, event] of events.entries()) {
+          if (event.upload === null) {
+            step += 1;
+          } else {
+            uploaded.add(event.upload);
+          }
+          if (event.reconcile || index === events.length - 1) {
+            reconcile();
+          }
+        }
+        for (let more = 0; more < 8; more += 1) {
+          step += 1;
+          reconcile();
+        }
+      }),
+      { numRuns: 2000 },
     );
   });
 });

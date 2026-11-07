@@ -1235,6 +1235,13 @@ export function led23(b: CaseBuilder): void {
     ledRemittance(b, base, 14, restatedOn, [reversalOf(correction), latest, otherClaim(b, 10)], interestPlb(base, [{ reference: latest.payerClaimControlNumber, amount: dollars('-3.00') }])).file,
     `After paired.835: C reversed (paid -160.00, AMT I -5.40) and corrected again by C2 (${latest.payerClaimControlNumber}, REF F8 naming C), which carries line 1 alone as C paid it (97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00), beside another patient's claim paying 150.00, and one PLB L6 of -3.00 naming C2: BPR02 73.00.`,
   );
+  // A PLB L6 naming C above C's AMT I (D4 steps 2 to 4): it covers C's 5.40, the pool pays K's 2.00 from what is left,
+  // and the 0.60 the pool leaves returns to C, never counted nowhere (PR 126 review RV-DB5-1).
+  b.add835(
+    'named-above.835',
+    ledRemittance(b, base, 15, adjustedOn, [reversal, correction, other], interestPlb(base, [{ reference: ccn, amount: dollars('-8.00') }])).file,
+    `As unnamed.835, the PLB L6 of -8.00 naming C (${ccn}), above C's AMT I 5.40 and the remittance's 7.40: BPR02 212.00.`,
+  );
   recoveryScenario(b);
   const caseLines = [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line }));
   b.scenario({
@@ -1243,6 +1250,7 @@ export function led23(b: CaseBuilder): void {
       paired: ['paired.835'],
       unnamed: ['unnamed.835'],
       namedNet: ['named-net.835'],
+      namedAbove: ['named-above.835'],
       identifiers: ['identifiers.835'],
       reportedOnly: ['reported-only.835'],
       netZero: ['paired.835', 'net-zero.835'],
@@ -1271,6 +1279,10 @@ export function led23(b: CaseBuilder): void {
       paired: { interest, totalCents: centsToString(LED_INTEREST) },
       unnamed: { interest, note: "K's 2.00 on no case line" },
       namedNet: { interest, note: "the PLB L6 covers C's 5.40 first; the other 2.00 is K's" },
+      namedAbove: {
+        interest: [ledEntry('interest', dollars('2.67'), 'named-above.835 PLB L6'), ledEntry('interest', dollars('3.33'), 'named-above.835 PLB L6')],
+        note: "the PLB L6 of 8.00 naming C covers C's 5.40, pays K's 2.00 (on no case line) and returns the 0.60 left to C: C's 6.00, split by payment",
+      },
       identifiers: { interest, note: 'named by the CLP07 among the identifiers' },
       reportedOnly: { interest: [], reported: { amountCents: centsToString(LED_INTEREST), note: 'shown as reported (AMT I), counted nowhere' } },
       netZero: { approvedL1: centsToString(dollars('2.00')), interest: [], note: 'no new interest entry: the reversal and its correction net to zero' },

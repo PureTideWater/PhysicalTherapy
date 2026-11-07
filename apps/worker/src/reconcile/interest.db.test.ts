@@ -323,6 +323,31 @@ describe('a remittance’s interest reported on its claims and paid by a PLB L6,
     await replayed(practice);
   });
 
+  it('pays the remittance’s other reported interest from a named PLB L6 above its claim’s AMT I, and returns what that leaves to the claim it names, never counted nowhere (named-above.835; PR 126 review RV-DB5-1)', async () => {
+    const { practice, lines } = await opened('LED-23');
+    await upload(practice, 'LED-23', 'named-above.835');
+    const [l1, l2] = lines as [Line, Line];
+    // The PLB L6 of -8.00 naming C covers C's 5.40, then K's 2.00 (on no case line), and returns the 0.60 left to C: C's
+    // 6.00, split by what the payer pays on each line (24.00 and 30.00).
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([{ amountCents: '267', allocated: true }]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([{ amountCents: '333', allocated: true }]);
+    const [l6] = await l6sOf(practice, 'SYNEFTLED23015');
+    const correction = await claimOf(practice, 'SYNEFTLED23015', 2);
+    const other = await claimOf(practice, 'SYNEFTLED23015', 3);
+    const { attribution } = await attributionNow(practice);
+    expect(attribution.unattributed).toEqual([]);
+    expect(attribution.draws.filter((draw) => draw.adjustmentId === l6).map((draw) => ({ cents: draw.cents, claimIds: draw.claimIds }))).toEqual([
+      { cents: 600n, claimIds: [correction.id] },
+      { cents: 200n, claimIds: [other.id] },
+    ]);
+    expect(await w.rows(practice, "SELECT claim_id, provider_adjustment_id FROM ledger_match WHERE kind = 'interest' ORDER BY seq")).toEqual([
+      { claim_id: correction.id, provider_adjustment_id: l6 },
+      { claim_id: correction.id, provider_adjustment_id: l6 },
+    ]);
+    await expectInterestFromItsL6(practice);
+    await replayed(practice);
+  });
+
   it('names the chain by the original’s control number, which its reversal carries too, and credits the lines its correction is matched to (named-original.835)', async () => {
     const { practice, lines } = await opened('LED-23');
     await upload(practice, 'LED-23', 'named-original.835');
