@@ -953,6 +953,13 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a period with a two-digit year glued to "Rd"', 'Service 01/01/2020-01/02/20Rd'],
     ['a period of ordinal dates glued to the next word', 'Service March 3rd, 2020-March 4th, 2020Paid'],
     ['a period of ordinal dates, day first, glued', 'Service 3rd of March, 2020-4th of March, 2020Paid'],
+    // Review GATEWAY2-2: a day-first ordinal second end glued after its four-digit year to a word that starts like an
+    // ordinal suffix, read on the glued reading that keeps only a day's suffix (cc3dd7f6 and 6fc88092 refused these).
+    ['a day-first ordinal second end glued to "St."', 'Service 01/01/2020-4th of March, 2020St. Mary'],
+    ['a day-first ordinal second end with no "of" glued to "St."', 'Service 01/01/2020-14th March 2020St. Mary'],
+    ['an ISO first end and a first-of-month end glued to "TH"', 'Service 2020-03-04-1st of March, 2020TH'],
+    ['a day-first ordinal second end glued to "Rd." after an en dash', 'Service 03/04/2020\u20133rd of March, 2020Rd. 9'],
+    ['a day-first ordinal second end in capitals glued to "ST."', 'SERVICE 01/01/2020-4TH OF MARCH, 2020ST. MARY'],
     // Re-review GATEWAY1-1: SEC-5's label is read over a plain number only in the amount's own run, so a phone word's own
     // number ("TTY 711", "Fax 2") followed by words, a date or an amount ends the read, as a digit ends every label window.
     ['an amount before a year after a TTY sentence', 'TTY 711. Paid 150.00 2026'],
@@ -998,6 +1005,12 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(sent);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  it('pins a recorded residual: a day-first ordinal second end with a two-digit year glued to "St." is refused, its "St" read as a day’s suffix (review GATEWAY2-2)', () => {
+    for (const letter of ['Service 01/01/2020-4th March, 20St. Mary', "Service 01/01/2020-4th of March, '20St. Mary"]) {
+      expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
+    }
   });
 
   it('refuses a letter whose SSN joined to a date has no shape a pattern reads (the range is no barrier)', () => {

@@ -1714,30 +1714,34 @@ function joinedRight(text: string, at: number): boolean {
 /** What a letter is read as in the scan's reading of a date glued to a word: no letter, digit, white space or date separator. */
 const WORD_BLANK = '#';
 /**
- * A word glued to a digit on either side, but what reads as a date's ordinal suffix ("3rd"): what that reading blanks. Each
- * match starts after a digit or at a word's first letter, so a long word is read once, never from each of its letters.
- */
-const GLUED_WORD = /(?<=[0-9])(?!(?:st|nd|rd|th)(?![\p{L}\p{N}]))\p{L}+|(?<!\p{L})\p{L}+(?=[0-9])/giu;
-/**
- * Every word glued to a digit, a suffix GLUED_WORD keeps among them: what a third reading blanks. GLUED_WORD keeps "St",
- * "Rd", "TH" or "nd" after any digit, a year's too, so a date glued to such a word ("10/15/2026St. Joseph", "2020-01-02nd
- * floor") is read on this reading only (review GATEWAY1-1). The readings are joined, so keeping a suffix only adds a date.
+ * Every word glued to a digit: letters after a digit, or a word before one. Each match starts after a digit or at a word's
+ * first letter, so a long word is read once, never from each of its letters.
  */
 const GLUED_ANY = /(?<=[0-9])\p{L}+|(?<!\p{L})\p{L}+(?=[0-9])/gu;
+/** A date's ordinal suffix ("3rd", "4th"): kept by the second glued reading after a day's one or two digits. */
+const ORDINAL_SUFFIX = /^(?:st|nd|rd|th)$/iu;
 
 /**
  * A text and its glued readings, where a date glued to a word ("2020-01-01Paid", extracted text that lost its space) is
- * read: datesIn reads no date against a letter. Only a word glued to a digit is blanked (GLUED_WORD), so a month word
- * stays one ("2 January 2020Paid"), and a blank is WORD_BLANK, never a space, so a word between two numbers never reads as
- * the white space of one date (MOD-16 seed 1034253323); each blank is one unit for one, so a span is where it was. A third
- * reading blanks an ordinal-like suffix as well ("2020St. Joseph": GLUED_ANY), where it differs. The survivor scan reads
- * its barriers on them, and redaction and the check a date of birth (matchesIn).
+ * read: datesIn reads no date against a letter. Only a word glued to a digit is blanked (GLUED_ANY), so a month word stays
+ * one ("2 January 2020Paid"), and a blank is WORD_BLANK, never a space, so a word between two numbers never reads as the
+ * white space of one date (MOD-16 seed 1034253323); each blank is one unit for one, so a span is where it was. The second
+ * reading keeps a day's ordinal suffix, glued after one or two digits and to nothing after it ("3rd of March"), and blanks
+ * every other glued word, a year's "St" too; the third blanks every glued word, where it differs ("10/15/2026St. Joseph",
+ * "2020-01-02nd floor": review GATEWAY1-1). So a range whose second end is a day-first ordinal date glued after its year
+ * to such a word is read on the second ("01/01/2020-4th of March, 2020St. Mary": review GATEWAY2-2). A suffix kept after
+ * three digits or more would read no date: every ordinal datesIn reads follows a day's one or two digits. The survivor
+ * scan reads its barriers on them, and redaction and the check a date of birth (matchesIn).
  */
 function gluedReadings(text: string): string[] {
   const readings = [text];
   if (/[0-9]\p{L}|\p{L}[0-9]/u.test(text)) {
     const blank = (word: string) => WORD_BLANK.repeat(word.length);
-    const ordinalsKept = text.replace(GLUED_WORD, blank);
+    const day = (word: string, at: number) => {
+      const run = /[0-9]+$/u.exec(text.slice(Math.max(0, at - 3), at))?.[0] ?? '';
+      return ORDINAL_SUFFIX.test(word) && run.length >= 1 && run.length <= 2 && !/[0-9]/u.test(text[at - run.length - 1] ?? '') && !/[\p{L}\p{N}]/u.test(text[at + word.length] ?? '');
+    };
+    const ordinalsKept = text.replace(GLUED_ANY, (word: string, at: number) => (day(word, at) ? word : blank(word)));
     const allBlanked = text.replace(GLUED_ANY, blank);
     readings.push(ordinalsKept);
     if (allBlanked !== ordinalsKept) readings.push(allBlanked);

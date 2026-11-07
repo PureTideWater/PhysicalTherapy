@@ -615,8 +615,11 @@ above stays as it was decided; where it differs, this amendment holds.
   amount-shaped SSN or phone at an end of such a range is read as an amount there, as R1 reads it alone, and is sent
   ("01/01/2020-900.12 3456", "$1-900.12 3456", recorded below: re-review PHI1-1); under an SSN or phone label it is
   refused. The review of that fix (GATEWAY1-1, GATEWAY1-2) added a third reading that blanks every word glued to a
-  digit, an ordinal-like suffix too, so a range glued to "St.", "Rd.", "TH" or "nd" after its year is a barrier
-  ("10/01/2026-10/15/2026St. Joseph"), and reads SEC-5's label over the numbers before an unsigned amount and before its
+  digit, an ordinal-like suffix too, so a range glued to "St.", "Rd.", "TH" or "nd" after its four-digit year is a
+  barrier ("10/01/2026-10/15/2026St. Joseph"; since review GATEWAY2-2 the second reading keeps an ordinal suffix only
+  after a day's one or two digits, so a day-first ordinal second end is read so too, "01/01/2020-4th of March, 2020St.
+  Mary", which cc3dd7f6 and 6fc88092 refused: 1,012 of 327,652 must-stay range letters in the review's sweep, none
+  since), and reads SEC-5's label over the numbers before an unsigned amount and before its
   range's first end, each digit as a space, so a date, an amount, a currency amount or a range between an SSN or phone
   label and an amount-shaped number no longer shields it ("SSN: 01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456"
   are refused). Its re-review (2026-11-06; its gateway findings reuse the ids GATEWAY1-n and are cited as re-review
@@ -715,7 +718,9 @@ only because the range then joined the next group, A3 (`SSN 900 12 345615.00-01/
 PHI1-2; a proposal: refuse it under a label); an amount-shaped SSN whose first group a date reading joins to the number
 before it (`SSN $10-9.00 12 3456`, where `10-9.00` reads as a date); an amount-shaped SSN or phone after a range and
 white space with its label more than 24 characters before it (`Phone March 11, 2029−2,866.66  960.58 4433`: GATEWAY1-2);
-a labeled SSN or phone split into a group of five digits or more, a group under five and a money amount (`Soc Sec 93798
+a range whose day-first ordinal second end has a two-digit year glued to a word that starts like an ordinal suffix
+(`01/01/2020-4th March, 20St. Mary`), refused, its `St` read as a day's suffix (review GATEWAY2-2); a labeled SSN or
+phone split into a group of five digits or more, a group under five and a money amount (`Soc Sec 93798
 4 1.46`, `Fax: 99299 3 8.10`), which that units column ends as it ends a service line's (review GATEWAY2-1; cc3dd7f6
 sent it too; 4 of 20,000 letters of the split fuzz); an amount followed by a dash and a year-first date, whose last
 integer digits, cents and year are written `[SSN]`

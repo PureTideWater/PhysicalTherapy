@@ -1636,7 +1636,15 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
         const [y2, m2, d2] = later.split('-');
         const dash = ['-', '-', '\u2013', '\u2014', '\u2212', '--'][Math.floor(pick / 9) % 6] ?? '-';
         const unpadded = (part = '') => String(Number.parseInt(part, 10));
-        const range = [
+        // A day-first ordinal date as the second end, after a first end with a four-digit year ("01/01/2020-4th of March,
+        // 2020", "-14th March 2020", "-1ST OF MARCH, 2020"): read glued to a word that starts like an ordinal suffix on the
+        // glued reading that keeps only a day's suffix (review GATEWAY2-2). A third of the date-to-date draws.
+        const day = Number.parseInt(d2 ?? '1', 10);
+        const ordinal = `${String(day)}${day % 100 >= 11 && day % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][day % 10] ?? 'th')}`;
+        const laterMonth = MONTH_WORDS[Number.parseInt(m2 ?? '1', 10) - 1] ?? 'May';
+        const ordinalEnd = [`${ordinal} of ${laterMonth}, ${y2}`, `${ordinal} ${laterMonth} ${y2}`, `${ordinal} of ${laterMonth}, ${y2}`.toUpperCase()][Math.floor(pick / 1287) % 6];
+        const firstEnd = new Map([[0, `${m1}/${d1}/${y1}`], [1, `${unpadded(m1)}/${unpadded(d1)}/${y1}`], [2, iso], [3, `${m1}-${d1}-${y1}`], [5, `${m1}.${d1}.${y1}`]]).get(pick % 13);
+        const range = firstEnd !== undefined && ordinalEnd !== undefined ? `${firstEnd}${dash}${ordinalEnd}` : [
           `${m1}/${d1}/${y1}${dash}${m2}/${d2}/${y2}`,
           `${unpadded(m1)}/${unpadded(d1)}/${y1}${dash}${unpadded(m2)}/${unpadded(d2)}/${y2}`,
           `${iso}${dash}${later}`,
