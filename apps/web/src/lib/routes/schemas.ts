@@ -19,6 +19,12 @@ export function blankOptional<T extends z.ZodType>(schema: T) {
 /** A form's required text field. Its two messages are instructions, read after the field's name ("Your name: fill this in"). */
 export const requiredText = (max: number) => z.string().trim().min(1, 'fill this in').max(max, `enter at most ${String(max)} characters`);
 
+/**
+ * A role the organization's kind does not hold (a group's roles for a firm, say). The form lists only the roles it holds,
+ * so the step is to choose one of them; never the raw kind ("group") the database names.
+ */
+export const ROLE_NOT_LISTED = 'choose one of the roles listed';
+
 /** An email field; its message is an instruction like requiredText's ("Email: enter an email address"). */
 export const emailAddress = z.string().trim().toLowerCase().pipe(z.email('enter an email address'));
 

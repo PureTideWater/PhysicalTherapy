@@ -76,7 +76,7 @@ describe('the suspension card’s forms (FRM-04; docs/adr/0077)', () => {
       invalid: true,
       issues: [
         { field: 'reason', message: 'choose why PaidWhole suspends it' },
-        { field: 'note', message: 'at most 500 characters' },
+        { field: 'note', message: 'enter at most 500 characters' },
         { field: 'confirm', message: 'tick to confirm what the suspension stops' },
       ],
     };

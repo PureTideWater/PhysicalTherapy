@@ -20,7 +20,7 @@ import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { localityReading, releaseInForce } from '../pricing/location';
 import type { NoticeDelivery } from './practice';
 import { ZIP_CODE_FORMAT, type ZipCode, parseZipCode } from '../zip';
-import { opaqueId, optionalText, requiredText } from './schemas';
+import { ROLE_NOT_LISTED, emailAddress, opaqueId, optionalText, requiredText } from './schemas';
 
 /**
  * The internal console v0 (PRD 6, Admin console "v0 (minimal)"; PRD 7, Internal console):
@@ -113,8 +113,8 @@ const statusNote = optionalText(
   z
     .string()
     .trim()
-    .max(500, 'at most 500 characters')
-    .regex(/^[^\p{Cc}]*$/u, 'one line, with no line breaks'),
+    .max(500, 'enter at most 500 characters')
+    .regex(/^[^\p{Cc}]*$/u, 'write it on one line, with no line breaks'),
 );
 
 const CLOSED_REFUSAL = 'a closed organization is neither suspended nor reinstated';
@@ -493,8 +493,8 @@ export const organizationPage = platformRoute({
   sample: { params: (refs) => ({ organizationId: refs.organizationId }) },
 });
 
-const npi = optionalText(z.string().regex(/^\d{10}$/, 'ten digits'));
-const lastFour = optionalText(z.string().regex(/^\d{4}$/, 'four digits'));
+const npi = optionalText(z.string().regex(/^\d{10}$/, 'enter the NPI’s 10 digits, or leave it blank'));
+const lastFour = optionalText(z.string().regex(/^\d{4}$/, 'enter the last four digits of the tax ID, or leave it blank'));
 
 /** The billing ZIP as a console form sends it: required, five digits or ZIP+4 (parseZipCode). */
 export const billingZip = z
@@ -694,7 +694,7 @@ export const inviteMember = platformRoute({
   phi: false,
   permission: 'organization.manage',
   params: z.object({}),
-  input: z.object({ organizationId: opaqueId, email: z.string().trim().toLowerCase().pipe(z.email('enter an email address')), role: z.enum(MEMBERSHIP_ROLES) }),
+  input: z.object({ organizationId: opaqueId, email: emailAddress, role: z.enum(MEMBERSHIP_ROLES) }),
   audit: { action: 'membership_created', objectType: 'membership' },
   handle: async ({ scope, input, services, actor }): Promise<MutationResult> => {
     const organization = (await scope.client.query<{ kind: 'group' | 'firm' | 'internal' }>('SELECT kind FROM organization WHERE id = $1', [input.organizationId])).rows[0];
@@ -702,7 +702,7 @@ export const inviteMember = platformRoute({
       throw new NotFoundError();
     }
     if (!ROLES_BY_KIND[organization.kind].includes(input.role)) {
-      throw new InputError([{ field: 'role', message: `a role a ${organization.kind} organization holds` }]);
+      throw new InputError([{ field: 'role', message: ROLE_NOT_LISTED }]);
     }
     const known = (
       await scope.client.query<{ id: string; cognito_sub: string; internal: boolean; customer: boolean }>(
@@ -721,10 +721,10 @@ export const inviteMember = platformRoute({
       throw new InputError([{ field: 'email', message: 'you cannot add yourself to an organization' }]);
     }
     if (known?.internal === true && organization.kind !== 'internal') {
-      throw new InputError([{ field: 'email', message: 'an internal user cannot join a practice group or a firm; support access is a support grant' }]);
+      throw new InputError([{ field: 'email', message: 'PaidWhole staff cannot join a practice group or a firm; to give support access, create a support grant from the ticket under Support' }]);
     }
     if (known?.customer === true && organization.kind === 'internal') {
-      throw new InputError([{ field: 'email', message: 'a member of a practice group or a firm cannot hold an internal role' }]);
+      throw new InputError([{ field: 'email', message: 'this person belongs to a practice group or a firm, so they cannot also be PaidWhole staff; invite a different address' }]);
     }
     // The provider's account: created with a temporary password it delivers (an invitation), or found.
     const ensured = await services.provider.ensureUser(input.email);
@@ -828,11 +828,11 @@ export const recordAgreement = platformRoute({
     kind: z.enum(AGREEMENT_KINDS),
     version: requiredText(40),
     signer: requiredText(200),
-    signedOn: z.iso.date('a date (YYYY-MM-DD)'),
+    signedOn: z.iso.date('enter the day it was signed'),
     documentRef: z
       .string()
       .trim()
-      .regex(/^[A-Za-z0-9:/._-]{1,200}$/, 'the e-signature reference (letters, digits and : / . _ -)'),
+      .regex(/^[A-Za-z0-9:/._-]{1,200}$/, 'use only letters, digits, colons, slashes, dots, underscores and hyphens, as the e-signature vendor gives it'),
     sha256: z
       .string()
       .trim()
@@ -972,7 +972,7 @@ export const createSupportGrant = platformRoute({
     ticket: z
       .string()
       .trim()
-      .regex(/^[A-Za-z0-9-]{1,64}$/, 'the ticket number (letters, digits and hyphens)'),
+      .regex(/^[A-Za-z0-9-]{1,64}$/, 'enter the ticket’s number, such as 1042, using only letters, digits and hyphens'),
     reason: requiredText(500),
   }),
   audit: { action: 'support_grant_created', objectType: 'support_grant' },

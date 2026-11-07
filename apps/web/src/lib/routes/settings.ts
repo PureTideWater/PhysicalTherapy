@@ -31,7 +31,7 @@ import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { ROLES_BY_KIND } from './console';
-import { blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
+import { ROLE_NOT_LISTED, blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
 
 /**
  * The practice's Settings screen (PRD 7, Settings: "Users and roles, grants and agreements, notification
@@ -999,7 +999,7 @@ export const inviteUserAction = organizationRoute({
   handle: async ({ scope, organizationId, input, services }): Promise<MutationResult> => {
     const kind = await organizationKind(scope.client, organizationId);
     if (!ROLES_BY_KIND[kind].includes(input.role)) {
-      throw new InputError([{ field: 'role', message: `a role a ${kind} organization holds` }]);
+      throw new InputError([{ field: 'role', message: ROLE_NOT_LISTED }]);
     }
     const inUse = (await scope.client.query<{ in_use: boolean }>('SELECT invitation_email_in_use($1, $2) AS in_use', [organizationId, input.email])).rows[0]?.in_use;
     if (inUse !== false) {
@@ -1052,7 +1052,7 @@ export const changeRoleAction = organizationRoute({
   handle: async ({ scope, organizationId, input }): Promise<MutationResult> => {
     const kind = await organizationKind(scope.client, organizationId);
     if (!ROLES_BY_KIND[kind].includes(input.role)) {
-      throw new InputError([{ field: 'role', message: `a role a ${kind} organization holds` }]);
+      throw new InputError([{ field: 'role', message: ROLE_NOT_LISTED }]);
     }
     let rowCount: number | null;
     try {

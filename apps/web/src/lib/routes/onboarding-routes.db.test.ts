@@ -340,6 +340,11 @@ describe('inviting an address the identity provider already knows (SEC-22)', () 
       issues: [{ field: 'email', message: EMAIL_IN_USE }],
     });
     expect(EMAIL_IN_USE).not.toMatch(/identity/);
+    // A firm's role in a practice group: the form lists only the group's roles, so the step is to choose one, never the raw kind.
+    expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'firm_principal' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'role', message: 'choose one of the roles listed' }],
+    });
     expect((await owner.query('SELECT id FROM "user" WHERE lower(email) = $1', [email])).rows).toEqual([]);
     expect(invitations).toHaveLength(sent);
   });

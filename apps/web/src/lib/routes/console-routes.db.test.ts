@@ -164,6 +164,14 @@ describe('organizations and practices', () => {
       status: 'invalid',
       issues: [{ field: 'zip', message: 'enter five digits, or a ZIP+4 such as 27601-1234' }],
     });
+    // Each refusal says what to enter, after the field's name (ADR 0077); SYNTHETIC values.
+    expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '12345', taxIdLast4: '12', zip: '00011' })).toEqual({
+      status: 'invalid',
+      issues: [
+        { field: 'npi', message: 'enter the NPI’s 10 digits, or leave it blank' },
+        { field: 'taxIdLast4', message: 'enter the last four digits of the tax ID, or leave it blank' },
+      ],
+    });
     const practice = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '00011' });
     if (practice.status !== 'ok' || practice.data.objectId === undefined) {
       throw new Error(`expected a new practice, got ${practice.status}`);
@@ -256,7 +264,7 @@ describe('members', () => {
       status: 'invalid',
       issues: [{ field: 'email', message: 'already a member of this organization' }],
     });
-    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'support' })).toMatchObject({ status: 'invalid', issues: [{ field: 'role' }] });
+    expect(await run(inviteMember, admin.token, { organizationId: world.organizationId, email, role: 'support' })).toEqual({ status: 'invalid', issues: [{ field: 'role', message: 'choose one of the roles listed' }] });
   });
 
   it('marks an internal member as needing a hardware key', async () => {
@@ -280,13 +288,13 @@ describe('members', () => {
         await addMembership(owner, admin.internalId, staff, internalRole);
         expect(await run(inviteMember, admin.token, { organizationId, email: await emailOf(staff), role })).toEqual({
           status: 'invalid',
-          issues: [{ field: 'email', message: 'an internal user cannot join a practice group or a firm; support access is a support grant' }],
+          issues: [{ field: 'email', message: 'PaidWhole staff cannot join a practice group or a firm; to give support access, create a support grant from the ticket under Support' }],
         });
       }
     }
     expect(await run(inviteMember, admin.token, { organizationId: admin.internalId, email: await emailOf(world.adminUserId), role: 'support' })).toEqual({
       status: 'invalid',
-      issues: [{ field: 'email', message: 'a member of a practice group or a firm cannot hold an internal role' }],
+      issues: [{ field: 'email', message: 'this person belongs to a practice group or a firm, so they cannot also be PaidWhole staff; invite a different address' }],
     });
     // Refused before the identity provider was asked for anything.
     expect(invitations).toHaveLength(before);
@@ -396,7 +404,11 @@ describe('agreements', () => {
     expect(rows).toEqual([{ kind: 'engagement', version: '2', signer: 'SYNTHETIC SIGNER', signed_at: new Date('2026-10-01T00:00:00Z'), document_ref: 'esign:synthetic-envelope-2', sha256: 'b'.repeat(64) }]);
     expect(await run(recordAgreement, admin.token, { organizationId: world.organizationId, kind: 'baa', version: '1', signer: 'S', signedOn: 'yesterday', documentRef: 'x y', sha256: 'short' })).toMatchObject({
       status: 'invalid',
-      issues: expect.arrayContaining([expect.objectContaining({ field: 'signedOn' }), expect.objectContaining({ field: 'documentRef' }), expect.objectContaining({ field: 'sha256' })]),
+      issues: expect.arrayContaining([
+        { field: 'signedOn', message: 'enter the day it was signed' },
+        { field: 'documentRef', message: 'use only letters, digits, colons, slashes, dots, underscores and hyphens, as the e-signature vendor gives it' },
+        expect.objectContaining({ field: 'sha256' }),
+      ]),
     });
   });
 });
@@ -552,6 +564,10 @@ describe('support grants (PRD 5, J15)', () => {
       issues: [{ field: 'userId' }],
     });
     expect(await run(createSupportGrant, admin.token, { practiceId: randomUUID(), userId: engineer, ticket: 'SYN-7', reason: 'SYNTHETIC' })).toMatchObject({ status: 'invalid', issues: [{ field: 'practiceId' }] });
+    expect(await run(createSupportGrant, admin.token, { practiceId: world.practiceId, userId: engineer, ticket: 'SYN 7', reason: 'SYNTHETIC' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'ticket', message: 'enter the ticket’s number, such as 1042, using only letters, digits and hyphens' }],
+    });
     const created = await run(createSupportGrant, admin.token, { practiceId: world.practiceId, userId: engineer, ticket: 'SYN-7', reason: 'SYNTHETIC SUPPORT REASON' });
     if (created.status !== 'ok' || created.data.objectId === undefined) {
       throw new Error(`expected a support grant, got ${created.status}`);
@@ -766,8 +782,8 @@ describe('suspending and reinstating an organization (docs/adr/0055; docs/adr/00
     expect(await run(setOrganizationStatus, admin.token, { change: 'suspend', organizationId: id, confirm: 'on' })).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose why PaidWhole suspends it' }] });
     expect(await run(setOrganizationStatus, admin.token, suspend(id, { reason: 'unpaid_invoice' }))).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose why PaidWhole suspends it' }] });
     expect(await run(setOrganizationStatus, admin.token, suspend(id, { confirm: undefined }))).toEqual({ status: 'invalid', issues: [{ field: 'confirm', message: 'tick to confirm what the suspension stops' }] });
-    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: 'x'.repeat(501) }))).toEqual({ status: 'invalid', issues: [{ field: 'note', message: 'at most 500 characters' }] });
-    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: 'SYNTHETIC\nSECOND LINE' }))).toEqual({ status: 'invalid', issues: [{ field: 'note', message: 'one line, with no line breaks' }] });
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: 'x'.repeat(501) }))).toEqual({ status: 'invalid', issues: [{ field: 'note', message: 'enter at most 500 characters' }] });
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: 'SYNTHETIC\nSECOND LINE' }))).toEqual({ status: 'invalid', issues: [{ field: 'note', message: 'write it on one line, with no line breaks' }] });
     expect(await run(setOrganizationStatus, admin.token, { change: 'reason', organizationId: id })).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose the new reason' }] });
     expect(await run(setOrganizationStatus, admin.token, { change: 'reinstate', organizationId: id, reason: 'security_hold' })).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose why it is reinstated' }] });
     // The old form's input is no longer a change.
