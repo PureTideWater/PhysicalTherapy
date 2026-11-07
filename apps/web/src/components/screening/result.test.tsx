@@ -415,7 +415,7 @@ describe('the anomalies by code and payer product', () => {
     };
     expect(tableCopy(outside(c(-100n)))).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="at_or_above">Allowed is above the Medicare figure</);
     expect(tableCopy(outside(c(0n)))).toMatch(/data-standing="at_or_above">Allowed is equal to the Medicare figure</);
-    expect(text(html)).toContain('2 groups of 5 are anomalies.');
+    expect(text(html)).toContain('2 of 5 groups are anomalies.');
     expect(text(html)).toContain('Medicare Advantage, no contract');
   });
 
@@ -424,10 +424,10 @@ describe('the anomalies by code and payer product', () => {
     expect(tableCopy(html)).toMatch(new RegExp(`data-group="97110:medicare_ffs"[\\s\\S]*?data-tone="neutral"[^>]*data-anomaly="false" data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
     expect(html.match(/data-anomaly="true"/g)).toHaveLength(2);
     expect(anomaliesDescription(onePage(GROUPS))).toBe(
-      `2 groups of 5 are anomalies. ${ANOMALY_RULE} 1 more group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
+      `2 of 5 groups are anomalies. 1 more group is within the range of the reduction across codes: between its two figures, which is not an anomaly. ${ANOMALY_RULE} Largest difference from the lowest figure first.`,
     );
     expect(anomaliesDescription(onePage(GROUPS.filter((group) => !group.anomaly)))).toBe(
-      `No group of 3 is an anomaly. ${ANOMALY_RULE} 1 group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
+      `None of the 3 groups is an anomaly. 1 group is within the range of the reduction across codes: between its two figures, which is not an anomaly. ${ANOMALY_RULE} Largest difference from the lowest figure first.`,
     );
     expect(anomaliesDescription(onePage([]))).toBe('No row was priced under Medicare, so there is nothing to compare.');
   });
@@ -513,9 +513,9 @@ describe('the anomalies by code and payer product', () => {
     expect([...later.matchAll(/data-group-no="(\d+)"/g)].map((match) => match[1])).toEqual(['51', '52', '53', '54', '55']);
     // The counts are the database's over all 20,507 groups, never the page's five.
     expect(anomaliesDescription(LATER_PAGE)).toBe(
-      `12,345 groups of 20,507 are anomalies. ${ANOMALY_RULE} 1,204 more groups are within the range of the reduction across codes: between their two figures, which is not an anomaly. Largest difference from the lowest figure first. This page lists groups 51 to 100; the table’s last row sums the other 20,457, and the pages below list them.`,
+      `12,345 of 20,507 groups are anomalies. 1,204 more groups are within the range of the reduction across codes: between their two figures, which is not an anomaly. ${ANOMALY_RULE} Largest difference from the lowest figure first. This page lists groups 51 to 100; the last entry sums the other 20,457, and the pages below list them.`,
     );
-    expect(text(later)).toContain('12,345 groups of 20,507 are anomalies.');
+    expect(text(later)).toContain('12,345 of 20,507 groups are anomalies.');
     // The other groups: the database's sums, in the table's columns, and how many of them are anomalies.
     const others = /<tr[^>]*data-group="others"[^>]*>([\s\S]*?)<\/tr>/.exec(later)?.[1] ?? '';
     expect(text(others)).toContain('The other 20,457 groups, summed');

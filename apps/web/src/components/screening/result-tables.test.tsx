@@ -661,21 +661,24 @@ describe('the screening result’s tables and their stacked rows (docs/adr/0078)
     }
   });
 
-  it('says of one other group that the last row is that group, summed, and that the next page lists it; more than one keeps #42’s words (TBL-08; P4-RC-01)', () => {
-    const counts = '21 groups of 51 are anomalies.';
+  it('says of one other group that the last entry is that group, summed, and that the next page lists it, and of more that the last entry sums them (TBL-08; P4-RC-01, UXR-08)', () => {
+    const counts = '21 of 51 groups are anomalies.';
     const within = '10 more groups are within the range of the reduction across codes: between their two figures, which is not an anomaly.';
     expect(anomaliesDescription(oneOther(1))).toBe(
-      `${counts} ${ANOMALY_RULE} ${within} Largest difference from the lowest figure first. This page lists groups 1 to 50; the table’s last row is the one other group, its rows summed, and the next page lists it.`,
+      `${counts} ${within} ${ANOMALY_RULE} Largest difference from the lowest figure first. This page lists groups 1 to 50; the last entry is the one other group, its rows summed, and the next page lists it.`,
     );
-    expect(anomaliesDescription(oneOther(0))).toMatch(/^20 groups of 51 are anomalies\. [\s\S]* This page lists groups 1 to 50; the table’s last row is the one other group, its rows summed, and the next page lists it\.$/);
-    // On the card, above the list whose last item is headed by the same name.
+    expect(anomaliesDescription(oneOther(0))).toMatch(/^20 of 51 groups are anomalies\. [\s\S]* This page lists groups 1 to 50; the last entry is the one other group, its rows summed, and the next page lists it\.$/);
+    // On the card, above the list whose last item is headed by the same name, and the table whose last row is.
     const card = anomalies(FIRST_PAGE, oneOther(1));
-    expect(text(/<p data-slot="card-description"[^>]*>([\s\S]*?)<\/p>/.exec(card)?.[1] ?? '')).toContain('the table’s last row is the one other group, its rows summed, and the next page lists it.');
+    expect(text(/<p data-slot="card-description"[^>]*>([\s\S]*?)<\/p>/.exec(card)?.[1] ?? '')).toContain('the last entry is the one other group, its rows summed, and the next page lists it.');
     expect(heading(items(copies(card).rows).at(-1)?.body ?? '')).toBe('The one other group, its rows summed');
+    expect(text(cellsOf(copies(card).table, 'data-group="others"')[0] ?? '')).toBe(`The one other group, its rows summed ${OTHERS_NOTE}`);
     expect(text(card)).not.toMatch(/the other 1\b/);
-    // Two or more other groups: the sentence #42's result.test.tsx pins.
-    expect(anomaliesDescription(LATER_PAGE)).toMatch(/This page lists groups 51 to 100; the table’s last row sums the other 20,457, and the pages below list them\.$/);
-    expect(anomaliesDescription({ ...oneOther(1), groups: 52, others: { ...oneOther(1).others, groups: 2 } })).toMatch(/; the table’s last row sums the other 2, and the pages below list them\.$/);
+    expect(text(card)).not.toContain('table’s last row');
+    // Two or more other groups: the last entry sums them, in the table and in the list.
+    expect(anomaliesDescription(LATER_PAGE)).toMatch(/This page lists groups 51 to 100; the last entry sums the other 20,457, and the pages below list them\.$/);
+    expect(anomaliesDescription({ ...oneOther(1), groups: 52, others: { ...oneOther(1).others, groups: 2 } })).toMatch(/; the last entry sums the other 2, and the pages below list them\.$/);
+    expect(text(LATER)).not.toContain('table’s last row');
   });
 
   it('lets a status wrap in its cell above a 10rem floor, and leaves the coverage’s outcome chips as they were (TBL-06; P4-DR-07)', () => {
@@ -833,6 +836,42 @@ describe('the screening result’s words (TBL-08)', () => {
     for (const file of sources) {
       expect(readFileSync(file, 'utf8'), file).not.toMatch(/(?<!figure:\s*)['"](?:short|whole)['"]/);
     }
+  });
+
+  it('puts the count on its noun, both counts before the rule, for every row of the closed set (TBL-08; UX-206)', () => {
+    const order = `${ANOMALY_RULE} Largest difference from the lowest figure first.`;
+    const its = 'within the range of the reduction across codes: between its two figures, which is not an anomaly.';
+    const their = 'within the range of the reduction across codes: between their two figures, which is not an anomaly.';
+    // [groups, anomalies, within the range, what the card says]: design 3.4's closed set, and its digits grouped.
+    const cases: readonly (readonly [number, number, number, string])[] = [
+      [1, 1, 0, `The only group is an anomaly. ${order}`],
+      [1, 0, 1, `The only group is ${its} ${order}`],
+      [1, 0, 0, `The only group is not an anomaly. ${order}`],
+      [2, 0, 0, `Neither group is an anomaly. ${order}`],
+      [2, 0, 2, `Neither group is an anomaly. 2 groups are ${their} ${order}`],
+      [2, 2, 0, `Both groups are anomalies. ${order}`],
+      [2, 1, 0, `1 of 2 groups is an anomaly. ${order}`],
+      [2, 1, 1, `1 of 2 groups is an anomaly. 1 more group is ${its} ${order}`],
+      [3, 0, 0, `None of the 3 groups is an anomaly. ${order}`],
+      [4, 0, 1, `None of the 4 groups is an anomaly. 1 group is ${its} ${order}`],
+      [4, 1, 1, `1 of 4 groups is an anomaly. 1 more group is ${its} ${order}`],
+      [5, 2, 1, `2 of 5 groups are anomalies. 1 more group is ${its} ${order}`],
+      [5, 2, 2, `2 of 5 groups are anomalies. 2 more groups are ${their} ${order}`],
+      [4, 4, 0, `All 4 groups are anomalies. ${order}`],
+      [1_234, 0, 0, `None of the 1,234 groups is an anomaly. ${order}`],
+      [1_234, 1_234, 0, `All 1,234 groups are anomalies. ${order}`],
+    ];
+    for (const [groups, anomalyGroups, withinReductionGroups, words] of cases) {
+      const page: ScreeningGroupPage = { ...onePage(GROUPS), groups, anomalyGroups, withinReductionGroups, lastGroup: Math.min(groups, 50) };
+      expect(anomaliesDescription(page), `${String(groups)} groups, ${String(anomalyGroups)} anomalies, ${String(withinReductionGroups)} within`).toBe(words);
+    }
+    // The worst shape's page 2, and on the card as the function says it.
+    const later = `12,345 of 20,507 groups are anomalies. 1,204 more groups are ${their} ${order} This page lists groups 51 to 100; the last entry sums the other 20,457, and the pages below list them.`;
+    expect(anomaliesDescription(LATER_PAGE)).toBe(later);
+    expect(text(/<p data-slot="card-description"[^>]*>([\s\S]*?)<\/p>/.exec(LATER)?.[1] ?? '')).toBe(later);
+    // Nothing priced: one sentence, nothing after it.
+    expect(anomaliesDescription(onePage([]))).toBe('No row was priced under Medicare, so there is nothing to compare.');
+    expect(text(LATER)).not.toMatch(/\bgroups? of [\d,]+ (?:is|are)\b/);
   });
 
   it('names the one figure a status is below, and says its for one anomalous row of a group and their for more, in both copies (TBL-08)', () => {

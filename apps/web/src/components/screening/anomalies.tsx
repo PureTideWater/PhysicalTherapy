@@ -209,12 +209,30 @@ function GroupStatus({ group, copy }: { readonly group: ScreeningGroup; readonly
   );
 }
 
+/** How many groups are anomalies, the count on its noun and its digits grouped (UX-206; design 3.4's closed set). */
+function anomalyCount(groups: number, anomalies: number, within: number): string {
+  const all = groups.toLocaleString('en-US');
+  if (groups === 1) {
+    if (anomalies === 1) {
+      return 'The only group is an anomaly.';
+    }
+    return within === 1 ? 'The only group is within the range of the reduction across codes: between its two figures, which is not an anomaly.' : 'The only group is not an anomaly.';
+  }
+  if (anomalies === 0) {
+    return groups === 2 ? 'Neither group is an anomaly.' : `None of the ${all} groups is an anomaly.`;
+  }
+  if (anomalies === groups) {
+    return groups === 2 ? 'Both groups are anomalies.' : `All ${all} groups are anomalies.`;
+  }
+  return `${anomalies.toLocaleString('en-US')} of ${all} groups ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
+}
+
 /**
  * What the anomalies card says above its table, from the database's counts over every group (never the page's): how
- * many groups are anomalies, and how many are within the range of the reduction across codes; with more than one
- * page, which groups this page shows and what its last row sums, one other group named as one (with 50 groups a page,
- * that is page 1 of a result of 51, and the next page lists it). The words for more other groups are the ones #42's
- * result.test.tsx pins, until UX PR 4b.
+ * many groups are anomalies, the count on its noun (UX-206), and how many are within the range of the reduction across
+ * codes, both before the rule; with more than one page, which groups this page shows and what its last entry sums (the
+ * table's last row and the list's last item, UXR-08), one other group named as one (with 50 groups a page, that is
+ * page 1 of a result of 51, and the next page lists it).
  */
 export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | 'anomalyGroups' | 'withinReductionGroups' | 'pages' | 'firstGroup' | 'lastGroup' | 'others'>): string {
   if (page.groups === 0) {
@@ -222,19 +240,19 @@ export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | '
   }
   const anomalies = page.anomalyGroups;
   const within = page.withinReductionGroups;
-  const all = page.groups.toLocaleString('en-US');
-  const first = anomalies === 0 ? `No group of ${all} is an anomaly.` : `${counted(anomalies, 'group')} of ${all} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
+  const first = anomalyCount(page.groups, anomalies, within);
+  // With one group, the first sentence says what it is: within the range is said there, for both counts.
   const second =
-    within === 0
+    within === 0 || page.groups === 1
       ? ''
       : ` ${counted(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
   const range = `${page.firstGroup.toLocaleString('en-US')} to ${page.lastGroup.toLocaleString('en-US')}`;
   const rest =
     page.others.groups === 1
-      ? 'the table’s last row is the one other group, its rows summed, and the next page lists it'
-      : `the table’s last row sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them`;
+      ? 'the last entry is the one other group, its rows summed, and the next page lists it'
+      : `the last entry sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them`;
   const shown = page.pages <= 1 ? '' : ` This page lists groups ${range}; ${rest}.`;
-  return `${first} ${ANOMALY_RULE}${second} Largest difference from the lowest figure first.${shown}`;
+  return `${first}${second} ${ANOMALY_RULE} Largest difference from the lowest figure first.${shown}`;
 }
 
 /** The page's own address with another page of groups, back at the anomalies card. */
