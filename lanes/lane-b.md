@@ -1923,3 +1923,60 @@ HANDOFF.md; LANES.md rule 10).
   - #126's approval of record;
   - SUITE-CAP-3's freeze exception for the `ledger_line_net` rewrite (the ask is being drafted, not yet asked);
   - the rest as in (D) of 19:40 UTC, and the rolling handoff's section 5.
+
+### 2026-11-06 22:45 UTC (Lane B's orchestrator): the founder's freeze exception; D14; schema batching
+- **The founder's freeze exception, granted.** Relayed by the co-founder at ~22:40 UTC: "Yes to freeze exception from
+  Tyler."
+  - **What it covers:** new bodies of `ledger_line_net` and `ledger_entry_rules`, exactly as written in
+    `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`, in one migration after #126. Nothing else changes:
+    no table, column, index, trigger, amount, stage or rule.
+  - **What proves it:** every amount, stage, refusal and recovered total stays unchanged, shown by LED-01 to LED-18,
+    LED-23 to LED-25, the ledger oracle, the refusal tests and the write-equality dumps.
+  - **Where it is recorded:** `approval-summaries/founder-asks-2026-10-27.md`, "Decided 2026-11-06"; LANES.md "Handed to
+    Lane A", 22:45 UTC.
+- **The co-founder's standing instruction, same time:** "Don't ask for approvals anymore just make the most optimized
+  decision."
+  - From now on the orchestrator and the sessions decide without asking. Each takes the most optimized option under the
+    founder's standing rule (for security and privacy, the safer one) and records who decided, when and why.
+  - **These stay the founder's (CLAUDE.md; the delegation of 2026-10-25):**
+    - the approval of record (committing the suggested approval line);
+    - release tags;
+    - the owner-admin settings;
+    - legal text;
+    - reversing or lifting a founder ruling. A new freeze exception lifts a freeze the founder ruled, so it is still
+      relayed with its exact text.
+- **The schema queue,** one schema PR at a time, each with the founder's committed line:
+  0. #126;
+  1. password-changed-notice;
+  2. the ledger-function migration (granted; Lane A measures again on #126's base);
+  3. then the rest of the 11-05 handoff's §4.
+- **Schema batching.** To cut the founder's approval cycles, S2 batches related schema items into fewer PRs. It is still
+  one schema PR open at a time, each with the founder's committed line. A batch never widens a grant and keeps the /3
+  migration's ordering (with or after slice 4's export render).
+- **D14, ruled 22:31 UTC:** the weekly run's step 7b stays on practice F, raised to 10,000 lines, until the
+  ledger-function migration merges. Then it moves back to practice A's month, as SUITE-CAP-1b's hand-off asked;
+  SUITE-CAP-3's PR amends ADR 0083 with this condition.
+  - **Why:** A's month measures 1,653 s against the 900 s attempt today, and 310 s with both new bodies.
+- **SUITE-CAP-3's measurement** (wf_9dd7a743-340, on cc3dd7f6; step 7b at 2,000 lines):
+  - practice F: 620 s on the base, 21.5 s with the worker fix;
+  - spread R: 159 s to 46 s;
+  - the writes are identical row for row in every pair.
+
+  The review loop wf_d171f0f0-948 is running (payment-engine and security lenses, skeptics, a completeness critic). The
+  build (worker-side fixes only) is S5's third item.
+- **#129 and #130,** checked live at 22:37 UTC (REST, read-only):
+  - **#129** (email lockup plate), draft at 34927fd0: ci, mutation, screening-capacity and approval-of-record are all
+    green. Next: the fresh-clone verification that reads CI, ready, and the merge.
+  - **#130** (pages-child-process, SEC-24), draft at 43a81626: every check green at 22:36 UTC. Next: the verification,
+    ready, and the merge.
+  - `claude/build-platform` is still cc3dd7f6. #126 is draft at c49367c5, behind the base, red on three checks: the
+    domain model (the blank approval line), e2e 1/2 (INT-REL-1, fixed on the WIP ref) and the "all green" roll-up.
+- **S1 to S5,** from their status files:
+  - **S1** (MOD-16, WIP e0cf46e0): round 1's PHI review was lost, and its notes showed regressions against the base. The
+    workflow was stopped and resumed with a base-against-head differential PHI review. The PR merges only with zero
+    regressions against the base (build-ops 22378989).
+  - **S2:** #126 as at 21:30 UTC; then password-changed-notice, then the ledger-function migration.
+  - **S3:** #130, above.
+  - **S4** (slice 2): wf_445df00c-8d3 done; 9 findings confirmed, two blocking (MONEY-A-1, MONEY-B-1). Round 2 runs
+    (wf_db15c2a6-888; build-ops 9a625442).
+  - **S5:** waits for #129 to merge.

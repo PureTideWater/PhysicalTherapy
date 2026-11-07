@@ -10,6 +10,15 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **FOUNDER DECISION (Tyler Williams), relayed by the co-founder through the orchestrator, 2026-11-06 ~22:45 UTC:** GRANTED, the
+  ledger freeze exception for new bodies of `ledger_line_net` and `ledger_entry_rules` exactly as written in
+  `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` (one migration, CREATE OR REPLACE; no table, column,
+  index, amount, stage or rule change; proof: LED-01..18, LED-23..25, the ledger oracle, the refusal tests, the
+  write-equality dumps; re-measured on #126's base). It joins this session's schema queue after #126 and
+  password-changed-notice, ahead of the rest of handoff section 4.
+- **Standing optimization (orchestrator, same message):** each schema PR costs a founder approval cycle, so batch queue
+  items that touch related tables or functions into one schema PR where review risk allows; record the grouping and why;
+  never more than one schema PR open.
 - **Running: wf_342b2332-e78** (`workflow-scripts/lane-a-interest-126-finish-wf_342b2332-e78.js`): the second adversarial
   review round on the fix-round delta c49367c5..23369ae6 (payment-engine; database, concurrency and security), each finding
   checked by a skeptic; the fixes; the base (cc3dd7f6 or later) merged once; the full local suite once (suite.sh); a
