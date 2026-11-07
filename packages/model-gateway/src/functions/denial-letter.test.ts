@@ -1059,6 +1059,10 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['an SSN read as an amount and a date', 'Paid 0,900-12-19.85', 'Paid 0,900-12-19.85'],
     ['an SSN read as an amount and a date that starts a range', 'SSN 2,900-12-19.85-1/3/20', 'SSN 2,900-12-19.85-1/3/20'],
     ['an amount-shaped phone whose last group and the next number read as a date starting a range', 'Call 202 555 01.23-12-150.00', 'Call 202 555 01.23-12-150.00'],
+    // An SSN after its label with the call's own identifier between, set apart by a space or punctuation: the label window
+    // ends at the placeholder (sent at cc3dd7f6 too; glued to the number, the label is read past it: review PHI2-1).
+    ['an amount-shaped SSN after its label and the patient’s name', 'SSN Vantree 900.12 3456', 'SSN [PATIENT_NAME] 900.12 3456'],
+    ['an SSN of a five-digit group after its label and the patient’s name', 'SSN for Zephyra Vantree: 90012-3456', 'SSN for [PATIENT_NAME] [PATIENT_NAME]: 90012-3456'],
     // A masked SSN glued after a range's end: the follow-on leak PR's masked-glued class, which the range barrier extends.
     ['a masked SSN glued after a range’s end', '01/01/2020-150.00XXX-XX-3456Paid', '01/01/2020-150.00XXX-XX-3456Paid'],
     // An SSN or phone glued digit to digit to an amount or a year, which the scan reads as one long group (review

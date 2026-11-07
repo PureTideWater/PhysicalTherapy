@@ -622,7 +622,8 @@ above stays as it was decided; where it differs, this amendment holds.
   digit, an ordinal-like suffix too, so a range glued to "St.", "Rd.", "TH" or "nd" after its four-digit year is a
   barrier ("10/01/2026-10/15/2026St. Joseph"; since review GATEWAY2-2 the second reading keeps an ordinal suffix only
   after a day's one or two digits, so a day-first ordinal second end is read so too, "01/01/2020-4th of March, 2020St.
-  Mary", which cc3dd7f6 and 6fc88092 refused: 1,012 of 327,652 must-stay range letters in the review's sweep, none
+  Mary", which cc3dd7f6 and 6fc88092 refused: 1,012 of 327,652 must-stay range letters in the review's sweep, and
+  3,432 of 993,564 in the fix's, every `datesIn` form at either end with every dash and glued before and after; none
   since), and reads SEC-5's label over the numbers before an unsigned amount and before its
   range's first end, each digit as a space, so a date, an amount, a currency amount or a range between an SSN or phone
   label and an amount-shaped number no longer shields it ("SSN: 01/01/2020-900.12 3456", "SSN 01/01/2020 900.12 3456"
@@ -736,7 +737,13 @@ only because the range then joined the next group, A3 (`SSN 900 12 345615.00-01/
 PHI1-2; a proposal: refuse it under a label); an amount-shaped SSN whose first group a date reading joins to the number
 before it (`SSN $10-9.00 12 3456`, where `10-9.00` reads as a date); an amount-shaped SSN or phone after a range and
 white space with its label more than 24 characters before it (`Phone March 11, 2029−2,866.66  960.58 4433`: GATEWAY1-2);
-a range whose day-first ordinal second end has a two-digit year glued to a word that starts like an ordinal suffix
+an SSN or phone after its label with the call's own identifier between them, set apart by white space or punctuation
+(`SSN Vantree 900.12 3456`, `SSN for Zephyra Vantree: 90012-3456`), where the scan's label window ends at the
+identifier's placeholder, so a shape only a label makes a number is read as unlabeled and sent (found by review round
+2's fix, sent at cc3dd7f6 as well; glued to the number, the label is read past the placeholder: review PHI2-1; owned by
+the follow-on leak PR, co-001/redact-ssn-phone-leaks, with the proposal to read past a placeholder that only white space
+or punctuation sets apart from the number, minding a phone word's own number on the line before a row); a range whose
+day-first ordinal second end has a two-digit year glued to a word that starts like an ordinal suffix
 (`01/01/2020-4th March, 20St. Mary`), refused, its `St` read as a day's suffix (review GATEWAY2-2); a labeled SSN or
 phone split into a group of five digits or more, a group under five and a money amount (`Soc Sec 93798
 4 1.46`, `Fax: 99299 3 8.10`), which that units column ends as it ends a service line's (review GATEWAY2-1; cc3dd7f6
