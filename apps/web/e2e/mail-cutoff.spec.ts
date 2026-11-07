@@ -140,6 +140,8 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
       await expect(screening.locator('[data-copy="resume-review"]')).toHaveText(
         'If SES still has the account under review, the platform pauses it again within a minute. Resume only once the account’s bounce and complaint rates are under their warnings: a warning still raised does not pause it again.',
       );
+      // The note is read with the reason select it is about.
+      await expect(screening.getByLabel('Why it can resume')).toHaveAttribute('aria-describedby', /(^|\s)resume-review(\s|$)/);
       // The customer streams never pause.
       await expect(admin.locator('[data-stream="transactional"]')).toHaveAttribute('data-state', 'sending');
       await expect(admin.locator('[data-stream="notices"]')).toHaveAttribute('data-state', 'sending');

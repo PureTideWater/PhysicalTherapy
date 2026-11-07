@@ -242,6 +242,8 @@ test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays 
         await expect(admin.getByRole('table', { name: 'Invitations' })).toContainText(email);
         expect(temporaryPassword(email)).not.toBe('');
       }
+      // The members table scrolls inside its own frame at a phone's width, never the page (UX-011).
+      await atPhoneWidth(admin, 'Users and roles', { tables: ['Members'] });
     });
 
     await test.step('pays by test ACH on the billing simulator', async () => {
@@ -571,7 +573,7 @@ test('a practice created with no seeded settings reaches a priced month from its
       const zipField = admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)');
       await zipField.fill('0001');
       await admin.getByRole('button', { name: 'Save the billing ZIP' }).click();
-      await expect(admin.getByRole('alert').filter({ hasText: 'Billing ZIP: five digits, or ZIP+4 such as 27601-1234' })).toBeVisible();
+      await expect(admin.getByRole('alert').filter({ hasText: 'Billing ZIP: enter five digits, or a ZIP+4 such as 27601-1234' })).toBeVisible();
       await expect(zipField).toHaveAttribute('aria-invalid', 'true');
       await expect(zipField).toBeFocused();
       await expectAccessible(admin, 'Pricing settings with a refused ZIP');
