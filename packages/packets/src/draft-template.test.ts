@@ -189,7 +189,7 @@ describe('the code draft', () => {
     const drafts = records.filter((record) => record.file === 'packages/packets/src/draft.ts');
     expect(drafts.filter((record) => record.reviewedBy === '' || record.reviewedOn === '')).toEqual([]);
     expect(drafts.filter((record) => record.mutator === 'OptionalChaining')).toEqual([]);
-    const guard =records.filter((record) => record.file === 'packages/packets/src/draft.ts' && record.original.includes('interest'));
+    const guard = records.filter((record) => record.file === 'packages/packets/src/draft.ts' && record.original.includes('interest'));
     expect(guard.map((record) => [record.mutator, record.original])).toEqual([
       ['ConditionalExpression', 'interest !== null && interest.total_cents !== null'],
       ['ConditionalExpression', 'interest.total_cents !== null'],
