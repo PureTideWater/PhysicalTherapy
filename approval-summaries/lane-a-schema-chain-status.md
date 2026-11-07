@@ -10,7 +10,7 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
-- **2026-11-07 ~09:40 UTC (acting Lane A): PR 5's freeze ask READY, sent to the orchestrator for the founder:**
+- **2026-11-07 08:45 UTC (acting Lane A): PR 5's freeze ask READY, sent to the orchestrator for the founder:**
   `approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md` (rewrite wf_c7d47053-463: four check rounds, issues
   16, 12, 9, 7; final confirmation wf_6870adec-1eb: scope and founder-reader clean twice, accuracy's two measurement-wording
   points fixed). Three independent yes/no questions, each a ledger-frozen function body in an appendix: Q1 roi_links_valid
