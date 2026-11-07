@@ -263,12 +263,12 @@ screeningTest('a specialist approves the split; a file with patient information 
     await expect(page.getByLabel('File to screen')).not.toHaveAttribute('name', /.*/);
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: memberIdCsv() });
     const refused = page.locator('[data-state="file-refused"]');
-    await expect(refused).toContainText('Column 4 (“Member ID”) holds member IDs; remove it and upload again.');
+    await expect(refused).toContainText('Column 4 (“Member ID”) holds member IDs; remove the column, then choose the file again.');
     await expect(refused).not.toContainText('SYNTHMBR');
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(refused).toContainText('Nothing was sent.');
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: dateOfServiceCsv() });
-    await expect(refused).toContainText('Column 6 (“DOS”) holds dates of service; remove it and upload again.');
+    await expect(refused).toContainText('Column 6 (“DOS”) holds dates of service; remove the column, then choose the file again.');
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(refused).toBeVisible();
     expect(posted, 'a refused file sends nothing').toEqual([]);

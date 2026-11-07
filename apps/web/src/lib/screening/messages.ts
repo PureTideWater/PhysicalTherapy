@@ -80,7 +80,7 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
   const header = reason.column === undefined ? undefined : headers?.[reason.column - 1];
   switch (reason.code) {
     case 'phi_column':
-      return `${columnName(reason.column, header)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again. A screening takes totals only, never patient information.`;
+      return `${columnName(reason.column, header)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove the column, then choose the file again. A screening takes totals only, never patient information.`;
     case 'unknown_column':
       return `${columnName(reason.column, header)} is not one of the eight screening columns; remove it.`;
     case 'duplicate_column':
@@ -92,7 +92,7 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
     case 'invalid_value':
       return `${rowName(reason.row)}, ${fieldName(reason.field)}: it must be ${reason.field === undefined ? 'in the column’s format' : FIELD_RULES[reason.field]}.`;
     case 'band_holds_date':
-      return `${rowName(reason.row)}: ${reason.column === undefined ? 'the service band column' : columnName(reason.column, header).replace(/^Column/, 'column')} holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.`;
+      return `${rowName(reason.row)}: ${reason.column === undefined ? 'the service band column' : columnName(reason.column, header).replace(/^Column/, 'column')} holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates, then choose the file again.`;
     case 'band_in_future':
       return `${rowName(reason.row)}, service band: that quarter has not started yet.`;
     case 'band_outside_content':
