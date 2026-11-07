@@ -70,18 +70,19 @@ describe('readMigrations', () => {
 });
 
 /**
- * The messages a migration's lock loops give up with: each RAISE EXCEPTION with ERRCODE lock_not_available, however it is
- * laid out (on one line or two, in any case, with format arguments or none; PR 126 review RV-DB1-1).
+ * The messages a migration's lock loops give up with: each RAISE EXCEPTION with ERRCODE lock_not_available or its
+ * SQLSTATE, 55P03, however it is laid out (on one line or two, in any case, with format arguments or none; PR 126 review
+ * RV-DB1-1, RV-DB2-7).
  */
 function lockLoopFailures(sql: string): string[] {
-  return [...sql.matchAll(/RAISE\s+EXCEPTION\s+'((?:[^']|'')*)'\s*(?:,[^;]*?)?\s*USING\s+ERRCODE\s*=\s*'lock_not_available'/gi)].map((match) => (match[1] as string).replaceAll("''", "'"));
+  return [...sql.matchAll(/RAISE\s+EXCEPTION\s+'((?:[^']|'')*)'\s*(?:,[^;]*?)?\s*USING\s+ERRCODE\s*=\s*'(?:lock_not_available|55P03)'/gi)].map((match) => (match[1] as string).replaceAll("''", "'"));
 }
 
 /** A migration's SQL without its comments, so a lock named in prose is not read as one taken. */
 const withoutComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '');
 
-/** Whether the migration takes a table lock with NOWAIT: the lock loop's try. */
-const locksWithNowait = (sql: string) => /\bLOCK\s+TABLE\b[^;]*\bNOWAIT\b/i.test(withoutComments(sql));
+/** Whether the migration takes a table lock with NOWAIT, TABLE written or not: the lock loop's try (PR 126 review RV-DB2-7). */
+const locksWithNowait = (sql: string) => /\bLOCK\s+(?:TABLE\s+)?[^;]*\bNOWAIT\b/i.test(withoutComments(sql));
 
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -112,6 +113,10 @@ describe('the deploy runbook (docs/runbooks/deploy-and-rollback.md)', () => {
     expect(lockLoopFailures(`  RAISE EXCEPTION 'the reconcile''s locks stayed held' USING ERRCODE = 'lock_not_available';`)).toEqual(["the reconcile's locks stayed held"]);
     // Another error code is no lock loop's failure.
     expect(lockLoopFailures(`  RAISE EXCEPTION '${message}'\n      USING ERRCODE = 'check_violation';`)).toEqual([]);
+    // The condition's SQLSTATE, 55P03, which EXCEPTION WHEN lock_not_available catches as its name (PR 126 review RV-DB2-7).
+    expect(lockLoopFailures(`  RAISE EXCEPTION '${message}' USING ERRCODE = '55P03';`)).toEqual([message]);
+    expect(lockLoopFailures(`  RAISE EXCEPTION '${message}'\n      USING ERRCODE='55P03';`)).toEqual([message]);
+    expect(lockLoopFailures(`  RAISE EXCEPTION '${message}' USING ERRCODE = '55P04';`)).toEqual([]);
   });
 
   it('finds a lock loop’s failure in every migration that takes a lock with NOWAIT, so no lock loop escapes the runbook (PR 126 review RV-DB1-1)', () => {
@@ -124,6 +129,13 @@ describe('the deploy runbook (docs/runbooks/deploy-and-rollback.md)', () => {
     expect(locksWithNowait('/* LOCK TABLE claim NOWAIT */ SELECT 1;')).toBe(false);
     expect(locksWithNowait('      lock table claim in share mode\n        nowait;')).toBe(true);
     expect(locksWithNowait('LOCK TABLE claim IN SHARE MODE; SELECT 1 NOWAIT;')).toBe(false);
+    // TABLE is optional in LOCK, and a loop may take the lock with neither spelling it gives up with by name: together
+    // they once escaped both detectors (PR 126 review RV-DB2-7).
+    expect(locksWithNowait('LOCK claim IN SHARE MODE NOWAIT;')).toBe(true);
+    expect(locksWithNowait('      lock ledger_entry, ledger_match in access exclusive mode\n        nowait;')).toBe(true);
+    expect(locksWithNowait("SELECT pg_advisory_lock(1); SELECT 1 FROM claim FOR UPDATE NOWAIT;")).toBe(false);
+    const loop = `DO $$\nBEGIN\n  FOR i IN 1..300 LOOP\n    BEGIN\n      LOCK claim IN SHARE MODE NOWAIT;\n      RETURN;\n    EXCEPTION WHEN lock_not_available THEN\n      PERFORM pg_sleep(1);\n    END;\n  END LOOP;\n  RAISE EXCEPTION 'claim stayed in use for five minutes; run the deploy again'\n    USING ERRCODE = '55P03';\nEND\n$$;`;
+    expect([locksWithNowait(loop), lockLoopFailures(loop)]).toEqual([true, ['claim stayed in use for five minutes; run the deploy again']]);
   });
 
   it('reads the deploy log’s line for a failure with format arguments as RAISE fills them in', () => {
