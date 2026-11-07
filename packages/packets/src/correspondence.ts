@@ -74,7 +74,8 @@ export const CORRESPONDENCE_FIELD_RULES: Readonly<Record<CorrespondenceField, st
   address_line2: 'a second address line of 1 to 100 characters with no @ (an email goes in its own field)',
   address_city: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters with no @ (an email goes in its own field)',
   address_state: 'a USPS state or territory code, such as NC',
-  address_zip: 'a ZIP code of five digits, or ZIP+4 (nine digits, with or without its hyphen)',
+  // The web app's ZIP_CODE_FORMAT, written out (this package cannot import apps/web).
+  address_zip: 'enter five digits, or a ZIP+4 such as 27601-1234',
 };
 
 /** A contact refused, naming the field (the rule's words, never the value). */

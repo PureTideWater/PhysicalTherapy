@@ -345,7 +345,7 @@ function prospectFields(input: {
   }
   const zipCode = parseZipCode(input.zip);
   if (zipCode === null) {
-    issues.push({ field: 'zip', message: `the practice’s ZIP code: ${ZIP_CODE_FORMAT}` });
+    issues.push({ field: 'zip', message: ZIP_CODE_FORMAT });
   }
   const contactEmail = input.contactEmail.trim().toLowerCase();
   if (!SCREENING_EMAIL.test(contactEmail) || contactEmail.length > 254 || contactEmail.indexOf('@') > 64) {

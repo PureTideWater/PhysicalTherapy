@@ -84,6 +84,8 @@ describe('correspondenceContactSetting', () => {
     expect(refusedFor({ ...base, address: { ...mailing, line2: 'ATTN billing@practice.test' } })).toBe('address_line2');
     expect(refusedFor({ ...base, address: { ...mailing, city: 'RALEIGH@X' } })).toBe('address_city');
     expect(CORRESPONDENCE_FIELD_RULES.name).toContain('no @');
+    // The ZIP's words are the web app's ZIP_CODE_FORMAT, written out here (this package cannot import apps/web).
+    expect(CORRESPONDENCE_FIELD_RULES.address_zip).toBe('enter five digits, or a ZIP+4 such as 27601-1234');
     for (const field of CORRESPONDENCE_FIELDS) {
       expect(new CorrespondenceContactError(field).message).toBe(CORRESPONDENCE_FIELD_RULES[field]);
     }

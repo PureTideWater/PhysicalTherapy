@@ -162,7 +162,7 @@ describe('organizations and practices', () => {
     expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'zip' }] });
     expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '0001' })).toMatchObject({
       status: 'invalid',
-      issues: [{ field: 'zip', message: 'five digits, or ZIP+4 such as 27601-1234' }],
+      issues: [{ field: 'zip', message: 'enter five digits, or a ZIP+4 such as 27601-1234' }],
     });
     const practice = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '00011' });
     if (practice.status !== 'ok' || practice.data.objectId === undefined) {

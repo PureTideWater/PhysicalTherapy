@@ -272,7 +272,7 @@ describe('the location and its status, for everyone who opens the practice', () 
 
   it('refuses a ZIP that is not five digits or ZIP+4, by its field, and the database refuses one sent around the handler', async () => {
     for (const zip of ['', '2760', '27601-12', '27601 1234', 'ZIP 00011']) {
-      expect(await call(setPricingLocationAction, manager, P(), { zip }), zip).toEqual({ status: 'invalid', issues: [{ field: 'zip', message: 'five digits, or ZIP+4 such as 27601-1234' }] });
+      expect(await call(setPricingLocationAction, manager, P(), { zip }), zip).toEqual({ status: 'invalid', issues: [{ field: 'zip', message: 'enter five digits, or a ZIP+4 such as 27601-1234' }] });
     }
     expect(await call(confirmPricingLocationAction, manager, P(), { shownZip: '00011', shownZipPlusFour: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
     // The location the page showed travels with the confirmation, in its shapes (a tampered form names its field).

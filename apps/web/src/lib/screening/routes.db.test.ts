@@ -430,7 +430,7 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
     expect(issuesOf(await submitted(submitInput({ zip: '00099' })))).toEqual([{ field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' }]);
     // Not a ZIP code at all: the form's own field.
     for (const zip of ['0001', '00011-12', '00011 1234']) {
-      expect(issuesOf(await submitted(submitInput({ zip }))), zip).toEqual([{ field: 'zip', message: 'the practice’s ZIP code: five digits, or ZIP+4 such as 27601-1234' }]);
+      expect(issuesOf(await submitted(submitInput({ zip }))), zip).toEqual([{ field: 'zip', message: 'enter five digits, or a ZIP+4 such as 27601-1234' }]);
     }
   });
 
