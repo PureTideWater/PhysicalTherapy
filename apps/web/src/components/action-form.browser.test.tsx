@@ -126,7 +126,7 @@ const FIRST_KEY = 'synthetic-request-key';
 const PERSON_B = 'synthetic-person-b';
 /** A synthetic password the tests type, joined from words so no scanner reads it as a stored secret. */
 const TYPED_PASSWORD = ['Synthetic', 'typed', 'words', '2026'].join('-');
-const ZIP = ['zip', 'five digits, or ZIP+4 such as 27601-1234'] as const;
+const ZIP = ['zip', 'enter five digits, or a ZIP+4 such as 27601-1234'] as const;
 
 /** The screening's SYNTHETIC rows of totals: a header, then one row or two, of 2026's quarters (the harness's content). */
 const SCREENING_HEADER = 'procedure_code,modifiers,units,place_of_service,payer_product,service_band,allowed_total,claim_count';
@@ -672,11 +672,11 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
 
     await refusedWith(page, invalid(ZIP));
     expect(await lead()).toBe('Fix the field listed here, then try again.');
-    expect(await items()).toEqual(['Billing ZIP: five digits, or ZIP+4 such as 27601-1234']);
+    expect(await items()).toEqual(['Billing ZIP: enter five digits, or a ZIP+4 such as 27601-1234']);
 
     await refusedWith(page, invalid(ZIP, ['confirm', 'tick the box first'], ['components', 'choose at least one component']));
     expect(await lead()).toBe('Fix the fields listed here, then try again.');
-    expect(await items()).toEqual(['Billing ZIP: five digits, or ZIP+4 such as 27601-1234', 'Confirmation: tick the box first', 'Components affected: choose at least one component']);
+    expect(await items()).toEqual(['Billing ZIP: enter five digits, or a ZIP+4 such as 27601-1234', 'Confirmation: tick the box first', 'Components affected: choose at least one component']);
     const text = (await page.textContent(SUMMARY)) ?? '';
     for (const key of ['zip', 'confirm', 'components']) {
       expect(text).not.toContain(key);
