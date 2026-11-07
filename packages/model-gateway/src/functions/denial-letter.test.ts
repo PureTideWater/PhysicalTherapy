@@ -1378,6 +1378,37 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     }
   });
 
+  // The judge's review round 3 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // GATEWAYJ3-1's sent rows cc3dd7f6 sends as here (3cf4d8cf refused them), and "Paid 150.00ST AN Zephyra" is a fail-safe
+  // refusal of a letter it sent with "ST" of STAN in clear.
+  it.each([
+    // GATEWAYJ3-1: a unit's letters before a name part whose rest is an initial, and an ordinal's suffix that fits the whole
+    // number before it or "am"/"pm" after an hour, before a part whose rest is another part, are no head of a part.
+    ['GATEWAYJ3-1', ['MINA ALI'], 'Total treatment time 45min Mina was seen on 02/14/2026.', 'Total treatment time 45min [PATIENT_NAME] was seen on 02/14/2026.', {}],
+    ['GATEWAYJ3-1', ['MINA ALI'], 'Session 30min Mina Ali attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ3-1', ['MINH HOANG'], 'Patient seen for 45min. Minh Hoang tolerated treatment well.', 'Patient seen for 45min. [PATIENT_NAME] tolerated treatment well.', {}],
+    ['GATEWAYJ3-1', ['MINH HOANG'], 'PT 45min Minh Hoang, 97110 x3 units.', 'PT 45min [PATIENT_NAME], 97110 x3 units.', {}],
+    ['GATEWAYJ3-1', ['MING GAO'], 'Session 30min Ming Gao attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ3-1', ['MINH H NGUYEN'], 'Treatment 45min Minh Nguyen tolerated treatment.', 'Treatment 45min [PATIENT_NAME] [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ3-1', ['NGUYEN THANH ANH'], 'Seen on the 4th Nguyen Thanh Anh.', 'Seen on the 4th [PATIENT_NAME].', {}],
+    ['GATEWAYJ3-1', ['NGUYEN THANH ANH'], 'On March 4th Thanh Anh was seen for therapy.', 'On March 4th [PATIENT_NAME] [PATIENT_NAME] was seen for therapy.', {}],
+    ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'On March 1st Stan An Zephyra called.', 'On March 1st [PATIENT_NAME] called.', {}],
+    ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'On March 1st Stan was seen.', 'On March 1st [PATIENT_NAME] was seen.', {}],
+    ['GATEWAYJ3-1', ['TRAN STAN AN'], 'Since the 1st Stan An has attended 8 visits.', 'Since the 1st [PATIENT_NAME] [PATIENT_NAME] has attended 8 visits.', {}],
+    ['GATEWAYJ3-1', ['THAI AI VANTREE'], 'On the 4th Thai called our office.', 'On the 4th [PATIENT_NAME] called our office.', {}],
+    ['GATEWAYJ3-1', ['AMAL AL ZEPHYRA'], 'Seen at 9am Amal Al Zephyra.', 'Seen at 9am [PATIENT_NAME].', {}],
+    ['GATEWAYJ3-1', ['AMAL AL ZEPHYRA'], 'Appointment at 9am Amal arrived on time.', 'Appointment at 9am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ3-1', ['MINA ALI'], 'Seen 150.00MIN A ALI paid', 'Seen 150.00MIN [PATIENT_NAME] [PATIENT_NAME] paid', {}],
+    ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'Paid 150.00ST AN Zephyra', null, {}],
+  ] as const)('handles the judge’s round 3 input (%s): %s %s', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
   it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
     for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456', 'RE: Vantree[SSN]']) {
       expect(holdsIdentifier(text, A, AC), text).toBe(true);
