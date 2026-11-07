@@ -4,7 +4,7 @@ Slice 2 of narrative figures as placeholders bound to the facts (`designs/lane-b
 
 **Decision record:** ADR 0089, `docs/adr/0089-write-a-narratives-figures-as-fact-tokens-rendered-by-code-refuse-every-free-figure-and-read-english-only-for-contradiction.md` (proposed; accepted when this pull request is approved). It amends ADR 0086 and marks 0086's "Revisit when" item on placeholders done. **Test matrix:** CAS-52, CAS-53 and CAS-54, in `docs/product/test-matrix.md` and `packages/synth/src/cases/matrix.ts`, with registry entries and generated `fixtures/synthetic/CAS-52..54/expected.json`.
 
-39 files against `claude/build-platform` (8a722f80), +3,203 / −53.
+42 files against `claude/build-platform` (ce95546d), +3,225 / −78. The head is **79d7e1bb27aa1b8efa193b6fc64e6b4cafcf3a1b**.
 
 - **Format /3 behind an explicit format** (`packages/packets/src/format.ts`, `verifier/index.ts`):
   - `VERIFIER_FORMAT_V3`, `VERIFIER_FORMATS` and `VerifierFormat` are new.
@@ -45,7 +45,9 @@ Slice 2 of narrative figures as placeholders bound to the facts (`designs/lane-b
   - `docs/runbooks/ci.md` gets the shard's row and the counts.
   - `tools/stryker/affected.ts` gets a data-file entry that makes `equivalent/packets.json` an input of `draft-template.test.ts`.
   - `tools/stryker/unicode.json` gets the new Unicode-based equivalent, and `tools/screening-capacity/watched-paths.txt` gets the three new source files.
-- **Tests (new):** `scan-strict.test.ts`, `verifier-template.test.ts`, `verifier-contradiction.test.ts`, `draft-template.test.ts` and `serialize.test.ts`, with the old draft kept as `legacy-draft.test-support.ts`, additions to `verifier.test.ts` (the /2 draft byte for byte, as a property) and `apps/web/src/lib/packets/view.test.ts`, and one test title in `fact-catalog.test.ts` given a CAS-53 suffix.
+  - `vitest.mutation.config.ts` `EXCLUDED` gains `verifier-template.performance.test.ts`, with its reason, as pricing's `performance.test.ts` is excluded: the test asserts only time, so under instrumentation on shared CPUs it passed or failed by load (7984faa8, under Checks). The unit project still runs it.
+- **`facts.ts` `parameterFigures`** (79d7e1bb): its array branch is removed, with the two equivalent records that proved it redundant. An array is an object, so `Object.entries` gives its items under `'0'`, `'1'`, …, none of which ends in `_cents` or is `percent` or `percentage`, and each item is read by the same recursive call. What it returns does not change; no test changed. The reason is a CI mutation timeout, under Checks.
+- **Tests (new):** `scan-strict.test.ts`, `verifier-template.test.ts`, `verifier-template.performance.test.ts` (the 100,000-character time test, moved there unchanged), `verifier-contradiction.test.ts`, `draft-template.test.ts` and `serialize.test.ts`, with the old draft kept as `legacy-draft.test-support.ts`, additions to `verifier.test.ts` (the /2 draft byte for byte, as a property) and `apps/web/src/lib/packets/view.test.ts`, and one test title in `fact-catalog.test.ts` given a CAS-53 suffix.
 
 ### For Lane A's slice-3 migration
 
@@ -89,12 +91,13 @@ Item: `co-001/packet-figure-placeholders` (Lane B), slice 2. Not a pull request 
 - Database schema and migrations: unchanged; no migration. The /3 migration is slice 3, Lane A's. `pnpm db:domain-model --check` passes against the schema at `20261109090000_line_status_heads.sql`.
 - Content releases (`content/`): unchanged.
 - Domain model (`docs/product/domain-model.md`), its approval line and `approvers.json`: unchanged.
-- CI and the GitHub settings: no workflow file changes. The mutation shard list gains `packets-template` (19 shards). Because `stryker/shards.json`, `stryker/base.mjs`, `tools/stryker/affected.ts` and `tools/stryker/equivalent/packets.json` are global mutation inputs, CI's `mutation` job runs every shard on this pull request. The screening-capacity watched paths gain three source files.
+- CI and the GitHub settings: no workflow file changes, and no mutation timeout, concurrency or threshold changes. The mutation shard list gains `packets-template` (19 shards), and the mutation test set leaves out one time-only test (7984faa8). Because `stryker/shards.json`, `stryker/base.mjs`, `tools/stryker/affected.ts` and `tools/stryker/equivalent/packets.json` are global mutation inputs, CI's `mutation` job runs every shard on this pull request. The screening-capacity watched paths gain three source files.
 - Nothing else served changes:
   - `VERIFIER_FORMAT` and every caller's verifier format are unchanged: web, worker, gateway and evaluation.
   - The code draft's default text is byte-identical, so the gateway's local provider sees today's text and no prompt changes.
   - Nothing changes in the worker, the export, the approval path or `verifierNow`.
   - The editor has no picker yet; that is slice 5.
+  - `facts.ts`'s narrative facts are the same for every input: the removed array branch did what the object branch does (79d7e1bb).
 - One /2 effect, by design: a /2 narrative holding a stray `{{` or `}}`, or a `{{…}}` run that is not an identifier placeholder, now fails as `unknown_placeholder`. A stored /2 narrative with such text would read `fails_now` on its next check. Nothing the product writes produces one, and none of the tests' or synthetic sets' narratives holds one. Every existing test passes; the only existing tests edited are the shard lists in `tools/stryker/shards.test.ts` and `affected.test.ts` (18 to 19 shards) and the one renamed title in `fact-catalog.test.ts`.
 - Out of scope, by later slice:
   - slice 3: the migration and the format flip;
@@ -109,7 +112,33 @@ Item: `co-001/packet-figure-placeholders` (Lane B), slice 2. Not a pull request 
 The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
 `screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
-The full local suite ran on the head **a851850d**. That commit merges `claude/build-platform` 8a722f80 (#130, #131) into the branch; its first parent, ba35c381, is the last slice-2 commit. Logs are in the build's scratchpad.
+### CI on the head 79d7e1bb27aa1b8efa193b6fc64e6b4cafcf3a1b
+
+**Green.** All 39 check runs completed: 38 succeeded and `notify` was skipped. That includes `all green`, `unit`, `db` (1/4 to 4/4), `e2e` (1/2, 2/2), `mutation`, `screening-capacity gate`, `capacity`, `approval-of-record`, `domain model`, `images`, `build`, `lint`, `static`, both `changes` runs and all 19 Stryker shards. The mutation job's gate reads "mutation gate: passed": money 96.81% (243 of 251), pricing 98.67% (1,934 of 1,960), ledger 98.48% (2,018 of 2,049), packets 99.17% (10,757 of 10,846), and every mutant no test caught is a recorded equivalent. The unit job: 488 test files passed; 10,138 tests passed and 2 skipped (10,140). `claude/build-platform` ce95546d is an ancestor of the head.
+
+**Fresh-clone verification on 79d7e1bb27aa1b8efa193b6fc64e6b4cafcf3a1b: pass, no problems.** A fresh clone, `pnpm install --frozen-lockfile`, then:
+- Ancestry and CI as above.
+- `format.ts` sets `VERIFIER_FORMAT = 'tp-packet-verifier/2'`. `VERIFIER_FORMAT_V3`, `verifyTemplate`, `verifyAtFormat` and `checkTemplate` are used only inside `packages/packets/src` and in tests. In the apps, /3 appears only in two comments this pull request does not change (`verifier-now.ts`, `approval.ts`) and in `view.ts`'s mismatch words. Every production `draftNarrative` caller passes no format (web `queries.ts`, worker `services.ts`, the gateway's `testing.ts`, e2e `models.ts`).
+- The draft-template differential tests passed ("writes format /2 by default, byte for byte", on every named content and on every generated pattern). A separate probe compared the head's `draftNarrative` with cc3dd7f6's `draft.ts` on four contents built with the package's test builders (default, two codes, per visit, regulation): the /2 output was identical with no `{{fact:` token, and naming /2 explicitly gave the default's text. The /3 code draft holds tokens and passes `verifyTemplate` at /3 with no mismatches; the same text fails `verifyNarrative` at /2 (`unknown_placeholder`, `figure_not_in_input`). `verifyTemplate('The payer paid 3 units [1].')` fails with `free_figure` at characters 15 to 16.
+- No migration or SQL file is in the diff, and `docs/product/domain-model.md` is unchanged against the base. ADR 0089 is present. The CAS-52, CAS-53 and CAS-54 rows in `docs/product/test-matrix.md` match the synth `TEST_MATRIX` exactly (compared by a script).
+- No `.skip`, `.only`, `.todo`, `skipIf` or `runIf` is added; the one `context.skip` in cc3dd7f6..79d7e1bb is already on the base (`packages/contracts/src/evidence/pages.test.ts`). The performance test is excluded only in `vitest.mutation.config.ts`; the unit config still runs it.
+- `pnpm typecheck` passed (23 projects). Vitest over `packages/packets`, `apps/web` `view.test.ts` and synth `fixtures.test.ts`: 46 files, 1,748 tests passed. Nothing was committed, pushed or posted.
+
+### Since the full local suite: two CI mutation reds and a base merge
+
+CI's `mutation` job failed twice after the full local suite, each time on a recorded equivalent that survives locally every time. Both were CI load, not a mutant a test tells apart. Each fix moves or removes code; **no test assertion, timeout, threshold or Stryker setting was weakened**, and no record was added.
+
+| Commit | Cause | Fix | Shards and gate |
+| --- | --- | --- | --- |
+| 7984faa8 | CI run 42360596958 (on a851850d's merge ref, the same tree, the same Node 24.22.0, Unicode 17.0 and ICU 78.3) scored the recorded `template.ts:180:65` equivalent (`marker.start < span.end` → `<=`) **Killed**. Among its 70 covering tests was the packets set's only wall-clock assertion, "reads the text before each token once: 100k-character templates", under 1,500 ms per template. Inside the full shard it took 774 ms in the dry run and 923 ms with the mutant active on 4 local CPUs; on the runner's 4 shared vCPUs with 4 test runners it can exceed the bound, and Stryker counts that failure as a kill. | The time test moved, unchanged, to `verifier-template.performance.test.ts`, which the unit project still runs; `vitest.mutation.config.ts` leaves it out of mutation runs with its reason, as pricing's performance test is. The record stays. | All 15 packets shards locally: run 0, gate 0 each. The canary 5/5 and the full gate passed: packets 99.16% (10,760 of 10,851), 91 recorded equivalents, as before the move, so no mutant was detected by the time test alone. `template.ts` 208 of 209. |
+| 972cae9c | Up-to-date merge of `claude/build-platform` ce95546d (#132). | Clean, no conflicts; both sides kept. The files both sides changed (`view.ts`, `view.test.ts`, the test matrix, the synth matrix and registry) merged automatically. `watched.ts --write` and `synth --all` changed nothing. typecheck, lint, lint:copy, lint:logs, check:fixtures and verify-content pass; the touched unit tests (141 files, 3,087 tests) pass. No merged file is in a Stryker shard. | — |
+| 79d7e1bb | CI run 42369472158 (on 972cae9c) scored the recorded `facts.ts:226:7` equivalent (`Array.isArray(value)` → `false`, recorded 2026-10-25, a file this pull request had not touched) **Timeout**; it survived in run 42360596958 on the same code, and its twin 226:29 survived in the same job. A `describe` body in `facts.test.ts` reaches `parameterFigures`, so the mutant is static: every test of the package runs under one clock (1.5 × the dry run's net + 30 s + overhead, about 87 to 93 s). With the mutant active the tests take the time they take without it (twice each way, no per-test slowdown); CI's dry runs of the same code vary from 24.5 s to 36.4 s net. | The branch the records proved redundant is removed, with its two records (226:7 and the block at 226:29). Reading the facts inside the tests instead, so the mutant would not be static, was measured and rejected: it reorders the files static mutants run, and packets-scan took 920 s and 942 s against 672 s. | packets-facts locally: run 0, gate 0 (445 of 446, one recorded equivalent left). The full gate passed: packets 99.17% (10,757 of 10,846), 89 recorded equivalents. Unit (1,927 touched tests), typecheck, lint and lint:logs pass. CI on 79d7e1bb: green, above. |
+
+**Proposal, not this pull request's:** an audit of every recorded packets equivalent's covering tests found about 14 other static ones at the same local margin (0.42 to 0.47 of their timeout: `scan.ts:369` and `:655`, `readable.ts:87`, `assemble.ts:110` and `:145`, `interest.ts:99` and `:120`, among others), with the same CI-load exposure; the base shares it, and any of them could flip on a loaded run. Each mutant job runs Stryker with 4 workers on 4 vCPUs, while the dry run that sets the clock runs alone. A CI-level fix, with its own reviews, would remove the class: the mutation jobs' Stryker concurrency below the vCPU count, or a timeout factor for static mutants.
+
+### The full local suite (on a851850d)
+
+The full local suite ran on **a851850d**, the head when this description was first written. That commit merges `claude/build-platform` 8a722f80 (#130, #131) into the branch; its first parent, ba35c381, is the last slice-2 commit. The three commits since are above. Logs are in the build's scratchpad.
 
 | Command | Result |
 | --- | --- |
@@ -129,7 +158,7 @@ The full local suite ran on the head **a851850d**. That commit merges `claude/bu
 | `pnpm test:db`, 4 shards run one after another on PG18 | 1/4: 38 files, 3,290 passed, 1 skipped, 509 s. 2/4: 37 files, 2,256 passed, 162 s. 3/4: 37 files, 3,311 passed, 259 s. 4/4: 37 files, 1,006 passed, 309 s. Together: 149 distinct files, each run exactly once, 9,863 passed and 1 skipped. |
 | Build (stamped with `BUILD_COMMIT`), then `pnpm test:e2e` with `E2E_PREBUILT=1` | Build 66 s. e2e: 81 passed, 692 s |
 | Mutation (`tools/stryker/affected.ts`: all 19 shards affected, since the branch changes global inputs) | Each shard ran its canary first, then its run and its shard gate (run 0, gate 0). Times:<br>• packets-template 210 s, packets-figures 245 s, packets-verifier 398 s, packets-scan 692 s<br>• packets-facts 282 s, packets-rest 263 s, packets-explain 432 s<br>• packets-roles 404 s, packets-roles-cues 250 s, packets-roles-numbers 329 s<br>• packets-words-labels 252 s, -amounts 190 s, -days 194 s, -dates 163 s, -prose 226 s<br>• money-ledger 234 s, pricing-engine 315 s, pricing-recompute 214 s, pricing-rest 176 s<br>About 5,469 s in total. |
-| Mutation final gate, `--expected` all 19 shards | Pass. money 96.81% (243/251), pricing 98.67% (1,934/1,960), ledger 98.48% (2,018/2,049), packets 99.16% (10,760/10,851). Every mutant no test caught is a recorded equivalent. packets-template's files: `draft.ts` 98.97%, `template.ts` 99.52%, `contradiction.ts` 100%, `serialize.ts` 100%. |
+| Mutation final gate, `--expected` all 19 shards | Pass on a851850d (on the head, packets is 99.17%, 10,757 of 10,846, after 79d7e1bb removed two records; above). money 96.81% (243/251), pricing 98.67% (1,934/1,960), ledger 98.48% (2,018/2,049), packets 99.16% (10,760/10,851). Every mutant no test caught is a recorded equivalent. packets-template's files: `draft.ts` 98.97%, `template.ts` 99.52%, `contradiction.ts` 100%, `serialize.ts` 100%. |
 | Suite checker | ok, no problems |
 | Properties | The draft-template and serialize properties each passed under 40 seeds during the build. In the full run, no test failed and none needed a re-run. The MOD-16 property test did not flake. |
 | Pre-push hook (fixture check and gitleaks) | Passed on every push |
@@ -144,6 +173,9 @@ The full local suite ran on the head **a851850d**. That commit merges `claude/bu
 | `scan.ts` | StringLiteral `'0'` → `""`, occurrence 3 → 6 | Renumbered only: slice 2 added three literals before it (nil, nought, naught). A reviewer confirmed it points at the same `int(match[2] ?? '0')`, and that all 64 of `scan.ts`'s entries still point at the same code. |
 | `draft.ts:147` | LogicalOperator: conjunction → disjunction | **Not equivalent; removed** (round 4, 0b5ca610). The mutant prints "Prompt-pay interest of $0.00" when every line was paid on time. A $0.00-interest case now kills it (the founder's ruling of 2026-10-20, Q4 (a)). |
 | `draft.ts:40` | OptionalChaining `pattern.codes[0]?.contract_amount_cents` | **Not equivalent; removed** (round 6, 7e9618e3). An empty `pattern.codes` is a value of the declared type. A per-visit content with no codes drafts the page's sentence, where the mutant throws, and a test now kills it. |
+| `facts.ts:226:7` | ConditionalExpression `Array.isArray(value)` → `false` (recorded 2026-10-25) | **Removed with the code it named** (79d7e1bb). The array branch it proved redundant is gone, so the mutant no longer exists. CI scored it Timeout under load (under Checks). |
+| `facts.ts:226:29` | BlockStatement: the array branch's block → `{}` (recorded 2026-10-25) | Same as above. |
+| `template.ts:180:65` | The `<=` record above | **Kept** (7984faa8). CI scored it Killed only by the wall-clock test's load; that test now runs outside mutation runs. |
 
 ## Reviewer agents' findings
 
@@ -237,6 +269,10 @@ Commits:
 | R6 Equivalents | EQUIV2-2 | — | The interest-guard record (`total_cents` check → true) | Confirmed equivalent; signed | 7e9618e3 |
 | R6 Equivalents | EQUIV2-3 | — | The `codes[0]?.` record | Not equivalent; removed, killed by a test | 7e9618e3 |
 | R6 Recheck | RECHECK2-N1 | nit | `const guard =records` spacing; the records test refuses any future OptionalChaining record for `draft.ts` | Spacing fixed. The broad rule is kept: a genuinely equivalent future record would edit the test | ba35c381 |
+| CI mutation (run 42360596958) | CI-MUT-1 | blocking (red gate) | The recorded `template.ts:180:65` equivalent scored Killed: a wall-clock test failed under the runner's load | Fixed: the time test moved unchanged to `verifier-template.performance.test.ts`, out of mutation runs only; no assertion, timeout or setting weakened; all 15 packets shards and the gate green | 7984faa8 |
+| CI mutation (run 42369472158) | CI-MUT-2 | blocking (red gate) | The recorded `facts.ts:226:7` equivalent, a static mutant, scored Timeout under the runner's load | Fixed: the redundant array branch removed with its two records; no test, timeout or setting changed; packets-facts and the gate green, CI green on 79d7e1bb | 79d7e1bb |
+
+The last two rows are CI's, after the reviews: they were raised by the `mutation` job, not by a reviewer, and are not counted in the totals above.
 
 "Not kept" means the result files do not keep the severity the reviewer filed. The second workflow's IDs (R1-…, R2-…, R3-…) number its own loop rounds, which are rounds 3, 4 and 5 in the first column, as in the commits and ADR 0089.
 
