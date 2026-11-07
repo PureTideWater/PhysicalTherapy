@@ -448,6 +448,9 @@ function where(file: string, node: ts.Node): string {
   return `${file.replace(`${WEB}/`, '')}:${String(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)}`;
 }
 
+/** A first word that keeps its capital in any sentence: the product's name, or an initialism such as NPI or ZIP. */
+const ALWAYS_CAPITAL = /^(PaidWhole|[A-Z][A-Z0-9+]+)\b/;
+
 /** The rules a message breaks, empty when it keeps the form. */
 function broken(text: string, flags: Flags): string[] {
   const rules: string[] = [];
@@ -457,7 +460,7 @@ function broken(text: string, flags: Flags): string[] {
   if (/^at most\b/.test(text)) {
     rules.push('starts with "at most"');
   }
-  if (flags.field && /^[A-Z]/.test(text)) {
+  if (flags.field && /^[A-Z]/.test(text) && !ALWAYS_CAPITAL.test(text)) {
     rules.push('an upper-case start');
   }
   if (flags.field && text.endsWith('.')) {
