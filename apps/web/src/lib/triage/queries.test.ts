@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type CaseState, netExpectedOf } from './queries';
+import { type CaseState, RUN_NOT_IN_EFFECT, RUN_RELEASE_WITHDRAWN, netExpectedOf } from './queries';
 
 /**
  * A case's Net expected value (docs/adr/0082 Decision 5; the fix review's E3 and UX-R1-01): the live figure less the
@@ -30,5 +30,21 @@ describe('a case’s net expected value', () => {
     expect(of('open', '6000', 2, '4500')).toEqual({ state: 'live', cents: '1500' });
     expect(of('open', '3000', 1, '4500')).toEqual({ state: 'live', cents: '-1500' });
     expect(of('partially_resolved', '900000000000001', 3, '4500')).toEqual({ state: 'live', cents: '899999999995501' });
+  });
+});
+
+/**
+ * Why a run is refused for triage or a report, read after "Pricing run:" (test matrix FRM-04; docs/adr/0077, amended by
+ * co-001/ux-forms-after-42): one sentence, the run first, then the step, with no colon of its own.
+ */
+describe('a run refused for triage or a report', () => {
+  it('names the run in effect and opens it', () => {
+    expect(RUN_NOT_IN_EFFECT).toBe('the pricing run in effect for its period is a complete run, or a re-run once accepted, not one it replaced; open that run');
+  });
+
+  it('says the run’s release was withdrawn, then how to report on the period', () => {
+    expect(RUN_RELEASE_WITHDRAWN).toBe(
+      'this run’s rule release was withdrawn because its content was wrong, so no audit report is built on it; price the period again under the release in force, accept that re-run, then generate the report on it',
+    );
   });
 });

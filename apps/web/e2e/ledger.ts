@@ -1,10 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { type Page, expect } from '@playwright/test';
 
-import { withDatabase } from './helpers';
+import { runTag, withDatabase } from './helpers';
 import { journeyPractice, pricedAndTriaged, queue, signedOffSchedule, until } from './journeys';
 
 export { chainFrom, chainPricedMonths, newestDocument } from './journeys';
@@ -58,7 +57,7 @@ export function ledgerFixture(caseId: string, file: string): Buffer {
  */
 export function patientSharePractice(caseId: string): Promise<string> {
   return journeyPractice({
-    name: `${LEDGER_PRACTICE} ${caseId} ${randomUUID().slice(0, 8)}`,
+    name: `${LEDGER_PRACTICE} ${caseId} ${runTag()}`,
     settings: { ...SETTINGS, posting_export_template: { template: 'synthetic_pm_export_v1' } },
   });
 }

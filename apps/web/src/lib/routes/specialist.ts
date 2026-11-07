@@ -145,7 +145,7 @@ export const adjustEntryAction = practiceRoute({
   input: z.object({
     entryId: opaqueId,
     amount: z.string().trim().regex(DOLLARS, 'the change in dollars and cents, with a minus sign to lower the amount'),
-    reason: z.string().trim().min(1, 'say why the amount is corrected').max(2000, 'at most 2,000 characters'),
+    reason: z.string().trim().min(1, 'say why the amount is corrected').max(2000, 'enter at most 2,000 characters'),
     confirm: z.literal('on', 'confirm what an adjustment does'),
   }),
   audit: { action: 'reconciliation_adjustment', objectType: 'ledger_entry' },

@@ -383,7 +383,7 @@ describe('under SYNTHETIC release 900001', () => {
     expect((await call(priceAgainAction, target.viewer, P, press)).status).toBe('forbidden');
     expect(refusedWith(await call(priceAgainAction, target.manager, P, { releaseNo: '900001' }))).toMatch(/^runIds:/);
     expect(refusedWith(await call(priceAgainAction, target.manager, P, { runIds: `${runId},${randomUUID()}`, releaseNo: '900001' }))).toBe(`runIds: ${MONTHS_CHANGED}`);
-    expect(refusedWith(await call(priceAgainAction, target.manager, P, { ...press, releaseNo: '900002' }))).toMatch(/^releaseNo: rule-release mismatch/);
+    expect(refusedWith(await call(priceAgainAction, target.manager, P, { ...press, releaseNo: '900002' }))).toMatch(/^releaseNo: release 900002 was asked for, and release 900001 is the one in force; reload the page to price under the release in force$/);
     expect(await rerunsOf(runId)).toEqual([]);
 
     // "Price these months again" from plan B's page: one re-run in the person's name, queued, audited on its own.
@@ -530,7 +530,7 @@ describe('under SYNTHETIC release 900001', () => {
     expect(refused).toBeInstanceOf(RerunRefusedError);
     const issue = priceAgainRefusal(refused, FEBRUARY)?.issues[0];
     expect(issue?.field).toBe('runIds');
-    expect(issue?.message).toMatch(/^2026-02-01 to 2026-02-28: is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced/);
+    expect(issue?.message).toMatch(/^the run of 2026-02-01 to 2026-02-28 is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced/);
     expect(await rerunsOf(runId)).toEqual(reruns);
     queue.jobs.splice(0);
   });

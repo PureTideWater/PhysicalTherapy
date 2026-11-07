@@ -419,8 +419,10 @@ describe('contracts: upload, tag, abstract by hand, approve, sign off, map (J5, 
     expect(refusedWith(await call(citeWindowAction, specialist, P(), { ...window, quote: 'Provider may dispute a payment within 365 days of the remittance date.' }))).toMatch(/The quote is not on the cited page/);
     const { unit: _unit, ...withoutUnit } = window;
     const { measuredFrom: _measuredFrom, ...withoutStart } = window;
-    expect(refusedWith(await call(citeWindowAction, specialist, P(), withoutUnit))).toMatch(/choose the unit the quote counts in/);
-    expect(refusedWith(await call(citeWindowAction, specialist, P(), withoutStart))).toMatch(/choose what the quote counts from/);
+    expect(refusedWith(await call(citeWindowAction, specialist, P(), withoutUnit))).toBe('choose the unit the quote counts in (calendar days, business days or months)');
+    expect(refusedWith(await call(citeWindowAction, specialist, P(), withoutStart))).toBe(
+      'choose what the quote counts from (the date of service, the remittance date, the payment date or the day the practice received it)',
+    );
     expect(refusedWith(await call(citeWindowAction, specialist, P(), { ...window, unit: 'days' }))).toMatch(/choose the unit the quote counts in/);
     expect(refusedWith(await call(citeWindowAction, specialist, P(), { ...window, measuredFrom: 'claim_date' }))).toMatch(/choose what the quote counts from/);
     expect((await call(citeWindowAction, manager, P(), window)).status).toBe('forbidden');

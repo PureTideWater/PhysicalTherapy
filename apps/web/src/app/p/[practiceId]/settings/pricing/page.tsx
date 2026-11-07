@@ -103,7 +103,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                   autoComplete="postal-code"
                   maxLength={10}
                   defaultValue={locationText ?? ''}
-                  hint="Five digits, or ZIP+4 such as 27601-1234."
+                  hint="Five digits, or a ZIP+4 such as 27601-1234."
                 />
               </ActionForm>
               {location !== null && settled && !confirmed ? (

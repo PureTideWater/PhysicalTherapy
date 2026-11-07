@@ -224,8 +224,8 @@ export const citeWindowAction = practiceRoute({
     documentId: opaqueId,
     page: z.coerce.number().int().min(1).max(999_999),
     quote: requiredText(2000),
-    unit: z.enum(DISPUTE_WINDOW_UNITS, 'choose the unit the quote counts in: calendar days, business days or months'),
-    measuredFrom: z.enum(DISPUTE_WINDOW_STARTS, 'choose what the quote counts from: the date of service, the remittance date, the payment date or the day the practice received it'),
+    unit: z.enum(DISPUTE_WINDOW_UNITS, 'choose the unit the quote counts in (calendar days, business days or months)'),
+    measuredFrom: z.enum(DISPUTE_WINDOW_STARTS, 'choose what the quote counts from (the date of service, the remittance date, the payment date or the day the practice received it)'),
   }),
   audit: { action: 'contract_window_citation_requested', objectType: 'contract_version' },
   handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
