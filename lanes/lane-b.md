@@ -2175,3 +2175,60 @@ notes from 00:32 UTC.
   accepted reading (c3a2743e), then 2f3726ad and 0b5ca610; WIP = 0b5ca610 (03:16 UTC). No PR yet.
 - **Counters:** CI-30 to `co-001/ux-forms-after-42`. Next free: ADR 0092, synth module 21, fixture release 900008;
   test-matrix MOD-23, CAS-56, SEC-25, SGN-17, CI-31 (the other series as at 2026-11-06 19:40 UTC).
+
+### 2026-11-07 06:40 UTC (Lane B's orchestrator)
+Heads checked live at 06:37 UTC (`git ls-remote origin`; no tags); status files read to 06:37 UTC; the orchestrator's
+notes from 03:37 UTC.
+
+- **The second review lesson (06:40 UTC), beside the 01:33 UTC custom-agentType lesson.**
+  - A review, skeptic or critic agent that dies (a usage stop) or returns nothing never counts; a round with a dead agent
+    is not dry.
+  - Workflow scripts must throw (or redo the agent) on a null result, as S4 did on 2026-11-07: slice 2's round 3 lost its
+    agents at the 5-hour limit, was not counted dry, and resumed at 05:50 UTC with the script throwing on a dead skeptic or
+    critic.
+  - Added to `lanes/lane-b-session-brief.md` §5 and the rolling handoff §7.
+- **The 5-hour limit stopped the account's workflows twice more:** ~04:45-05:30 UTC (S1's judge workflow, before any
+  agent returned) and ~05:00-05:50 UTC (S4's slice-2 round 3; S3's check round 1). Each resumed in its same run, with the
+  setup re-run where PostgreSQL was down.
+- **#131 merged** (UX PR 4b): 2026-11-07 03:27 UTC as **8a722f80**, from 9e577017, by S5. `claude/build-platform` is still
+  8a722f80 at 06:37 UTC; `main` 220f2b4e; no tags.
+- **S5 is on P2** (`co-001/ci-trivy-version`) since ~03:45 UTC: the delta re-design, on 8a722f80, of only what #107
+  (7bf7b252) and #106 (881e2bbd) leave undone; then the build alone, with two reviews (CI permissions); CI-24 to CI-26,
+  N33 to N42 and P38 to P42 as reserved. Not on origin yet. session_01FcouKNP2XtaombFLueKLnu stays idle (superseded).
+- **#126's F1, the blocking money defect, is fixed** (S2, acting Lane A; head **9824f4e9**):
+  - Confirmed by a red db test: with two remittances uploaded out of order (two-chains.835 before paired.835), a PLB L6's
+    payment written in one reconcile pass blocked its own take-back in the next, leaving 11.40 of interest on the lines
+    against 6.00 of cash.
+  - The fix (8ea33e13): `interestWrites` holds a PLB L6's payments while any take-back of a chain that may still hold
+    interest is not written in full. Both orders end at 0 on the lines, never above the cash; LED-23's renumbered-reversal
+    overstatement (5.40) closes too. Failing-first db, unit and property tests; `interest.ts` 100% (328 mutants); no
+    migration change; the domain model unchanged. F2 (9824f4e9): the runbook for the lock loop's 55P03, with a guard test.
+  - **The trade-off, for the founder's awareness** (ADR 0084 and #126's body): a payment netted against a take-back of a
+    reversal whose claim is never uploaded is never credited: low by up to that payment, never high. Not an ask.
+  - Running, wf_d944494b-d50: three judges on F-M2-1, the remaining nits, a third review round on everything since
+    d2fdd106 (until dry), the base merged once, the full local suite once, the push, CAS-42.5 on the final head, the body,
+    the fresh-clone verification, then the suggested line (not posted yet).
+  - Beside it: PR 1, `co-001/password-changed-notice`, at f110efd9 on origin (stacked on #126; no PR until #126 merges);
+    PR 5's freeze ask, draft v1 kept as WIP and not relayed (it did not converge), a short rewrite running
+    (wf_c7d47053-463).
+- **S1, `co-001/redact-range-glued`: the judge workflow wf_5d1aedda-db5** (candidates A, patching the glued reading, and
+  B, reverting it and refusing an own identifier glued across a boundary the patterns do not read; a differential gate of
+  at least 200,000 seeded letters; two judges; reviews on the winner until dry). Several hours; check-in ~10:57 UTC.
+  - **The tie-break ruling for S1's judges (03:40 UTC, given to them verbatim):** a close call goes to **B** (refuse where
+    the boundary is unknowable: the safer option); the winner must show **zero PHI regressions per identifier kind** on
+    the gate and **no must-stay damage beyond the base**.
+  - WIP 3fcb9359; the branch still cc3dd7f6; no PR. **#129 waits on it** (f4fef908 unchanged); a test is never skipped or
+    pinned to get round MOD-16. A fourth failing seed, -594136649, showed in S3's ux-forms-after-42 integration run (no
+    gateway file changed).
+- **S4, slice 2:** round 2 done; 12 more findings fixed, one **blocking**: a `draft.ts` mutant recorded and signed as
+  "equivalent" hid a real $0.00-interest print in the /2 draft's interest guard; fixed with a test (WIP 0b5ca610). Round 3
+  resumed at 05:50 UTC (above). No branch pushed; no PR.
+- **S3, ux-forms-after-42: built** (wf_24fdaecd-29b): slices U, C, W1 and W2 integrated with E into
+  `co-001/wip-ux-forms-after-42` = **dab7d237** (on origin). Its integration: typecheck, lint, the generators and the
+  browser harness green; `pnpm test` 10,014 with the one MOD-16 failure above; test:db 9,870; e2e 84 of 84. Stopped at
+  ~05:00 UTC in check round 1's skeptics and resumed. Next: the check rounds with repairs, the head shots, the draft PR,
+  the two reviews.
+- **Counters:** none allocated. Next free unchanged: ADR 0092, synth module 21, fixture release 900008; test-matrix MOD-23,
+  CAS-56, SEC-25, SGN-17, CI-31 (the other series as at 2026-11-06 19:40 UTC).
+- Records: LANES.md claim rows (P2, ux-forms, 4b, #126, MOD-16, #129, slice 2); the brief §5; the rolling handoff, now
+  current as of 06:40 UTC.
