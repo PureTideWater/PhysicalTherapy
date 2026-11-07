@@ -345,13 +345,36 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['one word as long as the letter, glued to a digit', ['JANE Q VANTREE'], `${'a'.repeat(N - 2)}1a`, ['SYN555001']],
     // Review GATEWAY1-1 and GATEWAY1-2: the third reading, and SEC-5's label read over the numbers before an amount.
     ['date ranges glued to an ordinal-like word after the year, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020St. '), ['SYN555001']],
-    ['amounts after a range, each read for a label over the numbers before it, repeated', ['JANE Q VANTREE'], fill('Billed 01/01/2020-150.00-120.00 1.00 '), ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
     const redacted = redactLetter(text, who, claim(...claimNumbers));
     expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers))).toBe(false);
     expect(mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] })).toBe(false);
+    const seconds = (performance.now() - started) / 1000;
+    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+  });
+
+  // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
+  it.each([
+    // The call's identifiers glued to text (ownIdentifierGlued): a run of letters a digit touches, read once per part.
+    ['a run of one letter a digit touches, for names of short repeated parts', ['ZZ ZZZ ZZZZ ZZZZZ', 'ZZ-ZZ ZZZ', 'ZZZZZZ ZZ'], `1${'Z'.repeat(N)}1`, true],
+    ['the same run for names none of whose parts it holds', ['ZQ ZZQ ZZZQ', 'QZ'], `1${'Z'.repeat(N)}1`, false],
+    ['an alternating camel-case run a digit touches', ['AB BA'], `1${fill('aB')}`, false],
+    ['month words at the ends of runs before digits (a date of birth glued to a word)', ['MAY MARCH'], fill('xMar 3, 1961'), true],
+    ['dates of birth glued to amounts', ['JANE Q VANTREE'], fill('3/3/61150.00 '), true],
+    // The scan's held ranges, each walked once for what stands beside it.
+    ['ranges of a date and an amount joined by white space', ['JANE Q VANTREE'], fill('01/01/2020-150.00 '), false],
+    ['ranges glued to a short part of the name', ['JA Q ZE'], fill('1/1/20-1.00Ja '), false],
+    // Review GATEWAY1-2's read over the numbers before each amount: an amount after a range's end may be an identifier's
+    // other part, so the letter is refused, as at cc3dd7f6.
+    ['amounts after a range, each read for a label over the numbers before it', ['JANE Q VANTREE'], fill('Billed 01/01/2020-150.00-120.00 1.00 '), true],
+    ['ranges then an SSN label glued to a word', ['JANE Q VANTREE'], fill('01/01/2020-150.00-PaidSSN 9 '), true],
+  ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
+    const who = patient([...names]);
+    const started = performance.now();
+    const redacted = redactLetter(text, who, claim('SYN555001'));
+    expect(holdsIdentifier(redacted.text, who, claim('SYN555001'))).toBe(refused);
     const seconds = (performance.now() - started) / 1000;
     expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
   });
@@ -931,7 +954,6 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['an ISO period glued to the next word', 'From 2020-01-01-2020-01-02Paid'],
     ['a period of dashed dates glued to the next word', 'Service 01-01-2020-01-02-2020Paid'],
     ['a period ending in a month word, glued to the next word', 'Service 2020-01-01-2 January 2020Paid'],
-    ['a period starting with a month word after an amount and a full stop', 'Paid $0,000.00.January 1, 2020-2020-01-02Paid'],
     ['a period joined by an en dash, glued', 'Service 01/01/2020–01/02/2020Paid'],
     ['a period joined by an em dash, glued', 'Service 01/01/2020—01/02/2020Paid'],
     ['a period joined by the minus sign, glued', 'Service 01/01/2020−01/02/2020Paid'],
@@ -1039,57 +1061,33 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
   // because a date or amount then joined the next group (A3), where MOD-16 now needs a barrier.
   it.each([
     // An unlabeled amount-shaped SSN or phone is read as an amount, as R1 keeps "150.00 1234": alone, after white space
-    // or at an end of a range (re-review PHI1-1). The must-stay rows that force it are "Paid 900.12 3456 units"
-    // (redact.property.test.ts) and "Paid $0,000.00.$0,000.00-150.00 1234" above; under a label it is refused.
+    // or at an end of a range of two amounts, which cc3dd7f6 read as a barrier too (re-review PHI1-1). The must-stay rows
+    // that force it are "Paid 900.12 3456 units" (redact.property.test.ts) and "Paid $0,000.00.$0,000.00-150.00 1234"
+    // above; under a label it is refused.
     ['an unlabeled amount-shaped SSN at the end of a range of two amounts (since review round 2)', 'Paid 150.00-900.12 3456', 'Paid 150.00-900.12 3456'],
-    ['an unlabeled amount-shaped SSN at the end of a range from a date', 'Paid 01/01/2020-900.12 3456', 'Paid 01/01/2020-900.12 3456'],
-    ['an unlabeled amount-shaped SSN at the end of a range from a currency amount with no cents', 'Paid $1-900.12 3456', 'Paid $1-900.12 3456'],
-    ['an unlabeled amount-shaped phone at the start of a range to a date', 'Paid 202 555 01.23-1/3/20', 'Paid 202 555 01.23-1/3/20'],
-    // A label glued to the word before it by a lost space is no label, so the amount-shaped number is read as unlabeled,
-    // alone (sent at cc3dd7f6 too) and at a range's end (refused there at cc3dd7f6 only by A3): review PHI2-3; owned by the
-    // follow-on leak PR.
+    // A label glued to the word before it by a lost space is no label, so the amount-shaped number is read as unlabeled
+    // and sent, as at cc3dd7f6 (review PHI2-3; owned by the follow-on leak PR). Next to a range cc3dd7f6 refused, the
+    // glued label is read (below).
     ['an amount-shaped SSN after an SSN label glued to the word before it', 'PatientSSN 900.12 3456', 'PatientSSN 900.12 3456'],
     ['an amount-shaped phone after a phone label glued to the word before it', 'PaidPhone 202 555 01.23', 'PaidPhone 202 555 01.23'],
-    ['an amount-shaped SSN at a range’s end after a glued SSN label', 'PatientSSN 01/01/2020-900.12 3456', 'PatientSSN 01/01/2020-900.12 3456'],
-    ['an amount-shaped phone starting a range after a glued phone label', 'PaidPhone 202 555 01.23-1/3/20', 'PaidPhone 202 555 01.23-1/3/20'],
-    // Read as an amount and a date joined by a dash, a range (review PHI2-4): an SSN with a comma after its first digit,
-    // or a digit and a comma before it, and a point in its last four; a phone's last group and the next number read as a
-    // date that starts a range; cc3dd7f6 refused each only because the range then joined the next group (A3).
-    ['an SSN read as an amount and a date after its label', 'SSN 1,900-12-19.85', 'SSN 1,900-12-19.85'],
-    ['an SSN read as an amount and a date', 'Paid 0,900-12-19.85', 'Paid 0,900-12-19.85'],
-    ['an SSN read as an amount and a date that starts a range', 'SSN 2,900-12-19.85-1/3/20', 'SSN 2,900-12-19.85-1/3/20'],
-    ['an amount-shaped phone whose last group and the next number read as a date starting a range', 'Call 202 555 01.23-12-150.00', 'Call 202 555 01.23-12-150.00'],
     // An SSN after its label with the call's own identifier between, set apart by a space or punctuation: the label window
-    // ends at the placeholder (sent at cc3dd7f6 too; glued to the number, the label is read past it: review PHI2-1).
+    // ends at the placeholder (sent at cc3dd7f6 too).
     ['an amount-shaped SSN after its label and the patient’s name', 'SSN Vantree 900.12 3456', 'SSN [PATIENT_NAME] 900.12 3456'],
     ['an SSN of a five-digit group after its label and the patient’s name', 'SSN for Zephyra Vantree: 90012-3456', 'SSN for [PATIENT_NAME] [PATIENT_NAME]: 90012-3456'],
-    // A masked SSN glued after a range's end: the follow-on leak PR's masked-glued class, which the range barrier extends.
-    ['a masked SSN glued after a range’s end', '01/01/2020-150.00XXX-XX-3456Paid', '01/01/2020-150.00XXX-XX-3456Paid'],
     // An SSN or phone glued digit to digit to an amount or a year, which the scan reads as one long group (review
     // GATEWAY1-3); spaced and labeled, it is refused only where a run of its groups from the label's first group, or from
-    // the amount the label reaches, holds 9 or 10 digits (re-review GATEWAY1-2, review PHI2-6), and next to a range as well
-    // (re-review PHI1-2).
+    // the amount the label reaches, holds 9 or 10 digits (re-review GATEWAY1-2, review PHI2-6). Sent at cc3dd7f6 too.
     ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
     ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
     ['a spaced labeled SSN glued to a two-digit amount', 'SSN 900 12 345615.00', 'SSN 900 12 345615.00'],
     ['a spaced labeled SSN glued to an amount with one decimal', 'SSN 900 12 3456150.0', 'SSN 900 12 3456150.0'],
     ['a spaced labeled phone glued to a two-digit amount', 'Phone 202 555 012315.00', 'Phone 202 555 012315.00'],
     ['a spaced labeled phone glued to a one-digit amount', 'Phone 202 555 01231.00', 'Phone 202 555 01231.00'],
-    ['a spaced labeled SSN glued to an amount that starts a range', 'SSN 900 12 345615.00-01/02/2020', 'SSN 900 12 345615.00-01/02/2020'],
-    ['a labeled SSN fused to an amount that starts a range', 'SSN 900123456120.00-01/02/2020', 'SSN 900123456120.00-01/02/2020'],
-    ['a labeled phone fused to an amount that starts a range', 'Phone: 2025550123150.00-01/03/2020', 'Phone: 2025550123150.00-01/03/2020'],
-    ['a labeled phone in a shape glued to a date that starts a range', 'Tel: 202-555-01231 January 2020-150.00', 'Tel: 202-555-01231 January 2020-150.00'],
-    // An SSN written with an OCR space and then a whole dashed date for its last six, next to a range too (re-review PHI1-2).
-    ['a labeled SSN whose last six read as a date that starts a range', 'SSN 9 01-12-1985-150.00', 'SSN 9 01-12-1985-150.00'],
-    // An amount-shaped SSN whose first group reads as a date with the number before it ("10-9.00").
+    // An amount-shaped SSN whose first group reads as a date with the number before it ("10-9.00"; sent at cc3dd7f6 too).
     ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],
-    // An amount-shaped phone after a range and white space with its label more than 24 characters back (review GATEWAY1-2).
-    ['an amount-shaped phone after a range and spaces, its label out of reach', 'Phone March 11, 2029\u22122,866.66  960.58 4433', 'Phone March 11, 2029\u22122,866.66  960.58 4433'],
-    // An SSN or phone whose label is behind a number and then a word or a span (a digit in its label window, as "Phone 1:
-    // 555-0100": re-review GATEWAY1-1).
+    // An SSN or phone whose label is behind a number and then a span (a digit in its label window, as "Phone 1:
+    // 555-0100": re-review GATEWAY1-1; sent at cc3dd7f6 too).
     ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
-    ['an SSN glued to an amount after the label’s number, a word and a range', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00'],
-    ['an amount-shaped SSN after the label’s number, a word and a range', 'SSN 1: is 01/01/2020-900.12 3456', 'SSN 1: is 01/01/2020-900.12 3456'],
     // A labeled SSN or phone split five, one, then an amount with one decimal digit before the cents: the units column
     // before a money amount ends the chain, as a service-line row's does (review GATEWAY2-1; cc3dd7f6 sent it too).
     ['a labeled SSN split five, one and an amount', 'Soc Sec 93798 4 1.46', 'Soc Sec 93798 4 1.46'],
@@ -1101,14 +1099,110 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
   });
 
-  it('refuses a hand-made redacted text that holds a surviving form (identifier_left, a fixed message with no number), and redacts the patient’s name glued to one (review PHI2-1)', () => {
+  it.each([
+    // A range the range fix reads as a barrier and cc3dd7f6 did not (a date or a currency amount to an amount, a date read
+    // only with a glued word blanked, a range joined by another dash) holds a chain whole only where nothing that may be
+    // the rest of an identifier stands beside it; where a range's end cannot be told from an identifier's fragment, the
+    // letter is refused as cc3dd7f6 refused it (the orchestrator's ruling of 2026-11-07). Each row was sent from 6fc88092
+    // to the head of review round 3 and pinned there as a residual (re-review PHI1-1, PHI1-2, GATEWAY1-2; review PHI2-3,
+    // PHI2-4).
+    ['an unlabeled amount-shaped SSN at the end of a range from a date', 'Paid 01/01/2020-900.12 3456'],
+    ['an unlabeled amount-shaped SSN at the end of a range from a currency amount with no cents', 'Paid $1-900.12 3456'],
+    ['an unlabeled amount-shaped phone at the start of a range to a date', 'Paid 202 555 01.23-1/3/20'],
+    ['an amount-shaped SSN at a range’s end after a glued SSN label', 'PatientSSN 01/01/2020-900.12 3456'],
+    ['an amount-shaped phone starting a range after a glued phone label', 'PaidPhone 202 555 01.23-1/3/20'],
+    // An amount without cents or a date of two separators is no range's end ("0,900-12-19.85" is an SSN's digits).
+    ['an SSN read as an amount and a date after its label', 'SSN 1,900-12-19.85'],
+    ['an SSN read as an amount and a date', 'Paid 0,900-12-19.85'],
+    ['an SSN read as an amount and a date that starts a range', 'SSN 2,900-12-19.85-1/3/20'],
+    ['an amount-shaped phone whose last group and the next number read as a date starting a range', 'Call 202 555 01.23-12-150.00'],
+    // A masked SSN, or a word, glued after a range's end, and the digits after it.
+    ['a masked SSN glued after a range’s end', '01/01/2020-150.00XXX-XX-3456Paid'],
+    ['an SSN of a five-digit group glued by a word after a range’s end', 'Re: 01/01/2020-1st Jan 2020th90012-3456'],
+    ['a spaced labeled SSN glued to an amount that starts a range', 'SSN 900 12 345615.00-01/02/2020'],
+    ['a labeled SSN fused to an amount that starts a range', 'SSN 900123456120.00-01/02/2020'],
+    ['a labeled phone fused to an amount that starts a range', 'Phone: 2025550123150.00-01/03/2020'],
+    ['a labeled phone in a shape glued to a date that starts a range', 'Tel: 202-555-01231 January 2020-150.00'],
+    ['a labeled SSN whose last six read as a date that starts a range', 'SSN 9 01-12-1985-150.00'],
+    ['an amount-shaped phone after a range and spaces, its label out of reach', 'Phone March 11, 2029\u22122,866.66  960.58 4433'],
+    ['an SSN glued to an amount after the label’s number, a word and a range', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00'],
+    ['an amount-shaped SSN after the label’s number, a word and a range', 'SSN 1: is 01/01/2020-900.12 3456'],
+    // Review round 3 (PHI3-5): a day-first ordinal range glued to "St" after an SSN label, the label more than 24
+    // characters back, and an amount-shaped SSN or phone after a range whose label the reach is counted to.
+    ['a labeled SSN after a day-first ordinal range glued to "St" (PHI3-5 i)', 'Re: SSN 01/01/2020-1st Jan 2020St 90012-3456'],
+    ['a labeled SSN after a day-first ordinal range glued to "St", with "of" (PHI3-5 i)', 'SSN 01/01/2020-4th of March, 2020St 900.12 3456'],
+    ['a labeled phone after a currency amount and an ordinal date (PHI3-5 ii)', 'SSN $10-1st Jan 2020 202 555 01.23'],
+    // An amount joined to a range's end as a chain joins, a currency amount's digits too (cc3dd7f6 refused this period after
+    // an amount and a full stop with no space for the range's own digits; with a word between, it is sent, above).
+    ['a period starting with a month word after an amount and a full stop', 'Paid $0,000.00.January 1, 2020-2020-01-02Paid'],
+    // A label glued to the word before it is read next to a range cc3dd7f6 refused.
+    ['an amount-shaped SSN after a glued SSN label after a range', '01/01/2020-150.00-PaidSSN 900 12 34.56 Paid'],
+    ['a local phone after a glued SSN label after a range', '150.00-01/02/2020-PaidSSN 555-0123Paid'],
+  ])('refuses, as cc3dd7f6 did, a letter in which a range’s end may be an identifier’s fragment: %s', (_case, letter) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
+    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: letter })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+  });
+
+  // Review round 3 of the range fix (2026-11-07): the glued reading of round 2 cut SSN and phone labels (PHI3-1, PHI3-2,
+  // PHI3-3) and took codes, modifiers and units after the patient's name (GATEWAY3-1, GATEWAY3-2). With it reverted, each
+  // finding's input is redacted or refused exactly as at cc3dd7f6 (null: refused).
+  const round3 = (names: string[]) => ({ pseudonym: 'synthetic-patient-15', names, datesOfBirth: ['1980-03-14'], memberIds: ['ZZ7654321'] });
+  it.each([
+    // PHI3-1: the patient's name glued or in camel case between an SSN or phone label and the number.
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Please call MsZephyra at 555-0123.', 'Please call MsZephyra at [PHONE].'],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Phone for JaneZephyra: 555-0123', 'Phone for JaneZephyra: [PHONE]'],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Re: Fax DrJane 555-0123', 'Re: Fax DrJane [PHONE]'],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN of MsZephyra: 90012-3456', null],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Social Security number of MsZephyra: 900.12 3456', null],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN DearJane 900.12 3456', null],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN ZEPHYRAJane 900.12 3456', null],
+    // PHI3-2: a lone ten starting 0 or 1 after the glued name, and a word between the name and the number.
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN MsZephyra0900123456', 'Re: SSN MsZephyra[SSN]'],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN Zephyra1900123456', null],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN for Zephyra1900123456', null],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: Fax ZephyraPaid900.12 3456', null],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN ZephyraPaid900,12 3456', null],
+    // PHI3-3: a short part that spells the end of an SSN label glued to its number.
+    ['PHI3-3', ['TY Q ZEPHYRA'], 'Re: Social Security900.12 3456', null],
+    ['PHI3-3', ['TY Q ZEPHYRA'], 'SOCIAL SECURITY90012-3456', null],
+    ['PHI3-3', ['TY Q ZEPHYRA'], 'Member Ty Zephyra, Social Security900,12 3456', null],
+    ['PHI3-3', ['SN VANTREE'], 'SSN900.12 3456', null],
+    // PHI3-5 (iii): the call's own identifier between a phone label and an SSN next to a range.
+    ['PHI3-5', ['JANE Q ZEPHYRA'], 'DOS Tel: ZZ7654321: 900 12 34.56-01/03/2020', null],
+    // GATEWAY3-1: a code whose letter is an initial of the patient, right after the name.
+    ['GATEWAY3-1', ['MARIA MARTINEZ'], 'MARTINEZ, MARIA M54.50 97110 1 150.00', '[PATIENT_NAME], [PATIENT_NAME] M54.50 97110 1 150.00'],
+    ['GATEWAY3-1', ['GEORGE ZEPHYRA'], 'Patient GEORGE ZEPHYRA G0283 denied.', 'Patient [PATIENT_NAME] G0283 denied.'],
+    ['GATEWAY3-1', ['GEORGE ZEPHYRA'], 'Patient George Zephyra Z96.651 on file', 'Patient [PATIENT_NAME] Z96.651 on file'],
+    ['GATEWAY3-1', ['JANE Q ZEPHYRA'], 'Patient: JANE Q ZEPHYRA\nJ3301 1 150.00', 'Patient: [PATIENT_NAME]\nJ3301 1 150.00'],
+    // GATEWAY3-2: remark codes, a modifier, minute units and words that a two- or three-letter part spells.
+    ['GATEWAY3-2', ['QIANG MA'], 'Remark: MA130 applies.', 'Remark: MA130 applies.'],
+    ['GATEWAY3-2', ['QIANG MA'], 'Re: QIANG MA\nMA04', 'Re: [PATIENT_NAME]\nMA04'],
+    ['GATEWAY3-2', ['MIN XU'], 'CPT 97110XU denied', 'CPT 97110XU denied'],
+    ['GATEWAY3-2', ['MIN XU'], 'Total time 45min.', 'Total time 45min.'],
+    ['GATEWAY3-2', ['MIN XU'], 'Total time 30MIN.', 'Total time 30MIN.'],
+    ['GATEWAY3-2', ['ANN LIN'], 'Line1 97110 150.00', 'Line1 97110 150.00'],
+    ['GATEWAY3-2', ['ANN LIN'], 'Paid 150.00Annual', 'Paid 150.00Annual'],
+    ['GATEWAY3-2', ['AL Q ZEPHYRA'], 'See ALJ2 decision.', 'See ALJ2 decision.'],
+    ['GATEWAY3-2', ['ED Q ZEPHYRA'], 'Edit1 applies.', 'Edit1 applies.'],
+  ] as const)('handles review round 3’s input as cc3dd7f6 did (%s): %s %s', (_finding, names, letter, sent) => {
+    const who = round3([...names]);
+    const redacted = redactLetter(letter, who, AC);
+    expect(holdsIdentifier(redacted.text, who, AC)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
     for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456', 'RE: Vantree[SSN]']) {
       expect(holdsIdentifier(text, A, AC), text).toBe(true);
     }
-    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'SSN 900 12 34 56' })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
-    // A name's letter edge reads a digit beside it as a lost space, so the name glued to an SSN is redacted with it, where
-    // the letter was refused before (design 7.4, docs/adr/0054).
-    expect(denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'RE: Vantree900-12-3456' }).user).toContain('RE: [PATIENT_NAME][SSN]');
+    // The name glued to the number by a lost space has no boundary redaction reads: the letter is refused, as at cc3dd7f6
+    // (design 7.4; the glued reading of review round 2 is reverted, review round 3).
+    for (const text of ['RE: Vantree900-12-3456', 'SSN 900 12 34 56']) {
+      expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+    }
   });
 
   it('rejects a claim reference that holds a placeholder without being one of the call’s claims (R10b)', () => {
