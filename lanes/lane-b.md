@@ -1980,3 +1980,89 @@ HANDOFF.md; LANES.md rule 10).
   - **S4** (slice 2): wf_445df00c-8d3 done; 9 findings confirmed, two blocking (MONEY-A-1, MONEY-B-1). Round 2 runs
     (wf_db15c2a6-888; build-ops 9a625442).
   - **S5:** waits for #129 to merge.
+
+### 2026-11-07 00:35 UTC (Lane B's orchestrator): #130 merged; S5 and S3 started
+Heads checked live at 00:33 UTC (`git ls-remote origin`; REST, read-only); status files read to 00:36 UTC.
+
+- **The account's 5-hour limit stopped every session's workflows** between ~22:58 and 00:10 UTC (its reset). The
+  machines restarted; each session re-ran its setup (PostgreSQL restarted) and resumed its workflow in the same run at
+  00:35 UTC. What each lost is in its row below.
+  - **Why so soon:** S1 ran two heavy workflows at once (the build and the leak hunt), which used the 5-hour window in
+    ~4.7 h. S1 now holds the hunt until its build ends.
+- **#130 merged** (pages-child-process, SEC-24): 2026-11-06 22:55 UTC as **31a7345f**, from 43a81626, by S3
+  (session_01FcouKQJppM8BdCui7NVQUa).
+  - CI on 43a81626: 38 check runs green.
+  - The fresh-clone verification wf_1edda650-2ad passed. Its hostile-input probe, run under the parent's
+    `--max-old-space-size=560`, refused all five inputs within bounds, with no reader left and no core.
+  - `claude/build-platform` is now 31a7345f, the first base move since cc3dd7f6. Its push runs are green (ci
+    42308243590, mutation 42308243735, screening-capacity 42308243690); the item is closed.
+  - **`infra/lib/heap.ts`'s `--max-old-space-size=560` is unblocked:** the worker task's flag may now ship.
+  - S3's proposals (status file; not in #130): a step in ci.yml's images job that reads one synthetic PDF through
+    `dist/page-reader.js` in the built worker image; the core-crash test run in CI. The open risk stays: the child can
+    open network connections, to revisit with Node 26 LTS.
+- **S5 started UX PR 4b** (session_01FcouKRDfoFAeXZK4Thp8M8; GO at 22:57 UTC, when #130 freed the slot).
+  - `co-001/ux-screening-result-words` is cut at 31a7345f, not on origin yet. Status
+    `approval-summaries/lane-b-ux-screening-result-words-status.md`.
+  - Scope: design §11 with #121's P1; TBL-08 reworded, no new number; no migration; Lane A's three §12.1 conditions.
+  - The build workflow wf_efec3b83-f5b started at 00:35 UTC: a scout re-pins §11 against the tree, a completeness
+    critic, the builder, the fast checks and the screening e2e specs.
+  - Next: the push and the draft PR; one review (UX and brand, with shots and skeptics); the full suite once; the merge
+    under rule 2a.
+- **S3 took ux-forms-after-42** from S5's queue (assigned 22:57 UTC, claimed 23:00 UTC), so the LANES.md row names S3,
+  session_01FcouKQJppM8BdCui7NVQUa, not S5.
+  - Status `approval-summaries/lane-b-ux-forms-after-42-status.md`. Cut locally at 31a7345f; nothing pushed yet.
+  - The design refresh of 7.8 against the base (wf_8ed4a036-bce: one reviewer and a critic) was stopped at its start by
+    the 5-hour limit and resumed at 00:35 UTC. Then the build, the shots, the draft PR, the UX and brand review, the
+    fix round with the full suite once, the push, CI, the verification, the merge.
+  - S5's order is otherwise unchanged: 4b, SUITE-CAP-3's worker-side fixes, P2, P5, UX PR 8, dark-mode-ship.
+- **The other rows:**
+  - **S1** (`co-001/redact-range-glued`; session_01FcouKP1U2GGDFhhZT9CaUV): WIP 6fc88092.
+    - The re-run PHI review (a 350,000-letter seeded base-against-head differential) found no SSN, phone or DOB digit
+      that the base redacts sent at e0cf46e0. PHI1-1 is recorded and pinned, with no code change.
+    - The re-review's fixes are in: 9ecbe6c9 (GATEWAY1-1) and 6fc88092 (ADR 0054 and the tests pin what the range
+      barrier sends: PHI1-1 to PHI1-3, GATEWAY1-2, GATEWAY1-4).
+    - The 5-hour stop lost round 2's reviews, the final fixer, the suite and the critic; wf_bca3d2b3-77c resumed.
+    - The branch is still cc3dd7f6; no PR. It merges only with zero base-against-head regressions.
+    - Then the follow-on, `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22; not cut). Its hunt lost its round-2 skeptics,
+      rounds 3 and 4 and its synthesis to the stop, and is held until this build ends.
+  - **S2** (#126; session_01FcouKQthXdmDnPmwhFepxW): pushed at d2fdd106 (~22:48 UTC) after cc3dd7f6 was merged once and
+    the full local suite ran once (the mutation gate's two survivors at `interest.ts:353` killed by d2fdd106).
+    - **The second review round is not done:** its two reviewers were cut off by the 5-hour limit (~23:55 UTC) without
+      returning. wf_29adffb1-b27 redoes it (loop until dry, a completeness critic), then CAS-42.5 on the final head, the
+      re-shots, the description and the verification. S2 is near the last push.
+    - CI on d2fdd106: e2e green (INT-REL-1 fixed); red on the domain model (the blank approval line, as expected) and on
+      `unit`, cancelled at its 20-minute timeout. Behind 31a7345f, merged once right before the merge.
+    - The batching plan: the read-only wf_255f9403-721 (5 of 7 scouts done before the stop) resumed beside it.
+  - **S4** (slice 2; session_01FcouKPkXdRW5ntz6ye92pL): round 1's nine findings fixed in d21f4577 (new code
+    `fact_not_separated`). Round 2, wf_db15c2a6-888, was stopped at 22:58 UTC after the carry-over verdicts and the
+    equivalent's review: the `template.ts` equivalent is signed in d96a053a (WIP); NEW-1 is fixed (fails closed); NEW-2
+    is an accepted reading in ADR 0089. Resumed at 00:35 UTC: the loop-until-dry rounds and the critic. No PR.
+  - **SUITE-CAP-3** (session_01FcouKP4ekrT97eyDtLe4Rd): the review loop wf_d171f0f0-948 finished round 1: 15 findings,
+    9 upheld by the skeptics; both lenses gave BUILD WITH CHANGES, nothing blocking.
+    - The surviving findings are applied to the design (f795bf28, §18): code changes go into slices 2 and 3, tests into
+      CAS-49.1, CAS-49.6 and CAS-50.
+    - The freeze-exception ask gained the 360 s wording and two proof items (a cross-practice test; a plan test). The
+      two granted bodies are unchanged, so the founder's grant stands as given.
+    - Round 2's reviewers and the critic were stopped by the 5-hour limit; resumed at 00:35 UTC.
+  - **#129** (email lockup plate; session_01FcouKRo5iee5QFtPT8UimZ): CI was all green on 34927fd0. The base moved to
+    31a7345f, which shares `test-matrix.md` and the synth registry, so wf_464a574d-f04 merged it once: f4fef908, no
+    conflicts, every check it ran passed. The 5-hour limit stopped it after the merge commit; it resumed and pushed
+    f4fef908 (~00:40 UTC). Next: CI on f4fef908, the fresh-clone verification, ready, the merge.
+- **For Lane A's slice-3 migration (S4's note, 22:36 UTC; ADR 0089):**
+  - /3 reports carry six new codes: `free_figure`, `number_word`, `unknown_fact`, `fact_not_canonical`,
+    `fact_contradicted` and `fact_not_separated`.
+  - All six are of kind `'fact'`.
+  - The mismatch key `canonical` appears on `fact_not_canonical` only.
+  - Recorded in the rolling handoff (§4, item 3) and in the slice's LANES.md row.
+- **The co-founder's question, 22:40 UTC:** "How can we speed this development up". The answer given, in order:
+  1. **Raise the usage ceiling first:** the organization's extra usage (or a higher limit). The weekly cap has been the
+     largest single stop: it stopped this orchestrator from 2026-11-02 to 2026-11-06, and stood Lane A down at 99% on
+     2026-11-05.
+  2. **Same-day founder approval lines:** each schema PR waits on the founder's committed line, so committing it the
+     day it is posted keeps the one-at-a-time chain moving.
+  3. **The GitHub organization on the Team plan:** a merge queue (in place of each PR merging the base again by hand
+     under the up-to-date rule), larger runners, and a private repository (it stays public until then).
+  4. **Start the people-only launch work now:** what no session can do (the founder's launch and staging items in the
+     rolling handoff's §5).
+  5. **Already in place:** schema batching, the speed rules (`lanes/acting-lane-b-2026-11-04.md`), the rolling handoff,
+     and about five sessions in parallel.

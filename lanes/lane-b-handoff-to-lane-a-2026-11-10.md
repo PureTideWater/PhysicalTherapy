@@ -1,6 +1,6 @@
 # Lane B's handoff to Lane A (for 2026-11-10)
 
-**Rolling: current as of 2026-11-06 22:45 UTC; finalized at stand-down.**
+**Rolling: current as of 2026-11-07 00:35 UTC; finalized at stand-down.**
 
 Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) brings this file up to date at every records commit, so a
 handoff exists whenever Lane B stops. Last week the 7-day cap stopped the orchestrator itself, and the planned refresh
@@ -43,39 +43,45 @@ Check every head live first (`git ls-remote origin`, the open PRs). Sessions pus
 
 | Merged | PRs |
 | --- | --- |
-| 2026-11-05 ~07:55 UTC to 2026-11-06 22:45 UTC | None. `claude/build-platform` is still cc3dd7f6 (#128, 2026-11-05 08:19 UTC; checked 22:37 UTC). Both accounts were out of weekly usage until 2026-11-06 19:00 UTC. |
+| 2026-11-05 ~07:55 UTC to 2026-11-06 22:54 UTC | None. Both accounts were out of weekly usage until 2026-11-06 19:00 UTC. |
+| 2026-11-06 22:55 UTC | **#130**, contract pages read in their own process (SEC-24; ADR 0033 and ADR 0071 amended), as **31a7345f** from 43a81626, by S3 (session_01FcouKQJppM8BdCui7NVQUa). CI green (38 check runs); fresh-clone verification wf_1edda650-2ad passed. Its push runs on 31a7345f are green (ci 42308243590, mutation 42308243735, screening-capacity 42308243690). `infra/lib/heap.ts`'s `--max-old-space-size=560` on the worker task is now unblocked. S3's proposals, not in #130: a step in ci.yml's images job reading one synthetic PDF through `dist/page-reader.js` in the built worker image; the core-crash test run in CI; the child's network reach revisited with Node 26 LTS (`approval-summaries/lane-a-pages-child-process-status.md`). |
+
+`claude/build-platform` is 31a7345f (checked 2026-11-07 00:33 UTC).
 
 Nothing went into `main` (220f2b4e, unmoved since 2026-10-20), and there are no tags.
 
 ## 2. In flight
 
-Heads were checked live at 2026-11-06 22:37 UTC. Each item's exact next step is in its status file's RESUME-BLOCK, or in
+Heads were checked live at 2026-11-07 00:33 UTC, status files read to 00:36 UTC. The account's 5-hour limit stopped every
+workflow between ~22:58 and 00:10 UTC; each resumed in its same run at 00:35 UTC (what each lost is below). Each item's exact next step is in its status file's RESUME-BLOCK, or in
 its log while the session runs. A branch "not on origin" has only a WIP ref.
 
 | Item | Session | Branch, WIP ref, PR | Stage | Resume from |
 | --- | --- | --- | --- | --- |
-| **MOD-16: a range glued to a word** (`co-001/redact-range-glued`; CI flake, PHI) | S1, session_01FcouKP1U2GGDFhhZT9CaUV | Branch = cc3dd7f6; WIP `co-001/wip-redact-range-glued` e0cf46e0; no PR | Built (2861bc0f, 89fb3193); gateway round 1 fixed (21e67bba, 435f0a68, e0cf46e0). Round 1's PHI review was lost and its notes showed regressions against the base, so wf_bca3d2b3-77c was resumed with a base-against-head differential PHI review. It merges only with zero regressions against the base. | `approval-summaries/lane-b-redact-range-glued-status.md` |
-| **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; PHI; MOD-21, MOD-22) | S1, next | Not cut; no PR | Mapped, not built. The read-only hunt wf_8da6dd19-398 found 52 candidate classes at cc3dd7f6 in round 1. Its synthesis (the design input) is in S1's scratchpad and goes to build-ops before any stand-down. | The range-glued status file, until its own exists; LANES.md row |
+| **MOD-16: a range glued to a word** (`co-001/redact-range-glued`; CI flake, PHI) | S1, session_01FcouKP1U2GGDFhhZT9CaUV | Branch = cc3dd7f6; WIP `co-001/wip-redact-range-glued` 6fc88092; no PR | Built (2861bc0f, 89fb3193); gateway round 1 fixed (21e67bba, 435f0a68, e0cf46e0). Round 1's PHI review was lost and its notes showed regressions against the base, so wf_bca3d2b3-77c was resumed with a base-against-head differential PHI review. The re-run differential (350,000 letters) found no digit the base redacts sent at e0cf46e0. The re-review's fixes: 9ecbe6c9 (GATEWAY1-1) and 6fc88092 (PHI1-1 to PHI1-3, GATEWAY1-2, GATEWAY1-4). The 5-hour stop lost round 2's reviews, the final fixer, the suite and the critic; resumed 00:35 UTC. It merges only with zero regressions against the base. Next: the base 31a7345f merged once, the full suite once, the push, the PR. | `approval-summaries/lane-b-redact-range-glued-status.md` |
+| **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; PHI; MOD-21, MOD-22) | S1, next | Not cut; no PR | Mapped, not built. The read-only hunt wf_8da6dd19-398 found 52 candidate classes at cc3dd7f6 in round 1. The 5-hour stop lost its round-2 skeptics, rounds 3 and 4 and the synthesis; S1 holds it until range-glued's build ends, then reruns it. The synthesis (the design input) goes to build-ops before any stand-down. | The range-glued status file, until its own exists; LANES.md row |
 | **Packets verifier identifier fold** (MOD-19, MOD-20) | S1, third | `co-001/packets-verifier-identifier-fold` not on origin, no commits; no PR | Three scouts done; design next. It shares verifier files with slice 2 and the /3 migration. | `approval-summaries/lane-b-packets-verifier-identifier-fold-status.md` RESUME-BLOCK |
-| **Interest credited once** (schema, acting Lane A) | S2, session_01FcouKQthXdmDnPmwhFepxW | `co-001/ledger-interest-once` c49367c5; WIP `co-001/wip-interest-fix` 23369ae6; draft #126 | wf_342b2332-e78 runs: the second review round on c49367c5..23369ae6, fixes, the base merged once, the full suite once. Then the push, the description, CAS-42.5 and the verification. Then ready, and the suggested line as one comment. | `approval-summaries/lane-a-schema-chain-status.md` (its 19:50 UTC section, then the RESUME-BLOCK) |
-| **password-changed-notice** (schema; ADR 0091, SGN-16) | S2, after #126 | Not started | Designed (`designs/lane-a-auth-emails.md`). Its PR opens only after #126 merges. | `approval-summaries/lane-a-auth-emails-status.md` RESUME-BLOCK |
-| **Contract pages in their own process** (SEC-24) | S3, session_01FcouKQJppM8BdCui7NVQUa | `co-001/pages-child-process` 43a81626 (cc3dd7f6 merged as 7ce6c8b5); draft #130 | Full local suite green at 43a81626 (wf_cb013d2b-2e3; 17 mutation shards). Every CI check green at 22:36 UTC. Next: the fresh-clone verification that reads CI, ready, the merge. | `approval-summaries/lane-a-pages-child-process-status.md` |
-| **Email lockup plate** (O-5, O-8) | session_01FcouKRo5iee5QFtPT8UimZ (S3's second item, run in parallel) | `co-001/email-lockup-plate` 34927fd0; draft #129 | Fix round 2 done and verified (61169d8b; description citations fixed in 34927fd0). Every CI check green on 34927fd0 (ci, mutation, screening-capacity, approval-of-record; checked 22:37 UTC). Next: the fresh-clone verification that reads CI, ready, the merge. | `approval-summaries/lane-a-email-lockup-plate-status.md` |
-| **Packet figures as placeholders, slice 2** (ADR 0089, CAS-52 to CAS-54) | S4, session_01FcouKPkXdRW5ntz6ye92pL | `co-001/packet-figure-placeholders-2` not on origin; WIP `co-001/wip-packet-figure-placeholders-2` d21f4577; no PR | Built in two parts (0fc43dcd, a3d234ce). wf_445df00c-8d3 done: 9 findings confirmed, two blocking (MONEY-A-1, MONEY-B-1). Round 2 runs (wf_db15c2a6-888: the recheck findings, loop-until-dry reviews, a completeness critic). Then the full suite, the push and the PR. | `approval-summaries/lane-b-packet-figure-placeholders-status.md` (the SLICE-2 section) |
-| **SUITE-CAP-3, the design review** | session_01FcouKP4ekrT97eyDtLe4Rd | `co-001/suite-cap-3-reconcile` 83d71fd6 (stale); WIP `co-001/wip-suite-cap-3` 0b6e90eb (cc3dd7f6 merged); no PR | wf_9dd7a743-340 done: step 7b at 2,000 lines on practice F 620 s -> 21.5 s, spread R 159 -> 46 s, writes identical row for row. D14 ruled 22:31 UTC (section 4). The freeze-exception ask was granted 22:40 UTC. The review loop wf_d171f0f0-948 runs. The build (worker-side fixes only) is S5's third item. | `approval-summaries/lane-b-suite-cap-3-status.md` |
-| **S5's queue** | S5, session_01FcouKRDfoFAeXZK4Thp8M8 | None cut | Waiting for #129 to merge. In order: UX PR 4b with #121's P1; ux-forms-after-42; SUITE-CAP-3's worker-side fixes; P2; P5; UX PR 8 (ADR 0090, SGN-09 to SGN-12); dark-mode-ship. | Each item's LANES.md row; `approval-summaries/lane-b-ux-screening-result-tables-status.md` for 4b |
+| **Interest credited once** (schema, acting Lane A) | S2, session_01FcouKQthXdmDnPmwhFepxW | `co-001/ledger-interest-once` d2fdd106 (= WIP `co-001/wip-interest-fix`); draft #126 | Pushed at d2fdd106 (~22:48 UTC): cc3dd7f6 merged once (e81cd5af), the full suite once, the mutation gate's two survivors killed. **The second review round is not done** (its reviewers were cut off by the 5-hour limit, ~23:55 UTC): wf_29adffb1-b27 redoes it, then CAS-42.5, the re-shots, the description and the verification. CI on d2fdd106: e2e green (INT-REL-1 fixed); red on the domain model (the blank approval line) and `unit` (cancelled at its 20-minute timeout). Behind 31a7345f, merged once right before the merge. Then ready, and the suggested line as one comment. The batching plan wf_255f9403-721 (read-only) resumed beside it. | `approval-summaries/lane-a-schema-chain-status.md` (its 19:50 UTC section, then the RESUME-BLOCK) |
+| **password-changed-notice** (schema; ADR 0091, SGN-16) | S2, after #126 | Not started | Designed (`designs/lane-a-auth-emails.md`). Its PR opens only after #126 merges; it may be batched with related queue items (section 4). | `approval-summaries/lane-a-auth-emails-status.md` RESUME-BLOCK |
+| **Email lockup plate** (O-5, O-8) | session_01FcouKRo5iee5QFtPT8UimZ (S3's second item, run in parallel) | `co-001/email-lockup-plate` f4fef908; draft #129 | Fix round 2 done and verified (61169d8b; description citations fixed in 34927fd0). Every CI check green on 34927fd0 (22:56 UTC). The base moved to 31a7345f, which shares `test-matrix.md` and the synth registry, so wf_464a574d-f04 merged it once (f4fef908, no conflicts, its checks pass) and pushed it at ~00:40 UTC, after a 5-hour-limit stop. Next: CI on f4fef908, the fresh-clone verification that reads CI, ready, the merge. | `approval-summaries/lane-a-email-lockup-plate-status.md` |
+| **Packet figures as placeholders, slice 2** (ADR 0089, CAS-52 to CAS-54) | S4, session_01FcouKPkXdRW5ntz6ye92pL | `co-001/packet-figure-placeholders-2` not on origin; WIP `co-001/wip-packet-figure-placeholders-2` d96a053a; no PR | Built in two parts (0fc43dcd, a3d234ce). wf_445df00c-8d3 done: 9 findings confirmed, two blocking (MONEY-A-1, MONEY-B-1), all fixed in d21f4577 (new code `fact_not_separated`). Round 2 (wf_db15c2a6-888) was stopped at 22:58 UTC after the carry-over verdicts and the equivalent's review: the `template.ts` equivalent signed in d96a053a; NEW-1 fixed (fails closed); NEW-2 an accepted reading in ADR 0089. Resumed 00:35 UTC: loop-until-dry reviews, a completeness critic. Then the full suite, the push and the PR. Its /3 codes for Lane A: section 4, item 3. | `approval-summaries/lane-b-packet-figure-placeholders-status.md` (the SLICE-2 section) |
+| **SUITE-CAP-3, the design review** | session_01FcouKP4ekrT97eyDtLe4Rd | `co-001/suite-cap-3-reconcile` 83d71fd6 (stale); WIP `co-001/wip-suite-cap-3` 0b6e90eb (cc3dd7f6 merged); no PR | wf_9dd7a743-340 done: step 7b at 2,000 lines on practice F 620 s -> 21.5 s, spread R 159 -> 46 s, writes identical row for row. D14 ruled 22:31 UTC (section 4). The freeze-exception ask was granted 22:40 UTC. The review loop wf_d171f0f0-948 finished round 1 (15 findings, 9 upheld; both lenses BUILD WITH CHANGES, nothing blocking; applied in f795bf28, design §18). Round 2 and the completeness critic, stopped by the 5-hour limit, resumed at 00:35 UTC. The ask gained the 360 s wording and two proof items (a cross-practice test; a plan test); the two granted bodies are unchanged. The build (worker-side fixes only) is S5's second item. | `approval-summaries/lane-b-suite-cap-3-status.md` |
+| **UX PR 4b: the screening result's words** (TBL-08 reworded; no migration) | S5, session_01FcouKRDfoFAeXZK4Thp8M8 | `co-001/ux-screening-result-words` cut at 31a7345f, not on origin; no PR | Started 22:57 UTC, when #130 merged. The build workflow wf_efec3b83-f5b started at 00:35 UTC. Next: the push and the draft PR; one review (UX and brand, with shots and skeptics); the full suite once; the merge under rule 2a. | `approval-summaries/lane-b-ux-screening-result-words-status.md` |
+| **ux-forms-after-42** (design 7.8) | S3, session_01FcouKQJppM8BdCui7NVQUa (moved from S5's queue at 22:57 UTC) | `co-001/ux-forms-after-42` cut locally at 31a7345f, not on origin; no PR | Claimed 23:00 UTC. The design refresh of 7.8 against the base (wf_8ed4a036-bce: one reviewer and a critic) was stopped at its start by the 5-hour limit and resumed at 00:35 UTC. Then the build, the shots, the draft PR, the UX and brand review, the fix round with the full suite once, the push, CI, the verification, the merge. | `approval-summaries/lane-b-ux-forms-after-42-status.md` |
+| **S5's queue after 4b** | S5 | None cut | In order: SUITE-CAP-3's worker-side fixes; P2; P5; UX PR 8 (ADR 0090, SGN-09 to SGN-12); dark-mode-ship. | Each item's LANES.md row |
 | **Kept and idle** | session_01FcouKNB2TyuPCAha9BaEjQ (#48, the narrative draft; ADR 0076, CAS-35 to CAS-37); session_01FcouKNP2XtaombFLueKLnu (ci-pin-age; P2 is now in S5's queue) | — | #48 waits for slice 2. Not started this week. | `approval-summaries/lane-b-unmapped-plan-status.md`, `approval-summaries/lane-b-ci-deps-status.md` |
 | **Dependabot #122, #123, #124** | None | Open, behind the base | Untriaged. Never merged as they stand; one replacement PR, like #94. | LANES.md rule 7 |
 
-Two things are not yet allowed:
-- **infra/lib/heap.ts's `--max-old-space-size=560`** must not ship before pages-child-process merges.
+One thing is not yet allowed:
 - **Slice 2, the verifier identifier fold and the /3 migration** all touch the packet verifier, so they go one at a time
   (rule 6: check the other's branch first).
+
+`infra/lib/heap.ts`'s `--max-old-space-size=560` on the worker task is allowed since #130 merged (2026-11-06 22:55 UTC).
 
 ## 3. The first item for Lane A
 
 **Take the schema chain back from S2 (session_01FcouKQthXdmDnPmwhFepxW) at its RESUME-BLOCK** in
-`approval-summaries/lane-a-schema-chain-status.md`. This section is rolling; at 22:45 UTC that means #126:
+`approval-summaries/lane-a-schema-chain-status.md`. This section is rolling; at 2026-11-07 00:35 UTC that means #126:
 - **First check** whether the founder has committed #126's approval line, and whether every required check is green on
   the latest commit.
 - **If both hold,** merge #126 under rule 2a (the base merged right before, with one CI re-run if the base moved). Then
@@ -87,11 +93,14 @@ Then take back the counters (section 6). Lane B keeps its own items, its session
 ## 4. The schema queue (one at a time, each with the founder's committed line)
 
 0. **#126, the interest fix.**
-   - Draft at c49367c5, with the WIP at 23369ae6.
-   - Its second review round, its one base merge and the full suite are running.
-   - The suggested approval line is not yet posted.
-   - The domain model's hash on 23369ae6 is provisional (f1b603ca…ef7, line 7469), and the base merge moves it.
-   - CI on c49367c5 is red only on the blank approval line and on e2e INT-REL-1, which is fixed on the WIP ref.
+   - Draft at d2fdd106 (= the WIP), pushed ~22:48 UTC after one base merge (cc3dd7f6) and the full suite once.
+   - **Its second review round is not done:** the 5-hour limit cut its reviewers off (~23:55 UTC). wf_29adffb1-b27
+     redoes it, then CAS-42.5, the re-shots, the description and the verification.
+   - CI on d2fdd106: e2e green (INT-REL-1 fixed); red on the blank approval line and on `unit`, cancelled at its
+     20-minute timeout.
+   - Behind the base again (31a7345f): merged once right before the merge, with `unit` green on that head. Then ready.
+   - The suggested approval line is not yet posted. The domain model's hash moves with the base merge, so it is taken
+     on the final head.
 1. **password-changed-notice.** Not started; S2 takes it next. ADR 0091, SGN-16.
 2. **The ledger-function migration: new bodies of `ledger_line_net` and `ledger_entry_rules`.** The founder granted the
    freeze exception at ~22:40 UTC, exactly as written in `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`.
@@ -108,7 +117,10 @@ Then take back the counters (section 6). Lane B keeps its own items, its session
      of 2026-11-06: flipping the constant stores token templates, which the export prints only once slice 4 renders
      them.
    - Slice 2 reaches /3 only by an explicit format argument, so nothing served changes before then.
-   - The note is also in LANES.md "Handed to Lane A".
+   - **The /3 reports carry six new codes (S4, 2026-11-06 22:36 UTC; ADR 0089):** `free_figure`, `number_word`,
+     `unknown_fact`, `fact_not_canonical`, `fact_contradicted` and `fact_not_separated`. All six are of kind `'fact'`.
+     The mismatch key `canonical` appears on `fact_not_canonical` only.
+   - The ordering note is also in LANES.md "Handed to Lane A"; the codes are in the slice's claim row too.
 4. **#85's design §7.2, items 1 to 5.**
 5. **#93's F9:** `roi_links_valid()`'s fifth key.
 6. **Relinking an app row to a new Cognito subject** (#125's stuck-invitee note).
@@ -127,12 +139,13 @@ staging, and the founder's F1 to F5 and ruling 16.
 - **#126's approval line:** https://github.com/PureTideWater/PhysicalTherapy/pull/126
   - S2 posts it as one suggested change on the domain model's approval line; the founder clicks "Commit suggestion", as
     for #104 and #110.
-  - It is not posted as of 2026-11-06 22:45 UTC.
+  - It is not posted as of 2026-11-07 00:35 UTC.
   - password-changed-notice's line follows.
 - **SUITE-CAP-3's ledger freeze exception: granted** by the founder, relayed by the co-founder at ~22:40 UTC, as written in
   https://github.com/PureTideWater/PhysicalTherapy/blob/claude/build-ops/approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md
   (the new bodies of `ledger_line_net` and `ledger_entry_rules`; section 4, item 2). Its PR still needs the founder's
-  approval of record.
+  approval of record. The design review's round 1 (f795bf28) added the 360 s wording and two proof items to the ask; the
+  two granted bodies are unchanged.
 - **A documented PHI residual,** if the leak hunt marks any class one (obfuscation beyond pattern reach). It would go
   through the co-founder with the exact text, and be fixed meanwhile as the safer option. There is none yet.
 - **Staging steps:**
@@ -161,7 +174,7 @@ staging, and the founder's F1 to F5 and ruling 16.
 
 ## 6. Counters (Lane B allocates until Lane A returns)
 
-Next free, as of 2026-11-06 21:04 UTC:
+Next free, as of 2026-11-06 21:04 UTC (unchanged at 2026-11-07 00:35 UTC: 4b rewords TBL-08 and takes no new number):
 - **ADR 0092.** 0089 is slice 2's, 0090 UX PR 8's, 0091 password-changed-notice's.
 - **Test-matrix MOD-23.** MOD-19 and MOD-20 are the verifier fold's; MOD-21 and MOD-22 are redact-ssn-phone-leaks'.
 - **Test-matrix CAS-56, SEC-25, SGN-17**, and in the other series LED-26, BIL-11, CI-30, MAP-11, PRC-33, HOM-05, TBL-09,
@@ -192,6 +205,16 @@ The record of each allocation is LANES.md rule 4's counters line.
   scratchpad. Commit what a successor needs to `claude/build-ops` before any stand-down.
 - **Two agents at a time per workflow on these machines.** When findings are many, batch the skeptics per angle, not per
   finding.
+- **The 5-hour limit stops a session's workflows too** (2026-11-06 ~22:58 to 00:10 UTC: every workflow on Lane B's
+  account stopped and resumed at 00:35 UTC). Two heavy workflows in one session used the window in ~4.7 h, so run one
+  heavy workflow per session at a time, and push WIP refs before long runs.
+- **CI's `unit` job can hit its 20-minute timeout** (#126 on d2fdd106, 22:48 to 23:08 UTC, cancelled). Re-run it once on
+  the final head; if it repeats, measure before raising the limit.
+- **The co-founder asked at 22:40 UTC how to speed the build up.** The answer, in `lanes/lane-b.md` 2026-11-07 00:35 UTC:
+  raise the usage ceiling first (the organization's extra usage); same-day founder approval lines; the GitHub
+  organization on the Team plan (merge queue, runners, a private repository; until then the repository stays public,
+  below); start the people-only launch work. In place already: schema batching, the speed rules, this rolling file,
+  about five sessions.
 - **The 11-05 handoff's section 7 still holds:**
   - keep the repository public;
   - GitHub's up-to-date rule;
