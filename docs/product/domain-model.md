@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `c1e44ad06cf8a4e9b6ec6269d88dca7601fd9e09` on branch `co-001/password-changed-notice` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 48; head `20261110090000_ledger_interest_once.sql`
-- PostgreSQL 18; schema `public`: 100 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
-- PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
-- RLS: 92 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 183 policies
-- Functions in `public`: 383 (174 SECURITY DEFINER); triggers: 279, none disabled or replica-only; rewrite rules on tables: none
+- Generated at commit `efb8cbb297267c46606b7321742f76718224f724` on branch `co-001/password-changed-notice` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 49; head `20261111090000_password_changed_notice.sql`
+- PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
+- PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
+- RLS: 93 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 184 policies
+- Functions in `public`: 390 (180 SECURITY DEFINER); triggers: 281, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 52 tables and 150 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 53 tables and 150 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -56,7 +56,7 @@
 | 10 | [Ledger](#area-ledger) | Ledger and reconciliation (PHI) | 5 | 5 | The signed, append-only recovery ledger, the matches that pair its evidence, the posting-export and EFT-export rows it matches against, and the ROI statement. |
 | 11 | [Model gateway](#area-models) | Model gateway (PHI references only) | 4 | 2 | Each model call (references and hashes only), evaluation examples, the proposals a person decides, and budget holds taken before a call. |
 | 12 | [Billing and onboarding](#area-billing) | Operations (no PHI by design) | 21 | 0 | Stripe subscriptions, invoices and webhook events, the outbox of each invoice's dunning notices (one row a stage and billing owner, with its message's delivery), the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations (with the delivery of their Cognito message), and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice). |
-| 13 | [Operations](#area-operations) | Operations (no PHI by design) | 20 | 3 | The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger. |
+| 13 | [Operations](#area-operations) | Operations (no PHI by design) | 21 | 3 | The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the password-changed notices' outbox (a user's ID and the change's time, no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger. |
 
 ## PHI flag and row-level security by table
 
@@ -66,7 +66,7 @@
 | [`agreement`](#table-agreement) | Tenancy and access | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 4 | 1 | SELECT, INSERT(cols) | - | - |
 | [`agreement_event`](#table-agreement-event) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`anomaly`](#table-anomaly) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 5 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`audit_event`](#table-audit-event) | Operations | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 5 | 6 | SELECT, INSERT(cols) | - | SELECT |
+| [`audit_event`](#table-audit-event) | Operations | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 5 | 7 | SELECT, INSERT(cols) | - | SELECT |
 | [`audit_report`](#table-audit-report) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 3 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`audit_report_download`](#table-audit-report-download) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 4 | SELECT, INSERT(cols) | - | - |
 | [`billing_event`](#table-billing-event) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | SELECT, INSERT, UPDATE | - |
@@ -109,6 +109,7 @@
 | [`packet`](#table-packet) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 5 | SELECT, INSERT(cols) | - | - |
 | [`packet_version`](#table-packet-version) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 12 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`parse_report`](#table-parse-report) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
+| [`password_notice`](#table-password-notice) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`patient_ref`](#table-patient-ref) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`payer`](#table-payer) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`payer_plan_mapping`](#table-payer-plan-mapping) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 3 | SELECT, INSERT(cols) | - | - |
@@ -5672,7 +5673,7 @@ Invariants enforced by triggers:
 
 <a id="area-operations"></a>
 
-The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger.
+The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the password-changed notices' outbox (a user's ID and the change's time, no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger.
 
 | Table | Class | RLS / FORCE | Policies | tp_app | Created by | Dictionary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -5691,6 +5692,7 @@ The append-only audit log, job runs, in-app notifications and digests (counts an
 | [`support_mail_receipt`](#table-support-mail-receipt) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261101120000_support_mail` | not in the Data dictionary |
 | [`mail_stream`](#table-mail-stream) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`mail_send`](#table-mail-send) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
+| [`password_notice`](#table-password-notice) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261111090000_password_changed_notice` | not in the Data dictionary |
 | [`mail_recipient_key`](#table-mail-recipient-key) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`screening_mail_refusal`](#table-screening-mail-refusal) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`screening_bounce_mark`](#table-screening-bounce-mark) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
@@ -5704,7 +5706,7 @@ The append-only audit log, job runs, in-app notifications and digests (counts an
 - Class: tenant (nullable practice_id), not registered
 - Row-level security: enabled, forced; 5 policies; owner `tp_owner`
 - Dictionary: Operations (no PHI by design): Append-only
-- Created by `20261015140500_audit_and_operations` (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261103090000_deadline_verification_and_export_attestation`, `20261107090000_mail_streams`, `20261108090000_suspension_refusal`
+- Created by `20261015140500_audit_and_operations` (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261103090000_deadline_verification_and_export_attestation`, `20261107090000_mail_streams`, `20261108090000_suspension_refusal`, `20261111090000_password_changed_notice`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols); `tp_operator` SELECT
 - Column grant: `tp_app` INSERT (`action`, `actor_id`, `actor_kind`, `grant_id`, `id`, `object_id`, `object_type`, `practice_id`, `purpose`, `request_id`)
@@ -5741,7 +5743,7 @@ Policies (5):
 - `audit_event_operator_record`: PERMISSIVE FOR INSERT TO tp_owner
   - WITH CHECK `true`
 - `audit_event_record`: PERMISSIVE FOR INSERT TO tp_app
-  - WITH CHECK `((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text, 'notice_undelivered'::text, 'mail_stream_paused'::text, 'mail_stream_resumed'::text, 'organization_suspended'::text, 'organization_reinstated'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
+  - WITH CHECK `((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text, 'notice_undelivered'::text, 'mail_stream_paused'::text, 'mail_stream_resumed'::text, 'organization_suspended'::text, 'organization_reinstated'::text, 'password_notice_sent'::text, 'password_notice_undelivered'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
 
 Invariants enforced by constraints:
 - `audit_event_action_check`: `CHECK (action ~ '^[a-z][a-z0-9_]{0,63}$'::text)`
@@ -5771,6 +5773,7 @@ Invariants enforced by triggers:
   - "a packet export is requested by a person, in their own name, never on the worker's login"
   - "a packet export is requested by a person who may export PHI in its practice"
   - "a packet export is requested of a packet version of its practice"
+- `audit_event_password_notice`: `AFTER INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'password_reset_completed'::text AND new.actor_kind = 'user'::text AND new.object_type = 'user'::text AND new.object_id = new.actor_id) EXECUTE FUNCTION audit_event_password_notice()`
 - `audit_event_submission_unattested`: `BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'submission_logged_unattested'::text) EXECUTE FUNCTION audit_event_submission_unattested()`
   - "a submission sent without sign-off is recorded in the name of the person who logged it, never on the worker's login"
   - "a submission sent without sign-off is recorded of a submission of its practice that its person logged without the attestation, with its reason"
@@ -6418,7 +6421,7 @@ Maintains `updated_at`: `mail_stream_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261107090000_mail_streams` (ADR 0065)
+- Created by `20261107090000_mail_streams` (ADR 0065); its DDL, policies or trigger functions changed by `20261111090000_password_changed_notice`
 - Primary key: `ses_message_id`
 - Privileges: none for any group role
 
@@ -6426,7 +6429,7 @@ Maintains `updated_at`: `mail_stream_updated_at`.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `ses_message_id` | `text` | NOT NULL |  |  | `20261107090000` |  |
 | 2 | `stream` | `text` | NOT NULL |  | `mail_stream(stream)` | `20261107090000` |  |
-| 3 | `kind` | `text` | NOT NULL |  |  | `20261107090000` | one of cognito, digest, dunning, support_grant_opened, support_grant_closed, screening_result, screening_failed, screening_reminder, screening_withdrawal, probe |
+| 3 | `kind` | `text` | NOT NULL |  |  | `20261107090000` | one of cognito, digest, password_changed, dunning, support_grant_opened, support_grant_closed, screening_result, screening_failed, screening_reminder, screening_withdrawal, probe |
 | 4 | `subject_id` | `uuid` | null |  |  | `20261107090000` |  |
 | 5 | `recipient_user_id` | `uuid` | null |  | `user(id)` | `20261107090000` |  |
 | 6 | `screening_prospect_id` | `uuid` | null |  | `screening_prospect(id)` | `20261107090000` |  |
@@ -6467,18 +6470,72 @@ Invariants enforced by constraints:
 - `mail_send_complaint`: `CHECK ((state = 'complained'::text) = (complaint_type IS NOT NULL))`
 - `mail_send_complaint_type`: `CHECK (complaint_type = ANY (ARRAY['abuse'::text, 'auth_failure'::text, 'fraud'::text, 'not_spam'::text, 'virus'::text, 'other'::text, 'unspecified'::text]))`
 - `mail_send_expiry_window`: `CHECK (expires_at > sent_at AND expires_at <= (sent_at + '91 days'::interval))`
-- `mail_send_kind`: `CHECK (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'dunning'::text, 'support_grant_opened'::text, 'support_grant_closed'::text, 'screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::text, 'probe'::text]))`
+- `mail_send_kind`: `CHECK (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'password_changed'::text, 'dunning'::text, 'support_grant_opened'::text, 'support_grant_closed'::text, 'screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::text, 'probe'::text]))`
 - `mail_send_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
 - `mail_send_prospect_on_screening`: `CHECK (stream = 'screening'::text OR screening_prospect_id IS NULL)`
 - `mail_send_screening_names_no_user`: `CHECK (stream <> 'screening'::text OR recipient_user_id IS NULL)`
 - `mail_send_state`: `CHECK (state = ANY (ARRAY['sent'::text, 'delayed'::text, 'delivered'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'complained'::text]))`
-- `mail_send_stream_kind`: `CHECK (stream = 'transactional'::text AND (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'probe'::text])) OR stream = 'notices'::text AND (kind = ANY (ARRAY['support_grant_opened'::text, 'support_grant_closed'::text, 'dunning'::text, 'probe'::text])) OR stream = 'screening'::text AND (kind = ANY (ARRAY['screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::text, 'probe'::text])))`
+- `mail_send_stream_kind`: `CHECK (stream = 'transactional'::text AND (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'password_changed'::text, 'probe'::text])) OR stream = 'notices'::text AND (kind = ANY (ARRAY['support_grant_opened'::text, 'support_grant_closed'::text, 'dunning'::text, 'probe'::text])) OR stream = 'screening'::text AND (kind = ANY (ARRAY['screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::text, 'probe'::text])))`
 - `mail_send_subject`: `CHECK ((kind = ANY (ARRAY['cognito'::text, 'probe'::text])) = (subject_id IS NULL))`
 
 Invariants enforced by triggers:
 - `mail_send_expiry`: `BEFORE INSERT OR UPDATE OF stream, sent_at, expires_at ON mail_send FOR EACH ROW EXECUTE FUNCTION mail_send_expiry()`
 
 Maintains `updated_at`: `mail_send_updated_at`.
+
+### Table `password_notice`
+
+<a id="table-password-notice"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261111090000_password_changed_notice` (ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261111090000` |  |
+| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261111090000` |  |
+| 3 | `audit_event_id` | `uuid` | NOT NULL |  |  | `20261111090000` |  |
+| 4 | `changed_at` | `timestamp with time zone` | NOT NULL |  |  | `20261111090000` |  |
+| 5 | `state` | `text` | NOT NULL | `'pending'::text` |  | `20261111090000` | one of pending, sent, delivered, undelivered, failed |
+| 6 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261111090000` |  |
+| 7 | `next_attempt_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261111090000` |  |
+| 8 | `ses_message_id` | `text` | null |  |  | `20261111090000` |  |
+| 9 | `error_code` | `text` | null |  |  | `20261111090000` |  |
+| 10 | `sent_at` | `timestamp with time zone` | null |  |  | `20261111090000` |  |
+| 11 | `undelivered_reported_at` | `timestamp with time zone` | null |  |  | `20261111090000` |  |
+| 12 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261111090000` |  |
+| 13 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261111090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique `password_notice_once`: `UNIQUE (audit_event_id)`
+- Unique `password_notice_ses_message_id_key`: `UNIQUE (ses_message_id)`
+- Foreign `password_notice_user_id_fkey`: (user_id) -> `user`(id), on delete no action
+
+Indexes:
+- `password_notice_by_expiry`: `USING btree (expires_at)`
+- `password_notice_pending`: `USING btree (next_attempt_at) WHERE (state = 'pending'::text)`
+
+Policies (1):
+- `password_notice_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `password_notice_attempts`: `CHECK (attempts >= 0 AND attempts <= 5)`
+- `password_notice_error_code`: `CHECK (error_code ~ '^[A-Za-z]{1,64}$'::text)`
+- `password_notice_expiry_window`: `CHECK (expires_at > changed_at AND expires_at <= (changed_at + '91 days'::interval))`
+- `password_notice_failed`: `CHECK ((state = 'failed'::text) = (error_code IS NOT NULL))`
+- `password_notice_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- `password_notice_reported`: `CHECK (undelivered_reported_at IS NULL OR (state = ANY (ARRAY['undelivered'::text, 'failed'::text])))`
+- `password_notice_sent`: `CHECK ((ses_message_id IS NULL) = (state = ANY (ARRAY['pending'::text, 'failed'::text])) AND (ses_message_id IS NULL) = (sent_at IS NULL))`
+- `password_notice_state`: `CHECK (state = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'undelivered'::text, 'failed'::text]))`
+
+Maintains `updated_at`: `password_notice_updated_at`.
 
 ### Table `mail_recipient_key`
 
@@ -6771,37 +6828,38 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D19 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
 | D20 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
 | D21 | [`organization_status_change`](#table-organization-status-change) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261108090000_suspension_refusal` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 |
-| D22 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D23 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
-| D24 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D25 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D26 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
-| D27 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
-| D28 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D29 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
-| D30 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
-| D31 | [`screening_bounce_mark`](#table-screening-bounce-mark) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D32 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D33 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D34 | [`screening_mail_refusal`](#table-screening-mail-refusal) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D35 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D36 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D37 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261106090000_screening_consumer` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 |
-| D38 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D39 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D40 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D41 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D42 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D43 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D44 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
-| D45 | [`support_grant_notice`](#table-support-grant-notice) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
-| D46 | [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
-| D47 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
-| D48 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D49 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D50 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D51 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D52 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D22 | [`password_notice`](#table-password-notice) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261111090000_password_changed_notice` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091 |
+| D23 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D24 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
+| D25 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D26 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D27 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
+| D28 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
+| D29 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D30 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
+| D31 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
+| D32 | [`screening_bounce_mark`](#table-screening-bounce-mark) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D33 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D34 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D35 | [`screening_mail_refusal`](#table-screening-mail-refusal) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D36 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D37 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D38 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261106090000_screening_consumer` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 |
+| D39 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D40 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D41 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D42 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D43 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D44 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D45 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
+| D46 | [`support_grant_notice`](#table-support-grant-notice) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
+| D47 | [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
+| D48 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
+| D49 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D50 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D51 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D52 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D53 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
 
 ### E. Columns not in the Data dictionary (informational)
 
@@ -6976,11 +7034,12 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `support_mail_receipt.outcome` | `opened`, `withheld`, `unknown_sender`, `unverified_sender`, `unreadable` |
 | `mail_stream.stream` | `transactional`, `notices`, `screening` |
 | `mail_stream.paused_reason` | `bounce_rate`, `complaint_rate`, `account_rate`, `account_review`, `operator` |
-| `mail_send.kind` | `cognito`, `digest`, `dunning`, `support_grant_opened`, `support_grant_closed`, `screening_result`, `screening_failed`, `screening_reminder`, `screening_withdrawal`, `probe` |
+| `mail_send.kind` | `cognito`, `digest`, `password_changed`, `dunning`, `support_grant_opened`, `support_grant_closed`, `screening_result`, `screening_failed`, `screening_reminder`, `screening_withdrawal`, `probe` |
 | `mail_send.state` | `sent`, `delayed`, `delivered`, `bounced`, `suppressed`, `rejected`, `complained` |
 | `mail_send.bounce_kind` | `permanent`, `transient`, `undetermined` |
 | `mail_send.bounce_subtype` | `general`, `no_email`, `suppressed`, `on_account_suppression_list`, `on_configuration_set_suppression_list`, `mailbox_full`, `message_too_large`, `content_rejected`, `attachment_rejected`, `undetermined`, `other` |
 | `mail_send.complaint_type` | `abuse`, `auth_failure`, `fraud`, `not_spam`, `virus`, `other`, `unspecified` |
+| `password_notice.state` | `pending`, `sent`, `delivered`, `undelivered`, `failed` |
 | `screening_mail_refusal.reason` | `bounced`, `complained` |
 | `screening_bounce_mark.subject_kind` | `client`, `account` |
 | `compliance_record.kind` | `policy_approval`, `access_review`, `tabletop_exercise`, `training_attestation`, `vendor_review`, `risk_analysis`, `security_official` |
@@ -7035,6 +7094,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `audit_event_packet_download()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5d9ff171f092c4f1` |
 | `audit_event_packet_export_attempt()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `980bc6bb1ce69ba4` |
 | `audit_event_packet_export_requested()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `41846c4e697780b0` |
+| `audit_event_password_notice()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e0e771daa158c3d4` |
 | `audit_event_submission_unattested()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8d18da3beb942ba9` |
 | `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3e46c1342db1a9db` |
 | `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1ab1a28f01764be6` |
@@ -7160,12 +7220,17 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_due_support_notices(integer)` | `TABLE(support_grant_id uuid, practice_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `80da21d02daeadaa` |
 | `operator_mail_account_signal(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2684abb0a6c123b1` |
 | `operator_mail_cutoff(text)` | `text` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `aec6c3e8b9262b47` |
-| `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `faa298581d4c5479` |
+| `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1483c2862d633565` |
 | `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1d712c911dfd58cf` |
 | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
 | `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2fcf2f8b70481744` |
 | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
-| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `3c175325fc14b48c` |
+| `operator_password_notice_claim(uuid)` | `TABLE(user_id uuid, email text, changed_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `71c91bc39c2d902a` |
+| `operator_password_notice_failed(uuid,text,boolean,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `11734c20b5241fd1` |
+| `operator_password_notice_sent(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `82b40ab2f16b4e66` |
+| `operator_password_notices_due(integer)` | `TABLE(notice_id uuid, user_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d3ca686c261a2915` |
+| `operator_password_notices_stale(integer,text)` | `TABLE(notice_id uuid, user_id uuid)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `04e09af840e2d487` |
+| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text, password_notice_undelivered uuid)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d0c75c27551b0f52` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
 | `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `a35a25f1df1aa1c8` |
 | `operator_screening_complete(uuid,text,text,text,text,integer)` | `TABLE(contact_email text, row_count integer, kept_with text, received_at timestamp with time zone, wait_reason text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `8220d43ccceb8bb4` |
@@ -7213,6 +7278,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `packets_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0444f4a36978439f` |
 | `packets_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d55baaa259f73fa7` |
 | `parse_report_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `377d9e5cdfe2b80c` |
+| `password_notice_report_undelivered(uuid,text)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b23f74d3c9743621` |
 | `payer_plan_mapping_in_force(uuid,date)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `80a161b250f57333` |
 | `payer_plan_mapping_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `06a465c2d5277fc6` |
 | `payer_response_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2031d828767ceebd` |
@@ -7449,13 +7515,14 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
 | 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
 | 48 | `20261110090000_ledger_interest_once.sql` | ADR 0009, ADR 0083, ADR 0084 | `35e53da4b31b3c6671800eba9591db9a3b10af6a9a1f154ff28e3fb281f37741` |
+| 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091 | `a8ca25aa7bd94cc4aefdce09c3c4635ffdb6f749b248139ccb71a5e2ec1a9753` |
 
 ## Cross-checks
 
 Run against the same migrated database by `packages/db/src/domain-model/cross-check.ts`: the Drizzle schema (packages/db/src/schema) against the live columns, as packages/db/src/migrate.db.test.ts does, and the repository's own catalog test function, catalogProblems() in packages/db/src/catalog.ts.
 
 ```text
-Drizzle tables: 99; migrated tables (excluding schema_migrations): 99
+Drizzle tables: 100; migrated tables (excluding schema_migrations): 100
 In the database, not in Drizzle: none
 In Drizzle, not in the database: none
 Column differences (name, type, nullability): 0
@@ -7464,6 +7531,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261110090000_ledger_interest_once.sql` (48 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261111090000_password_changed_notice.sql` (49 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7`
+Approved by: ________  Date: ________  Document SHA-256: `bb2672b0122db22a133a075bf5b913326054ca035718c7d5f8a70c2c2726cf47`

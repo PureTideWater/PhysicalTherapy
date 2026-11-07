@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_mail_expire(integer)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: faa298581d4c5479
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1483c2862d633565
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_mail_expire(at_most integer)
@@ -29,6 +29,10 @@ BEGIN
   removed := removed + counted;
   DELETE FROM screening_mail_refusal f
    WHERE f.recipient_sha256 IN (SELECT x.recipient_sha256 FROM screening_mail_refusal x WHERE x.expires_at <= now() ORDER BY x.expires_at LIMIT at_most);
+  GET DIAGNOSTICS counted = ROW_COUNT;
+  removed := removed + counted;
+  DELETE FROM password_notice p
+   WHERE p.id IN (SELECT x.id FROM password_notice x WHERE x.expires_at <= now() AND x.state <> 'pending' ORDER BY x.expires_at LIMIT at_most);
   GET DIAGNOSTICS counted = ROW_COUNT;
   RETURN removed + counted;
 END;
