@@ -434,7 +434,7 @@ describe('the anomalies by code and payer product', () => {
 
   it('calls a pooled code more than $5 a claim line below its fully reduced figure an anomaly, and says how many rows of a group are', () => {
     // 97140 is $5.20 a line below its fully reduced figure. An anomaly is in the unpriced tone (UX-040), its $5 in the
-    // mono face, the chip's words one run (#121's P1).
+    // mono face, the chip's words one run (PR 121's P1).
     const table = tableCopy(html);
     expect(table).toMatch(
       /data-group="97140:medicare_ffs"[\s\S]*?\$364\.00[\s\S]*?\$104\.00[\s\S]*?data-tone="unpriced"[^>]*data-anomaly="true" data-standing="anomaly"><span>Anomaly: more than <span class="font-mono tabular-nums">\$5<\/span> a claim line below the fully reduced figure<\/span><\/span>/,

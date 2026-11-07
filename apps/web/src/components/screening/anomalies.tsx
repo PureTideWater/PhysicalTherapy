@@ -133,7 +133,7 @@ function Reduced({ cents, copy }: { readonly cents: Cents | null; readonly copy:
 }
 
 /**
- * Words with each money figure in them in the mono face with tabular numerals (.claude/rules/brand.md; #121's P1), the
+ * Words with each money figure in them in the mono face with tabular numerals (.claude/rules/brand.md; PR 121's P1), the
  * words unchanged: the string itself when it names none, otherwise one span holding the whole run, so a status chip (an
  * inline flex box) lays the words out as one line of text with their spaces.
  */

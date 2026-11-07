@@ -935,7 +935,7 @@ describe('the screening result’s words (TBL-08)', () => {
     ]);
   });
 
-  it('sets the $5 of every status and of the anomaly rule in the mono face with tabular numerals, each chip’s words one run (#121 P1)', () => {
+  it('sets the $5 of every status and of the anomaly rule in the mono face with tabular numerals, each chip’s words one run (PR 121’s P1)', () => {
     // Every money figure on the result, the $5 of a status or of the rule included, directly inside a mono span.
     const page = renderToStaticMarkup(<ScreeningResultView data={DATA} convert={convert} />);
     for (const html of [LATER, TOP, page]) {
