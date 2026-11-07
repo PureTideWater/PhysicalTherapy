@@ -56,6 +56,7 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
 - Nothing.
 
 ## Log
+- 2026-11-07 02:05 UTC: CI unit red on c2725961: tools/brand-colors read "#121" (a PR number in three comments) as a hex colour; this PR's. Fixed as 03ec41f5 ("PR 121"), brand-colors and the 7 screening unit files (93 tests) green; pushed. The review step was switched from a custom agentType to a default agent applying .claude/agents/ux-brand-reviewer.md (the orchestrator's standing lesson, 01:33 UTC); wf_5e44d8cf-109 stopped after its shots (57 ids, both sides) and resumed from the edited script (archived).
 - 2026-11-07 01:31 UTC: acting Lane A confirmed P5 in the re-pin (conditions recorded under Current state).
 - 2026-11-07 01:40 UTC: build done; pushed c2725961; draft PR #131; subscribed; review-and-fix workflow wf_5e44d8cf-109 started.
 - 2026-11-07 00:35 UTC: the worker restarted after the status push; worktree intact; PostgreSQL restored; build workflow wf_efec3b83-f5b started.
