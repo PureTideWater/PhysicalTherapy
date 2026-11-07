@@ -9,7 +9,7 @@ import { LocalESignature } from '../src/lib/agreements/esign';
 import { totpCode } from '../src/lib/auth/totp';
 import { atPhoneWidth, expectAccessible } from './a11y';
 import { E2E_DEV_AUTH_DIR, E2E_ESIGN_DIR, E2E_ESIGN_SECRET, E2E_ORIGIN } from './env';
-import { refusal, registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
+import { refusal, registerKeyAndSignIn, runTag, signInWithTotp, withDatabase } from './helpers';
 import { chainFrom, queue, until } from './journeys';
 import { PREPARED_SPLIT } from './split';
 import { LOCATION_PRACTICE_PREFIX, startLocalWorker } from './worker';
@@ -75,7 +75,8 @@ function watchCsp(page: Page): string[] {
 
 test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays by test ACH and reaches the dashboard (J1, J2)', async ({ page, browser, request }) => {
   test.setTimeout(180_000);
-  const run = randomUUID().slice(0, 8);
+  const run = runTag();
+  expect(run).toMatch(/^[a-z]{8}$/);
   const clinic = `SYNTHETIC ONBOARDING CLINIC ${run.toUpperCase()}`;
   const adminEmail = `onboarding-admin-${run}@synthetic.test`;
   const violations = watchCsp(page);
@@ -297,7 +298,7 @@ test('refuses a mutation without the session’s CSRF token, with another sessio
 
 test('limits sign-in attempts on one account, and says how long to wait', async ({ page, request }) => {
   // An account no persona uses: twenty attempts in fifteen minutes, then a wait (docs/adr/0053).
-  const email = `burst-${randomUUID().slice(0, 8)}@synthetic.test`;
+  const email = `burst-${runTag()}@synthetic.test`;
   const statuses: number[] = [];
   for (let attempt = 0; attempt < 21; attempt += 1) {
     const response = await request.post('/api/sign-in/hardware-key/options', { headers: { 'content-type': 'application/json' }, data: { email } });
@@ -315,7 +316,7 @@ test('limits sign-in attempts on one account, and says how long to wait', async 
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(refusal(page)).toContainText('Too many attempts');
   // Another account is not held back.
-  await page.getByLabel('Email').fill(`calm-${randomUUID().slice(0, 8)}@synthetic.test`);
+  await page.getByLabel('Email').fill(`calm-${runTag()}@synthetic.test`);
   await page.getByLabel('Password').fill('Any-Synthetic-Pass-2026!');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(refusal(page)).toBeVisible();
@@ -354,7 +355,7 @@ async function dailyPlanDone(practiceId: string, day: string): Promise<boolean> 
 
 test('a practice created with no seeded settings reaches a priced month from its billing ZIP; one whose ZIP needs its ZIP+4 waits for it (audit #33, PRC-23, PRC-24)', async ({ page, browser }) => {
   test.setTimeout(360_000);
-  const run = randomUUID().slice(0, 8).toUpperCase();
+  const run = runTag().toUpperCase();
   const group = `SYNTHETIC LOCATION GROUP ${run}`;
   const names = { ready: `${LOCATION_PRACTICE_PREFIX}${run} READY`, split: `${LOCATION_PRACTICE_PREFIX}${run} SPLIT ZIP` } as const;
   const practices = { ready: '', split: '' };
