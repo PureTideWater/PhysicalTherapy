@@ -577,6 +577,127 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     },
   );
 
+  /** Loads each step's files, then reconciles once. */
+  async function steps(practice: Practice, ...each: readonly (readonly string[])[]): Promise<void> {
+    for (const files of each) {
+      for (const file of files) {
+        await w.load(practice, `LED-24/${file}`);
+      }
+      await w.reconcile(practice);
+    }
+  }
+
+  /** The practice's interest written and the cash its PLB L6s of category interest paid, net. */
+  const interestAndCash = async (practice: Practice) => [
+    await w.sum(practice, "SELECT coalesce(sum(amount_cents), 0)::text AS total FROM ledger_entry WHERE stage = 'interest'"),
+    await w.sum(practice, "SELECT coalesce(-sum(amount_cents), 0)::text AS total FROM provider_adjustment WHERE category = 'interest'"),
+  ];
+
+  const at = (amountCents: string, allocated: boolean) => ({ amountCents, allocated });
+
+  it.each([
+    ['after both PLB L6s paying C', [['partly-paid.835'], ['rest-paid.835'], ['netted-elsewhere.835']]],
+    ['between them', [['partly-paid.835'], ['netted-elsewhere.835'], ['rest-paid.835']]],
+    ['with the second, before one reconcile', [['partly-paid.835'], ['netted-elsewhere.835', 'rest-paid.835']]],
+  ])(
+    'credits the cash whichever is uploaded first when two PLB L6s pay C’s interest and the PLB L6 netting its take-back against another patient’s interest is uploaded %s (partly-paid.835, rest-paid.835, netted-elsewhere.835; PR 126 review R2M2-1)',
+    async (order, files) => {
+      const { practice, lines } = await opened('LED-24', 'out-of-order-original.835');
+      const [l1, l2, other] = lines as [Line, Line, Line];
+      const inOrder = order.startsWith('after');
+      await steps(practice, ...files.slice(0, 2));
+      if (order === 'between them') {
+        // The netting PLB L6 takes back the 1.00 on the lines, and its payment waits for the 4.40 still owed.
+        expect([await interestOf(practice, l1.serviceLineId), await interestOf(practice, l2.serviceLineId), await interestOf(practice, other.serviceLineId)]).toEqual([
+          [at('44', true), at('-44', true)],
+          [at('56', true), at('-56', true)],
+          [],
+        ]);
+      }
+      await steps(practice, ...files.slice(2));
+      // In order, C's 5.40 is paid on lines 1 and 2 and taken back there. With the netting PLB L6 first, rest-paid.835's
+      // 4.40 can go to neither line (it has reached both, and C's reversal left nothing remaining on them): interest
+      // credited nowhere, so the take-back is whole. Either way the second patient's 6.00 is written on line 3.
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual(inOrder ? [at('44', true), at('196', true), at('-240', true)] : [at('44', true), at('-44', true)]);
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual(inOrder ? [at('56', true), at('244', true), at('-300', true)] : [at('56', true), at('-56', true)]);
+      expect(await interestOf(practice, other.serviceLineId)).toEqual([at('600', false)]);
+      expect(await interestAndCash(practice)).toEqual([600n, 600n]);
+      await expectInterestFromItsL6(practice);
+      await replayed(practice);
+    },
+  );
+
+  it.each([
+    ['in date order', [['short-paid.835'], ['netted-elsewhere.835']]],
+    ['the netting PLB L6 first', [['netted-elsewhere.835'], ['short-paid.835']]],
+  ])(
+    'never credits interest above the cash when C’s interest is paid short of what the PLB L6 netting it takes back, %s: the take-back waits for interest that may yet arrive (short-paid.835, netted-elsewhere.835; PR 126 review R2M2-2)',
+    async (order, files) => {
+      const { practice, lines } = await opened('LED-24', 'out-of-order-original.835');
+      const [l1, l2, other] = lines as [Line, Line, Line];
+      await steps(practice, ...files);
+      // 3.00 paid and 5.40 taken back, against the second patient's 6.00 paid: 3.60 of cash. C's claim is matched to the
+      // lines, so 2.40 more of its interest may yet arrive: the take-back is written as far as the lines hold it, and the
+      // second patient's payment waits. Without that wait it would be written: 6.00 against 3.60.
+      const inOrder = order === 'in date order';
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual(inOrder ? [at('133', true), at('-133', true)] : []);
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual(inOrder ? [at('167', true), at('-167', true)] : []);
+      expect(await interestOf(practice, other.serviceLineId)).toEqual([]);
+      const [interest, cash] = await interestAndCash(practice);
+      expect([interest, cash]).toEqual([0n, 360n]);
+      expect(interest).toBeLessThanOrEqual(cash as bigint);
+      await expectInterestFromItsL6(practice);
+      await replayed(practice);
+    },
+  );
+
+  it.each([
+    ['in date order', [['reported-only.835'], ['later-paid.835'], ['two-chains.835']]],
+    ['the netting PLB L6 first', [['reported-only.835'], ['two-chains.835'], ['later-paid.835']]],
+  ])(
+    'writes the same, never above the cash, when C’s claims are matched before the PLB L6 paying its interest arrives, %s: its take-back holds B’s payment back while C may yet hold interest on the lines (reported-only.835, later-paid.835, two-chains.835; PR 126 review RV-DB2-2)',
+    async (order, files) => {
+      const { practice, lines } = await opened('LED-24');
+      const [l1, l2] = lines as [Line, Line];
+      await steps(practice, ...files.slice(0, 2));
+      if (order !== 'in date order') {
+        // C holds no interest on the lines yet, but its claims are matched there: its take-back finds nothing, and B's
+        // payment, which would take the lines C's interest is still to reach, waits. Without that wait it would be
+        // written: 6.00 against 0.60 of cash, and still 6.00 once later-paid.835 is uploaded, against 0.00 in order.
+        expect([await interestOf(practice, l1.serviceLineId), await interestOf(practice, l2.serviceLineId)]).toEqual([[], []]);
+        expect(await interestAndCash(practice)).toEqual([0n, 60n]);
+      }
+      await steps(practice, ...files.slice(2));
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual([at('240', true), at('-240', true)]);
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual([at('300', true), at('-300', true)]);
+      expect(await interestAndCash(practice)).toEqual([0n, 600n]);
+      await expectInterestFromItsL6(practice);
+      await replayed(practice);
+    },
+  );
+
+  it.each([
+    ['after both PLB L6s paying C1', [['one-line-paid.835'], ['one-line-rest-paid.835'], ['one-line-netted.835']]],
+    ['between them', [['one-line-paid.835'], ['one-line-netted.835'], ['one-line-rest-paid.835']]],
+    ['with the second, before one reconcile', [['one-line-paid.835'], ['one-line-netted.835', 'one-line-rest-paid.835']]],
+  ])(
+    'credits the cash whichever is uploaded first when two PLB L6s pay the interest of a correction of one line and the PLB L6 netting its take-back is uploaded %s: a payment is never moved to a line it would not reach in order (one-line-*.835; PR 126 review RV-DB2-1)',
+    async (order, files) => {
+      const { practice, lines } = await opened('LED-24');
+      const [l1, l2] = lines as [Line, Line];
+      await steps(practice, ...files);
+      // C1 approved line 1 alone. In order, or with the second payment walked first in one reconcile, its 5.40 is paid
+      // and taken back there. With the netting PLB L6 reconciled first, the 4.40 belongs on line 1, where that PLB L6 can
+      // write nothing more, so it is written nowhere, never moved to line 2 through C1's other claim match; the take-back
+      // is then whole. Either way B's 6.00 goes to line 2, which B approved.
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual(order === 'between them' ? [at('100', false), at('-100', false)] : [at('100', false), at('440', false), at('-540', false)]);
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual([at('600', false)]);
+      expect(await interestAndCash(practice)).toEqual([600n, 600n]);
+      await expectInterestFromItsL6(practice);
+      await replayed(practice);
+    },
+  );
+
   it('shares a short PLB L6 by AMT I, the correction’s part split by payment and flagged allocated (short.835)', async () => {
     const { practice, lines } = await opened('LED-24');
     const [l1, l2] = lines as [Line, Line];

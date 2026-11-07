@@ -16,6 +16,7 @@ export {
   type InterestDraw,
   type InterestHeldSums,
   type InterestHolding,
+  type InterestOfL6,
   type InterestPart,
   type InterestRemittance,
   type InterestWritten,
@@ -28,6 +29,7 @@ export {
   interestHeldOf,
   interestHeldOn,
   interestOutOfReach,
+  interestUnplaced,
   interestWrites,
   referenceCandidates,
 } from './interest';

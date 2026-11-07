@@ -55,7 +55,7 @@ const statement: StoredStatement = {
 
 const l6 = (id: string) => ({ id, remittanceId: 'r', position: 1, cashCents: cents(540n), namedChain: null, namedClaimIds: [] });
 const draw = (adjustmentId: string, chain: string) => ({ adjustmentId, chain, cents: cents(540n), shared: false, claimIds: ['claim'] });
-const paidLine = (serviceLineId: string) => ({ serviceLineId, claimId: 'claim', approved: true, weightCents: cents(2400n) });
+const paidLine = (serviceLineId: string) => ({ serviceLineId, claimId: 'claim', approved: true, weightCents: cents(2400n), outOfReach: false });
 
 const period = { periodFrom: '2026-04-01', periodTo: '2026-06-30', proofLevel: 'posted' as const, entries: [], feesCents: cents(0n), pursuitHours: '0.00', openCases: [] };
 
@@ -122,12 +122,12 @@ describe('every ledger refusal is a LedgerError that names the rule broken', () 
     ['the draws of two PLB L6s at once', () => interestWrites({ draws: [draw('a', 'c'), draw('b', 'd')], written: [], lines: new Map() }), "interest is written from one PLB L6's draws, each chain once"],
     [
       'one line twice in a chain’s list',
-      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [paidLine('l'), paidLine('l')], takenBack: [], mayYetHold: true }]]) }),
+      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [paidLine('l'), paidLine('l')], takenBack: [], mayYetHold: true, unplacedCents: cents(0n) }]]) }),
       "interest reaches a line once in each chain's list",
     ],
     [
       'a negative approval remaining',
-      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [{ ...paidLine('l'), weightCents: cents(-1n) }], takenBack: [], mayYetHold: true }]]) }),
+      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [{ ...paidLine('l'), weightCents: cents(-1n) }], takenBack: [], mayYetHold: true, unplacedCents: cents(0n) }]]) }),
       'interest is split by approvals remaining of zero or more',
     ],
   ])('refuses %s with its own message', (_name, run, message) => {

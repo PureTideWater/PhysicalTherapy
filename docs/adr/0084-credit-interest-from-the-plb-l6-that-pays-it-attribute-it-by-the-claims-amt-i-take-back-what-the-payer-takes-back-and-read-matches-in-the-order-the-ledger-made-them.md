@@ -5,7 +5,8 @@
   domain model, CO-02); under the founder's ledger freeze exception of 2026-10-27 (below); amended in review on
   2026-11-07 (the payments of a PLB L6 wait for its take-backs, #126 review F1; a named PLB L6 reaches forward in its
   chain only, #126 review F-M2-1; a payment never goes where a take-back still owed cannot follow, #126 review
-  MONEY-R4-1); amends
+  MONEY-R4-1; a take-back is whole once the rest of what it owes is interest that can reach no line, and a line kept
+  off a payment keeps its share of it, #126 review R2M2-1 and RV-DB2-1); amends
   [0042](0042-keep-recovery-in-a-signed-append-only-ledger-of-matched-evidence-and-move-lines-to-recovered-only-from-its-entries.md)
   (where an interest entry comes from) and
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -129,20 +130,34 @@ entry on a line, so its take-backs are written before its payments: a payment re
 and when two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
 unwritten, so the figure errs low, never above the cash (LED-24 `two-chains.835`). The payments also wait for the
 take-backs (#126 review F1): while a take-back of a chain that may yet hold interest on a case line is not written
-whole, the PLB L6 writes none of its payments, in this reconcile or a later one. A chain may yet hold interest when its
-root is a reversal the moment links to no claim (its claim not uploaded yet, or one the loader cannot link) or a claim
-of it has a standing claim match on a case line. The interest such a take-back is still to find arrives with a later
-upload (a remittance dated earlier and uploaded later), and the take-back reaches the lines it lands on before any
-payment of the L6 can, so the outcome is the one the remittances give uploaded in order (LED-24
-`two-chains.835` then `paired.835`). A take-back of a chain that can come to hold no interest on a case line holds
-nothing back. A chain can also come to a case line with no upload, after the PLB L6 wrote its payments: a person
-matches a claim of it by hand (the reconciliation screen lists every adjusted payment no case line was found for), or
-a written-off line is reopened. So a payment of a chain never goes to a line on which another PLB L6 still owes a
-take-back of that chain and has an entry already (`interestOutOfReach`, #126 review MONEY-R4-1): that L6 never writes
-on the line again, so its take-back could never follow the interest there. The interest goes to the chain's other
-lines, where the take-back follows it, or nowhere, whatever brings the chain to the lines (LED-24 `unplaced.835`, then
-`unplaced-two-chains.835`, then the person's match: 6.00, the cash, never 11.40). A line whose weight is zero takes
-nothing now; a later reconcile credits it once it has a weight.
+whole, the PLB L6 writes none of its payments, in this reconcile or a later one, unless what it still owes is no more
+than the chain's interest other PLB L6s paid and can pay to no line, less what other PLB L6s still owe of take-backs of
+it (`interestUnplaced`, #126 review R2M2-1): that interest was never credited, so there is nothing more for the
+take-back to find. A chain may yet hold interest when its root is a reversal the moment links to no claim (its claim
+not uploaded yet, or one the loader cannot link) or a claim of it has a standing claim match on a case line. The
+interest such a take-back is still to find arrives with a later upload (a remittance dated earlier and uploaded
+later). Landing on lines the take-back has not reached, it is taken back there before any payment of the L6 is
+written; landing nowhere, because nothing remains on its lines (the take-back's reversal recouped them) or they are
+lines the take-back has reached, it completes the take-back as interest credited nowhere. Either way the take-back
+reaches the lines the remittances uploaded in date order give it, so the outcome is the one they give uploaded in order
+(LED-24 `two-chains.835` then `paired.835`; `netted-elsewhere.835` after, between or with `partly-paid.835` and
+`rest-paid.835`; `one-line-netted.835` likewise around `one-line-paid.835` and `one-line-rest-paid.835`;
+`reported-only.835` with `later-paid.835` before or after `two-chains.835`). That holds while the later payment is
+split by the same weights in either order or can reach no line; when its claim's lines change weight between the
+uploads (a later approval, or a recoupment of only some of them), it can be split differently and the take-back reach
+other lines, and the figure still errs low, never above the cash. A take-back that no interest arriving completes,
+because the uploads pay the chain less than it takes back, holds the payments back for good (`short-paid.835` and
+`netted-elsewhere.835`, in either order: 0.00 against 3.60 of cash; Consequences). A take-back of a chain that can come
+to hold no interest on a case line holds nothing back. A chain can also come to a case line with no upload, after the
+PLB L6 wrote its payments: a person matches a claim of it by hand (the reconciliation screen lists every adjusted
+payment no case line was found for), or a written-off line is reopened. So a payment of a chain never writes on a line
+on which another PLB L6 still owes a take-back of that chain and has an entry already (`interestOutOfReach`, #126
+review MONEY-R4-1): that L6 never writes on the line again, so its take-back could never follow the interest there.
+Such a line stays among the payment's lines when the approved ones are chosen and the payment is split, and its share
+is written nowhere (#126 review RV-DB2-1), so a payment is never moved onto a line it would not reach uploaded in order:
+its shares of the chain's other lines go there, where the take-back follows them, and the rest nowhere, whatever brings
+the chain to the lines (LED-24 `unplaced.835`, then `unplaced-two-chains.835`, then the person's match: 6.00, the cash,
+never 11.40). A line whose weight is zero takes nothing now; a later reconcile credits it once it has a weight.
 
 **Once (D6; `interestWrites`, pure).** For each L6 and sign, what is left is its draws under the current attribution
 less the entries of that sign already written from it, gross (reversed ones included); for each L6 and chain, the
@@ -276,9 +291,12 @@ check by reading it.
   finds no line, so the PLB L6's payments wait (D5): no new interest, the chain's net. LED-23
   `renumbered-reversal.835` pins it. Its principal still has the gap (handed on below).
 - **Payments that wait for good.** A take-back of a reversal whose claim is never uploaded (paid before the practice
-  used the product, say), or of a chain whose interest landed on lines with nothing remaining, may never be written
-  whole, so the payments its PLB L6 nets against it are never written: an understatement by up to those payments,
-  never an overstatement, and each line still shows the interest its claims report. While it stays owed, a later
+  used the product, say), or one larger than the chain's interest the uploads pay (LED-24 `short-paid.835` and
+  `netted-elsewhere.835`: 0.00 against 3.60 of cash, in either order), may never be written whole, so the payments its
+  PLB L6 nets against it are never written: an understatement by up to those payments, never an overstatement, and
+  each line still shows the interest its claims report. The chain's interest that another PLB L6 pays and that can
+  reach no line (its lines have nothing remaining, or the take-back has reached them) completes the take-back instead
+  (D5, #126 review R2M2-1). While it stays owed, a later
   PLB L6's payment of that chain never goes to the lines its own PLB L6 has reached (D5): the same understatement.
 - **A claim matched by hand after the netting.** When a person matches a claim to case lines after a PLB L6 netted
   its interest taken back against another chain's interest paid on them, the interest a PLB L6 pays that claim never
