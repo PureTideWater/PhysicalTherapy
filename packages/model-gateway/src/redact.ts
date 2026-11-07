@@ -2671,25 +2671,56 @@ const MONTH_PART = new RegExp(`^${MONTH_WORD}$`, 'iu');
 /** A space or joiner, one to three, then the name's placeholder: a part written with a space inside after its head (nameGlued). */
 const SPACE_TO_NAME = new RegExp(`^[${NAME_JOINERS}\\s.]{1,3}${NAME_MARK}`, 'u');
 
-/** A whole number of one to four digits ending a text, after no digit, decimal point, comma, slash, currency sign, dash or colon. */
-const WHOLE_BEFORE = /(?:^|[^\p{N}.,/$\p{Pd}−:])([0-9]{1,4})$/u;
+/** Where a whole number starts: the text's start, or a character that is no digit, decimal point, comma, slash, currency sign, dash or colon. */
+const WHOLE_START = '(?:^|[^\\p{N}.,/$\\p{Pd}−:])';
 
-/** An hour (1 to 12) or a time (h:mm) ending a text, after no digit, decimal point, comma, slash, currency sign, dash or colon. */
-const HOUR_BEFORE = /(?:^|[^\p{N}.,/$\p{Pd}−:])(?:1[0-2]|0?[1-9]|(?:[01]?[0-9]|2[0-3]):[0-5][0-9])$/u;
+/** A time written h:mm or h.mm ("10:30", "9.30"). */
+const CLOCK = '(?:[01]?[0-9]|2[0-3])[:.][0-5][0-9]';
+
+/** A time written hhmm, four digits on the 24-hour clock ("0930", "1400"). */
+const HHMM = '(?:[01][0-9]|2[0-3])[0-5][0-9]';
+
+/**
+ * A range's first end and the dash or slash after it, a space allowed on each side: a whole number of one to four digits, an
+ * ordinal's suffix or "am"/"pm" after it, or a time h:mm or h.mm, "am"/"pm" after it ("9-", "3rd-", "3rd/", "9am-",
+ * "10:00-", "9.30 - "), read where a whole number starts.
+ */
+const RANGE_START = `(?:[0-9]{1,4}(?:ST|ND|RD|TH|AM|PM)?|${CLOCK}(?:AM|PM)?)\\s?[\\p{Pd}−/]\\s?`;
+
+/** A whole number of one to four digits ending a text, where a whole number starts or after a range's first end ("4", "3rd-4", "1-30"). */
+const WHOLE_BEFORE = new RegExp(`${WHOLE_START}(?:${RANGE_START})?([0-9]{1,4})$`, 'u');
+
+/**
+ * An hour or a time ending a text: an hour (1 to 12) or a time h:mm or h.mm where a whole number starts or after a range's
+ * first end ("9", "10:30", "9.30", "9-10", "9AM-10", "10:00-11:00"); or a time hhmm after a space, "@" or the text's start,
+ * alone or as the second end of a range of such times ("0930", "1400-1500"), never after another number's slash ("01/2020").
+ */
+const HOUR_BEFORE = new RegExp(`(?:${WHOLE_START}(?:${RANGE_START})?(?:1[0-2]|0?[1-9]|${CLOCK})|(?:^|[\\s@])(?:${HHMM}(?:AM|PM)?\\s?[\\p{Pd}−/]\\s?)?${HHMM})$`, 'u');
+
+/** A unit's letters glued after a whole number: time, age, length, weight and angle ("30MIN", "2HRS", "6WKS", "6MO", "45YO", "5IN", "10LBS", "90DEG"). */
+const UNIT_AFTER_NUMBER = new Set(['MIN', 'MINS', 'HR', 'HRS', 'SEC', 'SECS', 'WK', 'WKS', 'MO', 'MOS', 'YR', 'YRS', 'YO', 'IN', 'FT', 'CM', 'MM', 'KG', 'LB', 'LBS', 'DEG']);
+
+/** A procedure code ending a text, five digits (CPT) or a letter and four digits (HCPCS), after no letter, digit, decimal point, comma, slash, currency sign or dash. */
+const CODE_BEFORE = /(?:^|[^\p{L}\p{N}.,/$\p{Pd}−])(?:[0-9]{5}|\p{L}[0-9]{4})$/u;
 
 /**
  * Whether a run of letters (folded) glued to the digits that end `before` is that number's own suffix (nameGlued's head
- * rule, the judge's review round 3, GATEWAYJ3-1): the ordinal suffix that fits a whole number ("1ST", "2ND", "11TH", "23RD"),
- * or "AM" or "PM" after an hour or a time ("9AM", "10:30PM"). A number after a decimal point or a currency sign is an
- * amount's, and its letters stay a head ("150.00ST").
+ * rule, the judge's review rounds 3 and 4, GATEWAYJ3-1, GATEWAYJ4-1): the ordinal suffix that fits a whole number ("1ST",
+ * "2ND", "11TH", "23RD", "3RD-4TH"), a unit's letters after a whole number ("30MIN", "1-30MIN"), "AM" or "PM" after an hour
+ * or a time ("9AM", "10:30PM", "9-10AM", "9.30AM", "0930AM", "10:00-11:00AM"), or two letters after a procedure code, its
+ * modifier ("97110CO", "G0283CO"). A number after a decimal point or a currency sign is an amount's, and its letters stay a
+ * head ("150.00ST", "150.00MIN").
  */
 function numberSuffix(run: string, before: string): boolean {
   const whole = WHOLE_BEFORE.exec(before)?.[1];
   if (whole !== undefined) {
     const n = Number.parseInt(whole, 10);
-    if (run === (n % 100 >= 11 && n % 100 <= 13 ? 'TH' : (['TH', 'ST', 'ND', 'RD'][n % 10] ?? 'TH'))) {
+    if (run === (n % 100 >= 11 && n % 100 <= 13 ? 'TH' : (['TH', 'ST', 'ND', 'RD'][n % 10] ?? 'TH')) || UNIT_AFTER_NUMBER.has(run)) {
       return true;
     }
+  }
+  if (run.length === 2 && CODE_BEFORE.test(before)) {
+    return true;
   }
   return (run === 'AM' || run === 'PM') && HOUR_BEFORE.test(before);
 }
@@ -2746,11 +2777,15 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
     // other side, the head of a part of four letters or more whose rest is another part of the name (never an initial: a
     // unit's letters before a name whose rest is one, "45min [PATIENT_NAME]" for MINA ALI, cc3dd7f6 sends as here), the
     // run no month's word, only a space or a joiner between it and the placeholder (the part written with a space inside).
-    // An ordinal's suffix that fits the whole number glued before it ("1st", "4th", "11th"; the number after no digit,
-    // decimal point, comma, slash, currency sign, dash or colon) and "am" or "pm" after an hour or a time ("9am", "10:30pm")
-    // are no head, whatever part they begin ("on the 4th [PATIENT_NAME]" for THANH ANH, "at 9am [PATIENT_NAME]" for AMAL
-    // AL: the judge's review rounds 2 and 3, GATEWAYJ2-2, GATEWAYJ3-1); after an amount the same letters are a head
-    // ("150.00ST [PATIENT_NAME]" for STAN AN, a fail-safe refusal: cc3dd7f6 sends "ST" in clear there). With a held chain,
+    // A number's own letters are no head, whatever part they begin (numberSuffix): an ordinal's suffix that fits the whole
+    // number glued before it ("1st", "4th", "11th", "3rd-4th"; the number after no digit, decimal point, comma, slash,
+    // currency sign, dash or colon, or after a range's first end and its dash or slash), a unit's letters after a whole
+    // number ("30min", "1-30min"), "am" or "pm" after an hour or a time, a range's second end too ("9am", "10:30pm",
+    // "9-10am", "9am-10am", "10:00-11:00am", "9.30am", "0930am"), and a code's modifier ("97110CO") ("on the 4th
+    // [PATIENT_NAME]" for THANH ANH, "at 9am [PATIENT_NAME]" and "9-10am [PATIENT_NAME]" for AMAL AL, "30min
+    // [PATIENT_NAME]" for MINSEO SEO, "97110CO [PATIENT_NAME]" for COLIN LIN: the judge's review rounds 2 to 4,
+    // GATEWAYJ2-2, GATEWAYJ3-1, GATEWAYJ4-1); after an amount the same letters are a head ("150.00ST [PATIENT_NAME]" for
+    // STAN AN, "150.00MIN [PATIENT_NAME]" for MINHO HO, fail-safe refusals: cc3dd7f6 sends "ST" and "MIN" in clear there). With a held chain,
     // any run glued so on either side of the placeholder, or the head or tail of any part. A tail after the placeholder
     // glued to a digit is sent elsewhere, as at cc3dd7f6: there it is as often a code after the name ("[PATIENT_NAME]
     // CY2026" for NANCY).

@@ -395,9 +395,11 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['held letters, the date of birth redacted again and again with another number beside it (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961 5 ')}`, false],
     ['held letters, birth labels glued to the words beside them, no date after them (PHIJ3-2)', ['JANE Q VANTREE'], `${HELD}${fill('PaidDOBon file, see the enclosed record. ')}`, false],
     // The judge's review round 4: the date of birth's parts with gaps of any length of white space and separators, each gap
-    // read once, and every run of letters read against the name's initials, near misses all (PHIJ4-1, PHIJ4-2).
+    // read once, and every run of letters read against the name's initials, near misses all (PHIJ4-1, PHIJ4-2); a number's
+    // own letters before the name, each read for a range's first end, an hour, a unit or a code (GATEWAYJ4-1).
     ['held letters, the date of birth’s parts with wide gaps and runs of letters near the initials, near misses (PHIJ4-1, PHIJ4-2)', ['JANE Q VANTREE'], `${HELD}${fill('JX QQ VJX 61  /  03  /  04 Mar     6104     ')}`, false],
     ['held letters, the date of birth redacted again and again, another number past a wide gap beside it (PHIJ4-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961  /     5     ')}`, false],
+    ['times, ordinals, units and codes glued before a part read as the name (GATEWAYJ4-1)', ['AMAL AL HASSAN'], fill('9-10am Al 3rd-4th 30min Al 97110AM Al '), false],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
     const who = patient([...names]);
     const started = performance.now();
@@ -1464,7 +1466,9 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
 
   // The judge's review round 4 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
   // PHIJ4-1's and PHIJ4-2's refused rows cc3dd7f6 refused for the range's own digits (69a3a2fe sent them), and with no range
-  // both trees send or redact them as here.
+  // both trees send or redact them as here; GATEWAYJ4-1's sent rows cc3dd7f6 sends as here (69a3a2fe refused them), and its
+  // refused rows are fail-safe refusals of letters cc3dd7f6 sent with the head of a part in clear (an amount's letters, a
+  // bare whole number's or a range's second end without its own letters).
   const RANGE_END = 'Paid $0,000.00. Service 01/01/2020-01/02/2020';
   it.each([
     // PHIJ4-1: the date of birth in a form redaction reads after a birth label, more than four characters between its parts
@@ -1508,6 +1512,44 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHIJ4-2', ['ANN Q VANTREE'], `${RANGE_END}An\nn $0,000.00`, null, VANTREE],
     ['PHIJ4-2', ['JANE ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', {}],
     ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
+    // GATEWAYJ4-1: a number's own letters before the name are no head of a part: "am" or "pm" after a range of hours or
+    // times, h.mm or hhmm, an ordinal's suffix after a range's first end, a unit's letters after a whole number, and a
+    // procedure code's modifier.
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9-10am Amal Al Hassan tolerated treatment.', 'Seen 9-10am [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Session 9am-10am Amal Al Hassan attended.', 'Session 9am-10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment 10:00-11:00am Amal Al Hassan arrived on time.', 'Appointment 10:00-11:00am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment at 9.30am Amal Al Hassan arrived on time.', 'Appointment at 9.30am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment at 0930am Amal Al Hassan arrived on time.', 'Appointment at 0930am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9AM-10AM Amal Al Hassan attended.', 'Seen 9AM-10AM [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9:00am-10:30am Amal Al Hassan attended.', 'Seen 9:00am-10:30am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9–10am Amal Al Hassan attended.', 'Seen 9–10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9 - 10am Amal Al Hassan attended.', 'Seen 9 - 10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 1400-1500am Amal Al Hassan attended.', 'Seen 1400-1500am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'On 02/14/2026 9-10am Amal Al Hassan attended.', 'On 02/14/2026 9-10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAN AN ZEPHYRA'], 'Seen 8-9am Aman An Zephyra.', 'Seen 8-9am [PATIENT_NAME].', {}],
+    ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen on March 3rd-4th Thanh Anh attended both visits.', 'Seen on March 3rd-4th [PATIENT_NAME] [PATIENT_NAME] attended both visits.', {}],
+    ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen on the 3rd/4th Thanh Anh attended.', 'Seen on the 3rd/4th [PATIENT_NAME] [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen 3-4th Thanh Anh attended.', 'Seen 3-4th [PATIENT_NAME] [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['THANH ANH'], 'Seen 3rd–4th Thanh Anh attended.', 'Seen 3rd–4th [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30min Minseo Seo attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30min Minseo attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 1-30min Minseo Seo attended.', 'Session 1-30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30mins Minseo Seo attended.', 'Session 30mins [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINJI JI'], 'Session 30min Minji Ji attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINHO HO'], 'Treatment time 45min Minho Ho tolerated treatment.', 'Treatment time 45min [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ4-1', ['MINSU SU'], 'Therapeutic exercise 15min Minsu Su.', 'Therapeutic exercise 15min [PATIENT_NAME].', {}],
+    ['GATEWAYJ4-1', ['MINJUN JUN'], 'Session 30min Minjun Jun attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MOANA ANA'], 'Follow-up in 6mo Moana Ana agreed.', 'Follow-up in 6mo [PATIENT_NAME] agreed.', {}],
+    ['GATEWAYJ4-1', ['INES ES'], 'Measured 5in Ines Es tolerated.', 'Measured 5in [PATIENT_NAME] tolerated.', {}],
+    ['GATEWAYJ4-1', ['COLIN LIN'], 'Billed 97110CO Colin Lin tolerated treatment.', 'Billed 97110CO [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ4-1', ['COLIN LIN'], 'Line 2: 97530CO Colin Lin 02/14/2026 $38.00', 'Line 2: 97530CO [PATIENT_NAME] 02/14/2026 $38.00', {}],
+    ['GATEWAYJ4-1', ['COLIN LIN'], 'Billed G0283CO Colin Lin.', 'Billed G0283CO [PATIENT_NAME].', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Billed 97110AM Amal Al Hassan.', 'Billed 97110AM [PATIENT_NAME].', {}],
+    // Fail-safe refusals, as before: an amount's letters, a bare whole number's, and a range's second end glued to a head.
+    ['GATEWAYJ4-1', ['MINHO HO'], 'Seen 150.00MIN HO paid', null, {}],
+    ['GATEWAYJ4-1', ['DANIELLE LE'], '1Daniel Le', null, {}],
+    ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 9-10Daniel Le', null, {}],
+    ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 3rd-4Daniel Le', null, {}],
   ] as const)('handles the judge’s round 4 input (%s): %s %j', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);
