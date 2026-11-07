@@ -134,8 +134,15 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   one re-run of the failed jobs (run 42319584132), as the rules allow to confirm a failure is not this PR's; porting the fix
   is not possible (an unreviewed PHI change). If green, verify and merge; if red again, wait for the fix to merge.
 
+- 2026-11-07T01:34Z: the re-run of `unit` (job 128252577494) failed the same way: MOD-16, the same counterexample. Everything else is
+  green on f4fef908. **Ready; waiting on `co-001/redact-range-glued`** (the base's MOD-16 fix, session_01FcouKP1U2GGDFhhZT9CaUV).
+  Nothing more is pushed to #129 meanwhile. When it merges: merge claude/build-platform once (rule 6), fast checks and the
+  generators, push, CI green on that head, the fresh-clone verification that reads CI, ready, merge with expectedHeadSha.
+  Also checked (orchestrator's 01:33Z lesson): wf_5ac1f379-e54's three ux-brand-reviewer rounds each returned a real result
+  with shots (UXS-R1-01; then none, at r2 and r3), so no review round of this item is empty.
+
 ## Waiting on someone
-- None.
+- `co-001/redact-range-glued` to merge (the base's MOD-16 flake reds every unit run of #129).
 
 ## Next step
 The suite on f62265dc, the push and the description, CI, then the merge. Then the follow-on.
