@@ -56,6 +56,16 @@ Effect: any PR's unit job can go red at random.
   edited the script (the PHI lens as a default agent on the security-reviewer checklist, a seeded base-vs-HEAD differential, the
   lost notes given explicitly; any reviewer that dies is retried once) and resumed the same run: the PHI round-1 review re-runs on
   the current head, then the fixer applies its findings. This PR merges only with zero base-vs-HEAD regressions.
+- 2026-11-06T22:40Z: the re-run PHI review (350,000-letter seeded base-vs-HEAD differential): no SSN/phone/DOB digit that the base
+  redacted is sent at e0cf46e0; the earlier regressions were closed by 435f0a68. PHI1-1 (an unlabeled amount-shaped SSN at the end
+  of a date or cents-less currency range is now sent; its space twin was already sent by R1's amount barrier) confirmed; fix:
+  record and pin, no code change (a narrower rule would refuse clean letters). GATEWAY1-1 (435f0a68 read SEC-5's label through
+  "TTY 711", refusing clean letters) confirmed. Fix round 1 (re-run): 9ecbe6c9, 6fc88092 (WIP = 6fc88092).
+- 2026-11-07T00:10Z: **both workflows stopped by the account's 5-hour limit** (reset 00:10 UTC; the machine restarted). Lost:
+  round-2 reviews, the final fixer and suite, the critic (build); the round-2 skeptics, rounds 3-4 and the synthesis (hunt; its
+  "two dry rounds" were false: failed hunters returned nothing). 00:35Z: setup re-run (both clusters started), WIP pushed
+  (6fc88092), the build workflow resumed (wf_bca3d2b3-77c). **The leak hunt is held until the build workflow ends** (two heavy
+  workflows together burned the 5-hour window in ~4.7 h; this PR unblocks every PR's CI, so it goes first). Check-in ~05:45Z.
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
