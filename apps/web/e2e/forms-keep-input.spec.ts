@@ -3,6 +3,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import { personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { atPhoneWidth, expectAccessible } from './a11y';
 import { enterPassword, practiceId, registerKeyAndSignIn, signInWithTotp } from './helpers';
+import { holdScreeningStream } from './mail';
 
 /**
  * Forms keep what the person typed, and name the refused field (docs/adr/0077; test matrix FRM-01 to FRM-08): the public
@@ -211,6 +212,71 @@ test('a refused audit request keeps what was typed, names the field by its label
   });
 });
 
+/** The screening's fields, filled with SYNTHETIC values a URL, a log or a referrer must never carry. */
+const SCREENING_FIELDS = {
+  practiceName: 'SYNTHETIC NOSCRIPT PRACTICE',
+  zip: '00011',
+  contactEmail: 'forms-noscript@example.test',
+  referringFirm: 'SYNTHETIC NOSCRIPT FIRM',
+} as const;
+
+/**
+ * The screening upload without JavaScript (FRM-06): the form posts to the page itself, which is no action, so its fields
+ * travel only in the request body and the page is drawn again, and the file input has no name, so the file is never sent
+ * and nothing is screened. Before the form had a method, a press sent a GET with every field in the query string. Held
+ * on the screening stream shared, as every screening journey is: the mail cut-off journey pauses it, and the page then
+ * offers no form.
+ */
+test('the screening upload without JavaScript puts no field value in a URL and screens nothing (FRM-06)', async ({ browser }) => {
+  test.setTimeout(300_000);
+  const release = await holdScreeningStream('shared');
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const plain = await context.newPage();
+    await plain.goto('/screening');
+    await plain.getByLabel('Practice name', { exact: true }).fill(SCREENING_FIELDS.practiceName);
+    await plain.getByLabel('State', { exact: true }).selectOption('MN');
+    await plain.getByLabel('ZIP code', { exact: true }).fill(SCREENING_FIELDS.zip);
+    await plain.getByLabel('Work email', { exact: true }).fill(SCREENING_FIELDS.contactEmail);
+    await plain.getByLabel('How did you hear about us?', { exact: true }).selectOption('billing_firm');
+    await plain.getByLabel('Referring billing firm', { exact: true }).fill(SCREENING_FIELDS.referringFirm);
+    await plain.getByLabel('File to screen', { exact: true }).setInputFiles({ name: 'noscript-totals.csv', mimeType: 'text/csv', buffer: Buffer.from('SYNTHETIC-NOSCRIPT-FILE\n') });
+
+    await test.step('a press sends no field value in any URL, and no file part in its body', async () => {
+      const sent: { readonly url: string; readonly method: string; readonly body: string }[] = [];
+      plain.on('request', (request) => {
+        sent.push({ url: request.url(), method: request.method(), body: request.postData() ?? '' });
+      });
+      const answered = plain.waitForResponse((response) => response.request().isNavigationRequest() && new URL(response.url()).pathname === '/screening');
+      await plain.getByRole('button', { name: 'Screen the file', exact: true }).click();
+      await answered;
+      await plain.waitForLoadState('load');
+      expect(new URL(plain.url()).pathname).toBe('/screening');
+      expect(new URL(plain.url()).search).toBe('');
+      expect(sent.length).toBeGreaterThan(0);
+      const values = [...Object.values(SCREENING_FIELDS), encodeURIComponent(SCREENING_FIELDS.contactEmail), SCREENING_FIELDS.practiceName.replace(/ /g, '+')];
+      for (const request of sent) {
+        expect(new URL(request.url).search, request.method).toBe('');
+        for (const value of values) {
+          expect(request.url, request.method).not.toContain(value);
+        }
+        // The file input has no name: no part of the body is a file, and no byte of the file is in it.
+        expect(request.body).not.toContain('filename=');
+        expect(request.body).not.toContain('SYNTHETIC-NOSCRIPT-FILE');
+      }
+    });
+
+    await test.step('nothing is screened: the page is the form again, with no result or wait', async () => {
+      await expect(plain.getByRole('button', { name: 'Screen the file', exact: true })).toBeVisible();
+      await expect(plain.locator('a[href*="/screening/results/"]')).toHaveCount(0);
+      expect(new URL(plain.url()).searchParams.get('sent')).toBeNull();
+    });
+  } finally {
+    await context.close();
+    await release();
+  }
+});
+
 test('sign-in refusals keep the email, empty and say so for the password and the code, name the code, and take a code written with a space (FRM-01, FRM-05, FRM-07)', async ({ page }) => {
   const key = 'forms-signin';
   const form = formWith(page, 'Continue');
@@ -307,7 +373,7 @@ test('choosing a password: the policy is the field’s hint, Show reveals and hi
     await fresh.fill('Synthetic-Forms-Pass-2026!');
     await again.fill('Synthetic-Forms-Pass-2027!');
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(summary).toContainText('New password again: the two passwords do not match: type the same password in both fields');
+    await expect(summary).toContainText('New password again: the two passwords do not match; type the same password in both fields');
     await expect(again).toHaveAttribute('aria-invalid', 'true');
     await expect(again).toBeFocused();
     await expect(page).toHaveURL(/\/sign-in\/new-password$/);
