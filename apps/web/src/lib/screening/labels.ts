@@ -6,14 +6,16 @@ import { unpricedReasonText } from '../contracts/remedies';
 /**
  * The words a free screening's screens show (Change Order 001, CO-04 and CO-11; reconciliation-001, D19 and D20).
  * A screening never says owed, underpaid or recovered (the copy lint refuses them in any screening file): a row's
- * Medicare figure is "expected under Medicare", the prospect's own figure is "allowed in your file", and what lies
- * between is the "difference". Plain data, safe to import in the browser.
+ * figure is the "Medicare figure" (never "expected", which BRAND.md section 6 keeps for an amount under a signed-off
+ * contract version), the prospect's own figure is "allowed in your file", and each difference is the Medicare figure
+ * less the allowed amount. Plain data, safe to import in the browser.
  */
 
 /**
  * The version of these words. A kept screening summary (screening_lead.labels_version, audit #57) names the version
  * its result was shown under; the database's screening_labels_version() returns the same (a database test holds the
- * two equal), and labels.test.ts pins every label here to its version, so a label changes only under a new version.
+ * two equal), and labels.test.ts pins every label here to its version: a released version's labels never change, and
+ * an unreleased one may be re-pinned under its name (the rule in labels.test.ts's VERSIONS).
  */
 export const SCREENING_LABELS_VERSION = 'screening-labels/2026-11-05';
 
@@ -31,22 +33,22 @@ export const FULLY_REDUCED = 'fully reduced across codes';
  * unchanged engine, so the multiple procedure payment reduction across the codes of one visit is not applied, and
  * the figure can be higher than a visit with several codes would price at.
  */
-export const MEDICARE_FIGURE_LABEL = `Expected under Medicare, ${BEFORE_REDUCTION}`;
+export const MEDICARE_FIGURE_LABEL = `Medicare figure, ${BEFORE_REDUCTION}`;
 
 /** The fully reduced figure's label, for a code in the reduction across codes (the owner's ruling of 2026-10-18). */
-export const REDUCED_FIGURE_LABEL = `Expected under Medicare, ${FULLY_REDUCED}`;
+export const REDUCED_FIGURE_LABEL = `Medicare figure, ${FULLY_REDUCED}`;
 
 /** The engine's figure for one claim line of a row: as much a Medicare figure, and as much before the reduction. */
-export const MEDICARE_LINE_LABEL = `One claim line, expected under Medicare, ${BEFORE_REDUCTION}`;
+export const MEDICARE_LINE_LABEL = `Medicare figure for one claim line, ${BEFORE_REDUCTION}`;
 
 /** The fully reduced figure for one claim line of a row. */
-export const REDUCED_LINE_LABEL = `One claim line, expected under Medicare, ${FULLY_REDUCED}`;
+export const REDUCED_LINE_LABEL = `Medicare figure for one claim line, ${FULLY_REDUCED}`;
 
-/** The difference between the Medicare figure and the allowed amount in the file: worked out from the figure, so qualified as it is. */
-export const DIFFERENCE_LABEL = `Difference, ${BEFORE_REDUCTION}`;
+/** The Medicare figure less the allowed amount in the file, as its header says (UX-042): worked out from the figure, so qualified as it is. */
+export const DIFFERENCE_LABEL = `Medicare figure less allowed, ${BEFORE_REDUCTION}`;
 
-/** The difference between the fully reduced figure and the allowed amount in the file. */
-export const REDUCED_DIFFERENCE_LABEL = `Difference, ${FULLY_REDUCED}`;
+/** The fully reduced figure less the allowed amount in the file. */
+export const REDUCED_DIFFERENCE_LABEL = `Medicare figure less allowed, ${FULLY_REDUCED}`;
 
 /** The figure before the reduction, as a sentence names it: the words under its difference say which figure they mean. */
 export const BEFORE_REDUCTION_FIGURE = `the figure ${BEFORE_REDUCTION}`;
@@ -157,22 +159,12 @@ export function dispositionLabel(disposition: string): string {
   return (DISPOSITION_LABELS as Readonly<Record<string, string>>)[disposition] ?? disposition;
 }
 
-/** What a row with each outcome shows in place of a figure. */
-export const DISPOSITION_NOTES: Readonly<Record<ScreeningDisposition, string>> = {
-  priced: 'Priced by the engine on its own and, for a code in the reduction across codes, again as a later code of a visit; each figure multiplied by the claim count.',
-  rates_change_in_band: 'A Medicare rate changes inside the quarter, so a quarter of totals has no one figure.',
-  unpriced: 'The engine left the row without a price, for the reason shown.',
-  contract_required: 'Its payer product is priced by its contract, which a screening does not have.',
-  not_screened: 'A screening does not price this payer product.',
-  pending: 'Not yet priced.',
-};
-
 /**
  * Why the engine left a screening row without a price: the closed list's meaning (docs/product/unpriced-reasons.md),
  * and, for the details a screening meets, what they mean for a row of totals.
  */
 const DETAIL_LABELS: Readonly<Record<string, string>> = {
-  place_of_service_unmapped: 'The place of service is not in the approved place-of-service split',
+  place_of_service_unmapped: 'This place of service is in neither the facility nor the non-facility list a screening prices by, so the row has no Medicare figure',
   locality_needs_zip_plus_four: 'The ZIP spans more than one Medicare locality and no ZIP+4 was given',
   // A gap in PaidWhole's content (no ZIP+4 list of the ZIP in force), never the prospect's ZIP+4 (PR 6b-1's review).
   no_locality_plus_four: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day',
