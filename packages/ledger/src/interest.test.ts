@@ -723,6 +723,8 @@ describe('interestUnplaced: what of a chain’s interest other PLB L6s pay and c
     expect(unplaced([line('L1', 2400n, true)], [wrote('x', 'L9', 440n)], moved)).toBe(0n);
     expect(unplaced([line('L1', 2400n, true)], [wrote('x', 'L9', 400n)], moved)).toBe(40n);
     expect(unplaced([line('L1', 2400n, true)], [wrote('x', 'L9', 340n), wrote('k', 'L3', 100n)], moved)).toBe(100n);
+    // Its take-back of another chain leaves its payment whole.
+    expect(unplaced([line('L1', 2400n, true)], [], [drawOf('Y', 'a', 440n, ['C']), drawOf('Y', 'k', -100n, ['K'])])).toBe(440n);
     // A PLB L6 that pays the chain nothing, or takes interest back from it, adds nothing.
     expect(unplaced([line('L1', 2400n, true)], [], [drawOf('Y', 'k', 440n, ['K'])])).toBe(0n);
     expect(unplaced([line('L1', 2400n, true)], [], [drawOf('Y', 'a', -440n, ['C'])])).toBe(0n);
@@ -738,8 +740,10 @@ describe('interestUnplaced: what of a chain’s interest other PLB L6s pay and c
     // Written whole, it owes nothing; owing past what is unplaced, nothing is left.
     expect(interestUnplaced({ chain: 'a', payments: [z], takeBacks: [{ ...other, written: [wrote('a', 'L4', -300n)] }] })).toBe(100n);
     expect(interestUnplaced({ chain: 'a', payments: [z], takeBacks: [other] })).toBe(0n);
-    // A PLB L6 that takes nothing back from the chain takes nothing away.
+    // A PLB L6 that takes nothing back from the chain takes nothing away, even one that pays it while it takes back from
+    // another chain.
     expect(interestUnplaced({ chain: 'a', payments: [z], takeBacks: [{ draws: [drawOf('W', 'k', -300n, ['K'])], written: [] }] })).toBe(100n);
+    expect(interestUnplaced({ chain: 'a', payments: [z], takeBacks: [{ draws: [drawOf('W', 'a', 300n, ['C']), drawOf('W', 'k', -300n, ['K'])], written: [] }] })).toBe(100n);
     expect(interestUnplaced({ chain: 'a', payments: [], takeBacks: [] })).toBe(0n);
   });
 });
