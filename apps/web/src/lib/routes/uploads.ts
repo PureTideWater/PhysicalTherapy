@@ -232,7 +232,7 @@ export function formatProblem(kind: DocumentKind, formatId: EraFormatId | undefi
 const filesSchema = z
   .array(fileSchema)
   .min(1, 'choose at least one file')
-  .max(MAX_FILES_PER_BATCH, `at most ${String(MAX_FILES_PER_BATCH)} files at once; zip the rest`)
+  .max(MAX_FILES_PER_BATCH, `choose at most ${String(MAX_FILES_PER_BATCH)} files at once; zip the rest and upload the zip`)
   .superRefine((files, context) => {
     files.forEach((file, index) => {
       if (!allowedContentType(file.kind, file.contentType)) {
