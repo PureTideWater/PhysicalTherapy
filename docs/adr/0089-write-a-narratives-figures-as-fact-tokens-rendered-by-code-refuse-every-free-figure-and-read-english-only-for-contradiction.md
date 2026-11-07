@@ -101,7 +101,14 @@ else against it (a sign, a point, a comma or slash before it, a letter, a digit,
 one rule holds for a person and a model: serializeDraft joins segments as they stand, so a text segment ending in "-"
 before a fact segment fails the same way. A new code rather than `unknown_fact` or `free_figure`, because the person's
 fix is a space, not another figure; the editor says so. Accepted false refusals: a possessive or a hyphenated word
-against a token ("97110’s rate", "{{fact:pattern.lines}}-line"), which the person rewords. /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
+against a token ("97110’s rate", "{{fact:pattern.lines}}-line"), which the person rewords. Accepted readings (review
+round 2): two tokens one space apart pass ("{{fact:line.1.paid_on}} {{fact:line.1.units}}" prints the two phrases side
+by side), because each phrase is printed whole by code, the space keeps the figures apart and neither changes; the
+sentence may read awkwardly, which is wording for the person, not a figure. And the rule reads only the character
+against a token: a sign set off from it by a space, an opening bracket or a quotation mark ("- {{fact:pattern.units}}",
+"-({{fact:pattern.units}})"), or the word "negative" before it, is not refused here, as /2 does not refuse it before a
+typed figure; an amount's phrase begins with words, so it cannot print a signed dollar figure, and reading "negative"
+and its kin as a sign is ADR 0086's reader, which /2 and /3 share (Revisit when). /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
 placeholders naming no kind or row, markers naming no source, sentences with no marker, an empty template. Sentences
 are counted with each token read as a word, so a token can stand alone as a sentence and the dots inside an id never
 end one.
@@ -205,6 +212,8 @@ prints only rendered text: a /3 template exported by today's worker would print 
 - The evaluation's `fact_contradicted` rate (slice 7) shows careful drafts refused by cues beside phrases: consider a
   short phrase form per fact (design section 10), never a looser check.
 - People's narratives show an accepted false refusal often enough to cost more than its rewording.
+- A draft sets a sign or "negative" apart before a count or code token (accepted above): refuse it in ADR 0086's
+  shared reader, for /2 and /3 together, never in /3 alone.
 - A free figure in letters outside the scanner's one list (a Roman numeral spelled in letters outside level, appeal or
   tier; a Han numeral) is seen in a draft: widen the list in the design first, then strict mode.
 - A patient subset is needed beyond rows (it needs `tp-packet/3`).

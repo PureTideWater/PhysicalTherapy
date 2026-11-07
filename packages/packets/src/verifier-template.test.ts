@@ -255,6 +255,18 @@ describe('CAS-52: a fact token stands apart, so nothing typed against it prints 
     expect(glued('The schedule lists code -{{fact:line.1.code}} [1].', content('severalCodes'))).toEqual([['fact', '{{fact:line.1.code}}']]);
   });
 
+  it('passes two tokens one space apart, an accepted reading: each prints its own phrase whole, and neither figure changes', () => {
+    const template = 'The schedule shows {{fact:line.1.paid_on}} {{fact:line.1.units}} [1].';
+    expect(verify(template).passed).toBe(true);
+    expect(glued(template)).toEqual([]);
+    const alone = (token: string) => {
+      const rendered = renderFacts(token, content('base'));
+      return rendered.ok ? rendered.text : 'never';
+    };
+    const rendered = renderFacts(template, content('base'));
+    expect(rendered.ok && rendered.text).toBe(`The schedule shows ${alone('{{fact:line.1.paid_on}}')} ${alone('{{fact:line.1.units}}')} [1].`);
+  });
+
   it('fails a token a model’s text segment ends against, through serializeDraft', () => {
     const template = serializeDraft({ paragraphs: [{ sentences: [{ segments: [{ text: 'The payer counted -' }, { fact: 'line.1.units' }], sources: [1] }] }] });
     expect(template).toBe('The payer counted -{{fact:line.1.units}} [1].');
