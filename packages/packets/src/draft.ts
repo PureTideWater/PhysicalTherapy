@@ -74,12 +74,12 @@ function draftTemplate(content: PacketContent): string {
   const catalog: FactCatalog = factCatalog(content);
   const has = (id: string) => catalog.byId.has(id);
   const fact = (id: string) => factPlaceholder(id);
-  const { citation, pattern, interest } = content;
+  const { citation, pattern } = content;
   const codes = pattern.codes.map((code) => `code.${code.procedure_code.toLowerCase()}`).filter(has);
-  const listed = codes.map(fact).reduce((text, token, index) => (index === 0 ? token : `${text}${index === codes.length - 1 ? ' and ' : ', '}${token}`), '');
   const sentences: string[] = [];
-  const version = has('citation.version') ? fact('citation.version') : 'The contract';
-  const page = has('citation.page') ? ` on ${fact('citation.page')}` : '';
+  // A contract's version and page are always in its catalog (both required numbers); a regulation names neither.
+  const version = fact('citation.version');
+  const page = ` on ${fact('citation.page')}`;
   if (citation.kind === 'regulation') {
     const reference = has('citation.reference') ? ` under ${fact('citation.reference')}` : '';
     sentences.push(`The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay${reference} [1].`);
@@ -101,6 +101,8 @@ function draftTemplate(content: PacketContent): string {
   }
   // The codes in a sentence of their own: a code token names part of the lines (section 4).
   if (citation.kind === 'contract' && codes.length > 0) {
+    // With no initial value, reduce starts from the first token, at the second's index.
+    const listed = codes.map(fact).reduce((text, token, index) => `${text}${index === codes.length - 1 ? ' and ' : ', '}${token}`);
     sentences.push(`That rate is for ${listed} [1].`);
   }
   // The service dates in a sentence with no amount.
@@ -111,7 +113,8 @@ function draftTemplate(content: PacketContent): string {
       ? `Under the contract those lines come to ${fact('pattern.expected')}, and the difference is ${fact('pattern.variance')} [3].`
       : `At the Original Medicare amount those lines come to ${fact('pattern.expected')}, and the difference is ${fact('pattern.variance')} [3].`,
   );
-  if (interest !== null && interestStated(interest) && has('interest.total')) {
+  // The catalog holds interest.total exactly where interest is stated (interestStated()).
+  if (has('interest.total')) {
     sentences.push(`This packet states ${fact('interest.total')} as its own line, and it is not part of the shortfall [4].`);
   }
   return sentences.join(' ');

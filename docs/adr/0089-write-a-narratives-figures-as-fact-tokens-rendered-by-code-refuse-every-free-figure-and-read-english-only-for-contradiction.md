@@ -96,7 +96,9 @@ that figure: "-{{fact:pattern.units}}" prints "-6 units", ".{{fact:line.1.units}
 "{{fact:code.97110}}-GP-KX" prints modifiers the content does not hold, and two tokens glued together print "line 12
 units". Neither pass read it: pass 1 masks the tokens and pass 2 reads each as a stand-in with a space on each side. So
 a token must have, in the text as read, whitespace, an opening bracket or quotation mark, or the text's start before
-it, and whitespace or the text's end after it with only closing punctuation (`. , ; : ! ? ) ” ’ "`) between. Anything
+it, and whitespace or the text's end after it with only closing punctuation (`. , ; : ! ? ) ” ’ "`) between, however
+long that run (review round 3: a check that read 16 characters let "{{fact:code.97110}}" and 16 closing quotation marks
+then "-GP-KX" through, printing modifiers the line does not carry). Anything
 else against it (a sign, a point, a comma or slash before it, a letter, a digit, another token) fails the token. The
 one rule holds for a person and a model: serializeDraft joins segments as they stand, so a text segment ending in "-"
 before a fact segment fails the same way. A new code rather than `unknown_fact` or `free_figure`, because the person's
@@ -114,7 +116,14 @@ signed one ("- 6 units", "negative 6 units"). The rule is /3's own, in the separ
 shared reader are unchanged and nothing served changes; "minus" before an all-lines fact also stays
 `fact_contradicted` as a part word. Accepted false refusals: a token after "plus" or "positive" used as a conjunction
 or an adjective, which the person rewords. The em dash and the horizontal bar are punctuation between clauses, not a
-sign, so a token after one set off by a space passes. /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
+sign, so a token after one set off by a space passes. The check reads back from each token's start only (review round 3:
+one sticky lookbehind, matched backwards from that one position): past any run of set-off characters, with no limit,
+so 200 spaces and then "-" still fail, a sign there, or a sign's word with no letter before it ("nonnegative" passes).
+Each token costs the characters between it and the text before it, and those runs never overlap, so a template checks
+in time linear in its length; regular expressions over the whole text before each token took about 20 s on a
+19,224-character template under the worker's 20,000-character cap. A run of closing punctuation after a token is read
+the same way, from the token's end. The non-breaking hyphen (U+2011) is listed but never reached: the text as read is NFKC,
+which maps it to the hyphen (U+2010), also listed. /2's rules all still apply: hidden characters, unreadable figures, the case's identifiers, identifier
 placeholders naming no kind or row, markers naming no source, sentences with no marker, an empty template. Sentences
 are counted with each token read as a word, so a token can stand alone as a sentence and the dots inside an id never
 end one.
@@ -195,13 +204,19 @@ prints only rendered text: a /3 template exported by today's worker would print 
 - The stricter scan refuses the accepted false refusals above in /3 free text; the person rewords in one step.
 - Checks: CAS-52 to CAS-54 (`docs/product/test-matrix.md`; `scan-strict.test.ts`, `verifier-template.test.ts`,
   `draft-template.test.ts`, `serialize.test.ts`, `verifier-contradiction.test.ts`), the /2 differential, the /3 draft
-  stating what the /2 draft states (its amounts, interest exactly where /2 states it, every code the catalog holds),
+  stating what the /2 draft states (its amounts, interest exactly where /2 states it, every code the catalog holds, and
+  every other figure /2 writes: the version, page, percentage, year, reference, release, counts and dates, but a code
+  of another shape or a reference in braces, which have no fact), the /3 draft's text for each method and edge (no rate,
+  no year or percentage, no release, a braced reference, off-shape codes only), the zero-amount table and the set-off signs pinned
+  from literal lists, a claim or a patient read as a part from exactly two, the separation check's time on
+  100,000-character templates,
   pass 1's spans in template offsets after a hidden character or a lengthening normalization, and the properties of
   section 8 this slice owns (the code draft passes /3; a digit or a word of the scanner's tables inserted fails at its
   span; a sign, a point or a letter typed against any token, or a sign or a sign's word set off before it, fails at that
   token's span; a part-naming token beside an
   all-lines fact fails unless covering; a total cue beside a part fact fails; serialization keeps the sentence
-  count). Each ran under 40 seeds before the pull request.
+  count). Each ran under 40 seeds before the pull request. The code draft (`draft.ts`) is mutated in the
+  packets-template shard with the template's check and its serialization (review round 3).
 
 ## Not covered
 
@@ -209,6 +224,10 @@ prints only rendered text: a /3 template exported by today's worker would print 
   `rendered_sha256`, `rendered_changed` and `schedule_changed` (slice 4); the editor's picker, preview and one-click
   conversion (slice 5; the web's `mismatchShown` already has plain cases for the six codes); the gateway's prompt v2,
   segment schema and use of `serializeDraft` (slice 6); the v2 evaluation set (slice 7).
+
+- The scanner's own cost on a very long run of letters followed by whitespace, or of quotation marks (shared with /2's
+  scanner, which this slice does not change; about 0.8 s for 40,000 letters, growing with the square of the run): the
+  timing test of the separation check uses inputs the scanner reads in linear time.
 
 ## Not verified here
 

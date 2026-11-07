@@ -44,6 +44,50 @@
     "reviewedOn": "2026-10-25"
   },
   {
+    "file": "packages/packets/src/draft.ts",
+    "mutator": "ConditionalExpression",
+    "original": "interest !== null && interest.total_cents !== null",
+    "occurrence": 1,
+    "replacement": "true",
+    "reason": "interestStated(section) (interest.ts) is section !== null && section.total_cents !== null && parseCents(section.total_cents) > 0n, so it is false wherever interest is null or its total is null, and the guard's first two checks only narrow the type for dollars(interest.total_cents); with either removed or the conjunction made a disjunction, the sentence is written exactly where it was (the /2 draft's interest line, unchanged by this slice).",
+    "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/packets/src/draft.ts",
+    "mutator": "LogicalOperator",
+    "original": "interest !== null && interest.total_cents !== null && interestStated(interest)",
+    "occurrence": 1,
+    "replacement": "interest !== null && interest.total_cents !== null || interestStated(interest)",
+    "reason": "interestStated(section) (interest.ts) is section !== null && section.total_cents !== null && parseCents(section.total_cents) > 0n, so it is false wherever interest is null or its total is null, and the guard's first two checks only narrow the type for dollars(interest.total_cents); with either removed or the conjunction made a disjunction, the sentence is written exactly where it was (the /2 draft's interest line, unchanged by this slice).",
+    "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/packets/src/draft.ts",
+    "mutator": "ConditionalExpression",
+    "original": "interest.total_cents !== null",
+    "occurrence": 1,
+    "replacement": "true",
+    "reason": "interestStated(section) (interest.ts) is section !== null && section.total_cents !== null && parseCents(section.total_cents) > 0n, so it is false wherever interest is null or its total is null, and the guard's first two checks only narrow the type for dollars(interest.total_cents); with either removed or the conjunction made a disjunction, the sentence is written exactly where it was (the /2 draft's interest line, unchanged by this slice).",
+    "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/packets/src/draft.ts",
+    "mutator": "OptionalChaining",
+    "original": "pattern.codes[0]?.contract_amount_cents",
+    "occurrence": 1,
+    "replacement": "pattern.codes[0].contract_amount_cents",
+    "reason": "A packet has at least one line (assemblePacket throws a PacketAssemblyError on none, and pattern.codes holds each of its lines' codes), so pattern.codes[0] always exists and the optional chain never short-circuits; the per-visit sentence of the /2 draft reads the same amount either way (code that was there before this slice).",
+    "proposedBy": "fixer, review round 3 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
     "file": "packages/packets/src/facts.ts",
     "mutator": "ConditionalExpression",
     "original": "Array.isArray(value)",

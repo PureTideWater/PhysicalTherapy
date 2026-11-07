@@ -201,6 +201,16 @@ describe('CAS-52: free text holds no figure; tokens, a person’s markers and id
     expect(found(hidden, verify(hidden))).toEqual([['hidden_character', null, '​']]);
   });
 
+  it('keeps /2’s placeholder rules: a kind the schedule lacks, and braces that only show as braces, fail at the placeholder’s span', () => {
+    for (const [template, placeholder] of [
+      ['For {{bogus_kind:1}}, the remittances show {{fact:line.1.allowed}} [1].', '{{bogus_kind:1}}'],
+      ['For ｛｛patient_name:1｝｝, the remittances show {{fact:line.1.allowed}} [1].', '｛｛patient_name:1｝｝'],
+    ] as const) {
+      expect(found(template, verify(template)), template).toEqual([['unknown_placeholder', 'placeholder', placeholder]]);
+    }
+    expect(verify('For {{patient_name:1}}, the remittances show {{fact:line.1.allowed}} [1].').passed).toBe(true);
+  });
+
   it('takes a token standing alone as a sentence, and never ends one at the dots of an id', () => {
     expect(verify('{{fact:pattern.allowed}} [1]. {{fact:pattern.paid}} [1].')).toMatchObject({ passed: true, sentences: 2 });
     expect(verify('{{fact:pattern.allowed}}.')).toMatchObject({ passed: false, sentences: 1, mismatches: [{ code: 'sentence_without_citation' }] });
@@ -272,6 +282,92 @@ describe('CAS-52: a fact token stands apart, so nothing typed against it prints 
     }
     expect(glued('The schedule lists code - {{fact:line.1.code}} [1].', content('severalCodes'))).toEqual([['fact', '{{fact:line.1.code}}']]);
     expect(glued('The payer counted negative {{fact:line.1.units}} [1].')).toEqual([['fact', '{{fact:line.1.units}}']]);
+  });
+
+  it('fails every sign and currency sign of the set-off list, set off by each set-off character, at the token’s span', () => {
+    const token = '{{fact:pattern.units}}';
+    // Pinned as literals, not read from the verifier's tables, so a character removed from either fails here.
+    const signs = ['-', '−', '+', '±', '∓', '~', '‐', '‑', '‒', '–', '$', '€', '£', '¥', '₹'];
+    const setOffs: readonly [string, string][] = [
+      [' ', ''],
+      ['(', ')'],
+      ['“', '”'],
+      ['‘', '’'],
+      ['"', '"'],
+      [' ‘', '’'],
+      ['\t', ''],
+    ];
+    for (const sign of signs) {
+      for (const [open, close] of setOffs) {
+        const template = `The payer allowed ${sign}${open}${token}${close} [1].`;
+        expect(glued(template), template).toEqual([['fact', token]]);
+        expect(verify(template).passed, template).toBe(false);
+      }
+    }
+    for (const word of ['negative', 'negatively', 'minus', 'plus', 'positive']) {
+      for (const [open, close] of setOffs) {
+        const template = `The payer allowed ${word}${open}${token}${close} [1].`;
+        expect(glued(template), template).toEqual([['fact', token]]);
+      }
+    }
+  });
+
+  it('skips any run of set-off characters before a sign, and reads a sign’s word whole, however long the text before it', () => {
+    const token = '{{fact:pattern.units}}';
+    expect(glued(`The payer allowed -${' '.repeat(200)}${token} [1].`)).toEqual([['fact', token]]);
+    expect(glued(`The payer allowed -${'(“‘"'.repeat(60)}${token} [1].`)).toEqual([['fact', token]]);
+    expect(glued(`The payer allowed minus${' '.repeat(300)}${token} [1].`)).toEqual([['fact', token]]);
+    // A run of letters longer than any sign's word, ending in one, is a word of its own, not the sign's word.
+    expect(glued(`The payer allowed ${'a'.repeat(300)}minus ${token} [1].`)).toEqual([]);
+    expect(glued(`The payer allowed xminus ${token} [1].`)).toEqual([]);
+    expect(glued(`The payer allowed xnegatively ${token} [1].`)).toEqual([]);
+    expect(glued(`The payer allowed (negatively) ${token} [1].`)).toEqual([]);
+    // A sign's word written in letters outside the basic plane before it is still read as a word, not as the sign word.
+    expect(glued(`The payer allowed 𝐚minus ${token} [1].`)).toEqual([]);
+  });
+
+  it('reads any run of closing punctuation after a token: 16 or 17 closers then a letter or a sign still fail', () => {
+    for (const closers of ['”'.repeat(15), '”'.repeat(16), '”'.repeat(17), ')'.repeat(16), ')'.repeat(17), '.'.repeat(40)]) {
+      for (const [template, token] of [
+        [`That rate is for {{fact:code.97110}}${closers}-GP-KX [1].`, '{{fact:code.97110}}'],
+        [`The payer allowed {{fact:line.1.units}}${closers}-fold [1].`, '{{fact:line.1.units}}'],
+      ] as const) {
+        expect(glued(template), template).toEqual([['fact', token]]);
+        expect(verify(template).passed, template).toBe(false);
+      }
+      expect(glued(`The payer allowed {{fact:line.1.units}}${closers} here [1].`)).toEqual([]);
+      expect(glued(`The payer allowed {{fact:line.1.units}}${closers}`)).toEqual([]);
+    }
+  });
+
+  it('passes a token in single quotation marks, or followed by an exclamation mark, a question mark or a closing quotation mark', () => {
+    for (const template of [
+      'The remittances show ‘{{fact:pattern.allowed}}’ here [1].',
+      'The remittances show {{fact:pattern.allowed}}! see [1].',
+      'The remittances show {{fact:pattern.allowed}}? see [1].',
+      'The remittances show ‘{{fact:pattern.allowed}}’ [1].',
+      'The remittances show ‘{{fact:pattern.allowed}}’! see [1].',
+    ]) {
+      expect(glued(template), template).toEqual([]);
+    }
+    expect(verify('The remittances show ‘{{fact:pattern.allowed}}’ here [1].').passed).toBe(true);
+  });
+
+  it('reads the text before each token once: 100k-character templates with long runs before tokens check in well under a second each', () => {
+    const token = '{{fact:pattern.units}}';
+    const templates = [
+      `${' '.repeat(99_970)}x ${token}`,
+      `${'a'.repeat(99_970)}1 ${token}`,
+      `${token} `.repeat(Math.ceil(100_000 / (token.length + 1))),
+      `${' '.repeat(2000)}x ${token} `.repeat(Math.ceil(100_000 / (2000 + token.length + 3))),
+      `The payer allowed ${' '.repeat(10_000)}x${` ${token}`.repeat(400)} [1].`,
+      `The payer allowed ${'b'.repeat(99_000)}1 ${` minus ${token}`.repeat(30)} [1].`,
+    ];
+    for (const template of templates) {
+      const started = performance.now();
+      verify(template);
+      expect(performance.now() - started, `${template.length} characters`).toBeLessThan(1500);
+    }
   });
 
   it('passes a token after an em dash between clauses, or after a word that only ends in a sign’s word', () => {

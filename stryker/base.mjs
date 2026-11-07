@@ -73,8 +73,10 @@ export const MUTATE = {
     'packages/packets/src/fact-catalog.ts',
     'packages/packets/src/fact-words.ts',
     'packages/packets/src/render.ts',
-    // A narrative template's serialization from drafted segments (verifier format /3; its check is under verifier/).
+    // A narrative template's serialization from drafted segments and the code's own draft at /2 and /3 (verifier format
+    // /3; its check is under verifier/).
     'packages/packets/src/serialize.ts',
+    'packages/packets/src/draft.ts',
     '!packages/packets/src/**/*.test.ts',
     '!packages/packets/src/test-support.ts',
     '!packages/packets/src/explain/__golden__/**',

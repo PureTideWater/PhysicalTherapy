@@ -11,8 +11,8 @@ import { legacyDraftNarrative } from './legacy-draft.test-support';
 import { factPlaceholder, placeholder } from './placeholders';
 import { renderFacts } from './render';
 import { totalCues } from './roles-reader/cues';
-import { CURRENCY_WORDS, MULTIPLES, MULTIPLIERS, ORDINALS, SCALES, STRICT_NUMBER_WORDS, STRICT_PLURALS, TEENS, TENS, UNITS } from './scan';
-import { assemblyInput, line, roleContents } from './test-support';
+import { CURRENCY_WORDS, MULTIPLES, MULTIPLIERS, ORDINALS, SCALES, STRICT_NUMBER_WORDS, STRICT_PLURALS, TEENS, TENS, UNITS, scanText } from './scan';
+import { REGULATION, assemblyInput, contractCitation, line, roleContents } from './test-support';
 import { type Mismatch, verifyTemplate } from './verifier';
 
 /**
@@ -40,8 +40,29 @@ const contradicted = (template: string, report: { readonly mismatches: readonly 
 const twoCodes = (): PacketContent =>
   assemblePacket(assemblyInput({ lines: [line(1), line(2), line(3, { procedureCode: '97112' }), line(4, { procedureCode: '97112' })] }));
 
-/** Every content the packets tests name: the facts' and the role reader's. */
-const named = (): PacketContent[] => [...Object.values(FACT_CONTENTS).map((make) => make()), ...Object.values(roleContents()), twoCodes()];
+/**
+ * Contents at the draft's edges, each a branch no other named content reaches: a fixed schedule or a per-visit rate with
+ * no amount, a percentage of Medicare with no locked year or no percentage, a regulation with no rule release or with a
+ * reference in braces (no reference fact), and a
+ * pattern of off-shape codes only (no code token).
+ */
+const EDGES = {
+  fixedNoRate: () => assemblePacket(assemblyInput({ citation: contractCitation({ parameters: {} }) })),
+  perVisitNoRate: () => assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: {} }) })),
+  percentNoYear: () => assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percent: '112.5' } }) })),
+  percentNone: () => assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: {} }) })),
+  regulationNoRelease: () => assemblePacket(assemblyInput({ citation: REGULATION, releases: [] })),
+  regulationBraced: () => assemblePacket(assemblyInput({ citation: { ...REGULATION, reference: '42 CFR {{422.214}}' } })),
+  offShapeOnly: () => assemblePacket(assemblyInput({ lines: [line(1, { procedureCode: '9701' }), line(2, { procedureCode: '9701' })] })),
+} as const;
+
+/** Every content the packets tests name: the facts' and the role reader's, and the draft's edges. */
+const named = (): PacketContent[] => [
+  ...Object.values(FACT_CONTENTS).map((make) => make()),
+  ...Object.values(roleContents()),
+  twoCodes(),
+  ...Object.values(EDGES).map((make) => make()),
+];
 
 describe('the code draft', () => {
   it('writes format /2 by default, byte for byte the text it wrote before tokens, on every named content', () => {
@@ -87,6 +108,40 @@ describe('the code draft', () => {
     );
   });
 
+  it('writes these /3 templates, word for word, for the requirement of each method and edge', () => {
+    const pattern = 'The pattern is {{fact:pattern.lines}} on {{fact:pattern.claims}} with {{fact:pattern.service_dates}} [3]. The remittances show {{fact:pattern.allowed}} [3].';
+    const contract = `${pattern} Under the contract those lines come to {{fact:pattern.expected}}, and the difference is {{fact:pattern.variance}} [3].`;
+    const medicare = `${pattern} At the Original Medicare amount those lines come to {{fact:pattern.expected}}, and the difference is {{fact:pattern.variance}} [3].`;
+    const forCode = 'That rate is for {{fact:code.97110}} [1].';
+    const cases: readonly [PacketContent, string][] = [
+      [FACT_CONTENTS.base(), `{{fact:citation.version}} sets {{fact:contract.rate}} [1]. ${forCode} ${contract}`],
+      [
+        FACT_CONTENTS.severalCodes(),
+        `{{fact:citation.version}} sets {{fact:contract.rate}} [1]. That rate is for {{fact:code.0275t}}, {{fact:code.97110}} and {{fact:code.g0283}} [1]. ${contract} This packet states {{fact:interest.total}} as its own line, and it is not part of the shortfall [4].`,
+      ],
+      [twoCodes(), `{{fact:citation.version}} sets {{fact:contract.rate}} [1]. That rate is for {{fact:code.97110}} and {{fact:code.97112}} [1]. ${contract}`],
+      [FACT_CONTENTS.percent(), `{{fact:citation.version}} sets {{fact:contract.percent.1}} of the Medicare fee schedule [1]. That schedule is {{fact:contract.year.1}} [1]. ${forCode} ${contract}`],
+      [EDGES.percentNoYear(), `{{fact:citation.version}} sets {{fact:contract.percent.1}} of the Medicare fee schedule [1]. ${forCode} ${contract}`],
+      [EDGES.percentNone(), `{{fact:citation.version}} pays a percentage of the Medicare fee schedule [1]. ${forCode} ${contract}`],
+      [FACT_CONTENTS.lesserOf(), `{{fact:citation.version}} pays the lesser of the billed charge and the schedule cited on {{fact:citation.page}} [1]. ${forCode} ${contract}`],
+      [EDGES.fixedNoRate(), `{{fact:citation.version}} sets the rate in the clause cited on {{fact:citation.page}} [1]. ${forCode} ${contract}`],
+      [EDGES.perVisitNoRate(), `{{fact:citation.version}} sets the rate in the clause cited on {{fact:citation.page}} [1]. ${forCode} ${contract}`],
+      [EDGES.offShapeOnly(), `{{fact:citation.version}} sets {{fact:contract.rate}} [1]. ${contract}`],
+      [
+        FACT_CONTENTS.regulation(),
+        `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay under {{fact:citation.reference}} [1]. The Medicare fee schedule in effect for those service dates, {{fact:release.no.1}}, sets that amount [2]. ${medicare}`,
+      ],
+      [
+        EDGES.regulationBraced(),
+        `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay [1]. The Medicare fee schedule in effect for those service dates, {{fact:release.no.1}}, sets that amount [2]. ${medicare}`,
+      ],
+      [EDGES.regulationNoRelease(), `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay under {{fact:citation.reference}} [1]. ${medicare}`],
+    ];
+    for (const [content, expected] of cases) {
+      expect(draftNarrative(content, V3)).toBe(expected);
+    }
+  });
+
   it('renders its tokens with the figures the /2 draft states', () => {
     const content = FACT_CONTENTS.base();
     const rendered = renderFacts(draftNarrative(content, V3), content);
@@ -101,9 +156,22 @@ describe('the code draft', () => {
 const amounts = (text: string): string[] => [...text.matchAll(/\$[\d,]+\.\d{2}/g)].map((match) => match[0].replaceAll(',', ''));
 
 /**
+ * Every figure other than an amount a text writes, as its kind and its text as written: the contract's version, a page,
+ * a percentage and a fee-schedule year, a regulation's reference, a rule release, the counts and the service dates. A
+ * percentage is read in the renderer's words ("112.5%" as "112.5 percent"), the one deliberate rewording.
+ */
+const figuresAsWritten = (text: string): Set<string> =>
+  new Set(
+    scanText(text)
+      .figures.filter((figure) => figure.kind !== 'amount')
+      .map((figure) => `${figure.kind}:${text.slice(figure.start, figure.end).replace(/%$/u, ' percent')}`),
+  );
+
+/**
  * The /3 draft states what the /2 draft states: rendered, it holds every amount the /2 draft writes (the pattern's
- * totals, and interest exactly where /2 states it), and every procedure code /2 names; a contract draft lists every
- * code token the catalog holds for the pattern.
+ * totals, and interest exactly where /2 states it), every procedure code /2 names, and every other figure /2 writes
+ * (figuresAsWritten: the version, page, percentage, year, reference, release, counts and dates), but a code of another
+ * shape or a regulation's reference in braces, which have no fact (CAS-53); a contract draft lists every code token the catalog holds for the pattern.
  */
 function statesWhatV2States(content: PacketContent): void {
   const before = outcome(() => draftNarrative(content));
@@ -124,6 +192,16 @@ function statesWhatV2States(content: PacketContent): void {
   // A code the catalog holds (an off-shape code has no fact, CAS-53): named in /3 wherever /2 names it, and listed in
   // every contract draft.
   const catalog = factCatalog(content);
+  const factless = new Set(content.pattern.codes.map((each) => each.procedure_code).filter((each) => !catalog.byId.has(`code.${each.toLowerCase()}`)));
+  const v3Figures = figuresAsWritten(text);
+  // A regulation's reference in braces has no fact either (CAS-53): /3 leaves it out, so its figures are not held.
+  const unheld = content.citation.kind === 'regulation' && !catalog.byId.has('citation.reference') ? content.citation.reference : '';
+  for (const figure of figuresAsWritten(before)) {
+    const written = figure.slice(figure.indexOf(':') + 1);
+    if (!factless.has(written) && !unheld.includes(written)) {
+      expect(v3Figures.has(figure), `${figure} in ${text}`).toBe(true);
+    }
+  }
   for (const code of content.pattern.codes.map((each) => each.procedure_code).filter((each) => catalog.byId.has(`code.${each.toLowerCase()}`))) {
     if (new RegExp(`\\b${code}\\b`).test(before)) {
       expect(text, code).toMatch(new RegExp(`\\b${code}\\b`));

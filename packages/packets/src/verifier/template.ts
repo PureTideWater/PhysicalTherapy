@@ -46,35 +46,37 @@ import { DATED, type Mismatch, type MismatchCode, type NarrativeCheck, identifie
 const NUMERAL = /\p{N}/gu;
 /** What may stand right before a fact token: whitespace, or an opening bracket or quotation mark. */
 const BEFORE_TOKEN = /[\s(“‘"]/u;
-/** What may follow a fact token before whitespace or the text's end: closing punctuation, brackets and quotation marks. */
-const AFTER_TOKEN = /^[.,;:!?)”’"]*(?:\s|$)/u;
 /**
- * A sign or a currency sign, read past whitespace, opening brackets and quotation marks before a token: the hyphen-minus
- * and the minus, plus and plus-minus signs, the tilde, the hyphens and the figure and en dashes (each read as a minus),
- * and every currency sign. Its phrase would print beside it as a signed figure ("- 6 units", "-(6 units)", "$ 97110").
- * The em dash and the horizontal bar are punctuation between clauses, not a sign (docs/adr/0089).
+ * What may follow a fact token before whitespace or the text's end: closing punctuation, brackets and quotation marks.
+ * Sticky, read from the token's end with no limit on the run (anchored and linear: one step per character it reads).
  */
-const SIGN = /[-−+±∓~‐‑‒–\p{Sc}]$/u;
-/** A word that writes a sign, read past the same characters before a token (docs/adr/0089). */
-const SIGN_WORDS: ReadonlySet<string> = new Set(['negative', 'negatively', 'minus', 'plus', 'positive']);
-/** Whitespace, opening brackets and quotation marks at the end of the text before a token: what a sign may be set off by. */
-const SET_OFF = /[\s(“‘"]+$/u;
-/** The letters at the end of the text before a token, after what sets them off: a sign's word, or none. */
-const LAST_WORD = /\p{L}*$/u;
+const AFTER_TOKEN = /[.,;:!?)”’"]*(?:\s|$)/uy;
+/**
+ * A sign, a currency sign or a sign's word set off before a token, read backwards from the token's start (sticky, its
+ * lastIndex the token's start; it matches nothing, it only looks behind). Past any run of whitespace, opening brackets
+ * and quotation marks, with no limit on the run: a sign (the hyphen-minus and the minus, plus and plus-minus signs, the
+ * tilde, the hyphens and the figure and en dashes, each read as a minus) or any currency sign, whose phrase would print
+ * beside it as a signed figure ("- 6 units", "-(6 units)", "$ 97110"); or a word that writes a sign ("negative",
+ * "negatively", "minus", "plus", "positive", in any case) with no letter before it. The em dash and the horizontal bar
+ * are punctuation between clauses, not a sign (docs/adr/0089). A lookbehind is matched backwards from the one position,
+ * so each token costs the characters between it and the text before it: the runs before successive tokens never
+ * overlap, and a template checks in time linear in its length (docs/adr/0089, review round 3).
+ */
+const SIGNED_BEFORE = /(?<=(?:[-−+±∓~‐‑‒–\p{Sc}]|(?<!\p{L})(?:negative|negatively|minus|plus|positive))[\s(“‘"]*)/iuy;
 
 /**
  * Whether a fact token stands apart in the text as read: whitespace, an opening bracket or quotation mark (or the
- * text's start) before it, and whitespace (or the text's end) after it, with only closing punctuation between; and no
- * sign, currency sign or word of SIGN_WORDS set off before it by whitespace, opening brackets and quotation marks.
+ * text's start) before it, and whitespace (or the text's end) after it, with only closing punctuation between, however
+ * long that run; and no sign, currency sign or sign's word set off before it (SIGNED_BEFORE).
  */
 function separated(text: string, token: TextSpan): boolean {
   const before = text[token.start - 1];
-  if (!((before === undefined || BEFORE_TOKEN.test(before)) && AFTER_TOKEN.test(text.slice(token.end, token.end + 16)))) {
+  if (!(before === undefined || BEFORE_TOKEN.test(before))) {
     return false;
   }
-  const lead = text.slice(0, token.start).replace(SET_OFF, '');
-  const word = (LAST_WORD.exec(lead) as RegExpExecArray)[0];
-  return !SIGN.test(lead) && !SIGN_WORDS.has(word.toLowerCase());
+  AFTER_TOKEN.lastIndex = token.end;
+  SIGNED_BEFORE.lastIndex = token.start;
+  return AFTER_TOKEN.test(text) && !SIGNED_BEFORE.test(text);
 }
 
 /** A template read once: the check, and the template rendered (null when a token renders nothing). */

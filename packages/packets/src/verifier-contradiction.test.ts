@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { assemblePacket } from './assemble';
 import { FACT_CONTENTS } from './fact-contents.test-support';
 import type { PacketContent } from './format';
 import { totalCues } from './roles-reader/cues';
 import { type Mismatch, verifyTemplate } from './verifier';
 import { standIn } from './verifier/contradiction';
+import { assemblyInput, line } from './test-support';
 
 /**
  * Pass 2 of verifier format /3 at its edges (design lane-b-packet-figure-placeholders, section 4; docs/adr/0089; test
@@ -56,6 +58,28 @@ describe('what names a part beside an all-lines fact', () => {
       expect(contradicted(template, one), template).toEqual([]);
       expect(contradicted(template, many), template).toEqual(['{{fact:pattern.variance}}']);
     }
+  });
+
+  it('reads a claim or a patient as a part from exactly two of them: the boundary of “more than one”', () => {
+    const variance = ['{{fact:pattern.variance}}'];
+    // Two claims (rows 1 and 2 of one claim), three patients.
+    const twoClaims = FACT_CONTENTS.oneCode();
+    for (const template of ['For the claim the payer owes {{fact:pattern.variance}} [1].', 'For each claim the payer owes {{fact:pattern.variance}} [1].']) {
+      expect(contradicted(template, twoClaims), template).toEqual(variance);
+    }
+    // Two patients (rows 1 and 2 of one patient), three claims. SYNTHETIC keys.
+    const patient = (n: number) => `40000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+    const twoPatients = assemblePacket(assemblyInput({ lines: [line(1, { patientKey: patient(1) }), line(2, { patientKey: patient(1) }), line(3, { patientKey: patient(3) })] }));
+    expect(twoPatients.pattern.patients).toBe(2);
+    expect(twoPatients.pattern.claims).toBe(3);
+    for (const template of ['For the patient, the payer owes {{fact:pattern.variance}} [1].', 'For each patient, the payer owes {{fact:pattern.variance}} [1].']) {
+      expect(contradicted(template, twoPatients), template).toEqual(variance);
+    }
+    // One patient over two claims: a claim is a part, the patient is not.
+    const onePatient = assemblePacket(assemblyInput({ lines: [line(1, { patientKey: patient(1) }), line(2, { patientKey: patient(1) })] }));
+    expect(onePatient.pattern.patients).toBe(1);
+    expect(contradicted('For the patient, the payer owes {{fact:pattern.variance}} [1].', onePatient)).toEqual([]);
+    expect(contradicted('For the claim the payer owes {{fact:pattern.variance}} [1].', onePatient)).toEqual(variance);
   });
 
   it('reads "one of" and a stray scope phrase as a part, and every line or "in total" as none', () => {

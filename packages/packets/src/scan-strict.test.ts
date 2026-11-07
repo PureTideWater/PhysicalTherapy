@@ -206,6 +206,35 @@ describe('the strict-only tables and readings, value by value', () => {
     }
   });
 
+  it('reads every verb, zero word, noun and auxiliary of the zero-amount table (literal lists, not the table read back)', () => {
+    const zeroAmount = (phrase: string) => expect(only(phrase), phrase).toEqual([{ kind: 'amount', value: '0', start: 0, end: phrase.length, written: 'words' }]);
+    // After a payment or allowance verb: a zero word, or "no" and a noun.
+    const paymentVerbs = ['paid', 'pay', 'pays', 'paying', 'allowed', 'allow', 'allows', 'allowing', 'reimbursed', 'reimburse', 'reimburses', 'reimbursing', 'remitted', 'remit', 'remits', 'remitting'];
+    const zeros = ['nothing', 'none', 'zero', 'nil', 'nought', 'naught', 'no amount', 'no money', 'no payment', 'no dollar', 'no dollars', 'no cent', 'no cents'];
+    for (const verb of paymentVerbs) {
+      for (const zero of zeros) {
+        zeroAmount(`${verb} ${zero}`);
+        zeroAmount(`${verb.toUpperCase()} the practice ${zero}`);
+      }
+    }
+    // "No" and a noun after a verb of making, issuing or sending.
+    const issueVerbs = ['made', 'make', 'makes', 'making', 'issued', 'issue', 'issues', 'issuing', 'sent', 'send', 'sends', 'sending'];
+    const nouns = ['payment', 'payments', 'allowance', 'allowances', 'reimbursement', 'reimbursements', 'remittance', 'remittances'];
+    for (const verb of issueVerbs) {
+      for (const noun of nouns) {
+        zeroAmount(`${verb} no ${noun}`);
+      }
+    }
+    // A zero subject, an auxiliary and a participle.
+    for (const subject of ['nothing', 'none', 'zero', 'no amount']) {
+      for (const auxiliary of ['was', 'were', 'is', 'are', 'has been', 'have been']) {
+        for (const participle of ['paid', 'allowed', 'reimbursed', 'remitted']) {
+          zeroAmount(`${subject} ${auxiliary} ${participle}`);
+        }
+      }
+    }
+  });
+
   it('keeps each token and stray in the text’s order', () => {
     const scan = scanText('{{fact:pattern.paid}} }} {{fact:pattern.lines}} {{ [1]', { strict: true });
     expect(scan.facts.map((token) => token.id)).toEqual(['pattern.paid', 'pattern.lines']);
