@@ -38,12 +38,13 @@ import { lineChain } from './per-line';
  *   a row's total is the sum of its partialShare over the lines, which follows the cumulative amount posted ahead of it
  *   and so the random order itself (only a line's total over all the rows telescopes to an order-free amount); and the
  *   replay applies no cap, because the generator keeps every cap from biting on a partial check, and a cap that bit
- *   would make the replay itself fail on both sides rather than pass unseen;
+ *   would make the replay itself fail on both sides rather than pass unseen. What the rule cannot see, D6's running sum
+ *   order for order (each match's `before`, which a row's total follows), settle-order.test.ts holds exactly (slice 4);
  * - the claims whose patient control numbers each side decrypted in the search, equal as sets, and in the postings phase
- *   within the reference's and never more often (review round 1). Section 7 asks more of the postings phase, each claim
- *   at most once, which only D7 (slice 4) makes true: the shipped side is the per-line code until then and decrypts a
- *   claim as often as the reference does, so the once check is held behind POSTINGS_DECRYPT_ONCE, which slice 4 turns
- *   on with D7.
+ *   within the reference's and never more often (review round 1), and each claim at most once (D7, slice 4: a pass reads
+ *   and decrypts a remittance's claims once, however many posting rows name it); the reference compared with itself is
+ *   held to the first two only (CompareOptions.postingsDecryptOnce), since the per-line postings decrypt a remittance's
+ *   claims once for every row that names it.
  *
  * A difference names its table, the row's ordinal and the column, never a value: no identifier, plaintext or hash is
  * logged or printed.
@@ -212,13 +213,6 @@ export async function idsBefore(url: string, practiceId: string): Promise<Map<st
     await client.end();
   }
 }
-
-/**
- * Whether the compared side decrypts each claim's patient control number at most once in the postings phase (design
- * section 7; D7). False until slice 4 lands D7 (the base's per-line postings can decrypt one claim more than once);
- * slice 4 sets it true, and the check below then holds the shipped side to it.
- */
-const POSTINGS_DECRYPT_ONCE = false;
 
 /** caseLines' read: the remittances' step, and so the search, begins. */
 const CASE_LINES = /FROM case_line cl JOIN "case" k/;
@@ -457,6 +451,12 @@ function seqAsOrder(after: ReadonlyMap<string, readonly Record<string, unknown>[
 export interface CompareOptions {
   /** CAS-49.6: line_status and line_status_head compared by their seq order, not their seq values (seqAsOrder). */
   readonly seqByOrder?: boolean;
+  /**
+   * Whether the compared side must decrypt each claim's patient control number at most once in the postings phase
+   * (design section 7; D7, slice 4): true unless the compared side is the per-line reference itself (the settle rule's
+   * own proof), whose postings decrypt a remittance's claims once for every row that names it, as the base does.
+   */
+  readonly postingsDecryptOnce?: boolean;
 }
 
 /** Compares a side with the reference (design section 7, CAS-49.1; CAS-49.6 with seqByOrder). */
@@ -569,7 +569,7 @@ export function compare(reference: SideResult, side: SideResult, before: Readonl
     if (n > (refPostings.get(claim) ?? 0)) {
       differences.push('postings decrypts: a claim decrypted more often than the reference, or one it never read');
     }
-    if (POSTINGS_DECRYPT_ONCE && n > 1) {
+    if (options.postingsDecryptOnce !== false && n > 1) {
       differences.push('postings decrypts: a claim decrypted more than once (D7)');
     }
   }

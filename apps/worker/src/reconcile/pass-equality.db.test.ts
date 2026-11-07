@@ -29,7 +29,7 @@ import { type StageTrio, type StageWorld, buildStageWorld } from './test-support
  *
  * The proof level is fixed by the run's index (review round 5): even runs at posted, odd runs raised to deposited after
  * the history; after the runs the harness checks that both levels ran, that a posted run moved a line to recovered from
- * a posted entry matched in its pass, and that run 1 holds both move-backs. Run 1 also runs the fifteen self-check
+ * a posted entry matched in its pass, and that run 1 holds both move-backs. Run 1 also runs the seventeen self-check
  * mutants, each a fault injected at the shipped pass's statement boundary, each of which must fail the comparison.
  *
  * TP_CAS49_RUNS lowers the number of runs for a local look (CI runs all 25); every identifier is SYNTHETIC.
@@ -58,7 +58,8 @@ const facts = {
 // ---------------------------------------------------------------------------------------------------------------------
 // The self-check mutants (design section 7's six, a seventh for a line with no service date, an eighth for D16's
 // parameter arrays, a ninth and a tenth for D16's exclusion in each search alone, an eleventh for the chain order's
-// load key, and the twelfth to the fifteenth for the per-line filters the new statements restate): faults at the
+// load key, the twelfth to the fifteenth for the per-line filters the new statements restate, and the sixteenth and
+// seventeenth for D15's never-matched reads): faults at the
 // shipped pass's statement boundary. Each names the statement it changes by its text and counts its applications, so a
 // later slice that rewrites the statement fails here ("did not apply") until the mutant is aimed at the new code; each
 // must make the comparison fail.
@@ -82,6 +83,8 @@ const LEDGER_MATCHES = /FROM ledger_match m WHERE m\.practice_id = \$1 ORDER BY 
 const CASE_LINES = /FROM case_line cl JOIN "case" k/;
 /** insertStages' one statement (D3): the pass's stage events as arrays, in order. */
 const STAGE_EVENTS = /^\s*INSERT INTO line_status\b[\s\S]*\bunnest\(/;
+/** neverMatched's one statement (D15, slice 4): the practice's posting (or EFT) rows less every row a match was ever made for. */
+const NEVER_MATCHED = /\bEXCEPT SELECT m\.(posting_row_id|eft_row_id) FROM ledger_match m\b/;
 
 /** Rewrites every occurrence of each `from` in the statements `match` names; applied when any was there. */
 const rewrite =
@@ -326,6 +329,20 @@ const MUTANTS: readonly Mutant[] = [
     name: "the patient search's case-line filter dropped",
     middleware: rewrite(PATIENT_CLAIMS, ['AND xl.claim_id = c.id)', 'AND xl.claim_id = c.id AND FALSE)']),
   },
+  // The sixteenth and seventeenth (slice 4, D15): the never-matched read taking off only the rows of standing matches,
+  // where the base's NOT EXISTS took off every row a match was ever made for. A row whose match a person reversed is then
+  // matched again in the pass (the world's posting a person reversed in the history; and, in a raised run such as run 1,
+  // the deposit a person reversed while its posting stood), which section 7 and the module's doc forbid.
+  {
+    name: "the never-matched posting rows read without a person's reversed matches",
+    middleware: rewrite(NEVER_MATCHED, ['m.posting_row_id IS NOT NULL', 'm.posting_row_id IS NOT NULL AND m.reversed_at IS NULL']),
+    differs: (difference) => !difference.startsWith('search decrypts'),
+  },
+  {
+    name: "the never-matched EFT rows read without a person's reversed matches",
+    middleware: rewrite(NEVER_MATCHED, ['m.eft_row_id IS NOT NULL', 'm.eft_row_id IS NOT NULL AND m.reversed_at IS NULL']),
+    differs: (difference) => !difference.startsWith('search decrypts'),
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -420,7 +437,7 @@ async function oneRun(run: number): Promise<void> {
 
     const against: Comparison = compare(ref, shippedSide, before, built.practice);
     expect(against.differences, `run ${String(run)}: the shipped pass against the per-line reference`).toEqual([]);
-    const itself = compare(ref, self, before, built.practice);
+    const itself = compare(ref, self, before, built.practice, { postingsDecryptOnce: false });
     expect(itself.differences, `run ${String(run)}: the reference against itself (the settle rule)`).toEqual([]);
     facts.selfRuns += 1;
     facts.partialCheckRuns += itself.partialCheck ? 1 : 0;
@@ -466,7 +483,7 @@ describe('a reconcile pass writes what the per-line pass wrote (CAS-49.1)', () =
     expect(facts.partialCheckRuns).toBe(RUNS);
   });
 
-  it('fails each of the fifteen self-check mutants on run 1', () => {
+  it('fails each of the seventeen self-check mutants on run 1', () => {
     if (RUNS < 2) {
       return;
     }

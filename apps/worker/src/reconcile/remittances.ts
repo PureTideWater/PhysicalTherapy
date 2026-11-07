@@ -754,6 +754,31 @@ function reversalRule(chain: Pick<LineChain, 'original' | 'claims'>, reversed: C
   return { take, base: earlier ?? (chain.claims[0] as ChainClaim) };
 }
 
+/** Each context's matches, indexed once: the standing ones by service line, each list in the matches' order (D5). */
+const standingIndex = new WeakMap<readonly StoredMatch[], ReadonlyMap<string, readonly StoredMatch[]>>();
+
+/**
+ * A context's standing matches by service line, each line's in the context's chain order, built once per matches array
+ * and kept while the array lives (SUITE-CAP-3 D5; docs/adr/0087): a line's chain reads its own matches from it instead of
+ * filtering every match of the practice, so a pass, the report or a screen asking about every line walks the matches
+ * once. ChainContext.matches is readonly and no caller changes it after building the context; two contexts with equal
+ * but distinct arrays each get their own index.
+ */
+function standingByLine(matches: readonly StoredMatch[]): ReadonlyMap<string, readonly StoredMatch[]> {
+  const known = standingIndex.get(matches);
+  if (known !== undefined) {
+    return known;
+  }
+  const index = new Map<string, StoredMatch[]>();
+  for (const match of matches) {
+    if (match.standing && match.serviceLineId !== null) {
+      pushTo(index, match.serviceLineId, match);
+    }
+  }
+  standingIndex.set(matches, index);
+  return index;
+}
+
 /**
  * A case line's chain from the context: its standing claim matches with their paired lines, and the
  * baselines walked over every event in chain order (@tp/ledger paymentChain): each standing claim match
@@ -766,7 +791,7 @@ export function lineChain(context: ChainContext, line: ChainLine): LineChain | u
   if (original === undefined) {
     return undefined;
   }
-  const own = context.matches.filter((match) => match.serviceLineId === line.serviceLineId && match.standing);
+  const own = standingByLine(context.matches).get(line.serviceLineId) ?? [];
   const claims: ChainClaim[] = [{ match: null, claimId: line.claimId, position: -1, line: original }];
   for (const [position, match] of own.entries()) {
     const pair = match.kind === 'claim' ? caseLinePair(context.lines, line, match.claimId as string) : undefined;
