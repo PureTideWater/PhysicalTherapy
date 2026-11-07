@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { GetAccountCommand, GetConfigurationSetCommand, PutConfigurationSetSendingOptionsCommand } from '@aws-sdk/client-sesv2';
-import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, recordAuditEvent, withActor } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import { localMailEvents } from '../mail/events';
 import { type MailIdentity, MemoryMailSender } from '../mail/mail';
 import { MAIL_PROBE_RECIPIENTS } from '../mail/streams';
 import { type MailEventSource, type MailEventsOptions, type MailQueueMessage, MemoryMailControl, SesMailControl, expireMail, runMailEvents } from './mail-events';
+import { sendPasswordNotices } from './password-notices';
 import { sendSupportGrantNotices } from './support-notices';
 
 /**
@@ -573,6 +574,60 @@ describe('the mail_events job', () => {
     expect(sends).not.toMatch(/@|simulator/i);
     expect(sends).not.toContain(rows[0]?.keyed ?? 'none');
     expect(JSON.stringify(lines)).not.toContain('@');
+  });
+
+  it('reports a password-changed email not delivered once, by its notice’s and user’s IDs and the mail state, and not a delivery or a replay (SGN-16; docs/adr/0091)', async () => {
+    // Two completed resets, each sent its notice by the password_notices job.
+    const users = [await createUser(owner), await createUser(owner)];
+    for (const user of users) {
+      await withActor(app, user, (scope) => recordAuditEvent(scope, { action: 'password_reset_completed', objectType: 'user', objectId: user, purpose: 'email_code', requestId: `test-${randomUUID()}` }));
+    }
+    const mail = new MemoryMailSender();
+    const client = await operator.connect();
+    try {
+      await sendPasswordNotices({ client, mail, supportEmail: 'support@synthetic.test', requestId: 'job' });
+    } finally {
+      client.release();
+    }
+    const [bounced, delivered] = users.map((user) => mail.sent.find((message) => message.identity.recipientUserId === user));
+    expect(bounced?.identity.kind).toBe('password_changed');
+    expect(delivered?.identity.kind).toBe('password_changed');
+    // SES's events as the simulator would send them: one bounced, one delivered; then every event again.
+    const queue = new MemoryQueue();
+    const published = [
+      ...localMailEvents({ messageId: bounced?.messageId ?? '', to: 'bounce@simulator.amazonses.com', identity: bounced?.identity ?? screening(), streamPrefix: PREFIX, at: new Date() }),
+      ...localMailEvents({ messageId: delivered?.messageId ?? '', to: 'success@simulator.amazonses.com', identity: delivered?.identity ?? screening(), streamPrefix: PREFIX, at: new Date() }),
+    ];
+    for (const event of published) {
+      queue.push(JSON.stringify(event));
+    }
+    const { lines, logger } = capture();
+    expect(await run({ source: queue }, logger)).toMatchObject({ recorded: 4, unreadable: 0, notRecorded: 0 });
+    expect(lines.filter((line) => line.error_code === 'PASSWORD_NOTICE_UNDELIVERED')).toEqual([
+      expect.objectContaining({
+        level: 'error',
+        msg: 'password notice not delivered',
+        job_id: expect.any(String),
+        password_notice_id: bounced?.identity.subjectId,
+        user_id: users[0],
+        undelivered_reason_code: 'bounced',
+      }),
+    ]);
+    const states = await owner.query<{ id: string; state: string }>('SELECT id, state FROM password_notice WHERE user_id = ANY ($1::uuid[]) ORDER BY state', [users]);
+    expect(states.rows).toEqual([
+      { id: delivered?.identity.subjectId, state: 'delivered' },
+      { id: bounced?.identity.subjectId, state: 'undelivered' },
+    ]);
+    // A replay changes nothing and logs nothing.
+    const replay = new MemoryQueue();
+    for (const event of published) {
+      replay.push(JSON.stringify(event));
+    }
+    const again = capture();
+    expect(await run({ source: replay }, again.logger)).toMatchObject({ recorded: 0, repeated: 4 });
+    expect(again.lines.filter((line) => line.error_code === 'PASSWORD_NOTICE_UNDELIVERED')).toEqual([]);
+    expect((await owner.query("SELECT count(*)::integer AS n FROM audit_event WHERE action = 'password_notice_undelivered' AND object_id = ANY ($1::uuid[])", [users])).rows).toEqual([{ n: 1 }]);
+    expect(JSON.stringify([...lines, ...again.lines])).not.toContain('@');
   });
 
   it('expires the mail records past their days, as the nightly mail_expiry job does', async () => {
