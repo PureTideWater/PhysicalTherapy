@@ -394,6 +394,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['held letters, the date of birth’s numbers, compacts and month words, near misses (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('61 03 04 Mar 6104 610304 ')}`, false],
     ['held letters, the date of birth redacted again and again with another number beside it (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961 5 ')}`, false],
     ['held letters, birth labels glued to the words beside them, no date after them (PHIJ3-2)', ['JANE Q VANTREE'], `${HELD}${fill('PaidDOBon file, see the enclosed record. ')}`, false],
+    // The judge's review round 4: the date of birth's parts with gaps of any length of white space and separators, each gap
+    // read once, and every run of letters read against the name's initials, near misses all (PHIJ4-1, PHIJ4-2).
+    ['held letters, the date of birth’s parts with wide gaps and runs of letters near the initials, near misses (PHIJ4-1, PHIJ4-2)', ['JANE Q VANTREE'], `${HELD}${fill('JX QQ VJX 61  /  03  /  04 Mar     6104     ')}`, false],
+    ['held letters, the date of birth redacted again and again, another number past a wide gap beside it (PHIJ4-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961  /     5     ')}`, false],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
     const who = patient([...names]);
     const started = performance.now();
@@ -1458,6 +1462,61 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     }
   });
 
+  // The judge's review round 4 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // PHIJ4-1's and PHIJ4-2's refused rows cc3dd7f6 refused for the range's own digits (69a3a2fe sent them), and with no range
+  // both trees send or redact them as here.
+  const RANGE_END = 'Paid $0,000.00. Service 01/01/2020-01/02/2020';
+  it.each([
+    // PHIJ4-1: the date of birth in a form redaction reads after a birth label, more than four characters between its parts
+    // where only white space, separators, commas, full stops, apostrophes and "OF" stand there (datesIn takes any length).
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80  /  03  /  14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 1980  /  14  /  03 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80     March     14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80-03-\n        14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 /\n    03 /\n    14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80  -  03  -  14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80/\r\n   03/\r\n   14 today.`, null, {}],
+    ['PHIJ4-1', ['SIMONE Q VANTREE'], `${HELD}Seen 75  .  02  .  11 today.`, null, VANTREE],
+    // The month's word last with wide gaps, which no rule read (the skeptic's 216 letters), refused with them.
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 14     80     March today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 \r\n   14 \r\n   March today.`, null, {}],
+    // A part of the date of birth beside its placeholder past a wide gap, where redaction read only some of the written date
+    // ("May/2009" as May 20, 2009; the widened PHIJ3-1 property's counterexamples).
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen May/2009     20`, null, { datesOfBirth: ['2009-05-20'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Sep.1995  .     19`, null, { datesOfBirth: ['1995-09-19'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Jun\r\n   –     1941  -\r\n   19`, null, { datesOfBirth: ['1941-06-19'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 19 ,\n      June 1941 today.`, null, { datesOfBirth: ['1941-06-19'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'Seen May/2009     20', 'Seen [DATE_OF_BIRTH]     20', { datesOfBirth: ['2009-05-20'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'DOB 80  /  03  /  14 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'DOB 80     March     14 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'Seen 80  /  03  /  14 today.', 'Seen 80  /  03  /  14 today.', {}],
+    // PHIJ4-2: two or more of the name's initials written together, in any order and case and for a name of any number of
+    // parts, and a part of three letters split by a space or a bare line break, glued at a range's end or after it.
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE_END}JZ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE_END}ZJ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE_END}Jz $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${HELD}Re: Jane Zephyra (JZ).`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${HELD}Initials: JZ`, null, {}],
+    ['PHIJ4-2', ['SIMONE VANTREE'], `${RANGE_END}SV $0,000.00`, null, VANTREE],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}QZ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}QJZ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}JZQ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}ZJQ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['ANA BEA CORA DINA ELLA FAYE GIA'], `${RANGE_END}AG $0,000.00`, null, {}],
+    ['PHIJ4-2', ['ANA BEA CORA DINA ELLA FAYE GIA'], `${RANGE_END}BF $0,000.00`, null, {}],
+    ['PHIJ4-2', ['BOB XU'], `${RANGE_END}Bo b $0,000.00`, null, {}],
+    ['PHIJ4-2', ['ANN Q VANTREE'], `${RANGE_END}An\nn $0,000.00`, null, VANTREE],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', {}],
+    ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
+  ] as const)('handles the judge’s round 4 input (%s): %s %j', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
   // PHIJ3-1: a held letter never sends the date of birth written with each of datesIn's separators (DATE_SEPARATOR, a dash
   // of each kind among them), white space, and gaps of two or three characters, in every order of its year, month and
   // day, with a four- or two-digit year, padded or not (one row per separator and order): it is refused, or redaction
@@ -1507,7 +1566,12 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
 
   it('never sends the date of birth in clear in a held letter, whatever separators, order, year length, padding or month word write it (property, PHIJ3-1)', () => {
     const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const gap = fc.array(fc.constantFrom('/', '\\', '.', '-', '–', '−', '⁃', '_', '|', ' ', ',', '\n', "'"), { minLength: 1, maxLength: 3 }).map((characters) => characters.join(''));
+    // One to three characters, or a wide gap: white space longer than four characters, a separator then a line break and
+    // indentation, CRLF (the judge's review round 4, PHIJ4-1: datesIn takes white space of any length between a date's parts).
+    const narrow = fc.array(fc.constantFrom('/', '\\', '.', '-', '–', '−', '⁃', '_', '|', ' ', ',', '\n', "'"), { minLength: 1, maxLength: 3 }).map((characters) => characters.join(''));
+    const blank = fc.constantFrom('', '  ', '     ', '        ', '\n        ', '\r\n   ', '\t\t\t');
+    const wide = fc.tuple(blank, fc.constantFrom('', '/', '-', '.', ',', '–', '|'), blank).map(([before, separator, after]) => `${before}${separator}${after}`).filter((written) => written.length > 4);
+    const gap = fc.oneof(narrow, wide);
     const property = fc.property(
       fc.date({ min: new Date('1925-01-01T00:00:00Z'), max: new Date('2009-12-31T00:00:00Z'), noInvalidDate: true }),
       fc.constantFrom(...HELD_FRAMES),
@@ -1528,6 +1592,25 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
         const form = `${a}${first}${b}${second}${c}`;
         const { patient: who, claims } = judge1(['JANE Q ZEPHYRA'], { datesOfBirth: [birth] });
         neverInClear(frame.replace('{T}', form), form, who, claims);
+      },
+    );
+    fc.assert(property, { numRuns: 300 });
+  });
+
+  it('never sends two or more of the name’s initials written together in a held letter, in any order and case, for a name of any number of parts (property, PHIJ4-2)', () => {
+    const NAMES = ['JANE ZEPHYRA', 'JANE Q ZEPHYRA', 'SIMONE VANTREE', 'ANN Q VANTREE', 'BOB XU', 'MARY-JANE Q ZEPHYRA', 'ANA BEA CORA DINA ELLA FAYE GIA'];
+    const FRAMES = [`${RANGE_END}{T} $0,000.00`, `${HELD}Initials: {T}`, `${HELD}Re: {T}, thank you.`, 'Seen 01/01/2020-150.00{T} Paid in full.', '{T}\nSeen 01/01/2020-150.00Paid in full.'];
+    const property = fc.property(
+      fc.constantFrom(...NAMES).chain((name) => {
+        const initials = name.split(/[ -]/u).map((part) => part.charAt(0));
+        return fc.tuple(fc.constant(name), fc.shuffledSubarray(initials, { minLength: 2 }), fc.array(fc.boolean(), { minLength: initials.length, maxLength: initials.length }));
+      }),
+      fc.constantFrom(...FRAMES),
+      ([name, initials, small], frame) => {
+        const written = initials.map((initial, k) => (small[k] === true ? initial.toLowerCase() : initial)).join('');
+        const letter = frame.replace('{T}', written);
+        const { patient: who, claims } = judge1([name], {});
+        expect(holdsIdentifier(redactLetterForScreen(letter, who, claims).text, who, claims), JSON.stringify(letter)).toBe(true);
       },
     );
     fc.assert(property, { numRuns: 300 });

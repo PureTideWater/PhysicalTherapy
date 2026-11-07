@@ -144,7 +144,8 @@ const SEPARATOR = `\\s*[${DATE_SEPARATOR}]\\s*`;
 /** White space inside a line: what a date written with spaces alone has between its numbers. */
 const SPACES = '[^\\S\\r\\n\\u0085\\u2028\\u2029]+';
 /** An apostrophe, straight or typographic, before a two-digit year ('61, ’61). */
-const YEAR_APOSTROPHE = "['‘’ʼ`´]?";
+const APOSTROPHE = "'‘’ʼ`´";
+const YEAR_APOSTROPHE = `[${APOSTROPHE}]?`;
 
 const yearFirst = (m: RegExpExecArray) => readings([{ year: m[1] ?? '', month: num(m[2]), day: num(m[3]) }]);
 const yearLast = (m: RegExpExecArray) => readings([{ year: m[3] ?? '', month: num(m[1]), day: num(m[2]) }, { year: m[3] ?? '', month: num(m[2]), day: num(m[1]) }]);
@@ -2272,18 +2273,28 @@ const DATE_TOKEN = /[0-9]+|\p{L}+/gu;
 /** An ordinal's suffix at the head of a run of letters: glued to a number, part of it ("14TH"). */
 const ORDINAL_HEAD = /^(?:ST|ND|RD|TH)/u;
 
-/** The most characters birthInTokens reads between two parts of a written date ("., '": "Mar., '80, 14"). */
+/** The most characters birthInTokens reads between two parts of a written date ("., '": "Mar., '80, 14"), other than WIDE_DATE_GAP's. */
 const DATE_GAP = 4;
+
+/**
+ * What datesIn's patterns take between a date's parts, at any length (SEPARATOR's and SPACES's white space has no bound, nor
+ * the month-word patterns' run of separators): white space, date separators (DATE_SEPARATOR), commas, full stops, apostrophes
+ * and "OF". birthInTokens counts such a gap as none ("80  /  03  /  14", "80     March     14", "80-03-⏎        14": the
+ * judge's review round 4, PHIJ4-1).
+ */
+const WIDE_DATE_GAP = new RegExp(`^(?:[\\s${DATE_SEPARATOR},${APOSTROPHE}]|OF)*$`, 'u');
 
 /**
  * Whether the folded view of a held letter writes a date of birth (its year, month and day as written in ISO) in a form some
  * rule reads, blind to what joins its parts (heldOwnIdentifier; the judge's review round 3, PHIJ3-1). The view is read once
  * as runs of digits and runs of letters (an ordinal's suffix glued to a number is part of it, "OF" between parts is skipped):
- * - three runs in a row, at most four other characters between each, are the year (its four digits or its last two), the
- *   month (a number in any padding, or its word: "MARCH", "MAR", "SEPT") and the day (a number in any padding), in any
- *   order, whatever the characters between ("80_03_14", "80|03|14", "80⁃03⁃14", "1980-14-03", "03/80/14", "14/80/03",
- *   "80 March 14", "14TH OF MARCH '80"); a month's word may end a run of letters before the numbers or begin one after
- *   them ("PaidMarch 14 80"), no boundary being readable there;
+ * - three runs in a row, at most four other characters between each, or any number where they are only white space,
+ *   separators, commas, full stops, apostrophes and "OF" (WIDE_DATE_GAP: what datesIn takes between a date's parts at any
+ *   length; the judge's review round 4, PHIJ4-1), are the year (its four digits or its last two), the month (a number in
+ *   any padding, or its word: "MARCH", "MAR", "SEPT") and the day (a number in any padding), in any order, whatever the
+ *   characters between ("80_03_14", "80|03|14", "80⁃03⁃14", "1980-14-03", "03/80/14", "14/80/03", "80 March 14",
+ *   "14TH OF MARCH '80", "80  /  03  /  14", "14     80     March", "80-03-⏎        14"); a month's word may end a run of
+ *   letters before the numbers or begin one after them ("PaidMarch 14 80"), no boundary being readable there;
  * - the month's word beside one run of digits that is the year and the day, either first ("MARCH198014", "Mar8014",
  *   "141980March");
  * - one run of digits that is all three in any order: the four-digit year with the month and the day in any padding (six
@@ -2345,7 +2356,8 @@ function birthInTokens(text: string, year: string, month: string, day: string): 
       skipped += value.length;
       continue;
     }
-    const gap = end < 0 ? Number.POSITIVE_INFINITY : index - end - skipped;
+    // Each gap is read once, so the whole view is read in time linear in its length.
+    const gap = end < 0 ? Number.POSITIVE_INFINITY : WIDE_DATE_GAP.test(text.slice(end, index)) ? 0 : index - end - skipped;
     end = index + value.length;
     skipped = 0;
     digitsEnd = /^[0-9]/u.test(value) ? end : -1;
@@ -2375,15 +2387,27 @@ function birthInTokens(text: string, year: string, month: string, day: string): 
 /** The run of digits (an ordinal's suffix after them) or of letters that ends a text, then at most DATE_GAP characters that are no letter, digit or bracket. */
 const PART_BEFORE = /(?:([0-9]+)(?:ST|ND|RD|TH)?|(\p{L}+))[^\p{L}\p{N}[\]]{0,4}$/u;
 
-/** At most DATE_GAP characters that are no letter, digit or bracket, then the run of digits or of letters that starts a text. */
-const PART_AFTER = /^[^\p{L}\p{N}[\]]{0,4}(?:([0-9]+)|(\p{L}+))/u;
+/** The run of digits (an ordinal's suffix after them) or of letters that ends a text: the part before a wide gap. */
+const PART_ENDING = /(?:([0-9]+)(?:ST|ND|RD|TH)?|(\p{L}+))$/u;
+
+/**
+ * At most DATE_GAP characters that are no letter, digit or bracket, or any number of white space, separators, commas, full
+ * stops and apostrophes (a wide gap), then the run of digits or of letters that starts there (read at a position: sticky).
+ */
+const PART_AFTER = new RegExp(`(?:[^\\p{L}\\p{N}[\\]]{0,4}|[\\s${DATE_SEPARATOR},${APOSTROPHE}]*)(?:([0-9]+)|(\\p{L}+))`, 'uy');
+
+/** One character of a wide gap between a date's parts: white space, a separator, a comma, a full stop or an apostrophe. */
+const WIDE_DATE_CHARACTER = new RegExp(`^[\\s${DATE_SEPARATOR},${APOSTROPHE}]$`, 'u');
 
 /**
  * Whether a letter whose chain only held barriers hold (cc3dd7f6 refused it for the range's own digits) holds a part of the
  * date of birth beside the date of birth's placeholder, where redaction read only some of a written date as it: its day,
- * month (a number or its word) or year, at most four characters that are no letter or digit between ("19, [DATE_OF_BIRTH]"
- * and "19'[DATE_OF_BIRTH]" for "19'February 1941", "[DATE_OF_BIRTH] 19" for "February 1941 19": the judge's review round 3,
- * PHIJ3-1's property). cc3dd7f6 sends the same in a letter with no range; here no boundary of the date can be known.
+ * month (a number or its word) or year, at most four characters that are no letter or digit between, or any number of white
+ * space, separators, commas, full stops and apostrophes ("19, [DATE_OF_BIRTH]" and "19'[DATE_OF_BIRTH]" for "19'February
+ * 1941", "[DATE_OF_BIRTH] 19" for "February 1941 19": the judge's review round 3, PHIJ3-1's property; "[DATE_OF_BIRTH]
+ * 20" for "May/2009     20", redaction reading "May/2009" as May 20, 2009: round 4's property, PHIJ4-1). cc3dd7f6 sends
+ * the same in a letter with no range; here no boundary of the date can be known. Each gap is read once, from the
+ * placeholder it touches.
  */
 function birthBesideItsPlaceholder(text: string, subject: Subject): boolean {
   const births = (subject.datesOfBirth ?? []).flatMap((birth) => {
@@ -2402,8 +2426,12 @@ function birthBesideItsPlaceholder(text: string, subject: Subject): boolean {
     );
   const placeholder = PLACEHOLDERS.birth;
   for (let at = upper.indexOf(placeholder); at !== -1; at = upper.indexOf(placeholder, at + placeholder.length)) {
-    const before = PART_BEFORE.exec(upper.slice(Math.max(0, at - 24), at));
-    const after = PART_AFTER.exec(upper.slice(at + placeholder.length, at + placeholder.length + 24));
+    // Back over a wide gap before the placeholder, as far as it goes; it ends at the bracket of a placeholder before.
+    let from = at;
+    while (from > 0 && WIDE_DATE_CHARACTER.test(upper[from - 1] ?? '')) from -= 1;
+    const before = PART_BEFORE.exec(upper.slice(Math.max(0, at - 24), at)) ?? PART_ENDING.exec(upper.slice(Math.max(0, from - 24), from));
+    PART_AFTER.lastIndex = at + placeholder.length;
+    const after = PART_AFTER.exec(upper);
     if ((before !== null && isPart(before[1], before[2])) || (after !== null && isPart(after[1], after[2]))) {
       return true;
     }
@@ -2422,11 +2450,13 @@ const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0
  * P H Y R A", "jo ann"), a name's initials of three parts or more in order ("JQZ", "J.Q.Z."), or a date of birth's eight
  * digits in any order a date is written ("03⏎14⏎1980", "0 3 / 0 3 / 1 9 6 1"), not inside a longer run of digits; or the
  * date of birth's month word and its year stand within 24 characters of each other ("1961 March 3", "MARCH THIRD 1961");
- * or a part of two or three letters written letter by letter ("A L"), or the date of birth in any form redaction reads
- * after a birth label, its year, month and day in any order whatever joins them, or compact ("80-03-14", "80|03|14",
- * "1980-14-03", "801403", "80 March 14": birthInTokens; the judge's review rounds 2 and 3); or a birth label, glued to
- * anything, before a date redaction did not read. No six-digit form is read blind to separators: random digits of a
- * letter's ICNs, TINs and amounts would hold one by chance.
+ * or a part of two or three letters written letter by letter or split anywhere ("A L", "Bo b"), or two or more of a
+ * name's initials written together as one run of letters in any order ("JZ", "ZJ", "QJZ": the judge's review round 4,
+ * PHIJ4-2), or the date of birth in any form redaction reads after a birth label, its year, month and day in any order
+ * whatever joins them, at any length where only white space, separators, commas, full stops, apostrophes and "OF" join
+ * them, or compact ("80-03-14", "80|03|14", "1980-14-03", "801403", "80 March 14", "80  /  03  /  14": birthInTokens; the
+ * judge's review rounds 2 to 4); or a birth label, glued to anything, before a date redaction did not read. No six-digit
+ * form is read blind to separators: random digits of a letter's ICNs, TINs and amounts would hold one by chance.
  */
 function heldOwnIdentifier(normal: string, subject: Subject): boolean {
   const view = viewOf(normal, 'drop', true);
@@ -2446,18 +2476,42 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
       return true;
     }
   }
+  // Every run of two letters or more, each as its letters: read against each name's initials below.
+  const runs = [...view.text.matchAll(/\p{L}{2,}/gu)].map((run) => [...run[0]]);
   for (const name of subject.names) {
     const parts = nameWords(name).flat();
     if ((parts.length >= 3 && stream.includes(parts.map((part) => [...part][0] ?? '').join(''))) || parts.some((part) => [...part].length >= 4 && stream.includes(part))) {
       return true;
     }
-    // A part of two or three letters written letter by letter, each letter alone ("150.00A L Paid" for AL, "T Y" for TY: the
-    // judge's review round 2, GATEWAYJ2-3), which no form reads (a space splits a part only two letters or more from each end).
+    // A part of two or three letters written letter by letter, or split by a space, a line break, a full stop or a joiner
+    // anywhere, or whole: up to three of them between each two of its letters, the part a word of its own ("150.00A L Paid"
+    // for AL, "T Y" for TY, "Bo b" for BOB, "An⏎n" for ANN: the judge's review rounds 2 and 4, GATEWAYJ2-3, PHIJ4-2), which
+    // no form reads (a space splits a part only two letters or more from each end).
     for (const part of parts) {
       const letters = [...part];
-      if (letters.length >= 2 && letters.length <= 3 && new RegExp(`(?<!\\p{L})${letters.map(escapeRegExp).join(`[${NAME_JOINERS}\\s.]{1,3}`)}(?!\\p{L})`, 'u').test(view.text)) {
+      if (letters.length >= 2 && letters.length <= 3 && new RegExp(`(?<!\\p{L})${letters.map(escapeRegExp).join(`[${NAME_JOINERS}\\s.]{0,3}`)}(?!\\p{L})`, 'u').test(view.text)) {
         return true;
       }
+    }
+    // Two or more of the name's initials written together as one run of letters, in any order and case ("JZ", "ZJ", "Jz",
+    // "QJZ" for JANE Q ZEPHYRA, "SV" for SIMONE VANTREE: the judge's review round 4, PHIJ4-2): each letter of the run counted
+    // against the initials', whatever the number of parts. Linear: each run is read once per name, and only when it is no
+    // longer than the name has parts.
+    const initials = new Map<string, number>();
+    for (const part of parts) {
+      const first = [...part][0];
+      if (first !== undefined) initials.set(first, (initials.get(first) ?? 0) + 1);
+    }
+    const ofInitials = (run: readonly string[]) => {
+      const left = new Map(initials);
+      return run.every((letter) => {
+        const count = left.get(letter) ?? 0;
+        left.set(letter, count - 1);
+        return count > 0;
+      });
+    };
+    if (runs.some((run) => run.length <= parts.length && ofInitials(run))) {
+      return true;
     }
   }
   const digit = (index: number) => /^[0-9]$/u.test(view.text[index] ?? '');
