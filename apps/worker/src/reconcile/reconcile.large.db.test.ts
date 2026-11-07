@@ -23,11 +23,13 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './test-support/ledger-world'
  * three per line, which the sampled bound catches at any size and which run the cluster's shared lock table out (53200,
  * out of shared memory) once they pass it.
  *
- * LINES is 2,000 by default, not the design's 20,000 (TP_LARGE_RECONCILE_LINES sets it): the pass itself grows faster
- * than its lines whatever its locks (it compares every open case line with the new claims of its code and date, and
- * writes each line's stage as a statement of its own that refreshes the line's whole case), so 20,000 lines take far
- * longer than a CI shard (6,000 took 342 s on a 4-CPU container; the build's report). The bound on the locks is the
- * same at every size; the pass's own time at size is handed on.
+ * LINES is 2,000 by default, not the design's 20,000 (TP_LARGE_RECONCILE_LINES sets it). The pass no longer grows
+ * faster than its lines: since SUITE-CAP-3 (docs/adr/0087) it searches its claim candidates, reads their claim lines and
+ * indexes its standing matches once per pass, never per open case line, and writes its stage events in one statement,
+ * which CAS-50 bounds per line and CAS-51 times at size. What still grows with a practice's history is the ledger
+ * triggers' share of each insert, which are Lane A's, so the default stays a CI shard's size: the weekly
+ * release-capacity run's step 7b, F at 10,000 lines, is the full-size form (SUITE-CAP-3 D14). The bound on the locks is
+ * the same at every size.
  *
  * The setup reaches that pass through the job code in steps each small enough for the base's lock table: the original
  * payments are loaded by the parse job and priced and triaged PER_CHUNK lines at a time (one run per chunk's days), and
@@ -46,10 +48,12 @@ const PER_REMITTANCE = 20;
 /** The most advisory locks any backend may hold during the pass: the practice's `ledger:` lock (section 8.4). */
 const MOST_ADVISORY_LOCKS = 1;
 /**
- * The pass's time budget: about two and a half times what 2,000 lines took on a 4-CPU container (57.7 s), the rule of
- * section 8.4, so a per-row lock or another quadratic step returning fails it without a slow runner flaking it.
+ * The pass's time budget: about two and a half times what 2,000 lines took on a 4-CPU container once SUITE-CAP-3's
+ * pass was merged onto this test's base (22.8 s, rounded up; SUITE-CAP-3 D14, its design's section 8.4, docs/adr/0087;
+ * it was 150,000 from 57.7 s before), the rule of section 8.4, so a per-row lock, a per-line query or another quadratic
+ * step returning fails it without a slow runner flaking it.
  */
-const PASS_BUDGET_MS = 150_000;
+const PASS_BUDGET_MS = 60_000;
 
 /** Each case line: LED-06's 97110 x 2 line paid 70.00 against an expected 100.00, corrected to 100.00. */
 const DIFFERENCE_CENTS = '3000';
@@ -89,8 +93,9 @@ const traceOf = (chunk: number, check: number) => `SYNEFTRCL${String(chunk).padS
 /**
  * Case line n's code and date of service. Each chunk spreads its lines over DAYS_PER_CHUNK days of its own (so its
  * run's period holds them alone) and the five codes of the contract's schedule, as a practice's month spreads them:
- * the reconcile compares each case line with the new claims of its code and date (candidatesFor), so a whole month on
- * one code and day would measure that comparison, not the pass's locks.
+ * the reconcile's patient search reads the new claims of each case line's code and date (patientCandidates in
+ * remittances.ts, once per pass; docs/adr/0087), so a whole month on one code and day would measure that search's
+ * group, which CAS-51's spread A measures, not the pass's locks.
  */
 const CODES = ['97110', '97112', '97140', '97530', '97116'] as const;
 const DAYS_PER_CHUNK = 9;
