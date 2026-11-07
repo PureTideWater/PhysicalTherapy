@@ -284,14 +284,14 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
     case 'too_many_rows': {
       // Never a second screening: a later one replaces the earlier (the upload form's About card), so the step fits one file.
       const max = SCREENING_MAX_ROWS.toLocaleString('en-US');
-      return `a screening takes at most ${max} rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out (fewer quarters or payer products) until ${max} or fewer remain, then choose the file again`;
+      return `a screening takes at most ${max} rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until ${max} or fewer remain, then choose the file again`;
     }
     case 'row_count_mismatch':
       return 'the rows sent do not match the file; choose the file again';
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
       return reason.row === undefined
-        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least ${floor}`
+        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care; choose a file with rows of at least ${floor} claim lines`
         : `${row} sums fewer than ${floor} claim lines; a screening takes rows of at least ${floor}, because fewer can describe one patient’s care, so leave it out`;
     }
   }

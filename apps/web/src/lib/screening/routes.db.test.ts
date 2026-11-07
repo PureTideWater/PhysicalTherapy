@@ -272,12 +272,12 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     expect(words({ code: 'duplicate_row', row: 2 })).toBe('row 2 repeats a row above; add the two into one row');
     expect(words({ code: 'no_rows' })).toBe('the file has no rows under its header; add the rows, then choose the file again');
     expect(words({ code: 'too_many_rows' })).toBe(
-      'a screening takes at most 50,000 rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out (fewer quarters or payer products) until 50,000 or fewer remain, then choose the file again',
+      'a screening takes at most 50,000 rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until 50,000 or fewer remain, then choose the file again',
     );
     expect(words({ code: 'row_count_mismatch' })).toBe('the rows sent do not match the file; choose the file again');
     expect(words({ code: 'too_few_claim_lines', row: 1_234 })).toBe('row 1,234 sums fewer than 11 claim lines; a screening takes rows of at least 11, because fewer can describe one patient’s care, so leave it out');
     expect(words({ code: 'too_few_claim_lines' })).toBe(
-      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least 11',
+      'every row sums fewer than 11 claim lines, so there is nothing to screen; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care; choose a file with rows of at least 11 claim lines',
     );
   });
 });
