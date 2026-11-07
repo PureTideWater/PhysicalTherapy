@@ -9,8 +9,10 @@ import residuals from './redact.residuals.json' with { type: 'json' };
  * this head), and the judge's review rounds' representatives, each refused by cc3dd7f6 and asserted exactly as this head
  * handles it today, so a change either way fails here and is recorded again. The rows are synthetic (SSNs 900-xx-xxxx, or
  * the never-issued area 000 or 9xx where that alone keeps the number sent in clear; phones 202/555-01xx; patients ZEPHYRA,
- * VANTREE and their like with SYN-prefixed numbers). Regenerate the file from a gate run with the scripts kept beside the
- * gate, never by hand.
+ * VANTREE and their like with SYN-prefixed numbers). Regenerate the file only from a gate run and the review rounds'
+ * harness runs, never by hand: the gate (its corpus, oracle and runner) and the scripts that write this file are kept,
+ * synthetic only, in the ops repository (claude/build-ops) at designs/lane-b-redact-ssn-phone/gate/, and
+ * co-001/redact-ssn-phone-leaks owns the next regeneration.
  *
  * - ssnPhone (ruling A, 10:53): an SSN or phone in a shape no pattern or chain rule reads, written elsewhere in a letter
  *   whose chain only the range fix's barriers hold. cc3dd7f6 refused each only because the range's own digits chained; it
