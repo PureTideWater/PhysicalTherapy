@@ -10,6 +10,16 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 02:10 UTC (acting Lane A): the schema queue's batching plan** (wf_255f9403-721, read-only; critic and skeptic,
+  three revisions): `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` (+ `.json`). 10 schema PRs for ~22 items:
+  (1) password-changed-notice (+ SS-01 D11's REVOKE only on the founder's deploy fact); (2) the granted SUITE-CAP-3 ledger
+  bodies, alone (an exact grant is never widened); (3) tp-packet-verifier/3 with #38's words version; (4) #85's section 7.2
+  items 1-5 (+ F4 if designed); (5) the ledger-freeze batch: #93's F9 plus other ledger items under ONE combined founder ask,
+  sent early; (6) identity: the Cognito relink + ADR 0081 A6 (+ SEC-N5 if queued); (7) SS-01's suspension mail + Q13 + #32's
+  notice; (8) PHI identifier lookups (#120 F3); (9) triage's stored waiting patterns; (10) release-content health. Questions
+  for the orchestrator are in its last section (a skip-ahead rule; queue decisions; the PR 5 combined ask; the founder's D11
+  deploy fact). Next: build PR 1 on its own branch now (no PR until #126 merges); PR 2's measurements later with nothing
+  else on the container.
 - **2026-11-07 01:45 UTC (acting Lane A): #126 at d2fdd106; the second review round STILL not done.** wf_29adffb1-b27:
   every reviewer of a custom agent type (payment-engine-reviewer, security-reviewer, ux-brand-reviewer) ended without
   returning its result, three rounds running (a workflow defect with those types: use default agents that read the
