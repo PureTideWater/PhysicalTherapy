@@ -19,9 +19,10 @@ import { screeningReasonMessage } from '../screening/routes';
 const REPO = path.resolve(import.meta.dirname, '../../../../..');
 const WEB = 'apps/web/src';
 
-/** The directories whose messages a person reads in a refusal, and two files outside the web app that word one. */
-const ROOTS = [`${WEB}/lib/routes`, `${WEB}/lib/screening`, `${WEB}/lib/packets`, `${WEB}/lib/triage`, `${WEB}/lib/reconciliation`];
-const FILES = [`${WEB}/lib/zip.ts`, 'apps/worker/src/billing/account.ts', 'packages/packets/src/correspondence.ts'];
+/** The directories whose messages a person reads in a refusal, and three files outside the web app that word one. */
+const ROOTS = [`${WEB}/lib/routes`, `${WEB}/lib/screening`, `${WEB}/lib/packets`, `${WEB}/lib/triage`, `${WEB}/lib/reconciliation`, `${WEB}/lib/contracts`];
+const RERUN = 'apps/worker/src/price/rerun.ts';
+const FILES = [`${WEB}/lib/zip.ts`, 'apps/worker/src/billing/account.ts', 'packages/packets/src/correspondence.ts', RERUN];
 
 /**
  * Where a message must also start with a verb from VERBS: the field-rule maps (`*_FIELD_RULES`), the settings forms'
@@ -318,7 +319,7 @@ function propertyNamed(object: ts.ObjectLiteralExpression, name: string): ts.Obj
   return object.properties.find((property) => property.name !== undefined && ts.isIdentifier(property.name) && property.name.text === name);
 }
 
-/** (a)-(d): zod messages, local schema helpers' strings inside z.object, InputError and BillingRefusedError, and every { field, message }. */
+/** (a)-(d): zod messages, local schema helpers' strings inside z.object, InputError, BillingRefusedError and RerunRefusedError, and every { field, message }. */
 function visitPositions(file: string, source: ts.SourceFile): void {
   const visit = (node: ts.Node, inObject: boolean): void => {
     let inside = inObject;
@@ -342,6 +343,18 @@ function visitPositions(file: string, source: ts.SourceFile): void {
     }
     if (ts.isNewExpression(node) && calleeName(node) === 'BillingRefusedError' && node.arguments?.[1] !== undefined) {
       collect(file, node.arguments[1], { field: true, verbFirst: false }, new Set());
+    }
+    // A re-run refusal's message is the runId field's (lib/packets/pricing.ts passes it through), after "This re-run: ";
+    // one read from a record by a computed key (SUPERSEDED_MESSAGES[kind]) is every value the record holds.
+    if (ts.isNewExpression(node) && calleeName(node) === 'RerunRefusedError' && node.arguments?.[1] !== undefined) {
+      const message = unwrap(node.arguments[1]);
+      const record = ts.isElementAccessExpression(message) && ts.isIdentifier(message.expression) ? resolve(file, message.expression.text) : undefined;
+      const initializer = record !== undefined && ts.isVariableDeclaration(record.node) && record.node.initializer !== undefined ? unwrap(record.node.initializer) : undefined;
+      if (record !== undefined && initializer !== undefined && ts.isObjectLiteralExpression(initializer)) {
+        initializer.properties.filter(ts.isPropertyAssignment).forEach((property) => collect(record.file, property.initializer, { field: true, verbFirst: false }, new Set()));
+      } else {
+        collect(file, message, { field: true, verbFirst: false }, new Set());
+      }
     }
     if (ts.isNewExpression(node) && (calleeName(node) === 'PacketRuleError' || calleeName(node) === 'PacketRefusedError') && node.arguments?.[1] !== undefined) {
       collect(file, node.arguments[1], { field: false, verbFirst: false, sentence: true }, new Set());
@@ -479,6 +492,10 @@ describe('every field’s refusal message is one sentence with no colon of its o
       expect(PARSED.has(file), file).toBe(true);
     }
     expect(found.size).toBeGreaterThan(100);
+    // The re-run refusals, which the pricing route passes through as the runId field's message, and the contract forms'.
+    const fieldMessagesIn = (prefix: string) => [...found.values()].filter((entry) => entry.file.startsWith(prefix) && entry.flags.field).length;
+    expect(fieldMessagesIn(RERUN)).toBeGreaterThanOrEqual(12);
+    expect(fieldMessagesIn(`${WEB}/lib/contracts/`)).toBeGreaterThanOrEqual(10);
   });
 
   it('finds no message in the old form', () => {
