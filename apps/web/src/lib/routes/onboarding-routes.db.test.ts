@@ -27,7 +27,7 @@ import { ATTRIBUTION_COOKIE } from '../http/attribution';
 import { DECLINED_REASON_LABELS, convertProspect, prospectsPage, publishTerms, resendInvitationFromConsole, reviewProspect, uploadAgreement } from './console-onboarding';
 import { ESIGN_WEBHOOK_MAX_BYTES, acceptTerms, agreementWebhook, requestAudit, termsPage } from './onboarding';
 import { practiceHome } from './practice';
-import { EMAIL_IN_USE, accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
+import { EMAIL_IN_USE, INVITATION_RESEND_HELD, accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
 import { signInWithPassword } from './sign-in';
 import { consoleStatusPage, createTicket, maintenancePage, openIncident, setMaintenance, setTicketStatus, statusPage, supportRequestPage, ticketsPage, updateIncident } from './support';
 
@@ -340,6 +340,8 @@ describe('inviting an address the identity provider already knows (SEC-22)', () 
       issues: [{ field: 'email', message: EMAIL_IN_USE }],
     });
     expect(EMAIL_IN_USE).not.toMatch(/identity/);
+    // A held invitation is support's to release (the console sends it again, settings.ts); one colon per refusal line.
+    expect(INVITATION_RESEND_HELD).toBe('our mail service is holding this address back; ask PaidWhole support to release it and send the invitation again');
     // A firm's role in a practice group: the form lists only the group's roles, so the step is to choose one, never the raw kind.
     expect(await call(inviteUserAction, world.adminUserId, { organizationId: world.organizationId }, { email, role: 'firm_principal' })).toEqual({
       status: 'invalid',
@@ -473,7 +475,10 @@ describe('agreements', () => {
     const admin = world.adminUserId;
     const before = ok(await call(agreementsSettingsPage, admin, { practiceId: world.practiceId }));
     expect(before.missing).toEqual(['data_rights']);
-    expect((await call(confirmAgreementsAction, admin, { practiceId: world.practiceId }, { confirm: 'on' })).status).toBe('invalid');
+    expect(await call(confirmAgreementsAction, admin, { practiceId: world.practiceId }, { confirm: 'on' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'confirm', message: 'the chain is not complete; Data-rights addendum not on file, and a platform administrator records it when it is signed' }],
+    });
     await asOwner(owner, [world.practiceId], () =>
       owner.query("INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, $2, 'data_rights', '1', now(), 'SYNTHETIC SIGNER', 'agreements/data-rights', $3)", [
         world.organizationId,

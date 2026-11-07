@@ -264,7 +264,7 @@ export const confirmAgreementsAction = practiceRoute({
     const { organizationId } = await practiceOrganization(scope.client, practiceId);
     const missing = missingKinds(await chainAgreements(scope.client, practiceId, organizationId));
     if (missing.length > 0) {
-      throw new InputError([{ field: 'confirm', message: `the chain is not complete: ${missing.map((kind) => CHAIN_LABELS[kind]).join(', ')} not on file; a platform administrator records it when it is signed` }]);
+      throw new InputError([{ field: 'confirm', message: `the chain is not complete; ${missing.map((kind) => CHAIN_LABELS[kind]).join(', ')} not on file, and a platform administrator records it when it is signed` }]);
     }
     return { objectId: practiceId, redirect: `/p/${practiceId}/settings/agreements?notice=confirmed` };
   },
@@ -281,7 +281,7 @@ const minutes = z
   .trim()
   .regex(/^\d{1,5}$/, 'whole minutes')
   .transform((text) => Number.parseInt(text, 10))
-  .pipe(z.number().int().min(0).max(10_000, 'at most 10,000 minutes'));
+  .pipe(z.number().int().min(0).max(10_000, 'enter at most 10,000 minutes'));
 
 export const defaultsSettingsPage = practiceRoute({
   id: 'practice.settings.defaults',
@@ -423,7 +423,7 @@ export const setProofLevelAction = practiceRoute({
 /** The contact form's fields, as their refusals name them (CORRESPONDENCE_FIELDS but the whole contact's). */
 const blankText = (max: number, message: string) => z.string().trim().max(max, message).optional().default('');
 /** The name and the address lines hold no @: the email field holds the one email the payer's copy prints. */
-const NO_AT = 'no @ here: an email goes in its own field';
+const NO_AT = 'leave out the @; an email address goes in its own field';
 const noAt = <T extends z.ZodType<string, unknown>>(schema: T): T => schema.refine((value: string) => !value.includes('@'), NO_AT);
 
 /**
@@ -432,14 +432,14 @@ const noAt = <T extends z.ZodType<string, unknown>>(schema: T): T => schema.refi
  * correspondenceContactSetting(), which the worker's setter applies before anything is written.
  */
 export const correspondenceForm = z.object({
-  name: noAt(z.string().trim().min(1, 'a name or office').max(120, 'a name or office of at most 120 characters')),
-  phone: z.string().trim().min(1, 'a 10-digit phone number, such as (919) 555-0100').max(32, 'a 10-digit phone number, such as (919) 555-0100'),
-  phone_extension: blankText(6, 'an extension of 1 to 6 digits').pipe(z.string().regex(/^\d{0,6}$/, 'an extension of 1 to 6 digits')),
-  email: blankText(254, 'an email address of at most 254 characters'),
-  address_line1: noAt(blankText(100, 'at most 100 characters')),
-  address_line2: noAt(blankText(100, 'at most 100 characters')),
-  address_city: noAt(blankText(100, 'at most 100 characters')),
-  address_state: blankText(2, 'a USPS state or territory code, such as NC').pipe(z.string().toUpperCase()),
+  name: noAt(z.string().trim().min(1, 'enter a name or office').max(120, 'enter a name or office of at most 120 characters')),
+  phone: z.string().trim().min(1, 'enter a 10-digit phone number, such as (919) 555-0100').max(32, 'enter a 10-digit phone number, such as (919) 555-0100'),
+  phone_extension: blankText(6, 'enter an extension of 1 to 6 digits, or leave it blank').pipe(z.string().regex(/^\d{0,6}$/, 'enter an extension of 1 to 6 digits, or leave it blank')),
+  email: blankText(254, 'enter an email address of at most 254 characters'),
+  address_line1: noAt(blankText(100, 'enter at most 100 characters')),
+  address_line2: noAt(blankText(100, 'enter at most 100 characters')),
+  address_city: noAt(blankText(100, 'enter at most 100 characters')),
+  address_state: blankText(2, 'enter the two-letter USPS code of the state or territory, such as NC').pipe(z.string().toUpperCase()),
   address_zip: blankText(10, ZIP_CODE_FORMAT),
 });
 
@@ -899,7 +899,7 @@ function undeliveredView(reason: string | null): InvitationUndeliveredView {
 }
 
 /** The refusal of a resend the mail service would hold back (the review of 2026-10-27). */
-export const INVITATION_RESEND_HELD = 'our mail service is holding this address back: ask PaidWhole support to release it and send the invitation again';
+export const INVITATION_RESEND_HELD = 'our mail service is holding this address back; ask PaidWhole support to release it and send the invitation again';
 
 const organizationParams = z.object({ organizationId: opaqueId, notice: optionalText(z.enum(['invited', 'role_changed', 'ended', 'resent'])).catch(undefined) });
 

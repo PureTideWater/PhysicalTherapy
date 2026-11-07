@@ -25,7 +25,7 @@ import { coveragePage } from './coverage';
 import { mapPlanAction } from './mapping';
 import { practiceHome } from './practice';
 import { createPricingRunAction, pricingRunPage } from './pricing';
-import { confirmPricingLocationAction, pricingSettingsPage, setPricingLocationAction, settingsPage } from './settings';
+import { confirmPricingLocationAction, pricingSettingsPage, setCorrespondenceContactAction, setPricingLocationAction, settingsPage, settingsPursuitAction } from './settings';
 import { loadRouteRelease } from './test-support/pricing-world';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
 
@@ -535,5 +535,38 @@ describe('months priced before the location changed', () => {
     ok(await call(setPricingLocationAction, manager, P(), { zip: '00011' }));
     expect(await pricedElsewhere()).toEqual([]);
     queue.jobs.splice(0);
+  });
+});
+
+describe('the settings forms’ refusals, each an instruction after the field’s name (ADR 0077)', () => {
+  // SYNTHETIC values only. Each message says what to enter, with no colon of its own, so the summary's "{Field}: {message}" reads once.
+  const CONTACT = { name: 'SYNTHETIC BILLING OFFICE', phone: '(919) 555-0100', phone_extension: '', email: '', address_line1: '', address_line2: '', address_city: '', address_state: '', address_zip: '' };
+  const MAILING = { address_line1: '100 SYNTHETIC WAY', address_city: 'RALEIGH', address_state: 'NC', address_zip: '27601' };
+  const refused = (field: string, message: string) => ({ status: 'invalid', issues: [{ field, message }] });
+  const contact = (input: Record<string, string>) => call(setCorrespondenceContactAction, world.adminUserId, P(), { ...CONTACT, ...input });
+
+  it('names what to enter in the correspondence contact, on the form’s checks and on the setter’s rules alike', async () => {
+    expect(await contact({ name: '' })).toEqual(refused('name', 'enter a name or office'));
+    expect(await contact({ name: 'N'.repeat(121) })).toEqual(refused('name', 'enter a name or office of at most 120 characters'));
+    expect(await contact({ name: 'SYNTHETIC (billing@practice.test)' })).toEqual(refused('name', 'leave out the @; an email address goes in its own field'));
+    expect(await contact({ phone: '' })).toEqual(refused('phone', 'enter a 10-digit phone number, such as (919) 555-0100'));
+    expect(await contact({ phone_extension: 'x12' })).toEqual(refused('phone_extension', 'enter an extension of 1 to 6 digits, or leave it blank'));
+    expect(await contact({ email: `${'b'.repeat(250)}@x.test` })).toEqual(refused('email', 'enter an email address of at most 254 characters'));
+    expect(await contact({ ...MAILING, address_line1: 'L'.repeat(101) })).toEqual(refused('address_line1', 'enter at most 100 characters'));
+    expect(await contact({ ...MAILING, address_line2: 'ATTN billing@practice.test' })).toEqual(refused('address_line2', 'leave out the @; an email address goes in its own field'));
+    expect(await contact({ ...MAILING, address_state: 'NCA' })).toEqual(refused('address_state', 'enter the two-letter USPS code of the state or territory, such as NC'));
+    expect(await contact({ ...MAILING, address_zip: '27601-12345' })).toEqual(refused('address_zip', 'enter five digits, or a ZIP+4 such as 27601-1234'));
+    // Past the form's checks, @tp/packets' rules name the field in the same form.
+    expect(await contact({ phone: '555-0100' })).toEqual(refused('phone', 'enter a 10-digit phone number, such as (919) 555-0100'));
+    expect(await contact({ ...MAILING, address_state: 'ZZ' })).toEqual(refused('address_state', 'enter the two-letter USPS code of the state or territory, such as NC'));
+    expect(await contact({ ...MAILING, address_city: '' })).toEqual(refused('address_city', 'enter the city, 1 to 100 characters with no @ (an email goes in its own field)'));
+    expect(await contact({ ...MAILING, address_line1: '' })).toEqual(refused('address_line1', 'enter the street line, 1 to 100 characters with no @ (an email goes in its own field)'));
+    expect(await contact({ ...MAILING, address_zip: '2760' })).toEqual(refused('address_zip', 'enter five digits, or a ZIP+4 such as 27601-1234'));
+  });
+
+  it('names the most minutes the pursuit-cost defaults take', async () => {
+    expect(await call(settingsPursuitAction, world.adminUserId, P(), { staffRatePerHour: '40.00', minutesPerPacket: '10001', minutesPerFollowUp: '15' })).toEqual(
+      refused('minutesPerPacket', 'enter at most 10,000 minutes'),
+    );
   });
 });
