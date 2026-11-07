@@ -21,14 +21,41 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
   - one full local suite on the final tree;
   - merge under rule 2a.
 
-## Current state (2026-11-06 23:05 UTC)
-- Branch cut at **31a7345f** (#130) in `/home/user/ux-screening-result-words`, installed. Nothing pushed yet.
-- **Running:** the build workflow wf_efec3b83-f5b (from 00:35 UTC 2026-11-07; script archived): a scout re-pins §11 against the tree, a completeness critic, the builder (red-first, commits by theme), then the fast checks and the screening e2e specs. Safety check-in trig_01FxaPbwBtsYBNbRQHn41pQs at 05:44 UTC.
-- **Next:** the push and the draft PR; then the before/after shots and the one UX and brand review.
+## Current state (2026-11-07 01:40 UTC)
+- **Draft PR #131:** https://github.com/PureTideWater/PhysicalTherapy/pull/131. Head **c2725961**, pushed (up to date with base 31a7345f); subscribed.
+  - The description is from the template, written by create_pull_request and read back. The connector swapped my attribution lines for its own footer, which carries the session link; the next description update restores them.
+- **Build:** done (wf_efec3b83-f5b, 00:35-01:30 UTC), 8 commits:
+  - 94fe2f7d: tones, and the $5 in mono;
+  - 8253175c: the count sentence and "the last entry";
+  - 1856d0a5: the three §11.3 labels, re-pinned;
+  - 86a85511: P5's four figure labels, re-pinned; its own commit, so it reverts alone;
+  - e2d9c786: the specs: holdScreeningStream, the 1280 table tones and the :517 rescope;
+  - 87cb3d66: TBL-08 and its synth fixture;
+  - 31b617c8: ADR 0078 and 0056;
+  - c2725961: a typecheck fix.
+  - The plan had 19 items, with 9 critic gaps applied or answered.
+- **Fast checks on c2725961:** all pass.
+  - Unit: 140 files, 1,992 tests. db (screening): 4 files, 59 tests.
+  - e2e screening and screening-phone: 3 of 3.
+  - synth and watched-paths unchanged. 0 tags.
+- **Decision, P5 in the re-pin (2026-11-07):** taken. Lane A's rule is general (re-pin while no release tag contains the version), and its reasons hold for the four figure labels as for §11.3's three. The VERSIONS comment names all seven changes. Confirmation asked of the orchestrator (acting Lane A); if it declines, 86a85511 reverts alone.
+- **Running:** wf_5e44d8cf-109 (from 01:40 UTC; script archived):
+  - before and after shots: base 31a7345f, head c2725961;
+  - the one UX and brand review (words and tones lens, plus Lane A's conditions and the description's calls), each finding put to three skeptics;
+  - the fix round;
+  - the full local suite once.
+  - Safety check-in trig_01FxaPbwBtsYBNbRQHn41pQs at 05:44 UTC.
+- **Next:**
+  1. one push;
+  2. the description (the reviewer table, the suite, the calls' rulings);
+  3. the fresh-clone verification;
+  4. git ls-remote --tags (condition 2);
+  5. merge under 2a.
 
 ## Waiting on someone
 - Nothing.
 
 ## Log
+- 2026-11-07 01:40 UTC: build done; pushed c2725961; draft PR #131; subscribed; review-and-fix workflow wf_5e44d8cf-109 started.
 - 2026-11-07 00:35 UTC: the worker restarted after the status push; worktree intact; PostgreSQL restored; build workflow wf_efec3b83-f5b started.
 - 2026-11-06 22:57 UTC: the orchestrator's GO (S5). 23:00: branch cut at 31a7345f; 0 release tags.
