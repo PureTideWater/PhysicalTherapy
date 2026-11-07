@@ -75,6 +75,20 @@ Effect: any PR's unit job can go red at random.
   42319584132) on the same shape; pin both beside 1034253323; #129 and #131 wait on this PR (critical path for three PRs). Stopped
   the workflow at 02:40Z after fix round 2 and resumed it with the final fixer told to pin both seeds (shown failing at cc3dd7f6,
   passing at HEAD) before the one full local suite; round-3 reviews re-run.
+- 2026-11-07T03:35Z: review round 3: fix round 2's glued name/DOB reading (21684dff, 5a13c9d9) itself regressed: PHI3-1/2
+  (blocking, confirmed: a glued or camel-case own name between an SSN/phone label and the number cuts the label, so SSNs that
+  cc3dd7f6 redacted are sent), PHI3-3, PHI3-4 (own-DOB shapes still sent), GATEWAY3-1/2 (codes after the patient's name damaged:
+  MA01-MA130, XU, minute units), GATEWAY3-3 (no timing rows). Third round in a row a fix traded one regression for another, so
+  the build workflow was stopped before its final fixer, and a judge workflow **wf_5d1aedda-db5** started (03:45Z): one shared
+  base-vs-candidate differential gate (PHI per identifier kind, KEEP per must-stay class, timing; >= 200,000 seeded letters plus
+  every finding's inputs), then two candidates from 3fcb9359 in their own worktrees: **A** patches the glued reading; **B**
+  reverts it and has the self-check REFUSE an own identifier glued to text across a boundary the patterns do not read (the
+  orchestrator's "refuse where the boundary is unknowable"); two judges (PHI-first; correctness/over-refusal), a tie-break if
+  they split; then whole-change PHI + gateway reviews with skeptics on the winner until a dry round (max 4), fixes gated by
+  the differential; then the three MOD-16 seeds pinned, docs, the full local suite once, a critic. The bar: zero base-redacted
+  or base-refused inputs sent (SSN, phone, every own identifier) and zero must-stay changes, except classes recorded in ADR 0054
+  with a pinned row. Worktrees `/home/user/rg-cand-a`, `/home/user/rg-cand-b` (local branches rg-cand-a/-b); the winner is
+  fast-forwarded into `co-001/redact-range-glued` before the push. Round-1 to 3 findings: scratchpad rg-judge/.
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
