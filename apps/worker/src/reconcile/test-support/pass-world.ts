@@ -31,16 +31,42 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './ledger-world';
  * a claim already a case line, a case line with no service date), claims loaded in one transaction, a second practice
  * with the same numbers, export rows never matched and a posting match a person reversed, a claim reference naming
  * another remittance's claim, and a control-number candidate that pairs with no line beside a patient-number claim that
- * would pair (review round 3). The proof level is fixed by the run's index (review round 5): even runs stay at posted;
- * odd runs are raised to deposited after the history and before the pass, and hold a recovered line moved back with no
- * reversal (the proof-level note) and one whose deposit match a person reversed while its posting stood (the reversal
- * note).
+ * would pair (review round 3), a correction found by payer claim control number that a person unmatched from its line in
+ * the history (slice 3's verification: the control search's own D16 exclusion), and two claims of one line and payment
+ * date loaded in different transactions in an order their IDs do not follow (the chain order's load key).
+ *
+ * The candidate filters bite in the pass's search alone too (slice 3's second verification): another patient's claim
+ * carrying the control number of a correction the pass brings, in the line's own remittance or loaded before the line's
+ * claim, reached by payer claim control number only through that correction; and, after the history, a later month's
+ * run triaging a claim of a line's patient and another patient's claim carrying a line's control number, each a case
+ * line from then on. The world's history reconcile runs the code under test, so a filter's fault there is written into
+ * the history both sides start from; these claims are out of the history's reach, and only the pass can read them.
+ *
+ * The proof level is fixed by the run's index (review round 5): even runs stay at posted; odd runs are raised to
+ * deposited after the history and before the pass, and hold a recovered line moved back with no reversal (the
+ * proof-level note) and one whose deposit match a person reversed while its posting stood (the reversal note).
  */
 
 /** The schedule every case's code is priced at: 50.00 a unit, so a two-unit line is expected at 100.00. */
 const CODES = ['97110', '97112', '97140'] as const;
 /** A code no contract prices: a correction carrying it pairs with no case line. */
 const UNPAIRED_CODE = '97530';
+/**
+ * The unmatched line's date of service, which no other line has (the others take 2 to 26 March): the claim a person
+ * unmatched from it is then one no line's own patient search returns, so only D16's exclusion inside the patient
+ * statements keeps it from being read and decrypted, and a TypeScript-only exclusion fails the decrypt equality
+ * (design section 7, review round 1).
+ */
+const UNMATCHED_DATE = '2026-03-28';
+/**
+ * The date of service of the lines whose claims a later month's run triages (caseLineLate, caseLineLateControl), which
+ * no other line has: that run prices this date alone, so no other line's claim is priced again.
+ */
+const LATE_DATE = '2026-03-29';
+/** The payment date of the loadedApart line's claims, each in a file of its own: the same BPR16 date, another load. */
+const APART_PAID_ON = '2026-06-09';
+/** How many claims the loadedApart line may be given before its claims' IDs must have left their load order. */
+const APART_MOST = 8;
 
 /** What a case line of the main case meets in the history and in the pass (several shapes per role). */
 export type Role =
@@ -59,6 +85,8 @@ export type Role =
   | 'reversalAlone'
   | 'withholding'
   | 'unmatched'
+  | 'controlUnmatched'
+  | 'loadedApart'
   | 'writtenOff'
   | 'postClaim'
   | 'postLine'
@@ -68,6 +96,10 @@ export type Role =
   | 'loadedBefore'
   | 'held'
   | 'caseLineTwin'
+  | 'ownRemittanceControl'
+  | 'loadedBeforeControl'
+  | 'caseLineLate'
+  | 'caseLineLateControl'
   | 'otherPatient'
   | 'otherPractice'
   | 'noDate'
@@ -90,6 +122,8 @@ const EVERY_WORLD: readonly Role[] = [
   'reversalAlone',
   'withholding',
   'unmatched',
+  'controlUnmatched',
+  'loadedApart',
   'writtenOff',
   'postClaim',
   'postLine',
@@ -99,6 +133,10 @@ const EVERY_WORLD: readonly Role[] = [
   'loadedBefore',
   'held',
   'caseLineTwin',
+  'ownRemittanceControl',
+  'loadedBeforeControl',
+  'caseLineLate',
+  'caseLineLateControl',
   'otherPatient',
   'otherPractice',
   'noDate',
@@ -364,7 +402,8 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   };
   const dayOf = (n: number) => `2026-03-${String(2 + (n % 25)).padStart(2, '0')}`;
   for (const role of plan.roles) {
-    add(role, CODES[0], role === 'noDate' ? null : dayOf(lines.length + 1));
+    const late = role === 'caseLineLate' || role === 'caseLineLateControl';
+    add(role, CODES[0], role === 'noDate' ? null : role === 'unmatched' ? UNMATCHED_DATE : late ? LATE_DATE : dayOf(lines.length + 1));
   }
   for (let index = 0; index < plan.respondedLines; index += 1) {
     add('responded', CODES[1], dayOf(lines.length + 1));
@@ -388,9 +427,25 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   });
   /** A claim of the line's patient, code and date under a new payer claim control number: found by patient control number only. */
   const patientClaim = (item: PlannedLine, suffix: string, paidCents: bigint): ClaimText => ({ pcn: item.pcn, ccn: `SYNCCNP${item.ccn.slice(7)}${suffix}`, status: '1', member: item.member, lines: [line(item.code, item.date, paidCents)] });
+  /** Another patient's claim of the line's code and date carrying `ccn` (no REF F8): found by payer claim control number only. */
+  const controlClaim = (item: PlannedLine, ccn: string, paidCents: bigint): ClaimText => ({
+    pcn: `SYNPCNY${item.pcn.slice(7)}`,
+    ccn,
+    status: '1',
+    member: `SYNMBRY${item.member.slice(7)}`,
+    lines: [line(item.code, item.date, paidCents)],
+  });
 
-  // Before the originals: a claim of one line's patient, code and date, paid in full (loaded before the line's claim).
-  await load(practice, [{ trace: `SYNEFTQ${tag}PRIOR`, paidOn: '2026-03-30', claims: [patientClaim(one('loadedBefore'), 'B', EXPECTED_CENTS)] }]);
+  // Before the originals: a claim of one line's patient, code and date, paid in full (loaded before the line's claim),
+  // and another patient's claim carrying the control number of the correction the pass brings for another line.
+  const loadedBeforeControl = one('loadedBeforeControl');
+  await load(practice, [
+    {
+      trace: `SYNEFTQ${tag}PRIOR`,
+      paidOn: '2026-03-30',
+      claims: [patientClaim(one('loadedBefore'), 'B', EXPECTED_CENTS), controlClaim(loadedBeforeControl, `${loadedBeforeControl.ccn}C`, EXPECTED_CENTS)],
+    },
+  ]);
 
   // The originals, in one file of two checks (one transaction, so one created_at): the case-line twin's second claim
   // and the other patient's claim of a line's code and date are in the second check; the own-remittance claim beside
@@ -398,8 +453,11 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   const twin = one('caseLineTwin');
   const otherPatient = one('otherPatient');
   const ownRemittance = one('ownRemittance');
+  const ownRemittanceControl = one('ownRemittanceControl');
   const firstCheck = lines.map((item) => original(item));
-  firstCheck.push({ ...patientClaim(ownRemittance, 'O', EXPECTED_CENTS) });
+  // Beside it, another patient's claim carrying the control number of the correction the pass brings for another line:
+  // reached by payer claim control number only through that correction, in the line's own remittance.
+  firstCheck.push({ ...patientClaim(ownRemittance, 'O', EXPECTED_CENTS) }, controlClaim(ownRemittanceControl, `${ownRemittanceControl.ccn}C`, EXPECTED_CENTS));
   const secondCheck: ClaimText[] = [
     { pcn: twin.pcn, ccn: `${twin.ccn}T`, status: '1', member: twin.member, lines: [line(twin.code, twin.date, ORIGINAL_PAID_CENTS)] },
     { pcn: `SYNPCNX${otherPatient.pcn.slice(7)}`, ccn: `SYNCCNX${otherPatient.ccn.slice(7)}`, status: '1', member: `SYNMBRX${otherPatient.member.slice(7)}`, lines: [line(otherPatient.code, otherPatient.date, EXPECTED_CENTS)] },
@@ -437,6 +495,12 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   for (const item of present('unmatched')) {
     h1.push(patientClaim(item, 'U', EXPECTED_CENTS));
   }
+  // A correction naming the line's claim (REF F8), found by payer claim control number and matched in the history, then
+  // unmatched by a person: every later pass's control search reaches it again through the line's own claim, and only
+  // D16's exclusion keeps it from being matched to the line again.
+  for (const item of present('controlUnmatched')) {
+    h1.push(correction(item, 'A', EXPECTED_CENTS));
+  }
   const h2 = present('moveBackReversal').flatMap((item) => [reversal(item, item.ccn, ORIGINAL_PAID_CENTS), correction(item, 'A', EXPECTED_CENTS)]);
   const historyChecks: CheckText[] = [{ trace: `SYNEFTQ${tag}HIST1`, paidOn: '2026-05-11', claims: h1 }, ...(h2.length === 0 ? [] : [{ trace: `SYNEFTQ${tag}HIST2`, paidOn: '2026-05-12', claims: h2 }])];
   await load(practice, historyChecks);
@@ -462,7 +526,7 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
     }
     return row.id;
   };
-  for (const item of present('unmatched')) {
+  for (const item of [...present('unmatched'), ...present('controlUnmatched')]) {
     await unmatch(w, practice, await matchOf("SELECT id FROM ledger_match WHERE kind = 'claim' AND service_line_id = $1 AND reversed_at IS NULL", [serviceLineOf(item)]));
   }
   for (const item of present('postingReversed')) {
@@ -484,6 +548,19 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
     }, practice.world.adminUserId);
   }
 
+  // A later month's run, after the history: a claim of the caseLineLate line's patient, code and date, and another
+  // patient's claim carrying the caseLineLateControl line's control number, each paid short, priced on their date alone
+  // and triaged into case lines that no reconcile of the history read. Neither may be matched to the line it reaches.
+  const lateCaseLine = one('caseLineLate');
+  const lateControl = one('caseLineLateControl');
+  await load(practice, [{ trace: `SYNEFTQ${tag}LATE`, paidOn: '2026-06-05', claims: [patientClaim(lateCaseLine, 'L', ORIGINAL_PAID_CENTS), controlClaim(lateControl, lateControl.ccn, ORIGINAL_PAID_CENTS)] }]);
+  const lateRun = await w.triage.pricedRun(practice, { plans: [{ key: LED_PLAN, versionId: contract.versionId }], from: LATE_DATE, to: LATE_DATE });
+  await w.triage.triage(practice, lateRun);
+  const lateCaseLines = (await caseLinesOf(w, practice)).filter((row) => row.pcn === lateCaseLine.pcn || row.claimCcn === lateControl.ccn);
+  if (lateCaseLines.length !== 4) {
+    throw new Error('the later run triaged the late claims into no case line');
+  }
+
   // The pass's new evidence: one file of `checks` checks (one transaction, so its claims share one created_at), an 835
   // held for review, the second practice's claim, and the exports of postings and deposits.
   const passChecks: ClaimText[][] = Array.from({ length: plan.checks }, () => []);
@@ -500,6 +577,8 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
     const into = role !== 'responded' && role !== 'closed' && firstOnly.has(role) ? at(0) : at(elsewhere());
     switch (role) {
       case 'control':
+      case 'ownRemittanceControl':
+      case 'loadedBeforeControl':
       case 'writtenOff':
       case 'closed':
       case 'postClaim':
@@ -554,6 +633,8 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
         break;
       case 'idle':
       case 'unmatched':
+      case 'controlUnmatched':
+      case 'loadedApart':
       case 'postLine':
       case 'postingReversed':
       case 'moveBackProof':
@@ -562,6 +643,8 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
       case 'loadedBefore':
       case 'held':
       case 'caseLineTwin':
+      case 'caseLineLate':
+      case 'caseLineLateControl':
       case 'otherPatient':
       case 'otherPractice':
         // Nothing new of their own in the pass's checks: their history, exports or filter-biting claims are elsewhere.
@@ -587,6 +670,26 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
     adjustments: plb[index] ?? [],
   }));
   await load(practice, checkTexts);
+  // The loadedApart line's claims of the patient, code and date, each paid differently and in a file of its own on one
+  // payment date, so the chain orders them by when each was loaded: loaded until one's ID sorts below an earlier one's
+  // (a UUID's lower-case text sorts as PostgreSQL compares it), so neither the payment date nor the ID gives their order.
+  for (const item of present('loadedApart')) {
+    const loaded: { readonly id: string; readonly at: bigint }[] = [];
+    for (let k = 0; ; k += 1) {
+      if (k === APART_MOST) {
+        throw new Error('the loadedApart claims kept their IDs in load order');
+      }
+      await load(practice, [{ trace: `SYNEFTQ${tag}APART${String(item.n)}X${String(k)}`, paidOn: APART_PAID_ON, claims: [patientClaim(item, `R${String(k)}`, EXPECTED_CENTS + 500n * BigInt(k))] }]);
+      const newest = await newestClaim(w, practice);
+      if (loaded.some((earlier) => earlier.at >= newest.at)) {
+        throw new Error('the loadedApart claims were loaded at one time');
+      }
+      if (loaded.some((earlier) => earlier.id > newest.id)) {
+        break;
+      }
+      loaded.push(newest);
+    }
+  }
   const traceOfClaim = (ccn: string) => passTrace(checkTexts.findIndex((check) => check.claims.some((claim) => claim.ccn === ccn)));
   // An 835 held for review (docs/adr/0060: the payment was first loaded from an ERA export of another payer): loaded,
   // then marked held as the loader marks it, as a superuser, since only that export's path makes the state.
@@ -664,6 +767,19 @@ async function claimsOf(w: LedgerWorld, practice: Practice): Promise<{ readonly 
     w.owner.query<{ id: string; pcn: string }>('SELECT c.id, c.patient_control_number AS pcn FROM claim c WHERE c.practice_id = $1', [practice.practiceId]),
   );
   return rows.rows.map((row) => ({ id: row.id, pcn: practice.cipher.decrypt('claim.patient_control_number', row.pcn) }));
+}
+
+/** The practice's claim loaded last (one claim a file, so the claim the last load wrote), with when it was loaded in microseconds. */
+async function newestClaim(w: LedgerWorld, practice: Practice): Promise<{ readonly id: string; readonly at: bigint }> {
+  const [row] = await w.rows<{ id: string; at: string }>(
+    practice,
+    'SELECT c.id, (extract(epoch FROM c.created_at) * 1000000)::bigint::text AS at FROM claim c WHERE c.practice_id = $1 ORDER BY c.created_at DESC, c.id DESC LIMIT 1',
+    [practice.practiceId],
+  );
+  if (row === undefined) {
+    throw new Error('the practice has no claim');
+  }
+  return { id: row.id, at: BigInt(row.at) };
 }
 
 /** Reverses a match as the billing manager, with a reason (a person's unmatch). */
