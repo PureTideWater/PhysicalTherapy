@@ -2415,3 +2415,43 @@ d4f52071; the orchestrator's notes from 14:05 to 15:37 UTC.
 - **Counters:** none allocated. Next free unchanged.
 - Records: LANES.md claim rows (packet-figure-placeholders; MOD-16), Queues item 22 (the OCR/homoglyph fold; acceptance
   includes the A' rows) and item 23 (the static-mutant timeout CI item); the rolling handoff, now current as of 15:40 UTC.
+
+### 2026-11-07 18:40 UTC (Lane B's orchestrator)
+Heads from the sessions' reports (not re-checked live: the weekly cap at its warning); `claude/build-platform` at
+d4f52071; the orchestrator's notes from 16:14 to 18:38 UTC.
+
+- **#126 (S2): round 4 fixed four more money findings (head 75cb2b70).** Its last fix found a per-reconcile overshoot:
+  two take-backs of one chain plus a payment after both gave interest 169 against cash 168 for ONE reconcile, until the
+  next. S2 decided to re-walk the interest path within a reconcile until a walk writes nothing; round 5 (wf_5da61191-99a):
+  test-first, reviews until dry, the base merged once, the suite, CAS-42.5, the body, the verification, then the line.
+  - **The orchestrator (16:14 UTC): agreed, with the re-walk bounded:** the cap is the chain's entries + 1 walks; at the
+    cap the reconcile is refused, retryable, and only IDs are logged.
+  - **S2's claim "MOD-16 fails on build-platform since #133, every unit red" was checked live and is WRONG:** the base's
+    push run 42382157294 on d4f52071 is green, `unit` included; #126's run 42385909554 on 75cb2b70 has `unit` green and
+    only the domain model red (expected until the founder's line). S2 was asked for any deterministic seed, for S1.
+  - S2 acknowledged at 16:15 UTC: round 5 restarted as wf_e030cd67-f8f with the bound (at most chain entries + 1 walks; at
+    the cap the reconcile is refused, retryable, the whole transaction rolled back, IDs and counts logged only; a test
+    forces the cap; the 169-against-168 case pinned first). S2 recorded the base correction. Its MOD-16 counterexample is
+    the known seed 1034253323; no new seed.
+- **SUITE-CAP-3 (session_01FcouKP4ekrT97eyDtLe4Rd): draft PR #134 open at ee1dbb7d** (17:40 UTC): six slices, each red
+  first and skeptic-verified; the fast checks green; the freeze holds; the D16 gate passed, no fallback. Subscribed.
+  Reviews wf_d54190e6-262 (payment-engine and security checklists, default agents, fresh clones, three skeptics per
+  finding, until dry); the fix round queued (the findings and CAS-49.2: LED-01 to LED-18 old against new). Status on
+  build-ops a96ff41d. **Counter: PR #134 = SUITE-CAP-3.**
+  - **The orchestrator's OK on the Known gap words, with an edit:** no lane names in the printed text; cite
+    docs/adr/0087; "89% of it in the ledger triggers" (exact); "finish within 360 s" as a sizing bound; the tests that pin
+    the string updated in the fix round.
+  - **18:27 UTC: reviews done:** 7 findings, 4 survived three skeptics (1 should-fix, a test gap in CAS-49.1's
+    patient-search coverage; 3 nits); none touches amounts, rules or writes. Fix round wf_3b9983ef-e3f: those, CAS-49.2,
+    a delta review, the base merged once (the shared-doc conflict in test-matrix, `matrix.ts` and `registry.ts` resolved
+    keeping both sides), the full suite once, one push, the PR body. The Known gap words applied with a precision edit:
+    "A's full month (its 30,795 actionable lines) was last measured at 1,653 s" (A's month = 100,000 lines; 30,795
+    actionable). Status on build-ops 646f58e4.
+- **The check-in at 18:38 UTC:** no failed sessions. Running: S1 (MOD-16 B: the gate test pushed; 66 false refusals
+  open; the final stage next), S2 (#126 round 5 with the re-walk cap; its own check-in 21:24 UTC), SUITE-CAP-3 (#134's
+  fix round wf_3b9983ef-e3f). Idle by design: #129 (waits on MOD-16), P2 (held), S3, S4 and S5 (done). #126's line is not
+  posted yet; no answer yet on PR 5's freeze ask. `claude/build-platform` d4f52071. Open PRs: drafts #126, #129 and #134;
+  Dependabot #122, #123 and #124.
+- **Counters:** none allocated (PR #134 recorded for SUITE-CAP-3). Next free unchanged.
+- Records: LANES.md claim rows (SUITE-CAP-3, with #134; interest credited twice, #126; MOD-16); the rolling handoff, now
+  current as of 18:40 UTC.
