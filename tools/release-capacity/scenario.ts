@@ -129,18 +129,11 @@ export const PLACE_OF_SERVICE = { '11': 'non_facility', '22': 'facility' } as co
 export const SETTINGS = { place_of_service_settings: PLACE_OF_SERVICE, default_rounding: 'HALF_UP_CENT', proof_level: 'posted', posting_export_template: { template: 'synthetic_pm_export_v1' } } as const;
 
 /**
- * The worker's command with a heap flag after `node` (#31's explicit heap limit; infra/lib/heap.ts): production's
- * worker command from tools/screening-capacity/containers.ts, which imports no heap constant (docs/adr/0071; B1).
+ * The worker's command with a heap flag after `node` (#31's explicit heap limit; infra/lib/heap.ts, where it is defined
+ * so infra/test/heap.test.ts measures the page reader under the same spelling): production's worker command from
+ * tools/screening-capacity/containers.ts, which imports no heap constant (docs/adr/0071; B1).
  */
-export function withHeapFlag(command: readonly string[], flag: string): string[] {
-  if (command[0] !== 'node') {
-    throw new RangeError('the command runs node');
-  }
-  if (!/^--max-old-space-size=\d+$/.test(flag) || command.some((word) => word.startsWith('--max-old-space-size'))) {
-    throw new RangeError('one heap flag, --max-old-space-size=<MiB>');
-  }
-  return [command[0], flag, ...command.slice(1)];
-}
+export { withHeapFlag } from '../../infra/lib/heap';
 
 export interface CapacityLine {
   readonly lineNo: number;

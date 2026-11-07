@@ -291,8 +291,8 @@ packages/compliance/src/policies.ts
 packages/contracts/src/calendar.ts
 packages/contracts/src/coverage.ts
 packages/contracts/src/dates.ts
+packages/contracts/src/evidence/page-reader.ts
 packages/contracts/src/evidence/page-text.ts
-packages/contracts/src/evidence/page-thread.ts
 packages/contracts/src/evidence/pages.ts
 packages/contracts/src/evidence/resolve.ts
 packages/contracts/src/evidence/scan.ts

@@ -6,7 +6,8 @@ import { type DocumentStore, collect } from '@tp/worker/documents';
  * The cited pages of a practice's contract documents, for the Rate record review screen and the
  * workflow's evidence checks (PRD 6, Contract repository: "every rate record resolves to a page"; PRD
  * 7, Rate record review; docs/adr/0028 and 0033). The web app never parses an uploaded document: the
- * worker read each clean contract, exhibit and payer letter once at intake, in a bounded thread, and
+ * worker read each clean contract, exhibit and payer letter once at intake, in a child process of its own with its
+ * own heap limit, and
  * sealed its page texts with the practice's key beside the original. Here the row is read under the
  * practice's policies and audited, and the stored page text is opened with the practice's cipher in
  * this request (ADR 0018). A document intake has not read yet cites as not_read_yet; one it refused

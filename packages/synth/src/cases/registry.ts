@@ -525,6 +525,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'infra/test/monitoring.test.ts',
     'apps/web/src/lib/auth/sign-in.db.test.ts',
   ]),
+  // The page reader in a child process of its own (docs/adr/0033's amendment of 2026-11-05; docs/adr/0071).
+  'SEC-24': none(1, 'Every document is SYNTHETIC and built in memory by the tests (PDFs, a deflate bomb, workbooks, CSVs); the stand-in readers send frames, not files; no file.', [
+    'packages/contracts/src/evidence/pages.test.ts',
+    'packages/contracts/src/evidence/evidence.test.ts',
+    'infra/test/heap.test.ts',
+    'infra/test/compute.test.ts',
+    'apps/worker/src/bundle.test.ts',
+  ]),
   'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
     'apps/worker/src/screening/format.test.ts',
     'apps/web/src/lib/screening/parse.test.ts',

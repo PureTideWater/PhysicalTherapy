@@ -192,8 +192,9 @@ percentages as `Decimal`; commercial flags off unless the contract says so), the
 `amendVersion`, `supersedeVersion`, `mapPlan`, `correctMapping`), evidence resolution (`EvidenceResolver` over a
 `PageSource`) and `agreementResolver`, which is pure over the records `loadAgreementRecords` returns. A rate record whose
 scope names no codes is a general term for every code; beside a code exhibit it is `AMBIGUOUS_RATE` (ADR 0033). The web
-app never parses an uploaded document (ADR 0033): intake reads each clean contract, exhibit and payer letter once in its
-own worker thread under a memory cap, a deadline and page, text and inflation caps (`@tp/contracts/pages`: pdf.js for
+app never parses an uploaded document (ADR 0033): intake reads each clean contract, exhibit and payer letter once in a
+child process of its own (its own heap, an empty environment, Node's permission model) under a memory cap, a deadline and
+page, text and inflation caps (`@tp/contracts/pages`: pdf.js for
 text PDFs, an .xlsx a page per sheet, a CSV a page per 50 rows, `TextractPageReader` behind `ScannedPageReader` for
 scans), seals its page text beside the original and records `page_text_status`; the screens cite from that stored
 text. An .xls exhibit is refused at upload and held at intake. The database holds the version states, the non-overlapping windows, the freeze of approved
