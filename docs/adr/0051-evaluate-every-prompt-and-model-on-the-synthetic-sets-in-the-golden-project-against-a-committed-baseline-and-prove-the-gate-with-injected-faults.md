@@ -48,7 +48,9 @@ generation by the fixtures test like every case:
   `packages/synth` from its own sums in one of three styles.
 
 **The harness is `packages/model-gateway/eval`.** It reads the committed sets through intake's own readers (pdf.js
-in its bounded thread, the CSV reader, and for a scan the Textract page reader over a client that answers from the
+in its bounded thread, a child process of its own since
+[ADR 0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md)'s
+amendment of 2026-11-05, the CSV reader, and for a scan the Textract page reader over a client that answers from the
 recording), assembles each narrative case with `@tp/packets`, and runs a provider through the gateway itself as
 synthetic evaluation calls (no practice, the evaluation actor, logged in model_call; ADR 0048). It scores:
 

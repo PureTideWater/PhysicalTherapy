@@ -370,6 +370,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "Undelivered reset requests (configuration and throttle codes), failed requests, refused enrolments, refused client credentials and the start-up probe's refusal each have a filter and an alarm on the operator topic; reset requests per user over 5 in an hour alarm through a contributor rule keyed on the user ID, with no per-user metric; the messages are read from the app's source",
   },
   {
+    id: 'SEC-24',
+    title: "An untrusted document is read in its own process (ADR 0033's amendment of 2026-11-05)",
+    assertion:
+      "Each contract, exhibit or payer letter is read in a child process of its own, one at a time in a worker process, with an empty environment, an argv of its flags and entry only, Node's permission model reading only its own code (no file written, no process, thread or addon), no core file written (a core limit of 0, soft and hard, it cannot raise, its working directory `/`, every container's core ulimit 0; a host core_pattern that pipes to a program is the host's) and a heap of its own, 240 MiB under any parent's heap flag (measured under the worker command with `heapFlag('worker')`); past its memory cap over its ready baseline, its deadline, its page or character caps or the reply's total byte bound, or on a V8 heap out of memory it is killed and the document is unsupported_document, never read in part; a reply frame whose header claims more than the bound leaves is refused before its body is read as the reader's own failure (PageReadError); the bounds hold until it closes, and one that does not exit within 1 s of its last frame is killed; any other failure is PageReadError, naming only an exit code or signal; a container of the worker image carries a V8 heap flag only while `PAGE_READER_ISOLATION` is `'process'`; the bundled reader reads SYNTHETIC documents under the image's argv",
+  },
+  {
     id: 'SCR-01',
     title: 'Screening upload with a date-of-service or member-ID column',
     assertion: 'Rejected with the column named by position and kind; only the row count and reasons stored, no hash',
@@ -729,7 +735,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'TBL-08',
     title: "The screening result's words and tones",
     assertion:
-      "The top rows head their claim-line count Claim lines; one sentence above each table of differences says that each difference is its Medicare figure less the allowed amount in the file and which way its sign runs; the coverage shows an unpriced reason in words alone, its code kept in its row's data attribute; the could-not-price card and the top rows say what PaidWhole prices, never the engine; every count on the result groups its digits and takes a noun that agrees with it (the one other group, its rows summed); an empty value is said as none; on a phone an anomaly shows in the unpriced tone and every other standing neutral, never Short or Whole; never owed, underpaid or recovered",
+      "The top rows head their claim-line count Claim lines; every Medicare figure's header says Medicare figure and each difference's names its subtraction (Medicare figure less allowed), and one sentence above each table of differences says that each difference is its Medicare figure less the allowed amount in the file and which way its sign runs; in both copies an anomaly shows in the unpriced tone and every other standing neutral, and no screening component uses the short or the whole tone; a status of a code with one figure names it (below the Medicare figure by $5 a claim line or less), and the $5 of every status and of the anomaly rule is in the mono face with tabular numerals; the anomalies card puts the count on its noun (1 of 4 groups is an anomaly; 2 of 5 groups are anomalies; none of the 4 groups is an anomaly; the only group is an anomaly), both counts before the rule, and calls the other groups' sum the last entry; the coverage shows an unpriced reason in words alone, its code kept in its row's data attribute; the could-not-price card and the top rows say what PaidWhole prices, never the engine; every count on the result groups its digits and takes a noun that agrees with it (the one other group, its rows summed; 1 of 2 rows below its lowest figure); an empty value is said as none; never owed, underpaid or recovered",
   },
   {
     id: 'DLR-01',

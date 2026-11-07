@@ -6,8 +6,9 @@ import { brandFileSources } from './src/report/brand-files';
 
 /**
  * Bundles the worker and every workspace package it imports into one ESM file for the container
- * image, and beside it the page reader's thread (@tp/contracts, page-thread.ts), which the worker
- * starts from dist/page-thread.js for every contract document it reads (docs/adr/0033), the screening
+ * image, and beside it the page reader (@tp/contracts, page-reader.ts), which the worker spawns as a
+ * child process of its own from dist/page-reader.js for every contract document it reads, allowed by
+ * Node's permission model to read only that file (docs/adr/0033), the screening
  * consumer's pricing thread (src/screening/thread.ts), which the consumer (WORKER_JOBS=screening) starts
  * from dist/screening-thread.js, one per run it prices at once (src/screening/threads.ts; docs/adr/0062), and the
  * migrator (`pnpm db:migrate`'s CLI), which the one-off migration task runs from the same image as
@@ -41,13 +42,14 @@ const embedBrandFiles: Plugin = {
 await build({
   entryPoints: {
     main: 'src/main.ts',
-    'page-thread': '../../packages/contracts/src/evidence/page-thread.ts',
+    'page-reader': '../../packages/contracts/src/evidence/page-reader.ts',
     'screening-thread': 'src/screening/thread.ts',
     migrate: '../../packages/db/src/cli/migrate.ts',
     logins: 'src/deploy/logins-cli.ts',
     'evaluate-permitted': 'src/models/permitted-cli.ts',
   },
-  outdir: 'dist',
+  // dist/, or the directory named after the script (apps/worker/src/bundle.test.ts builds the same bundle into its own).
+  outdir: process.argv[2] ?? 'dist',
   bundle: true,
   platform: 'node',
   format: 'esm',

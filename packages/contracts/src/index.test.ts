@@ -49,7 +49,7 @@ describe('@tp/contracts', () => {
     visit(path.join(import.meta.dirname, 'index.ts'));
     const reached = [...seen].map((file) => path.relative(import.meta.dirname, file));
     expect(reached).not.toContain('evidence/pages.ts');
-    expect(reached).not.toContain('evidence/page-thread.ts');
+    expect(reached).not.toContain('evidence/page-reader.ts');
     expect([...external].filter((name) => name.startsWith('pdfjs-dist') || name === 'yauzl' || name === 'node:worker_threads')).toEqual([]);
     expect(reached).toContain('evidence/resolve.ts');
   });
