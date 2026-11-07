@@ -220,9 +220,9 @@ export const screeningPage = publicRoute({
   },
 });
 
-/** The column a server message names: its position, never the header the person typed. */
+/** The column a server message names, lower-case: its position ("column 4"), never the header the person typed. */
 function columnName(reason: ScreeningRejection): string {
-  return reason.column === undefined ? 'A column' : `Column ${String(reason.column)}`;
+  return reason.column === undefined ? 'a column' : `column ${String(reason.column)}`;
 }
 
 const FIELD_NAMES: Readonly<Record<ScreeningColumn, string>> = {
@@ -236,43 +236,53 @@ const FIELD_NAMES: Readonly<Record<ScreeningColumn, string>> = {
   claim_count: 'claim count',
 };
 
-/** A refusal's reason as the server words it: positions, rows, fields and kinds only. */
+/**
+ * A refusal's reason as the server words it: positions, rows, fields and kinds only. Each is one lower-case sentence
+ * read after "File to screen:" (the issue's field is `upload`), with no colon of its own: what is wrong, the row or column
+ * first as its subject, then the step, joined by a semicolon (ADR 0077). The file is never uploaded, so the step is to
+ * choose it again, never to upload it again.
+ */
 export function screeningReasonMessage(reason: ScreeningRejection): string {
-  const row = reason.row === undefined ? 'A row' : `Row ${reason.row.toLocaleString('en-US')}`;
+  const row = reason.row === undefined ? 'a row' : `row ${reason.row.toLocaleString('en-US')}`;
+  const column = columnName(reason);
   const fieldName = reason.field === undefined ? 'a column' : FIELD_NAMES[reason.field];
   switch (reason.code) {
     case 'phi_column':
-      return `${columnName(reason)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again`;
+      return `${column} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove the column, then choose the file again`;
     case 'unknown_column':
-      return `${columnName(reason)} is not one of the eight screening columns; remove it`;
+      return `${column} is not one of the eight screening columns; remove it`;
     case 'duplicate_column':
-      return `${columnName(reason)} is a second ${fieldName} column; keep one`;
+      return `${column} is a second ${fieldName} column; keep one`;
     case 'missing_column':
-      return `The file has no ${fieldName} column; add it`;
+      return `the file has no ${fieldName} column; add it`;
     case 'row_shape':
-      return `${row} does not have one cell for each column`;
+      return `${row} does not have one cell for each column; save the file again as CSV, then choose it again`;
     case 'invalid_value':
-      return `${row}: the ${fieldName} is not in the screening’s format`;
+      // No article before the field's name ("the allowed total column"), and its own words with no field.
+      return reason.field === undefined
+        ? `${row} has a value that is not in the screening’s format; correct it, or leave the row out`
+        : `${row} has a value in the ${FIELD_NAMES[reason.field]} column that is not in the screening’s format; correct it, or leave the row out`;
     case 'band_holds_date':
-      return `${row}: ${columnName(reason).toLowerCase()} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1`;
+      return `${row}’s ${reason.column === undefined ? 'service band column' : column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1`;
     case 'band_in_future':
-      return `${row}: the service band’s quarter has not started yet`;
+      return `${row}’s service band is a quarter that has not started yet; leave it out`;
     case 'band_outside_content':
       return reason.row === undefined
-        ? 'Every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded'
-        : `${row}: the service band’s quarter is outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out`;
+        ? 'every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter'
+        : `${row}’s service band is a quarter outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out`;
     case 'duplicate_row':
-      return `${row} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}; add the two into one row`;
+      return `${row} repeats ${reason.first_row === undefined ? 'a row above' : `row ${reason.first_row.toLocaleString('en-US')}`}; add the two into one row`;
     case 'no_rows':
-      return 'The file has no rows under its header';
+      return 'the file has no rows under its header; add the rows, then choose the file again';
     case 'too_many_rows':
-      return `A screening takes at most ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows`;
+      return `a screening takes at most ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows; split the file and screen each part`;
     case 'row_count_mismatch':
-      return 'The rows sent do not match the file; choose the file again';
+      return 'the rows sent do not match the file; choose the file again';
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
-      const why = `a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care`;
-      return reason.row === undefined ? `Every row sums fewer than ${floor} claim lines, so there is nothing to screen: ${why}` : `${row} sums fewer than ${floor} claim lines; ${why}: leave it out`;
+      return reason.row === undefined
+        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care`
+        : `${row} sums fewer than ${floor} claim lines; a screening takes rows of at least ${floor}, because fewer can describe one patient’s care, so leave it out`;
     }
   }
 }
