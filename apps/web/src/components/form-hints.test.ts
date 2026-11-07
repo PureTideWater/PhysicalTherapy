@@ -16,11 +16,8 @@ import { describe, expect, it } from 'vitest';
 
 const SOURCE = path.resolve(import.meta.dirname, '..');
 
-/** Files whose pattern fields may not have a hint yet, each with the change that removes it. */
-const ALLOWED = new Map([
-  // Ticket (`[A-Za-z0-9-]{1,64}`): the page is #42's; remove after #42 merges, with the hint "Letters, digits and hyphens, as in SYN-1234."
-  ['app/console/support/page.tsx', 'remove after #42 merges'],
-]);
+/** Files whose pattern fields may not have a hint yet, each with the change that removes it (none now). */
+const ALLOWED = new Map<string, string>([]);
 
 function sources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
