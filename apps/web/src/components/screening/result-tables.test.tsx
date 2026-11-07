@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
 import { type Cents, cents } from '@tp/money';
 import { buttonVariants } from '@tp/ui';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -395,16 +398,41 @@ function hookOf(attributes: string, hook: string): string | null {
   return new RegExp(`\\s${hook}="([^"]*)"`).exec(` ${attributes}`)?.[1] ?? null;
 }
 
-/** A chip's words and its standing hook: the table's data-standing, or the stacked copy's data-stacked-standing. */
+/**
+ * A chip's whole words and its standing hook: the table's data-standing, or the stacked copy's data-stacked-standing.
+ * The words are all the chip holds, a figure's span included: a table chip ends its status cell's block, a stacked one
+ * its dd.
+ */
 function chip(markup: string, hook: 'data-standing' | 'data-stacked-standing'): { readonly tone: string; readonly standing: string; readonly words: string } | null {
-  const match = new RegExp(`data-tone="([^"]*)"[^>]*${hook}="([^"]*)">([^<]*)<`).exec(markup);
-  return match === null ? null : { tone: match[1] ?? '', standing: match[2] ?? '', words: match[3] ?? '' };
+  const match = new RegExp(`data-tone="([^"]*)"[^>]*${hook}="([^"]*)">([\\s\\S]*?)</span></(?:div|dd)>`).exec(markup);
+  return match === null ? null : { tone: match[1] ?? '', standing: match[2] ?? '', words: text(match[3] ?? '') };
+}
+
+/** Every status chip of some markup: its tone, its attributes and all it holds (a chip ends a table cell's block or a dd). */
+function chips(markup: string): { readonly tone: string; readonly attributes: string; readonly inner: string }[] {
+  return [...markup.matchAll(/<span data-slot="status-chip" data-tone="([^"]*)"([^>]*)>([\s\S]*?)<\/span><\/(?:div|dd)>/g)].map(([, tone = '', attributes = '', inner = '']) => ({ tone, attributes, inner }));
 }
 
 /** The labels of a table's fields: every column but its naming ones. */
 function fieldLabels(columns: readonly { readonly label: string; readonly naming?: true }[]): string[] {
   return columns.filter((column) => column.naming !== true).map((column) => column.label);
 }
+
+/** The conversion's action, which these renders never call. */
+const convert = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
+
+/** The whole result as its route gives it: page 2 of the worst shape's groups, the coverage and the top rows. */
+const DATA: ScreeningResultData = {
+  resultId: PATH.slice(PATH.lastIndexOf('/') + 1),
+  requested: false,
+  converted: false,
+  summary: { ...SUMMARY, createdAt: new Date(SUMMARY.createdAt), expiresAt: new Date(SUMMARY.expiresAt) },
+  groups: LATER_GROUPS,
+  groupPage: LATER_PAGE,
+  coverage: COVERAGE,
+  rows: ROWS,
+  arrangements: [{ value: 'in_house', label: 'In-house billing' }],
+};
 
 const anomalies = (groups: readonly ScreeningGroup[], page: ScreeningGroupPage) => renderToStaticMarkup(<ScreeningAnomalies groups={groups} page={page} path={PATH} />);
 const LATER = anomalies(LATER_GROUPS, LATER_PAGE);
@@ -586,12 +614,14 @@ describe('the screening result’s tables and their stacked rows (docs/adr/0078)
       const inTable = chip(cellsOf(copies(LATER).table, `data-group="${hook}"`).join(''), 'data-standing');
       const inItem = chip(groups.find((item) => item.key === hook)?.body ?? '', 'data-stacked-standing');
       expect(inItem?.standing, hook).toBe(inTable?.standing);
+      expect(inTable?.words, hook).not.toBe('');
       expect(inItem?.words, hook).toBe(inTable?.words);
     }
     for (const row of ROWS) {
       const inTable = chip(cellsOf(copies(TOP).table, `data-row-no="${String(row.rowNo)}"`).join(''), 'data-standing');
       const inItem = chip(top.find((item) => item.key === String(row.rowNo))?.body ?? '', 'data-stacked-standing');
       expect(inItem?.standing, String(row.rowNo)).toBe(row.standing);
+      expect(inTable?.words, String(row.rowNo)).not.toBe('');
       expect(inItem?.words, String(row.rowNo)).toBe(inTable?.words);
     }
   });
@@ -752,12 +782,30 @@ describe('the screening result’s words (TBL-08)', () => {
     }
   });
 
-  it('shows an anomaly in the unpriced tone on a phone and never Short or Whole there; the table’s tones as they were until UX PR 4b (P4-DR-03)', () => {
+  it('shows an anomaly in the unpriced tone in both copies and every other standing neutral, and no screening component uses the short or the whole tone (TBL-08; UX-040, UXR-07)', () => {
     for (const html of [LATER, TOP, COVERED]) {
-      const { rows } = copies(html);
-      expect(rows).not.toMatch(/data-tone="(?:short|whole)"/);
-      for (const match of rows.matchAll(/data-tone="([^"]*)"[^>]*data-stacked-standing="([^"]*)"/g)) {
-        expect(match[1], match[2]).toBe(match[2] === 'anomaly' ? 'unpriced' : 'neutral');
+      const { table, rows } = copies(html);
+      for (const [copy, hook] of [
+        [table, 'data-standing'],
+        [rows, 'data-stacked-standing'],
+      ] as const) {
+        expect(copy).not.toMatch(/data-tone="(?:short|whole)"/);
+        for (const match of copy.matchAll(new RegExp(`data-tone="([^"]*)"[^>]*${hook}="([^"]*)"`, 'g'))) {
+          expect(match[1], `${hook} ${match[2] ?? ''}`).toBe(match[2] === 'anomaly' ? 'unpriced' : 'neutral');
+        }
+      }
+    }
+    // Each stacked chip in its table chip's tone, row by row, the others' included.
+    for (const [html, pairs] of [
+      [LATER, [...LATER_GROUPS.map((group) => [`data-group="${group.procedureCode}:${group.payerProduct}"`, `${group.procedureCode}:${group.payerProduct}`] as const), ['data-group="others"', 'others'] as const]],
+      [TOP, ROWS.map((row) => [`data-row-no="${String(row.rowNo)}"`, String(row.rowNo)] as const)],
+    ] as const) {
+      const { table, rows } = copies(html);
+      for (const [hook, key] of pairs) {
+        const inTable = chips(cellsOf(table, hook).join(''));
+        const inItem = chips(items(rows).find((item) => item.key === key)?.body ?? '');
+        expect(inTable, key).toHaveLength(1);
+        expect(inItem.map((each) => each.tone), key).toEqual(inTable.map((each) => each.tone));
       }
     }
     const later = copies(LATER);
@@ -765,28 +813,90 @@ describe('the screening result’s words (TBL-08)', () => {
     expect(items(later.rows).at(-1)?.body).toMatch(/data-tone="unpriced"[^>]*>12,300 groups among them are anomalies</);
     const quiet = copies(anomalies(LATER_GROUPS, { ...LATER_PAGE, others: { ...LATER_PAGE.others, anomalyGroups: 0 } }));
     expect(items(quiet.rows).at(-1)?.body).toMatch(/data-tone="neutral"[^>]*>No group among them is an anomaly</);
-    // The table copy: an anomaly short and the rest neutral, as #42's result.test.tsx pins it, and never Whole.
-    expect(later.table).toMatch(/data-tone="short"[^>]*data-anomaly="true" data-standing="anomaly">/);
-    expect(cellsOf(later.table, 'data-group="others"').at(-1)).toContain('data-tone="short"');
-    for (const html of [LATER, TOP, COVERED]) {
-      expect(html).not.toContain('data-tone="whole"');
+    expect(cellsOf(quiet.table, 'data-group="others"').at(-1)).toMatch(/data-tone="neutral"[^>]*>No group among them is an anomaly</);
+    // The table copy: an anomaly unpriced, as the stacked rows have had it (P4-DR-03), and the others' chip with it.
+    expect(later.table).toMatch(/data-tone="unpriced"[^>]*data-anomaly="true" data-standing="anomaly">/);
+    expect(cellsOf(later.table, 'data-group="others"').at(-1)).toContain('data-tone="unpriced"');
+    // The whole result, the withdrawn release's notice included: no chip and no class in the short or the whole tone.
+    const page = renderToStaticMarkup(<ScreeningResultView data={{ ...DATA, summary: { ...DATA.summary, releaseWithdrawn: true } }} convert={convert} />);
+    expect(page).toContain('data-state="release-withdrawn"');
+    expect(page).not.toMatch(/data-tone="(?:short|whole)"/);
+    expect(page).not.toMatch(/\b(?:bg|text|border)-status-(?:short|whole)\b/);
+    // And no screening component names either tone: a column's figure role (expected, paid, short) is the brand's order, not a tone.
+    const roots = [import.meta.dirname, path.resolve(import.meta.dirname, '../../app/screening')];
+    const sources = roots.flatMap((root) =>
+      readdirSync(root, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name))
+        .map((entry) => path.join(entry.parentPath, entry.name)),
+    );
+    expect(sources.map((file) => path.basename(file))).toEqual(expect.arrayContaining(['anomalies.tsx', 'coverage.tsx', 'result-summary.tsx', 'page.tsx']));
+    for (const file of sources) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(/(?<!figure:\s*)['"](?:short|whole)['"]/);
+    }
+  });
+
+  it('names the one figure a status is below, and says its for one anomalous row of a group and their for more, in both copies (TBL-08)', () => {
+    /** A status's words in each copy, by its table row's hook and its item's key. */
+    const both = (html: string, hook: string, key: string) => {
+      const { table, rows } = copies(html);
+      return [chip(cellsOf(table, hook).join(''), 'data-standing')?.words, chip(items(rows).find((item) => item.key === key)?.body ?? '', 'data-stacked-standing')?.words];
+    };
+    const below = 'Below the Medicare figure by $5 a claim line or less';
+    // The 97035 group and row 1,204: one figure each, $0.20 and $0.67 a claim line below it.
+    expect(both(LATER, 'data-group="97035:medicare_ffs"', '97035:medicare_ffs')).toEqual([below, below]);
+    expect(both(TOP, 'data-row-no="1204"', '1204')).toEqual([below, below]);
+    // Its pooled twin names its own figure, as it did: 97110 at $31.00 a claim line, $0.45 below its fully reduced $31.45.
+    const pooled: ScreeningGroup = { ...(GROUPS[2] as ScreeningGroup), observedCents: c(31_000n), differenceCents: c(5_840n), reducedDifferenceCents: c(450n), standing: 'below_by_threshold_or_less' };
+    const twin = 'Below the fully reduced figure by $5 a claim line or less';
+    expect(both(anomalies([pooled], onePage([pooled])), 'data-group="97110:medicare_ffs"', '97110:medicare_ffs')).toEqual([twin, twin]);
+    // A group of two rows: one of them an anomaly is its lowest figure's; both, their lowest figures'.
+    const one: ScreeningGroup = { ...(GROUPS[0] as ScreeningGroup), anomalyRows: 1 };
+    expect(both(anomalies([one], onePage([one])), 'data-group="97161:ma_noncontracted"', '97161:ma_noncontracted')).toEqual([
+      'Anomaly: 1 of 2 rows more than $5 a claim line below its lowest figure',
+      'Anomaly: 1 of 2 rows more than $5 a claim line below its lowest figure',
+    ]);
+    const two = GROUPS[0] as ScreeningGroup;
+    expect(both(anomalies([two], onePage([two])), 'data-group="97161:ma_noncontracted"', '97161:ma_noncontracted')).toEqual([
+      'Anomaly: 2 of 2 rows more than $5 a claim line below their lowest figure',
+      'Anomaly: 2 of 2 rows more than $5 a claim line below their lowest figure',
+    ]);
+  });
+
+  it('sets the $5 of every status and of the anomaly rule in the mono face with tabular numerals, each chip’s words one run (#121 P1)', () => {
+    // Every money figure on the result, the $5 of a status or of the rule included, directly inside a mono span.
+    const page = renderToStaticMarkup(<ScreeningResultView data={DATA} convert={convert} />);
+    for (const html of [LATER, TOP, page]) {
+      for (const match of html.matchAll(/\$\d/g)) {
+        const before = html.slice(0, match.index);
+        expect(before.slice(before.lastIndexOf('<')), html.slice(match.index, match.index + 16)).toMatch(/^<span class="font-mono tabular-nums[^"]*">-?$/);
+      }
+    }
+    // Each chip that holds a figure holds one span, its words in one run with their spaces, the figure's span inside it:
+    // a status chip is an inline flex box, so loose words beside the figure would lose the spaces around it.
+    const anomaly = 'Anomaly: more than $5 a claim line below';
+    for (const [html, words] of [
+      [LATER, ['Anomaly: 2 of 2 rows more than $5 a claim line below their lowest figure', `${anomaly} the fully reduced figure`, 'Below the Medicare figure by $5 a claim line or less']],
+      [TOP, [`${anomaly} the Medicare figure`, 'Below the Medicare figure by $5 a claim line or less']],
+    ] as const) {
+      const all = chips(html);
+      expect(all).toHaveLength(html.split('data-slot="status-chip"').length - 1);
+      const figured = all.filter((each) => each.inner.includes('$'));
+      expect(figured.map((each) => text(each.inner))).toEqual([...words, ...words]);
+      for (const { inner } of figured) {
+        expect(inner.replace(/<span class="font-mono tabular-nums">(\$\d[\d,]*(?:\.\d{2})?)<\/span>/g, '$1')).toBe(`<span>${text(inner)}</span>`);
+        expect(inner).toContain(' <span class="font-mono tabular-nums">$5</span> ');
+      }
+    }
+    // The rule's $5 in each card's description, in the same face.
+    const description = (html: string) => /<p data-slot="card-description"[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1] ?? '';
+    for (const html of [LATER, TOP]) {
+      expect(description(html)).toContain('more than <span class="font-mono tabular-nums">$5</span> a claim line below its lowest Medicare figure');
+      expect(text(description(html))).toContain(ANOMALY_RULE);
     }
   });
 });
 
 describe('the result’s one action, at its top (UX-134)', () => {
-  const convert = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
-  const DATA: ScreeningResultData = {
-    resultId: PATH.slice(PATH.lastIndexOf('/') + 1),
-    requested: false,
-    converted: false,
-    summary: { ...SUMMARY, createdAt: new Date(SUMMARY.createdAt), expiresAt: new Date(SUMMARY.expiresAt) },
-    groups: LATER_GROUPS,
-    groupPage: LATER_PAGE,
-    coverage: COVERAGE,
-    rows: ROWS,
-    arrangements: [{ value: 'in_house', label: 'In-house billing' }],
-  };
   const view = (state: Partial<Pick<ScreeningResultData, 'requested' | 'converted'>> = {}) => renderToStaticMarkup(<ScreeningResultView data={{ ...DATA, ...state }} convert={convert} />);
 
   it('links from directly under the heading to the audit request’s title, in the title’s words and the primary button’s style; the kept paragraph stays where it was', () => {

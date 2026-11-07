@@ -256,6 +256,13 @@ function text(html: string): string {
     .replace(/\s+/g, ' ');
 }
 
+/** A card's table copy: its markup before the stacked list, which renders the same chips (docs/adr/0078). */
+function tableCopy(html: string): string {
+  const start = html.indexOf('<ul role="list" data-stacked-copy="rows"');
+  expect(start, 'the stacked list').toBeGreaterThan(-1);
+  return html.slice(0, start);
+}
+
 describe('the screening summary', () => {
   const html = renderToStaticMarkup(
     <>
@@ -399,22 +406,22 @@ describe('the anomalies by code and payer product', () => {
   it('lists each group with both figures, allowed and both differences in that order, and its status in words', () => {
     const headers = [...html.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((match) => match[1]);
     expect(headers).toEqual(['Code', 'Payer product', 'Rows', 'Claim lines', MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, 'Allowed in your file', DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL, 'Status']);
-    expect(html).toMatch(/data-group="97110:medicare_ffs"[\s\S]*?\$368\.40[\s\S]*?\$314\.50[\s\S]*?\$340\.00[\s\S]*?\$28\.40[\s\S]*?-\$25\.50/);
-    expect(html).toMatch(/data-group="97530:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is at or above both Medicare figures</);
+    expect(tableCopy(html)).toMatch(/data-group="97110:medicare_ffs"[\s\S]*?\$368\.40[\s\S]*?\$314\.50[\s\S]*?\$340\.00[\s\S]*?\$28\.40[\s\S]*?-\$25\.50/);
+    expect(tableCopy(html)).toMatch(/data-group="97530:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is at or above both Medicare figures</);
     // A code outside the reduction across codes has one figure, and its chip names it.
     const outside = (differenceCents: Cents) => {
       const group: ScreeningGroup = { ...(GROUPS[3] as ScreeningGroup), observedCents: c(10_000n - differenceCents), differenceCents, standing: 'at_or_above' };
       return renderToStaticMarkup(<ScreeningAnomalies groups={[group]} page={onePage([group])} path={PATH} />);
     };
-    expect(outside(c(-100n))).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="at_or_above">Allowed is above the Medicare figure</);
-    expect(outside(c(0n))).toMatch(/data-standing="at_or_above">Allowed is equal to the Medicare figure</);
+    expect(tableCopy(outside(c(-100n)))).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="at_or_above">Allowed is above the Medicare figure</);
+    expect(tableCopy(outside(c(0n)))).toMatch(/data-standing="at_or_above">Allowed is equal to the Medicare figure</);
     expect(text(html)).toContain('2 groups of 5 are anomalies.');
     expect(text(html)).toContain('Medicare Advantage, no contract');
   });
 
   it('calls a pooled code between its two figures within the range of the reduction across codes, never an anomaly', () => {
     // 97110 is $2.84 a line below its figure before the reduction and above its fully reduced figure.
-    expect(html).toMatch(new RegExp(`data-group="97110:medicare_ffs"[\\s\\S]*?data-tone="neutral"[^>]*data-anomaly="false" data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
+    expect(tableCopy(html)).toMatch(new RegExp(`data-group="97110:medicare_ffs"[\\s\\S]*?data-tone="neutral"[^>]*data-anomaly="false" data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
     expect(html.match(/data-anomaly="true"/g)).toHaveLength(2);
     expect(anomaliesDescription(onePage(GROUPS))).toBe(
       `2 groups of 5 are anomalies. ${ANOMALY_RULE} 1 more group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
@@ -426,10 +433,18 @@ describe('the anomalies by code and payer product', () => {
   });
 
   it('calls a pooled code more than $5 a claim line below its fully reduced figure an anomaly, and says how many rows of a group are', () => {
-    // 97140 is $5.20 a line below its fully reduced figure.
-    expect(html).toMatch(/data-group="97140:medicare_ffs"[\s\S]*?\$364\.00[\s\S]*?\$104\.00[\s\S]*?data-tone="short"[^>]*data-anomaly="true" data-standing="anomaly">Anomaly: more than \$5 a claim line below the fully reduced figure</);
-    expect(html).toMatch(/data-group="97161:ma_noncontracted"[\s\S]*?data-tone="short"[^>]*data-anomaly="true" data-standing="anomaly">Anomaly: 2 of 2 rows more than \$5 a claim line below their lowest figure</);
-    expect(html).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="below_by_threshold_or_less">Below by \$5 a claim line or less</);
+    // 97140 is $5.20 a line below its fully reduced figure. An anomaly is in the unpriced tone (UX-040), its $5 in the
+    // mono face, the chip's words one run (#121's P1).
+    const table = tableCopy(html);
+    expect(table).toMatch(
+      /data-group="97140:medicare_ffs"[\s\S]*?\$364\.00[\s\S]*?\$104\.00[\s\S]*?data-tone="unpriced"[^>]*data-anomaly="true" data-standing="anomaly"><span>Anomaly: more than <span class="font-mono tabular-nums">\$5<\/span> a claim line below the fully reduced figure<\/span><\/span>/,
+    );
+    expect(table).toMatch(
+      /data-group="97161:ma_noncontracted"[\s\S]*?data-tone="unpriced"[^>]*data-anomaly="true" data-standing="anomaly"><span>Anomaly: 2 of 2 rows more than <span class="font-mono tabular-nums">\$5<\/span> a claim line below their lowest figure<\/span><\/span>/,
+    );
+    expect(table).toMatch(
+      /data-group="97035:medicare_ffs"[\s\S]*?data-standing="below_by_threshold_or_less"><span>Below the Medicare figure by <span class="font-mono tabular-nums">\$5<\/span> a claim line or less<\/span><\/span>/,
+    );
   });
 
   it('keeps one figure for a code outside the reduction across codes, and says so where the second would be', () => {
@@ -507,7 +522,7 @@ describe('the anomalies by code and payer product', () => {
     const cells = [...others.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => text(match[1] ?? '').trim());
     expect(cells.slice(1, 8)).toEqual(['49,870', '1,745,450', '$98,765,432.10', '$87,654,321.00', '$76,543,210.00', '$22,222,222.10', '$11,111,111.00']);
     expect(cells[8]).toBe('12,300 groups among them are anomalies');
-    expect(others).toContain('data-tone="short"');
+    expect(others).toContain('data-tone="unpriced"');
     // The pages: first, previous, next and last, back at this card; the page and the count in words.
     const pages = /<nav[^>]*data-slot="group-pages"[^>]*>([\s\S]*?)<\/nav>/.exec(later)?.[0] ?? '';
     expect([...pages.matchAll(/<a [^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((match) => [match[2], match[1]])).toEqual([
@@ -531,9 +546,11 @@ describe('the anomalies by code and payer product', () => {
     for (const label of [MEDICARE_FIGURE_LABEL, MEDICARE_LINE_LABEL, REDUCED_FIGURE_LABEL, REDUCED_LINE_LABEL, DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL]) {
       expect(text(rows), label).toContain(label);
     }
-    expect(rows).toMatch(/data-row-no="4"[\s\S]*?97110[\s\S]*?GP[\s\S]*?2026-Q1[\s\S]*?\$36\.84[\s\S]*?\$1,473\.60[\s\S]*?\$31\.45[\s\S]*?\$1,258\.00[\s\S]*?\$1,360\.00[\s\S]*?\$113\.60[\s\S]*?-\$102\.00/);
-    expect(rows).toMatch(new RegExp(`data-row-no="4"[\\s\\S]*?data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
-    expect(rows).toMatch(/data-row-no="7"[\s\S]*?\$59\.17[\s\S]*?data-figure="one-figure"[\s\S]*?data-standing="anomaly">Anomaly: more than \$5 a claim line below the Medicare figure</);
+    expect(tableCopy(rows)).toMatch(/data-row-no="4"[\s\S]*?97110[\s\S]*?GP[\s\S]*?2026-Q1[\s\S]*?\$36\.84[\s\S]*?\$1,473\.60[\s\S]*?\$31\.45[\s\S]*?\$1,258\.00[\s\S]*?\$1,360\.00[\s\S]*?\$113\.60[\s\S]*?-\$102\.00/);
+    expect(tableCopy(rows)).toMatch(new RegExp(`data-row-no="4"[\\s\\S]*?data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
+    expect(tableCopy(rows)).toMatch(
+      /data-row-no="7"[\s\S]*?\$59\.17[\s\S]*?data-figure="one-figure"[\s\S]*?data-standing="anomaly"><span>Anomaly: more than <span class="font-mono tabular-nums">\$5<\/span> a claim line below the Medicare figure<\/span><\/span>/,
+    );
     expect(text(rows)).toContain(ANOMALY_RULE);
     const many = renderToStaticMarkup(<ScreeningTopRows rows={Array.from({ length: 30 }, (_, index) => ({ ...ROWS[0] as ScreeningRow, rowNo: index + 1 }))} />);
     expect(many.match(/data-row-no=/g)).toHaveLength(25);
@@ -546,9 +563,9 @@ describe('the coverage', () => {
 
   it('lists every row’s outcome by payer product, with the engine’s reason and a labelled chip', () => {
     expect(html.match(/<tr [^>]*data-coverage=/g)).toHaveLength(4);
-    expect(html).toMatch(/data-coverage="commercial:contract_required"[\s\S]*?Cannot be priced without a contract[\s\S]*?\$6,543\.21/);
-    expect(html).toMatch(/data-coverage="medicare_ffs:unpriced" data-reason="ENGINE_ERROR"[\s\S]*?The place of service is not in the approved place-of-service split/);
-    expect(html).toMatch(/data-coverage="medicaid:not_screened"[\s\S]*?Not screened/);
+    expect(tableCopy(html)).toMatch(/data-coverage="commercial:contract_required"[\s\S]*?Cannot be priced without a contract[\s\S]*?\$6,543\.21/);
+    expect(tableCopy(html)).toMatch(/data-coverage="medicare_ffs:unpriced" data-reason="ENGINE_ERROR"[\s\S]*?The place of service is not in the approved place-of-service split/);
+    expect(tableCopy(html)).toMatch(/data-coverage="medicaid:not_screened"[\s\S]*?Not screened/);
     expect(text(html)).toContain('33% of the rows (2 of 6) cannot be priced without a contract');
     expect(html).not.toContain('data-tone="whole"');
   });
