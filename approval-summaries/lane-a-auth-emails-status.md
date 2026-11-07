@@ -1,3 +1,17 @@
+ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW, acting Lane A, S2) holds part 2 (password-changed-notice, schema PR 1 of the queue) from 2026-11-07 02:20 UTC; Lane A: read lanes/lane-b.md's latest entries before resuming.
+
+## 2026-11-07 02:20 UTC (acting Lane A, S2): part 2 building
+- Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 1 (its decisions refine the design: 24-hour cutoff;
+  four-caller undelivered helper; PASSWORD_NOTICE_UNDELIVERED pages; complained leaves the notice; the trigger's guard;
+  operator_record_mail_event DROP/CREATE with a seventh column; the operator role's transactional send). D11 and A6 do not
+  ride.
+- **Running: wf_5cf101cd-7ab** (`workflow-scripts/lane-a-pwnotice-build-wf_5cf101cd-7ab.js`): a design addendum with an
+  adversarial reviewer and skeptics; branch `co-001/password-changed-notice` stacked on #126 (d2fdd106) plus the latest base,
+  worktree /home/user/pwnotice; builders D (migration 20261111090000_password_changed_notice.sql via the marker route), then
+  W (worker, infra) and M (ADR 0091, SGN-16, runbooks); the integrator's full suite; three reviews (security and sign-in;
+  database, mail and deploy; UX and brand with renders) with skeptics and a completeness critic; the fix round. No PR until
+  #126 merges.
+
 <!-- RESUME-BLOCK (2026-11-05T08:00Z, acting S4 stood down) -->
 ## RESUME-BLOCK
 - **Part 1** is MERGED (#125, 0f4a5ed5). Nothing of this item is unpushed. The worktree /home/user/auth-emails is
