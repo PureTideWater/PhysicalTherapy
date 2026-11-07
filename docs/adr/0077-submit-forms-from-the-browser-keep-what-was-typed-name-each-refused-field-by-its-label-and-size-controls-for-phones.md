@@ -273,10 +273,10 @@ refused the "123 456" an authenticator app copies; and that several fields check
   held key shared by both `ActionForm`s), so a press in either after a dropped one is never a second save.
 
   *Amended (co-001/ux-forms-after-42): outside `StackedRows`, the settings users page's Invitations section (exempt
-  from `StackedRows`, docs/adr/0078) renders `ResendForm` twice since #42, in a hand-written `sm:hidden` list and a
-  `sm:table` table, each with its own `FormKeys`. A press dropped in one copy and repeated in the other after a resize
-  or rotation sends a fresh key. The 34th UX PR's shared key and pin is to cover this page too, which means extending
-  its mechanism beyond `StackedRows`.*
+  from `StackedRows`, docs/adr/0078) renders `ResendForm` twice since #42, in a hand-written `sm:hidden` list and, from
+  sm up, a table in a `ScrollTable` inside a `hidden sm:block` wrapper, each with its own `FormKeys`. A press dropped in
+  one copy and repeated in the other after a resize or rotation sends a fresh key. The 34th UX PR's shared key and pin
+  is to cover this page too, which means extending its mechanism beyond `StackedRows`.*
 
 ## Not verified here
 
