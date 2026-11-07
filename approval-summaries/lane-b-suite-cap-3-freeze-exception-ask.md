@@ -1,6 +1,7 @@
 # Ledger freeze exception: two ledger function bodies, `ledger_line_net` and `ledger_entry_rules` (for the founder; text for the orchestrator to relay)
 
-From SUITE-CAP-3 (Lane B, reconcile at real size), 2026-11-06; revised the same day by the design's completeness check.
+From SUITE-CAP-3 (Lane B, reconcile at real size), 2026-11-06; revised the same day by the design's completeness check
+and by the design review's round 1 (the 360 s wording, the plan note and two proof items; design section 18).
 Design: `designs/lane-b-suite-cap-3-reconcile.md`, sections 1.5, 8.3a, 8.4 and 14.1. All figures were measured on
 synthetic data only, one run each on a 4-CPU container.
 
@@ -51,6 +52,11 @@ of a case of its practice and of a line of that case), so adding the line's prac
 cents does not depend on the order. A reversal or adjustment still counts as the stage of the entry it finally corrects
 (its target, or the target's target when the target is itself an adjustment), one whose target is missing still counts
 as nothing, and every other entry counts as its own stage.
+
+The added practice condition and the `ORDER BY e.seq` change no answer; they are there only so the database reads the
+line's entries through the line index on a ledger it has no statistics for. Removing either would bring back the slow
+read without failing any correctness test, so the migration's comment says so and Lane A's pull request adds a test
+that checks which index each new statement uses (below).
 
 ### 2. `ledger_entry_rules`
 Two statements change; the rest of the function is unchanged word for word.
@@ -183,8 +189,9 @@ case the writes with the new bodies matched the writes without them row for row 
 event, `seq` values included; 102,907 rows at F 10,000, 20,635 at R 2,000), and the recovered totals were the same.
 
 What it is for: today step 7b of the weekly run cannot move back to practice A's full month, because the pass there takes
-1,653 s against the 900 s limit. With both bodies it takes 310 s, inside the 360 s the release checks allow for a
-900 s job. Practice A's real month should add up to about 35 s more, so the margin is small: one more ledger check
+1,653 s against the 900 s limit. With both bodies it takes 310 s, inside 360 s, the 2.5-times margin the capacity
+work sizes a 900 s job by (no check enforces 360 s; the weekly run fails only when the job needs a second attempt).
+Practice A's real month should add up to about 35 s more, so the margin is small: one more ledger check
 (`ledger_entry_within_evidence`, 76 s of the 310) is the next one to look at. Lane A measures again on its own base
 before step 7b moves back.
 
@@ -195,6 +202,10 @@ before step 7b moves back.
   ledger match, entry and stage event, `seq` values included, and the same recovered totals.
 - A test for each changed refusal in `ledger_entry_rules`: no match, a match of another practice, a reversed match, each
   refused with today's error.
+- A cross-practice test: `ledger_line_net` called directly by the app's database role with another practice's line
+  gives 0, before and after the change (one test, written on the interest fix's base).
+- A plan test: on a ledger with no statistics, `ledger_line_net` reads through the line index and both match lookups in
+  `ledger_entry_rules` through the match's primary key, so a later edit cannot quietly bring the slow reads back.
 - The schema gate as usual: `domain-model.md` and `packages/db/functions` regenerated in the same pull request, with
   your approval of record on it.
 
