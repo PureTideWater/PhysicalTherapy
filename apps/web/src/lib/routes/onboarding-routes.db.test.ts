@@ -564,7 +564,7 @@ describe('support', () => {
     const refusal = (field: string) => ({
       field,
       message:
-        'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+        'a ticket takes no patient information; remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
     });
     expect(await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).toEqual({
       status: 'invalid',
@@ -609,7 +609,7 @@ describe('the status page and maintenance', () => {
     expect((await call(updateIncident, platformAdmin, {}, { incidentId: opened.objectId, status: 'monitoring', message: 'Again.' })).status).toBe('invalid');
     expect((await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'x' })).status).toBe('invalid');
     // Both fields at once: each is named, so both are fixed before the next press.
-    const publicRule = 'the status page is public: write no identifier, date of birth or phone number';
+    const publicRule = 'the status page is public; write no identifier, date of birth or phone number';
     expect(await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'Or 919-555-0135.' })).toEqual({
       status: 'invalid',
       issues: [

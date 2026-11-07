@@ -478,7 +478,7 @@ test('the support form keeps what was typed through a dropped connection, a page
     await subject.fill('A question about the date of birth column');
     await page.getByRole('button', { name: 'Open ticket' }).click();
     const refusal =
-      'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead';
+      'a ticket takes no patient information; remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead';
     await expect(summary).toContainText(`Subject: ${refusal}`);
     await expect(subject).toBeFocused();
     // The refusal says the rule in the summary and under the field; the card still says it once, and the field reads
