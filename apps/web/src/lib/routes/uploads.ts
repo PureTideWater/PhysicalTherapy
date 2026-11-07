@@ -215,10 +215,10 @@ const fileSchema = z.strictObject({
 /** The request's message when an ERA export names no format, or another kind names one. */
 export function formatProblem(kind: DocumentKind, formatId: EraFormatId | undefined, position: number): string | null {
   if (kind === 'era_export' && formatId === undefined) {
-    return `File ${String(position)} is an ERA export: choose which system's export it is.`;
+    return `file ${String(position)} is an ERA export; choose which system’s export it is`;
   }
   if (kind !== 'era_export' && formatId !== undefined) {
-    return `File ${String(position)} has an export format but is not an ERA export.`;
+    return `file ${String(position)} is not an ERA export, so it takes no export format; choose its kind again`;
   }
   return null;
 }
