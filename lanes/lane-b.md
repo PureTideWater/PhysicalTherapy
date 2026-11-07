@@ -2232,3 +2232,93 @@ notes from 03:37 UTC.
   CAS-56, SEC-25, SGN-17, CI-31 (the other series as at 2026-11-06 19:40 UTC).
 - Records: LANES.md claim rows (P2, ux-forms, 4b, #126, MOD-16, #129, slice 2); the brief §5; the rolling handoff, now
   current as of 06:40 UTC.
+
+### 2026-11-07 09:40 UTC (Lane B's orchestrator)
+Heads checked live at 09:43 UTC (`git ls-remote origin`, the open PRs; no tags); status files read to 09:40 UTC
+(build-ops 66fc06f0); the orchestrator's notes from 06:40 to 09:37 UTC.
+
+- **Pacing: the 7-day limit at its warning level again** (06:50 UTC; it resets 2026-11-13 19:00 UTC). Decided under the
+  "finish near-done" precedent: MOD-16 (S1), #126 to its suggested line, PR 5's ask text, S4's slice 2,
+  ux-forms-after-42, SUITE-CAP-3's build and #129 continue; P2's build and schema PR 1's build are held at clean points;
+  S5 stops. No new item started since.
+- **Who runs what (06:40 UTC).** S5 refused P2 without a typed human go (an older session). P2 went back to its original
+  session, ci-pin-age (session_01FcouKNP2XtaombFLueKLnu), which holds the design and accepts the orchestrator's resume.
+  Future queue items (P5, UX PR 8, dark-mode-ship) go only to sessions created with the `append_system_prompt`
+  authorization.
+- **The setup fix, 6bc01e3d on build-ops (`tools/setup-container.sh`):** a machine restart leaves /root at 0700, so the
+  PostgreSQL clusters stay down (found by SUITE-CAP-3). `start_server` now reopens /root to 0755 before `pg_ctl start`.
+  Verified at 06:50 UTC on the orchestrator's container: /root at 0700 reproduced; the setup restored 0755 and started
+  both clusters.
+- **S5 done; #131's claim row closed.** S5 (session_01FcouKRDfoFAeXZK4Thp8M8, ux-screening-result-words) finished clean
+  at 06:47 UTC: #131 merged as 8a722f80; its push runs on 8a722f80 green (screening-capacity, mutation; ci green on
+  attempt 2 after one re-run of MOD-16's base flake, seed -460602131). Its status file is final and pushed; no
+  check-ins, workflows or worktrees are left. S5 is free and, under the pacing, takes no new item.
+  - **Proposal recorded:** `lib/screening/routes.ts:836`'s doc comment "Expected less allowed" becomes "The Medicare
+    figure less allowed" at the next change to that file.
+- **S1, `co-001/redact-range-glued`:**
+  - **MOD-16's five seeds,** pinned failing at cc3dd7f6 and passing at HEAD in its final stage: 1034253323 (#128),
+    -1074798020 (#129), 383403599 (#131's job), -460602131 (the base's own push run on 8a722f80, red on `unit`; to S1 at
+    06:40 UTC) and -594136649 (S3's integration run; to S1 at 06:50 UTC).
+  - At the pacing, candidate A and the two judges were dropped (06:45 UTC, the status file); B is built alone against
+    the bar.
+  - **The gate (07:20 UTC; 975,489 seeded synthetic letters, 5,292 synthetic patients):** neither head meets the bar
+    against cc3dd7f6. HEAD 3fcb9359 sends SSN 38,604 and phone 33,965 (about 65,000 of them the
+    glued-own-name-cuts-the-label class), DOB 95, name parts 648 and initials 357, and damages 3,615 code or unit
+    letters. The earlier head 6fc88092 sends name parts 15,064, DOB 6,036, initials 3,455, member 2,465, claim 1,511 and
+    SSN 7,495.
+  - **The orchestrator's ruling (07:20 UTC) on SSN-shaped amounts at range ends (the R1 must-stay conflict):** fail
+    closed where it is not decidable at run time (refuse as the base does: no regression, no damage beyond the base). A
+    class is send-exempt only if the generator's ground truth shows no identifier of any kind, of any patient, in every
+    letter of the class, and the rule decides from structure (a code-computed money figure), not surface text; one
+    failing letter refuses the class. Every class is reported with its counts in the PR description and the status file.
+  - S1 acknowledged at 07:21 UTC, applied the ruling verbatim to B and restarted B from its progress file at 07:22 UTC.
+    B's gate numbers come next.
+- **#126 (S2, acting Lane A):** in its round 4 at 08:44 UTC; head 9c68a4be (08:45 UTC, live; WIP
+  `co-001/wip-interest-fix` the same). wf_d944494b-d50 runs to the suggested line, which is not posted yet.
+- **Schema PR 1, password-changed-notice, held clean (06:42 UTC):** branch f110efd9 (the database, worker and infra, and
+  records parts built and pushed); WIP `co-001/wip-pwnotice` c0ced87f (the base merged, the seam tests); `unit` 10,065
+  green. The suite, the reviews and the fix round wait for #126's founder line (RESUME-BLOCK in
+  `approval-summaries/lane-a-auth-emails-status.md`).
+- **PR 5's combined ledger freeze ask: ready (08:44 UTC) and relayed.**
+  `approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md` (build-ops 9102eadf; base 8a722f80):
+  - Q1: `roi_links_valid` accepts a fifth key, `actionable_open_lines`;
+  - Q2: `roi_statement_rules`' sum check (only with Q1);
+  - Q3: an empty links object `{}` is refused.
+  - Lane A recommends yes to all three. The grant is the appendix text only, for PR 5 only.
+  - Relayed to the co-founder (a push notification and the chat) at 08:45 UTC, for Tyler (the founder); awaiting his
+    answer. SUITE-CAP-3's further ledger items are a later ask.
+- **S4, slice 2:** reviews done at 07:03 UTC (round 3 nits only; the critic's one finding fixed: a `draft.ts`
+  "equivalent" was not equivalent, and a test now kills it); WIP e30a44aa, then 7e9618e3. Suite stage wf_ca36d6f2-079:
+  the base 8a722f80 merged, one full local suite, the branch push, the PR description. Its status file at 09:37 UTC
+  (build-ops 815839e3): the suite green; `co-001/packet-figure-placeholders-2` pushed at a851850d; the PR body prepared.
+  **Draft #133** at a851850d, opened by S4 at 09:38 UTC (live at 09:43 UTC; status file 66fc06f0: subscribed, CI
+  running).
+- **ux-forms-after-42 (S3, session_01FcouKQJppM8BdCui7NVQUa): draft #132** at 76da396a (opened 08:03 UTC; 85 files; two
+  check rounds repaired; 105 after-shots). Next, wf_1bd58daa-b34: the UX and brand review with shots and the security
+  and privacy review (including a ruling on the late re-send's second result email), skeptics and a critic, one fix
+  round with the base 8a722f80 merged, the full suite once, one push, the description. Waiting on nothing.
+- **P2, `co-001/ci-trivy-version` (session_01FcouKNP2XtaombFLueKLnu):** the delta re-read is done and committed (08:30
+  UTC; wf_ab899371-7bf: 19 findings, 5 S and 14 N; 17 fixed, 2 refuted; CI-24 to CI-26, Part 6 and N33 to N42 free;
+  target Trivy v0.76.1). **Held before the build:** no commits on the branch (= the base 8a722f80), no WIP.
+  - The key fact: #107's de7438c8 ages `tools/trivy/release.txt` by the action pins' default-branch rule, so P2 moves
+    Trivy to its own verified release-branch rule (the 3-day floor kept).
+  - **The orchestrator's ruling (08:30 UTC):** the per-release exclude is not the founder's (the founder's exclude under
+    the floor and the 48-hour database floor are untouched); no relay.
+  - Status file at build-ops 097acc24. Its check-in trig_01R6nXDdCD43e1PypnQ2Dtwi, at 2026-11-13 19:15 UTC, is settled
+    at the stand-down (cancelled, or handed to Lane A).
+- **#129 (session_01FcouKRo5iee5QFtPT8UimZ):** ready at f4fef908 (WIP s5), green on every check but `unit`'s MOD-16 base
+  flake. Its check-ins stopped at 08:38 UTC; it is idle until the orchestrator messages it after
+  `co-001/redact-range-glued` merges, then: the base merged once, the push, CI, the verification, the merge. **When
+  MOD-16 merges:** wake #129; #126, S4's #133 and #132 take the fixed base at their own base merges.
+- **The check-in at 09:37 UTC:** no failed sessions. Running: S1 (B building), S2 (#126's round 4), S4 (storing the PR
+  body), ux-forms-after-42 (#132's reviews), SUITE-CAP-3 (session_01FcouKP4ekrT97eyDtLe4Rd; re-running the setup after
+  the /root permissions). Idle by design: #129 (waits on MOD-16), P2 (held at the cap), S5 (done). #126's suggested
+  approval line is not posted yet. No new item started.
+- **Carried from the 06:35 UTC check-in:** (a) the web owner's try-lock item and (b) the UX PR 67, 68, 74, 75 and 84
+  strikes were already in LANES.md (Queues items 21 and 20) and the rolling handoff; (c) the five seeds, (d) S4's WIP
+  move and (e) the setup fix are recorded now (above, their LANES.md rows and the handoff).
+- **Counters:** none allocated; PR #132 is ux-forms-after-42's. Next free unchanged: ADR 0092, synth module 21, fixture
+  release 900008; test-matrix MOD-23, CAS-56, SEC-25, SGN-17, CI-31 (the other series as at 2026-11-06 19:40 UTC).
+- Records: LANES.md claim rows (P2, ux-forms-after-42, 4b closed, SUITE-CAP-3, #126, UX PR 8, MOD-16, #129, slice 2,
+  password-changed-notice, dark-mode-ship) and "Handed to Lane A" (PR 5's ask); the rolling handoff, now current as of
+  09:40 UTC.
