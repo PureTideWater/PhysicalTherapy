@@ -431,14 +431,14 @@ runs, the five properties were run once over 60 seeds at 400 runs each with no f
 Still not covered, recorded as residuals (none is new): nicknames (Bob for Robert); homoglyphs (Cyrillic `а` for Latin
 `a`: a payer letter's text is not adversarial, and OCR in Latin mode does not emit them); digits of other scripts
 (`٣`); a name in a script other than the records'; a date of birth in a form `datesIn` does not read (`1961 March 3`); a
-name glued to another word by a lost space that nothing sets apart, no digit beside its run of letters and no change of
-case (`DEARJANE`, `Zephyrapaid`, `2020PAIDZEPHYRATODAY`, `0.00-01/02/2020PaidzephyraToday`), which is not a whole word
-(cc3dd7f6 refused such a letter beside a range only because the range then joined the next group, A3; since review
-PHI2-1 of the range fix, 2026-11-07, a name glued to a digit or set apart by a change of case is read, below); a call's
-member ID or claim number inside a longer token, a letter glued to its letter or a digit to its digit (`ZZ12345678` for
-ZZ1234567, `2020PaidZZ7654321`, `ZZ7654321150.00-1/2/20`), which redaction keeps as another identifier for the screen and
-the check refuses when the number holds letters and digits (no boundary can be known), and a digits-only one glued so
-(`Room AB99887766`, `Claim 123456780.00` for claim 12345678), read as another number and sent; a bare monogram (`JQV`);
+name glued to another word by a lost space with no digit beside its run of letters (`DEARJANE`, `DearJane`,
+`ZephyraPaid in full`), which is not a whole word (a name, initial, date of birth, member ID or claim number glued to
+text where a digit touches it is refused by the check since review round 3 of the range fix, 2026-11-07, below); a
+call's member ID or claim number inside a longer token, a letter glued to its letter or a digit to its digit
+(`ZZ12345678` for ZZ1234567, `2020PaidZZ7654321`, `ZZ7654321150.00-1/2/20`), which redaction keeps as another
+identifier for the screen and the check refuses when the number holds letters (no boundary can be known), and a
+digits-only one glued so (`Room AB99887766`, `Claim 123456780.00` for claim 12345678), read as another number and sent;
+a bare monogram (`JQV`);
 an identifier split into more than three tokens, which the screen does not join (the contract screen's runs are not
 limited to three); another patient's identifier the screen sees only with a digit and five characters or more,
 while the stored side keeps values from two; another patient's name, which the screen does not look for; and addresses,
@@ -604,21 +604,21 @@ above stays as it was decided; where it differs, this amendment holds.
   there too and an unsigned amount is no barrier ("Phone: 202-5550123", "SSN 90012-3456", "SSN 9 0 0 1 2 3 4 5 6", "SSN
   900.12 3456" are refused, "Please call about CPT 97110 97140." and "Call our office, TIN 12-3456789" sent). Review
   round 1 (2026-11-05: SEC-1, SEC-2, SEC-4, SEC-5, SEC-6, corr-ssn-1) widened the scan so. The refusal is
-  `identifier_left`, the fixed sentence that names no number. A letter that glued the patient's name to a pattern span
-  ("RE: Vantree900-12-3456") was refused the same way (design 7.4) until review PHI2-1 of the range fix (2026-11-07),
-  since which the name is redacted with it ("RE: [PATIENT_NAME][SSN]", below). Since 2026-11-06 (MOD-16 seed 1034253323, where "Paid $0,000.00.
+  `identifier_left`, the fixed sentence that names no number. A letter that glues the patient's name to a pattern span
+  ("RE: Vantree900-12-3456") is refused the same way (design 7.4; review round 2 of the range fix redacted both, a
+  reading review round 3 reverted, below). Since 2026-11-06 (MOD-16 seed 1034253323, where "Paid $0,000.00.
   Service 01/01/2020-01/02/2020Paid $0,000.00" was refused) a range's two ends may be read on either reading and may be
   a date and an amount (with or without a currency sign), the glued reading blanks only a word glued to a digit and
   never as white space, and `datesIn` tries each date form at every number, so a match that reads as no date never hides
   a date it overlaps (that also redacts a date of birth written after an amount and a full stop, "0.00.03/14/1980",
-  "0.00. 03/14/1980", "0.00.03/14/80", and, as the date rule says, keeps a month-word name or a digits-only claim or
-  member number written as such a date there, "Paid 0.00. 01-01-2020" for claim 01012020, which cc3dd7f6 redacted only
-  because it missed the date; with no space after the full stop that letter is refused: re-review PHI1-3, review
-  PHI2-5); a range joined to a further group is still no barrier. An unlabeled
-  amount-shaped SSN or phone at an end of such a range is read as an amount there, as R1 reads it alone, and is sent
-  ("01/01/2020-900.12 3456", "$1-900.12 3456", recorded below: re-review PHI1-1); under an SSN or phone label it is
-  refused, but a label glued to the word before it by a lost space ("PatientSSN", "PaidPhone") is no label, so there
-  it is read as unlabeled and sent (recorded below: review PHI2-3). The review of that fix (GATEWAY1-1, GATEWAY1-2) added a third reading that blanks every word glued to a
+  "0.00. 03/14/1980", "0.00.03/14/80", and, as the date rule says, keeps a month-word name written as such a date there:
+  re-review PHI1-3; a digits-only claim or member number written as such a date stays only where the date is read past
+  each match's end too, as cc3dd7f6 read dates, so "Paid 0.00. 01-01-2020" for claim 01012020 is "Paid 0.00. [CLAIM_1]"
+  as it was there: review PHI2-5, closed in review round 3); a range joined to a further group is still no barrier. An
+  unlabeled amount-shaped SSN or phone at an end of a range of two amounts is read as an amount there, as R1 reads it
+  alone, and is sent, as at cc3dd7f6 ("150.00-900.12 3456", recorded below); at an end of a range the fix added (a date
+  or a currency amount to an amount), with a short group after it, the letter is refused as cc3dd7f6 refused it
+  ("01/01/2020-900.12 3456", "$1-900.12 3456": re-review PHI1-1, closed in review round 3, below). The review of that fix (GATEWAY1-1, GATEWAY1-2) added a third reading that blanks every word glued to a
   digit, an ordinal-like suffix too, so a range glued to "St.", "Rd.", "TH" or "nd" after its four-digit year is a
   barrier ("10/01/2026-10/15/2026St. Joseph"; since review GATEWAY2-2 the second reading keeps an ordinal suffix only
   after a day's one or two digits, so a day-first ordinal second end is read so too, "01/01/2020-4th of March, 2020St.
@@ -647,24 +647,75 @@ above stays as it was decided; where it differs, this amendment holds.
   150.00"): 2,247 of those 20,000 letters are still refused (1,182 kept again), a refusal, never a leak; the SEC fuzz of
   60,000 labeled letters is unchanged.
   Review round 2 of the fix (2026-11-07: PHI2-1, PHI2-2) found that the barrier sent the call's own identifiers that
-  cc3dd7f6 refused only because the range then joined the next group (A3), in the shapes redaction never read: a date of
+  cc3dd7f6 refused only because the range then joined the next group (A3), in shapes redaction never read: a date of
   birth glued to a word, and a name, member ID or claim number glued to a digit ("Paid $0,000.00. Service
-  01/01/2020-01/02/2020Zephyra $0,000.00", "DOB 150.00-03/14/1980Paid", "Seen 0.00-01/02/2020SYNCLAIM0001"; 6,602 of
-  21,600 letters in its seeded differential), some sent at cc3dd7f6 as well ("Seen 2020SYNMEMBER0042", "Paid
-  150.00Zephyra"). Redaction and the check now read the call's identifiers as the scan reads glued text: a date of birth
-  on the scan's glued readings, and with a month word set apart from what is glued before it ("DOB03/14/1980", "Born
-  03/14/1980St. Mary", "DOBMarch 14, 1980", any date a birth label introduces too); a form's letter edge reads a digit
-  beside it as a lost space, and a number's digit edge a letter beside it ("150.00Q Zephyra", "RE: Vantree900-12-3456",
-  "SYNCLAIM0001Paid"); in a run of letters a digit touches, a name part at either end of the run, beside a name read
-  there, or between changes of case, whatever letters it is glued to ("01/02/2020ZephyraPaid", "150.00PaidZephyra",
-  "01/02/2020ZEPHYRAJANEQ150.00"), and in any run a name part between changes of case ("DearJane", "ZephyraPaid"), so a
-  short part may take letters of another word glued to a digit ("150.00Deductible" for a part "DE"), and a part that is
-  a word of a name written in camel case its own ("BlueCross" for a part "CROSS"): more redacted, never less; and the
-  check refuses the call's number of letters and digits inside a longer token. Its differentials (21,600,
-  864 and 47,754 letters, the own identifiers at or beside a range end, glued on either side) send none that cc3dd7f6
-  refused but the recorded class of a name glued to another word that nothing sets apart (162 of 47,754, a lower-case name
-  glued between words). A date read on a glued reading alone keeps no name or number in it: only a date of birth is taken
-  there.
+  01/01/2020-01/02/2020Zephyra $0,000.00", "DOB 150.00-03/14/1980Paid", "Seen 0.00-01/02/2020SYNCLAIM0001"). That
+  round's answer, a glued reading of the call's identifiers in redaction (21684dff, 5a13c9d9), cut SSN and phone labels
+  so that SSNs cc3dd7f6 redacted or refused were sent (review round 3: PHI3-1, PHI3-2, PHI3-3) and took codes, modifiers
+  and units after the patient's name (GATEWAY3-1, GATEWAY3-2: "MA04" for a part MA, "97110XU", "45min", "M54.50" after
+  MARIA). Review round 3 reverted it: redaction reads the call's identifiers at word boundaries again, as cc3dd7f6 read
+  them, and the self-check refuses (`identifier_left`) a letter that holds one of them glued to text across a boundary no
+  pattern reads (`ownIdentifierGlued`), where no boundary can be known and the letter goes to a person:
+  - a part of the patient's name of four letters or more that is no month's word, folded, anywhere in a run of letters
+    a digit touches, or written with joiners or a space inside as its form reads it ("01/01/2020-150.00Zephyra",
+    "Jane0.00-01/02/2020", "2020PAIDZEPHYRATODAY", "150.00ZEP HYRA"); letters between a digit and the name's placeholder
+    with only invisible characters between (a part the placeholder cut); an initial alone with a digit right before it,
+    before the name or a placeholder ("150.00Q Zephyra", "150.00J. [PATIENT_NAME]"), never with a digit after it, where it
+    is a code's letter ("ZEPHYRA G0283", "MARIA M54.50");
+  - a member ID or claim number of letters with a digit beside it, and one of letters and digits inside any longer token
+    ("Seen 150.00SYNCLAIM0001", "2020PaidZZ7654321");
+  - a date of birth in any form `datesIn` reads with a letter or a digit beside it ("DOB03/14/1980", "114-Mar-1980-150.00",
+    "DOB 03/14/1980150.00 - 01/01/2020", PHI3-4), compact with a letter beside it; none inside another date. A name or
+    number written as a word of a written date of birth is that date's ("DOB June 1, 2002Paid" for a patient June), and a
+    date a birth label introduces that reads as no date of birth takes the digits an invisible character joins to it.
+  A part of two or three letters, a month's word or an initial set apart in a glued run is as often a code, a unit or a
+  date's month ("Remark: MA04", "97110XU", "45min", "June1", "Seen 0.00-$20Al"): it is refused only in a letter whose
+  chain only the range fix's barriers hold, which cc3dd7f6 refused for the range's own digits ("01/01/2020-150.00Al",
+  "0.00-01/02/2020PAIDMa", "01/01/2020-150.00J. Ma"), and sent elsewhere, as at cc3dd7f6. The survivor scan tells such a
+  letter (`survivorIn`, step 5): it reads the letter again with the barriers cc3dd7f6 read alone ("kept": a currency
+  amount, and a date read as cc3dd7f6 read dates or an unsigned amount, alone or in a range of its own kind joined by a
+  hyphen, a dash or the minus sign), and a chain that survives there is a survivor unless the barriers the range fix
+  added ("held": a range of a date and an amount or of an amount and a currency amount, a date read only with a glued
+  word blanked, a range joined by another dash) hold all of it, each standing: its ends written as a range's ends are (a
+  date of one separator or a month word with its day and year apart, an amount with cents, a currency amount), no SSN
+  or phone label before it, and nothing beside it that may be the other part of an identifier whose part the range
+  holds (a short group no barrier holds, joined as a chain joins; an unsigned amount so; a held range that does not stand
+  on that side; after it, any group glued by a word or a mask's characters, and a run of plain short groups in an SSN's
+  or phone's shape after a word and white space). Where a range's end cannot be told from an identifier's fragment, the
+  letter is refused as cc3dd7f6 refused it (the orchestrator's ruling of 2026-11-07): "Paid 01/01/2020-900.12 3456",
+  "Paid $1-900.12 3456", "Paid 202 555 01.23-1/3/20", "Paid 0,900-12-19.85", "SSN 2,900-12-19.85-1/3/20", "Call 202 555
+  01.23-12-150.00", "01/01/2020-150.00XXX-XX-3456Paid", "SSN 900123456120.00-01/02/2020", "Phone March 11,
+  2029−2,866.66  960.58 4433", "SSN 1: is 01/01/2020-900.12 3456", "Re: SSN 01/01/2020-4th of March, 2020St 900.12 3456"
+  (PHI3-5), each sent from 6fc88092 to the head of round 2. In a letter whose chain only held barriers hold, an SSN or
+  phone label glued to the word before it is read too ("01/01/2020-150.00-PaidSSN 900 12 34.56"). The MOD-16 seed letter
+  and its class stay sent ("Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00": the held range holds its
+  chain whole and stands); a range of either kind written right after an amount and a full stop with no word between
+  ("Paid $0,000.00.January 1, 2020-2020-01-02Paid") is refused, as at cc3dd7f6.
+  Measured by the differential gate of review round 3 (975,489 synthetic letters; cc3dd7f6 against this head): the call's
+  own identifiers that cc3dd7f6 redacted or refused and this head sends: no initial, date of birth, member ID or claim
+  number, and 5 name letters (below); SSNs 385 and phones 171 letters, all in letters whose chain only held barriers hold
+  (below). Codes, units, amounts, IDs and references this head changes that cc3dd7f6 sent: none; dates 4, a number and a
+  word 1 each, all in one reviewer fuzzer's letters of two patients' dates of birth, where a second written form of the
+  date of birth is redacted that cc3dd7f6 left inside the date beside it (more redacted). Fail-safe refusals of letters
+  cc3dd7f6 sent: 60 must-stay letters by the gate's oracle, each holding the call's own date of birth glued digit to digit
+  ("Seen $10.00-1980/03/14150.00", one reviewer harness), refused as a glued date of birth; 602 letters whose identifiers
+  cc3dd7f6 redacted (415 by the scan, as at 6fc88092; 187 by the glued check: a name, initial, date of birth or number
+  glued to a digit, which cc3dd7f6 sent in clear beside the redacted ones); 7,014 must-stay letters after an SSN or phone
+  word, the class GATEWAY2-1 narrowed (6fc88092 8,455). MOD-16's property, its seed 1034253323 and the three CI seeds
+  hold; 100,000 generated MOD-16 letters on five seeds are all sent unchanged.
+  Still sent, needing the orchestrator's ruling (neither a range end that cannot be told, nor a class whose sent digits
+  are no identifier): an SSN or phone written elsewhere in a letter whose chain only held barriers hold, in a shape no
+  pattern or chain rule reads and cc3dd7f6 sends when no range is in the letter (385 SSN and 171 phone letters of the
+  gate, all from reviewers' fuzzers and data files: after a word glued to a range's end and white space, `Re:
+  01/01/2020-4th of March, 2020St 90012-3456`, `…2020Paid. 900.12 3456`; amount-shaped, five-four or odd groupings,
+  `1900.11-02–16–2028.`, `511.51⁃973.61, Ref 97447.74.58`; a label behind its own number, `01/01/2020-150.00 Call 1:
+  555-0123Paid`); cc3dd7f6 refused each only because the range's own digits chained (A3). Closing the class means refusing
+  every such letter with another short run of digits, which MOD-16's must-stay letters hold too: reading every unsigned
+  amount as no barrier there refused 297 of 20,000 generated MOD-16 letters, and reading a word and white space after a
+  range as joined refused about 10 of 20,000 (`2029Rd. 9 92956`, `2028TIN 56-0000465`, `2022-07-02Row 02 28 2030`). And
+  a month-word name part read as a date's month (`Seen May 2020|June 103 / 1961-03-03/03.03.61` for patients May and
+  June: 5 letters of one fuzzer), in letters cc3dd7f6 refused only because its own redaction missed a date of birth
+  this head redacts.
 - **Time.** Every pattern is a fixed sequence of bounded pieces, run once per start; the label window is read once per
   bare match, the scan's chains at most four groups from each, or under a label until they hold more than eleven digits
   (twelve groups at most). A letter with no invisible run is read once, not on two readings, by the patterns and by the
@@ -702,45 +753,45 @@ Still not covered, recorded as residuals: addresses (the ruling does not cover t
 the records hold it); a phone written in words or with letters (`1-800-555-SYNP`); an SSN's last four in prose (`ending
 in 3456`); an unlabeled bare ten starting 2 that passes the NPI check; a seven-digit local number with no phone label,
 or with a digit in its label window (`Phone 1: 555-0100`), and so an SSN or phone whose label is behind a number and
-then a word, a date or an amount (`TTY 1: 7,439.10 942.77 3098`, `SSN 1: is 01/01/2020-900.12 3456`, `Phone 1: is
-2/5/26-545.68 936 90 8080172.00`: re-review GATEWAY1-1; cc3dd7f6 sent the first, and refused the others only because the
-range then joined the next group, A3); a non-NANP phone number; `1` and ten written as one run with no phone label
+then an amount (`TTY 1: 7,439.10 942.77 3098`: re-review GATEWAY1-1; cc3dd7f6 sent it too; after a range the fix added,
+`SSN 1: is 01/01/2020-900.12 3456`, `Phone 1: is 2/5/26-545.68 936 90 8080172.00`, refused as cc3dd7f6 refused them
+since review round 3); a non-NANP phone number; `1` and ten written as one run with no phone label
 (`Patient 12025550123`, kept as an 11-digit ICN is); two phones with nothing between them (`202-555-0123202-555-0124`);
-an SSN written with an OCR space and then a whole slashed or dashed date for its last six (`SSN 900 12/03/56`), next to
-a range too (`SSN 9 01-12-1985-150.00`: re-review PHI1-2); a number written as two whole dates or amounts, or one of
-each (a currency amount too), joined by a dash, read as a range (`9-1-26-1-23-45`; no SSN or phone in a shape the
-patterns read is one, but an SSN with a comma after its first digit or a digit and a comma before it, and a point in its
-last four, is read as an amount and a date, `SSN 1,900-12-19.85`, `Paid 0,900-12-19.85`, `SSN 2,900-12-19.85-1/3/20`,
-which cc3dd7f6 refused only because the range then joined the next group, A3: review PHI2-4); an amount-shaped phone
-whose last group and the next number read as a date that starts a range (`Call 202 555 01.23-12-150.00`, as `SSN
-$10-9.00 12 3456` for a first group, below; cc3dd7f6 refused it only by A3, and sent `Call 202 555 01.23-12`: review
-PHI2-4); a masked SSN glued after the end of a range (`01/01/2020-150.00XXX-XX-3456Paid`; the masked SSN glued to a
-digit or a word is the follow-on leak PR's class, co-001/redact-ssn-phone-leaks, which the range barrier extends:
-review PHI2-4); an unlabeled amount-shaped SSN or phone (`900.12 3456`, `202 555 01.23`), read as an amount as R1 keeps `150.00 1234`:
-alone, after white space, or as one end of a dash range, of two amounts (sent since review round 2: `150.00-900.12
-3456`) or, since 2026-11-06 (MOD-16 seed 1034253323), of a date or a currency amount with no cents (`01/01/2020-900.12
-3456`, `$1-900.12 3456`, `202 555 01.23-1/3/20`: re-review PHI1-1), where cc3dd7f6 refused it only because the range
-joined it to the next group (A3); under an SSN or phone label it is refused (SEC-5, GATEWAY1-2), but a label glued to the
-word before it by a lost space is no label, so there it is read as unlabeled and sent, alone and at a range's end
-(`PatientSSN 900.12 3456`, `PaidPhone 202 555 01.23`, and `PatientSSN 01/01/2020-900.12 3456`, `PaidPhone 202 555
-01.23-1/3/20`, which cc3dd7f6 refused only by A3: review PHI2-3; owned by the follow-on leak PR,
-co-001/redact-ssn-phone-leaks, with the proposal to read a label that a change of case sets apart, as `PatientSSN`,
-and to refuse a glued label in capitals, `PATIENTSSN 900.12 3456`, as an unknowable boundary); an SSN or phone glued
+an SSN written with an OCR space and then a whole slashed or dashed date for its last six (`SSN 900 12/03/56`; next to
+a range the fix added it is refused, `SSN 9 01-12-1985-150.00`, as at cc3dd7f6: re-review PHI1-2, review round 3); a
+number written as two whole dates or amounts, or one of each (a currency amount too), joined by a dash, read as a range
+(`9-1-26-1-23-45`; no SSN or phone in a shape the patterns read is one; an SSN read as an amount without cents and a date
+of two separators, `Paid 0,900-12-19.85`, `SSN 1,900-12-19.85`, `SSN 2,900-12-19.85-1/3/20`, and a phone whose last
+group and the next number read as a date that starts a range, `Call 202 555 01.23-12-150.00`, are refused since review
+round 3, as cc3dd7f6 refused them: review PHI2-4); an unlabeled amount-shaped SSN or phone (`900.12 3456`, `202 555
+01.23`), read as an amount as R1 keeps `150.00 1234`: alone, after white space, or as one end of a dash range of two
+amounts (`150.00-900.12 3456`), as at cc3dd7f6; at an end of a range the fix added, with a short group or an amount
+beside it, the letter is refused as at cc3dd7f6 (`01/01/2020-900.12 3456`, `$1-900.12 3456`, `202 555 01.23-1/3/20`:
+re-review PHI1-1, review round 3); under an SSN or phone label it is refused (SEC-5, GATEWAY1-2), but a label glued to
+the word before it by a lost space is no label, so there it is read as unlabeled and sent alone (`PatientSSN 900.12
+3456`, `PaidPhone 202 555 01.23`, as at cc3dd7f6: review PHI2-3; owned by the follow-on leak PR,
+co-001/redact-ssn-phone-leaks, with the proposal to read a label that a change of case sets apart, as `PatientSSN`, and to
+refuse a glued label in capitals, `PATIENTSSN 900.12 3456`, as an unknowable boundary); at a range's end, or in a letter
+whose chain only the range fix's barriers hold, the glued label is read and the letter refused (`PatientSSN
+01/01/2020-900.12 3456`, `PaidPhone 202 555 01.23-1/3/20`, `01/01/2020-150.00-PaidSSN 900 12 34.56`); a masked SSN
+glued after a range's end is refused as at cc3dd7f6 (`01/01/2020-150.00XXX-XX-3456Paid`; glued to a digit or a word
+elsewhere it is the follow-on leak PR's class); an SSN or phone glued
 digit to digit to a date, a year, an amount or a currency amount, which the scan reads as one long group (`SSN
 900-12-3456150.00`, `SSN 01/01/2020900-12-3456`, `$514451/293-6215`: review GATEWAY1-3); spaced and labeled, it is
 refused only where a run of its groups that starts at the label's first group, or at the amount the label reaches, holds
 9 or 10 digits, or 11 starting with 1 (`SSN 900 12 3456150.00`, `SSN 900 12 34561.00`; a run from elsewhere with a group
 of five digits or more is read as a code: review PHI2-6), and sent otherwise (`SSN 900 12 345615.00`, `SSN 900 12 3456150.0`, `Phone 202 555
-012315.00`, `Phone 202 555 01231.00`: re-review GATEWAY1-2); the class holds next to a range too, which cc3dd7f6 refused
-only because the range then joined the next group, A3 (`SSN 900 12 345615.00-01/02/2020`, `SSN
-900123456120.00-01/02/2020`, `Phone: 2025550123150.00-01/03/2020`, `Tel: 202-555-01231 January 2020-150.00`: re-review
-PHI1-2; a proposal: refuse it under a label); an amount-shaped SSN whose first group a date reading joins to the number
-before it (`SSN $10-9.00 12 3456`, where `10-9.00` reads as a date); an amount-shaped SSN or phone after a range and
-white space with its label more than 24 characters before it (`Phone March 11, 2029−2,866.66  960.58 4433`: GATEWAY1-2);
+012315.00`, `Phone 202 555 01231.00`: re-review GATEWAY1-2), as at cc3dd7f6; next to a range the fix added it is refused
+as cc3dd7f6 refused it (`SSN 900 12 345615.00-01/02/2020`, `SSN 900123456120.00-01/02/2020`, `Phone:
+2025550123150.00-01/03/2020`, `Tel: 202-555-01231 January 2020-150.00`: re-review PHI1-2, review round 3); an
+amount-shaped SSN whose first group a date reading joins to the number before it (`SSN $10-9.00 12 3456`, where `10-9.00`
+reads as a date; sent at cc3dd7f6 too); an amount-shaped SSN or phone after a range and white space with its label more
+than 24 characters before it is refused since review round 3 (`Phone March 11, 2029−2,866.66  960.58 4433`, an amount
+beside the range; GATEWAY1-2, PHI3-5);
 an SSN or phone after its label with the call's own identifier between them, set apart by white space or punctuation
 (`SSN Vantree 900.12 3456`, `SSN for Zephyra Vantree: 90012-3456`), where the scan's label window ends at the
 identifier's placeholder, so a shape only a label makes a number is read as unlabeled and sent (found by review round
-2's fix, sent at cc3dd7f6 as well; glued to the number, the label is read past the placeholder: review PHI2-1; owned by
+2's fix, sent at cc3dd7f6 as well; the call's identifier glued to the number is refused, review round 3; owned by
 the follow-on leak PR, co-001/redact-ssn-phone-leaks, with the proposal to read past a placeholder that only white space
 or punctuation sets apart from the number, minding a phone word's own number on the line before a row); a range whose
 day-first ordinal second end has a two-digit year glued to a word that starts like an ordinal suffix
