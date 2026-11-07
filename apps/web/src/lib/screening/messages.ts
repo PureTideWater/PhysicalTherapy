@@ -195,7 +195,7 @@ export function reasonMessages(reasons: readonly ScreeningRejection[], headers?:
   return [...kept, `And ${(all - kept.length).toLocaleString('en-US')} more ${all - kept.length === 1 ? 'problem' : 'problems'} like these.`];
 }
 
-/** The browser's refusals of the file itself, before any row is read. */
+/** The browser's refusals of the file itself, before any row is read: sentences of the "Not sent" list. */
 export const FILE_MESSAGES = {
   empty: 'The file is empty. Choose the CSV you saved.',
   tooLarge: 'The file is larger than 25 MiB. A screening takes at most 50,000 rows of totals; combine rows and choose it again.',
@@ -203,8 +203,12 @@ export const FILE_MESSAGES = {
   notText: 'The file is not UTF-8 text. Save it as CSV (comma-separated, UTF-8) and choose it again.',
   unclosedQuote: 'The file ends inside a quoted cell: a quote is never closed. Save it again as CSV and choose it again.',
   textAfterQuote: 'A cell has text after its closing quote. Save it again as CSV and choose it again.',
-  noFile: 'Choose the file to screen.',
+  /** The browser could not read the file's bytes (a NotReadableError: the file moved, or its permission changed). */
+  unreadable: 'This browser could not read the file. Choose it again.',
 } as const;
+
+/** The file input's own field message when a press finds no file chosen: never a sentence of the "Not sent" list. */
+export const NO_FILE_CHOSEN = 'choose the file to screen';
 
 /**
  * What the screening says while its mail stream is paused (audit #76; docs/adr/0065, D7; the founder's Q12 of

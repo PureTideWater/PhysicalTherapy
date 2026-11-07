@@ -79,11 +79,8 @@ describe('format hints on pattern fields (FRM-04)', () => {
   });
 });
 
-/** Files whose hand-written descriptions may still be 12 px, each with the change that removes it. */
-const SMALL_ALLOWED = new Map([
-  // The screening upload's file and template hints: the form is #42's; remove after #42 merges, with the shared Hint.
-  ['components/screening/upload-form.tsx', 'remove after #42 merges'],
-]);
+/** Files whose hand-written descriptions may still be 12 px, each with the change that removes it (none now). */
+const SMALL_ALLOWED = new Map<string, string>([]);
 
 interface Description {
   readonly file: string;

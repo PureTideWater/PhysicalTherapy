@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { MAILBOX_UNCONFIRMED } from '../lib/screening/address';
+import { FILE_MESSAGES } from '../lib/screening/messages';
 import type { RefusalState } from './form-issues';
 import { type Harness, chromiumInstalled, startHarness } from './test-support/browser';
 
@@ -125,6 +127,75 @@ const PERSON_B = 'synthetic-person-b';
 /** A synthetic password the tests type, joined from words so no scanner reads it as a stored secret. */
 const TYPED_PASSWORD = ['Synthetic', 'typed', 'words', '2026'].join('-');
 const ZIP = ['zip', 'five digits, or ZIP+4 such as 27601-1234'] as const;
+
+/** The screening's SYNTHETIC rows of totals: a header, then one row or two, of 2026's quarters (the harness's content). */
+const SCREENING_HEADER = 'procedure_code,modifiers,units,place_of_service,payer_product,service_band,allowed_total,claim_count';
+const SCREENING_ROWS = ['97110,GP,1,11,ma_noncontracted,2026-Q1,600.00,40', '97140,59 GP,1,11,medicare_ffs,2026-Q2,"2,500.00",50'];
+/** A screening file as the person chooses it: `rows` of SCREENING_ROWS, or a Member ID column the browser refuses. */
+function screeningFile(rows: 1 | 2 | 'member-id'): { readonly name: string; readonly mimeType: string; readonly buffer: Buffer } {
+  const text =
+    rows === 'member-id'
+      ? `procedure_code,modifiers,units,Member ID,place_of_service,payer_product,service_band,allowed_total,claim_count\r\n97110,GP,1,SYNTHMBR0001,11,ma_noncontracted,2026-Q1,600.00,40\r\n`
+      : `${[SCREENING_HEADER, ...SCREENING_ROWS.slice(0, rows)].join('\r\n')}\r\n`;
+  return { name: 'totals.csv', mimeType: 'text/csv', buffer: Buffer.from(text, 'utf8') };
+}
+/** The screening harness's web address, as the page's server would give it (services.origin). */
+const SCREENING_ORIGIN = 'https://app.synthetic.test';
+
+/**
+ * Holds every read of a chosen file (Blob.arrayBuffer) until the test answers it, counting them: each parse reads the
+ * file once. answerRead(page, index, 'fail') rejects as a browser that cannot read the file does (NotReadableError).
+ */
+async function holdReads(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    // The real read, as a Response reads a Blob's bytes (the same bytes arrayBuffer gives).
+    const real = (blob: Blob): Promise<ArrayBuffer> => new Response(blob).arrayBuffer();
+    const held: { go: () => void; fail: () => void }[] = [];
+    Object.assign(window, { heldReads: held });
+    Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob) {
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        held.push({ go: () => void real(this).then(resolve, reject), fail: () => reject(new DOMException('SYNTHETIC unreadable', 'NotReadableError')) });
+      });
+    };
+  });
+}
+
+async function answerRead(page: Page, index: number, answer: 'go' | 'fail' = 'go'): Promise<void> {
+  await page.waitForFunction((at) => ((window as unknown as { heldReads: unknown[] }).heldReads.length > at), index);
+  await page.evaluate(([at, how]) => {
+    (window as unknown as { heldReads: { go: () => void; fail: () => void }[] }).heldReads[at]?.[how]();
+  }, [index, answer] as const);
+}
+
+function readsStarted(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { heldReads: unknown[] }).heldReads.length);
+}
+
+/** Fills the screening's fields with SYNTHETIC values the browser's own checks take. */
+async function fillProspect(page: Page): Promise<void> {
+  await page.fill('#field-practiceName', 'SYNTHETIC Practice');
+  await page.selectOption('#field-state', 'NC');
+  await page.fill('#field-zip', '27601');
+  await page.fill('#field-contactEmail', 'prospect@synthetic.test');
+}
+
+const PROSPECT_IDS = ['#field-practiceName', '#field-state', '#field-zip', '#field-contactEmail'] as const;
+
+async function prospectValues(page: Page): Promise<string[]> {
+  return Promise.all(PROSPECT_IDS.map((id) => page.inputValue(id)));
+}
+
+/** The file input's description and mark, as a screen reader reads them. */
+function fileMarks(page: Page): Promise<{ readonly invalid: string | null; readonly described: string | null }> {
+  return page.locator('#screening-file').evaluate((input) => ({ invalid: input.getAttribute('aria-invalid'), described: input.getAttribute('aria-describedby') }));
+}
+
+/** What each call of the action sent as one entry. */
+async function sentEntry(page: Page, name: string): Promise<readonly (string | undefined)[]> {
+  return (await calls(page)).map((call) => call.entries.find(([entry]) => entry === name)?.[1]);
+}
+
+const SCREEN = 'Screen the file';
 
 /** The id of the focused element, or its tag when it has none. */
 function focused(page: Page): Promise<string> {
@@ -959,6 +1030,254 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['Facility places of service: list at least one place of service']);
     expect(await focused(page)).toBe('split-facility');
     expect([await page.inputValue('#split-facility'), await page.inputValue('#split-non-facility')]).toEqual(['11 22', '02']);
+    await page.close();
+  });
+
+  it('FRM-04: the screening upload leads one refused field in the singular and names it by the page’s label, first in the form, with a link', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await refusedWith(page, invalid(['zip', 'enter five digits, or a ZIP+4 such as 27601-1234']), SCREEN);
+    expect(await page.textContent(`${DESCRIPTION} > p`)).toBe('Fix the field listed here, then try again.');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['ZIP code: enter five digits, or a ZIP+4 such as 27601-1234']);
+    expect(await page.getAttribute(`${SUMMARY} li a`, 'href')).toBe('#field-zip');
+    // The summary is the form's first child, before "About your practice".
+    expect(await page.evaluate((selector) => document.querySelector('form')?.firstElementChild === document.querySelector(selector), SUMMARY)).toBe(true);
+    expect(await focused(page)).toBe('field-zip');
+    expect(await page.textContent('#field-zip-error')).toBe('enter five digits, or a ZIP+4 such as 27601-1234');
+    expect(await prospectValues(page)).toEqual(['SYNTHETIC Practice', 'NC', '27601', 'prospect@synthetic.test']);
+    await page.close();
+  });
+
+  it('FRM-05: while the chosen file is read, the screening’s button stays available and the file’s status says it is being read', async () => {
+    const page = await harness.open('screeningUpload');
+    await holdReads(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await expect.poll(() => readsStarted(page)).toBe(1);
+    const button = page.getByRole('button', { name: SCREEN, exact: true });
+    expect(await button.getAttribute('aria-disabled')).toBeNull();
+    expect(await button.isDisabled()).toBe(false);
+    expect(await button.evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+    expect(await page.textContent('[data-slot="file-status"]')).toBe('Reading the file in this browser…');
+    await answerRead(page, 0);
+    await page.waitForSelector('[data-state="file-ready"]');
+    expect(await page.locator('[data-slot="file-status"] [data-state="reading"]').count()).toBe(0);
+    await page.close();
+  });
+
+  it('FRM-05: a press while the file is read is pending at once, keeps the button’s focus and words, and sends once the read is done', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await holdReads(page);
+    await page.setInputFiles('#screening-file', screeningFile(2));
+    await expect.poll(() => readsStarted(page)).toBe(1);
+    const button = page.getByRole('button', { name: SCREEN, exact: true });
+    await button.click({ timeout: 5_000 });
+    await expect.poll(() => button.getAttribute('aria-disabled')).toBe('true');
+    expect(await focused(page)).toBe('button');
+    expect(await button.textContent()).toBe(SCREEN);
+    expect(await page.textContent('[data-slot="pending-status"]')).toBe('Working…');
+    expect(await calls(page)).toHaveLength(0);
+    await script(page, { hold: {} });
+    await answerRead(page, 0);
+    await expect.poll(async () => (await calls(page)).length).toBe(1);
+    expect(await sentEntry(page, 'rowCount')).toEqual(['2']);
+    // The file itself is never sent: only its rows of totals, and the fields typed.
+    expect((await calls(page))[0]?.entries.map(([name]) => name)).not.toContain('upload');
+    expect(await page.textContent('[data-slot="pending-status"]')).toBe('Working…');
+    await page.evaluate(() => (window as unknown as { harness: Control }).harness.release?.());
+    await expect.poll(() => button.getAttribute('aria-disabled')).toBeNull();
+    expect(await calls(page)).toHaveLength(1);
+    await page.close();
+  });
+
+  it('FRM-05: two presses while the file is read send one request, and the file is read once', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await holdReads(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await expect.poll(() => readsStarted(page)).toBe(1);
+    const button = page.getByRole('button', { name: SCREEN, exact: true });
+    await button.focus();
+    // Two presses in one frame, then Space on the focused button while the first press waits for the read.
+    await page.evaluate((words) => {
+      const screen = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find((element) => element.textContent === words);
+      screen?.click();
+      screen?.click();
+    }, SCREEN);
+    await page.keyboard.press('Space');
+    await script(page, { refuse: {} });
+    await answerRead(page, 0);
+    await expect.poll(async () => (await calls(page)).length).toBe(1);
+    await page.waitForTimeout(200);
+    expect(await calls(page)).toHaveLength(1);
+    expect(await readsStarted(page)).toBe(1);
+    await page.close();
+  });
+
+  it('FRM-05: a file chosen while a press prepares is the one sent, never the file chosen before it', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await holdReads(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await expect.poll(() => readsStarted(page)).toBe(1);
+    await page.getByRole('button', { name: SCREEN, exact: true }).click({ timeout: 5_000 });
+    await page.setInputFiles('#screening-file', screeningFile(2));
+    await expect.poll(() => readsStarted(page)).toBe(2);
+    await script(page, { refuse: {} });
+    await answerRead(page, 0);
+    await page.waitForTimeout(200);
+    expect(await calls(page)).toHaveLength(0);
+    await answerRead(page, 1);
+    await expect.poll(async () => (await calls(page)).length).toBe(1);
+    await page.waitForTimeout(200);
+    expect(await sentEntry(page, 'rowCount')).toEqual(['2']);
+    await page.close();
+  });
+
+  it('FRM-05: a file this browser cannot read is listed under “Not sent”, keeps the form, and a press once it is chosen again sends once', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await holdReads(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await answerRead(page, 0, 'fail');
+    const refused = page.locator('[data-state="file-refused"]');
+    await refused.waitFor();
+    expect(await refused.locator('[data-slot="alert-title"]').textContent()).toBe('Not sent');
+    expect(await refused.locator('#screening-file-problems > p').textContent()).toBe('Nothing was sent. Choose the file again once each problem below is fixed:');
+    expect(await refused.locator('li').allTextContents()).toEqual([FILE_MESSAGES.unreadable]);
+    await page.getByRole('button', { name: SCREEN, exact: true }).click();
+    expect(await focused(page)).toBe('screening-file');
+    expect(await calls(page)).toHaveLength(0);
+    expect(await page.locator('[data-boundary]').count()).toBe(0);
+    expect(await prospectValues(page)).toEqual(['SYNTHETIC Practice', 'NC', '27601', 'prospect@synthetic.test']);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await answerRead(page, 1);
+    await page.waitForSelector('[data-state="file-ready"]');
+    expect(await refused.count()).toBe(0);
+    await script(page, { refuse: {} });
+    await page.getByRole('button', { name: SCREEN, exact: true }).click();
+    await expect.poll(async () => (await calls(page)).length).toBe(1);
+    await page.waitForTimeout(200);
+    expect(await calls(page)).toHaveLength(1);
+    await page.close();
+  });
+
+  it('FRM-04: a press with no file chosen names the file input in the summary and under it, and focuses it; nothing is sent', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await send(page, SCREEN);
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['File to screen: choose the file to screen']);
+    expect(await page.textContent('#screening-file-error')).toBe('choose the file to screen');
+    expect(await page.locator('#screening-file-error').evaluate((error) => error.parentElement?.textContent)).toBe('Error:choose the file to screen');
+    expect(await focused(page)).toBe('screening-file');
+    expect(await fileMarks(page)).toEqual({ invalid: 'true', described: 'screening-file-error screening-file-hint' });
+    expect(await calls(page)).toHaveLength(0);
+    await page.close();
+  });
+
+  it('FRM-01: a dropped connection while sending a screening keeps every value and the chosen file, and says it is not confirmed', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await script(page, { drop: true });
+    await send(page, SCREEN);
+    expect(await page.textContent(TITLE)).toBe('Not confirmed');
+    expect(await page.locator('[data-boundary]').count()).toBe(0);
+    expect(await prospectValues(page)).toEqual(['SYNTHETIC Practice', 'NC', '27601', 'prospect@synthetic.test']);
+    expect(await page.locator('#screening-file').evaluate((input) => (input as HTMLInputElement).files?.[0]?.name)).toBe('totals.csv');
+    expect(await page.locator('[data-state="file-ready"]').count()).toBe(1);
+    await page.close();
+  });
+
+  it('FRM-04: the file input is marked and described by both the server’s refusal and this browser’s problems, in a fixed order, and React alone owns its marks', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await refusedWith(page, invalid(['upload', 'column 4 holds member IDs; remove the column, then choose the file again']), SCREEN);
+    expect(await fileMarks(page)).toEqual({ invalid: 'true', described: 'screening-file-error screening-file-hint' });
+    expect(await focused(page)).toBe('screening-file');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['File to screen: column 4 holds member IDs; remove the column, then choose the file again']);
+    await page.setInputFiles('#screening-file', screeningFile('member-id'));
+    await page.waitForSelector('[data-state="file-refused"]');
+    expect(await fileMarks(page)).toEqual({ invalid: 'true', described: 'screening-file-error screening-file-problems screening-file-hint' });
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await script(page, { refuse: {} });
+    await page.getByRole('button', { name: SCREEN, exact: true }).click();
+    await expect.poll(async () => (await calls(page)).length).toBe(2);
+    await expect.poll(() => fileMarks(page)).toEqual({ invalid: null, described: 'screening-file-hint' });
+    await page.close();
+  });
+
+  it('FRM-04: a screening whose page fails the origin check says so, names PaidWhole’s web address to open, refreshes nothing and keeps the values', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await refusedWith(page, STALE, SCREEN);
+    expect(await page.textContent(TITLE)).toBe('Not done');
+    expect(await page.textContent(`${DESCRIPTION} > p`)).toBe(
+      `PaidWhole could not confirm that this page came from PaidWhole’s own web address (for example, a translated or saved copy cannot send a file), so nothing was sent. Open ${SCREENING_ORIGIN}/screening, fill in the form again, then screen the file.`,
+    );
+    const link = page.locator(`${DESCRIPTION} a`);
+    expect(await link.getAttribute('href')).toBe(`${SCREENING_ORIGIN}/screening`);
+    expect(await link.evaluate((element) => element.classList.contains('font-mono'))).toBe(true);
+    const text = (await page.textContent(SUMMARY)) ?? '';
+    expect(text).not.toContain('up to date');
+    expect(text).not.toContain('Reload');
+    expect(text).not.toContain(`press “${SCREEN}” again`);
+    await page.waitForTimeout(200);
+    expect(await refreshes(page)).toBe(0);
+    expect(await prospectValues(page)).toEqual(['SYNTHETIC Practice', 'NC', '27601', 'prospect@synthetic.test']);
+    await page.close();
+  });
+
+  it('FRM-04: a mailbox the server could not confirm offers the keep box, names “Work email”, and the address hint does not say it twice', async () => {
+    const page = await harness.open('screeningUpload');
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await refusedWith(page, invalid(['contactEmail', MAILBOX_UNCONFIRMED]), SCREEN);
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual([`Work email: ${MAILBOX_UNCONFIRMED}`]);
+    expect(await page.isVisible('#field-keepAddress')).toBe(true);
+    expect((await page.textContent('[data-slot="address-hint"]')) ?? '').not.toContain(MAILBOX_UNCONFIRMED);
+    expect(await focused(page)).toBe('field-contactEmail');
+    await page.close();
+  });
+
+  it('FRM-04: the screening’s audit link reaches a form-wide item only, never a field’s message, on the first render or after', async () => {
+    const page = await harness.open('screeningUpload');
+    // Every summary item ever inserted, as it was inserted: a link in a field's item on the first render is caught too.
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      Object.assign(window, { seenItems: seen });
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (node instanceof HTMLElement) {
+              for (const item of node.matches('li') ? [node] : [...node.querySelectorAll('li')]) {
+                seen.push(item.innerHTML);
+              }
+            }
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    await fillProspect(page);
+    await page.setInputFiles('#screening-file', screeningFile(1));
+    await page.waitForSelector('[data-state="file-ready"]');
+    await refusedWith(page, invalid(['zip', 'this ZIP code is not in the locality map; check it, or request an audit']), SCREEN);
+    expect(await page.locator(`${SUMMARY} a[href="/request-audit"]`).count()).toBe(0);
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['ZIP code: this ZIP code is not in the locality map; check it, or request an audit']);
+    const fieldItems = await page.evaluate(() => (window as unknown as { seenItems: string[] }).seenItems);
+    expect(fieldItems.length).toBeGreaterThan(0);
+    expect(fieldItems.filter((html) => html.includes('/request-audit'))).toEqual([]);
+    await refusedWith(page, invalid(['input', 'new screenings are paused for now; try again later, or request an audit']), SCREEN);
+    expect(await page.getAttribute(`${SUMMARY} li a`, 'href')).toBe('/request-audit');
     await page.close();
   });
 

@@ -239,7 +239,7 @@ screeningTest('a specialist approves the split; a file with patient information 
     await expect(rules.locator('[data-rule="claim-floor"]')).toContainText('tells you how many rows, claim lines and dollars it left out');
     await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('Leave denied lines out of every total');
     await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('A denial is not a rate variance');
-    await expect(page.locator('[data-slot="template-hint"]')).toContainText(
+    await expect(page.locator('#screening-template-hint')).toContainText(
       'The template’s first lines state its rules: each row sums at least 11 claim lines, and denied lines are left out of every total and claim count.',
     );
     // The template file states them too, as note lines above its header, in plain ASCII so a spreadsheet shows them as written.
