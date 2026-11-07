@@ -114,9 +114,21 @@ Effect: any PR's unit job can go red at random.
   no identifier of any kind for any patient in the call, AND the rule decides it from structure at run time, not surface text;
   (3) report every such class with counts as sent-exempt or refused-as-base, in the PR description and here; ask only if a class
   meets neither. Added to B's prompt verbatim; B restarted from its progress file (07:22Z).
+- 2026-11-07T10:50Z: **candidate B committed** (local branch rg-cand-b: 3f76385e, fefd22d2 on 3fcb9359; pushed as WIP
+  `co-001/wip-redact-range-glued-b`). It reverts the glued reading (21684dff, 5a13c9d9), keeps 8d98b8bb and d9ae7b30, adds
+  `ownIdentifierGlued` to the check and reads each letter with cc3dd7f6's barriers ("kept") beside the range fix's ("held").
+  Gate vs cc3dd7f6: PHI initial/DOB/member/claim 0, name 5, SSN 385, phone 171; must-stay code/unit/amount/ID/ref changed 0;
+  679/679 tests; the three CI seeds 79/79; MOD-16 stress 7x20k 0 bad; slowest 587 ms. Sent-exempt: none. Refused-as-base and
+  fail-safe classes recorded in ADR 0054 (60 must-stay letters with the own DOB glued digit to digit; 187 letters with a glued own
+  identifier the base sent in clear). **Two classes meet neither part of the ruling** and went to the orchestrator (10:55Z):
+  (A) SSN 385 / phone 171 in shapes no pattern reads, in letters the base refused only via the range's own digits; the base
+  sends the same shapes without a range (the leaks PR's class); closing it here refuses MOD-16 must-stay letters (297 or ~10 per
+  20k) and so re-creates the CI flake; recommended: a recorded residual here, closed in co-001/redact-ssn-phone-leaks.
+  (B) name 5 (month-word patient names); recommended: accept and record. The reviews of B run meanwhile.
 
 ## Waiting on someone
-None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
+- The orchestrator: a ruling on classes (A) and (B) (asked 2026-11-07 10:55 UTC). The reviews continue meanwhile.
+- Previously: none. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
 meanwhile as the safer option.)
 
 ## Next step
