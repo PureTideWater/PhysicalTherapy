@@ -310,9 +310,9 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     });
   });
 
-  it('counts each platform mail code, an unsent probe and the web\'s refused validation and validation cap from the logs, by the code alone (eight filters)', () => {
+  it('counts each platform mail code, an unsent probe and the web\'s refused validation and validation cap from the logs, by the code alone (nine filters)', () => {
     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(MAIL_NAMESPACE));
-    expect(filters).toHaveLength(8);
+    expect(filters).toHaveLength(9);
     const platform = ref(logicalIdOf(stack, stack.monitoring.platformLogGroup));
     const web = ref(logicalIdOf(stack, stack.monitoring.webLogGroup));
     const expected = [
@@ -432,12 +432,40 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     expect(ready - missed).toBe(22);
   });
 
-  it('has seventeen mail alarms', () => {
+  it('pages on a password-changed email not delivered or not sent within 24 hours, from the platform\'s log, by the code alone (docs/adr/0091, D9)', () => {
+    expect(MAIL_PLATFORM_ALARM_CODES).toEqual(['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED']);
+    expect(source('apps/worker/src/mail/streams.ts')).toContain("passwordNoticeUndelivered: 'PASSWORD_NOTICE_UNDELIVERED'");
+    const metricName = mailCodeMetricName('PASSWORD_NOTICE_UNDELIVERED');
+    expect(metricName).toBe('PasswordNoticeUndelivered');
+    const filter = resourcesOf(template, 'AWS::Logs::MetricFilter').find(([, candidate]) => JSON.stringify(propertiesOf(candidate).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+    expect(propertiesOf((filter as [string, CfnResource])[1])).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
+      FilterPattern: '{ $.error_code = "PASSWORD_NOTICE_UNDELIVERED" }',
+      MetricTransformations: [{ MetricNamespace: MAIL_NAMESPACE, MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+    });
+    const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.mailCodeAlarms.PASSWORD_NOTICE_UNDELIVERED)));
+    expect(alarm).toMatchObject({
+      Namespace: MAIL_NAMESPACE,
+      MetricName: metricName,
+      Statistic: 'Sum',
+      Period: 300,
+      EvaluationPeriods: 1,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
+    });
+    expect(alarm.Dimensions).toBeUndefined();
+    expect(alarm.AlarmDescription).toContain('password-changed email did not reach its account, or was not sent within 24 hours');
+    expect(alarm.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.10');
+  });
+
+  it('has eighteen mail alarms', () => {
     const mail = resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, alarm]) => {
       const properties = propertiesOf(alarm);
       return properties.Namespace === MAIL_NAMESPACE || properties.Namespace === 'AWS/SES' || (properties.Namespace === 'AWS/SQS' && JSON.stringify(properties.Dimensions).includes('MailStreamsEvents'));
     });
-    expect(mail).toHaveLength(17);
+    expect(mail).toHaveLength(18);
   });
 
   it('outputs every DNS record the founder sets at the registrar, and the sets and queues', () => {

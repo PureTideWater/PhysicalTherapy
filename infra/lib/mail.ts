@@ -91,9 +91,10 @@ export const MAIL_EVENTS_QUEUE_PERIOD_SECONDS = 300;
 /**
  * The codes the platform jobs log as `error_code` that page the operator, each counted by its own metric filter on the
  * platform's log group and alarmed at one in five minutes (D5): the screening stream paused, a notice not delivered to a
- * recipient, a notice with no recipient at all, an invitation not delivered, a stream with no probe back in 26 hours.
+ * recipient, a notice with no recipient at all, an invitation not delivered, a stream with no probe back in 26 hours, and
+ * a password-changed email not delivered or not sent within 24 hours (docs/adr/0091, D9).
  */
-export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED'] as const;
+export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED'] as const;
 export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
 export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
 

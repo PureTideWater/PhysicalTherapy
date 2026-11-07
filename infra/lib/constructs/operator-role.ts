@@ -72,7 +72,8 @@ export const SUPPORT_MAIL_BUCKET_ACTIONS = ['s3:ListBucket'] as const;
  *   one scratch instance, give it a one-time master password, wait for it and delete it, all on that
  *   instance's ARN; KMS grants for the encrypted snapshot only through RDS and only for AWS resources.
  * - SES (docs/adr/0065): the support-access and dunning notices through the notices stream's set and MailFromAddress's
- *   identity, from MailFromAddress alone; the daily probes through every set and both identities, to the mailbox
+ *   identity, from MailFromAddress alone; the password-changed notice (docs/adr/0091) through the transactional set and
+ *   MailFromAddress's identity, from MailFromAddress alone; the daily probes through every set and both identities, to the mailbox
  *   simulator's two addresses alone (`ses:Recipients`, which must be present); the account's status and both identities read; and the
  *   screening set's sending read and switched, on that set alone (the cut-off pauses only the screening stream). No
  *   statement names `identity/*`.
@@ -187,6 +188,14 @@ export class OperatorRole extends Construct {
         sid: 'NoticeEmail',
         actions: ['ses:SendEmail'],
         resources: [props.mail.mailIdentityArn, props.mail.configurationSetArns.notices],
+        conditions: { StringEquals: { 'ses:FromAddress': props.mail.mailFromAddress } },
+      }),
+      // The password-changed notice (docs/adr/0091, D5): the transactional set and MailFromAddress's identity alone, from
+      // MailFromAddress, to the account's own address; the reset code goes through the same set.
+      new iam.PolicyStatement({
+        sid: 'PasswordNoticeEmail',
+        actions: ['ses:SendEmail'],
+        resources: [props.mail.mailIdentityArn, props.mail.configurationSetArns.transactional],
         conditions: { StringEquals: { 'ses:FromAddress': props.mail.mailFromAddress } },
       }),
       new iam.PolicyStatement({

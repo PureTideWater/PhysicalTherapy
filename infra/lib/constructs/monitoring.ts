@@ -150,19 +150,22 @@ export interface MonitoringProps {
  * minutes in a row; and its failed runs (any error line, or a run out of attempts). The web app's uploads sent to wait
  * (over an account's share or the day's cap, Q7) are counted from the web's group. No metric has a dimension.
  *
- * The mail streams (docs/adr/0065; audit #76) add eight metric filters, each with its alarm: five codes the platform
+ * The mail streams (docs/adr/0065; audit #76) add nine metric filters, each with its alarm: six codes the platform
  * jobs log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a
  * recipient, a notice with no recipient, an invitation not delivered, a stream with no probe back in 26 hours, logged on
- * every run while it holds), each alarmed at one in five minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
+ * every run while it holds, and a password-changed email not delivered or not sent within 24 hours, docs/adr/0091), each
+ * alarmed at one in five minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
  * has one; the web's code for an address validation AWS refused (the address-validation account's role or its call),
  * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
  * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
  * the reputation and queue alarms.
  *
- * Reset and enrolment (R-11; docs/adr/0088, D7; test matrix SEC-23) add five metric filters on the web's group, each
+ * Reset and enrolment (R-11; docs/adr/0088, D7; test matrix SEC-23) add eight metric filters on the web's group, each
  * with its alarm (infra/lib/security-events.ts, RESET_AND_ENROLMENT_COUNTS): a reset request not delivered for a code
  * that means the app and Cognito disagree or mail is broken, one not delivered for a throttle code, a failed reset
- * request, a refused second-factor enrolment and a refused client credential. Reset requests per user are counted by a
+ * request, a refused second-factor enrolment, a refused client credential, the start-up probe's refused credential,
+ * three reset requests in an hour answered after their floor (docs/adr/0081), and a completed reset whose sessions were
+ * not ended, which queued no password-changed email (docs/adr/0091, D15). Reset requests per user are counted by a
  * Contributor Insights rule keyed on the user ID, never by a metric with a user dimension, and alarm at five in an
  * hour; the alarm names no user.
  *
@@ -512,6 +515,7 @@ export class Monitoring extends Construct {
       NOTICE_UNDELIVERED: `A ${props.environmentName} support-access or dunning notice did not reach a recipient: reach the practice or organization another way.`,
       NOTICE_UNDELIVERABLE: `A ${props.environmentName} support-access or dunning notice had no one to send to: reach the practice or organization another way.`,
       INVITATION_UNDELIVERED: `A ${props.environmentName} invitation email was not delivered: tell the inviting administrator.`,
+      PASSWORD_NOTICE_UNDELIVERED: `A ${props.environmentName} password-changed email did not reach its account, or was not sent within 24 hours: tell the person another way and check the platform service and SES (docs/runbooks/deliverability.md, 3.10).`,
       MAIL_PROBE_MISSED: `A ${props.environmentName} mail stream's probes have not come back: ${String(MAIL_PROBE_HOURS.missed)} hours after the older of its last delivered and bounced probe, or ${String(MAIL_PROBE_HOURS.firstProof)} hour after the first probe sent since a resume, sent and lost or never sent (then MAIL_PROBE_UNSENT too). It stays raised, and the probes go again hourly, until both come back. Staging and production close the screening ${String(MAIL_PROBE_HOURS.ready)} hours after the last came back, and keep a resumed one closed until both are back; check the identity, the event destination, the rule, the queue and the job (docs/runbooks/deliverability.md, 3.7).`,
     };
     const codeAlarms: Partial<Record<MailPlatformAlarmCode, cloudwatch.Alarm>> = {};
@@ -575,6 +579,7 @@ export class Monitoring extends Construct {
       SecondFactorEnrolmentRefused: `A ${props.environmentName} sign-in that passed the password was refused second-factor enrolment outside a live invitation (docs/adr/0088, D3): read the user ID, and treat it as an attempted takeover until the person is confirmed.`,
       ClientCredentialRefused: `Cognito refused the ${props.environmentName} web client's credential, so sign-in fails for everyone: check the client secret and the client ID the web task was given (docs/adr/0088, D2).`,
       ClientCredentialProbeRefused: `A ${props.environmentName} web task's start-up probe found its Cognito client credential refused, so its health check fails and the deploy rolls back: check the client secret and the client ID the new task definition was given (docs/adr/0088, D8).`,
+      PasswordResetSessionsNotEnded: `A ${props.environmentName} password reset changed the password at Cognito, but the app could not end the account's sessions or record the reset, so no password-changed email was queued: read the user ID from the line, end the account's access and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"; docs/adr/0091, D15).`,
       PasswordResetRequestOverFloor: `Three ${props.environmentName} password reset requests in an hour were answered after their floor, so their timing could tell an account from none: find the slow call (Cognito, the message trigger's cold start), or raise RESET_REQUEST_FLOOR_MS (docs/adr/0081).`,
     };
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
