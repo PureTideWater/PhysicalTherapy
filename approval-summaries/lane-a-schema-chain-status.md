@@ -10,6 +10,15 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 06:25 UTC (acting Lane A): PR 5's freeze ask, first draft done but not relayed** (wf_2c1376ed-a7d; kept as
+  `approval-summaries/lane-a-wip/pr5-ask/draft-v1-long.md` with its tested SQL). It asks only #93's F9 (roi_links_valid
+  accepting a fifth key actionable_open_lines; roi_statement_rules checking the figure against the lines it names) and a
+  second gap found while testing (roi_links_valid lets an empty links object through); the SUITE-CAP-3 items are "ask
+  later" (no body or measurement yet) or "not needed". It did not converge (52 KB; 21 issues in its third round, mostly
+  that it put unfrozen writer code under the grant). **Running: wf_c7d47053-463:** a short rewrite (grant = the frozen
+  bodies only, exact text in an appendix; independent yes/no questions with every combination's outcome), checked by
+  accuracy, scope and founder-reader critics against the current base until a round finds nothing. Then the path goes
+  to the orchestrator.
 - **2026-11-07 06:05 UTC (acting Lane A): #126's second review round DONE (default agents, three rounds) and its blocking
   finding fixed: head 9824f4e9.** wf_a71650bd-ea2: **F1 / MONEY-R2-1 (blocking, money), confirmed by a red db test:**
   with two-chains.835 uploaded before paired.835, a PLB L6's payment written in pass 1 blocked its own take-back in pass 2,
