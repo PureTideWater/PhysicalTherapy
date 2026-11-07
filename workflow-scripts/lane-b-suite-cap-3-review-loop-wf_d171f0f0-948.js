@@ -29,12 +29,14 @@ phase('Review')
 const seen = []
 const log_ = []
 let dry = 0, round = 0
-while (dry < 1 && round < 3) {
+while (dry < 1 && round < 4) {
   round++
   const prior = seen.length ? `Findings already raised in earlier rounds (do not repeat them; look for what they missed and check that the fixes applied for them are right): ${JSON.stringify(seen)}` : ''
-  const found = (await parallel(LENSES.map(l => () => agent(`${RULES}
+  let found = (await parallel(LENSES.map(l => () => agent(`${RULES}
 Round ${round}. Your task: an ADVERSARIAL REVIEW of ${DESIGN}, ${ASK} and the candidate in ${CL} through ${l.text} ${prior} ${SAVE(`loop-r${round}-${l.key}.md`, 'findings so far')}
-Return a verdict (build / build with changes / redesign) and findings rated blocking, should-fix or nit, each with evidence (file:line, a recorded result or a probe) and the fix.`, { label: `review:r${round}:${l.key}`, phase: 'Review', schema: FIND }).then(r => r ? r.findings.map(f => ({ ...f, lens: l.key, verdict: r.verdict })) : [])))).filter(Boolean).flat()
+Return a verdict (build / build with changes / redesign) and findings rated blocking, should-fix or nit, each with evidence (file:line, a recorded result or a probe) and the fix.`, { label: `review:r${round}:${l.key}`, phase: 'Review', schema: FIND }).then(r => r ? r.findings.map(f => ({ ...f, lens: l.key, verdict: r.verdict })) : null))))
+  if (found.some(x => x === null)) { log(`round ${round}: a reviewer returned nothing; the round does not count as dry`); log_.push({ round, failed: true }); if (round >= 3) break; continue }
+  found = found.flat()
   const fresh = found.filter(f => !seen.some(s => s.key === key(f)))
   fresh.forEach(f => seen.push({ key: key(f), lens: f.lens, title: f.title }))
   if (!fresh.length) { dry++; log(`round ${round}: no fresh findings`); log_.push({ round, fresh: 0, survived: 0 }); break }
