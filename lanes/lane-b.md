@@ -2322,3 +2322,53 @@ Heads checked live at 09:43 UTC (`git ls-remote origin`, the open PRs; no tags);
 - Records: LANES.md claim rows (P2, ux-forms-after-42, 4b closed, SUITE-CAP-3, #126, UX PR 8, MOD-16, #129, slice 2,
   password-changed-notice, dark-mode-ship) and "Handed to Lane A" (PR 5's ask); the rolling handoff, now current as of
   09:40 UTC.
+
+### 2026-11-07 12:40 UTC (Lane B's orchestrator)
+Heads from the sessions' reports (not re-checked live: the weekly cap at its warning); `claude/build-platform` fetched at
+ce95546d; the orchestrator's notes from 09:40 to 12:38 UTC.
+
+- **#132 (ux-forms-after-42) merged as ce95546d** (11:32 UTC; head 109654d6): every required check green; the
+  fresh-clone verification passed; approval-of-record re-ran green after ready. Its fix round (bceda579, the base
+  8a722f80 merged) fixed the UX review's three should-fixes and nits; security and privacy clean, with the ruling that the
+  late re-send's second result email is accepted as the safer option. The UX PR strikes (67, 68, 74, 75, 84) and
+  follow-up proposals are in `approval-summaries/lane-b-ux-forms-after-42-status.md`. Its push runs on ce95546d are all
+  green (ci, mutation, screening-capacity; 11:48 UTC). **The claim row is closed. S3 stopped clean** (no subscriptions,
+  check-ins or workflows) and takes no new item under the cap. #133, #129 and #126 take ce95546d at their own base merges.
+- **#133 (S4, slice 2) at 972cae9c** (11:45 UTC; the base ce95546d merged clean). **The mutation-gate change:** the gate
+  was red on a wall-clock test (100k-character templates under 1,500 ms) failing under CI load with a mutant active. The
+  test moved **unchanged** to its own file, is still run by `unit`, and is excluded from mutation runs like pricing's
+  performance test (7984faa8; 15 packets shards and the gate green, scores identical). **The orchestrator checked it: not
+  a skip or a quarantine** (`unit` still runs it; the pricing precedent). At 12:36 UTC the mutation check was red again;
+  the fixer is re-running six packets shards. Next: CI green, the fresh-clone verification, the merge.
+- **S1, MOD-16: candidate B** committed as fefd22d2 (10:53 UTC); B's WIP pushed as `co-001/wip-redact-range-glued-b`
+  fefd22d2 (10:54 UTC).
+  - **B's gate against cc3dd7f6 (975,489 letters):** initials, DOB, member ID and claim number 0; name parts 5; SSN 385;
+    phone 171; must-stay letters changed 0; 679 of 679 tests; the three CI seeds 79 of 79; stress 7 x 20,000 with 0
+    bad; slowest 587 ms. Send-exempt classes: none; the refused-as-base classes listed; fail-safe refusals 60 (an own
+    DOB glued digit to digit, must-stay) and 187 (a glued own identifier the base sent in clear).
+  - **Ruling (A), 10:53 UTC: SSN 385 and phone 171 accepted as a pinned residual.** They are shapes no pattern reads,
+    the pre-existing leak class of `co-001/redact-ssn-phone-leaks`, exposed by removing the MOD-16 bug's accidental
+    refusal; closing them here re-creates the flake. Recorded as pinned rows and an ADR 0054 entry naming
+    `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22); that PR's acceptance is that the pinned rows flip. **The leaks PR
+    is S1's very next item, exempt from the cap hold (PHI safety), and must land before any real PHI is processed**
+    (the founder owns launch).
+  - **Ruling (B), 10:53 UTC: name parts 5 (month-word name parts) accepted and recorded,** a named case in the leaks
+    PR's design.
+  - S1 acknowledged at 10:54 UTC: both rulings applied to every review, fix, final and critic prompt; the workflow
+    restarted at review round 1 (the gate and B cached); its status file records the leaks-PR line. At 12:38 UTC its
+    fixer is on round 1's findings (679 tests green). No PR yet.
+- **#126 (S2), round 4 at 9c68a4be** (11:10 UTC; the base 8a722f80 merged): fixed F-M2-1 (three of three judges:
+  LED-R1's widening mis-split a PLB L6 naming the latest correction), MONEY-R4-1 (a later claim match could put interest
+  above the cash) and nits. Round 2 confirmed two more money should-fixes (a partly written take-back gave an
+  order-dependent outcome; `mayYetHold`'s condition (b) had no committed test); in progress at 12:38 UTC, then round 3,
+  the full suite, CAS-42.5, the body, the verification and the line to the orchestrator. PR 1 held; PR 5's ask with the
+  co-founder (no answer yet).
+- **The check-in at 12:38 UTC:** no failed sessions. Running: S1 (the fixer on review round 1's findings), S2 (#126's two
+  money findings; its own check-in 16:11 UTC), S4 (#133's mutation shards re-running), SUITE-CAP-3 (slice 3 building;
+  slices 1 and 2 committed). Idle by design: #129 (waits on MOD-16), P2 (held), S3 and S5 (done; no new item under the
+  weekly cap). #126's suggested line is not posted yet; no answer yet on PR 5's freeze ask. `claude/build-platform`
+  ce95546d.
+- **Counters:** none allocated (MOD-21 and MOD-22 stay reserved for the leaks PR). Next free unchanged.
+- Records: LANES.md claim rows (Forms, closed; packet-figure-placeholders; MOD-16; #126; SUITE-CAP-3; the SSN and phone
+  leaks) and Queues item 22 (the leaks PR: must land before any real PHI is processed; next for S1 after MOD-16; exempt
+  from the cap hold); the rolling handoff, now current as of 12:40 UTC.
