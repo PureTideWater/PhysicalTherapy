@@ -23,10 +23,12 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
 
 ## Current state (2026-11-06 23:05 UTC)
 - Branch cut at **31a7345f** (#130) in `/home/user/ux-screening-result-words`, installed. Nothing pushed yet.
-- **Next:** the build workflow (scout re-pins §11 against the current tree, a completeness critic, the builder, the fast checks); then the push and the draft PR.
+- **Running:** the build workflow wf_efec3b83-f5b (from 00:35 UTC 2026-11-07; script archived): a scout re-pins §11 against the tree, a completeness critic, the builder (red-first, commits by theme), then the fast checks and the screening e2e specs. Safety check-in trig_01FxaPbwBtsYBNbRQHn41pQs at 05:44 UTC.
+- **Next:** the push and the draft PR; then the before/after shots and the one UX and brand review.
 
 ## Waiting on someone
 - Nothing.
 
 ## Log
+- 2026-11-07 00:35 UTC: the worker restarted after the status push; worktree intact; PostgreSQL restored; build workflow wf_efec3b83-f5b started.
 - 2026-11-06 22:57 UTC: the orchestrator's GO (S5). 23:00: branch cut at 31a7345f; 0 release tags.

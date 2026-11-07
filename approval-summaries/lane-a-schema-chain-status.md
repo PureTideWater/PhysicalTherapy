@@ -10,6 +10,19 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 00:40 UTC (acting Lane A): #126 pushed d2fdd106** (fast-forward of c49367c5 through the hook; also
+  `co-001/wip-interest-fix`): base cc3dd7f6 (#128) merged once as e81cd5af (no conflict; provenance only); the full local
+  suite once on that tree: unit 10,001 + 4 skipped, infra 793, golden 381, oracle 717, ledger oracle 12, test:db 9,899 + 1
+  skipped, e2e 83, Stryker 18 shards rc 0; the mutation gate found 2 survivors at interest.ts:353 (LED-R2's sign filter),
+  killed by d2fdd106 (test only; money-ledger shard re-run: interest.ts 100%, 317 mutants); fast checks green; domain model
+  **f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7, line 7469** (provisional). PR body refreshed (51,089
+  characters, read back). **The second review round's two reviewers were cut off by the 5-hour limit (~23:55) without
+  returning, so it is NOT done** (their notes: no defect found in what they had checked). CAS-42.5, the re-shots and the
+  verification did not start. Base now 31a7345f (merged once right before the merge).
+  **Running: wf_29adffb1-b27** (script archived): the second round redone (payment-engine; db, concurrency and security;
+  skeptic per finding; completeness critic; loop until dry), fixes if any, CAS-42.5 on the final head, UX-INT-1 re-shots,
+  the body, the fresh-clone verification reading CI. Then: mark ready, post the line, link to the orchestrator.
+  Resumed beside it: wf_255f9403-721 (the read-only schema-queue batching plan; 5 of 7 scouts done before the stop).
 - **FOUNDER DECISION (Tyler Williams), relayed by the co-founder through the orchestrator, 2026-11-06 ~22:45 UTC:** GRANTED, the
   ledger freeze exception for new bodies of `ledger_line_net` and `ledger_entry_rules` exactly as written in
   `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` (one migration, CREATE OR REPLACE; no table, column,

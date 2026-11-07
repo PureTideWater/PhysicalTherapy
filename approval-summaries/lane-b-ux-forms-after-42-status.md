@@ -9,4 +9,5 @@ Open questions: none.
 <!-- RESUME-BLOCK -->
 ## Current state
 - **2026-11-06 23:00 UTC:** claimed; base 31a7345f (#130). Next: design refresh (7.8 against the base) with one reviewer and a critic, as a workflow; then build, before/after shots, draft PR, the UX and brand review, fix round with the full suite once, one push, CI, verification, merge.
+- **2026-11-07 00:35 UTC:** design refresh wf_8ed4a036-bce (`workflow-scripts/lane-b-ux-forms-after-42-design-wf_8ed4a036-bce.js`) stopped by the account's 5-hour limit at its start (reset 00:10 UTC) and resumed in the same run; PostgreSQL restarted by setup-container after a worker restart. Progress `lane-b-ux-forms-after-42-wip/progress/`. Local branch co-001/ux-forms-after-42 = 31a7345f (nothing to push yet).
 <!-- RESUME-BLOCK -->
