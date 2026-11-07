@@ -1,0 +1,22 @@
+# verify131 progress (fresh-clone verification of PR #131 @ 9e577017)
+Started 2026-11-07 (fresh; no earlier verify131.md).
+- [x] 1 clone at verify131/clone, HEAD=9e577017; ls-remote branch head 9e577017; origin/claude/build-platform=31a7345f IS ancestor (merge-base 31a7345f; base unmoved). 11 commits (94fe2f7d..9e577017).
+- [x] 2 CI (03:20Z): all 22 check runs completed; runs ci 42331675586, mutation 42331675490, screening-capacity 42331675486, approval-of-record 42331675508 + 42333364912 (03:18, PR edit), all success attempt 1. CI merge b302d45b = 31a7345f + 9e577017.
+  - unit: 479 files, 9952 passed | 2 skipped (9954); no redact flake
+  - db: 38/3291, 37/2256, 37/3311, 37/1006 -> 149 files, 9864 passed
+  - e2e: shard1 41 passed + brand baselines 5 passed; shard2 40 passed (screening-phone:123, screening:170 SCR-01..07/18, :742 SCR-15); no flaky/retry. total 81
+  - all green success (static lint unit db domain-model build e2e images); mutation success (no money path changed); gate success with advisory S4 time warning 55.1 s (base push 31a7345f: 54.5 s, pre-existing); aor success (APPROVAL_REVIEW_REQUIRED unset; no review of record needed)
+  - logs in verify131/logs/
+- [x] 3 diff review: 15 files. PR body saved verify131/pr131-body.md.
+  - cond 1 OK: labels.test.ts:39-54 VERSIONS comment, exact rule at :53, names DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL, place_of_service_unmapped, DISPOSITION_NOTES, MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, MEDICARE_LINE_LABEL, REDUCED_LINE_LABEL; 2026-10-18 entry unchanged.
+  - P5 sweep: "expected under Medicare" only ADR 0062:237-240, change-order-001:42, result-tables.test.tsx:752 (neg pin). "Difference, " only ADR 0062:239,241 + neg pin :753. old POS words none. DISPOSITION_NOTES strings none (labels.ts:155 'Not yet priced' is DISPOSITION_LABELS, pre-existing). "table’s last row" only test title :646 + neg pins :687,:691; straight-apostrophe comments anomalies.tsx:45,:234,:406 structural. "No group of"/"group of N" forms none. "One claim line," none.
+  - candidate nit: apps/web/src/lib/screening/routes.ts:836 doc comment "/** Expected less allowed. */" (twin of result-summary.tsx:43 which the PR changed); code comment, not a label.
+- [x] 4 local (lock 03:21:03-03:22:07): install --frozen-lockfile exit 0; typecheck passed 23 projects (cold, 51.9 s); vitest unit (components/screening, lib/screening, lib/copy, tools/brand-colors, tools/brand-copy) 16 files 217 tests passed; porcelain empty after.
+  - scope: no packages/db|pricing|ledger|money, no migration, no lockfile/package.json/.github/content; screening_labels_version() last defined in 20261105090000_...sql:683-685 -> 'screening-labels/2026-11-05'.
+  - shared files: test-matrix.md, matrix.ts, registry.ts only TBL-08; md==matrix.ts==expected.json (python compare); CI fixtures.test passed.
+  - generators in clone (lock): watched.ts --write (578 lines) + synth --all (319 cases 0 written 720 unchanged; EMR 8/16 unchanged) -> porcelain empty.
+  - commits: 11, each ends with Co-Authored-By + Claude-Session lines; no model id in added lines or messages beyond the mandated trailer; no '# Conflicts'.
+  - 4B-UX-01 PR body P5 paragraph records ruling + conditions; 4B-UX-02 ADR 0062:1572,1585-1586 + labels.test.ts:47-49; 4B-UX-03 anomalies.tsx:255 + result-tables.test.tsx:882-884. All OK.
+  - design 11.2-11.6, 3.4, 3.9, 12.1 spot-checked OK; departures (one group, TBL-08 'its words unchanged') recorded in body.
+- final recheck 03:24:25Z: heads unchanged (9e577017 / base 31a7345f), tags empty, 22 check runs 0 incomplete 0 non-success/skipped; PR draft:true, mergeable_state clean.
+- DONE: verdict pass; nit routes.ts:836 comment.

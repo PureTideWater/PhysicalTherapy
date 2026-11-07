@@ -21,58 +21,31 @@ The follow-on of #83 (UX PR 4, merged as 43565235), in the same session (https:/
   - one full local suite on the final tree;
   - merge under rule 2a.
 
-## Current state (2026-11-07 01:40 UTC)
-- **Draft PR #131:** https://github.com/PureTideWater/PhysicalTherapy/pull/131. Head **c2725961**, pushed (up to date with base 31a7345f); subscribed.
-  - The description is from the template, written by create_pull_request and read back. The connector swapped my attribution lines for its own footer, which carries the session link; the next description update restores them.
-- **Build:** done (wf_efec3b83-f5b, 00:35-01:30 UTC), 8 commits:
-  - 94fe2f7d: tones, and the $5 in mono;
-  - 8253175c: the count sentence and "the last entry";
-  - 1856d0a5: the three §11.3 labels, re-pinned;
-  - 86a85511: P5's four figure labels, re-pinned; its own commit, so it reverts alone;
-  - e2d9c786: the specs: holdScreeningStream, the 1280 table tones and the :517 rescope;
-  - 87cb3d66: TBL-08 and its synth fixture;
-  - 31b617c8: ADR 0078 and 0056;
-  - c2725961: a typecheck fix.
-  - The plan had 19 items, with 9 critic gaps applied or answered.
-- **Fast checks on c2725961:** all pass.
-  - Unit: 140 files, 1,992 tests. db (screening): 4 files, 59 tests.
-  - e2e screening and screening-phone: 3 of 3.
-  - synth and watched-paths unchanged. 0 tags.
-- **Decision, P5 in the re-pin (2026-11-07):** taken. Lane A's rule is general (re-pin while no release tag contains the version), and its reasons hold for the four figure labels as for §11.3's three. The VERSIONS comment names all seven changes. **CONFIRMED by the orchestrator, acting Lane A, 2026-11-07 01:31 UTC** (same reasons: the rule is general, 0 tags, no migration, the comment names all seven). Its conditions: re-check `git ls-remote --tags origin` is empty right before the merge; the one UX and brand review covers the four new strings, and the verification greps every place the old strings could appear (exports, packets, help text, tests) for a leftover "Expected under Medicare"; record the ruling in #131's description (next update) and here. 86a85511 stays as is.
-- **CI events:**
-  - c2725961: unit red on tools/brand-colors. "#121", written in comments, read as a hex colour; this PR's; fixed in 03ec41f5.
-  - 03ec41f5: unit red once on MOD-16, the known base defect in model-gateway (seed 383403599). S1 is fixing it on co-001/redact-range-glued. One comment posted on #131; the re-run passed, and every check went green.
-- **Review and fix round** (wf_5e44d8cf-109, 01:40-03:00 UTC):
-  - The review step was switched from the custom agentType to a default agent applying the checklist (the orchestrator's lesson) and resumed after the shots.
-  - Shots: 57 ids, before and after.
-  - The one UX and brand review: "pass with fixes".
-  - 3 findings, all confirmed:
-    - 4B-UX-01: the description's P5 paragraph;
-    - 4B-UX-02: ADR 0062's amendment says who ruled on what and when;
-    - 4B-UX-03: a one-group result states no order (the review overruled the build's call).
-  - Calls confirmed: the line labels, the descriptions' mono $5, TBL-08.
-  - Fixes: e01d96bc, 9e577017.
-- **Full local suite on 9e577017:** all pass.
-  - unit: 479 files, 9,950 passed, 4 skipped;
-  - db: 149 files (equal to the list), 9,863 passed;
-  - e2e: 81 of 81;
-  - golden 381, oracle 689, stryker none.
-  - Table: `approval-summaries/lane-b-ux-screening-result-words-suite.md`; shots index `…-shots.md`.
-- **Pushed 9e577017** (03:05 UTC; base 31a7345f unchanged, 0 tags).
-- **Running:** wf_a6153b93-653, started 03:05 UTC:
-  - the description (suite, CI, rulings; claim-checked; read back);
-  - the fresh-clone verification reading CI on 9e577017, including acting Lane A's grep for leftover old strings.
-- **Next:**
-  1. git ls-remote --tags (condition 2);
-  2. the up-to-date check (2a);
-  3. mark ready;
-  4. approval-of-record's re-run;
-  5. merge.
+## Current state (2026-11-07 03:27 UTC): MERGED
+- **#131 merged** at 03:27 UTC on 2026-11-07 as **8a722f80** (method merge, expectedHeadSha 9e577017).
+- **At the merge:**
+  - origin had 0 release tags (Lane A's condition 2, checked right before);
+  - the base 31a7345f had not moved since the head's CI (rule 2a);
+  - all four required checks were green on 9e577017;
+  - approval-of-record re-ran green after ready (03:26:30 UTC).
+- **Head history:** 31a7345f, then 94fe2f7d, 8253175c, 1856d0a5, 86a85511 (P5), e2d9c786, 87cb3d66, 31b617c8, c2725961; 03ec41f5 (the brand-colors fix); e01d96bc and 9e577017 (the review's 4B-UX-03 and -02).
+- **CI on 9e577017:** 22 runs, 20 success and 2 skipped; unit 9,952; db 149 files, 9,864; e2e 81.
+- **Fresh-clone verification:** PASS (wf_a6153b93-653). One nit, not taken: apps/web/src/lib/screening/routes.ts:836's doc comment "Expected less allowed" (no screen shows it). A proposal for the next change to routes.ts.
+- **Description:** rewritten from the template, claim-checked (12 corrections, all applied), and read back identical (26,878 characters, with the standard attribution lines).
+- **Lane A's conditions:**
+  1. the VERSIONS comment states the rule and names all seven changed strings;
+  2. 0 tags right before the merge;
+  3. recorded in the description and here.
+  - Acting Lane A's P5 conditions are met: the review covered the four strings, and the verifier's grep found no leftover outside record documents and negative pins.
+- **Cleaned up:** unsubscribed from #131; the check-in deleted; worktree /home/user/ux-screening-result-words removed.
+- **Push runs on 8a722f80:** see the Log.
+- **Next for this session (S5, the orchestrator's queue):** SUITE-CAP-3's worker-side build only if its session has not taken it, then P2, P5 ci-catalog, UX PR 8, dark-mode-ship, each on the orchestrator's confirmation.
 
 ## Waiting on someone
 - Nothing.
 
 ## Log
+- 2026-11-07 03:27 UTC: #131 MERGED as 8a722f80. Verification PASS; tags 0; base unmoved; approval-of-record re-ran green after ready.
 - 2026-11-07 03:05 UTC: review passed with fixes (3 confirmed, fixed); full suite green on 9e577017; pushed; describe-and-verify workflow started.
 - 2026-11-07 02:05 UTC: CI unit red on c2725961: tools/brand-colors read "#121" (a PR number in three comments) as a hex colour; this PR's. Fixed as 03ec41f5 ("PR 121"), brand-colors and the 7 screening unit files (93 tests) green; pushed. The review step was switched from a custom agentType to a default agent applying .claude/agents/ux-brand-reviewer.md (the orchestrator's standing lesson, 01:33 UTC); wf_5e44d8cf-109 stopped after its shots (57 ids, both sides) and resumed from the edited script (archived).
 - 2026-11-07 01:31 UTC: acting Lane A confirmed P5 in the re-pin (conditions recorded under Current state).
