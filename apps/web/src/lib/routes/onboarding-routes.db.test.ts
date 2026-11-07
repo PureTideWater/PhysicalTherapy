@@ -488,6 +488,11 @@ describe('agreements', () => {
     expect(readFileSync(path.join(scratch, 'agreements', 'agreements', world.organizationId, `${recorded.objectId ?? ''}.pdf`))).toEqual(Buffer.from(PDF));
     expect((await call(uploadAgreement, platformAdmin, {}, { ...input, kind: 'data_rights' }, upload(new TextEncoder().encode('not a pdf')))).status).toBe('invalid');
     expect((await call(uploadAgreement, platformAdmin, {}, { ...input, kind: 'data_rights' })).status).toBe('invalid');
+    // The day it was signed is refused in the words the recorded agreement's form uses (console.ts, recordAgreement).
+    expect(await call(uploadAgreement, platformAdmin, {}, { ...input, signedOn: '2026-13-01' }, upload(PDF))).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'signedOn', message: 'enter the day it was signed' }],
+    });
   });
 
   it('lets the practice administrator confirm the chain only once it is complete, recorded in the audit log', async () => {
