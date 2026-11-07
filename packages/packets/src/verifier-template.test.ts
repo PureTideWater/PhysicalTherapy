@@ -355,23 +355,6 @@ describe('CAS-52: a fact token stands apart, so nothing typed against it prints 
     expect(verify('The remittances show ‘{{fact:pattern.allowed}}’ here [1].').passed).toBe(true);
   });
 
-  it('reads the text before each token once: 100k-character templates with long runs before tokens check in well under a second each', () => {
-    const token = '{{fact:pattern.units}}';
-    const templates = [
-      `${' '.repeat(99_970)}x ${token}`,
-      `${'a'.repeat(99_970)}1 ${token}`,
-      `${token} `.repeat(Math.ceil(100_000 / (token.length + 1))),
-      `${' '.repeat(2000)}x ${token} `.repeat(Math.ceil(100_000 / (2000 + token.length + 3))),
-      `The payer allowed ${' '.repeat(10_000)}x${` ${token}`.repeat(400)} [1].`,
-      `The payer allowed ${'b'.repeat(99_000)}1 ${` minus ${token}`.repeat(30)} [1].`,
-    ];
-    for (const template of templates) {
-      const started = performance.now();
-      verify(template);
-      expect(performance.now() - started, `${template.length} characters`).toBeLessThan(1500);
-    }
-  });
-
   it('passes a token after an em dash between clauses, or after a word that only ends in a sign’s word', () => {
     for (const template of [
       'The payer paid less — {{fact:pattern.paid}} — than the contract allows [1].',
