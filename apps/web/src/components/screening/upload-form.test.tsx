@@ -178,6 +178,9 @@ describe('the upload’s refusal, on the shared summary', () => {
   });
 
   it('leads a dropped connection with the shared words, and says a press again may send a second email whose link alone opens', () => {
+    // The mails-again clause holds in both of routes.db.test.ts's re-send cases: before the first is priced, one result
+    // mail and its link opens (the condition is false, so no second email is promised); after the first is priced and
+    // mailed, RESEND_LATE_MAILS (two) and only the newer link opens.
     const unconfirmed: FormState = { unconfirmed: true };
     const summary = (props: { readonly unconfirmed?: 'mails-again' }) =>
       words(
@@ -190,7 +193,7 @@ describe('the upload’s refusal, on the shared summary', () => {
         ),
       );
     expect(summary({ unconfirmed: 'mails-again' })).toBe(
-      'Not confirmedThe connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Screen the file” again. If the first press reached PaidWhole, a second email follows, and only the newer email’s link opens the screening.',
+      'Not confirmedThe connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Screen the file” again. If PaidWhole had already emailed you the first screening, a second email follows, and only the newer email’s link opens the screening.',
     );
     // Every other form keeps the shared lead.
     expect(summary({})).toBe(
