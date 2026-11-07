@@ -10,6 +10,13 @@ ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepx
   `lanes/lane-a-handoff-to-lane-b-2026-11-05.md` section 4's queue in order; one schema PR open at a time, each after the one
   before merges on the founder's committed line; each suggested line's link to the orchestrator at once; stand down at a
   clean point before Lane A returns (~2026-11-10 14:00 UTC) when asked.
+- **2026-11-07 11:15 UTC (acting Lane A): #126 round 4 in its review loop; head 9c68a4be.** F-M2-1 upheld by 3 of 3 judges
+  (LED-R1's widening, 84534029, mis-split a PLB L6 naming the latest correction; c49367c5 was right) and fixed (c7f152cc);
+  F-M2-2/DB2-4 (8a6d0f26), DB-C1 (migration header wording, marker route), a brand-colour scan test, matrix rows; base
+  8a722f80 merged (c256fee7). Round 1 of the new review: MONEY-R4-1 confirmed (a person's later claim match could still put
+  interest above the cash) and fixed (1fda5637, 9c68a4be); RV-DB1-1 fixed. Round 2: confirmed R2M2-1/RV-DB2-1 (a take-back
+  first written in part still leaves the outcome order-dependent), R2M2-2/RV-DB2-2 (no committed test of mayYetHold's
+  condition (b)), three runbook/header nits; fix r2 running. Then round 3, the suite, CAS-42.5, body, verification.
 - **2026-11-07 08:45 UTC (acting Lane A): PR 5's freeze ask READY, sent to the orchestrator for the founder:**
   `approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md` (rewrite wf_c7d47053-463: four check rounds, issues
   16, 12, 9, 7; final confirmation wf_6870adec-1eb: scope and founder-reader clean twice, accuracy's two measurement-wording
