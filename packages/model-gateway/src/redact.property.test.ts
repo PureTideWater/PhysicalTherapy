@@ -781,6 +781,9 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
       expect(redacted, letter).toMatch(/\[PATIENT_NAME\]/u);
       expect(holdsIdentifier(redacted, born, claims), letter).toBe(true);
     }
+    // A space inside a part leaves capitalized pieces of two letters or more there too, as the name's own pattern reads it.
+    expect(redactLetter('Seen 2020Zeph yra', born, claims).text).toBe('Seen 2020Zeph yra');
+    expect(redactLetter('Seen 2020Zeph Yra', born, claims).text).toBe('Seen 2020[PATIENT_NAME]');
     // A short part may take letters of a word glued to a digit: more redacted, never less (docs/adr/0054).
     const de: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['DE ZEPHYRA'], datesOfBirth: [], memberIds: ['ZZ7654321'] };
     expect(redactLetter('Seen 150.00Deductible', de, []).text).toBe('Seen 150.00[PATIENT_NAME]ductible');

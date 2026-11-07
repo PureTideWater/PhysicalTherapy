@@ -851,8 +851,8 @@ function letterRuns(view: View, normal: string): LetterRun[] {
  * ("150.00Deductible" for a part "DE"): more redacted, never less. A name glued to another word that nothing sets apart
  * ("DEARJANE", "2020PAIDZEPHYRATODAY", "Zephyrapaid") is not read: a recorded residual.
  */
-function namesInRuns(view: View, forms: readonly Form[], runs: readonly LetterRun[], initials: ReadonlySet<string>): Range[] {
-  const names = forms.filter((form) => form.kind === 'name').map((form) => ({ length: form.compact.length, sticky: new RegExp(form.core, 'uy') }));
+function namesInRuns(view: View, normal: string, forms: readonly Form[], runs: readonly LetterRun[], initials: ReadonlySet<string>): Range[] {
+  const names = forms.filter((form) => form.kind === 'name').map((form) => ({ form, sticky: new RegExp(form.core, 'uy') }));
   const text = view.text;
   const matches: Range[] = [];
   for (const run of runs) {
@@ -877,16 +877,17 @@ function namesInRuns(view: View, forms: readonly Form[], runs: readonly LetterRu
     };
     for (let head = 0; head < queue.length; head += 1) {
       const at = queue[head] ?? run.start;
-      for (const { length, sticky } of names) {
+      for (const { form, sticky } of names) {
         // Beginning here; and ending here, where a match within the run is as long as the form.
-        for (const from of new Set([at, at - length])) {
+        for (const from of new Set([at, at - form.compact.length])) {
           if (from < run.start || from >= run.end) continue;
           sticky.lastIndex = from;
           const match = sticky.exec(text);
           const end = from + (match?.[0].length ?? 0);
           // Past the run, a name's own edge: no letter after it.
           const ends = (place: number) => bounds.has(place) || (place > run.end && !LETTER.test(codePointAt(text, place)));
-          if (match !== null && (from === at ? open.has(at) || ends(end) : end === at && (open.has(at) || bounds.has(from)))) {
+          // A space inside a part, as the name's own pattern reads it, leaves capitalized pieces ("2020Zeph yra" is no name).
+          if (match !== null && (from === at ? open.has(at) || ends(end) : end === at && (open.has(at) || bounds.has(from))) && spacedPiecesPass(form, view, normal, from, end)) {
             take({ start: from, end });
           }
         }
@@ -998,7 +999,7 @@ function matchesIn(normal: string, subject: Subject): Found[] {
       }
     }
   }
-  for (const match of namesInRuns(view, forms, runs, subject.initials ? initialsOf(subject.names) : new Set())) {
+  for (const match of namesInRuns(view, normal, forms, runs, subject.initials ? initialsOf(subject.names) : new Set())) {
     const range = inNormal(view, match.start, match.end);
     if (!inOtherDate(range)) {
       names.push(match);
