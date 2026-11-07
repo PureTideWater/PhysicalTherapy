@@ -32,6 +32,7 @@ ${CLONE(SP + '/pfp2r2-verify-' + l.key)}
 Lens: ${l.text}. Default real=false when unsure. Findings: ${JSON.stringify(findings)}
 ${SAVE(`pfp2r2-verify-${tag}-${l.key}.md`, 'each finding: verdict and what you ran')}
 ${RULES}`, { label: `verify-${tag}-${l.key}`, phase: 'Review', schema: VERDICTS })))
+  if (sets.some((s) => s === null)) throw new Error(`a skeptic of ${tag} returned nothing: resume, never count it as refuted`)
   const votes = {}
   for (const s of sets.filter(Boolean)) for (const v of s.verdicts) (votes[v.id] ??= []).push(v)
   return findings.map((f) => ({ ...f, verdicts: votes[f.id] ?? [], confirmed: (votes[f.id] ?? []).filter((v) => v.real).length === 2 || ((votes[f.id] ?? []).length === 1 && votes[f.id][0].real) }))
@@ -109,13 +110,22 @@ ${RULES}`, { label: `review-${round}-${l.key}`, phase: 'Review', schema: REVIEW 
 if (dry < 1) log('review loop stopped at 3 rounds without a dry round: the last recheck\'s new findings are returned unverified')
 
 phase('Critic')
+const equiv2 = await agent(`${CONTEXT}
+You review, independently of their proposer, every entry of tools/stryker/equivalent/packets.json whose reviewedBy is empty (three draft.ts entries at the time of writing: two ConditionalExpression mutants of the /2 interest guard and one OptionalChaining on pattern.codes[0]?.contract_amount_cents). ${CLONE(SP + '/pfp2r2-equiv2')}
+For each, try hard to KILL the mutant with a test (any reachable content: interest null, total null, total zero or negative, no lines, codes empty). Return equivalent=true only if you cannot and its reason holds. Do not edit files.
+${SAVE('pfp2r2-equiv2.md', 'each entry: what you tried')}
+${RULES}`, { label: 'equivalent-review-2', phase: 'Critic', schema: { type: 'object', required: ['entries'], properties: { entries: { type: 'array', items: { type: 'object', required: ['original', 'replacement', 'equivalent', 'reason', 'killingTest'], properties: { original: { type: 'string' }, replacement: { type: 'string' }, equivalent: { type: 'boolean' }, reason: { type: 'string' }, killingTest: { type: 'string' } } } } } } })
+const equiv2Tasks = (equiv2?.entries ?? []).map((e, i) => e.equivalent
+  ? { id: `EQUIV2-${i + 1}`, severity: 'should fix', file: 'tools/stryker/equivalent/packets.json', title: `Sign the reviewed equivalent ${e.original} -> ${e.replacement}`, detail: e.reason, reproduction: 'reviewedBy is empty', fix: 'Set reviewedBy "review round 2 of 2026-11-07 (Lane B, packet-figure-placeholders slice 2)" and reviewedOn "2026-11-07" on that entry only; run its shard\'s gate.' }
+  : { id: `EQUIV2-${i + 1}`, severity: 'should fix', file: 'tools/stryker/equivalent/packets.json', title: `Not equivalent: ${e.original} -> ${e.replacement}`, detail: e.reason, reproduction: e.killingTest, fix: 'Remove the entry, add the killing test (and fix the code if the mutant exposes a defect); run the shard and its gate.' })
 const critic = await agent(`${CONTEXT}
 You are the completeness critic, read-only, at the worktree HEAD. ${CLONE(SP + '/pfp2r2-critic')}
 Ask what is missing: every item of section 9's slice 2 and of sections 2.1, 2.3, 2.4, 4 that slice 2 owns, every CAS-52..54 case in section 8 this slice can reach, every section-8 property owned by slice 2, the ADR's required content (section 9's last paragraph and decisions), test-matrix and synth rows word for word, mutation coverage of every new source file (draft.ts included or argued), a lens no review ran, a claim no one verified. History of the reviews: ${JSON.stringify(history).slice(0, 20000)}. Report each gap as a finding with a reproduction (a command or a missing file/test); ids CRITIC-1, ...
 ${SAVE('pfp2r2-critic.md', 'items checked')}
 ${RULES}`, { label: 'critic', phase: 'Critic', schema: REVIEW })
 const criticJudged = await verify(critic?.findings ?? [], 'critic')
-const criticConfirmed = criticJudged.filter((f) => f.confirmed)
+if (critic === null) throw new Error('critic returned nothing: an empty critic is not a pass')
+const criticConfirmed = [...criticJudged.filter((f) => f.confirmed), ...equiv2Tasks]
 let criticFix = null
 if (criticConfirmed.length) criticFix = await fixAndRecheck(criticConfirmed, 'critic')
 return { carry: carryJudged, equiv, history, seen, critic: criticJudged.map((f) => ({ id: f.id, severity: f.severity, title: f.title, confirmed: f.confirmed })), criticFix, lastRecheckNew: (criticFix ?? state)?.recheck?.newFindings ?? [] }
