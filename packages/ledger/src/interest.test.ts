@@ -528,7 +528,7 @@ describe('interestWrites (D5, D6, D10)', () => {
     }
   });
 
-  describe('holds a PLB L6’s payments while a take-back of a chain that may yet hold interest is not written whole (#126 review F1)', () => {
+  describe('holds a PLB L6’s payments while a take-back of a chain that may yet hold interest is not written whole (PR 126 review F1)', () => {
     // LED-24 two-chains.835 uploaded before paired.835: b is paid 6.00 and a, C's reversal, takes 5.40 back.
     const draws = [drawOf('A', 'b', 600n, ['B']), drawOf('A', 'a', -540n, ['V'])];
     const lines = (held: ChainInterestLines['takenBack'], mayYetHold = true) =>
@@ -638,7 +638,7 @@ describe('interestHeld (D5)', () => {
   /** The sums as arrays, so their order is compared too. */
   const ordered = (sums: InterestHeldSums) => [...sums].map(([chain, ofChain]) => [chain, [...ofChain]] as const);
 
-  it('keeps the sums before the floor, each chain and line in the order the entries first reach it, and adds entries in parts as in one (#126 review F-M2-2)', () => {
+  it('keeps the sums before the floor, each chain and line in the order the entries first reach it, and adds entries in parts as in one (PR 126 review F-M2-2)', () => {
     const entries = [
       entry('e1', 'm1', 'L1', 'interest', 240n),
       entry('e2', 'm2', 'L2', 'interest', 300n),
@@ -678,7 +678,7 @@ describe('interestHeld (D5)', () => {
     expect(interestHeld(entries, chains)).toEqual([...interestHeldOf(whole, 'c'), ...interestHeldOf(whole, 'k')]);
   });
 
-  it('gives the same sums, in the same order, whether a pass adds the entries it writes one at a time or reads them all at once (#126 review F-M2-2)', () => {
+  it('gives the same sums, in the same order, whether a pass adds the entries it writes one at a time or reads them all at once (PR 126 review F-M2-2)', () => {
     fc.assert(
       fc.property(
         fc.array(fc.record({ line: fc.constantFrom('L1', 'L2', 'L3'), match: fc.constantFrom('m1', 'm2', 'm3', 'm4'), amount: fc.bigInt({ min: -500n, max: 500n }) }), { maxLength: 12 }),
@@ -899,7 +899,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
           written = [...written, ...parts.map((item) => wrote(item.chain, item.serviceLineId, item.cents))];
           const total = bySign(written.map((item) => item.cents));
           // A payment is written only once every take-back of a chain that may yet hold interest is whole: the chain has
-          // been given all of its draw, or the L6's draws of that sign are spent (#126 review F1).
+          // been given all of its draw, or the L6's draws of that sign are spent (PR 126 review F1).
           if (parts.some((item) => item.cents > 0n)) {
             for (const draw of own.filter((item) => item.cents < 0n && lines.get(item.chain)?.mayYetHold === true)) {
               const given = bySign(written.filter((item) => item.chain === draw.chain).map((item) => item.cents)).taken;
@@ -918,7 +918,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
     );
   });
 
-  it('writes the same whichever is uploaded first: a PLB L6 netting two chains, or the earlier PLB L6 paying the chain it takes back from (#126 review F1)', () => {
+  it('writes the same whichever is uploaded first: a PLB L6 netting two chains, or the earlier PLB L6 paying the chain it takes back from (PR 126 review F1)', () => {
     const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 4 });
     fc.assert(
       fc.property(fc.bigInt({ min: 1n, max: 1000n }), fc.bigInt({ min: 1n, max: 1000n }), someLines, someLines, (taken, payment, aLines, bLines) => {

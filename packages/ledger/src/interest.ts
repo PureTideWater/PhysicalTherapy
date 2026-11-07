@@ -108,7 +108,7 @@ export interface ChainInterestLines {
   /**
    * The chain may yet come to hold interest on a case line: its root is a reversal the moment links to no claim (its
    * claim not uploaded yet), or a claim of it has a standing claim match on a case line. A take-back of such a chain
-   * that is not written whole holds back the PLB L6's payments (#126 review F1).
+   * that is not written whole holds back the PLB L6's payments (PR 126 review F1).
    */
   readonly mayYetHold: boolean;
 }
@@ -328,7 +328,7 @@ export function attributeInterest({ remittances, adjustments }: { readonly remit
  * left. When two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
  * unwritten, so the figure errs low and never above the cash (LED-24 two-chains.835).
  *
- * The payments also wait for the take-backs (#126 review F1): while a take-back of a chain that may yet hold interest
+ * The payments also wait for the take-backs (PR 126 review F1): while a take-back of a chain that may yet hold interest
  * on a case line is not written whole, the L6 writes none of its payments, now or in a later reconcile. The interest
  * that chain is still to hold arrives with a later upload (a remittance dated earlier, uploaded later), and the
  * take-back then reaches the lines it lands on before any payment of the L6 can, so the outcome does not depend on the
@@ -363,7 +363,7 @@ export function interestWrites({
   const left = new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
   const reached = new Set(written.map((entry) => entry.serviceLineId));
   const parts: InterestPart[] = [];
-  // A take-back of a chain that may yet hold interest is not written whole: the payments wait (#126 review F1).
+  // A take-back of a chain that may yet hold interest is not written whole: the payments wait (PR 126 review F1).
   let waiting = false;
   for (const [sign, draw] of [-1n, 1n].flatMap((ofSign) => draws.filter((item) => item.cents / size(item.cents) === ofSign).map((item) => [ofSign, item] as const))) {
     const chainLines = lines.get(draw.chain);
@@ -416,7 +416,7 @@ export function interestWrites({
 /**
  * What lines hold of each chain's interest, net and before the floor: by chain, then by line, each in the order the
  * entries first reach it (addInterestHeld). A reconcile pass builds it once from the entries it reads and adds each
- * entry it writes, so a take-back reads its chain's lines without reading every entry again (#126 review F-M2-2).
+ * entry it writes, so a take-back reads its chain's lines without reading every entry again (PR 126 review F-M2-2).
  */
 export type InterestHeldSums = Map<string, Map<string, bigint>>;
 

@@ -1227,7 +1227,8 @@ export function led23(b: CaseBuilder): void {
     `After reported-only.835: a later remittance whose PLB L6 of -5.40 names the original (${occn}), not C, beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.`,
   );
   // C2 corrects C and carries line 1 alone, as C paid it; C's claim match on line 2 stands, since a reversal beside its
-  // correction recoups nothing. A PLB L6 naming C2 is for C2 and what follows it in the chain, not C (#126 review F-M2-1).
+  // correction recoups nothing. A PLB L6 naming C2 is for C2 and what follows it in the chain, not C (PR 126 review
+  // F-M2-1).
   const latest = correctionOf(b, 9, correction, [shareLine(b, 10000n, 'coinsurance')]);
   b.add835(
     'named-latest.835',
@@ -1381,7 +1382,7 @@ export function led24(b: CaseBuilder): void {
     `After paired.835: B (${unlinked.payerClaimControlNumber}), a correction with no REF F8 that comes before the reversal, so the loader links it to nothing, paying as C (paid 160.00) with AMT I 6.00, then C reversed (paid -160.00, AMT I -5.40), and one PLB L6 of -0.60 naming nothing, netting B's 6.00 paid against C's 5.40 taken back on the same two lines: BPR02 0.60.`,
   );
   // After first.835 and second.835: F2 approved line 2 and left line 1 as F1 paid it, so a PLB L6 naming F2 is for F2's
-  // approved line, not line 1 through F1's claim match (#126 review F-M2-1).
+  // approved line, not line 1 through F1's claim match (PR 126 review F-M2-1).
   b.add835(
     'later-named-latest.835',
     ledRemittance(b, base, 14, laterOn, [otherClaim(b, 17)], interestPlb(base, [{ reference: f2.payerClaimControlNumber, amount: negateCents(LED_INTEREST) }])).file,

@@ -949,7 +949,7 @@ interface InterestMatch {
  * - caseLineChains: the chains a claim of which has a standing claim match on a case line;
  * - held and lineHeld: what each line holds of each chain's interest, and of its interest as a whole (every chain's,
  *   and a match's that names none, together, under LINE_TOTAL), net of corrections and take-backs: @tp/ledger
- *   addInterestHeld's sums, which a take-back reads floored (#126 review F-M2-2).
+ *   addInterestHeld's sums, which a take-back reads floored (PR 126 review F-M2-2).
  */
 interface InterestState {
   readonly matches: InterestMatch[];
@@ -1099,8 +1099,8 @@ async function recordInterest(
             })
         : [];
     // A take-back of a chain that may yet hold interest on a case line, not written whole, holds the L6's payments
-    // back (@tp/ledger interestWrites; #126 review F1): its root a reversal of a claim not uploaded yet, or a claim of
-    // it matched to a case line.
+    // back (@tp/ledger interestWrites; PR 126 review F1): its root a reversal of a claim not uploaded yet, or a claim
+    // of it matched to a case line.
     chainLines.set(draw.chain, { paid, takenBack, mayYetHold: reading.unlinkedReversals.has(draw.chain) || interest.caseLineChains.has(draw.chain) });
   }
   for (const part of interestWrites({ draws, written, lines: chainLines })) {

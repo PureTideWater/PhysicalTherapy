@@ -337,7 +337,7 @@ describe('a remittance’s interest reported on its claims and paid by a PLB L6,
     await replayed(practice);
   });
 
-  it('credits a PLB L6 naming the latest correction to that correction’s lines, never to a line only an earlier claim of its chain is matched to (named-latest.835; #126 review F-M2-1)', async () => {
+  it('credits a PLB L6 naming the latest correction to that correction’s lines, never to a line only an earlier claim of its chain is matched to (named-latest.835; PR 126 review F-M2-1)', async () => {
     const { practice, lines } = await opened('LED-23');
     const [l1, l2] = lines as [Line, Line];
     await upload(practice, 'LED-23', 'paired.835', 'named-latest.835');
@@ -427,7 +427,7 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     await expectWithinFirst(practice, first);
   });
 
-  it('credits a later PLB L6 naming the latest correction to the line that correction approved, never split onto a line through an earlier claim of its chain (later-named-latest.835; #126 review F-M2-1)', async () => {
+  it('credits a later PLB L6 naming the latest correction to the line that correction approved, never split onto a line through an earlier claim of its chain (later-named-latest.835; PR 126 review F-M2-1)', async () => {
     const { practice, lines } = await opened('LED-24');
     const [l1, l2] = lines as [Line, Line];
     await upload(practice, 'LED-24', 'first.835', 'second.835', 'later-named-latest.835');
@@ -494,7 +494,7 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     ['reconciled between the uploads', true],
     ['both uploaded before one reconcile', false],
   ])(
-    'writes the same when the PLB L6 netting two chains is uploaded before the payment it takes back: its payments wait for its take-back (two-chains.835, then paired.835, %s; #126 review F1)',
+    'writes the same when the PLB L6 netting two chains is uploaded before the payment it takes back: its payments wait for its take-back (two-chains.835, then paired.835, %s; PR 126 review F1)',
     async (_, between) => {
       const { practice, lines } = await opened('LED-24');
       const [l1, l2] = lines as [Line, Line];

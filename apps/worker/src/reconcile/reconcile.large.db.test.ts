@@ -43,7 +43,7 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './test-support/ledger-world'
  * (review INT-REL-2): each PLB L6's draws scanned every case line against every match, 161 s for this pass. A later
  * check then takes each claim's interest back, by a PLB L6 naming its correction, beside another patient's claim, so the
  * measured pass also walks LINES PLB L6s that take interest back, each reading the holdings of its chain's lines
- * (#126 review F-M2-2: those holdings were rebuilt from every interest entry for each such PLB L6, quadratic in the
+ * (PR 126 review F-M2-2: those holdings were rebuilt from every interest entry for each such PLB L6, quadratic in the
  * practice's history; they are now kept once a pass).
  */
 

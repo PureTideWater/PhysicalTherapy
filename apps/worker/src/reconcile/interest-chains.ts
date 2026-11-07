@@ -110,7 +110,7 @@ export interface InterestReading {
   readonly chainOf: ReadonlyMap<string, string>;
   /**
    * The chains among them whose root is a reversal the moment links to no claim: its claim is not uploaded yet (or the
-   * loader cannot link it), so that claim's interest may yet arrive on a case line (#126 review F1).
+   * loader cannot link it), so that claim's interest may yet arrive on a case line (PR 126 review F1).
    */
   readonly unlinkedReversals: ReadonlySet<string>;
 }
@@ -160,8 +160,8 @@ interface ClaimRow {
  * those that reverse or correct them later in the chain (each claim read whose walk back passes one it reaches), so a
  * draw for it reaches the lines matched to any of them (D5): a reference to the original, whose control number its
  * reversal carries too, reaches the lines its correction is matched to, and a reference to the latest correction only
- * that correction's lines, never a line only an earlier claim of the chain is matched to (#126 review F-M2-1). It takes
- * statement 1's result as its argument, so a test can hand it an earlier moment.
+ * that correction's lines, never a line only an earlier claim of the chain is matched to (PR 126 review F-M2-1). It
+ * takes statement 1's result as its argument, so a test can hand it an earlier moment.
  */
 export async function interestAttribution(scope: Scope, cipher: PracticeCipher, practiceId: string, moment: AdjustmentMoment): Promise<InterestReading> {
   const l6s = moment.adjustments.filter((row) => row.category === 'interest');
@@ -207,7 +207,8 @@ export async function interestAttribution(scope: Scope, cipher: PracticeCipher, 
       position: row.position,
       cashCents: negateCents(parseCents(row.amount_cents)),
       namedChain,
-      // The claims reached and those later in the chain from them, never the chain's earlier claims (#126 review F-M2-1).
+      // The claims reached and those later in the chain from them, never the chain's earlier claims (PR 126 review
+      // F-M2-1).
       namedClaimIds: namedChain === null ? [] : [...new Set((byChain.get(namedChain) ?? []).filter((claim) => claim.back.some((id) => reachedIds.has(id))).map((claim) => claim.id))],
     };
   });
