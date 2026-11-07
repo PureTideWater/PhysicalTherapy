@@ -10,7 +10,9 @@ findings were checked against the candidate and by probe, and four are taken (D1
 comparison of settle's partial postings, CAS-50's array bound), one is already in the design. **Completeness check,
 2026-11-06 (section 17):** gaps closed in the tests, the slices, the #126 interplay and the sizes; the hand-off to Lane
 A re-measured on F (the review's `ledger_line_net` form gave nothing there; a corrected form with `ledger_entry_rules`'
-lookup takes A's month from 1,653 to 310 s, writes identical), and the freeze-exception ask rewritten to match.
+lookup takes A's month from 1,653 to 310 s, writes identical), and the freeze-exception ask rewritten to match. **Review rounds 1-4 (section 18) and completeness check 2
+(section 19, 2026-11-07):** the founder's grant and the D14 ruling recorded from the status file; section 0, D16's
+fallback, CAS-50's bound, 8.2 and the slices made consistent.
 - Candidate code (the design's probe, not the build): WIP ref `co-001/wip-suite-cap-3`, head **0b6e90eb** (a merge of
   the 83d71fd6 candidate 956b32ef with cc3dd7f6; clean, no fixes; against the base it differs only in `postings.ts`,
   `remittances.ts` and `stages.ts`, +333 −105). On 0b6e90eb: worker typecheck and eslint clean; unit 243/243 (17 files);
@@ -55,12 +57,12 @@ database-bound: 2-8 s of TypeScript between statements in a pass).
    the third is the per-event case refresh (79 s for one 2,000-line case).
 3. The first three are orchestration, in the worker. The fix keeps every rule, filter, comparison and write, and the
    order of every write, and changes only how often the pass reads: every open line's candidates found in one search
-   for the pass (one statement per round by control number, one per pass by patient, each claim decrypted once), each
+   for the pass (one statement per round by control number, two per pass by patient, each claim decrypted once), each
    claim's lines read once, and the pass's stage events written in one statement in today's order (D1-D4).
 4. The `ledger_match` exclusion ("never claim-matched to this line") is taken from the pass's own set of claim matches,
    read before any write, never as a predicate on `ledger_match` (D16, 1b's ask): its cost cannot depend on that table's
-   statistics. The control search drops matched pairs in TypeScript; the patient search excludes them inside its
-   statement against parameter arrays, so it decrypts no claim today's queries did not. The TypeScript form measured the
+   statistics. The control search drops matched pairs in TypeScript; the patient search excludes them inside its two
+   statements ((a) and `patientPairs`, review round 3) against parameter arrays, so it decrypts no claim today's queries did not. The TypeScript form measured the
    same time and writes as the candidate's SQL form; the array form is a build gate, and its fallback is the candidate's
    correlated `NOT EXISTS` once per pass, never a TypeScript-only patient exclusion (that would widen decrypts; review
    round 1, section 18).
@@ -71,9 +73,9 @@ database-bound: 2-8 s of TypeScript between statements in a pass).
    F without the other tenants 179 → 21 s; spread R 159 → 46 s; spread A 165 → 47 s. On F the case refresh goes from
    4,000 statements (79 s) to one (0.7 s), D3. Decrypts on F 89,136 → 5,680. The writes equal the base's row for row in
    every pair compared, the recovered totals equal.
-7. The fourth family (the ledger_entry triggers) is in the database and frozen: handed to Lane A with its DDL and its
-   measured gain (section 14.1), behind #126, under a founder freeze exception (the ask:
-   `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`). At A's full month (30,795 lines in one case) the
+7. The fourth family (the ledger_entry triggers) is in the database and frozen: handed to Lane A with its DDL and its measured gain (section 14.1), behind #126, under a founder freeze exception (the ask:
+   `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`; **granted 2026-11-06 22:40 UTC** on the ask's
+   pre-review text, as the item's status file records; the two bodies are unchanged since, completeness check 2). At A's full month (30,795 lines in one case) the
    candidate's pass takes 1,653 s, of which 1,469 s are those triggers: `ledger_line_net` 716 s and, new in this review,
    `ledger_entry_rules`' match lookup 581 s. The candidate's own part is linear, 5.6-6.0 ms a line. **Completeness
    check:** the review's `ledger_line_net` form gave no gain on F; a corrected form (the line's entries read through
@@ -81,19 +83,23 @@ database-bound: 2-8 s of TypeScript between statements in a pass).
    10,000 and **1,653.1 → 309.9 s at A's month (34% of the attempt)**, writes identical.
 8. **This item needs no index, no table and no migration** (D9, section 14.0). `claim_by_superseded` is 1b's D15, now
    on the base.
-9. No lock, transaction or order changes: the pass stays one transaction under `lockLedger`, and every insert happens
-   in today's order, so `ledger_entry.seq`, `line_status.seq` and (after #126) `ledger_match.seq` draw the same order.
+9. No lock added or removed, no transaction or write-order change: the pass stays one transaction under `lockLedger`,
+   and every insert happens in today's order (the one stage statement takes its row locks in another order, every event
+   line's head then the cases, which D3's savepoint retry absorbs; D4, 5.2, review round 1), so `ledger_entry.seq`, `line_status.seq` and (after #126) `ledger_match.seq` draw the same order.
 10. Shared code: `claimLines`' SQL is unchanged word for word (#126's `CLAIM_LINES` copy stays valid, checked on
     c49367c5); `chainContext` is unchanged; `lineChain` and `reprocessingOf` keep their answers, so the report path is
     re-proved by CAS-41 and the manual actions by LED-01 to LED-18.
 11. Tests: CAS-49 (the same writes as today's code on generated passes), CAS-50 (the pass's statements and decrypts do
     not grow per line, and no candidate statement reads `ledger_match`), CAS-51 (a real-size pass within its budget).
 12. D14, now this item's since 1b has landed: it resets CAS-42.3's `PASS_BUDGET_MS` (150,000 → 60,000, default 2,000
-    lines kept) and step 7b's expectation (F at 10,000 lines, attempt 1 within 360 s; measured 220 s). It does **not**
+    lines kept) and step 7b's expectation (F at 10,000 lines, attempt 1 within 360 s, a sizing bound no check enforces: the weekly run fails only on a second
+    attempt at 900 s; measured 220 s). It does **not**
     move step 7b back to A's full month: measured, that pass is 1,653 s, 184% of the attempt, held by Lane A's two
     trigger fixes (with both, measured in the completeness check: 310 s, inside the 360 s bound). The Known gap line
-    stays, reworded to that figure; the move back becomes the acceptance step of Lane A's trigger PR (section 8.4; a
-    deviation from 1b's hand-off and ADR 0083, put to the orchestrator).
+    stays, reworded to that figure; the move back becomes the acceptance step of Lane A's trigger PR (section 8.4; a deviation from 1b's hand-off and ADR 0083, put to the orchestrator). **Ruling (completeness check 2):**
+    the item's status file records the orchestrator's ruling of 2026-11-06 22:31 UTC accepting this split (step 7b moves
+    back to A's month once Lane A's two trigger fixes merge); it predates the review rounds, which changed none of D14's
+    figures, so it needs only the orchestrator's confirmation when the reviewed design is committed (8.4).
 13. Merge: no function is changed by both this item and #126; a three-way merge of 0b6e90eb with c49367c5 is clean and
     typechecks. Whichever merges second re-runs CAS-49 (with LED-23 to LED-25 and the `seq` order if #126 is first),
     section 12.2.
@@ -253,7 +259,9 @@ lines each, B 20,000) inserted, because without them `byPatient` never takes 1b'
   is now one statement per pass (per round), run before any of the pass's own writes, it costs nothing measurable
   today; but its plan would still depend on `ledger_match`'s statistics. The statistics-proof form (both SQL predicates
   dropped; the pass's `matched` set, read before any write, applied in TypeScript, as the patient search already did;
-  `cap3-results-rev/d1-ts-exclusion.diff`, 51 lines, clone `cap3-d1`) measured the same:
+  `cap3-results-rev/d1-ts-exclusion.diff`, 51 lines, clone `cap3-d1`; a measured reference, not a patch: its patient hunk
+  is the TypeScript-only patient exclusion D16 rejects, so the build takes only its control-search hunk, section 4,
+  review round 4) measured the same:
 
   | case | patient search, candidate vs TypeScript set (whole pass) |
   | --- | --- |
@@ -288,10 +296,11 @@ privacy, cost to serve, maintainability, resilience to change; never build effor
   with the same rounds: per round one statement by control number for all lines still searching (each line's known
   claims passed as pairs), and once per pass one statement by patient that returns each claim some line's own query
   would have returned (same filters, joined on code and date), each decrypted once and given to the lines whose patient
-  control number, code and date it carries and whose filters it passes; the chain's claim order sorted in TypeScript
+  control number it carries, then (review round 3) one statement over only those patient-equal (claim, line) pairs
+  keeping the ones that pass the line's filters, code and date included; the chain's claim order sorted in TypeScript
   by the query's own key. Accuracy: identical filters, rounds and order (section 5.1 proves the equivalence; CAS-49
   tests it). Privacy: the search's decrypts fall from 31 per line (62,000 at 2,000 lines) to one per claim (500), never
-  a claim no line's query would have decrypted. Cost: about six statements per pass (the patient search and its load-time read once, a control
+  a claim no line's query would have decrypted. Cost: about six statements per pass (the patient search's two statements once, a control
   search and a claim-line read per round, two rounds in the probe's shapes) instead of two to eight per line. Resilience: the same
   `CANDIDATE_FILTERS` predicates, written once per statement, except the `ledger_match` exclusion, which is applied
   from the pass's own set of claim matches (D16): in TypeScript for the control search, and for the patient search
@@ -375,22 +384,22 @@ review's first form, measured on spread R at 83d71fd6 at 1,001.1 → 206.7 s, gi
 
 | # | Decision | Why |
 | --- | --- | --- |
-| D1 | `matchClaims` finds every open line's candidates for the pass before matching any (`passCandidates`): per round, one statement by payer claim control number for every line still searching (`controlCandidates`), and once per pass one statement by patient control number, code and date (`patientCandidates`), each claim decrypted once; rounds, filters (the `ledger_match` exclusion as D16 writes it), `preferredCandidates`, the seen and known sets and the chain's claim order exactly as `candidateClosure` and `chainOrdered` had them. `candidatesFor`, `candidateClosure` and `chainOrdered` go. | Section 2.1 A; equivalence in 5.1. Statements per pass instead of per line; decrypts at most one per claim. |
+| D1 | `matchClaims` finds every open line's candidates for the pass before matching any (`passCandidates`): per round, one statement by payer claim control number for every line still searching (`controlCandidates`), and once per pass the search by patient control number, code and date (`patientCandidates`: one statement returning the claims, each decrypted once, and, review round 3, one `patientPairs` statement over only the (claim, line) pairs equal by patient control number, section 4); rounds, filters (the `ledger_match` exclusion as D16 writes it), `preferredCandidates`, the seen and known sets and the chain's claim order exactly as `candidateClosure` and `chainOrdered` had them. `candidatesFor`, `candidateClosure` and `chainOrdered` go. | Section 2.1 A; equivalence in 5.1. Statements per pass instead of per line; decrypts at most one per claim. |
 | D2 | Each claim's lines are read once a pass: the context's map, extended by one `claimLines` call per search round for the round's new candidates; `reprocessingOf` gains an optional last argument, the map, and reads `claimLines` only when the map lacks the line's claim or the candidate. `claimLines`' SQL does not change. | Section 2.2 A. `claimLines` reads stored rows only, which the pass never writes. |
 | D3 | `syncLineStages` collects its events and writes them in one `INSERT … SELECT … FROM unnest(…) WITH ORDINALITY … ORDER BY n` (`insertStages`), in today's order (by `service_line_id`, a line's payer approved before its recovered); the move-back notes are read first. | Section 2.3 A. One case refresh per statement; same rows, same `seq` order, same checks. Removes 1b's case-refresh family: on F (one case of 2,000 lines) 4,000 refreshes, 79 s, become one, 0.7 s (section 1.7). The same locks are taken in another order (every event line's head row, then the cases; 5.2, review round 1): `insertStages` runs under a savepoint and re-issues the same statement on a deadlock (SQLSTATE `40P01`), at most twice, so a person's reopen crossing the pass never costs the pass. |
 | D4 | No new lock, no lock removed, no change to transactions or write order. The pass stays one transaction under `lockLedger`; every `insertMatch`, `insertEntry`, `recordReprocessedNoChange` and stage event is issued in today's order. **Corrected in review round 1:** the order in which the stage write takes its row locks does change (D3: all event lines' heads, then their cases, where today each event took its head and then its case); 5.2 says what that means and D3's savepoint retry absorbs it. | Section 5.2. `ledger_entry.seq`, `line_status.seq` and, after the interest fix, `ledger_match.seq` draw the same order, so every reader that orders by them reads the same. |
 | D5 | `lineChain` reads a line's standing matches from an index built once per context's matches array (a module `WeakMap`), in the array's order. `ChainContext` keeps its shape. | Section 2.4. O(C+M) per context instead of O(C·M); every caller (pass, report, screens) unchanged in answer. |
 | D6 | `settleMatches` keeps a running sum of each check's check-level postings in the standing matches' order instead of re-filtering the prefix. | Section 2.4. Same `before` for each match. |
 | D7 | `matchPostings` passes `postingDecision` a map of each remittance's claims with their patient control numbers decrypted, filled on first use; `postingDecision` and `claimsWithReference` take it as an optional last argument (the manual match passes none). | Section 2.4. One read and one decrypt per claim a pass instead of one per row. |
-| D16 (1b's hand-off; reviewed 2026-11-06) | Neither search statement names `ledger_match`. The "never claim-matched to this line" exclusion comes from the pass's `matched` set (every `claim`-kind match of the practice, standing or reversed, as `claim line` pairs, from the context's matches read before any write): `controlCandidates` drops matched pairs in TypeScript; `patientCandidates` excludes them inside its statement against two parameter arrays (claim, line index) holding only the matched pairs whose claim is not already in that line's known set (a reversed match, a person's unmatch, a standing match with no line of the code and date), so it decrypts exactly the claims today's per-line queries decrypted, and also drops them in TypeScript. | 1b's ask: the exclusion's cost cannot depend on `ledger_match`'s statistics, by construction. The binding limit: decrypts never widened (a TypeScript-only patient exclusion would decrypt, once, a claim excluded from every line only by such a match). The TypeScript form was measured equal in time, decrypts and writes in five statistics states (section 1.7); the patient statement's parameter-array form is a build gate (slice 3). **Its fallback (review round 1) is the candidate's own correlated `NOT EXISTS` on `ledger_match` inside the patient statement's per-line `EXISTS` (once per pass; measured 37-60 ms in all five statistics states, 1.7), never the TypeScript-only patient exclusion, which the security review does not accept: it would decrypt claims no line's query returned.** If the fallback is taken, the patient search alone stays bound to `ledger_match`'s statistics (once per pass), the PR says so, and CAS-50's text check excludes that one statement. The control search's TypeScript drop stays in either case (it decrypts nothing). Equal by 5.1 step 1a. |
+| D16 (1b's hand-off; reviewed 2026-11-06) | No search statement names `ledger_match`. The "never claim-matched to this line" exclusion comes from the pass's `matched` set (every `claim`-kind match of the practice, standing or reversed, whose service line is an open line's (review round 4: bounded by the open lines, not the match history; the same answer for every searched line), as `claim line` pairs, from the context's matches read before any write): `controlCandidates` drops matched pairs in TypeScript; `patientCandidates` excludes them inside its statements ((a) and `patientPairs`, review round 3) against two parameter arrays (claim, line index) holding only the matched pairs whose claim is not already in that line's known set (a reversed match, a person's unmatch, a standing match with no line of the code and date), so it decrypts exactly the claims today's per-line queries decrypted, and also drops them in TypeScript. | 1b's ask: the exclusion's cost cannot depend on `ledger_match`'s statistics, by construction. The binding limit: decrypts never widened (a TypeScript-only patient exclusion would decrypt, once, a claim excluded from every line only by such a match). The TypeScript form was measured equal in time, decrypts and writes in five statistics states (section 1.7); the patient statement's parameter-array form is a build gate (slice 3). **Its fallback (review round 1) is the candidate's own correlated `NOT EXISTS` on `ledger_match` inside the patient statement's per-line `EXISTS` (once per pass; measured 37-60 ms in all five statistics states, 1.7), never the TypeScript-only patient exclusion, which the security review does not accept: it would decrypt claims no line's query returned.** If the fallback is taken, the patient search alone stays bound to `ledger_match`'s statistics (once per pass), the PR says so, and CAS-50's text check excludes the patient search's two statements, (a) and `patientPairs` (b), which both carry it (section 4; completeness check 2). The control search's TypeScript drop stays in either case (it decrypts nothing). Equal by 5.1 step 1a. |
 | D15 (found in the probe phase; numbered last; revised in the review, section 16) | `matchPostings` and `matchDeposits` find the rows no match was ever made for with one practice-scoped `EXCEPT` statement in the server (the practice's row IDs less its matched `posting_row_id`s, or `eft_row_id`s; identifiers only), then read those rows by `id = ANY ($2)` with today's `ORDER BY`. | Section 1.6 and 2.4. The same rows in the same order; linear on an unanalyzed table (a set operation has no per-row plan); the worker holds only the never-matched IDs, never the practice's history (the candidate's TypeScript comparison held 278 MiB at 1,000,000 rows). |
 | D8 | `claim_by_superseded` is SUITE-CAP-1b's D15 (`designs/suite-cap-1-triage-locks.md` line 475, migration `20261109090000` section 4). This item cites it and adds nothing to the schema. | The orchestrator's limit. After D1-D2 it serves the three practice-wide `claimLines` calls and the report. |
-| D9 | No migration, index or table (section 14.0). The ledger triggers' part is handed to Lane A (section 14.1) with its DDL and measured gain; it is a ledger function change, needs a founder freeze exception (the ask is written: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`) and queues behind #126 (one schema PR at a time). | The ledger freeze; the orchestrator's limit. |
+| D9 | No migration, index or table (section 14.0). The ledger triggers' part is handed to Lane A (section 14.1) with its DDL and measured gain; it is a ledger function change, needs a founder freeze exception (the ask is written: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`; granted 2026-11-06 22:40 UTC, as the item's status file records; completeness check 2) and queues behind #126 (one schema PR at a time). This item's build is worker-side only (the co-founder's scope, 2026-11-06): no Lane A part is in its PR. | The ledger freeze; the orchestrator's limit. |
 | D10 | Nothing under `packages/ledger/src` changes; no matching rule, amount, stage, outcome or recovered total changes. | The freeze; CAS-49 and LED-01 to LED-18 prove it. |
-| D11 | Every new statement is practice-scoped (`c.practice_id = $1`, `o.practice_id = $1`, inside the pass's practice scope with forced RLS), on every table it reads, not only on its output: the patient search's `named` read of `service_line` carries `s.practice_id = $1` in both branches and the control search's `probe` reads of `claim q` carry `q.practice_id = $1` (the candidate relied on RLS and the output's `c.practice_id` there; taken in the review, section 16); and (review round 1, section 18) every other table alias in both search statements too: `r.practice_id = $1` on `remittance r`, `o.practice_id = $1` in the correlated `claim o` load-time subqueries, `s.practice_id = $1` in the patient search's two `ARRAY(…)` reads of `service_line`, and `x.practice_id = $1 AND xl.practice_id = $1` in the `case_line` exclusion (the D16 fallback's `ledger_match m`, if taken, `m.practice_id = $1`); CAS-50 checks each alias; decrypts happen only in the worker, once per claim, never logged; no identifier reaches a log line, an error message or a job payload. | Tenancy and PHI rules; CAS-50 counts the decrypts. |
+| D11 | Every new statement is practice-scoped (`c.practice_id = $1`, `o.practice_id = $1`, inside the pass's practice scope with forced RLS), on every table it reads, not only on its output: the patient search's `named` read of `service_line` carries `s.practice_id = $1` in both branches and the control search's `probe` reads of `claim q` carry `q.practice_id = $1` (the candidate relied on RLS and the output's `c.practice_id` there; taken in the review, section 16); and (review round 1, section 18) every other table alias in every search statement too: `r.practice_id = $1` on `remittance r`, `o.practice_id = $1` in the correlated `claim o` load-time subqueries, and `x.practice_id = $1 AND xl.practice_id = $1` in the `case_line` exclusion (the D16 fallback's `ledger_match m`, if taken, `m.practice_id = $1`); the candidate's two `ARRAY(…)` reads of `service_line` (every line's code and date of each returned claim) are removed, not scoped (review round 2; review round 3: the patient search's statement (a) selects no `service_line` column and its statement (b), `patientPairs`, returns only (claim, line index) pairs for pairs already equal by decrypted patient control number, every alias of both carrying `practice_id = $1`, section 4, 5.2); CAS-50 checks each alias; decrypts happen only in the worker, once per claim, never logged; no identifier reaches a log line, an error message or a job payload. | Tenancy and PHI rules; CAS-50 counts the decrypts. |
 | D12 | ADR 0087: "A reconcile pass reads per pass, never per open line, and writes in the order the rules define." The pass's statements stay a bounded number per pass (CAS-50 enforces it); a new matching filter is written into the pass-level search and kept equal to the per-line definition CAS-49 holds. | A lasting constraint on every later change to the reconcile step (the matching rules will change again; a per-line query would bring the curve back). |
 | D13 | CAS-49 to CAS-51 (section 7); the old per-line step is kept as test support (`apps/worker/src/reconcile/test-support/per-line.ts`) as the reference CAS-49 compares with, as SUITE-CAP-1a kept the whole read. | The proof is old against new, at generated sizes and shapes. |
-| D14 (revised 2026-11-06) | 1b has landed, so this item is second and resets them, from section 8.4: CAS-42.3 keeps its default 2,000 lines, `PASS_BUDGET_MS` 150,000 → 60,000, and its comment's "grows faster than its lines" paragraph is rewritten; step 7b stays on F, a practice of its own, at **10,000** lines at full size (`FULL_SIZE.reconcileLines`; the smoke size keeps 600), expected to complete on attempt 1 within 360 s; the Known gap line stays, with its fixed words rewritten to A's month's measured figure and to who closes it (Lane A's trigger fixes). Moving step 7b back to A's full month is **not** in this item: measured, it fails the attempt (1,653 s against 900 s, 8.3a); it becomes the acceptance step of Lane A's trigger PR, re-measured within 360 s. ADR 0083 gets a dated note pointing to ADR 0087. | 1b's hand-off and ADR 0083 named the move back as this item's acceptance; the measurement shows no worker change can meet it (89% of that pass is the ledger triggers). Building a step that fails every weekly run would hide every other signal of that run. Put to the orchestrator in the review (section 8.4). |
+| D14 (revised 2026-11-06) | 1b has landed, so this item is second and resets them, from section 8.4: CAS-42.3 keeps its default 2,000 lines, `PASS_BUDGET_MS` 150,000 → 60,000, and its comment's "grows faster than its lines" paragraph is rewritten; step 7b stays on F, a practice of its own, at **10,000** lines at full size (`FULL_SIZE.reconcileLines`; the smoke size keeps 600), expected to complete on attempt 1 within 360 s; the Known gap line stays, with its fixed words rewritten to A's month's measured figure and to who closes it (Lane A's trigger fixes). Moving step 7b back to A's full month is **not** in this item: measured, it fails the attempt (1,653 s against 900 s, 8.3a); it becomes the acceptance step of Lane A's trigger PR, re-measured within 360 s. ADR 0083 gets a dated note pointing to ADR 0087. | 1b's hand-off and ADR 0083 named the move back as this item's acceptance; the measurement shows no worker change can meet it (89% of that pass is the ledger triggers). Building a step that fails every weekly run would hide every other signal of that run. Put to the orchestrator in the review (section 8.4); the status file records its ruling of 2026-11-06 22:31 UTC accepting the split, for confirmation with the reviewed design (8.4, completeness check 2). |
 
 ---
 
@@ -422,21 +431,57 @@ review's first form, measured on spread R at 83d71fd6 at 1,001.1 → 206.7 s, gi
     line's `byPatient` would have returned (the same filters less the `ledger_match` predicate, joined on the line's
     code and date: equality on both, or
     both dates null, which is `IS NOT DISTINCT FROM`; both branches of its `named` CTE read `service_line s` with
-    `s.practice_id = $1`, D11, review; `remittance r`, `claim o`, `case_line x`, `service_line xl` and both `ARRAY(…)`
-    reads of `service_line s` carry `practice_id = $1`, D11, review round 1), with its own lines' codes and dates; one
-    statement for the lines'
-    claims' `loadedAt`; each claim decrypted once; per line, the claims of its patient control number that pass its
-    filters (the line's own remittance excluded, loaded no earlier than the line's claim, not known, never
-    claim-matched to the line (its pair not in `matched`, D16), a line of its code and date), sorted `inChainOrder`.
-    Inside the statement's per-line `EXISTS`, `ledger_match`'s `NOT EXISTS` becomes `NOT EXISTS (SELECT 1 FROM
-    unnest($8::uuid[], $9::int[]) AS x (claim_id, ix) WHERE x.claim_id = c.id AND x.ix = l.ix)`, the arrays holding the
+    `s.practice_id = $1`, D11, review; `remittance r`, `claim o`, `case_line x` and `service_line xl` carry
+    `practice_id = $1`, D11, review round 1). **Review round 2 (PHI read):** the statement selects no `service_line`
+    column. The candidate's `ARRAY(SELECT s.procedure_code …) AS codes` and `ARRAY(SELECT s.service_date::text …) AS
+    dates` (cap3-rev `remittances.ts:272-273`: every line of every returned claim, other patients' included, in the
+    worker before the patient filter) and its separate `loaded_at` statement for the lines' claims (:287-290) go.
+    **Review round 3 (volume):** round 2 put an `ixs` array of the passing line indexes in their place; that form is
+    withdrawn, because `named` pairs every searched line with every claim of its code and date whatever the patient,
+    so `ixs` evaluated the full per-line predicate for all g × g' pairs of a code-date group and returned them all to
+    the worker (Σ g × g', the base's per-line volume; on spread A at A's month about 9.5 M elements), and a
+    skeptic's probe of it on a reduced schema took 8.0 s at 2,000 and 181.5 s at 6,000 lines against the candidate
+    form's 0.09 and 0.71 s. The patient search is instead **two statements, once per pass**:
+    (a) the outer statement exactly as the candidate has it less the two arrays: the same outer `EXISTS` (stopping
+    at the first passing line, so the same claim rows), selecting only `c.id`, `c.remittance_id`, the `to_char`
+    payment date, the load time and `c.patient_control_number`; each claim decrypted once;
+    (b) `patientPairs`: after decrypting, the worker sends only the (claim, line index) pairs whose decrypted patient
+    control number equals the line's, as two parameter arrays (`unnest($n::uuid[], $m::int[]) AS p (claim_id, ix)`,
+    no statement when there are none), and the statement returns the pairs that pass the per-line predicate, word
+    for word the outer `EXISTS`'s (a line of the claim of the line's code and date, `IS NOT DISTINCT FROM` on the
+    date; own remittance excluded; `c.created_at >= (SELECT o.created_at …)`; the `k` known exclusion; D16's array
+    exclusion; with D11's `practice_id = $1` on every alias), selecting `p.claim_id, p.ix` only, `ORDER BY p.ix,
+    p.claim_id`. Its input and output grow with the pairs that match by patient (linear in the open lines), never
+    with a code-date group's size; no code or service date reaches the worker, and the decrypts are (a)'s, equal to
+    the base's union.
+    Per line, the candidates by patient are the claims (b) returned for the line's index, less (in later rounds) the
+    line's known claims and `matched` (D16's TypeScript drop), sorted `inChainOrder`; the line's `seen` claims are
+    taken off **after** `preferredCandidates([control, patient])`, as the base's `candidateClosure` and the candidate
+    (`remittances.ts:356`) do, never from either list before it (review round 3: a control-number candidate that
+    paired with no line comes back each round and, kept, hides the patient list; dropped first, the search would fall
+    through to a patient claim and write a match; CAS-49.1's fifth mutant). The TypeScript re-checks of `since`,
+    remittance and code and date (:301-311) go: (b) applies them per pair in SQL, exactly the per-line `byPatient`
+    query's predicate, so the returned rows, the decrypts and the writes are the same, and the worker holds no code or
+    service date of a claim no line's decrypted number named (as the base's `claimLines`, read only for such claims).
+    Inside both statements' per-line predicate, `ledger_match`'s `NOT EXISTS` becomes `NOT EXISTS (SELECT 1 FROM
+    unnest($8::uuid[], $9::int[]) AS x (claim_id, ix) WHERE x.claim_id = c.id AND x.ix = l.ix)` (in (a)'s outer
+    `EXISTS` and in (b) alike), the arrays holding the
     matched pairs whose claim is not in that line's known set (D16; numbering as the build lays out the parameters).
     If slice 3's gate fails, the candidate's correlated `NOT EXISTS (SELECT 1 FROM ledger_match m …)` stays there
-    instead (D16's fallback, with `m.practice_id = $1`); never a TypeScript-only patient exclusion.
+    instead, in (a) and (b) alike (D16's fallback, with `m.practice_id = $1`); never a TypeScript-only patient exclusion.
     `matched` is the set of `claim line` pairs of the context's `claim`-kind matches (standing or reversed; the
-    context's `chainMatches` reads both), built once in `matchClaims` before any write of `matchClaims`. Neither
-    statement names `ledger_match` (CAS-50 checks the text). The build takes the measured change
-    (`cap3-results-rev/d1-ts-exclusion.diff`) onto the candidate;
+    context's `chainMatches` reads both) whose service line is an open line's (review round 4: a `Set` of `open`'s
+    service-line IDs first, then the filter; the candidate's set, `remittances.ts:915`, holds the practice's whole
+    claim-match history, 5.0 MiB at 61,590 pairs and about 65 MiB at 740,000, about a year at A's rate; every lookup is
+    by a searched line, and only open lines are searched, so the exclusion is the same), built once in `matchClaims`
+    before any write of `matchClaims`. No search
+    statement (the control search, the patient search's (a) and (b)) names `ledger_match` (CAS-50 checks the text). From
+    `cap3-results-rev/d1-ts-exclusion.diff` (a measured reference, not a patch) the build takes only the control-search
+    hunk (`controlCandidates`' `matched` argument, its TypeScript drop and the removal of that statement's `ledger_match`
+    predicate) and `passCandidates`' call-site change; never its patient-search hunk (@@ -276), which deletes the patient
+    statement's `NOT EXISTS` and puts nothing in its place, the TypeScript-only patient exclusion D16 rejects (it would
+    decrypt claims no line's query returned; review round 4). The patient statements (a) and (b) get D16's
+    parameter-array predicate as above, or, if slice 3's gate fails, the correlated fallback;
   - `passCandidates(scope, cipher, practiceId, open, matched, lines)`: the rounds (section 5.1), extending `lines` by
     one `claimLines` call per round for the round's unread candidates.
 - `matchClaims` (:705-719): build `open` (each open line with its `lineChain`, as today), the `matched` set and the
@@ -485,8 +530,15 @@ review's first form, measured on spread R at 83d71fd6 at 1,001.1 → 206.7 s, gi
   `postingDecision`, `claimsWithReference` and `settleMatches` (the prefix filter) from `postings.ts`; each calling the
   copies, never the new functions; and `referencePass(scope, cipher, practiceId)`, today's `reconcilePractice` body
   (`pass.ts:35-51`) with those copies in its order and the unchanged steps (payer responses, recoupment notices)
-  imported. Exported for CAS-49 (D13). Not imported by any production file (the lint rule on test-support imports
-  already holds this). Once #126 is on the base the copies are taken from the merged base's text (its `remittances.ts`
+  imported. Exported for CAS-49 (D13). Not imported by any production file. **Corrected in review round 3:** no lint rule or
+  test holds this today (`eslint.config.js` restricts imports only for the model SDKs and Google fonts, and
+  `packages/packets/src/role-examples.ts` already imports a `./test-support` module unflagged), so slice 1 adds the
+  guard: the `per-line` module joins `restrictedImports`' patterns (`**/test-support/per-line`, with a message
+  naming ADR 0087), and a test-file override (`**/*.test.ts`, `**/test-support/**`) re-declares the rule with the
+  existing patterns only, since a later flat-config block replaces a rule's options; a lint fixture test, as
+  `packages/model-gateway/src/lint.test.ts` does for the SDK rule, shows a production file importing it through
+  `./`, `../` and the package path fails and a test file passes. The rule is scoped to `per-line`, not to every
+  `test-support` path, so existing imports (`role-examples.ts`, the package's exported test subpaths) are untouched. Once #126 is on the base the copies are taken from the merged base's text (its `remittances.ts`
   hunks included), so the reference is always "the base this PR merges into".
 
 ### Not changed
@@ -539,12 +591,18 @@ The pass-level search computes the same per line:
 2. **`byControl`** runs per round for the lines still searching, with each line's own `known_r`: the same rows per line
    in the same order (the statement's `ORDER BY l.ix, …` is each line's `ORDER BY` within its index).
 3. **`byPatient`** differs between rounds only by `c.id <> ALL(known_r)`, and `known` only grows; so
-   `P_r = P_1 less known_r`, which the search computes from one read. `P_1` per line is exactly the claims whose
-   decrypted patient control number equals L's among those L's query returned: the statement returns the union over
-   lines of what each line's query returned (the per-line filters are inside the statement's `EXISTS`), and TypeScript
-   re-applies each line's filters to the claims of L's patient control number. The decrypt set is that union, each claim
-   once.
-4. **Rounds, `seen` and pairing**: per line as today; the round's `claimLines` read covers every line's new candidates
+   `P_r = P_1 less known_r`, which the search computes from one read. `P_1` for line L is exactly the claims that
+   statement (b) (`patientPairs`, section 4) returns for L's index (review round 3; round 2's `ixs` text and the
+   earlier "TypeScript re-applies each line's filters" are withdrawn): (a)'s outer `EXISTS` holds L's own per-line
+   predicate, so every claim L's query returned is among (a)'s rows and is decrypted; the worker pairs it with L when
+   its decrypted patient control number equals L's (the patient equality of L's query); and (b) keeps the pair when it
+   passes L's per-line predicate, the same predicate as L's own `byPatient` query, D16's arrays included (which leave
+   out only pairs whose claim is in `known_L`, which `c.id <> ALL(known_L)` already excludes). So `P_1` is L's
+   query's rows, no more and no fewer. The decrypt set is (a)'s rows, the union over lines of what each line's query
+   returned, each claim once.
+4. **Rounds, `seen` and pairing**: per line as today; `seen` is taken off after `preferredCandidates([C_r, P_r])`,
+   never from `C_r` or `P_r` before it (review round 3: a control-number candidate that paired with no line stays in
+   `C_r`, so the round empties and the search stops, as today); the round's `claimLines` read covers every line's new candidates
    (D2's map equals a two-claim read).
 5. **Order**: `found` sorted by `inChainOrder`, the key of `chainOrdered`'s `ORDER BY`. Then the lines are matched in
    `caseLines` order and each line's candidates in that order: every `insertMatch`, `insertEntry` and
@@ -572,8 +630,9 @@ The pass-level search computes the same per line:
   proceeds, and a reopen leaves the head at the same stage, so the same events pass the same checks; if a concurrent
   stage change makes one fail its check, the pass fails and retries as today's would). If the deadlock detector picks
   the person's reopen instead, the reopen gets a retryable error (`40P01`), as it can today. CAS-49.6 tests it. The
-  lasting fix, the reopen taking `lockLedger` first since it writes stage events the pass's stage sync owns, is handed
-  to the web owner (14.4 item 14).
+  lasting fix, the reopen taking the `ledger:` lock with `pg_try_advisory_xact_lock` and refusing at once (retryable,
+  no identifier) while a pass holds it, never the blocking `lockLedger`, which would hold a shared web connection for
+  the length of a pass (review round 4), is handed to the web owner (14.4 item 14).
 - `ledger_entry.seq` (default `nextval`): the inserts are issued in today's order, so seq order is today's.
   `ledgerEntries` (`ORDER BY seq`) and `ledger_line_stage` (`max(seq)`) read the same.
 - `ledger_match`: inserted in today's order (claims in line and chain order, then reversals, then WOs and L6s, then
@@ -592,7 +651,12 @@ The pass-level search computes the same per line:
 - `line_status.seq`: the multi-row insert forms its rows in `n` order and draws each row's default `nextval` as it forms
   it, then runs its BEFORE triggers before forming the next; 1b's `line_status_rules()` draws its own `nextval` under the
   head row in the same interleaving. CAS-49.3 checks a line's payer approved then recovered in one statement under both
-  bodies, and the probe compared `seq` values exactly (section 8.3).
+  bodies, and the probe compared `seq` values exactly (section 8.3). **Gaps (review round 3):** a statement rolled back
+  (D3's savepoint retry, a reopen aborted by the deadlock detector) does not return the values it drew, both the rows'
+  defaults and the head rows' `nextval`, so `line_status_seq_seq` then has gaps; that is correct, as no reader depends
+  on gap-free values (every reader takes a line's latest event by `ORDER BY s.seq DESC LIMIT 1`, e.g. `stages.ts:95`,
+  `triage/actionable-now.ts:26`, the web's queries, or reads `line_status_head`; none compares values). CAS-49.1 compares exact `seq` values (no concurrent writer, nothing rolled back); CAS-49.6 compares `seq`
+  order only.
 - `case`: refreshed once per statement instead of once per event; the final row is the same (its state and totals are
   derived from the lines' latest events; `updated_at` and `closed_at` take `now()`, the transaction's time, either
   way). No trigger on `"case"` writes history or audit rows (`case_rules`, `case_updated_at`, `case_belongs`,
@@ -600,7 +664,12 @@ The pass-level search computes the same per line:
 - The notification and audit rows are written by unchanged code in unchanged order.
 - The pass returns no more PHI-bearing rows to the worker than today: every new statement is inside the practice
   scope and filters on `practice_id`; the patient search returns the union of the claims the per-line queries returned
-  (each once; D16's parameter arrays keep the `ledger_match` exclusion inside the statement, so the union is exact);
+  (each once; D16's parameter arrays keep the `ledger_match` exclusion inside the statement, so the union is exact),
+  and per claim no more columns than the base's `byPatient` returned (id, remittance, payment date, the encrypted
+  patient control number; plus its load time): neither patient statement selects a `service_line` column, so no code
+  or service date of another patient's claim reaches the worker (review round 2; the candidate's `codes`/`dates`
+  arrays did, section 4), and statement (b) receives and returns only (claim, line index) pairs already equal by
+  patient control number, so its volume follows the patient matches, not a code-date group's size (review round 3);
   D15's `EXCEPT` returns only the never-matched rows' identifiers, which today's anti-join also computed inside the
   server, so the worker receives no more identifiers than it then reads rows for. The arrays D16 passes are
   identifiers of the practice's own matches, never logged.
@@ -616,7 +685,8 @@ the same numbers; no screen, report, CSV, PDF, email or log line changes.
 
 None in the product changes. No message, label, note, email, notification text, error text, log line or document a
 customer reads is added, removed or reworded. The reopen notes (`REOPEN_NOTES`) are written by the same code into the
-same rows. No ux-brand review is needed (LANES.md rule 1).
+same rows; D3 moves when `moveBackNote` runs (before every insert, not between them), so CAS-49.1 compares each note by
+its decrypted text and its sixth mutant gives a proof-level move-back the reversal note (review round 4). No ux-brand review is needed (LANES.md rule 1).
 
 One operators' line changes (D14): the weekly release-capacity summary's Known gap line (`tools/release-capacity/
 checks.ts` `KNOWN_GAP`, `KNOWN_GAP_REVISIT`), read by the founder and the lanes, not by a customer. Its fixed words
@@ -631,7 +701,9 @@ the draft PR.
 ## 7. Tests
 
 Every new test reads SYNTHETIC rows only (`packages/synth` twins, LED fixtures, or rows the test generates with
-SYN-marked identifiers), logs no identifier, and runs in the `db` project unless marked unit.
+SYN-marked identifiers), logs no identifier, and runs in the `db` project unless marked unit. No test compares
+encrypted text by whether it is set: an encrypted column is compared by the SHA-256 of its decrypted plaintext, taken
+in memory and never logged (CAS-49.1; review round 4).
 
 ### CAS-49: the pass writes what the per-line pass wrote
 
@@ -652,12 +724,15 @@ SYN-marked identifiers), logs no identifier, and runs in the `db` project unless
    claims of the same code, date and patient control number (D11: never a candidate); interest as the base pays it
    (AMT I and a PLB L6; LED-23 to LED-25's worlds join once #126 lands); posting and EFT rows of an earlier export never
    matched, and a posting match a person reversed (D15: its row is never matched again, as `NOT EXISTS` had it); a
-   claim-level posting row whose claim reference names a claim of another remittance (D7). Each case is built twice
+   claim-level posting row whose claim reference names a claim of another remittance (D7); and (review round 3) a
+   case line with a control-number candidate that pairs with no line (a correction that changed the procedure code)
+   beside a patient-number claim of the same code and date that would pair, so that the base's stop (the control
+   candidate returns, `seen` empties the round, the patient claim is never matched) is in every run's world. Each case is built twice
    from the same template
    database (`CREATE DATABASE … TEMPLATE`), one pass run by `referencePass` (today's every changed function, section 4)
    and one by `reconcilePractice`, and the
-   test compares, with each row's new UUIDs replaced by their ordinal in insertion order: the ledger matches in
-   insertion order; the ledger entries in `seq` order with their `seq` values, except the posted and deposited
+   test compares, with each row's new UUIDs replaced by their ordinal in insertion order (taken as the paragraph
+   below says, never by `ctid`): the ledger matches in insertion order; the ledger entries in `seq` order with their `seq` values, except the posted and deposited
    entries `settleMatches` writes, which follow the random match IDs: compared as a set, with the rule that their
    `seq` order is `ledgerMatches`' order checked on both, **except** for a check with two or more allocated
    check-level postings matched in that pass, whose entries' amounts depend on that random order (5.2): for those,
@@ -674,16 +749,48 @@ SYN-marked identifiers), logs no identifier, and runs in the `db` project unless
    phase each claim at most once and within the reference's set (D7 removes repeat decrypts there). The generator
    includes a person's unmatch of a claim of the same code and date that no other line would take, and (review round 1)
    a reversed claim match on a case line whose claim no other line names, so the equality bites in both directions and
-   would fail a TypeScript-only patient exclusion (D16). **Fails
+   would fail a TypeScript-only patient exclusion (D16).
+   **How insertion order is taken (review round 2).** On the base `ledger_match`, `payer_response`, `submission`,
+   `notification` and `audit_event` have no `seq`, and a pass's rows share one `created_at`; the probe's `dump.py`
+   ordered them by `ctid` (`cap3-probe/dump.py:10, 24`), which is physical position, not insertion order, and the
+   build does not copy it. The test's statement proxy (the one CAS-50 and CAS-51 use) records, on each side, every
+   write statement to those tables in issue order with its parameters. (a) A single-row insert that returns its id
+   (`insertMatch`, `ledger.ts:141-144`; the payer response and submission inserts, `packets/services.ts:702-704,
+   767-769`) gives that id its ordinal in issue
+   order, and the rows are compared in that order. (b) A multi-row insert without `RETURNING` (`audit_event`'s
+   `INSERT … SELECT FROM unnest(…)`, `packages/db/src/authz/audit.ts:49`; the recoupment `notification`'s
+   `INSERT … SELECT … ON CONFLICT DO NOTHING`, `stages.ts:155`): the two sides' sequences of such statements are
+   compared in issue order (text and parameters, new UUIDs by ordinal), and the rows each wrote are compared as a
+   multiset of canonical rows (own id and timestamps out); no other row refers to these rows' ids, so they need no
+   ordinal; any other insert into these tables without `RETURNING` falls under (b). The template database's written tables are set `autovacuum_enabled = false` before the clones are taken,
+   so neither side is vacuumed during the run. Once #126 is on the base, `ledger_match` is compared by `seq` (12.2).
+   **How encrypted text is compared (review round 4).** Never by presence. Every encrypted column the pass writes
+   (`line_status.reason`, the move-back and recoupment notes; and any other column the test's wrapper over
+   `PracticeCipher.encrypt` sees written in the run, e.g. a payer response's or notification's encrypted text, and in
+   CAS-49.4 `ledger_entry.reason` and `ledger_match.reversal_reason`) is decrypted in memory on each side with the test
+   practice's cipher and compared as the SHA-256 of its plaintext, in the row's place in the comparison; a `null` stays
+   `null`. The ciphertext itself differs on every run (AES-256-GCM with a fresh nonce, `packages/db/src/crypto/cipher.ts`),
+   so comparing it byte for byte fails spuriously and comparing it as set or not (the probe's `dump.py:12`, section 15
+   T2) would pass a wrong note: `REOPEN_NOTES.reversal`, `.proofLevel` and `.recoupment` all look alike as "set". The
+   plaintext and its hash are never logged or printed; a failure names the table, the row's ordinal and the column
+   only. The generator's recovered line moved back is made both ways in every run's world: once by a reversal written
+   after it reached recovered (the reversal note) and once by the practice's proof level raised from posted to
+   deposited (the proof-level note), since D3 moves `moveBackNote` ahead of every insert (`stages.ts:118`, one
+   `insertStages` at :123 at 0b6e90eb).
+   **Fails
    first** with D1 written without step 3 of 5.1
    (one round's patient read reused without taking off the known claims), with the patient search's `created_at`
    filter narrowed from `>=` to `>` (a dropped claim that pairs with no line: only the decrypt equality sees it),
    and with D3 writing the events grouped by stage
    (every payer approved, then every recovered: the same rows, another `seq` order), and with D16's exclusion dropped
-   from both searches (an unmatched claim matched again); all four mutants are part of the test file's own
-   self-check, run against a copy of the new code.
+   from both searches (an unmatched claim matched again), and (review round 3) with `seen` taken off the
+   control-number list before `preferredCandidates` (the patient claim above matched: a new match and entry), and
+   (review round 4) with `moveBackNote` returning `REOPEN_NOTES.reversal` for every recovered line moved back (the
+   proof-level move-back gets the reversal note: the same rows, stages and `seq`; only the decrypted comparison sees
+   it; a full swap of the two notes is not used, as LED-07 already fails it, `ledger.db.test.ts:632`); all six
+   mutants are part of the test file's own self-check, run against a copy of the new code.
 2. **LED fixtures.** For LED-01 to LED-18's own worlds (`ledger.db.test.ts`' `LedgerWorld`), the same comparison after
-   each reconcile the LED test runs. LED-01 to LED-18 and `ledger-oracle.db.test.ts` themselves are unchanged and pass
+   each reconcile the LED test runs (encrypted text by its decrypted hash, as in 1; review round 4). LED-01 to LED-18 and `ledger-oracle.db.test.ts` themselves are unchanged and pass
    byte for byte.
 3. **Stage events in one statement.** Under the base's `line_status_rules()` (1b's head-row body, #110; the pre-1b body
    is gone from the base, so the test has one half only, 12.1), one `insertStages` with a line's payer approved then
@@ -698,7 +805,7 @@ SYN-marked identifiers), logs no identifier, and runs in the `db` project unless
    LED-07's worlds and each manual action (`matchClaimByHand`, `matchPostingByHand`, `matchDepositByHand`,
    `reverseMatch`, `adjustEntry`) twice from one template: once as shipped, once with `./stages`, `./postings` and the
    changed `./remittances` exports mocked to `per-line.ts`' copies; it compares the writes as in 1 (with `set_by`, the
-   audit event and the actor), and the refusals (`ReconciliationError` codes) for the same bad inputs. **Fails first**
+   audit event and the actor; `ledger_entry.reason` and `ledger_match.reversal_reason` by their decrypted hash, review round 4), and the refusals (`ReconciliationError` codes) for the same bad inputs. **Fails first**
    with D3 grouping a person's events by stage.
 5. **`lineChain`'s index (D5), unit (completeness check).** `apps/worker/src/reconcile/line-chain-index.test.ts`
    (new, fast-check, fixed seeds): for generated `ChainContext`s (matches in any order, standing and reversed, lines
@@ -715,8 +822,24 @@ SYN-marked identifiers), logs no identifier, and runs in the `db` project unless
    with a hook between them: its `UPDATE case_line` (taking C), then holds. Session A runs the pass; its `insertStages`
    takes L's head and waits on C. B then runs its `INSERT line_status` (waits on L's head): a deadlock. Asserted: when
    PostgreSQL aborts A's statement, the savepoint retry re-issues it, B commits, the pass completes and its rows equal
-   those of the same pass run after B alone (as in 1); when it aborts B, B gets `40P01` and the pass's rows equal the
-   pass alone; in neither case is a stage event written twice or out of `n` order. The victim is forced each way with
+   those of the **reference interleaving** (as in 1, encrypted text by its decrypted hash included); when it aborts B, B gets `40P01` and the pass's rows equal the
+   pass alone. **`seq` by order, not value (review round 3):** here `line_status` rows and `line_status_head.seq` are
+   compared by their ordinal in `seq` order, not by `seq` value, because a rolled-back statement keeps the sequence
+   values it drew (5.2): when A is the victim, its aborted attempt drew a default for every row it formed and a head
+   `nextval` for each existing head, so its retried rows carry higher values than the reference's; when B is the
+   victim, B's lost default is drawn after A's statement has drawn all of its own (the case lock is taken AFTER
+   STATEMENT), so only stage rows the pass writes later would shift. The order is the same in both cases. CAS-49.1
+   keeps exact `seq` values. **The reference interleaving (review round 2).** Not "the pass run after B alone": the retried pass's
+   reads (`caseLines`' `open`, `remittances.ts:142`, and the responses, unmatched and patient-share reads) were all
+   taken while L was written off, so it never searched L, where a pass run after B would search L and could match a
+   new claim to it (correct either way: the next pass reconciles L, 5.1 step 1). The reference is the same pass from
+   the same template with B's two statements committed from session B at a hook placed after the stage sync's read and
+   before its first stage insert (in `referencePass`, before `per-line.ts`' first `insertStage`), so B's
+   `line_status` row stands ahead of the pass's event for L in `seq` order; B blocks on nothing there (the pass holds
+   neither C nor L's head yet: the world writes no payer response or submission on C in the pass, since
+   `payer_response_refresh_case` and `submission_refresh_case` update the case, which the deadlock setup needs free as
+   well), and the test fails if B waits more than its `lock_timeout`. The world also holds a
+   new claim that pairs with L, so that a retry which re-read L as open would differ from the reference and fail; in neither case is a stage event written twice or out of `n` order. The victim is forced each way with
    `deadlock_timeout` set per session. **Fails first** with `insertStages` without the savepoint (the pass's
    transaction aborts).
 
@@ -725,16 +848,27 @@ SYN-marked identifiers), logs no identifier, and runs in the `db` project unless
 `apps/worker/src/reconcile/pass-bounds.db.test.ts` (new). A step-7b-shaped practice at 200 and at 800 lines (LED-06's
 SYNTHETIC segments, as CAS-42.3 seeds them), one pass each through `reconcilePractice` with a counting proxy over the
 scope's client (the probe's method) and a counting wrapper over `PracticeCipher.decrypt`:
-- the candidate statements (`controlCandidates`, `patientCandidates` and its `loadedAt` read) and `claimLines` calls
-  are at most `2 + 2 × rounds` and do not change between 200 and 800 lines;
+- the candidate statements (`controlCandidates` and the patient search's (a) and (b); the candidate's separate
+  `loadedAt` read is gone, review round 2) and the search's own `claimLines` calls (`passCandidates`, one per round with unread candidates) are at most
+  `2 + 2 × rounds` (review round 3) and do not change between 200 and 800 lines; the pass's other `claimLines` calls are
+  exactly the base's three practice-wide ones (`chainContext` in `matchClaims` and in `recoupReversals`, `remittances.ts:907` and :978 at 0b6e90eb, and in
+  `shares`, `postings.ts:285`), counted apart and
+  asserted equal to 3 at both sizes (completeness check 2: a test that bounded every `claimLines` call by
+  `2 + 2 × rounds` would fail the build's correct code; the candidate measured 4 calls in all, 3 + 1 round with
+  candidates, against the base's 2N + 3);
+- the patient search's statement selects no `service_line` column (review round 2: the test parses its outer select
+  list, which names only `c.id`, `c.remittance_id`, the `to_char` payment date, the load time and
+  `c.patient_control_number`; no `ARRAY(…)` over `service_line`); `patientPairs` selects only the pair's claim and
+  index, and its parameter pairs are only pairs whose decrypted patient control numbers are equal (review round 3);
 - `line_status` inserts: exactly one statement;
 - decrypts of `claim.patient_control_number`: at most one per claim of the practice per pass phase (the search, the
   postings), plus `caseLines`' one per case line;
 - the posting and EFT rows never matched: two statements each (the `EXCEPT` and the read by ID), whatever the size,
   and the `EXCEPT` returns exactly as many IDs as rows the second reads (D15: no history of IDs reaches the worker);
 - no candidate statement's text names `ledger_match` (D16: the exclusion's cost cannot depend on that table's
-  statistics; if slice 3 takes D16's fallback, the patient search's statement is excepted by name and the PR says so),
-  every table alias in both search statements carries a `practice_id = $1` predicate (D11, review round 1: the test
+  statistics; if slice 3 takes D16's fallback, the patient search's two statements, (a) and `patientPairs`, are excepted by name and the PR
+  says so; completeness check 2),
+  every table alias in every search statement ((a) and (b) included) carries a `practice_id = $1` predicate (D11, review round 1: the test
   parses each `FROM`/`JOIN` alias of a table, not of `unnest`, from the statement text), and the patient search's parameter arrays hold at most the practice's claim matches whose claim is not
   in that line's chain (`lineChain`'s claims): reversed matches (a person's unmatch among them) and standing matches
   whose claim has no line paired with the case line (corrected in the review: "non-standing" missed the last kind);
@@ -757,6 +891,13 @@ in one pass) at `TP_LARGE_RECONCILE_LINES` (default 2,000), in the CI `db` shard
 - the shape: one case per code as CAS-42.3 seeds it, and a second pass of the same test on F's shape (all 2,000 lines
   in one case, the scenario's `reconcileClaims`/`FIXED_RATE`/`reprocessing()`), since the case refresh and the
   `ledger_match` exclusion bite hardest there (section 1.7). F's form shares the budgets.
+- (review round 3) a third pass on **spread A's shape** (the probe's `seed.mts`: 20 dates, so a code-date group grows
+  with N, at N/4 and N): the patient search's elements (statement (a)'s rows, (b)'s parameter pairs and returned
+  pairs) per open line at N at most 1.5 times those at N/4, and the own part's per-line ratio at most 1.5. Spread R's
+  group size is a constant 16 and F spreads its dates over the year, so neither shape sees a term that grows with a
+  code-date group; this one does. **Fails first** with round 2's `ixs` form (its elements grow with the group, about
+  4 times between 500 and 2,000). Spread A's form shares the budgets (the candidate's spread A at 2,000: 47 s on
+  cc3dd7f6, 1.7).
 The weekly release-capacity run (1b's step 7b, F at 10,000 lines after D14) is its full-size form. **Fails first** on the
 base: on cc3dd7f6 its own part took 122.8 s on spread R at 2,000 against a 40 s budget (the pass 158.7 s less its
 inserts 35.9 s), and on F 609 s (619.8 less 11.2); its per-line time grew 2.3 times between 2,000 and 6,000 at 83d71fd6
@@ -794,9 +935,9 @@ the review (T1 and R1 ran the worker's); run in the completeness check on 0b6e90
 
 | ID | Title | Expected |
 | --- | --- | --- |
-| CAS-49 | A reconcile pass writes what the per-line pass wrote | On generated passes with corrections, reversals, recoupments, payer responses, partial postings, EFT deposits, patient share and reopens, and on LED-01 to LED-18's worlds, the pass writes the same ledger matches, entries, stage events, payer responses, notifications and audit events, in the same order where order is observable, as the per-line pass; a line's payer approved and recovered written in one statement keep their order and checks |
+| CAS-49 | A reconcile pass writes what the per-line pass wrote | On generated passes with corrections, reversals, recoupments, payer responses, partial postings, EFT deposits, patient share and reopens, and on LED-01 to LED-18's worlds, the pass writes the same ledger matches, entries, stage events, payer responses, notifications and audit events, in the same order where order is observable and with the same text in every encrypted note, as the per-line pass; a line's payer approved and recovered written in one statement keep their order and checks |
 | CAS-50 | A reconcile pass's reads do not grow per line | Between 200 and 800 lines the pass's candidate searches and claim-line reads stay a fixed number of statements, none of them reads the ledger's matches, its stage events are one statement, and it decrypts each claim's patient control number at most once per phase |
-| CAS-51 | A reconcile pass at real size | A step-7b pass of 2,000 lines, spread over cases and in one case (more on the weekly run) approves and posts every line within its time budget, its own part (the pass less the ledger's entry inserts) within its own budget and at most 1.5 times as slow a line at 2,000 as at 500, under 75% of the worker's heap |
+| CAS-51 | A reconcile pass at real size | A step-7b pass of 2,000 lines, spread over cases, in one case and on few service dates (more on the weekly run) approves and posts every line within its time budget, its own part (the pass less the ledger's entry inserts) within its own budget and at most 1.5 times as slow a line at 2,000 as at 500, under 75% of the worker's heap |
 
 `packages/synth/src/cases/registry.ts`, module 5 (CAS), no fixture files:
 - `'CAS-49': none(8, 'Generated passes and LED worlds, compared with the per-line pass: no file.', ['apps/worker/src/reconcile/pass-equality.db.test.ts'])`;
@@ -827,8 +968,15 @@ export's reconcile, the postings). The base's 2,000-line runs were repeated in t
 A `test:db` shard runs CAS-50 (two passes of 200 and 800 lines: seconds) and CAS-51 at its default 2,000 lines: the
 candidate's step-7b pass takes 53-60 s on this 4-CPU container in either schema state at 83d71fd6 (46 s on spread R
 and 22 s on F at cc3dd7f6), plus the setup (about 10 s of
-seeding through the job code at 2,000), so CAS-51 fits a shard beside its other files. It does not need the 8-CPU
-runner. 6,000 and 10,000 are for the weekly run (`TP_LARGE_RECONCILE_LINES`).
+seeding through the job code at 2,000), so CAS-51 fits a shard beside its other files. It does not need the 8-CPU runner. **Completeness check 2:** since
+review round 3 CAS-51 runs three shapes (spread R, F, spread A), each at N and N/4 for its per-line ratio: by the
+measured 2,000-line passes (46 + 22 + 47 s on cc3dd7f6), about a quarter of that again at 500, and about 10 s of
+seeding per 2,000-line world, the file is about 3 to 3.5 minutes on 4 CPUs, estimated, not measured. A private
+repository's db shards run on 2-CPU runners under a 20-minute job timeout (`.github/workflows/ci.yml:301`) and already
+hold CAS-41's and CAS-42's real-size files (5 to 11 minutes each locally, `vitest.config.ts`' `SLOW_FIRST` comment); a
+shard is chosen by the hash of a file's path, so `pass.large` may land beside one of them. Slice 5 records the file's
+time on CI from the shard's results and, if its shard nears the timeout, says so in the PR for the orchestrator (the
+shapes are not cut without a ruling: each guards a different term, section 7). 6,000 and 10,000 are for the weekly run (`TP_LARGE_RECONCILE_LINES`).
 
 ### 8.3 Before and after (seconds; 4 CPUs; spread R unless marked)
 
@@ -980,9 +1128,23 @@ SUITE-CAP-1's rule: a budget is 2.5 times the measured figure, so a step whose a
   base (after #126) before the move. (The review's figure "1,001 to 207 s at 10,000 on 83d71fd6" was spread R's and
   its form gives nothing on F, 14.1.) **For the orchestrator to rule in the
   review:** accept this split (recommended), or hold this item's merge until Lane A's trigger PR, or move step 7b
-  back now and accept a red weekly run.
+  back now and accept a red weekly run. **Recorded ruling (completeness check 2):** the item's status file records the
+  orchestrator's ruling of 2026-11-06 22:31 UTC: the split, step 7b on F at 10,000 lines for now, and the condition that
+  step 7b moves back to A's month once Lane A's corrected `ledger_line_net` and `ledger_entry_rules` lookup merge (in
+  ADR 0083's dated note and the hand-off to Lane A). The ruling predates review rounds 1-4, which changed none of the
+  figures it rests on (1,653 s at A's month, 220 s at F 10,000, 310 s with both fixes); the orchestrator confirms it
+  when the reviewed design is committed, and the build writes it into D14 and ADR 0087's text as ruled.
 - **Memory:** peak heap 157 MiB at 10,000 against 560 (28%) at 83d71fd6; 138 MiB at 10,000 and 271 MiB at 30,795 on
   F (48%); live heap after the pass 37 MiB, as the base.
+- **Which form these figures are of (review round 3).** Every time and heap figure above, and the about 345 s bound,
+  were measured on the candidate's patient search (one statement, the outer `EXISTS`, linear in what it returns).
+  Round 2's `ixs` form was never measured by this design and is withdrawn (section 4: it returned Σ g × g' elements,
+  about 9.5 M on spread A at A's month, and a skeptic's reduced-schema probe took 181.5 s at 6,000 lines). The build's
+  two-statement form keeps the candidate's statement (a) and adds (b), whose input and output are the pairs equal
+  by patient control number (linear), so the budgets are expected to hold; they are not restated until slice 3
+  re-measures heap and search time on spread A at 10,000 and on F at A's month size (30,795) with the build's form.
+  If either differs from the candidate's by more than 10% in search time or 25 MiB in peak heap, 8.3a, this section
+  and the ask's "about 35 s more" are restated from the new run before the draft PR.
 ---
 
 ## 9. Files
@@ -994,9 +1156,11 @@ SUITE-CAP-1's rule: a budget is 2.5 times the measured figure, so a step whose a
 | `apps/worker/src/reconcile/postings.ts` | D6 (as `checkPostedBefore`), D7, D15 (the `EXCEPT` form) |
 | `apps/worker/src/reconcile/settle-order.test.ts` | new (unit): D6's `before` equals today's prefix filter for any standing order |
 | `apps/worker/src/reconcile/test-support/per-line.ts` | new: today's text of every function this item changes and `referencePass`, the CAS-49 reference (section 4) |
+| `eslint.config.js` | `**/test-support/per-line` added to `restrictedImports`' patterns (message citing ADR 0087), and a test-file override (`**/*.test.ts`, `**/test-support/**`) re-declaring the rule with the existing patterns only (review round 3; section 4) |
+| `apps/worker/src/reconcile/per-line-import.test.ts` | new (unit): the ESLint API on fixture text, as `packages/model-gateway/src/lint.test.ts`: a production file importing `per-line` by `./`, `../` or the package path fails, a test file passes (review round 3) |
 | `apps/worker/src/reconcile/pass-equality.db.test.ts` | new: CAS-49 |
 | `apps/worker/src/reconcile/pass-bounds.db.test.ts` | new: CAS-50 |
-| `apps/worker/src/reconcile/pass.large.db.test.ts` | new: CAS-51 |
+| `apps/worker/src/reconcile/pass.large.db.test.ts` | new: CAS-51 (spread R, F and, review round 3, spread A) |
 | `docs/adr/0087-…md` | new (D12; and D14's split: step 7b stays on F at 10,000 until Lane A's trigger PR moves it back) |
 | `docs/adr/0083-…md` | a dated note under "The weekly run's memory line and step 7b, 2026-11-04": step 7b's move back to A is now Lane A's trigger PR's acceptance step, F at 10,000, see ADR 0087 (an accepted ADR takes dated notes, never a rewrite) |
 | `apps/worker/src/reconcile/reconcile.large.db.test.ts` | CAS-42.3 (1b's, merged): `PASS_BUDGET_MS` 150,000 → 60,000; its comment's "grows faster than its lines" paragraph and `lineOf`'s `candidatesFor` reference rewritten (D14) |
@@ -1030,10 +1194,12 @@ files (`stage-head.db.test.ts`, migration 20261109090000), and every file #126 c
 | The multi-row stage insert reorders rows. | `ORDER BY e.n` over `WITH ORDINALITY`; the `seq` values were compared exactly against the base's (section 8.3); CAS-49.3. |
 | One statement of a whole month's stage events is too big. | 20,000 rows at 10,000 lines took 4.8 s and the pass's peak heap stayed at 157 MiB (section 8.3); arrays are four parameters; no limit is near at 100,000. Chunking is the fallback (2.3 C). |
 | The patient search's server-side join grows on an adverse spread (many lines on few dates). | Measured on spread A at 2,000 and 6,000 (section 8.3); it is a hash join on code and date, inside one statement, and no decrypt grows with it. A patient-control-number equality hash would remove it (section 14.3), not needed at the measured sizes. |
-| Memory: the pass's claim-line map and candidate lists live for the pass. | Peak heap measured at each size (section 8.3), under 75% of 560 MiB at 10,000; CAS-51 asserts it. |
+| The per-line predicate is evaluated, or its results returned to the worker, for every (claim, line) pair of a code-date group (g × g'), as round 2's `ixs` form did (review round 3). | Statement (a) stops at the first passing line per claim; statement (b) takes only pairs equal by decrypted patient control number (section 4); CAS-51's spread-A pass bounds the elements per open line between N/4 and N, and fails on the `ixs` form; slice 3 re-measures spread A at 10,000 and F at 30,795 before the budgets are restated (8.4). |
+| A production file imports the per-line reference (`test-support/per-line.ts`), bringing back per-line decrypts and the quadratic search with no failing check (review round 3). | Slice 1's `no-restricted-imports` pattern on `**/test-support/per-line` for non-test files and its lint fixture test (section 4). |
+| Memory: the pass's claim-line map and candidate lists live for the pass. | Peak heap measured at each size (section 8.3), under 75% of 560 MiB at 10,000; CAS-51 asserts it. D16's `matched` set is filtered to the open lines' pairs (review round 4), so it does not grow with the practice's claim-match history (the measured runs had none; unfiltered it would hold about 65 MiB after a year at A's rate). |
 | The interest fix (#126) lands first and its `seq` order exposes an order difference. | The insert order is today's (5.2); the merged tree already passes LED-23 to LED-25 and the oracle (R5); whoever merges second re-runs CAS-49 with LED-23 to LED-25 and the `seq` order (section 12.2). |
 | D16's patient-search arrays grow with a practice's reversed claim matches and get a poor plan. | They hold only the matched pairs `known` does not already exclude; slice 3's gate measures 2,000 of them; the fallback is the candidate's correlated `NOT EXISTS`, once per pass (37-60 ms in all five statistics states, 1.7), never a TypeScript-only patient exclusion, which would widen decrypts (review round 1). |
-| D3's one statement takes all event lines' head rows before their cases, the reverse of the web reopen and triage, which take case then head outside the `ledger:` lock (review round 1). | A savepoint around `insertStages` re-issues the same statement on `40P01` (section 4, 5.2); CAS-49.6 crosses a reopen with the pass both ways; the reopen taking `lockLedger` is handed to the web owner (14.4 item 14). |
+| D3's one statement takes all event lines' head rows before their cases, the reverse of the web reopen and triage, which take case then head outside the `ledger:` lock (review round 1). | A savepoint around `insertStages` re-issues the same statement on `40P01` (section 4, 5.2); CAS-49.6 crosses a reopen with the pass both ways; the reopen taking the `ledger:` lock by `pg_try_advisory_xact_lock` and refusing while a pass holds it (never a blocking wait in a web request, review round 4) is handed to the web owner (14.4 item 14). |
 | The chain's claim order compares the payment date as text, which sorts as the date only under an ISO `DateStyle` (review round 1). | The two search statements select `to_char(r.bpr16_date, 'YYYY-MM-DD')` (section 4); the base's other `::text` dates share the assumption, handed on (14.4 item 13). |
 | Step 7b at F 10,000 adds setup time and disk to the weekly run. | Measured on the first weekly run and recorded; F at 10,000 is 220 s of the pass, 24.5% of the attempt; the smoke size keeps 600. |
 | The weekly run's step 7b stays off A's full month after this item, against ADR 0083's "acceptance step". | Measured (8.3a): A's month fails the attempt whatever the worker does; the Known gap line says so with the figure, and Lane A's trigger PR carries the move back; the orchestrator rules on the split in the review (8.4). |
@@ -1050,28 +1216,42 @@ files (`stage-head.db.test.ts`, migration 20261109090000), and every file #126 c
 1. `test-support/per-line.ts` (today's text of every function the item changes, copied, and `referencePass`, section
    4) and CAS-49's harness against it, green on the base code (the new code still the old), with section 7's settle rule (the replay in each side's order for a check with two or more
    allocated check-level postings in one pass; the generator must produce one) run 20 times on the base against
-   itself without a failure, which proves the rule absorbs the base's random order.
+   itself without a failure, which proves the rule absorbs the base's random order. CAS-49.1's generator includes the
+   control-number candidate that pairs with nothing beside a pairing patient claim (review round 3), and the harness's
+   six self-check mutants are written here, with the comparison of encrypted text by decrypted hash (review round 4: never by presence; the generator's proof-level and reversal move-backs; the sixth mutant gives the proof-level move-back the reversal note). The import guard on `per-line` (`eslint.config.js` and
+   `per-line-import.test.ts`, section 4; review round 3), `pnpm lint` green.
 2. D3 (`insertStages`, under its savepoint with the `40P01` retry, section 4; review round 1) with CAS-49.3 and
-   CAS-49.6 (the two-session reopen, both victims); CAS-49 green.
+   CAS-49.6 (the two-session reopen, both victims; `seq` compared by order there, review round 3); CAS-49 green.
 3. D1, D2 and D16 (`passCandidates`, the claim-line map, `reprocessingOf`'s argument; the exclusion from the pass's
    set: TypeScript in the control search, parameter arrays plus TypeScript in the patient search); CAS-49 and LED-01 to
-   LED-18 green. Gate for D16's array form: the probe's 1.7 D16 matrix re-run on it (F with the other tenants, 7b and P,
+   LED-18 green. Of `d1-ts-exclusion.diff` (a measured reference, not a patch) only the control-search hunk and
+   `passCandidates`' call site are taken; its patient-search hunk never is (review round 4): the patient statements get
+   D16's arrays or the correlated fallback. "The TypeScript form" below is that diff's measured time, a baseline only.
+   (Review round 4, nit) `matched` is built only from the claim matches whose `serviceLineId` is an open line's: a `Set`
+   of the open lines' service-line IDs first, then the filter, so the set is bounded by the open lines, not the
+   practice's match history; every lookup of it is by a searched (open) line, so the exclusion is the same. Gate for D16's array form: the probe's 1.7 D16 matrix re-run on it (F with the other tenants, 7b and P,
    `ledger_match` unanalyzed, analyzed empty, 100,000 other-tenant matches) plus F with 2,000 reversed claim matches,
    each within 10% of the TypeScript form's time with equal writes; if not, the candidate's correlated `NOT EXISTS` in
    the patient statement (D16's fallback, review round 1: never the TypeScript-only patient exclusion), with CAS-50's
-   text check excepting that statement and the PR saying so. EXPLAIN `controlCandidates` at 10,000 lines (8.3a).
+   text check excepting the patient search's two statements ((a) and `patientPairs`, which both carry it) and the PR saying so. EXPLAIN `controlCandidates` at 10,000 lines (8.3a).
    D11's predicates added to the candidate's statements (`s.practice_id = $1` in both `named` branches,
    `q.practice_id = $1` in `probe`, and, review round 1, `practice_id = $1` on `remittance r`, `claim o`, `case_line x`,
-   `service_line xl` and both `ARRAY(…)` reads of `service_line s`), and `to_char(r.bpr16_date, 'YYYY-MM-DD')` for
-   `paid_on` in both statements; the gate's runs include them: F and R at 2,000 within 10% of the candidate's
+   `service_line xl`), and `to_char(r.bpr16_date, 'YYYY-MM-DD')` for `paid_on` in both statements; (review rounds 2 and 3)
+   the patient statement's `codes` and `dates` arrays and its separate `loaded_at` statement removed, and the second
+   statement `patientPairs` (b) added (section 4; never round 2's `ixs` array, withdrawn in round 3), with the
+   TypeScript re-check of since, remittance, code and date removed, `seen` kept after `preferredCandidates`, and
+   CAS-50's select-list check and `2 + 2 × rounds` bound; then heap and search time re-measured on spread A at 10,000
+   and F at 30,795 with this form, and 8.3a, 8.4 and the ask's "about 35 s more" restated if they differ (8.4); the gate's runs include them: F and R at 2,000 within 10% of the candidate's
    21.8 / 46.0 s, and the EXPLAIN at 10,000 shows no plan regression from the added predicates; decrypts (the search
    phase's set equal, CAS-49) and writes equal.
 4. D5 to D7 and D15's `EXCEPT` form (replacing the candidate's two ID reads), with `checkPostedBefore` and
-   `settle-order.test.ts`; CAS-49, CAS-41 (`streamed.db.test.ts`) and the report's tests green; the probe's P shape at
+   `settle-order.test.ts`; CAS-49, CAS-41 (`streamed.db.test.ts`) and the report's tests green, and the web's tests that reach the changed code
+   (`reconciliation-routes.db.test.ts`, `dashboard.db.test.ts`, `home-figures.db.test.ts` and the web's reconciliation and
+   dashboard tests, section 7; completeness check 2); the probe's P shape at
    2,000 and 6,000 re-run with the `EXCEPT` form in the pass's own trap state (the candidate's TypeScript form took
    `postings.rows` 0.6 / 5.6 s on the base's anti-join, 1.6, and the candidate's TypeScript form 8-10 ms at 2,000 and
    34 ms at 10,000; the `EXCEPT` form must stay linear and within twice the candidate's figures, writes equal).
-5. CAS-50 and CAS-51 (both shapes), `pass.large` in `SLOW_FIRST`; CAS-49.4 (manual actions) and CAS-49.5 (`lineChain`'s
+5. CAS-50 and CAS-51 (all three shapes: spread R, F and spread A, review round 3), `pass.large` in `SLOW_FIRST` with `tools/test/db-shards.test.ts` re-run (12.1; completeness check 2); CAS-49.4 (manual actions) and CAS-49.5 (`lineChain`'s
    index); the matrix rows and the registry; `pnpm synth --all` if needed; ADR 0087 and ADR 0083's dated note.
 5a. D14 (1b has landed): CAS-42.3's `PASS_BUDGET_MS` and comment in `reconcile.large.db.test.ts`; in
    `tools/release-capacity`, `FULL_SIZE.reconcileLines` 10,000 and the comments in `scenario.ts` and `run.ts`, the Known
@@ -1242,7 +1422,11 @@ $function$;
 ```
 
 The same answer for every line and stage: every entry of a line carries the line's practice (an entry is of a case of
-its practice and of a line of that case, `ledger_entry_rules` lines 35-40; a case line is of its case's practice and of a
+its practice and of a line of that case, `ledger_entry_rules` lines 35-40, for every entry written in scope; review round
+4: an entry outside `app.practice_ids` skips those checks only because `ledger_entry_tenant`'s `WITH CHECK` then refuses
+it, migration `20261023120000`:731-735 and `practice_in_scope`'s comment, `20261016090000`:119-120, and every role, the
+owner included, is `NOBYPASSRLS`, `migrate.test.ts`:138-148, so only a superuser, who could as well disable the
+triggers, could store a mismatched row; a case line is of its case's practice and of a
 priced line of its own service line and practice, `case_line_belongs`), so the added equality drops no entry; the sum of
 integers does not depend on the order; a correction counts as the stage of the entry it finally corrects, as in the
 first form. A line not visible under the scope gives no practice and so 0, as the base gives 0 for a line whose entries
@@ -1256,7 +1440,21 @@ So Lane A's PR (a) says this in the migration's comment above each body, and (b)
 (GENERIC_PLAN)` of `ledger_line_net`'s inner read and of both `ledger_entry_rules` lookups, as `tp_app` with
 `app.practice_ids` set, on a ledger with rows that was never analyzed, asserting the index each uses (`ledger_entry_by_line`
 with both leading columns as Index Cond; `ledger_match_pkey`), not the plan's text, so it holds across planner versions
-(PostgreSQL 18; `GENERIC_PLAN` exists since 16). Also (review round 1, nit) a cross-tenant case: `ledger_line_net`
+(PostgreSQL 18; `GENERIC_PLAN` exists since 16). **Tied to the deployed bodies (review round 4).** EXPLAIN takes
+statement text, so a copy kept in the test would keep planning well after a later migration changed the body. The test
+therefore takes each statement from `pg_get_functiondef` of the installed function: the migration writes a marker comment
+before each of the three statements (`-- plan-guard: line-net-read`, `-- plan-guard: correction-match`,
+`-- plan-guard: reversal-match`), the test cuts the statement that follows each marker, replaces the plpgsql variables
+and the function's argument by `$1`, `$2` (`GENERIC_PLAN` plans those), and fails if a marker is missing, so a body
+edited without its guard fails as surely as a slow plan. (Rejected: auto_explain on a real insert, which tests the
+trigger as it runs but needs a superuser's `LOAD` and the server log, which the db project has neither of.) **The
+no-statistics state is made and checked, not assumed:** before seeding, `ALTER TABLE ledger_entry SET
+(autovacuum_enabled = false)` and the same on `ledger_match`, in the test's own database from the template; before
+planning, it asserts `pg_class.reltuples = -1` for both and `pg_stat_user_tables.last_analyze` and `last_autoanalyze`
+null, so autoanalyze (50 rows plus 10%) cannot make the old and new bodies plan alike and the test pass vacuously.
+**Fails first:** the PR runs the same assertions once on #126's base against today's bodies' statements (marked the same
+way in a test-only copy of today's bodies) and records that the line read takes `ledger_entry_by_date` and the lookups
+`ledger_match_standing` (C1), i.e. the test fails there. Also (review round 1, nit) a cross-tenant case: `ledger_line_net`
 is granted to `tp_app` and callable directly, so the same PR's test calls it as `tp_app` with another practice's line
 and asserts 0, written on #126's base so it passes before and after the migration.
 
@@ -1286,7 +1484,8 @@ other tenants, the candidate 0b6e90eb; `cap3-results-crit/`):
 
 (n is the recommended `ledger_line_net` alone; m, the review's first form, is worse than nothing on F.) Writes
 identical to the candidate's at F 10,000 in k, m + k and n + k (`compare2.py`, 102,907 rows: 20,000 matches, 20,000
-entries, 40,000 stage events with their `seq` values) and at R 2,000 in n + k (20,635 rows). One run each, 4 CPUs, the
+entries, 40,000 stage events with their `seq` values) and at R 2,000 in n + k (20,635 rows; encrypted text compared by
+presence only, `dump.py:12`, harmless here as F and R write no note, review round 4). One run each, 4 CPUs, the
 private cluster as 8.3a. At A's month, n + k is 310 s, inside the 360 s
 bound; what remains of its inserts is mostly `ledger_entry_within_evidence`, 75.6 s (its posted-so-far sum, 2.3 ms and
 about 400 buffer hits a call; its generic plan on an empty ledger reads `ledger_entry_by_evidence` by `evidence_id`, so
@@ -1335,8 +1534,7 @@ a later look, with the `fillx` control (populated ledger) as the measure, is Lan
 
 **Measured and rejected:** `CREATE INDEX ledger_entry_by_service_line ON ledger_entry (service_line_id, stage);`
 (state (l)): no gain (55.7 s against 53.7 s at 2,000, inserts 44.0 against 42.6 s), because the cost is the two joins,
-not the line's own scan, and a planner that sees an empty ledger keeps its sequential scans anyway. Adding
-`practice_id` to `ledger_line_net`'s predicate (so `ledger_entry_by_line` leads) would not reach the joins either (by the same reading of the plan; not measured).
+not the line's own scan, and a planner that sees an empty ledger keeps its sequential scans anyway. Adding `practice_id` to `ledger_line_net`'s predicate (so `ledger_entry_by_line` leads) would not reach the joins either (by the same reading of the plan; not measured). **Superseded (completeness check 2):** this paragraph and "the cost is the two joins, not the line's own scan" are spread R's reading at 83d71fd6; on F the cost is the line's own read (C1), and the recommended form above, which adds exactly that practice equality, is what removes it (`ledger_line_net` 74.6 → 2.0 s at F 10,000). The index stays rejected.
 
 **Its share on cc3dd7f6, shape F, after this item's worker fix** (8.3a; the time the rewrite works on, not a measured
 gain on F): `ledger_line_net` 3.3 s of a 21.8 s pass at 2,000 (15%), 27.2 of 94.5 s at 6,000 (29%), 74.3 of 220.2 s at
@@ -1344,7 +1542,9 @@ gain on F): `ledger_line_net` 3.3 s of a 21.8 s pass at 2,000 (15%), 27.2 of 94.
 analyzed, with `ledger_entry` analyzed empty, a worse plan than F's unanalyzed one). The rewrite's gain was measured
 on 83d71fd6 spread R (table above); Lane A's PR re-measures it on F at 2,000, 10,000 and A's month on its own base.
 
-**Queue and exception:** a ledger function change, so a founder freeze exception (asked:
+**Queue and exception:** a ledger function change, so a founder freeze exception (granted 2026-11-06 22:40 UTC on the
+ask's pre-review text, as the item's status file records; rounds 1, 3 and 4 changed only its proof wording and proof
+list, never the two bodies; completeness check 2; asked:
 `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md`), one Lane A schema PR after #126 (one schema PR at a
 time; #126 changes neither `ledger_line_net` nor `ledger_entry_rules`, so both apply on top of it as written, but it
 adds `ledger_match_by_seq`, so Lane A measures them again on its base, 12.2). The proof the amounts are unchanged:
@@ -1445,11 +1645,25 @@ Each is outside SUITE-CAP-3's claim; the orchestrator decides where it goes.
    `openPool` passes no options; only the domain-model generator sets it). This item's new statements no longer depend
    on it (section 4); a pinned `options: '-c DateStyle=ISO,MDY'` in `openPool`, with a db test under a database whose
    default is `'SQL, DMY'`, would close it for every path. A shared-package hardening item; the orchestrator places it.
-14. **The web's `reopenLineAction` should take `lockLedger` first** (review round 1; 5.2): it writes a stage event
-   (`apps/web/src/lib/routes/triage.ts:544`) that the pass's stage sync owns, after locking the case, outside the
-   `ledger:` lock, so it can deadlock a reconcile pass (D3's retry absorbs that on the pass's side). Taking
-   `lockLedger(scope, practiceId)` first would serialize it with the pass and the manual actions. The web owner, with
-   CAS-49.6's two-session shape as its test.
+14. **The web's `reopenLineAction` should not cross a running pass** (review round 1; 5.2; **corrected in review round
+   4**): it writes a stage event (`apps/web/src/lib/routes/triage.ts:544`) that the pass's stage sync owns, after locking
+   the case, outside the `ledger:` lock, so it can deadlock a reconcile pass (D3's retry absorbs that on the pass's
+   side). Round 1 proposed the blocking `lockLedger(scope, practiceId)` first; that is withdrawn. `lockLedger` is
+   `pg_advisory_xact_lock` (`apps/worker/src/reconcile/ledger.ts:17`), nothing in the repository sets `lock_timeout` or
+   `statement_timeout` (`packages/db/src/connect.ts` sets only the pool's connection and idle timeouts), and a pass holds
+   the lock for its whole transaction (219 s at F 10,000, 310 s at A's month with Lane A's fixes), so each reopen on that
+   practice during a pass would hold a web request and one of the application pool's 10 connections
+   (`apps/web/src/lib/server/pools.ts:10`), shared by every practice's requests, for minutes: a few such clicks could
+   starve every tenant. The worker's manual actions take the lock inside jobs, so they are no precedent. The
+   recommendation: at the start of the handler, inside its practice-scoped transaction, `SELECT
+   pg_try_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0))` (the same key as `lockLedger`); if it is not
+   granted, refuse at once with a retryable refusal that carries no identifier (the web owner words it, e.g. that
+   reconciliation is running and to try again shortly, through the ux-brand review), writing nothing; if granted, the
+   reopen holds the lock to its commit, so it serializes with the pass and the manual actions and never waits. A
+   `SET LOCAL lock_timeout` of a few seconds before a blocking lock is the lesser form (it still holds a connection for
+   those seconds and turns a wait into an error just the same). Its test: CAS-49.6's two-session shape with the ledger
+   lock held by session A, asserting the reopen returns the refusal within a second and writes nothing, and a reopen
+   with the lock free succeeds. D3's savepoint retry stays either way (a triage job still takes case then head).
 
 ---
 
@@ -1466,14 +1680,15 @@ pushed; the private cluster `/tmp/laneb-suitecap3-pg-2` (port 5494) was removed 
 | --- | --- | --- |
 | P0 | The profile (the scout phase): the base in states (a), (b), (c), shapes 7b and P, 2,000 / 6,000 / 10,000 lines, spreads R and A, the `statsx` and `fillx` controls, auto_explain of the trigger bodies | Sections 1.2-1.5 (`cap3-results/profile.md`) |
 | T1 | The candidate's tests: `vitest --project db` on `apps/worker/src/reconcile` and `apps/worker/src/report` (chain, exports, ledger-oracle, ledger (LED-01 to LED-18), lines, payment-terms, settings, vendor-exports, report, streamed (CAS-41), report-ledger, documents, unattested-report), on the shared PG18 cluster; `--project unit` on `reconcile` and `packages/ledger`; `tsc --noEmit` and eslint on the worker | 13 files, 175 tests pass; 16 files, 239 unit tests pass; typecheck and lint clean (both before and after D15) |
-| T2 | Equality: the base and the candidate from the same seed template, each pass's writes dumped (`dump.py`: ledger matches in insertion order, entries and stage events in `seq` order with their `seq` values, payer responses, submissions, notifications, audit events, source documents, posting rows, cases; new UUIDs by ordinal; ciphertext as set or not; timestamps out; settle's posted entries as a set, with their order rule checked on both) and compared (`compare.py`) | Identical in all seven pairs at 2,000: step 7b in states (a) and (c), spread R; step 7b in state (c), spread A; shape P's approvals pass and postings pass in states (a) and (c) (20,635 rows a 7b or P database, 12,634 after the approvals pass: 4,000 matches, 4,000 entries, 8,000 stage events with identical `seq` values). State (m) (14.1) identical to the base's (c). These shapes exercise corrections, reversals beside their correction, approvals, line-level postings and stages; reversals alone, WOs, payer responses, deposits, partial postings, patient share and reopens are covered by T1's LED-01 to LED-18 and oracle runs and by CAS-49's generated passes in the build |
+| T2 | Equality: the base and the candidate from the same seed template, each pass's writes dumped (`dump.py`: ledger matches in insertion order, entries and stage events in `seq` order with their `seq` values, payer responses, submissions, notifications, audit events, source documents, posting rows, cases; new UUIDs by ordinal; ciphertext as set or not, so encrypted text was compared by presence only (review round 4: harmless for these shapes, which hold no move-back or other note, but CAS-49 compares it by decrypted hash); timestamps out; settle's posted entries as a set, with their order rule checked on both) and compared (`compare.py`) | Identical in all seven pairs at 2,000: step 7b in states (a) and (c), spread R; step 7b in state (c), spread A; shape P's approvals pass and postings pass in states (a) and (c) (20,635 rows a 7b or P database, 12,634 after the approvals pass: 4,000 matches, 4,000 entries, 8,000 stage events with identical `seq` values). State (m) (14.1) identical to the base's (c). These shapes exercise corrections, reversals beside their correction, approvals, line-level postings and stages; reversals alone, WOs, payer responses, deposits, partial postings, patient share and reopens are covered by T1's LED-01 to LED-18 and oracle runs and by CAS-49's generated passes in the build |
 | T3 | The candidate's sizes: 2,000 / 6,000 / 10,000 lines, states (a) and (c), shapes 7b and P, spread R; spread A at 2,000 and 6,000 | Section 8.3 |
 | T4 | Lane A candidates on top of the candidate: (l) an index on `ledger_entry (service_line_id, stage)`; (m) `ledger_line_net` rewritten | Section 14.1: (l) no gain; (m) 1,058.4 → 263.3 s at 10,000, writes identical at 2,000 |
 | T5 | Plans: the trigger bodies under auto_explain (P0's), read for 1.5 and 14.1 | `ledger_line_net`'s two whole-ledger joins per call |
 
 **Review probes on cc3dd7f6 (2026-11-06)**, scratch clones `cap3-rev` (the candidate 0b6e90eb), `cap3-base2` (cc3dd7f6),
 `cap3-d1` (0b6e90eb plus the D16 TypeScript form); results `cap3-results-rev/` (`summary.md`, per run `.json`,
-`.pss.tsv`, `.functions.tsv`, `.tables.tsv`, `.dump.ndjson`; `d1-ts-exclusion.diff`) and `cap3-results-rev126/`; run logs
+`.pss.tsv`, `.functions.tsv`, `.tables.tsv`, `.dump.ndjson`; `d1-ts-exclusion.diff`, a measured reference, not a patch,
+section 4) and `cap3-results-rev126/`; run logs
 `progress/rev-rebase.md`, `rev-measure.md`, `rev-update.md`. New scripts in `cap3-probe/` (README section added):
 `seedF.mts`, `runrev.sh`, `queue-rev.sh`, `queue-rev2.sh`, `cluster-pss.sh`, `fill-match.sql`, `fill-entry.sql`,
 `summ.py`, `compare2.py`. Private cluster removed at the end.
@@ -1608,7 +1823,8 @@ reconciliation and dashboard db tests on the candidate (3 files, 18 tests pass).
   reachable, by Lane A's PR, not by this item).
 - CAS-49.4's twin-world mocking (`vi.mock` of `./stages`, `./postings` and the changed `./remittances` exports) is a
   test design not yet tried; if `manual.ts`' imports resist it, the builder compares LED-02's and LED-07's manual
-  actions against dumps recorded from the base instead (the probe's `dump.py` rows), and says so in the PR.
+  actions against dumps recorded from the base instead (the probe's `dump.py` rows, re-ordered as CAS-49.1's
+  insertion-order paragraph says, never by `ctid`; review round 2; encrypted text by its decrypted hash, never `dump.py`'s set-or-not, review round 4), and says so in the PR.
 - The figures are one run each on this container; CI may differ (as section 8.3a says).
 
 ---
@@ -1616,7 +1832,8 @@ reconciliation and dashboard db tests on the candidate (3 files, 18 tests pass).
 ## 18. After the design review (2026-11-06, rounds)
 
 Round 1: the payment-engine and security reviews (the latter with SUITE-CAP-1a's concurrency-and-capacity lens), three
-skeptics per finding. Both verdicts: BUILD WITH CHANGES, nothing blocking. Seven findings survived; each was checked
+skeptics per finding. Both verdicts: BUILD WITH CHANGES, nothing blocking. Nine findings survived (of 15; corrected from "seven" in completeness
+check 2: nine rows below, 4 taken and 5 taken corrected, six refuted); each was checked
 against the candidate (cap3-rev, 0b6e90eb against cc3dd7f6) by reading, no probe run in the apply step. Applied in
 place in D3, D4, D11, D16, sections 0, 4, 5.1, 5.2, 7 (CAS-49.1, CAS-49.6, CAS-50), 9, 10, 11 (slices 2 and 3), 14.1,
 14.4 (items 13 and 14) and in the freeze-exception ask. No change to the matching rules, any amount, the order of any
@@ -1634,6 +1851,9 @@ grant).
 | 1 | D11 promises a practice predicate on every table read, but section 4 lists only `named` and `probe`. | security | should-fix | 3 of 3 | Candidate `remittances.ts`: `remittance r` (:227, :274), correlated `claim o` (:230, :278), the two `ARRAY(…)` reads of `service_line` (:272-273), `case_line x JOIN service_line xl` (:232, :276) carry none; forced RLS means no leak; `remittance` and `case_line` have `practice_id`. Skeptics: should-fix or nit; not a tenancy breach. | **Taken.** D11, section 4 and slice 3 list every alias (`r`, `o`, both `ARRAY` reads, `x`, `xl`; `m` in D16's fallback); same rows by construction; slice 3's EXPLAIN at 10,000 shows no plan regression; CAS-50 checks each table alias has `practice_id = $1`. |
 | 1 | Claims committed by a concurrent 835 load during a pass are picked up a pass later. | security | nit | 3 of 3 | `pass.ts`: plain `BEGIN` (READ COMMITTED), `loadExports` before `lockLedger`; intake and parse_835 never take `ledger:`; the candidate searches once up front. Next pass: `monitor/job.ts:86`, `triage/job.ts:35`, `intake.ts:224`, `monitoring-schedule.ts:51`, singleton keys `registry.ts:95`. | **Taken.** 5.1 step 1 says such a claim is reconciled by the next pass and names what queues it; no amount, rule or total changes; CAS-49 has no concurrent writer. |
 | 1 | The ask has no cross-tenant test for `ledger_line_net`, which `tp_app` can call directly. | security | nit | 2 of 3 | `ledger_line_net.sql:23` grants EXECUTE to `tp_app`; STABLE, INVOKER, forced RLS: another practice's line gives 0 before and after; no test calls the function directly. The refuting skeptic: nothing changes and the proof list is about amounts. | **Taken, corrected** (the upholding skeptic's form): one test in Lane A's PR, written on #126's base so it passes before and after; one line in the ask's proof list and in 14.1; the rest of the ask unchanged. |
+| 2 | The patient search returns every line's code and service date of every returned claim (`ARRAY` `codes`, `dates`) to the worker before the patient filter, which the base never read; 5.2's "no more PHI-bearing rows" and the limit "PHI reads as today" do not hold. | security | should-fix | 3 of 3 | Candidate `remittances.ts:272-273` (both arrays), :287-290 (`loaded_at` statement), :295 (decrypt), :301-311 (TypeScript re-check of since, remittance, code and date); base cc3dd7f6 `candidatesFor` `byPatient` selects only `c.id`, `remittance_id`, `paid_on`, `patient_control_number`, code and date tested only in an `EXISTS`; `claimLines` read only after the decrypted number matched (`candidateClosure`). D11 and section 4 scoped the arrays rather than removing them; CAS-49.1 and CAS-50 count decrypts and predicates, not columns. Two skeptics: the `service_date::text` side point is moot (both sides read `::text` on one connection). | **Taken; superseded in round 3** (the `ixs` form withdrawn for the two-statement patient search, round 3's first row; completeness check 2). Section 4: the statement returns `ixs` (the searched lines' indexes whose per-line predicate, the outer `EXISTS`'s word for word with D16's arrays, the claim passes) and no `service_line` column; the `loaded_at` statement and the TypeScript re-checks go; TypeScript keeps only the patient-number equality and the known, seen and `matched` drops. D11 no longer lists the `ARRAY` reads; 5.2 states the columns; CAS-50: `1 + 2 × rounds` statements and a select-list check; slice 3 carries the change. Same rows, decrypts and writes (same predicate); budgets of 8.4 unchanged (one statement fewer). DateStyle side point not taken (moot). |
+| 2 | CAS-49.1 compares tables without `seq` "in insertion order" with no mechanism; the probe it rests on orders them by `ctid`. | payment engine | nit | 2 of 3 | `cap3-probe/dump.py:10, 24` (`ctid`, as "physical insertion order"); base migrations give `seq` to `ledger_entry` only; `audit.ts:49` (multi-row, no `RETURNING`), `stages.ts:155` (notification, no `RETURNING`), `ledger.ts:141-144` and `packets/services.ts:702-704, 767-769` (`RETURNING id`). The refuting skeptic: both clones start byte-identical, the pass only inserts into these tables, and the fix's "returned ids" cannot see `audit_event` or `notification` rows. | **Taken, corrected** (the refuting skeptic's point): CAS-49.1's new paragraph: ids returned by single-row inserts give ordinals in issue order; multi-row inserts without `RETURNING` are compared as the issue-ordered sequence of statements plus a multiset of canonical rows; never `ctid`; `autovacuum_enabled = false` on the template's written tables; `ledger_match` by `seq` after #126 (12.2). Section 17's fallback to `dump.py` rows says the same. |
+| 2 | CAS-49.6's oracle "the same pass run after B alone" is wrong when B reopens a written-off line: the retried pass read L before B committed and never searched it. | payment engine | nit | 3 of 3 | `caseLines` `open` (`remittances.ts:142`), search only of open lines (:909); the retry re-issues only `insertStages` (section 4); `reopenLineAction` clears `written_off_reason` then inserts at the current stage; other phases read the written-off state too (`responses.ts:54`, `unmatched.ts:202`, `patient-share.ts:175, 205`), so "no new claim for L" alone would not fix the oracle. Also checked: `payer_response_refresh_case.sql` and `submission_refresh_case.sql` update the case. | **Taken, corrected** (the first fix, made concrete): the reference is the same pass with B's two statements committed at a hook after the stage sync's read and before its first insert; B's row precedes the pass's event for L in `seq`; the world writes no payer response or submission on C in the pass (so B blocks on nothing in the reference) and holds a new claim pairing with L (so a retry that re-read L would fail). Test: CAS-49.6 in slice 2; no code change. |
 
 **Refuted in round 1 (not taken):**
 - *The ask's proof never exercises the part of `ledger_line_net` it rewrites* (payment engine): LED-07 and the "what Postgres lets an entry do" test in `ledger.db.test.ts` already run reversals, adjustments and a reversal of an adjustment through `ledger_entry_within_line`, and the missing-target and other-practice cases cannot be written.
@@ -1646,3 +1866,133 @@ grant).
 **Verdict after round 1:** the design stands with these corrections; slices 2 and 3 carry the code changes (the
 savepoint retry, the `to_char` dates, the added predicates, D16's SQL fallback), CAS-49.1, CAS-49.6 and CAS-50 the tests,
 and the ask the 360 s wording and two proof items. D14's split remains the orchestrator's ruling.
+
+Round 2 (the same two lenses, three skeptics per finding; both verdicts BUILD WITH CHANGES, nothing blocking). Three
+findings survived (rows above), each checked against the candidate (cap3-rev, 0b6e90eb against cc3dd7f6) and the
+base's text by reading; no probe was run in the apply step. Applied in D11, sections 4, 5.2, 7 (CAS-49.1, CAS-49.6,
+CAS-50), 11 (slice 3) and 17. No change to the matching rules, any amount, the order of any write, the recovered
+total, the budgets of 8.4, `packages/ledger/src`, the schema, or the freeze-exception ask (no surviving finding
+concerns it). CAS-49 to CAS-51's matrix rows are unchanged in words.
+
+**Refuted in round 2 (not taken):**
+- *A's real month bounded at about 345 s with Lane A's fixes contradicts the spread-shape data, and the ask passes it on* (payment engine, 1 of 3 upheld): the spread seeds' extra trigger time comes from their statistics (`ledger_entry` analyzed empty, 1.7), not from case spread; the trigger bodies read by line, match and evidence, never by case; R at 2,000 with n + k falls to F's order; 8.3a, 8.4, the risks row and the ask already say A's real month is unmeasured and Lane A re-measures before step 7b moves.
+- *Never-matched posting and EFT rows pile up, so D15's ID list and D7's map grow with history* (security, 1 of 3 upheld, and that one as a downgrade): the leftover and its full reads are the base's; the `EXCEPT` returns exactly the IDs the next read takes (CAS-50); D7's map decrypts the same claims fewer times, inside one pass, and was refuted in round 1.
+- *D16's array-form gate varies only `ledger_match` statistics* (security, 0 of 3): the gate includes F with 2,000 reversed claim matches (the array-size point), the risks table names the risk, the candidate's known-set exclusion is the same construct and already scales at 10,000 lines, and a skeptic's probe found a hashed subplan at 2,000 and 20,000 pairs.
+
+**Verdict after round 2:** the design stands; slice 3 carries the patient statement's `ixs` change, CAS-49.1 the
+insertion-order mechanism, CAS-49.6 the reference interleaving, CAS-50 the statement bound and select-list check.
+
+Round 3 (the same two lenses, three skeptics per finding; both verdicts BUILD WITH CHANGES, nothing blocking). Six
+findings survived, each checked against the candidate (cap3-rev, 0b6e90eb against cc3dd7f6), the base's SQL and the
+recorded results by reading; no probe was run in the apply step (one skeptic's reduced-schema probe of round 2's
+`ixs` form is cited from its report). Applied in D1, D11, D16, sections 0, 2.1, 4, 5.1, 5.2, 7 (CAS-49.1, CAS-49.6,
+CAS-50, CAS-51 and its matrix row), 8.4, 9, 10, 11 (slices 1, 2, 3 and 5) and in the freeze-exception ask. No change to
+the matching rules, any amount, the order of any write, the recovered total, `packages/ledger/src` or the schema; 8.4's
+budgets stand on the candidate's measured form until slice 3 re-measures the build's form (below).
+
+| Round | Finding | Lens | Rating | Skeptics (upheld) | What was checked | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| 3 | Round 2's `ixs` array brings back the per-line g × g' volume inside the one patient statement, unmeasured; no test shape would see it. | security | should-fix | 3 of 3 | Candidate `remittances.ts` `patientCandidates`: `named` joins each searched line to every claim of its code and date whatever the patient; the outer `EXISTS` stops at the first passing line and the candidate returned per-claim arrays, so round 2's `ixs` (design section 4) evaluated and returned every passing pair; spread A's seed (`seed.mts`: claims/20 × 4/5 per code-date) gives about 1 M elements at 10,000 and 9.5 M at 30,795; section 18 round 2 ran no probe; CAS-50 counts statements and decrypts, CAS-51 runs spread R (group size 16) and F (dates spread over the year). A skeptic's reduced-schema probe (no RLS, port 5494, removed after): `ixs` 8.0 s at 2,000, 181.5 s at 6,000, no finish at 30,800, against the candidate form's 0.09 and 0.71 s, same rows. Skeptics' correction: `named`'s server-side join was never fully linear (risks row on spread A); what was linear was the per-pair predicate and the volume returned. | **Taken.** `ixs` withdrawn. Section 4: the patient search is two statements once per pass, (a) the candidate's outer statement less its arrays and (b) `patientPairs` over only the pairs equal by decrypted patient control number, returning the pairs that pass the per-line predicate word for word (D16's arrays, D11's predicates); D1, D11, D16, 2.1, 5.1 step 3, 5.2 follow. CAS-50: `2 + 2 × rounds` and (b)'s select list and inputs; CAS-51: a spread-A pass (group size growing with N) bounding elements per open line between N/4 and N at 1.5, failing on the `ixs` form. 8.4: the figures are the candidate's form; slice 3 re-measures spread A at 10,000 and F at 30,795 and restates 8.3a, 8.4 and the ask's "about 35 s" if they differ (10% time, 25 MiB heap). Risks row added. The ask's 35 s sentence says the build re-measures. |
+| 3 | CAS-49.6 requires `seq` values equal to the reference, which no deadlock run can meet. | payment engine | should-fix | 3 of 3 | `line_status_rules.sql:24-27` at 0b6e90eb (the row's default `nextval`, then `nextval` in `ON CONFLICT DO UPDATE` on the head, `NEW.seq := next_seq`); `ROLLBACK TO SAVEPOINT` does not return sequence values; CAS-49.1 compares `seq` values; no section said 49.6 compares by order. Every reader of a line's stage takes `ORDER BY s.seq DESC LIMIT 1` (`stages.ts:95`, `triage/actionable-now.ts:26`, the web's queries) or reads the head. Third skeptic: the case lock is taken AFTER STATEMENT, so when B is the victim A's rows from the deadlocked statement are not shifted. | **Taken, corrected** (the case-2 "offset by one" dropped). CAS-49.6 compares `line_status` and `line_status_head.seq` by ordinal in `seq` order and says why for each victim; 5.2 states that rolled-back statements leave gaps and that no reader compares values; CAS-49.1 keeps exact values. Slice 2 names it. |
+| 3 | CAS-49's generator and mutants never exercise "seen control-number candidates stop the search", a money-changing place to slip. | payment engine | should-fix | 3 of 3 | Base `candidateClosure` (cc3dd7f6 `remittances.ts:723-741`) and `candidatesFor` (:198): `seen` filtered after `preferredCandidates` (`packages/ledger/src/matching.ts:20-23`); `CANDIDATE_FILTERS` excludes only known; candidate `remittances.ts:356` keeps the order. CAS-49.1's list and the four mutants do not build the case; no LED test does. Skeptics: 5.1 already writes `cand_r = preferredCandidates([C_r, P_r]) less seen`; section 4's "less the line's known and seen claims" on the patient list is the wording that invites the slip. | **Taken, corrected** (the stating part was mostly there). CAS-49.1: a generator case (a control-number candidate that pairs with nothing beside a pairing patient claim of the same code and date) and a fifth self-check mutant (`seen` off the control list before `preferredCandidates`); section 4 now drops only known and `matched` from the patient list and `seen` after `preferredCandidates`, as the candidate; 5.1 step 4 says so; slice 1 builds both. |
+| 3 | Section 5.1 step 3's proof still describes the TypeScript re-checks that round 2 removed. | payment engine | nit | 3 of 3 | Step 3's "TypeScript re-applies each line's filters" (the only match for "re-appl"); section 4 and round 2's row remove the re-checks (:301-311); round 2's apply list had no 5.1. | **Taken, corrected** (argued from round 3's statement (b), since `ixs` is withdrawn above): `P_1` for L is the claims (b) returns for L's index, which are L's query's rows; decrypts are (a)'s rows, each once. |
+| 3 | The ask's "in every case … row for row" sits under a table that includes A's month, which was compared on totals only. | payment engine | nit | 3 of 3 | Ask lines 182-189; `cap3-results-crit` holds dumps for F 10,000 (none, k, mk, nk) and R 2,000 (none, nk) only; the 30,795 nk run (`cap3-results-crit`) and none run (`cap3-results-rev`) have no dump; both `after` blocks: 30,795 approved, 30,795 posted, 30,795 recovered, 494,780,000 posted cents, 61,590 matches, 123,180 stage events. A skeptic's correction: the none run is in `cap3-results-rev`, not results-crit. | **Taken** (the rewording; no dump run in the apply step). The ask: row for row at F 10,000 and R 2,000; at A's month the counts and cents matched, rows not compared. The design (14.1) already said so. |
+| 3 | The lint rule the design cites for keeping `test-support/per-line.ts` out of production code does not exist. | security | nit | 3 of 3 | `eslint.config.js` at 0b6e90eb: `no-restricted-imports` only for the model SDKs and fonts (:37-39, 125, 145); no tool refuses a test-support import; `packages/packets/src/role-examples.ts:7` already imports `./test-support` unflagged; `apps/worker/package.json` exports test subpaths. Skeptic's correction: a repo-wide `**/test-support/**` pattern would flag existing code, so scope it. | **Taken, corrected.** Section 4's sentence corrected; slice 1 adds a `no-restricted-imports` pattern scoped to `**/test-support/per-line` (in `restrictedImports`, with a test-file override re-declaring the rule, since a later flat-config block replaces options) and a lint fixture test `per-line-import.test.ts`; files table and a risks row. |
+
+**Refuted in round 3 (not taken):**
+- *Section 14.1's row breakdown for the F 10,000 equality does not add up, and its stage-event count contradicts the run* (payment engine, 1 of 3 upheld): the 40,000 stage events count the dumped database's `line_status` (4N, seed state included, as 8.3 and T2 state), not the pass's 2N; the parts name the main ledger tables and are not meant to sum to 102,907 (T2 names 16,000 of 20,635 the same way); the IDENTICAL line is recorded in `progress/rev-critic.md`.
+
+**Verdict after round 3:** the design stands; slice 1 carries the `per-line` import guard, CAS-49.1's new case and
+fifth mutant; slice 2 CAS-49.6's comparison by `seq` order; slice 3 the two-statement patient search (never `ixs`)
+and the re-measure on spread A at 10,000 and F at 30,795 before the budgets and the ask's 35 s are relied on; slice 5
+CAS-51's spread-A pass. The ask's equality sentence now separates row-proved runs from totals-only.
+
+Round 4 (the same two lenses, three skeptics per finding; both verdicts BUILD WITH CHANGES, nothing blocking; the
+payment-engine lens re-checked the money claims against cc3dd7f6..0b6e90eb and #126 at c49367c5 and found them
+holding). Six findings survived, each checked against the candidate (cap3-rev, 0b6e90eb), the base's migrations and
+the recorded results by reading; no probe was run in the apply step (the `matched` heap figures are the reviewer's and
+a skeptic's, node 24 under the heavy lock). Applied in D16, sections 1.7, 4, 5.2, 6, 7 (CAS-49.1, 49.2, 49.4, 49.6 and
+CAS-49's matrix row, which `matrix.ts` copies word for word), 10, 11 (slices 1 and 3), 14.1, 14.4 (item 14), 15 and 17,
+and in the freeze-exception ask (wording of its proof only, with a dated note that the two granted bodies are
+unchanged). No change to the matching rules, any amount, the order of any write, the recovered total, the budgets of
+8.4, `packages/ledger/src`, the schema, the files of section 9 or ADR 0087's text.
+
+| Round | Finding | Lens | Rating | Skeptics (upheld) | What was checked | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4 | Every equality proof compares encrypted text only as present or absent, so a wrong move-back note passes, and D3 moves the code that chooses the note. | payment engine | should-fix | 3 of 3 | `cap3-probe/dump.py:12` (`CIPHER`, `canon()` → `v is not None`) and T2; CAS-49 had no decrypted comparison; `cipher.ts` is AES-256-GCM with a fresh nonce, so byte equality fails spuriously; candidate `stages.ts:35-45` (`moveBackNote`), :118 (chosen per line before any insert), :123 (one `insertStages`); the only encrypted write in the pass is `line_status.reason` (`stages.ts:119`), the manual actions add `ledger_entry.reason` and `ledger_match.reversal_reason` (`manual.ts:196, 253`). A skeptic's narrowing: LED-07 (`ledger.db.test.ts:632`) decrypts and expects `REOPEN_NOTES.reversal`, so a full reversal/proof-level swap already fails; no test checks the proof-level text. | **Taken, corrected.** Section 7's intro and CAS-49.1's new paragraph: every encrypted column the pass writes is compared by the SHA-256 of its decrypted plaintext, in memory, never logged, never by presence; 49.2, 49.4 and 49.6 the same; the generator makes both move-backs in every world. The sixth mutant is `moveBackNote` always returning the reversal note (the proof-level note lost), which LED-07 does not catch, not the full swap it does. Section 6, CAS-49's matrix row ("the same text in every encrypted note"), T2 and 14.1 (presence only, harmless for F and R, which write no note), section 17's dump fallback, slice 1. The ask: one sentence that encrypted text was compared by presence only in the row-for-row runs. |
+| 4 | Round 1's plan guard for the new ledger function bodies can pass without testing the deployed function. | payment engine | should-fix | 3 of 3 | 14.1, the ask's "A plan test" bullet and section 16's row 1: EXPLAIN of copied statement text, no tie to `pg_get_functiondef`, no step that keeps the ledger unanalyzed (`autovacuum_enabled = false` only in CAS-49.1), no fail-first run; C1 measured the bad plans on a never-analyzed ledger only. A skeptic could not confirm that autoanalyze fires within CI's window or that the old body picks `ledger_entry_by_line` with statistics; the copy-versus-catalog point stands alone. | **Taken, corrected** (the catalog form, not auto_explain). 14.1: the migration marks each of the three statements with a `-- plan-guard: …` comment; the test cuts them from `pg_get_functiondef`, fails on a missing marker, sets `autovacuum_enabled = false` on `ledger_entry` and `ledger_match` and asserts `reltuples = -1` and null `last_analyze` and `last_autoanalyze` before planning, and the PR records it failing on #126's base against today's bodies. auto_explain on a real insert rejected: it needs a superuser's `LOAD` and the server log. The ask's bullet says the same in plain words. Lane A's PR carries it; nothing in this item's build. |
+| 4 | The ask says the new `ledger_line_net` gives the same answer unconditionally, but the trigger rule it rests on is skipped for out-of-scope inserts and no foreign key backs it. | payment engine | nit | 2 of 3 | `ledger_entry_rules` returns early when `NOT practice_in_scope(NEW.practice_id)`; `ledger_entry` has single-column keys only (migration `20261023120000`:173-185). The refuting skeptic, confirmed: the early return leaves the row to `ledger_entry_tenant`'s `WITH CHECK` (`20261023120000`:733-735; `practice_in_scope`'s comment, `20261016090000`:119-120), and every role, the owner included, is `NOBYPASSRLS` (`migrate.test.ts`:138-148), so only a superuser can store a mismatched row, and a superuser could equally disable the triggers; run as the owner, the proposed count reads nothing under the forced policy and would prove nothing. | **Taken, corrected** (wording only). 14.1 and the ask's "Why the answer is the same" now say the rule holds for every entry any non-superuser role can store, and why (the rules in scope, the tenant policy outside it). The migration precondition is **not taken**: as the owner it is vacuous under forced RLS, and the ask would offer it as evidence. |
+| 4 | Section 4 tells the build to apply `d1-ts-exclusion.diff`, whose patient-search hunk is the TypeScript-only exclusion D16 rejects. | security | should-fix | 3 of 3 | Design section 4's last line of the patient bullet; the diff's three hunks (`controlCandidates` at @@ -228, the patient statement's `NOT EXISTS` deleted with nothing in its place at @@ -276, `passCandidates` at @@ -348); D16, 1.7, slice 3 and round 1's row reject that form; 1.7 and section 15 present the diff as "the D16 TypeScript form". Skeptics: slice 3's "TypeScript form" is a timing baseline, not an instruction; nit or should-fix. | **Taken.** Section 4: from the diff the build takes only the control-search hunk and `passCandidates`' call site, never the patient hunk; the patient statements get D16's arrays or the correlated fallback. 1.7, section 15 and slice 3 name the diff "a measured reference, not a patch"; slice 3 says its "TypeScript form" is a timing baseline. |
+| 4 | 14.4 item 14 recommends a blocking `lockLedger` in a web request, which can hold the shared 10-connection web pool for the length of a pass. | security | should-fix | 3 of 3 | `lockLedger` is `pg_advisory_xact_lock` (`ledger.ts:17`); no `lock_timeout` or `statement_timeout` in apps, packages or infra (`connect.ts` sets connection and idle timeouts only); `WEB_POOL_CONNECTIONS.application` 10 (`pools.ts:10`); `reopenLineAction` runs in the request's practice-scoped transaction (`triage.ts:518-555`); the pass holds the lock for its whole transaction (`pass.ts:38-50`; 219-310 s). | **Taken.** 14.4 item 14 rewritten: the blocking form withdrawn; the reopen takes the `ledger:` key with `pg_try_advisory_xact_lock` and, if not granted, refuses at once with a retryable refusal carrying no identifier (wording the web owner's, through ux-brand), writing nothing; `SET LOCAL lock_timeout` named as the lesser form; its test (CAS-49.6's shape with the lock held: the refusal within a second, nothing written). 5.2 and the risks row follow. D3's savepoint retry stays. A hand-off; nothing in this item's build. |
+| 4 | D16's `matched` set grows with the practice's whole claim-match history, though the search needs only the open lines' pairs. | security | nit | 3 of 3 | Candidate `remittances.ts:915` (every `claim`-kind match, all time); `matched` is read only at :310 and (in the build) the control search's drop, always with a searched line, and only open lines are searched (`passCandidates`, :348); the base had no such set, so round 1's "the base's map" reason does not cover it. Reviewer: 5.0 MiB at 61,590 pairs, 65.2 MiB at 740,000; a skeptic reproduced 5.6 / 71.8 MiB. Skeptics' corrections: 740,000 is about one year at A's rate, not two; the set is a fraction of the base's own history-scaled `context.matches`, so nit. | **Taken** (the filter, not only a heap seed). Slice 3, section 4 and D16: a `Set` of the open lines' service-line IDs first, then the filter, so the set is bounded by the open lines; the same exclusion for every searched line; risks memory row. No budget changes. |
+
+**Refuted in round 4 (not taken):**
+- *D14 sizes step 7b at 10,000 lines on cc3dd7f6 figures, but no pass at that size ran on #126's base* (payment engine, 0 of 3): 12.2 and 14.4 item 11 name `ledger_match_by_seq` and give the re-measure to Lane A's trigger PR, whose primary-key lookup does not depend on the old form's index; 360 s is a sizing bound, the failing condition is the 900 s attempt (4.1 times margin), and the first weekly run prints the figure; the lookup already scans the practice's standing matches, so another practice-leading index keeps the same order (and it is about 58 s of the 161 s, not 100).
+- *D7's moved claim read and D2's batched `claimLines` rely on RLS alone* (security, 0 of 3): D11 covers new statements only; both texts are the base's word for word (`postings.ts:73-78`, D2, section 0 item 10, R6 against #126's `CLAIM_LINES`); D7 decrypts the same claims fewer times within one pass; adding predicates would break #126's word-for-word copy.
+
+**Verdict after round 4:** the design stands; slice 1 carries CAS-49's comparison of encrypted text by decrypted hash
+and its sixth mutant; slice 3 takes only the control-search hunk of `d1-ts-exclusion.diff` and builds `matched` from
+the open lines' pairs; Lane A's PR carries the catalog-tied, statistics-checked, fail-first plan test; the web owner's
+hand-off (14.4 item 14) is a try-lock with a retryable refusal, never a blocking wait. The ask changed in proof wording
+only; the bodies the founder granted are unchanged.
+
+---
+
+## 19. Completeness check 2 (2026-11-07, after review rounds 1-4)
+
+A second completeness critic read this design and the freeze-exception ask after the four review rounds. It checked:
+every surviving finding has a disposition row; D14 is stated with its numbers and its ruling; the worker-only scope is
+clear and every Lane A part has DDL, a measured gain and a place behind #126; the ask's numbers match the design; the
+slices can be built from the text; and sections 0, 3, 7, 8, 9, 11, 14, 16 and 17 do not contradict each other. It
+read the candidate (cap3-rev, 0b6e90eb), the recorded results (`lane-b-suite-cap-3-wip/results-rev`, `results-crit`),
+the item's status file and the ask's history on build-ops (38123394, f795bf28). It ran no probe. Changes, each in place:
+
+1. **The founder's grant and the D14 ruling recorded (0 items 7 and 12, D9, D14, 8.4, 14.1).** The status file
+   records the orchestrator's D14 ruling (2026-11-06 22:31 UTC: the split, step 7b on F at 10,000 lines, with the move
+   back to A's month once Lane A's two fixes merge). It also records the founder's freeze exception (22:40 UTC). The
+   design still called both open. Each is now recorded where it applies, sourced to the status file. D14's ruling
+   predates the review rounds, which changed none of its figures (1,653 s, 220 s, 310 s). It is marked for the
+   orchestrator's confirmation when the reviewed design is committed. D9 now says the build is worker-side only.
+2. **The ask's revision history corrected.** The ask said round 1 came before the grant and only round 4 after it. In
+   fact the grant was given on the 22:28 UTC text (38123394), and rounds 1, 3 and 4 all changed the ask afterwards. Two
+   of those changes correct statements the founder read: that the release checks allow 360 s, and that the writes
+   matched row for row in every case. The header now lists what changed since the grant. The SQL of both bodies was
+   compared with the granted text and is identical. The two bodies also equal 14.1's and `probe-crit/state-k.sql`.
+3. **Section 0 matched to the reviewed decisions.** Item 4 now says two patient statements, not one (round 3). Item 9
+   said that no lock order changes, which contradicts D4's round-1 correction; it now names the changed order and D3's
+   retry. Item 12 now says that 360 s is a sizing bound with no check enforcing it (8.4).
+4. **D16's fallback covers both patient statements (D16, CAS-50, slice 3).** Section 4 puts the fallback's
+   `NOT EXISTS` in (a) and in `patientPairs` (b). D16, CAS-50 and slice 3 had excepted "that one statement" from the
+   text check, so a builder taking the fallback would have failed CAS-50 on (b). All three now name both statements.
+5. **CAS-50's statement bound made buildable.** "Candidate statements and `claimLines` calls at most `2 + 2 × rounds`"
+   would also count the pass's three practice-wide `claimLines` calls. Those are `chainContext` in `matchClaims` and in
+   `recoupReversals` (`remittances.ts:907`, :978) and in `shares` (`postings.ts:285`). The candidate measured 4 calls,
+   3 + 1, against the base's 4,003 = 2N + 3. Counted that way, the bound fails correct code (8 against 6 with two
+   rounds). The bound now covers the search's own calls, and the three practice-wide calls are asserted to be 3.
+6. **14.1's first-form paragraph marked superseded.** "Adding `practice_id` … would not reach the joins either" and
+   "the cost is the two joins" were spread R's reading. The recommended form is that practice equality, and it removes
+   F's cost (74.6 → 2.0 s).
+7. **CAS-51's CI time stated (8.2).** Since round 3, CAS-51 runs three shapes at two sizes each. The estimate is about
+   3 to 3.5 minutes on 4 CPUs, not measured. Private db shards run on 2-CPU runners under a 20-minute timeout, beside
+   CAS-41's and CAS-42's real-size files. Slice 5 records the time. If the shard nears the timeout, the PR says so;
+   no shape is cut without a ruling.
+8. **Slices completed.** Slice 4 names the web's tests that section 7 assigns to it. Slice 5 adds the
+   `db-shards.test.ts` re-run that 12.1 names.
+9. **Section 18 counts and supersession.** Round 1's preamble said "seven" findings survived, but there are nine rows
+   (4 taken, 5 taken corrected; six refuted). Round 2's `ixs` row is now marked as superseded by round 3.
+
+Checked and found consistent: one disposition row per surviving finding, 9 + 3 + 6 + 6 = 24 against the rounds' 9, 3,
+6 and 6. Refuted findings are listed: 6, 3, 1 and 2. The ask's figures equal 14.1's and 8.3a's: 219.1 → 84.9 s,
+1,653.1 → 309.9 s, 43.7 → 19.2 s, inserts 161.3 → 29.1, 1,468.9 → 141.5 and 33.3 → 8.6 s, the parts apart 160.0
+and 128.1 s, 102,907 and 20,635 rows, 75.6 s for `within_evidence`, about 35 s. A's month at $4,947,800.00 equals
+`posted_cents` 494,780,000 in both runs' results. 8.4's budgets equal CAS-51's and the slices'. No number, rule,
+write order, budget or file in section 9 changed.
+
+**Not fixed here (for the orchestrator or the build):**
+- Confirming D14's recorded ruling, and writing it into D14's text and ADR 0087 as ruled, is the orchestrator's step
+  when the reviewed design is committed.
+- The orchestrator should relay the ask's corrected statements to the founder (item 2): the 360 s wording and
+  row-for-row only at F 10,000 and R 2,000. The bodies are unchanged, so the grant's subject is the same.
+- CAS-51's CI time is an estimate until slice 5 (item 7).
+- The status file's "For Lane A" entries still carry the first form's figures (it says so itself). The status file is
+  the item session's to update.
