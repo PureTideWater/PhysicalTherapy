@@ -831,3 +831,7 @@ Low to moderate. Small.
 
 ## Skips taken
 - None yet.
+
+## Founder decisions
+- 2026-11-07 ~18:46 UTC: PR 5's combined ledger freeze ask granted (Q1, Q2, Q3 yes; Appendices A and D exactly):
+  `lane-a-ledger-freeze-ask-pr5-2026-11-07.md`, section "Decided". PR 5's freeze gate is met; it keeps its queue place.

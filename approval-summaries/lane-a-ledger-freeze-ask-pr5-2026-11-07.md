@@ -315,3 +315,17 @@ BEGIN
 END;
 $function$;
 ```
+
+## Decided
+**Granted, 2026-11-07, about 18:46 UTC.** The founder (Tyler Williams) approved, relayed by the co-founder as "Tyler
+approves" and recorded by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW, message of 19:27 UTC) as approving Lane
+A's recommendation:
+- **Q1: yes. Q2: yes. Q3: yes.**
+- The grant covers exactly **Appendix A** (`roi_links_valid` with Q1 and Q3, body `13c4dd46b9203095`) and **Appendix D**
+  (`roi_statement_rules`, body `ba8293836b9cd5aa`), word for word, for schema PR 5 only, never widened.
+- The ask's own lapse and fault rules (under "The questions") apply as written.
+- This is not the approval of record for any schema PR: the founder still commits each schema PR's suggested
+  domain-model approval line himself.
+- The queue order is unchanged: #126 first, then schema PR 1 (password-changed-notice), then the rest as planned.
+
+Recorded by acting Lane A (S2), https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW.
