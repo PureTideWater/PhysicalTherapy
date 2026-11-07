@@ -1,7 +1,18 @@
 # Ledger freeze exception: two ledger function bodies, `ledger_line_net` and `ledger_entry_rules` (for the founder; text for the orchestrator to relay)
 
-From SUITE-CAP-3 (Lane B, reconcile at real size), 2026-11-06; revised the same day by the design's completeness check
-and by the design review's round 1 (the 360 s wording, the plan note and two proof items; design section 18).
+From SUITE-CAP-3 (Lane B, reconcile at real size), 2026-11-06; revised the same day by the design's completeness check.
+The founder granted the exception at 2026-11-06 22:40 UTC on that text (committed at 22:28 UTC). Everything changed
+since came from the design review's rounds 1, 3 and 4 (2026-11-07, design section 18), and none of it touches the two
+function bodies, which are exactly as granted:
+- Two statements the founder read were corrected. (1) "inside the 360 s the release checks allow" now says that no check
+  enforces 360 s; it is the margin the capacity work sizes a 900 s job by, and the weekly run fails only when the job
+  needs a second attempt (round 1). (2) "In every case the writes matched row for row" now says the rows were compared
+  at F 10,000 and R 2,000 only. At A's month only the counts and the cents were compared. Encrypted text was compared
+  only as present or absent (rounds 3 and 4).
+- Three proof items were added for Lane A's pull request: the note on why the practice condition and the ordering are
+  there, a cross-practice test, and a plan test that reads the installed functions (rounds 1 and 4).
+- Two sentences were reworded. Why the answer is the same now rests on the tenant policy (round 4). The "about 35 s more"
+  is now marked as measured on the search's first form (round 3).
 Design: `designs/lane-b-suite-cap-3-reconcile.md`, sections 1.5, 8.3a, 8.4 and 14.1. All figures were measured on
 synthetic data only, one run each on a 4-CPU container.
 
@@ -47,8 +58,10 @@ AS $function$
 $function$;
 ```
 
-Why the answer is the same: every entry of a line carries the line's practice (the existing rules require an entry to be
-of a case of its practice and of a line of that case), so adding the line's practice drops no entry. Adding up whole
+Why the answer is the same: every entry the app or a migration can store carries its line's practice. An entry written
+in the app's practice scope must be of a case of its practice and of a line of that case (the existing rules), and the
+ledger's tenant policy refuses any entry outside that scope; no database role but a superuser can get past the policy,
+and a superuser could as well switch the rules off. So adding the line's practice drops no entry. Adding up whole
 cents does not depend on the order. A reversal or adjustment still counts as the stage of the entry it finally corrects
 (its target, or the target's target when the target is itself an adjustment), one whose target is missing still counts
 as nothing, and every other entry counts as its own stage.
@@ -184,14 +197,20 @@ Measured on the current base (cc3dd7f6, SUITE-CAP-1b merged) with SUITE-CAP-3's 
 | F at practice A's full month, 30,795 | 1,653.1 s (184%) | 309.9 s (34%) | 1,468.9 → 141.5 s |
 | R (lines spread over cases), 2,000 | 43.7 s | 19.2 s | 33.3 → 8.6 s |
 
-Apart, at F 10,000: the `ledger_entry_rules` change alone 160.0 s, the `ledger_line_net` change alone 128.1 s. In every
-case the writes with the new bodies matched the writes without them row for row (every ledger match, entry and stage
-event, `seq` values included; 102,907 rows at F 10,000, 20,635 at R 2,000), and the recovered totals were the same.
+Apart, at F 10,000: the `ledger_entry_rules` change alone 160.0 s, the `ledger_line_net` change alone 128.1 s. At F 10,000
+and R 2,000 the writes with the new bodies matched the writes without them row for row (every ledger match, entry and
+stage event, `seq` values included; 102,907 rows at F 10,000, 20,635 at R 2,000). Encrypted text in those rows was
+compared only as present or absent, not by its words; these runs write no such note, and SUITE-CAP-3's own test
+compares the words. At A's month the approved and posted
+counts, the lines recovered and the posted cents matched (30,795 approved, 30,795 posted, 30,795 recovered,
+$4,947,800.00 posted, in both runs); the rows were not
+compared there. The recovered totals were the same in every case.
 
 What it is for: today step 7b of the weekly run cannot move back to practice A's full month, because the pass there takes
 1,653 s against the 900 s limit. With both bodies it takes 310 s, inside 360 s, the 2.5-times margin the capacity
 work sizes a 900 s job by (no check enforces 360 s; the weekly run fails only when the job needs a second attempt).
-Practice A's real month should add up to about 35 s more, so the margin is small: one more ledger check
+Practice A's real month should add up to about 35 s more (SUITE-CAP-3's claim searches, measured in their
+first form; the build re-measures them in their final form at A's size before this figure is relied on), so the margin is small: one more ledger check
 (`ledger_entry_within_evidence`, 76 s of the 310) is the next one to look at. Lane A measures again on its own base
 before step 7b moves back.
 
@@ -205,7 +224,11 @@ before step 7b moves back.
 - A cross-practice test: `ledger_line_net` called directly by the app's database role with another practice's line
   gives 0, before and after the change (one test, written on the interest fix's base).
 - A plan test: on a ledger with no statistics, `ledger_line_net` reads through the line index and both match lookups in
-  `ledger_entry_rules` through the match's primary key, so a later edit cannot quietly bring the slow reads back.
+  `ledger_entry_rules` through the match's primary key, so a later edit cannot quietly bring the slow reads back. The
+  test plans the statements as they stand in the installed functions, taken from the database's own copy of each
+  function, never from a copy kept in the test, so editing a function body is what it checks. It first makes sure the
+  ledger really has no statistics (automatic analysis switched off on the two ledger tables, and a check that neither
+  was ever analyzed). It is shown to fail against today's two bodies before the new ones are applied.
 - The schema gate as usual: `domain-model.md` and `packages/db/functions` regenerated in the same pull request, with
   your approval of record on it.
 
