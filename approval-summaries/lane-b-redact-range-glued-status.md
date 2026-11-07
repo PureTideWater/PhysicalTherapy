@@ -89,6 +89,11 @@ Effect: any PR's unit job can go red at random.
   or base-refused inputs sent (SSN, phone, every own identifier) and zero must-stay changes, except classes recorded in ADR 0054
   with a pinned row. Worktrees `/home/user/rg-cand-a`, `/home/user/rg-cand-b` (local branches rg-cand-a/-b); the winner is
   fast-forwarded into `co-001/redact-range-glued` before the push. Round-1 to 3 findings: scratchpad rg-judge/.
+- 2026-11-07T03:40Z: the orchestrator's tie-break ruling added to the judges verbatim (close -> B; the winner must show zero PHI
+  regressions per identifier kind on the gate and no must-stay damage beyond base); resumed.
+- 2026-11-07T~04:45Z: **the 5-hour limit stopped the judge workflow again** (reset 05:30 UTC) before any agent returned (the
+  gate was part-built; its progress file is kept). 05:46Z: setup re-run (PostgreSQL restarted), the workflow resumed as the same
+  run wf_5d1aedda-db5. Check-in ~10:57Z.
 
 ## Waiting on someone
 None. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
