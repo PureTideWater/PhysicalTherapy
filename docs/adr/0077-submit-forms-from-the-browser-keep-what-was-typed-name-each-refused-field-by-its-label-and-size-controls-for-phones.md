@@ -297,18 +297,18 @@ refused the "123 456" an authenticator app copies; and that several fields check
 ## Amended (co-001/ux-forms-after-42, 2026-11)
 
 1. **The separator rule.** A field's message is one lower-case sentence with no full stop and no colon of its own: what
-   is wrong, then the next step, joined by a semicolon; examples follow "such as". In a field's refusal, the only
-   colons are the summary's "{Field}:" and the field's "Error:". `apps/web/src/lib/routes/messages.test.ts` enforces
-   the form (test matrix FRM-04), except for a legal surface's wording until counsel rules; the step is reviewed by
-   hand. The "Not sent" list items of the screening upload are full sentences and stay outside the rule. A step's
-   refusal (shown as "Refused: {message}.", `lib/cases/refusals.ts`) and the core's form-wide sentences
-   (`FORM_WIDE_FIELDS`) are never printed after a field's name, so they are outside the rule, and so are the pricing
-   and export refusal texts that `messages.test.ts`'s `ALLOWED` names with a reason (`PRICING_BLOCKED_TEXT`,
-   `NOT_APPROVED_ALONE_TEXT`) and the payer's-copy print refusal (`lib/packets/calculation-words.ts`), which carries a
-   colon and two sentences of its own; bringing these under the rule is a follow-up ("Revisit when"). This supersedes
-   the colon-joined wordings of the forms design's 10.3, and the full stop docs/adr/0037 (its amendment of 2026-10-26)
-   had the pricing route add to the re-run refusals after the UX recheck of PR #50, N5: each is now one sentence with
-   no full stop of its own.
+   is wrong, then the next step, joined by a semicolon; examples follow "such as". In a field's refusal, the only colons
+   are the summary's "{Field}:" and the field's "Error:". `apps/web/src/lib/routes/messages.test.ts` enforces the form
+   (test matrix FRM-04), except for a legal surface's wording, and the founder's ZIP wording that counsel has yet to
+   confirm, until counsel rules (item 5); the step is reviewed by hand. The "Not sent" list items of the screening
+   upload are full sentences and stay outside the rule. A step's refusal (shown as "Refused: {message}.",
+   `lib/cases/refusals.ts`) and the core's form-wide sentences (`FORM_WIDE_FIELDS`) are never printed after a field's
+   name, so they are outside the rule, and so are the pricing and export refusal texts that `messages.test.ts`'s
+   `ALLOWED` names with a reason (`PRICING_BLOCKED_TEXT`, `NOT_APPROVED_ALONE_TEXT`) and the payer's-copy print refusal
+   (`lib/packets/calculation-words.ts`), which carries a colon and two sentences of its own; bringing these under the
+   rule is a follow-up ("Revisit when"). This supersedes the colon-joined wordings of the forms design's 10.3, and the
+   full stop docs/adr/0037 (its amendment of 2026-10-26) had the pricing route add to the re-run refusals after the UX
+   recheck of PR #50, N5: each is now one sentence with no full stop of its own.
 2. **"Not covered", extended.** The `StackedRows` bullet stands; the settings users page's two-copy Invitations form,
    outside `StackedRows`, is added beside it (above).
 3. **The screening upload is on the core.** It is a public route, so `stale` means only a failed origin check, which
@@ -317,8 +317,9 @@ refused the "123 456" an authenticator app copies; and that several fields check
    JavaScript the file is never sent and nothing is screened (FRM-06).
 4. **The loading state's `aria-busy`** (the forms design's 11.2.4) is superseded: the loading state announces through
    `role="status"`.
-5. **Legal surfaces.** The separator rule applies to every message except a legal surface's wording, until counsel
-   rules: `lib/screening/address.ts`'s messages, `SCREENING_BOUNCE_BUDGET` and `SCREENING_ZIP_MESSAGES`.
+5. **Legal surfaces.** The separator rule applies to every message except a legal surface's wording
+   (`lib/screening/address.ts`'s messages and `SCREENING_BOUNCE_BUDGET`, legal surface screening-mail-address) and the
+   founder's wording awaiting counsel (`SCREENING_ZIP_MESSAGES`, the founder's Q12 of 2026-10-21), until counsel rules.
 
 The shell's skip link (test matrix CI-30) is the first tab stop of every page in `AppShell`; its main is
 `main#content`.
