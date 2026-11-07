@@ -13,6 +13,7 @@
     "lint": "tsx tools/lint/run.ts",
     "lint:logs": "tsx tools/lint-logs/index.ts",
     "lint:copy": "tsx tools/brand-copy/index.ts",
+    "brand:email-plate": "tsx tools/brand-email-plate/index.ts",
     "check:fixtures": "tsx tools/fixture-check/index.ts",
     "hooks:install": "bash tools/pre-push/install.sh",
     "gitleaks:install": "bash tools/gitleaks/install.sh",
