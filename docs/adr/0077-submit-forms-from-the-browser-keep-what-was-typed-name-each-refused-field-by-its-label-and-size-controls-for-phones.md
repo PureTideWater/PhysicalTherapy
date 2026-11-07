@@ -4,6 +4,7 @@
   [0056](0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md) (the type
   scale's phone exception, decision D6); amended by
   [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md)
+  and by `co-001/ux-forms-after-42` (2026-11; see "Amended (co-001/ux-forms-after-42, 2026-11)" below)
 - **Date:** 2026-10-26 (revised 2026-10-27 after the security and accessibility review and the UX and brand review)
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings of 2026-10-25 (about 21:27 and 21:34 UTC) have the build improve as it goes and take each
@@ -262,11 +263,20 @@ refused the "123 456" an authenticator app copies; and that several fields check
   needs none: a drop there shows the error screen, which invites no press, and `requestExportOnce` makes a repeated
   request one; it does watch the person's mark (D10), as the split form, an `ActionForm`, does. #42's upload form
   neither pins its key nor watches the mark, until it adopts this pattern after #42.
+
+  *Amended (co-001/ux-forms-after-42): the screening upload is on the shared core now; as a public route it has no
+  request key and no person's mark to keep (item 3 of the amendment below).*
 - **A row form in both copies of `StackedRows`** (docs/adr/0078, Decision 5) has a request key and a pin in each copy,
   so after a press dropped in one copy and a resize across `stackBelow` (a phone turned), a press in the other would
   send a fresh key and could save twice. No page renders a row form in both copies yet; the review's 34th pull request,
   the first to, gives a row's two copies one request key and one pin (its `<FormKeys/>` rendered once for both, or one
   held key shared by both `ActionForm`s), so a press in either after a dropped one is never a second save.
+
+  *Amended (co-001/ux-forms-after-42): outside `StackedRows`, the settings users page's Invitations section (exempt
+  from `StackedRows`, docs/adr/0078) renders `ResendForm` twice since #42, in a hand-written `sm:hidden` list and a
+  `sm:table` table, each with its own `FormKeys`. A press dropped in one copy and repeated in the other after a resize
+  or rotation sends a fresh key. The 34th UX PR's shared key and pin is to cover this page too, which means extending
+  its mechanism beyond `StackedRows`.*
 
 ## Not verified here
 
@@ -281,3 +291,25 @@ refused the "123 456" an authenticator app copies; and that several fields check
   key and the person's mark.
 - The route outcome can tell a stale CSRF token from a wrong origin, so a page out of date may invite a press after a
   post without JavaScript too.
+
+## Amended (co-001/ux-forms-after-42, 2026-11)
+
+1. **The separator rule.** A field's message is one lower-case sentence with no full stop and no colon of its own: what
+   is wrong, then the next step, joined by a semicolon; examples follow "such as". The only colons in a refusal are the
+   summary's "{Field}:" and the field's "Error:". `apps/web/src/lib/routes/messages.test.ts` enforces the form (test
+   matrix FRM-04), except for a legal surface's wording until counsel rules; the step is reviewed by hand. The "Not
+   sent" list items of the screening upload are full sentences and stay outside the rule. This supersedes the
+   colon-joined wordings of the forms design's 10.3.
+2. **"Not covered", extended.** The `StackedRows` bullet stands; the settings users page's two-copy Invitations form,
+   outside `StackedRows`, is added beside it (above).
+3. **The screening upload is on the core.** It is a public route, so `stale` means only a failed origin check, which
+   gets its own lead naming the app's configured web address and no refresh; there is no request key, no `duplicate`
+   and no person's mark. The form is `method="post"` with no action: no field value ever reaches a URL, and without
+   JavaScript the file is never sent and nothing is screened (FRM-06).
+4. **The loading state's `aria-busy`** (the forms design's 11.2.4) is superseded: the loading state announces through
+   `role="status"`.
+5. **Legal surfaces.** The separator rule applies to every message except a legal surface's wording, until counsel
+   rules: `lib/screening/address.ts`'s messages, `SCREENING_BOUNCE_BUDGET` and `SCREENING_ZIP_MESSAGES`.
+
+The shell's skip link (test matrix CI-30) is the first tab stop of every page in `AppShell`; its main is
+`main#content`.

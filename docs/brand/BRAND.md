@@ -145,6 +145,8 @@ Contract-verified calculation without cash is a line status (validated), never a
   pages with a 16 px mark in the running header; styles in `apps/worker/src/report/brand.css`.
 - Billing-firm white label: the firm's name and logo lead; PaidWhole appears only as the Verified
   badge in the footer, when earned.
+- Refusals: a refusal names the field once, then says what is wrong and what to do in one sentence,
+  with no colon inside it (docs/adr/0077, amended by co-001/ux-forms-after-42).
 
 ## 8. Do not
 
