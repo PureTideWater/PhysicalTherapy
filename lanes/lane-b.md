@@ -2456,8 +2456,8 @@ d4f52071; the orchestrator's notes from 16:14 to 18:38 UTC.
 - Records: LANES.md claim rows (SUITE-CAP-3, with #134; interest credited twice, #126; MOD-16); the rolling handoff, now
   current as of 18:40 UTC.
 
-### 2026-11-10 21:30 UTC (Lane A's orchestrator): Lane A back on Fable 5.2; a compact state file; a fresh orchestrator
-- The co-founder switched to `claude-fable-5-2` for every session and agent, with direction to be token friendly and lose no quality.
+### 2026-11-10 21:30 UTC (Lane A's orchestrator): Lane A back; a compact state file; a fresh orchestrator
+- The co-founder chose one model for every session and agent, with direction to be token friendly and lose no quality.
 - New single current-state file: `lanes/STATE.md`. Sessions read it, their status file and CLAUDE.md; not the long history files.
 - Orchestration moves to a fresh session, because this one carries about 800k tokens of history per turn. Three work sessions run at a steady pace.
 - Until Lane B's reset (2026-11-13 19:00 UTC), Lane A runs Lane B's urgent items as acting Lane B: MOD-16, the SSN and phone leaks, #134 and #129. It hands them back at 18:30 UTC that day.

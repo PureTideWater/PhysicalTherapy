@@ -8,7 +8,7 @@ own status file and `CLAUDE.md`, not the long history files.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17.
 - **Lane B:** capped until Fri 2026-11-13 19:00 UTC. Until then Lane A runs Lane B's urgent items as acting Lane B, and hands them back at 18:30 UTC that day.
 - **Pace to the week:** an orchestrator plus 3 work sessions, about 13% of the weekly allowance a day. No bursts.
-- **Model:** every session and every subagent runs `claude-fable-5-2`, the co-founder's choice of 2026-11-10. Sessions inherit it; never override it with a smaller model.
+- **Model:** every session and every subagent runs the model the co-founder chose on 2026-11-10, set on each session. Subagents inherit it; never override it with a smaller model.
 
 ## Token rules (the co-founder's direction: token friendly, no loss of quality)
 - No Workflow fan-outs unless the co-founder opts in. Reviews run as Agent subagents: two adversarial reviews for the database, money, PHI and redaction, auth, security and CI permissions; one for wording, display, tests and dependencies.
