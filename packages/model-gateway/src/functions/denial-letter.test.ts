@@ -397,7 +397,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // The judge's review round 4: the date of birth's parts with gaps of any length of white space and separators, each gap
     // read once, and every run of letters read against the name's initials, near misses all (PHIJ4-1, PHIJ4-2); a number's
     // own letters before the name, each read for a range's first end, an hour, a unit or a code (GATEWAYJ4-1).
-    ['held letters, the date of birth’s parts with wide gaps and runs of letters near the initials, near misses (PHIJ4-1, PHIJ4-2)', ['JANE Q VANTREE'], `${HELD}${fill('JX QQ VJX 61  /  03  /  04 Mar     6104     ')}`, false],
+    ['held letters, the date of birth’s parts with wide gaps and runs of letters near the initials, near misses (PHIJ4-1, PHIJ4-2)', ['JANE Q VANTREE'], `${HELD}${fill('JX QQ VXJ 61  /  03  /  04 Mar     6104     ')}`, false],
+    // Review round 5: every stretch of the initials' own letters inside a longer run is read in windows no longer than the
+    // name has parts, near misses all (PHI5-1).
+    ['held letters, long runs of the initials’ own letters with no two of them together, near misses (PHI5-1)', ['JANE Q VANTREE'], `${HELD}${fill('JJJJJJJJ QQQQXVVVVVV XJXQXVX ')}`, false],
     ['held letters, the date of birth redacted again and again, another number past a wide gap beside it (PHIJ4-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961  /     5     ')}`, false],
     ['times, ordinals, units and codes glued before a part read as the name (GATEWAYJ4-1)', ['AMAL AL HASSAN'], fill('9-10am Al 3rd-4th 30min Al 97110AM Al '), false],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
@@ -1511,6 +1514,19 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHIJ4-2', ['BOB XU'], `${RANGE_END}Bo b $0,000.00`, null, {}],
     ['PHIJ4-2', ['ANN Q VANTREE'], `${RANGE_END}An\nn $0,000.00`, null, VANTREE],
     ['PHIJ4-2', ['JANE ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', {}],
+    // Review round 5, PHI5-1: two or more initials glued to another word's letters, at either end or inside, in any case:
+    // no boundary says where the word ends, so a held letter is refused (cc3dd7f6 refused each for the range's own digits;
+    // 9f953223 sent them); with no range both trees send them as written, and a word with one of the initials' letters
+    // twice is no pair of initials.
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}4thZQ was seen.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}4thzq was seen.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}PaidZQ 150.00`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}ZQpaid in full.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}SeenQJZtoday.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `Re: 3rd-4thZQ\nService January 1, 2020-2020-01-02Paid $0,000.00`, null, {}],
+    ['PHI5-1', ['SIMONE VANTREE'], `${HELD}3rd-4thSV`, null, VANTREE],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], 'Seen 3rd-4thZQ today.', 'Seen 3rd-4thZQ today.', {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}A jazz quiz was held.`, `${HELD}A jazz quiz was held.`, {}],
     ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
     // GATEWAYJ4-1: a number's own letters before the name are no head of a part: "am" or "pm" after a range of hours or
     // times, h.mm or hhmm, an ordinal's suffix after a range's first end, a unit's letters after a whole number, and a

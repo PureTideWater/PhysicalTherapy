@@ -2495,8 +2495,11 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
     }
     // Two or more of the name's initials written together as one run of letters, in any order and case ("JZ", "ZJ", "Jz",
     // "QJZ" for JANE Q ZEPHYRA, "SV" for SIMONE VANTREE: the judge's review round 4, PHIJ4-2): each letter of the run counted
-    // against the initials', whatever the number of parts. Linear: each run is read once per name, and only when it is no
-    // longer than the name has parts.
+    // against the initials', whatever the number of parts. The same glued to another word's letters, at either end or inside
+    // ("4thZQ", "Paidzq", "ZQpaid", "BEST" for S T: review round 5, PHI5-1): no boundary says where the word ends and the
+    // initials begin, so every stretch of two letters up to the number of parts, anywhere in a run, is counted the same way
+    // and the letter is refused, as cc3dd7f6 refused it. Linear in the letter: only stretches made of the initials' own
+    // letters are read, in windows no longer than the name has parts.
     const initials = new Map<string, number>();
     for (const part of parts) {
       const first = [...part][0];
@@ -2510,7 +2513,22 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
         return count > 0;
       });
     };
-    if (runs.some((run) => run.length <= parts.length && ofInitials(run))) {
+    const initialsWithin = (run: readonly string[]) => {
+      let start = 0;
+      for (let end = 0; end <= run.length; end += 1) {
+        const letter = run[end];
+        if (letter !== undefined && initials.has(letter)) continue;
+        // run[start, end) is a stretch made only of the initials' letters.
+        for (let size = 2; size <= Math.min(parts.length, end - start); size += 1) {
+          for (let from = start; from + size <= end; from += 1) {
+            if (ofInitials(run.slice(from, from + size))) return true;
+          }
+        }
+        start = end + 1;
+      }
+      return false;
+    };
+    if (runs.some(initialsWithin)) {
       return true;
     }
   }
