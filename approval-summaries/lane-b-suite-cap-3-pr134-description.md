@@ -6,8 +6,8 @@ SUITE-CAP-3, reconcile at real size (`designs/lane-b-suite-cap-3-reconcile.md` o
 - **The stage write** (`stages.ts`, D3): `insertStages` writes a pass's events in one `INSERT … SELECT … FROM unnest(…) WITH ORDINALITY … ORDER BY n`, in today's order, under a savepoint that re-issues the same statement on a deadlock (`40P01`), at most twice more, so a person's reopen crossing the pass never costs the pass.
 - **The smaller loops** (`remittances.ts`, `postings.ts`, D5 to D7, D15): `lineChain` reads standing matches from an index built once per context; `settleMatches` keeps a running sum per check (`checkPostedBefore`); a pass reads and decrypts each remittance's claims once for its posting rows; the never-matched posting and EFT rows are found by one practice-scoped server-side `EXCEPT` and then read by ID in today's order.
 - **The reference** (D13): today's per-line step, word for word, is kept as test support (`apps/worker/src/reconcile/test-support/per-line.ts`, `referencePass`), and no production file may import it (a `no-restricted-imports` pattern in `eslint.config.js`, held by `per-line-import.test.ts`).
-- **The weekly release-capacity run** (D14, as ruled): step 7b reconciles practice F at 10,000 lines at full size (600 at the smoke size), sized for attempt 1 to complete within 360 s; the Known gap line's fixed words now name A's full month's measured figure and Lane A's trigger fixes as what holds it; CAS-42.3's `PASS_BUDGET_MS` goes from 150,000 to 60,000 (2,000 lines kept); `docs/runbooks/ci.md` says the same.
-- **Tests:** CAS-49 (the pass writes what the per-line pass wrote: CAS-49.1 on 25 generated worlds with seventeen mutants, CAS-49.3 the one-statement stage order, CAS-49.4 the manual actions, CAS-49.5 the chain index, CAS-49.6 the two-session deadlock retry), CAS-50 (between 200 and 800 lines the candidate searches and claim-line reads stay a fixed number of statements, none names `ledger_match`, the stage events are one statement, and each claim is decrypted at most once a phase), CAS-51 (a real-size pass in spreads R, F and A at 500 and 2,000 lines, within budget and at most 1.5 times as slow a line at 2,000 as at 500); `settle-order.test.ts` and `stages.test.ts` (unit). `vitest.config.ts`'s `SLOW_FIRST` gains `pass-equality` and `pass.large`; `tools/test/db-shards.test.ts` counts 19.
+- **The weekly release-capacity run** (D14, as ruled): step 7b reconciles practice F at 10,000 lines at full size (600 at the smoke size), sized for attempt 1 to complete within 360 s; the Known gap line's fixed words (as approved on 2026-11-07) now name A's full month's measured figure and the ledger trigger fixes as what holds it; CAS-42.3's `PASS_BUDGET_MS` goes from 150,000 to 60,000 (2,000 lines kept); `docs/runbooks/ci.md` says the same.
+- **Tests:** CAS-49 (the pass writes what the per-line pass wrote: CAS-49.1 on 25 generated worlds with twenty-three mutants, CAS-49.2 on LED-01 to LED-18's own worlds (`pass-equality-led.db.test.ts`: the LED tests run again, unchanged, each of their 207 reconciles run by the per-line reference on a copy of the world and by the pass on the world itself, the writes compared), CAS-49.3 the one-statement stage order, CAS-49.4 the manual actions, CAS-49.5 the chain index, CAS-49.6 the two-session deadlock retry), CAS-50 (between 200 and 800 lines the candidate searches and claim-line reads stay a fixed number of statements, none names `ledger_match`, the stage events are one statement, and each claim is decrypted at most once a phase), CAS-51 (a real-size pass in spreads R, F and A at 500 and 2,000 lines, within budget and at most 1.5 times as slow a line at 2,000 as at 500); `settle-order.test.ts` and `stages.test.ts` (unit). `vitest.config.ts`'s `SLOW_FIRST` gains `pass-equality`, `pass-equality-led` and `pass.large`; `tools/test/db-shards.test.ts` counts 20.
 - **Documents:** ADR 0087 ("A reconcile pass reads per pass, never per open line, and writes in the order the rules define"), a dated note in ADR 0083, the CAS-49 to CAS-51 rows in the test matrix, `matrix.ts` and `registry.ts`, and their generated `fixtures/synthetic/CAS-49..51/expected.json` (metadata only).
 
 **Measured, base against this change** (SYNTHETIC rows, a private PostgreSQL 18 cluster, 4 CPUs; the base is `claude/build-platform` with SUITE-CAP-1b merged; one to four runs each, so read ranges across runs; the 10,000-line R rows are from 83d71fd6 with 1b's migration applied, the base's schema):
@@ -50,13 +50,14 @@ Recommended options, with reasons (design section 3):
 
 ## Open items
 
-- **CAS-49.2 is not built yet.** Old against new on LED-01 to LED-18's own worlds (design section 7, item 2) comes in the fix round. Until then the CAS-49 test-matrix row, its registry entry and ADR 0087's Consequences claim it ahead of the test. LED-01 to LED-18 and the ledger oracle themselves pass unchanged.
+- **CAS-49.2 is built** (the fix round): old against new on LED-01 to LED-18's own worlds, 207 reconciles compared, 204 of them decrypting a claim in the search, none refused. It fails first with the patient list dropped from the shipped search.
 - **The build's search is 15 to 16% slower than the probed candidate's** (A at 10,000: 4.66 against 4.01 s; F at 30,795: 5.55 against 4.84 s), past the design's 10% restatement trigger (8.4). Restated: A's month's searches and `claimLines` are 8.9 s against 8.3 s, so the "about 35 s" bound above the 1,653 s still stands. ADR 0087's Measured table gives the candidate's figures; the build's (F 19.76 s, R 49.87 s at 2,000) are in its records, not yet in the ADR.
-- **CI time.** CAS-49 (about 10 minutes locally) and CAS-51 (about 4) may land in one 2-CPU db shard under its 20-minute timeout (4 shards: shard 4 with route-tests.7; 6 shards: shard 6). To be measured on this PR's CI.
-- **The Known gap sentence** (`tools/release-capacity/checks.ts`, `KNOWN_GAP_FIGURE` and `KNOWN_GAP_REVISIT`, and its copy in `docs/runbooks/ci.md`) awaits the orchestrator's approval of its exact words.
+- **CI time.** CAS-49.1 (about 10 minutes locally), CAS-49.2 (about 3) and CAS-51 (about 4) may land in one 2-CPU db shard under its 20-minute timeout. To be measured on this PR's CI.
+- **The Known gap sentence** carries the words approved on 2026-11-07, with the review's precision ("A’s full month (its 30,795 actionable lines)"). One reviewer's optional note stands: the 1,653 s was measured with A's line count in F's one-case shape (ADR 0087's table says so); the approved sentence does not.
 - **Deviations from the design**, each checked by the build's completeness check:
   - `claimLines`' TypeScript body collects rows with `pushTo`; its SQL is unchanged word for word. `byPayment` is now built from the shared `chainOrder` comparator. Neither touches #126's hunks.
-  - `pass-equality.db.test.ts` (CAS-49) joins `SLOW_FIRST` beside CAS-51, which the design did not list; `db-shards.test.ts` counts 19.
+  - `pass-equality.db.test.ts` and `pass-equality-led.db.test.ts` (CAS-49) join `SLOW_FIRST` beside CAS-51, which the design did not list; `db-shards.test.ts` counts 20.
+  - Four of CAS-49.1's mutants (the loaded and the reversal filter of each search) make the pass write a match `ledger_match_rules()` refuses, so they are caught by that guard, asserted by its fixed message, not by the comparison.
   - CAS-49.1's mutants are injected at the statement boundary on the shipped pass, not into a copy of the new code; the code mutants (D5, D6, D7, D15) ran in a scratch copy, each killed by CAS-49, CAS-49.5 or `settle-order.test.ts`.
   - `fixtures/synthetic/CAS-49..51/expected.json` are added (the generator's idiom for every case: metadata only), where the design said no fixture files.
   - CAS-51's F shape is seeded from LED-06's segments, not from the scenario's `reconcileClaims`.
@@ -69,7 +70,7 @@ Recommended options, with reasons (design section 3):
 - Database schema and migrations: none. No migration, index, table or function (`claim_by_superseded` is SUITE-CAP-1b's, cited); nothing under `packages/db` changes. Lane A's two trigger fixes are not in this PR.
 - Content releases (`content/`): unchanged.
 - Domain model (`docs/product/domain-model.md`), its approval line and `approvers.json`: unchanged.
-- CI and the GitHub settings: unchanged, except that `vitest.config.ts`'s `SLOW_FIRST` gains `pass-equality.db.test.ts` and `pass.large.db.test.ts` and `tools/test/db-shards.test.ts` counts them; `watched-paths.txt` is unchanged by `watched.ts --write`.
+- CI and the GitHub settings: unchanged, except that `vitest.config.ts`'s `SLOW_FIRST` gains `pass-equality.db.test.ts`, `pass-equality-led.db.test.ts` and `pass.large.db.test.ts` and `tools/test/db-shards.test.ts` counts them; `watched-paths.txt` is unchanged by `watched.ts --write`.
 - No lock, transaction or write order: the pass stays one transaction under the practice's `ledger:` lock, with peak advisory locks of 1 (CAS-42.3, CAS-51).
 - Nothing a person reads: no page, notice, email, PDF, CSV or audit event changes. The release-capacity summary's Known gap line is the only changed sentence, in a build tool's output.
 
@@ -78,35 +79,40 @@ Recommended options, with reasons (design section 3):
 The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
 `screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
-Run by the build on the head ee1dbb7d (Node 24, PostgreSQL 18), after each slice was built red first and checked by a skeptic. The full local suite (unit, golden, every db shard, e2e) has not run on this head: it runs once in the fix round, after the base is merged.
+The full local suite ran once, on the fix round merged with the base d4f52071 (Node 24, PostgreSQL 18, 4 CPUs); the pushed head d88f2325 is that tree. Each new test was built red first.
 
 | Command | Result |
 | --- | --- |
 | `pnpm typecheck` | pass, 23 projects |
-| `pnpm lint` | pass, 1,882 files, 0 errors, 0 warnings |
-| `pnpm lint:copy` | pass, 595 files |
-| `pnpm lint:logs` | pass |
-| `pnpm check:fixtures` | pass, 342 files guarded, 4,249 searched for an X12 header |
-| `pnpm synth --all` | 0 files written, 723 unchanged, 0 removed (the tree unchanged) |
-| Unit: `apps/worker/src/reconcile`, `packages/ledger`, `tools/release-capacity`, `tools/test/db-shards`, `packages/synth` | 38 files, 540 passed |
-| db: `apps/worker/src/reconcile`, `apps/worker/src/report`, `tools/release-capacity` | 21 files, 227 passed (CAS-49 to CAS-51, CAS-49.3 to CAS-49.6, LED-01 to LED-18, the ledger oracle, CAS-41, CAS-42.3, stage-head) |
-| CAS-49.1 (`pass-equality.db.test.ts`) | 28/28: 25 generated worlds equal to the per-line reference, the seventeen mutants each apply and fail, the facts |
-| Watched-list test; `watched.ts --write` | 6/6; `watched-paths.txt` unchanged |
-| Freeze: diff against 31a7345f on `packages/ledger/src`, `packages/db`, `packages/pricing` | empty |
-| Red first, per slice | each new test failed on the code before it for the stated reason (the import guard, CAS-49.3 and CAS-49.6, the eight search mutants, D7's decrypt-once check, `settle-order.test.ts`, CAS-50's first 7 tests and CAS-51 against the per-line reference, the slice-5a Known gap and full-size tests) |
-| CAS-42.3 (`reconcile.large.db.test.ts`) | pass, 2,000 lines in 16.2 s (slice 5a) and 30.4 s (the build check's run on this head) against the new 60 s budget, peak advisory locks 1 (base 57.7 s would also pass, so a reset, not a fails-first test) |
-| `release-capacity --small` (process runtime) | verdict pass; F's reconcile 600 of 600 lines in 4.5 s on attempt 1; the new Known gap words printed |
+| `pnpm lint`, `pnpm lint:logs`, `pnpm lint:copy` | pass |
+| `pnpm check:fixtures`, `pnpm verify-content` | pass |
+| `pnpm synth --all` | 0 files written, 727 unchanged, 0 removed (after the base merge) |
+| `pnpm test` (unit and property) | 492 files, 10,171 passed, 4 skipped |
+| `pnpm test:golden` | 5 files, 381 passed |
+| `pnpm test:db` (every database test, the catalog and cross-tenant tests among them) | 155 files, 10,001 passed, 1 skipped |
+| `pnpm test:e2e` | 84 passed |
+| CAS-49.1 (`pass-equality.db.test.ts`) | 25 generated worlds equal to the per-line reference; the twenty-three mutants each apply and are caught; in every world the patient search's second statement kept a claim for one line of a patient and refused it for another, twice or more |
+| CAS-49.2 (`pass-equality-led.db.test.ts`) | 207 reconciles of the LED tests compared, 187 writing rows, 204 decrypting a claim in the search, 0 refused; red first with the patient list dropped from the shipped search (1 LED test fails, naming tables and columns only) |
+| Freeze: diff against the base on `packages/ledger/src`, `packages/db`, `packages/pricing` | empty |
 | D16 gate (slice 3, real size) | passed, array form, no fallback (Decisions, D16) |
 | Mutation | not run locally; CI's `mutation` reports here |
 
 ## Reviewer agents' findings
 
-Pending. Two adversarial reviews run next, each in a fresh clone of this head: default workflow agents applying the payment-engine checklist (`.claude/agents/payment-engine-reviewer.md`) and the security checklist, with skeptics checking each finding. Their findings and resolutions are added to this table before the fix round's push. No screen changes, so no UX and brand review is due.
+Two adversarial reviews of the head ee1dbb7d (payment-engine and security checklists, three skeptics a finding, two rounds; record `approval-summaries/lane-b-suite-cap-3-pr134-reviews.md` on `claude/build-ops`), then two of the fix round's delta (the `payment-engine-reviewer` and `security-reviewer` agents), each finding checked against the code before it was fixed. No finding changes an amount, a matching rule, a write or its order, or the recovered total. No screen changes, so no UX and brand review is due.
 
 | Reviewer | Finding | Resolution |
 | --- | --- | --- |
-| Payment engine checklist | Pending | Pending |
-| Security checklist | Pending | Pending |
+| Payment engine checklist | 2.1 (should fix): no generated world had two case lines sharing a patient control number, and no mutant aimed at the patient search's second statement | Fixed: claims of two lines, one code twice in a claim, and case lines of different claims sharing a patient, code and date with a further claim only one may take; two mutants on that statement alone; its other clauses recorded as equivalent |
+| Payment engine checklist | 2.2 (nit): no mutant on the loaded and reversal filters the new statements restate | Fixed: a held 835 claim the control search reaches, four mutants, each caught by the database guard it names |
+| Payment engine checklist | 1.2 (nit): the D2 comment held only where no correction loop exists | Fixed: the comment says so; run 0 reads a sample of claims alone against all together |
+| Payment engine checklist | 1.3 (nit): the Known gap line called 30,795 lines A's full month | Fixed in the approved words |
+| Payment engine checklist | 1.1 (nit): the savepoint left open on a non-deadlock error | Refuted (1 of 3): the outer rollback discards it; as designed |
+| Security checklist | 1.4, 1.5 (nits): older statements rely on RLS alone; decrypted control numbers held for the posting pass | Refuted (0 of 3 each): unchanged SQL run fewer times; the trade-off is ADR 0087's |
+| Payment engine reviewer, delta | Should fix: CAS-49.2's decrypt comparison could be nothing against nothing on every reconcile | Fixed: the run counts the reconciles that decrypted a claim in the search and asserts some did (204) |
+| Payment engine reviewer, delta | Nits: refusals counted but not asserted zero; a comment naming the wrong state of the world; the Known gap sentence leaves out "in F's shape" | The first two fixed; the third stands as the approved words (Open items) |
+| Security reviewer, delta | Nits: a failed claim-lines check would print a line's code, date and cents; an LED copy left behind if the world's connections cannot be reopened | Both fixed |
+| Security reviewer, delta | Notes on older test code: clone drops in a loop with no guard for each; an unexpected mutant error is rethrown whole | Not changed here: neither is new in the fix round |
 
 ## Freeze exception
 
@@ -126,4 +132,4 @@ dismisses it. The build then merges, and never reviews.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
-https://claude.ai/code/session_01FcouKP4ekrT97eyDtLe4Rd
+https://claude.ai/code/session_019i9ifE6JAC24yB5654GXcV
