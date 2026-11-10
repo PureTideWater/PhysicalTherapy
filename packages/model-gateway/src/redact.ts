@@ -1761,7 +1761,8 @@ function wholeRanges<T extends { readonly start: number; readonly end: number }>
  *    unsigned amount there is no barrier ("SSN 900.12 3456": SEC-5), the label read over the numbers before the amount
  *    or its range too, and a chain from that amount read under it ("SSN 01/01/2020-900.12 3456": review GATEWAY1-2);
  * 5. read again with the barriers cc3dd7f6 read alone ("kept": a currency amount, and a date or an unsigned amount alone or
- *    in a range of its own kind joined by a hyphen, a dash or the minus sign, the dates read as cc3dd7f6 read them): a
+ *    in a range of its own kind joined by a hyphen, a dash or the minus sign, the dates read as cc3dd7f6 read them, and
+ *    those it read over words no digit touches, with no SSN or phone label in them, barriers of the first reading too): a
  *    chain that survives there is a survivor unless the barriers the range fix added ("held": a range of a date and an
  *    amount or of an amount and a currency amount, a date read only with a glued word blanked, a range joined by another
  *    dash) hold all of it, each standing (rangeStands); where they do, the letter is 'held': sent, but read past them for
@@ -1858,10 +1859,26 @@ function survivorIn(text: string): Survivor {
     for (let i = span.start; i < span.end; i += 1) kept[i] = barrier[i] ?? 0;
   };
   currency.forEach(keep);
-  // cc3dd7f6 read the dates past each match's end only, and a date glued to a word with every letter read as a space.
-  for (const reading of /[0-9]\p{L}|\p{L}[0-9]/u.test(text) ? [text, text.replace(/\p{L}/gu, (letter) => ' '.repeat(letter.length))] : [text]) {
-    wholeRanges(text, datesIn(reading, false).filter((span) => span.separated && span.dates.length > 0), PLAIN_RANGE_DASH, false).forEach(keep);
+  // cc3dd7f6 read the dates past each match's end only, and, once any letter touches a digit, with every letter read as a
+  // space: so "12/31 terminated. 26" is a date to it wherever a code has its modifier glued ("97110GP"), and a range
+  // ending in it stands. Such a date is a barrier of the full reading as well where it is read with only the words no
+  // digit touches as spaces (a glued word stays a blank, never the white space of a date: MOD-16 seed 1034253323) and no
+  // SSN, Medicare or phone label stands in it: without it the first pass refused clean letters cc3dd7f6 sends unchanged
+  // ("Coverage 10/1/2025-12/31 terminated. 26 units of 97110GP were billed.": review round 5, F6). No chain cc3dd7f6
+  // refused crosses one: it was its barrier too. Every other date it read is kept only where the full reading has a
+  // barrier, as before: a date read over a label or a glued word may end in the first numbers of a number written after
+  // it ("150.00-$10-\nSSN 9.00 12 3456Paid" reads "10-\n 9.00" as a date, "3rd—01|90 0-12-3456" reads "3 —01|90").
+  const dated = (reading: string) => wholeRanges(text, datesIn(reading, false).filter((span) => span.separated && span.dates.length > 0), PLAIN_RANGE_DASH, false);
+  const place = (span: { readonly start: number; readonly end: number }) => `${String(span.start)}:${String(span.end)}`;
+  if (/[0-9]\p{L}|\p{L}[0-9]/u.test(text)) {
+    const spaced = (word: string) => ' '.repeat(word.length);
+    const overWords = new Set(dated(text.replace(GLUED_ANY, (word) => WORD_BLANK.repeat(word.length)).replace(/\p{L}/gu, spaced)).map(place));
+    for (const span of dated(text.replace(/\p{L}/gu, spaced))) {
+      if (overWords.has(place(span)) && !LABEL_IN_DATE.test(text.slice(span.start, span.end))) mark(span.start, span.end);
+      keep(span);
+    }
   }
+  dated(text).forEach(keep);
   wholeRanges(text, amounts, PLAIN_RANGE_DASH, false).forEach(keep);
   const groups: { readonly start: number; readonly end: number; readonly digits: string; readonly blocked: boolean; readonly kept: boolean; readonly range: number }[] = [];
   for (const match of text.matchAll(/[0-9]+/gu)) {
@@ -2020,6 +2037,9 @@ function survivorIn(text: string): Survivor {
  * is bounded, so a long run of letters is read in linear time.
  */
 const GLUED_AFTER_RANGE = /^(?:\p{L}+|\p{L}*\.?[\p{Pd}\u2212 .]?(?:[Xx]{2,5}|[*#_\u2022\u25CF]{1,5})(?:[\p{Pd}\u2212 .]?(?:[Xx]{2,5}|[*#_\u2022\u25CF]{1,5})){0,3}[\p{Pd}\u2212 .]?)$/u;
+
+/** An SSN, Medicare or phone label inside a date cc3dd7f6 read with every letter as a space, glued to a word or not (survivorIn's kept reading). */
+const LABEL_IN_DATE = new RegExp([...GLUED_PERSON_LABELS, MEDICARE_LABEL].map((label) => `(?:${label.source.replace('(?<![\\p{L}\\p{N}])', '')})`).join('|'), 'u');
 
 /** What the words before a chain say it is to the scan: a person's number (an SSN or phone label), a nine after "Medicare", or nothing. */
 type ScanLabel = 'person' | 'medicare' | null;

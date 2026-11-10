@@ -1581,6 +1581,15 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['F4', ['ZEPHYRA VANTREE'], 'DOB 1-2-01-01/05/2026 denied', 'DOB [DATE_OF_BIRTH]-01/05/2026 denied', { datesOfBirth: ['2001-01-02'] }],
     ['F4', ['ZEPHYRA VANTREE'], 'Born 1/2/01 - 01/05/2026 seen', 'Born [DATE_OF_BIRTH] - 01/05/2026 seen', { datesOfBirth: ['2001-01-02'] }],
     ['F4', ['ZEPHYRA VANTREE'], 'Seen 1/2/01 - 01/05/2026 again', 'Seen [DATE_OF_BIRTH] - 01/05/2026 again', { datesOfBirth: ['2001-01-02'] }],
+    // Review round 5, F6: cc3dd7f6 reads every letter as a space once any letter touches a digit, so "12/31 terminated. 26"
+    // is a date to it and the range before it stands; the dates it read so are barriers of the scan's full reading too,
+    // and the letter is sent as it sent it. With no letter against a digit both trees refuse the range's digits.
+    ['F6', ['ZEPHYRA VANTREE'], 'Coverage 10/1/2025-12/31 terminated. 26 units of 97110GP were billed.', 'Coverage 10/1/2025-12/31 terminated. 26 units of 97110GP were billed.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110GP are pending.', 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110GP are pending.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'Service 03/08/2021-6/14 denied. 27 visits of 97530GO were denied.', 'Service 03/08/2021-6/14 denied. 27 visits of 97530GO were denied.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12/2025 reviewed. 16 claims of 97110GP are pending.', 'DOS 10/22/2024-2/12/2025 reviewed. 16 claims of 97110GP are pending.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed.', null, {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110 GP are pending.', null, {}],
   ] as const)('handles the judge’s round 4 input (%s): %s %j', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);
