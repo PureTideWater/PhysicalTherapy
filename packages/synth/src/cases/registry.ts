@@ -354,6 +354,11 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
   ]),
+  // Lane B (co-001/suite-cap-3-reconcile, SUITE-CAP-3; docs/adr/0087): a reconcile pass compared with the per-line pass, its reads bounded
+  // per pass, and a pass at real size.
+  'CAS-49': none(8, 'Generated passes and LED worlds, compared with the per-line pass: no file.', ['apps/worker/src/reconcile/pass-equality.db.test.ts', 'apps/worker/src/reconcile/pass-equality-led.db.test.ts']),
+  'CAS-50': none(8, 'Generated at two sizes by the test: no file.', ['apps/worker/src/reconcile/pass-bounds.db.test.ts']),
+  'CAS-51': none(8, 'Generated at size by the test from LED-06\'s synthetic segments: no file.', ['apps/worker/src/reconcile/pass.large.db.test.ts']),
   // Lane B (co-001/packet-figure-placeholders, slice 2): verifier format /3 behind an explicit format (VERIFIER_FORMAT stays /2): pass 1's
   // strict scan and fact ids, pass 2's contradiction in both directions, the code draft's tokens. The model's half comes with slice 6.
   'CAS-52': none(
