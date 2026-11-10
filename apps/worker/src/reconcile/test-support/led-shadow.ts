@@ -24,7 +24,7 @@ import { referencePass } from './per-line';
  */
 
 /** What the shadow saw, for the test that turned it on to check it ran. */
-export const shadowed = { reconciles: 0, writing: 0, refused: 0 };
+export const shadowed = { reconciles: 0, writing: 0, refused: 0, searchDecrypting: 0 };
 
 interface Options {
   readonly documentId?: string;
@@ -44,14 +44,27 @@ async function copyOf(adminUrl: string, world: LedgerWorld) {
   await endPool(pricing.app);
   await endPool(pricing.worker);
   await pricing.owner.end();
-  try {
-    return await clone(adminUrl, { name: pricing.database.name, url: pricing.database.url });
-  } finally {
+  const reopen = async () => {
     connections.owner = databaseClient(pricing.database.url);
     await connections.owner.connect();
     connections.app = openPool(pricing.database.appUrl, 8);
     connections.worker = openPool(pricing.database.workerUrl, 8);
+  };
+  let copy: Awaited<ReturnType<typeof clone>>;
+  try {
+    copy = await clone(adminUrl, { name: pricing.database.name, url: pricing.database.url });
+  } catch (error) {
+    await reopen();
+    throw error;
   }
+  try {
+    await reopen();
+  } catch (error) {
+    // No copy is left behind when the world's own connections cannot be opened again.
+    await copy.drop();
+    throw error;
+  }
+  return copy;
 }
 
 /** A side's outcome: what it ran and wrote, or the error it stopped on. */
@@ -91,6 +104,9 @@ async function shadow(adminUrl: string, world: LedgerWorld, target: Practice, op
     }
     const wrote = [...shippedSide.result.after].some(([table, rows]) => rows.some((row) => typeof row.id === 'string' && !(before.get(table)?.has(row.id) ?? false)));
     shadowed.writing += wrote ? 1 : 0;
+    // A reconcile may decrypt no claim in its search (searchMayDecryptNone); that some did is checked over the whole run,
+    // so the decrypt comparison is never one of nothing with nothing.
+    shadowed.searchDecrypting += reference.result.decrypts.some((decrypt) => decrypt.phase === 'search' && decrypt.column === 'claim.patient_control_number') ? 1 : 0;
     return shippedSide.result.summary;
   } finally {
     await copy.drop();

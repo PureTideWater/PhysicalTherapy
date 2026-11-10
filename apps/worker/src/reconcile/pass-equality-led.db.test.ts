@@ -25,12 +25,16 @@ describe('old against new on the LED worlds (CAS-49.2)', () => {
   afterAll(() => {
     off();
     // Counts only, for the pull request's record.
-    process.stdout.write(`CAS-49.2: ${String(shadowed.reconciles)} reconciles compared; ${String(shadowed.writing)} wrote rows; ${String(shadowed.refused)} refused on both sides\n`);
+    process.stdout.write(`CAS-49.2: ${String(shadowed.reconciles)} reconciles compared; ${String(shadowed.writing)} wrote rows; ${String(shadowed.searchDecrypting)} decrypted a claim in the search; ${String(shadowed.refused)} refused on both sides\n`);
   });
 
   // Registered after the LED tests, so it runs once they have: the shadow compared their reconciles, most of which write.
   it('compared every reconcile the LED tests ran, most of them writing', () => {
     expect(shadowed.reconciles).toBeGreaterThanOrEqual(150);
     expect(shadowed.writing).toBeGreaterThanOrEqual(120);
+    // The search's decrypts were recorded and compared in some of them, never nothing with nothing throughout.
+    expect(shadowed.searchDecrypting).toBeGreaterThanOrEqual(10);
+    // No LED test expects a reconcile to be refused.
+    expect(shadowed.refused).toBe(0);
   });
 });

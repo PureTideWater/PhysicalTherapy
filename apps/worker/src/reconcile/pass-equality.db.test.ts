@@ -513,7 +513,7 @@ function expectWorldShapes(built: BuiltWorld, side: SideResult, before: Readonly
 /**
  * D2's ground (the pull request's review, finding 1.2): a claim's lines as claimLines gives them depend only on the
  * claim's own correction chain, so reading it among other claims gives what reading it alone gives, and the pass's one
- * map equals each line's fresh read. Held here on a world after its pass, for every claim of the practice at once
+ * map equals each line's fresh read. Held here on a world as its pass finds it (the pass writes none of the rows read), for every claim of the practice at once
  * against a sample read one by one (chains of three, claims of two lines with a claim-level share kept among them).
  */
 async function expectClaimLinesIndependent(url: string, built: BuiltWorld, side: SideResult): Promise<void> {
@@ -528,7 +528,9 @@ async function expectClaimLinesIndependent(url: string, built: BuiltWorld, side:
       expect(sample.length).toBeGreaterThan(40);
       for (const claimId of sample) {
         const alone = await claimLines(scope, [claimId]);
-        expect(alone.get(claimId), `run ${String(built.plan.run)}: a claim's lines read alone against read among every claim`).toEqual(together.get(claimId));
+        // Compared as text and asserted as a yes or no, so a failure names the run and never prints a line's values.
+        const text = (lines: unknown) => JSON.stringify(lines, (_key, value: unknown) => (typeof value === 'bigint' ? String(value) : value));
+        expect(text(alone.get(claimId)) === text(together.get(claimId)), `run ${String(built.plan.run)}: a claim's lines read alone against read among every claim`).toBe(true);
       }
     });
   } finally {
