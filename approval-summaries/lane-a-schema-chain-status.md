@@ -19,6 +19,23 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   LED-24 `unlinked-paid.835`, `both-taken-back.835`, four variants; no migration change (domain model unchanged).
 - **Next:** two adversarial reviews (money; database and security) and the money-ledger mutation shard are running;
   then fixes if confirmed, the full suite once, push, CAS-42.5, the body, verification, the suggested approval line.
+- **Reviews of 1f3e2260 (both reported):** money: no defect, one doc nit RVM6-1 (fixed); database and security: none.
+  Commit f0a3b6ad (nits; a mutant-proof rewrite). Full local suite on f0a3b6ad was green through e2e and the
+  money-ledger mutation shard when the base moved; stopped there (the tree changes).
+- **Base 994ee303 (#134, ADR 0087) merged at 23:25 UTC: da139247**, textually clean, but the base's per-line reference
+  (CAS-49) copied the old interest code. **b1c1b161** aligns it (decision, W2: the reference imports this branch's
+  interest step, `providerAdjustments`, exported for it alone, not a 500-line copy; the pass-level change touches
+  nothing in it and it calls nothing that change touched, so the two passes can differ only in what #134 changed):
+  `reconcileRemittances` and counts take #126's text; `settleOrder` and CAS-49.3's pattern read `ledger_match.seq`;
+  a generated practice expects one interest credit. ADR 0087 dated note; **owed as its own item:** the settle entries
+  compared row for row in `seq` order (ADR 0087 "Revisit when"). CAS-49.1 30/30, pass-equality-led 82/82, bounds and
+  deadlock green. No migration change. Both on `co-001/wip-interest-fix`; not yet on the PR branch.
+- **RESUME-BLOCK (#126):** (1) two reviews of b1c1b161 running (money; database and security): verify findings, fix;
+  (2) full local suite once on the final tree (`lane-a-wip/interest-pr/suite.sh`); (3) push to
+  `co-001/ledger-interest-once` from the hooked checkout; (4) dispatch `release-capacity.yml` (CAS-42.5) on that head;
+  (5) body (`body-build.py`; add RVM5-1, RVM6-1, D19's trade-off for the founder, the #134 alignment), read back;
+  (6) fresh-clone verification reading CI; (7) one suggestion comment with the approval line on
+  docs/product/domain-model.md; (8) its link to the orchestrator; merge only after the founder's committed line.
 
 ## 2026-11-06 19:50 UTC (acting Lane A): #126 resumed from the RESUME-BLOCK
 - Worktree /home/user/interest fast-forwarded to `co-001/wip-interest-fix` 23369ae6 (setup re-run, OK). subscribe_pr_activity
