@@ -150,6 +150,20 @@ Effect: any PR's unit job can go red at random.
   0054 naming the leaks PR (whose design gets an NFKC + TR39-style confusable skeleton + O/0, l/1, I/1, S/5, B/8 fold for
   own-identifier matching; acceptance: the pinned A and A' rows flip; it must land before any real PHI is processed). The fixer
   still closes every form a rule reads. Added to fix round 2 onward; the run restarted at fix round 2 (15:52Z).
+- 2026-11-10 (W1, acting Lane B, session_019i9if9bThP3wWKpHBiU3m8): **resumed from candidate B's WIP 9f953223** (fefd22d2 is an
+  early commit of it, no ref; the branch stays at cc3dd7f6 until the final push). The base merges into it with no conflict
+  (trial). **Gate at 9f953223** (975,489 letters, vs cc3dd7f6): PHI ssn 385, phone 171, name 5 (the ruled residuals), no other
+  kind; refused must-stay other 60, after an SSN or phone word 7,014, letters with identifiers 598; changed date 4, text 1,
+  number 1; unplaced 523; slowest 598 ms; the five MOD-16 seeds 95 of 95 each. **Review round 5** (two adversarial reviews,
+  both delivered): PHI5-1 blocking (two or more initials glued to another word's letters sent in held letters, 276 of 560;
+  fixed in dedeb35f by refusing every stretch of initials in a run, the safer reading; gate unchanged, 2,291 residual rows
+  hold); the gateway review's six blocking, all reproduced: two new properties fail at random (MOD-13 glued, 4 of 304 seeds;
+  PHIJ4-2's, a test bug), a quadratic range scan (122 s at 100 kB), a must-stay date damaged after a date of birth written
+  M/D/YY (12,600 of 12,600), new refusals where a code's or unit's own letter stands before the name (304 of 1,440), and a
+  clean-letter refusal for a range with no year on its second end (4,584 of 6,000). **Fix round 5 is running** (one fixer;
+  then the gate, the seed sweeps, a re-review by two fresh reviewers, the base merge, the full suite once, the push, the PR).
+  WIP `co-001/wip-redact-range-glued-b` = dedeb35f. The gate is copied to /home/user/gate in the container; outputs in
+  /home/user/gate-out (not kept).
 
 ## Waiting on someone
 - None: classes (A) and (B) ruled 2026-11-07 10:53 UTC.
