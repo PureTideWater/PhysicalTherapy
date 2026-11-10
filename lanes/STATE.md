@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-10 21:30 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-10 21:40 UTC by Lane A's orchestrator, with Lane B's records after its last handoff update (2026-11-07 18:40 to 19:44 UTC). **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -31,8 +31,8 @@ own status file and `CLAUDE.md`, not the long history files.
 ## Work, in priority order (each item's status file holds its RESUME-BLOCK; Lane B's handoff §2 names them)
 | # | Item | Resume from | Lane | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | **MOD-16: a date range glued to a word escapes redaction** (PHI; base CI flake) | `co-001/wip-redact-range-glued` 3fcb9359; candidate B 9f953223 | B (acting) | Unblocks every PR's `unit` job and #129. Two reviews. |
-| 2 | **#126, interest credited once** (schema) | 64aa14d9; `approval-summaries/lane-a-schema-chain-status.md` | A | Finish, CAS-42.5 on the final head, verification, then the suggested approval line. **The founder commits it.** |
+| 1 | **MOD-16: a date range glued to a word escapes redaction** (PHI; a random-seed flake in `unit`; push runs on d4f52071 green, but #129 failed on it twice) | Candidate B's WIP `co-001/wip-redact-range-glued-b` 9f953223 (on 3fcb9359); `lane-b-redact-range-glued-status.md` (the orchestrator's rulings (A) and (B) of 2026-11-07 10:53 UTC; the round-4 harnesses kept in `designs/lane-b-redact-ssn-phone/gate/round-harnesses/round4/`) | B (acting) | Judge round 1 confirmed 9 blocking findings on B; round 2 was bookkeeping. Next: finish the review rounds and fixes, the full suite once, push, draft PR, CI, verification, merge. It unblocks #129. Two reviews. |
+| 2 | **#126, interest credited once** (schema) | Head 64aa14d9; `approval-summaries/lane-a-schema-chain-status.md` (2026-11-07 18:50 UTC entry); round-5 progress files in `approval-summaries/lane-a-wip/interest-pr/round-5/` | A | Round 5's re-walk fix is pushed (87ce6146, then 64aa14d9): bounded at entries + 1, retryable, interest <= cash after every reconcile. Its review round 1 confirmed findings, and their fix was cut by a restart. Next: that fix, CAS-42.5 on the final head, verification, the suggested approval line. Domain model provisional (bb7662c6…). **The founder commits the line.** |
 | 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | Not cut; Lane B's handoff §2 | B (acting) | **Must land before any real PHI is processed.** After MOD-16. Two reviews. |
 | 4 | **#134, SUITE-CAP-3** | a3e77a72; `lane-b-suite-cap-3-status.md` | B (acting) | Fix round, then merge. No `ledger_line_net` change without a founder exception. |
 | 5 | **#129, email plate** | f4fef908 | B (acting) | Base merge after MOD-16 lands, then merge. |
@@ -42,6 +42,7 @@ own status file and `CLAUDE.md`, not the long history files.
 | 9 | Web requests never wait on a reconcile; Stryker static-mutant timeouts; Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | Lane B's handoff §2; `LANES.md` Queues | B | As capacity allows. |
 
 ## Founder items (bring each with the exact link or text)
+- **Granted 2026-11-07 19:26 UTC** (relayed as "Tyler approves"): the schema batching plan's PR 5 ledger freeze ask. Q1 to Q3 yes, exactly Appendices A and D, for schema PR 5 only (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`).
 - #126's approval line ("Commit suggestion"), then password-changed-notice's.
 - Staging:
   - F0, before release N reaches production;
