@@ -11,6 +11,7 @@ own status file and `CLAUDE.md`, not the long history files.
   - **W3** session_019i9ifE6JAC24yB5654GXcV (acting Lane B): items 4, 5, 9.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17.
 - **Lane B:** capped until Fri 2026-11-13 19:00 UTC. Until then Lane A runs Lane B's urgent items as acting Lane B, and hands them back at 18:30 UTC that day.
+- **Environment:** the Default environment has a guarded setup script since 2026-11-10 (it runs `tools/setup-container.sh` from `claude/build-ops`; log in `/tmp/setup-container.log`). Unproven on a fresh container: a new session still runs the script once and reads its summary.
 - **Pace to the week:** an orchestrator plus 3 work sessions, about 13% of the weekly allowance a day. No bursts.
 - **Model:** every session and every subagent runs the model the co-founder chose on 2026-11-10, set on each session. Subagents inherit it; never override it with a smaller model.
 
