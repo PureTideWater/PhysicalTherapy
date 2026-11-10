@@ -477,7 +477,7 @@ describe('the worker’s memory: the working set judged, memory.peak and the mem
 
 describe('the Known gap line (SUITE-CAP-3 D14, ruled 2026-11-06: step 7b on F at 10,000 lines until Lane A’s trigger fixes move it back to A)', () => {
   const GAP =
-    'Known gap: reconcile at A’s full month waits on Lane A’s ledger trigger fixes. Step 7b reconciles F, a practice of its own at 10,000 lines (fewer at the smoke size), sized for its first attempt to complete within 360 s, while A keeps its full month for triage and reports: A’s full month was last measured at 30,795 lines in 1,653 s, past a job’s 15-minute attempt, most of it in the ledger’s triggers. Revisit when Lane A’s ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).';
+    'Known gap: reconcile at A’s full month waits on the ledger trigger fixes (docs/adr/0087). Step 7b reconciles F, a practice of its own, at 10,000 lines (fewer at the smoke size), sized for its first attempt to finish within 360 s; A keeps its full month for triage and reports. A’s full month (its 30,795 actionable lines) was last measured at 1,653 s, past a job’s 15-minute attempt, 89% of it in the ledger triggers. Revisit when the ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).';
 
   it('names F’s size, A’s full month’s measured figure, who closes the gap and the revisit condition, word for word', () => {
     expect(KNOWN_GAP).toBe(GAP);

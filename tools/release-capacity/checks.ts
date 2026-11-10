@@ -37,10 +37,10 @@ export const WORKING_SET = 'working set (memory.current less inactive_file, samp
  * 30,795 lines in one case in 1,653 s, 89% of it in the ledger triggers, which are Lane A's.
  */
 const KNOWN_GAP_FIGURE =
-  'Known gap: reconcile at A’s full month waits on Lane A’s ledger trigger fixes. Step 7b reconciles F, a practice of its own at 10,000 lines (fewer at the smoke size), sized for its first attempt to complete within 360 s, while A keeps its full month for triage and reports: A’s full month was last measured at 30,795 lines in 1,653 s, past a job’s 15-minute attempt, most of it in the ledger’s triggers.';
+  'Known gap: reconcile at A’s full month waits on the ledger trigger fixes (docs/adr/0087). Step 7b reconciles F, a practice of its own, at 10,000 lines (fewer at the smoke size), sized for its first attempt to finish within 360 s; A keeps its full month for triage and reports. A’s full month (its 30,795 actionable lines) was last measured at 1,653 s, past a job’s 15-minute attempt, 89% of it in the ledger triggers.';
 
 /** The Known gap line's fixed words after this run's own figure: the revisit condition. */
-const KNOWN_GAP_REVISIT = 'Revisit when Lane A’s ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).';
+const KNOWN_GAP_REVISIT = 'Revisit when the ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).';
 
 /**
  * The fixed words of the line every summary prints: step 7b reconciles F, a practice of its own, at 10,000 lines at full

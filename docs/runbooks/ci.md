@@ -72,7 +72,7 @@ whole run's and each phase's and chain job's working set; a failing check names 
 Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at 10,000
 lines, not A's month, until Lane A's ledger trigger fixes land, whose pull request moves it back to A as its acceptance
 step (SUITE-CAP-3's D14, ADR 0087 and ADR 0083's dated note of 2026-11-07). It is not a failure. Beside A's full month's
-measured figure (30,795 lines in 1,653 s, most of it in the ledger triggers) it gives this run's F reconcile time
+measured figure (its 30,795 actionable lines in 1,653 s, 89% of it in the ledger triggers) it gives this run's F reconcile time
 against the job's 900 s attempt, with its share and the seconds to spare. F's size was chosen for its first attempt to
 complete within 360 s (SUITE-CAP-3 measured 220 s on 4 CPUs); 360 s is a sizing bound, not a check, so a run past it
 still passes and the line shows its time. A margin that shrinks run over run points at the runner, the reconcile's

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { openPool, readDatabaseUrl, withJobScope, withPracticeScope, workerDevLoginUrl } from '@tp/db';
+import { endPool } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Scope } from './ledger';
 import { reconcilePractice } from './pass';
+import { claimLines } from './remittances';
 import { REOPEN_NOTES, type StageEvent, insertStages } from './stages';
 import { type Comparison, type Middleware, type Pass, type Query, type SideResult, clone, compare, idsBefore, runSide, template } from './test-support/pass-compare';
 import { type BuiltWorld, buildWorld, worldPlan } from './test-support/pass-world';
@@ -29,8 +31,9 @@ import { type StageTrio, type StageWorld, buildStageWorld } from './test-support
  *
  * The proof level is fixed by the run's index (review round 5): even runs at posted, odd runs raised to deposited after
  * the history; after the runs the harness checks that both levels ran, that a posted run moved a line to recovered from
- * a posted entry matched in its pass, and that run 1 holds both move-backs. Run 1 also runs the seventeen self-check
- * mutants, each a fault injected at the shipped pass's statement boundary, each of which must fail the comparison.
+ * a posted entry matched in its pass, and that run 1 holds both move-backs. Run 1 also runs the twenty-three self-check
+ * mutants, each a fault injected at the shipped pass's statement boundary, each of which must fail the comparison, or,
+ * where the fault makes the pass write a row a database guard refuses, be stopped by that guard and no other.
  *
  * TP_CAS49_RUNS lowers the number of runs for a local look (CI runs all 25); every identifier is SYNTHETIC.
  */
@@ -58,8 +61,9 @@ const facts = {
 // ---------------------------------------------------------------------------------------------------------------------
 // The self-check mutants (design section 7's six, a seventh for a line with no service date, an eighth for D16's
 // parameter arrays, a ninth and a tenth for D16's exclusion in each search alone, an eleventh for the chain order's
-// load key, the twelfth to the fifteenth for the per-line filters the new statements restate, and the sixteenth and
-// seventeenth for D15's never-matched reads): faults at the
+// load key, the twelfth to the fifteenth for the per-line filters the new statements restate, the sixteenth and
+// seventeenth for D15's never-matched reads, the eighteenth and nineteenth for the patient search's second statement
+// alone, and the twentieth to the twenty-third for the loaded and reversal filters of each search): faults at the
 // shipped pass's statement boundary. Each names the statement it changes by its text and counts its applications, so a
 // later slice that rewrites the statement fails here ("did not apply") until the mutant is aimed at the new code; each
 // must make the comparison fail.
@@ -70,7 +74,18 @@ interface Mutant {
   readonly middleware: (applied: () => void) => Middleware;
   /** What only this mutant's difference can be, when it can be told apart. */
   readonly differs?: (difference: string) => boolean;
+  /**
+   * The database guard that stops this mutant's pass, by its message (a fixed sentence, no identifier): the fault makes
+   * the pass write a row no pass may write, so the pass is refused before there is anything to compare. Asserted, so
+   * the mutant is caught on purpose: another error, or a guard on a mutant that names none, fails the run.
+   */
+  readonly refusedBy?: string;
 }
+
+/** ledger_match_rules()' refusals: of a match to a remittance that is not loaded, and of a claim match to a reversal. */
+const LOADED_GUARD = 'a match is to a loaded remittance of its practice';
+const CLAIM_MATCH_GUARD = 'a claim match is of a claim of its remittance, never a reversal';
+const refused = (message: string) => `refused: ${message}`;
 
 /** The pass-level search's statements (slice 3, D1): the control search by rounds, the patient search's (a) and (b). */
 const CONTROL_SEARCH = /\bprobe \(ix, claim_id\) AS\b/;
@@ -343,7 +358,77 @@ const MUTANTS: readonly Mutant[] = [
     middleware: rewrite(NEVER_MATCHED, ['m.eft_row_id IS NOT NULL', 'm.eft_row_id IS NOT NULL AND m.reversed_at IS NULL']),
     differs: (difference) => !difference.startsWith('search decrypts'),
   },
+  // The eighteenth and nineteenth (the pull request's review, finding 2.1): the patient search's second statement, (b),
+  // alone. (a) returns a claim when any searched line's own predicate holds for it, and the worker pairs it with every
+  // searched line of its patient control number; (b) then decides each pair by that line's predicate. So (b) alone
+  // keeps a claim from a line that shares its patient, code and date with a line that may take it: the world's claim in
+  // the later sibling's own remittance, and its claim loaded between the two siblings' claims. Each is matched to the
+  // later sibling too once (b) loses the clause.
+  //
+  // (b)'s other clauses have no mutant, each being equivalent at this boundary: passCandidates takes a line's known
+  // claims and its D16 pairs off the patient list again in TypeScript, and a pair whose claim has no line of the line's
+  // code and date is seen once, pairs with nothing and is never matched (caseLinePair), so no write, decrypt or summary
+  // count can differ.
+  {
+    name: "the patient search's own-remittance filter dropped from its second statement alone",
+    middleware: rewrite(PATIENT_PAIRS, ['c.remittance_id <> l.remittance_id AND ', '']),
+    differs: (difference) => !difference.startsWith('search decrypts'),
+  },
+  {
+    name: "the patient search's created_at filter dropped from its second statement alone",
+    middleware: rewrite(PATIENT_PAIRS, ['c.created_at >= (SELECT o.created_at FROM claim o WHERE o.practice_id = $1 AND o.id = l.claim_id)', 'TRUE']),
+    differs: (difference) => !difference.startsWith('search decrypts'),
+  },
+  // The twentieth to the twenty-third (finding 2.2): the loaded and the reversal filters the new statements restate,
+  // each taken out of one statement alone. The world's held 835 carries a claim of a line's patient, and another
+  // patient's claim under the line's own control number, and the pass's reversals carry their lines' control numbers
+  // and patients, so each search reaches such a claim once its filter is gone, and pairs it. The match it then writes is
+  // one ledger_match_rules() refuses, so the pass stops there: each is caught by its guard, by name.
+  {
+    name: "the control search's loaded filter dropped",
+    middleware: rewrite(CONTROL_SEARCH, ["r.status = 'loaded'", 'TRUE']),
+    refusedBy: LOADED_GUARD,
+  },
+  {
+    name: "the control search's reversal filter dropped",
+    middleware: rewrite(CONTROL_SEARCH, ["c.claim_status_code <> '22'", 'TRUE']),
+    refusedBy: CLAIM_MATCH_GUARD,
+  },
+  {
+    name: "the patient search's loaded filter dropped from its first statement",
+    middleware: rewrite(PATIENT_CLAIMS, ["r.status = 'loaded'", 'TRUE']),
+    refusedBy: LOADED_GUARD,
+  },
+  {
+    name: "the patient search's reversal filter dropped from its first statement",
+    middleware: rewrite(PATIENT_CLAIMS, ["c.claim_status_code <> '22'", 'TRUE']),
+    refusedBy: CLAIM_MATCH_GUARD,
+  },
 ];
+
+/**
+ * What the patient search's second statement, (b), did on the shipped side (finding 2.1): the (claim, line) pairs it
+ * was given ($12, $13) and the ones it kept, by claim. Read at the statement boundary, changing nothing.
+ */
+function watchPatientPairs(seen: { shared: number }): Middleware {
+  return (next) => async (text, values) => {
+    const result = await next(text, values);
+    if (!PATIENT_PAIRS.test(text)) {
+      return result;
+    }
+    const given = new Map<string, number>();
+    for (const claimId of values[11] as readonly string[]) {
+      given.set(claimId, (given.get(claimId) ?? 0) + 1);
+    }
+    const kept = new Map<string, number>();
+    for (const row of result.rows) {
+      kept.set(String(row.claim_id), (kept.get(String(row.claim_id)) ?? 0) + 1);
+    }
+    // A claim paired with two or more searched lines (they share its patient control number), kept for one and not another.
+    seen.shared += [...given].filter(([claimId, n]) => n >= 2 && (kept.get(claimId) ?? 0) >= 1 && (kept.get(claimId) ?? 0) < n).length;
+    return result;
+  };
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The runs
@@ -412,8 +497,43 @@ function expectWorldShapes(built: BuiltWorld, side: SideResult, before: Readonly
     matches.some((row) => row.kind === 'claim' && datelessCaseLines.some((item) => item.service_line_id === row.service_line_id) && datelessClaims.has(String(row.claim_id))),
     `${run}: a line with no service date matched by patient control number`,
   ).toBe(true);
+  // Claims of more than one line matched in the pass (finding 2.1): the two-code claim's correction to its case line,
+  // and the claim with one code twice to both of its patient's sibling lines, which share a claim.
+  const linesOfClaim = new Map<string, number>();
+  for (const row of serviceLines) {
+    linesOfClaim.set(String(row.claim_id), (linesOfClaim.get(String(row.claim_id)) ?? 0) + 1);
+  }
+  const multiLine = matches.filter((row) => row.kind === 'claim' && (linesOfClaim.get(String(row.claim_id)) ?? 0) >= 2);
+  expect(multiLine.length, `${run}: claim matches to claims of two lines`).toBeGreaterThanOrEqual(3);
+  expect(new Set(multiLine.map((row) => String(row.claim_id))).size, `${run}: a claim of two lines matched to two case lines`).toBeLessThan(multiLine.length);
   // A claim of the line's patient, code and date paired after its correction by control number (the second round).
   expect(matches.filter((row) => row.kind === 'claim').length, `${run}: claim matches`).toBeGreaterThan(built.plan.roles.filter((role) => role === 'control').length);
+}
+
+/**
+ * D2's ground (the pull request's review, finding 1.2): a claim's lines as claimLines gives them depend only on the
+ * claim's own correction chain, so reading it among other claims gives what reading it alone gives, and the pass's one
+ * map equals each line's fresh read. Held here on a world after its pass, for every claim of the practice at once
+ * against a sample read one by one (chains of three, claims of two lines with a claim-level share kept among them).
+ */
+async function expectClaimLinesIndependent(url: string, built: BuiltWorld, side: SideResult): Promise<void> {
+  const claimIds = (side.after.get('claim') ?? []).map((row) => String(row.id)).sort();
+  const matched = new Set((side.after.get('ledger_match') ?? []).filter((row) => row.kind === 'claim').map((row) => String(row.claim_id)));
+  // Every matched claim (the chains), and every seventh of the rest.
+  const sample = claimIds.filter((claimId, index) => matched.has(claimId) || index % 7 === 0);
+  const pool = openPool(workerDevLoginUrl(url), 2);
+  try {
+    await withJobScope(pool, { jobId: randomUUID(), practiceId: built.practice.practiceId }, async (scope) => {
+      const together = await claimLines(scope, claimIds);
+      expect(sample.length).toBeGreaterThan(40);
+      for (const claimId of sample) {
+        const alone = await claimLines(scope, [claimId]);
+        expect(alone.get(claimId), `run ${String(built.plan.run)}: a claim's lines read alone against read among every claim`).toEqual(together.get(claimId));
+      }
+    });
+  } finally {
+    await endPool(pool);
+  }
 }
 
 async function oneRun(run: number): Promise<void> {
@@ -432,7 +552,11 @@ async function oneRun(run: number): Promise<void> {
     const ref = await side('reference', reference);
     recordFacts(built, ref, before);
     expectWorldShapes(built, ref, before);
-    const shippedSide = await side('shipped', shipped);
+    const pairs = { shared: 0 };
+    const shippedSide = await side('shipped', shipped, watchPatientPairs(pairs));
+    // Two claims at least (the one in a sibling's own remittance, the one loaded between the siblings' claims) that
+    // (b) kept for one line of their patient and refused for another: without them (b)'s own clauses decide nothing.
+    expect(pairs.shared, `run ${String(run)}: claims the patient search's second statement kept for one line of a patient and refused for another`).toBeGreaterThanOrEqual(2);
     const self = await side('reference again', reference);
 
     const against: Comparison = compare(ref, shippedSide, before, built.practice);
@@ -443,11 +567,26 @@ async function oneRun(run: number): Promise<void> {
     facts.partialCheckRuns += itself.partialCheck ? 1 : 0;
     facts.strictSettleWouldDiffer += itself.strictSettleWouldDiffer || against.strictSettleWouldDiffer ? 1 : 0;
 
+    if (run === 0) {
+      const copy = await clone(adminUrl, database);
+      clones.push(copy);
+      await expectClaimLinesIndependent(copy.url, built, ref);
+    }
     if (run === 1) {
       for (const mutant of MUTANTS) {
         let applied = 0;
-        const result = await side(mutant.name, shipped, mutant.middleware(() => (applied += 1)));
-        facts.mutants.set(mutant.name, { applied, differences: compare(ref, result, before, built.practice).differences });
+        const differences = await side(mutant.name, shipped, mutant.middleware(() => (applied += 1))).then(
+          (result) => compare(ref, result, before, built.practice).differences,
+          (error: unknown) => {
+            // Only the guard the mutant names, by its fixed message (never a row's value): anything else fails the run.
+            const { code, message } = error as { readonly code?: string; readonly message?: string };
+            if (mutant.refusedBy === undefined || code !== '23514' || message !== mutant.refusedBy) {
+              throw error;
+            }
+            return [refused(message)];
+          },
+        );
+        facts.mutants.set(mutant.name, { applied, differences });
       }
     }
   } finally {
@@ -483,7 +622,7 @@ describe('a reconcile pass writes what the per-line pass wrote (CAS-49.1)', () =
     expect(facts.partialCheckRuns).toBe(RUNS);
   });
 
-  it('fails each of the seventeen self-check mutants on run 1', () => {
+  it('fails each of the twenty-three self-check mutants on run 1', () => {
     if (RUNS < 2) {
       return;
     }
@@ -495,6 +634,11 @@ describe('a reconcile pass writes what the per-line pass wrote (CAS-49.1)', () =
       expect.soft(result.differences.length, `${mutant.name}: the comparison did not fail`).toBeGreaterThan(0);
       if (mutant.differs !== undefined) {
         expect.soft(result.differences.every(mutant.differs), `${mutant.name}: failed for another reason than its own`).toBe(true);
+      }
+      if (mutant.refusedBy !== undefined) {
+        expect.soft(result.differences, `${mutant.name}: not stopped by its guard`).toEqual([refused(mutant.refusedBy)]);
+      } else {
+        expect.soft(result.differences.some((difference) => difference.startsWith('refused: ')), `${mutant.name}: stopped by a guard, not by the comparison`).toBe(false);
       }
     }
   });

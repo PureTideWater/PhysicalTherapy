@@ -850,7 +850,8 @@ export async function reprocessingOf(
   read?: ReadonlyMap<string, readonly ClaimLine[]>,
 ): Promise<Reprocessed | null> {
   // The claims' lines as the pass already read them (SUITE-CAP-3 D2: claimLines reads stored rows only, which the pass
-  // never writes, so its map equals a fresh read), else read here (a person's match by hand passes none).
+  // never writes, and a claim's lines depend only on its own correction chain, which the loader never makes a loop, so
+  // its map equals a fresh read of the two claims), else read here (a person's match by hand passes none).
   const lines = read !== undefined && read.has(line.claimId) && read.has(claimId) ? read : await claimLines(scope, [line.claimId, claimId]);
   const next = caseLinePair(lines, line, claimId);
   if (next === undefined) {

@@ -35,6 +35,18 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './ledger-world';
  * the history (slice 3's verification: the control search's own D16 exclusion), and two claims of one line and payment
  * date loaded in different transactions in an order their IDs do not follow (the chain order's load key).
  *
+ * Claims of more than one line (the pull request's review, finding 2.1): a claim of two codes whose second line is paid
+ * in full, corrected in the pass with a claim-level patient share split between its lines (multiLine); and a claim with
+ * one code twice, told apart by a modifier, both lines case lines of one patient control number, code and date
+ * (sameCodeTwice): a claim of the patient matched to both in the history, which a person then unmatched from one line
+ * only (the other's match stands), and another in the pass that pairs with both.
+ *
+ * Case lines of different claims that share a patient control number, code and date, with a further claim of that
+ * patient that only one of them may take (finding 2.1; the patient search's second statement decides it alone, since its
+ * first returns the claim for the other line): in the later line's own remittance (sharedOwnRemittance), or loaded
+ * between the two lines' claims (sharedLoadedBetween). The later line of each is triaged after the history, as the
+ * late lines below are, so only the pass reads them.
+ *
  * The candidate filters bite in the pass's search alone too (slice 3's second verification): another patient's claim
  * carrying the control number of a correction the pass brings, in the line's own remittance or loaded before the line's
  * claim, reached by payer claim control number only through that correction; and, after the history, a later month's
@@ -67,6 +79,8 @@ const LATE_DATE = '2026-03-29';
 const APART_PAID_ON = '2026-06-09';
 /** How many claims the loadedApart line may be given before its claims' IDs must have left their load order. */
 const APART_MOST = 8;
+/** A second line's modifier: the same code and date twice in one claim, told apart by it (@tp/ledger pairLines). */
+const SECOND_LINE_MODIFIER = '59';
 
 /** What a case line of the main case meets in the history and in the pass (several shapes per role). */
 export type Role =
@@ -87,6 +101,10 @@ export type Role =
   | 'unmatched'
   | 'controlUnmatched'
   | 'loadedApart'
+  | 'multiLine'
+  | 'sameCodeTwice'
+  | 'sharedOwnRemittance'
+  | 'sharedLoadedBetween'
   | 'writtenOff'
   | 'postClaim'
   | 'postLine'
@@ -124,6 +142,10 @@ const EVERY_WORLD: readonly Role[] = [
   'unmatched',
   'controlUnmatched',
   'loadedApart',
+  'multiLine',
+  'sameCodeTwice',
+  'sharedOwnRemittance',
+  'sharedLoadedBetween',
   'writtenOff',
   'postClaim',
   'postLine',
@@ -195,6 +217,8 @@ interface LineText {
   readonly chargeCents: bigint;
   readonly paidCents: bigint;
   readonly allowedCents: bigint;
+  /** The procedure's modifiers (SVC01-3 on), none when absent. */
+  readonly modifiers?: readonly string[];
 }
 
 interface ClaimText {
@@ -244,7 +268,7 @@ function claimSegments(claim: ClaimText): string[] {
     ...(statement === null ? [] : [`DTM*232*${x12Date(statement)}`, `DTM*233*${x12Date(statement)}`]),
     ...(claim.interestCents === undefined ? [] : [`AMT*I*${money(sign * claim.interestCents)}`]),
     ...claim.lines.flatMap((line) => [
-      `SVC*HC:${line.code}*${money(sign * line.chargeCents)}*${money(sign * line.paidCents)}**2`,
+      `SVC*HC:${[line.code, ...(line.modifiers ?? [])].join(':')}*${money(sign * line.chargeCents)}*${money(sign * line.paidCents)}**2`,
       ...(line.date === null ? [] : [`DTM*472*${x12Date(line.date)}`]),
       `CAS*CO*45*${money(sign * (line.chargeCents - line.paidCents))}`,
       `AMT*B6*${money(sign * line.allowedCents)}`,
@@ -362,7 +386,14 @@ const ORIGINAL_PAID_CENTS = 7000n;
 const EXPECTED_CENTS = 10000n;
 const CHARGE_CENTS = 15000n;
 
-const line = (code: string, date: string | null, paidCents: bigint, chargeCents = CHARGE_CENTS): LineText => ({ code, date, chargeCents, paidCents, allowedCents: paidCents });
+const line = (code: string, date: string | null, paidCents: bigint, chargeCents = CHARGE_CENTS, modifiers: readonly string[] = []): LineText => ({
+  code,
+  date,
+  chargeCents,
+  paidCents,
+  allowedCents: paidCents,
+  ...(modifiers.length === 0 ? {} : { modifiers }),
+});
 
 /** Loads one interchange of `checks` (ISA13 `control`, unique within the practice) through the parse job, as intake leaves an 835. */
 export async function loadChecks(w: LedgerWorld, target: Practice, control: number, checks: readonly CheckText[]): Promise<void> {
@@ -402,7 +433,7 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   };
   const dayOf = (n: number) => `2026-03-${String(2 + (n % 25)).padStart(2, '0')}`;
   for (const role of plan.roles) {
-    const late = role === 'caseLineLate' || role === 'caseLineLateControl';
+    const late = role === 'caseLineLate' || role === 'caseLineLateControl' || role === 'sharedOwnRemittance' || role === 'sharedLoadedBetween';
     add(role, CODES[0], role === 'noDate' ? null : role === 'unmatched' ? UNMATCHED_DATE : late ? LATE_DATE : dayOf(lines.length + 1));
   }
   for (let index = 0; index < plan.respondedLines; index += 1) {
@@ -415,18 +446,35 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   }
   const byRole = (role: PlannedLine['role']) => lines.filter((item) => item.role === role);
   const one = (role: Role) => byRole(role)[0] as PlannedLine;
-  const original = (item: PlannedLine, paidCents = ORIGINAL_PAID_CENTS): ClaimText => ({ pcn: item.pcn, ccn: item.ccn, status: '1', member: item.member, lines: [line(item.code, item.date, paidCents)] });
-  const reversal = (item: PlannedLine, ccn: string, paidCents: bigint): ClaimText => ({ pcn: item.pcn, ccn, status: '22', member: item.member, lines: [line(item.code, item.date, paidCents)] });
+  /**
+   * A claim's lines as the role writes them, the case line paid `paidCents`: one line; for multiLine a second line of
+   * the second code beside it, paid in full (never a case line); for sameCodeTwice the code twice, the second with a
+   * modifier and paid `secondCents` more (both short in the original, so both are case lines).
+   */
+  const linesOf = (item: PlannedLine, paidCents: bigint, code = item.code, secondCents = 0n): LineText[] =>
+    item.role === 'multiLine'
+      ? [line(code, item.date, paidCents), line(CODES[1], item.date, EXPECTED_CENTS)]
+      : item.role === 'sameCodeTwice'
+        ? [line(code, item.date, paidCents), line(code, item.date, paidCents + secondCents, CHARGE_CENTS, [SECOND_LINE_MODIFIER])]
+        : [line(code, item.date, paidCents)];
+  const original = (item: PlannedLine, paidCents = ORIGINAL_PAID_CENTS): ClaimText => ({ pcn: item.pcn, ccn: item.ccn, status: '1', member: item.member, lines: linesOf(item, paidCents) });
+  const reversal = (item: PlannedLine, ccn: string, paidCents: bigint): ClaimText => ({ pcn: item.pcn, ccn, status: '22', member: item.member, lines: linesOf(item, paidCents) });
   const correction = (item: PlannedLine, suffix: string, paidCents: bigint, corrects = item.ccn, code = item.code): ClaimText => ({
     pcn: item.pcn,
     ccn: `${item.ccn}${suffix}`,
     status: '1',
     member: item.member,
     corrects,
-    lines: [line(code, item.date, paidCents)],
+    lines: linesOf(item, paidCents, code),
   });
   /** A claim of the line's patient, code and date under a new payer claim control number: found by patient control number only. */
-  const patientClaim = (item: PlannedLine, suffix: string, paidCents: bigint): ClaimText => ({ pcn: item.pcn, ccn: `SYNCCNP${item.ccn.slice(7)}${suffix}`, status: '1', member: item.member, lines: [line(item.code, item.date, paidCents)] });
+  const patientClaim = (item: PlannedLine, suffix: string, paidCents: bigint, secondCents = 0n): ClaimText => ({
+    pcn: item.pcn,
+    ccn: `SYNCCNP${item.ccn.slice(7)}${suffix}`,
+    status: '1',
+    member: item.member,
+    lines: linesOf(item, paidCents, item.code, secondCents),
+  });
   /** Another patient's claim of the line's code and date carrying `ccn` (no REF F8): found by payer claim control number only. */
   const controlClaim = (item: PlannedLine, ccn: string, paidCents: bigint): ClaimText => ({
     pcn: `SYNPCNY${item.pcn.slice(7)}`,
@@ -492,7 +540,7 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
       h1.push(reversal(item, item.ccn, ORIGINAL_PAID_CENTS), correction(item, 'A', EXPECTED_CENTS));
     }
   }
-  for (const item of present('unmatched')) {
+  for (const item of [...present('unmatched'), ...present('sameCodeTwice')]) {
     h1.push(patientClaim(item, 'U', EXPECTED_CENTS));
   }
   // A correction naming the line's claim (REF F8), found by payer claim control number and matched in the history, then
@@ -526,7 +574,16 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
     }
     return row.id;
   };
-  for (const item of [...present('unmatched'), ...present('controlUnmatched')]) {
+  // The sameCodeTwice claim's two case lines were both matched to its patient's claim: a person unmatches one line's
+  // match only (the first the claim's lines give), and the sibling's stands.
+  for (const item of present('sameCodeTwice')) {
+    const siblings = caseLines.filter((row) => row.pcn === item.pcn && row.claimCcn === item.ccn);
+    const matched = await w.rows<{ n: string }>(practice, "SELECT count(*)::text AS n FROM ledger_match WHERE kind = 'claim' AND service_line_id = ANY ($1::uuid[]) AND reversed_at IS NULL", [siblings.map((row) => row.serviceLineId)]);
+    if (siblings.length !== 2 || matched[0]?.n !== '2') {
+      throw new Error('the sameCodeTwice claim has not two case lines, each matched in the history');
+    }
+  }
+  for (const item of [...present('unmatched'), ...present('controlUnmatched'), ...present('sameCodeTwice')]) {
     await unmatch(w, practice, await matchOf("SELECT id FROM ledger_match WHERE kind = 'claim' AND service_line_id = $1 AND reversed_at IS NULL", [serviceLineOf(item)]));
   }
   for (const item of present('postingReversed')) {
@@ -551,14 +608,40 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   // A later month's run, after the history: a claim of the caseLineLate line's patient, code and date, and another
   // patient's claim carrying the caseLineLateControl line's control number, each paid short, priced on their date alone
   // and triaged into case lines that no reconcile of the history read. Neither may be matched to the line it reaches.
+  //
+  // The shared lines (finding 2.1), in the same run: each gets a second claim of its patient, code and date, paid short
+  // (a case line of another claim that shares the first's patient control number), and a further claim of that patient
+  // paid in full (never a case line), which only the first line may take: for sharedOwnRemittance it is in the later
+  // line's own remittance; for sharedLoadedBetween it is in a file of its own, loaded before the later line's claim.
   const lateCaseLine = one('caseLineLate');
   const lateControl = one('caseLineLateControl');
-  await load(practice, [{ trace: `SYNEFTQ${tag}LATE`, paidOn: '2026-06-05', claims: [patientClaim(lateCaseLine, 'L', ORIGINAL_PAID_CENTS), controlClaim(lateControl, lateControl.ccn, ORIGINAL_PAID_CENTS)] }]);
+  const sharedOwn = one('sharedOwnRemittance');
+  const sharedBetween = one('sharedLoadedBetween');
+  await load(practice, [{ trace: `SYNEFTQ${tag}BETWEEN`, paidOn: '2026-06-04', claims: [patientClaim(sharedBetween, 'N', EXPECTED_CENTS)] }]);
+  const between = await newestClaim(w, practice);
+  await load(practice, [
+    {
+      trace: `SYNEFTQ${tag}LATE`,
+      paidOn: '2026-06-05',
+      claims: [
+        patientClaim(lateCaseLine, 'L', ORIGINAL_PAID_CENTS),
+        controlClaim(lateControl, lateControl.ccn, ORIGINAL_PAID_CENTS),
+        patientClaim(sharedOwn, 'L', ORIGINAL_PAID_CENTS),
+        patientClaim(sharedOwn, 'M', EXPECTED_CENTS),
+        patientClaim(sharedBetween, 'L', ORIGINAL_PAID_CENTS),
+      ],
+    },
+  ]);
+  if ((await newestClaim(w, practice)).at <= between.at) {
+    throw new Error('the sharedLoadedBetween claims were loaded at one time');
+  }
   const lateRun = await w.triage.pricedRun(practice, { plans: [{ key: LED_PLAN, versionId: contract.versionId }], from: LATE_DATE, to: LATE_DATE });
   await w.triage.triage(practice, lateRun);
-  const lateCaseLines = (await caseLinesOf(w, practice)).filter((row) => row.pcn === lateCaseLine.pcn || row.claimCcn === lateControl.ccn);
-  if (lateCaseLines.length !== 4) {
-    throw new Error('the later run triaged the late claims into no case line');
+  const latePatients = new Set([lateCaseLine.pcn, sharedOwn.pcn, sharedBetween.pcn]);
+  const lateCaseLines = (await caseLinesOf(w, practice)).filter((row) => latePatients.has(row.pcn) || row.claimCcn === lateControl.ccn);
+  // Two case lines each: the line's own and its late claim's; the claims paid in full are none.
+  if (lateCaseLines.length !== 8) {
+    throw new Error('the later run triaged the late claims into no case line, or a claim paid in full into one');
   }
 
   // The pass's new evidence: one file of `checks` checks (one transaction, so its claims share one created_at), an 835
@@ -604,7 +687,13 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
         at(1).push(patientClaim(item, 'P', EXPECTED_CENTS));
         break;
       case 'patientShare':
+      case 'multiLine':
+        // For multiLine the claim-level share is split between the claim's two lines (@tp/ledger claimLinePayments).
         into.push(reversal(item, item.ccn, ORIGINAL_PAID_CENTS), { ...correction(item, 'C', EXPECTED_CENTS), patientShareCents: 1000n });
+        break;
+      case 'sameCodeTwice':
+        // A claim of the patient that pairs with both sibling lines, each paid differently.
+        into.push(patientClaim(item, 'P', EXPECTED_CENTS + 500n, 200n));
         break;
       case 'interestAmt':
         into.push(reversal(item, item.ccn, ORIGINAL_PAID_CENTS), { ...correction(item, 'C', EXPECTED_CENTS), interestCents: 500n });
@@ -645,6 +734,8 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
       case 'caseLineTwin':
       case 'caseLineLate':
       case 'caseLineLateControl':
+      case 'sharedOwnRemittance':
+      case 'sharedLoadedBetween':
       case 'otherPatient':
       case 'otherPractice':
         // Nothing new of their own in the pass's checks: their history, exports or filter-biting claims are elsewhere.
@@ -693,8 +784,11 @@ async function build(w: LedgerWorld, plan: WorldPlan): Promise<BuiltWorld> {
   const traceOfClaim = (ccn: string) => passTrace(checkTexts.findIndex((check) => check.claims.some((claim) => claim.ccn === ccn)));
   // An 835 held for review (docs/adr/0060: the payment was first loaded from an ERA export of another payer): loaded,
   // then marked held as the loader marks it, as a superuser, since only that export's path makes the state.
+  // Beside each held line's claim by patient control number, another patient's claim carrying the line's own control
+  // number (finding 2.2): the control search reaches it through the line's claim in the pass, and only the statement's
+  // loaded filter keeps it out.
   const held = present('held');
-  await load(practice, [{ trace: `SYNEFTQ${tag}HELD`, paidOn: '2026-06-07', claims: held.map((item) => patientClaim(item, 'H', EXPECTED_CENTS)) }]);
+  await load(practice, [{ trace: `SYNEFTQ${tag}HELD`, paidOn: '2026-06-07', claims: held.flatMap((item) => [patientClaim(item, 'H', EXPECTED_CENTS), controlClaim(item, item.ccn, EXPECTED_CENTS)]) }]);
   await w.superuser("UPDATE remittance SET status = 'held', held_reason = 'export_payment_other_payer' WHERE practice_id = $1 AND trn02 = $2", [practice.practiceId, `SYNEFTQ${tag}HELD`]);
   // A case line with no service date (design section 7: the patient search's IS NOT DISTINCT FROM branch). The parser
   // never writes one: a line with no DTM 472 takes the claim's statement dates (edi835 lineDates), so the noDate line

@@ -525,6 +525,12 @@ export interface CompareOptions {
    * person's actions (CAS-49.4), which run no search and no postings phase; their writes are compared all the same.
    */
   readonly passDecrypts?: boolean;
+  /**
+   * Whether the reference side may have decrypted no claim in its search (CAS-49.2: a reconcile of an LED world with no
+   * open line, or none with a claim of its code and date). False for the generated worlds, whose open lines always have
+   * candidates, so a search that recorded none there is the harness's own fault.
+   */
+  readonly searchMayDecryptNone?: boolean;
 }
 
 /** Compares a side with the reference (design section 7, CAS-49.1; CAS-49.6 with seqByOrder). */
@@ -625,7 +631,7 @@ export function compare(reference: SideResult<unknown>, side: SideResult<unknown
     return counted;
   };
   const refSearch = claimsIn(reference, 'search');
-  if (refSearch.size === 0) {
+  if (refSearch.size === 0 && options.searchMayDecryptNone !== true) {
     // The harness's own check: a world whose open lines have candidates decrypts some in the search.
     differences.push('search decrypts: none recorded on the reference side');
   }
