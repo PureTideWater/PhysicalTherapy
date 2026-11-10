@@ -1721,7 +1721,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     fc.assert(property, { numRuns: 300 });
   });
 
-  it('never sends two or more of the name’s initials written together in a held letter, in any order and case, for a name of any number of parts (property, PHIJ4-2)', () => {
+  it('never sends two or more of the name’s initials written together in a held letter, in any order and case, for a name of any number of parts: refused, or the letters replaced where they spell a whole part (property, PHIJ4-2)', () => {
     const NAMES = ['JANE ZEPHYRA', 'JANE Q ZEPHYRA', 'SIMONE VANTREE', 'ANN Q VANTREE', 'BOB XU', 'MARY-JANE Q ZEPHYRA', 'ANA BEA CORA DINA ELLA FAYE GIA'];
     const FRAMES = [`${RANGE_END}{T} $0,000.00`, `${HELD}Initials: {T}`, `${HELD}Re: {T}, thank you.`, 'Seen 01/01/2020-150.00{T} Paid in full.', '{T}\nSeen 01/01/2020-150.00Paid in full.'];
     const property = fc.property(
@@ -1734,10 +1734,31 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
         const written = initials.map((initial, k) => (small[k] === true ? initial.toLowerCase() : initial)).join('');
         const letter = frame.replace('{T}', written);
         const { patient: who, claims } = judge1([name], {});
-        expect(holdsIdentifier(redactLetterForScreen(letter, who, claims).text, who, claims), JSON.stringify(letter)).toBe(true);
+        const screened = redactLetterForScreen(letter, who, claims);
+        // Refused, or sent with those letters replaced: initials written together may spell a whole part of the name ("BEA"
+        // for B, E and A of ANA BEA CORA DINA ELLA FAYE GIA), which redaction takes as the name where a boundary sets it
+        // apart (review round 5, F2: seeds -893188803 and -2096183961 drew it).
+        expect(holdsIdentifier(screened.text, who, claims) || screened.text === frame.replace('{T}', '[PATIENT_NAME]'), JSON.stringify(letter)).toBe(true);
       },
     );
     fc.assert(property, { numRuns: 300 });
+  });
+
+  it.each([
+    ['BEA\nSeen 01/01/2020-150.00Paid in full.', '[PATIENT_NAME]\nSeen 01/01/2020-150.00Paid in full.'],
+    ['bEa\nSeen 01/01/2020-150.00Paid in full.', '[PATIENT_NAME]\nSeen 01/01/2020-150.00Paid in full.'],
+    ['Re: Bea.\nSeen 01/01/2020-150.00Paid in full.', 'Re: [PATIENT_NAME].\nSeen 01/01/2020-150.00Paid in full.'],
+    // "Service" holds C and E, two of this name's initials, together: a held letter with it is refused whatever else it holds (PHI5-1).
+    [`${HELD}Initials: BEA`, null],
+    [`${RANGE_END}BEA $0,000.00`, null],
+    ['Seen 01/01/2020-150.00BEA Paid in full.', null],
+    [`${HELD}Initials: BAE`, null],
+    [`${HELD}Initials: BE`, null],
+  ] as const)('sends initials written together that spell a whole part of the name with the part replaced, and refuses them glued or in another order (F2): %j', (letter, sent) => {
+    const { patient: who, claims } = judge1(['ANA BEA CORA DINA ELLA FAYE GIA'], {});
+    const screened = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(screened.text, who, claims)).toBe(sent === null);
+    if (sent !== null) expect(screened.text).toBe(sent);
   });
 
   it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
