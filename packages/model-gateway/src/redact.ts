@@ -1938,8 +1938,16 @@ function survivorIn(text: string): Survivor {
     const token = text.slice(span.start, span.end);
     return span.amount ? /[.,][0-9]{2}$/u.test(token) : /^\p{Sc}/u.test(token) || (new Set(token.match(/[^\p{L}\p{N}\s,]/gu) ?? []).size <= 1 && (token.match(/[0-9]+/gu) ?? []).length >= 2);
   };
-  const rangeStands = (range: number): boolean =>
-    (rangeSpans.get(range) ?? []).every(written) && labeledAt(range) !== 'person' && labeledOverNumbers(range) !== 'person' && sideStands(range, 'left') && sideStands(range, 'right');
+  // Settled once per range: a range of many ends holds many groups, and each chain asks for each of its groups' range.
+  const stood = new Map<number, boolean>();
+  const rangeStands = (range: number): boolean => {
+    let stands = stood.get(range);
+    if (stands === undefined) {
+      stands = (rangeSpans.get(range) ?? []).every(written) && labeledAt(range) !== 'person' && labeledOverNumbers(range) !== 'person' && sideStands(range, 'left') && sideStands(range, 'right');
+      stood.set(range, stands);
+    }
+    return stands;
+  };
   const chained = (digits: string) => digits.length === 9 || digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
   /**
    * Whether a chain survives where `stands` says which groups are barriers; one that `placed` says lies wholly in barriers

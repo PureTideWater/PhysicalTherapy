@@ -403,6 +403,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['held letters, long runs of the initials’ own letters with no two of them together, near misses (PHI5-1)', ['JANE Q VANTREE'], `${HELD}${fill('JJJJJJJJ QQQQXVVVVVV XJXQXVX ')}`, false],
     ['held letters, the date of birth redacted again and again, another number past a wide gap beside it (PHIJ4-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961  /     5     ')}`, false],
     ['times, ordinals, units and codes glued before a part read as the name (GATEWAYJ4-1)', ['AMAL AL HASSAN'], fill('9-10am Al 3rd-4th 30min Al 97110AM Al '), false],
+    // Review round 5: one held range of many ends, each chain of its groups asking whether the range stands: settled once
+    // per range (F3: 4.5 s at 20 kB and 122 s at 100 kB before).
+    ['one held range of dates and amounts as long as the letter (F3)', ['JANE Q VANTREE'], `Service 01/01/2020${fill('-150.00-01/01/2020')}`, false],
+    ['one held range of dates and amounts as long as the letter, its last date glued to a word (F3)', ['JANE Q VANTREE'], `${fill('01/01/2020-150.00-')}01/01/2020Paid`, false],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
     const who = patient([...names]);
     const started = performance.now();
