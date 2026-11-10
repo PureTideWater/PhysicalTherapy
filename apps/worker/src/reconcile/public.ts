@@ -8,7 +8,7 @@
  * level, the practice administrator), and is audited; the reconcile job does the rest, and the
  * roi_statement job prints the statements.
  */
-export { type Scope, practiceLedgerSettings } from './ledger';
+export { type Scope, practiceLedgerSettings, tryLockLedger } from './ledger';
 export { type ManualContext, ReconciliationError, type ReconciliationRefusal, adjustEntry, matchClaimByHand, matchDepositByHand, matchPostingByHand, reverseMatch } from './manual';
 export { LedgerSettingsRefused, setLedgerSettings, setPostingTemplate } from './settings';
 export { approvalShortfalls } from './shortfalls';

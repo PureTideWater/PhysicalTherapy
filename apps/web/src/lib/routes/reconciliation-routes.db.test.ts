@@ -21,14 +21,15 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { lockLedger } from '../../../../worker/src/reconcile/ledger';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
 import { casePatientBalance, reconciliation } from '../reconciliation/queries';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
-import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
+import { matchClaimAction, matchDepositAction, matchPostingAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
 import { adjustEntryAction, ledgerReviewPage } from './specialist';
-import { casePage, casesPage } from './triage';
+import { casePage, casesPage, reopenLineAction, writeOffLineAction } from './triage';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -577,4 +578,111 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
     expect(review.shortfalls[0]?.correction.billable).toMatchObject({ billableCents: '600', reasons: null });
     expect(review.totals).toMatchObject({ approvedCents: '3000', payerApprovedCents: '3000' });
   });
+});
+
+/**
+ * CAS-56 (docs/adr/0092): no web request waits on the practice's ledger lock. A reconcile pass holds the lock for its
+ * whole transaction (minutes at real size), and so does another person's ledger action for its own; the write-off, the
+ * reopen and the five manual reconciliation actions take it only if it is free. Here a second session holds the lock as
+ * a pass does (the worker's own lockLedger, in a job scope) while each of the seven actions is sent with input its
+ * schema accepts, by a person allowed to send it: each answers `busy` at once, names nothing, and writes nothing (no
+ * row of the practice, no audit event, no request key). With the lock free the same people's actions go through.
+ * Synthetic data only.
+ */
+describe('no web request waits on the ledger lock (CAS-56)', () => {
+  /** Holds the practice's ledger lock in a job scope, as a pass holds it, until released. */
+  async function holdLedger(): Promise<{ readonly release: () => Promise<void> }> {
+    let release = (): void => undefined;
+    const until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = (): void => undefined;
+    const taken = new Promise<void>((resolve) => {
+      held = resolve;
+    });
+    const holding = withJobScope(w.pricing.worker, { jobId: randomUUID(), practiceId: practice.practiceId }, async (scope) => {
+      await lockLedger(scope, practice.practiceId);
+      held();
+      await until;
+    });
+    await taken;
+    return {
+      release: async () => {
+        release();
+        await holding;
+      },
+    };
+  }
+
+  /** Every row of the practice a ledger action can write, and the audit events and request keys of its requests, as counts. */
+  async function written(): Promise<Record<string, string>> {
+    const counts: Record<string, string> = {};
+    for (const table of ['ledger_match', 'ledger_entry', 'line_status', 'payer_response', 'notification', 'audit_event']) {
+      const { rows } = await w.owner.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${table} WHERE practice_id = $1`, [practice.practiceId]);
+      counts[table] = rows[0]?.n ?? '';
+    }
+    const { rows } = await w.owner.query<{ state: string }>(
+      "SELECT string_agg(id::text || ':' || coalesce(written_off_reason, '') || ':' || (reopen_reason IS NOT NULL)::text, ',' ORDER BY id) AS state FROM case_line WHERE practice_id = $1",
+      [practice.practiceId],
+    );
+    counts.case_line = rows[0]?.state ?? '';
+    const reversed = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM ledger_match WHERE practice_id = $1 AND reversed_at IS NOT NULL', [practice.practiceId]);
+    counts.reversed = reversed.rows[0]?.n ?? '';
+    return counts;
+  }
+
+  it('refuses each of the seven actions at once while the lock is held, writing nothing, and lets them through once it is free', async () => {
+    const page = ok(await call(reconciliationPage, practice.manager, P()));
+    const standing = page.linkage.items.flatMap((item) => item.deposits).find((deposit) => deposit.standing);
+    expect(standing).toBeDefined();
+    const [caseLine] = (await w.owner.query<{ id: string }>('SELECT id FROM case_line WHERE practice_id = $1 AND written_off_reason IS NULL ORDER BY id', [practice.practiceId])).rows;
+    expect(caseLine).toBeDefined();
+    const specialist = w.pricing.specialist;
+    const reverse = { matchId: standing?.id, reason: 'SYNTHETIC matched by mistake', confirm: 'on' };
+    const writeOff = { caseLineId: caseLine?.id, reason: 'not_worth_pursuit', text: '', confirm: 'on' };
+    const reopen = { caseLineId: caseLine?.id, reason: 'SYNTHETIC reopen: the payer asked for it again' };
+    const actions: readonly (readonly [string, () => Promise<Outcome<unknown>>])[] = [
+      ['match a posting', () => call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })],
+      ['match a deposit', () => call(matchDepositAction, practice.manager, P(), { eftRowId: randomUUID(), remittanceId: randomUUID() })],
+      ['match a claim', () => call(matchClaimAction, practice.manager, P(), { claimId: randomUUID(), serviceLineId: randomUUID() })],
+      ['reverse a match', () => call(reverseMatchAction, practice.manager, P(), reverse)],
+      ['adjust an entry', () => call(adjustEntryAction, specialist, P(), { entryId: randomUUID(), amount: '5.00', reason: 'SYNTHETIC specialist review', confirm: 'on' })],
+      ['write a line off', () => call(writeOffLineAction, practice.manager, P(), writeOff)],
+      ['reopen a line', () => call(reopenLineAction, practice.manager, P(), reopen)],
+    ];
+    const before = await written();
+    const holder = await holdLedger();
+    try {
+      for (const [name, send] of actions) {
+        const started = performance.now();
+        const outcome = await send();
+        // The whole outcome: a status and nothing else, so no identifier and no word of what holds the lock.
+        expect(outcome, name).toEqual({ status: 'busy' });
+        expect(performance.now() - started, `${name}: answered at once, never after a wait`).toBeLessThan(1_000);
+      }
+      expect(await written()).toEqual(before);
+    } finally {
+      await holder.release();
+    }
+    // The lock free: the reversal, the write-off and the reopen that were refused now go through, as sent.
+    expect(ok(await call(reverseMatchAction, practice.manager, P(), reverse)).redirect).toBe(`/p/${practice.practiceId}/reconciliation?notice=reversed`);
+    expect(ok(await call(writeOffLineAction, practice.manager, P(), writeOff)).objectId).toBe(caseLine?.id);
+    expect(ok(await call(reopenLineAction, practice.manager, P(), reopen)).objectId).toBe(caseLine?.id);
+    const after = await written();
+    expect(Number(after.reversed)).toBe(Number(before.reversed) + 1);
+    expect(Number(after.audit_event)).toBeGreaterThanOrEqual(Number(before.audit_event) + 3);
+    // And the ones sent with ids that name nothing are refused for that, no longer for the lock.
+    expect((await call(matchDepositAction, practice.manager, P(), { eftRowId: randomUUID(), remittanceId: randomUUID() })).status).toBe('not_found');
+  }, 60_000);
+
+  it('holds the lock to the action’s commit, so two people’s actions never interleave and the second is refused, not queued', async () => {
+    // A person's action in flight: its request's transaction has taken the lock (as begin() does) and not yet committed.
+    const holder = await holdLedger();
+    try {
+      expect(await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })).toEqual({ status: 'busy' });
+    } finally {
+      await holder.release();
+    }
+    expect((await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })).status).toBe('not_found');
+  }, 30_000);
 });

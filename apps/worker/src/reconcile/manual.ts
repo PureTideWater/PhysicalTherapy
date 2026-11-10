@@ -1,7 +1,7 @@
 import { type KeyProvider, type Permission, type PracticeCipher, recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
 import { type Cents, ZERO_CENTS, negateCents, parseCents } from '@tp/money';
 
-import { EMPTY_LINE_LEDGER, type Scope, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers, lockLedger } from './ledger';
+import { EMPTY_LINE_LEDGER, type Scope, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers, tryLockLedger } from './ledger';
 import { depositDecision, postingDecision, postingRow, settleMatches } from './postings';
 import { caseLines, chainContext, lineChain, paidLine, recordReprocessing, reprocessingOf } from './remittances';
 import { recordReprocessedNoChange } from './responses';
@@ -25,7 +25,9 @@ export type ReconciliationRefusal =
   | 'amount_mismatch'
   | 'not_standing'
   | 'reverse_postings_first'
-  | 'no_change_in_amount';
+  | 'no_change_in_amount'
+  /** The practice's ledger lock is held (a reconcile pass, or another person's action): nothing was written; the same action may be tried again. */
+  | 'ledger_busy';
 
 export class ReconciliationError extends Error {
   override readonly name = 'ReconciliationError';
@@ -45,7 +47,10 @@ export interface ManualContext {
 
 async function begin(context: ManualContext, practiceId: string, permission: Permission = 'posting.reconcile'): Promise<string> {
   requirePracticePermission(context.scope, practiceId, permission);
-  await lockLedger(context.scope, practiceId);
+  // Taken only if free, never waited for (docs/adr/0092): the action runs in a person's request.
+  if (!(await tryLockLedger(context.scope, practiceId))) {
+    throw new ReconciliationError('ledger_busy');
+  }
   return context.scope.actorId;
 }
 

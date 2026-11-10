@@ -54,10 +54,19 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
   };
 }
 
+/**
+ * What a form says when its action met the practice's ledger lock (docs/adr/0092): nothing was saved, what was typed
+ * stays, and pressing again is the next step. It never says what holds the lock (a reconcile, or another person's action).
+ */
+export const BUSY_MESSAGE = 'The ledger is being updated, so nothing was saved. Try again in a moment.';
+
 /** What a refused form says when the wrapper's rate limits refused it (a refused CSRF token is a page out of date, STALE). */
 function guardMessage(outcome: Outcome<unknown>): string | undefined {
   if (outcome.status === 'rate_limited') {
     return `Too many attempts in a short time. Wait ${minutesWords(retryMinutes(outcome.retryAfterSeconds))} and try again.`;
+  }
+  if (outcome.status === 'busy') {
+    return BUSY_MESSAGE;
   }
   return undefined;
 }

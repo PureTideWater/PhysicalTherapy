@@ -1,0 +1,17 @@
+{
+  "case": "CAS-56",
+  "module": "CAS",
+  "title": "No web request waits on the ledger lock",
+  "assertion": "While a second session holds a practice's `ledger:` lock as a reconcile pass does, each of the seven ledger actions a person sends (match a posting, a deposit or a claim by hand, reverse a match, adjust an entry, write a line off, reopen a line) answers `busy` within a second, as a status alone with no identifier, and writes no row, audit event or request key; with the lock free the same actions go through",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["apps/web/src/lib/routes/reconciliation-routes.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -31,6 +31,7 @@ import {
   InputError,
   type Issue,
   type MutationResult,
+  BusyError,
   NotFoundError,
   type OrganizationSpec,
   type Outcome,
@@ -285,6 +286,9 @@ async function runCommitted(committed: readonly (() => Promise<unknown>)[], serv
 async function refusal(error: unknown, kind: Route['kind'], services: Services, actor: Actor, practiceId: string | null): Promise<Outcome<never>> {
   if (error instanceof NotFoundError) {
     return { status: 'not_found' };
+  }
+  if (error instanceof BusyError) {
+    return { status: 'busy' };
   }
   if (error instanceof TermsRequiredError) {
     return { status: 'terms_required' };

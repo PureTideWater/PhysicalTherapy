@@ -328,6 +328,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'The render equals each fact’s phrase with `formatUsdPlain` amounts, stored pattern and code totals, and code-computed row sums (bigint cents, decimal units); it is idempotent; it is the same in the browser and the worker, and `formatUsdPlain` equals `formatUsd` en-US in both; a renderer change between save and approval makes `verifierNow` read `fails_now` and blocks the approval (`rendered_changed` when the screen’s hash differs); the export refuses a `rendered_sha256` that differs or a surviving `{{`; the v2 set passes 300 of 300 at the gate on the local provider',
   },
+  {
+    id: 'CAS-56',
+    title: 'No web request waits on the ledger lock',
+    assertion:
+      'While a second session holds a practice\'s `ledger:` lock as a reconcile pass does, each of the seven ledger actions a person sends (match a posting, a deposit or a claim by hand, reverse a match, adjust an entry, write a line off, reopen a line) answers `busy` within a second, as a status alone with no identifier, and writes no row, audit event or request key; with the lock free the same actions go through',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

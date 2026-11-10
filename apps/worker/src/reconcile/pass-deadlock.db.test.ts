@@ -30,6 +30,10 @@ import { type CrossingWorld, buildCrossingWorld } from './test-support/stage-wor
  *   interleaving's; only B's row's place in the global seq order among the pass's other lines' rows may differ, which
  *   no reader compares (section 5.2).
  *
+ * Since docs/adr/0092 the web's reopen takes the practice's ledger lock if it is free and is refused while a pass holds
+ * it, so the web no longer makes this crossing; session B's statements stand here for any writer that takes the case
+ * and then the head outside that lock (a triage job among them), which the retry still has to absorb.
+ *
  * Session B begins at the hook in every interleaving (its UPDATE and INSERT both run there), so it holds nothing while
  * the pass reads; its statements are the web's own, held to their source by the first test.
  *
