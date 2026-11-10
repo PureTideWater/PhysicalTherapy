@@ -823,9 +823,24 @@ function readDatesOf(normal: string, subject: Subject): DatesOf {
   const other = (span: DateSpan) => span.separated && span.dates.length > 0;
   for (const invisible of ['drop', 'space'] as const) {
     const view = viewOf(normal, invisible);
+    // The dates as cc3dd7f6 read them, past each match's end, and where one of them is the date of birth by its value: a
+    // date read only from a start inside it is no second date of birth (below).
+    const asMatched = datesIn(view.text, false);
+    const matched = new Set(asMatched.map((span) => `${String(span.start)}:${String(span.end)}`));
+    const inBirth = new Uint8Array(view.text.length + 1);
+    for (const span of asMatched) {
+      if (span.dates.some((date) => birthDates.has(date))) inBirth.fill(1, span.start + 1, span.end);
+    }
     for (const span of datesIn(view.text)) {
       const range = inNormal(view, span.start, span.end);
       const birth = span.dates.some((date) => birthDates.has(date));
+      if (inBirth[span.start] === 1 && !matched.has(`${String(span.start)}:${String(span.end)}`)) {
+        // Read only from a start inside the written date of birth, its last numbers with the number after it ("2/01 - 01"
+        // of "DOB 1/2/01 - 01/05/2026", born 2001-01-02): the date of birth is the one before it, already taken, and the
+        // number after it is the next token's (a date of service, a time, an amount, units), which stays as cc3dd7f6
+        // left it (review round 5, F4).
+        continue;
+      }
       if (subject.datesOfBirth !== null && (birth || BIRTH_LABEL.test(view.text.slice(Math.max(0, span.start - 40), span.start)))) {
         // A date a birth label introduces that reads as no date of birth, read with an invisible character as a space,
         // takes the digits the character joins to it ("DOB 1970-01-0<ZWNJ>1Paid"): the date may go on in them.
@@ -835,7 +850,7 @@ function readDatesOf(normal: string, subject: Subject): DatesOf {
         otherDates.push(range);
       }
     }
-    for (const span of datesIn(view.text, false).filter(other)) {
+    for (const span of asMatched.filter(other)) {
       asRead.push(inNormal(view, span.start, span.end));
     }
   }

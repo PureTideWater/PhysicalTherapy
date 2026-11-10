@@ -1570,6 +1570,17 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['GATEWAYJ4-1', ['DANIELLE LE'], '1Daniel Le', null, {}],
     ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 9-10Daniel Le', null, {}],
     ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 3rd-4Daniel Le', null, {}],
+    // Review round 5, F4: the date of birth's last numbers and the number after it read as the date again ("2/01 - 01" of
+    // "1/2/01 - 01/05/2026", born 2001-01-02), a read only from a start inside the written date of birth: the number after
+    // it is the next token's and stays as cc3dd7f6 left it.
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1/2/01 - 01/05/2026 date of service denied.', 'DOB [DATE_OF_BIRTH] - 01/05/2026 date of service denied.', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 10/11/10 - 10/14/2025 visit', 'DOB [DATE_OF_BIRTH] - 10/14/2025 visit', { datesOfBirth: ['2010-10-11'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1/2/01|01:30am visit', 'DOB [DATE_OF_BIRTH]|01:30am visit', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1/2/01. 01.00 paid', 'DOB [DATE_OF_BIRTH]. 01.00 paid', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 01/02/01/01 units billed', 'DOB [DATE_OF_BIRTH]/01 units billed', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1-2-01-01/05/2026 denied', 'DOB [DATE_OF_BIRTH]-01/05/2026 denied', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'Born 1/2/01 - 01/05/2026 seen', 'Born [DATE_OF_BIRTH] - 01/05/2026 seen', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'Seen 1/2/01 - 01/05/2026 again', 'Seen [DATE_OF_BIRTH] - 01/05/2026 again', { datesOfBirth: ['2001-01-02'] }],
   ] as const)('handles the judge’s round 4 input (%s): %s %j', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);
