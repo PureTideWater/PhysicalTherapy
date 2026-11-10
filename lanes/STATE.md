@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-10 23:25 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-10 23:50 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -28,6 +28,7 @@ own status file and `CLAUDE.md`, not the long history files.
 ## Base and open PRs (live 2026-11-10 23:25 UTC)
 - `claude/build-platform` is at **994ee303** (#134, merged 2026-11-10 23:20 UTC). Every open PR merges this base before its last push.
 - **#126**, the interest fix (schema): head 64aa14d9.
+- **#136**, web requests never wait on a reconcile (ADR 0092): reviewed; W3 pushes the fixes and merges it on green.
 - **#129**, the email lockup plate: head f4fef908; waits only for MOD-16.
 - Dependabot #122, #123, #124 and #135, untriaged: one replacement PR, never merged as they stand.
 
@@ -42,7 +43,7 @@ own status file and `CLAUDE.md`, not the long history files.
 | 6 | **password-changed-notice** (schema PR 1) | f110efd9 (WIP c0ced87f), stacked on #126 | A | Opens only after #126 merges. Founder's line. |
 | 7 | The schema batching plan, PRs 2 to 10 | `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR at a time. |
 | 8 | Packets verifier identifier fold (MOD-19, MOD-20) | `lane-b-packets-verifier-identifier-fold-status.md` | B | Never at the same time as the verifier /3 migration. |
-| 9 | Web requests never wait on a reconcile; Stryker static-mutant timeouts; Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | Lane B's handoff §2; `LANES.md` Queues | B | As capacity allows. W3 holds the first (`co-001/web-ledger-try-lock`: CAS-56, its own ADR 0092). |
+| 9 | Web requests never wait on a reconcile; Stryker static-mutant timeouts; Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | Lane B's handoff §2; `LANES.md` Queues | B | As capacity allows. W3: #136 (the seven ledger actions; ADR 0092, CAS-56), then `LANES.md` Queues item 24, a `lock_timeout` on every web mutation (CAS-57; amends ADR 0092), then the rest in order. |
 
 ## Founder items (bring each with the exact link or text)
 - **Granted 2026-11-07 19:26 UTC** (relayed as "Tyler approves"): the schema batching plan's PR 5 ledger freeze ask. Q1 to Q3 yes, exactly Appendices A and D, for schema PR 5 only (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`).
