@@ -266,7 +266,8 @@ while the line holds interest of another chain (a net above zero, chain by chain
 the pass's holdings by line). The line stays one of the payment's lines when the approved ones are chosen and the
 payment is split, and its share is written nowhere, as for a line a take-back keeps the chain off (D5). Two chains meet
 on a line only when claims the loader links to nothing as corrections of each other are matched to it: a correction the
-payer renumbered with no REF F8, uploaded without the reversal that would link it. The reason is the grant's "once per
+payer renumbered with no REF F8, uploaded without the reversal that would link it, or a claim a person matches to the
+line by hand (#126 review RVM6-1). The reason is the grant's "once per
 PLB L6 and case line": one PLB L6 writes one entry on a line, so a PLB L6 taking back two chains' interest held on one
 line took the first back and left the second on the line for good, 6.00 above the cash in LED-24's shape. With one
 chain's interest on a line at a time, each of its take-backs finds its chain on lines no other of its take-backs

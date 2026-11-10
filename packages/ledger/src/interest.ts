@@ -581,10 +581,15 @@ export function addInterestHeld(sums: InterestHeldSums, entries: readonly Matche
  * held on one line could not both be taken back by a PLB L6 netting both. The reconcile therefore keeps a payment of a
  * chain off a line while another chain holds interest there (PaidInterestLine.outOfReach: the line's share is written
  * nowhere), and a line holds one chain's interest at a time; the share lands in a later walk or reconcile once the
- * line holds none of another's, if its PLB L6 still owes it. The figure errs low, never above the cash.
+ * line holds none of another's, if its PLB L6 still owes it. The figure errs low by that share until then, for good
+ * while the other chain's interest stays, and is never above the cash.
  */
 export function interestOfOthersOn(byLine: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string, serviceLineId: string): boolean {
-  for (const [other, amount] of byLine.get(serviceLineId) ?? []) {
+  const onLine = byLine.get(serviceLineId);
+  if (onLine === undefined) {
+    return false;
+  }
+  for (const [other, amount] of onLine) {
     if (other !== chain && amount > 0n) {
       return true;
     }
