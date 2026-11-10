@@ -2,6 +2,24 @@
 
 ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW) holds #126 from 2026-11-06 19:45 UTC on the orchestrator's GO (19:40 UTC: #126 only); Lane A: read lanes/lane-b.md's latest entries before resuming.
 
+## 2026-11-10 (Lane A, W2, https://claude.ai/code/session_019i9ifDkbzUJwNMrtB7Yriz): #126 from head 64aa14d9
+Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree /home/user/interest.
+- **What was open at 64aa14d9:** RVM5-1 (blocking, money), left "for the founder's ruling": one PLB L6 taking back two
+  chains' interest held on one line wrote only the first (one entry per PLB L6 and line), so the second stayed above the
+  cash. RVM5-2 and RV-DB5-1 were already fixed in 64aa14d9.
+- **Decision (W2; money: the safer option, inside the grant, no founder cycle):** a payment of a chain is kept off a line
+  while the line holds another chain's interest (`interestOfOthersOn`; the line keeps its share, written nowhere, and
+  the share is written once the line holds none). A line holds one chain's interest at a time, so the shape cannot
+  arise from the reconcile's own writes. Errs low by the kept-off share meanwhile, never above the cash. **Not chosen:**
+  one entry per PLB L6, line and chain (exact, but needs `ledger_match_standing` to carry the claim: a unique index
+  outside section 10.1 and a new founder exception); recorded in ADR 0084 D19 and Options as the open alternative, and
+  as the trade-off for the founder in the PR body.
+- **Commit 1f3e2260** (local and `co-001/wip-interest-fix`; not yet on the PR branch): red first in the database (1140
+  against 540/600) and in the composing property (2 against 1 within 150,000 runs; green over 400,000 with the fix);
+  LED-24 `unlinked-paid.835`, `both-taken-back.835`, four variants; no migration change (domain model unchanged).
+- **Next:** two adversarial reviews (money; database and security) and the money-ledger mutation shard are running;
+  then fixes if confirmed, the full suite once, push, CAS-42.5, the body, verification, the suggested approval line.
+
 ## 2026-11-06 19:50 UTC (acting Lane A): #126 resumed from the RESUME-BLOCK
 - Worktree /home/user/interest fast-forwarded to `co-001/wip-interest-fix` 23369ae6 (setup re-run, OK). subscribe_pr_activity
   refused (another holder or none); polling with send_later instead.
