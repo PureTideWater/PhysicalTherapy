@@ -1632,6 +1632,18 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['F1', ['AA JONES'], 'Jones-SMITH9 paid', null, { memberIds: ['JONESSMITH'] }],
     ['F1', ['AA SMITH-JONES'], 'DOS 2020-01-01–2020-01-02 S MITH\u00ADJONES;', 'DOS 2020-01-01–2020-01-02 [MEMBER_ID];', { memberIds: ['SMITHJONES'] }],
     ['F1', ['AA JONES'], 'Paid 150.00 Mary-Jones today', 'Paid 150.00 Mary-[PATIENT_NAME] today', { memberIds: ['SMITHJONES'] }],
+    // Review round 5, F7: more units whose letters after a whole number are no head of a part (dose and the counts a letter
+    // bills); after an amount they stay a head, and the head rule's other gaps stay fail-safe refusals (docs/adr/0054).
+    ['F7', ['MGALI ALI'], 'Dose 30mg Ali tolerated.', 'Dose 30mg [PATIENT_NAME] tolerated.', {}],
+    ['F7', ['MLALI ALI'], 'Dose 5ml Ali tolerated.', 'Dose 5ml [PATIENT_NAME] tolerated.', {}],
+    ['F7', ['OZANA ANA'], 'Weight 8oz Ana gained.', 'Weight 8oz [PATIENT_NAME] gained.', {}],
+    ['F7', ['DAYSANA ANA'], 'Stay 3days Ana attended.', 'Stay 3days [PATIENT_NAME] attended.', {}],
+    ['F7', ['VISITSANA ANA'], 'Limit 12visits Ana used.', 'Limit 12visits [PATIENT_NAME] used.', {}],
+    ['F7', ['UNITSANA ANA'], 'Billed 4units Ana attended.', 'Billed 4units [PATIENT_NAME] attended.', {}],
+    ['F7', ['UNITSANA ANA'], 'Billed 150.00units Ana attended.', null, {}],
+    ['F7', ['COLIN LIN'], 'Billed 97110-59CO Lin', null, {}],
+    ['F7', ['COLIN LIN'], 'Rev 0420CO Lin', null, {}],
+    ['F7', ['AMAL AL HASSAN'], 'Seen 9:30:00am Al Hassan', null, {}],
   ] as const)('handles the judge’s round 4 and review round 5 input (%s): %s %j', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);

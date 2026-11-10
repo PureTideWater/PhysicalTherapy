@@ -2793,8 +2793,12 @@ const WHOLE_BEFORE = new RegExp(`${WHOLE_START}(?:${RANGE_START})?([0-9]{1,4})$`
  */
 const HOUR_BEFORE = new RegExp(`(?:${WHOLE_START}(?:${RANGE_START})?(?:1[0-2]|0?[1-9]|${CLOCK})|(?:^|[\\s@])(?:${HHMM}(?:AM|PM)?\\s?[\\p{Pd}−/]\\s?)?${HHMM})$`, 'u');
 
-/** A unit's letters glued after a whole number: time, age, length, weight and angle ("30MIN", "2HRS", "6WKS", "6MO", "45YO", "5IN", "10LBS", "90DEG"). */
-const UNIT_AFTER_NUMBER = new Set(['MIN', 'MINS', 'HR', 'HRS', 'SEC', 'SECS', 'WK', 'WKS', 'MO', 'MOS', 'YR', 'YRS', 'YO', 'IN', 'FT', 'CM', 'MM', 'KG', 'LB', 'LBS', 'DEG']);
+/**
+ * A unit's letters glued after a whole number: time, age, length, weight, dose, angle and the counts a letter bills
+ * ("30MIN", "2HRS", "6WKS", "6MO", "45YO", "5IN", "10LBS", "90DEG"; "30MG", "5ML", "8OZ", "3DAYS", "12VISITS", "4UNITS":
+ * review round 5, F7).
+ */
+const UNIT_AFTER_NUMBER = new Set(['MIN', 'MINS', 'HR', 'HRS', 'SEC', 'SECS', 'WK', 'WKS', 'MO', 'MOS', 'YR', 'YRS', 'YO', 'IN', 'FT', 'CM', 'MM', 'KG', 'LB', 'LBS', 'DEG', 'MG', 'ML', 'OZ', 'DAY', 'DAYS', 'VISIT', 'VISITS', 'UNIT', 'UNITS']);
 
 /** A procedure code ending a text, five digits (CPT) or a letter and four digits (HCPCS), after no letter, digit, decimal point, comma, slash, currency sign or dash. */
 const CODE_BEFORE = /(?:^|[^\p{L}\p{N}.,/$\p{Pd}−])(?:[0-9]{5}|\p{L}[0-9]{4})$/u;
