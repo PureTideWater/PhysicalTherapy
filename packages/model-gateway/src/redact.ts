@@ -2656,15 +2656,50 @@ function spacedNameGlued(normal: string, subject: Subject, inOtherDate: (range: 
 /** A form's pattern without its word edges. */
 const coreOf = (form: Form) => form.pattern.source.slice(BEFORE.length, form.pattern.source.length - AFTER.length);
 
-/** Whether the call's member ID or claim number stands glued (ownIdentifierGlued). */
+/**
+ * Whether the call's member ID or claim number stands glued (ownIdentifierGlued): written whole, or with a part of the
+ * patient's name inside it already replaced, where the number holds that part's letters at its end, its start or between
+ * ("S MITH\u00AD[PATIENT_NAME]" for a member ID SMITHJONES of AA SMITH-JONES: the number begins glued to a digit, so no
+ * boundary reads it, and redaction took "JONES", after a joiner, as the name: review round 5, F1). The rest of the number
+ * is read beside the name's placeholder (NAME_MARK), or beside any placeholder where the part is itself one of the call's
+ * numbers, with the number's own gaps, and a number of letters alone only with a digit right before or after it.
+ */
 function numberGlued(normal: string, subject: Subject): boolean {
   const text = viewOf(normal, 'join').text;
-  return formsOf(subject).some((form) => {
-    if ((form.kind !== 'claim' && form.kind !== 'member') || form.digitsOnly) {
+  const forms = formsOf(subject).filter((form) => (form.kind === 'claim' || form.kind === 'member') && !form.digitsOnly);
+  if (forms.length === 0) {
+    return false;
+  }
+  const numbers = new Set(forms.map((form) => form.compact));
+  const parts = [...new Set(subject.names.flatMap((name) => nameWords(name).flat()))].filter((part) => [...part].length >= 2);
+  const marked = text.includes(NAME_MARK) || text.includes(BARRIER);
+  const isLetter = (character: string | undefined) => character !== undefined && /\p{L}/u.test(character);
+  const spelled = (characters: readonly string[]) => characters.map((character, i) => `${escapeRegExp(character)}${i + 1 < characters.length ? (isLetter(character) || isLetter(characters[i + 1]) ? GAP.numberNearLetter : GAP.number) : ''}`).join('');
+  return forms.some((form) => {
+    const core = coreOf(form);
+    const lettersOnly = !/\p{N}/u.test(form.compact);
+    const glued = (source: string) => new RegExp(lettersOnly ? `(?<=\\p{N})(?:${source})|(?:${source})(?=\\p{N})` : source, 'u').test(text);
+    if (glued(core)) {
+      return true;
+    }
+    if (!marked) {
       return false;
     }
-    const core = coreOf(form);
-    return new RegExp(/\p{N}/u.test(form.compact) ? core : `(?<=\\p{N})(?:${core})|(?:${core})(?=\\p{N})`, 'u').test(text);
+    return parts.some((part) => {
+      if (part.length >= form.compact.length) {
+        return false;
+      }
+      const mark = numbers.has(part) ? `[${NAME_MARK}${BARRIER}]` : NAME_MARK;
+      for (let at = form.compact.indexOf(part); at !== -1; at = form.compact.indexOf(part, at + 1)) {
+        const before = [...form.compact.slice(0, at)];
+        const after = [...form.compact.slice(at + part.length)];
+        const source = `${before.length > 0 ? `${spelled(before)}${GAP.numberNearLetter}` : ''}${mark}${after.length > 0 ? `${GAP.numberNearLetter}${spelled(after)}` : ''}`;
+        if (glued(source)) {
+          return true;
+        }
+      }
+      return false;
+    });
   });
 }
 
@@ -2819,6 +2854,7 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
   const numberedName = parts.some((part) => numbers.has(part));
   const small = (codePoint: string) => codePoint !== codePoint.toUpperCase() && codePoint === codePoint.toLowerCase();
   const large = (codePoint: string) => codePoint !== codePoint.toLowerCase();
+  const caseless = (codePoint: string) => !small(codePoint) && !large(codePoint);
   const isLetter = (index: number) => index < text.length && /^\p{L}$/u.test(codePointAt(text, index));
   const isDigit = (codePoint: string) => /^\p{N}$/u.test(codePoint);
   /** Whether a name part begins at a view position: the whole part, no letter after it, or with a held chain any word that begins with one. */
@@ -2883,6 +2919,10 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
       const before = letters[k - 1]?.written ?? '';
       const after = letters[k + 1]?.written ?? '';
       if (k > 0 && large(letter.written) && (small(before) || (large(before) && small(after)))) words.add(letter.at);
+      // A letter with no case (a modifier letter written for an apostrophe, a letter of a script without case) ends the
+      // word before it and begins none with the letter after it: "OʼBrien" (U+02BC), "ʼZephyra", "Zephyraʼs" (review
+      // round 5, F1).
+      if (k > 0 && caseless(letter.written) !== caseless(before)) words.add(letter.at);
     });
     // A run of one case has no boundary to read inside it.
     const oneCase = !(letters.some((letter) => small(letter.written)) && letters.some((letter) => large(letter.written)));

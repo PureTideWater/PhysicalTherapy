@@ -1613,7 +1613,26 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['F5', ['ANNA DAVIS'], 'Diagnosis 9S83.511A. Anna', null, {}],
     ['F5', ['ANNA DAVIS'], `${HELD}Diagnosis S83.511A. Anna was evaluated.`, null, {}],
     ['F5', ['DANA SMITH'], `${HELD}Authorized 30d. Dana Smith may appeal.`, null, {}],
-  ] as const)('handles the judge’s round 4 input (%s): %s %j', (_finding, names, letter, sent, more) => {
+    // Review round 5, F1 (the glued property's seeds 85720467, 283659814, -1270007264 and 708482257). A letter with no case
+    // in a run a digit touches (U+02BC, U+02B9 and U+02CA written for an apostrophe, a letter of a script without case)
+    // ends the word before it and begins none: the part beside it is set apart and the letter refused; a word that only
+    // holds a part stays ("Billed" for BILL).
+    ['F1', ["O'BRIEN AA"], 'Billed 150.00-120.00OʼBrien Aa, ', null, {}],
+    ['F1', ["O'BRIEN AA"], 'Paid 150.00OʹBrien', null, {}],
+    ['F1', ["O'BRIEN AA"], 'Paid 150.00OˊBrien', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00ʼZephyra', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00Zephyraʼs', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00אZephyra', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00王Zephyra', null, {}],
+    ['F1', ['BILL VANTREE'], 'Paid 150.00אBilled', 'Paid 150.00אBilled', {}],
+    // A member ID or claim number of letters that begins glued to a digit, a part of the name inside it already replaced
+    // (redaction read "JONES" after the soft hyphen as the name): the rest of the number beside the placeholder is read.
+    ['F1', ['AA SMITH-JONES'], 'DOS 2020-01-01–2020-01-02S MITH\u00ADJONES;', null, { memberIds: ['SMITHJONES'] }],
+    ['F1', ['CLAIM SMITH-JONES'], 'DOS 2020-01-01–2020-01-02S MITH\u00ADJONES;', null, { claimNumbers: ['SMITHJONES'] }],
+    ['F1', ['AA JONES'], 'Jones-SMITH9 paid', null, { memberIds: ['JONESSMITH'] }],
+    ['F1', ['AA SMITH-JONES'], 'DOS 2020-01-01–2020-01-02 S MITH\u00ADJONES;', 'DOS 2020-01-01–2020-01-02 [MEMBER_ID];', { memberIds: ['SMITHJONES'] }],
+    ['F1', ['AA JONES'], 'Paid 150.00 Mary-Jones today', 'Paid 150.00 Mary-[PATIENT_NAME] today', { memberIds: ['SMITHJONES'] }],
+  ] as const)('handles the judge’s round 4 and review round 5 input (%s): %s %j', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);
     expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
