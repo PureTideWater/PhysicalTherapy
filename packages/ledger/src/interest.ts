@@ -93,8 +93,9 @@ export interface PaidInterestLine {
   readonly weightCents: Cents;
   /**
    * Another PLB L6 still owes a take-back of the chain and can no longer write it here (interestOutOfReach; PR 126
-   * review MONEY-R4-1): the line is still one of the draw's lines when the approved ones are chosen and the draw is
-   * split, but its share is written nowhere (PR 126 review RV-DB2-1).
+   * review MONEY-R4-1), or the line holds another chain's interest (interestOfOthersOn; PR 126 review RVM5-1): the
+   * line is still one of the draw's lines when the approved ones are chosen and the draw is split, but its share is
+   * written nowhere (PR 126 review RV-DB2-1).
    */
   readonly outOfReach: boolean;
 }
@@ -360,6 +361,10 @@ export function attributeInterest({ remittances, adjustments }: { readonly remit
  * other L6's payment of the chain (interestOutOfReach). Such a line is still one of the payment's lines when the
  * approved ones are chosen and the payment is split, and its share is written nowhere, so a payment is never moved onto
  * a line it would not reach uploaded in order (PR 126 review RV-DB2-1).
+ *
+ * Two take-backs of one PLB L6 never meet on a line (PR 126 review RVM5-1): the second would find the line reached and
+ * leave its chain's interest there. The reconcile keeps a payment off a line holding another chain's interest
+ * (interestOfOthersOn), so no line it wrote holds two chains' interest for them to meet on.
  */
 export function interestWrites({
   draws,
@@ -549,9 +554,9 @@ export type InterestHeldSums = Map<string, Map<string, bigint>>;
  * Adds `entries` to `sums` (D5): each interest entry from a match naming a claim of a chain (`chainOfMatch`, by match),
  * and each correction under the entry it corrects, to that chain's line. A match that names no claim (one written
  * before docs/adr/0084 from the PLB L6 alone) is in no chain. `entries` holds every entry a correction among them
- * corrects.
+ * corrects. With `byLine`, the same sums are kept there by line, then by chain, for interestOfOthersOn.
  */
-export function addInterestHeld(sums: InterestHeldSums, entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>): void {
+export function addInterestHeld(sums: InterestHeldSums, entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>, byLine?: InterestHeldSums): void {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   for (const entry of entries) {
     const root = correctedEntry(entry, byId) as MatchedLedgerEntry;
@@ -562,7 +567,29 @@ export function addInterestHeld(sums: InterestHeldSums, entries: readonly Matche
     const ofChain = sums.get(chain) ?? new Map<string, bigint>();
     sums.set(chain, ofChain);
     ofChain.set(root.serviceLineId, (ofChain.get(root.serviceLineId) ?? 0n) + entry.amountCents);
+    if (byLine !== undefined) {
+      const onLine = byLine.get(root.serviceLineId) ?? new Map<string, bigint>();
+      byLine.set(root.serviceLineId, onLine);
+      onLine.set(chain, (onLine.get(chain) ?? 0n) + entry.amountCents);
+    }
   }
+}
+
+/**
+ * Whether a line holds interest of a chain other than `chain` (PR 126 review RVM5-1): a net above zero, read chain by
+ * chain from `byLine`, addInterestHeld's sums by line. One PLB L6 writes one entry on a line, so two chains' interest
+ * held on one line could not both be taken back by a PLB L6 netting both. The reconcile therefore keeps a payment of a
+ * chain off a line while another chain holds interest there (PaidInterestLine.outOfReach: the line's share is written
+ * nowhere), and a line holds one chain's interest at a time; the share lands in a later walk or reconcile once the
+ * line holds none of another's, if its PLB L6 still owes it. The figure errs low, never above the cash.
+ */
+export function interestOfOthersOn(byLine: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string, serviceLineId: string): boolean {
+  for (const [other, amount] of byLine.get(serviceLineId) ?? []) {
+    if (other !== chain && amount > 0n) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** What each line holds of the chain's interest in `sums`, in their order, floored at zero (D5). */

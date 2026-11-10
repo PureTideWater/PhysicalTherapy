@@ -820,6 +820,55 @@ describe('one PLB L6 attributed once, whatever later uploads change, and interes
     },
   );
 
+  it.each([
+    ['C’s interest first: B’s payment is kept off the lines holding it', ['paired.835', 'unlinked-paid.835', 'both-taken-back.835'], [540n, 540n, 0n], 'C'],
+    ['B’s interest first: C’s payment is kept off the lines holding it', ['unlinked-paid.835', 'paired.835', 'both-taken-back.835'], [600n, 600n, 0n], 'B'],
+    ['the PLB L6 taking both back first: its reversals leave the lines no approval for interest to be split by, so none is written', ['both-taken-back.835', 'paired.835', 'unlinked-paid.835'], [0n, 0n, 0n], null],
+  ] as const)(
+    'holds one chain’s interest on a line at a time, so one PLB L6 taking back two chains’ interest leaves none of it on the lines: never above the cash (both-taken-back.835; %s; PR 126 review RVM5-1)',
+    async (_, files, afterEach, held) => {
+      const { practice, lines } = await opened('LED-24');
+      const [l1, l2] = lines as [Line, Line];
+      const interest = async () => (await interestAndCash(practice))[0];
+      for (const [index, file] of files.entries()) {
+        await upload(practice, 'LED-24', file);
+        expect(await interest()).toBe(afterEach[index]);
+      }
+      // B is a chain of its own, matched to both lines beside C; one PLB L6 draws both chains' take-backs.
+      const b = await claimOf(practice, 'SYNEFTLED24031', 1);
+      expect([b.reversal_of_claim_id, b.superseded_by_claim_id]).toEqual([null, null]);
+      expect((await claimOf(practice, 'SYNEFTLED24032', 2)).reversal_of_claim_id).toBe(b.id);
+      expect(await w.rows(practice, "SELECT service_line_id FROM ledger_match WHERE kind = 'claim' AND claim_id = $1 AND reversed_at IS NULL ORDER BY seq", [b.id])).toHaveLength(2);
+      const [l6] = await l6sOf(practice, 'SYNEFTLED24032');
+      expect(((await attributionNow(practice)).draws.get(l6 as string) ?? []).map((draw) => draw.cents).sort()).toEqual([-540n, -600n]);
+      // The chain that reached the lines first is paid there and taken back there; the other is written nowhere.
+      const paidAndTakenBack = (amountCents: string) => (held === null ? [] : [at(amountCents, true), at(`-${amountCents}`, true)]);
+      expect(await interestOf(practice, l1.serviceLineId)).toEqual(paidAndTakenBack(held === 'C' ? '240' : '267'));
+      expect(await interestOf(practice, l2.serviceLineId)).toEqual(paidAndTakenBack(held === 'C' ? '300' : '333'));
+      expect(await interestAndCash(practice)).toEqual([0n, 0n]);
+      await expectInterestFromItsL6(practice);
+      await replayed(practice);
+    },
+  );
+
+  it('writes a payment kept off the lines once they hold none of the other chain’s interest, in the reconcile that takes it back: the figure is the cash (unlinked-paid.835, then taken-back.835; PR 126 review RVM5-1)', async () => {
+    const { practice, lines } = await opened('LED-24');
+    const [l1, l2] = lines as [Line, Line];
+    await upload(practice, 'LED-24', 'paired.835', 'unlinked-paid.835');
+    // B's 6.00 waits: both of its lines hold C's interest.
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0]]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1]]);
+    expect(await interestAndCash(practice)).toEqual([540n, 1140n]);
+    await replayed(practice);
+    // taken-back.835 takes C's 5.40 back; walking the PLB L6s again, B's 6.00 reaches the lines, which B approved.
+    await upload(practice, 'LED-24', 'taken-back.835');
+    expect(await interestOf(practice, l1.serviceLineId)).toEqual([PAIRED[0], at('-240', true), at('267', true)]);
+    expect(await interestOf(practice, l2.serviceLineId)).toEqual([PAIRED[1], at('-300', true), at('333', true)]);
+    expect(await interestAndCash(practice)).toEqual([600n, 600n]);
+    await expectInterestFromItsL6(practice);
+    await replayed(practice);
+  });
+
   it('refuses a reconcile whose PLB L6s still write on the last walk allowed, rolling all of it back and logging only IDs and the walks, and the retry writes the cash (PR 126, the per-reconcile bound)', async () => {
     const { practice } = await opened('LED-24', 'out-of-order-original.835');
     for (const file of ['cent-paid.835', 'netted-first.835', 'netted-second.835', 'paid-after-both.835']) {

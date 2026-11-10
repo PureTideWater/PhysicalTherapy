@@ -28,6 +28,7 @@ export {
   interestHeld,
   interestHeldOf,
   interestHeldOn,
+  interestOfOthersOn,
   interestOutOfReach,
   interestUnplaced,
   interestWrites,

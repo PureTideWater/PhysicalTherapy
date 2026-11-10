@@ -9,7 +9,8 @@
   off a payment keeps its share of it, #126 review R2M2-1 and RV-DB2-1; two take-backs of one chain each count that
   interest less what the other still owes, so which is whole can depend on the order, #126 review RVM3-3; a reconcile
   walks the PLB L6s again until a walk writes nothing, within a bound, so none ends above the cash, #126 review round
-  4); amends
+  4); amended in review on 2026-11-10 (a line holds one chain's interest at a time, so one PLB L6 never meets two
+  chains' interest to take back on one line, #126 review RVM5-1; D19); amends
   [0042](0042-keep-recovery-in-a-signed-append-only-ledger-of-matched-evidence-and-move-lines-to-recovered-only-from-its-entries.md)
   (where an interest entry comes from) and
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -260,6 +261,26 @@ half-written, the job's attempt fails and is retried (the third failure raises t
 names the job, the practice and the walks made, never an amount, line or claim. The reconcile reports its walks
 (`interestWalks`).
 
+**One chain's interest on a line at a time (D19; #126 review RVM5-1).** A payment of a chain writes nothing on a line
+while the line holds interest of another chain (a net above zero, chain by chain; `interestOfOthersOn`, pure, read from
+the pass's holdings by line). The line stays one of the payment's lines when the approved ones are chosen and the
+payment is split, and its share is written nowhere, as for a line a take-back keeps the chain off (D5). Two chains meet
+on a line only when claims the loader links to nothing as corrections of each other are matched to it: a correction the
+payer renumbered with no REF F8, uploaded without the reversal that would link it. The reason is the grant's "once per
+PLB L6 and case line": one PLB L6 writes one entry on a line, so a PLB L6 taking back two chains' interest held on one
+line took the first back and left the second on the line for good, 6.00 above the cash in LED-24's shape. With one
+chain's interest on a line at a time, each of its take-backs finds its chain on lines no other of its take-backs
+reaches. The share kept off is still owed by its PLB L6: once the line holds none of the other chain's interest (a
+take-back, or a specialist's adjustment to zero), the next walk or reconcile writes it there, unless a take-back of its
+own chain still owed can no longer follow it (D5). Until then, and for good when the other chain's interest stays, the
+figure is low by that share, never above the cash; the line's reported interest (AMT I) and the remittance page still
+show it. Which chain a line holds is the one whose payment reached it first, by payment date within a reconcile and by
+upload across reconciles, so the lines can differ with the upload order; the bound does not. A person can still bring
+two chains' interest onto one line by undoing a take-back there by hand (reversing its match, or a specialist's
+adjustment of its entry towards zero), which by itself puts the line above the cash the payer left; a PLB L6 taking
+both chains' interest back afterwards would again take one. That is the person's recorded decision, with a reason, on
+the ledger review.
+
 **PRD 13** now reads, under the exception: "Interest the payer pays (PLB L6) is recorded as its own entry category
 `interest`, against the case lines of the claims it is for (the claims the PLB L6 names, or, when it names none, those
 its remittance reports interest on in AMT I, a claim's reversal and correction netted), positive when paid and negative
@@ -294,6 +315,15 @@ PLB L6 pays is shown as reported and counted nowhere."
   reconcile: the figure, and a quarter's ROI statement the daily reconcile generates after it, are above the cash
   until then. **Chosen: walk the PLB L6s again within the reconcile until a walk writes nothing, bounded by the
   entries they can write (D18).**
+- **One PLB L6 taking back two chains' interest held on one line (#126 review RVM5-1).** Let a PLB L6 write one entry
+  per line and chain: exact on the lines in every order, but `ledger_match_standing` (one standing match per kind,
+  evidence and line) would have to carry the claim for interest matches, a unique index on `ledger_match` outside the
+  granted DDL and a change to "once per PLB L6 and case line", so a new exception from the founder and a second
+  design of `interestWrites`' once rule. Write one entry for both chains: the entry's match names one claim, so the
+  holdings by chain, which every later take-back reads, would be wrong. Leave it: the figure stays above the cash.
+  **Chosen: keep a payment off a line holding another chain's interest (D19), inside the grant: low by the share
+  kept off while the other chain's interest stays, never above the cash. The per-chain entry stays open as a later
+  schema change if the founder wants those shares on the lines.**
 - **The previous image.** Refusing its one-record match fails every reconcile with an AMT I claim on a case line until
   roll-forward (review F4). **Chosen: skip exactly that shape when the job writes it.**
 - **A reference with several identifiers.** Hashing whole never reads "CLP01 CLP07 TRN02"; searching every claim's
@@ -388,6 +418,11 @@ check by reading it.
   that writes none walks them once, as before. Should a walk still write at the bound, which no real ledger reaches, the
   practice's reconcile is refused on every attempt until the defect is fixed (the operator's alert on the third): no
   figure moves meanwhile and nothing is half-written.
+- **A line holds one chain's interest at a time** (D19). When a payer pays interest on a renumbered correction it did
+  not link (no REF F8, its reversal in another upload or none) while the lines still hold the earlier claim's
+  interest, the later payment is written nowhere until that interest is taken back: the figure is low by it meanwhile
+  (5.40 against 11.40 of cash in LED-24's `unlinked-paid.835`), and is the cash once the take-back arrives. This is the
+  trade-off for the founder: the alternative that writes both needs a ledger index outside the exception (Options).
 - **Lock alignment.** The new trigger takes the practice's `ledger:` key, the key SUITE-CAP-1b moved the other two
   ledger triggers to, so a writer holding `lockLedger` takes no new lock slot.
 
