@@ -29,8 +29,10 @@ import residuals from './redact.residuals.json' with { type: 'json' };
  * - loneInitial: a lone letter that is one of the name's initials glued to a range's end, with no name, part, label or full
  *   stop beside it (`token`), sent: as often a code's or a unit's letter; cc3dd7f6 refused it only for the range's digits.
  * - failSafe: letters cc3dd7f6 sent that this head refuses, a person handling them: the call's date of birth glued digit to
- *   digit in a must-stay letter, and the call's identifier glued where no boundary can be read in a letter whose other
- *   identifiers cc3dd7f6 redacted.
+ *   digit in a letter cc3dd7f6 sent unchanged (`gate` "must-stay", 52 rows) or sent with a month-word part of the name or
+ *   an amount's digits replaced, no identifier in it that the gate's oracle places ("must-stay-changed-at-base", 8 rows:
+ *   review round 5 found them tagged "must-stay"), and the call's identifier glued where no boundary can be read in a
+ *   letter whose other identifiers cc3dd7f6 redacted ("glued-check").
  */
 interface Row {
   readonly p: number;
