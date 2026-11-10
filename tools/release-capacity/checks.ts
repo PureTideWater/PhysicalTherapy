@@ -31,18 +31,24 @@ export const MEMORY_PEAK_PERCENT = 90;
 /** How a failing check and the summary name the working set and how it is computed. */
 export const WORKING_SET = 'working set (memory.current less inactive_file, sampled each second)';
 
-/** The Known gap line's fixed words before this run's own figure: SUITE-CAP-3's item and its last figure at size. */
+/**
+ * The Known gap line's fixed words before this run's own figure: F's size, A's full month's measured figure and what
+ * holds it. The figure is the reviewed candidate's on a private PostgreSQL 18 cluster (SUITE-CAP-3, design section 8.3a):
+ * 30,795 lines in one case in 1,653 s, 89% of it in the ledger triggers, which are Lane A's.
+ */
 const KNOWN_GAP_FIGURE =
-  'Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F, a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s 15-minute attempt.';
+  'Known gap: reconcile at A’s full month waits on the ledger trigger fixes (docs/adr/0087). Step 7b reconciles F, a practice of its own, at 10,000 lines (fewer at the smoke size), sized for its first attempt to finish within 360 s; A keeps its full month for triage and reports. A’s full month (its 30,795 actionable lines) was last measured at 1,653 s, past a job’s 15-minute attempt, 89% of it in the ledger triggers.';
 
 /** The Known gap line's fixed words after this run's own figure: the revisit condition. */
-const KNOWN_GAP_REVISIT = 'Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step (docs/adr/0083).';
+const KNOWN_GAP_REVISIT = 'Revisit when the ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).';
 
 /**
- * The fixed words of the line every summary prints (Lane A's orchestrator, 2026-11-04; test scope, not a founder
- * ruling): step 7b reconciles F, a practice of its own, until SUITE-CAP-3 lands and moves it back to A as its acceptance
- * step. The summary prints them with this run's F reconcile time against its attempt between the two sentences
- * (knownGap; the orchestrator's addition of 2026-11-04, ~22:27 UTC).
+ * The fixed words of the line every summary prints: step 7b reconciles F, a practice of its own, at 10,000 lines at full
+ * size until Lane A's trigger fixes land, and moving it back to A is the acceptance step of Lane A's trigger pull request
+ * (SUITE-CAP-3 D14, as Lane B's orchestrator ruled on 2026-11-06 at 22:31 UTC; docs/adr/0087, and ADR 0083's dated note
+ * of 2026-11-07). The 360 s is the bound F's size was chosen by, not a check: the run fails only on a later attempt
+ * (verdict), and the line prints the run's own margin. The summary prints the words with this run's F reconcile time
+ * against its attempt between the two sentences (knownGap; Lane A's orchestrator's addition of 2026-11-04, ~22:27 UTC).
  */
 export const KNOWN_GAP = `${KNOWN_GAP_FIGURE} ${KNOWN_GAP_REVISIT}`;
 
@@ -621,9 +627,10 @@ function eventsLine(memory: WorkerMemory): string {
 
 /**
  * The Known gap line as the summary prints it: the fixed words, with this run's F reconcile time against its attempt (the
- * margin SUITE-CAP-3's item leaves step 7b) beside the full-size figure; or why this run gives no margin. pg-boss resets a
- * job's started_on at each claim, so its time is its last attempt's alone: a margin is printed only for a reconcile that
- * completed on its first attempt, never for one a retry completed (its earlier attempt is the one that did not fit).
+ * margin step 7b keeps until Lane A's trigger fixes move it back to A; docs/adr/0087) beside A's full month's measured
+ * figure; or why this run gives no margin. pg-boss resets a job's started_on at each claim, so its time is its last
+ * attempt's alone: a margin is printed only for a reconcile that completed on its first attempt, never for one a retry
+ * completed (its earlier attempt is the one that did not fit).
  */
 export function knownGap(m: CapacityMeasurements): string {
   const reconcile = m.jobs.find((job) => job.what === 'F reconcile');

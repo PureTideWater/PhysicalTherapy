@@ -131,8 +131,18 @@ export class LedgerWorld {
     return this.triage.pricing.jobContext(target.practiceId, logs);
   }
 
+  /**
+   * CAS-49.2 (SUITE-CAP-3; design section 7, item 2): when set, every reconcile of every world runs through it in place
+   * of the pass alone (test-support/led-shadow.ts: the per-line reference on a copy of the world, the shipped pass on
+   * the world itself, their writes compared). Unset everywhere but pass-equality-led.db.test.ts.
+   */
+  static shadow: ((world: LedgerWorld, target: Practice, options: { readonly documentId?: string }) => Promise<ReconcileSummary>) | undefined;
+
   /** One reconcile of the practice, in its job scope. */
   reconcile(target: Practice, options: { readonly documentId?: string } = {}): Promise<ReconcileSummary> {
+    if (LedgerWorld.shadow !== undefined) {
+      return LedgerWorld.shadow(this, target, options);
+    }
     return reconcilePractice(this.jobContext(target), this.services, target.practiceId, options.documentId === undefined ? {} : { documentId: options.documentId });
   }
 

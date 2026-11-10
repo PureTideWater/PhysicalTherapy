@@ -57,18 +57,68 @@ interface LineRow {
   readonly current_stage: Stage | null;
 }
 
-async function insertStage(scope: Scope, practiceId: string, serviceLineId: string, stage: Stage, setBy: string | null, reopen?: { readonly from: Stage; readonly reason: string }): Promise<void> {
-  await scope.client.query('INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from) VALUES ($1, $2, $3, $4, $5, $6)', [
-    practiceId,
-    serviceLineId,
-    stage,
-    setBy,
-    reopen?.reason ?? null,
-    reopen?.from ?? null,
-  ]);
+/** One stage event of a line, as syncLineStages decides it and insertStages writes it. */
+export interface StageEvent {
+  readonly serviceLineId: string;
+  readonly stage: Stage;
+  /** A move back: the stage the line was at, and its note (encrypted with the practice's key). */
+  readonly reopen?: { readonly from: Stage; readonly reason: string };
 }
 
-/** Brings every case line with ledger entries to the stage its entries put it at. */
+/** The pass's stage events, one row for each event, formed in the order given (n). */
+const INSERT_STAGES = `INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from)
+     SELECT $1, e.service_line_id, e.stage, $2, e.reason, e.reopened_from
+       FROM unnest($3::uuid[], $4::text[], $5::text[], $6::text[]) WITH ORDINALITY AS e (service_line_id, stage, reason, reopened_from, n)
+      ORDER BY e.n`;
+
+/** How many times the statement is issued again after a deadlock before the error stands (D3: at most twice). */
+const DEADLOCK_RETRIES = 2;
+
+/** PostgreSQL's deadlock detector aborted the statement (SQLSTATE 40P01). */
+function isDeadlock(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === '40P01';
+}
+
+/**
+ * Writes the events in one statement, in the order given (SUITE-CAP-3 D3; docs/adr/0087): each row draws its seq as it
+ * is formed and its BEFORE triggers see the rows before it, so every row's seq follows the order given and a line's
+ * payer approved is checked before its recovered, as when each event was a statement of its own; the cases the events
+ * touch are refreshed once (line_status_refresh_cases, a statement trigger) instead of once an event. No events, no
+ * statement.
+ *
+ * The statement takes every event line's head row and then, at its end, the cases (D4; design section 5.2), where a
+ * person's reopen or a triage takes a case and then a head, so the two can deadlock. It runs under a savepoint: on a
+ * deadlock the rollback to it releases the head rows it took, and the same statement is issued again with the same
+ * events, at most twice more, never split or reordered; any other error stands at once, as one statement's did.
+ */
+export async function insertStages(scope: Scope, practiceId: string, events: readonly StageEvent[], setBy: string | null): Promise<void> {
+  if (events.length === 0) {
+    return;
+  }
+  const values = [
+    practiceId,
+    setBy,
+    events.map((event) => event.serviceLineId),
+    events.map((event) => event.stage),
+    events.map((event) => event.reopen?.reason ?? null),
+    events.map((event) => event.reopen?.from ?? null),
+  ];
+  await scope.client.query('SAVEPOINT stage_events');
+  for (let retries = 0; ; retries += 1) {
+    try {
+      await scope.client.query(INSERT_STAGES, values);
+      break;
+    } catch (error) {
+      if (!isDeadlock(error) || retries === DEADLOCK_RETRIES) {
+        throw error;
+      }
+      await scope.client.query('ROLLBACK TO SAVEPOINT stage_events');
+    }
+  }
+  await scope.client.query('RELEASE SAVEPOINT stage_events');
+}
+
+/** Brings every case line with ledger entries to the stage its entries put it at, its events written in one statement (D3). */
 export async function syncLineStages(scope: Scope, cipher: PracticeCipher, practiceId: string, setBy: string | null): Promise<StageSync> {
   const { rows } = await scope.client.query<LineRow>(
     `SELECT cl.service_line_id, ledger_line_stage(cl.service_line_id) AS ledger_stage,
@@ -80,24 +130,27 @@ export async function syncLineStages(scope: Scope, cipher: PracticeCipher, pract
   );
   let forward = 0;
   let back = 0;
+  const events: StageEvent[] = [];
   for (const row of rows) {
     const target = row.ledger_stage;
     const current = row.current_stage;
     if (target !== null && (current === null || RANK[target] > RANK[current])) {
       if (target === 'recovered' && (current === null || RANK[current] < RANK.payer_approved)) {
-        await insertStage(scope, practiceId, row.service_line_id, 'payer_approved', setBy);
+        events.push({ serviceLineId: row.service_line_id, stage: 'payer_approved' });
         forward += 1;
       }
-      await insertStage(scope, practiceId, row.service_line_id, target, setBy);
+      events.push({ serviceLineId: row.service_line_id, stage: target });
       forward += 1;
       continue;
     }
     if ((current === 'payer_approved' || current === 'recovered') && (target === null || RANK[target] < RANK[current])) {
+      // Read before any event is written, as before the first one was: the note reads only this line's own events and entries.
       const note = target === null ? REOPEN_NOTES.recoupment : current === 'recovered' ? await moveBackNote(scope, row.service_line_id) : REOPEN_NOTES.reversal;
-      await insertStage(scope, practiceId, row.service_line_id, target ?? 'actionable', setBy, { from: current, reason: cipher.encrypt('line_status.reason', note) });
+      events.push({ serviceLineId: row.service_line_id, stage: target ?? 'actionable', reopen: { from: current, reason: cipher.encrypt('line_status.reason', note) } });
       back += 1;
     }
   }
+  await insertStages(scope, practiceId, events, setBy);
   return { forward, back };
 }
 

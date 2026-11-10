@@ -520,6 +520,18 @@ As built (`tools/release-capacity/scenario.ts`, `run.ts`, `checks.ts`):
   `checks.ts` before it, 2 of the file's 35 tests, and its scenario test (A's actionable lines matched against the
   expected ones) on the `scenario.ts` before it.
 
+*Dated note, 2026-11-07 (SUITE-CAP-3; [0087](0087-reconcile-a-practice-with-reads-per-pass-never-per-open-line-writing-in-the-rules-order.md)).*
+SUITE-CAP-3 lands without moving step 7b back to A's full month, and the move is no longer its acceptance step. Ruled
+by Lane B's orchestrator on 2026-11-06 at 22:31 UTC, as the item's status file records (design section 8.4, D14):
+step 7b stays on F, a practice of its own, at 10,000 lines at full size (`FULL_SIZE.reconcileLines`; the smoke size
+keeps 600), until Lane A's corrected `ledger_line_net` and `ledger_entry_rules`' match lookup merge; moving step 7b back
+to A's full month is then the acceptance step of Lane A's trigger pull request, re-measured on its own base. Why:
+measured on the reviewed candidate, A's month (30,795 lines in one case) reconciles in 1,653 s, 184% of the job's 900 s
+attempt, of which 1,469 s are those two triggers, which are Lane A's and frozen; with both of Lane A's fixes it took
+310 s, inside the 360 s sizing bound. F at 10,000 lines took 220 s, 24.5% of the attempt. The Known gap line stays,
+reworded to that figure and to who closes it; "Temporary until SUITE-CAP-3 lands" above now reads as until Lane A's
+trigger fixes land. ADR 0087 records the rest.
+
 #### The release loader's freeze, 2026-11-04
 
 *Added 2026-11-04.* The database suite's first shard, run on the shared local cluster in SS-01's integration (on which
