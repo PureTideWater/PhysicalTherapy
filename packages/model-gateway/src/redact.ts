@@ -2786,6 +2786,23 @@ function numberSuffix(run: string, before: string): boolean {
   return (run === 'AM' || run === 'PM') && HOUR_BEFORE.test(before);
 }
 
+/** One letter a whole number carries: a unit of time (d, h, m, s, w, y), "x" for times, and F or M after an age ("30D", "3X", "6W", "45F"). */
+const LETTER_AFTER_NUMBER = new Set(['D', 'H', 'M', 'S', 'W', 'Y', 'X', 'F']);
+
+/** A token shaped as an ICD-10-CM code that ends a text in a letter: a letter, a digit, a letter or digit, then a dot and one to four letters or digits ("S83.511A", "M54.5A"), after no letter, digit or dot. */
+const ICD_LETTER_END = /(?:^|[^\p{L}\p{N}.])[A-Z][0-9][0-9A-Z]\.[0-9A-Z]{0,3}[A-Z]$/u;
+
+/**
+ * Whether one letter (folded) glued after the digits that end `before` is that number's own, by the number's structure and
+ * never by what the letter may mean (nameGlued's lone-initial rule, review round 5, F5): the last character of a token
+ * shaped as an ICD-10-CM code ("S83.511A", its seventh character), or a one-letter unit after a whole number of one to
+ * three digits, read where numberSuffix reads a unit ("30d", "3x", "30s", "6w", "45F", "L4-5S"). After an amount's cents, a
+ * currency sign or a year's four digits the letter is no unit ("150.00Q", "$30D", "2020D").
+ */
+function numberLetter(letter: string, before: string): boolean {
+  return ICD_LETTER_END.test(`${before}${letter}`.slice(-10)) || (LETTER_AFTER_NUMBER.has(letter) && (WHOLE_BEFORE.exec(before)?.[1]?.length ?? 4) <= 3);
+}
+
 /** What may stand between a name's fragment and the name's placeholder before it (nameGlued): INITIAL_TO_NAME read backwards. */
 const NAME_TO_FRAGMENT = new RegExp(`[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}$`, 'u');
 
@@ -2889,11 +2906,13 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
     }
     // An initial at a run's end before the name: past up to three other characters, the name's placeholder (or a number's
     // that a part of the name is written as), a whole part, or another such initial ("150.00J. Q. Zephyra"). Outside a
-    // held chain, an initial alone with a digit right before it ("150.00Q Zephyra"); with a held chain, the last letter of
+    // held chain, an initial alone with a digit right before it ("150.00Q Zephyra"), unless the letter is the number's own
+    // by its structure (numberLetter: an ICD-10-CM code's last character, a one-letter unit after a whole number:
+    // "S83.511A. [PATIENT_NAME]" for ANNA, "30d. [PATIENT_NAME]" for DANA, which cc3dd7f6 sends so); with a held chain, the last letter of
     // any run, unless it is written small at the end of a word that holds a capital ("DEARQ Zephyra", "PaidJ. Zephyra",
     // "JQ Zephyra", but "Dear Zephyra" for an initial R), before another initial too ("DEARJ.Q."), or before a full stop.
     const last = letters.at(-1);
-    const alone = letters.length === 1 && digitBefore;
+    const alone = letters.length === 1 && digitBefore && !numberLetter(run, text.slice(Math.max(0, start - 24), start));
     const ended = held && last !== undefined && !(small(last.written) && letters.some((letter) => large(letter.written)));
     if (last !== undefined && initials.has(text.slice(last.at, end)) && (alone || ended)) {
       // With a held chain, an initial's full stop marks it one ("DEARQ.", "MsQ.").

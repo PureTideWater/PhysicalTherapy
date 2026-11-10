@@ -1590,6 +1590,29 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12/2025 reviewed. 16 claims of 97110GP are pending.', 'DOS 10/22/2024-2/12/2025 reviewed. 16 claims of 97110GP are pending.', {}],
     ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed.', null, {}],
     ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110 GP are pending.', null, {}],
+    // Review round 5, F5: a lone letter glued after a number before the name is the number's own by its structure, an
+    // ICD-10-CM code's last character or a one-letter unit after a whole number of one to three digits, and no initial
+    // (cc3dd7f6 sends each with only the name replaced); after an amount, a currency sign, a year or a longer number it
+    // stays an initial, and so does every such letter in a held letter (fail-safe refusals).
+    ['F5', ['ANNA DAVIS'], 'Diagnosis S83.511A. Anna was evaluated on 01/05/2026.', 'Diagnosis S83.511A. [PATIENT_NAME] was evaluated on 01/05/2026.', {}],
+    ['F5', ['ANNA DAVIS'], 'Diagnosis S83.511A Davis', 'Diagnosis S83.511A [PATIENT_NAME]', {}],
+    ['F5', ['MAY ALLEN'], 'Diagnosis S83.511A may be payable under the plan.', 'Diagnosis S83.511A [PATIENT_NAME] be payable under the plan.', {}],
+    ['F5', ['WILL ADAMS'], 'Diagnosis S83.511A will be reviewed.', 'Diagnosis S83.511A [PATIENT_NAME] be reviewed.', {}],
+    ['F5', ['DANA SMITH'], 'Authorized 30d. Dana Smith may appeal.', 'Authorized 30d. [PATIENT_NAME] may appeal.', {}],
+    ['F5', ['XAVIER VANTREE'], 'Therapy 3x, Xavier Vantree, denied.', 'Therapy 3x, [PATIENT_NAME], denied.', {}],
+    ['F5', ['FIONA VANTREE'], 'Patient 45F Fiona Vantree', 'Patient 45F [PATIENT_NAME]', {}],
+    ['F5', ['SAM VANTREE'], 'Rest 30s. Sam Vantree tolerated.', 'Rest 30s. [PATIENT_NAME] tolerated.', {}],
+    ['F5', ['WILLIAM VANTREE'], 'Visit 6w William Vantree', 'Visit 6w [PATIENT_NAME]', {}],
+    ['F5', ['SAM VANTREE'], 'Level L4-5S, Sam Vantree', 'Level L4-5S, [PATIENT_NAME]', {}],
+    ['F5', ['JANE Q ZEPHYRA'], 'Paid 150.00Q Zephyra', null, {}],
+    ['F5', ['JANE Q ZEPHYRA'], 'Paid 150Q Zephyra', null, {}],
+    ['F5', ['DANA SMITH'], 'Paid 150.00D Dana Smith', null, {}],
+    ['F5', ['DANA SMITH'], 'Paid $30D Dana Smith', null, {}],
+    ['F5', ['DANA SMITH'], 'Seen 2020D Dana Smith', null, {}],
+    ['F5', ['DANA SMITH'], 'Ref 12345D Dana Smith', null, {}],
+    ['F5', ['ANNA DAVIS'], 'Diagnosis 9S83.511A. Anna', null, {}],
+    ['F5', ['ANNA DAVIS'], `${HELD}Diagnosis S83.511A. Anna was evaluated.`, null, {}],
+    ['F5', ['DANA SMITH'], `${HELD}Authorized 30d. Dana Smith may appeal.`, null, {}],
   ] as const)('handles the judge’s round 4 input (%s): %s %j', (_finding, names, letter, sent, more) => {
     const { patient: who, claims } = judge1([...names], more);
     const redacted = redactLetterForScreen(letter, who, claims);
