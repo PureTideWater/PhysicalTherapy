@@ -39,8 +39,8 @@ a deadlock, which ADR 0087's savepoint retry absorbs on the pass's side.
 2. **Refused at once, writing nothing.** Not granted, the worker's action throws `ReconciliationError('ledger_busy')`
    and the web's handlers throw `BusyError`; the request's transaction rolls back, so no row, audit event or request
    key is written, and the outcome is `{ status: 'busy' }`, a new member of the routes' closed list of outcomes.
-3. **The refusal names nothing.** The outcome is a status alone. The form says "The ledger is being updated, so nothing
-   was saved. Try again in a moment." and keeps what was typed; it never says that a reconciliation is running, since
+3. **The refusal names nothing.** The outcome is a status alone. The form says "The recovery ledger is being updated, so
+   nothing was saved. What you typed is still here: try again in a minute." and keeps what was typed; it never says that a reconciliation is running, since
    another person's action holds the same lock, and it carries no identifier. A JSON client gets 409 with
    `Retry-After: 5`.
 4. **Placed everywhere an outcome is read.** `busy` has its HTTP status, its form message and, so the closed list of a
@@ -54,9 +54,24 @@ a deadlock, which ADR 0087's savepoint retry absorbs on the pass's side.
   transaction is open, where it used to wait the few milliseconds the first took. Acceptable: the action is one press.
 - The reopen no longer crosses a pass's stage write, since it runs only with the lock. ADR 0087's savepoint retry stays:
   a triage job still takes the case then the head outside the lock, and CAS-49.6 holds the retry.
-- A web writer added later that takes the `ledger:` lock, or changes `case`, `case_line`, `submission`, `line_status`
-  or a ledger table from a request, takes `tryLockLedger` first. CAS-56 holds the seven that exist: each answers `busy`
-  within a second while the lock is held, writes nothing, and goes through once the lock is free.
+- CAS-56 holds the seven: each answers `busy` at once (within two seconds, the whole request) while the lock is held,
+  writes nothing (a request key sent with a refused press is still unused afterwards), and goes through once the lock is
+  free; a second person's action sent while the first is in flight is refused the same way.
+- **The seven are not every web writer a pass can hold up** (the pull request's security review). A pass also holds,
+  to its commit, the `case` rows of the lines it writes a stage event or a payer response for, and three more requests
+  rewrite a case's row through a trigger: logging a submission (`submission_refresh_case`), recording a payer response
+  (`payer_response_refresh_case`) and assigning a case (`case_activity_sets_owner`). Each still waits when, and only
+  when, its own case is one the running pass has written for. They need no serializing with the ledger, so refusing
+  them for a whole pass with the try-lock would be wrong; the remedy for them, and for any writer like them, is a short
+  `lock_timeout` on the web's mutations answered as `busy`, which is its own change with its own review (queued; see
+  Revisit when).
+- A write-off of a line already written off, or a reopen of a line not written off, used to answer as done without
+  writing; while the lock is held it now answers `busy`, since the lock is taken before the line is read.
+- The write-off and the reopen now hold the lock while they read the case line for update. A triage job holding that
+  row makes them wait for it (seconds, never a pass), and a pass starting meanwhile waits behind them: the same shape
+  the manual actions already had.
+- A refused press still counts toward the person's mutation rate limit (120 a minute), as every refusal does; the
+  form's "in a minute" and a client's `Retry-After` keep an honest retry far inside it.
 - No amount, stage, rule or total changes: a refused action writes nothing, and a granted one runs as before.
 
 ## Alternatives considered
@@ -71,6 +86,10 @@ a deadlock, which ADR 0087's savepoint retry absorbs on the pass's side.
 | An input error on a field ("Fix the fields listed here") | Nothing the person typed is wrong; the refusal is retryable as sent and belongs with the outcomes, not with a field |
 
 ## Revisit when
+
+- The floor for the rest of the class is built: a `lock_timeout` of a few seconds on a web mutation's transaction,
+  with PostgreSQL's `55P03` answered as `busy`, so that no request waits on any row a pass holds (submissions, payer
+  responses and assignments first). The try-lock stays for the seven, which must also serialize with the ledger.
 
 - A pass no longer holds the `ledger:` lock for its whole transaction (shorter transactions, or a lock per case): the
   refusal may then be rare enough to become a short bounded wait.

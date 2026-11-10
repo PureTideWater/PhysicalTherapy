@@ -586,7 +586,9 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
  * reopen and the five manual reconciliation actions take it only if it is free. Here a second session holds the lock as
  * a pass does (the worker's own lockLedger, in a job scope) while each of the seven actions is sent with input its
  * schema accepts, by a person allowed to send it: each answers `busy` at once, names nothing, and writes nothing (no
- * row of the practice, no audit event, no request key). With the lock free the same people's actions go through.
+ * row of the practice, no audit event, no request key: the same key sent again once the lock is free is taken as new).
+ * With the lock free the same people's actions go through and write what they always wrote. A person's own action in
+ * flight holds the lock the same way: a second person's action sent meanwhile is refused, never queued behind it.
  * Synthetic data only.
  */
 describe('no web request waits on the ledger lock (CAS-56)', () => {
@@ -605,7 +607,8 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
       held();
       await until;
     });
-    await taken;
+    // A holder that fails before it holds fails the test with its own error, never by a silent wait.
+    await Promise.race([taken, holding]);
     return {
       release: async () => {
         release();
@@ -621,6 +624,12 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
       const { rows } = await w.owner.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${table} WHERE practice_id = $1`, [practice.practiceId]);
       counts[table] = rows[0]?.n ?? '';
     }
+    // The request keys of the two people who send the actions (the table is per person, not per practice).
+    const keys = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM mutation_request WHERE user_id = ANY ($1::uuid[])', [[practice.manager, w.pricing.specialist]]);
+    counts.mutation_request = keys.rows[0]?.n ?? '';
+    // The cases' own rows, which the refreshes of a case line, a stage event and a response rewrite.
+    const cases = await w.owner.query<{ state: string }>(`SELECT string_agg(id::text || ':' || updated_at::text, ',' ORDER BY id) AS state FROM "case" WHERE practice_id = $1`, [practice.practiceId]);
+    counts.case = cases.rows[0]?.state ?? '';
     const { rows } = await w.owner.query<{ state: string }>(
       "SELECT string_agg(id::text || ':' || coalesce(written_off_reason, '') || ':' || (reopen_reason IS NOT NULL)::text, ',' ORDER BY id) AS state FROM case_line WHERE practice_id = $1",
       [practice.practiceId],
@@ -638,7 +647,8 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
     const [caseLine] = (await w.owner.query<{ id: string }>('SELECT id FROM case_line WHERE practice_id = $1 AND written_off_reason IS NULL ORDER BY id', [practice.practiceId])).rows;
     expect(caseLine).toBeDefined();
     const specialist = w.pricing.specialist;
-    const reverse = { matchId: standing?.id, reason: 'SYNTHETIC matched by mistake', confirm: 'on' };
+    // The reversal carries one request key throughout: refused under the lock, the same key is still unused afterwards.
+    const reverse = { matchId: standing?.id, reason: 'SYNTHETIC matched by mistake', confirm: 'on', requestKey: randomUUID() };
     const writeOff = { caseLineId: caseLine?.id, reason: 'not_worth_pursuit', text: '', confirm: 'on' };
     const reopen = { caseLineId: caseLine?.id, reason: 'SYNTHETIC reopen: the payer asked for it again' };
     const actions: readonly (readonly [string, () => Promise<Outcome<unknown>>])[] = [
@@ -658,31 +668,55 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
         const outcome = await send();
         // The whole outcome: a status and nothing else, so no identifier and no word of what holds the lock.
         expect(outcome, name).toEqual({ status: 'busy' });
-        expect(performance.now() - started, `${name}: answered at once, never after a wait`).toBeLessThan(1_000);
+        // The whole request (session, keys, the lock, the rollback), on a loaded runner too; a wait on the lock would
+        // last until the holder lets go, which it does only after this loop.
+        expect(performance.now() - started, `${name}: answered at once, never after a wait`).toBeLessThan(2_000);
       }
       expect(await written()).toEqual(before);
     } finally {
       await holder.release();
     }
-    // The lock free: the reversal, the write-off and the reopen that were refused now go through, as sent.
+    // The lock free: the reversal, the write-off and the reopen that were refused now go through, as sent. The
+    // reversal's request key is the one its refused attempt carried: taken as new (a refusal that had kept the key
+    // would answer `duplicate` here), and written now.
+    const lineOf = async () =>
+      (await w.owner.query<{ written_off_reason: string | null; reopened: boolean }>('SELECT written_off_reason, reopen_reason IS NOT NULL AS reopened FROM case_line WHERE id = $1', [caseLine?.id])).rows[0];
+    const depositedBefore = ok(await call(reconciliationPage, practice.manager, P())).totals.depositedCents;
+    expect(depositedBefore).not.toBe('0');
     expect(ok(await call(reverseMatchAction, practice.manager, P(), reverse)).redirect).toBe(`/p/${practice.practiceId}/reconciliation?notice=reversed`);
+    const reversed = await written();
+    expect(Number(reversed.reversed)).toBe(Number(before.reversed) + 1);
+    expect(Number(reversed.mutation_request)).toBe(Number(before.mutation_request) + 1);
+    // The reversal's entries net the deposit to zero, as LED-07's reversal does.
+    expect(Number(reversed.ledger_entry)).toBeGreaterThan(Number(before.ledger_entry));
+    expect(ok(await call(reconciliationPage, practice.manager, P())).totals.depositedCents).toBe('0');
     expect(ok(await call(writeOffLineAction, practice.manager, P(), writeOff)).objectId).toBe(caseLine?.id);
+    expect(await lineOf()).toEqual({ written_off_reason: 'not_worth_pursuit', reopened: false });
     expect(ok(await call(reopenLineAction, practice.manager, P(), reopen)).objectId).toBe(caseLine?.id);
+    expect(await lineOf()).toEqual({ written_off_reason: null, reopened: true });
     const after = await written();
-    expect(Number(after.reversed)).toBe(Number(before.reversed) + 1);
+    // The reopen's stage event, in the person's name, from the stage the line was at.
+    const reopenEvents = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM line_status WHERE practice_id = $1 AND reopened_from IS NOT NULL AND set_by = $2', [practice.practiceId, practice.manager]);
+    expect(Number(after.line_status)).toBeGreaterThan(Number(reversed.line_status));
+    expect(Number(reopenEvents.rows[0]?.n)).toBeGreaterThanOrEqual(1);
     expect(Number(after.audit_event)).toBeGreaterThanOrEqual(Number(before.audit_event) + 3);
+    expect(Number(after.mutation_request)).toBe(Number(before.mutation_request) + 3);
     // And the ones sent with ids that name nothing are refused for that, no longer for the lock.
     expect((await call(matchDepositAction, practice.manager, P(), { eftRowId: randomUUID(), remittanceId: randomUUID() })).status).toBe('not_found');
   }, 60_000);
 
-  it('holds the lock to the action’s commit, so two people’s actions never interleave and the second is refused, not queued', async () => {
-    // A person's action in flight: its request's transaction has taken the lock (as begin() does) and not yet committed.
-    const holder = await holdLedger();
-    try {
-      expect(await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })).toEqual({ status: 'busy' });
-    } finally {
-      await holder.release();
-    }
+  it('holds the lock to the action’s commit: a second person’s action sent while the first is in flight is refused, not queued', async () => {
+    // The first person's action, held right after its request's transaction took the lock (the statement begin() issues)
+    // and before it commits: the second person's action is sent from there, on the plain services.
+    let second: Outcome<unknown> | undefined;
+    const inFlight = committingMidRead('pg_try_advisory_xact_lock', async () => {
+      second = await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() });
+    });
+    const first = await call(matchDepositAction, practice.manager, P(), { eftRowId: randomUUID(), remittanceId: randomUUID() }, inFlight);
+    // The first held the lock and went on to its own answer (its ids name nothing); the second met the lock.
+    expect(first.status).toBe('not_found');
+    expect(second).toEqual({ status: 'busy' });
+    // The first committed or rolled back, so the lock is free again.
     expect((await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })).status).toBe('not_found');
   }, 30_000);
 });

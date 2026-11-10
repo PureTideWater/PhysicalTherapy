@@ -458,7 +458,6 @@ export const triageRunAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ runId: refs.pricingRunId }) },
 });
 
-/** What a write-off does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
 /**
  * Takes the practice's ledger lock for the rest of the request's transaction, or refuses at once (docs/adr/0092). A
  * write-off and a reopen change rows a reconcile pass holds locked to its commit (the case, through the case line's
@@ -472,6 +471,7 @@ async function ledgerOrBusy(scope: Parameters<typeof tryLockLedger>[0], practice
   }
 }
 
+/** What a write-off does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
 export const WRITE_OFF_CONSEQUENCE =
   'The line leaves the case’s actionable total and stays in the case, struck through, with its reason. A person who works cases can reopen it, with a reason, while its dispute window is open.';
 

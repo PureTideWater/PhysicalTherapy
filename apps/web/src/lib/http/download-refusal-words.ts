@@ -105,7 +105,7 @@ export function downloadRefusalWords(refusal: RefusedDownload, surface: Download
       return { title: NOT_DOWNLOADED, body: 'This download could not be checked against your session. Try it again from this page.' };
     case 'busy':
       // No download takes the ledger lock today; the outcome is placed so the closed list stays whole (docs/adr/0092).
-      return { title: NOT_DOWNLOADED, body: 'The records this file reads are being updated. Try again in a moment.' };
+      return { title: NOT_DOWNLOADED, body: 'The records in this file are being updated. Try again in a minute.' };
   }
 }
 
