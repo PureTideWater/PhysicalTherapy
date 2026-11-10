@@ -80,10 +80,10 @@ export default async function CorrespondencePage(props: { readonly params: Promi
                 <legend className="text-sm font-medium">Mailing address (optional: all of street, city, state and ZIP, or none)</legend>
                 <Field label="Street" name="address_line1" maxLength={100} defaultValue={stored?.address?.line1 ?? ''} />
                 <Field label="Suite or floor (optional)" name="address_line2" maxLength={100} defaultValue={stored?.address?.line2 ?? ''} />
-                <div className="grid gap-3 sm:grid-cols-[1fr_6rem_8rem]">
+                <div className="grid gap-3 sm:grid-cols-[1fr_6rem_11rem]">
                   <Field label="City" name="address_city" maxLength={100} defaultValue={stored?.address?.city ?? ''} />
                   <SelectField label="State" name="address_state" options={[{ value: '', label: '—' }, ...states.map((code) => ({ value: code, label: code }))]} defaultValue={stored?.address?.state ?? ''} />
-                  <Field label="ZIP" name="address_zip" inputMode="text" autoComplete="postal-code" maxLength={10} defaultValue={stored?.address?.zip ?? ''} />
+                  <Field label="ZIP" name="address_zip" inputMode="text" autoComplete="postal-code" maxLength={10} defaultValue={stored?.address?.zip ?? ''} hint="Five digits, or a ZIP+4 such as 27601-1234." />
                 </div>
               </fieldset>
             </ActionForm>

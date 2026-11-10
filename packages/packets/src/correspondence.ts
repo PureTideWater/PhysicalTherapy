@@ -63,18 +63,22 @@ export interface CorrespondenceContactInput {
 export const CORRESPONDENCE_FIELDS = ['contact', 'name', 'phone', 'phone_extension', 'email', 'address_line1', 'address_line2', 'address_city', 'address_state', 'address_zip'] as const;
 export type CorrespondenceField = (typeof CORRESPONDENCE_FIELDS)[number];
 
-/** What each refusal says (fixed words, never the value). */
+/**
+ * What each refusal says (fixed words, never the value): an instruction read after the field's name, one lower-case
+ * sentence with no colon of its own (ADR 0077), the same words as the web form's correspondenceForm where the rule is.
+ */
 export const CORRESPONDENCE_FIELD_RULES: Readonly<Record<CorrespondenceField, string>> = {
-  contact: 'a correspondence contact names a person or office and a phone number, and holds nothing else',
-  name: 'a name or office of 1 to 120 characters, with no hidden characters and no @ (an email goes in its own field)',
-  phone: 'a 10-digit phone number, such as (919) 555-0100',
-  phone_extension: 'an extension of 1 to 6 digits',
-  email: 'an email address of at most 254 characters, with one @ and no spaces',
-  address_line1: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters with no @ (an email goes in its own field)',
-  address_line2: 'a second address line of 1 to 100 characters with no @ (an email goes in its own field)',
-  address_city: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters with no @ (an email goes in its own field)',
-  address_state: 'a USPS state or territory code, such as NC',
-  address_zip: 'a ZIP code of five digits, or ZIP+4 (nine digits, with or without its hyphen)',
+  contact: 'name a person or office and give a phone number, and nothing else',
+  name: 'enter a name or office of 1 to 120 characters, with no hidden characters and no @ (an email goes in its own field)',
+  phone: 'enter a 10-digit phone number, such as (919) 555-0100',
+  phone_extension: 'enter an extension of 1 to 6 digits, or leave it blank',
+  email: 'enter an email address of at most 254 characters, with one @ and no spaces',
+  address_line1: 'enter the street line, 1 to 100 characters with no @ (an email goes in its own field)',
+  address_line2: 'enter a second address line of 1 to 100 characters with no @ (an email goes in its own field)',
+  address_city: 'enter the city, 1 to 100 characters with no @ (an email goes in its own field)',
+  address_state: 'enter the two-letter USPS code of the state or territory, such as NC',
+  // The web app's ZIP_CODE_FORMAT, written out (this package cannot import apps/web).
+  address_zip: 'enter five digits, or a ZIP+4 such as 27601-1234',
 };
 
 /** A contact refused, naming the field (the rule's words, never the value). */

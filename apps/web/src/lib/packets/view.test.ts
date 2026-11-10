@@ -1,4 +1,4 @@
-import { FIGURE_ROLES, MISMATCH_CODES, assemblePacket, checkedFigures, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { FIGURE_ROLES, MISMATCH_CODES, assemblePacket, checkedFigures, narrativeFacts, verifyNarrative, verifyTemplate } from '@tp/packets';
 import { checkReading } from '@tp/packets/check';
 import { assemblyInput } from '@tp/packets/testing';
 import { VERIFIER_STANDINGS } from '@tp/worker/packets';
@@ -83,7 +83,7 @@ describe('the words for a figure in the wrong role', () => {
     for (const text of [...Object.values(MISMATCH_TEXT), ...Object.values(FIGURE_KIND_TEXT), SAY_WHAT_IT_COUNTS]) {
       expect(text).not.toMatch(/role its words|release|input records/);
     }
-    expect(SAY_WHAT_IT_COUNTS).toBe('say what it counts or names: 3 claims, 6 units, page 2, 3650 days');
+    expect(SAY_WHAT_IT_COUNTS).toBe('say what it counts or names, such as 3 claims, 6 units, page 2 or 3,650 days');
     expect(readAsText(['claims'])).toBe('read as a count of claims');
     expect(readAsText(['lines', 'claims'])).toBe('read as a count of lines or a count of claims');
     expect(readAsText(['lines', 'claims', 'patients'])).toBe('read as a count of lines, a count of claims or a count of patients');
@@ -144,6 +144,26 @@ describe('the words for a figure in the wrong role', () => {
     // A figure read with no need says what it was read as, as before; a stored report's figure, by its kind.
     expect(mismatchText('figure_not_in_input', 'amount', { roles: ['paid'], every: false, heldAs: ['expected'], needs: null })).toBe('read as what the payer paid; the records hold it as what the contract requires');
     expect(mismatchText('figure_not_in_input', 'amount', null)).toBe('an amount that does not match this version’s records');
+  });
+});
+
+describe('the words for a template’s mismatches (tp-packet-verifier/3; docs/adr/0089; CAS-52, CAS-53)', () => {
+  it('say each new code plainly, show a typed figure as typed, and never echo a figure placeholder', () => {
+    const content = assemblePacket(assemblyInput());
+    const template = 'The payer paid 3 [1]. On one line, {{fact:line.9.paid}} and {{fact:code.97110.variance}} [1].';
+    const report = verifyTemplate(template, content, []);
+    expect(report.mismatches.map((mismatch) => [mismatch.code, mismatchShown(mismatch.code, template.slice(mismatch.start, mismatch.end))])).toEqual([
+      ['free_figure', '3'],
+      ['number_word', 'one'],
+      ['unknown_fact', null],
+      ['fact_not_canonical', null],
+    ]);
+    expect(mismatchShown('fact_contradicted', '{{fact:pattern.paid}}')).toBeNull();
+    expect(mismatchShown('fact_not_separated', '{{fact:pattern.units}}')).toBeNull();
+    for (const code of ['free_figure', 'number_word', 'unknown_fact', 'fact_not_canonical', 'fact_contradicted', 'fact_not_separated'] as const) {
+      expect(MISMATCH_TEXT[code], code).not.toMatch(/\{\{|fact_|canonical/);
+    }
+    expect(FIGURE_KIND_TEXT.fact).toBe('a figure placeholder');
   });
 });
 

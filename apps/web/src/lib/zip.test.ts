@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseZipCode, zipCodeText } from './zip';
+import { ZIP_CODE_FORMAT, parseZipCode, zipCodeText } from './zip';
 
 /** The ZIP code a person types (PR 6b, ADR 0064). SYNTHETIC ZIP codes only. */
 describe('a ZIP code as typed', () => {
@@ -20,5 +20,9 @@ describe('a ZIP code as typed', () => {
   it('shows the ZIP+4 with its hyphen', () => {
     expect(zipCodeText('00012', '5000')).toBe('00012-5000');
     expect(zipCodeText('00011', null)).toBe('00011');
+  });
+
+  it('refuses with one instruction, read after the field’s name ("Billing ZIP: enter five digits, …"; ADR 0077)', () => {
+    expect(ZIP_CODE_FORMAT).toBe('enter five digits, or a ZIP+4 such as 27601-1234');
   });
 });

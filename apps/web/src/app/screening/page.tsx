@@ -91,6 +91,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             serverTime={data.serverTime}
             contentQuarters={data.contentQuarters}
             sources={data.sources}
+            appOrigin={data.appOrigin}
           />
         )}
         <Card>

@@ -17,6 +17,12 @@ export const MISMATCH_TEXT: Readonly<Record<MismatchCode, string>> = {
   hidden_character: 'a hidden character, one that prints as nothing or as something else (a zero-width space, a soft hyphen, a direction control); delete it',
   unreadable_figure: 'a figure in digits other than 0 to 9, which the verifier cannot check; write it in 0 to 9',
   identifier_in_narrative: 'one of this case’s identifiers (a patient’s name, a member ID or a claim number); write its placeholder, which the export fills in from the record',
+  free_figure: 'a figure typed into the text; insert it from the list of figures instead, so it is printed from the records',
+  number_word: 'a number written in words; insert the figure from the list of figures instead, or reword without it (“To begin,” rather than “First,”)',
+  unknown_fact: 'a figure placeholder this version’s records do not have; insert the figure again from the list',
+  fact_not_canonical: 'a figure placeholder for lines another placeholder names; use the one the list offers',
+  fact_contradicted: 'words beside a figure that say something other than what the figure covers; reword them or choose another figure',
+  fact_not_separated: 'a figure with a character typed right against it (a sign, a point, a letter or another figure), which would print as part of the figure; put a space between them',
 };
 
 /** A figure's kind, as a mismatch names it ("an amount that does not match this version’s records"). */
@@ -32,10 +38,11 @@ export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
   identifier: 'an identifier',
   placeholder: 'a placeholder',
   citation: 'a citation',
+  fact: 'a figure placeholder',
 };
 
 /** What a number with no word for what it counts is asked for, with examples a person writes (the UX review of 2026-10-28). */
-export const SAY_WHAT_IT_COUNTS = 'say what it counts or names: 3 claims, 6 units, page 2, 3650 days';
+export const SAY_WHAT_IT_COUNTS = 'say what it counts or names, such as 3 claims, 6 units, page 2 or 3,650 days';
 
 /**
  * What a figure in its role is asked for when its words must say more (docs/adr/0086): rule 2, an amount or a count of
@@ -52,7 +59,7 @@ export const NEEDS_TEXT: Readonly<Record<Exclude<FigureNeeds, null>, string>> = 
 /**
  * What a mismatch's list item shows beside its words: the figure, placeholder or marker as written, a
  * hidden character as its code points (it shows as nothing), and nothing for an identifier (the stored
- * narrative marks it where it is) or a sentence.
+ * narrative marks it where it is), a sentence or a figure placeholder (never echoed as typed).
  */
 export function mismatchShown(code: MismatchCode, written: string): string | null {
   switch (code) {
@@ -60,12 +67,19 @@ export function mismatchShown(code: MismatchCode, written: string): string | nul
     case 'unknown_placeholder':
     case 'unknown_citation':
     case 'unreadable_figure':
+    case 'free_figure':
+    case 'number_word':
       return written;
     case 'hidden_character':
       return [...written].map((char) => `U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
+    // A figure placeholder is never shown as typed: a malformed one is never echoed.
     case 'identifier_in_narrative':
     case 'sentence_without_citation':
     case 'empty_narrative':
+    case 'unknown_fact':
+    case 'fact_not_canonical':
+    case 'fact_contradicted':
+    case 'fact_not_separated':
       return null;
   }
 }

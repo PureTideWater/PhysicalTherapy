@@ -1,7 +1,7 @@
 import { decimal, parseAmount } from '@tp/money';
 
 import { QUALIFIED_IDENTIFIER } from './payer';
-import { PLACEHOLDER_PATTERN } from './placeholders';
+import { PLACEHOLDER_PATTERN, factPlaceholderPattern } from './placeholders';
 
 /**
  * Reading a narrative the way the verifier checks it (PRD 12: "the verifier then checks every date,
@@ -38,6 +38,19 @@ import { PLACEHOLDER_PATTERN } from './placeholders';
  * scanText reads the text it is given; the verifier gives it the narrative as readableText
  * (./readable.ts) normalizes it, so a figure written in fullwidth, superscript or mathematical digits,
  * or split by a hidden character, is read as the figure it shows.
+ *
+ * Strict mode (design lane-b-packet-figure-placeholders, section 2.4; the template check of verifier format
+ * tp-packet-verifier/3, ../verifier/template.ts): what a template's free text may hold. Before anything else it masks
+ * the template's tokens, so no digit inside a fact id (code.97110, lines.1+2) or an identifier placeholder is read:
+ * fact tokens first ({{fact:<id>}}), then identifier placeholders, then any other run in double braces and any lone
+ * {{ or }} (a stray, which a template may not hold), then citation markers. It then reads every kind above, with no
+ * exemption for a lone "one" or "zero", and, strict-only (the tables marked so; the reading without strict mode is
+ * unchanged for every other caller): nil, nought, billion, quarter, double, triple and once; the plurals of the
+ * cardinals, scales, multipliers, ordinals and fractions (tens, hundreds, thousands, dozens, halves, thirds,
+ * quarters); the currency unit words (dollar, cent, penny and their plurals); a zero amount stated in prose after a
+ * payment or allowance verb ("paid nothing", "allowed none", "made no payment", "nothing was paid"); and any number
+ * character or $, %, §, # or ¢ left over. Each figure says whether it was written in symbols (digits, a sign, a
+ * numeral, a date, a code) or in words.
  */
 
 export type FigureKind = 'amount' | 'percent' | 'date' | 'month' | 'month_day' | 'code' | 'modifier' | 'number' | 'identifier';
@@ -75,6 +88,31 @@ export interface Scan {
 export interface Span {
   readonly start: number;
   readonly end: number;
+}
+
+/** A strict scan's figure: how it is written, in symbols (digits, a sign, a numeral, a date, a code) or in words. */
+export interface StrictFigure extends Figure {
+  readonly written: 'symbols' | 'words';
+}
+
+/** A fact token of a template, {{fact:<id>}}, with its id. */
+export interface FactToken {
+  readonly id: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** A strict scan (scanText with `strict`): a template's tokens, its strays and every figure of its free text. */
+export interface StrictScan extends Scan {
+  readonly figures: readonly StrictFigure[];
+  readonly facts: readonly FactToken[];
+  /** Every run in double braces that is neither a fact token nor an identifier placeholder, and every lone {{ or }}. */
+  readonly strays: readonly Span[];
+}
+
+export interface ScanOptions {
+  /** A template's free text (design section 2.4): masks its tokens first and reads every figure and number word. */
+  readonly strict?: boolean;
 }
 
 const MONTHS: Readonly<Record<string, number>> = {
@@ -128,7 +166,7 @@ export function canonicalNumber(text: string): string {
 
 const int = (text: string) => Number.parseInt(text, 10);
 
-const UNITS: Readonly<Record<string, number>> = {
+export const UNITS: Readonly<Record<string, number>> = {
   zero: 0,
   one: 1,
   two: 2,
@@ -140,7 +178,7 @@ const UNITS: Readonly<Record<string, number>> = {
   eight: 8,
   nine: 9,
 };
-const TEENS: Readonly<Record<string, number>> = {
+export const TEENS: Readonly<Record<string, number>> = {
   ten: 10,
   eleven: 11,
   twelve: 12,
@@ -152,12 +190,12 @@ const TEENS: Readonly<Record<string, number>> = {
   eighteen: 18,
   nineteen: 19,
 };
-const TENS: Readonly<Record<string, number>> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+export const TENS: Readonly<Record<string, number>> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
 /** Words that multiply the number before them (or one): two hundred, a dozen, four score. */
-const MULTIPLIERS: Readonly<Record<string, number>> = { hundred: 100, dozen: 12, score: 20 };
-const SCALES: Readonly<Record<string, number>> = { thousand: 1000, million: 1_000_000 };
+export const MULTIPLIERS: Readonly<Record<string, number>> = { hundred: 100, dozen: 12, score: 20 };
+export const SCALES: Readonly<Record<string, number>> = { thousand: 1000, million: 1_000_000 };
 /** Ordinal words, each with the number word it orders; an ordinal ends the number it is part of. */
-const ORDINALS: Readonly<Record<string, string>> = {
+export const ORDINALS: Readonly<Record<string, string>> = {
   first: 'one',
   second: 'two',
   third: 'three',
@@ -190,9 +228,58 @@ const ORDINALS: Readonly<Record<string, string>> = {
   millionth: 'million',
 };
 /** Words that are a figure on their own: a fraction or a multiple. */
-const MULTIPLES: Readonly<Record<string, string>> = { half: '0.5', twice: '2', thrice: '3' };
+export const MULTIPLES: Readonly<Record<string, string>> = { half: '0.5', twice: '2', thrice: '3' };
 const NUMBER_WORD = `(?:${[...Object.keys(UNITS), ...Object.keys(TEENS), ...Object.keys(TENS), ...Object.keys(MULTIPLIERS), ...Object.keys(SCALES), ...Object.keys(ORDINALS)].join('|')})`;
-const NUMBER_WORDS = new RegExp(`\\b${NUMBER_WORD}(?:(?:\\s+and\\s+|\\s*-\\s*|\\s+)${NUMBER_WORD})*\\b(\\s*(?:percent|per\\s+cent)\\b)?`, 'gi');
+export const NUMBER_WORDS = new RegExp(`\\b${NUMBER_WORD}(?:(?:\\s+and\\s+|\\s*-\\s*|\\s+)${NUMBER_WORD})*\\b(\\s*(?:percent|per\\s+cent)\\b)?`, 'gi');
+
+/** A word's plural: sixes, twenties, halves, the rest with an s. */
+const plural = (word: string): string => (word === 'half' ? 'halves' : word.endsWith('x') ? `${word}es` : word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`);
+
+/** Strict-only (section 2.4): words that state a number on their own, each with the number it states. */
+export const STRICT_NUMBER_WORDS: Readonly<Record<string, string>> = {
+  nil: '0',
+  nought: '0',
+  naught: '0',
+  billion: '1000000000',
+  quarter: '0.25',
+  double: '2',
+  triple: '3',
+  once: '1',
+};
+
+/**
+ * Strict-only (section 2.4): the plurals of the cardinals (ones, sixes, twenties), the multipliers and scales
+ * (hundreds, dozens, scores, thousands, billions) and the fractions (halves, thirds to tenths, quarters), each with the
+ * word it is the plural of. "firsts" and "seconds" are no fraction.
+ */
+export const STRICT_PLURALS: Readonly<Record<string, string>> = Object.fromEntries(
+  [
+    ...Object.keys(UNITS),
+    ...Object.keys(TEENS),
+    ...Object.keys(TENS),
+    ...Object.keys(MULTIPLIERS),
+    ...Object.keys(SCALES),
+    'billion',
+    'half',
+    'quarter',
+    ...Object.keys(ORDINALS).filter((word) => word !== 'first' && word !== 'second'),
+  ].flatMap((word) => [[plural(word), word] as const, ...(word === 'zero' ? [['zeroes', word] as const] : [])]),
+);
+
+/** Strict-only (section 2.4): the currency unit words; an amount is a token, never words. */
+export const CURRENCY_WORDS: readonly string[] = ['dollar', 'dollars', 'cent', 'cents', 'penny', 'pennies'];
+
+/** A payment or allowance verb, for a zero amount stated in prose. */
+const PAYMENT_VERB = '(?:paid|pays?|paying|allowed|allows?|allowing|reimbursed|reimburses?|reimbursing|remitted|remits?|remitting)';
+/**
+ * Strict-only (section 2.4): a zero amount stated in prose after a payment or allowance verb, the figure 0 in words:
+ * "paid nothing", "allowed none", "paid the practice zero", "made no payment", "nothing was paid".
+ */
+export const ZERO_AMOUNT_PHRASES: readonly RegExp[] = [
+  new RegExp(`\\b${PAYMENT_VERB}\\s+(?:[a-z]+\\s+){0,2}?(?:nothing|none|zero|nil|nought|naught|no\\s+(?:amount|money|payment|dollars?|cents?))\\b`, 'gi'),
+  /\b(?:made|makes?|making|issued|issues?|issuing|sent|sends?|sending)\s+no\s+(?:payments?|allowances?|reimbursements?|remittances?)\b/gi,
+  /\b(?:nothing|none|zero|no\s+amount)\s+(?:was|were|is|are|has\s+been|have\s+been)\s+(?:paid|allowed|reimbursed|remitted)\b/gi,
+];
 /** A day of a month as an ordinal word: first to thirty-first. */
 const ORDINAL_DAY =
   '(?:(?:twenty|thirty)(?:\\s*-\\s*|\\s+))?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth';
@@ -338,27 +425,58 @@ class Masked {
 const TRIM_LEADING = /^[\s([{"'“‘<]+/;
 const TRIM_TRAILING = /[\s)\]}"'”’>,.;:!?]+$/;
 
-/** Reads every placeholder, citation marker and figure of `text`, in order of position. */
-export function scanText(text: string): Scan {
+/** Any run in double braces with no brace inside it, and any lone {{ or }}: what a stray is read from (global: read it with matchAll). */
+export const BRACED = /\{\{[^{}]*\}\}|\{\{|\}\}/g;
+
+/**
+ * Reads every placeholder, citation marker and figure of `text`, in order of position; with `strict`, a template's
+ * free text (the module's comment, "Strict mode"), its fact tokens and strays too.
+ */
+export function scanText(text: string): Scan;
+export function scanText(text: string, options: ScanOptions & { readonly strict: true }): StrictScan;
+export function scanText(text: string, options?: ScanOptions): Scan;
+export function scanText(text: string, options: ScanOptions = {}): Scan | StrictScan {
+  const strict = options.strict === true;
   const masked = new Masked(text);
   const figures: Figure[] = [];
+  const inWords = new WeakSet<Figure>();
   const placeholders: PlaceholderToken[] = [];
   const markers: MarkerToken[] = [];
+  const facts: FactToken[] = [];
+  const strays: Span[] = [];
   const each = (pattern: RegExp, found: (match: RegExpExecArray) => void) => {
     const source = masked.text;
     for (const match of source.matchAll(pattern)) {
       found(match);
     }
   };
-  const figure = (kind: FigureKind, value: string, start: number, end: number) => {
-    figures.push({ kind, value, start, end });
+  const figure = (kind: FigureKind, value: string, start: number, end: number, words = false) => {
+    const found = { kind, value, start, end };
+    figures.push(found);
+    if (words) {
+      inWords.add(found);
+    }
     masked.take(start, end);
   };
 
+  // A template's fact tokens, before anything else reads the digits of their ids.
+  if (strict) {
+    each(factPlaceholderPattern(), (match) => {
+      facts.push({ id: match[1] as string, start: match.index, end: match.index + match[0].length });
+      masked.take(match.index, match.index + match[0].length);
+    });
+  }
   each(new RegExp(PLACEHOLDER_PATTERN.source, 'g'), (match) => {
     placeholders.push({ kind: match[1] ?? '', row: int(match[2] ?? '0'), start: match.index, end: match.index + match[0].length });
     masked.take(match.index, match.index + match[0].length);
   });
+  // Any other run in double braces, and any lone {{ or }}: a stray, never read inside.
+  if (strict) {
+    each(BRACED, (match) => {
+      strays.push({ start: match.index, end: match.index + match[0].length });
+      masked.take(match.index, match.index + match[0].length);
+    });
+  }
   each(new RegExp(MARKER_PATTERN.source, 'g'), (match) => {
     markers.push({ sources: (match[1] ?? '').split(',').map((part) => int(part.trim())), start: match.index, end: match.index + match[0].length });
     masked.take(match.index, match.index + match[0].length);
@@ -482,6 +600,12 @@ export function scanText(text: string): Scan {
       figure('identifier', value, match.index + leading, match.index + leading + value.length);
     }
   });
+  // Strict: a zero amount stated in prose after a payment or allowance verb, read whole before its words are.
+  if (strict) {
+    for (const phrase of ZERO_AMOUNT_PHRASES) {
+      each(phrase, (match) => figure('amount', '0', match.index, match.index + match[0].length, true));
+    }
+  }
   // Roman numerals after level, appeal or tier: "a level IV appeal" is the number 4.
   each(/\b(?:level|appeal|tier)s?\s+([IVXLCDM]+)\b/gi, (match) => {
     const numeral = match[1] ?? '';
@@ -493,7 +617,7 @@ export function scanText(text: string): Scan {
   });
   // A fraction or a multiple in a word: half, twice, thrice.
   each(new RegExp(`\\b(?:${Object.keys(MULTIPLES).join('|')})\\b`, 'gi'), (match) => {
-    figure('number', MULTIPLES[match[0].toLowerCase()] ?? match[0], match.index, match.index + match[0].length);
+    figure('number', MULTIPLES[match[0].toLowerCase()] ?? match[0], match.index, match.index + match[0].length, true);
   });
   // Numbers in words.
   each(NUMBER_WORDS, (match) => {
@@ -504,17 +628,36 @@ export function scanText(text: string): Scan {
     numbers.forEach((written, index) => {
       const only = written.words.length === 1 ? (written.words[0]?.word.toLowerCase() ?? '') : '';
       const isLast = index === numbers.length - 1;
-      if (only === 'one' || only === 'zero') {
+      // A lone "one" or "zero" is prose, except in a template's free text.
+      if (!strict && (only === 'one' || only === 'zero')) {
         return;
       }
       const start = written.words[0]?.start ?? match.index;
       const end = isLast && percent ? match.index + match[0].length : (written.words.at(-1)?.end ?? start);
-      figure(isLast && percent ? 'percent' : 'number', String(written.value), start, end);
+      figure(isLast && percent ? 'percent' : 'number', String(written.value), start, end, true);
     });
   });
+  if (strict) {
+    // The strict-only words: a number on its own, a plural, a currency unit.
+    const words: Readonly<Record<string, string>> = {
+      ...STRICT_NUMBER_WORDS,
+      ...Object.fromEntries(Object.keys(STRICT_PLURALS).map((word) => [word, word])),
+      ...Object.fromEntries(CURRENCY_WORDS.map((word) => [word, word])),
+    };
+    each(new RegExp(`\\b(?:${Object.keys(words).join('|')})\\b`, 'gi'), (match) => {
+      figure('number', words[match[0].toLowerCase()] ?? match[0], match.index, match.index + match[0].length, true);
+    });
+    // Any number character or sign left over.
+    each(/[\p{N}$%§#¢]+/gu, (match) => figure('identifier', match[0], match.index, match.index + match[0].length));
+  }
 
   const byPosition = (a: { start: number }, b: { start: number }) => a.start - b.start;
-  return { figures: figures.sort(byPosition), placeholders: placeholders.sort(byPosition), markers: markers.sort(byPosition) };
+  const scan = { figures: figures.sort(byPosition), placeholders: placeholders.sort(byPosition), markers: markers.sort(byPosition) };
+  if (!strict) {
+    return scan;
+  }
+  // Each fact token and stray is read by one pass over the text, so in its order already.
+  return { ...scan, figures: scan.figures.map((found): StrictFigure => ({ ...found, written: inWords.has(found) ? 'words' : 'symbols' })), facts, strays };
 }
 
 /** Words before a period that do not end a sentence. */

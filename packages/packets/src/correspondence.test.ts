@@ -84,6 +84,20 @@ describe('correspondenceContactSetting', () => {
     expect(refusedFor({ ...base, address: { ...mailing, line2: 'ATTN billing@practice.test' } })).toBe('address_line2');
     expect(refusedFor({ ...base, address: { ...mailing, city: 'RALEIGH@X' } })).toBe('address_city');
     expect(CORRESPONDENCE_FIELD_RULES.name).toContain('no @');
+    // Each rule is an instruction read after the field's name, one lower-case sentence with no colon (ADR 0077); the
+    // ZIP's is the web app's ZIP_CODE_FORMAT, written out here (this package cannot import apps/web).
+    expect(CORRESPONDENCE_FIELD_RULES).toEqual({
+      contact: 'name a person or office and give a phone number, and nothing else',
+      name: 'enter a name or office of 1 to 120 characters, with no hidden characters and no @ (an email goes in its own field)',
+      phone: 'enter a 10-digit phone number, such as (919) 555-0100',
+      phone_extension: 'enter an extension of 1 to 6 digits, or leave it blank',
+      email: 'enter an email address of at most 254 characters, with one @ and no spaces',
+      address_line1: 'enter the street line, 1 to 100 characters with no @ (an email goes in its own field)',
+      address_line2: 'enter a second address line of 1 to 100 characters with no @ (an email goes in its own field)',
+      address_city: 'enter the city, 1 to 100 characters with no @ (an email goes in its own field)',
+      address_state: 'enter the two-letter USPS code of the state or territory, such as NC',
+      address_zip: 'enter five digits, or a ZIP+4 such as 27601-1234',
+    });
     for (const field of CORRESPONDENCE_FIELDS) {
       expect(new CorrespondenceContactError(field).message).toBe(CORRESPONDENCE_FIELD_RULES[field]);
     }
