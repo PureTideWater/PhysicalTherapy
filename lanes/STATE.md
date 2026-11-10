@@ -5,6 +5,7 @@ merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LAN
 own status file and `CLAUDE.md`, not the long history files.
 
 ## Accounts and pace
+- **Orchestrator:** session_019i9ifDAzQNA3kLHozjBoeS, from 2026-11-10 21:23 UTC. The co-founder talks to it. It starts the work sessions W1 to W3 and lists them here.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17.
 - **Lane B:** capped until Fri 2026-11-13 19:00 UTC. Until then Lane A runs Lane B's urgent items as acting Lane B, and hands them back at 18:30 UTC that day.
 - **Pace to the week:** an orchestrator plus 3 work sessions, about 13% of the weekly allowance a day. No bursts.
