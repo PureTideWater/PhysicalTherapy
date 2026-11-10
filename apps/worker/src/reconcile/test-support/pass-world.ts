@@ -26,7 +26,7 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './ledger-world';
  * recoupment, a decrease taking an approval back, a payer response accepting an amount (confirmed, then paid) and
  * no-change reprocessings (the submission's response), claims of the same code and date for another patient, a
  * person's unmatch, a written-off line and a closed case, claim-level, line-level and partial check-level postings, EFT
- * deposits alone and batched, a claim-level PR (the patient's share), interest (AMT I and a PLB L6), each candidate
+ * deposits alone and batched, a claim-level PR (the patient's share), interest (a PLB L6, and an AMT I that credits none, docs/adr/0084), each candidate
  * filter biting alone (the line's own remittance, a claim loaded before the line's, an 835 held for review, a reversal,
  * a claim already a case line, a case line with no service date), claims loaded in one transaction, a second practice
  * with the same numbers, export rows never matched and a posting match a person reversed, a claim reference naming

@@ -31,8 +31,8 @@ import { lineChain } from './per-line';
  *   a multiset of canonical rows; each new UUID anywhere replaced by its row's ordinal, timestamps by their presence;
  * - every encrypted value compared as the SHA-256 of its plaintext, decrypted in memory with the practice's cipher under
  *   its own column (review round 4), never by presence and never byte for byte; a null stays null;
- * - the posted and deposited entries settleMatches writes, which follow ledgerMatches' order (matched_at, then the random
- *   match id; section 5.2), compared as a set, with that order checked on each side; and for a check with two or more
+ * - the posted and deposited entries settleMatches writes, which follow ledgerMatches' order (ledger_match.seq since the
+ *   interest fix, docs/adr/0084; matched_at, then the random match id, when section 5.2 was written), compared as a set, with that order checked on each side; and for a check with two or more
  *   allocated check-level postings matched in the pass, whose amounts follow that order, each side's entries replayed
  *   against partialShare in its own order and the two sides' totals per line and stage compared (the settle rule). Two
  *   deviations from section 7's words, both recorded for slice 4: the totals per posting row are not compared, because
@@ -653,12 +653,10 @@ export function compare(reference: SideResult<unknown>, side: SideResult<unknown
   return { differences, partialCheck: partial.size > 0, strictSettleWouldDiffer };
 }
 
-/** The settle entries in seq order follow this side's ledgerMatches order (matched_at, id): the rule both sides hold. */
+/** The settle entries in seq order follow this side's ledgerMatches order (ledger_match.seq, docs/adr/0084): the rule both sides hold. */
 function settleOrder(result: SideResult<unknown>, before: ReadonlyMap<string, ReadonlySet<string>>): string[] {
   const matches = (result.after.get('ledger_match') ?? []).filter((row) => row.reversed_at === null);
-  // matched_at as row_to_json writes it, its fraction padded to microseconds; then the id, compared as PostgreSQL compares UUIDs.
-  const at = (row: Record<string, unknown>) => String(row.matched_at).replace(/^([^.+]*)(?:\.(\d+))?/, (_whole, head: string, fraction: string | undefined) => `${head}.${(fraction ?? '').padEnd(6, '0')}`);
-  const order = [...matches].sort((a, b) => (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
+  const order = [...matches].sort((a, b) => Number(BigInt(String(a.seq)) - BigInt(String(b.seq))));
   const position = new Map(order.map((row, index) => [String(row.id), index]));
   const settled = (result.after.get('ledger_entry') ?? [])
     .filter((row) => isSettle(row) && !(before.get('ledger_entry')?.has(String(row.id)) ?? false))

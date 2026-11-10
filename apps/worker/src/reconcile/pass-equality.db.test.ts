@@ -94,7 +94,7 @@ const PATIENT_PAIRS = /\bp \(claim_id, ix\) AS\b/;
 const SEARCH = { test: (text: string) => CONTROL_SEARCH.test(text) || PATIENT_CLAIMS.test(text) || PATIENT_PAIRS.test(text) };
 const PATIENT_SEARCH = { test: (text: string) => PATIENT_CLAIMS.test(text) || PATIENT_PAIRS.test(text) };
 /** ledgerMatches' read: the first one after caseLines is matchClaims' chain context, from which D16's matched set is built. */
-const LEDGER_MATCHES = /FROM ledger_match m WHERE m\.practice_id = \$1 ORDER BY m\.matched_at, m\.id/;
+const LEDGER_MATCHES = /FROM ledger_match m WHERE m\.practice_id = \$1 ORDER BY m\.seq/;
 const CASE_LINES = /FROM case_line cl JOIN "case" k/;
 /** insertStages' one statement (D3): the pass's stage events as arrays, in order. */
 const STAGE_EVENTS = /^\s*INSERT INTO line_status\b[\s\S]*\bunnest\(/;
@@ -467,8 +467,8 @@ function expectWorldShapes(built: BuiltWorld, side: SideResult, before: Readonly
   for (const count of ['approved', 'confirmed', 'decreased', 'noChange', 'recoupments'] as const) {
     expect(summary.remittances[count], `${run}: ${count}`).toBeGreaterThan(0);
   }
-  // AMT I and a PLB L6.
-  expect(summary.remittances.interest, `${run}: interest`).toBe(2);
+  // The PLB L6 alone: a claim's AMT I credits nothing since the interest fix (docs/adr/0084), on either side.
+  expect(summary.remittances.interest, `${run}: interest`).toBe(1);
   expect(summary.postingsMatched, `${run}: postings`).toBeGreaterThan(0);
   expect(summary.depositsMatched, `${run}: deposits`).toBeGreaterThan(0);
   expect(summary.stages.back, `${run}: a line moved back`).toBeGreaterThan(0);

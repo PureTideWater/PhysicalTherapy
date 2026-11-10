@@ -1137,8 +1137,11 @@ function namedLines(hash: string, lines: readonly CaseLine[], claimHashes: Reado
  * writes nothing. A walk that writes at the limit is a defect: the reconcile is refused with InterestUnsettled, its
  * whole transaction rolls back, nothing is half-written, and the job is retried (pass.ts logs the job, the practice
  * and the walks, never an amount).
+ *
+ * Exported for the per-line reference alone (test-support/per-line.ts, docs/adr/0087 D13): SUITE-CAP-3 changes nothing
+ * here and this calls none of what it changes, so the reference runs this text, not a copy of it.
  */
-async function providerAdjustments(
+export async function providerAdjustments(
   scope: Scope,
   cipher: PracticeCipher,
   practiceId: string,

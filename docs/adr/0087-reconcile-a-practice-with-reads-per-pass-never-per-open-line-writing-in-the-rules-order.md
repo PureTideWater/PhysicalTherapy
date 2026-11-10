@@ -131,5 +131,11 @@ measured figure (SUITE-CAP-1's rule):
   lowers CAS-51's `PASS_BUDGET_MS` from its own measurement.
 - The interest fix (#126) lands: CAS-49 compares `ledger_match` and the settle entries exactly in `seq` order, and the
   per-line reference is taken from the merged base's text.
+  Dated note, 2026-11-10: #126 merges after this item, so its pull request aligns the reference instead. The per-line
+  reference runs #126's interest step by import (`providerAdjustments`, exported for it alone: this item changes
+  nothing in it and it calls nothing this item changes) and takes #126's `reconcileRemittances`; `settleOrder` and
+  CAS-49.3's `ledgerMatches` pattern read `ledger_match.seq`; a generated practice expects one interest credit (the
+  PLB L6; AMT I credits none, ADR 0084). Still owed, as its own item: the settle entries compared row for row in
+  `seq` order in place of the set comparison and the replay (CAS-49.1 reports 0 of 25 runs would differ).
 - A spread puts many lines on few codes and dates beyond CAS-51's spread A, or the patient search's share of a pass
   grows: the equality hash above.
