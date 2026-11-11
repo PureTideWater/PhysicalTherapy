@@ -151,12 +151,30 @@ interface ResolvedRow {
 }
 
 /**
+ * How long the transaction that resolves a session may sit idle between its statements before PostgreSQL ends its
+ * connection and releases the session's and the device's rows: the transaction holds them from the database's answer
+ * to its commit, so a web task that stalls or loses its network in between would otherwise keep that person's later
+ * requests waiting on the rows for as long as the connection lived. A healthy request is idle there for a round trip.
+ */
+export const SESSION_RESOLVE_IDLE_MS = 10_000;
+
+/**
+ * The resolving statement: the session by its token's hash ($1), and, for this transaction only (set_config's
+ * is_local), the idle bound above ($2, milliseconds) as idle_in_transaction_session_timeout. The bound rides in the
+ * same statement, so it costs no round trip, and it takes effect when the statement ends and the transaction first
+ * waits for the client, whichever of the two the server evaluates first. It bounds idleness, not a wait for a lock: a
+ * session's paths stay outside the web's lock timeout (docs/adr/0092, the amendment of 2026-11-11).
+ */
+export const RESOLVE_SESSION = "SELECT r.* FROM set_config('idle_in_transaction_session_timeout', $2, true) AS bound, resolve_session($1) AS r";
+
+/**
  * The session a cookie names, resolved by the database on every request: an active session is
  * touched (its idle clock restarts); one past a limit is ended there and then, and its end is an
  * audit event. The end and its event are one transaction (Queues item 25 (d)): the database ends the
  * session and the event is written in the session's user's name before the one commit, so a session
  * never ends without its event, and no event is kept for an end that was not. A failure of either
- * fails the request with the session as it was; the next request ends it again, with its event. No
+ * fails the request with the session as it was; the next request ends it again, with its event. The
+ * transaction's idleness is bounded (SESSION_RESOLVE_IDLE_MS). No
  * cookie, or one the database does not know, is no session.
  */
 export async function resolveSession(pool: ScopePool<ScopeClient>, sessionToken: string | undefined, requestId: string): Promise<SessionState> {
@@ -164,7 +182,7 @@ export async function resolveSession(pool: ScopePool<ScopeClient>, sessionToken:
     return { state: 'none' };
   }
   const row = await withResolvedActor(pool, async (client, actAs) => {
-    const resolved = (await client.query<ResolvedRow>('SELECT * FROM resolve_session($1)', [tokenHash(sessionToken)])).rows[0];
+    const resolved = (await client.query<ResolvedRow>(RESOLVE_SESSION, [tokenHash(sessionToken), String(SESSION_RESOLVE_IDLE_MS)])).rows[0];
     if (resolved?.ended_now === true) {
       if (resolved.user_id === null || resolved.session_id === null || resolved.outcome === 'unknown' || resolved.outcome === 'active') {
         // An end the database reports without its session, its user or its reason cannot be recorded: nothing commits.

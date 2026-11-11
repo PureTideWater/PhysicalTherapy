@@ -9,7 +9,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { type OpenedSession, SESSION_COOKIE, resolveSession } from '../auth/sessions';
+import { type OpenedSession, RESOLVE_SESSION, SESSION_COOKIE, SESSION_RESOLVE_IDLE_MS, resolveSession } from '../auth/sessions';
+import { tokenHash } from '../auth/tokens';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -36,10 +37,11 @@ let world: TenantWorld;
 
 /**
  * The fault the next matching transaction meets: a statement refused before it is sent; a statement the database runs
- * whose answer is then lost (so the work fails with the statement's writes made in the open transaction); or the COMMIT
+ * whose answer is then lost (so the work fails with the statement's writes made in the open transaction); a statement
+ * the server itself refuses, sent in its place (so the transaction is aborted on the server); or the COMMIT
  * sent as ROLLBACK (what PostgreSQL answers a failed transaction).
  */
-type Fault = { readonly kind: 'statement' | 'answer'; readonly match: RegExp } | { readonly kind: 'commit'; readonly within: RegExp };
+type Fault = { readonly kind: 'statement' | 'answer' | 'refused'; readonly match: RegExp } | { readonly kind: 'commit'; readonly within: RegExp };
 let fault: Fault | undefined;
 let faultsMet = 0;
 
@@ -62,6 +64,10 @@ function faultyPool(): ScopePool<ScopeClient> {
                 if (fault.kind === 'statement' && fault.match.test(text)) {
                   faultsMet += 1;
                   return Promise.reject(new Error('synthetic failure'));
+                }
+                if (fault.kind === 'refused' && fault.match.test(text)) {
+                  faultsMet += 1;
+                  return target.query('SELECT 1 / 0');
                 }
                 if (fault.kind === 'answer' && fault.match.test(text)) {
                   faultsMet += 1;
@@ -155,6 +161,11 @@ async function events(action: string, objectId: string): Promise<{ actor_id: str
   return (await owner.query<{ actor_id: string; purpose: string | null }>('SELECT actor_id, purpose FROM audit_event WHERE action = $1 AND object_id = $2', [action, objectId])).rows;
 }
 
+/** The connections to this database that sit in a transaction with no statement running. */
+async function inTransaction(): Promise<number> {
+  return (await owner.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%'")).rows.length;
+}
+
 const LIMITS: readonly { readonly reason: 'idle' | 'expired' | 'device_revoked' | 'user_disabled'; readonly reach: (session: OpenedSession, userId: string) => Promise<unknown> }[] = [
   { reason: 'idle', reach: (session) => owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [session.sessionId]) },
   {
@@ -175,9 +186,9 @@ describe('a session past a limit: the database ends it on the next request, and 
       await reach(session, userId);
       expect(await standing(session.sessionId)).toBe('live');
 
-      // The audit event's insert fails: the end rolls back with it.
-      fault = { kind: 'statement', match: AUDIT };
-      await expect(resolveSession(faulty.pool, session.sessionToken, 'test')).rejects.toThrow('synthetic failure');
+      // The server refuses the audit event's statement, aborting the transaction: the end rolls back with it.
+      fault = { kind: 'refused', match: AUDIT };
+      await expect(resolveSession(faulty.pool, session.sessionToken, 'test')).rejects.toMatchObject({ code: '22012' });
       expect(faultsMet).toBe(1);
       expect(await standing(session.sessionId)).toBe('live');
       expect(await events('session_ended', session.sessionId)).toEqual([]);
@@ -203,8 +214,40 @@ describe('a session past a limit: the database ends it on the next request, and 
       expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: reason }]);
       expect(await resolveSession(app, session.sessionToken, 'test')).toEqual({ state: 'ended', reason: 'ended' });
       expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: reason }]);
+      // Every failed try gave its connection back with no transaction open.
+      expect(await inTransaction()).toBe(0);
     });
   }
+
+  it('bounds the resolving transaction’s idleness for that transaction alone, and a transaction left idle past it loses its connection and its hold on the rows', async () => {
+    expect(SESSION_RESOLVE_IDLE_MS).toBe(10_000);
+    const userId = await createUser(owner);
+    const session = await sessionFor(userId);
+    const one = openPool(database.appUrl, 1);
+    const bound = async (client: ScopeClient) => (await client.query<{ bound: string }>("SELECT current_setting('idle_in_transaction_session_timeout') AS bound")).rows[0]?.bound;
+    try {
+      // As resolveSession sends it: the bound holds inside the transaction and is gone from the connection after.
+      const client = await one.connect();
+      await client.query('BEGIN');
+      expect((await client.query(RESOLVE_SESSION, [tokenHash(session.sessionToken), String(SESSION_RESOLVE_IDLE_MS)])).rows).toMatchObject([{ outcome: 'active', session_id: session.sessionId }]);
+      expect(await bound(client)).toBe('10s');
+      await client.query('COMMIT');
+      expect(await bound(client)).toBe('0');
+      // A short bound, and a client that never commits: the server ends the connection and the rows are free again.
+      await owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [session.sessionId]);
+      client.on('error', () => undefined);
+      await client.query('BEGIN');
+      expect((await client.query(RESOLVE_SESSION, [tokenHash(session.sessionToken), '200'])).rows).toMatchObject([{ outcome: 'idle', ended_now: true }]);
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await expect(client.query('COMMIT')).rejects.toThrow();
+      client.release(true);
+      expect(await standing(session.sessionId)).toBe('live');
+      expect(await resolveSession(app, session.sessionToken, 'test')).toEqual({ state: 'ended', reason: 'idle' });
+      expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: 'idle' }]);
+    } finally {
+      await endPool(one);
+    }
+  });
 
   it('fails closed on a route: while the end’s event cannot be written the request does nothing as the user; then it is refused as signed out', async () => {
     const userId = await createUser(owner);
@@ -286,8 +329,7 @@ describe('a session past a limit: the database ends it on the next request, and 
     expect(rows).toEqual([{ fresh: true }]);
     expect(await events('session_ended', session.sessionId)).toEqual([]);
     expect(await resolveSession(app, randomBytes(32).toString('base64url'), 'test')).toEqual({ state: 'none' });
-    const idle = await owner.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%'");
-    expect(idle.rows).toEqual([]);
+    expect(await inTransaction()).toBe(0);
   });
 });
 
