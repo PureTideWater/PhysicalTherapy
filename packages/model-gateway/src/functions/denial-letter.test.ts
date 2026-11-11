@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '../redact';
+import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '../redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -146,8 +146,10 @@ describe('PHI minimization reads every form a letter writes an identifier in (PR
       const redacted = redactLetter(`SYNTHETIC: member ${written}, claim SYNCLM 55501 and synclm55501.`, patient, claims);
       expect(redacted.text, written).toBe('SYNTHETIC: member [MEMBER_ID], claim [CLAIM_1] and [CLAIM_1].');
     }
-    // A longer number holding the ID is not the ID.
+    // A longer number holding the ID is not the ID to redaction (another identifier, which the screen reads); the check
+    // refuses it, since the ID glued to another number by a lost space has no boundary to read (review PHI2-1).
     expect(redactLetter('SYNTHETIC: account ZZ12345678', patient, claims).text).toBe('SYNTHETIC: account ZZ12345678');
+    expect(holdsIdentifier('SYNTHETIC: account ZZ12345678', patient, claims)).toBe(true);
   });
 
   it('refuses a call with no patient identifier or no claim to strip: with nothing to strip, the letter would go as it is', () => {
@@ -312,6 +314,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
   // Each took seconds to minutes before; each is linear now, and its budget leaves room for a loaded runner.
   const N = 100_000;
   const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
+  const half = (unit: string) => unit.repeat(Math.floor(N / 2 / unit.length));
+  /** MOD-16's CI counterexample: a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's digits). */
+  const HELD = 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. ';
   it.each([
     ['a long gap after a name and many initials past it (97 s before)', ['JANE Q VANTREE'], `Vantree${' '.repeat(2_000)}x${' J'.repeat(49_000)}`, ['SYN555001']],
     ['a gap after a name as long as the letter (4.6 s before)', ['JANE Q VANTREE'], `Vantree${' '.repeat(N - 20)}x J`, ['SYN555001']],
@@ -338,12 +343,75 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['date ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('10/01/2026-10/15/2026 '), ['SYN555001']],
     ['amount ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('150.00-120.00 '), ['SYN555001']],
     ['a list after a keep-noun as long as the letter', ['JANE Q VANTREE'], `Claims 900123456${fill(' and 900123457')}`, ['SYN555001']],
+    // MOD-16 seed 1034253323: date ranges glued to the next word, and one word as long as the letter glued to a digit.
+    ['date ranges glued to the next word, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020Paid '), ['SYN555001']],
+    ['one word as long as the letter, glued to a digit', ['JANE Q VANTREE'], `${'a'.repeat(N - 2)}1a`, ['SYN555001']],
+    // Review GATEWAY1-1 and GATEWAY1-2: the third reading, and SEC-5's label read over the numbers before an amount.
+    ['date ranges glued to an ordinal-like word after the year, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020St. '), ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
     const started = performance.now();
-    const redacted = redactLetter(text, who, claim(...claimNumbers));
+    // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5).
+    const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
     expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers))).toBe(false);
     expect(mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] })).toBe(false);
+    const seconds = (performance.now() - started) / 1000;
+    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+  });
+
+  // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
+  it.each([
+    // The call's identifiers glued to text (ownIdentifierGlued): a run of letters a digit touches, read once per part.
+    ['a run of one letter a digit touches, for names of short repeated parts', ['ZZ ZZZ ZZZZ ZZZZZ', 'ZZ-ZZ ZZZ', 'ZZZZZZ ZZ'], `1${'Z'.repeat(N)}1`, true],
+    ['the same run for names none of whose parts it holds', ['ZQ ZZQ ZZZQ', 'QZ'], `1${'Z'.repeat(N)}1`, false],
+    ['an alternating camel-case run a digit touches', ['AB BA'], `1${fill('aB')}`, false],
+    ['month words at the ends of runs before digits (a date of birth glued to a word)', ['MAY MARCH'], fill('xMar 3, 1961'), true],
+    ['dates of birth glued to amounts', ['JANE Q VANTREE'], fill('3/3/61150.00 '), true],
+    // The scan's held ranges, each walked once for what stands beside it.
+    ['ranges of a date and an amount joined by white space', ['JANE Q VANTREE'], fill('01/01/2020-150.00 '), false],
+    ['ranges glued to a short part of the name', ['JA Q ZE'], fill('1/1/20-1.00Ja '), false],
+    // Review GATEWAY1-2's read over the numbers before each amount: an amount after a range's end may be an identifier's
+    // other part, so the letter is refused, as at cc3dd7f6.
+    ['amounts after a range, each read for a label over the numbers before it', ['JANE Q VANTREE'], fill('Billed 01/01/2020-150.00-120.00 1.00 '), true],
+    ['ranges then an SSN label glued to a word', ['JANE Q VANTREE'], fill('01/01/2020-150.00-PaidSSN 9 '), true],
+    // The judge's review round 1: with a held chain, every run read for a part anywhere and the letter read blind to its
+    // separators; a held range's end glued to a run of mask characters; heads of parts before the name's placeholder.
+    ['held letters, every run read for a part of the name anywhere (PHIJ1-1)', ['AL MAY Q'], fill('Seen 01/01/2020-150.00Paid in full '), false],
+    ['held letters, read blind to their separators for the call’s identifiers (PHIJ1-3)', ['JANE Q VANTREE'], fill('Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 1 2 '), false],
+    ['a held range’s end glued to a word as long as the letter, then a dash and a digit (PHIJ1-5)', ['JANE Q VANTREE'], `Seen 01/01/2020-150.00Paid${'X'.repeat(N - 30)}-a1`, false],
+    ['a held range’s end glued to lower-case letters as long as the letter (PHIJ1-5)', ['JANE Q VANTREE'], `Seen 01/01/2020-150.00${'x'.repeat(N - 30)}-a1`, false],
+    ['runs glued to a digit before the name, each read as a part’s head (GATEWAYJ1-4)', ['DANIELLE LE'], fill('1Daniel Le '), true],
+    ['runs glued to a digit before the name, a head whose rest is no part (GATEWAYJ2-2)', ['DANIELLE LE'], fill('1Dan Le '), false],
+    ['birth labels in a held letter, each read for a date redaction did not take (PHIJ1-3)', ['JANE Q VANTREE'], fill('DOB on file 01/01/2020-150.00 '), true],
+    // The judge's review round 2: the date of birth's month words and its years far apart in a held letter, read in one walk
+    // of both lists (PHIJ2-4: 772 ms at 100 kB and 8.8 s at 400 kB before); a short part's letters each alone and the date
+    // of birth's two-digit-year forms, near misses all (GATEWAYJ2-3, PHIJ2-2).
+    ['held letters, the date of birth’s month words, then its years far from them (PHIJ2-4)', ['JANE Q VANTREE'], `${HELD}${half('Mar. ')} filler words here and there. ${half('1961/')}`, false],
+    ['held letters, the date of birth’s years, then its month words far from them (PHIJ2-4)', ['JANE Q VANTREE'], `${HELD}${half('1961/')} filler words here and there. ${half('March ')}`, false],
+    ['held letters, a short part’s letters each alone and two-digit-year dates, near misses (GATEWAYJ2-3, PHIJ2-2)', ['AL Q VANTREE'], `${HELD}${fill('A Lx 61-03-0 6103034 ')}`, false],
+    // The judge's review round 3: the date of birth's parts read as runs in one pass, each compared with the two before it,
+    // and its placeholder read for a part beside it (PHIJ3-1, PHIJ3-2), near misses all; glued birth labels, each read.
+    ['held letters, the date of birth’s numbers, compacts and month words, near misses (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('61 03 04 Mar 6104 610304 ')}`, false],
+    ['held letters, the date of birth redacted again and again with another number beside it (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961 5 ')}`, false],
+    ['held letters, birth labels glued to the words beside them, no date after them (PHIJ3-2)', ['JANE Q VANTREE'], `${HELD}${fill('PaidDOBon file, see the enclosed record. ')}`, false],
+    // The judge's review round 4: the date of birth's parts with gaps of any length of white space and separators, each gap
+    // read once, and every run of letters read against the name's initials, near misses all (PHIJ4-1, PHIJ4-2); a number's
+    // own letters before the name, each read for a range's first end, an hour, a unit or a code (GATEWAYJ4-1).
+    ['held letters, the date of birth’s parts with wide gaps and runs of letters near the initials, near misses (PHIJ4-1, PHIJ4-2)', ['JANE Q VANTREE'], `${HELD}${fill('JX QQ VXJ 61  /  03  /  04 Mar     6104     ')}`, false],
+    // Review round 5: every stretch of the initials' own letters inside a longer run is read in windows no longer than the
+    // name has parts, near misses all (PHI5-1).
+    ['held letters, long runs of the initials’ own letters with no two of them together, near misses (PHI5-1)', ['JANE Q VANTREE'], `${HELD}${fill('JJJJJJJJ QQQQXVVVVVV XJXQXVX ')}`, false],
+    ['held letters, the date of birth redacted again and again, another number past a wide gap beside it (PHIJ4-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961  /     5     ')}`, false],
+    ['times, ordinals, units and codes glued before a part read as the name (GATEWAYJ4-1)', ['AMAL AL HASSAN'], fill('9-10am Al 3rd-4th 30min Al 97110AM Al '), false],
+    // Review round 5: one held range of many ends, each chain of its groups asking whether the range stands: settled once
+    // per range (F3: 4.5 s at 20 kB and 122 s at 100 kB before).
+    ['one held range of dates and amounts as long as the letter (F3)', ['JANE Q VANTREE'], `Service 01/01/2020${fill('-150.00-01/01/2020')}`, false],
+    ['one held range of dates and amounts as long as the letter, its last date glued to a word (F3)', ['JANE Q VANTREE'], `${fill('01/01/2020-150.00-')}01/01/2020Paid`, false],
+  ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
+    const who = patient([...names]);
+    const started = performance.now();
+    const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
+    expect(holdsIdentifier(redacted.text, who, claim('SYN555001'))).toBe(refused);
     const seconds = (performance.now() - started) / 1000;
     expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
   });
@@ -833,6 +901,47 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     // Review round 2, finding 2: dates or amounts joined by a hyphen are a range only when the range is joined to nothing else.
     ['a date range joined to a further group', 'Seen 10/01/2026-10/15/2026-0123'],
     ['an amount range joined to a further group', 'Ref 12.34-56.78-901'],
+    // Review GATEWAY1-2: SEC-5's label is read over the numbers before an amount-shaped SSN or phone, and before its range's
+    // first end, so a date, an amount, a currency amount or a range between them shields nothing.
+    ['a labeled amount-shaped SSN after a date and a hyphen', 'SSN: 01/01/2020-900.12 3456'],
+    ['after a date with a month word', 'SSN January 1, 2020-900.12 3456'],
+    ['after a cents-less currency amount', 'SSN $10-900.12 3456'],
+    ['with a comma, after an en dash', 'SSN 01/01/2020\u2013900,12 3456'],
+    ['in 3.1 5', 'SSN 01/01/2020-900.1 23456'],
+    ['in 1.2 2 4', 'SSN 01/01/2020-9.00 12 3456'],
+    ['a labeled amount-shaped phone after a date', 'Phone 01/01/2020-202.55 50123'],
+    ['after an amount and a hyphen', 'SSN 10.00-900.12 3456'],
+    ['after a date and a space', 'SSN 01/01/2020 900.12 3456'],
+    ['after a currency amount and a space', 'SSN $10.00 900.12 3456'],
+    ['after an amount and a space', 'SSN 150.00 900.12 3456'],
+    ['after a range whose later end follows a currency end', 'SSN: 8,281.35\u2013$57--990.53 6728'],
+    ['a phone after two currency amounts', 'Phone $45-$97\u2212985.37 8257'],
+    ['a phone after a range and a space', 'Phone 2023-04-10-130.80 912.90 2128'],
+    ['a phone after a range ending in a currency amount', 'Contact us about 507.75\u2013$39-9.78 59 4246'],
+    // Re-review GATEWAY1-1: a plain number in the amount's own run, before any word or span, is still read over.
+    ['a labeled SSN whose amount follows a group of it', 'SSN 9001 2.34 56'],
+    ['after a number in parentheses', 'SSN (2) 900.12 3456'],
+    ['after words and a number', 'SSN of member 2: 900.12 3456'],
+    ['after a number that starts its range', 'SSN 2: 01/01/2020-900.12 3456'],
+    ['a phone after the phone word\u2019s own number', 'Phone 711 900.12 3456'],
+    // A spaced SSN glued digit to digit to an amount after its label (review GATEWAY1-3), refused only because some run of
+    // its groups under the label holds 9 or 10 digits (3456150 and the cents 00; 900, 12 and 34561): with other lengths
+    // the class is a recorded residual, pinned below (re-review GATEWAY1-2).
+    ['a labeled SSN glued to an amount, nine digits in a run under the label', 'SSN 900 12 3456150.00'],
+    ['a labeled SSN glued to an amount that starts a range, nine digits in a run', 'SSN 900 12 3456150.00-01/02/2020'],
+    ['a labeled SSN glued to a one-digit amount, ten digits in a run', 'SSN 900 12 34561.00'],
+    // The labeled twin of an unlabeled amount-shaped phone at the start of a range, which is sent (re-review PHI1-1).
+    ['a labeled amount-shaped phone that starts a range to a date', 'Phone 202 555 01.23-1/3/20'],
+    // The twin with the label set apart from the word before it (review PHI2-3).
+    ['an amount-shaped SSN at a range’s end after "Patient SSN"', 'Patient SSN 01/01/2020-900.12 3456'],
+    // Review GATEWAY2-1: a labeled SSN or phone split with a group of five digits or more and an amount-shaped piece is
+    // still one chain under its label (only a units column, a group under five digits, before the amount ends it).
+    ['a labeled SSN of a five-digit group and cents', 'SSN 90012 34.56'],
+    ['a labeled SSN of a five-digit group and an amount of four digits', 'SSN 90012 3456.00'],
+    ['a labeled SSN with a five-digit group in the middle', 'SSN 900 12345 6.00'],
+    ['a labeled phone with a five-digit group and cents', 'Phone 202 55501 23.45'],
+    ['a labeled phone of a five-digit group and an amount', 'Phone 20255 501.23'],
+    ['a labeled fax number of a five-digit group and an amount', 'Fax: 95274 588.97 1234'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -874,17 +983,825 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['dashed dates joined by a hyphen', 'Service 10-01-2026-10-15-2026.'],
     ['amounts joined by a hyphen', 'Billed 150.00-120.00 allowed.'],
     ['amounts joined by a hyphen, no word after', 'Range 123.45-67.89.'],
+    ['a service period glued to the next word after an amount and a full stop (MOD-16 seed 1034253323)', 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00'],
+    // Its class: a range glued to a word on either side or after a full stop with no space, of dates or amounts or one of
+    // each, with any dash the scan joins over, a month word at an end, or an invisible character beside the dash.
+    ['a service period glued to words on both sides', 'Service01/01/2020-01/02/2020Paid'],
+    ['a service period after an amount and a full stop with no space', 'Paid $0,000.00.Service 01/01/2020-01/02/2020Paid $0,000.00'],
+    ['an ISO period glued to the next word', 'From 2020-01-01-2020-01-02Paid'],
+    ['a period of dashed dates glued to the next word', 'Service 01-01-2020-01-02-2020Paid'],
+    ['a period ending in a month word, glued to the next word', 'Service 2020-01-01-2 January 2020Paid'],
+    ['a period joined by an en dash, glued', 'Service 01/01/2020–01/02/2020Paid'],
+    ['a period joined by an em dash, glued', 'Service 01/01/2020—01/02/2020Paid'],
+    ['a period joined by the minus sign, glued', 'Service 01/01/2020−01/02/2020Paid'],
+    ['a period joined by the hyphen bullet', 'Service 2020-01-01⁃2020-01-02.Paid'],
+    ['a period joined by two hyphens, glued', 'Service 01/01/2020--01/02/2020Paid'],
+    ['a period with a zero-width space before the dash, glued', 'Service 01/01/2020​-01/02/2020Paid'],
+    ['a period joined by "to" with no spaces', 'Service 01/01/2020to01/02/2020Paid'],
+    ['a range from a date to an amount', 'Service 01/01/2020-150.00 billed'],
+    ['a range from an amount to one with a currency sign, glued', 'Billed 150.00-$120.00Paid'],
+    ['an amount range after an amount with a currency sign and a full stop', 'Paid $0,000.00.$0,000.00-150.00 1234'],
+    ['an amount range glued to the next word', 'Billed 0,000.00-9,999.00Paid'],
+    // Review GATEWAY1-1: a range glued to a word that starts like an ordinal suffix after its year ("St.", "Rd.", "TH",
+    // "nd"), or after a two-digit year; and ordinal dates at both ends, still read.
+    ['a service period glued to "St." after its year', 'Service 10/01/2026-10/15/2026St. Joseph Medical Center'],
+    ['an ISO period glued to "St."', "Service 2020-01-01-2020-01-02St. Luke's Hospital"],
+    ['a period glued to "Rd."', 'Seen 01/01/2020-01/02/2020Rd. 9'],
+    ['a period glued to "TH"', 'Seen 01/01/2020-01/02/2020TH'],
+    ['a period glued to "St" and a space', 'Seen 01/01/2020-01/02/2020St Mary'],
+    ['an ISO period glued to "nd"', 'Seen 2020-01-01-2020-01-02nd floor'],
+    ['a period with two-digit years glued to "St."', 'Seen 01/01/2020-01/02/20St. Mary'],
+    ['a period with a two-digit year glued to "Rd"', 'Service 01/01/2020-01/02/20Rd'],
+    ['a period of ordinal dates glued to the next word', 'Service March 3rd, 2020-March 4th, 2020Paid'],
+    ['a period of ordinal dates, day first, glued', 'Service 3rd of March, 2020-4th of March, 2020Paid'],
+    // Review GATEWAY2-2: a day-first ordinal second end glued after its four-digit year to a word that starts like an
+    // ordinal suffix, read on the glued reading that keeps only a day's suffix (cc3dd7f6 and 6fc88092 refused these).
+    ['a day-first ordinal second end glued to "St."', 'Service 01/01/2020-4th of March, 2020St. Mary'],
+    ['a day-first ordinal second end with no "of" glued to "St."', 'Service 01/01/2020-14th March 2020St. Mary'],
+    ['an ISO first end and a first-of-month end glued to "TH"', 'Service 2020-03-04-1st of March, 2020TH'],
+    ['a day-first ordinal second end glued to "Rd." after an en dash', 'Service 03/04/2020\u20133rd of March, 2020Rd. 9'],
+    ['a day-first ordinal second end in capitals glued to "ST."', 'SERVICE 01/01/2020-4TH OF MARCH, 2020ST. MARY'],
+    // Re-review GATEWAY1-1: SEC-5's label is read over a plain number only in the amount's own run, so a phone word's own
+    // number ("TTY 711", "Fax 2") followed by words, a date or an amount ends the read, as a digit ends every label window.
+    ['an amount before a year after a TTY sentence', 'TTY 711. Paid 150.00 2026'],
+    ['amounts after a TTY line', 'TTY users call 711.\nBilled 150.00 120.00'],
+    ['amounts in a list after a call sentence', 'Call 711. Billed 150.00, 120.00'],
+    ['amounts after a fax line', 'Fax 3 pages: 150.00 120.00'],
+    ['a row of amounts on the line after "TTY 711"', 'TTY 711\n150.00 120.00 30.00'],
+    ['a row of amounts after "TTY 711" and a space', 'TTY 711 150.00 120.00'],
+    ['a row with a currency amount on the line after "TTY 711"', 'TTY 711\n$150.00 120.00 30.00'],
+    ['a row of small amounts after "TTY 711"', 'TTY 711\n150.00 12.00 3.00'],
+    ['a date and amounts on the line after "Call 711"', 'Call 711\n01/02/2026 150.00 120.00'],
+    ['a date and amounts after a fax line', 'Fax 2; 03/19/2026 150.00 120.00'],
+    // Review GATEWAY2-1: a service-line row's code column and units column before its amount, after a phone or contact
+    // sentence, end the own-run read's chain at the amount (cc3dd7f6 sent these; 435f0a68 to 6fc88092 refused them).
+    ['a code and units row after a contact sentence', 'If you have questions, please contact us.\n97110 1 150.00 120.00'],
+    ['a code and units row after a call sentence', 'Questions? Call us.\n97110 2 150.00'],
+    ['a code and units row after a toll-free line', 'Call us toll free.\n97161 3 34.20'],
+    ['a code and units row after "Contact us." on one line', 'Contact us. 97110 1 150.00'],
   ])('refuses no letter of what must stay: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(letter);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
   });
 
+  // A range is a barrier only as a whole: an SSN or phone beside one, inside one or glued to one is still redacted, or the
+  // letter refused (MOD-15 with MOD-16 seed 1034253323's barriers).
+  it.each([
+    ['an SSN after a date and a dash', 'Seen 01/01/2020-900-12-3456', 'Seen 01/01/2020-[SSN]'],
+    ['a phone after an amount and a dash', 'Paid $10.00-555-012-3456', 'Paid $10.00-[PHONE]'],
+    ['an SSN before a date and a dash', 'Seen 900-12-3456-01/01/2020', 'Seen [SSN]-01/01/2020'],
+    ['a phone before an amount and a dash', 'Paid 555-012-3456-$10.00', 'Paid [PHONE]-$10.00'],
+    ['an SSN glued to a word before a glued range', 'Paid900-12-3456-01/01/2020-01/02/2020Paid', 'Paid[SSN]-01/01/2020-01/02/2020Paid'],
+    ['an SSN joined to a range and glued to the next word', 'Service 01/01/2020-01/02/2020-900-12-3456Paid', 'Service 01/01/2020-01/02/2020-[SSN]Paid'],
+    ['a phone inside a range', 'Service 01/01/2020-555-012-3456-01/02/2020Paid', 'Service 01/01/2020-[PHONE]-01/02/2020Paid'],
+    ['an SSN glued to the word after a range', 'Service 01/01/2020-01/02/2020Paid900-12-3456', 'Service 01/01/2020-01/02/2020Paid[SSN]'],
+    ['a phone joined to a range by en dashes', 'Service 01/01/2020–01/02/2020–555–012–3456', 'Service 01/01/2020–01/02/2020–[PHONE]'],
+    ['a spaced SSN joined to an ISO range', 'Service 2020-01-01-2020-01-02-900 12 3456', 'Service 2020-01-01-2020-01-02-[SSN]'],
+    ['a phone joined to an amount range', 'Billed 150.00-120.00-555-012-3456Paid', 'Billed 150.00-120.00-[PHONE]Paid'],
+    ['an SSN joined to a range of a date and an amount', 'Service 01/01/2020-150.00-900-12-3456', 'Service 01/01/2020-150.00-[SSN]'],
+    ['a phone glued to its label after a glued range', 'Service 01/01/2020-01/02/2020Phone5550123456', 'Service 01/01/2020-01/02/2020Phone[PHONE]'],
+    ['an SSN glued to "St" after a glued range (review GATEWAY1-1)', 'Seen 01/01/2020-01/02/2020St900-12-3456', 'Seen 01/01/2020-01/02/2020St[SSN]'],
+  ])('redacts an SSN or phone beside a range: %s', (_case, letter, sent) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(redacted.text).toBe(sent);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  it('pins a recorded residual: a day-first ordinal second end with a two-digit year glued to "St." is refused, its "St" read as a day’s suffix (review GATEWAY2-2)', () => {
+    for (const letter of ['Service 01/01/2020-4th March, 20St. Mary', "Service 01/01/2020-4th of March, '20St. Mary"]) {
+      expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
+    }
+  });
+
+  it('refuses a letter whose SSN joined to a date has no shape a pattern reads (the range is no barrier)', () => {
+    expect(holdsIdentifier(redactLetter('Seen 01/01/2020-900-1-2-3456', A, AC).text, A, AC)).toBe(true);
+    expect(holdsIdentifier(redactLetter('Seen 01/01/2020-01/02/2020-900-1-2-3456Paid', A, AC).text, A, AC)).toBe(true);
+  });
+
+  it('refuses amounts a phone label is nearest, read over the numbers before them, as SEC-5 refuses "Call us about 150.00 1234" (review GATEWAY1-2, re-review GATEWAY1-1, review GATEWAY2-1: the fail-safe side)', () => {
+    // The chain's first group under the label, or an amount right after the phone word's own number with nothing between.
+    // cc3dd7f6 refused only the first; it sent the others, which 435f0a68's read over the numbers before an amount refuses
+    // (docs/adr/0054 gives the measured share).
+    for (const letter of ['Call us about 150.00 1234', 'Call us about 150.00-120.00', 'Call us about 150.00 120.00', 'TTY 711\n150.00 1234', 'Contact us. 150.00-120.00 total']) {
+      expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
+    }
+    // Refused by design, as an SSN's five-digit first group would be (review GATEWAY2-1): a code right before the amount
+    // with no units column, a units number after the label's own number, an HCPCS letter code (a letter ends the chain's
+    // code column, so the units and the amount chain from the label).
+    for (const letter of ['Calls are free.\nLine 1 97110 600.50', 'Hearing impaired: TTY 711\n1 150.00 0.00', 'Questions? Call us.\nG0283 1 150.00']) {
+      expect(holdsIdentifier(redactLetter(letter, A, AC).text, A, AC), letter).toBe(true);
+    }
+  });
+
+  // Recorded residuals (docs/adr/0054), pinned so a change to them is seen. cc3dd7f6 sent each of them, or refused it only
+  // because a date or amount then joined the next group (A3), where MOD-16 now needs a barrier.
+  it.each([
+    // An unlabeled amount-shaped SSN or phone is read as an amount, as R1 keeps "150.00 1234": alone, after white space
+    // or at an end of a range of two amounts, which cc3dd7f6 read as a barrier too (re-review PHI1-1). The must-stay rows
+    // that force it are "Paid 900.12 3456 units" (redact.property.test.ts) and "Paid $0,000.00.$0,000.00-150.00 1234"
+    // above; under a label it is refused.
+    ['an unlabeled amount-shaped SSN at the end of a range of two amounts (since review round 2)', 'Paid 150.00-900.12 3456', 'Paid 150.00-900.12 3456'],
+    // A label glued to the word before it by a lost space is no label, so the amount-shaped number is read as unlabeled
+    // and sent, as at cc3dd7f6 (review PHI2-3; owned by the follow-on leak PR). Next to a range cc3dd7f6 refused, the
+    // glued label is read (below).
+    ['an amount-shaped SSN after an SSN label glued to the word before it', 'PatientSSN 900.12 3456', 'PatientSSN 900.12 3456'],
+    ['an amount-shaped phone after a phone label glued to the word before it', 'PaidPhone 202 555 01.23', 'PaidPhone 202 555 01.23'],
+    // An SSN after its label with the call's own identifier between, set apart by a space or punctuation: the label window
+    // ends at the placeholder (sent at cc3dd7f6 too).
+    ['an amount-shaped SSN after its label and the patient’s name', 'SSN Vantree 900.12 3456', 'SSN [PATIENT_NAME] 900.12 3456'],
+    ['an SSN of a five-digit group after its label and the patient’s name', 'SSN for Zephyra Vantree: 90012-3456', 'SSN for [PATIENT_NAME] [PATIENT_NAME]: 90012-3456'],
+    // An SSN or phone glued digit to digit to an amount or a year, which the scan reads as one long group (review
+    // GATEWAY1-3); spaced and labeled, it is refused only where a run of its groups from the label's first group, or from
+    // the amount the label reaches, holds 9 or 10 digits (re-review GATEWAY1-2, review PHI2-6). Sent at cc3dd7f6 too.
+    ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
+    ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
+    ['a spaced labeled SSN glued to a two-digit amount', 'SSN 900 12 345615.00', 'SSN 900 12 345615.00'],
+    ['a spaced labeled SSN glued to an amount with one decimal', 'SSN 900 12 3456150.0', 'SSN 900 12 3456150.0'],
+    ['a spaced labeled phone glued to a two-digit amount', 'Phone 202 555 012315.00', 'Phone 202 555 012315.00'],
+    ['a spaced labeled phone glued to a one-digit amount', 'Phone 202 555 01231.00', 'Phone 202 555 01231.00'],
+    // An amount-shaped SSN whose first group reads as a date with the number before it ("10-9.00"; sent at cc3dd7f6 too).
+    ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],
+    // An SSN or phone whose label is behind a number and then a span (a digit in its label window, as "Phone 1:
+    // 555-0100": re-review GATEWAY1-1; sent at cc3dd7f6 too).
+    ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
+    // A labeled SSN or phone split five, one, then an amount with one decimal digit before the cents: the units column
+    // before a money amount ends the chain, as a service-line row's does (review GATEWAY2-1; cc3dd7f6 sent it too).
+    ['a labeled SSN split five, one and an amount', 'Soc Sec 93798 4 1.46', 'Soc Sec 93798 4 1.46'],
+    // An amount followed by a dash and a year-first date, read as [SSN]: over-redaction, never a leak (review GATEWAY1-5).
+    ['an amount and a year-first date joined by a hyphen', 'Service 150.00-2020-04-05 billed', 'Service [SSN]-04-05 billed'],
+  ])('pins a recorded residual: %s', (_case, letter, sent) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(redacted.text).toBe(sent);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  it.each([
+    // A range the range fix reads as a barrier and cc3dd7f6 did not (a date or a currency amount to an amount, a date read
+    // only with a glued word blanked, a range joined by another dash) holds a chain whole only where nothing that may be
+    // the rest of an identifier stands beside it; where a range's end cannot be told from an identifier's fragment, the
+    // letter is refused as cc3dd7f6 refused it (the orchestrator's ruling of 2026-11-07). Each row was sent from 6fc88092
+    // to the head of review round 3 and pinned there as a residual (re-review PHI1-1, PHI1-2, GATEWAY1-2; review PHI2-3,
+    // PHI2-4).
+    ['an unlabeled amount-shaped SSN at the end of a range from a date', 'Paid 01/01/2020-900.12 3456'],
+    ['an unlabeled amount-shaped SSN at the end of a range from a currency amount with no cents', 'Paid $1-900.12 3456'],
+    ['an unlabeled amount-shaped phone at the start of a range to a date', 'Paid 202 555 01.23-1/3/20'],
+    ['an amount-shaped SSN at a range’s end after a glued SSN label', 'PatientSSN 01/01/2020-900.12 3456'],
+    ['an amount-shaped phone starting a range after a glued phone label', 'PaidPhone 202 555 01.23-1/3/20'],
+    // An amount without cents or a date of two separators is no range's end ("0,900-12-19.85" is an SSN's digits).
+    ['an SSN read as an amount and a date after its label', 'SSN 1,900-12-19.85'],
+    ['an SSN read as an amount and a date', 'Paid 0,900-12-19.85'],
+    ['an SSN read as an amount and a date that starts a range', 'SSN 2,900-12-19.85-1/3/20'],
+    ['an amount-shaped phone whose last group and the next number read as a date starting a range', 'Call 202 555 01.23-12-150.00'],
+    // A masked SSN, or a word, glued after a range's end, and the digits after it.
+    ['a masked SSN glued after a range’s end', '01/01/2020-150.00XXX-XX-3456Paid'],
+    ['an SSN of a five-digit group glued by a word after a range’s end', 'Re: 01/01/2020-1st Jan 2020th90012-3456'],
+    ['a spaced labeled SSN glued to an amount that starts a range', 'SSN 900 12 345615.00-01/02/2020'],
+    ['a labeled SSN fused to an amount that starts a range', 'SSN 900123456120.00-01/02/2020'],
+    ['a labeled phone fused to an amount that starts a range', 'Phone: 2025550123150.00-01/03/2020'],
+    ['a labeled phone in a shape glued to a date that starts a range', 'Tel: 202-555-01231 January 2020-150.00'],
+    ['a labeled SSN whose last six read as a date that starts a range', 'SSN 9 01-12-1985-150.00'],
+    ['an amount-shaped phone after a range and spaces, its label out of reach', 'Phone March 11, 2029\u22122,866.66  960.58 4433'],
+    ['an SSN glued to an amount after the label’s number, a word and a range', 'Phone 1: is 2/5/26-545.68 936 90 8080172.00'],
+    ['an amount-shaped SSN after the label’s number, a word and a range', 'SSN 1: is 01/01/2020-900.12 3456'],
+    // Review round 3 (PHI3-5): a day-first ordinal range glued to "St" after an SSN label, the label more than 24
+    // characters back, and an amount-shaped SSN or phone after a range whose label the reach is counted to.
+    ['a labeled SSN after a day-first ordinal range glued to "St" (PHI3-5 i)', 'Re: SSN 01/01/2020-1st Jan 2020St 90012-3456'],
+    ['a labeled SSN after a day-first ordinal range glued to "St", with "of" (PHI3-5 i)', 'SSN 01/01/2020-4th of March, 2020St 900.12 3456'],
+    ['a labeled phone after a currency amount and an ordinal date (PHI3-5 ii)', 'SSN $10-1st Jan 2020 202 555 01.23'],
+    // An amount joined to a range's end as a chain joins, a currency amount's digits too (cc3dd7f6 refused this period after
+    // an amount and a full stop with no space for the range's own digits; with a word between, it is sent, above).
+    ['a period starting with a month word after an amount and a full stop', 'Paid $0,000.00.January 1, 2020-2020-01-02Paid'],
+    // A label glued to the word before it is read next to a range cc3dd7f6 refused.
+    ['an amount-shaped SSN after a glued SSN label after a range', '01/01/2020-150.00-PaidSSN 900 12 34.56 Paid'],
+    ['a local phone after a glued SSN label after a range', '150.00-01/02/2020-PaidSSN 555-0123Paid'],
+  ])('refuses, as cc3dd7f6 did, a letter in which a range’s end may be an identifier’s fragment: %s', (_case, letter) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
+    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: letter })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+  });
+
+  // Review round 3 of the range fix (2026-11-07): the glued reading of round 2 cut SSN and phone labels (PHI3-1, PHI3-2,
+  // PHI3-3) and took codes, modifiers and units after the patient's name (GATEWAY3-1, GATEWAY3-2). With it reverted, each
+  // finding's input is redacted or refused exactly as at cc3dd7f6 (null: refused).
+  const round3 = (names: string[]) => ({ pseudonym: 'synthetic-patient-15', names, datesOfBirth: ['1980-03-14'], memberIds: ['ZZ7654321'] });
+  it.each([
+    // PHI3-1: the patient's name glued or in camel case between an SSN or phone label and the number.
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Please call MsZephyra at 555-0123.', 'Please call MsZephyra at [PHONE].'],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Phone for JaneZephyra: 555-0123', 'Phone for JaneZephyra: [PHONE]'],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Re: Fax DrJane 555-0123', 'Re: Fax DrJane [PHONE]'],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN of MsZephyra: 90012-3456', null],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'Social Security number of MsZephyra: 900.12 3456', null],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN DearJane 900.12 3456', null],
+    ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN ZEPHYRAJane 900.12 3456', null],
+    // PHI3-2: a lone ten starting 0 or 1 after the glued name, and a word between the name and the number.
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN MsZephyra0900123456', 'Re: SSN MsZephyra[SSN]'],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN Zephyra1900123456', null],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN for Zephyra1900123456', null],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: Fax ZephyraPaid900.12 3456', null],
+    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN ZephyraPaid900,12 3456', null],
+    // PHI3-3: a short part that spells the end of an SSN label glued to its number.
+    ['PHI3-3', ['TY Q ZEPHYRA'], 'Re: Social Security900.12 3456', null],
+    ['PHI3-3', ['TY Q ZEPHYRA'], 'SOCIAL SECURITY90012-3456', null],
+    ['PHI3-3', ['TY Q ZEPHYRA'], 'Member Ty Zephyra, Social Security900,12 3456', null],
+    ['PHI3-3', ['SN VANTREE'], 'SSN900.12 3456', null],
+    // PHI3-5 (iii): the call's own identifier between a phone label and an SSN next to a range.
+    ['PHI3-5', ['JANE Q ZEPHYRA'], 'DOS Tel: ZZ7654321: 900 12 34.56-01/03/2020', null],
+    // GATEWAY3-1: a code whose letter is an initial of the patient, right after the name.
+    ['GATEWAY3-1', ['MARIA MARTINEZ'], 'MARTINEZ, MARIA M54.50 97110 1 150.00', '[PATIENT_NAME], [PATIENT_NAME] M54.50 97110 1 150.00'],
+    ['GATEWAY3-1', ['GEORGE ZEPHYRA'], 'Patient GEORGE ZEPHYRA G0283 denied.', 'Patient [PATIENT_NAME] G0283 denied.'],
+    ['GATEWAY3-1', ['GEORGE ZEPHYRA'], 'Patient George Zephyra Z96.651 on file', 'Patient [PATIENT_NAME] Z96.651 on file'],
+    ['GATEWAY3-1', ['JANE Q ZEPHYRA'], 'Patient: JANE Q ZEPHYRA\nJ3301 1 150.00', 'Patient: [PATIENT_NAME]\nJ3301 1 150.00'],
+    // GATEWAY3-2: remark codes, a modifier, minute units and words that a two- or three-letter part spells.
+    ['GATEWAY3-2', ['QIANG MA'], 'Remark: MA130 applies.', 'Remark: MA130 applies.'],
+    ['GATEWAY3-2', ['QIANG MA'], 'Re: QIANG MA\nMA04', 'Re: [PATIENT_NAME]\nMA04'],
+    ['GATEWAY3-2', ['MIN XU'], 'CPT 97110XU denied', 'CPT 97110XU denied'],
+    ['GATEWAY3-2', ['MIN XU'], 'Total time 45min.', 'Total time 45min.'],
+    ['GATEWAY3-2', ['MIN XU'], 'Total time 30MIN.', 'Total time 30MIN.'],
+    ['GATEWAY3-2', ['ANN LIN'], 'Line1 97110 150.00', 'Line1 97110 150.00'],
+    ['GATEWAY3-2', ['ANN LIN'], 'Paid 150.00Annual', 'Paid 150.00Annual'],
+    ['GATEWAY3-2', ['AL Q ZEPHYRA'], 'See ALJ2 decision.', 'See ALJ2 decision.'],
+    ['GATEWAY3-2', ['ED Q ZEPHYRA'], 'Edit1 applies.', 'Edit1 applies.'],
+  ] as const)('handles review round 3’s input as cc3dd7f6 did (%s): %s %s', (_finding, names, letter, sent) => {
+    const who = round3([...names]);
+    const redacted = redactLetter(letter, who, AC);
+    expect(holdsIdentifier(redacted.text, who, AC)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  // The judge's review round 1 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // cc3dd7f6 refused every row refused here but GATEWAYJ1-1's three fail-safe rows (sent unchanged there), GATEWAYJ1-4's last
+  // and GATEWAYJ1-3's last three (sent there with a fragment of the name or an initial in clear), and sent every other row
+  // as written here.
+  const judge1 = (names: string[], more: { readonly datesOfBirth?: readonly string[]; readonly memberIds?: readonly string[]; readonly claimNumbers?: readonly string[] }) => ({
+    patient: { pseudonym: 'synthetic-patient-15', names, datesOfBirth: [...(more.datesOfBirth ?? ['1980-03-14'])], memberIds: [...(more.memberIds ?? ['SYNMEMBER0042', 'ZZ7654321'])] },
+    claims: [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-15', claimNumbers: [...(more.claimNumbers ?? ['SYNCLAIM0001', 'C2026000417'])] }],
+  });
+  it.each([
+    // PHIJ1-1: in a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's own digits), a
+    // part of the name of any length anywhere in a run of letters, and an initial at a run's end before the name, a part,
+    // another initial or a full stop.
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARAL,', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Seen 01/01/2020-150.00 ALPAID in full.', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Service 2020-01-01-150.00 Paid. dearal.', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Seen 01/01/2020-150.00 DEARALPAID', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARQ ZEPHYRA', null, {}],
+    ['PHIJ1-1', ['AL Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARQ.', null, {}],
+    ['PHIJ1-1', ['JUNE Q VANTREE'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00 DEARJUNE,', null, {}],
+    ['PHIJ1-1', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DEARJ. ZEPHYRA', null, {}],
+    ['PHIJ1-1', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient JQ ZEPHYRA', null, {}],
+    // PHIJ1-3: the shapes cc3dd7f6 sends with no range (docs/adr/0054's residuals), in such a letter, read blind to their
+    // separators: a member ID or claim number, a part of four letters or more, the name's initials, a date of birth's eight
+    // digits, its month's word beside its year, and a birth label whose date redaction did not read.
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 1961 March 3 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Born MARCH THIRD 1961 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 0 3 / 0 3 / 1 9 6 1 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 1961/3 Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB March 3rd, nineteen sixty-one Thank you.', null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. DOB 03\n14\n1980 on file.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Member ZZ.765.4321 on file.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Claim C2026/000417 on file.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Seen 03-15-61 Thank you.', null, { memberIds: ['031561'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Claim 123456780.00 Thank you.', null, { claimNumbers: ['12345678'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Ref 1234ー5678 Thank you.', null, { claimNumbers: ['12345678'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Total $555001.00 Thank you.', null, { claimNumbers: ['555001'] }],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient JQZ.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient J.Q.Z.', null, {}],
+    ['PHIJ1-3', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Patient Z E P H Y R A', null, {}],
+    ['PHIJ1-3', ['JOANN ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. Dear jo ann,', null, {}],
+    // PHIJ1-4: a member ID or claim number of digits alone glued to a word, in such a letter.
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid76543210 in full.', null, { memberIds: ['76543210'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. MemberID76543210.', null, { memberIds: ['76543210'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 76543210Paid in full.', null, { memberIds: ['76543210'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Service 2020-01-01-150.00 Paid. Dear88776655.', null, { claimNumbers: ['88776655'] }],
+    ['PHIJ1-4', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. CLAIMNO99887766 Thank you.', null, { claimNumbers: ['99887766'] }],
+    // PHIJ1-5: a masked SSN glued to a word glued to a held range's end, or anywhere in such a letter; a word and a gap
+    // alone glue nothing (MOD-16's own letter is sent).
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidXXX-XX-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020PaidXXX-XX-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00Paid***-**-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00Paidxxx-xx-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidXXX XX 3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidXXX-XX-3456 thanks', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 PaidXXX-XX-3456', null, {}],
+    ['PHIJ1-5', ['JANE Q ZEPHYRA'], 'Service 01/01/2020-150.00Paid 97110   3   1234.56', 'Service 01/01/2020-150.00Paid 97110   3   1234.56', {}],
+    // GATEWAYJ1-4: a part's head before the name's placeholder where redaction read the rest of a part written with a space
+    // inside as a shorter part (seed 2026110710's shape): with a held chain any run, elsewhere a head glued to a digit.
+    ['GATEWAYJ1-4', ['DANIELLE LE'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020DANIEL LE $0,000.00', null, {}],
+    ['GATEWAYJ1-4', ['DANIELLE LE'], 'Billed 01/02/2020-150.00Daniel Le, seen', null, {}],
+    ['GATEWAYJ1-4', ['ANGELA Q LA'], 'Seen 01/01/2020-150.00ANGE LA, Paid', null, {}],
+    ['GATEWAYJ1-4', ['STELLA LA'], 'Service 01/01/2020-150.00STEL LA paid', null, {}],
+    ['GATEWAYJ1-4', ['CLAIM LA ORLA'], 'Seen 01/01/2020-150.00OR LA, CL AIM LA, ', null, { datesOfBirth: ['1970-01-01'], memberIds: ['19900101'], claimNumbers: ['19900101'] }],
+    ['GATEWAYJ1-4', ['ANGELA Q LA'], 'Seen 150.00ANGE LA, Paid', null, {}],
+    // GATEWAYJ1-1: outside such a letter, a part of four letters or more only where its run sets it apart (from the run's
+    // start or a change of case, to its end, a digit or a change of case) or anywhere in a run of one case: an ordinary word
+    // around a part is sent as at cc3dd7f6; the part as a whole word glued to a digit, and a run of capitals, are refused
+    // (fail-safe: "Page" for PAGE, "BALANCE24.00" for ALAN). A part's tail after the placeholder is sent ("CY2026").
+    ['GATEWAYJ1-1', ['BILL Q ZEPHYRA'], 'Paid 96.00 2020Billed 150.00', 'Paid 96.00 2020Billed 150.00', {}],
+    ['GATEWAYJ1-1', ['VERA Q ZEPHYRA'], 'Paid 0.00Coverage 01/01/2020-12/31/2020', 'Paid 0.00Coverage 01/01/2020-12/31/2020', {}],
+    ['GATEWAYJ1-1', ['MARK Q ZEPHYRA'], 'CO-45 Remark1: N130', 'CO-45 Remark1: N130', {}],
+    ['GATEWAYJ1-1', ['ROSS Q ZEPHYRA'], 'Gross150.00 Net120.00', 'Gross150.00 Net120.00', {}],
+    ['GATEWAYJ1-1', ['TATE Q ZEPHYRA'], 'Statement1 of 2', 'Statement1 of 2', {}],
+    ['GATEWAYJ1-1', ['MINA Q ZEPHYRA'], 'Determination01/15/2026', 'Determination01/15/2026', {}],
+    ['GATEWAYJ1-1', ['WARD Q ZEPHYRA'], 'Forwarded2 claims', 'Forwarded2 claims', {}],
+    ['GATEWAYJ1-1', ['BILL Q ZEPHYRA'], 'Service 6 March 2020—8 March 2020Billed0.00 paid.', 'Service 6 March 2020—8 March 2020Billed0.00 paid.', {}],
+    ['GATEWAYJ1-1', ['PAGE Q ZEPHYRA'], '93359   5   335.00Page 2 of 5   95870 2   58.00', null, {}],
+    ['GATEWAYJ1-1', ['ALAN Q ZEPHYRA'], 'BILLED 150.00 ALLOWED 120.00 PAID 96.00 BALANCE24.00', null, {}],
+    ['GATEWAYJ1-1', ['PAGE Q ZEPHYRA'], 'Paid 150.00Page 2 of 3', null, {}],
+    ['GATEWAYJ1-1', ['NANCY VANTREE'], 'Patient: Nancy Vantree CY2026 1 150.00', 'Patient: [PATIENT_NAME] CY2026 1 150.00', {}],
+    // GATEWAYJ1-3: outside such a letter, an initial alone after a digit only before the name's placeholder (or a number's
+    // that a part of the name is written as), a whole part or another initial: suite and line letters before a word that
+    // begins like a part, or before another placeholder, are sent as at cc3dd7f6. Before the name it is refused (fail-safe:
+    // "Room 4L, Lee Hall" for LEE).
+    ['GATEWAYJ1-3', ['AL Q ZEPHYRA'], 'Suite 2A, Albany, NY 12207', 'Suite 2A, Albany, NY 12207', {}],
+    ['GATEWAYJ1-3', ['AL Q ZEPHYRA'], 'Line 1A Allowed 120.00', 'Line 1A Allowed 120.00', {}],
+    ['GATEWAYJ1-3', ['JANE A MA'], 'Suite 3A, Main Street, Baltimore MD 21201', 'Suite 3A, Main Street, Baltimore MD 21201', {}],
+    ['GATEWAYJ1-3', ['ED Q LI'], 'Box 1E, Edison NJ 08817', 'Box 1E, Edison NJ 08817', {}],
+    ['GATEWAYJ1-3', ['ED Q LI'], 'Room 4L, Lincoln Hall', 'Room 4L, Lincoln Hall', {}],
+    ['GATEWAYJ1-3', ['TY Q ZEPHYRA'], 'Apt 2T, Tyler TX 75701', 'Apt 2T, Tyler TX 75701', {}],
+    ['GATEWAYJ1-3', ['ANNA Q ZEPHYRA'], 'Suite 2A, Annapolis, MD 21401', 'Suite 2A, Annapolis, MD 21401', {}],
+    ['GATEWAYJ1-3', ['ANNA Q ZEPHYRA'], 'Appeals Unit, Suite 2A, 202-555-0143', 'Appeals Unit, Suite 2A, [PHONE]', {}],
+    ['GATEWAYJ1-3', ['BEN Q ZEPHYRA'], 'Floor 3B, 202-555-0143', 'Floor 3B, [PHONE]', {}],
+    ['GATEWAYJ1-3', ['CARL Q ZEPHYRA'], 'Building 4C - 202-555-0143', 'Building 4C - [PHONE]', {}],
+    ['GATEWAYJ1-3', ['ANNA Q ZEPHYRA'], 'Line 1A: SYNCLAIM0001 denied CO-45', 'Line 1A: [CLAIM_1] denied CO-45', {}],
+    ['GATEWAYJ1-3', ['ZEPHYRA Q LEE'], 'Room 4L, Lee Hall', null, {}],
+    ['GATEWAYJ1-3', ['JANE Q ZEPHYRA'], 'Seen 150.00Q Zephyra', null, {}],
+    ['GATEWAYJ1-3', ['JANE Q ZEPHYRA'], 'Seen 150.00J. Q. Zephyra', null, {}],
+  ] as const)('handles the judge’s round 1 input (%s): %s %s', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  // The judge's review round 2 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // GATEWAYJ2-2's sent rows are sent as at cc3dd7f6 (5b8ed30f refused them; its last row, a head whose rest is a part, stays
+  // refused, cc3dd7f6 sending "Daniel" in clear); GATEWAYJ2-3's and PHIJ2-2's refused rows cc3dd7f6 refused for the range's
+  // own digits (2a5ed43b sent them), and it sends their rows with no range as here; "Total 80.03 14 units" it refused for
+  // the range too, an amount and units that write the date of birth's three numbers, refused since the judge's review round
+  // 3 (PHIJ3-1, a fail-safe of a held letter: below); GATEWAYJ2-4's are fail-safe refusals of letters
+  // cc3dd7f6 sent, beside GATEWAYJ1-1's "BALANCE24.00", and title case is sent as there.
+  const HELD = 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. ';
+  it.each([
+    // GATEWAYJ2-2: an ordinal's or a time's letters glued to a digit before the whole name, which redaction read, are no head
+    // of a part; a head is refused only where the rest of the part is a part or an initial redaction read and a space or a
+    // joiner alone stands between (GATEWAYJ1-4's rows above).
+    ['GATEWAYJ2-2', ['THOMAS ZEPHYRA'], 'On March 10th, Thomas Zephyra was seen for therapy.', 'On March 10th, [PATIENT_NAME] was seen for therapy.', {}],
+    ['GATEWAYJ2-2', ['STEPHEN ZEPHYRA'], 'On March 1st, Stephen Zephyra received physical therapy.', 'On March 1st, [PATIENT_NAME] received physical therapy.', {}],
+    ['GATEWAYJ2-2', ['STANLEY ZEPHYRA'], 'On June 1st, Stanley Zephyra was evaluated.', 'On June 1st, [PATIENT_NAME] was evaluated.', {}],
+    ['GATEWAYJ2-2', ['STELLA ZEPHYRA'], 'Since April 1st Stella Zephyra has attended 12 visits.', 'Since April 1st [PATIENT_NAME] has attended 12 visits.', {}],
+    ['GATEWAYJ2-2', ['AMANDA ZEPHYRA'], 'On 01/02/2020 at 9am Amanda Zephyra was seen.', 'On 01/02/2020 at 9am [PATIENT_NAME] was seen.', {}],
+    ['GATEWAYJ2-2', ['AMBER ZEPHYRA'], 'Seen 01/02/2020 at 11am, Amber Zephyra arrived late.', 'Seen 01/02/2020 at 11am, [PATIENT_NAME] arrived late.', {}],
+    ['GATEWAYJ2-2', ['ZEPHYRA THOMPSON'], 'On March 10th, Thompson was seen.', 'On March 10th, [PATIENT_NAME] was seen.', {}],
+    ['GATEWAYJ2-2', ['STEPHANIE VANTREE'], 'Visit of the 21st, Stephanie Vantree, was denied.', 'Visit of the 21st, [PATIENT_NAME], was denied.', {}],
+    ['GATEWAYJ2-2', ['DANIELLE LE'], 'Seen 150.00DANIEL, LE', 'Seen 150.00DANIEL, [PATIENT_NAME]', {}],
+    ['GATEWAYJ2-2', ['DANIELLE LE'], 'Seen 150.00Daniel Le, paid', null, {}],
+    // GATEWAYJ2-3: a part of two or three letters written letter by letter, each letter alone, in a held letter; with no
+    // range both trees send it.
+    ['GATEWAYJ2-3', ['AL Q ZEPHYRA'], 'Seen 01/01/2020-150.00A L Paid', null, {}],
+    ['GATEWAYJ2-3', ['TY Q ZEPHYRA'], 'Seen 01/01/2020-150.00T Y Paid', null, {}],
+    ['GATEWAYJ2-3', ['TY Q ZEPHYRA'], 'Seen 01/01/2020-150.00 T Y Paid', null, {}],
+    ['GATEWAYJ2-3', ['AL Q ZEPHYRA'], `${HELD}A L`, null, {}],
+    ['GATEWAYJ2-3', ['TY Q ZEPHYRA'], 'Seen 150.00T Y Paid', 'Seen 150.00T Y Paid', {}],
+    // PHIJ2-2: the date of birth's two-digit-year forms redaction reads after a birth label, in a held letter, and a birth
+    // label written "D/O/B" before a date redaction did not read; with no range and no label both trees send them. The
+    // forms no rule reads (OCR confusions, homoglyphs, Roman or CJK months, seven digits) are ruling A' of 2026-11-07,
+    // pinned in src/redact.residuals.json.
+    ['PHIJ2-2', ['SIMONE Q VANTREE'], `${HELD}D/O/B 75-11-02`, null, { datesOfBirth: ['1975-11-02'] }],
+    ['PHIJ2-2', ['SIMONE Q VANTREE'], `${HELD}75/11/02`, null, { datesOfBirth: ['1975-11-02'] }],
+    ['PHIJ2-2', ['SIMONE Q VANTREE'], `${HELD}751102`, null, { datesOfBirth: ['1975-11-02'] }],
+    ['PHIJ2-2', ['SIMONE Q VANTREE'], `${HELD}D/O/B 2-XI-1975`, null, { datesOfBirth: ['1975-11-02'] }],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}80-03-14`, null, {}],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}800314`, null, {}],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid. 80 3 14', null, {}],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], `${HELD}Total 80.03 14 units`, null, {}],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], 'Dear Patient, re 80-03-14, thank you.', 'Dear Patient, re 80-03-14, thank you.', {}],
+    ['PHIJ2-2', ['JANE Q ZEPHYRA'], 'Dear Patient, re 800314, thank you.', 'Dear Patient, re 800314, thank you.', {}],
+    // GATEWAYJ2-4: outside a held letter a part of four letters or more anywhere in a run of one case a digit touches is
+    // refused (no boundary can be read there): 14 of 422 common parts for a payer's word in capitals glued to an amount.
+    ['GATEWAYJ2-4', ['MARK Q ZEPHYRA'], 'REMARK150.00', null, {}],
+    ['GATEWAYJ2-4', ['MARK Q ZEPHYRA'], 'remark150.00', null, {}],
+    ['GATEWAYJ2-4', ['MARY Q ZEPHYRA'], 'PRIMARY150.00', null, {}],
+    ['GATEWAYJ2-4', ['BILL Q ZEPHYRA'], 'BILLED150.00', null, {}],
+    ['GATEWAYJ2-4', ['MARK Q ZEPHYRA'], 'Remark150.00', 'Remark150.00', {}],
+  ] as const)('handles the judge’s round 2 input (%s): %s %s', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  // The judge's review round 3 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // GATEWAYJ3-1's sent rows cc3dd7f6 sends as here (3cf4d8cf refused them), and "Paid 150.00ST AN Zephyra" is a fail-safe
+  // refusal of a letter it sent with "ST" of STAN in clear; PHIJ3-1's and PHIJ3-2's refused rows it refused for the range's
+  // own digits (3cf4d8cf sent them), and with no range both trees send or redact them as here.
+  const VANTREE = { datesOfBirth: ['1975-11-02'] };
+  it.each([
+    // GATEWAYJ3-1: a unit's letters before a name part whose rest is an initial, and an ordinal's suffix that fits the whole
+    // number before it or "am"/"pm" after an hour, before a part whose rest is another part, are no head of a part.
+    ['GATEWAYJ3-1', ['MINA ALI'], 'Total treatment time 45min Mina was seen on 02/14/2026.', 'Total treatment time 45min [PATIENT_NAME] was seen on 02/14/2026.', {}],
+    ['GATEWAYJ3-1', ['MINA ALI'], 'Session 30min Mina Ali attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ3-1', ['MINH HOANG'], 'Patient seen for 45min. Minh Hoang tolerated treatment well.', 'Patient seen for 45min. [PATIENT_NAME] tolerated treatment well.', {}],
+    ['GATEWAYJ3-1', ['MINH HOANG'], 'PT 45min Minh Hoang, 97110 x3 units.', 'PT 45min [PATIENT_NAME], 97110 x3 units.', {}],
+    ['GATEWAYJ3-1', ['MING GAO'], 'Session 30min Ming Gao attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ3-1', ['MINH H NGUYEN'], 'Treatment 45min Minh Nguyen tolerated treatment.', 'Treatment 45min [PATIENT_NAME] [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ3-1', ['NGUYEN THANH ANH'], 'Seen on the 4th Nguyen Thanh Anh.', 'Seen on the 4th [PATIENT_NAME].', {}],
+    ['GATEWAYJ3-1', ['NGUYEN THANH ANH'], 'On March 4th Thanh Anh was seen for therapy.', 'On March 4th [PATIENT_NAME] [PATIENT_NAME] was seen for therapy.', {}],
+    ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'On March 1st Stan An Zephyra called.', 'On March 1st [PATIENT_NAME] called.', {}],
+    ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'On March 1st Stan was seen.', 'On March 1st [PATIENT_NAME] was seen.', {}],
+    ['GATEWAYJ3-1', ['TRAN STAN AN'], 'Since the 1st Stan An has attended 8 visits.', 'Since the 1st [PATIENT_NAME] [PATIENT_NAME] has attended 8 visits.', {}],
+    ['GATEWAYJ3-1', ['THAI AI VANTREE'], 'On the 4th Thai called our office.', 'On the 4th [PATIENT_NAME] called our office.', {}],
+    ['GATEWAYJ3-1', ['AMAL AL ZEPHYRA'], 'Seen at 9am Amal Al Zephyra.', 'Seen at 9am [PATIENT_NAME].', {}],
+    ['GATEWAYJ3-1', ['AMAL AL ZEPHYRA'], 'Appointment at 9am Amal arrived on time.', 'Appointment at 9am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ3-1', ['MINA ALI'], 'Seen 150.00MIN A ALI paid', 'Seen 150.00MIN [PATIENT_NAME] [PATIENT_NAME] paid', {}],
+    ['GATEWAYJ3-1', ['STAN AN ZEPHYRA'], 'Paid 150.00ST AN Zephyra', null, {}],
+    // PHIJ3-1: the date of birth's year, month and day in any order, whatever joins them, compact, or with its month's
+    // word, in a held letter; with no range a birth label's date is redacted and an unlabeled one sent, by both trees.
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80_03_14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80|03|14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80\\03\\14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80⁃03⁃14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 1980-14-03`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 19801403`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 801403`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 03/80/14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 14/80/03`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 March 14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Mar., '80, 14`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 198014thMarch`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Mar8014`, null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid. Seen 80|03|14', null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00March 80 14 in full.', null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00DOB 1980-14-03', null, {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 196133`, null, { datesOfBirth: ['1961-03-03'] }],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'DOB 80|03|14 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'DOB 1980-14-03 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ3-1', ['JANE Q ZEPHYRA'], 'Seen 80|03|14 today.', 'Seen 80|03|14 today.', {}],
+    // PHIJ3-2: a birth label glued to a range's end, to a word or to the date after it, in a held letter, before a date
+    // redaction did not read (ruling A' forms: alone they are pinned as sent in src/redact.residuals.json).
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOB 2-XI-1975', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOB: 2-XI-1975', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020DOB 2-XI-1975 $0,000.00', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOB November second, nineteen seventy-five', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00Born 1975/11', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00D/O/B 2-XI-1975', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00Birthdate 1975/11', null, VANTREE],
+    ['PHIJ3-2', ['SIMONE Q VANTREE'], 'Seen 01/01/2020-150.00DOBNovember second, nineteen seventy-five in full.', null, VANTREE],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidDOB 1961/3', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020DOB March 14th, nineteen eighty', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020Birthdate 14-III-1980', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020-01/02/2020D/O/B 14-III-1980', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidBorn 14-III-1980 in full.', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00DOBMar 14th in full.', null, {}],
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00PaidDOBIII/14/1980 in full.', null, {}],
+    // "D O B" written with spaces alone is read between word edges only: "and obtain" before a number is no label.
+    ['PHIJ3-2', ['JANE Q ZEPHYRA'], 'Seen 01/01/2020-150.00 Paid. AND OBTAIN 2 copies.', 'Seen 01/01/2020-150.00 Paid. AND OBTAIN 2 copies.', {}],
+  ] as const)('handles the judge’s round 3 input (%s): %s %s', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  // The judge's review round 4 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.
+  // PHIJ4-1's and PHIJ4-2's refused rows cc3dd7f6 refused for the range's own digits (69a3a2fe sent them), and with no range
+  // both trees send or redact them as here; GATEWAYJ4-1's sent rows cc3dd7f6 sends as here (69a3a2fe refused them), and its
+  // refused rows are fail-safe refusals of letters cc3dd7f6 sent with the head of a part in clear (an amount's letters, a
+  // bare whole number's or a range's second end without its own letters).
+  const RANGE_END = 'Paid $0,000.00. Service 01/01/2020-01/02/2020';
+  it.each([
+    // PHIJ4-1: the date of birth in a form redaction reads after a birth label, more than four characters between its parts
+    // where only white space, separators, commas, full stops, apostrophes and "OF" stand there (datesIn takes any length).
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80  /  03  /  14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 1980  /  14  /  03 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80     March     14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80-03-\n        14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 /\n    03 /\n    14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80  -  03  -  14 today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80/\r\n   03/\r\n   14 today.`, null, {}],
+    ['PHIJ4-1', ['SIMONE Q VANTREE'], `${HELD}Seen 75  .  02  .  11 today.`, null, VANTREE],
+    // The month's word last with wide gaps, which no rule read (the skeptic's 216 letters), refused with them.
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 14     80     March today.`, null, {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 80 \r\n   14 \r\n   March today.`, null, {}],
+    // A part of the date of birth beside its placeholder past a wide gap, where redaction read only some of the written date
+    // ("May/2009" as May 20, 2009; the widened PHIJ3-1 property's counterexamples).
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen May/2009     20`, null, { datesOfBirth: ['2009-05-20'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Sep.1995  .     19`, null, { datesOfBirth: ['1995-09-19'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen Jun\r\n   –     1941  -\r\n   19`, null, { datesOfBirth: ['1941-06-19'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], `${HELD}Seen 19 ,\n      June 1941 today.`, null, { datesOfBirth: ['1941-06-19'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'Seen May/2009     20', 'Seen [DATE_OF_BIRTH]     20', { datesOfBirth: ['2009-05-20'] }],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'DOB 80  /  03  /  14 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'DOB 80     March     14 today.', 'DOB [DATE_OF_BIRTH] today.', {}],
+    ['PHIJ4-1', ['JANE Q ZEPHYRA'], 'Seen 80  /  03  /  14 today.', 'Seen 80  /  03  /  14 today.', {}],
+    // PHIJ4-2: two or more of the name's initials written together, in any order and case and for a name of any number of
+    // parts, and a part of three letters split by a space or a bare line break, glued at a range's end or after it.
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE_END}JZ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE_END}ZJ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${RANGE_END}Jz $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${HELD}Re: Jane Zephyra (JZ).`, null, {}],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], `${HELD}Initials: JZ`, null, {}],
+    ['PHIJ4-2', ['SIMONE VANTREE'], `${RANGE_END}SV $0,000.00`, null, VANTREE],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}QZ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}QJZ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}JZQ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['JANE Q ZEPHYRA'], `${RANGE_END}ZJQ $0,000.00`, null, {}],
+    ['PHIJ4-2', ['ANA BEA CORA DINA ELLA FAYE GIA'], `${RANGE_END}AG $0,000.00`, null, {}],
+    ['PHIJ4-2', ['ANA BEA CORA DINA ELLA FAYE GIA'], `${RANGE_END}BF $0,000.00`, null, {}],
+    ['PHIJ4-2', ['BOB XU'], `${RANGE_END}Bo b $0,000.00`, null, {}],
+    ['PHIJ4-2', ['ANN Q VANTREE'], `${RANGE_END}An\nn $0,000.00`, null, VANTREE],
+    ['PHIJ4-2', ['JANE ZEPHYRA'], 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', 'Paid $0,000.00. Service 01/01/2020 JZ $0,000.00', {}],
+    // Review round 5, PHI5-1: two or more initials glued to another word's letters, at either end or inside, in any case:
+    // no boundary says where the word ends, so a held letter is refused (cc3dd7f6 refused each for the range's own digits;
+    // 9f953223 sent them); with no range both trees send them as written, and a word with one of the initials' letters
+    // twice is no pair of initials.
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}4thZQ was seen.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}4thzq was seen.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}PaidZQ 150.00`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}ZQpaid in full.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}SeenQJZtoday.`, null, {}],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `Re: 3rd-4thZQ\nService January 1, 2020-2020-01-02Paid $0,000.00`, null, {}],
+    ['PHI5-1', ['SIMONE VANTREE'], `${HELD}3rd-4thSV`, null, VANTREE],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], 'Seen 3rd-4thZQ today.', 'Seen 3rd-4thZQ today.', {}],
+    // The re-review of round 5, F4's mirror, recorded and unchanged: where a date of service's last two numbers and the
+    // number after it happen to read as the date of birth ("12/24 - 24", born 2024-12-24), they are replaced as one, a
+    // must-stay date and count lost that cc3dd7f6 sent. Reading no date from a start inside any date cc3dd7f6 read would
+    // send a date of birth written straight after another number ("12.03/14/1980", "June 103 / 03.03.61"): the safer
+    // reading is kept (docs/adr/0054).
+    ['F4-mirror', ['ZEPHYRA VANTREE'], 'DOS 11/12/24 - 24 units of 97110 billed', 'DOS 11/[DATE_OF_BIRTH] units of 97110 billed', { datesOfBirth: ['2024-12-24'] }],
+    ['F4-mirror', ['ZEPHYRA VANTREE'], 'DOS 11/12/24 - 25 units of 97110 billed', 'DOS 11/12/24 - 25 units of 97110 billed', { datesOfBirth: ['2024-12-24'] }],
+    // The re-review of round 5, PHI5-2: two initials with a space, a hyphen, an apostrophe or a modifier letter between
+    // them, one standing alone and the other at the near end of a word (cc3dd7f6 refused each for the range's own digits;
+    // 9f953223 and dedeb35f sent them); with no range both trees send them as written.
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient: Z VPaid $10.00.`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient Z-VDenied.`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient: z vpaid`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}PaidZ V today`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Pt: Z\u02bcV`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient Z\u02b9 V`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient Z\u3005V`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA QUILL VANTREE'], `${HELD}Patient Z QPaid`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], 'Patient: Z VPaid $10.00.', 'Patient: Z VPaid $10.00.', VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Claim reviewed; no balance is owed.`, `${HELD}Claim reviewed; no balance is owed.`, VANTREE],
+    ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}A jazz quiz was held.`, `${HELD}A jazz quiz was held.`, {}],
+    ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
+    // GATEWAYJ4-1: a number's own letters before the name are no head of a part: "am" or "pm" after a range of hours or
+    // times, h.mm or hhmm, an ordinal's suffix after a range's first end, a unit's letters after a whole number, and a
+    // procedure code's modifier.
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9-10am Amal Al Hassan tolerated treatment.', 'Seen 9-10am [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Session 9am-10am Amal Al Hassan attended.', 'Session 9am-10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment 10:00-11:00am Amal Al Hassan arrived on time.', 'Appointment 10:00-11:00am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment at 9.30am Amal Al Hassan arrived on time.', 'Appointment at 9.30am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Appointment at 0930am Amal Al Hassan arrived on time.', 'Appointment at 0930am [PATIENT_NAME] arrived on time.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9AM-10AM Amal Al Hassan attended.', 'Seen 9AM-10AM [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9:00am-10:30am Amal Al Hassan attended.', 'Seen 9:00am-10:30am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9–10am Amal Al Hassan attended.', 'Seen 9–10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 9 - 10am Amal Al Hassan attended.', 'Seen 9 - 10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Seen 1400-1500am Amal Al Hassan attended.', 'Seen 1400-1500am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'On 02/14/2026 9-10am Amal Al Hassan attended.', 'On 02/14/2026 9-10am [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['AMAN AN ZEPHYRA'], 'Seen 8-9am Aman An Zephyra.', 'Seen 8-9am [PATIENT_NAME].', {}],
+    ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen on March 3rd-4th Thanh Anh attended both visits.', 'Seen on March 3rd-4th [PATIENT_NAME] [PATIENT_NAME] attended both visits.', {}],
+    ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen on the 3rd/4th Thanh Anh attended.', 'Seen on the 3rd/4th [PATIENT_NAME] [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['NGUYEN THANH ANH'], 'Seen 3-4th Thanh Anh attended.', 'Seen 3-4th [PATIENT_NAME] [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['THANH ANH'], 'Seen 3rd–4th Thanh Anh attended.', 'Seen 3rd–4th [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30min Minseo Seo attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30min Minseo attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 1-30min Minseo Seo attended.', 'Session 1-30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINSEO SEO'], 'Session 30mins Minseo Seo attended.', 'Session 30mins [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINJI JI'], 'Session 30min Minji Ji attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MINHO HO'], 'Treatment time 45min Minho Ho tolerated treatment.', 'Treatment time 45min [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ4-1', ['MINSU SU'], 'Therapeutic exercise 15min Minsu Su.', 'Therapeutic exercise 15min [PATIENT_NAME].', {}],
+    ['GATEWAYJ4-1', ['MINJUN JUN'], 'Session 30min Minjun Jun attended.', 'Session 30min [PATIENT_NAME] attended.', {}],
+    ['GATEWAYJ4-1', ['MOANA ANA'], 'Follow-up in 6mo Moana Ana agreed.', 'Follow-up in 6mo [PATIENT_NAME] agreed.', {}],
+    ['GATEWAYJ4-1', ['INES ES'], 'Measured 5in Ines Es tolerated.', 'Measured 5in [PATIENT_NAME] tolerated.', {}],
+    ['GATEWAYJ4-1', ['COLIN LIN'], 'Billed 97110CO Colin Lin tolerated treatment.', 'Billed 97110CO [PATIENT_NAME] tolerated treatment.', {}],
+    ['GATEWAYJ4-1', ['COLIN LIN'], 'Line 2: 97530CO Colin Lin 02/14/2026 $38.00', 'Line 2: 97530CO [PATIENT_NAME] 02/14/2026 $38.00', {}],
+    ['GATEWAYJ4-1', ['COLIN LIN'], 'Billed G0283CO Colin Lin.', 'Billed G0283CO [PATIENT_NAME].', {}],
+    ['GATEWAYJ4-1', ['AMAL AL HASSAN'], 'Billed 97110AM Amal Al Hassan.', 'Billed 97110AM [PATIENT_NAME].', {}],
+    // Fail-safe refusals, as before: an amount's letters, a bare whole number's, and a range's second end glued to a head.
+    ['GATEWAYJ4-1', ['MINHO HO'], 'Seen 150.00MIN HO paid', null, {}],
+    ['GATEWAYJ4-1', ['DANIELLE LE'], '1Daniel Le', null, {}],
+    ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 9-10Daniel Le', null, {}],
+    ['GATEWAYJ4-1', ['DANIELLE LE'], 'Seen 3rd-4Daniel Le', null, {}],
+    // Review round 5, F4: the date of birth's last numbers and the number after it read as the date again ("2/01 - 01" of
+    // "1/2/01 - 01/05/2026", born 2001-01-02), a read only from a start inside the written date of birth: the number after
+    // it is the next token's and stays as cc3dd7f6 left it.
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1/2/01 - 01/05/2026 date of service denied.', 'DOB [DATE_OF_BIRTH] - 01/05/2026 date of service denied.', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 10/11/10 - 10/14/2025 visit', 'DOB [DATE_OF_BIRTH] - 10/14/2025 visit', { datesOfBirth: ['2010-10-11'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1/2/01|01:30am visit', 'DOB [DATE_OF_BIRTH]|01:30am visit', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1/2/01. 01.00 paid', 'DOB [DATE_OF_BIRTH]. 01.00 paid', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 01/02/01/01 units billed', 'DOB [DATE_OF_BIRTH]/01 units billed', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'DOB 1-2-01-01/05/2026 denied', 'DOB [DATE_OF_BIRTH]-01/05/2026 denied', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'Born 1/2/01 - 01/05/2026 seen', 'Born [DATE_OF_BIRTH] - 01/05/2026 seen', { datesOfBirth: ['2001-01-02'] }],
+    ['F4', ['ZEPHYRA VANTREE'], 'Seen 1/2/01 - 01/05/2026 again', 'Seen [DATE_OF_BIRTH] - 01/05/2026 again', { datesOfBirth: ['2001-01-02'] }],
+    // Review round 5, F6: cc3dd7f6 reads every letter as a space once any letter touches a digit, so "12/31 terminated. 26"
+    // is a date to it and the range before it stands; the dates it read so are barriers of the scan's full reading too,
+    // and the letter is sent as it sent it. With no letter against a digit both trees refuse the range's digits.
+    ['F6', ['ZEPHYRA VANTREE'], 'Coverage 10/1/2025-12/31 terminated. 26 units of 97110GP were billed.', 'Coverage 10/1/2025-12/31 terminated. 26 units of 97110GP were billed.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110GP are pending.', 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110GP are pending.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'Service 03/08/2021-6/14 denied. 27 visits of 97530GO were denied.', 'Service 03/08/2021-6/14 denied. 27 visits of 97530GO were denied.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12/2025 reviewed. 16 claims of 97110GP are pending.', 'DOS 10/22/2024-2/12/2025 reviewed. 16 claims of 97110GP are pending.', {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed.', null, {}],
+    ['F6', ['ZEPHYRA VANTREE'], 'DOS 10/22/2024-2/12 reviewed. 16 claims of 97110 GP are pending.', null, {}],
+    // Review round 5, F5: a lone letter glued after a number before the name is the number's own by its structure, an
+    // ICD-10-CM code's last character or a one-letter unit after a whole number of one to three digits, and no initial
+    // (cc3dd7f6 sends each with only the name replaced); after an amount, a currency sign, a year or a longer number it
+    // stays an initial, and so does every such letter in a held letter (fail-safe refusals).
+    ['F5', ['ANNA DAVIS'], 'Diagnosis S83.511A. Anna was evaluated on 01/05/2026.', 'Diagnosis S83.511A. [PATIENT_NAME] was evaluated on 01/05/2026.', {}],
+    ['F5', ['ANNA DAVIS'], 'Diagnosis S83.511A Davis', 'Diagnosis S83.511A [PATIENT_NAME]', {}],
+    ['F5', ['MAY ALLEN'], 'Diagnosis S83.511A may be payable under the plan.', 'Diagnosis S83.511A [PATIENT_NAME] be payable under the plan.', {}],
+    ['F5', ['WILL ADAMS'], 'Diagnosis S83.511A will be reviewed.', 'Diagnosis S83.511A [PATIENT_NAME] be reviewed.', {}],
+    ['F5', ['DANA SMITH'], 'Authorized 30d. Dana Smith may appeal.', 'Authorized 30d. [PATIENT_NAME] may appeal.', {}],
+    ['F5', ['XAVIER VANTREE'], 'Therapy 3x, Xavier Vantree, denied.', 'Therapy 3x, [PATIENT_NAME], denied.', {}],
+    ['F5', ['FIONA VANTREE'], 'Patient 45F Fiona Vantree', 'Patient 45F [PATIENT_NAME]', {}],
+    ['F5', ['SAM VANTREE'], 'Rest 30s. Sam Vantree tolerated.', 'Rest 30s. [PATIENT_NAME] tolerated.', {}],
+    ['F5', ['WILLIAM VANTREE'], 'Visit 6w William Vantree', 'Visit 6w [PATIENT_NAME]', {}],
+    ['F5', ['SAM VANTREE'], 'Level L4-5S, Sam Vantree', 'Level L4-5S, [PATIENT_NAME]', {}],
+    ['F5', ['JANE Q ZEPHYRA'], 'Paid 150.00Q Zephyra', null, {}],
+    ['F5', ['JANE Q ZEPHYRA'], 'Paid 150Q Zephyra', null, {}],
+    ['F5', ['DANA SMITH'], 'Paid 150.00D Dana Smith', null, {}],
+    ['F5', ['DANA SMITH'], 'Paid $30D Dana Smith', null, {}],
+    ['F5', ['DANA SMITH'], 'Seen 2020D Dana Smith', null, {}],
+    ['F5', ['DANA SMITH'], 'Ref 12345D Dana Smith', null, {}],
+    ['F5', ['ANNA DAVIS'], 'Diagnosis 9S83.511A. Anna', null, {}],
+    ['F5', ['ANNA DAVIS'], `${HELD}Diagnosis S83.511A. Anna was evaluated.`, null, {}],
+    ['F5', ['DANA SMITH'], `${HELD}Authorized 30d. Dana Smith may appeal.`, null, {}],
+    // Review round 5, F1 (the glued property's seeds 85720467, 283659814, -1270007264 and 708482257). A letter with no case
+    // in a run a digit touches (U+02BC, U+02B9 and U+02CA written for an apostrophe, a letter of a script without case)
+    // ends the word before it and begins none: the part beside it is set apart and the letter refused; a word that only
+    // holds a part stays ("Billed" for BILL).
+    ['F1', ["O'BRIEN AA"], 'Billed 150.00-120.00OʼBrien Aa, ', null, {}],
+    ['F1', ["O'BRIEN AA"], 'Paid 150.00OʹBrien', null, {}],
+    ['F1', ["O'BRIEN AA"], 'Paid 150.00OˊBrien', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00ʼZephyra', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00Zephyraʼs', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00אZephyra', null, {}],
+    ['F1', ['ZEPHYRA VANTREE'], 'Paid 150.00王Zephyra', null, {}],
+    ['F1', ['BILL VANTREE'], 'Paid 150.00אBilled', 'Paid 150.00אBilled', {}],
+    // A member ID or claim number of letters that begins glued to a digit, a part of the name inside it already replaced
+    // (redaction read "JONES" after the soft hyphen as the name): the rest of the number beside the placeholder is read.
+    ['F1', ['AA SMITH-JONES'], 'DOS 2020-01-01–2020-01-02S MITH\u00ADJONES;', null, { memberIds: ['SMITHJONES'] }],
+    ['F1', ['CLAIM SMITH-JONES'], 'DOS 2020-01-01–2020-01-02S MITH\u00ADJONES;', null, { claimNumbers: ['SMITHJONES'] }],
+    ['F1', ['AA JONES'], 'Jones-SMITH9 paid', null, { memberIds: ['JONESSMITH'] }],
+    ['F1', ['AA SMITH-JONES'], 'DOS 2020-01-01–2020-01-02 S MITH\u00ADJONES;', 'DOS 2020-01-01–2020-01-02 [MEMBER_ID];', { memberIds: ['SMITHJONES'] }],
+    ['F1', ['AA JONES'], 'Paid 150.00 Mary-Jones today', 'Paid 150.00 Mary-[PATIENT_NAME] today', { memberIds: ['SMITHJONES'] }],
+    // Review round 5, F7: more units whose letters after a whole number are no head of a part (dose and the counts a letter
+    // bills); after an amount they stay a head, and the head rule's other gaps stay fail-safe refusals (docs/adr/0054).
+    ['F7', ['MGALI ALI'], 'Dose 30mg Ali tolerated.', 'Dose 30mg [PATIENT_NAME] tolerated.', {}],
+    ['F7', ['MLALI ALI'], 'Dose 5ml Ali tolerated.', 'Dose 5ml [PATIENT_NAME] tolerated.', {}],
+    ['F7', ['OZANA ANA'], 'Weight 8oz Ana gained.', 'Weight 8oz [PATIENT_NAME] gained.', {}],
+    ['F7', ['DAYSANA ANA'], 'Stay 3days Ana attended.', 'Stay 3days [PATIENT_NAME] attended.', {}],
+    ['F7', ['VISITSANA ANA'], 'Limit 12visits Ana used.', 'Limit 12visits [PATIENT_NAME] used.', {}],
+    ['F7', ['UNITSANA ANA'], 'Billed 4units Ana attended.', 'Billed 4units [PATIENT_NAME] attended.', {}],
+    ['F7', ['UNITSANA ANA'], 'Billed 150.00units Ana attended.', null, {}],
+    ['F7', ['COLIN LIN'], 'Billed 97110-59CO Lin', null, {}],
+    ['F7', ['COLIN LIN'], 'Rev 0420CO Lin', null, {}],
+    ['F7', ['AMAL AL HASSAN'], 'Seen 9:30:00am Al Hassan', null, {}],
+  ] as const)('handles the judge’s round 4 and review round 5 input (%s): %s %j', (_finding, names, letter, sent, more) => {
+    const { patient: who, claims } = judge1([...names], more);
+    const redacted = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(redacted.text, who, claims)).toBe(sent === null);
+    if (sent !== null) {
+      expect(redacted.text).toBe(sent);
+    }
+  });
+
+  // PHIJ3-1: a held letter never sends the date of birth written with each of datesIn's separators (DATE_SEPARATOR, a dash
+  // of each kind among them), white space, and gaps of two or three characters, in every order of its year, month and
+  // day, with a four- or two-digit year, padded or not (one row per separator and order): it is refused, or redaction
+  // reads the form as the date of birth and the letter is sent with that form alone replaced ("03/14/1980").
+  const neverInClear = (letter: string, form: string, who: PatientIdentifiers, claims: readonly LetterClaim[]) => {
+    const screened = redactLetterForScreen(letter, who, claims);
+    const refused = holdsIdentifier(screened.text, who, claims);
+    expect(refused || screened.text === letter.normalize('NFKC').replace(form.normalize('NFKC'), '[DATE_OF_BIRTH]'), JSON.stringify(letter)).toBe(true);
+  };
+  const HELD_FRAMES = [`${HELD}Seen {T}`, 'Seen 01/01/2020-150.00 Paid. {T}', '{T}\nSeen 01/01/2020-150.00Paid in full.', 'Re: {T}. Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00'];
+  const SEPARATORS = ['/', '\\', '.', '-', '‐', '‑', '‒', '–', '—', '―', '−', '⁃', '_', '|', ' ', '\n', ' / ', '--', ', ', ' | '];
+  const ORDERS = ['ymd', 'ydm', 'mdy', 'dmy', 'myd', 'dym'] as const;
+  const writtenAs = (birth: string, order: string, separator: string, short: boolean, padded: boolean) => {
+    const [year = '', month = '', day = ''] = birth.split('-');
+    const parts: Record<string, string> = { y: short ? year.slice(2) : year, m: padded ? month : month.replace(/^0/u, ''), d: padded ? day : day.replace(/^0/u, '') };
+    return [...order].map((part) => parts[part] ?? '').join(separator);
+  };
+  it.each(SEPARATORS.flatMap((separator) => ORDERS.map((order) => [separator, order] as const)))('never sends the date of birth in a held letter written with %j in the order %s', (separator, order) => {
+    for (const [names, birth] of [
+      [['JANE Q ZEPHYRA'], '1980-03-14'],
+      [['SIMONE Q VANTREE'], '1975-11-02'],
+    ] as const) {
+      const { patient: who, claims } = judge1([...names], { datesOfBirth: [birth] });
+      for (const short of [false, true]) {
+        for (const padded of [true, false]) {
+          for (const frame of HELD_FRAMES) {
+            const form = writtenAs(birth, order, separator, short, padded);
+            neverInClear(frame.replace('{T}', form), form, who, claims);
+          }
+        }
+      }
+    }
+  });
+
+  it.each([
+    ['1980-03-14', ['19800314', '19801403', '03141980', '14031980', '03198014', '14198003', '1980314', '3141980', '800314', '801403', '031480', '140380', '038014', '148003']],
+    ['1975-11-02', ['1121975', '2111975', '1975112', '1975211', '19751102', '751102', '021175']],
+    ['1961-03-03', ['19610303', '196133', '331961', '319613', '1961033', '610303', '030361']],
+  ] as const)('never sends the date of birth %s written compact in a held letter, in any order', (birth, forms) => {
+    const { patient: who, claims } = judge1(['JANE Q ZEPHYRA'], { datesOfBirth: [birth] });
+    for (const form of forms) {
+      for (const frame of HELD_FRAMES) {
+        neverInClear(frame.replace('{T}', form), form, who, claims);
+      }
+    }
+  });
+
+  it('never sends the date of birth in clear in a held letter, whatever separators, order, year length, padding or month word write it (property, PHIJ3-1)', () => {
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    // One to three characters, or a wide gap: white space longer than four characters, a separator then a line break and
+    // indentation, CRLF (the judge's review round 4, PHIJ4-1: datesIn takes white space of any length between a date's parts).
+    const narrow = fc.array(fc.constantFrom('/', '\\', '.', '-', '–', '−', '⁃', '_', '|', ' ', ',', '\n', "'"), { minLength: 1, maxLength: 3 }).map((characters) => characters.join(''));
+    const blank = fc.constantFrom('', '  ', '     ', '        ', '\n        ', '\r\n   ', '\t\t\t');
+    const wide = fc.tuple(blank, fc.constantFrom('', '/', '-', '.', ',', '–', '|'), blank).map(([before, separator, after]) => `${before}${separator}${after}`).filter((written) => written.length > 4);
+    const gap = fc.oneof(narrow, wide);
+    const property = fc.property(
+      fc.date({ min: new Date('1925-01-01T00:00:00Z'), max: new Date('2009-12-31T00:00:00Z'), noInvalidDate: true }),
+      fc.constantFrom(...HELD_FRAMES),
+      fc.constantFrom(...ORDERS),
+      gap,
+      gap,
+      fc.boolean(),
+      fc.boolean(),
+      fc.nat(4),
+      (date, frame, order, first, second, short, padded, word) => {
+        const birth = date.toISOString().slice(0, 10);
+        const [year = '', month = '', day = ''] = birth.split('-');
+        const name = MONTH_NAMES[Number.parseInt(month, 10) - 1] ?? 'May';
+        // The month as a number, or as its word, its first three letters, those with a full stop, or the word in capitals.
+        const monthAs = [padded ? month : month.replace(/^0/u, ''), name, name.slice(0, 3), `${name.slice(0, 3)}.`, name.toUpperCase()][word] ?? month;
+        const parts: Record<string, string> = { y: short ? year.slice(2) : year, m: monthAs, d: padded ? day : day.replace(/^0/u, '') };
+        const [a = '', b = '', c = ''] = [...order].map((part) => parts[part] ?? '');
+        const form = `${a}${first}${b}${second}${c}`;
+        const { patient: who, claims } = judge1(['JANE Q ZEPHYRA'], { datesOfBirth: [birth] });
+        neverInClear(frame.replace('{T}', form), form, who, claims);
+      },
+    );
+    fc.assert(property, { numRuns: 300 });
+  });
+
+  it('never sends two or more of the name’s initials written together in a held letter, in any order and case, for a name of any number of parts: refused, or the letters replaced where they spell a whole part (property, PHIJ4-2)', () => {
+    const NAMES = ['JANE ZEPHYRA', 'JANE Q ZEPHYRA', 'SIMONE VANTREE', 'ANN Q VANTREE', 'BOB XU', 'MARY-JANE Q ZEPHYRA', 'ANA BEA CORA DINA ELLA FAYE GIA'];
+    const FRAMES = [`${RANGE_END}{T} $0,000.00`, `${HELD}Initials: {T}`, `${HELD}Re: {T}, thank you.`, 'Seen 01/01/2020-150.00{T} Paid in full.', '{T}\nSeen 01/01/2020-150.00Paid in full.'];
+    const property = fc.property(
+      fc.constantFrom(...NAMES).chain((name) => {
+        const initials = name.split(/[ -]/u).map((part) => part.charAt(0));
+        return fc.tuple(fc.constant(name), fc.shuffledSubarray(initials, { minLength: 2 }), fc.array(fc.boolean(), { minLength: initials.length, maxLength: initials.length }));
+      }),
+      fc.constantFrom(...FRAMES),
+      ([name, initials, small], frame) => {
+        const written = initials.map((initial, k) => (small[k] === true ? initial.toLowerCase() : initial)).join('');
+        const letter = frame.replace('{T}', written);
+        const { patient: who, claims } = judge1([name], {});
+        const screened = redactLetterForScreen(letter, who, claims);
+        // Refused, or sent with those letters replaced: initials written together may spell a whole part of the name ("BEA"
+        // for B, E and A of ANA BEA CORA DINA ELLA FAYE GIA), which redaction takes as the name where a boundary sets it
+        // apart (review round 5, F2: seeds -893188803 and -2096183961 drew it).
+        expect(holdsIdentifier(screened.text, who, claims) || screened.text === frame.replace('{T}', '[PATIENT_NAME]'), JSON.stringify(letter)).toBe(true);
+      },
+    );
+    fc.assert(property, { numRuns: 300 });
+  });
+
+  it.each([
+    ['BEA\nSeen 01/01/2020-150.00Paid in full.', '[PATIENT_NAME]\nSeen 01/01/2020-150.00Paid in full.'],
+    ['bEa\nSeen 01/01/2020-150.00Paid in full.', '[PATIENT_NAME]\nSeen 01/01/2020-150.00Paid in full.'],
+    ['Re: Bea.\nSeen 01/01/2020-150.00Paid in full.', 'Re: [PATIENT_NAME].\nSeen 01/01/2020-150.00Paid in full.'],
+    // "Service" holds C and E, two of this name's initials, together: a held letter with it is refused whatever else it holds (PHI5-1).
+    [`${HELD}Initials: BEA`, null],
+    [`${RANGE_END}BEA $0,000.00`, null],
+    ['Seen 01/01/2020-150.00BEA Paid in full.', null],
+    [`${HELD}Initials: BAE`, null],
+    [`${HELD}Initials: BE`, null],
+  ] as const)('sends initials written together that spell a whole part of the name with the part replaced, and refuses them glued or in another order (F2): %j', (letter, sent) => {
+    const { patient: who, claims } = judge1(['ANA BEA CORA DINA ELLA FAYE GIA'], {});
+    const screened = redactLetterForScreen(letter, who, claims);
+    expect(holdsIdentifier(screened.text, who, claims)).toBe(sent === null);
+    if (sent !== null) expect(screened.text).toBe(sent);
+  });
+
   it('refuses a hand-made redacted text that holds a surviving form, and a letter that glues the patient’s name to one (identifier_left, a fixed message with no number)', () => {
-    for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456']) {
+    for (const text of ['Call [CLAIM_1] at 202-555-0123', 'SSN 900 12 3456', 'Phone: 2025550123', 'xxx-xx-3456', 'RE: Vantree[SSN]']) {
       expect(holdsIdentifier(text, A, AC), text).toBe(true);
     }
-    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: 'RE: Vantree900-12-3456' })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+    // The name glued to the number by a lost space has no boundary redaction reads: the letter is refused, as at cc3dd7f6
+    // (design 7.4; the glued reading of review round 2 is reverted, review round 3).
+    for (const text of ['RE: Vantree900-12-3456', 'SSN 900 12 34 56']) {
+      expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+    }
   });
 
   it('rejects a claim reference that holds a placeholder without being one of the call’s claims (R10b)', () => {
