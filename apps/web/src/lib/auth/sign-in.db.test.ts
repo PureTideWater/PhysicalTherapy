@@ -143,6 +143,8 @@ describe('sign-in with a password and TOTP', () => {
     const resolved = await resolveSession(app, done.session.sessionToken, 'test');
     expect(resolved).toMatchObject({ state: 'active', session: { userId: invited.id, mfaMethod: 'totp', userStatus: 'active', mfaEnrolled: true, hardwareKeyRequired: false } });
     expect(await events(invited.id)).toEqual(['password_changed:', 'mfa_enrolled:totp', 'sign_in:totp']);
+    // The invitation's first password queues no password-changed email (docs/adr/0091, D2).
+    expect(await notices(invited.id)).toEqual([]);
   });
 
   it('SGN-04: reports on the first step’s pending result that the account must also register a hardware key, and nothing for a customer', async () => {
@@ -355,6 +357,14 @@ function failing(match: RegExp, times: number): ScopePool<ScopeClient> {
   };
 }
 
+/** What a database that cannot be reached answers a connection with (a synthetic failure). */
+const UNREACHABLE = 'synthetic: the database is unreachable';
+
+/** The application's pool while `reachable()` holds; otherwise every connection is refused, as an unreachable database refuses one. */
+function reachableWhile(reachable: () => boolean): ScopePool<ScopeClient> {
+  return { connect: () => (reachable() ? app.connect() : Promise.reject(Object.assign(new Error(UNREACHABLE), { code: 'ECONNREFUSED' }))) };
+}
+
 /** The last code mailed to an address. */
 function codeFor(email: string): string {
   const code = mailed.filter((entry) => entry.email === email).at(-1)?.code;
@@ -376,6 +386,35 @@ async function openSessions(userId: string): Promise<number> {
   const { rows } = await owner.query<{ count: string }>('SELECT count(*) AS count FROM user_session WHERE user_id = $1 AND ended_at IS NULL', [userId]);
   return Number(rows[0]?.count ?? -1);
 }
+
+/** A password-changed notice the database queued (docs/adr/0091; SGN-16): its state, and the event that queued it. */
+interface QueuedNotice {
+  readonly state: string;
+  readonly attempts: number;
+  readonly unsent: boolean;
+  readonly event: string;
+  readonly at_event: boolean;
+}
+
+/** The user's password-changed notices, oldest first, each with the action and purpose of the audit event that queued it. */
+async function notices(userId: string): Promise<QueuedNotice[]> {
+  const { rows } = await owner.query<QueuedNotice>(
+    `SELECT n.state, n.attempts, n.ses_message_id IS NULL AS unsent, e.action || ':' || coalesce(e.purpose, '') AS event, n.changed_at = e.at AS at_event
+       FROM password_notice n JOIN audit_event e ON e.id = n.audit_event_id
+      WHERE n.user_id = $1 ORDER BY n.changed_at, n.id`,
+    [userId],
+  );
+  return rows;
+}
+
+/** Every password-changed notice in this file's database. */
+async function noticeCount(): Promise<number> {
+  const { rows } = await owner.query<{ count: string }>('SELECT count(*) AS count FROM password_notice');
+  return Number(rows[0]?.count ?? -1);
+}
+
+/** The one pending notice a completed reset queues, from its own password_reset_completed event. */
+const QUEUED: QueuedNotice = { state: 'pending', attempts: 0, unsent: true, event: 'password_reset_completed:email_code', at_event: true };
 
 /** Signs a person in with the password and a code: their open session. */
 async function signedIn(email: string, password = PASSWORD) {
@@ -498,6 +537,7 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
 
   it('SGN-06: a wrong code, an unknown address and a weak password are refused; a wrong code counts no failure, records nothing and signs nothing out', async () => {
     const user = await person();
+    const queued = await noticeCount();
     const { flow: reset, lines } = paced();
     await reset.requestPasswordReset(user.email, context());
     const code = codeFor(user.email);
@@ -513,6 +553,21 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(logged(lines, 'password reset code refused')).toContainEqual(expect.objectContaining({ level: 'warn', request_id: request.requestId, error_code: expect.any(String) }));
     expect(lines.join('\n')).not.toContain(user.email);
     expect(lines.join('\n')).not.toContain(code);
+    // A refused code, an unknown address and a weak password queue no password-changed email (SGN-16).
+    expect(await noticeCount()).toBe(queued);
+  });
+
+  it('SGN-16: a reset the provider completes for an address the app has no account for records nothing and queues no password-changed email', async () => {
+    const stray = `${randomUUID()}@synthetic.test`;
+    await store.put({ sub: randomUUID(), email: stray, passwordHash: await hashPassword(PASSWORD, CHEAP), temporary: false, totpSecret: SECRET, totpLastStep: -1, credentials: [] });
+    const queued = await noticeCount();
+    const recorded = (await owner.query<{ count: string }>("SELECT count(*) AS count FROM audit_event WHERE action = 'password_reset_completed'")).rows[0]?.count;
+    await provider.requestPasswordReset(stray);
+    expect(await paced().flow.confirmPasswordReset(stray, codeFor(stray), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: false });
+    // The provider was asked all the same, an account or none (docs/adr/0091, D15): it holds the new password.
+    expect(await provider.signIn(stray, CHOSEN)).toMatchObject({ kind: 'mfa_required' });
+    expect((await owner.query<{ count: string }>("SELECT count(*) AS count FROM audit_event WHERE action = 'password_reset_completed'")).rows[0]?.count).toBe(recorded);
+    expect(await noticeCount()).toBe(queued);
   });
 
   it('SGN-07: a reset ends every session, then signs out at the provider, records the reset, and still asks for the second factor', async () => {
@@ -538,6 +593,9 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await reset.confirmPasswordReset(user.email, codeFor(user.email), 'Another-Pass-2026', context())).toEqual({ kind: 'rejected' });
     expect(pendingOf(await flow.start(user.email, CHOSEN, context())).step).toBe('mfa');
     expect(await flow.start(user.email, PASSWORD, context())).toEqual({ kind: 'refused', reason: 'credentials' });
+    // The database queued exactly one password-changed email in the reset's own transaction, from its event, pending for
+    // the platform's job (SGN-16; docs/adr/0091, D1); the refused second try and the sign-ins queued none.
+    expect(await notices(user.id)).toEqual([QUEUED]);
   });
 
   it('SGN-07: a locked account is reset and stays locked, keeping no email; an account disabled after the request keeps none either', async () => {
@@ -553,10 +611,14 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     await reset.requestPasswordReset(later.email, context());
     await owner.query('UPDATE "user" SET status = \'disabled\' WHERE id = $1', [later.id]);
     expect(await reset.confirmPasswordReset(later.email, codeFor(later.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: false });
+    // Each is still told its password changed: the guard reads no lock and no status (SGN-16; docs/adr/0091, D3 and D4).
+    expect(await notices(lockedUser.id)).toEqual([QUEUED]);
+    expect(await notices(later.id)).toEqual([QUEUED]);
   });
 
   it('SGN-07: a provider sign-out that fails is logged and the reset still lands (review SEC-N1)', async () => {
     const user = await person();
+    await signedIn(user.email);
     const { flow: reset, lines } = paced();
     await reset.requestPasswordReset(user.email, context());
     const signOut = vi.spyOn(provider, 'globalSignOut').mockRejectedValueOnce(Object.assign(new Error('synthetic'), { name: 'InternalErrorException' }));
@@ -566,6 +628,9 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(logged(lines, 'security event: password reset provider sign-out failed')).toEqual([
       expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId, error_code: 'InternalErrorException' }),
     ]);
+    // The sessions ended before the sign-out was tried, so the password-changed email is queued all the same (SGN-16).
+    expect(await openSessions(user.id)).toBe(0);
+    expect(await notices(user.id)).toEqual([QUEUED]);
   });
 
   it('SGN-07: a revoke that fails once is retried; failing twice it is logged, the provider still signs out, and the reset answers the generic failure (review R-3)', async () => {
@@ -576,6 +641,8 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await retried.flow.confirmPasswordReset(once.email, codeFor(once.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: true });
     expect(await openSessions(once.id)).toBe(0);
     expect((await events(once.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual(['password_reset_completed:email_code']);
+    // One notice: the failed try rolled back with everything it wrote (SGN-16).
+    expect(await notices(once.id)).toEqual([QUEUED]);
 
     const twice = await person();
     await signedIn(twice.email);
@@ -588,6 +655,148 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     signOut.mockRestore();
     expect(await openSessions(twice.id)).toBe(1);
     expect(logged(failed.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: twice.id, request_id: request.requestId })]);
+    // Neither try recorded the reset, so no password-changed email is queued: this line, which pages the operator
+    // (PasswordResetSessionsNotEnded), is the one signal of this path (SGN-16; docs/adr/0091, D15).
+    expect((await events(twice.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual([]);
+    expect(await notices(twice.id)).toEqual([]);
+  });
+
+  it('SGN-16: a confirmation made while the database cannot be reached fails before the provider is asked, so the password is unchanged and the same code resets once the database answers (docs/adr/0091, D15; review SEC-02 of 2026-11-11)', async () => {
+    const user = await person();
+    await signedIn(user.email);
+    await paced().flow.requestPasswordReset(user.email, context());
+    const code = codeFor(user.email);
+    let reachable = false;
+    const outage = paced(reachableWhile(() => reachable));
+    const asked = vi.spyOn(provider, 'confirmPasswordReset');
+    const thrown = await outage.flow.confirmPasswordReset(user.email, code, CHOSEN, context()).catch((error: unknown) => error);
+    const providerCalls = asked.mock.calls.length;
+    asked.mockRestore();
+    // The lookup's own error leaves the confirmation: nothing answers as if the password had been reset.
+    expect(thrown).toMatchObject({ message: UNREACHABLE });
+    // Nothing changed at the provider, which was never asked: the old password still passes its first step, and the new
+    // one does not.
+    expect(await provider.signIn(user.email, PASSWORD)).toMatchObject({ kind: 'mfa_required' });
+    expect(await provider.signIn(user.email, CHOSEN)).toEqual({ kind: 'rejected', stage: 'password' });
+    expect(providerCalls).toBe(0);
+    // No reset happened, so none is recorded, told or logged, and the open session rightly stays.
+    expect(await openSessions(user.id)).toBe(1);
+    expect((await events(user.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual([]);
+    expect(await notices(user.id)).toEqual([]);
+    expect(logged(outage.lines, 'security event: password reset completed')).toEqual([]);
+    // Nothing was thrown away: the code is unspent, and completes the reset once the database answers.
+    reachable = true;
+    const request = context();
+    expect(await outage.flow.confirmPasswordReset(user.email, code, CHOSEN, request)).toEqual({ kind: 'reset', locked: false, keepEmail: true });
+    expect(await openSessions(user.id)).toBe(0);
+    expect(await notices(user.id)).toEqual([QUEUED]);
+    expect(logged(outage.lines, 'security event: password reset completed')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id, request_id: request.requestId })]);
+  });
+
+  it('SGN-16: a reset the provider completes as the database becomes unreachable is logged as sessions not ended by the user’s ID, still signs out at the provider and answers the generic failure (docs/adr/0091, D15; review SEC-02 of 2026-11-11)', async () => {
+    const user = await person();
+    await signedIn(user.email);
+    await paced().flow.requestPasswordReset(user.email, context());
+    // The lookup is answered; from the provider's confirmation on, every connection is refused.
+    let reachable = true;
+    const outage = paced(reachableWhile(() => reachable));
+    const confirm = provider.confirmPasswordReset.bind(provider);
+    const confirmed = vi.spyOn(provider, 'confirmPasswordReset').mockImplementation(async (...args) => {
+      const result = await confirm(...args);
+      reachable = false;
+      return result;
+    });
+    const signOut = vi.spyOn(provider, 'globalSignOut');
+    const request = context();
+    const answered = await outage.flow.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, request).catch((error: unknown) => error);
+    confirmed.mockRestore();
+    const signedOut = [...signOut.mock.calls];
+    signOut.mockRestore();
+    expect(answered).toEqual({ kind: 'sessions_not_ended' });
+    expect(signedOut).toEqual([[user.sub]]);
+    expect(logged(outage.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId })]);
+    expect(outage.lines.join('\n')).not.toContain(user.email);
+    // The provider holds the new password; the app ended no session and recorded no reset, so no password-changed email
+    // is queued: the line above, which pages the operator (PasswordResetSessionsNotEnded), is this reset's signal.
+    expect(await provider.signIn(user.email, CHOSEN)).toMatchObject({ kind: 'mfa_required' });
+    expect(await provider.signIn(user.email, PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
+    expect(await openSessions(user.id)).toBe(1);
+    expect((await events(user.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual([]);
+    expect(await notices(user.id)).toEqual([]);
+  });
+
+  // An open residual, required before launch (docs/adr/0091, D10; review SEC-01 of 2026-11-11): this records what a
+  // sign-in step begun before a reset can do today, for the step's 3 minutes, not what is wanted. The close refuses to
+  // open a session from a step begun before the account's latest completed reset: `signed_in` below becomes a refusal.
+  it('SGN-16, open residual (ADR 0091 D10): a step that proved the old password before a reset still opens a session when its code is answered after the reset, which queued its one notice; the close refuses it, and flips this case', async () => {
+    const user = await person();
+    await signedIn(user.email);
+    // Before the reset: the old password is proved, and the step waits at the code.
+    const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));
+    expect(begun.step).toBe('mfa');
+    const { flow: reset } = paced();
+    await reset.requestPasswordReset(user.email, context());
+    expect(await reset.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: true });
+    // The reset ended every session, refuses the old password from here on, and queued exactly one notice.
+    expect(await openSessions(user.id)).toBe(0);
+    expect(await flow.start(user.email, PASSWORD, context())).toEqual({ kind: 'refused', reason: 'credentials' });
+    expect(await notices(user.id)).toEqual([QUEUED]);
+    // After the reset: the step begun before it is answered with a current code, and opens a session.
+    const finished = await flow.answerTotp(begun, nextCode(), context());
+    expect(finished.kind).toBe('signed_in');
+    if (finished.kind !== 'signed_in') {
+      return;
+    }
+    expect((await resolveSession(app, finished.session.sessionToken, 'test')).state).toBe('active');
+    // The one open session of the account started after the change its notice reports.
+    const { rows } = await owner.query<{ after_change: boolean }>(
+      'SELECT s.started_at > (SELECT max(n.changed_at) FROM password_notice n WHERE n.user_id = s.user_id) AS after_change FROM user_session s WHERE s.user_id = $1 AND s.ended_at IS NULL',
+      [user.id],
+    );
+    expect(rows).toEqual([{ after_change: true }]);
+    expect(await notices(user.id)).toEqual([QUEUED]);
+  });
+
+  // An open residual, required before launch (docs/adr/0091, D10; review SEC-01 of 2026-11-11): the grant sealed in a
+  // key-registration step outlives a reset whose provider sign-out had no effect, for the step's 15 minutes. The same
+  // close ends it (a step begun before the account's latest completed reset is refused): no key is registered below.
+  it('SGN-16, open residual (ADR 0091 D10): a key-registration step begun before a reset still registers a key after it when the provider’s sign-out had no effect, and the reset queued its one notice; the close refuses it, and flips this case', async () => {
+    // Before the reset: an account that must use a hardware key and has none proves the old password and a code.
+    const staff = await person({ internal: true });
+    const step = pendingOf(await flow.answerTotp(pendingOf(await flow.start(staff.email, PASSWORD, context())), nextCode(), context()));
+    expect(step).toMatchObject({ step: 'register_key', userId: staff.id });
+    const { flow: reset, lines } = paced();
+    await reset.requestPasswordReset(staff.email, context());
+    // The provider's sign-out fails, so the grant stays good (the local provider's own sign-out ends no grant either).
+    const signOut = vi.spyOn(provider, 'globalSignOut').mockRejectedValueOnce(Object.assign(new Error('synthetic'), { name: 'InternalErrorException' }));
+    const request = context();
+    expect(await reset.confirmPasswordReset(staff.email, codeFor(staff.email), CHOSEN, request)).toEqual({ kind: 'reset', locked: false, keepEmail: true });
+    signOut.mockRestore();
+    // The reset queued exactly one notice, and its failed sign-out is logged by the user's ID: the line that pages the
+    // operator for this case (PasswordResetProviderSignOutFailed).
+    expect(await notices(staff.id)).toEqual([QUEUED]);
+    expect(logged(lines, 'security event: password reset provider sign-out failed')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: staff.id, request_id: request.requestId, error_code: 'InternalErrorException' }),
+    ]);
+    // After the reset: the step begun before it registers a key, and that key signs in with no password.
+    const key = new SoftAuthenticator(ORIGIN);
+    const begun = await flow.beginKeyRegistration(step);
+    if ('kind' in begun) {
+      throw new Error('expected options');
+    }
+    expect(await flow.completeKeyRegistration(begun.pending, key.create(begun.options), context())).toEqual({ kind: 'key_registered' });
+    const keyStart = await flow.beginKey(staff.email);
+    if ('kind' in keyStart) {
+      throw new Error('expected options');
+    }
+    const done = await flow.completeKey(keyStart.pending, key.get(keyStart.options), context());
+    expect(done.kind).toBe('signed_in');
+    if (done.kind !== 'signed_in') {
+      return;
+    }
+    expect(await resolveSession(app, done.session.sessionToken, 'test')).toMatchObject({ state: 'active', session: { userId: staff.id, mfaMethod: 'webauthn' } });
+    expect(await events(staff.id)).toEqual(['password_reset_requested:unverified_request', 'password_reset_completed:email_code', 'hardware_key_registered:webauthn', 'sign_in:webauthn']);
+    expect(await notices(staff.id)).toEqual([QUEUED]);
   });
 });
 

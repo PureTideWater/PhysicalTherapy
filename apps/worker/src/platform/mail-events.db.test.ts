@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { GetAccountCommand, GetConfigurationSetCommand, PutConfigurationSetSendingOptionsCommand } from '@aws-sdk/client-sesv2';
-import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, recordAuditEvent, withActor } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -10,13 +10,15 @@ import { localMailEvents } from '../mail/events';
 import { type MailIdentity, MemoryMailSender } from '../mail/mail';
 import { MAIL_PROBE_RECIPIENTS } from '../mail/streams';
 import { type MailEventSource, type MailEventsOptions, type MailQueueMessage, MemoryMailControl, SesMailControl, expireMail, runMailEvents } from './mail-events';
+import { sendPasswordNotices } from './password-notices';
 import { sendSupportGrantNotices } from './support-notices';
 
 /**
  * The platform's mail_events job against a real database (audit #76; docs/adr/0065; JOB-05, SCR-21, SEC-18, SEC-19):
  * each SES event recorded once per message and event in any order, deleted from the queue only after its record
  * commits; the screening's set kept in step with its stream (a pause disables the screening set alone, and nothing keeps
- * a paused set sending); the account's signals; the probes; and a notice's undelivered recipient reported once.
+ * a paused set sending); the account's signals; the probes; and a notice's undelivered recipient reported once, its line
+ * written before the queue's delete, so a delete that fails after the record cannot lose it (the review of 2026-11-11, DB-01).
  */
 
 const PREFIX = 'tp-production';
@@ -573,6 +575,136 @@ describe('the mail_events job', () => {
     expect(sends).not.toMatch(/@|simulator/i);
     expect(sends).not.toContain(rows[0]?.keyed ?? 'none');
     expect(JSON.stringify(lines)).not.toContain('@');
+  });
+
+  it('reports a password-changed email not delivered once, by its notice’s and user’s IDs and the mail state, and not a delivery or a replay (SGN-16; docs/adr/0091)', async () => {
+    // Two completed resets, each sent its notice by the password_notices job.
+    const users = [await createUser(owner), await createUser(owner)];
+    for (const user of users) {
+      await withActor(app, user, (scope) => recordAuditEvent(scope, { action: 'password_reset_completed', objectType: 'user', objectId: user, purpose: 'email_code', requestId: `test-${randomUUID()}` }));
+    }
+    const mail = new MemoryMailSender();
+    const client = await operator.connect();
+    try {
+      await sendPasswordNotices({ client, mail, supportEmail: 'support@synthetic.test', requestId: 'job' });
+    } finally {
+      client.release();
+    }
+    const [bounced, delivered] = users.map((user) => mail.sent.find((message) => message.identity.recipientUserId === user));
+    expect(bounced?.identity.kind).toBe('password_changed');
+    expect(delivered?.identity.kind).toBe('password_changed');
+    // SES's events as the simulator would send them: one bounced, one delivered; then every event again.
+    const queue = new MemoryQueue();
+    const published = [
+      ...localMailEvents({ messageId: bounced?.messageId ?? '', to: 'bounce@simulator.amazonses.com', identity: bounced?.identity ?? screening(), streamPrefix: PREFIX, at: new Date() }),
+      ...localMailEvents({ messageId: delivered?.messageId ?? '', to: 'success@simulator.amazonses.com', identity: delivered?.identity ?? screening(), streamPrefix: PREFIX, at: new Date() }),
+    ];
+    for (const event of published) {
+      queue.push(JSON.stringify(event));
+    }
+    const { lines, logger } = capture();
+    expect(await run({ source: queue }, logger)).toMatchObject({ recorded: 4, unreadable: 0, notRecorded: 0 });
+    expect(lines.filter((line) => line.error_code === 'PASSWORD_NOTICE_UNDELIVERED')).toEqual([
+      expect.objectContaining({
+        level: 'error',
+        msg: 'password notice not delivered',
+        job_id: expect.any(String),
+        password_notice_id: bounced?.identity.subjectId,
+        user_id: users[0],
+        undelivered_reason_code: 'bounced',
+      }),
+    ]);
+    const states = await owner.query<{ id: string; state: string }>('SELECT id, state FROM password_notice WHERE user_id = ANY ($1::uuid[]) ORDER BY state', [users]);
+    expect(states.rows).toEqual([
+      { id: delivered?.identity.subjectId, state: 'delivered' },
+      { id: bounced?.identity.subjectId, state: 'undelivered' },
+    ]);
+    // A replay changes nothing and logs nothing.
+    const replay = new MemoryQueue();
+    for (const event of published) {
+      replay.push(JSON.stringify(event));
+    }
+    const again = capture();
+    expect(await run({ source: replay }, again.logger)).toMatchObject({ recorded: 0, repeated: 4 });
+    expect(again.lines.filter((line) => line.error_code === 'PASSWORD_NOTICE_UNDELIVERED')).toEqual([]);
+    expect((await owner.query("SELECT count(*)::integer AS n FROM audit_event WHERE action = 'password_notice_undelivered' AND object_id = ANY ($1::uuid[])", [users])).rows).toEqual([{ n: 1 }]);
+    expect(JSON.stringify([...lines, ...again.lines])).not.toContain('@');
+  });
+
+  it('writes a password-changed email’s not-delivered line before the queue’s delete: a delete that fails after the bounce’s record has already paged, and the event received again logs nothing more (the review of 2026-11-11, DB-01; docs/adr/0091, D9)', async () => {
+    const user = await createUser(owner);
+    await withActor(app, user, (scope) => recordAuditEvent(scope, { action: 'password_reset_completed', objectType: 'user', objectId: user, purpose: 'email_code', requestId: `test-${randomUUID()}` }));
+    const mail = new MemoryMailSender();
+    const client = await operator.connect();
+    try {
+      await sendPasswordNotices({ client, mail, supportEmail: 'support@synthetic.test', requestId: 'job' });
+    } finally {
+      client.release();
+    }
+    const sent = mail.sent.find((message) => message.identity.recipientUserId === user);
+    expect(sent?.identity.kind).toBe('password_changed');
+    const queue = new MemoryQueue();
+    events(queue, 'bounce@simulator.amazonses.com', sent?.identity ?? screening(), sent?.messageId);
+    // The queue's delete fails once, after the bounce's record has committed (a throttle, a network error, a task stopped
+    // there): the database reports the notice to that one call alone, so the line must not wait for the delete.
+    let failures = 1;
+    const source: MailEventSource = {
+      receive: (max) => queue.receive(max),
+      remove: (message) => {
+        if (failures > 0 && (JSON.parse(message.body) as { detail: { eventType: string } }).detail.eventType === 'Bounce') {
+          failures -= 1;
+          return Promise.reject(new Error('SYNTHETIC the queue could not delete the message'));
+        }
+        return queue.remove(message);
+      },
+    };
+    const { lines, logger } = capture();
+    await expect(run({ source }, logger)).rejects.toThrow('SYNTHETIC the queue could not delete the message');
+    // The record committed: the notice is undelivered and reported, and its bounce is still on the queue.
+    expect((await owner.query('SELECT state, undelivered_reported_at IS NOT NULL AS reported FROM password_notice WHERE user_id = $1', [user])).rows).toEqual([{ state: 'undelivered', reported: true }]);
+    expect(queue.messages).toHaveLength(1);
+    // Received again: already recorded, so the database reports nothing and the job logs nothing; this time it is deleted.
+    queue.expire();
+    expect(await run({ source }, logger)).toMatchObject({ recorded: 0, repeated: 1, notRecorded: 0 });
+    expect(queue.messages).toEqual([]);
+    // One line over the two runs: the page was not lost with the delete, and is not written twice.
+    expect(lines.filter((line) => line.error_code === 'PASSWORD_NOTICE_UNDELIVERED')).toEqual([
+      expect.objectContaining({ level: 'error', msg: 'password notice not delivered', password_notice_id: sent?.identity.subjectId, user_id: user, undelivered_reason_code: 'bounced' }),
+    ]);
+    expect((await owner.query("SELECT count(*)::integer AS n FROM audit_event WHERE action = 'password_notice_undelivered' AND object_id = $1", [user])).rows).toEqual([{ n: 1 }]);
+    expect(JSON.stringify(lines)).not.toMatch(/@|SYNTHETIC/);
+  });
+
+  it('writes each not-delivered line the record returns before the queue’s delete, and nothing else: the probe’s line, the counts and a pause still follow the delete (the review of 2026-11-11, DB-01)', async () => {
+    const ids = { grant: randomUUID(), invoice: randomUUID(), invitation: randomUUID(), notice: randomUUID() };
+    const queue = new MemoryQueue();
+    // A probe's bounce, so the line that stays after the delete (the probe's) would show if it had moved before it.
+    events(queue, MAIL_PROBE_RECIPIENTS.bounced, { stream: 'transactional', kind: 'probe' });
+    const client = await operator.connect();
+    try {
+      // The record's answer for every event, as if one had left all four not delivered and paused the stream (no one event
+      // does: each column is read on its own). Every other statement goes to the database.
+      const row = { recorded: true, state: 'bounced', notice_undelivered: ids.grant, invoice_undelivered: ids.invoice, invitation_undelivered: ids.invitation, stream_paused: 'bounce_rate', password_notice_undelivered: ids.notice };
+      const answering = {
+        query: (text: string, values?: unknown[]) => (text.includes('operator_record_mail_event') ? Promise.resolve({ rows: [row] }) : client.query(text, values)),
+      };
+      const source: MailEventSource = { receive: (max) => queue.receive(max), remove: () => Promise.reject(new Error('SYNTHETIC the queue could not delete the message')) };
+      const control = new MemoryMailControl();
+      const { lines, logger } = capture();
+      const options = { client: answering, source, control, mail: new MemoryMailSender(), streamPrefix: PREFIX, probes: false, requestId: 'job', logger };
+      await expect(runMailEvents(options)).rejects.toThrow('SYNTHETIC the queue could not delete the message');
+      expect(lines.map((line) => [line.level, line.error_code, line.support_grant_id ?? line.invoice_id ?? line.invitation_id ?? line.password_notice_id])).toEqual([
+        ['error', 'NOTICE_UNDELIVERED', ids.grant],
+        ['error', 'NOTICE_UNDELIVERED', ids.invoice],
+        ['warn', 'INVITATION_UNDELIVERED', ids.invitation],
+        ['error', 'PASSWORD_NOTICE_UNDELIVERED', ids.notice],
+      ]);
+      // After the delete, which failed: no probe line, and the screening set was not touched.
+      expect(control.changes).toEqual([]);
+      expect(queue.messages).toHaveLength(2);
+    } finally {
+      client.release();
+    }
   });
 
   it('expires the mail records past their days, as the nightly mail_expiry job does', async () => {

@@ -95,6 +95,24 @@ describe('notice email', () => {
     expect(sent[1]).toMatchObject({ ConfigurationSetName: 'tp-production-transactional', FromEmailAddress: 'PaidWhole <notices@synthetic.test>' });
   });
 
+  it('sends a message’s own Reply-To when it names one (the password-changed email’s support address, docs/adr/0091), from its stream’s unchanged sender, and over its stream’s Reply-To', async () => {
+    const { client, sent } = sesClient();
+    const ses = new SesMailSender({ client, staticOrigin: null, streamPrefix: 'tp-production', senders: SENDERS });
+    await ses.send({ ...MESSAGE, replyTo: 'support@synthetic.test', identity: { stream: 'transactional', kind: 'password_changed', subjectId: NOTICE, recipientUserId: ADMIN } });
+    expect(sent[0]).toMatchObject({
+      FromEmailAddress: 'PaidWhole <notices@synthetic.test>',
+      Destination: { ToAddresses: ['admin@synthetic.test'] },
+      ReplyToAddresses: ['support@synthetic.test'],
+      ConfigurationSetName: 'tp-production-transactional',
+    });
+    // A message's own wins over its stream's.
+    await ses.send({ ...MESSAGE, to: ['prospect@clinic.synthetic.test'], replyTo: 'desk@synthetic.test', identity: { stream: 'screening', kind: 'screening_result', subjectId: RUN } });
+    expect(sent[1]).toMatchObject({ FromEmailAddress: 'PaidWhole <results@screening.synthetic.test>', ReplyToAddresses: ['desk@synthetic.test'] });
+    // The next message on the same stream names none, and has none: the header is the message's, never the stream's.
+    await ses.send({ ...MESSAGE, identity: { stream: 'transactional', kind: 'digest', subjectId: NOTICE, recipientUserId: ADMIN } });
+    expect(sent[2]).not.toHaveProperty('ReplyToAddresses');
+  });
+
   it('refuses before sending a message to two addresses or none, a stream it has no sender for, and a tag that is not an opaque ID', async () => {
     const { client, sent } = sesClient();
     const ses = new SesMailSender({ client, staticOrigin: null, streamPrefix: 'tp-production', senders: { notices: SENDERS.notices } });
@@ -132,6 +150,46 @@ describe('notice email', () => {
     await local.send(MESSAGE);
     expect(local.sent[0]?.html).toBe(mailBodyHtml(MESSAGE, null));
     expect(() => local.send({ ...MESSAGE, to: ['a@synthetic.test', 'b@synthetic.test'] })).toThrow(MailAddressError);
+    // A message's own Reply-To is kept with it, where a test reads it; a message that names none has none.
+    await local.send({ ...MESSAGE, replyTo: 'support@synthetic.test' });
+    expect(local.sent[1]?.replyTo).toBe('support@synthetic.test');
+    expect(local.sent[0]).not.toHaveProperty('replyTo');
+  });
+});
+
+describe('the account variant’s text alternative (the password-changed email; docs/adr/0091, D5)', () => {
+  const ACCOUNT: MailMessage = {
+    to: ['someone@clinic.synthetic.test'],
+    subject: 'Your password was changed',
+    lines: ['A first fixed line.', 'A second fixed line.'],
+    links: [],
+    variant: 'account',
+    identity: { stream: 'transactional', kind: 'password_changed', subjectId: NOTICE, recipientUserId: ADMIN },
+  };
+
+  it('ends with a blank line and the account footer, so a reader of the text part alone gets the sentence a look-alike cannot keep', () => {
+    expect(mailBody(ACCOUNT)).toBe(`A first fixed line.\nA second fixed line.\n\n${MAIL_FOOTERS.account}`);
+    // A link, were one ever sent in this variant, stays where every message has it: the footer is still last, after a blank line.
+    const [link = ''] = MESSAGE.links;
+    expect(mailBody({ ...ACCOUNT, links: [link] })).toBe(`A first fixed line.\nA second fixed line.\n\n${link}\n\n${MAIL_FOOTERS.account}`);
+  });
+
+  it('is the text part every sender sends, beside the HTML that carries the same footer', async () => {
+    const { client, sent } = sesClient();
+    await new SesMailSender({ client, staticOrigin: STATIC, streamPrefix: 'tp-production', senders: SENDERS }).send(ACCOUNT);
+    expect(sent).toEqual([expect.objectContaining({ Content: { Simple: expect.objectContaining({ Body: { Text: { Data: mailBody(ACCOUNT), Charset: 'UTF-8' }, Html: { Data: mailBodyHtml(ACCOUNT, STATIC), Charset: 'UTF-8' } } }) } })]);
+    const memory = new MemoryMailSender();
+    await memory.send(ACCOUNT);
+    expect(memory.sent[0]?.body.endsWith(`\n\n${MAIL_FOOTERS.account}`)).toBe(true);
+    expect(memory.sent[0]?.html).toContain(MAIL_FOOTERS.account);
+  });
+
+  it('leaves a customer’s and a prospect’s text as it was, byte for byte: the lines, a line break, the links, and no footer', () => {
+    for (const variant of [undefined, 'customer', 'prospect'] as const) {
+      const message: MailMessage = { ...MESSAGE, ...(variant === undefined ? {} : { variant }) };
+      expect(mailBody(message), String(variant)).toBe(`${MESSAGE.lines[0] ?? ''}\n\n${MESSAGE.links[0] ?? ''}`);
+      expect(mailBody({ ...message, links: [] }), String(variant)).toBe(`${MESSAGE.lines[0] ?? ''}\n`);
+    }
   });
 });
 
@@ -158,6 +216,19 @@ describe('the local outbox', () => {
     expect(Array.isArray(written.to)).toBe(true);
     // No events directory: no event is written.
     expect(readdirSync(dir)).toEqual(['outbox']);
+  });
+
+  it('writes a message’s own Reply-To beside it, where a journey reads it; a message that names none is written as before, with no such key', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'tp-mail-'));
+    await new LocalMailSender(path.join(dir, 'outbox'), null).send({ ...MESSAGE, replyTo: 'support@synthetic.test' });
+    const [file = ''] = readdirSync(path.join(dir, 'outbox'));
+    expect(JSON.parse(readFileSync(path.join(dir, 'outbox', file), 'utf8'))).toEqual({
+      to: ['admin@synthetic.test'],
+      subject: `${MESSAGE.subject} | PaidWhole`,
+      body: mailBody(MESSAGE),
+      html: mailBodyHtml(MESSAGE, null),
+      replyTo: 'support@synthetic.test',
+    });
   });
 
   it('writes the events SES’s simulator would publish, by the address’s local part before any +, which the mail_events job reads', async () => {

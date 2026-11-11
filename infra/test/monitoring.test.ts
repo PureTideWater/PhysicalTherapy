@@ -58,7 +58,9 @@ import {
   PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES,
   PASSWORD_RESET_NOT_DELIVERED_MESSAGE,
   PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
+  PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE,
   PASSWORD_RESET_REQUESTED_MESSAGE,
+  PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE,
   RESET_AND_ENROLMENT_COUNTS,
   RESET_REQUESTS_PER_USER,
   SECURITY_ALARM_PERIOD_SECONDS,
@@ -117,7 +119,7 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
 describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
   const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
 
-  it('pins the seven counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+  it('pins the nine counted lines, their codes and thresholds, and the per-user line, as literals', () => {
     // Literals, so an edit to the constants cannot pass by changing both sides.
     expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
       {
@@ -135,13 +137,17 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'ClientCredentialProbeRefused', message: 'cognito probe refused', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A reset request answered after its floor (review security-N-1): its timing could tell an account from none.
       { metricName: 'PasswordResetRequestOverFloor', message: 'password reset request over floor', errorCodes: [], threshold: 3, periodSeconds: 3600 },
+      // A completed reset whose sessions were not ended queues no password-changed email, so its line pages (docs/adr/0091, D15).
+      { metricName: 'PasswordResetSessionsNotEnded', message: 'security event: password reset sessions not ended', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // A completed reset whose sign-out at the provider failed: a key-registration step begun before it can still register a key (docs/adr/0091, D10).
+      { metricName: 'PasswordResetProviderSignOutFailed', message: 'security event: password reset provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
     ]);
     expect(PASSWORD_RESET_REQUESTED_MESSAGE).toBe('password reset requested');
     expect(RESET_REQUESTS_PER_USER).toEqual({ threshold: 5, periodSeconds: 3600 });
     expect(SECURITY_ALARM_PERIOD_SECONDS).toBe(300);
   });
 
-  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal and each account\'s request', () => {
+  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal, a reset whose sessions were not ended, a reset whose provider sign-out failed and each account\'s request', () => {
     const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
     const flow = source('apps/web/src/lib/auth/sign-in.ts');
     expect(provider).toContain(`this.logger.warn('${PASSWORD_RESET_NOT_DELIVERED_MESSAGE}', { error_code: code, request_id: requestId ?? null });`);
@@ -150,6 +156,10 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(flow).toContain(`this.deps.logger.warn('${ENROLMENT_REFUSED_MESSAGE}', {`);
     expect(flow).toContain(`this.deps.logger.error('${CLIENT_CREDENTIAL_REFUSED_MESSAGE}', {`);
     expect(source('apps/web/src/lib/auth/credential-probe.ts')).toContain(`logger?.error('${CREDENTIAL_PROBE_REFUSED_MESSAGE}', { error_code: code });`);
+    // The completed reset that queues no password-changed email (docs/adr/0091, D15): the user's ID and the request's alone.
+    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
+    // The completed reset whose sign-out at the provider failed (docs/adr/0091, D10): the user's ID, the request's and the error's name alone.
+    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });`);
     // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
     expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
   });
@@ -254,12 +264,13 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // Worker: heartbeat, final job failures, pricing engine errors, job heap peaks, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
-    // the platform's five codes, an unsent probe, and the web's refused validation and validation cap. Reset and
-    // enrolment (R-11; docs/adr/0088, D7): the web's undelivered requests (configuration, throttle), failed requests,
-    // refused enrolments, refused client credentials and the start-up probe's refusal. The user pool's message trigger
-    // (docs/adr/0081, the code-email amendment): a message left to the pool's template, and the web's reset request
-    // answered after its floor.
-    expect(filters).toHaveLength(31);
+    // the platform's six codes (the sixth a password-changed email not delivered, docs/adr/0091, D9), an unsent probe,
+    // a password-changed email SES accepted whose record failed (D9), and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
+    // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
+    // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
+    // sign-out at the provider failed (docs/adr/0091, D10). The user pool's message trigger (docs/adr/0081, the
+    // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
+    expect(filters).toHaveLength(35);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -280,6 +291,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.uptime.certificateAlarm,
       ...Object.values(stack.monitoring.mailCodeAlarms),
       stack.monitoring.mailProbeUnsentAlarm,
+      stack.monitoring.passwordNoticeRecordFailedAlarm,
       stack.monitoring.mailValidationRefusedAlarm,
       stack.monitoring.mailValidationCapAlarm,
       ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
@@ -476,7 +488,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
     const web = stack.monitoring.webLogGroup;
 
-    it('counts each of the seven lines on the web log group alone, by message and, for undelivered requests, by code, and alarms at its threshold', () => {
+    it('counts each of the nine lines on the web log group alone, by message and, for undelivered requests, by code, and alarms at its threshold', () => {
       for (const count of RESET_AND_ENROLMENT_COUNTS) {
         const codes = count.errorCodes as readonly string[];
         const pattern =
@@ -504,6 +516,29 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       }
       const counted = filters.filter(([, filter]) => RESET_AND_ENROLMENT_COUNTS.some((count) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${count.metricName}"`)));
       expect(counted).toHaveLength(RESET_AND_ENROLMENT_COUNTS.length);
+      expect(counted).toHaveLength(9);
+    });
+
+    it('says, for each of the two completed resets that page (docs/adr/0091, D10 and D15), what happened, what to do and which runbook section', () => {
+      const description = (metricName: 'PasswordResetSessionsNotEnded' | 'PasswordResetProviderSignOutFailed') =>
+        String(propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms[metricName]))).AlarmDescription);
+      const notEnded = description('PasswordResetSessionsNotEnded');
+      expect(notEnded).toContain('the app could not end the account\'s sessions or record the reset');
+      // What to do names what the runbook's control does (End membership, or the founder's break-glass session): it ends the sessions.
+      expect(notEnded).toContain('read the user ID from the line, end the account\'s sessions and tell the person another way');
+      expect(notEnded).toContain('docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"');
+      const signOut = description('PasswordResetProviderSignOutFailed');
+      // What happened, and what it leaves open: a key-registration step begun before the reset, for its 15 minutes.
+      expect(signOut).toContain(`A ${environment} password reset was completed, but the sign-out at Cognito that follows it failed`);
+      expect(signOut).toContain('a hardware-key registration begun before the reset can still be completed for up to 15 minutes');
+      // What to do: the audit log by the line's user ID, for the one row the failed sign-out makes possible, a key
+      // registered since the reset; the person's own next sign-in by authenticator code is no sign of it and ends no
+      // membership (the delta review of 2026-11-11, DS-01).
+      expect(signOut).toContain('read the user ID from the line');
+      expect(signOut).toContain('look in the audit log for hardware_key_registered by that user since the reset, and if there is one treat it as a takeover, end the account\'s sessions and tell the founder; a sign_in by authenticator code is the person\'s own');
+      expect(signOut).toContain('docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"');
+      expect(signOut).toContain('docs/adr/0091, D10');
+      expect(signOut.length).toBeLessThanOrEqual(1024);
     });
 
     it('counts reset requests per user with one contributor rule keyed on the user ID, and no metric filter counts them', () => {

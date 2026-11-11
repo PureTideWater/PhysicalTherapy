@@ -344,6 +344,8 @@ export class Compute extends Construct {
         APP_ORIGIN: appOrigin,
         // The support-grant notices embed the brand's lockup from the static host too.
         STATIC_ASSET_ORIGIN: staticAssetOrigin,
+        // The support address the password-changed email names (docs/adr/0091), the web's own.
+        SUPPORT_EMAIL: parameters.supportEmail,
       },
       stopTimeout: WORKER_STOP_TIMEOUT,
     });

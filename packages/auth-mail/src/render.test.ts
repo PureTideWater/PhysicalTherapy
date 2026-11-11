@@ -224,19 +224,43 @@ describe('the words of each message', () => {
   });
 });
 
-describe('the password-changed email (sent from the follow-on pull request, ADR 0091)', () => {
-  it('says when, as every screen writes a time (format.ts utc()), that every session ended and the factor still holds, and the support route, with no link', () => {
+describe('the password-changed email (sent by the worker’s password_notices job, ADR 0091)', () => {
+  /** Synthetic: the change's time and the support address. */
+  const CHANGED = new Date('2026-11-05T14:32:00Z');
+  const SUPPORT = 'support@paidwhole.example';
+
+  it('says when, as every screen writes a time (format.ts utc()), that every session ended and an enrolled account’s second factor still holds, to ignore it if the change was the reader’s own, and two routes if it was not, with no link', () => {
     expect(utcMinute(new Date('2026-11-05T14:32:59.999Z'))).toBe('2026-11-05 14:32 UTC');
     expect(utcMinute(new Date('2027-01-09T03:04:00Z'))).toBe('2027-01-09 03:04 UTC');
     expect(PASSWORD_CHANGED_SUBJECT).toBe('Your password was changed');
-    const lines = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example');
+    const lines = passwordChangedLines(CHANGED, SUPPORT, true);
     expect(lines).toEqual([
       'The password for your PaidWhole account was changed at 2026-11-05 14:32 UTC, with a code sent to this address.',
       'Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.',
-      'If you changed it, there is nothing more to do.',
-      'If you did not, write to support@paidwhole.example from this address now, and we will help you secure the account.',
+      'If you changed it, ignore this email.',
+      'If you did not, write to support@paidwhole.example now from the address you sign in with, and tell your organization’s administrator. We will help you secure the account.',
     ]);
     expect(lines.join(' ')).not.toMatch(/https?:|www\./);
+  });
+
+  it('tells an account with no second factor only that every session ended, never that signing in still asks for one (docs/adr/0091, R3); its other three lines are the same', () => {
+    const enrolled = passwordChangedLines(CHANGED, SUPPORT, true);
+    const lines = passwordChangedLines(CHANGED, SUPPORT, false);
+    expect(lines).toEqual([enrolled[0], 'Every session of this account has ended.', enrolled[2], enrolled[3]]);
+    expect(lines.join(' ')).not.toMatch(/authenticator|hardware key|still asks/i);
+  });
+
+  it('says nothing a locked or disabled account’s reader would find untrue, and names a second route that needs no inbound mail, in the screens’ own words (docs/adr/0091, R4)', () => {
+    for (const secondFactorEnrolled of [true, false]) {
+      const words = passwordChangedLines(CHANGED, SUPPORT, secondFactorEnrolled).join(' ');
+      // A locked account still has something to do (write to have the lock lifted), so the email never says it has not.
+      expect(words).not.toMatch(/nothing more to do/i);
+      // The sign-in screens' phrase (apps/web's sign-in notice), never "from this address": a forwarded mailbox is not it.
+      expect(words).toContain('from the address you sign in with');
+      expect(words).not.toMatch(/from this address/i);
+      // The administrator can reach the support desk without the sign-in the reader may have lost.
+      expect(words).toContain('tell your organization’s administrator');
+    }
   });
 
   it('frames plain lines as the worker’s header-less frame does, every value escaped', () => {
@@ -268,9 +292,13 @@ describe('the record of the exact words (each message’s HTML and text, for the
     await expect(`Subject: ${message.subject}\n\n${message.text}\n`).toMatchFileSnapshot('./__snapshots__/fallback-code.txt');
   });
 
-  it('password-changed', async () => {
-    const lines = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example');
-    await expect(tokenNamed(authMailHtml(PASSWORD_CHANGED_SUBJECT, lines))).toMatchFileSnapshot('./__snapshots__/password-changed.html');
-    await expect(`Subject: ${PASSWORD_CHANGED_SUBJECT}\n\n${[...lines, AUTH_MAIL_FOOTER].join('\n\n')}\n`).toMatchFileSnapshot('./__snapshots__/password-changed.txt');
+  // The password-changed email as an account with a second factor enrolled is sent it, and as one with none is.
+  it.each([
+    ['password-changed', true],
+    ['password-changed-not-enrolled', false],
+  ] as const)('%s', async (name, secondFactorEnrolled) => {
+    const lines = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example', secondFactorEnrolled);
+    await expect(tokenNamed(authMailHtml(PASSWORD_CHANGED_SUBJECT, lines))).toMatchFileSnapshot(`./__snapshots__/${name}.html`);
+    await expect(`Subject: ${PASSWORD_CHANGED_SUBJECT}\n\n${[...lines, AUTH_MAIL_FOOTER].join('\n\n')}\n`).toMatchFileSnapshot(`./__snapshots__/${name}.txt`);
   });
 });

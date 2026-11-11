@@ -5,3 +5,6 @@
 # whatever core.autocrlf says, since --check compares them byte for byte with what the generator writes
 # (tools/test/function-files.test.ts).
 packages/db/functions/*.sql linguist-generated=false text eol=lf
+# A migration is text with LF line ends in every checkout too: migration 20261111090000's preflight compares the SHA-256
+# of two function bodies as PostgreSQL stored them, which are the migration files' own bytes, line ends included.
+packages/db/migrations/*.sql text eol=lf

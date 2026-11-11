@@ -80,6 +80,7 @@ export function platformRuntime(config: PlatformConfig, queue?: JobSender): { ha
       inbox: supportInbox(config),
       mailEvents: mailEvents(config),
       appOrigin: config.appOrigin,
+      supportEmail: config.supportEmail,
       ...(queue === undefined ? {} : { queue }),
     }),
   };

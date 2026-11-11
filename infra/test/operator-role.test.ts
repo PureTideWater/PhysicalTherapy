@@ -126,6 +126,24 @@ describe.each(ENVIRONMENTS)('%s: operator role', (environment) => {
     expect(statements.every((statement) => statement.Effect === 'Allow')).toBe(true);
   });
 
+  it('sends the password-changed notice only through MailFromAddress\'s identity and the transactional set, from MailFromAddress (docs/adr/0091, D5)', () => {
+    const notice = bySid('PasswordNoticeEmail');
+    expect(notice).toMatchObject({ Effect: 'Allow', Action: 'ses:SendEmail', Condition: { StringEquals: { 'ses:FromAddress': { Ref: PARAMETER_NAMES.mailFromAddress } } } });
+    expect(Object.keys(notice.Condition ?? {})).toEqual(['StringEquals']);
+    const resource = JSON.stringify(notice.Resource);
+    expect(Array.isArray(notice.Resource) ? notice.Resource : [notice.Resource]).toHaveLength(2);
+    expect(resource).toContain(logicalIdOf(stack, stack.mailStreams.mailIdentity));
+    expect(resource).toContain(`configuration-set/tp-${environment}-transactional`);
+    for (const other of ['notices', 'screening']) {
+      expect(resource).not.toContain(`tp-${environment}-${other}`);
+    }
+    expect(resource).not.toContain(logicalIdOf(stack, stack.mailStreams.screeningIdentity));
+    expect(resource).not.toContain('identity/*');
+    // The one other statement that reaches the transactional set is the probes', to the simulator alone.
+    const transactional = statements.filter((statement) => JSON.stringify(statement.Resource).includes(`configuration-set/tp-${environment}-transactional`)).map((statement) => statement.Sid);
+    expect(transactional.sort()).toEqual(['MailProbes', 'PasswordNoticeEmail']);
+  });
+
   it('sends probes through every set and both identities to the mailbox simulator alone, never without named recipients, from the two senders alone', () => {
     const probes = bySid('MailProbes');
     expect(probes.Action).toBe('ses:SendEmail');

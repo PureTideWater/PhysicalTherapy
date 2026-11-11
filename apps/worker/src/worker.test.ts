@@ -236,6 +236,7 @@ describe('startWorker', () => {
         mail_events: failing,
         mail_expiry: failing,
         dunning_notices: failing,
+        password_notices: failing,
       },
       heartbeatMs: 60_000,
     });
@@ -416,6 +417,7 @@ describe('startWorker', () => {
         mail_events: failing,
         mail_expiry: failing,
         dunning_notices: failing,
+        password_notices: failing,
       },
       heartbeatMs: 60_000,
     });
@@ -709,6 +711,7 @@ describe('startWorker', () => {
       mail_events: () => Promise.resolve(),
       mail_expiry: () => Promise.resolve(),
       dunning_notices: () => Promise.resolve(),
+      password_notices: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
@@ -739,6 +742,7 @@ describe('startWorker', () => {
       mail_events: () => Promise.resolve(),
       mail_expiry: () => Promise.resolve(),
       dunning_notices: () => Promise.resolve(),
+      password_notices: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
     for (const type of JOB_TYPES) {

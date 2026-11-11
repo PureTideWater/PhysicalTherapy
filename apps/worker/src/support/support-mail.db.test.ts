@@ -214,6 +214,7 @@ describe('support mail', () => {
         restorer: { restoreLatest: () => Promise.reject(new Error('not used')) },
         mail: new MemoryMailSender(),
         appOrigin: 'http://localhost:3000',
+        supportEmail: 'support@synthetic.test',
         inbox: new LocalSupportInbox(jobDir),
       });
       await handlers.support_mail({}, { jobId: 'job-mail-1', logger });
@@ -235,6 +236,7 @@ describe('support mail', () => {
         restorer: { restoreLatest: () => Promise.reject(new Error('not used')) },
         mail: new MemoryMailSender(),
         appOrigin: 'http://localhost:3000',
+        supportEmail: 'support@synthetic.test',
       });
       await expect(without.support_mail({}, { jobId: 'job-mail-3', logger })).rejects.toThrow(NoInboxError);
     } finally {
