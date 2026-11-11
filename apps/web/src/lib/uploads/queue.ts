@@ -1,9 +1,10 @@
-import { CONNECTION_TIMEOUT_MS } from '@tp/db/runtime';
+import { CONNECTION_TIMEOUT_MS, lockTimeoutParameter } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 import { type JobPayload, type JobType, SCREENING_PRICE_PAYLOAD, SCREENING_PRIORITY, type ScreeningRunJobOptions, enqueue, enqueueScreeningRun, parsePayload } from '@tp/worker/jobs';
-import { PgBoss } from 'pg-boss';
+import { type ConstructorOptions, PgBoss } from 'pg-boss';
 
 import { WEB_POOL_CONNECTIONS } from '../server/pools';
+import { WEB_LOCK_TIMEOUT_MS } from '../server/web-pool';
 
 /**
  * How the web app queues work for the worker (PRD 10, Pipeline step 1: "the server records
@@ -22,9 +23,27 @@ export interface JobQueue {
 }
 
 /**
- * pg-boss as a producer only: it supervises, schedules and migrates nothing (the worker does), and it
- * starts on first use.
+ * pg-boss's options as the web's producer: it supervises, schedules and migrates nothing (the worker does). Its pool
+ * carries the web's lock_timeout, as the request pools do (server/web-pool.ts; docs/adr/0092, the amendment of
+ * 2026-11-11): a handler queues inside its request's open transaction ("Queued in the request"), so a send that waited
+ * on a lock (the queue's own schema change as a worker starts, a send of the same singleton key in flight) would hold
+ * the request's application connection for as long. Given as pg's own parameter, which pg-boss hands to its pool with
+ * the rest of its options; never through `options`, which a production URL's own `options` (the login's role) would
+ * replace. queue.db.test.ts reads it back from a connection pg-boss opens.
  */
+export function producerOptions(connectionString: string): ConstructorOptions {
+  return {
+    connectionString,
+    supervise: false,
+    schedule: false,
+    migrate: false,
+    max: WEB_POOL_CONNECTIONS.queue,
+    connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
+    ...lockTimeoutParameter(connectionString, WEB_LOCK_TIMEOUT_MS),
+  };
+}
+
+/** pg-boss as a producer only (producerOptions); it starts on first use. */
 export class PgBossQueue implements JobQueue {
   private started: Promise<PgBoss> | undefined;
 
@@ -35,7 +54,7 @@ export class PgBossQueue implements JobQueue {
 
   private boss(): Promise<PgBoss> {
     this.started ??= (async () => {
-      const boss = new PgBoss({ connectionString: this.connectionString, supervise: false, schedule: false, migrate: false, max: WEB_POOL_CONNECTIONS.queue, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
+      const boss = new PgBoss(producerOptions(this.connectionString));
       boss.on('error', () => {
         // pg-boss errors are logged by code only; their text can carry SQL and connection details.
         this.logger.error('queue error', { error_code: 'QUEUE_ERROR' });

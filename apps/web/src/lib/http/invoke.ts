@@ -86,7 +86,10 @@ function issuesOf(error: z.ZodError): Issue[] {
   return error.issues.map((issue) => ({ field: issue.path.join('.') || 'input', message: issue.message }));
 }
 
-/** PostgreSQL's lock_not_available: a statement gave up waiting for a lock (lock_timeout, or NOWAIT). */
+/**
+ * PostgreSQL's lock_not_available: a statement on one of the web's pools gave up waiting for a lock (the pools'
+ * lock_timeout, server/web-pool.ts; the web's own code uses no NOWAIT).
+ */
 const LOCK_NOT_AVAILABLE = '55P03';
 
 function isPgError(error: unknown, code: string): boolean {
@@ -232,13 +235,26 @@ export async function shellFor(scope: AnyScope<ScopeClient>, currentPracticeId: 
   };
 }
 
-/** Records the request key; false when it was already used (the mutation then does nothing). */
+/**
+ * Records the request key; false when it was already used (the mutation then does nothing). The same key sent again
+ * while its first request is still running waits here, on that request's uncommitted key. If the first ends inside the
+ * web's lock_timeout, this one is answered as any key used before (or goes on, where the first was rolled back). Past
+ * it, this one is refused as busy with the closed word `request`: "nothing was saved" would be false of a form whose
+ * earlier send may yet save (docs/adr/0092, the amendment of 2026-11-11).
+ */
 async function claimRequestKey(scope: AnyScope<ScopeClient>, routeId: string, requestKey: string): Promise<boolean> {
-  const { rowCount } = await scope.client.query(
-    'INSERT INTO mutation_request (user_id, request_key, route_id) VALUES (app_actor_id(), $1, $2) ON CONFLICT (user_id, request_key) DO NOTHING',
-    [requestKey, routeId],
-  );
-  return rowCount === 1;
+  try {
+    const { rowCount } = await scope.client.query(
+      'INSERT INTO mutation_request (user_id, request_key, route_id) VALUES (app_actor_id(), $1, $2) ON CONFLICT (user_id, request_key) DO NOTHING',
+      [requestKey, routeId],
+    );
+    return rowCount === 1;
+  } catch (error) {
+    if (isPgError(error, LOCK_NOT_AVAILABLE)) {
+      throw new BusyError('request');
+    }
+    throw error;
+  }
 }
 
 interface Running {
@@ -293,11 +309,6 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
   if (error instanceof BusyError) {
     return { status: 'busy', what: error.what };
   }
-  if (isPgError(error, LOCK_NOT_AVAILABLE)) {
-    // A statement waited past the web's lock_timeout for a row something else holds (server/web-pool.ts): the request's
-    // transaction is rolled back, nothing is written, and the person may send it again (docs/adr/0092, the amendment).
-    return { status: 'busy', what: 'records' };
-  }
   if (error instanceof TermsRequiredError) {
     return { status: 'terms_required' };
   }
@@ -337,6 +348,27 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'forbidden', permission: 'practice.open', message: 'the database refused this action for your role', roles: [] };
   }
   throw error;
+}
+
+/**
+ * Answers a lock timeout anywhere in a route as the busy refusal (docs/adr/0092, the amendment of 2026-11-11): a
+ * statement gave up waiting for a lock, in the session's read, the rate limit's count, the request's transaction or a
+ * public handler's own. That statement's transaction is rolled back, so nothing it wrote is kept, and the request may
+ * be sent again. One place for every kind of route, so no path answers it as a server error, and pg's error, which
+ * names the statement and the relation, is never thrown on to the framework's log. Work a handler left for after its
+ * commit never reaches here (runCommitted takes its own failures), so a request that saved is never answered busy.
+ */
+function lockBounded<R>(invoke: Route<R>['invoke']): Route<R>['invoke'] {
+  return async (request, services) => {
+    try {
+      return await invoke(request, services);
+    } catch (error) {
+      if (isPgError(error, LOCK_NOT_AVAILABLE)) {
+        return { status: 'busy', what: 'records' };
+      }
+      throw error;
+    }
+  };
 }
 
 interface Shape {
@@ -390,7 +422,7 @@ export function publicRoute<P, I, R>(spec: PublicSpec<P, I, R>): Route<R> {
   return {
     ...shape,
     mutation: false,
-    invoke: async (request, services) => {
+    invoke: lockBounded<R>(async (request, services) => {
       if (shape.originChecked && !sameOrigin(request, services.origin)) {
         return { status: 'csrf_refused' };
       }
@@ -414,7 +446,7 @@ export function publicRoute<P, I, R>(spec: PublicSpec<P, I, R>): Route<R> {
         }
         throw error;
       }
-    },
+    }),
   };
 }
 
@@ -422,7 +454,7 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
   const shape = common(spec, access);
   return {
     ...shape,
-    invoke: async (request, services) => {
+    invoke: lockBounded<R>(async (request, services) => {
       // A POST from another site is refused before anything in it is read.
       if (shape.originChecked && !sameOrigin(request, services.origin)) {
         return { status: 'csrf_refused' };
@@ -459,7 +491,7 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
       } catch (error) {
         return refusal(error, spec.kind, services, actor, null);
       }
-    },
+    }),
   };
 }
 
@@ -482,7 +514,7 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
   }
   return {
     ...shape,
-    invoke: async (request, services) => {
+    invoke: lockBounded<R>(async (request, services) => {
       // A POST from another site is refused before anything in it is read.
       if (shape.originChecked && !sameOrigin(request, services.origin)) {
         return { status: 'csrf_refused' };
@@ -528,7 +560,7 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
       } catch (error) {
         return refusal(error, spec.kind, services, actor, practiceId);
       }
-    },
+    }),
   };
 }
 
@@ -542,7 +574,7 @@ export function organizationRoute<P extends { readonly organizationId: string },
   const shape = common(spec, { kind: 'organization', permission: spec.permission });
   return {
     ...shape,
-    invoke: async (request, services) => {
+    invoke: lockBounded<R>(async (request, services) => {
       // A POST from another site is refused before anything in it is read.
       if (shape.originChecked && !sameOrigin(request, services.origin)) {
         return { status: 'csrf_refused' };
@@ -582,6 +614,6 @@ export function organizationRoute<P extends { readonly organizationId: string },
       } catch (error) {
         return refusal(error, spec.kind, services, actor, null);
       }
-    },
+    }),
   };
 }

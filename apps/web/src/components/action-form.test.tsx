@@ -73,14 +73,14 @@ describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr
   it('says on a busy refusal what stays in the form, from the flag and never the server’s words: nothing where no field is known, all but passwords and codes where it held one (docs/adr/0092; CAS-57)', () => {
     // The server's words claim nothing about the form (next.ts); a summary that has not read the page yet, the post
     // without JavaScript and a form of buttons (the export form gives no `fields`) say the same.
-    const records = { error: 'The records this change needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' } as const;
+    const records = { error: 'The records this form needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' } as const;
     const ledger = { error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.', busy: 'ledger' } as const;
     expect(lead(records)).toBe(`<p>${records.error}</p>`);
     expect(lead(ledger, false, false)).toBe(`<p>${ledger.error}</p>`);
-    expect(lead(records, false, true)).toBe('<p>The records this change needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
+    expect(lead(records, false, true)).toBe('<p>The records this form needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
     expect(lead(ledger, false, true)).toBe('<p>The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
     expect(lead(records, true, true)).toBe(
-      '<p>The records this change needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.</p>',
+      '<p>The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.</p>',
     );
     // The flag decides, whatever words came with it; it is a refusal that did nothing, titled "Not done".
     expect(lead({ error: 'SYNTHETIC other words.', busy: 'records' }, false, true)).not.toContain('SYNTHETIC');

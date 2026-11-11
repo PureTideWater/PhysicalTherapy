@@ -112,10 +112,9 @@ export type Outcome<R> =
   /** The platform is in maintenance (the platform.maintenance flag). */
   | { readonly status: 'maintenance' }
   /**
-   * A mutation refused because what it would write is being written by something else right now (the practice's ledger
-   * lock is held; docs/adr/0092): nothing was written, and the same request may be sent again. It names no one and
-   * nothing: `what` is a closed word for the form's sentence, the ledger (its lock was not free) or records (a row the
-   * request had to change stayed locked past the web's lock_timeout; the amendment of 2026-11-11).
+   * A request refused because what it needs is being written by something else right now (docs/adr/0092 and its
+   * amendment of 2026-11-11): its transaction is rolled back, so nothing it wrote is kept, and the same request may be
+   * sent again. It names no one and nothing: `what` is a closed word for the sentence a person reads (BusyWhat).
    */
   | { readonly status: 'busy'; readonly what: BusyWhat };
 
@@ -131,8 +130,13 @@ export class BusyError extends Error {
   }
 }
 
-/** What a busy refusal was waiting on, as a closed word (never a table, a row or a person). */
-export type BusyWhat = 'ledger' | 'records';
+/**
+ * What a busy refusal was waiting on, as a closed word (never a table, a row, a job or a person): the practice's ledger
+ * lock, which a ledger action takes if free or is refused at once; records, where a statement waited past the web's
+ * lock_timeout for any lock (a row, a key, an advisory lock, a table behind a schema change); or the request itself,
+ * where the same request key was sent before and that first request is still running.
+ */
+export type BusyWhat = 'ledger' | 'records' | 'request';
 
 /** Thrown by a handler: what the request names does not exist, or the actor cannot see it. */
 export class NotFoundError extends Error {

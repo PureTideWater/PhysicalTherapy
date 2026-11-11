@@ -273,8 +273,9 @@ export function servicesFromConfig(config: WebConfig): Services {
     billingPool,
     esignPool: config.esignDatabaseUrl === null ? null : openWebPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),
     // One connection for each call the process lets be in flight at once, and one to spare (pools.ts). The gateway's
-    // own pool keeps no lock_timeout: its waits (a budget hold behind a call in flight) are the gateway's design, and no
-    // request's mutation runs on it (docs/adr/0092, the amendment).
+    // own pool keeps no lock_timeout, on purpose: what it writes are the gateway's own short transactions (a budget
+    // hold, a call's record), and a call's record, written after the model has answered, must wait for its lock, never
+    // be given up. What a request writes for itself stays on the application pool (docs/adr/0092, the amendment).
     modelPool: openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.model),
     provider: auth,
     credentialProbe: credentialProbeOf(config.auth, auth, logger),

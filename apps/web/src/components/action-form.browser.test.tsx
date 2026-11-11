@@ -321,7 +321,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
 
   it('CAS-57: a busy refusal is "Not done", reads nothing again, and says what stays in the form it is shown on: all but passwords and codes, what was typed, or nothing on a form that is one button', async () => {
     // The server's words claim nothing about the form (next.ts, busyState); each form writes its own lead from the flag.
-    const records: RefusalState = { error: 'The records this change needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' };
+    const records: RefusalState = { error: 'The records this form needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' };
     const ledger: RefusalState = { error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.', busy: 'ledger' };
 
     const keep = await harness.open('keep');
@@ -334,7 +334,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await looks(keep, SUMMARY)).toEqual(FAILURE);
     // The form held a password and a code, which the refusal emptied: the lead never says they are still here.
     expect(await keep.textContent(DESCRIPTION)).toBe(
-      'The records this change needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.',
+      'The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.',
     );
     expect(await keep.inputValue('#field-zip')).toBe('27514');
     expect(await keep.inputValue('#field-password')).toBe('');
@@ -354,14 +354,14 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await refusedWith(row, ledger, 'Set');
     expect(await row.textContent(DESCRIPTION)).toBe('The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a few minutes.');
     await refusedWith(row, records, 'Set');
-    expect(await row.textContent(DESCRIPTION)).toBe('The records this change needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.');
+    expect(await row.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.');
     await row.close();
 
     // One button and what the page names: nothing typed, so nothing is said to stay.
     const press = await harness.open('press');
     await refusedWith(press, records, 'Reopen this line');
     expect(await press.textContent(TITLE)).toBe('Not done');
-    expect(await press.textContent(DESCRIPTION)).toBe('The records this change needs are being updated, so nothing was saved. Try again in a few minutes.');
+    expect(await press.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. Try again in a few minutes.');
     await press.close();
 
     // The export form's own summary: no field of it is the person's to fill.
@@ -370,7 +370,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await script(exported, { refuse: records });
     await exported.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
     await exported.waitForFunction((selector) => document.querySelector(selector) !== null, description);
-    expect(await exported.textContent(description)).toBe('The records this change needs are being updated, so nothing was saved. Try again in a few minutes.');
+    expect(await exported.textContent(description)).toBe('The records this form needs are being updated, so nothing was saved. Try again in a few minutes.');
     expect(await refreshes(exported)).toBe(0);
     await exported.close();
   });

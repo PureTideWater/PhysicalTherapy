@@ -110,6 +110,19 @@ async function paramsOf(params: PageParams, searchParams: PageParams): Promise<R
   return { ...((await searchParams) ?? {}), ...((await params) ?? {}) };
 }
 
+/**
+ * A page whose read gave up waiting for a lock (docs/adr/0092, the amendment of 2026-11-11): a table behind a schema
+ * change, the session's own row, a lock its audit event needs. The page cannot be shown now, which is the error state
+ * and its "Try again" (app/error.tsx), never "not found" for a record that is there. Thrown, so the framework logs it
+ * by these words alone: no statement, relation or identifier.
+ */
+export class PageBusyError extends Error {
+  override readonly name = 'PageBusyError';
+  constructor() {
+    super('a page’s read waited past the lock timeout');
+  }
+}
+
 /** Runs a page's route. A refused session redirects to sign-in; a practice the actor cannot reach is a 404. */
 export async function loadPage<R>(route: Route<R>, props: { readonly params?: PageParams; readonly searchParams?: PageParams }): Promise<PageResult<R>> {
   const outcome = await route.invoke(await nextRequest(await paramsOf(props.params, props.searchParams)), services());
@@ -128,12 +141,18 @@ export async function loadPage<R>(route: Route<R>, props: { readonly params?: Pa
   if (outcome.status === 'forbidden') {
     return { kind: 'forbidden', message: outcome.message, roles: outcome.roles, shell: outcome.shell };
   }
+  if (outcome.status === 'busy') {
+    throw new PageBusyError();
+  }
   notFound();
 }
 
 /** A public page whose handler may send the browser elsewhere (a sign-in step that has expired). */
 export async function loadPublicPage<R extends object>(route: Route<R | StepResult>, props: { readonly params?: PageParams; readonly searchParams?: PageParams }): Promise<R> {
   const outcome = await route.invoke(await nextRequest(await paramsOf(props.params, props.searchParams)), services());
+  if (outcome.status === 'busy') {
+    throw new PageBusyError();
+  }
   if (outcome.status !== 'ok') {
     notFound();
   }
