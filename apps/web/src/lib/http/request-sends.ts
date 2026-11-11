@@ -4,6 +4,9 @@ import { type JobPayload, type JobType, parsePayload } from '@tp/worker/jobs';
 
 import type { HeldSends, JobQueue, PendingSend, RequestQueue } from '../uploads/queue';
 
+/** A job's place in the one order every request inserts in: its type, then its payload's text (the same job, the same text). */
+const order = (send: PendingSend): string => `${send.type}\n${JSON.stringify(send.payload)}`;
+
 /** How often a job whose held send was lost at the queue's own commit is sent again, directly, before it is given up. */
 const DIRECT_ATTEMPTS = 3;
 
@@ -20,6 +23,13 @@ const DIRECT_ATTEMPTS = 3;
  * 3. The request commits. settle(undefined) then commits the queue's transaction: the jobs are visible to workers only
  *    now, after the records they read.
  * 4. The request did not commit. settle(error) rolls the queue's transaction back: no worker ever sees the jobs.
+ *
+ * What a held job can wait on, each bounded and each ending the request unsaved, as a failed send always has: the
+ * producer's pool of two connections, one of which a hold keeps from its first insert to the queue's commit (a third
+ * request's hold waits for one, up to the pool's connection timeout, its own transaction open meanwhile; pg-boss
+ * also reads a queue it has not seen yet on the pool, so two holds for a queue made in the last minute can both end
+ * at that timeout until its cache reloads); and the queue's unique index, where the same singleton key held by a
+ * request that has not ended yet is waited for up to the pool's lock_timeout and then refused as busy (55P03).
  *
  * Two commits are not one, and what that leaves is said here. If the queue's commit fails after the request's, the
  * jobs are sent again directly, each tried three times; one still unsent is logged as an error by its code, its type
@@ -67,6 +77,9 @@ export class RequestSends {
     }
     this.state = 'held';
     if (this.pending.length > 0) {
+      // One order for every request: two requests holding the same two singleton keys in opposite orders would wait
+      // on each other in the queue's unique index until PostgreSQL ended one as a deadlock.
+      this.pending.sort((a, b) => order(a).localeCompare(order(b)));
       this.held = await this.queue.hold(this.pending);
     }
   }
@@ -96,7 +109,11 @@ export class RequestSends {
     }
   }
 
-  /** The held jobs again, one by one on the queue's own connection: the singleton key makes one already queued a no-op. */
+  /**
+   * The held jobs again, one by one on the queue's own connection. If the queue's commit was made and only its answer
+   * lost, the singleton key makes the second send nothing while the first job is queued or running; once it has
+   * finished, the job runs a second time, which a job must bear anyway (jobs are idempotent by their keys; CLAUDE.md).
+   */
   private async sendDirectly(): Promise<void> {
     for (const send of this.pending) {
       let sent = false;

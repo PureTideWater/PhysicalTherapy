@@ -123,10 +123,29 @@ export interface Services {
  */
 export type SignedInServices = Omit<Services, 'pool' | 'signIn' | 'queue'> & { readonly queue: RequestQueue };
 
-/** The services as a signed-in handler gets them: every property but the application pool and the sign-in flow, and the request's own queue. */
+/** Each request's view of a server's services, by the services it was made from (signedInServices). */
+const servers = new WeakMap<object, object>();
+
+/**
+ * The services as a signed-in handler gets them: every property but the application pool and the sign-in flow, and the
+ * request's own queue. A new object for each request, since its queue is the request's; what a server keeps once for
+ * all its requests is kept by serverOf, never by this object.
+ */
 export function signedInServices(services: Services, queue: RequestQueue): SignedInServices {
   const { pool: _pool, signIn: _signIn, queue: _queue, ...kept } = services;
-  return Object.freeze({ ...kept, queue });
+  const mine = Object.freeze({ ...kept, queue });
+  servers.set(mine, services);
+  return mine;
+}
+
+/**
+ * The server a set of services belongs to, as the key of what is kept once per server (the cap on model calls in
+ * flight, a test's model path, the remembered refusals; models/path.ts, models/contract-proposals.ts): the services a
+ * request's view was made from, or the services themselves. A request's view is a new object every time, so a map
+ * keyed by the view would start empty for every request: the cap would cap nothing.
+ */
+export function serverOf(services: object): object {
+  return servers.get(services) ?? services;
 }
 
 /**

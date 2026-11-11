@@ -62,20 +62,22 @@ export class CommitOutcomeUnknownError extends ScopeError {
   }
 }
 
-/** An SQLSTATE: five characters of digits and upper-case letters (a connection's failure carries words like ECONNRESET, or nothing). */
+/** An SQLSTATE: five characters of digits and upper-case letters. Node's own codes can have the same shape (EPIPE), so it is never read alone. */
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 
 /**
  * Whether the server itself refused the statement with an ERROR, which rolls its transaction back for certain: an
- * SQLSTATE, and a severity that is not one that ends the session (FATAL, PANIC: the commit may have been made before
- * the session ended). A stand-in's error with an SQLSTATE and no severity is read as the server's.
+ * SQLSTATE and the severity ERROR, both. Anything else is not known to be a rollback: a severity that ends the session
+ * (FATAL, PANIC: the commit may have been made before the session ended), a socket's failure (whose code can have an
+ * SQLSTATE's shape and has no severity), and a severity in another language than English (pg reads the localized
+ * field alone; the deployment's lc_messages is English, and the unknown side is the safe one).
  */
 function refusedByServer(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) {
     return false;
   }
   const { code, severity } = error as { readonly code?: unknown; readonly severity?: unknown };
-  return typeof code === 'string' && SQLSTATE.test(code) && severity !== 'FATAL' && severity !== 'PANIC';
+  return typeof code === 'string' && SQLSTATE.test(code) && severity === 'ERROR';
 }
 
 /** What commits: a connection with a transaction open, as far as `committed` uses it (a pg client, or a queue's transaction). */

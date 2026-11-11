@@ -13,6 +13,7 @@ import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE } from '../auth/sessions';
 import { openSessionNow } from '../routes/test-support/open-session';
+import { assignModelPath, modelLimiterOf, modelPathOf } from '../models/path';
 import { opaqueId } from '../routes/schemas';
 import { type Services, type SignedInServices, createServices } from '../server/services';
 import { type JobQueue, MemoryQueue, PgBossQueue } from '../uploads/queue';
@@ -355,5 +356,26 @@ describe('a signed-in handler cannot take a second connection from the applicati
     expect(seen).toEqual(Array.from({ length: 3 }, () => ({ pool: false, signIn: false, value: undefined, frozen: true, enqueue: 'function', hold: false })));
     // The wrapper's own services are untouched: it opens the transaction.
     expect('pool' in services).toBe(true);
+  });
+
+  it('keeps what a server keeps once for all its requests: every request’s services share the cap on model calls and a model path given to the server', async () => {
+    const limiters: unknown[] = [];
+    const paths: unknown[] = [];
+    const path = { kind: 'unavailable' as const, reason: 'SYNTHETIC path of this server' } as unknown as Parameters<typeof assignModelPath>[1];
+    assignModelPath(services, path);
+    work = ({ services: mine }) => {
+      limiters.push(modelLimiterOf(mine));
+      paths.push(modelPathOf(mine));
+      return Promise.resolve();
+    };
+    expect((await press()).outcome).toMatchObject({ status: 'ok' });
+    expect((await press()).outcome).toMatchObject({ status: 'ok' });
+    // One limiter for the server, not one for each request (which would cap nothing).
+    expect(limiters).toHaveLength(2);
+    expect(limiters[0]).toBe(limiters[1]);
+    expect(limiters[0]).toBe(modelLimiterOf(services));
+    expect(paths).toEqual([path, path]);
+    // Another server's services have their own.
+    expect(modelLimiterOf(servicesWith())).not.toBe(limiters[0]);
   });
 });

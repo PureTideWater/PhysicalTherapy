@@ -66,9 +66,26 @@ describe('a request’s jobs are committed in step with the request', () => {
     await sends.enqueue('price', { practice_id: PRACTICE, pricing_run_id: RUN });
     expect(steps).toEqual([]);
     await sends.hold();
-    expect(steps).toEqual(['hold reconcile,price']);
+    expect(steps).toEqual(['hold price,reconcile']);
     await sends.settle(undefined);
-    expect(steps).toEqual(['hold reconcile,price', 'commit']);
+    expect(steps).toEqual(['hold price,reconcile', 'commit']);
+  });
+
+  it('inserts in one order whatever order the handler sent in, so two requests never wait on each other’s keys', async () => {
+    const orders: string[] = [];
+    for (const sent of [
+      ['price', 'reconcile'],
+      ['reconcile', 'price'],
+    ] as const) {
+      const { queue, steps } = recordingQueue();
+      const sends = new RequestSends(queue, logged().logger, 'req-order');
+      for (const type of sent) {
+        await (type === 'price' ? sends.enqueue('price', { practice_id: PRACTICE, pricing_run_id: RUN }) : sends.enqueue('reconcile', DAILY));
+      }
+      await sends.hold();
+      orders.push(steps.join());
+    }
+    expect(orders).toEqual(['hold price,reconcile', 'hold price,reconcile']);
   });
 
   it('rolls the jobs back with a request that did not commit: thrown from the handler, or rolled back at its COMMIT', async () => {
@@ -128,7 +145,7 @@ describe('a request’s jobs are committed in step with the request', () => {
     await sends.enqueue('price', { practice_id: PRACTICE, pricing_run_id: RUN });
     await sends.hold();
     await sends.settle(undefined);
-    expect(steps).toEqual(['hold reconcile,price', 'commit failed', 'direct reconcile failed', 'direct reconcile failed', 'direct reconcile', 'direct price']);
+    expect(steps).toEqual(['hold price,reconcile', 'commit failed', 'direct price failed', 'direct price failed', 'direct price', 'direct reconcile']);
     expect(lines.map((line) => [line.level, line.error_code, line.request_id])).toEqual([['warn', 'QUEUE_COMMIT_FAILED', 'req-7']]);
   });
 
@@ -140,10 +157,10 @@ describe('a request’s jobs are committed in step with the request', () => {
     await sends.enqueue('price', { practice_id: PRACTICE, pricing_run_id: RUN });
     await sends.hold();
     await expect(sends.settle(undefined)).resolves.toBeUndefined();
-    expect(steps.slice(2)).toEqual(['direct reconcile failed', 'direct reconcile failed', 'direct reconcile failed', 'direct price']);
+    expect(steps.slice(2)).toEqual(['direct price failed', 'direct price failed', 'direct price failed', 'direct reconcile']);
     expect(lines.map((line) => [line.level, line.error_code, line.job_type, line.request_id])).toEqual([
       ['warn', 'QUEUE_COMMIT_FAILED', undefined, 'req-8'],
-      ['error', 'JOB_NOT_QUEUED_AFTER_COMMIT', 'reconcile', 'req-8'],
+      ['error', 'JOB_NOT_QUEUED_AFTER_COMMIT', 'price', 'req-8'],
     ]);
     // No line holds a payload: IDs of the request and the job's type alone.
     expect(JSON.stringify(lines)).not.toContain(PRACTICE);

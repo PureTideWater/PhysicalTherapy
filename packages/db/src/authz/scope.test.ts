@@ -146,8 +146,10 @@ describe('transaction handling', () => {
     // The server's own ERROR, by its SQLSTATE, is certain: the transaction is rolled back.
     const serialization = Object.assign(new Error('could not serialize'), { code: '40001', severity: 'ERROR' });
     await expect(committed({ query: () => Promise.reject(serialization) })).rejects.toBe(serialization);
-    const standIn = Object.assign(new Error('a stand-in with a code and no severity'), { code: '55P03' });
-    await expect(committed({ query: () => Promise.reject(standIn) })).rejects.toBe(standIn);
+    // A code of an SQLSTATE's shape is not enough: Node's EPIPE has it, and so has a code with no severity or another's.
+    for (const almost of [{ code: 'EPIPE' }, { code: '55P03' }, { code: '55P03', severity: 'FEHLER' }, { code: '40001', severity: 'PANIC' }, { severity: 'ERROR' }]) {
+      await expect(committed({ query: () => Promise.reject(Object.assign(new Error('SYNTHETIC'), almost)) })).rejects.toBeInstanceOf(CommitOutcomeUnknownError);
+    }
   });
 
   it('destroys a connection whose rollback fails', async () => {
