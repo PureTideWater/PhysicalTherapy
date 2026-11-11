@@ -1915,29 +1915,37 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         if (form !== 'mask5' && form !== 'local' && pushOwn(view, readingsOf(view, start, end, core))) {
           continue;
         }
+        const takenAs = (decision: Decision): PatternKind | null => {
+          const labeled = decision === 'ssn' || decision === 'phone';
+          if (wrapped) {
+            // A group wrapped across a line break: only after a label, never across another break on either side (R2b, R2c;
+            // wrappedAcross, above: "90000\n0000 \n2\r\n  02-555-0123").
+            return labeled ? decision : null;
+          }
+          if (form === 'nine') {
+            return decision === 'keep' ? null : 'ssn';
+          }
+          if (form === 'ten') {
+            const glued = groups.prefix !== undefined && groups.g0 === undefined;
+            return decision === 'keep' ? null : labeled ? decision : glued ? null : /^[3-9]/u.test(core) || (core.startsWith('2') && !npiCheckDigitValid(core)) ? 'phone' : null;
+          }
+          if (form === 'mask5') {
+            return decision === 'ssn' ? 'ssn' : null;
+          }
+          return labeled ? decision : null;
+        };
         const plainly = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
+        let taken = takenAs(plainly);
         // A label read through the call's own identifier or its list number ("Call Zephyra at 555-0123", "Phone 1:
-        // 555-0100") takes a number its own words say nothing of; a number a noun names stays named. ef3e8d20 did not make
-        // this match, so it is marked fresh: redaction applies it only in a letter the scan does not refuse without it
-        // (appliedMatches), whatever is joined to the number ("Call Zephyra at 555-0123/555-0124" stays refused whole).
-        const through = plainly === 'none' ? decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own) : plainly;
-        const fresh = plainly === 'none' && (through === 'ssn' || through === 'phone');
-        const decision = fresh ? through : plainly;
-        const labeled = decision === 'ssn' || decision === 'phone';
-        let taken: PatternKind | null;
-        if (wrapped) {
-          // A group wrapped across a line break: only after a label, never across another break on either side (R2b, R2c;
-          // wrappedAcross, above: "90000\n0000 \n2\r\n  02-555-0123").
-          taken = labeled ? decision : null;
-        } else if (form === 'nine') {
-          taken = decision === 'keep' ? null : 'ssn';
-        } else if (form === 'ten') {
-          const glued = groups.prefix !== undefined && groups.g0 === undefined;
-          taken = decision === 'keep' ? null : labeled ? decision : glued ? null : /^[3-9]/u.test(core) || (core.startsWith('2') && !npiCheckDigitValid(core)) ? 'phone' : null;
-        } else if (form === 'mask5') {
-          taken = decision === 'ssn' ? 'ssn' : null;
-        } else {
-          taken = labeled ? decision : null;
+        // 555-0100") takes a number its own words say nothing of and that is not taken without it; a number a noun names
+        // stays named. ef3e8d20 did not make this match, so it is marked fresh: the letter reader applies it only in a
+        // letter the scan does not refuse without it (appliedMatches), whatever is joined to the number ("Call Zephyra at
+        // 555-0123/555-0124" stays refused whole).
+        let fresh = false;
+        if (taken === null && plainly === 'none') {
+          const through = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own);
+          taken = through === 'ssn' || through === 'phone' ? takenAs(through) : null;
+          fresh = taken !== null;
         }
         if (taken === null) {
           matcher.lastIndex = start + 1;
