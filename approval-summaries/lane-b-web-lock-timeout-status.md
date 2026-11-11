@@ -1,20 +1,28 @@
 # No web mutation waits on a lock a reconcile pass holds (Queues item 24): status
 
-W3, session_019i9ifE6JAC24yB5654GXcV (acting Lane B on Lane A's account), under the orchestrator
-session_019i9ifDAzQNA3kLHozjBoeS. Branch `co-001/web-lock-timeout`, worktree `/home/user/wl`, cut from
-`claude/build-platform` at 06cde5eb (#136 merged). Reserved: test-matrix CAS-57; a dated amendment to ADR 0092.
+W4, session_019i9ifAM5Y3ftqx7i6Cx8Gk (acting Lane B on Lane A's account), from 2026-11-11 01:20 UTC, under the
+orchestrator session_019i9ifDAzQNA3kLHozjBoeS; built by W3, session_019i9ifE6JAC24yB5654GXcV. Branch
+`co-001/web-lock-timeout`, worktree `/home/user/weblock`, cut from `claude/build-platform` at 06cde5eb (#136 merged).
+Reserved: test-matrix CAS-57; a dated amendment to ADR 0092.
 
 ## Now
-**2026-11-11 01:10 UTC: HELD (the orchestrator's stand-down, 00:59 UTC: the account's weekly limit at its warning level).**
-W3 stopped here; unsubscribed from #137; no check-in pending. The claim row is held; CAS-57 stays reserved.
+**2026-11-11 01:45 UTC: IN REVIEW (W4).** The machine was ready at start (the environment's setup script: its log
+ended OK, and `/tmp/setup-container.sh` equals `tools/setup-container.sh` at 52ea8bcf). W4 holds the claim row. CI on
+59eb9e9d was read: red in `unit` only. The three reviews run again on 59eb9e9d (launched 01:36 UTC).
 
 ### RESUME-BLOCK (a fresh session builds from this; nothing else is needed)
 - **Where it is:** branch `co-001/web-lock-timeout` = 59eb9e9d on origin (one commit on the base 06cde5eb), draft PR
   #137 with its description filled from the template (the review table says Pending). The item is BUILT; it is not
-  reviewed. Three reviews were launched on 59eb9e9d and stopped unfinished at the stand-down: none counts. Run them
-  again: two adversarial (auth and tenancy: `security-reviewer`; database: a general agent with a PostgreSQL and pool
-  lens), and `ux-brand-reviewer` for the new sentence. Give each a budget of about 18 tool calls and ask for the
-  report by name, or it ends at its turn limit with none.
+  reviewed. W4's three reviews on 59eb9e9d count only once their findings are written under "Reviews" below; if that
+  section is missing, run them again: two adversarial (auth and tenancy: `security-reviewer`; database: a general
+  agent with a PostgreSQL and pool lens), and `ux-brand-reviewer` for the new sentence. Give each a budget of about
+  18 tool calls and ask for the report by name, or it ends at its turn limit with none.
+- **CI on 59eb9e9d:** `unit` failed, everything else passed (`mutation`, `screening-capacity gate`, `capacity`,
+  `approval-of-record`, db 1 to 4, e2e 1 and 2, static, lint, build, images). The failure is this change's:
+  `tools/screening-capacity/watched.test.ts` (twice), because the committed watched list lacks
+  `apps/web/src/lib/server/web-pool.ts`. Fix: `pnpm exec tsx tools/screening-capacity/watched.ts --write`.
+- **A gap found on the takeover:** no test ties the form's sentence to the outcome's word (`BUSY_MESSAGE` and
+  `BUSY_RECORDS_MESSAGE` appear in no test). Add one in `apps/web/src/lib/http/next.test.ts` in the fix round.
 - **What is built (all in 59eb9e9d):**
   - `packages/db/src/connect.ts`: `openPool(url, max, { lockTimeoutMs })` passes pg's `lock_timeout` (a startup
     parameter; pg 8.23.1 `lib/connection-parameters.js:122`, `lib/client.js:561`); omitted, nothing changes.
@@ -60,7 +68,7 @@ W3 stopped here; unsubscribed from #137; no check-in pending. The claim row is h
   last push; fill the description's review table; CI green; the up-to-date check; merge with a merge commit; record
   here and in LANES.md; tell the orchestrator.
 - **Environment notes from this session:** the container restarted twice and PostgreSQL was down after each; the
-  setup script brings it back (`bash /tmp/setup-container.sh co-001/web-lock-timeout:/home/user/wl`). Database tests:
+  setup script brings it back (`bash /tmp/setup-container.sh co-001/web-lock-timeout:/home/user/weblock`). Database tests:
   `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`, `PATH=/opt/node24/bin:$PATH`, heavy commands under
   `flock /tmp/laneb-heavy.lock`. Push `claude/build-ops` from the hooked main checkout. Plain `npx eslint` on the web
   runs out of memory: use `pnpm lint`.
@@ -82,6 +90,7 @@ sentence, fixes, the full local suite once, the base merged before the last push
 - A closed word on the outcome (`ledger` or `records`) so the sentence is true to what was held.
 
 ## Log
+- 2026-11-11 01:45 UTC: W4 took the claim over; the machine was ready at start; CI on 59eb9e9d read (`unit` red: the watched list); the three reviews launched again.
 - 2026-11-11 01:10 UTC: held on the orchestrator's stand-down; draft #137 at 59eb9e9d; the three reviews stopped unfinished; RESUME-BLOCK written.
 - 2026-11-11 01:40 UTC: built, pushed.
 - 2026-11-10 23:46 UTC: allocated by the orchestrator (CAS-57; amendment to ADR 0092).
