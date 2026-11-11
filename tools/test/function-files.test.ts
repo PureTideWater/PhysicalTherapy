@@ -73,7 +73,14 @@ describe('the generated database function files (docs/adr/0068)', () => {
 
   it('mark nothing else: the README and every other path are left to GitHub', () => {
     expect(attributes('packages/db/functions/README.md').size).toBe(0);
-    expect(attributes('packages/db/migrations/20261015140000_tenancy.sql').size).toBe(0);
+    expect(attributes('packages/db/migrations/README.md').size).toBe(0);
+    expect(attributes('packages/db/src/migrate.ts').size).toBe(0);
+  });
+
+  it('leave a migration as text with LF line ends and nothing more: a preflight compares function bodies by hash, which are the file’s own bytes (docs/adr/0091, D11)', () => {
+    // Not marked generated or not generated: GitHub shows a migration as it shows any source file.
+    expect(Object.fromEntries(attributes('packages/db/migrations/20261015140000_tenancy.sql'))).toEqual({ text: 'set', eol: 'lf' });
+    expect(Object.fromEntries(attributes('packages/db/migrations/20261111090000_password_changed_notice.sql'))).toEqual({ text: 'set', eol: 'lf' });
   });
 
   it('are left as the generator wrote them by every editor that reads .editorconfig', () => {

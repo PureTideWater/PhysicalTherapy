@@ -92,7 +92,8 @@ export const MAIL_EVENTS_QUEUE_PERIOD_SECONDS = 300;
  * The codes the platform jobs log as `error_code` that page the operator, each counted by its own metric filter on the
  * platform's log group and alarmed at one in five minutes (D5): the screening stream paused, a notice not delivered to a
  * recipient, a notice with no recipient at all, an invitation not delivered, a stream with no probe back in 26 hours, and
- * a password-changed email not delivered or not sent within 24 hours (docs/adr/0091, D9).
+ * a password-changed email not delivered, not sent within 24 hours, or sent with its record still failing at its fifth
+ * try (docs/adr/0091, D9).
  */
 export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED'] as const;
 export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
@@ -119,6 +120,18 @@ export const MAIL_PROBE_HOURS = { daily: 24, firstProof: 1, missed: 26, ready: 4
  * a send that keeps failing pages within 15 minutes, about a day before readiness lapses.
  */
 export const MAIL_PROBE_UNSENT_ALARM = { code: 'MAIL_PROBE_UNSENT', periodSeconds: 300, periods: 3 } as const;
+
+/**
+ * A password-changed email SES accepted whose record then failed (docs/adr/0091, D6 and D9; the delta review of
+ * 2026-11-11, DD-02). The platform's password_notices job logs `password notice record failed` at warn with this
+ * `error_code` on each such try (apps/worker/src/platform/password-notices.ts), counts the try and fails its attempt.
+ * The notice then backs off, so with one notice due at a time the job's retry finds nothing due and completes: the
+ * failed-job alarm hears nothing, and PASSWORD_NOTICE_UNDELIVERED follows only at the notice's fifth try, 81 minutes
+ * later, when the person has five copies. So the line itself is counted on the platform's log group and alarmed at one
+ * in five minutes: the first copy pages. On that group the code is this line's alone as an `error_code`: the
+ * undelivered line carries it as its `undelivered_reason_code`. The metric is named by `metricName`, not from the code.
+ */
+export const PASSWORD_NOTICE_RECORD_FAILED_ALARM = { code: 'RecordFailed', message: 'password notice record failed', metricName: 'PasswordNoticeRecordFailed', periodSeconds: 300 } as const;
 
 /** The web's code when a day's address validations reach the cap (Q1 (g)): counted and alarmed at one in a day. */
 export const MAIL_VALIDATION_CAP_CODE = 'MAIL_VALIDATION_CAP_REACHED';

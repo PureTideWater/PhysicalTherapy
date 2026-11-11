@@ -89,20 +89,23 @@ Two facts of the base shape the decision:
   EXECUTE), and fires for every role's insert. Its insert is `ON CONFLICT ON CONSTRAINT password_notice_once DO
   NOTHING`, and can fail only on the foreign key (the actor's own row, which `withActor` read in the same transaction)
   or a CHECK (every value is the event's own or a constant), so it can newly stop no reset from ending sessions.
-- **D4. The table and the address.** `password_notice` is global: no `practice_id`, no PHI, no address and no name;
-  the user's ID, the reset event's ID (`audit_event_id`, the idempotency key `password_notice_once`), the change's time,
-  the send's state (`pending`, `sent`, `delivered`, `undelivered`, `failed`), its attempts, SES's message ID, an error
-  code (letters only), the report stamp and the expiry. ENABLE and FORCE ROW LEVEL SECURITY, one owner-only policy
+- **D4. The table and the address.** `password_notice` is global: no `practice_id`, no PHI, no address and no name; the
+  user's ID, the reset event's ID (`audit_event_id`, the idempotency key `password_notice_once`), the change's time, the
+  send's state (`pending`, `sent`, `delivered`, `undelivered`, `failed`), its attempts, SES's message ID, an error code
+  (letters only), the report stamp and the expiry. ENABLE and FORCE ROW LEVEL SECURITY, one owner-only policy
   (`password_notice_owner`), nothing granted to any role, revoked from PUBLIC and `tp_app`; it has no
   `phi_table_registry` row, since the catalog accepts a registry row only for a table with a NOT NULL `practice_id`.
   `user_id` keeps its foreign key to `"user"`. For a notice, the account's row is read in one place:
   `operator_password_notice_claim()`, for a pending notice that is due and under 24 hours old, under `FOR UPDATE SKIP
   LOCKED`, the cutoff checked again under the lock. It returns four columns: the user's ID, the address, the change's
   time and, fourth, `mfa_enrolled`, the one fact of the account's state the email's words depend on (D10). The address
-  and the flag are read at send time, not at the reset: the address is the one the code went to for as long as no
-  route changes `"user".email` (Revisit when). The claim does not filter on the user's status, so a user disabled
-  after the reset is still told; mail from a disabled account's address opens no support ticket, which is one reason
-  line 4 names a second route (D5).
+  and the flag are read at send time, not at the reset: the address is the one the code went to for as long as no route
+  changes `"user".email` (Revisit when). The flag is the account's as the claim finds it, and that can differ from the
+  reset's: the first sign-in that enrols a factor sets it (`record_sign_in_with_mfa()`), and the send follows the reset
+  by up to a minute, or by up to 24 hours while a send is retried or the platform service is down. D10 says what that
+  leaves open and where its fix rides. The claim does not filter on the user's status, so a user disabled after the
+  reset is still told; mail from a disabled account's address opens no support ticket, which is one reason line 4 names
+  a second route (D5).
 - **D5. The kind and the stream.** `password_changed` on the transactional stream: it keeps the account's suppression
   list, nothing pauses it, and the reset code goes through the same set. `mail_send_kind` and `mail_send_stream_kind`
   widen in one ALTER TABLE (A-2), in `MAIL_KINDS`' and `MAIL_STREAM_KINDS`' order; `mail_send_subject` then requires
@@ -186,17 +189,22 @@ Two facts of the base shape the decision:
   send threw, SES's or the worker's own). The code joins `MAIL_PLATFORM_ALARM_CODES`: a counted filter on the platform
   log group and an alarm at 1 in five minutes, to the operator topic. The alarm notifies when it goes into ALARM, not
   once a line: notices that fail while it is raised share its page, and a stale sweep can fail up to 100 in one run. So
-  the alarm's words say to read every line while it is raised, and the runbook reads from five minutes before the alarm
-  was raised until it is back at OK and checks the lines against the audit log's `password_notice_undelivered`, one a
-  notice. Each line is written once its report has committed: in `mail_events`, before the event's message is deleted
-  from the queue, so a delete that fails cannot take the line with it (the event comes again, and is answered as a
-  replay with nothing more to log). A task stopped between a commit and its line still loses the line, since the
-  database hands a report out once; the audit event remains, and the weekly sign-in review reads the week's against
-  their tickets. Why it pages: every mail code in the base is alarmed, and `MAIL_WARNING_CODES` have no filter at all,
-  so a counted code no one reads would be new; this notice is the account holder's only warning of a reset they did not
-  make, and the operator can still give that warning another way; and the volume is tiny, since a notice exists only for
-  a completed reset and a reset needs the mailbox's code. What the operator does: `docs/runbooks/deliverability.md`,
-  3.10.
+  the alarm's words say to read every line while it is raised and each line's reason before anyone is told, since a
+  notice that failed as `RecordFailed` went out; and the runbook reads from five minutes before the alarm was raised
+  until it is back at OK and checks the lines against the audit log's `password_notice_undelivered`, one a notice. Each
+  line is written once its report has committed: in `mail_events`, before the event's message is deleted from the queue,
+  so a delete that fails cannot take the line with it (the event comes again, and is answered as a replay with nothing
+  more to log). A task stopped between a commit and its line still loses the line, since the database hands a report out
+  once; the audit event remains, and the weekly sign-in review reads the week's against their tickets. One reason pages
+  before its report (the delta review of 2026-11-11, DD-02): the job's line `password notice record failed` (warn;
+  `error_code` `RecordFailed`) is itself counted on the platform log group, as `PasswordNoticeRecordFailed`, and alarmed
+  at 1 in five minutes. The counted try backs the notice off, so the job's retry finds nothing due and completes, and
+  the failed-job alarm never hears of it; without this count the first page was the report at the fifth try, 81 minutes
+  and five copies in. Why the report pages: every mail code in the base is alarmed, and `MAIL_WARNING_CODES` have no
+  filter at all, so a counted code no one reads would be new; this notice is the account holder's only warning of a
+  reset they did not make, and the operator can still give that warning another way; and the volume is tiny, since a
+  notice exists only for a completed reset and a reset needs the mailbox's code. What the operator does:
+  `docs/runbooks/deliverability.md`, 3.10.
 - **D10. What the lines claim** (departure 5: #125's security-N-3 and ux-brand-N5; S2 closed both with option (a),
   and the review round kept the sessions line, recorded what it leaves open and changed lines 2 to 4).
   - **N5**, "with a code sent to this address", is true only for a reset: closed by D2's WHEN, since design 3.2 found
@@ -213,9 +221,11 @@ Two facts of the base shape the decision:
       depend on the provider's sign-out. The other party needs a current code as well as the old password. ADR 0081's
       amendment already records it of Cognito's sign-in session.
     - **(b) A key-registration step.** A step that proved the password and the code before the reset, and stopped at
-      registering a hardware key, holds the provider's grant sealed for 15 minutes. When the provider's sign-out had
-      no effect, that grant registers a hardware key after the reset, and the key then signs in with no password: a
-      factor the reset does not remove. It needs the sign-out to fail, so it is the rarer case.
+      registering a hardware key, holds the provider's grant sealed for 15 minutes. When the provider's sign-out had no
+      effect, that grant registers a hardware key after the reset, and the key then signs in with no password: a factor
+      the reset does not remove. It needs the sign-out to fail, so it is the rarer case. Only an account that must sign
+      in with a hardware key and has none reaches that step: PaidWhole's own platform administrators, contract
+      specialists, reimbursement reviewers and support engineers, never a customer's account.
 
     Nothing in the app ties a step to the account's latest completed reset. So for those minutes the line is not the
     whole truth for a reader whose password and second factor are both in another's hands, and this decision says so:
@@ -230,38 +240,53 @@ Two facts of the base shape the decision:
       is **required before launch**. The pull request's description puts this to the founder as a trade-off, with its
       exact alternative: hold this pull request until the close is built into it.
     - **Until the close**, in this pull request: the email keeps "Every session of this account has ended."; SGN-16
-      holds both cases as tests that record what a step begun before a reset can do today, named so that the close
-      flips them; and the web's line `security event: password reset provider sign-out failed` (error; `user_id`,
-      `request_id`, `error_code`) is counted on the web log group as `PasswordResetProviderSignOutFailed` (at least 1
-      in 300 s, to the operator topic), the ninth of the reset and enrolment counts, so what case (b) needs pages a
-      person, who reads the audit log for a key registered or a sign-in by that user in the next 15 minutes
-      (`docs/runbooks/incident-response.md`, "A password reset whose provider sign-out failed"). Case (a) pages no
-      one: its session is recorded as any other `sign_in`. A reset whose provider sign-out fails still queues the
-      notice, with the same lines (SGN-16).
+      holds both cases as tests that record what a step begun before a reset can do today, named so that the close flips
+      them; and the web's line `security event: password reset provider sign-out failed` (error; `user_id`,
+      `request_id`, `error_code`) is counted on the web log group as `PasswordResetProviderSignOutFailed` (at least 1 in
+      300 s, to the operator topic), the ninth of the reset and enrolment counts, so what case (b) needs pages a person,
+      who reads the audit log for a key registered by that user since the reset, from the reset's own row: that row is
+      what the failed sign-out makes possible, and a `sign_in` by authenticator code after it is the person's own and
+      ends no membership (`docs/runbooks/incident-response.md`, "A password reset whose provider sign-out failed"). Case
+      (a) pages no one: its session is recorded as any other `sign_in`. A reset whose provider sign-out fails still
+      queues the notice, with the same lines (SGN-16).
     - **What waits on the confidential client.** The design gave two facts with no condition that hold only once the
       user pool's client is confidential (ADR 0088's release N+1, designed and not built; its ruling 15: in production
       within 7 days of release N, and before the first customer invitation): that Cognito's tokens live only in the
-      app's sealed pending sign-in cookie, and that only the app can start `ForgotPassword`. Today the client is
-      public. Anyone holding the client ID can ask Cognito for a reset code directly, for an account the app's gate
-      (ADR 0081 A2) would refuse, and redeem it on the app's own confirm route, which queues a notice like any other;
-      and anyone who signs in at Cognito directly, with the password and a code, holds its tokens outside that cookie
-      (the refresh token for 12 hours). What holds without the condition: the tokens the app itself obtains live only
-      in the key-registration step's sealed cookie (`apps/web/src/lib/auth/pending.ts`), for at most 15 minutes, every
-      other path giving the grant back before a session opens; the refresh token is revoked when the step ends
-      (`release()`), though not when the step only expires or the revoke fails, where it stays sealed and unread;
-      access tokens last 15 minutes (`infra/lib/constructs/identity.ts`, `TOKEN_LIFETIMES`); and no token of Cognito's
-      is a PaidWhole session or reaches a page. That the web client can write no attribute (`writeAttributes` empty,
-      ADR 0081 B4a) is in the template and not yet proven of Cognito (Not verified here).
-  - **Line 2's second sentence**, "Signing in still asks for your authenticator code or hardware key.", is sent only
-    to an account whose row says `mfa_enrolled` when its notice is claimed (D4, D5; R3). On the app's own path a code
-    goes only to an active, enrolled account (`requestPasswordReset`; ADR 0081 A2); but while the client is public a
-    reset can be started at Cognito directly for an account that gate would refuse (an invitee who chose a password
-    and stopped before the authenticator, ADR 0088's C1'; a disabled account) and completed on the app's confirm
-    route. Told the full line, that reader would believe a second factor guards an account that has none, so their
-    line ends at the sessions. For an enrolled account the sentence holds whenever it is sent: no code path in the
-    apps or packages sets `"user".mfa_enrolled` to false, the application role cannot update it, and a reset never
-    removes the second factor (ADR 0081 A5). A later change that can clear the flag needs no new words: the line
-    follows the flag.
+      app's sealed pending sign-in cookie, and that only the app can start `ForgotPassword`. Today the client is public.
+      Anyone holding the client ID can ask Cognito for a reset code directly, for an account the app's gate (ADR 0081
+      A2) would refuse, and redeem it on the app's own confirm route, which queues a notice like any other; and anyone
+      who signs in at Cognito directly, with the password and a code, holds its tokens outside that cookie (the refresh
+      token for 12 hours). What holds without the condition: the tokens the app itself obtains live only in the
+      key-registration step's sealed cookie (`apps/web/src/lib/auth/pending.ts`), for at most 15 minutes, every other
+      path giving the grant back before a session opens; the refresh token is revoked when the step ends (`release()`),
+      though not when the step only expires or the revoke fails, where it stays sealed and unread; access tokens last 15
+      minutes (`infra/lib/constructs/identity.ts`, `TOKEN_LIFETIMES`); and no token of Cognito's is a PaidWhole session
+      or reaches a page. That the web client can write no attribute (`writeAttributes` empty, ADR 0081 B4a) is in the
+      template and not yet proven of Cognito (Not verified here). And until the client is confidential a token taken at
+      Cognito directly outlives case (b)'s 15 minutes: a sign-out that failed revoked none of them, and a key registered
+      with one at Cognito writes no `hardware_key_registered`. So the runbook has the founder make the sign-out again
+      for that user, and the week's review reads `sign_in` rows of purpose `webauthn` for them. Unproven without a user
+      pool.
+  - **Line 2's second sentence**, "Signing in still asks for your authenticator code or hardware key.", is sent only to
+    an account whose row says `mfa_enrolled` when its notice is claimed (D4, D5; R3). On the app's own path a code goes
+    only to an active, enrolled account (`requestPasswordReset`; ADR 0081 A2); but while the client is public a reset
+    can be started at Cognito directly for an account that gate would refuse (an invitee who chose a password and
+    stopped before the authenticator, ADR 0088's C1'; a disabled account) and completed on the app's confirm route. Told
+    the full line, that reader would believe a second factor guards an account that has none, so their line ends at the
+    sessions. For an account enrolled at the reset the sentence holds whenever it is sent: no code path in the apps or
+    packages sets `"user".mfa_enrolled` to false, the application role cannot update it, and a reset never removes the
+    second factor (ADR 0081 A5). A later change that can clear the flag needs no new words: the line follows the flag.
+  - **What reading the flag at the send leaves open** (the delta review of 2026-11-11, DS-03 and DD-01). The flag goes
+    from false to true, and it does so in the very takeover the short line exists for. Whoever reads an invitee's
+    mailbox can reset the password from outside the app's gate, sign in with it inside the live invitation, enrol an
+    authenticator of their own and hold a session before the job's next run. The account's address is then sent the full
+    line, though the open session and the authenticator are the other party's; the short line goes out only when the
+    send falls between the reset and that enrolment. It is reachable only while the client is public, since the reset
+    has to be started at Cognito directly, as SEC-03's own case was; it is reproduced with the local provider twin and
+    unproven at Cognito. It is not fixed in this pull request. The fix keeps the fact as it was at the reset: a column
+    of `password_notice` written by the reset's trigger and returned by the claim. That changes the table, the trigger
+    and the claim, and it rides with `LANES.md` Queues item 28, the next schema pull request, which already replaces the
+    trigger. The pull request's description lists it for the founder as a fourth case.
   - **Lines 3 and 4** (R4). This decision decides who receives the lines, and D4 tells a locked account, and one
     disabled after the reset, on purpose; the review weighed lines 2 to 4 for both. Line 2 stays true of them: their
     sessions ended and the second factor was not removed, though neither can sign in until the lock is lifted or the
@@ -274,21 +299,26 @@ Two facts of the base shape the decision:
     (`docs/runbooks/support-mail.md`). It now says "from the address you sign in with", the screens' own words, and
     names a second route that needs no inbound mail: the organization's administrator.
 - **D11. The locks.** The migration takes `"user"` (SHARE ROW EXCLUSIVE, for the foreign key), `audit_event` (ACCESS
-  EXCLUSIVE, for the policy and the trigger) and `mail_send` (ACCESS EXCLUSIVE, for the CHECKs) together, with
-  `NOWAIT`, in one subtransaction, once a second, up to 300 tries (ADR 0083's loop), before any DDL. A refused try holds
-  and queues nothing. All three in one try because a new-device sign-in holds `audit_event` and then updates `"user"`:
-  a plain wait on `"user"` would stall every sign-in and the loop could never win. If no moment comes in five minutes
-  the migration fails with `"user", audit_event or mail_send stayed in use for five minutes; run the deploy again
+  EXCLUSIVE, for the policy and the trigger) and `mail_send` (ACCESS EXCLUSIVE, for the CHECKs) together, with `NOWAIT`,
+  in one subtransaction, once a second, up to 300 tries (ADR 0083's loop), before any DDL. A refused try holds and
+  queues nothing. All three in one try because a new-device sign-in holds `audit_event` and then updates `"user"`: a
+  plain wait on `"user"` would stall every sign-in and the loop could never win. If no moment comes in five minutes the
+  migration fails with `"user", audit_event or mail_send stayed in use for five minutes; run the deploy again
   (docs/adr/0091)` (55P03), before any service moves. Once held, to the commit (the DDL and one scan of `mail_send`, at
-  most about 91 days of messages: about 0.3 seconds measured with 500,000 mail records), every write of `"user"`,
-  every audited read or mutation, every other read of `audit_event` and every read or write of `mail_send` waits. Jobs
-  and sign-ins wait and then proceed. A signed-in request waits up to its three-second lock timeout and is then
-  refused as busy, with nothing saved (ADR 0092's amendment of 2026-11-11, #137); at the measured window no one is
-  refused. What refuses the loop, and when to deploy if it fails, is the runbook's. Before the loop, the file's
-  preflight refuses to go on unless what it replaces is exactly the base's: it compares the SHA-256 of the stored body
-  of `operator_record_mail_event()` and of `operator_mail_expire()`, and of the whole WITH CHECK expression of the
-  `audit_event_record` policy, with the values of a database migrated to the 48 migrations before this one, not
-  substrings (R9), so a migration that changed one of them in between is never undone without a word.
+  most about 91 days of messages: about 0.3 seconds measured with 500,000 mail records), every write of `"user"`, every
+  audited read or mutation, every other read of `audit_event` and every read or write of `mail_send` waits. Jobs and
+  sign-ins wait and then proceed. A signed-in request waits up to its three-second lock timeout and is then refused as
+  busy, with nothing saved (ADR 0092's amendment of 2026-11-11, #137); at the measured window no one is refused. What
+  refuses the loop, and when to deploy if it fails, is the runbook's. Before the loop, the file's preflight compares
+  three things with the values of a database migrated to the 48 migrations before this one, by SHA-256 and not by
+  substrings (R9): the stored body of each of the two functions it replaces, `operator_record_mail_event()` and
+  `operator_mail_expire()`, and the whole WITH CHECK expression of the `audit_event_record` policy. A migration that
+  changed one of those in between is refused, never undone without a word. The preflight does not compare the rest of
+  what the file restates from its own text: the two kind CHECKs of `mail_send` that it rewrites, the policy's command
+  and roles, and the two functions' grants and settings. A change to one of those by a migration sorting before this one
+  would be replaced without a refusal (the delta review of 2026-11-11, DD-03). The migration's own comment states the
+  first and not the second. No comparison is added: no migration can come to sort before this one in a chain that merges
+  one schema pull request at a time.
 - **D12. Rollback, and the rollback floor.** A rollback redeploys the previous image on this schema (ADR 0009; ADR 0049,
   `tp:skipMigrations=true`); the schema is never rolled back, and undoing the trigger would be a later migration. This is
   the first change that adds a mail kind.
@@ -307,8 +337,8 @@ Two facts of the base shape the decision:
     that loses the events of the notices sent before it. The image selects `operator_record_mail_event()`'s six columns
     by name and calls `operator_mail_expire(integer)`, whose new body never deletes a pending notice, so its mail jobs
     keep working; it writes neither reserved action.
-  - `PasswordNoticeEmail` and the three alarms (D9, D10, D15) stay with the stack; D10's and D15's count lines the
-    previous web already writes, so they keep paging across a rollback of the images.
+  - `PasswordNoticeEmail` and the four alarms (D9's two, D10's and D15's) stay with the stack; D10's and D15's count
+    lines the previous web already writes, so they keep paging across a rollback of the images.
   - **Roll forward rather than stay back.** After rolling forward, the new job sends every pending notice inside the
     cutoff; every one older than 24 hours fails `NoticeStale`, up to 100 a run, and they share one page, one line a
     notice (the operator tells each person another way); then redrive the dead-letter queue, so the delivered and
@@ -320,41 +350,40 @@ Two facts of the base shape the decision:
   - The steps: `docs/runbooks/deploy-and-rollback.md`, "Password-changed notices".
 - **D13. Logs.** IDs and codes only, never an address, a name or a token: `password notice sent`, `password notice send
   failed` (warn, the thrown error's name), `password notice record failed` (warn: SES accepted the message and its
-  record failed, D6), `password notice not delivered` (D9) and `password notices sent` (the run's count). Two fields
-  join the observability allowlist (A-1): `password_notice_id` (the notice's opaque ID) and `undelivered_reason_code`
-  (a code: one of D9's six fixed words, or the thrown error's name, letters only). The address exists only in the
-  claim's row and the one message's recipient.
+  record failed, D6; counted and alarmed as `PasswordNoticeRecordFailed`, D9), `password notice not delivered` (D9) and
+  `password notices sent` (the run's count). Two fields join the observability allowlist (A-1): `password_notice_id`
+  (the notice's opaque ID) and `undelivered_reason_code` (a code: one of D9's six fixed words, or the thrown error's
+  name, letters only). The address exists only in the claim's row and the one message's recipient.
 - **D14. Expiry** (A-4). `expires_at` is 90 days after the change (a CHECK keeps it within 91), as the other customer
   streams' mail records. `operator_mail_expire()`, the nightly `mail_expiry` job's function, also deletes expired
   notices that are not pending; a pending notice is never expired, so the stale sweep has failed and reported it first,
   and no notice disappears without a page, even after a long rollback.
 - **D15. The completed reset no notice covers pages instead.** The web's reset looks the account up before it asks
-  Cognito to change the password (R2). A database that cannot be reached then fails the lookup while Cognito still
-  holds the old password and the code is unspent: nothing changed, and the person tries again. So whatever fails after
-  the password changed has the user's ID. When the transaction that ends the app's sessions and records
-  `password_reset_completed` then fails twice (Context), Cognito already holds the new password, the app's sessions
-  were not ended, and neither the event nor the notice exists. No email is sent there: N-3's line would be false (D10).
-  The web's existing line `security event: password reset sessions not ended` (error; `user_id`, `request_id`) is
-  counted on the web log group as `PasswordResetSessionsNotEnded` (at least 1 in 300 s, to the operator topic), the
-  eighth of the reset and enrolment counts, beside ADR 0088 D7's filters and ADR 0081's over-floor count; ADR 0088's D7
-  table and SEC-23's row are not edited for it or for D10's ninth, as ADR 0081 left them for its own count. The
-  operator ends the account's sessions and tells the person another way, by user ID
-  (`docs/runbooks/incident-response.md`, "A password reset whose sessions were not ended"). So every completed reset
-  the app learns of, for an account, either queues a notice or pages, and with D9 every notice not delivered pages
-  too. This decision claims no more than that. Three completed resets do neither, and are not this decision's to
-  close: one for an address the
-  app has no account for (the provider's confirm runs for every address, so the answer cannot tell an account from
-  none, and there is no account here to tell); one made at Cognito directly from start to finish, which never reaches
-  the app and is possible while the client is public (D10); and one Cognito applied whose answer never reached the
-  app. The Cognito client is built with the SDK's default retries (`apps/web/src/lib/server/services.ts`), so a
-  `ConfirmForgotPassword` whose answer is lost is sent again, meets its own spent code and is answered as a refused
-  code: the password is changed, the person reads that the code did not match, no session ends, nothing is recorded,
-  no notice is queued and nothing pages. It is not proven without a user pool. The app never learns of that reset, so
-  D15 does not cover it; its close rides in the next schema pull request with D10's two cases (`LANES.md` Queues item
-  28). The gap predates this decision; it is
-  closed here because D9 makes the notice the account holder's warning, and this is the path where that warning
-  matters most. Infra's contract test pins both lines' calls in `sign-in.ts`, so an edit to either fails as for every
-  other counted line.
+  Cognito to change the password (R2). A database that cannot be reached then fails the lookup while Cognito still holds
+  the old password and the code is unspent: nothing changed, and the person tries again. So whatever fails after the
+  password changed has the user's ID. When the transaction that ends the app's sessions and records
+  `password_reset_completed` then fails twice (Context), Cognito already holds the new password, the app's sessions were
+  not ended, and neither the event nor the notice exists. No email is sent there: N-3's line would be false (D10). The
+  web's existing line `security event: password reset sessions not ended` (error; `user_id`, `request_id`) is counted on
+  the web log group as `PasswordResetSessionsNotEnded` (at least 1 in 300 s, to the operator topic), the eighth of the
+  reset and enrolment counts, beside ADR 0088 D7's filters and ADR 0081's over-floor count; ADR 0088's D7 table and
+  SEC-23's row are not edited for it or for D10's ninth, as ADR 0081 left them for its own count. The operator ends the
+  account's sessions and tells the person another way, by user ID (`docs/runbooks/incident-response.md`, "A password
+  reset whose sessions were not ended"). So every completed reset the app learns of, for an account, either queues a
+  notice or pages, unless its web task stops in between (the fourth case below), and with D9 every notice not delivered
+  pages too. This decision claims no more than that. Four completed resets do neither, and are not this decision's to
+  close: one for an address the app has no account for (the provider's confirm runs for every address, so the answer
+  cannot tell an account from none, and there is no account here to tell); one made at Cognito directly from start to
+  finish, which never reaches the app and is possible while the client is public (D10); and one Cognito applied whose
+  answer never reached the app. The Cognito client is built with the SDK's default retries
+  (`apps/web/src/lib/server/services.ts`), so a `ConfirmForgotPassword` whose answer is lost is sent again, meets its
+  own spent code and is answered as a refused code: the password is changed, the person reads that the code did not
+  match, no session ends, nothing is recorded, no notice is queued and nothing pages. It is not proven without a user
+  pool. The app never learns of that reset, so D15 does not cover it; its close rides in the next schema pull request
+  with D10's two cases (`LANES.md` Queues item 28). The fourth: a web task stopped between Cognito's answer and the line
+  loses both; nothing records that reset. The gap predates this decision; it is closed here because D9 makes the notice
+  the account holder's warning, and this is the path where that warning matters most. Infra's contract test pins both
+  lines' calls in `sign-in.ts`, so an edit to either fails as for every other counted line.
 
 ### Choices of the design addendum (A-n)
 
@@ -439,12 +468,14 @@ What the design did not state, added with their reasons:
 ## Consequences
 
 - Every reset the provider answers as completed, for an account, either queues a notice, sent within about a minute, or
-  pages the operator (D15); every notice bounced, suppressed, rejected, refused, accepted with its record still failing
-  at the fifth try, or not sent within 24 hours is reported once and raises the alarm (D9); notices that fail while it
-  is raised share its page, and the runbook reads every line. The account holder learns of a reset they did not make
-  from their own mailbox, and line 4 brings them, or their organization's administrator, to the support desk's "Password
-  changed, not by me" (`docs/runbooks/support-mail.md`) when the message opens a readable ticket; a reply or a forward
-  quotes the email's date and address and is withheld, and the playbook says how the desk treats it.
+  pages the operator (D15, which lists the four resets that do neither); every notice bounced, suppressed, rejected,
+  refused, accepted with its record still failing at the fifth try, or not sent within 24 hours is reported once and
+  raises the alarm (D9); notices that fail while it is raised share its page, and the runbook reads every line; a record
+  that fails after SES accepted the message pages at its first copy, by the job's own line (D9). The account holder
+  learns of a reset they did not make from their own mailbox, and line 4 brings them, or their organization's
+  administrator, to the support desk's "Password changed, not by me" (`docs/runbooks/support-mail.md`) when the message
+  opens a readable ticket; a reply or a forward quotes the email's date and address and is withheld, and the playbook
+  says how the desk treats it.
 - For up to 3 minutes after a reset, a sign-in step that proved the old password can still open a session with a
   current code, and for up to 15, when the provider's sign-out fails, a key-registration step can still register a
   key (D10): two open cases, tested as they stand, their close required before launch.
@@ -466,8 +497,8 @@ What the design did not state, added with their reasons:
   before any service moves (D11). An old and a new platform task overlap in a rolling deploy, and an old task cannot
   read a `password_changed` event, so the deploy runbook checks the mail events' dead-letter queue after each deploy.
 - What proves it (SGN-16): `packages/db/src/password-notice.db.test.ts` (the table, the trigger and its guard, the
-  idempotency, the reserved actions, the grants, the claim, its four columns and its cutoff under the lock, `_sent`
-  and the one kind of record it reads, the race, both sides of the message-ID lock, the retries, the stale sweep, the
+  idempotency, the reserved actions, the grants, the claim, its four columns and its cutoff under the lock, `_sent` and
+  the one kind of record it reads, the race, both sides of the message-ID lock, the retries, the stale sweep, the
   mirror, order independence over every sequence of up to three events and every position of the send's commit, the
   seventh column and the body diff, the kind, the expiry, the lock loop giving back all it took on a refused try, each
   refusal of the preflight and its three hashes, the whole file's locks on the tables that existed before it, the
@@ -477,12 +508,13 @@ What the design did not state, added with their reasons:
   ended at five, the run's 8 seconds, and its log lines) and `mail-events.db.test.ts` (the seventh column's line,
   written before the queue's delete); the web's `sign-in.db.test.ts` (one notice for a confirmed reset, none for a
   refused, invalid or rolled-back one or the invitation's first password, none for the reset whose sessions were not
-  ended, which logs the counted line, a confirmation that fails at the lookup with the provider not asked, and D10's
-  two open cases as they stand) and `e2e/sign-in.spec.ts` (the reset journey's message in the local outbox); infra's
-  `operator-role.test.ts`, `mail-streams.test.ts` and `monitoring.test.ts` (the statement, the three filters, their
-  alarms and what their words say, and both lines pinned in `sign-in.ts`); and the catalog and cross-tenant tests,
-  unchanged. Beside SGN-16's list, `packages/auth-mail`'s `render.test.ts` holds the four lines and both second lines,
-  and the worker's `mail.test.ts` the per-message Reply-To and the text alternative's footer.
+  ended, which logs the counted line, a confirmation that fails at the lookup with the provider not asked, and D10's two
+  open cases as they stand) and `e2e/sign-in.spec.ts` (the reset journey's message in the local outbox); infra's
+  `operator-role.test.ts`, `mail-streams.test.ts` and `monitoring.test.ts` (the statement, the four filters, their
+  alarms and what their words say, both lines pinned in `sign-in.ts` and the job's line pinned in
+  `password-notices.ts`); and the catalog and cross-tenant tests, unchanged. Beside SGN-16's list,
+  `packages/auth-mail`'s `render.test.ts` holds the four lines and both second lines, and the worker's `mail.test.ts`
+  the per-message Reply-To and the text alternative's footer.
 - Not verified here (no user pool or SES in this lane), so on the staging smoke list that #125 and this pull request
   share, each with a synthetic account:
   - a completed reset produces one "Your password was changed | PaidWhole" message, which also proves
@@ -511,8 +543,12 @@ What the design did not state, added with their reasons:
 - The close of D10's two cases: refusing to open a session or register a key from a step begun before the account's
   latest completed reset. Its own change, required before launch: `LANES.md` Queues item 28, the next schema pull
   request, in build on `co-001/step-before-reset`. The same change takes the reset whose answer from Cognito is lost
-  (D15), and its scope takes a hardware key registered in case (b): nothing an operator holds removes one.
+  (D15). A key already registered in case (b) is removed by nothing an operator holds: that remedy is `LANES.md` Queues
+  item 29, not yet assigned, its need before launch still to be decided.
   Built as ADR 0093 (the amendment of 2026-11-11, below).
+- The second-factor sentence as the account was at the reset: the claim reads the flag at the send (D4, D10). The fix,
+  the flag kept with the notice by the reset's trigger, rides with `LANES.md` Queues item 28.
+  Built with ADR 0093 (its D10; the amendment below names the two limits).
 - The sibling outboxes (`support-notices.ts`, `dunning.ts`) rethrow an error after an accepted send uncounted, as this
   job did before R7, and bound no run by time; and the two earlier lock-loop tests (`ledger-interest.db.test.ts`,
   `line-status.db.test.ts`) never look at what a refused try holds, as this one did before the review. Base behaviour,
@@ -564,7 +600,8 @@ record and the build as follows; what was deferred is under Not covered.
 - **R7 (SEC-07, DB-02).** A record that fails after SES accepted the message counts as a try (D6): the residue is
   bounded, the notices behind it are not held up, and the runbook has a case for `RecordFailed`.
 - **R8 (SEC-08).** `operator_password_notice_sent()` reads only a mail record of kind `password_changed` (D8).
-- **R9 (DB-07).** The preflight compares hashes with the base's values, not substrings (D11).
+- **R9 (DB-07).** The preflight compares the hashes of the two replaced bodies and of the policy's WITH CHECK expression
+  with the base's values, not substrings; D11 says what it leaves uncompared.
 - **R10 (DB-08).** A run stops claiming notices once it has spent 8 seconds sending (D6).
 - **R11 (UX-10).** The text alternative ends with the `account` variant's footer (D5).
 - **DB-01.** `mail_events` writes the lines for what a record reported before it deletes the event from the queue (D9).
@@ -582,6 +619,31 @@ record and the build as follows; what was deferred is under Not covered.
 - **SEC-05.** "Revisit when" names a route that changes an address.
 - **DB-11** is the pull request description's: it names the five new grants to `tp_operator` and the definer trigger
   function.
+
+Two more reviews then read the round's own changes (68895f0f to ffa44ea9): sign-in, words and records (DS-01 to DS-08)
+and database, worker and mail (DD-01 to DD-06). None was blocking and every finding was real. W6's rulings on them,
+numbered D1 to D7 in their own file and not to be read as this record's decisions of those numbers, changed the record
+and the build as follows.
+
+- **DS-03, DD-01.** Not built here: the second-factor sentence follows the flag as the claim finds it, so an
+  authenticator enrolled after the reset by whoever holds the new password puts the sentence back. D4 and D10 say so,
+  Not covered names the fix, and it rides with Queues item 28.
+- **DD-02.** The job's line for a record that failed is counted and alarmed as `PasswordNoticeRecordFailed`, so the
+  first copy pages (D9); runbook 3.10's `RecordFailed` case starts from it.
+- **DD-03.** The preflight compares, by SHA-256, the stored bodies of the two functions it replaces and the policy's
+  whole WITH CHECK expression. It does not compare the two kind CHECKs of `mail_send` that the file rewrites, the
+  policy's command and roles, or the two functions' grants and settings. The migration's own comment states the first
+  and not the second; D11 now states both, and the migration is not edited.
+- **DS-01.** On the page for a failed provider sign-out a key registered since the reset is the sign, read from the
+  reset's own row; the person's own sign-in by authenticator code ends no membership (D10, the runbook, the alarm's
+  words).
+- **DS-02.** The runbook's statement that finds a user's practices keeps those of the user's own organization only; no
+  row goes to the founder.
+- **DS-04 to DS-08.** Whose accounts case (b) can touch and where the removal of a registered key is queued (D10, Not
+  covered); what the break-glass session does, and what the database refuses for an only administrator (the runbooks);
+  tokens taken at Cognito directly (D10); the undelivered alarm's words, which now cover `RecordFailed`; and D15's
+  fourth unreported reset.
+- **DD-04 to DD-06** changed nothing in this record.
 
 ## Amendment: the close of D10's two cases and of the lost-answer reset (co-001/step-before-reset, 2026-11-11)
 
@@ -610,6 +672,11 @@ them.
   before the mark is refused under the account's row lock, so a sign-in racing the reset is either ended or refused.
   The trade-off this decision put to the founder (keep the line while the two cases stood open) ends with ADR 0093.
 - **SGN-16** no longer records the two cases as open: its two tests flip, and SGN-17 asserts them refused.
+- **The second-factor sentence as the account was at the reset (DS-03, DD-01): closed, with two limits.** ADR
+  0093's migration adds `password_notice.mfa_enrolled_at_reset`, written by the notice's trigger function in the
+  reset's own transaction and returned by the claim as `mfa_enrolled`, so a factor enrolled between the reset and
+  the send no longer puts the sentence back. The two limits, each only while the provider's client is public (ADR
+  0093, D10): a factor enrolled before the reset is recorded, and a second reset by the same hand after enrolling.
 
 What stays open, each named in ADR 0093's known limits:
 

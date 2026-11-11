@@ -1449,7 +1449,7 @@ describe('the migration on the previous head: its preflight, and what the whole 
     expect(pinned.slice(0, 2)).toEqual([written('operator_record_mail_event'), written('operator_mail_expire')]);
   });
 
-  it('holds at its end, of the relations that existed before it, the loop’s three tables in the loop’s modes and nothing stronger, and no other relation: no statement after the loop can wait in a lock queue', async () => {
+  it('holds at its end, of the relations that existed before it, the loop’s three tables in the loop’s modes and nothing stronger, and no other relation but an index of theirs in the weakest mode: no statement after the loop can wait in a lock queue', async () => {
     // The loop's own statements, as pg_locks names their modes.
     const taken = [...lockLoop().matchAll(/LOCK TABLE (\S+) IN ([A-Z ]+) MODE NOWAIT;/g)].map((match) => [
       match[1] ?? '',
@@ -1468,18 +1468,26 @@ describe('the migration on the previous head: its preflight, and what the whole 
       const existed = (await head.query<{ oid: string }>("SELECT oid::text AS oid FROM pg_class WHERE relnamespace = 'public'::regnamespace")).rows.map((row) => row.oid);
       await head.query(file());
       return (
-        await head.query<{ relation: string; mode: string; granted: boolean }>(
-          `SELECT l.relation::regclass::text AS relation, l.mode, l.granted FROM pg_locks l
+        await head.query<{ relation: string; mode: string; granted: boolean; index_of: string | null }>(
+          `SELECT l.relation::regclass::text AS relation, l.mode, l.granted, i.indrelid::regclass::text AS index_of
+             FROM pg_locks l LEFT JOIN pg_index i ON i.indexrelid = l.relation
             WHERE l.pid = pg_backend_pid() AND l.locktype = 'relation' AND l.relation = ANY ($1::oid[]) ORDER BY 1, 2`,
           [existed],
         )
       ).rows;
     });
     expect(held.filter((lock) => !lock.granted)).toEqual([]);
+    // An index of one of the three, in the weakest mode, is PostgreSQL's own bookkeeping and cannot wait either: 18.6
+    // holds it on "user"'s primary key from adding the foreign key, where 18.4 holds none (CI's db shard of 2026-11-11).
+    // ACCESS SHARE conflicts only with ACCESS EXCLUSIVE on that index, a rebuild or a drop, and each of those first
+    // takes a lock on the index's table that the loop's own lock on it refuses. Any other index, and any stronger mode
+    // on one of these, fails here.
+    const indexes = held.filter((lock) => lock.index_of !== null);
+    expect(indexes.filter((lock) => lock.mode !== 'AccessShareLock' || !taken.some(([table]) => table === lock.index_of))).toEqual([]);
     // A later statement's weaker lock on one of the three never waits: what could refuse it, the loop's lock already
     // shut out. A stronger one, or any lock on another relation, could wait behind a transaction the loop never met.
     const strongest = new Map<string, string>();
-    for (const lock of held) {
+    for (const lock of held.filter((each) => each.index_of === null)) {
       const now = strongest.get(lock.relation);
       if (now === undefined || TABLE_LOCK_MODES.indexOf(lock.mode) > TABLE_LOCK_MODES.indexOf(now)) {
         strongest.set(lock.relation, lock.mode);

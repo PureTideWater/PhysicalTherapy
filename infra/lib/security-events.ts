@@ -59,8 +59,10 @@ export const PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE = 'security event: passwo
  * ended, and logs its failure at error with the user's ID, the request's ID and the error's name only
  * (apps/web/src/lib/auth/sign-in.ts, confirmPasswordReset); the reset still lands. The provider's grant of a
  * key-registration step begun before the reset then still works for the step's 15 minutes, so a hardware key can be
- * registered after the reset. One alarms: the operator reads the audit log for a key registered or a sign-in by that
- * user after the line (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed").
+ * registered after the reset. Only an account that must sign in with a hardware key and has none is ever in that step:
+ * one of PaidWhole's own, never a customer's. One alarms: the operator reads the audit log for a key registered by that
+ * user since the reset, the one row the failed sign-out makes possible; a sign-in by authenticator code after it is the
+ * person's own (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed").
  */
 export const PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: password reset provider sign-out failed';
 

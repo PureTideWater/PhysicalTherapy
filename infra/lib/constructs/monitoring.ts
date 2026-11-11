@@ -49,6 +49,7 @@ import {
   MAIL_VALIDATION_REFUSED_CODE,
   MAIL_VALIDATION_REFUSED_PERIOD_SECONDS,
   type MailPlatformAlarmCode,
+  PASSWORD_NOTICE_RECORD_FAILED_ALARM,
   mailCodeMetricName,
 } from '../mail';
 import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../models';
@@ -150,15 +151,18 @@ export interface MonitoringProps {
  * minutes in a row; and its failed runs (any error line, or a run out of attempts). The web app's uploads sent to wait
  * (over an account's share or the day's cap, Q7) are counted from the web's group. No metric has a dimension.
  *
- * The mail streams (docs/adr/0065; audit #76) add nine metric filters, each with its alarm: six codes the platform
+ * The mail streams (docs/adr/0065; audit #76) add ten metric filters, each with its alarm: six codes the platform
  * jobs log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a
  * recipient, a notice with no recipient, an invitation not delivered, a stream with no probe back in 26 hours, logged on
- * every run while it holds, and a password-changed email not delivered or not sent within 24 hours, docs/adr/0091), each
+ * every run while it holds, and a password-changed email not delivered, not sent within 24 hours or sent with its record
+ * still failing at its fifth try, docs/adr/0091), each
  * alarmed at one in five minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
- * has one; the web's code for an address validation AWS refused (the address-validation account's role or its call),
+ * has one; the job's code for a password-changed email SES accepted whose record then failed, on each such try
+ * (PASSWORD_NOTICE_RECORD_FAILED_ALARM; docs/adr/0091, D9), alarmed at one in five minutes, so the first copy pages;
+ * the web's code for an address validation AWS refused (the address-validation account's role or its call),
  * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
- * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
- * the reputation and queue alarms.
+ * a day. Each is matched on the line's `error_code` and named by it (the failed record by its constant's name), never
+ * by a value from the line; MailStreams holds the reputation and queue alarms.
  *
  * Reset and enrolment (R-11; docs/adr/0088, D7; test matrix SEC-23) add thirteen metric filters on the web's group, each
  * with its alarm (infra/lib/security-events.ts, RESET_AND_ENROLMENT_COUNTS): a reset request not delivered for a code
@@ -202,6 +206,8 @@ export class Monitoring extends Construct {
   readonly mailCodeAlarms: Readonly<Record<MailPlatformAlarmCode, cloudwatch.Alarm>>;
   /** A probe that could not be sent for 15 minutes (MAIL_PROBE_UNSENT_ALARM). */
   readonly mailProbeUnsentAlarm: cloudwatch.Alarm;
+  /** A password-changed email SES accepted whose record then failed, on each such try: the first copy pages (PASSWORD_NOTICE_RECORD_FAILED_ALARM). */
+  readonly passwordNoticeRecordFailedAlarm: cloudwatch.Alarm;
   /** An address validation AWS refused (MAIL_VALIDATION_REFUSED_CODE). */
   readonly mailValidationRefusedAlarm: cloudwatch.Alarm;
   readonly mailValidationCapAlarm: cloudwatch.Alarm;
@@ -519,8 +525,9 @@ export class Monitoring extends Construct {
       NOTICE_UNDELIVERABLE: `A ${props.environmentName} support-access or dunning notice had no one to send to: reach the practice or organization another way.`,
       INVITATION_UNDELIVERED: `A ${props.environmentName} invitation email was not delivered: tell the inviting administrator.`,
       // One page can stand for several notices: the alarm notifies when it goes into ALARM, not once a line, so the
-      // words say to read every line while it is raised (review UX-04 of 2026-11-11).
-      PASSWORD_NOTICE_UNDELIVERED: `One or more ${props.environmentName} password-changed emails did not reach their accounts, or were not sent within 24 hours: read every line while this alarm is raised, tell each person another way and check the platform service and SES (docs/runbooks/deliverability.md, 3.10).`,
+      // words say to read every line while it is raised (review UX-04 of 2026-11-11), and each line's reason before
+      // anyone is told: a notice whose record kept failing went out, up to five times (the delta review, DS-07).
+      PASSWORD_NOTICE_UNDELIVERED: `One or more ${props.environmentName} password-changed emails did not reach their accounts, were not sent within 24 hours, or went out with their record failing: read every line while this alarm is raised and each line's reason before you tell anyone (docs/runbooks/deliverability.md, 3.10).`,
       MAIL_PROBE_MISSED: `A ${props.environmentName} mail stream's probes have not come back: ${String(MAIL_PROBE_HOURS.missed)} hours after the older of its last delivered and bounced probe, or ${String(MAIL_PROBE_HOURS.firstProof)} hour after the first probe sent since a resume, sent and lost or never sent (then MAIL_PROBE_UNSENT too). It stays raised, and the probes go again hourly, until both come back. Staging and production close the screening ${String(MAIL_PROBE_HOURS.ready)} hours after the last came back, and keep a resumed one closed until both are back; check the identity, the event destination, the rule, the queue and the job (docs/runbooks/deliverability.md, 3.7).`,
     };
     const codeAlarms: Partial<Record<MailPlatformAlarmCode, cloudwatch.Alarm>> = {};
@@ -552,6 +559,25 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.mailProbeUnsentAlarm.addAlarmAction(notify);
+
+    // The password_notices job's warning for a message SES accepted whose record then failed (docs/adr/0091, D9): the
+    // try is counted and the notice backs off, so the job's retry completes and the failed-job alarm hears nothing;
+    // this alarm pages on the first copy, not on the undelivered line at the fifth.
+    const recordFailed = counted(
+      this.platformLogGroup,
+      PASSWORD_NOTICE_RECORD_FAILED_ALARM.metricName,
+      { namespace: MAIL_NAMESPACE, metricName: PASSWORD_NOTICE_RECORD_FAILED_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.error_code', '=', PASSWORD_NOTICE_RECORD_FAILED_ALARM.code),
+    );
+    this.passwordNoticeRecordFailedAlarm = new cloudwatch.Alarm(this, `Mail${PASSWORD_NOTICE_RECORD_FAILED_ALARM.metricName}`, {
+      alarmDescription: `SES accepted a ${props.environmentName} password-changed email and the platform then could not record it, so the person has a copy and is sent another at each retry (after 1, 5, 15 and 60 minutes) until a try's record succeeds or the notice fails at its fifth: read the job's error (job attempt failed, job_type password_notices), fix the record, and check the copies' mail records before you tell anyone (docs/runbooks/deliverability.md, 3.10, RecordFailed).`,
+      metric: recordFailed.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(PASSWORD_NOTICE_RECORD_FAILED_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.passwordNoticeRecordFailedAlarm.addAlarmAction(notify);
 
     const refusedMetricName = mailCodeMetricName(MAIL_VALIDATION_REFUSED_CODE);
     const validationRefused = counted(this.webLogGroup, refusedMetricName, { namespace: MAIL_NAMESPACE, metricName: refusedMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_VALIDATION_REFUSED_CODE));
@@ -585,7 +611,7 @@ export class Monitoring extends Construct {
       ClientCredentialRefused: `Cognito refused the ${props.environmentName} web client's credential, so sign-in fails for everyone: check the client secret and the client ID the web task was given (docs/adr/0088, D2).`,
       ClientCredentialProbeRefused: `A ${props.environmentName} web task's start-up probe found its Cognito client credential refused, so its health check fails and the deploy rolls back: check the client secret and the client ID the new task definition was given (docs/adr/0088, D8).`,
       PasswordResetSessionsNotEnded: `A ${props.environmentName} password reset changed the password at Cognito, but the app could not end the account's sessions or record the reset, so no password-changed email was queued: read the user ID from the line, end the account's sessions and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"; docs/adr/0091, D15).`,
-      PasswordResetProviderSignOutFailed: `A ${props.environmentName} password reset was completed, but the sign-out at Cognito that follows it failed, so a hardware-key registration begun before the reset can still be completed for up to 15 minutes: read the user ID from the line, look in the audit log for hardware_key_registered or sign_in by that user after the line, and if there is one treat it as a takeover and end the account's sessions (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"; docs/adr/0091, D10).`,
+      PasswordResetProviderSignOutFailed: `A ${props.environmentName} password reset was completed, but the sign-out at Cognito that follows it failed, so a hardware-key registration begun before the reset can still be completed for up to 15 minutes: read the user ID from the line, look in the audit log for hardware_key_registered by that user since the reset, and if there is one treat it as a takeover, end the account's sessions and tell the founder; a sign_in by authenticator code is the person's own (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"; docs/adr/0091, D10).`,
       SignInStepRefusedAfterReset: `A ${props.environmentName} sign-in step begun before the account's latest password reset was answered after it and refused, so someone proved the old password around the reset from another browser or device: read the user ID and the step from the line, tell the person, and at the code step (mfa) tell them their second factor may be known too, which a reset does not change (docs/runbooks/incident-response.md, "A sign-in step refused after a password reset"; docs/adr/0093, D5).`,
       HardwareKeyRegisteredAcrossReset: `A ${props.environmentName} hardware key was registered while the account's password reset was being recorded: read the line's error code. removed: confirm with the person. not_removed: the key is still on the account and the account is locked, so have the key removed through the founder's break-glass before anyone unlocks it. not_removed_not_locked: the key signs in, so go to the break-glass now (docs/runbooks/incident-response.md, "A hardware key registered across a password reset"; docs/adr/0093, D6).`,
       PasswordResetOutcomeUnknown: `Cognito did not say whether a ${props.environmentName} password reset changed the password, so the app ended the account's sessions and sent no password-changed email: read the user ID from the line, find out at Cognito whether the password changed, and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose outcome is unknown"; docs/adr/0093, D9).`,

@@ -314,13 +314,13 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
     // the platform's six codes (the sixth a password-changed email not delivered, docs/adr/0091, D9), an unsent probe,
-    // and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
+    // a password-changed email SES accepted whose record failed (D9), and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
     // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
     // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
     // sign-out at the provider failed (docs/adr/0091, D10), and the four around a reset (docs/adr/0093: a step refused
     // after it, a hardware key registered across it, an unknown outcome, a crossed account). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(38);
+    expect(filters).toHaveLength(39);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -341,6 +341,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.uptime.certificateAlarm,
       ...Object.values(stack.monitoring.mailCodeAlarms),
       stack.monitoring.mailProbeUnsentAlarm,
+      stack.monitoring.passwordNoticeRecordFailedAlarm,
       stack.monitoring.mailValidationRefusedAlarm,
       stack.monitoring.mailValidationCapAlarm,
       ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
@@ -580,9 +581,11 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       // What happened, and what it leaves open: a key-registration step begun before the reset, for its 15 minutes.
       expect(signOut).toContain(`A ${environment} password reset was completed, but the sign-out at Cognito that follows it failed`);
       expect(signOut).toContain('a hardware-key registration begun before the reset can still be completed for up to 15 minutes');
-      // What to do: the audit log by the line's user ID, and the control the runbook names.
+      // What to do: the audit log by the line's user ID, for the one row the failed sign-out makes possible, a key
+      // registered since the reset; the person's own next sign-in by authenticator code is no sign of it and ends no
+      // membership (the delta review of 2026-11-11, DS-01).
       expect(signOut).toContain('read the user ID from the line');
-      expect(signOut).toContain('look in the audit log for hardware_key_registered or sign_in by that user after the line');
+      expect(signOut).toContain('look in the audit log for hardware_key_registered by that user since the reset, and if there is one treat it as a takeover, end the account\'s sessions and tell the founder; a sign_in by authenticator code is the person\'s own');
       expect(signOut).toContain('docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"');
       expect(signOut).toContain('docs/adr/0091, D10');
       expect(signOut.length).toBeLessThanOrEqual(1024);

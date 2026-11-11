@@ -391,7 +391,7 @@ it was, and the console's mail page names the notices in the transactional strea
 while it still runs, selects `operator_record_mail_event()`'s six columns by name and calls the new
 `operator_mail_expire()`, so its mail jobs keep working. The same deploy gives the operator role its
 `PasswordNoticeEmail` statement and the platform task `SUPPORT_EMAIL` (from the stack's `SupportEmail` parameter), and
-adds the alarms `PASSWORD_NOTICE_UNDELIVERED`, `PasswordResetSessionsNotEnded` and
+adds the alarms `PASSWORD_NOTICE_UNDELIVERED`, `PasswordNoticeRecordFailed`, `PasswordResetSessionsNotEnded` and
 `PasswordResetProviderSignOutFailed`; while IAM propagates, a refused first send is retried a minute later.
 
 **The rolling platform deploy.** The platform service rolls with a minimum of 100% and a maximum of 200%
@@ -414,7 +414,7 @@ above state stay). What the previous images cannot do:
   account up afterwards, so such a reset changes the password, ends no session, records nothing and writes neither
   counted line (ADR 0091, D15).
 
-The operator role's statement and ADR 0091's three alarms stay with the stack; `PasswordResetSessionsNotEnded` and
+The operator role's statement and ADR 0091's four alarms stay with the stack; `PasswordResetSessionsNotEnded` and
 `PasswordResetProviderSignOutFailed` count lines the previous web already writes (docs/runbooks/incident-response.md),
 so they keep paging. Roll forward with a fix rather than staying back. While rolled back, list who waits, in a session
 as the operator role:

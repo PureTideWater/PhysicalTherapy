@@ -24,6 +24,7 @@ import {
   MAIL_VALIDATION_REFUSED_CODE,
   MAIL_VALIDATION_REFUSED_PERIOD_SECONDS,
   MAIL_WARNING_CODES,
+  PASSWORD_NOTICE_RECORD_FAILED_ALARM,
   REPUTATION_PERIOD_SECONDS,
   SET_REPUTATION_ALARMS,
   configurationSetName,
@@ -314,9 +315,9 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     });
   });
 
-  it('counts each platform mail code, an unsent probe and the web\'s refused validation and validation cap from the logs, by the code alone (nine filters)', () => {
+  it('counts each platform mail code, an unsent probe, a password-changed email\'s failed record and the web\'s refused validation and validation cap from the logs, by the code alone (ten filters)', () => {
     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(MAIL_NAMESPACE));
-    expect(filters).toHaveLength(9);
+    expect(filters).toHaveLength(10);
     const platform = ref(logicalIdOf(stack, stack.monitoring.platformLogGroup));
     const web = ref(logicalIdOf(stack, stack.monitoring.webLogGroup));
     const expected = [
@@ -461,19 +462,56 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     });
     expect(alarm.Dimensions).toBeUndefined();
     // One page can stand for several notices (the alarm notifies when it goes into ALARM, not once a notice), so its words
-    // say so and what to read: every line while it is raised.
+    // say so and what to read: every line while it is raised, and each line's reason before anyone is told, since a notice
+    // whose record kept failing went out, up to five times (the delta review of 2026-11-11, DS-07).
     expect(alarm.AlarmDescription).toBe(
-      `One or more ${environment} password-changed emails did not reach their accounts, or were not sent within 24 hours: read every line while this alarm is raised, tell each person another way and check the platform service and SES (docs/runbooks/deliverability.md, 3.10).`,
+      `One or more ${environment} password-changed emails did not reach their accounts, were not sent within 24 hours, or went out with their record failing: read every line while this alarm is raised and each line's reason before you tell anyone (docs/runbooks/deliverability.md, 3.10).`,
     );
     expect(alarm.OKActions).toBeUndefined();
   });
 
-  it('has eighteen mail alarms', () => {
+  it('pages on the first password-changed email SES accepted whose record failed, from the platform\'s log, by the code alone (docs/adr/0091, D9; the delta review of 2026-11-11, DD-02)', () => {
+    expect(PASSWORD_NOTICE_RECORD_FAILED_ALARM).toEqual({ code: 'RecordFailed', message: 'password notice record failed', metricName: 'PasswordNoticeRecordFailed', periodSeconds: 300 });
+    // The job's own line: a warning on each try whose record failed after SES accepted the message, with the code the
+    // filter matches. No other line of the job carries the code as its error_code: the undelivered line carries it as
+    // its reason, under PASSWORD_NOTICE_UNDELIVERED.
+    const job = source('apps/worker/src/platform/password-notices.ts');
+    expect(job).toContain(`export const PASSWORD_NOTICE_RECORD_FAILED = '${PASSWORD_NOTICE_RECORD_FAILED_ALARM.code}';`);
+    expect(job).toContain(`logger?.warn('${PASSWORD_NOTICE_RECORD_FAILED_ALARM.message}', { password_notice_id: notice.notice_id, user_id: notice.user_id, error_code: PASSWORD_NOTICE_RECORD_FAILED });`);
+    expect(job.split('error_code: PASSWORD_NOTICE_RECORD_FAILED')).toHaveLength(2);
+    const { metricName } = PASSWORD_NOTICE_RECORD_FAILED_ALARM;
+    const filter = resourcesOf(template, 'AWS::Logs::MetricFilter').find(([, candidate]) => JSON.stringify(propertiesOf(candidate).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+    expect(propertiesOf((filter as [string, CfnResource])[1])).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
+      FilterPattern: '{ $.error_code = "RecordFailed" }',
+      MetricTransformations: [{ MetricNamespace: MAIL_NAMESPACE, MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+    });
+    const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.passwordNoticeRecordFailedAlarm)));
+    expect(alarm).toMatchObject({
+      Namespace: MAIL_NAMESPACE,
+      MetricName: metricName,
+      Statistic: 'Sum',
+      Period: 300,
+      EvaluationPeriods: 1,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
+    });
+    expect(alarm.Dimensions).toBeUndefined();
+    // What happened, what it means for the person, what to do and where: the first copy pages, not the fifth.
+    expect(alarm.AlarmDescription).toBe(
+      `SES accepted a ${environment} password-changed email and the platform then could not record it, so the person has a copy and is sent another at each retry (after 1, 5, 15 and 60 minutes) until a try's record succeeds or the notice fails at its fifth: read the job's error (job attempt failed, job_type password_notices), fix the record, and check the copies' mail records before you tell anyone (docs/runbooks/deliverability.md, 3.10, RecordFailed).`,
+    );
+    expect(alarm.OKActions).toBeUndefined();
+  });
+
+  it('has nineteen mail alarms', () => {
     const mail = resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, alarm]) => {
       const properties = propertiesOf(alarm);
       return properties.Namespace === MAIL_NAMESPACE || properties.Namespace === 'AWS/SES' || (properties.Namespace === 'AWS/SQS' && JSON.stringify(properties.Dimensions).includes('MailStreamsEvents'));
     });
-    expect(mail).toHaveLength(18);
+    expect(mail).toHaveLength(19);
   });
 
   it('outputs every DNS record the founder sets at the registrar, and the sets and queues', () => {
