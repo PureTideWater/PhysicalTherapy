@@ -25,9 +25,14 @@
 -- - sign_in_lock_key_across_reset(target_user, request): locks an account whose hardware key was registered across
 --   its reset and could not be removed at the provider (docs/adr/0093 D6), so the key opens nothing until a platform
 --   administrator has had it removed and unlocks the account. It refuses unless that registration is on record.
+-- - unlock_user(target_user) (replaced: the body of migration 20261015170000 with one refusal added) refuses to unlock
+--   an account locked for such a key (the constraint name user_key_across_reset_hold) until a security_event with the
+--   purpose key_across_reset_cleared is recorded after the lock, which only the owner writes once the key is removed
+--   at the provider (docs/runbooks/incident-response.md), so the ordinary unlock never hands the key a sign-in.
 --
 -- Tables touched: "user" (one nullable column, no default: catalog only, no rewrite, no scan); user_session (one
--- nullable column, the same; one BEFORE INSERT trigger; one column grant); audit_event (one AFTER INSERT trigger). No
+-- nullable column, the same; one BEFORE INSERT trigger; one column grant); audit_event (one AFTER INSERT trigger). One
+-- existing function is replaced in place, unlock_user(uuid), its signature, owner and grant unchanged. No
 -- PHI table, no ledger table, no rule table and no pricing table is touched; no function sets app.practice_ids or
 -- app.actor_id. Every function is revoked from PUBLIC. The two trigger functions are SECURITY DEFINER, owned by
 -- tp_owner and granted to no role (a trigger fires without EXECUTE); sign_in_lock_account(), sign_in_step_refused() and
@@ -66,6 +71,13 @@ BEGIN
      OR to_regprocedure('sign_in_step_refused(uuid, timestamptz, text, text)') IS NOT NULL
      OR to_regprocedure('sign_in_lock_key_across_reset(uuid, text)') IS NOT NULL THEN
     RAISE EXCEPTION 'a function of migration 20261112090000 already exists; it creates them' USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
+  -- unlock_user() is replaced whole: its stored body must be the one of migration 20261015170000 (pg_proc.prosrc, by
+  -- SHA-256, as migration 20261111090000's preflight compares), or this migration refuses until it is rebased.
+  IF (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p WHERE p.oid = to_regprocedure('public.unlock_user(uuid)'))
+     IS DISTINCT FROM 'dcb9d4ff9b6626f14cb8959f6d24d9eaa1c38e22ad7e697375898c3e4fba9623' THEN
+    RAISE EXCEPTION 'unlock_user(uuid) is not the body of migration 20261015170000 that migration 20261112090000 replaces; rebase this migration on its latest body'
+      USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
   -- The mark moves under the password notice's guard (docs/adr/0091 D3). If that trigger is gone or its guard is no
   -- longer the one read here, this migration refuses until it is rebased on the new guard. The catalog prints the
@@ -195,7 +207,8 @@ CREATE TRIGGER user_session_sign_in_not_before BEFORE INSERT ON user_session FOR
 -- the account's mark). Only the last is evidence (the old password, or a key assertion, was proved around a reset): it
 -- writes a security_event for the account, as sign_in_failed() writes its own, with the step in the purpose and the
 -- request's ID, once for an account, a step and a mark (a replayed step, or a caller repeating the call, adds no
--- row). It counts no failure: a count would let a stale step lock the account. It reads the committed mark and takes
+-- row). The row's time is the clock's, not the transaction's start, so "since the mark" is read on the mark's own
+-- clock whenever the calling transaction began. It counts no failure: a count would let a stale step lock the account. It reads the committed mark and takes
 -- no lock; the session insert's trigger is the exact check.
 CREATE FUNCTION sign_in_step_refused(target_user uuid, began timestamptz, step text, request text) RETURNS text
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
@@ -227,8 +240,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM audit_event e
                   WHERE e.object_type = 'user' AND e.object_id = target_user AND e.action = 'security_event'
                     AND e.actor_kind = 'system' AND e.purpose = what AND e.at >= mark) THEN
-    INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-    VALUES ('system', 'security_event', 'user', target_user, what, request);
+    INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose, request_id)
+    VALUES (clock_timestamp(), 'system', 'security_event', 'user', target_user, what, request);
   END IF;
   RETURN 'before_reset';
 END;
@@ -236,9 +249,10 @@ $$;
 
 -- A hardware key registered across the account's reset that the provider did not remove (the reset's own sign-out
 -- has ended the token that could remove it): the account is locked, as ten failed sign-ins lock it, so the key signs
--- in to nothing until a platform administrator has had the key removed and unlocks the account
--- (docs/runbooks/incident-response.md). It refuses unless sign_in_step_refused() has recorded that registration since
--- the account's mark, so it locks no account without that evidence. True when this call locked it.
+-- in to nothing, and the lock is recorded (account_locked_key_across_reset) whether or not the account was locked
+-- already, since that record is what holds unlock_user() until the key is cleared. It refuses unless
+-- sign_in_step_refused() has recorded that registration since the account's mark, so it locks no account without
+-- that evidence. True when this call locked it; false when it was locked already.
 CREATE FUNCTION sign_in_lock_key_across_reset(target_user uuid, request text) RETURNS boolean
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
@@ -246,7 +260,7 @@ DECLARE
   mark timestamptz;
   was_locked boolean;
 BEGIN
-  SELECT u.sign_in_not_before, u.locked_at IS NOT NULL INTO mark, was_locked FROM "user" u WHERE u.id = target_user FOR UPDATE;
+  SELECT u.sign_in_not_before, u.locked_at IS NOT NULL INTO mark, was_locked FROM "user" u WHERE u.id = target_user FOR NO KEY UPDATE;
   IF NOT FOUND OR mark IS NULL OR NOT EXISTS (
        SELECT 1 FROM audit_event e
         WHERE e.object_type = 'user' AND e.object_id = target_user AND e.action = 'security_event'
@@ -254,13 +268,40 @@ BEGIN
     RAISE EXCEPTION 'an account is locked for a key registered across its reset only when that registration is on record'
       USING ERRCODE = 'insufficient_privilege';
   END IF;
-  IF was_locked THEN
-    RETURN false;
+  IF NOT was_locked THEN
+    UPDATE "user" u SET locked_at = now() WHERE u.id = target_user;
   END IF;
-  UPDATE "user" u SET locked_at = now() WHERE u.id = target_user;
-  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-  VALUES ('system', 'security_event', 'user', target_user, 'account_locked_key_across_reset', request);
-  RETURN true;
+  INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES (clock_timestamp(), 'system', 'security_event', 'user', target_user, 'account_locked_key_across_reset', request);
+  RETURN NOT was_locked;
+END;
+$$;
+
+-- The unlock, as migration 20261015170000 created it, with one refusal: an account locked for a key registered across
+-- its reset stays locked until the key is cleared. The hold is the latest account_locked_key_across_reset event with
+-- no key_across_reset_cleared event after it; both are security_event rows the application role cannot write
+-- (audit_event_record reserves the action), and the second is written by the owner once the key is removed at the
+-- provider. Without the hold, the ordinary unlock would hand the key its sign-in.
+CREATE OR REPLACE FUNCTION unlock_user(target_user uuid) RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+#variable_conflict use_variable
+BEGIN
+  IF NOT app_actor_platform_permitted('organization.manage') THEN
+    RAISE EXCEPTION 'only a platform administrator unlocks an account' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF EXISTS (
+       SELECT 1 FROM audit_event held
+        WHERE held.object_type = 'user' AND held.object_id = target_user AND held.action = 'security_event'
+          AND held.actor_kind = 'system' AND held.purpose = 'account_locked_key_across_reset'
+          AND NOT EXISTS (
+            SELECT 1 FROM audit_event cleared
+             WHERE cleared.object_type = 'user' AND cleared.object_id = target_user AND cleared.action = 'security_event'
+               AND cleared.actor_kind = 'system' AND cleared.purpose = 'key_across_reset_cleared' AND cleared.at > held.at)) THEN
+    RAISE EXCEPTION 'an account locked for a hardware key registered across its password reset is unlocked only after the key is cleared'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'user_key_across_reset_hold';
+  END IF;
+  UPDATE "user" SET failed_sign_ins = 0, locked_at = NULL WHERE id = target_user AND locked_at IS NOT NULL;
+  RETURN FOUND;
 END;
 $$;
 
@@ -271,6 +312,6 @@ $$;
 GRANT INSERT (sign_in_began_at) ON user_session TO tp_app;
 REVOKE ALL ON FUNCTION sign_in_step_began(), sign_in_lock_account(), audit_event_sign_in_not_before(),
   user_session_sign_in_not_before(), sign_in_step_refused(uuid, timestamptz, text, text),
-  sign_in_lock_key_across_reset(uuid, text) FROM PUBLIC;
+  sign_in_lock_key_across_reset(uuid, text), unlock_user(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text),
-  sign_in_lock_key_across_reset(uuid, text) TO tp_app;
+  sign_in_lock_key_across_reset(uuid, text), unlock_user(uuid) TO tp_app;

@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- sign_in_step_refused(uuid,timestamp with time zone,text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 45256972319cb794
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2f2824594601d24a
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.sign_in_step_refused(target_user uuid, began timestamp with time zone, step text, request text)
@@ -39,8 +39,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM audit_event e
                   WHERE e.object_type = 'user' AND e.object_id = target_user AND e.action = 'security_event'
                     AND e.actor_kind = 'system' AND e.purpose = what AND e.at >= mark) THEN
-    INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-    VALUES ('system', 'security_event', 'user', target_user, what, request);
+    INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose, request_id)
+    VALUES (clock_timestamp(), 'system', 'security_event', 'user', target_user, what, request);
   END IF;
   RETURN 'before_reset';
 END;

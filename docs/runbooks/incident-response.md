@@ -321,11 +321,23 @@ event: hardware key registered across a password reset`.
 3. **`not_removed`: the key is still on the account, and the account is locked.** A locked account is refused before
    any credential is tried, so the key opens nothing while the lock stays. Open the record (section 1). Give the
    user ID to the founder: nothing an operator holds removes a key (not a reset, not End membership), so the
-   founder's break-glass removes it, until `LANES.md` Queues item 29 gives the operator an action. **Do not unlock
-   the account, and let no platform administrator unlock it, until the founder confirms the key is removed**: an
-   unlock before that hands the account to whoever holds the key. The audit log holds `hardware_key_registered` and
-   a `security_event` with the purpose `account_locked_key_across_reset` for the user at the line's time. The person
-   cannot sign in meanwhile; step 5 tells them why.
+   founder's break-glass removes it, until `LANES.md` Queues item 29 gives the operator an action. The account
+   cannot be unlocked meanwhile: the database holds it, and the console's Unlock answers "This account is locked
+   because a hardware key was registered during a password reset. It stays locked until the key is removed. See the
+   incident runbook." An unlock before the key is gone would hand the account to whoever holds the key. The audit
+   log holds `hardware_key_registered` and a `security_event` with the purpose `account_locked_key_across_reset`
+   for the user at the line's time. The person cannot sign in meanwhile; step 5 tells them why. Then, in order:
+   1. The founder's break-glass removes the key at the provider and confirms that the user has no key left.
+   2. Only then, the founder's break-glass session records the clear, as the owner (the application role cannot
+      write this row):
+
+      ```sql
+      INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose)
+      VALUES (clock_timestamp(), 'system', 'security_event', 'user', '<user id>', 'key_across_reset_cleared');
+      ```
+
+   3. A platform administrator unlocks the account in the console. If the account is locked for a key again
+      later, the hold returns and this step is done again.
 3a. **`not_removed_not_locked`: the key is still on the account and the lock failed too.** This is the urgent case:
    a hardware key signs in without the password. Contain at once (section 2, "A user or session"), give the user ID
    to the founder for the break-glass now, and do not add the person back until the founder has dealt with the key.

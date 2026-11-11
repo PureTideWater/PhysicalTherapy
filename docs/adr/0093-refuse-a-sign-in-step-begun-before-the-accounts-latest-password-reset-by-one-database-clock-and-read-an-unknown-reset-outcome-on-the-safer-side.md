@@ -116,7 +116,10 @@ confidential client) closes that. So "required before launch" needs both: this r
   the step: `step_before_reset_mfa`, `_key`, `_register_key`, `_new_password`, `_mfa_setup`, and
   `key_registered_across_reset`; the request ID), as `sign_in_failed()` writes its own. It writes that row once for
   an account, a step and a mark: a replayed step, or a caller repeating the call with any old start, is refused
-  again and adds none (the build's reviews: security N3 and N4, database S2). Checking and recording are one
+  again and adds none (the build's reviews: security N3 and N4, database S2). The row's time is the clock's, not the
+  transaction's start, so "since the mark" is read on the mark's own clock whenever the calling transaction began
+  (the fix round's review, S1). The row kept is the first: a second stale request for the same step and mark adds
+  none, so its request ID is in the paging line's log and not in the audit log. Checking and recording are one
   function, so no call site can refuse without the record. It counts no failure: a count would let a stale step
   lock the account.
 
@@ -166,10 +169,22 @@ confidential client) closes that. So "required before launch" needs both: this r
   - so a key that is not removed locks the account: `sign_in_lock_key_across_reset(target_user, request)` (SECURITY
     DEFINER, EXECUTE to `tp_app`) sets the account's lock, as ten failed sign-ins do, and records a `security_event`
     (purpose `account_locked_key_across_reset`). It refuses (`42501`) unless `sign_in_step_refused` has recorded that
-    registration since the account's mark, so it locks no account without the evidence; it answers false, and
-    writes nothing, for an account already locked. A locked account is refused before any credential is tried, so
-    the key signs in to nothing until a platform administrator unlocks the account, which the runbook allows only
-    after the key is removed;
+    registration since the account's mark, so it locks no account without the evidence. It records the lock every
+    time, also for an account already locked (ten failed sign-ins, which anyone can cause), where it answers false
+    and leaves the lock's time: the record is what the hold below reads. The flow locks the key's own account
+    first, whichever account the reset marked, then any other account judged stale; if the key's account is not
+    locked the line says so. A locked account is refused before any credential is tried, so the key signs in to
+    nothing while the lock stays;
+  - and the lock stays until the key is cleared: `unlock_user()` (replaced by this migration, its body otherwise
+    that of migration `20261015170000`) refuses (`check_violation`, the constraint name
+    `user_key_across_reset_hold`) while the account's latest `account_locked_key_across_reset` record has no
+    `security_event` with the purpose `key_across_reset_cleared` after it. The application role cannot write a
+    `security_event` (the `audit_event_record` policy reserves the action), so only the owner records the clear,
+    from the runbook, once the key is removed at the provider. The console answers the refusal in words that say
+    why and point to the runbook. Why in the database: the lock is the lock ten failures set, the console shows only
+    "locked", and the person who has just reset their password will ask support to unlock it; with the runbook
+    alone between that click and the key's sign-in, one unlock would undo the containment (the fix round's review,
+    B1);
   - `security event: hardware key registered across a password reset` is logged (error; `user_id`, `request_id`,
     `error_code` `removed`, `not_removed` (the account is locked) or `not_removed_not_locked` (the lock failed too:
     the urgent case)) and counted as `HardwareKeyRegisteredAcrossReset` (at least 1 in 300 s), with a runbook step:
@@ -302,8 +317,14 @@ confidential client) closes that. So "required before launch" needs both: this r
   update, against that order, can deadlock with a reset, and PostgreSQL ends one of the two.
 - **Above READ COMMITTED** a start-carrying insert that waits behind a reset ends in a serialization failure, never
   a session; no caller opens a session there.
-- **A long transaction.** The once-a-mark record compares the event's time with the mark; a caller that judges
-  inside a transaction begun before the reset would record each call. The web judges in a statement of its own.
+- **The application role can make the evidence.** `sign_in_step_refused()` trusts its caller for the start and the
+  step, so `tp_app` can record a `key_registered_across_reset` for any account that has ever been reset and then
+  lock it, and the lock is held until the owner clears it. That is the trust `sign_in_failed()` already gives it
+  (ten calls lock any account), with a record that names a key no provider registered. Nothing in the web passes
+  a caller's account or start to either function.
+- **An event judged against an earlier mark** can carry a time at or after a later one when a second reset's
+  trigger ran before the judgement began and committed after its read; it then counts as the record for the later
+  mark. Timing only, unverified.
 
 ## Not verified here
 

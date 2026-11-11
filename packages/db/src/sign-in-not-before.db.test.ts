@@ -9,7 +9,7 @@ import { recordAuditEvent, withActor } from './authz';
 import { readDatabaseUrl } from './config';
 import { MIGRATIONS_DIR } from './migrate';
 import { APP_DEV_LOGIN, APP_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OPERATOR_ROLE, OWNER_ROLE, SCREENING_ROLE, WORKER_DEV_LOGIN } from './roles';
-import { type MigratedDatabase, createMigratedDatabase, createUser, endPool } from './testing';
+import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrganization, createUser, endPool } from './testing';
 
 /**
  * SGN-17 and SGN-18's database rows (migration 20261112090000; docs/adr/0093): a sign-in step begun before a password
@@ -762,24 +762,135 @@ describe('sign_in_lock_key_across_reset(): a key registered across a reset and n
     expect(await lock(user, requestId)).toBe(true);
     expect(await lockState(user)).toEqual({ failed_sign_ins: 0, locked: true });
     const lockedAt = (await owner.query<{ at: string }>('SELECT locked_at::text AS at FROM "user" WHERE id = $1', [user])).rows[0]?.at;
-    expect(await lock(user)).toBe(false);
+    const again = request();
+    expect(await lock(user, again)).toBe(false);
     expect((await owner.query<{ at: string }>('SELECT locked_at::text AS at FROM "user" WHERE id = $1', [user])).rows[0]?.at).toBe(lockedAt);
+    // Each call records the lock, the second too: that record is what holds unlock_user() until the key is cleared.
     expect((await securityEvents(user)).slice(1)).toEqual([
       { actor_kind: 'system', actor_id: null, action: 'security_event', object_type: 'user', object_id: user, purpose: 'account_locked_key_across_reset', request_id: requestId },
+      { actor_kind: 'system', actor_id: null, action: 'security_event', object_type: 'user', object_id: user, purpose: 'account_locked_key_across_reset', request_id: again },
     ]);
     // The sign-in path reads the lock as it reads the lock of ten failures.
     const read = await owner.query<{ locked: boolean }>('SELECT a.locked FROM "user" u, sign_in_account(u.email, NULL) a WHERE u.id = $1', [user]);
     expect(read.rows[0]?.locked).toBe(true);
   });
 
-  it('an account already locked by ten failures is left as it is: false, and no second lock is recorded', async () => {
+  it('an account already locked by ten failures keeps its lock time and answers false, and the lock for the key is still recorded, so its audit trail says what holds it', async () => {
     const user = await createUser(owner);
     const start = await beganAndPassed();
     await recordReset(user);
     expect(await stepRefused(user, start, 'key_registered')).toBe('before_reset');
     await owner.query('UPDATE "user" SET locked_at = now(), failed_sign_ins = 10 WHERE id = $1', [user]);
     expect(await lock(user)).toBe(false);
-    expect((await securityEvents(user)).map((event) => event.purpose)).toEqual(['key_registered_across_reset']);
+    expect(await lockState(user)).toEqual({ failed_sign_ins: 10, locked: true });
+    expect((await securityEvents(user)).map((event) => event.purpose)).toEqual(['key_registered_across_reset', 'account_locked_key_across_reset']);
+  });
+
+  it('writes its records at the clock’s time, not the transaction’s start: a judgement in a transaction begun before the mark moved is recorded once and is the evidence the lock then finds', async () => {
+    const user = await createUser(owner);
+    const start = await beganAndPassed();
+    // The judging transaction begins (its now() is fixed here), then the reset moves the mark and commits.
+    const judge = await connect(database.url);
+    await judge.client.query(`SET ROLE ${APP_ROLE}`);
+    await judge.client.query('BEGIN');
+    await judge.client.query('SELECT now()');
+    await owner.query('SELECT pg_sleep(0.003)');
+    await recordReset(user);
+    const refused = (requestId: string) =>
+      judge.client.query<{ refused: string | null }>("SELECT sign_in_step_refused($1, $2::timestamptz, 'key_registered', $3) AS refused", [user, start, requestId]).then((result) => result.rows[0]?.refused);
+    expect(await refused(request())).toBe('before_reset');
+    expect(await refused(request())).toBe('before_reset');
+    const locked = await judge.client.query<{ locked: boolean }>('SELECT sign_in_lock_key_across_reset($1, $2) AS locked', [user, request()]);
+    expect(locked.rows[0]?.locked).toBe(true);
+    await judge.client.query('COMMIT');
+    await close(judge.client);
+    expect((await securityEvents(user)).map((event) => event.purpose)).toEqual(['key_registered_across_reset', 'account_locked_key_across_reset']);
+    const times = await owner.query<{ since: boolean }>(
+      `SELECT bool_and(e.at >= u.sign_in_not_before) AS since FROM audit_event e JOIN "user" u ON u.id = e.object_id WHERE e.object_id = $1 AND e.action = 'security_event'`,
+      [user],
+    );
+    expect(times.rows[0]?.since).toBe(true);
+  });
+});
+
+describe('unlock_user(): an account locked for a key registered across its reset stays locked until the key is cleared (SGN-17; docs/adr/0093 D6)', () => {
+  const HOLD = { code: '23514', constraint: 'user_key_across_reset_hold' } as const;
+  const CLEARED = "INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose) VALUES (clock_timestamp(), 'system', 'security_event', 'user', $1, 'key_across_reset_cleared')";
+  const lock = (user: string) => app.query<{ locked: boolean }>('SELECT sign_in_lock_key_across_reset($1, $2) AS locked', [user, request()]).then((result) => result.rows[0]?.locked);
+  const locked = async (user: string) => (await owner.query<{ locked: boolean }>('SELECT locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [user])).rows[0]?.locked;
+  let admin: string;
+  const unlock = (user: string, actor: string = admin) => withActor(app, actor, async (scope) => (await scope.client.query<{ ok: boolean }>('SELECT unlock_user($1) AS ok', [user])).rows[0]?.ok);
+  /** An account reset, its key registered across the reset on record, and locked for it. */
+  async function held(): Promise<string> {
+    const user = await createUser(owner);
+    const start = await beganAndPassed();
+    await recordReset(user);
+    expect(await stepRefused(user, start, 'key_registered')).toBe('before_reset');
+    expect(await lock(user)).toBe(true);
+    return user;
+  }
+
+  beforeAll(async () => {
+    const internal = await createOrganization(owner, 'internal');
+    admin = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, internal, admin, 'platform_admin');
+  });
+
+  it('refuses a platform administrator by the constraint’s name while the lock for the key has no later clear, and the account stays locked; anyone else is refused as before', async () => {
+    const user = await held();
+    expect(await failure(unlock(user))).toEqual(HOLD);
+    expect(await locked(user)).toBe(true);
+    expect(await code(unlock(user, user))).toBe('42501');
+  });
+
+  it('unlocks once the owner has recorded the key cleared after the lock; a clear recorded before the lock clears nothing; a second lock after a clear holds again', async () => {
+    const early = await createUser(owner);
+    await owner.query(CLEARED, [early]);
+    await owner.query('SELECT pg_sleep(0.003)');
+    const start = await beganAndPassed();
+    await recordReset(early);
+    expect(await stepRefused(early, start, 'key_registered')).toBe('before_reset');
+    expect(await lock(early)).toBe(true);
+    expect(await failure(unlock(early))).toEqual(HOLD);
+
+    const user = await held();
+    await owner.query(CLEARED, [user]);
+    expect(await unlock(user)).toBe(true);
+    expect(await locked(user)).toBe(false);
+    expect(await unlock(user)).toBe(false);
+    // Locked for the key again (the same record of the registration, the mark unmoved): held again.
+    await owner.query('SELECT pg_sleep(0.003)');
+    expect(await lock(user)).toBe(true);
+    expect(await failure(unlock(user))).toEqual(HOLD);
+    await owner.query(CLEARED, [user]);
+    expect(await unlock(user)).toBe(true);
+  });
+
+  it('holds an account that ten failures had locked before the key’s lock was recorded, and leaves an account locked by ten failures alone unlocking as before', async () => {
+    const both = await createUser(owner);
+    const start = await beganAndPassed();
+    await recordReset(both);
+    expect(await stepRefused(both, start, 'key_registered')).toBe('before_reset');
+    await owner.query('UPDATE "user" SET locked_at = now(), failed_sign_ins = 10 WHERE id = $1', [both]);
+    expect(await lock(both)).toBe(false);
+    expect(await failure(unlock(both))).toEqual(HOLD);
+
+    const plain = await createUser(owner);
+    await owner.query('UPDATE "user" SET locked_at = now(), failed_sign_ins = 10 WHERE id = $1', [plain]);
+    expect(await unlock(plain)).toBe(true);
+    expect((await owner.query('SELECT failed_sign_ins, locked_at FROM "user" WHERE id = $1', [plain])).rows).toEqual([{ failed_sign_ins: 0, locked_at: null }]);
+  });
+
+  it('keeps the clear from the application role: it cannot write a security_event, as itself, as the account or as a platform administrator', async () => {
+    const user = await held();
+    await expect(app.query(CLEARED, [user])).rejects.toMatchObject({ code: '42501' });
+    for (const actor of [user, admin]) {
+      await expect(withActor(app, actor, (scope) => scope.client.query(CLEARED, [user]))).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        withActor(app, actor, (scope) => recordAuditEvent(scope, { action: 'security_event', objectType: 'user', objectId: user, purpose: 'key_across_reset_cleared', requestId: request() })),
+      ).rejects.toMatchObject({ code: '42501' });
+    }
+    expect(await failure(unlock(user))).toEqual(HOLD);
   });
 });
 
@@ -791,6 +902,8 @@ describe('the functions’ owners and grants (docs/adr/0093)', () => {
       'sign_in_lock_account()': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
       'sign_in_step_refused(uuid,timestamp with time zone,text,text)': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
       'sign_in_lock_key_across_reset(uuid,text)': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
+      // Replaced by this migration: its owner, its definer's rights, its pinned search_path and its one grant are as before.
+      'unlock_user(uuid)': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
       'sign_in_step_began()': { definer: false, grantees: [APP_ROLE], config: INVOKER_PATH },
     };
     const { rows } = await owner.query<{ name: string; definer: boolean; config: string[] | null; owner: string; grantees: string[]; public: boolean; volatility: string }>(
@@ -997,13 +1110,25 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
 
 describe('the migration’s preflight (docs/adr/0093 D10)', () => {
   const preflight = () => doBlock('object_not_in_prerequisite_state');
+  /** unlock_user() as migration 20261015170000 created it: the body this migration's preflight compares, to the byte. */
+  const UNLOCK_BEFORE = `CREATE OR REPLACE FUNCTION unlock_user(target_user uuid) RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NOT app_actor_platform_permitted('organization.manage') THEN
+    RAISE EXCEPTION 'only a platform administrator unlocks an account' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  UPDATE "user" SET failed_sign_ins = 0, locked_at = NULL WHERE id = target_user AND locked_at IS NOT NULL;
+  RETURN FOUND;
+END;
+$$;`;
   const UNDO = `
     DROP TRIGGER audit_event_sign_in_not_before ON audit_event;
     DROP TRIGGER user_session_sign_in_not_before ON user_session;
     DROP FUNCTION audit_event_sign_in_not_before(), user_session_sign_in_not_before(), sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text),
       sign_in_lock_key_across_reset(uuid, text);
     ALTER TABLE "user" DROP COLUMN sign_in_not_before;
-    ALTER TABLE user_session DROP COLUMN sign_in_began_at;`;
+    ALTER TABLE user_session DROP COLUMN sign_in_began_at;
+    ${UNLOCK_BEFORE}`;
 
   /** Runs the preflight as tp_owner in a transaction of the superuser's that `prepare` changed first, rolled back whatever happens. */
   async function preflightAfter(prepare: string): Promise<{ readonly code: string; readonly message: string } | 'accepted'> {
@@ -1062,6 +1187,15 @@ describe('the migration’s preflight (docs/adr/0093 D10)', () => {
            EXECUTE FUNCTION audit_event_password_notice();`,
       ),
     ).toBe('accepted');
+  });
+
+  it('refuses when unlock_user() is not the body of migration 20261015170000 that this migration replaces, or is gone', async () => {
+    const REBASE = 'unlock_user(uuid) is not the body of migration 20261015170000 that migration 20261112090000 replaces; rebase this migration on its latest body';
+    // The head itself: unlock_user() is this migration's own replacement, so only the undo makes the preflight pass.
+    expect(await preflightAfter(UNDO.replace(UNLOCK_BEFORE, ''))).toEqual({ code: '55000', message: REBASE });
+    // A replacer function: a replacement string would read the body's dollar quotes as its own escapes.
+    expect(await preflightAfter(UNDO.replace(UNLOCK_BEFORE, () => UNLOCK_BEFORE.replace('RETURN FOUND;', 'RETURN  FOUND;')))).toEqual({ code: '55000', message: REBASE });
+    expect(await preflightAfter(`${UNDO} DROP FUNCTION unlock_user(uuid);`)).toEqual({ code: '55000', message: REBASE });
   });
 
   it('reads the notice’s trigger the same with public off the search path, where the catalog prints the function’s schema (the build review’s DB-N1)', async () => {

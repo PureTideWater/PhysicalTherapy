@@ -384,6 +384,29 @@ describe('members', () => {
     expect((await owner.query('SELECT failed_sign_ins, locked_at FROM "user" WHERE id = $1', [userId])).rows).toEqual([{ failed_sign_ins: 0, locked_at: null }]);
     expect(await run(unlockUser, admin.token, { organizationId: world.organizationId, userId })).toEqual({ status: 'not_found' });
   });
+
+  it('SGN-17: an account locked for a hardware key registered across its password reset is not unlocked from the console until the owner records the key cleared; the refusal says why and where to look', async () => {
+    const userId = await createUser(owner);
+    await owner.query('UPDATE "user" SET sign_in_not_before = clock_timestamp() - interval \'1 minute\' WHERE id = $1', [userId]);
+    await owner.query("SELECT sign_in_step_refused($1, clock_timestamp() - interval '2 minutes', 'key_registered', 'req-key')", [userId]);
+    await owner.query("SELECT sign_in_lock_key_across_reset($1, 'req-key')", [userId]);
+    expect(await run(unlockUser, admin.token, { organizationId: world.organizationId, userId })).toEqual({
+      status: 'invalid',
+      issues: [
+        {
+          field: 'input',
+          message: 'This account is locked because a hardware key was registered during a password reset. It stays locked until the key is removed. See the incident runbook.',
+        },
+      ],
+    });
+    expect((await owner.query<{ locked: boolean }>('SELECT locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [userId])).rows).toEqual([{ locked: true }]);
+    await owner.query(
+      "INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose) VALUES (clock_timestamp(), 'system', 'security_event', 'user', $1, 'key_across_reset_cleared')",
+      [userId],
+    );
+    expect((await run(unlockUser, admin.token, { organizationId: world.organizationId, userId })).status).toBe('ok');
+    expect((await owner.query<{ locked: boolean }>('SELECT locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [userId])).rows).toEqual([{ locked: false }]);
+  });
 });
 
 describe('agreements', () => {

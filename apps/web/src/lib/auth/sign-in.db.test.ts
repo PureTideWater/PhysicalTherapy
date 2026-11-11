@@ -1235,6 +1235,80 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     expect(await securityEvents(neither.staff.id)).toEqual([]);
   });
 
+  it('SGN-17: a crossed pair’s line is logged before the grant is given back, so a release that throws does not take it; a registered key whose audit write fails says so by IDs before the error leaves; a key that stays is locked on its own account first, whichever account the reset marked', async () => {
+    // The release throws (review S2 of the fix round): the line is there, and the error leaves.
+    const typed = await person();
+    const subject = await person();
+    await store.update(typed.sub, (record) => ({ ...record, email: `moved-${record.email}` }));
+    await store.put({ sub: subject.sub, email: typed.email, passwordHash: await hashPassword(PASSWORD, CHEAP), temporary: false, totpSecret: SECRET, totpLastStep: -1, credentials: [] });
+    const crossed = paced();
+    const step = pendingOf(await flow.start(typed.email, PASSWORD, context()));
+    const thrown = vi.spyOn(provider, 'release').mockRejectedValueOnce(new Error('synthetic release failure'));
+    const request = context();
+    await expect(crossed.flow.answerTotp(step, nextCode(), request)).rejects.toThrow('synthetic release failure');
+    thrown.mockRestore();
+    expect(logged(crossed.lines, CROSSED_LINE)).toEqual([expect.objectContaining({ level: 'warn', user_id: subject.id, request_id: request.requestId })]);
+    expect(await openSessions(subject.id)).toBe(0);
+
+    // The clean path (review S3 of the fix round): the key is registered, no reset, and the audit write fails.
+    const clean = await registrationBegun();
+    const broken = paced(failing(/audit_event/, 1));
+    const release = vi.spyOn(provider, 'release');
+    const second = context();
+    await expect(broken.flow.completeKeyRegistration(clean.begun.pending, clean.key.create(clean.begun.options), second)).rejects.toThrow('synthetic failure');
+    expect(release.mock.calls).toHaveLength(1);
+    release.mockRestore();
+    expect(logged(broken.lines, 'hardware key registered but not audited')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: clean.staff.id, request_id: second.requestId, error_code: 'Error' }),
+    ]);
+    expect(logged(broken.lines, KEY_ACROSS_RESET_LINE)).toEqual([]);
+    expect((await store.bySub(clean.staff.sub))?.credentials).toHaveLength(1);
+
+    // A step sealed before the crossed state was refused outright carries the address's account (review S4 of the fix
+    // round). Only that account is reset; the key stays. The key's own account is asked to lock first: the database has
+    // no registration across a reset on record for it and refuses, so the line says not locked; the address's is locked.
+    const legacy = await registrationBegun();
+    const address = await person();
+    const pending = { ...legacy.begun.pending, addressUserId: address.id } as Pending;
+    const complete = provider.completeKeyRegistration.bind(provider);
+    const during = vi.spyOn(provider, 'completeKeyRegistration').mockImplementationOnce(async (...args) => {
+      const registered = await complete(...args);
+      await resetRecorded(address.id);
+      return registered;
+    });
+    const asked: unknown[] = [];
+    const watching: ScopePool<ScopeClient> = {
+      connect: async () => {
+        const client = await app.connect();
+        return new Proxy(client, {
+          get(target, property) {
+            if (property === 'query') {
+              return (text: unknown, values?: unknown[]) => {
+                if (typeof text === 'string' && /sign_in_lock_key_across_reset/.test(text)) {
+                  asked.push(values?.[0]);
+                }
+                return target.query(text as string, values);
+              };
+            }
+            const value = Reflect.get(target, property, target) as unknown;
+            return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+          },
+        });
+      },
+    };
+    const watched = paced(watching);
+    keyRemovalFails = true;
+    const third = context();
+    expect(await watched.flow.completeKeyRegistration(pending, legacy.key.create(legacy.begun.options), third)).toEqual(EXPIRED);
+    keyRemovalFails = false;
+    during.mockRestore();
+    expect(asked).toEqual([legacy.staff.id, address.id]);
+    expect(logged(watched.lines, KEY_ACROSS_RESET_LINE)).toEqual([expect.objectContaining({ error_code: 'not_removed_not_locked', user_id: legacy.staff.id, request_id: third.requestId })]);
+    const lockedOf = async (userId: string) => (await owner.query<{ locked: boolean }>('SELECT locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [userId])).rows[0]?.locked;
+    expect(await lockedOf(address.id)).toBe(true);
+    expect(await lockedOf(legacy.staff.id)).toBe(false);
+  });
+
   it('SGN-17: only a start at or before the mark pages: a start ahead of the database’s clock is refused with an error line of its own and no record, and a replayed stale step adds no second record', async () => {
     const user = await person();
     const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));

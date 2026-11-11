@@ -630,6 +630,7 @@ describe('CognitoAuthProvider: a reset whose answer is lost (SGN-18; docs/adr/00
       // As the SDK wraps a socket error, and as Node reports one refusal an address tried.
       Object.assign(named('NetworkingError'), { cause: coded('ECONNREFUSED') }),
       Object.assign(new AggregateError([coded('ECONNREFUSED'), coded('ECONNREFUSED')], 'all addresses refused'), { name: 'AggregateError' }),
+      Object.assign(new AggregateError([coded('ECONNREFUSED'), coded('ENOTFOUND')], 'all addresses refused, coded'), { name: 'AggregateError', code: 'ECONNREFUSED' }),
     ];
     const maybeSent: readonly (readonly [Error, string])[] = [
       [coded('ECONNRESET'), 'Error'],
@@ -638,6 +639,8 @@ describe('CognitoAuthProvider: a reset whose answer is lost (SGN-18; docs/adr/00
       [Object.assign(named('TimeoutError'), { cause: coded('ETIMEDOUT') }), 'TimeoutError'],
       // One address refused, one reset: the request may have arrived.
       [Object.assign(new AggregateError([coded('ECONNREFUSED'), coded('ECONNRESET')], 'mixed'), { name: 'AggregateError' }), 'AggregateError'],
+      // The aggregate itself carries a never-sent code, as Node sets one on it, but one address was reset: read by its members.
+      [Object.assign(new AggregateError([coded('ECONNREFUSED'), coded('ECONNRESET')], 'mixed, coded'), { name: 'AggregateError', code: 'ECONNREFUSED' }), 'AggregateError'],
     ];
     const { provider } = make({ ConfirmForgotPasswordCommand: [...neverSent, ...maybeSent.map(([error]) => error)] });
     for (const error of neverSent) {

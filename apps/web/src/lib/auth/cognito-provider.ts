@@ -226,7 +226,8 @@ const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']);
 
 /**
  * Whether a failed request cannot have reached the provider (review SEC-S2 of 2026-11-11): the error, a cause of it,
- * or every error an aggregate holds (one per address tried) carries one of NEVER_SENT's codes. Such a confirm changed
+ * or every error an aggregate holds (one per address tried) carries one of NEVER_SENT's codes. An aggregate is read
+ * by its members first, whatever code it carries itself: one address that failed another way may have been sent to. Such a confirm changed
  * nothing, so it is the platform's failure and ends nobody's sessions.
  */
 function neverSent(error: unknown, depth = 0): boolean {
@@ -234,11 +235,11 @@ function neverSent(error: unknown, depth = 0): boolean {
     return false;
   }
   const { code, cause, errors } = error as { readonly code?: unknown; readonly cause?: unknown; readonly errors?: unknown };
-  if (typeof code === 'string') {
-    return NEVER_SENT.has(code);
-  }
   if (Array.isArray(errors) && errors.length > 0) {
     return errors.every((inner) => neverSent(inner, depth + 1));
+  }
+  if (typeof code === 'string') {
+    return NEVER_SENT.has(code);
   }
   return neverSent(cause, depth + 1);
 }

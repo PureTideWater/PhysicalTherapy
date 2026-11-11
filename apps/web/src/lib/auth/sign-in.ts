@@ -435,8 +435,10 @@ export class SignInFlow {
       // A crossed state is then refused outright (review SEC-S1 of 2026-11-11): the address's reset marks and sweeps
       // one account and the session's insert is checked against the other, so nothing exact can be said of the pair.
       if (crossed) {
-        await release();
+        // Logged before the grant is given back: a release that throws must not take the line with it (review S2 of
+        // the fix round).
         this.deps.logger.warn('security event: sign-in refused for a crossed account', { user_id: account.user_id, request_id: context.requestId });
+        await release();
         return refused('no_account');
       }
       const judgedAccounts = [account.user_id];
@@ -702,7 +704,13 @@ export class SignInFlow {
       unjudged = true;
     }
     if (!unjudged && across.length === 0) {
-      await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
+      try {
+        await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
+      } catch (error) {
+        // The key is at the provider with no audit record: said by IDs before the error leaves (review S3 of the fix round).
+        this.deps.logger.error('hardware key registered but not audited', { user_id: pending.userId, request_id: context.requestId, error_code: errorCode(error) });
+        throw error;
+      }
       return { kind: 'key_registered' };
     }
     // A key registered across the reset is removed, best effort. The reset's own sign-out has usually ended the
@@ -718,15 +726,17 @@ export class SignInFlow {
     }
     let outcome: 'removed' | 'not_removed' | 'not_removed_not_locked' = removed ? 'removed' : 'not_removed';
     if (!removed) {
-      const evidenced = across.filter((judgement) => judgement.why === 'before_reset').map((judgement) => judgement.userId);
-      try {
-        // The database locks only an account whose registration across the reset it has on record; with no such
-        // record (the judgement threw, or refused for another reason) it refuses, and the line says not locked.
-        for (const userId of evidenced.length > 0 ? evidenced : [pending.userId]) {
+      // The key's own account is always locked, first (review S4 of the fix round: the key is on it, whichever
+      // account the reset marked), then any other account answered before_reset. The database locks only an account
+      // whose registration across the reset it has on record; with no such record for the key's account (the
+      // judgement threw, or only the other account was reset) it refuses, and the line says not locked.
+      const others = across.filter((judgement) => judgement.why === 'before_reset' && judgement.userId !== pending.userId).map((judgement) => judgement.userId);
+      for (const userId of [pending.userId, ...others]) {
+        try {
           await this.query<{ locked: boolean }>('SELECT sign_in_lock_key_across_reset($1, $2) AS locked', [userId, context.requestId]);
+        } catch {
+          outcome = 'not_removed_not_locked';
         }
-      } catch {
-        outcome = 'not_removed_not_locked';
       }
     }
     this.deps.logger.error('security event: hardware key registered across a password reset', { user_id: pending.userId, request_id: context.requestId, error_code: outcome });
