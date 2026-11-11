@@ -54,6 +54,7 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9if9wx1DzzAD4jRFYi2
 - The migration custom resource stops its ECS task when its 50 minutes pass (today the task runs on and a later deploy waits behind it on the advisory lock). Infra; from C2-2.
 
 ## Log
+- 2026-11-11 21:16 UTC: #147's run 43099651185, attempt 1, failed in `unit` alone (job 130786707692): three wall-clock rows of `packages/model-gateway/src/functions/denial-letter.test.ts` from #146 (3.16 s, 3.74 s, 4.58 s against 3 s); not #147's (it touches nothing there; `unit` passed on the base's own run at f3f5a642). The orchestrator's ruling: the bound is W18's (Queues item 26); re-run the failed job at most three times, the run's end between them; merge on green; after three failures on those rows alone, tell the orchestrator and stand down with the PR open. Attempt 2 (the failed jobs re-run) started 21:17 UTC; one comment on the PR says so.
 - 2026-11-11 19:35 UTC: the machine restarted (PostgreSQL down); the setup script run again, PostgreSQL back by 19:50 UTC. The script's summary listed five items as failed because the checkout had uncommitted work at that moment; the tools it names were in place from the first run (the pre-push hook and gitleaks ran on every push since).
 - 2026-11-11 19:33 UTC: #145 merged as ea8f200f.
 - 2026-11-11 17:16 UTC: started. The machine was ready except PostgreSQL (the setup script run again, then OK).
