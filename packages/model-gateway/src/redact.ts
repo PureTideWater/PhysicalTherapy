@@ -1108,13 +1108,13 @@ function matchesIn(normal: string, subject: Subject, marked: string = normal): F
   });
   // Last, so a bare number's label window ends at every settled match (section 3.4); never inside a run that holds one of
   // the call's identifiers glued in a look-alike form, which the check refuses whole. A run that a match of the call's own
-  // covers whole is not left to the check: that match's placeholder replaces it, so the pattern's match is applied as
-  // ef3e8d20 applied it (where one member ID ends another, "ZZ76543\uA6EF1" holds 7654321 glued and is ZZ7654321 whole: with
-  // the match that begins in its last digit withheld, "ID [MEMBER_ID]" was sent with the date after it as written, which
-  // ef3e8d20's redaction replaced).
+  // covers whole is not left to the check, and the pattern's match is applied as ef3e8d20 applied it: where that own match
+  // is applied its placeholder replaces the run, and where it is not (appliedMatches, the settled matches alone) the scan
+  // as ef3e8d20 read it refuses the text. Where one member ID ends another, "ZZ76543\uA6EF1" holds 7654321 glued and is
+  // ZZ7654321 whole: with the match that begins in its last digit withheld, "ID [MEMBER_ID]" was sent with the date after
+  // it as written, which ef3e8d20's redaction replaced.
   const settled = found.filter((match) => match.fresh !== true);
-  const own = [...found];
-  const leftToTheCheck = glued.filter((range) => !own.some((whole) => whole.start <= range.start && range.end <= whole.end));
+  const leftToTheCheck = glued.filter((range) => !found.some((whole) => whole.start <= range.start && range.end <= whole.end));
   for (const match of patternMatchesIn(marked, settled, subject)) {
     const inRun = (match.kind === 'ssn' || match.kind === 'phone') && leftToTheCheck.some((range) => match.start < range.end && range.start < match.end);
     found.push(inRun ? { ...match, withheld: true } : match);
@@ -3251,7 +3251,9 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
 /**
  * The letter redacted (as redactLetter), and the runs the one-patient screen asks the practice's records about
  * (docs/adr/0054, amendment of 2026-11-04, section 5 and R6): identifierCandidates of the sent text; identifierCandidates
- * of the letter with only the call's own identifiers replaced (the Social Security and phone numbers left as written);
+ * of the letter with only the call's own identifiers replaced (the Social Security and phone numbers left as written,
+ * one that merges under a placeholder of the call's own too: "Member ID: ZZ1980O314", a line break and "555-0123" is sent
+ * as "Member ID: [MEMBER_ID]" for member ID ZZ19800314 and offers 5550123, as ef3e8d20 offers it: review L-1);
  * and the compact form of every Social Security or phone number that is not the call's own, whole, its core digits and
  * joined to the token written against it. The call's own member IDs and claim numbers are never among them.
  * PHI: for the screen only, in memory; never sent, logged, stored, or put in an error or a job payload. Not exported
@@ -3269,7 +3271,10 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
     normal,
     spans.filter((span) => span.placeholder !== PLACEHOLDERS.ssn && span.placeholder !== PLACEHOLDERS.phone),
   );
-  for (const candidate of [...identifierCandidates(screenText), ...found.flatMap((match) => match.compacts ?? [])]) {
+  // A pattern's number that merges under one of the call's own placeholders is hidden from that text with it: the screen
+  // reads the letter once more with the call's own matches alone replaced, so the number is offered as it is written.
+  const ownText = written(normal, merge(found.filter((match) => !isPatternKind(match.kind))));
+  for (const candidate of [...identifierCandidates(screenText), ...(ownText === screenText ? [] : identifierCandidates(ownText)), ...found.flatMap((match) => match.compacts ?? [])]) {
     if (!own.has(candidate)) {
       candidates.add(candidate);
     }

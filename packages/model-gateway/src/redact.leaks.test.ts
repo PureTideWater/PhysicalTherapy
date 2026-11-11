@@ -1557,6 +1557,28 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     );
   });
 
+  // L-1 (the review of that delta): a pattern's number that merges under one of the call's own placeholders is hidden
+  // in what is sent, and the one-patient screen is still offered it as it is written, as ef3e8d20 offers it. Before, a
+  // merged span hid the number from the screen's reading too: for a patient with one identifier since the look-alike
+  // forms were first read, and for one whose identifier ends or begins another once the withheld match was applied.
+  it.each([
+    ['one member ID', 'Member ID: ZZ1980O314\n555-0123\nPaid in full.', ['ZZ19800314'], [['SYNCLAIM0001']], 'Member ID: [MEMBER_ID]\nPaid in full.', '5550123'],
+    ['a member ID that ends another', 'Member ID: ZZ1980O314\n555-0123\nPaid in full.', ['ZZ19800314', '800314'], [['SYNCLAIM0001']], 'Member ID: [MEMBER_ID]\nPaid in full.', '5550123'],
+    ['a claim number that ends another', 'Claim SYN445S667\n555-0123', ['ZZ7654321'], [['SYN4455667', '4455667']], 'Claim [CLAIM_1]', '5550123'],
+    ['a member ID that begins another', '7654E210 555-0123', ['7654321', '76543210'], [['SYNCLAIM0001']], '[MEMBER_ID]', '5550123'],
+    ['the withheld match’s own letter', 'ID ZZ76543\uA6EF1\n01-02-2020', ['ZZ7654321', '7654321'], [['SYNCLAIM0001']], 'ID [MEMBER_ID]', '01022020'],
+  ] as const)('L-1, %s: %j is sent with the number hidden and the screen is offered it', (_row, letter, memberIds, claimNumbers, sent, offered) => {
+    const patient = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [...memberIds]);
+    const claims = claimNumbers.map((numbers, index) => ({ claimId: `synthetic-claim-21-${String(index + 1)}`, patientPseudonym: 'synthetic-patient-21', claimNumbers: [...numbers] }));
+    const screened = redactLetterForScreen(letter, patient, claims);
+    expect(screened.text).toBe(sent);
+    expect(holdsIdentifier(screened.text, patient, claims)).toBe(false);
+    expect(screened.candidates).toContain(offered);
+    for (const own of [...memberIds, ...claimNumbers.flat()]) {
+      expect(screened.candidates).not.toContain(own);
+    }
+  });
+
   // The invariant behind B1-1 and C1-1: whatever redactLetterForScreen leaves as written that redactLetter replaces, the
   // check refuses.
   it('refuses every letter in which the letter reader left a match as written (property)', () => {
