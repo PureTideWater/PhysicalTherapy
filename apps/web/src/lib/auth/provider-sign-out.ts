@@ -7,7 +7,7 @@ import type { AuthProvider } from './provider';
 export const NO_PROVIDER_SUBJECT = 'NO_PROVIDER_SUBJECT';
 
 /**
- * Asks the provider to sign a user out everywhere once the request's transaction has committed (docs/adr/00XX). End
+ * Asks the provider to sign a user out everywhere once the request's transaction has committed (docs/adr/0094). End
  * membership ends the membership and the app's own sessions in that transaction, and they stay ended whatever the
  * provider answers: the provider is never called inside it, so its failure rolls nothing back and its slowness holds no
  * row. A failure is one line at error (the alarm MembershipEndProviderSignOutFailed counts its words:

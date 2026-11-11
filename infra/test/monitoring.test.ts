@@ -150,7 +150,7 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'PasswordResetSessionsNotEnded', message: 'security event: password reset sessions not ended', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A completed reset whose sign-out at the provider failed: a key-registration step begun before it can still register a key (docs/adr/0091, D10).
       { metricName: 'PasswordResetProviderSignOutFailed', message: 'security event: password reset provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
-      // An ended membership whose sign-out at the provider did not happen: the membership and the sessions stay ended (docs/adr/00XX).
+      // An ended membership whose sign-out at the provider did not happen: the membership and the sessions stay ended (docs/adr/0094).
       { metricName: 'MembershipEndProviderSignOutFailed', message: 'security event: membership end provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A sign-in step begun before a reset and refused after it (docs/adr/0093, D5): every step but the hardware-key sign-in's, where no password was proved.
       {
@@ -188,7 +188,7 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
     // The completed reset whose sign-out at the provider failed (docs/adr/0091, D10): the user's ID, the request's and the error's name alone.
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });`);
-    // The ended membership whose sign-out at the provider did not happen (docs/adr/00XX): both of the web's lines hold these words
+    // The ended membership whose sign-out at the provider did not happen (docs/adr/0094): both of the web's lines hold these words
     // and carry the user's ID, the request's ID and a code alone.
     const signOut = source('apps/web/src/lib/auth/provider-sign-out.ts');
     expect(signOut.split(`deps.logger.error('${MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: ids.userId, request_id: ids.requestId, error_code: `)).toHaveLength(3);
@@ -326,7 +326,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
     // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
     // sign-out at the provider failed (docs/adr/0091, D10), an ended membership whose sign-out there did not happen
-    // (docs/adr/00XX), and the four around a reset (docs/adr/0093: a step refused
+    // (docs/adr/0094), and the four around a reset (docs/adr/0093: a step refused
     // after it, a hardware key registered across it, an unknown outcome, a crossed account). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
     expect(filters).toHaveLength(40);

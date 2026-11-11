@@ -28,7 +28,7 @@ Pick what fits; do the cheapest effective step first.
   their role in that organization at once. The membership, the sessions and the audit event are one transaction, and
   the identity provider is asked to sign the person out only once it has committed: if the provider refuses or cannot be
   reached, nothing is undone, the page still shows the membership ended, and `MembershipEndProviderSignOutFailed` pages
-  the operator ("An ended membership whose provider sign-out failed", below; docs/adr/00XX). It does not disable the account or change its password, and the database refuses it for an
+  the operator ("An ended membership whose provider sign-out failed", below; docs/adr/0094). It does not disable the account or change its password, and the database refuses it for an
   organization's only practice administrator. The page lists members by their sign-in email and shows no user ID, so it
   needs the person, not only an ID. When the membership must stay, when the account must be disabled at the identity
   provider, or when only a user ID is known, give the user ID to the founder, whose break-glass session ends the
@@ -279,7 +279,7 @@ event: password reset provider sign-out failed`.
    outage at Cognito, or the application role without `cognito-idp:AdminUserGlobalSignOut`
    (`infra/lib/constructs/application-role.ts`).
 
-## An ended membership whose provider sign-out failed (`MembershipEndProviderSignOutFailed`; docs/adr/00XX)
+## An ended membership whose provider sign-out failed (`MembershipEndProviderSignOutFailed`; docs/adr/0094)
 
 End membership (the console's, or an organization's Settings, Users) ended a membership, the account's sessions and
 wrote `membership_ended` in one transaction, and the sign-out at the identity provider that follows the commit did not

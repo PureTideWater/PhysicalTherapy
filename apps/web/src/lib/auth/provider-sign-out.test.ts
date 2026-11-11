@@ -14,7 +14,7 @@ function arrange(globalSignOut: (sub: string) => Promise<void>) {
 }
 const ids = { userId: '0b0e7a52-5f0b-4f0e-9d7e-1a2b3c4d5e6f', requestId: 'test-request' };
 
-describe('the provider sign-out after an ended membership (docs/adr/00XX; SGN-XX)', () => {
+describe('the provider sign-out after an ended membership (docs/adr/0094; SGN-19)', () => {
   it('asks nothing until the commit, then asks once and logs nothing on success', async () => {
     const { lines, committed, provider, deps, afterCommit } = arrange(() => Promise.resolve());
     signOutAtProviderAfterCommit(afterCommit, deps, ids, 'synthetic-subject');

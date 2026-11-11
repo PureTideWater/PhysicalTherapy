@@ -1075,7 +1075,7 @@ export const changeRoleAction = organizationRoute({
 
 /**
  * Ends a membership now: the person's sessions end in this transaction, and the identity provider is asked to sign them
- * out once it has committed (PRD 3, Lifecycle events; docs/adr/00XX).
+ * out once it has committed (PRD 3, Lifecycle events; docs/adr/0094).
  */
 export const endMembershipAction = organizationRoute({
   id: 'settings.users.end_membership',
@@ -1088,7 +1088,7 @@ export const endMembershipAction = organizationRoute({
   audit: { action: 'membership_ended', objectType: 'membership' },
   handle: async ({ scope, organizationId, input, request, services, afterCommit }): Promise<MutationResult> => {
     // Read while the membership stands: once it has ended, row-level security hides the person's row from an
-    // administrator who administers them nowhere else, and the provider would never be asked (docs/adr/00XX).
+    // administrator who administers them nowhere else, and the provider would never be asked (docs/adr/0094).
     const sub = (
       await scope.client.query<{ cognito_sub: string }>(
         'SELECT u.cognito_sub FROM membership m JOIN "user" u ON u.id = m.user_id WHERE m.id = $1 AND m.organization_id = $2 AND m.user_id <> app_actor_id() AND (m.ends_at IS NULL OR m.ends_at > now())',
@@ -1113,7 +1113,7 @@ export const endMembershipAction = organizationRoute({
       throw new NotFoundError();
     }
     await revokeUserSessions(scope, ended.user_id);
-    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/00XX).
+    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/0094).
     signOutAtProviderAfterCommit(afterCommit, services, { userId: ended.user_id, requestId: request.requestId }, sub);
     return { objectId: input.membershipId, redirect: `/settings/organizations/${organizationId}/users?notice=ended` };
   },

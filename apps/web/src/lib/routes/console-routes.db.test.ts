@@ -369,7 +369,7 @@ describe('members', () => {
     expect(await run(endMembership, admin.token, { membershipId })).toEqual({ status: 'not_found' });
   });
 
-  // docs/adr/00XX (Queues item 29): the provider is asked only once End membership has committed, and its failure undoes nothing.
+  // docs/adr/0094 (Queues item 29): the provider is asked only once End membership has committed, and its failure undoes nothing.
   describe.each([
     { name: 'the console', route: () => endMembership, actor: () => admin.token, input: (membershipId: string) => ({ membershipId }), params: () => ({}) },
     {
@@ -379,7 +379,7 @@ describe('members', () => {
       input: (membershipId: string) => ({ membershipId, confirm: 'on' }),
       params: () => ({ organizationId: world.organizationId }),
     },
-  ])('End membership in $name when the provider’s sign-out fails (SGN-XX)', ({ route, actor, input, params }) => {
+  ])('End membership in $name when the provider’s sign-out fails (SGN-19)', ({ route, actor, input, params }) => {
     it('ends the membership, the sessions and writes the audit event; the provider is asked after the commit and its failure is one logged line', async () => {
       const userId = await createUser(owner);
       const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');

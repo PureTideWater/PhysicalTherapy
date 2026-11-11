@@ -67,7 +67,7 @@ export const PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE = 'security event: passwo
 export const PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: password reset provider sign-out failed';
 
 /**
- * An ended membership whose sign-out at the provider did not happen (docs/adr/00XX; test matrix SGN-XX). End membership
+ * An ended membership whose sign-out at the provider did not happen (docs/adr/0094; test matrix SGN-19). End membership
  * ends the membership and the app's sessions in one transaction and asks the provider only once it has committed
  * (apps/web/src/lib/auth/provider-sign-out.ts); a failure undoes nothing and is logged at error with the user's ID, the
  * request's ID and the error's name only (`NO_PROVIDER_SUBJECT` when the subject could not be read and the provider was

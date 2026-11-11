@@ -789,7 +789,7 @@ export const endMembership = platformRoute({
     // PRD 3, Lifecycle events: a user who leaves an organization has their sessions revoked.
     await revokeUserSessions(scope, ended.user_id);
     const sub = (await scope.client.query<{ cognito_sub: string }>('SELECT cognito_sub FROM "user" WHERE id = $1', [ended.user_id])).rows[0]?.cognito_sub;
-    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/00XX).
+    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/0094).
     signOutAtProviderAfterCommit(afterCommit, services, { userId: ended.user_id, requestId: request.requestId }, sub);
     return { objectId: input.membershipId, redirect: `/console/organizations/${ended.organization_id}` };
   },
