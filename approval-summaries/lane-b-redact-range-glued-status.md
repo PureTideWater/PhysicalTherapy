@@ -165,21 +165,14 @@ Effect: any PR's unit job can go red at random.
   WIP `co-001/wip-redact-range-glued-b` = dedeb35f. The gate is copied to /home/user/gate in the container; outputs in
   /home/user/gate-out (not kept).
 
-## RESUME-BLOCK (W1, session_019i9if9bThP3wWKpHBiU3m8; written 2026-11-11, at the push)
-- **Head:** `co-001/redact-range-glued` = **c5c11918** (pushed; the base 06cde5eb merged; = WIP acac58b3 + the merge). Draft
-  PR opened from it; the description is filled from the template (rulings A, A', B; the recorded costs; both review rounds).
-- **Done:** review round 5 (PHI5-1 and F1 to F10) and its re-review by two fresh reviewers (PHI5-2 fixed in 65a07881; MOD-15's
-  generator fixed in acac58b3; F4's mirror, F6's neighbour family and the lone-letter shapes recorded in ADR 0054 as the
-  safer reading, not changed). Gate at 65a07881 vs cc3dd7f6: PHI ssn 385, phone 171, name 5, no other kind; must-stay
-  changed 0; refusals 60 / 7,014 / 598; slowest 574 ms. Local on c5c11918: typecheck, lint, lint:logs, verify-content
-  pass; `pnpm test` 13,115; golden 381; the 12 named seeds pass. test:db and test:e2e need
-  `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres` (PostgreSQL 18; the default 5432 is 16 and fails the
-  new line_status_heads migration); their local run was still going at the push; CI is the suite of record.
-- **Next:** CI green on the head, the up-to-date rule (origin/claude/build-platform an ancestor of the head), ready, merge,
-  one line to the orchestrator, this file closed, unsubscribe. Then #129 (base merge, push, merge on green), then a
-  RESUME-BLOCK for the leaks PR in `lane-b-redact-ssn-phone-status.md` and stand down (the orchestrator, 01:20 UTC).
-- **If CI's unit job fails on a redaction property:** take the seed from the log, reproduce with the FC_SEED mirror
-  (`designs/lane-b-redact-ssn-phone/gate/tests.sh`), fix the cause; never re-run to get green.
+## MERGED (W1, session_019i9if9bThP3wWKpHBiU3m8; 2026-11-11 02:36 UTC)
+**#138 merged as ef3e8d20** on claude/build-platform from head c5c11918 (the base 06cde5eb an ancestor; 0 tags). CI: every
+job green; `e2e (2/2)` passed on its one re-run after `reports.spec.ts` J12 got a connection reset on a report PDF (not this
+change's; one comment on the PR). Review round 5 and its re-review (two adversarial reviewers each) are in ADR 0054 and the PR
+description. Left for `co-001/redact-ssn-phone-leaks` (MOD-21, MOD-22): rulings A (SSN 385, phone 171), A' and B, every row
+pinned in `redact.residuals.json`; and the four recorded costs (the initials rule refusing most held letters of common
+initials; F6's neighbour family of clean-letter refusals; F4's mirror over-redaction; lone-letter shapes outside F5's).
+WIP refs `co-001/wip-redact-range-glued` and `-b` are superseded. The item is closed; W1 is unsubscribed.
 
 ## Waiting on someone
 - None: classes (A) and (B) ruled 2026-11-07 10:53 UTC.
