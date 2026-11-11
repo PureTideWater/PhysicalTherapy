@@ -850,7 +850,7 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   });
 
   // B1-4: the checks' own marks, written in a letter, are the control characters they are.
-  it.each([refused('SSN \u0003\n900.12 3456'), sentAs('Phone \u0003\n555-0123', 'Phone \u0003\n[PHONE]'), refused('SSN \u0001 900.12 3456')])('B1-4: a control character of the checks’ own in a letter is no placeholder: %j %s', (letter, _outcome, sent) => {
+  it.each([refused('SSN \u0003\n900.12 3456'), refused('Phone \u0003\n555-0123'), refused('SSN \u0001 900.12 3456')])('B1-4, H1-1: a control character of the checks’ own in a letter is no placeholder, and the letter is refused: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
 
@@ -1093,9 +1093,10 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     unchanged(`${HELD}Member ID:\n\n802-45-678901`),
     refused('Claim Number:\n\n\n20260112345.01'),
     refused('STATEMENT\n\n900-12-3456150.00'),
-    // G2-4: "on file" in its writings names nothing.
+    // G2-4, H2-6: "on file" names nothing as one phrase on one line; "on" at a line's end is no part of a label that
+    // begins the next ("File Number:").
     refused('Phone on-file: 202-555-0123150.00'),
-    refused('Phone on\nfile: 202-555-0123150.00'),
+    unchanged('Phone on\nfile: 202-555-0123150.00'),
     // G2-6: a section's or a list's numbers, and a word that ends in a month's letters, are no date before a year.
     unchanged('Sec. 2.1. 2026011-22-3333'),
     unchanged('Items 3 - 5 - 2026011-22-3333'),
@@ -1105,6 +1106,68 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('1234567899/9/2020'),
     unchanged('NPI 1234567893/9/2026'),
   ])('G1-2, G1-3, G1-5, G2-1 to G2-4, G2-6, G2-7: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // The two reviews of the next delta, H1 (PHI) and H2 (must-stay), each finding on both sides.
+  it.each([
+    // H1-1: a letter that writes one of the checks' own three marks is refused, whatever else it holds.
+    refused('Total\u0002for45.00 and 9 0 0 1 2 3 4 5 6'),
+    refused('Acct\u0002x9. Front desk 555-0123'),
+    refused('SSN 900\u000112 3456'),
+    refused('Our office: 555-0123. Paid\u0003'),
+    unchanged('Total for45.00 and 9 0 0 1 2 3 4 5 6'),
+    unchanged('Our office: 555-0123. Paid\u0004'),
+    // H1-2: the month's word glued to the number, its four-digit year after a space or a comma; two digits after a
+    // space are as often the day of a date of its own.
+    refused('900-12-345601Jan 2020'),
+    refused('202-555-012301Jan, 2020'),
+    refused('(202) 555-012301-Jan 2020'),
+    refused('SSN 900.12 345601Jan 2020'),
+    refused('900-12-345601JAN. 2020'),
+    unchanged('802-45-678901Jan 15, 2026 97110'),
+    // H1-3: after the date that follows a bare nine or ten, another number with a structure of its own in any writing;
+    // under a Social Security label, whatever follows.
+    refused('90012345601/02/20201,250.00 Paid'),
+    refused('90012345601/02/2020150.5 Paid'),
+    refused('90012345601/02/2020150.00120.00 Paid'),
+    refused('90012345601/02/202001/31/2020150.00 Paid'),
+    refused('90012345601/02/202001-Jan-2020 Paid'),
+    refused('90012345601/02/20202020-01-31 Paid'),
+    refused('SSN: 90012345601/02/20201234 Paid'),
+    // H1-4: the hyphen bullet is a dash to a date as to a number.
+    refused('90012345601\u204302\u20432020 Paid'),
+    // H1-5, H2-4, H2-7: a heading with line breaks before a word on the number's own line names nothing; what ends a
+    // label stands on the label's own line; a rule is three of its characters or more, and points are none.
+    refused('Statement\n\nNumber: 900-12-3456150.00'),
+    refused('STATEMENT\n\n\n\nNo. 900-12-3456150.00'),
+    refused('Thank you for your payment.\n\nNo. 900-12-3456150.00'),
+    refused('Remittance\n\n\nAdvice 900-12-3456150.00'),
+    refused('REMITTANCE ADVICE\n\n#900-12-3456150.00'),
+    refused('STATEMENT\n\n: 900-12-3456150.00'),
+    refused('STATEMENT\n-  \n900-12-3456150.00'),
+    refused('STATEMENT\n...\n900-12-3456150.00'),
+    refused('STATEMENT\n--\n802-45-678901.50'),
+    // H2-1: a rule of underscores, tildes or box-drawing lines, a table's corners and bars around it, a form's blank.
+    unchanged('ICN\n_____\n12345678901234.01'),
+    unchanged('Claim Number\n~~~~~~~~~~~~\n20260112345.01'),
+    unchanged('Claim Number\n+------------+\n20260112345.01'),
+    unchanged('Claim Number\n\u2500\u2500\u2500\u2500\u2500\u2500\n20260112345.01'),
+    unchanged('| Claim |\n|-------|\n| 20260112345.01 |'),
+    unchanged('Claim Number: ______ 20260112345.01'),
+    // H2-3: the Social Security label must be the number's own label: under Medicare with the Act named before it, the
+    // writing stays an amount and a number.
+    unchanged('under section 1833 of the Social Security Act. Medicare rate 110 32.74420'),
+    unchanged('Social Security/Medicare rate 110 32.74420'),
+    unchanged('SSN: Medicare rate 110 32.74420'),
+    // H2-6: "on" at a line's end before a label that begins the next line.
+    unchanged('This notice is based on\nFile Number: 12345678901234.01'),
+    unchanged('Auto-pay: ON\nFile No. 802-45-678901.50'),
+    // H2-8: the second reading is ef3e8d20's own: it reads no Social Security label glued after a letter.
+    unchanged('MemberSSN 8 1234567893.1'),
+    unchanged('Assoc. Sec. 8 1234567893.1'),
+    refused('Member SSN 8 1234567893.1'),
+  ])('H1-1 to H1-5, H2-1, H2-3, H2-4, H2-6 to H2-8: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
 
