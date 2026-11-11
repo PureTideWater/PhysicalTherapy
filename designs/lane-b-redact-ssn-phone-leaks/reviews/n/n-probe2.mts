@@ -1,0 +1,10 @@
+import { show, patient, claimsOf } from './nlib.mts';
+const C0 = claimsOf([['SYNCLAIM0001']]);
+show('q1 whole own in an arabic-indic writing, plain own over the number start', 'ID 77 202-555-٠123 88', patient(['77202', '5550123']), C0, ['555٠123', '555٠12388', '202555٠123']);
+show('q1b same, nothing after', 'ID 77 202-555-٠123', patient(['77202', '5550123']), C0, ['555٠123', '202555٠123']);
+show('q1c same, ssn', 'ID ZZ 900-12-345٦', patient(['ZZ900', '123456']), C0, ['12345٦', '90012345٦']);
+show('q1d devanagari', 'ID 77 202-555-०123', patient(['77202', '5550123']), C0, ['555०123']);
+show('q2 label before a long own inside', 'Tel 202-555-0123 88', patient(['012388', '202555']), C0, ['TEL202555', 'TEL202']);
+show('q3 own claim over the end', 'Ref 202-555-0123-88 Paid', patient(['ZZ19800314', '2025550']), claimsOf([['SYNCLAIM0001'], ['012388']]), ['2025550', 'REF2025550']);
+show('q4 own with letters inside? ZZ in number none', 'Fax 77 (202) 555-0156 99', patient(['77202', '5550156']), C0, ['5550156', '555015699']);
+show('q5 the two own are the same identifier twice', 'ID 77 202-555-0123 5550123', patient(['77202', '5550123']), C0, ['5550123', '55501235550123']);

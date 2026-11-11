@@ -1,0 +1,36 @@
+"Member ID: ZZ1980O314\n555-0123\nPaid in full." ["ZZ19800314"] [["0123"]]
+   base  sent    "Member ID: ZZ1980O[PHONE]\nPaid in full." 5550123:offered
+   ac41  sent    "Member ID: [MEMBER_ID]\nPaid in full." 5550123:NOT-offered
+   head  sent    "Member ID: [MEMBER_ID]\nPaid in full." 5550123:NOT-offered
+   alt2  sent    "Member ID: [MEMBER_ID]\nPaid in full." 5550123:offered
+"Member ID: ZZ1980O314\n555-0123\nPaid in full." ["ZZ19800314","555"] [["SYNCLAIM0001"]]
+   base  sent    "Member ID: ZZ1980O[PHONE]\nPaid in full." 5550123:offered
+   ac41  sent    "Member ID: [MEMBER_ID]\nPaid in full." 5550123:NOT-offered
+   head  sent    "Member ID: [MEMBER_ID]\nPaid in full." 5550123:NOT-offered
+   alt2  sent    "Member ID: [MEMBER_ID]\nPaid in full." 5550123:offered
+"7654E210 555-0123" ["7654321","76543210"] [["0123"]]
+   base  sent    "7654E[PHONE]" 5550123:offered
+   ac41  sent    "[MEMBER_ID]" 5550123:NOT-offered
+   head  sent    "[MEMBER_ID]" 5550123:NOT-offered
+   alt2  sent    "[MEMBER_ID]" 5550123:offered
+"Claim SYN445S667\n555-0123" ["ZZ7654321","0123"] [["SYN4455667"]]
+   base  sent    "Claim SYN445S[PHONE]" 5550123:offered
+   ac41  sent    "Claim [CLAIM_1]" 5550123:NOT-offered
+   head  sent    "Claim [CLAIM_1]" 5550123:NOT-offered
+   alt2  sent    "Claim [CLAIM_1]" 5550123:offered
+"Call 314 555-0123 today." ["ZZ19800314"] [["0123"]]
+   base  sent    "Call [PHONE] today." 5550123:offered
+   ac41  sent    "Call [PHONE] today." 5550123:offered
+   head  sent    "Call [PHONE] today." 5550123:offered
+   alt2  sent    "Call [PHONE] today." 5550123:offered
+"ID ZZ1980O900-12-3456" ["ZZ19800900","3456"] [["SYNCLAIM0001"]]
+   base  sent    "ID ZZ1980O[SSN]" 900123456:offered
+   ac41  sent    "ID [MEMBER_ID]" 900123456:offered
+   head  sent    "ID [MEMBER_ID]" 900123456:offered
+   alt2  sent    "ID [MEMBER_ID]" 900123456:offered
+{
+ "letters": 21504,
+ "no short id: base offers": 3504,
+ "short id: base offers": 11136,
+ "short id: head misses (M-1)": 576
+}

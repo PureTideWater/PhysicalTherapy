@@ -4,30 +4,41 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-ACTING (Lane A's account, https://claude.ai/code/session_019i9ifADZcDuzjeUkfedYiW) holds this item from 2026-11-11 16:40 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifADZcDuzjeUkfedYiW) holds this item from 2026-11-11 (the orchestrator's start, 16:40 UTC by its clock); Lane B: read lanes/lane-b.md's latest entries before resuming.
 
-## RESUME-BLOCK (W13, session_019i9ifADZcDuzjeUkfedYiW; current at 2026-11-11 17:20 UTC; W5's block below still holds for everything it does not replace)
+## RESUME-BLOCK (W13, session_019i9ifADZcDuzjeUkfedYiW; current at 2026-11-11 18:35 UTC by this container's clock; W5's block below holds for what this one does not replace)
 
-- **State.** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **ac412151** (74c32149 plus one commit: OPEN 1's fix and
-  its tests). Branch `co-001/redact-ssn-phone-leaks` not on origin; no pull request; nothing subscribed.
-- **OPEN 1 is fixed by the one condition** in `matchesIn`: a pattern's match is withheld only for a glued run that no
-  match of the call's own covers whole (`leftToTheCheck`). Failing first on 74c32149: three rows of the seed-5923 letter
-  and a property (`redact.leaks.test.ts`, "the withheld match"); after it the six files pass (4,113 tests), typecheck and
-  eslint clean, pinned rows 697 / 406 / 5 as before, the residual table needs no change. `pe.mts`: the head sends
-  `ID [MEMBER_ID]`; `pe2.mts`: `B:hides K:shows` 0 (was 8), and the 24 `B:hides K:REF` are now hidden and sent;
-  `w13/enum.mts` (44,352 letters, the property's space in full) read 40 on 74c32149.
-- **K-1 and review K's five lesser forms are pinned as sent today** in `redact.leaks.test.ts` (no code change).
-- **Running at 17:20 UTC:** the battery with fresh seeds and the gate on both trees (`w13/battery17.sh`, output
-  `/home/user/work/p17`, the comparison run on 74c32149 in `/home/user/work/p16`); review L of the delta (brief in the
-  session; report `/home/user/review-l/REPORT.md`, to be copied to `reviews/l/`).
-- **Next, in order:** read the battery, the gate and review L (verify each finding before any fix; a blocking one is
-  fixed and its delta reviewed once more; a third round goes to the orchestrator); W5's steps 3 to 7 (docs commit, the
-  eight seeds, the base merge with `base-merge/base-merge.sh`, the gate again on the merged tree, the full suite once,
-  push, the draft pull request, subscribe; merge on green under rule 2a).
-- **A fresh container:** `w13/layout.sh` then `python3 w13/audit.py` rebuild the layout `battery/README.md` describes
-  from the worktree `/home/user/leaks` (after `git worktree add` of the WIP ref and the two base trees, and `pnpm
-  install`); `layout.sh refresh` and `audit.py refresh` re-copy the head after a change. A typed backslash-u escape in a
-  command is decoded to its character on the way to the shell: write look-alike escapes from a script (`chr(92)`).
+- **State.** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **c9dddaa7** (74c32149 plus three commits); the worktree
+  `/home/user/leaks` on `co-001/redact-ssn-phone-leaks` is ahead of it, not yet pushed: 6d80683c (MOD-21's matrix row),
+  **cc6a914c** (the base 91bc6b7c merged: `redact.ts` is `packages/redact/src/redact.ts`), and uncommitted the two pinned
+  rows of review N in `redact.leaks.test.ts`. No pull request; nothing subscribed. **No further change to `redact.ts`**
+  (the orchestrator's ruling, 18:02 UTC).
+- **What W13 changed, each by a ruling.** ac412151: OPEN 1 fixed by the one condition in `matchesIn` (a pattern's match is
+  withheld only for a glued run that no match of the call's own covers whole); K-1 and review K's lesser forms pinned.
+  247a53e3: review L-1 (ruling 17:23 UTC, fix): the other-patient screen reads the letter once more with the call's own
+  matches alone replaced. c9dddaa7: review M-1 (ruling 18:02 UTC, fix, the last change): that reading follows `merge`'s
+  rule R6b. Review N's N-1 and N-2 are RECORDED (the same ruling): pinned rows, ADR 0054, Queues item 26.
+- **Reviews L, M, N:** `designs/lane-b-redact-ssn-phone-leaks/reviews/l/VERIFIED.md` (scope, each finding verified, each
+  resolution), reports beside it and in `reviews/m`, `reviews/n`. None blocking.
+- **Verified.** On ac412151 (the last change to what is sent): the battery with fresh seeds clean, the gate no PHI class
+  against ef3e8d20 or cc3dd7f6 and every class equal to 74c32149's run (`w13/out/`). On c9dddaa7: the six files (4,122
+  tests), the eight seeds (734 each), typecheck, eslint, pinned rows 697 / 406 / 5, the residual table unchanged. On the
+  merged tree cc6a914c: typecheck, the redaction tests (4,087 in the gateway, 46 in `packages/redact`), the residual check
+  (`gen-residual6.mts` now reads `packages/redact/src/redact.ts`).
+- **Running at 18:35 UTC:** the gate on the merged tree (`/home/user/snap18`, output `/home/user/gate-out/p18-ef3` and
+  `p18-cc3`).
+- **Next, in order.** (1) Read the gate: no PHI class, the classes as on 74c32149. (2) `python3 w13/adr.py <slowest ms
+  of B> <slowest ms of A>` (from `p18-cc3/report.md`'s last line; it needs `/home/user/work/w13/n-text.txt`, whose text
+  is in the script's folder history) appends the amendment to `docs/adr/0054-*.md`; commit it with the two N rows.
+  (3) The full suite once: `bash w13/suite.sh` (PostgreSQL 18 on 5433 must be up: `su postgres -c "/opt/pg18/bin/pg_ctl
+  -D /root/pgdata18 -l /tmp/pg18.log -w start"`; it had stopped once in this container). (4) `git push -u origin
+  co-001/redact-ssn-phone-leaks` through the hook; the draft pull request into `claude/build-platform` with
+  `python3 w13/prbody.py <checks table>` (it writes the description from W5's drafts with rounds K to N and the section
+  "What is still not covered"); subscribe; merge under rule 2a on green required checks; one line to the orchestrator.
+- **A fresh container:** `w13/layout.sh` then `python3 w13/audit.py` rebuild the layout from the worktree (written for the
+  tree before the base merge: after it the head's file is `packages/redact/src/redact.ts`, and the scratch copies keep the
+  old directory names). A typed backslash-u escape in a command is decoded on the way to the shell: write look-alike
+  escapes from a script (`chr(92)`).
 
 ## RESUME-BLOCK (written by W5, session_019i9ifC8ouxG6CLPdZtgAcJ, for a successor; current at 2026-11-11 16:37 UTC; W5 has stood down)
 

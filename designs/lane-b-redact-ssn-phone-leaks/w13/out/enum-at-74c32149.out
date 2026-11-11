@@ -1,0 +1,15 @@
+{"path":"leaks","n":44352,"sent":28680,"refused":15672,"leftAsWrittenAndSent":40,"baseRefusedHeadSent":0,"headShowsWhatBaseHides":40,"byCls":{"B:sent H:sent":28680,"B:REF H:REF":6984,"B:sent H:REF":8688},"ms":160284}
+  LEFT {"t":"ID ZZ76543ꛯ1\n01-02-2020","s":"ID [MEMBER_ID]\n01-02-2020","all":"ID [MEMBER_ID]"}
+  LEFT {"t":"ID ZZ76543ꛯ1\n01-02-2020 Paid","s":"ID [MEMBER_ID]\n01-02-2020 Paid","all":"ID [MEMBER_ID] Paid"}
+  LEFT {"t":"ID ZZ76543ꛯ1\n01-02-2020.","s":"ID [MEMBER_ID]\n01-02-2020.","all":"ID [MEMBER_ID]."}
+  LEFT {"t":"ID ZZ76543ꛯ1\n01-02-2020 Zephyra","s":"ID [MEMBER_ID]\n01-02-2020 [PATIENT_NAME]","all":"ID [MEMBER_ID] [PATIENT_NAME]"}
+  LEFT {"t":"ID ZZ76543ꛯ1 \n01-02-2020","s":"ID [MEMBER_ID] \n01-02-2020","all":"ID [MEMBER_ID]"}
+  LEFT {"t":"ID ZZ76543ꛯ1 \n01-02-2020 Paid","s":"ID [MEMBER_ID] \n01-02-2020 Paid","all":"ID [MEMBER_ID] Paid"}
+  SHOWS {"t":"ID ZZ76543ꛯ1\n01-02-2020","b":"ID ZZ76543ꛯ[SSN]","h":"ID [MEMBER_ID]\n01-02-2020"}
+  SHOWS {"t":"ID ZZ76543ꛯ1\n01-02-2020 Paid","b":"ID ZZ76543ꛯ[SSN] Paid","h":"ID [MEMBER_ID]\n01-02-2020 Paid"}
+  SHOWS {"t":"ID ZZ76543ꛯ1\n01-02-2020.","b":"ID ZZ76543ꛯ[SSN].","h":"ID [MEMBER_ID]\n01-02-2020."}
+  SHOWS {"t":"ID ZZ76543ꛯ1\n01-02-2020 Zephyra","b":"ID ZZ76543ꛯ[SSN] [PATIENT_NAME]","h":"ID [MEMBER_ID]\n01-02-2020 [PATIENT_NAME]"}
+  SHOWS {"t":"ID ZZ76543ꛯ1 \n01-02-2020","b":"ID ZZ76543ꛯ[SSN]","h":"ID [MEMBER_ID] \n01-02-2020"}
+  SHOWS {"t":"ID ZZ76543ꛯ1 \n01-02-2020 Paid","b":"ID ZZ76543ꛯ[SSN] Paid","h":"ID [MEMBER_ID] \n01-02-2020 Paid"}
+  SHOWS {"t":"ID ZZ76543ꛯ1 \n01-02-2020.","b":"ID ZZ76543ꛯ[SSN].","h":"ID [MEMBER_ID] \n01-02-2020."}
+  SHOWS {"t":"ID ZZ76543ꛯ1 \n01-02-2020 Zephyra","b":"ID ZZ76543ꛯ[SSN] [PATIENT_NAME]","h":"ID [MEMBER_ID] \n01-02-2020 [PATIENT_NAME]"}

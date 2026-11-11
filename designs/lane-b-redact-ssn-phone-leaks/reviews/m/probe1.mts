@@ -1,0 +1,22 @@
+import { show, patient, claimsOf, run, N, H1, B } from './lib.mts';
+const L = 'Member ID: ZZ1980O314\n555-0123\nPaid in full.';
+show('L-1 control', L, patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+show('d1 short claim 0123', L, patient(['ZZ19800314']), claimsOf([['0123']]), ['5550123']);
+show('d2 claim list with 0123', L, patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001', '0123']]), ['5550123']);
+show('d3 member 0123', L, patient(['ZZ19800314', '0123']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+show('d4 member 555', L, patient(['ZZ19800314', '555']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+show('d5 member 50123', L, patient(['ZZ19800314', '50123']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+show('d6 labelled claim', 'Member ID: ZZ1980O314\n555-0123\nClaim 0123 paid.', patient(['ZZ19800314']), claimsOf([['0123']]), ['5550123']);
+show('d7 dob tail', 'Member ID: ZZ1980O314\n555-1980\nPaid in full.', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['5551980']);
+show('d8 other family', '7654E210 555-0123', patient(['7654321', '76543210']), claimsOf([['0123']]), ['5550123']);
+show('d9 claim family', 'Claim SYN445S667\n555-0123', patient(['ZZ7654321', '0123']), claimsOf([['SYN4455667']]), ['5550123']);
+show('d10 no lookalike, R6b alone', 'Call 314 555-0123 today.', patient(['ZZ19800314']), claimsOf([['0123']]), ['3145550123', '5550123']);
+show('n1 name glued', 'Zephyra555-0123', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+show('n2 dob then phone', '03/14/1980-555-0123', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['5550123', '9805550123']);
+show('n3 dob in nine', 'SSN 900-03-1480 x', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['900031480']);
+show('n4 dob in nine b', 'ID 903141980', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['903141980']);
+show('n5 lookalike dob? then phone', 'DOB O3/14/198O 555-0123', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+show('n6 name digits', '23PHYRA 555-0123 and Z3phyra 555-0123', patient(['ZZ19800314']), claimsOf([['SYNCLAIM0001']]), ['5550123']);
+// speed
+const t0 = Date.now(); for (let i = 0; i < 300; i += 1) run(N, `${L} ${i}`, patient(['ZZ19800314']), claimsOf([['0123']])); console.log('head ms/letter', (Date.now() - t0) / 300);
+const t1 = Date.now(); for (let i = 0; i < 300; i += 1) run(B, `${L} ${i}`, patient(['ZZ19800314']), claimsOf([['0123']])); console.log('base ms/letter', (Date.now() - t1) / 300);

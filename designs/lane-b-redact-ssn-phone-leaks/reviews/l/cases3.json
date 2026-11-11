@@ -1,0 +1,10 @@
+[
+ {"note":"letter glued before a plain member ID, the defect's patient", "t":"Fax X7654321 ext 12", "ids":["ZZ7654321","7654321"]},
+ {"note":"letter glued before a plain member ID, one ID", "t":"Fax X76543210 ext 12", "ids":["76543210"]},
+ {"note":"L-1 exact", "t":"Member ID: ZZ1980O314\n555-0123\nPaid in full.", "ids":["ZZ19800314","800314"], "want":["5550123"]},
+ {"note":"L-1 exact, the defect's patient", "t":"ID ZZ765٤321-555-0123", "ids":["ZZ7654321","7654321"], "want":["5550123"]},
+ {"note":"L-1 exact, the defect's patient, letter for digit", "t":"Member ID: ZZ765A321 555-0123", "ids":["ZZ7654321","7654321"], "want":["5550123"]},
+ {"note":"L-1 claim number", "t":"Claim SYN445S667\n555-0123", "ids":["ZZ7654321"], "claims":[["SYN4455667","4455667"]], "want":["5550123"]},
+ {"note":"L-2 exact", "t":"Tel. 345-62\n03l41980 Seen 01/01/2020-150.00Paid", "ids":["ZZ19800314","800314","03141980","141980"]},
+ {"note":"L-2 exact one ID", "t":"Tel. 345-62\n03l41980 Seen 01/01/2020-150.00Paid", "ids":["03141980"]}
+]

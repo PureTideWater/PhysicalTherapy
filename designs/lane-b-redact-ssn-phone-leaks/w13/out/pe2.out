@@ -1,0 +1,8 @@
+7600 {
+  'B:hides K:hides': 4112,
+  'B:REF K:REF': 839,
+  'B:shows K:shows': 2396,
+  'B:shows K:REF': 235,
+  'B:shows K:hides': 18
+}
+head shows the tail where the base hides or refuses, by tail: {}

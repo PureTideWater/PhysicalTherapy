@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const TABLE = '/home/user/leaks/packages/model-gateway/src/redact.residuals.json';
-const REDACT = '/home/user/leaks/packages/model-gateway/src/redact.ts';
+const REDACT = '/home/user/leaks/packages/redact/src/redact.ts';
 
 const ABOUT =
   "The residuals co-001/redact-range-glued recorded (docs/adr/0054; the orchestrator's rulings of 2026-11-07), as SYNTHETIC rows from the differential gate (975,489 synthetic letters, cc3dd7f6 against that fix's head) and the judge's review rounds 1 to 4 and review round 5, each refused by cc3dd7f6 and handled by this head exactly as written here: the rows of rulings A, A' and B as co-001/redact-ssn-phone-leaks (MOD-21, MOD-22) closed them, and the lone-initial and fail-safe classes as before. " +

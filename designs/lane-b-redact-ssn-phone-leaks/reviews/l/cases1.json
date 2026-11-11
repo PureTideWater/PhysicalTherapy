@@ -1,0 +1,20 @@
+[
+ {"note":"M1-a", "t":"Tel. 345-62 \n03l41980 Seen 01/01/2020-150.00Paid", "ids":["ZZ19800314","800314","03141980","141980"]},
+ {"note":"M1-a one ID (nothing glued)", "t":"Tel. 345-62 \n03l41980 Seen 01/01/2020-150.00Paid", "ids":["03141980"]},
+ {"note":"M1-a redacted form as a letter", "t":"Tel. 03141980 Seen 01/01/2020-150.00Paid", "ids":["03141980"]},
+ {"note":"M1-a not held", "t":"Tel. 345-62 \n03l41980 Paid in full.", "ids":["ZZ19800314","800314","03141980","141980"]},
+ {"note":"M1-b", "t":"SSN 1: 255-7654E210 Zephyra\nLine 3. 76५4۳213-45 6202 Paid", "ids":["7654321","76543210"]},
+ {"note":"M1-b first line", "t":"SSN 1: 255-7654E210 Zephyra", "ids":["7654321","76543210"]},
+ {"note":"M1-b second line", "t":"Line 3. 76५4۳213-45 6202 Paid", "ids":["7654321","76543210"]},
+ {"note":"M1-b one ID", "t":"SSN 1: 255-7654E210 Zephyra\nLine 3. 76५4۳213-45 6202 Paid", "ids":["76543210"]},
+ {"note":"d-i 7-digit phone after the run", "t":"ID ZZ765٤321 555-0123", "ids":["ZZ7654321","7654321"], "want":["5550123","3215550123"]},
+ {"note":"d-i one ID", "t":"ID ZZ765٤321 555-0123", "ids":["ZZ7654321"], "want":["5550123","3215550123"]},
+ {"note":"d-ii phone after 1", "t":"ID ZZ76543ꛯ1 202-555-0123", "ids":["ZZ7654321","7654321"], "want":["2025550123","12025550123"]},
+ {"note":"d-iii ssn wrapped", "t":"ID ZZ76543ꛯ1\n900-12-3456", "ids":["ZZ7654321","7654321"], "want":["900123456"]},
+ {"note":"d-iv phone before the run", "t":"Call 202-555-0123 76543ꛯ1", "ids":["ZZ7654321","7654321","54321"], "want":["2025550123"]},
+ {"note":"d-v 7-digit phone, newline", "t":"Member ID: ZZ765٤321\n555-0123\nPaid in full.", "ids":["ZZ7654321","7654321"], "want":["5550123","3215550123"]},
+ {"note":"d-vi ssn after 3 digits", "t":"Member ID: ZZ765٤321\n900-12-3456", "ids":["ZZ7654321","7654321"], "want":["900123456"]},
+ {"note":"d-vii phone 10 after 3 digits", "t":"Member ID: ZZ765٤321 202 555 0123", "ids":["ZZ7654321","7654321"], "want":["2025550123"]},
+ {"note":"name ZEPHYR4", "t":"Re: ZEPHYR4\n01-02-2020", "names":["JANE Q ZEPHYRA","HYRA"], "ids":["ZZ7654321"]},
+ {"note":"name VANTR33", "t":"Re: VANTR33 5-0123", "names":["JANE VANTREE","TREE"], "ids":["ZZ7654321"]}
+]

@@ -1,0 +1,184 @@
+== rows (the head is /home/user/fix)
+ssnPhone 697 {"refused":632,"redacted":65}
+ownIdentifierA 406 {"redacted":200,"refused":206}
+monthWordName 5 {"sent-changed":5}
+== the reviews' reproduction scripts: lines that differ from the run before
+b1: 0 lines differ
+b2: 0 lines differ
+c1: 0 lines differ
+c2: 0 lines differ
+d1p4: 0 lines differ
+## S9 explicit
+## S8 May, patient born 2000-05-12, held letter
+## S5 names with new joiners: 232/232 letters {"same":199,"CHANGED":32,"NEW":1} (1s)
+## S6 masks and blanks: 110/110 letters {"same":99,"both":9,"NEW":2} (0s)
+## S1 dashed shapes x noun x what follows: 5200/5200 letters {"same":4515,"NEW":249,"both":436} (10s)
+## S2 phone word or Medicare before a named reference: 3600/3600 letters {"same":3055,"both":405,"NEW":140} (6s)
+## S7 held letter, a longer last group by noun: 648/648 letters {"same":128,"NEW":520} (2s)
+## S3 rows of a CSV or table: 6000 rows {"both":878,"same":5114,"NEW":8} (13s); minimal windows:
+## S4 phone, fax and TTY lines: 6000 letters {"same":5724,"both":228,"CHANGED":48} (13s); minimal forms:
+## S4b own identifier between a phone word and figures: 6000 letters {"same":4879,"NEW":438,"CHANGED":649,"both":34} (15s); NEW that the base refuses 
+== PHI fuzzers (flips = the base refused, the head sent; expect 0 but the month-named patient M's, ruling B)
+runs 20000 seed 53: flips(base refused, head sent) 0, of them with 3+ digits in clear 0; both sent and head shows more digits 0; head threw 0
+runs 20000 seed 59: flips(base refused, head sent) 0; both sent and head shows more digits 0
+runs 20000 seed 227: flips(base refused, head sent) 0, of them with 3+ digits in clear 0; both sent and head shows more digits 0; head threw 0
+runs 20000 seed 229: flips(base refused, head sent) 0; both sent and head shows more digits 0
+runs 30000: flips 0, unredact 0, of both with a letter the fold reads as a digit 0
+
+{"letters":43008,"headSent":21724} seed 233 in 150 s; distinct shapes 0
+shapes by kind {}
+{"letters":49600,"withheld":5823,"SENT_WITHHELD":0,"threw":0} seed 239 in 120 s
+seed 5923 in 120 s inst=true {"letters":25984,"headSent":15594,"flip":47,"withheldRefused":3045,"flip-other3":30,"FLIP-ADJ":6,"flip-other0":11,"FLIP-OWN":1}
+seed 6131 in 120 s inst=true {"letters":26304,"headSent":15812,"flip":43,"withheldRefused":2976,"flip-other3":18,"FLIP-ADJ":14,"flip-other0":11}
+fz3 letter seed 6143 in 120 s inst=true {"letters":27296,"headSent":16229,"flip":14,"withheldRefused":2677,"flip-other3.M":8,"FLIP-ADJ.M":3,"flip-other0.M":3}
+== the audit variant: DEPART lines (expect 0)
+DEPART: 0
+== the PHI reviews' generators (head against their before and base; expect base flags 0)
+58
+## gen seed 79: 27269 letters in 100006 ms; head sent 12796; throws 0; DEPART 0; base flags 0 {}; before flags 0
+## gen seed 83: 23761 letters in 60003 ms; head sent 6518; throws 0; DEPART 0; base flags 0 {}; before flags 0
+## enum: 33172/40320 letters in 100002 ms; head sent 14844; DEPART 0; base flags 0; before flags 0
+## tight: 43985 letters in 90000 ms; head sent 21159; base flags 0; before flags 0
+  24 E3 sfar/nl2 R>S base:as-head :: "The Social Security number that we have on\n\nfile 202-555-012301/02/2020" head=same before=REFUSED
+  24 E3 sfar/vt R>S base:as-head :: "The Social Security number that we have on\u000bfile: 202-555-0123150.00" head=same before=REFUSED
+BASE flags: 0
+
+
+## family (ii) again: 6270 letters; before refused and the head sends, by the number's writing: [["900 12.3456",30],["900  12.3456",30],["110 32.7442",30],["900 12.34567",90],["900 12. 3456",15],["900 12 .3456",15]]; by the label: [["Social Security Act. Medicare rate",70],["SSN: Medicare rate",70],
+## marks part 2 (U+0004, U+0005): ran 9540 of 9540 in 28941 ms; head sent 8140; flags 0
+
+== G|MAJOR: 1 tags
+  (5) sp.pt+cents
+    "Contact/ Number  900 32.1415150.00"
+      head: same | before: REFUSED | base: same
+== reviewer J's and K's generators
+- one line: "<Noun> <ref> 150.00 120.00"
+    \n: === 120
+    \r\n: === 120
+- three-line label (this round's give-back): "<Noun>|ID|Number|<ref>"
+    \n: RR= 120
+    \r\n: RR= 120
+- a rule inside the label (this round's give-back): "<Noun>|rule|No. <ref>"
+    \n: RR= 120
+    \r\n: RR= 120
+- "<Noun>|#|<ref>" (this round's give-back)
+    \n: RR= 120
+    \r\n: RR= 120
+
+8000 + 3840 letters in 39s
+## fuzz3 seed 43: 10000 letters, 0 exceptions, 28s; the head sends more than the BASE in 0 distinct letters
+  the head sends what "before" refused, by what follows the year: "" 0/724, ",150.00" 0/717, ".50" 97/767, ",2021" 0/745, ".5 units" 0/758, ",1" 0/818, ".01.15" 96/781, ", 150.00" 0/784, " 150.00" 0/748, "." 0/789, "," 0/799, ".00" 98/769, ",00" 0/801
+  by label: "" 32, "Row" 39, "Claim" 0, "SSN" 13, "SSN:" 11, "Soc. Sec." 15, "Member SSN" 14, "Phone" 18, "Tel" 17, "Fax:" 14, "Call" 19, "Medicare" 13, "Medicare ID" 16, "Contact" 14, "Medicare rate" 30, "Contact: Billing" 26
+0
+  --+:40:reach: head 3ms REFUSED | before 7ms same | base 2ms same
+  --+:80:reach: head 1ms REFUSED | before 4ms same | base 1ms same
+  --+:108:reach: head 1ms REFUSED | before 4ms same | base 1ms same
+
+## C p8: 24 letters; slowest that returned: head 20ms, before 13ms, base 17ms
+  +--------:40:reach: head 2ms REFUSED | before 8ms same | base 1ms same
+  +--------:80:reach: head 1ms REFUSED | before 10ms same | base 2ms same
+  +--------:108:reach: head 1ms REFUSED | before 2ms same | base 5ms same
+
+## R rule lines: 15 letters; slowest that returned: head 45ms, before 39ms, base 37ms
+  rule-mix:40: head 26ms REFUSED | before 39ms same | base 26ms same
+  rule-mix:100: head 10ms REFUSED | before 11ms same | base 2ms same
+
+total 20s
+   "SSN on file. Remittance\nAdvice\ufeff\u000b\tID No.\u200b|  \r\ufe0f\n\ufeff12345678901234.01" :: H REFUSED | P same | B same
+   "Dear Provider,\nReference\u200b,\u00a0\u2029\u00a0*\u0085|No.\t*\r\u200b\n  20260112345.01 Paid" :: H REFUSED | P "Dear Provider,\nReference\u200b, \u2029 *\u0085|No.\t*\r\u200b\n  20260112345.01 Paid" | B "Dear Provider,\nReference\u200b, \u2029 *\u0085|N
+   "SSN on file. Remittance\nAdvice\u200b\f\ufeff\tNo.,  \r\u034f\n\u00a0#900-12-3456150.00\nThank you." :: H REFUSED | P "SSN on file. Remittance\nAdvice\u200b\f\ufeff\tNo.,  \r\u034f\n #900-12-3456150.00\nThank you." | B "SSN on file. Remittance\nAdvice\u200
+## STAY plus=true shortRun=false breaks>1=true: 2
+   "Dear Provider,\nReference\n-:#\n+-900-12-3456150.00 Paid" :: H REFUSED | P same | B same
+   "Dear Provider,\nSTATEMENT-+\n~~~~ ID \n802-45-678901.50 Paid" :: H REFUSED | P same | B same
+   "Dear Provider,\nRow 366-535-169312Dec 2026.001" :: H REFUSED | P same | B same
+   "202555012315Sept,1999.125" :: H REFUSED | P same | B same
+   "202-555-01231Sep,2021.001" :: H REFUSED | P same | B same
+   "Ph.\tID.  Num\t##250-75 .123456" :: H REFUSED | P same | B same
+   "Mobile\tNumber No. \u2013:250-75 .123456\n" :: H REFUSED | P same | B same
+   "Fax/Phone Num  No\t#- 900 77.3283150.00 Paid" :: H REFUSED | P same | B same
+  "Phone Member ID\r\ufe0f\nNo. 202-555-0123150.00" :: H REFUSED | P REFUSED | B same
+  "Phone Member ID\r\nNo. 202-555-0123150.00" :: H same | P REFUSED | B same
+  "Member ID\r\ufe0f\nNo. 202-555-0123150.00" :: H REFUSED | P REFUSED | B same
+  "Phone STATEMENT\r\u200b\nNo.\r\u200b\n202-555-01234567" :: H same | P same | B same
+  "Phone STATEMENT\r\nNo.\r\n202-555-01234567" :: H same | P same | B same
+  "Phone STATEMENT\r\u200b\n\r\u200b\n202-555-01234567" :: H same | P same | B same
+== must-stay
+letters 12000 seed 11 dashedRef 0.5: {"both-refused":2908,"same":9012,"NEW-REFUSAL":72,"CHANGED":8}
+     71  id.contact [?]
+      7  ph.list [CHANGED]
+      1  LETTER-LEVEL [?]
+## RATE 1a ref + space + month-word date (row: ref date code amount) [held letter]: 400 letters, base sends unchanged 400; head refuses/changes 400 (100.0%), before 400 (100.0%), new this round 0 (0.0
+## RATE 3 noun above its number, layout "blank line": 32 letters, base sends 32; head refuses 32, before 0
+## RATE 3 noun above its number, layout "rule under it": 32 letters, base sends 32; head refuses 32, before 0
+## RATE 3 noun above its number, layout "wrapped label": 32 letters, base sends 32; head refuses 4, before 0
+## RATE 3 noun above its number, layout "CRLF blank line": 32 letters, base sends 32; head refuses 32, before 0
+## RATE 3 held letter, a dashed number two lines under its noun: base sends 48; head refuses 48, before 16
+## RATE 4 line ends in a phone word, next line starts "1) ": 192 letters, base sends 180; head refuses/changes 33, before 0; of head's, base also sends with the list number taken out: 0
+## RATE 4 line ends in a phone word, next line starts "1: ": 192 letters, base sends 192; head refuses/changes 44, before 0; of head's, base also sends with the list number taken out: 0
+## RATE 4 line ends in a phone word, next line starts "2) ": 192 letters, base sends 192; head refuses/changes 44, before 0; of head's, base also sends with the list number taken out: 0
+## RATE 4 line ends in a phone word, next line starts "(1) ": 192 letters, base sends 180; head refuses/changes 33, before 0; of head's, base also sends with the list number taken out: 0
+## RATE 4 line ends in a phone word, next line starts "1. ": 192 letters, base sends 168; head refuses/changes 0, before 0; of head's, base also sends with the list number taken out: 0
+## RATE 4 line ends in a phone word, next line starts "a) ": 192 letters, base sends 144; head refuses/changes 0, before 0; of head's, base also sends with the list number taken out: 0
+## RATE 4 line ends in a phone word, next line starts "1 - ": 192 letters, base sends 168; head refuses/changes 0, before 0; of head's, base also sends with the list number taken out: 0
+## colon, blank line: base sends 64/64; head refuses 64, before 64; every noun
+## blank line, no colon: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "-" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "=" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "_" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "~" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "*" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "." under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "—" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "─" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of "━" under the label: base sends 64/64; head refuses 64, before 64; every noun
+## rule of spaced hyphens "- - -": base sends 64/64; head refuses 64, before 64; every noun
+## rule +-----+: base sends 64/64; head refuses 64, before 64; every noun
+## rule |-----|: base sends 64/64; head refuses 64, before 64; every noun
+## rule of hyphens 80 wide: base sends 64/64; head refuses 64, before 64; every noun
+## rule of hyphens 100 wide: base sends 64/64; head refuses 64, before 64; every noun
+## rule of hyphens 110 wide: base sends 64/64; head refuses 64, before 64; every noun
+## rule of hyphens 120 wide: base sends 64/64; head refuses 64, before 64; every noun
+## rule of hyphens 132 wide: base sends 64/64; head refuses 64, before 64; every noun
+## rule, number indented 8: base sends 64/64; head refuses 64, before 64; every noun
+## label, rule and number all indented 4: base sends 64/64; head refuses 64, before 64; every noun
+## boxed cell: | label | / |-----| / | number |: base sends 64/64; head refuses 64, before 64; every noun
+## boxed with a +---+ frame: base sends 64/64; head refuses 64, before 64; every noun
+## markdown __label__: base sends 64/64; head refuses 64, before 64; every noun
+## form blank: label: ______ number: base sends 64/64; head refuses 0, before 64; 
+## form blank filled: label: __number__: base sends 64/64; head refuses 64, before 64; every noun
+## header row of 3 columns (spaces), number first: base sends 64/64; head refuses 64, before 64; every noun
+## header row of 3 columns (pipes), number first: base sends 48/64; head refuses 48, before 48; every noun
+## header row of 3 columns (tabs), number first: base sends 64/64; head refuses 64, before 64; every noun
+## header row (spaces), number in the last column: base sends 64/64; head refuses 64, before 64; every noun
+## RATE Medicare + a word + "ddd dd.ddddd", a Social Security label within reach before it: 300 letters, base sends 300; head refuses 0 (0%), before 0
+## RATE the same with no Social Security label (control): 300 letters, base sends 300; head refuses 0 (0%), before 0
+## RATE the same, the label further back than 24 characters (control): 300 letters, base sends 300; head refuses 0 (0%), before 0
+## RATE a label only head reads (glued, or "Assoc. Sec.") + a digit + ten digits from 1 + one decimal: 300 letters, base sends 300; head refuses 31 (10%), before 31; of head's, sent with no 2nd reading 0
+## RATE the same under a label both trees read (control): 300 letters, base sends 0; head refuses 0 (0%), before 0; of head's, sent with no 2nd reading 0
+  W=56: head REFUSED | before same | base same
+  W=57: head REFUSED | before same | base same
+  W=58: head REFUSED | before REFUSED | base same
+  W=60: head REFUSED | before REFUSED | base same
+  W=64: head REFUSED | before REFUSED | base same
+  W=72: head REFUSED | before REFUSED | base same
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/review-i2/v/vX.mts'
+}
+
+Node.js v24.22.0
+    done P1:20000 [20000 chars] redact 22ms check 27ms same
+    done P6:20000 [20000 chars] redact 27ms check 21ms same
+## vL: P0:20000 P1:20000 P2:20000 P3:20000 P4:20000 P5:20000 P6:20000 P1:20000 P6:20000 ERR age (node:internal/modules/esm/worker:251:24)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:869:20)
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/review-i2/v/vL.mts'
+}
+
+Node.js v24.22.0
+
+total 6s
+== the new property, every letter of its space (expect leftAsWrittenAndSent 0, baseRefusedHeadSent 0, headShowsWhatBaseHides 0)
+{"path":"leaks","n":44352,"sent":28800,"refused":15552,"leftAsWrittenAndSent":0,"baseRefusedHeadSent":0,"headShowsWhatBaseHides":0,"byCls":{"B:sent H:sent":28800,"B:REF H:REF":6984,"B:sent H:REF":8568},"ms":158252}
+battery done 17:38:11

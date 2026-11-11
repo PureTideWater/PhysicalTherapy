@@ -1,0 +1,17 @@
+[
+ {"note":"X-1 fuzz letter", "t":"Fax 555\n0123 #7654E210/X7654٣২10 ext 12", "ids":["7654321","76543210"]},
+ {"note":"X-2 no pattern", "t":"Fax 7654E210/X7654٣২10 ext 12", "ids":["7654321","76543210"]},
+ {"note":"X-3 the run alone", "t":"Fax X7654٣২10 ext 12", "ids":["7654321","76543210"]},
+ {"note":"X-4 the run after a slash", "t":"Fax 150.00/X7654٣২10 ext 12", "ids":["7654321","76543210"]},
+ {"note":"X-5 space for slash", "t":"Fax 555\n0123 #7654E210 X7654٣২10 ext 12", "ids":["7654321","76543210"]},
+ {"note":"X-6 the run alone, one script", "t":"Fax X7654٣٢10 ext 12", "ids":["7654321","76543210"]},
+ {"note":"X-7 fuzz letter, plain ID after slash", "t":"Fax 555\n0123 #7654E210/X76543210 ext 12", "ids":["7654321","76543210"]},
+ {"note":"D-1 7-digit phone after the run (nbsp)", "t":"7654E210 555-0123", "ids":["7654321","76543210"], "want":["5550123"]},
+ {"note":"D-1 one ID", "t":"7654E210 555-0123", "ids":["76543210"], "want":["5550123"]},
+ {"note":"D-2 next line", "t":"Member ID: ZZ1980O314\n555-0123\nPaid in full.", "ids":["ZZ19800314","800314"], "want":["5550123"]},
+ {"note":"D-2 one ID", "t":"Member ID: ZZ1980O314\n555-0123\nPaid in full.", "ids":["ZZ19800314"], "want":["5550123"]},
+ {"note":"D-3 space, spaces", "t":"ID ZZ765٤321 555 0123", "ids":["ZZ7654321","7654321"], "want":["5550123"]},
+ {"note":"D-3 one ID", "t":"ID ZZ765٤321 555 0123", "ids":["ZZ7654321"], "want":["5550123"]},
+ {"note":"D-4 the defect's patient, look-alike 4th from last, next line", "t":"Member ID: ZZ765٤321\n555 0123", "ids":["ZZ7654321","7654321"], "want":["5550123"]},
+ {"note":"D-5 plain ID (no look-alike)", "t":"Member ID: ZZ7654321\n555 0123", "ids":["ZZ7654321","7654321"], "want":["5550123"]}
+]
