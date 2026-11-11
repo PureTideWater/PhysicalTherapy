@@ -76,3 +76,13 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   a point).
 - `brief-j.md`, `recorded-for-the-seventh-review.md`: the brief and the recorded list given to the one reviewer of the
   delta 24ad1075 to f2f9f05e (105 diff lines; one reviewer with three lenses: what is sent, what must stay, logic and time).
+- `j/`: that review, which ran to its report: no blocking finding in about 33,400 letters, five major. J-1 (the guard
+  after a spaced year also turned away a real year before a comma), J-2 (a stray mark or an empty table row as the
+  middle line of a three-line label), J-3 (one CR LF read as a blank line, so a label that held one named nothing),
+  J-4 (an indented number or a padded cell under a ruled label), J-5 (a table's corner "+" read two ways: exponential
+  again). `findings.jsonl` holds its letters, `rows-at-f2f9f05e.txt` their outcomes as the builder re-ran them;
+  `probe*.mts`, `fuzz.mts`, `fuzz3.mts` and `time.mts` are its probes, generators and timing. The label-over-number
+  layouts had now failed a review four rounds running, so 74c32149 withdraws that reading for one rule (one line break
+  at most inside a label and one at most before the number) and records what that refuses (`rows-at-74c32149.txt`).
+- `brief-k.md`, `recorded-for-the-eighth-review.md`: the brief and the recorded list given to the one reviewer of the
+  delta f2f9f05e to 74c32149 (130 diff lines, most of them removals).

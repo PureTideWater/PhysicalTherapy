@@ -1,0 +1,102 @@
+"Claim -+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ Total 20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Please refer to claim\r\nnumber 20260112345.01 when you call." 
+    head: REFUSED | before: same | base: same
+"Please refer to claim\nnumber 20260112345.01 when you call." 
+    head: same | before: same | base: same
+"Claim\r\nNumber: 20260112345.01" 
+    head: REFUSED | before: same | base: same
+"Claim\nNumber: 20260112345.01" 
+    head: same | before: same | base: same
+"Reference\r\nNo. 802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"Member\r\nID: 802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"Remittance\r\nAdvice No. 20260112345.01" 
+    head: REFUSED | before: same | base: same
+"Remittance\nAdvice No. 20260112345.01" 
+    head: same | before: same | base: same
+"Member\r\nID\r\nNumber\r\n20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Member\nID\nNumber\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Invoice\r\n-------\r\nNo. 20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Claim\n-----\n         20260112345.01" 
+    head: REFUSED | before: same | base: same
+"Claim\n-----\n        20260112345.01" 
+    head: same | before: same | base: same
+"                              Reference\n                              ---------\n                              802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"| Claim          |\n|----------------|\n| 20260112345.01 |" 
+    head: REFUSED | before: same | base: same
+"| Claim |\n|-------|\n| 20260112345.01 |" 
+    head: same | before: same | base: same
+"+----------------+\n| Claim          |\n+----------------+\n| 20260112345.01 |\n+----------------+" 
+    head: REFUSED | before: same | base: same
+"| Visit                    |\n|--------------------------|\n|        12345678902687.66 |" 
+    head: REFUSED | before: same | base: same
+"Reference           \n--------------------\n20260112345.01" 
+    head: REFUSED | before: same | base: same
+"900-12-345601Jan 2020,150.00" 
+    head: same | before: REFUSED | base: same
+"900-12-345615-Mar, 2021,2022" 
+    head: same | before: REFUSED | base: same
+"SSN 900.12 345601Jan 2020,150.00" 
+    head: same | before: REFUSED | base: same
+"SSN: 900.12 345601Jan 2020,2021" 
+    head: same | before: REFUSED | base: same
+"Member SSN 900.12 345601Jan 2020,150.00" 
+    head: same | before: REFUSED | base: same
+"Tel 250.75 123401Jan 2020,150.00" 
+    head: same | before: REFUSED | base: same
+"(202) 555-012301Jan 2020,150.00" 
+    head: same | before: REFUSED | base: same
+"202-555-012305MAY 2026,1 unit" 
+    head: same | before: REFUSED | base: same
+"900-12-345601Jan 2020, 150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"900-12-345601Jan 2020" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN 900.12 345601Jan 2020" 
+    head: REFUSED | before: REFUSED | base: same
+"STATEMENT\n.\nNo. 900-12-3456150.00" 
+    head: same | before: REFUSED | base: same
+"STATEMENT\n'\nNo. 900-12-3456150.00" 
+    head: same | before: REFUSED | base: same
+"STATEMENT\n|\nNo. 900-12-3456150.00" 
+    head: same | before: REFUSED | base: same
+"| STATEMENT             |\n|                       |\n| No. 900-12-3456150.00 |" 
+    head: same | before: REFUSED | base: same
+"STATEMENT\n,\nID: 202-555-0123150.00" 
+    head: same | before: REFUSED | base: same
+"STATEMENT\n\nNo. 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"STATEMENT\n \nNo. 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN: 90012345601Jan 2020,150.00" 
+    head: same | before: same | base: same
+"SSN: 90012345601Jan 2020" 
+    head: REFUSED | before: same | base: same
+"Phone:    900 77.3283150.00" 
+    head: same | before: same | base: same
+"Phone: 900 77.3283150.00" 
+    head: REFUSED | before: same | base: same
+"Phone #: 900 77.3283150.00" 
+    head: same | before: same | base: same
+"Medicare ID No. 900 12.3456150.00" 
+    head: same | before: same | base: same
+"Phone900 77.3283150.00" 
+    head: same | before: same | base: same
+"Provider -+1-202-555-0123150.00" 
+    head: same | before: same | base: same
+"Provider: +1-202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Row 366-535-169012-September., 2000.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Row 366-535-169012-September, 2000.00" 
+    head: same | before: REFUSED | base: same
+"Claim __│__ 20260112345.01" 
+    head: REFUSED | before: same | base: same
+"+*******+\n| Claim |\n+*******+\n| 20260112345.01 |" 
+    head: REFUSED | before: same | base: same

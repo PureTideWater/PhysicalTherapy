@@ -10,9 +10,12 @@ still not covered are in ADR 0054's amendment of 2026-11-11.
   - glued to another number where structure says whose the other digits are: a currency amount's digits, an amount's
     cents or a date's end before the number's own shape; cents (a range after them too), a second number or a date
     after it; a date after a bare nine or ten; an amount's cents before a bare nine or ten;
+  - glued to more digits under its own label, in the number's usual writing too (`SSN No. 900-12-345678`,
+    `Phone number (202) 555-01234567`); a reference a listed noun names is kept (`Case No. 123-45-678901.00`);
   - behind a label with the call's own identifier or the label's list number between them (`Call <name> at 555-0123`,
     `Phone 1: 555-0100`, `Phone (2) 555-0100`), read as the label reads the text without them;
-  - masked and glued to a word, a year, a date or an amount's cents; after a Social Security label glued to a word;
+  - masked and glued to a word, a year, a date, an amount's cents, a currency amount or three digits or more; after a
+    Social Security label glued to a word;
   - in a letter whose digit chain only the range fix's barriers hold (a letter cc3dd7f6 refused whole): the shapes no
     structure decides are refused there, as cc3dd7f6 refused them.
 - **Ruling A', the call's own name, member ID, claim number and date of birth** (MOD-22): written with another script's
@@ -23,7 +26,12 @@ still not covered are in ADR 0054's amendment of 2026-11-11.
   for a patient named May is redacted as the name.
 - **One principle keeps the base's reading whole:** ef3e8d20's own matches are read first, and a match it did not make
   is applied only where the letter is not refused without it; whatever is left as written the check finds again and
-  refuses.
+  refuses. The survivor scan reads a text as ef3e8d20 read it too wherever its own reading reads a label ef3e8d20 did
+  not or may hold less in a chain, and takes the worse answer: a letter ef3e8d20's scan refuses stays refused by
+  construction (`survivorIn`).
+- **A letter that itself writes one of the checks' three control characters (U+0001 to U+0003) is refused whole.**
+  ef3e8d20 read a letter's own mark as its placeholder and refused such letters in places; text that holds one is no
+  text to trust.
 
 ## Why
 
