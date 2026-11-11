@@ -1,6 +1,6 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 01:10 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 01:20 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
@@ -15,8 +15,9 @@ kept current instead. If STATE.md is newer than this file, trust STATE.md and th
 
 ## Handed back to Lane B (each item's status file holds its RESUME-BLOCK)
 - STATE.md items 1, 3, 5, 8 and 9, as STATE.md shows them when you read it.
-- `LANES.md` Queues item 24 (new on 2026-11-10): a `lock_timeout` on every web mutation. CAS-57 is reserved for it; it
-  amends ADR 0092. Held, not assigned.
+- `LANES.md` Queues item 24 (new on 2026-11-10): a `lock_timeout` on every web mutation (CAS-57; amends ADR 0092).
+  Draft #137 at 59eb9e9d is built and not reviewed: held, not assigned. Resume from
+  `approval-summaries/lane-b-web-lock-timeout-status.md`.
 
 ## Lane A keeps
 - The schema chain (STATE.md items 2, 6 and 7).
