@@ -337,6 +337,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['the name letter by letter, repeated', ['JANE Q VANTREE'], fill('V a n t r e e '), ['SYN555001']],
     ['the name written apart, then initials to the end of the letter', ['JANE Q VANTREE'], `Vant ree${' J'.repeat(N / 2)}`, ['SYN555001']],
     ['all of the name but its last letter, spaced, repeated', ['JANE Q VANTREE'], fill('V a n t r e '), ['SYN555001']],
+    // The wider reading's dearest letters: a wider match is applied only after the first reading's check has read the
+    // letter, and a CR LF letter is checked in both writings, so these are read about 2.7 times as long as on the base.
+    ['dates written with spaces alone and a CR LF, then the name with a part written apart', ['JANE Q VANTREE'], `${fill('1 1 11 ')}\r\nVant ree`, ['SYN555001']],
+    ['a digit and a CRLF, repeated, then the name with a part written apart', ['JANE Q VANTREE'], `${fill('5\r\n')}Vant ree`, ['SYN555001']],
     ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
     // Social Security and phone numbers by pattern (docs/adr/0054, amendment of 2026-11-04; twins NPA-555-01xx, 9xx).
     ['phones back to back', ['JANE Q VANTREE'], fill('(202) 555-0123 '), ['SYN555001']],
