@@ -1,7 +1,7 @@
 import { type NarrativeFacts, narrativeFacts } from './facts';
 import type { PacketContent } from './format';
 import { type FactCatalog, factCatalog } from './fact-catalog';
-import { type NarrativeCheck, type NarrativeReading, findMismatches, readNarrative } from './verifier/mismatches';
+import { type NarrativeCheck, type NarrativeReading, findMismatches, readNarrative, readsNoIdentifier } from './verifier/mismatches';
 import { type TemplateReading, readTemplate, templateSentenceSpans } from './verifier/template';
 
 /**
@@ -11,7 +11,8 @@ import { type TemplateReading, readTemplate, templateSentenceSpans } from './ver
  * for the person typing; the stored result is the server's, computed again when the version is written and again at
  * each step (request approval, approve, export), and only the server's gates approval. Nothing here reads a Node
  * module, a clock or the network. The browser never holds the case's identifiers (they are placeholders on every
- * screen), so it checks for none: the server's check compares the narrative with them.
+ * screen), so it reads for none (readsNoIdentifier): the server's check reads the narrative for them, with code this
+ * module never imports (./verifier/identifiers.ts and the letter reader's matcher, @tp/redact).
  *
  * The editor builds the version's facts once (narrativeFacts, memoised on its content) and reads the narrative once per
  * keystroke (checkReading: the check and every figure as read, from one reading; the review of 2026-11-01, PE-9).
@@ -28,7 +29,7 @@ export { type TemplateReading, readTemplate, templateSentenceSpans };
 export { type DraftOutput, type DraftParagraph, type DraftSegment, type DraftSentence, serializeDraft, serializeSentence } from './serialize';
 
 export function checkNarrative(narrative: string, content: PacketContent): NarrativeCheck {
-  return findMismatches(narrative, narrativeFacts(content), []);
+  return findMismatches(narrative, narrativeFacts(content), readsNoIdentifier);
 }
 
 /**
@@ -38,7 +39,7 @@ export function checkNarrative(narrative: string, content: PacketContent): Narra
  * as and what the records hold it as. The stored result does not carry the figures; they are advice while typing.
  */
 export function checkReading(narrative: string, facts: NarrativeFacts): NarrativeReading {
-  return readNarrative(narrative, facts, []);
+  return readNarrative(narrative, facts, readsNoIdentifier);
 }
 
 /**
@@ -46,5 +47,5 @@ export function checkReading(narrative: string, facts: NarrativeFacts): Narrativ
  * version's catalog (built once per content), with no identifiers, and the template rendered.
  */
 export function checkTemplate(template: string, catalog: FactCatalog | PacketContent): TemplateReading {
-  return readTemplate(template, 'byId' in catalog ? catalog : factCatalog(catalog), []);
+  return readTemplate(template, 'byId' in catalog ? catalog : factCatalog(catalog), readsNoIdentifier);
 }

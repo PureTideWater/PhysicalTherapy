@@ -1,4 +1,4 @@
-import { FIGURE_ROLES, MISMATCH_CODES, assemblePacket, checkedFigures, narrativeFacts, verifyNarrative, verifyTemplate } from '@tp/packets';
+import { FIGURE_ROLES, MISMATCH_CODES, NO_CASE_IDENTIFIERS, assemblePacket, checkedFigures, narrativeFacts, verifyNarrative, verifyTemplate } from '@tp/packets';
 import { checkReading } from '@tp/packets/check';
 import { assemblyInput } from '@tp/packets/testing';
 import { VERIFIER_STANDINGS } from '@tp/worker/packets';
@@ -151,7 +151,7 @@ describe('the words for a template’s mismatches (tp-packet-verifier/3; docs/ad
   it('say each new code plainly, show a typed figure as typed, and never echo a figure placeholder', () => {
     const content = assemblePacket(assemblyInput());
     const template = 'The payer paid 3 [1]. On one line, {{fact:line.9.paid}} and {{fact:code.97110.variance}} [1].';
-    const report = verifyTemplate(template, content, []);
+    const report = verifyTemplate(template, content, NO_CASE_IDENTIFIERS);
     expect(report.mismatches.map((mismatch) => [mismatch.code, mismatchShown(mismatch.code, template.slice(mismatch.start, mismatch.end))])).toEqual([
       ['free_figure', '3'],
       ['number_word', 'one'],
@@ -204,8 +204,8 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(exportFailsNowText('stale')).toBe('This version cannot be exported: the stored narrative no longer matches its verifier report, so save it again as a new version, which needs approval again.');
     const facts = narrativeFacts(assemblePacket(assemblyInput()));
     expect(failsNowCause({ mismatches: [] })).toBe('stale');
-    expect(failsNowCause(verifyNarrative('The payer paid $100.00 for each line [1].', facts, []))).toBe('marked');
-    expect(failsNowCause(verifyNarrative('The payer paid less than the contract requires.', facts, []))).toBe('unmarked');
+    expect(failsNowCause(verifyNarrative('The payer paid $100.00 for each line [1].', facts, NO_CASE_IDENTIFIERS))).toBe('marked');
+    expect(failsNowCause(verifyNarrative('The payer paid less than the contract requires.', facts, NO_CASE_IDENTIFIERS))).toBe('unmarked');
     for (const standing of VERIFIER_STANDINGS) {
       expect(VERIFIER_STANDING_TEXT[standing].length, standing).toBeGreaterThan(5);
     }
@@ -214,7 +214,7 @@ describe('the words for what the verifier says of a stored version now (docs/adr
   it('refuse a step on such a version with each mismatch by its sentence and kind, never the narrative’s words', () => {
     const content = assemblePacket(assemblyInput());
     const narrative = 'The payer paid $100.00 for each line [1]. There were 3650 claims [3].';
-    const report = verifyNarrative(narrative, narrativeFacts(content), []);
+    const report = verifyNarrative(narrative, narrativeFacts(content), NO_CASE_IDENTIFIERS);
     expect(report.passed).toBe(false);
     const refusal = failsNowRefusal(report);
     expect(refusal).toBe(
@@ -233,12 +233,12 @@ describe('the words for what the verifier says of a stored version now (docs/adr
     expect(worded.split(':').length).toBe(2);
     // A figure whose words must say more is refused with what to say, never the narrative's words (rules 2 and 3).
     const unscoped = 'The payer allowed $210.00 [3]. These were $300.00 and $210.00, respectively [3].';
-    const unscopedReport = verifyNarrative(unscoped, narrativeFacts(content), []);
+    const unscopedReport = verifyNarrative(unscoped, narrativeFacts(content), NO_CASE_IDENTIFIERS);
     expect(failsNowRefusal(unscopedReport, checkedFigures(unscoped, narrativeFacts(content)).filter((figure) => !figure.passed))).toBe(
       'the verifier passed this version when it was written and fails it now (3 mismatches: in sentence 1, an amount whose words must say whether it is per line or in total; in sentence 2, an amount that needs its own words instead of “respectively” (twice)). Its figures are marked under Narrative above. Correct the narrative and save a new version; only a version the verifier passes now can be approved',
     );
     // A mismatch the builder marks nothing for: never "Its figures are marked" (NEW-N3).
-    const unmarked = verifyNarrative('The payer paid less than the contract requires.', narrativeFacts(content), []);
+    const unmarked = verifyNarrative('The payer paid less than the contract requires.', narrativeFacts(content), NO_CASE_IDENTIFIERS);
     expect(unmarked.mismatches.map((mismatch) => mismatch.code)).toEqual(['sentence_without_citation']);
     expect(failsNowRefusal(unmarked)).not.toContain('marked');
     expect(failsNowRefusal({ mismatches: [] })).toBe('the stored narrative no longer matches its verifier report. Save it again as a new version; only a version the verifier passes now can be approved');
@@ -247,7 +247,7 @@ describe('the words for what the verifier says of a stored version now (docs/adr
   it('say the same mismatch once, with how many times (UX-D3)', () => {
     const content = assemblePacket(assemblyInput());
     const narrative = 'The payer paid $100.00 and allowed $56.00 for each line [1]. These 4 claims were short [2].';
-    const report = verifyNarrative(narrative, narrativeFacts(content), []);
+    const report = verifyNarrative(narrative, narrativeFacts(content), NO_CASE_IDENTIFIERS);
     const refusal = failsNowRefusal(report);
     expect(refusal).toContain('(3 mismatches: in sentence 1, an amount that does not match this version’s records (twice); in sentence 2, a number that does not match this version’s records)');
     expect(liveCheckSummary(true, 0)).toBe('Live check passes');

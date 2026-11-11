@@ -1,5 +1,5 @@
 import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { type CheckedFigure, type PacketContent, type VerifierReport, checkedFigures, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { type CaseIdentifiers, type CheckedFigure, NO_CASE_IDENTIFIERS, type PacketContent, type VerifierReport, checkedFigures, narrativeFacts, verifyNarrative } from '@tp/packets';
 
 import { scheduleIdentifiers } from './identifiers';
 
@@ -43,7 +43,7 @@ export interface VerifierNow {
  * The verifier over a stored version's narrative and content now, with `identifiers` the schedule rows' own (the
  * export's and the steps'; a screen passes none). A failed stored report stands as it is, without reading again.
  */
-export function verifierNow(narrative: string, content: PacketContent, stored: VerifierReport, identifiers: readonly string[]): VerifierNow {
+export function verifierNow(narrative: string, content: PacketContent, stored: VerifierReport, identifiers: CaseIdentifiers): VerifierNow {
   if (!stored.passed) {
     return { standing: 'failed', report: stored, figures: [] };
   }
@@ -92,7 +92,7 @@ export async function verifyVersionNow(
   }
   const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
   const identifiers = await scheduleIdentifiers(scope, cipher, row.content, { purpose: 'packet_verification', requestId: input.requestId });
-  return verifierNow(cipher.decrypt('packet_version.narrative', row.narrative), row.content, row.verifier_report, identifiers.all);
+  return verifierNow(cipher.decrypt('packet_version.narrative', row.narrative), row.content, row.verifier_report, identifiers);
 }
 
 /**
@@ -118,7 +118,7 @@ export async function caseVerifiersNow(
   const rows = await readStored(scope, input.practiceId, passed, input.requestId);
   const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
   for (const row of rows) {
-    now.set(row.id, verifierNow(cipher.decrypt('packet_version.narrative', row.narrative), row.content, row.verifier_report, []));
+    now.set(row.id, verifierNow(cipher.decrypt('packet_version.narrative', row.narrative), row.content, row.verifier_report, NO_CASE_IDENTIFIERS));
   }
   return now;
 }

@@ -5,7 +5,7 @@ import { assemblePacket } from './assemble';
 import { type NarrativeFacts, heldRoles, largestHeld, narrativeFacts } from './facts';
 import type { PacketContentV1, PacketContentV2, RegulationCitation } from './format';
 import type { FigureRole } from './roles';
-import { verifyNarrative } from './verifier';
+import { NO_CASE_IDENTIFIERS, verifyNarrative } from './verifier';
 import { IDS, SHA, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord } from './test-support';
 
 /**
@@ -259,22 +259,22 @@ describe('narrativeFacts', () => {
     const unnamed = narrativeFacts(assemblePacket(assemblyInput({ payer })));
     expect(unnamed.identifiers.has('SYNPLAN-63')).toBe(true);
     expect(unnamed.identifiers.has('CE:SYNPLAN-63')).toBe(false);
-    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', unnamed, []).passed).toBe(true);
-    expect(verifyNarrative('The plan is CE:SYNPLAN-63 [1].', unnamed, []).passed).toBe(false);
+    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', unnamed, NO_CASE_IDENTIFIERS).passed).toBe(true);
+    expect(verifyNarrative('The plan is CE:SYNPLAN-63 [1].', unnamed, NO_CASE_IDENTIFIERS).passed).toBe(false);
     // Named: the copy prints the name alone, so neither the identifier nor the key is one; the payer's ID never was.
     const named = narrativeFacts(assemblePacket(assemblyInput({ payer: { ...payer, plan_name: 'SYNTHETIC PLAN 64' } })));
     expect(quotes(named, 'n:64')).toBe(true);
     expect([...named.identifiers].filter((value) => value.includes('SYNPLAN') || value.includes('SYNPAYER'))).toEqual([]);
-    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', named, []).passed).toBe(false);
+    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', named, NO_CASE_IDENTIFIERS).passed).toBe(false);
     // The name's 64 is repeated beside its words, never as a count.
-    expect(verifyNarrative('The claims were paid under SYNTHETIC PLAN 64 [1].', named, []).passed).toBe(true);
-    expect(verifyNarrative('There were 64 claims [3].', named, []).passed).toBe(false);
+    expect(verifyNarrative('The claims were paid under SYNTHETIC PLAN 64 [1].', named, NO_CASE_IDENTIFIERS).passed).toBe(true);
+    expect(verifyNarrative('There were 64 claims [3].', named, NO_CASE_IDENTIFIERS).passed).toBe(false);
   });
 
   it('holds a plan known only by its claim filing indicator as the copy prints it, its type in words, never the code (the founder’s ruling of 2026-10-21)', () => {
     const payer = { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'XV:SYNPAYERXV', plan_id: IDS.plan, plan_key: 'CLP06:12', plan_name: null };
     const typed = narrativeFacts(assemblePacket(assemblyInput({ payer })));
-    const failed = (facts: NarrativeFacts, narrative: string) => verifyNarrative(narrative, facts, []).mismatches.map((mismatch) => [mismatch.code, mismatch.kind, narrative.slice(mismatch.start, mismatch.end)]);
+    const failed = (facts: NarrativeFacts, narrative: string) => verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS).mismatches.map((mismatch) => [mismatch.code, mismatch.kind, narrative.slice(mismatch.start, mismatch.end)]);
     // The code is no figure of the plan's, so 12 is no input at all here: "plan identifier 12" states a number from nowhere.
     expect(roles(typed, 'number', '12')).toEqual([]);
     expect(quotes(typed, 'n:12')).toBe(false);
@@ -296,7 +296,7 @@ describe('narrativeFacts', () => {
 
   it('fails a remittance key in a narrative, digit or not, as a figure no input holds (the verification of 2026-10-21)', () => {
     const facts = narrativeFacts(assemblePacket(assemblyInput()));
-    const failed = (narrative: string) => verifyNarrative(narrative, facts, []).mismatches.map((mismatch) => [mismatch.code, mismatch.kind]);
+    const failed = (narrative: string) => verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS).mismatches.map((mismatch) => [mismatch.code, mismatch.kind]);
     // The content's own keys, another payer's, an ERA export's, and the loaders' longer qualifiers: no input holds one.
     for (const key of ['CE:SYNPLAN-FIX-ONE', '2U:SYNPAYERQ', 'XV:SYNPAYERXV', 'NAME:SYNTHETIC', 'PLAN:SYNTHETIC', 'TRN03:SYNPAYER', 'CLP06:HM']) {
       expect(failed(`The claims were paid under plan ${key} [1].`), key).toEqual([['figure_not_in_input', 'identifier']]);
@@ -309,7 +309,7 @@ describe('narrativeFacts', () => {
     // A key an input the verifier quotes holds may be repeated as it holds it.
     const quoting = narrativeFacts(assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit under schedule FS:SYNTHETIC' }) })));
     expect(quoting.identifiers.has('FS:SYNTHETIC')).toBe(true);
-    expect(verifyNarrative('The contract pays 97110 under schedule FS:SYNTHETIC [1].', quoting, []).passed).toBe(true);
+    expect(verifyNarrative('The contract pays 97110 under schedule FS:SYNTHETIC [1].', quoting, NO_CASE_IDENTIFIERS).passed).toBe(true);
   });
 
   it('holds the lines’ windows and the clause behind them at the first level only, as the payer’s copy prints them (audit item #37 part 1)', () => {
@@ -328,10 +328,10 @@ describe('narrativeFacts', () => {
     expect([...above.roles.values()].some((held) => held.has('window_days') || held.has('window_page'))).toBe(false);
     expect(quotes(above, 'n:3650')).toBe(false);
     const window = 'Each line’s dispute window ends on 2036-04-05 [3].';
-    expect(verifyNarrative(window, narrativeFacts(first), []).passed).toBe(true);
-    expect(verifyNarrative(window, above, []).passed).toBe(false);
-    expect(verifyNarrative('The contract’s dispute window is 3650 days [1].', above, []).passed).toBe(false);
-    expect(verifyNarrative('The window for this level ends on 2026-12-01 [3].', above, []).passed).toBe(true);
+    expect(verifyNarrative(window, narrativeFacts(first), NO_CASE_IDENTIFIERS).passed).toBe(true);
+    expect(verifyNarrative(window, above, NO_CASE_IDENTIFIERS).passed).toBe(false);
+    expect(verifyNarrative('The contract’s dispute window is 3650 days [1].', above, NO_CASE_IDENTIFIERS).passed).toBe(false);
+    expect(verifyNarrative('The window for this level ends on 2026-12-01 [3].', above, NO_CASE_IDENTIFIERS).passed).toBe(true);
   });
 
   it('holds interest only where it is stated, above zero: no $0.00 total, and no due date, days or amount of a line not stated', () => {
@@ -349,7 +349,7 @@ describe('narrativeFacts', () => {
     expect(roles(facts, 'date', '2026-04-04')).toEqual([]);
     expect(roles(facts, 'amount', '0')).toEqual([]);
     expect(roles(facts, 'number', '0')).toEqual([]);
-    expect(verifyNarrative('Prompt-pay interest of $0.00 is stated as its own line [4].', facts, []).passed).toBe(false);
+    expect(verifyNarrative('Prompt-pay interest of $0.00 is stated as its own line [4].', facts, NO_CASE_IDENTIFIERS).passed).toBe(false);
     // The rule's own figures stay: its release, its days and its rate.
     expect(roles(facts, 'number', '33')).toEqual(['days_to_pay']);
     expect(roles(facts, 'percent', '9')).toEqual(['interest_rate']);
@@ -368,9 +368,9 @@ describe('narrativeFacts', () => {
     const business = late('business');
     // A business-day rule computes no interest (interest_business_days), so only its days to pay are stated.
     expect(business.businessDays).toBe(true);
-    expect(verifyNarrative('Disputes are raised within 3650 business days [1].', business, []).passed).toBe(false);
-    expect(verifyNarrative('The payer has 33 business days to pay [4].', business, []).passed).toBe(true);
-    expect(verifyNarrative('The payer has 33 business days to pay [4].', late('calendar'), []).passed).toBe(false);
+    expect(verifyNarrative('Disputes are raised within 3650 business days [1].', business, NO_CASE_IDENTIFIERS).passed).toBe(false);
+    expect(verifyNarrative('The payer has 33 business days to pay [4].', business, NO_CASE_IDENTIFIERS).passed).toBe(true);
+    expect(verifyNarrative('The payer has 33 business days to pay [4].', late('calendar'), NO_CASE_IDENTIFIERS).passed).toBe(false);
   });
 
   it('holds the regulation’s figures, and no figure for what the version does not state', () => {

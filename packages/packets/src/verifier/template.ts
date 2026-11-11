@@ -4,7 +4,7 @@ import { type ReadableText, type TextSpan, readableText } from '../readable';
 import { type RenderedFacts, renderFacts } from '../render';
 import { type StrictScan, scanText, sentenceSpans } from '../scan';
 import { contradictions } from './contradiction';
-import { DATED, type Mismatch, type MismatchCode, type NarrativeCheck, identifierSpans, sentenceFinder } from './mismatches';
+import { DATED, type IdentifierReader, type Mismatch, type MismatchCode, type NarrativeCheck, sentenceFinder } from './mismatches';
 
 /**
  * The template check of verifier format tp-packet-verifier/3 (design lane-b-packet-figure-placeholders, section 4;
@@ -106,8 +106,8 @@ export function templateSentenceSpans(template: string): TextSpan[] {
   return templateSentences(readable, scanText(readable.text, { strict: true }));
 }
 
-/** Reads a template against a version's catalog and the case's own identifiers (none in the browser). */
-export function readTemplate(template: string, catalog: FactCatalog, identifiers: readonly string[]): TemplateReading {
+/** Reads a template against a version's catalog, and for the case's own identifiers (the browser's reader reads for none). */
+export function readTemplate(template: string, catalog: FactCatalog, identifiers: IdentifierReader): TemplateReading {
   const readable = readableText(template);
   const { text } = readable;
   const scan = scanText(text, { strict: true });
@@ -165,8 +165,8 @@ export function readTemplate(template: string, catalog: FactCatalog, identifiers
       add('unknown_placeholder', 'placeholder', at(token));
     }
   }
-  const skip = [...scan.placeholders, ...scan.markers, ...scan.facts, ...scan.strays, ...scan.figures.filter((figure) => DATED.has(figure.kind))];
-  for (const span of identifierSpans(text, identifiers, skip)) {
+  const skip = { tokens: [...scan.placeholders, ...scan.markers, ...scan.facts, ...scan.strays], dated: scan.figures.filter((figure) => DATED.has(figure.kind)) };
+  for (const span of identifiers(text, skip)) {
     add('identifier_in_narrative', 'identifier', at(span));
   }
   const sources = new Set(catalog.content.sources.map((source) => source.marker));

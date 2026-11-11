@@ -415,7 +415,6 @@ packages/model-gateway/src/providers/bedrock.ts
 packages/model-gateway/src/providers/local.ts
 packages/model-gateway/src/providers/messages.ts
 packages/model-gateway/src/purposes.ts
-packages/model-gateway/src/redact.ts
 packages/model-gateway/src/spec.ts
 packages/model-gateway/src/specs.ts
 packages/model-gateway/src/store.ts
@@ -468,6 +467,7 @@ packages/packets/src/roles.ts
 packages/packets/src/scan.ts
 packages/packets/src/serialize.ts
 packages/packets/src/verifier/contradiction.ts
+packages/packets/src/verifier/identifiers.ts
 packages/packets/src/verifier/index.ts
 packages/packets/src/verifier/mismatches.ts
 packages/packets/src/verifier/template.ts
@@ -482,6 +482,8 @@ packages/pricing/src/release.ts
 packages/pricing/src/trace.ts
 packages/pricing/src/types.ts
 packages/pricing/src/windows.ts
+packages/redact/src/index.ts
+packages/redact/src/redact.ts
 packages/rules/src/build.ts
 packages/rules/src/content.ts
 packages/rules/src/guards.ts

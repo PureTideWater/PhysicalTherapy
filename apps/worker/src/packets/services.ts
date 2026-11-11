@@ -165,7 +165,7 @@ async function assembleVersion(scope: PracticeScope<ScopeClient>, keys: KeyProvi
   const content = assemblePacket(assembly);
   const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
   const identifiers = await scheduleIdentifiers(scope, cipher, content, { purpose: 'packet_verification', requestId: input.requestId });
-  return { content, identifiers: identifiers.all, names: identifiers.names, cipher };
+  return { content, identifiers, cipher };
 }
 
 export type DraftInputsRequest = Pick<WriteVersionInput, 'practiceId' | 'caseId' | 'promptPayState' | 'attachedDocumentIds' | 'requestId' | 'asOf'>;
@@ -177,6 +177,8 @@ export interface DraftInputs {
   readonly identifiers: readonly string[];
   /** Which of the identifiers are names, so the drafter's check reads each as a name and the rest as numbers. */
   readonly names: readonly string[];
+  /** Which are numbers (member IDs and claim numbers), each from its own column: what the verifier reads as numbers. */
+  readonly numbers: readonly string[];
 }
 
 /**
@@ -186,8 +188,8 @@ export interface DraftInputs {
  * the identifiers stay here, for the check.
  */
 export async function packetDraftInputs(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: DraftInputsRequest): Promise<DraftInputs> {
-  const { content, identifiers, names } = await assembleVersion(scope, keys, input);
-  return { content, identifiers, names };
+  const { content, identifiers } = await assembleVersion(scope, keys, input);
+  return { content, identifiers: identifiers.all, names: identifiers.names, numbers: identifiers.numbers };
 }
 
 export interface PacketVersionDetail {

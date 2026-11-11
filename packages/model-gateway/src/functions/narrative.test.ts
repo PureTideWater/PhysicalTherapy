@@ -67,6 +67,9 @@ describe('the inputs', () => {
     // Without the typed list, a value with no digit is a name and the rest numbers.
     expect(identifierKinds({ identifiers: SYNTHETIC_CASE_IDENTIFIERS })).toEqual({ names: ['ZEPHYRA, JANE Q'], numbers: ['SYNMEMBER0042', 'SYNCLAIM0001', 'SYNCLAIM0002', 'SYNCLAIM0003'] });
     expect(identifierKinds({ identifiers: ['VANTREE', 'ABCDEF'], names: ['VANTREE'] })).toEqual({ names: ['VANTREE'], numbers: ['ABCDEF'] });
+    // With both lists, as the worker gives them from the records' columns, each is as given: a value in both is read both ways.
+    expect(identifierKinds({ identifiers: ['VANTREE', 'ABCDEF'], names: ['VANTREE'], numbers: ['ABCDEF', 'VANTREE'] })).toEqual({ names: ['VANTREE'], numbers: ['ABCDEF', 'VANTREE'] });
+    expect(identifierKinds({ identifiers: ['VANTREE', 'QQRSTUVW'], names: ['VANTREE'], numbers: ['QQRSTUVW'] })).toEqual({ names: ['VANTREE'], numbers: ['QQRSTUVW'] });
   });
 });
 

@@ -12,7 +12,7 @@ import { heldRoles, narrativeFacts } from './facts';
 import type { PacketContent, PacketContentV2 } from './format';
 import { scanText } from './scan';
 import { HAND_WRITTEN, MISSTATED, REVIEWED, STATED, assemblyInput, contractCitation, line, roleContents, roleOracle, scopedOracle } from './test-support';
-import { type VerifierReport, checkedFigures, identifierForms, verifyNarrative } from './verifier';
+import { type CaseIdentifiers, NO_CASE_IDENTIFIERS, type VerifierReport, checkedFigures, identifierForms, verifyNarrative } from './verifier';
 import { identifierSpans } from './verifier/mismatches';
 
 /**
@@ -27,7 +27,10 @@ const EXPECTED = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixture
 };
 
 const content = assemblePacket(assemblyInput());
-const verify = (narrative: string, of: PacketContent = content, identifiers: readonly string[] = []) => verifyNarrative(narrative, narrativeFacts(of), identifiers);
+const verify = (narrative: string, of: PacketContent = content, identifiers: CaseIdentifiers = NO_CASE_IDENTIFIERS) => verifyNarrative(narrative, narrativeFacts(of), identifiers);
+/** Identifiers the records hold as names, and as numbers (member IDs and claim numbers). */
+const names = (...values: string[]): CaseIdentifiers => ({ names: values, numbers: [] });
+const numbers = (...values: string[]): CaseIdentifiers => ({ names: [], numbers: values });
 const codes = (report: VerifierReport) => report.mismatches.map((mismatch) => mismatch.code);
 
 /** The figures the report flags, as the narrative writes them. */
@@ -208,28 +211,28 @@ describe('figures in other characters', () => {
 });
 
 describe('the case’s own identifiers', () => {
-  const identifiers = ['SYNTHETIC', 'JANE', 'ABCDEFGH', 'SYNCCN0001', 'SYNPCN0001', 'APRIL'];
+  const identifiers: CaseIdentifiers = { names: ['SYNTHETIC', 'JANE', 'APRIL'], numbers: ['ABCDEFGH', 'SYNCCN0001', 'SYNPCN0001'] };
 
   it('fails a narrative that names a patient, a member ID or a claim, whatever its case, and says only where', () => {
     for (const narrative of ['Jane Synthetic, a member of the plan, was underpaid [1].', 'Member ABCDEFGH was underpaid [1].', 'Claim syncCn0001 was paid short [3].', 'APRIL asked for the review [1].']) {
       const report = verify(narrative, content, identifiers);
       expect(report.passed, narrative).toBe(false);
       expect(codes(report).filter((code) => code === 'identifier_in_narrative').length, narrative).toBeGreaterThan(0);
-      for (const identifier of identifiers) {
+      for (const identifier of [...identifiers.names, ...identifiers.numbers]) {
         expect(JSON.stringify(report).toLowerCase()).not.toContain(identifier.toLowerCase());
       }
     }
     const named = 'Jane Synthetic was underpaid [1].';
     expect(verify(named, content, identifiers).mismatches.filter((item) => item.code === 'identifier_in_narrative').map((item) => named.slice(item.start, item.end))).toEqual(['Jane', 'Synthetic']);
-    expect(verify(named, content, ['JANE SYNTHETIC']).mismatches.filter((item) => item.code === 'identifier_in_narrative').map((item) => named.slice(item.start, item.end))).toEqual(['Jane Synthetic']);
+    expect(verify(named, content, names('JANE SYNTHETIC')).mismatches.filter((item) => item.code === 'identifier_in_narrative').map((item) => named.slice(item.start, item.end))).toEqual(['Jane Synthetic']);
   });
 
   it('matches whole words only, leaves a month of a date alone, and ignores placeholders and one-letter parts', () => {
     expect(verify('The synthetics were reviewed [1].', content, identifiers).passed).toBe(true);
     expect(verify('It was paid in April 2026 [3].', content, identifiers).passed).toBe(true);
     expect(verify('Claim {{claim_control_number:1}} for {{patient_name:1}} was paid short [3].', content, identifiers).passed).toBe(true);
-    expect(verify('The plan paid short [1].', content, ['Q', 'A.', '']).passed).toBe(true);
-    expect(verify(`J${cp(0xff41)}ne was underpaid [1].`, content, ['JANE']).passed).toBe(false);
+    expect(verify('The plan paid short [1].', content, { names: ['Q', 'A.', ''], numbers: ['Q', 'A.', ''] }).passed).toBe(true);
+    expect(verify(`J${cp(0xff41)}ne was underpaid [1].`, content, names('JANE')).passed).toBe(false);
   });
 });
 
@@ -268,7 +271,7 @@ describe('the edges of the check', () => {
 
   it('names the kind of each mismatch, and counts the figures, placeholders and markers it checked', () => {
     const narrative = 'Claim {{patient_name:9}} of Jane was paid 1234.56 short [9].';
-    const report = verify(narrative, content, ['JANE']);
+    const report = verify(narrative, content, names('JANE'));
     expect(report.mismatches.map((item) => [item.code, item.kind, narrative.slice(item.start, item.end)])).toEqual([
       ['unknown_placeholder', 'placeholder', '{{patient_name:9}}'],
       ['identifier_in_narrative', 'identifier', 'Jane'],
@@ -281,7 +284,7 @@ describe('the edges of the check', () => {
 
   it('orders mismatches that start together by where they end', () => {
     const narrative = 'Claim 12345-678 was paid short [3].';
-    const report = verify(narrative, content, ['12345']);
+    const report = verify(narrative, content, numbers('12345'));
     expect(report.mismatches.map((item) => [item.code, narrative.slice(item.start, item.end)])).toEqual([
       ['identifier_in_narrative', '12345'],
       ['figure_not_in_input', '12345-678'],
@@ -304,7 +307,7 @@ describe('the edges of the check', () => {
     expect(identifierForms([' Synthetic, Jane ', 'Jo', 'AB/CD;EF', 'Q R'])).toEqual(['Synthetic, Jane', 'Synthetic', 'AB/CD;EF', 'Jane', 'Q R', 'AB', 'CD', 'EF', 'Jo']);
     expect(identifierForms([cp(0xff2a, 0xff21, 0xff2e, 0xff25)])).toEqual(['JANE']);
     const spans = (narrative: string, identifiers: readonly string[]) =>
-      verify(narrative, content, identifiers)
+      verify(narrative, content, names(...identifiers))
         .mismatches.filter((item) => item.code === 'identifier_in_narrative')
         .map((item) => narrative.slice(item.start, item.end));
     expect(spans('Jane Synthetic was underpaid [1].', ['JANE  SYNTHETIC'])).toEqual(['Jane Synthetic']);
@@ -315,8 +318,8 @@ describe('the edges of the check', () => {
     expect(spans('The lines of Jane[3] were paid short.', ['JANE'])).toEqual(['Jane']);
     expect(spans('[3]Jane was paid short.', ['JANE'])).toEqual(['Jane']);
     // A month's name in any date is the date.
-    expect(verify('A line was billed on March 5 [3].', content, ['MARCH']).passed).toBe(true);
-    expect(verify('A line was billed on March 5, 2026 [3].', content, ['MARCH']).passed).toBe(true);
+    expect(verify('A line was billed on March 5 [3].', content, names('MARCH')).passed).toBe(true);
+    expect(verify('A line was billed on March 5, 2026 [3].', content, names('MARCH')).passed).toBe(true);
   });
 });
 
@@ -563,9 +566,9 @@ describe('properties of the verifier', () => {
       fc.property(contentArbitrary, name, fc.array(fc.boolean(), { minLength: 14, maxLength: 14 }), (generated, identifier, lower) => {
         const written = [...identifier].map((char, at) => (lower[at] === true ? char.toLowerCase() : char)).join('');
         const draft = draftNarrative(generated);
-        expect(verify(draft, generated, [identifier]).passed).toBe(true);
+        expect(verify(draft, generated, names(identifier)).passed).toBe(true);
         const narrative = `${draft} The payer told ${written} so [3].`;
-        const report = verify(narrative, generated, [identifier]);
+        const report = verify(narrative, generated, names(identifier));
         expect(report.mismatches.map((item) => [item.code, narrative.slice(item.start, item.end)])).toEqual([['identifier_in_narrative', written]]);
       }),
     );
@@ -659,7 +662,7 @@ describe('the check: the inputs each rule separates', () => {
 
   it('finds an identifier holding a character a pattern would read as syntax only as written', () => {
     const named = 'St. Synthetic was underpaid [1].';
-    const spans = verify(named, content, ['ST. SYNTHETIC'])
+    const spans = verify(named, content, names('ST. SYNTHETIC'))
       .mismatches.filter((item) => item.code === 'identifier_in_narrative')
       .map((item) => named.slice(item.start, item.end));
     expect(spans).toEqual(['St. Synthetic']);
@@ -806,7 +809,7 @@ describe('a partitive’s part', () => {
     expect(verify('We note 2 of them here [1].').passed).toBe(true);
     // No count held in the pronoun's roles: the part fails.
     const none = { ...narrativeFacts(content), roles: new Map() };
-    expect(flagged('We note 2 of them here [1].', verifyNarrative('We note 2 of them here [1].', none, []))).toEqual(['2']);
+    expect(flagged('We note 2 of them here [1].', verifyNarrative('We note 2 of them here [1].', none, NO_CASE_IDENTIFIERS))).toEqual(['2']);
   });
 });
 

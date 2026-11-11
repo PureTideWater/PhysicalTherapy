@@ -9,7 +9,7 @@ import { IDENTIFIER_KINDS } from './format';
 import { canonicalJson, versionSha256 } from './hash';
 import { lineHoldsOnlyPlaceholders } from './placeholders';
 import { IDS, REGULATION, SHA, assemblyInput, contractCitation, contractWindowSource, internalTermsIn, line, promptPayRecord } from './test-support';
-import { verifyNarrative } from './verifier';
+import { NO_CASE_IDENTIFIERS, verifyNarrative } from './verifier';
 
 describe('assemblePacket', () => {
   const content = assemblePacket(assemblyInput());
@@ -77,7 +77,7 @@ describe('assemblePacket', () => {
     expect(ma.requested_action).toContain('Original Medicare');
     const draft = draftNarrative(ma);
     expect(draft).toContain('42 CFR 422.214 [1]');
-    expect(verifyNarrative(draft, narrativeFacts(ma), []).passed).toBe(true);
+    expect(verifyNarrative(draft, narrativeFacts(ma), NO_CASE_IDENTIFIERS).passed).toBe(true);
   });
 
   it('reads the percentages and years of a percent-of-Medicare or lesser-of term', () => {
@@ -90,7 +90,7 @@ describe('assemblePacket', () => {
     expect(lesser.pattern.codes[0]?.contract_amount_cents).toBe('4500');
     const visit = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) }));
     for (const generated of [percent, lesser, visit]) {
-      expect(verifyNarrative(draftNarrative(generated), narrativeFacts(generated), []).mismatches).toEqual([]);
+      expect(verifyNarrative(draftNarrative(generated), narrativeFacts(generated), NO_CASE_IDENTIFIERS).mismatches).toEqual([]);
     }
   });
 
@@ -102,7 +102,7 @@ describe('assemblePacket', () => {
     expect(withInterest.requested_action).toContain('prompt-pay interest');
     const draft = draftNarrative(withInterest);
     expect(draft).toContain('Prompt-pay interest of $0.57');
-    expect(verifyNarrative(draft, narrativeFacts(withInterest), []).passed).toBe(true);
+    expect(verifyNarrative(draft, narrativeFacts(withInterest), NO_CASE_IDENTIFIERS).passed).toBe(true);
     const unknown = assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } }));
     expect(unknown.interest?.total_cents).toBeNull();
     expect(unknown.evidence_gaps).toEqual([{ code: 'interest_rate_unknown', row: null }]);
@@ -381,7 +381,7 @@ describe('draftNarrative for the payer (audit item #37 part 1, T10)', () => {
       const draft = draftNarrative(content);
       expect(internalTermsIn(draft)).toEqual([]);
       expect(draft).not.toMatch(/could not be computed|cannot be computed|not stated|in all/);
-      expect(verifyNarrative(draft, narrativeFacts(content), []).passed).toBe(true);
+      expect(verifyNarrative(draft, narrativeFacts(content), NO_CASE_IDENTIFIERS).passed).toBe(true);
     });
   }
 

@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import { referenceCandidate } from '../../eval/reference';
 import { sha256Hex } from '../hash';
-import { screenedBytes } from '../redact';
+import { screenedBytes } from '@tp/redact';
 import { syntheticRecordsCheck } from '../patient-records';
 import { NO_IDENTIFIERS, SYNTHETIC_CONTRACT_PAGES, SYNTHETIC_IDS, memoryPracticeRecords, syntheticContractInput, syntheticContractOutput, syntheticPracticeCheck } from '../testing';
 import {

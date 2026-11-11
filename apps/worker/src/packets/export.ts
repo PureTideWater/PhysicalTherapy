@@ -197,7 +197,7 @@ export async function exportPacketVersion(
     const identifiers = await scheduleIdentifiers(scope, cipher, version.content, { purpose: 'packet_export', requestId: context.jobId });
     // The verifier again, over exactly what is printed below: this narrative, this content, today's identifiers (the
     // same verifierNow() a request for approval, an approval and the screens ask; ./verifier-now.ts).
-    const verified = verifierNow(narrative, version.content, version.verifier_report, identifiers.all);
+    const verified = verifierNow(narrative, version.content, version.verifier_report, identifiers);
     if (verified.standing !== 'passed') {
       await recordRefusal(scope, context, practiceId, versionId, 'verifier_failed');
       return { outcome: 'not_exportable', reason: 'verifier_failed' };

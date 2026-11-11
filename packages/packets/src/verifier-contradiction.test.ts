@@ -4,7 +4,7 @@ import { assemblePacket } from './assemble';
 import { FACT_CONTENTS } from './fact-contents.test-support';
 import type { PacketContent } from './format';
 import { totalCues } from './roles-reader/cues';
-import { type Mismatch, verifyTemplate } from './verifier';
+import { type Mismatch, NO_CASE_IDENTIFIERS, verifyTemplate } from './verifier';
 import { standIn } from './verifier/contradiction';
 import { assemblyInput, line } from './test-support';
 
@@ -15,7 +15,7 @@ import { assemblyInput, line } from './test-support';
  */
 
 const contradicted = (template: string, content: PacketContent) =>
-  verifyTemplate(template, content, [])
+  verifyTemplate(template, content, NO_CASE_IDENTIFIERS)
     .mismatches.filter((mismatch: Mismatch) => mismatch.code === 'fact_contradicted')
     .map((mismatch) => template.slice(mismatch.start, mismatch.end));
 
@@ -173,7 +173,7 @@ describe('a stand-in the words beside it do not leave a figure of its own', () =
       ['The payer was billed for ${{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
       ['The payer was billed for US${{fact:pattern.units}} [1].', '{{fact:pattern.units}}'],
     ] as const) {
-      const report = verifyTemplate(template, base, []);
+      const report = verifyTemplate(template, base, NO_CASE_IDENTIFIERS);
       expect(report.passed, template).toBe(false);
       expect(contradicted(template, base), template).toEqual([token]);
       expect(report.mismatches.map((mismatch) => mismatch.code), template).toContain('free_figure');

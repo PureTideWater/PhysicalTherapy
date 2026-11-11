@@ -29,6 +29,12 @@ export interface ScheduleIdentifiers {
   readonly all: readonly string[];
   /** Which of them are names (the patients' and insureds' last and first names): the rest are member IDs and claim numbers. */
   readonly names: readonly string[];
+  /**
+   * The rest, read each from its own column: the patients' and insureds' member IDs, the payer's claim control numbers
+   * and the practice's patient control numbers. With `names`, what the verifier reads a narrative for (@tp/packets
+   * CaseIdentifiers): a name and a number are read differently.
+   */
+  readonly numbers: readonly string[];
 }
 
 export async function scheduleIdentifiers(
@@ -58,6 +64,7 @@ export async function scheduleIdentifiers(
   const rows = new Map<number, RowIdentifiers>();
   const all = new Set<string>();
   const names = new Set<string>();
+  const numbers = new Set<string>();
   for (const line of content.lines) {
     const row = byLine.get(line.service_line_id);
     if (row === undefined) {
@@ -81,6 +88,11 @@ export async function scheduleIdentifiers(
         names.add(name);
       }
     }
+    for (const number of [identifiers.claim_control_number, identifiers.patient_control_number, member, insuredMember]) {
+      if (number !== null && number.trim() !== '') {
+        numbers.add(number);
+      }
+    }
     for (const value of [
       identifiers.claim_control_number,
       identifiers.patient_control_number,
@@ -96,5 +108,5 @@ export async function scheduleIdentifiers(
       }
     }
   }
-  return { rows, all: [...all], names: [...names] };
+  return { rows, all: [...all], names: [...names], numbers: [...numbers] };
 }

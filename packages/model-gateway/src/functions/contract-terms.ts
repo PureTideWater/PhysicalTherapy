@@ -9,7 +9,7 @@ import { isSha256, sha256Hex } from '../hash';
 import { type QuoteSpan, type WrittenFigure, codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote, tokenSpans } from '../figures';
 import { type PatientRecordsCheck, issuedCheck } from '../patient-records';
 import { PROMPTS } from '../prompts';
-import { screenedBytes } from '../redact';
+import { screenedBytes } from '@tp/redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { framePages } from '../untrusted';
 
@@ -541,9 +541,9 @@ export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked ag
  * screened is exactly what would leave, even for an input whose pages read differently each time they are asked for
  * (a getter or a proxy), which would otherwise pass the screen clean and frame a page that names a patient. The
  * frame adds no run the screen could take for an identifier: each page sits between lines of its own (a run never
- * crosses a line break, ../redact.ts someIdentifierRun), the frame's words have no digit, which every kept identifier
+ * crosses a line break, @tp/redact someIdentifierRun), the frame's words have no digit, which every kept identifier
  * has (SCREEN_FLOORS), and its page numbers and count stand alone, below every floor (the `="` before each one joins
- * two tokens only for a practice whose own identifiers hold it: ../redact.ts storedSeparators).
+ * two tokens only for a practice whose own identifiers hold it: @tp/redact storedSeparators).
  */
 export async function screenContractPages(input: ContractPagesInput, prepared: { readonly user: string }, context: CallContext): Promise<void> {
   const check: unknown = input.patientRecords;
