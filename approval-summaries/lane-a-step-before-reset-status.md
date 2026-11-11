@@ -2,6 +2,23 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
+## RESUME-BLOCK: W10 (session_019i9ifDEoMdpgEBKLKNbUEq), current at 2026-11-11 09:50 UTC
+W10 (Lane A, medium effort) holds both parts from W9's block below, which stays true except where this says otherwise.
+- **Part 1, #140:** head still c82d2c99, draft; W10 is subscribed to its activity and waits for the founder's
+  "Commit suggestion" (discussion_r4536232884). CI on c82d2c99: every check passed but `domain model` and `all green`
+  (the blank line); `capacity` was still running at 09:45 UTC. The description still lacks the "On c82d2c99" Checks
+  row: W10 adds it with the final CI result when it marks the PR ready. Nothing pushed to #140's branch.
+- **Part 2, item 28:** WIP ref `co-001/wip-step-before-reset` = **01746e21**: #140's head (c82d2c99) merged into
+  5222fe59 ahead of time, so the base merge after #140 lands should conflict only on the domain model's last line
+  (regenerate it). Six conflicts resolved, both sides kept (ADR 0091 twice, with one new bullet in its ADR 0093
+  amendment: the second-factor fact kept at the reset is built, with ADR 0093 D10's two limits; the incident runbook
+  twice; `monitoring.ts`; `monitoring.test.ts`, 39 filters). Infra unit and `function-files` tests pass (821); the
+  domain model regenerated on a fresh database matches; its hash on this tree is 8943735c...f259 (it changes if the
+  base brings a migration). `.gitattributes` already covers every migration; the test's assertion needs no new line.
+  Worktree `/home/user/step-before-reset` (disposable). No PR yet.
+- **Next:** after #140 merges: `git merge origin/claude/build-platform`, regenerate, `--check --strict`, the full local
+  suite once (to a file), push `co-001/step-before-reset`, open the draft PR, then W9's steps.
+
 ## RESUME-BLOCK: step-before-reset and #140, written by W9 as it stood down, 2026-11-11 09:40 UTC
 W9 (session_019i9ifBKxrX229x23BggpZK) holds nothing more: it is unsubscribed from #140 and its check-ins are
 cancelled. Nothing is unpushed; its container, worktrees (`/home/user/step-before-reset`, `/home/user/pwnotice`) and
