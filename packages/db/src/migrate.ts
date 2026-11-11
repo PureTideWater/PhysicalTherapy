@@ -213,7 +213,8 @@ async function applyMigration(client: pg.Client, migration: Migration, xid: stri
   await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
   await client.query(migration.sql);
   if ((await transactionId(client)) !== xid) {
-    throw new Error('it ended the transaction the runner opened; a migration never commits, rolls back or begins a transaction itself');
+    // The caller's look at the try's savepoint turns this into the failure that says so.
+    throw new Error('it ended the transaction the runner opened');
   }
   const timeout = await client.query<{ off: boolean }>("SELECT current_setting('lock_timeout')::interval = interval '0' AS off");
   if (timeout.rows[0]?.off !== false) {
@@ -259,21 +260,34 @@ function lockFailure(migration: Migration, lockWait: MigrationLockWait, tries: n
   );
 }
 
+/** The savepoint each try opens with; only the transaction the runner opened has it. */
+const TRY_SAVEPOINT = 'tp_migration_runner_try';
+
 /**
- * After a failed try's ROLLBACK: did the transaction the runner opened commit all the same? Only a
- * migration's own COMMIT does that. Such a file is half applied and not recorded, so it is never
- * tried again and never reported as having changed nothing. Null when it rolled back, as it should.
+ * After a failed try, before its ROLLBACK: is the open transaction still the one the runner opened?
+ * Rolling back to the try's savepoint works in that transaction alone, aborted or not; PostgreSQL
+ * refuses it (with an SQLSTATE) once a migration has committed or rolled the transaction back
+ * itself, whatever it began afterwards. A lost connection answers with no SQLSTATE and is not taken
+ * for that: the server rolls an open transaction back on its own.
  */
-async function committedAnyway(client: pg.Client, migration: Migration, xid: string | undefined): Promise<MigrationError | null> {
+async function endedByMigration(client: pg.Client, xid: string | undefined): Promise<boolean> {
   if (xid === undefined) {
-    return null;
+    return false;
   }
-  const { rows } = await client.query<{ status: string | null }>('SELECT pg_xact_status($1::xid8) AS status', [xid]);
-  if (rows[0]?.status !== 'committed') {
-    return null;
+  try {
+    await client.query(`ROLLBACK TO SAVEPOINT ${TRY_SAVEPOINT}`);
+    return (await transactionId(client)) !== xid;
+  } catch (error) {
+    return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string';
   }
+}
+
+/** A migration that ended the runner's transaction: never tried again, never said to have changed nothing. */
+function endedFailure(migration: Migration, dry: boolean): MigrationError {
   return new MigrationError(
-    `${migration.name} failed after committing part of itself: it ended the transaction the runner opened (a migration never commits, rolls back or begins a transaction itself). It is not recorded as applied; compare the database with the file before anything runs again (docs/adr/0009)`,
+    `${migration.name} failed and may be partly applied: it ended the transaction the runner opened (a migration never commits, rolls back or begins a transaction itself). ${
+      dry ? 'The dry run may have changed the database' : 'It is not recorded as applied'
+    }; compare the database with the file before anything runs again (docs/adr/0009)`,
   );
 }
 
@@ -291,12 +305,16 @@ async function dryRun(client: pg.Client, migrations: readonly Migration[], devLo
     await setLockTimeout(client, lockWait);
     await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
     const { pending, done } = await pendingMigrations(client, migrations);
+    await client.query(`SAVEPOINT ${TRY_SAVEPOINT}`);
     const xid = await transactionId(client);
     const applied: string[] = [];
     for (const migration of pending) {
       try {
         await applyMigration(client, migration, xid);
       } catch (error) {
+        if (await endedByMigration(client, xid)) {
+          throw endedFailure(migration, true);
+        }
         // One transaction holds every pending migration, so there is no trying one again: the dry run fails.
         throw isLockTimeout(error) ? lockFailure(migration, lockWait, 1) : failure(migration, error);
       }
@@ -315,7 +333,6 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
   // A connection lost while the run pauses between tries is reported by the next statement, not thrown from nowhere.
   client.on('error', () => undefined);
   await client.connect();
-  const started = Date.now();
   try {
     if (options.dryRun === true) {
       return await dryRun(client, migrations, options.devLogin === true, lockWait);
@@ -323,6 +340,8 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
     await bootstrapRoles(client, { devLogin: options.devLogin === true });
     await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK]);
     try {
+      // The budget's clock starts with this run's own turn, not with its wait for another migrator's.
+      const started = Date.now();
       await client.query(`SET ROLE ${OWNER_ROLE}`);
       const { pending, done } = await pendingMigrations(client, migrations);
       const applied: string[] = [];
@@ -332,6 +351,7 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
           try {
             await client.query('BEGIN');
             await setLockTimeout(client, lockWait);
+            await client.query(`SAVEPOINT ${TRY_SAVEPOINT}`);
             xid = await transactionId(client);
             await applyMigration(client, migration, xid);
             await client.query('COMMIT');
@@ -339,12 +359,10 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
           } catch (error) {
             // A cancelled wait has already given up its place in the queue and the try's locks; the rollback ends
             // the transaction. On a lost connection there is nothing to roll back and the first error is the news.
-            const committed = await client
-              .query('ROLLBACK')
-              .then(() => committedAnyway(client, migration, xid))
-              .catch(() => null);
-            if (committed !== null) {
-              throw committed;
+            const ended = await endedByMigration(client, xid);
+            await client.query('ROLLBACK').catch(() => undefined);
+            if (ended) {
+              throw endedFailure(migration, false);
             }
             if (!isLockTimeout(error)) {
               throw failure(migration, error);

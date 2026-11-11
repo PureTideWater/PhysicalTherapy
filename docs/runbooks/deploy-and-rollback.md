@@ -295,8 +295,8 @@ reconcile pass, a long triage or audit report, or jobs running back to back. Run
 Never take the locks by hand, and never end another session's transaction, or cancel a job or a vacuum, to make room.
 A migration with a lock loop of its own (the sections below) fails in its own words instead, and is not tried again.
 The runner starts no new try once the whole run has lasted thirty minutes (the deploy waits fifty for the task), so
-the same message can say fewer than 20 tries. If the log instead ends with "failed after committing part of itself",
-stop: that migration ended its own transaction, part of it is in the database and it is not recorded. Do not run the
+the same message can say fewer than 20 tries. If the log instead ends with "failed and may be partly applied", stop:
+that migration ended the runner's transaction itself, part of it may be in the database and it is not recorded. Do not run the
 deploy again; compare the database with the file first (ADR 0009, the amendment's item 7).
 
 ## A line's stage lock (ADR 0083; SUITE-CAP-1b)

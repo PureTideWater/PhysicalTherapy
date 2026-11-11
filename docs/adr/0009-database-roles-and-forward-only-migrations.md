@@ -108,18 +108,22 @@ migration without such a loop.
    transaction holds every pending migration, so a cancelled wait fails the dry run, which changes nothing either way.
 6. The migrators' advisory lock is still waited for without limit: it queues no reader, and a second migrator's turn
    comes when the first ends.
-7. A migration that undoes the bound is refused. After a migration's SQL the runner checks that the transaction is
-   still the one it opened (by its number) and that `lock_timeout` is not off, and rolls back otherwise. After any
-   failed try it asks PostgreSQL whether that transaction committed all the same (`pg_xact_status`), which only a
-   `COMMIT` inside the migration causes: such a file is never tried again, and the run fails with "failed after
-   committing part of itself … compare the database with the file before anything runs again", never with "it changed
-   nothing". (A `COMMIT` inside a migration was always wrong; before this, it went unseen.)
+7. A migration that undoes the bound is refused. Each try opens with a savepoint. After a migration's SQL the runner
+   checks that the transaction is still the one it opened (by its number) and that `lock_timeout` is not off at the
+   end, and after any failed try it rolls back to that savepoint before the rollback proper, which PostgreSQL allows
+   in the runner's transaction alone: a migration that committed or rolled that transaction back itself, whatever it
+   began afterwards, is never tried again, and the run (a dry run too) fails with "failed and may be partly applied:
+   it ended the transaction the runner opened … compare the database with the file before anything runs again", never
+   with "it changed nothing". (Transaction control inside a migration was always wrong; before this, it went unseen.
+   A migration's own savepoints and handled errors are not that.)
 8. A migration never catches every error around a statement that can wait for a lock (`EXCEPTION WHEN OTHERS`, or a
    handler for `lock_not_available` around anything but `NOWAIT`): the handler would swallow the cancellation and
    the migration would be recorded with that statement undone. No migration does; the new-migration skill says so.
    The runner does not scan for it: a text match would refuse sound handlers and miss dynamic SQL.
-9. A lost connection is reported as that migration's failure in the runner's own line, and the server rolls the open
-   transaction back.
+9. A lost connection is reported as that migration's failure in the runner's own line. The server rolls an open
+   transaction back; a connection lost during the commit itself may have committed, and the next run reads
+   `schema_migrations` and goes on from what is recorded.
+10. The thirty minutes count from the run's own turn (after the migrators' lock), not from its wait for another's.
 
 **What it does not bound.** Once a migration holds a table's lock, readers wait until it commits: how long a
 migration may hold a lock is each migration's design (the add, backfill and remove rule; the new-migration skill). A

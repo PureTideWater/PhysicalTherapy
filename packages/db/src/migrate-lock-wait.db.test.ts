@@ -291,7 +291,7 @@ describe('a migration that undoes the runner’s bound', () => {
       writeFileSync(path.join(dir, PROBE), 'CREATE TABLE lock_wait_committed (id integer PRIMARY KEY);\nCOMMIT;\nBEGIN;\nCREATE TABLE lock_wait_after (id integer PRIMARY KEY);');
       const error: unknown = await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) }).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(MigrationError);
-      expect((error as MigrationError).message).toContain(`${PROBE} failed after committing part of itself`);
+      expect((error as MigrationError).message).toContain(`${PROBE} failed and may be partly applied: it ended the transaction the runner opened`);
       expect((error as MigrationError).message).not.toContain('changed nothing');
       const client = await connect(url);
       try {
@@ -313,13 +313,73 @@ describe('a migration that undoes the runner’s bound', () => {
       try {
         const error: unknown = await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({ paused }) }).catch((caught: unknown) => caught);
         expect(error).toBeInstanceOf(MigrationError);
-        expect((error as MigrationError).message).toContain(`${PROBE} failed after committing part of itself`);
+        expect((error as MigrationError).message).toContain(`${PROBE} failed and may be partly applied: it ended the transaction the runner opened`);
         expect(paused).toEqual([]);
         expect((await holder.query("SELECT 1 FROM pg_tables WHERE tablename = 'lock_wait_committed'")).rows.length).toBe(1);
       } finally {
         await holder.query('ROLLBACK');
         await holder.end();
       }
+    });
+  });
+});
+
+describe('a migration that ends the runner’s transaction in other ways', () => {
+  it.each([
+    ['rolls it back and goes on outside any transaction', 'CREATE TABLE lock_wait_gone (id integer);\nROLLBACK;\nCREATE TABLE lock_wait_kept (id integer);', ['lock_wait_kept']],
+    ['rolls it back, begins its own and fails there', 'ROLLBACK;\nBEGIN;\nCREATE TABLE lock_wait_kept (id integer);\nCOMMIT;\nBEGIN;\nSELECT no_such_function();', ['lock_wait_kept']],
+    ['rolls it back and begins its own, which the runner then holds', 'ROLLBACK;\nBEGIN;\nCREATE TABLE lock_wait_gone (id integer);', []],
+  ])('is refused in the words that say it may be partly applied when it %s', async (_name, sql, kept) => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), sql);
+      const paused: number[] = [];
+      await expect(migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({ paused }) })).rejects.toThrow(`${PROBE} failed and may be partly applied`);
+      expect(paused).toEqual([]);
+      const client = await connect(url);
+      try {
+        expect((await client.query<{ tablename: string }>("SELECT tablename FROM pg_tables WHERE tablename LIKE 'lock_wait_%' ORDER BY 1")).rows.map((row) => row.tablename)).toEqual(kept);
+        expect(await probeRecorded(client)).toBe(0);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  it('is never tried again when a wait is cancelled in a transaction it began after rolling the runner’s back', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), `ROLLBACK;\nBEGIN;\nCREATE TABLE IF NOT EXISTS lock_wait_kept (id integer);\nCOMMIT;\nBEGIN;\nSET LOCAL lock_timeout = '250ms';\n${PROBE_SQL}`);
+      const holder = await holdTable(url);
+      const paused: number[] = [];
+      try {
+        await expect(migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({ paused }) })).rejects.toThrow(`${PROBE} failed and may be partly applied`);
+        expect(paused).toEqual([]);
+      } finally {
+        await holder.query('ROLLBACK');
+        await holder.end();
+      }
+    });
+  });
+
+  it('says so of a dry run too, which such a file makes real', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), 'CREATE TABLE lock_wait_kept (id integer);\nCOMMIT;');
+      await expect(migrate({ databaseUrl: url, migrationsDir: dir, dryRun: true, lockWait: lockWait({}) })).rejects.toThrow(
+        `${PROBE} failed and may be partly applied: it ended the transaction the runner opened (a migration never commits, rolls back or begins a transaction itself). The dry run may have changed the database`,
+      );
+    });
+  });
+
+  it('is not what a migration’s own savepoints and handled errors are', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(
+        path.join(dir, PROBE),
+        "SAVEPOINT own;\nCREATE TABLE lock_wait_gone (id integer);\nROLLBACK TO SAVEPOINT own;\nDO $$ BEGIN BEGIN PERFORM 1 / 0; EXCEPTION WHEN division_by_zero THEN NULL; END; END $$;\nCREATE TABLE lock_wait_kept (id integer);",
+      );
+      expect((await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) })).applied).toEqual([PROBE]);
     });
   });
 });
