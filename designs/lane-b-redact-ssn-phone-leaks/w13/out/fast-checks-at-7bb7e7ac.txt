@@ -1,0 +1,11 @@
+typecheck exit=0
+lint exit=0
+lint:logs exit=0
+lint:copy exit=0
+check:fixtures exit=0
+verify-content exit=0
+generators: git status lines 0
+redact tests exit=0
+gateway redaction tests exit=0
+worker bundle test exit=0
+db migrate unit test exit=0

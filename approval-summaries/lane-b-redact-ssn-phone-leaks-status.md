@@ -6,39 +6,28 @@ counter comes from the orchestrator.
 
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifADZcDuzjeUkfedYiW) holds this item from 2026-11-11 (the orchestrator's start, 16:40 UTC by its clock); Lane B: read lanes/lane-b.md's latest entries before resuming.
 
-## RESUME-BLOCK (W13, session_019i9ifADZcDuzjeUkfedYiW; current at 2026-11-11 18:35 UTC by this container's clock; W5's block below holds for what this one does not replace)
+## RESUME-BLOCK (W13, session_019i9ifADZcDuzjeUkfedYiW; current at 2026-11-11 20:05 UTC by this container's clock; W5's block below is history)
 
-- **State.** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **c9dddaa7** (74c32149 plus three commits); the worktree
-  `/home/user/leaks` on `co-001/redact-ssn-phone-leaks` is ahead of it, not yet pushed: 6d80683c (MOD-21's matrix row),
-  **cc6a914c** (the base 91bc6b7c merged: `redact.ts` is `packages/redact/src/redact.ts`), and uncommitted the two pinned
-  rows of review N in `redact.leaks.test.ts`. No pull request; nothing subscribed. **No further change to `redact.ts`**
-  (the orchestrator's ruling, 18:02 UTC).
-- **What W13 changed, each by a ruling.** ac412151: OPEN 1 fixed by the one condition in `matchesIn` (a pattern's match is
-  withheld only for a glued run that no match of the call's own covers whole); K-1 and review K's lesser forms pinned.
-  247a53e3: review L-1 (ruling 17:23 UTC, fix): the other-patient screen reads the letter once more with the call's own
-  matches alone replaced. c9dddaa7: review M-1 (ruling 18:02 UTC, fix, the last change): that reading follows `merge`'s
-  rule R6b. Review N's N-1 and N-2 are RECORDED (the same ruling): pinned rows, ADR 0054, Queues item 26.
-- **Reviews L, M, N:** `designs/lane-b-redact-ssn-phone-leaks/reviews/l/VERIFIED.md` (scope, each finding verified, each
-  resolution), reports beside it and in `reviews/m`, `reviews/n`. None blocking.
-- **Verified.** On ac412151 (the last change to what is sent): the battery with fresh seeds clean, the gate no PHI class
-  against ef3e8d20 or cc3dd7f6 and every class equal to 74c32149's run (`w13/out/`). On c9dddaa7: the six files (4,122
-  tests), the eight seeds (734 each), typecheck, eslint, pinned rows 697 / 406 / 5, the residual table unchanged. On the
-  merged tree cc6a914c: typecheck, the redaction tests (4,087 in the gateway, 46 in `packages/redact`), the residual check
-  (`gen-residual6.mts` now reads `packages/redact/src/redact.ts`).
-- **Running at 18:35 UTC:** the gate on the merged tree (`/home/user/snap18`, output `/home/user/gate-out/p18-ef3` and
-  `p18-cc3`).
-- **Next, in order.** (1) Read the gate: no PHI class, the classes as on 74c32149. (2) `python3 w13/adr.py <slowest ms
-  of B> <slowest ms of A>` (from `p18-cc3/report.md`'s last line; it needs `/home/user/work/w13/n-text.txt`, whose text
-  is in the script's folder history) appends the amendment to `docs/adr/0054-*.md`; commit it with the two N rows.
-  (3) The full suite once: `bash w13/suite.sh` (PostgreSQL 18 on 5433 must be up: `su postgres -c "/opt/pg18/bin/pg_ctl
-  -D /root/pgdata18 -l /tmp/pg18.log -w start"`; it had stopped once in this container). (4) `git push -u origin
-  co-001/redact-ssn-phone-leaks` through the hook; the draft pull request into `claude/build-platform` with
-  `python3 w13/prbody.py <checks table>` (it writes the description from W5's drafts with rounds K to N and the section
-  "What is still not covered"); subscribe; merge under rule 2a on green required checks; one line to the orchestrator.
-- **A fresh container:** `w13/layout.sh` then `python3 w13/audit.py` rebuild the layout from the worktree (written for the
-  tree before the base merge: after it the head's file is `packages/redact/src/redact.ts`, and the scratch copies keep the
-  old directory names). A typed backslash-u escape in a command is decoded on the way to the shell: write look-alike
-  escapes from a script (`chr(92)`).
+- **State. Draft pull request #146** (`co-001/redact-ssn-phone-leaks` into `claude/build-platform`), head **7bb7e7ac**
+  (the base ea8f200f, #145, is an ancestor). W13 is subscribed to it. The WIP ref equals the branch. CI is running.
+- **Next.** On green required checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`) with
+  `origin/claude/build-platform` still an ancestor of the head: mark ready and merge (rule 2a), one line to the
+  orchestrator, record the merge here, unsubscribe. If the base moved: merge it once more, the fast checks and the
+  generators (`w13/out/fast-checks-at-7bb7e7ac.txt` lists them), push, wait for CI. If CI dies at `playwright install
+  --with-deps` on the runners' DNS: re-run only the failed jobs at intervals of 30 minutes or more; push nothing to kick it.
+- **No further change to `redact.ts`** (the orchestrator's ruling, 18:02 UTC). What W13 changed, each by a ruling:
+  ac412151 (OPEN 1, the one condition in `matchesIn`; K-1 pinned), 247a53e3 (review L-1, the screen's second reading),
+  c9dddaa7 (review M-1, that reading follows `merge`'s R6b); review N's N-1 and N-2 recorded and pinned (052ff9e5, with
+  ADR 0054's amendment); d06e772d (the worker's bundle test and the watched list name the look-alike table); cc6a914c and
+  7bb7e7ac (the base merged at 91bc6b7c, then ea8f200f).
+- **Reviews L, M, N** (none blocking): `designs/lane-b-redact-ssn-phone-leaks/reviews/l/VERIFIED.md`.
+- **Verified.** The battery with fresh seeds on ac412151, the last change to what is sent (`w13/out/fuzz-all.out`); the
+  gate on the merged tree: no PHI class against ef3e8d20 or cc3dd7f6, every class equal to 74c32149's run, slowest letter
+  1,137 ms (`w13/out/gate-*-report-merged-tree.md`); the eight seeds; the full suite once on 052ff9e5 with its two
+  failures fixed in d06e772d and run again there (`w13/out/suite-*.txt`); the fast checks on 7bb7e7ac. The description
+  as sent: `w13/pr-body.md`.
+- **For Queues item 26** (the orchestrator has them): K-1; MOD-23's two name forms; review N-1 and N-2; a digits-only
+  identifier glued to a word (recorded since the amendment of 2026-10-27).
 
 ## RESUME-BLOCK (written by W5, session_019i9ifC8ouxG6CLPdZtgAcJ, for a successor; current at 2026-11-11 16:37 UTC; W5 has stood down)
 
