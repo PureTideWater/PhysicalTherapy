@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, TransactionNotCommittedError, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import type { ScopeClient, ScopePool } from '@tp/db/runtime';
+import { type ScopeClient, type ScopePool, withResolvedActor } from '@tp/db/runtime';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -34,8 +34,12 @@ let app: DatabasePool;
 let faulty: Services;
 let world: TenantWorld;
 
-/** The fault the next matching transaction meets: a statement refused, or its COMMIT sent as ROLLBACK (what PostgreSQL answers a failed transaction). */
-type Fault = { readonly kind: 'statement'; readonly match: RegExp } | { readonly kind: 'commit'; readonly within: RegExp };
+/**
+ * The fault the next matching transaction meets: a statement refused before it is sent; a statement the database runs
+ * whose answer is then lost (so the work fails with the statement's writes made in the open transaction); or the COMMIT
+ * sent as ROLLBACK (what PostgreSQL answers a failed transaction).
+ */
+type Fault = { readonly kind: 'statement' | 'answer'; readonly match: RegExp } | { readonly kind: 'commit'; readonly within: RegExp };
 let fault: Fault | undefined;
 let faultsMet = 0;
 
@@ -58,6 +62,10 @@ function faultyPool(): ScopePool<ScopeClient> {
                 if (fault.kind === 'statement' && fault.match.test(text)) {
                   faultsMet += 1;
                   return Promise.reject(new Error('synthetic failure'));
+                }
+                if (fault.kind === 'answer' && fault.match.test(text)) {
+                  faultsMet += 1;
+                  return target.query(text, values).then(() => Promise.reject(new Error('synthetic failure')));
                 }
                 if (fault.kind === 'commit') {
                   within ||= fault.within.test(text);
@@ -174,8 +182,8 @@ describe('a session past a limit: the database ends it on the next request, and 
       expect(await standing(session.sessionId)).toBe('live');
       expect(await events('session_ended', session.sessionId)).toEqual([]);
 
-      // The end itself fails: no event is written for it.
-      fault = { kind: 'statement', match: /resolve_session/ };
+      // The end is made and its answer lost: it rolls back, and no event is written for it.
+      fault = { kind: 'answer', match: /resolve_session/ };
       await expect(resolveSession(faulty.pool, session.sessionToken, 'test')).rejects.toThrow('synthetic failure');
       expect(faultsMet).toBe(2);
       expect(await standing(session.sessionId)).toBe('live');
@@ -197,6 +205,77 @@ describe('a session past a limit: the database ends it on the next request, and 
       expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: reason }]);
     });
   }
+
+  it('fails closed on a route: while the end’s event cannot be written the request does nothing as the user; then it is refused as signed out', async () => {
+    const userId = await createUser(owner);
+    const session = await sessionFor(userId);
+    await owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [session.sessionId]);
+    fault = { kind: 'statement', match: AUDIT };
+    // Sign-out is open to everyone signed in, so a refusal here is the session's and nothing else's.
+    expect(await run(faulty, signOutAction, session.sessionToken)).toBe('threw');
+    expect(faultsMet).toBe(1);
+    expect(await standing(session.sessionId)).toBe('live');
+    expect(await events('sign_out', session.sessionId)).toEqual([]);
+    expect(await events('session_ended', session.sessionId)).toEqual([]);
+    fault = undefined;
+    expect(await run(faulty, signOutAction, session.sessionToken)).toBe('unauthenticated');
+    expect(await standing(session.sessionId)).toBe('idle');
+    expect(await events('sign_out', session.sessionId)).toEqual([]);
+    expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: 'idle' }]);
+  });
+
+  it('writes one event when requests race to end the same session, a faulted one among them', async () => {
+    const userId = await createUser(owner);
+    const session = await sessionFor(userId);
+    await owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [session.sessionId]);
+    const clean = await Promise.all([1, 2, 3].map(() => resolveSession(app, session.sessionToken, 'test')));
+    expect(clean.map((state) => (state.state === 'ended' ? state.reason : state.state)).sort()).toEqual(['ended', 'ended', 'idle']);
+    expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: 'idle' }]);
+
+    const other = await sessionFor(userId);
+    await owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [other.sessionId]);
+    // The faulted request ends the session and loses the event; whichever order they run in, the sound one ends it with its event.
+    fault = { kind: 'statement', match: AUDIT };
+    const lost = resolveSession(faulty.pool, other.sessionToken, 'test').then(
+      () => 'resolved',
+      () => 'threw',
+    );
+    const sound = resolveSession(app, other.sessionToken, 'test');
+    // First to the row: the faulted one fails and the sound one ends the session (threw, idle); or the sound one ends it
+    // and the faulted one finds it ended, with no event of its own to lose (resolved, ended).
+    const outcome = [await lost, await sound];
+    expect([
+      ['threw', { state: 'ended', reason: 'idle' }],
+      ['resolved', { state: 'ended', reason: 'idle' }],
+    ]).toContainEqual(outcome);
+    expect(await standing(other.sessionId)).toBe('idle');
+    expect(await events('session_ended', other.sessionId)).toEqual([{ actor_id: userId, purpose: 'idle' }]);
+  });
+
+  it('sets the actor for its own transaction alone: none before the database names the user, none on the connection after', async () => {
+    const userId = await createUser(owner);
+    const one = openPool(database.appUrl, 1);
+    try {
+      const actor = async (client: ScopeClient) => (await client.query<{ actor: string | null }>("SELECT nullif(current_setting('app.actor_id', true), '') AS actor")).rows[0]?.actor;
+      const seen = await withResolvedActor(one, async (client, actAs) => {
+        const before = await actor(client);
+        const scope = await actAs(userId);
+        return { before, during: await actor(scope.client) };
+      });
+      expect(seen).toEqual({ before: null, during: userId });
+      // The pool's one connection again, after the commit and after a transaction that rolled back with the actor set.
+      expect(await withResolvedActor(one, (client) => actor(client))).toBeNull();
+      await expect(
+        withResolvedActor(one, async (_client, actAs) => {
+          await actAs(userId);
+          throw new Error('synthetic failure');
+        }),
+      ).rejects.toThrow('synthetic failure');
+      expect(await withResolvedActor(one, (client) => actor(client))).toBeNull();
+    } finally {
+      await endPool(one);
+    }
+  });
 
   it('touches an active session and commits, leaving no connection in a transaction and writing no event', async () => {
     const userId = await createUser(owner);
@@ -292,7 +371,8 @@ describe('a session a person ends: the route’s audit event is in the transacti
       expect(await standing(ends.sessionId)).toBe('live');
       expect(await events(action, objectId)).toEqual([]);
 
-      fault = { kind: 'statement', match: end };
+      // The end is made and its answer lost: it rolls back, and the route writes no event for it.
+      fault = { kind: 'answer', match: end };
       expect(await run(faulty, route, asks.sessionToken, input, params)).not.toBe('ok');
       expect(faultsMet).toBe(2);
       expect(await standing(ends.sessionId)).toBe('live');

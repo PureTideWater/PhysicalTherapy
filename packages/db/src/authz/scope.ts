@@ -359,16 +359,22 @@ export function withResolvedActor<P extends ScopePool<ScopeClient>, T>(
   return transaction(
     pool,
     (client) => Promise.resolve(client),
-    (client) => {
-      let acting = false;
-      return run(client, async (actorId) => {
-        const actor = requireUuid(actorId, 'actorId');
-        if (acting) {
-          throw new ScopeError('a resolved transaction acts as one user, once');
-        }
-        acting = true;
-        return actorScope(client, actor);
-      });
+    async (client) => {
+      // The one door to an actor: open while the work runs, used once, shut when the work ends however it ends, so a
+      // call kept past it can never set an actor on a connection the pool has handed to other work.
+      let door: 'open' | 'used' | 'shut' = 'open';
+      try {
+        return await run(client, async (actorId) => {
+          const actor = requireUuid(actorId, 'actorId');
+          if (door !== 'open') {
+            throw new ScopeError(door === 'used' ? 'a resolved transaction acts as one user, once' : 'a resolved transaction’s work has ended: it names no actor now');
+          }
+          door = 'used';
+          return actorScope(client, actor);
+        });
+      } finally {
+        door = 'shut';
+      }
     },
   );
 }

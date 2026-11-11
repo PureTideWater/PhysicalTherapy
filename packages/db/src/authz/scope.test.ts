@@ -309,6 +309,24 @@ describe('withResolvedActor: one transaction that learns its actor from the data
     expect(malformed.texts()).toEqual(['BEGIN', 'ROLLBACK']);
   });
 
+  it('names no actor once its work has ended: a call kept past the transaction is refused and sends nothing on the connection', async () => {
+    const { pool, texts } = fakePool();
+    let kept: ((actorId: string) => Promise<unknown>) | undefined;
+    await withResolvedActor(pool, (_client, actAs) => {
+      kept = actAs;
+      return Promise.resolve();
+    });
+    const sent = texts().length;
+    await expect(kept?.(ACTOR)).rejects.toThrow('a resolved transaction’s work has ended: it names no actor now');
+    expect(texts()).toHaveLength(sent);
+    expect(texts().filter((text) => text.includes('app.actor_id'))).toEqual([]);
+  });
+
+  it('says the outcome is unknown when the commit ends without the server’s answer, after the actor was set', async () => {
+    const lost = fakePool((text) => (text === 'COMMIT' ? new Error('synthetic: the connection ended') : undefined));
+    await expect(withResolvedActor(lost.pool, async (_client, actAs) => void (await actAs(ACTOR)))).rejects.toBeInstanceOf(CommitOutcomeUnknownError);
+  });
+
   it('reports nothing as done when the work fails after the actor is set, or when the server answers the commit with ROLLBACK', async () => {
     const failed = fakePool((text) => (text === 'SELECT 2 AS recorded' ? new Error('synthetic failure') : undefined));
     await expect(withResolvedActor(failed.pool, async (client, actAs) => (await actAs(ACTOR)).client.query('SELECT 2 AS recorded'))).rejects.toThrow('synthetic failure');
