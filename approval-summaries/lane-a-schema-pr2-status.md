@@ -4,7 +4,7 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 15:55 UTC)
+## RESUME-BLOCK (current at 2026-11-11 16:45 UTC)
 - **State: draft PR #143 is OPEN** (https://github.com/PureTideWater/PhysicalTherapy/pull/143), head **c4272c33** on
   `co-001/ledger-function-bodies` (= `co-001/wip-ledger-function-bodies`), base 3bff4fd6. W11 is subscribed. Its
   description is `lane-a-wip/schema-pr2/pr-description.md`.
@@ -17,6 +17,14 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
   test: the runner could not resolve Ubuntu's archive hosts while `playwright install --with-deps chromium` fetched
   system packages (not this PR's). **Failed jobs re-run once at 15:53 UTC** (W11); a second failure of a test job is
   real and gets read. Check-in set for 16:38 UTC. The container restarted again about 15:50 UTC (checkout intact).
+- **BLOCKED on CI's runners, not on the change (16:45 UTC):** the one re-run failed the same way at 16:00 UTC (same
+  step, same "Temporary failure resolving" for Ubuntu's three archive hosts; no test ran). #144 (W12) fails alike on
+  every attempt since 15:10 UTC; W12's record: `lane-b-web-transaction-scope-status.md`. One comment on #143 says so
+  (issuecomment-6801581958). The orchestrator was told (16:45 UTC); until it rules otherwise W11 follows the word it
+  gave W12: re-run the FAILED JOBS ONLY (`rerun_failed_jobs`, run 43043707704) once the runners resolve those hosts
+  again, 30 minutes or more apart, up to three more times, then tell it; push nothing to kick CI, change no workflow,
+  skip no test. **Re-runs under that word so far: 0 of 3.** Check-in set for about 17:25 UTC. The suggested approval
+  line is NOT posted until the test jobs have run and passed on the head.
 - **Next, in order:** (1) CI on c4272c33: every check green but `domain model` and `all green` (the blank line); a red
   check otherwise: reproduce, fix, show it passing, push; (2) then post the suggested approval line as ONE
   pull-request comment: `gh api repos/PureTideWater/PhysicalTherapy/pulls/143/comments -f commit_id=<head sha>
