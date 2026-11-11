@@ -32,10 +32,12 @@ cat <<'SQL'
 -- ledger_match_standing, the match's id as a filter). Measured on SYNTHETIC practices: docs/adr/0087, "Measured".
 --
 -- Safe with the previous image running, and on rollback: no image reads either function's text, and each answers
--- and refuses as before, so an image before or after this migration writes the same ledger. It takes no table lock:
--- CREATE OR REPLACE FUNCTION locks only the function's own catalog row, so a reconcile, a person's ledger action and a
--- page reading the ledger go on beside it; each transaction calls the new body from its next call after this
--- migration commits. Nothing is backfilled and no stored row is read or written.
+-- and refuses as before, so an image before or after this migration writes the same ledger. It holds no lock a
+-- reader or a writer of the ledger waits for: CREATE OR REPLACE FUNCTION replaces the function's own catalog row, and
+-- checking ledger_line_net's new body takes ACCESS SHARE on ledger_entry and service_line, the lock every SELECT
+-- takes. So a reconcile, a person's ledger action and a page reading the ledger go on beside it, and each
+-- transaction calls the new body from its next call after this migration commits. Nothing is backfilled and no
+-- stored row is read or written.
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. Preflight: the bodies this migration replaces are the ones the founder's exception was granted on
