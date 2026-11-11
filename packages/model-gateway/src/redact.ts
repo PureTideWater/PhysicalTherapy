@@ -2708,7 +2708,8 @@ const YEAR_GLUED_BEFORE = new RegExp(
  * What joins the parts of a date glued after a bare number: a slash, a point, a dash, or a dot written for one. A bar, an
  * underscore, a backslash or a tilde joins the cells of a row and the parts of a file's name as often
  * ("91895853214|3|20260401", "ERA_79790014228_08_2026.pdf": the review of the last round's delta, G2-2), and is read as a
- * date's joiner under a person's label alone ("SSN: 90012345601_02_2020").
+ * date's joiner under a Social Security label alone ("SSN: 90012345601_02_2020"; a phone word is an ordinary word too:
+ * "Fax ERA_79790014228_08_2026.pdf").
  */
 const BARE_DATE_JOIN = '[/.\\p{Pd}\\u2212\\u2215\\u2044\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022]';
 const LABELED_DATE_JOIN = `[${DATE_SEPARATOR}\\u2215\\u2044~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022]`;
@@ -2813,7 +2814,7 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     // A date glued after a bare nine or ten ("SSN: 94156421006-22-2027", "92146703003.03.2028"), unless a noun names the run.
     const dateLead = a.digits.length === 11 || a.digits.length === 12 ? 2 : a.digits.length === 13 || a.digits.length === 14 ? 4 : 0;
     const dateText = dateLead > 0 ? text.slice(a.end - dateLead, a.end + BARE_DATE_REACH) : '';
-    const dateAfter = dateLead > 0 && (BARE_DATE_AFTER.test(dateText) || (LABELED_DATE_AFTER.test(dateText) && labelOf(a) !== null));
+    const dateAfter = dateLead > 0 && (BARE_DATE_AFTER.test(dateText) || (LABELED_DATE_AFTER.test(dateText) && labelOf(a) === 'person' && ssnLabel(a)));
     // A nine or a ten and a date that begins with one digit, written with slashes ("20255501239/9/2020"); with dashes one
     // digit and two groups are as often a reference's own end ("20260112345-01-2026").
     const shortDateAfter = (a.digits.length === 10 || a.digits.length === 11) && BARE_SHORT_DATE_AFTER.test(text.slice(a.end - 1, a.end + BARE_DATE_REACH));

@@ -1069,13 +1069,14 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     unchanged('802-45-678901 may 30 days'),
     unchanged('Lines reviewed:\n724-24-822630 Jan 2026 97535 340.34'),
     refused('Seen 900-12-345601Jan2020 today.'),
-    // G2-2: a bar, an underscore, a backslash or a tilde joins a row's cells and a file name's parts; under a person's
-    // label it joins a date's parts too. After the date, an amount or a second date, never a longer number's digits.
+    // G2-2: a bar, an underscore, a backslash or a tilde joins a row's cells and a file name's parts; under a Social
+    // Security label it joins a date's parts too. After the date, an amount or a second date, never a longer number's digits.
     unchanged('91895853214|3|20260401|97110|238.64'),
     unchanged('ClaimNo|Line|DOS|HCPCS|Billed\n41534035603|1|20260613|97140|464.44'),
     unchanged('See attached ERA_79790014228_08_2026.pdf for details.'),
     unchanged('\\\\fs01\\era\\12345678901\\01\\2026\\remit.pdf'),
     unchanged('12345678901~02~2026'),
+    unchanged('Fax ERA_79790014228_08_2026.pdf to the plan.'),
     refused('SSN: 90012345601_02_2020 ok.'),
     refused('SSN: 90012345601\\02\\2020 ok.'),
     refused('SSN: 90012345601/02/202001/31/2020 ok.'),
