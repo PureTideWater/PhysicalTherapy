@@ -53,7 +53,21 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   running (the job's log, a longer tail) before changing anything. CAS-42.5 was dispatched on bf2fc44f; dispatch it
   again on the final head after the last base merge. The container restarted twice (Postgres down each time:
   `bash tools/setup-container.sh` from the ops worktree brings it back).
-- **RESUME-BLOCK (#126), head e4ed0f0a:** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
+- **CI on e4ed0f0a (02:07 UTC):** every job green (unit, money-ledger mutation shard and the rest) but `domain model`
+  (expected) and `db (1/4)`, cancelled again at 20 minutes with only reconcile.large.db.test.ts (CAS-42.3) unfinished.
+  **Cause, reproduced with autovacuum off:** with no column statistics on `claim` (just loaded, not analyzed) the
+  interest chains' walk joined each step's claim as a hash of every claim of the practice, and the pass did not end: a
+  production reliability defect of this PR's statement, not a test quirk. **Fix b8b4ec0d + the commit after it:** the
+  step's claim read by key in a LATERAL behind OFFSET 0 (same rows); pass 32.5 s with no statistics, 21.1 s with
+  (budget 60 s); chain.large's plan test holds the keyed read with statistics, with claim's column statistics cleared
+  and with its row count cleared, and fails on the plain join; 169/169 affected db tests. Two reviews (money: same
+  rows, nothing blocking; database: tenant scope unchanged, OFFSET 0 holds on 18). **Owed, its own item (database
+  review, medium, not fixed here):** with no statistics the link lookups (`claim k` by claim_by_superseded here,
+  reportedInterest's `claim v`, and the base's claimLines `named` join, remittances.ts) are planned as a BitmapAnd with
+  a practice-wide index under the tenant policy, once a step: slower (32.5 s against 21 s at 2,000 lines), bounded
+  here, growing with the practice; the durable answer is the loader analyzing claim after a load (or these lookups made
+  statistics-proof), measured at CAS-51's sizes.
+- **RESUME-BLOCK (#126), head the commit after b8b4ec0d (pushed 02:27 UTC):** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
   merge; the domain model's blank approval line); (2) dispatch `release-capacity.yml` (CAS-42.5) on the head;
   (3) body (`lane-a-wip/interest-pr/body-build.py`; add RVM5-1, RVM6-1, D19's trade-off for the founder, the #134 and
   #136 merges, the three owed items), read back; (4) fresh-clone verification reading CI; (5) one suggestion comment
