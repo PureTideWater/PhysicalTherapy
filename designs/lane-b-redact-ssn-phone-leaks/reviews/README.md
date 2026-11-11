@@ -86,3 +86,14 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   at most inside a label and one at most before the number) and records what that refuses (`rows-at-74c32149.txt`).
 - `brief-k.md`, `recorded-for-the-eighth-review.md`: the brief and the recorded list given to the one reviewer of the
   delta f2f9f05e to 74c32149 (130 diff lines, most of them removals).
+- `k/`: that review, which ran to its report on 74c32149: no letter ef3e8d20 refuses sent and no digit shown that it
+  redacts in 192,590 generated letters; no refusal of ordinary text outside the recorded costs; no slow letter (the
+  tree before did not return in 70 s on J-5's letter, the head takes under a millisecond). One major by its brief's
+  definition, K-1: a label's reach is counted in characters, so a CR LF shortens it by one and a Social Security label
+  24 characters before a number a noun names does not own it (`rows3.mts`, `rows4.mts`, `edge.mts`; 126 of 126 letters
+  at that one distance, none at any other). The builder ran it on seven trees (`../open-findings/k1-on-seven-trees.txt`):
+  every head but f2f9f05e sends it, and the base and cc3dd7f6 do; recorded as a residual, no fix round. Five minor forms
+  and four comment notes (`rows1.txt`, `rows5.txt`); `gen.mts` holds its four generators, `time.mts` its timing.
+- `../open-findings/`: what was open when W5 stood down on 2026-11-11: the withheld match (found by the battery's
+  instrumented fuzzer, not by a review; a fix recipe, not built) and K-1 (recorded).
+

@@ -1,0 +1,18 @@
+7600 {
+  'B:hides K:hides': 4080,
+  'B:REF K:REF': 839,
+  'B:shows K:shows': 2396,
+  'B:shows K:REF': 235,
+  'B:hides K:shows': 8,
+  'B:hides K:REF': 24,
+  'B:shows K:hides': 18
+}
+head shows the tail where the base hides or refuses, by tail: { '01-02-2020': 8 }
+{"t":"ID ZZ76543ꛯ1\n01-02-2020","b":"ID ZZ76543ꛯ[SSN]","k":"ID [MEMBER_ID]\n01-02-2020"}
+{"t":"Member ID: ZZ76543ꛯ1\n01-02-2020","b":"Member ID: ZZ76543ꛯ[SSN]","k":"Member ID: [MEMBER_ID]\n01-02-2020"}
+{"t":"Call ZZ76543ꛯ1\n01-02-2020","b":"Call ZZ76543ꛯ[SSN]","k":"Call [MEMBER_ID]\n01-02-2020"}
+{"t":"ZZ76543ꛯ1\n01-02-2020","b":"ZZ76543ꛯ[SSN]","k":"[MEMBER_ID]\n01-02-2020"}
+{"t":"ID ZZ76543ꛯ1 \n01-02-2020","b":"ID ZZ76543ꛯ[SSN]","k":"ID [MEMBER_ID] \n01-02-2020"}
+{"t":"Member ID: ZZ76543ꛯ1 \n01-02-2020","b":"Member ID: ZZ76543ꛯ[SSN]","k":"Member ID: [MEMBER_ID] \n01-02-2020"}
+{"t":"Call ZZ76543ꛯ1 \n01-02-2020","b":"Call ZZ76543ꛯ[SSN]","k":"Call [MEMBER_ID] \n01-02-2020"}
+{"t":"ZZ76543ꛯ1 \n01-02-2020","b":"ZZ76543ꛯ[SSN]","k":"[MEMBER_ID] \n01-02-2020"}

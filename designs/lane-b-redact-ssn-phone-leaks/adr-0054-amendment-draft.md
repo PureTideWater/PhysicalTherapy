@@ -48,7 +48,7 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     number 1) 7886924.4`, `Phone (20) 2555 0123`, the number's own first digits written as a list number: G1-1), and one
     more had been sent since the amount rule (`Telephone number 8 1234567893.1`, an eleven that starts with 1 to
     ef3e8d20). A copy of the head that always takes the second reading and reports a text where it is worse though no
-    such place was marked reported none on any run (@@AUDIT_LETTERS@@ fuzz letters by the builder, 206,772 by review
+    such place was marked reported none on any run (368,640 fuzz letters by the builder, 206,772 by review
     H1); always taking it was measured and not kept, at half as much time again on the slowest crafted letters.
 - **In every letter.**
   - *Another number's digits glued to an SSN's or a phone's own shape* (`gluedShape`, in the survivor scan): three
@@ -70,48 +70,50 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     555-012301.02.2020`, `(202) 555-012301-Jan-2020`); a month's word after a space begins a date of its own, and the
     number before it is kept (`802-45-678901 Jan 15, 2026`: review G2-1); glued to the number's last digits, its
     four-digit year may follow a space or a comma (`900-12-345601Jan 2020`: H1-2), while two digits there are as often
-    the day of a date of its own (`802-45-678901Jan 15, 2026`) and an amount that begins as a year does is none
-    (`366-535-16935Nov 2000.00`: I2-6). A reference's noun and what stands between it and its number name the whole
-    joined number, from the first of its joined groups, across a form's column of spaces and one line break after the
-    label's last word, and the letter keeps it (`Case No. 123-45-678901.00`, `Claim # 20260115-12-3456`, `Policy No.
-    01-23456-78-9012`), under a phone word or Medicare too where the noun stands nearer the number (`Medicare Summary
-    Notice 802-45-678901`, `Fax confirmation number 802-456-78901.50`, `Contact us regarding account 802-456-789012`);
-    no other word names one (`Patient # 900-12-3456150.00` is refused; `on file`, one phrase on one line, and a bare
-    `advice` are none: `Phone on file: 202-555-0123150.00`). A label wrapped over two or three lines is one label, a
-    rule drawn inside it too, never a blank line (`Member`, `ID`, `Number` on three lines; `Invoice`, a rule, `No.`:
-    I2-4), and a blank line or a rule drawn under the label stands between it and its number where the label ends as one
-    does, in a number word, a number's own name, or a colon or `#` on its own line or alone on the line under it, or the
-    rule is there: three or more dashes, equals signs, underscores, tildes, asterisks or box-drawing lines, a table's
-    bars, corners and box lines around them and the label's own full stop before them (`Claim Number:` and a blank line,
-    `Claim` over `#`, `ICN` over a rule, `| Claim |` over `|-------|` or `|:------|`: reviews G2-3, H2-1 and I2-2). A
-    heading over a blank line names nothing, nor one with line breaks before a word on the number's own line
-    (`REMITTANCE ADVICE`, a blank line and `900-12-3456150.00`; `STATEMENT`, blank lines and `No. 900-12-3456150.00`:
-    E1-7, H1-5), nor anything three line breaks up. Three underscores or more between a label and its number on one line
-    are a form's blank and stand between them too (`Claim Number: ______ 20260112345.01`), and so does a bar or a
-    box-drawing line; a `+` only as a table's corner beside a dash, because before a digit it is a phone's own sign
-    (`Provider: +1-202-555-0123150.00` is refused). Under a Social Security label no noun names a number: what follows
-    that label is the person's whatever stands between (`Social Security Account Number 900-12-345678`, `SSN on file:
-    900-12-345678` and `SSN/Member ID: 900-12-3456150.00` are refused), unless a claim's or another code's own label
-    stands nearer the number and is the scan's label for it (`SSN on file. Claim 802-45-678901.50` is kept); and the
-    label right before a noun makes the noun the label's own word however far the number stands after it and whatever is
-    glued before its shape (`Social Security Account Number:` and a column of spaces, `SSN Account
-    01-900-12-3456150.00`: G1-3). Under an SSN or phone label, or Medicare over an SSN's shape, with no such noun, the
-    shape is the person's number whatever is glued after it, in the number's usual writing too (`SSN No. 900-12-345678`,
-    `Phone number (202) 555-01234567`, `Medicare ID 900-12-345678`), with a point between its groups only where a date
-    is glued after its last four (`SSN 900.12 345601/01/2020`; `Contact: Billing 250.75 123456` and `Medicare rate 110
-    32.74420` are an amount and a number) or, between the second and third groups, where the number's own label, the
-    nearest, is a Social Security label, which is no ordinary word (`SSN 900 12.3456150.00`: G1-5; with the Act named
-    before Medicare the writing stays a rate: `Social Security Act. Medicare rate 110 32.74420`, H2-3), or where the
-    label, whatever it is, stands right before the number with no other word between them (`Medicare 917 16.2677535.06`,
-    `Call 900 77.3283150.00`: the gate's replay; `Medicare rate 110 32.74420` and `Contact: Billing 250 75.123456` have
-    a word between). With no structure and no label, a longer group is as often a reference's (`Tracking 123-456-78901`,
-    `Referral # 123-45-67890-01`, `2026-0115-123-4567`, `29 CFR 2590.715-2719`), and so are digits before the shape that
-    no date, amount or currency sign places: a year or a longer run (`20260115-12-3456`, `2020900-12-3456`), the cells
-    of a row joined by a bar (`1234567893|11|97110|2|150.00`), a file's name (`remit_20260115_01_0001.pdf`), a field
-    after a comma (`1,00123-456-7890`). Each is sent as at cc3dd7f6 (the review of the fix round's delta, D2-1, D2-2 and
-    D2-4), and a longer last group that nothing names is refused in a held letter only (`900-01-202012th`, `(202)
-    555-01234`); a line's own numbers written with parentheses are refused with it there (`Line (001) 420-97110`),
-    because the two cannot be told apart (reviews E2-5 and G1-4).
+    the day of a date of its own (`802-45-678901Jan 15, 2026`) and an amount that begins as a year does, its cents after
+    it, is none (`366-535-16935Nov 2000.00`: I2-6; a comma after the year ends the date and no more, so
+    `900-12-345601Jan 2020,150.00` is refused: J-1). A reference's noun and what stands between it and its number name
+    the whole joined number, from the first of its joined groups, across a form's column of spaces and one line break
+    after the label's last word, and the letter keeps it (`Case No. 123-45-678901.00`, `Claim # 20260115-12-3456`,
+    `Policy No. 01-23456-78-9012`), under a phone word or Medicare too where the noun stands nearer the number
+    (`Medicare Summary Notice 802-45-678901`, `Fax confirmation number 802-456-78901.50`, `Contact us regarding account
+    802-456-789012`); no other word names one (`Patient # 900-12-3456150.00` is refused; `on file`, one phrase on one
+    line, and a bare `advice` are none: `Phone on file: 202-555-0123150.00`). A label may wrap once and its number may
+    stand on the line under it: one line break at most inside the label and one at most between its last word and the
+    number (`Claim` over `Number: 20260112345.01`, `Claim Number:` over its number; a line break written CR LF is one:
+    review J-3). More than that makes the word a heading and no label: a blank line, a rule drawn under it, a third
+    line, a mark alone on a line (`REMITTANCE ADVICE`, a blank line and `900-12-3456150.00`: E1-7; `STATEMENT`, a point
+    alone on a line and `No. 900-12-3456150.00`: J-2). Four rounds read those layouts (a rule under a label, a blank
+    line after a label that ends as one does, a label of three lines, a table's cell under its header's rule: reviews
+    G2-3, H2-1, I2-2, I2-4 and I2-5), and each reading named a number it should not have or failed the next review
+    (H1-5, H2-4, H2-7, I1-1, J-2 to J-5); the reading was withdrawn for this one rule, the safer one, and what it
+    refuses is a recorded cost below. Three underscores or tildes or more between a label and its number on one line are
+    a form's blank and stand between them too (`Claim Number: ______ 20260112345.01`), and so does a bar or a
+    box-drawing line; a `+` never does: it is a phone's own sign (`Provider: +1-202-555-0123150.00` is refused). Under a
+    Social Security label no noun names a number: what follows that label is the person's whatever stands between
+    (`Social Security Account Number 900-12-345678`, `SSN on file: 900-12-345678` and `SSN/Member ID: 900-12-3456150.00`
+    are refused), unless a claim's or another code's own label stands nearer the number and is the scan's label for it
+    (`SSN on file. Claim 802-45-678901.50` is kept); and the label right before a noun makes the noun the label's own
+    word however far the number stands after it and whatever is glued before its shape (`Social Security Account
+    Number:` and a column of spaces, `SSN Account 01-900-12-3456150.00`: G1-3). Under an SSN or phone label, or Medicare
+    over an SSN's shape, with no such noun, the shape is the person's number whatever is glued after it, in the number's
+    usual writing too (`SSN No. 900-12-345678`, `Phone number (202) 555-01234567`, `Medicare ID 900-12-345678`), with a
+    point between its groups only where a date is glued after its last four (`SSN 900.12 345601/01/2020`; `Contact:
+    Billing 250.75 123456` and `Medicare rate 110 32.74420` are an amount and a number) or, between the second and third
+    groups, where the number's own label, the nearest, is a Social Security label, which is no ordinary word (`SSN 900
+    12.3456150.00`: G1-5; with the Act named before Medicare the writing stays a rate: `Social Security Act. Medicare
+    rate 110 32.74420`, H2-3), or where the label, whatever it is, stands right before the number with no other word
+    between them, a number word or two and a sign or two apart (`Medicare 917 16.2677535.06`, `Call 900 77.3283150.00`,
+    `Phone #: 900 77.3283150.00`, `Medicare ID No. 900 12.3456150.00`: the gate's replay and review J; `Medicare rate
+    110 32.74420` and `Contact: Billing 250 75.123456` have a word between). With no structure and no label, a longer
+    group is as often a reference's (`Tracking 123-456-78901`, `Referral # 123-45-67890-01`, `2026-0115-123-4567`, `29
+    CFR 2590.715-2719`), and so are digits before the shape that no date, amount or currency sign places: a year or a
+    longer run (`20260115-12-3456`, `2020900-12-3456`), the cells of a row joined by a bar
+    (`1234567893|11|97110|2|150.00`), a file's name (`remit_20260115_01_0001.pdf`), a field after a comma
+    (`1,00123-456-7890`). Each is sent as at cc3dd7f6 (the review of the fix round's delta, D2-1, D2-2 and D2-4), and a
+    longer last group that nothing names is refused in a held letter only (`900-01-202012th`, `(202) 555-01234`); a
+    line's own numbers written with parentheses are refused with it there (`Line (001) 420-97110`), because the two
+    cannot be told apart (reviews E2-5 and G1-4).
   - *A number glued to an amount's digits*: a run of nine digits or more before a point is no amount, so the scan reads
     the run; a run of eleven or more with cents after a point is refused (`900123456150.00`, `900123456150.00-120.00`)
     unless a noun names it (`ICN 12345678901234.01`); and an amount's cents with a nine or a ten right after them
@@ -166,8 +168,8 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     names: the scan starts no chain in it, so `Telephone call (2) 30.00 60.00` and `Fax 2) 15.00 30.00` are sent as the
     same rows are without it (review E2-1: the rule's first build counted the digit in the chain and refused such rows).
     The number in parentheses was first read only before a colon; the gate replayed both ways decided it: of the letters
-    that turn on it, @@PAREN_LEAK@@ hold a number written as an SSN or a phone and @@PAREN_AMOUNT@@ hold amounts, and
-    ef3e8d20 refuses every one of the second with the number in parentheses taken out. With no parentheses, colon or
+    that turn on it, 275 hold a number written as an SSN or a phone and 237 hold amounts, and ef3e8d20 refuses or
+    redacts every one of the second with the number in parentheses taken out. With no parentheses, colon or
     closing parenthesis, a digit and a space are as often the number's own first digit (`Phone 1 800 555 0199`): no list
     number.
   - *A pattern's placeholder is a number to what is glued to it*: where `[SSN]` or `[PHONE]` has a letter against it
@@ -244,25 +246,25 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     fail-safe rows stand as recorded.
   - *The differential gate* (975,489 letters). Against cc3dd7f6 and against ef3e8d20: no letter in which the older tree
     redacted or refused an identifier and this one sends it. Against ef3e8d20 this reading redacts or refuses a Social
-    Security number in 16,318 letters more, a phone number in 10,657, a name in 12,645, an initial in 635 and a date of
-    birth in 34. Of the letters ef3e8d20 sent unchanged and in which the gate's oracle places no number, it refuses 3,877
-    that hold the call's identifiers (the glued and look-alike forms), 603 after an SSN or phone word and 3,345 others
-    (1,725 of them the earlier reviewers' own letters, written with a number glued that the oracle cannot place), and it
+    Security number in 16,325 letters more, a phone number in 10,703, a name in 12,645, an initial in 635 and a date of
+    birth in 44. Of the letters ef3e8d20 sent unchanged and in which the gate's oracle places no number, it refuses 3,877
+    that hold the call's identifiers (the glued and look-alike forms), 603 after an SSN or phone word and 3,359 others
+    (1,519 of them from the earlier reviewers' own files, written with a number glued that the oracle cannot place), and it
     changes a date in 308 (a month's word that is the patient's name: ruling B), a number in 17 and an amount in 1 (a
     label read through its list number reads what ef3e8d20 reads without it: `Tel 7: is 802⏎8185.55` is `[PHONE].55`).
     It sends 33 letters ef3e8d20 refused, each for a patient whose name is a month's word, which ef3e8d20's own check
-    found left in its text and this reading redacts. Against cc3dd7f6 the three classes are 2,882, 7,479 and 559; the
+    found left in its text and this reading redacts. Against cc3dd7f6 the three classes are 2,882, 7,479 and 573; the
     13,575 must-stay letters and 4,483 with identifiers that cc3dd7f6 refused whole are sent, the range fix's gain kept;
     and 385 letters it refused that hold digits after an SSN or phone word and no number the oracle can place are sent:
     195 must-stay rows unchanged, 189 with the number redacted and one amount-shaped split of the kind recorded above.
   - *The fuzzers* the reviews left, each ef3e8d20 against this head on letters it generates, with fresh seeds after the
-    last change: no letter ef3e8d20 refuses that this head sends in 122,992 letters, and no match left as written and
-    sent in 58,496; the last PHI review's two fuzzers, 62,432 letters: 67 such letters, every one the patient whose names
-    are months.
+    last change: no letter ef3e8d20 refuses that this head sends in 162,416 letters, and no match left as written and
+    sent in 61,696; the first delta review's two fuzzers, 62,688 letters: 79 such letters, every one the patient whose
+    names are months.
   - *What the reading costs*, each the safer reading, each measured:
     - A label read through the call's own identifier or its list number refuses what ef3e8d20 refuses without them: 72
       of 12,000 letters of the must-stay fuzzer, 71 of them `Contact <own name>, <city>, IL <ZIP+4>` and one a `TTY:
-      711` line with the call's identifiers and a service row on the next line; the @@PAREN_AMOUNT@@ gate letters with a
+      711` line with the call's identifiers and a service row on the next line; the 237 gate letters with a
       number in parentheses; `Contact 1: Springfield, IL 62701-1234`; `TTY 1: Questions? 150.00 120.00 30.00`; and a
       numbered list on the line after a phone word (`please call` and `1) Member Services 97110 97140` on the next line:
       33 of 180 and 44 of 192 letters of review G2's grid for `1)` and `1:`, none for `1.`).
@@ -287,15 +289,26 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
       three digits, two digits, a point and four digits or more (`Medicare 110 32.74420`, `Fax 250 75.123456`); under a
       Social Security label whatever noun stands between (`Social Security Administration Notice 802-45-678901`, `SSN
       verified. Account 802-45-678901.50`); and a letter glued before a reference's digits, which un-names it (`Claim
-      W2026008123456.01`). Review D2's grids: @@D2_GRIDS@@. A noun names its number only with nothing but its own
+      W2026008123456.01`). Review D2's grids: 249 of 5,200 dashed shapes under a noun, 140 of 3,600 named references
+      after a phone word or Medicare, 8 of 6,000 rows of a table. A noun names its number only with nothing but its own
       connectors between them: under a header row of several columns, or after a label with other words before the
       number, a long run with a decimal suffix or a dashed shape with one has no name and is refused (every such row of
       review H2's tables: 195 of 195 with fourteen digits and `.0n`, 184 of 184 dashed; none where the number has no
-      suffix), and so under a rule wider than about 110 characters or after a noun and `on file`.
+      suffix), and so after a noun and `on file`. The same holds for such a number with more than one line break between
+      its label and it or inside its label: under a rule drawn under the label or a table's cell under its header's
+      rule, after a blank line, under a label of three lines or a mark alone on a line (`ICN`, a rule,
+      `12345678901234.01`; `| Claim |`, `|-------|`, `| 20260112345.01 |`; `Claim Number:`, a blank line,
+      `20260112345.01`; `Member`, `ID`, `Number`, `20260112345.01`). Four rounds of reviews measured these layouts as
+      they were read; on this head every letter of review H2's table under a rule, a blank line or a boxed cell is
+      refused (64 of 64 in each such layout) and 32 of 32 of review G2's, where the number has such a suffix; none with
+      the label and its number on one line, across one line break, under a wrapped label or after a form's blank, and
+      none where the number has no suffix. After a month's word glued to a number, a year-like number with one decimal
+      or three (`366-535-16935Nov 2000.5`). One or two underscores, or a blank's underscores cut by another character,
+      between a label and its number (`Claim __ 20260112345.01`).
     - A shape that starts inside a currency amount (`$1500-12-2026`, `$1000/250/5000`).
     - A name's digit-for-letter form among ordinary tokens: one of 651 common names against 26,143 tokens (`Week5` for
       WEEKS); `S83511A` for member 583511, and its pieces across a space; a month-and-year phrase for a patient named
-      May or June (the @@B_DATES@@ above); asterisks in a masked SSN's shape glued to a word (`Total due*** ** 2026`),
+      May or June (the 308 above); asterisks in a masked SSN's shape glued to a word (`Total due*** ** 2026`),
       and three digits or more before a masked SSN's shape (`Acct 123XXX-XX-1234`).
     - A letter that writes U+0001, U+0002 or U+0003 is refused whole, those ef3e8d20 sent among them, with a number
       redacted or not (`Our office: 555-0123. Paid<U+0002>`, `SSN<U+0001> 900 12 3456`).
@@ -303,11 +316,13 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     on both sides in `redact.leaks.test.ts`: a letter that holds a service period or a range writes no local number with
     no label; a segment that begins with a word and holds a bare nine or ten is not glued to a range's end; no letter
     holds the date of birth run together with a two-digit year. Its five seeds and three fresh ones pass on this head.
-  - *Time.* The slowest letter of the gate's timing set takes 857 ms (488 ms at cc3dd7f6; the budget is 3,000 ms), and
+  - *Time.* The slowest letter of the gate's timing set takes 1,035 ms (514 ms at cc3dd7f6; the budget is 3,000 ms), and
     the timing rows of `functions/denial-letter.test.ts` hold, four added. A rule of underscores or tildes between a
     noun and its number is read in time linear in its length: a round had read it with a repeated run inside a repeated
     group, a rule of sixty characters did not return (I1-1, I2-1), and a row of the leaks tests now holds rules of 48 to
-    5,000 characters under a second each.
+    5,000 characters under a second each. The round after read a table's corner `+` two ways, and twenty-eight of them
+    beside dashes took seconds (J-5): no connector is read two ways now, and a second row holds each connector
+    repeated 24 to 2,500 times.
   - *Reviews.* Two adversarial reviews of the design; two of the build (PHI, B1-1 to B1-14; what must stay, B2-1 to
     B2-9); of the fix round, two that the session's usage limit cut off before a report, which count for nothing but
     whose rows were each run and fixed (C1-1 to C1-4, C2-1 to C2-8), then two that ran to their reports (D1-1 and a note
@@ -320,7 +335,12 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     new refusals of ordinary text); two of the round after that (I1: no letter ef3e8d20 or the tree before refused is
     sent outside the recorded give-backs, over about 120,000 generated letters; I1-1 and I2-1: the check did not return
     on a long rule of underscores between a noun and a number; I2-2 to I2-6, two of them forms a round had begun to
-    refuse); and one of the round after that, with all three lenses (@@REVIEW_J@@). Every finding was run before it was
+    refuse); one of the round after that, with all three lenses (J-1 to J-5, none of them a letter ef3e8d20 protects:
+    a guard that turned a real year away, one CR LF read as a blank line, a table's corner read two ways, and two more
+    in the reading of a label over its number, which was then withdrawn); and one of that round's delta
+    (K: no letter ef3e8d20 refuses sent and no digit shown that it redacts in 192,590 generated letters, no
+    refusal of ordinary text outside the recorded costs and no slow letter; K-1 and five lesser forms, recorded with the
+    residuals below). Every finding was run before it was
     fixed, and each is a row of `redact.leaks.test.ts` on both sides; the gate, replayed against its last run after each
     round, found the forms a round re-opened (a number in parentheses after a label, a range after an amount's cents, a
     date after a bare nine or ten), which no review had, and the fuzzers found the letters ef3e8d20 refuses that a round
@@ -364,12 +384,22 @@ its separators, with spaces alone or with underscores before a year glued to a s
 under a phone word or Medicare where a reference's noun stands nearer (`Fax / Member ID 202-555-012378`), under any
 label where a claim's or another code's own label does (`SSN on file. Claim 900-12-345678`), and under a Social Security
 label out of its reach or written in a form no label reads, with a noun between (`Social Security number as shown on
-your record: 900-12-345678`, `S.S. No. on file: 900-12-345678`); under Medicare or a phone word, a point between the
-second and third groups of the usual writing (`Medicare 900 12.3456150.00`, `SSN/Medicare ID 900 12.3456150.00`), and
+your record: 900-12-345678`, `S.S. No. on file: 900-12-345678`); under Medicare or a phone word that does not stand
+right before the number (another word, three blanks or more, or three number words between them), a point between the
+second and third groups of the usual writing (`Medicare benefit 900 12.3456150.00`, `Phone:    900 77.3283150.00`), and
 under any label a middle dot or a slash there (`SSN 900 12/3456150.00`); a Social Security label and a noun with
 punctuation between them (`SSN: Account 01-900-12-3456150.00`); `on file` wrapped over two lines or written otherwise
-(`Phone on record: 202-555-0123150.00`); a number its label names across a rule, a form's blank or a `#` alone on the
-line between (`STATEMENT` over a rule and `900-12-3456150.00`, `Claim: ____ 900-12-3456150.00`); one or two digits
+(`Phone on record: 202-555-0123150.00`); a number its label names across a form's blank or one line break (`Claim:
+____ 900-12-3456150.00`; `STATEMENT`, `No.` on the next line and `900-12-3456150.00`); a shape with a month's word
+glued after it and a point and two digits after its year, an amount's cents or not (`900-12-345601Jan 2020.00`,
+`900-12-345601Jan 2020.12.31`); a Social Security label 24 characters before a number that a noun names, where a CR LF
+stands between them: a label's reach is counted in characters on every tree and a CR LF counts two, so the label owns
+the number in the writing with LF and the noun names it in the writing with CR LF (`SSN on file. Statement`, CR LF and
+`No. 900-12-3456150.00`: review K-1; ef3e8d20, cc3dd7f6 and every head of this build but one sent it, and one character
+further it is the label out of reach recorded above); the label right before a number with its parts in another order,
+with `is`, or with a word in parentheses (`Phone number is 900 77.3283150.00`, `Phone # : 900 77.3283150.00`, `Phone
+(cell): 900 77.3283150.00`); a noun read from the first letters a slice of 120 characters shows (`Overpayment`, 113
+points and a number: `PAYMENT`); one or two digits
 before a mask with no year, date, cents or currency sign there (`12XXX-XX-3456`), one cent digit or a decimal comma
 before it (`150.0XXX-XX-3456`, `150,00XXX-XX-3456`), mask characters with spaces between them, and underscores for the
 mask glued to a word outside a held letter (`Paid___-__-3456`); a list number with no parenthesis or colon (`Phone 2

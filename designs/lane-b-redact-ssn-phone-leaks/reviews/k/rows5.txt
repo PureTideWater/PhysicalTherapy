@@ -1,0 +1,25 @@
+# CR LF against LF between a label and a number written with spaces (is the edge the base's own?)
+"SSN:\r\n900 12 3456"
+"SSN:\n900 12 3456"
+"SSN Plan Number.\r\n900 12 3456150.00"
+"SSN Plan Number.\n900 12 3456150.00"
+"SSN Plan /Number.\r\n-900 12 3456150.00 150.00"
+"SSN Plan /Number.\n-900 12 3456150.00 150.00"
+"Phone:\r\n202 555 0123"
+"Phone:\n202 555 0123"
+# K-1 once more, the four writings of one letter, and the letter one blank shorter and one blank longer
+"SSN on file. Statement\r\nNo. 900-12-3456150.00"
+"SSN on file. Statement\nNo. 900-12-3456150.00"
+"SSN on file. Statement\r\rNo. 900-12-3456150.00"
+"SSN on file. Statement No. 900-12-3456150.00"
+"SSN on file. Statemen\r\nNo. 900-12-3456150.00"
+"SSN on file. Account\r\nNo. 900-12-3456150.00"
+"SSN on file.  Statement\nNo. 900-12-3456150.00"
+"SSN on file.  Statement\r\nNo. 900-12-3456150.00"
+# the label of a wrapped Social Security Account Number
+"Social Security\nAccount Number: 900-12-3456150.00"
+"Social Security\r\nAccount Number: 900-12-3456150.00"
+"Social Security\nAccount\nNumber: 900-12-3456150.00"
+# CR CR LF, one line end doubled
+"Claim Number:\r\r\n20260112345.01"
+"Claim\r\r\nNumber: 20260112345.01"

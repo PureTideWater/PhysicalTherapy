@@ -1,0 +1,17 @@
+letter "Dear June March,\nFaxes 5 (home): SYN/MEMB+ER0042; Telephone No. – March 5:188\nSoc. Sec. No. June 103\t7534·40763•278,93436. Contacted 5: SYNCLAIM0001\nPhones (home)\n\n5\nJune\n 090۱2-۳4۵6 cc June⋅March"
+K (M): "Dear [PATIENT_NAME],\nFaxes 5 (home): SYN/MEMB+ER0042; Telephone No. – [PATIENT_NAME] 5:188\nSoc. Sec. No. [PATIENT_NAME] [SSN]·40763•278,93436. Contacted 5: [CLAIM_1]\nPhones (home)\n\n5\n[PATIENT_NAME]\n 090۱2-۳4۵6 cc [PATIENT_NAME]"
+J (M): "Dear [PATIENT_NAME],\nFaxes 5 (home): SYN/MEMB+ER0042; Telephone No. – [PATIENT
+B (M): REFUSED
+"Faxes 5 (home): SYN/MEMB+ER0042; paid."
+   K (D): "Faxes 5 (home): SYN/MEMB+ER0042; paid." | (M): "Faxes 5 (home): SYN/MEMB+ER0042; paid."
+   J (D): "Faxes 5 (home): SYN/MEMB+ER0042; paid." | (M): "Faxes 5 (home): SYN/MEMB+ER0042; paid."
+   B (D): "Faxes 5 (home): SYN/MEMB+ER0042; paid." | (M): "Faxes 5 (home): SYN/MEMB+ER0042; paid."
+"ID SYN/MEMB+ER0042"
+   K (D): "ID SYN/MEMB+ER0042" | (M): "ID SYN/MEMB+ER0042"
+   J (D): "ID SYN/MEMB+ER0042" | (M): "ID SYN/MEMB+ER0042"
+   B (D): "ID SYN/MEMB+ER0042" | (M): "ID SYN/MEMB+ER0042"
+"Member ID SYN/MEMB+ER0042 on file."
+   K (D): "Member ID SYN/MEMB+ER0042 on file." | (M): "Member ID SYN/MEMB+ER0042 on file."
+   J (D): "Member ID SYN/MEMB+ER0042 on file." | (M): "Member ID SYN/MEMB+ER0042 on file."
+   B (D): "Member ID SYN/MEMB+ER0042 on file." | (M): "Member ID SYN/MEMB+ER0042 on file."
+no month words, B (M): "Dear Xxxx Xxxx,\nFaxes 5 (home): SYN/MEMB+ER0042; Telephone | K (M): "Dear Xxxx Xxxx,\nFaxes 5 (home): SYN/MEMB+ER0042; Telephone

@@ -1,0 +1,58 @@
+"SSN on file. Statement\r\nNo. 900-12-3456150.00" 
+    head: same | f2f9f05e: REFUSED | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN on file. Statement\nNo. 900-12-3456150.00" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN on file. Statement\r\rNo. 900-12-3456150.00" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: same | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN on file. Statement No. 900-12-3456150.00" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN on file.  Statement\nNo. 900-12-3456150.00" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN on file.  Statement\r\nNo. 900-12-3456150.00" 
+    head: same | f2f9f05e: REFUSED | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN on file Statement\r\nNo. 900-12-3456150.00" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN: see Member\r\nID Number: 900-12-3456150.00" 
+    head: same | f2f9f05e: REFUSED | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN: see Member\nID Number: 900-12-3456150.00" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN verified. Provider\r\nNo. 90012345601/02/2020" 
+    head: same | f2f9f05e: REFUSED | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN verified. Provider\nNo. 90012345601/02/2020" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"Service 01/01/2020-150.00 Paid\nSSN on file. Statement\r\nNo. 900-12-345678" 
+    head: same | f2f9f05e: REFUSED | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: REFUSED
+"Service 01/01/2020-150.00 Paid\nSSN on file. Statement\nNo. 900-12-345678" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: REFUSED
+"Dear Jane Zephyra,\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you." 
+    head: "Dear [PATIENT_NAME] [PATIENT_NAME],\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you." | f2f9f05e: REFUSED | 24ad1075: "Dear [PATIENT_NAME] [PATIENT_NAME],\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you." | a66fee45: "Dear [PATIENT_NAME] [PATIENT_NAME],\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you." | 8e599038: "Dear [PATIENT_NAME] [PATIENT_NAME],\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you." | base: "Dear [PATIENT_NAME] [PATIENT_NAME],\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you." | cc3dd7f6: "Dear [PATIENT_NAME] [PATIENT_NAME],\r\nSSN on file. Statement\r\nNo. 900-12-3456150.00\r\nThank you."
+"Dear Jane Zephyra,\nSSN on file. Statement\nNo. 900-12-3456150.00\nThank you." 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: "Dear [PATIENT_NAME] [PATIENT_NAME],\nSSN on file. Statement\nNo. 900-12-3456150.00\nThank you." | cc3dd7f6: "Dear [PATIENT_NAME] [PATIENT_NAME],\nSSN on file. Statement\nNo. 900-12-3456150.00\nThank you."
+"SSN verified. Account No. \r\n900-12-3456150.00" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN verified. Account No. \n900-12-3456150.00" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN verified. Account \r\nNo. 900-12-345678" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"SSN verified. Account \nNo. 900-12-345678" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: same | cc3dd7f6: same
+"SSN of the insured party\r\n900 12 3456" 
+    head: "SSN of the insured party\r\n[SSN]" | f2f9f05e: "SSN of the insured party\r\n[SSN]" | 24ad1075: "SSN of the insured party\r\n[SSN]" | a66fee45: "SSN of the insured party\r\n[SSN]" | 8e599038: "SSN of the insured party\r\n[SSN]" | base: "SSN of the insured party\r\n[SSN]" | cc3dd7f6: "SSN of the insured party\r\n[SSN]"
+"SSN of the insured party\n900 12 3456" 
+    head: "SSN of the insured party\n[SSN]" | f2f9f05e: "SSN of the insured party\n[SSN]" | 24ad1075: "SSN of the insured party\n[SSN]" | a66fee45: "SSN of the insured party\n[SSN]" | 8e599038: "SSN of the insured party\n[SSN]" | base: "SSN of the insured party\n[SSN]" | cc3dd7f6: "SSN of the insured party\n[SSN]"
+"SSN of the insured party:\r\n900 12 3456" 
+    head: "SSN of the insured party:\r\n[SSN]" | f2f9f05e: "SSN of the insured party:\r\n[SSN]" | 24ad1075: "SSN of the insured party:\r\n[SSN]" | a66fee45: "SSN of the insured party:\r\n[SSN]" | 8e599038: "SSN of the insured party:\r\n[SSN]" | base: "SSN of the insured party:\r\n[SSN]" | cc3dd7f6: "SSN of the insured party:\r\n[SSN]"
+"SSN of the insured party:\n900 12 3456" 
+    head: "SSN of the insured party:\n[SSN]" | f2f9f05e: "SSN of the insured party:\n[SSN]" | 24ad1075: "SSN of the insured party:\n[SSN]" | a66fee45: "SSN of the insured party:\n[SSN]" | 8e599038: "SSN of the insured party:\n[SSN]" | base: "SSN of the insured party:\n[SSN]" | cc3dd7f6: "SSN of the insured party:\n[SSN]"
+"Social Security No. listed\r\n900.12 3456" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: REFUSED | cc3dd7f6: REFUSED
+"Social Security No. listed\n900.12 3456" 
+    head: REFUSED | f2f9f05e: REFUSED | 24ad1075: REFUSED | a66fee45: REFUSED | 8e599038: REFUSED | base: REFUSED | cc3dd7f6: REFUSED
+"Tel of the billing office\r\n5550123" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"Tel of the billing office\n5550123" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"Tel of the billing offices\r\n5550123" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same
+"Tel of the billing offices\n5550123" 
+    head: same | f2f9f05e: same | 24ad1075: same | a66fee45: same | 8e599038: same | base: same | cc3dd7f6: same

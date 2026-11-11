@@ -1,0 +1,85 @@
+
+## C1 connectors: 252 letters; sum head 545ms, before 550ms, base 528ms; slowest head 15ms (us:5000:word:900-12-3456150.00), before 24ms, base 14ms (us3-sp:5000:noun-run-noun-run)
+
+## C2 connectors: 252 letters; sum head 633ms, before 56428ms, base 562ms; slowest head 28ms (box:5000:noun-run-noun-run), before 20550ms, base 16ms (dash:5000:word:900-12-3456150.00)
+  plus-dash:60:word:20260112345.01: head 0.7ms REFUSED | before NO RETURN in 70s (killed) | base 0.7ms same
+  box:5000:noun-run-noun-run: head 27.7ms REFUSED | before not run | base 14.7ms same
+
+## C3 connectors: 252 letters; sum head 663ms, before 602ms, base 545ms; slowest head 20ms (boxbar-sp:5000:word:900-12-3456150.00), before 16ms, base 25ms (boxbar-sp:5000:noun-run-noun-run)
+
+## C4 connectors: 252 letters; sum head 862ms, before 918ms, base 750ms; slowest head 39ms (NO:5000:noun-run-noun-run), before 37ms, base 28ms (ID:5000:noun-run-noun-run)
+
+## C5 connectors: 252 letters; sum head 779ms, before 746ms, base 588ms; slowest head 37ms (NUM:5000:noun-run-noun-run), before 34ms, base 16ms (IS-sp:5000:noun-run-noun-run)
+
+## C6 connectors: 252 letters; sum head 749ms, before 772ms, base 593ms; slowest head 24ms (words:5000:noun-run-noun-run), before 33ms, base 31ms (words:5000:noun-run-noun-run)
+
+## N nouns in a row: 324 letters; sum head 10725ms, before 10341ms, base 7491ms; slowest head 210ms (NoClaimNo:5000:reach:900-12-3456150.00), before 198ms, base 301ms (Remittance-lf3:5000:reach:20260112345.01)
+  ClaimNo:5000:reach:20260112345.01: head 170.1ms same | before 149.9ms same | base 78.0ms same
+  ClaimNo:5000:reach:802-45-678901.50: head 178.9ms same | before 154.2ms same | base 63.1ms same
+  Remit:5000:reach:20260112345.01: head 163.8ms same | before 140.5ms same | base 89.5ms same
+  Remit:5000:word:20260112345.01: head 168.7ms REFUSED | before 131.5ms REFUSED | base 86.8ms same
+  Remit:5000:reach:802-45-678901.50: head 157.0ms same | before 145.0ms same | base 85.6ms same
+  Remit:5000:word:802-45-678901.50: head 151.1ms REFUSED | before 141.3ms REFUSED | base 90.0ms same
+  Remit:5000:reach:900-12-3456150.00: head 165.2ms same | before 150.6ms same | base 87.7ms same
+  Remit:5000:word:900-12-3456150.00: head 162.5ms REFUSED | before 136.1ms REFUSED | base 87.1ms same
+  PreAuth:5000:reach:20260112345.01: head 150.9ms same | before 135.5ms same | base 64.6ms same
+  PreAuth:5000:reach:802-45-678901.50: head 156.8ms same | before 144.6ms same | base 64.1ms same
+  PreAuth:5000:reach:900-12-3456150.00: head 185.6ms same | before 124.8ms same | base 64.9ms same
+  PreAuth:5000:word:900-12-3456150.00: head 182.0ms REFUSED | before 120.7ms REFUSED | base 64.3ms same
+  NoClaimNo:5000:reach:20260112345.01: head 196.1ms same | before 194.2ms same | base 122.3ms same
+  NoClaimNo:5000:word:20260112345.01: head 193.5ms REFUSED | before 188.4ms REFUSED | base 93.4ms same
+  NoClaimNo:5000:reach:802-45-678901.50: head 197.6ms same | before 198.1ms same | base 103.2ms same
+  NoClaimNo:5000:word:802-45-678901.50: head 187.3ms REFUSED | before 185.1ms REFUSED | base 140.6ms same
+  NoClaimNo:5000:reach:900-12-3456150.00: head 209.9ms same | before 195.9ms same | base 109.6ms same
+  NoClaimNo:5000:word:900-12-3456150.00: head 189.5ms REFUSED | before 193.7ms REFUSED | base 110.1ms same
+
+## L label right before: 120 letters; sum head 2477ms, before 3337ms, base 3213ms; slowest head 485ms (a number per label xN:5000:900 77.3283150.00), before 958ms, base 769ms (a number per label xN:5000:250 75.123456)
+  a number per label xN:5000:900 77.3283150.00: head 484.5ms REFUSED | before 958.2ms same | base 626.1ms same
+  a number per label xN:5000:250 75.123456: head 469.4ms REFUSED | before 655.0ms same | base 768.9ms same
+
+## D dates after a number: 27 letters; sum head 2341ms, before 2660ms, base 2226ms; slowest head 723ms (5Nov 2000.00 xN:5000), before 754ms, base 726ms (Seq ...Jan 2020,150.00 xN:5000)
+  01Jan xN:5000: head 234.1ms same | before 165.2ms same | base 123.6ms same
+  5Nov 2000.00 xN:5000: head 723.2ms same | before 754.1ms same | base 574.0ms same
+  12-September., 2020.00xN:5000: head 340.2ms REFUSED | before 416.5ms REFUSED | base 326.6ms same
+  Seq ...Jan 2020,150.00 xN:5000: head 531.0ms REFUSED | before 675.4ms same | base 726.3ms same
+
+## W1 whole letters of 20,000 characters: 4 letters; sum head 439ms, before 399ms, base 303ms; slowest head 153ms (line 2: "Phone #: 250 75.123456\n"), before 145ms, base 115ms (line 2: "Phone #: 250 75.123456\n")
+  line 0: "Claim -+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+": head 72.8ms REFUSED | before 72.0ms REFUSED | base 58.2ms same
+  line 1: "Claim ___ ~~~ ___ see 802-45-678901.50\n": head 98.1ms REFUSED | before 86.2ms REFUSED | base 74.7ms same
+  line 2: "Phone #: 250 75.123456\n": head 153.1ms REFUSED | before 144.8ms same | base 115.2ms same
+  line 3: "Row 366-535-169012-September., 2000.00\n": head 114.5ms same | before 95.5ms REFUSED | base 54.7ms same
+
+## W2 whole letters of 20,000 characters: 4 letters; sum head 365ms, before 302ms, base 273ms; slowest head 155ms (line 4: "Claim\nNumber\n20260112345.01\n"), before 99ms, base 96ms (line 4: "Claim\nNumber\n20260112345.01\n")
+  line 4: "Claim\nNumber\n20260112345.01\n": head 155.3ms same | before 99.4ms same | base 95.6ms same
+  line 5: "STATEMENT\n\nNo. 900-12-3456150.00\n": head 72.3ms REFUSED | before 90.8ms REFUSED | base 82.1ms same
+  line 6: "| Claim | 20260112345.01 |\n": head 102.3ms changed | before 69.6ms changed | base 70.0ms changed
+  line 7: "Claim                                       ": head 35.4ms same | before 42.7ms same | base 25.4ms same
+
+## W3 whole letters of 20,000 characters: 4 letters; sum head 384ms, before 471ms, base 293ms; slowest head 115ms (line 9: "Member ID 900-12-3456150.00 Claim (S)(S)(S) "), before 164ms, base 102ms (line 8: "Tel. No. #: 900 77.3283150.00\n")
+  line 8: "Tel. No. #: 900 77.3283150.00\n": head 101.5ms REFUSED | before 163.7ms same | base 101.8ms same
+  line 9: "Member ID 900-12-3456150.00 Claim (S)(S)(S) ": head 114.5ms same | before 158.0ms same | base 98.4ms same
+  line 10: "Claim NO NO NO NO NO NO NO NO NO NO NO NO NO": head 93.8ms REFUSED | before 84.7ms REFUSED | base 37.0ms same
+  line 11: "Seq 90012345601Jan 2020,150.00 ": head 74.5ms REFUSED | before 64.8ms same | base 55.5ms same
+
+## W4 whole letters of 20,000 characters: 4 letters; sum head 247ms, before 290ms, base 237ms; slowest head 111ms (line 12: "Medicare ID No. 110 32.74420 "), before 138ms, base 104ms (line 12: "Medicare ID No. 110 32.74420 ")
+  line 12: "Medicare ID No. 110 32.74420 ": head 111.4ms REFUSED | before 137.8ms same | base 104.3ms same
+  line 13: "Claim _~_~_~_~_~_~_~_~_~_~_~_~_~_~_~_~_~_~_~": head 52.9ms same | before 44.9ms same | base 60.5ms same
+  line 14: "Claim (S)(S)(S)(S)(S)(S)(S)(S)(S)(S)(S)(S)(S": head 48.9ms REFUSED | before 60.7ms REFUSED | base 40.1ms same
+  line 15: "Statement ___ ___ ___ ___ ___ ___ ___ ___ __": head 33.6ms REFUSED | before 46.8ms REFUSED | base 32.4ms same
+
+## W5 held letters of 20,000 characters: 6 letters; sum head 523ms, before 533ms, base 502ms; slowest head 134ms (held + line 3: "Row 366-535-169012-September., 2000.00\n"), before 126ms, base 137ms (held + line 3: "Row 366-535-169012-September., 2000.00\n")
+  held + line 0: "Claim -+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+": head 67.0ms REFUSED | before 64.1ms REFUSED | base 92.6ms same
+  held + line 3: "Row 366-535-169012-September., 2000.00\n": head 134.1ms REFUSED | before 96.8ms REFUSED | base 137.3ms same
+  held + line 6: "| Claim | 20260112345.01 |\n": head 107.0ms changed | before 125.5ms changed | base 69.3ms changed
+  held + line 9: "Member ID 900-12-3456150.00 Claim (S)(S)(S) ": head 109.1ms REFUSED | before 107.8ms REFUSED | base 92.6ms same
+  held + line 12: "Medicare ID No. 110 32.74420 ": head 81.8ms REFUSED | before 108.2ms REFUSED | base 75.6ms same
+  held + line 15: "Statement ___ ___ ___ ___ ___ ___ ___ ___ __": head 24.2ms REFUSED | before 30.5ms REFUSED | base 34.2ms same
+
+## W6 one run of 20,000 characters: 5 letters; sum head 295ms, before 275ms, base 268ms; slowest head 84ms (Claim + 6,600 "(S)" + number), before 102ms, base 86ms (2,000 numbers, each under "Phone No. No.:")
+  Claim + 19,970 underscores + number: head 37.4ms REFUSED | before 25.9ms REFUSED | base 30.7ms same
+  Claim + 9,985 "_~" + see number: head 20.5ms REFUSED | before 21.9ms REFUSED | base 22.7ms same
+  Claim + 6,600 "(S)" + number: head 84.2ms REFUSED | before 44.5ms REFUSED | base 62.2ms same
+  all 16 lines, mixed: head 70.1ms REFUSED | before 80.3ms REFUSED | base 66.7ms same
+  2,000 numbers, each under "Phone No. No.:": head 83.2ms REFUSED | before 102.4ms same | base 85.8ms same
+
+total 77s
