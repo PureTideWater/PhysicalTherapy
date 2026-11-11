@@ -1,0 +1,212 @@
+== C2-1 a name part of two or three letters in the patient's own script is no longer the name (matchesIn, the B2-7 fix)
+"Пациент: Зефира Ли. Г-жа Ли получила 12 визитов."   patient ЗЕФИРА ЛИ, born 1980-03-14
+      base: SENT "Пациент: [PATIENT_NAME]. Г-жа [PATIENT_NAME] получила 12 визитов." | aea2852d: SENT "Пациент: [PATIENT_NAME]. Г-жа [PATIENT_NAME] получила 12 визитов." | 405314b4: SENT "Пациент: [PATIENT_NAME]. Г-жа Ли получила 12 визитов." | head a64cc9af: SENT "Пациент: [PATIENT_NAME]. Г-жа [PATIENT_NAME] получила 12 визитов."
+"Dear Ms. Ли:"   patient ЗЕФИРА ЛИ, born 1980-03-14
+      base: SENT "Dear Ms. [PATIENT_NAME]:" | aea2852d: SENT "Dear Ms. [PATIENT_NAME]:" | 405314b4: SENT same | head a64cc9af: SENT "Dear Ms. [PATIENT_NAME]:"
+"Patient 泽飞 was approved for 12 visits."   patient 泽飞, born 1980-03-14
+      base: SENT "Patient [PATIENT_NAME] was approved for 12 visits." | aea2852d: SENT "Patient [PATIENT_NAME] was approved for 12 visits." | 405314b4: SENT same | head a64cc9af: SENT "Patient [PATIENT_NAME] was approved for 12 visits."
+"Patient: 王 泽飞"   patient 泽飞 王, born 1980-03-14
+      base: SENT "Patient: [PATIENT_NAME] [PATIENT_NAME]" | aea2852d: SENT "Patient: [PATIENT_NAME] [PATIENT_NAME]" | 405314b4: SENT same | head a64cc9af: SENT "Patient: [PATIENT_NAME] [PATIENT_NAME]"
+"환자: 김 제피"   patient 제피 김, born 1980-03-14
+      base: SENT "환자: [PATIENT_NAME] [PATIENT_NAME]" | aea2852d: SENT "환자: [PATIENT_NAME] [PATIENT_NAME]" | 405314b4: SENT "환자: 김 [PATIENT_NAME]" | head a64cc9af: SENT "환자: [PATIENT_NAME] [PATIENT_NAME]"
+"Dear 김:"   patient 제피 김, born 1980-03-14
+      base: SENT "Dear [PATIENT_NAME]:" | aea2852d: SENT "Dear [PATIENT_NAME]:" | 405314b4: SENT same | head a64cc9af: SENT "Dear [PATIENT_NAME]:"
+"Αγαπητή κα Ρω:"   patient ΖΕΦΥΡΑ ΡΩ, born 1980-03-14
+      base: SENT "Αγαπητή κα [PATIENT_NAME]:" | aea2852d: SENT "Αγαπητή κα [PATIENT_NAME]:" | 405314b4: SENT same | head a64cc9af: SENT "Αγαπητή κα [PATIENT_NAME]:"
+"Dear Ms. Ли:"   patient ZEPHYRA ЛИ, born 1980-03-14
+      base: SENT "Dear Ms. [PATIENT_NAME]:" | aea2852d: SENT "Dear Ms. [PATIENT_NAME]:" | 405314b4: SENT same | head a64cc9af: SENT "Dear Ms. [PATIENT_NAME]:"
+  (control) "Если вы говорите на русском языке"   patient LINH HA, born 1980-03-14
+      base: SENT same | aea2852d: SENT "Если вы говорите [PATIENT_NAME] русском языке" | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Dear Linh Ha, Ms. Ha was approved."   patient LINH HA, born 1980-03-14
+      base: SENT "Dear [PATIENT_NAME], Ms. [PATIENT_NAME] was approved." | aea2852d: SENT "Dear [PATIENT_NAME], Ms. [PATIENT_NAME] was approved." | 405314b4: SENT "Dear [PATIENT_NAME], Ms. [PATIENT_NAME] was approved." | head a64cc9af: SENT "Dear [PATIENT_NAME], Ms. [PATIENT_NAME] was approved."
+== C2-2 a reference within 24 characters after a phone word or "Medicare" is refused (gluedShape: labeled, LOOSE_JOIN)
+"Contact Information\nMember ID: 1234-567-89012"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Contact Information\nPolicy: 1234-567-89012"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Questions? Call us.\nSubscriber ID: 2345-67-89012"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Call us. Member number 2345-678-9012"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Fax confirmation 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Fax confirmation 2026-123-\n45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Call tracking number 2345-678-9012"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Call log 2026-015-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Please call about account 2345-678-9012."
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Phone inquiry 2026-123-45678 was closed."
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Medicare Secondary Payer 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Medicare Provider Number 12345-67-8901"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Medicare crossover 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Medicare remittance 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Medicare Redetermination Number 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Contact Jane Zephyra about policy 1234-567-89012"
+      base: SENT "Contact [PATIENT_NAME] [PATIENT_NAME] about policy 1234-567-89012" | aea2852d: SENT "Contact [PATIENT_NAME] [PATIENT_NAME] about policy 1234-567-89012" | 405314b4: REFUSED | head a64cc9af: SENT "Contact [PATIENT_NAME] [PATIENT_NAME] about policy 1234-567-89012"
+"Contact: Billing 250.75 123456"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Telephone visit 250.00   1234567"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"RE: Medicare crossover claim for Jane Zephyra\n\nMedicare Secondary Payer 2026-123-45678 has been closed. The primary payer allowed $112.50 for CPT 97110 on 01/05/2026.\n\nIf you disagree, you may appeal within 180 days.\n"
+      base: SENT "RE: Medicare crossover claim for [PATIENT_NAME] [PATIENT_NAME]\n\nMedicare Secondary Payer 2026-123-45678 has been closed. The primary payer all… | aea2852d: SENT "RE: Medicare crossover claim for [PATIENT_NAME] [PATIENT_NAME]\n\nMedicare Secondary Payer 2026-123-45678 has been closed. The primary payer all… | 405314b4: REFUSED | head a64cc9af: SENT "RE: Medicare crossover claim for [PATIENT_NAME] [PATIENT_NAME]\n\nMedicare Secondary Payer 2026-123-45678 has been closed. The primary payer all…
+"Dear Jane Zephyra:\n\nYour request for physical therapy (CPT 97110, 97140) was approved for 12 visits from 01/05/2026 through 03/31/2026.\n\nContact Information\nPolicy: 1234-567-89012\nMember Services: 1-800-555-0199 (TTY: 711)\n"
+      base: SENT "Dear [PATIENT_NAME] [PATIENT_NAME]:\n\nYour request for physical therapy (CPT 97110, 97140) was approved for 12 visits from 01/05/2026 through 0… | aea2852d: SENT "Dear [PATIENT_NAME] [PATIENT_NAME]:\n\nYour request for physical therapy (CPT 97110, 97140) was approved for 12 visits from 01/05/2026 through 0… | 405314b4: REFUSED | head a64cc9af: SENT "Dear [PATIENT_NAME] [PATIENT_NAME]:\n\nYour request for physical therapy (CPT 97110, 97140) was approved for 12 visits from 01/05/2026 through 0…
+  (control) "Call Reference Number 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Contact us about claim 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Medicare Advantage authorization 2026-123-45678"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Policy: 1234-567-89012"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+== C2-3 a reference its own noun names is refused: the any-word naming is gone, and NAMED_BEFORE reads no "(ICN)", pipe, comma or quote
+"TCN # 2026008123456.01"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Payment ID 2026008123456.01"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Referral # 123-45-67890-01"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Receipt # 123-456-78901-2"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Rx # 1234-567-89012-01"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Internal Control Number (ICN): 2026008123456.01"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Document control number (DCN): 2026-0115-123-4567"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim number (ICN) 123-45-67890-01"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim Number | 2026-0115-123-4567"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim Number, 2026-0115-123-4567"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim number \"2026-0115-123-4567\""
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim #/Line: 2026-0115-123-4567"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim Number   Service Date\n2026-0115-123-4567   01/05/2026"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Referral # 01-23456-78-9012"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Precertification # 01-23456-78-9012"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"TCN 2026008123456.01"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"CCN: 2026008123456.01"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"MRN 12345678901.01"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Dear Provider:\n\nReferral # 123-45-67890-01 for Jane Zephyra was received on 01/05/2026. Internal Control Number (ICN): 2026008123456.01.\n"
+      base: SENT "Dear Provider:\n\nReferral # 123-45-67890-01 for [PATIENT_NAME] [PATIENT_NAME] was received on 01/05/2026. Internal Control Number (ICN): 202600… | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT "Dear Provider:\n\nReferral # 123-45-67890-01 for [PATIENT_NAME] [PATIENT_NAME] was received on 01/05/2026. Internal Control Number (ICN): 202600…
+  (control) "Claim number: 2026-0115-123-4567"
+      base: SENT same | aea2852d: REFUSED | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Policy No. 01-23456-78-9012"
+      base: SENT same | aea2852d: REFUSED | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Payer Claim Control Number 2026008123456.01"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Inquiry # 123-45-67890-01"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+== C2-4 a comma (or a period) and then eleven or twelve digits is read as cents and a number; ",150.00" after a long ID as an amount's end (gluedShape)
+"ICN 12345678901,12345678902"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claims 20260112345,20260112346,20260112347"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"NDC 00002143380,00002143480"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Reference numbers: 202601123456,202601123457"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Trace numbers 21000021234,21000021235"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"CPT,ICN,Billed\n97110,20260112345,150.00"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim,Amount\n20261234567890,150.00"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Remit 20261234567,150.00"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Claim 20261234567,01/05/2026"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+"Dear Provider:\n\nWe reprocessed the following claims for Jane Zephyra (Member ID SYNMEMBER0042).\n\nICN,Service Date,Billed,Paid\n20260112345,01/05/2026,150.00,96.40\n20260112346,01/07/2026,150.00,96.40\n\nPayment was issued by EFT on 01/20/2026. Questions? Call Provider Services at 1-800-555-0199.\n"
+      base: SENT "Dear Provider:\n\nWe reprocessed the following claims for [PATIENT_NAME] [PATIENT_NAME] (Member ID [MEMBER_ID]).\n\nICN,Service Date,Billed,Paid… | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT "Dear Provider:\n\nWe reprocessed the following claims for [PATIENT_NAME] [PATIENT_NAME] (Member ID [MEMBER_ID]).\n\nICN,Service Date,Billed,Paid…
+  (control) "ICN 12345678901, 12345678902"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "ICN 1234567890,1234567891"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Claim 20261234567890,150.00"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+== C2-5 held letters: the day as an ordinal's word, and "may" after an ordinal or at a line's end (heldBirthUnread)
+"Service 01/01/2020-150.00 Paid\nThe first March payment was applied."   patient JANE Q ZEPHYRA, born 1980-03-01
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nWe received your third June claim."   patient JANE Q ZEPHYRA, born 2001-06-03
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nCoverage begins in March. First, verify eligibility."   patient JANE Q ZEPHYRA, born 1980-03-01
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nOnly a second may\nbe requested."   patient JANE Q ZEPHYRA, born 1980-05-02
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nYou may first\ncall Member Services."   patient JANE Q ZEPHYRA, born 1980-05-01
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nVisits after the 12th may require prior authorization."   patient JANE Q ZEPHYRA, born 1980-05-12
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nVisits over 12 may\nrequire prior authorization."   patient JANE Q ZEPHYRA, born 1980-05-12
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nClaims received after the 15th may be denied."   patient JANE Q ZEPHYRA, born 1975-05-15
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nA copay of $20 may\napply."   patient JANE Q ZEPHYRA, born 1975-05-20
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+"Service 01/01/2020-150.00 Paid\nYou may 1) call us or 2) write to us."   patient JANE Q ZEPHYRA, born 1980-05-01
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: SENT same
+  (control) "The first March payment was applied."   patient JANE Q ZEPHYRA, born 1980-03-01
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Service 01/01/2020-150.00 Paid\nVisits over 12 may require prior authorization."   patient JANE Q ZEPHYRA, born 1980-05-12
+      base: SENT same | aea2852d: REFUSED | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Service 01/01/2020-150.00 Paid\nThe first March payment was applied."   patient JANE Q ZEPHYRA, born 1980-03-02
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+== C2-6 a masked account number of four, two and four after "#" (MASKED_SSN_GLUED, three to five mask characters)
+"Acct#XXXX-XX-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Deposited to Acct#XXXX-XX-1234 on 01/15/2026."
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Card#XXXX-XX-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+"Acct#****-**-1234"
+      base: SENT "Acct#*[SSN]" | aea2852d: SENT "Acct#*[SSN]" | 405314b4: SENT "Acct#*[SSN]" | head a64cc9af: SENT "Acct#*[SSN]"
+"Loan#XXXX XX 1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: SENT same
+  (control) "Acct #XXXX-XX-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "Acct#XXXX1234"
+      base: SENT same | aea2852d: REFUSED | 405314b4: SENT same | head a64cc9af: SENT same
+== C2-7 a label read through its list number (G5) refuses what follows it
+"Contact 1: Springfield, IL 62701-1234"
+      base: SENT same | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: REFUSED
+"Contact (1): Springfield, IL 62701-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: REFUSED
+"Fax 1 (main): Dayton, OH 45402-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: REFUSED
+"Tel. 2: Dayton, OH 45402-1234"
+      base: SENT same | aea2852d: SENT same | 405314b4: REFUSED | head a64cc9af: REFUSED
+  (control) "Contact: Springfield, IL 62701-1234"
+      base: REFUSED | aea2852d: REFUSED | 405314b4: REFUSED | head a64cc9af: REFUSED
+== C2-8 the pieces rule: neighbouring tokens read as one of the call's identifiers (confusedMatchesIn)
+"Plan of care: Week-5 reassessment"   patient ANNA WEEKS, born 1980-03-14
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT "Plan of care: [PATIENT_NAME] reassessment" | head a64cc9af: SENT same
+"See Field-5 of the claim form."   patient SALLY FIELDS, born 1980-03-14
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT "See [PATIENT_NAME] of the claim form." | head a64cc9af: SENT same
+"House Bill-13 takes effect 01/01/2027."   patient BILLIE VANTREE, born 1980-03-14
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT "House [PATIENT_NAME] takes effect 01/01/2027." | head a64cc9af: SENT same
+"07/18/2027  S9131  CO  6  $4242.00  $876.00  $3,323.30  CO-253"   patient JANE Q ZEPHYRA, born 1980-03-14, member ID 202759131
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT "07/18/[MEMBER_ID]  CO  6  $4242.00  $876.00  $3,323.30  CO-253" | head a64cc9af: SENT "07/18/[MEMBER_ID]  CO  6  $4242.00  $876.00  $3,323.30  CO-253"
+"Diagnosis codes: M62.81 M48.061 I69.354"   patient JANE Q ZEPHYRA, born 1980-03-14, member ID 061169
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT "Diagnosis codes: M62.81 M48.[MEMBER_ID].354" | head a64cc9af: SENT "Diagnosis codes: M62.81 M48.[MEMBER_ID].354"
+  (control) "Plan of care: Week 5 reassessment"   patient ANNA WEEKS, born 1980-03-14
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same
+  (control) "07/18/2027  S9131  CO  6  $4242.00"   patient JANE Q ZEPHYRA, born 1980-03-14, member ID 202759132
+      base: SENT same | aea2852d: SENT same | 405314b4: SENT same | head a64cc9af: SENT same

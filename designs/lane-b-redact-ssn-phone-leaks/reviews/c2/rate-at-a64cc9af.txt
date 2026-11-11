@@ -1,0 +1,37 @@
+lines 100000 seed 20261111; sample: [{"tag":"law.policy","text":"Certificate of Coverage, Section 11, page 112"},{"tag":"ref.8digits","text":"Grievance ID 35277410 dated Mar 25, 2027"},{"tag":"hdr.page","text":"8 / 6"}]
+A: birth dates in the universe (1940-2015) 27759; lines with a run of six digits or more 31694; candidate (line, birth date) pairs 4525; stride 1
+A: pairs run 4525 in 29s; head refuses and base sends 2966; of them sent by head for a birth date that is not in the line 2620; of them sent by aea2852d too (the fix round's six-digit rule) 2176
+A: expected lines refused per 100,000 lines after a held range, patient's birth date uniform over 27759: new against base 0.094; new in the fix round 0.078
+A: by class [["ref.npi",258],["svc.row.1500",183],["ref.1-11",180],["ref.7digits",167],["ref.check",162],["ref.claim.digits",156],["ref.14digits",148],["ref.12digits",142],["ref.tin",133],["ref.8digits",120],["ref.LLL8",113],["ref.provider.id",101]]
+   1954-04-27 ref.claim.digits "Claim 205659912270454"
+   2003-01-27 hdr.date "Mailed 20270103"
+   1944-10-07 ref.7digits "Appeal case number: 4410072 was denied."
+   1944-12-02 ref.npi "Group NPI 1202443531"
+   1944-02-12 ref.npi "Group NPI 1202443531"
+   1954-03-19 ref.7digits "Invoice # 1190354"
+   1960-12-27 ref.npi "Rendering provider NPI 2712602731"
+   1941-07-27 svc.row.1500 "4 02/11/2027 04/02/2025 49 97542 KX AB 59,658.00 2 2707418309"
+   2013-12-26 ddl.time "Effective 20261213 through 11-28-2027"
+   1982-12-01 ref.12digits "Policy number 316059821201."
+   1967-10-31 svc.row.1500 "2 04/07/2025 09/23/2025 11 97116 RT AB 568.69 8 1344103167"
+   2013-01-13 ref.group "Group #: 0113130"
+B: names of 5 to 8 letters 491; generated lines with a joined token 45207/100000, candidates in them 0; ordinary joined tokens 72397, name-token pairs 35546927, candidates 40
+B: confirmed on the head (differs from base) 40 of 40 candidates, names 10; refused 0; the recorded plural-and-5 class 32; new since aea2852d 40
+   MILLIE <- "Mill-13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   MILLIE <- "MILL-13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   MILLIE <- "Mill_13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   MILLIE <- "MILL_13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   BILLIE <- "Bill-13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   BILLIE <- "BILL-13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   BILLIE <- "Bill_13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+   BILLIE <- "BILL_13" (token) base SENT same | aea SENT same | head SENT "See [PATIENT_NAME] below."
+C: windows of two to four neighbouring tokens (number joiners, a space among them) that read as a digits-only ID of 6 to 12 with a letter for a digit: 630 in 100000 lines, distinct IDs 371, by length [[6,90],[7,64],[8,60],[9,216],[10,48],[11,59],[12,93]]
+   member ID 202759131 <- "2027  S9131" in "07/18/2027  S9131  CO  6  $4242.00  $876.00  $3,323.30  CO-253": base SENT same | aea SENT same | head SENT "07/18/[MEMBER_ID]  CO  6  $4242.00  $876.00  $3,323.30  CO-253"
+   member ID 061169 <- "061 I69" in "Diagnosis codes: M62.81 M48.061 I69.354": base SENT same | aea SENT same | head SENT "Diagnosis codes: M62.81 M48.[MEMBER_ID].354"
+   member ID 115506 <- "115 S06" in "Diagnosis codes: G81.94 L03.115 S06.0X0A": base SENT same | aea SENT same | head SENT "Diagnosis codes: G81.94 L03.[MEMBER_ID].0X0A"
+   member ID 202558948 <- "2025  S8948" in "06/11/2025  S8948  76  3  $311.00  $4,140.35  $1203.00  CO-253": base SENT same | aea SENT same | head SENT "06/11/[MEMBER_ID]  76  3  $311.00  $4,140.35  $1203.00  CO-253"
+   member ID 20255894876 <- "2025  S8948  76" in "06/11/2025  S8948  76  3  $311.00  $4,140.35  $1203.00  CO-253": base SENT same | aea SENT same | head SENT "06/11/[MEMBER_ID]  3  $311.00  $4,140.35  $1203.00  CO-253"
+   member ID 202558948763 <- "2025  S8948  76  3" in "06/11/2025  S8948  76  3  $311.00  $4,140.35  $1203.00  CO-253": base SENT same | aea SENT same | head SENT "06/11/[MEMBER_ID]  $311.00  $4,140.35  $1203.00  CO-253"
+   member ID 5894876 <- "S8948  76" in "06/11/2025  S8948  76  3  $311.00  $4,140.35  $1203.00  CO-253": base SENT same | aea SENT same | head SENT "06/11/2025  [MEMBER_ID]  3  $311.00  $4,140.35  $1203.00  CO-253"
+   member ID 58948763 <- "S8948  76  3" in "06/11/2025  S8948  76  3  $311.00  $4,140.35  $1203.00  CO-253": base SENT same | aea SENT same | head SENT "06/11/2025  [MEMBER_ID]  $311.00  $4,140.35  $1203.00  CO-253"
+DONE

@@ -12,4 +12,9 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   report, so it does not count as a review**; its reproductions and its triage file (`triage-at-a64cc9af.txt`) were read
   and every row re-run by the builder, and fixed in f0d6e914 (`repro-at-f0d6e914.txt`). `gen.mts`, `fz2.mts`, `cls.mts`
   and `corpus2.mts` are its letter generator, its base-against-head fuzzer, its classifier and its corpus scan.
-- The fix round's must-stay reviewer was cut off too and left no findings file.
+- `c2/`: the fix round's must-stay review (C2-1 to C2-8), on a64cc9af. **Cut off by the usage limit before its report
+  too, so no review either**; its reproductions (`repro-at-a64cc9af.txt`) and its rate measurement (`rate.mts`,
+  `rate-at-a64cc9af.txt`) were read and every row re-run by the builder, and fixed in 0c0975a6 to 0ddfa078
+  (`repro-at-19454724.txt`: 7 of 102 rows still differ from the base, the recorded costs C2-7 and C2-8's member IDs).
+- `c1/withheld.mts`: over `c1/gen.mts`'s letters, a letter whose sent text differs from `redactLetter`'s (a match left as
+  written) and that the check does not refuse. It must print `SENT_WITHHELD 0`.

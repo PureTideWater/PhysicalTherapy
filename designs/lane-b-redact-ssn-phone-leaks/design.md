@@ -5,6 +5,14 @@ regressions; must-stay damage and logic).
 Base `claude/build-platform` ef3e8d20 (#138). Synthetic data only. Records: ADR 0054 (the amendment of 2026-11-04,
 rulings A, A' and B), `LANES.md` Queues item 22, the status file `approval-summaries/lane-b-redact-ssn-phone-leaks-status.md`.
 
+> **Read first (2026-11-11 09:40 UTC):** the rules as built at 0ddfa078 are stated in `adr-0054-amendment-draft.md` beside
+> this file (the text that goes into ADR 0054 in the PR, its measured section still to fill from the final gate). The
+> sections "Every letter" and "A held letter only" below are the design as it stood at a64cc9af, before the findings
+> recovered from the two cut-off reviewers of the fix round (`reviews/c1`, `reviews/c2`); where they differ, the draft
+> amendment is right: ef3e8d20's reading stands and the look-alike reading only adds; structure decides the glued shape
+> (four digits or more, a currency amount, cents or a date before it; cents after a point, a second shape or a date after
+> it); the masked rule, the "may" rule, the list number in parentheses and the name pieces are narrower.
+
 ## What must hold
 1. Every pinned row of `redact.residuals.json` classes `ssnPhone` (697, ruling A) and `ownIdentifierA` (406, ruling A')
    flips to redacted or refused; the gate against cc3dd7f6 reads SSN 0 and phone 0.

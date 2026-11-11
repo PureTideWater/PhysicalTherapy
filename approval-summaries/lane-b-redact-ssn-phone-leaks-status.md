@@ -4,52 +4,46 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 09:12 UTC)
-- **State:** the code is at **f0d6e914** = WIP `co-001/wip-redact-ssn-phone-leaks` on origin (typecheck and lint clean;
-  worktree `/home/user/leaks`, branch `co-001/redact-ssn-phone-leaks`, not on origin; no PR). Not merged, not reviewed
-  to the end: **the review of the fix round's delta is owed** (below), and **the tests are not yet brought to the code**.
-- **Blocker met at about 07:50 UTC:** the account's usage limit stopped the two delta reviewers and the test builder
-  mid-run (each ended with "out of usage credits"; none wrote a report), and the container restarted at 09:00 UTC. The
-  files survived. A stopped agent counts as no review. The session itself kept running.
-- **What is done since the two build reviews** (their findings and reproductions: `designs/lane-b-redact-ssn-phone-leaks/
-  reviews/b1` and `b2` on this branch; the design note beside them states every rule):
-  - The fix round (405314b4, a64cc9af): the look-alike fold for the call's own identifiers only; a match ef3e8d20 did not
-    make applied by the letter reader only where the scan as ef3e8d20 read it does not refuse the letter without it;
-    structure decides the glued shape; digit-for-letter forms of five characters or more; the smaller fixes.
-  - Three corrections from replaying the gate on it (0105cd96): a person's label refuses the glued shape only with a clean
-    start or structure before it; a number in parentheses is a list number only before a colon; the year of a date written
-    with its month's word, glued before the shape, is another number's.
-  - **f0d6e914, from the stopped PHI reviewer's own files** (`reviews/c1`: its reproduction script, triage and fuzzers; every
-    row re-run by W5, all 33 now read as ef3e8d20 or safer): the call's own identifiers are read as ef3e8d20 read them
-    first (the plain fold), and the look-alike reading only adds, each addition a fresh match; the patterns read the
-    settled matches alone; the glued checks run on both folds in the strict check; the glued-label space is a second
-    reading, never a replacement; the check's patterns read through the call's own placeholders, so whatever redaction
-    left as written is found again and the letter refused.
-- **Measured on f0d6e914:** pinned rows ruling A 697 of 697 (632 refused, 65 redacted), ruling A' 406 of 406 (200 redacted,
-  206 refused), ruling B 5 of 5; the three reviews' reproduction scripts (b1, b2, c1) read as before or safer.
-  **Not yet run on it:** the reviewers' fuzzers, the must-stay fuzzers, MOD-16's stress, the gate, the six test files.
-- **Gate on 405314b4 (before the corrections; outputs `/home/user/gate-out/p8-*`, not kept):** no PHI class against either
-  tree; against ef3e8d20: dates changed 309, refused that ef3e8d20 sent 3,435 clean, 605 after an SSN or phone word, 7,697
-  with identifiers (a64cc9af turned 3,815 of these back into redactions; 0105cd96 the 287 parenthesised list numbers);
-  slowest 1,134 ms against cc3dd7f6's 752 ms on a loaded machine (budget 3,000 ms).
-- **Tests:** the earlier builder's six files pass at aea2852d (3,675 tests). At f0d6e914 they are NOT brought to the code:
-  about 26 expectations pinned before the fix round fail on purpose (nine rows of `redact.leaks.test.ts`, four "recorded
-  residual" rows and one timing row of `denial-letter.test.ts`, eleven residual rows fixed by the regenerated table, which
-  is committed), and the fix round's rules have no tests of their own yet. The base's property tests (MOD-13, MOD-15,
-  MOD-16) passed at a64cc9af.
-- **Next, in order:** (1) the fuzzers and the gate on f0d6e914; (2) the tests brought to the code and new fixed tests per
-  rule (B1-1 to B2-9, C1-1 to C1-4), the five MOD-16 seeds; (3) **two adversarial reviews of the fix round's delta
-  (aea2852d to the head), each with a narrow scope, about 20 tool calls, its report as its final message**, every finding
-  verified before it is fixed; (4) the final gate; (5) ADR 0054's amendment (draft `/home/user/work/adr-amendment.md`, not
-  kept; its text predates f0d6e914) and test-matrix rows MOD-21 and MOD-22; (6) the full suite once, the base merged
-  (the packets verifier's fold may have moved `redact.ts` to `packages/redact/src/`: `confusables.ts` and the new tests move
-  beside it by hand), the push, the draft PR from the template, CI, the merge under rule 2a, one line to the orchestrator.
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 09:38 UTC)
+- **State:** code and tests at **0ddfa078** = WIP `co-001/wip-redact-ssn-phone-leaks` on origin (typecheck and lint clean;
+  the six redaction test files passed at 19454724, 3,773 tests; worktree `/home/user/leaks`, branch
+  `co-001/redact-ssn-phone-leaks`, not on origin; no PR). **Owed before the merge: two adversarial reviews of the fix
+  round's delta that run to their report.** The two started at 07:35 UTC were stopped by the account's usage limit at
+  about 07:50 UTC with no report (a stopped agent is no review); the container restarted at 09:00 UTC.
+- **What happened since the two build reviews** (their reproductions: `designs/lane-b-redact-ssn-phone-leaks/reviews/`):
+  the fix round (405314b4, a64cc9af); three corrections from replaying the gate (0105cd96); then **the two cut-off
+  reviewers' own files were read and every row re-run by W5** (`reviews/c1`, `reviews/c2`), and fixed:
+  - f0d6e914: ef3e8d20's reading of the call's own identifiers stands (the plain fold) and the look-alike reading only
+    adds, each addition a fresh match; the patterns read the settled matches alone; the glued checks run on both folds in
+    the strict check; the glued-label space is a second reading; the check's patterns read through the call's own
+    placeholders, so a match left as written is found again and the letter refused.
+  - 0c0975a6 to 0ddfa078: digits before the glued shape are another number's only as a currency amount's, four or more,
+    an amount's cents or a date's end, and after it only as cents after a point, a second shape or a date; more
+    reference nouns and separators name a number; cents only after a point; the masked rule, the verb "may", a day in
+    words (not read), a list number in parentheses, a name's pieces; the call's own number found through a label's list
+    number is fresh too.
+- **Measured on 0ddfa078 so far:** pinned rows ruling A 697 of 697 (632 refused, 65 redacted), ruling A' 406 of 406 (200
+  redacted, 206 refused), ruling B 5 of 5. The four reviews' reproduction scripts: b1 and c1 read as ef3e8d20 or safer on
+  every row; b2 as ef3e8d20 but the leak forms now refused and the recorded costs; c2: 95 of 102 rows as ef3e8d20, the
+  other 7 recorded costs. The cut-off PHI reviewer's fuzzer: 0 letters ef3e8d20 refused that the head sends (85,888
+  letters; 200 at a64cc9af) and 0 matches left as written and sent (`reviews/c1/withheld.mts`, about 316,000 letters).
+  **Running now:** every fuzzer and the gate on 0ddfa078 (outputs `/home/user/work/p9/fuzz-all.out`,
+  `/home/user/gate-out/p9-*`, not kept).
+- **The rules as built:** `designs/lane-b-redact-ssn-phone-leaks/adr-0054-amendment-draft.md` (the text for ADR 0054, its
+  measured section still to fill); `design.md` beside it is the history.
+- **Next, in order:** (1) read the fuzzers and the gate; (2) fill the amendment's measured section, put it in ADR 0054,
+  add test-matrix rows MOD-21 and MOD-22; (3) MOD-16's five seeds and three fresh on the property files; (4) **the two
+  delta reviews (aea2852d to the head), each a narrow scope, about 20 tool calls, its report as its final message**;
+  verify, fix, and a review of any fix; (5) the final gate if the code moved; (6) the full suite once, the base merged
+  (the packets verifier's fold may have moved `redact.ts` to `packages/redact/src/`: `confusables.ts` and the new tests
+  move beside it by hand), the push, the draft PR from the template, CI, the merge under rule 2a, one line to the
+  orchestrator.
 - **MOD-23** (allocated 2026-11-11, `LANES.md` Queues item 26): `Zephy ra`, `Zephy. ra` and `Z e p h y r a` are sent in
-  clear outside a held letter on cc3dd7f6, ef3e8d20 and this head alike. Reproduce:
+  clear outside a held letter on cc3dd7f6, ef3e8d20 and this head alike; pinned in `redact.leaks.test.ts`. Reproduce:
   `cd designs/lane-b-redact-ssn-phone/gate/leaks-scripts && node --import ../ts-resolve.mjs name-forms.mts <redact.ts of each tree>`.
 - **Container paths (not kept):** `/home/user/fix` (scratch copy of the head's `redact.ts`), `/home/user/gate` and
   `/home/user/gate-out`, `/home/user/tree-cc3`, `/home/user/tree-ef3`, `/home/user/work` (fuzzers `d1p6/`, `d2p6/`, `b1fix/`,
-  `b2fix/`; `stress16.mts`; `p8/` outputs), `/home/user/review-b1`, `-b2`, `-c1`, `-c2` (the reviewers' scratch).
+  `b2fix/`, `c1fix/`; `stress16.mts`; `p8/`, `p9/` outputs), `/home/user/review-b1`, `-b2`, `-c1`, `-c2`.
 - **Trailers:** every commit ends with `Co-Authored-By: Claude <noreply@anthropic.com>` and the session's
   `Claude-Session:` line. Nothing already pushed is rewritten.
 
@@ -121,3 +115,4 @@ counter comes from the orchestrator.
 - 2026-11-11T07:06Z (W5): the builder's tests in (WIP 360824db); both build reviews delivered and reproduced: four regressions against ef3e8d20 and two claimed-closed forms (review 1), five major must-stay findings (review 2). The fix round is in progress in a scratch worktree.
 - 2026-11-11T07:31Z (W5): the fix round for both build reviews is built (WIP 405314b4): every regression row reads as ef3e8d20 or safer, review 1's fuzzers find 0 un-refusals, the pinned rows hold; 26 tests wait for their expectations; the gate runs.
 - 2026-11-11T09:12Z (W5): the usage limit stopped the two delta reviewers and the test builder at about 07:50Z, with no reports; the container restarted at 09:00Z. The gate on the fix round read no PHI class; three corrections from its replay (0105cd96); the stopped PHI reviewer's reproductions re-run and fixed (f0d6e914). The delta review is still owed.
+- 2026-11-11T09:38Z (W5): the cut-off must-stay reviewer's reproductions re-run and fixed too; the tests brought to the code (six files pass at 19454724); WIP 0ddfa078; the fuzzers and the gate run on it. The delta review is still owed.
