@@ -1,0 +1,86 @@
+"ICN\n_____\n12345678901234.01" 
+    head: same | before: REFUSED | base: same
+"Claim Number\n____________\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Claim Number:\n____________\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Claim Number\n~~~~~~~~~~~~\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Claim Number\n+------------+\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Reference\n_________\n802-45-678901.50" 
+    head: same | before: REFUSED | base: same
+"| Claim |\n|-------|\n| 20260112345.01 |" 
+    head: same | before: REFUSED | base: same
+"ICN\n-----\n12345678901234.01" 
+    head: same | before: same | base: same
+"Claim Number: ______ 20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Claim Number    Service Date    Billed\n20260112345.01    01/15/2026    150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"ICN | DOS | Billed\n12345678901234.01 | 01/15/2026 | 150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Claim Number    Service Date    Billed\n20260112345    01/15/2026    150.00" 
+    head: same | before: same | base: same
+"Claim Number\n------------\n20260112345.01    01/15/2026    150.00" 
+    head: same | before: same | base: same
+"under section 1833 of the Social Security Act. Medicare rate 110 32.74420" 
+    head: same | before: REFUSED | base: same
+"Social Security Act. Medicare rate 110 32.74420" 
+    head: same | before: REFUSED | base: same
+"SSN: Medicare rate 110 32.74420" 
+    head: same | before: REFUSED | base: same
+"Social Security/Medicare rate 110 32.74420" 
+    head: same | before: REFUSED | base: same
+"Soc. Sec. and Medicare 110 32.74420" 
+    head: same | before: REFUSED | base: same
+"Medicare rate 110 32.74420" 
+    head: same | before: same | base: same
+"SSN: Medicare claim 110 32.74420" 
+    head: same | before: same | base: same
+"REMITTANCE ADVICE\n\n\n\nNo. 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"REMITTANCE ADVICE\n\n\n\n900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Statement\n\n\n\nID: 802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"ID: 802-45-678901.50" 
+    head: REFUSED | before: REFUSED | base: same
+"Claim\n\n\n\nLine: 802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"Statement\n\nNumber 802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"This notice is based on\nFile Number: 12345678901234.01" 
+    head: same | before: REFUSED | base: same
+"Auto-pay: ON\nFile No. 802-45-678901.50" 
+    head: same | before: REFUSED | base: same
+"Claim number on-file: 12345678901234.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Account number on file: 802-45-678901.50" 
+    head: REFUSED | before: REFUSED | base: same
+"File Number: 12345678901234.01" 
+    head: same | before: same | base: same
+"Statement\n.  \n802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n-||\n802-45-678901.50" 
+    head: REFUSED | before: same | base: same
+"REMITTANCE ADVICE\n-  \n900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n--\n802-45-678901.50" 
+    head: REFUSED | before: REFUSED | base: same
+"MemberSSN 8 1234567893.1" 
+    head: same | before: REFUSED | base: same
+"PatientSSN 8 1234567893.1" 
+    head: same | before: REFUSED | base: same
+"Assoc. Sec. 8 1234567893.1" 
+    head: same | before: REFUSED | base: same
+"Member SSN 8 1234567893.1" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN   Claim Number: 20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Social Security Check 12345678901.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Seq 0000012345/1/2026" 
+    head: REFUSED | before: REFUSED | base: same
+"Remittance\n\nAdvice 12345678901234.01" 
+    head: REFUSED | before: same | base: same

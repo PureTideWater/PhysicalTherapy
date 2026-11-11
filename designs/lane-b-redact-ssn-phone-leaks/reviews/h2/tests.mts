@@ -1,0 +1,45 @@
+// The letters timed by t.mts (one process per letter and tree).
+export const JANE = { pseudonym: 'p', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['ZZ7654321'] };
+export const JA = { pseudonym: 'p', names: ['JA Q ZE'], datesOfBirth: ['1980-03-14'], memberIds: ['ZZ7654321'] };
+export const CLAIMS = [{ claimId: 'c', patientPseudonym: 'p', claimNumbers: ['SYNCLAIM0001'] }];
+const big = (unit: string, n = 20000) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+const rule = (ch: string) => `Claim Number\n${ch.repeat(Math.ceil(5000 / ch.length))}\n12345678901234.01`;
+export const TESTS: [string, string, any?][] = [
+  ['20k: label + list number before every number', big('Phone 1: 97110 150.00\n')],
+  ['20k: own name before every number', big('Call Jane Zephyra 97110 150.00\n')],
+  ["'1/1/20-1.00Ja ' x 7000, patient JA Q ZE", '1/1/20-1.00Ja '.repeat(7000), JA],
+  ["'1/1/20-1.00Ja ' x 1750, patient JA Q ZE", '1/1/20-1.00Ja '.repeat(1750), JA],
+  ['20k: Fax 2) 15 00 30 00', big('Fax 2) 15 00 30 00\n')],
+  ['20k: Contact (2) three amounts', big('Contact (2) 150.00 120.00 30.00\n')],
+  ['20k: Contact own name, city, ZIP+4', big('Contact Jane Zephyra, Springfield, IL 62701-1234\n')],
+  ['20k: Fax own claim, code, units, amount', big('Fax SYNCLAIM0001 97110 2 150.00\n')],
+  ['20k: ICN long-run decimal on every line', big('ICN 12345678901234.01 97110 150.00\n')],
+  ['20k: plain service rows, no trigger (control)', big('01/15/2026 97110 2 150.00 120.00\n')],
+  ['20k: one list-number label, then plain rows', 'Phone 1: 97110\n' + big('01/15/2026 97110 2 150.00 120.00\n', 19985)],
+  ['20k: one ICN long-run decimal, then plain rows', 'ICN 12345678901234.01\n' + big('01/15/2026 97110 2 150.00 120.00\n', 19978)],
+  ['20k: held range rows under a list-number label', big('Phone 1: 01/15/2026-150.00 Paid 97110\n')],
+  ['rule: 5000 hyphens', rule('-')], ['rule: 5000 equals', rule('=')], ['rule: 5000 underscores', rule('_')], ['rule: 5000 dots', rule('.')], ['rule: 5000 asterisks', rule('*')], ['rule: 5000 tildes', rule('~')], ['rule: 5000 of "- "', rule('- ')], ['rule: 5000 of "|+"', rule('|+')], ['rule: 5000 em dashes', rule('—')],
+  ['60 rule lines of 80 hyphens between label and number', `Claim Number\n${('-'.repeat(80) + '\n').repeat(60)}12345678901234.01`],
+  ['5000 spaces before a named number', `Claim Number${' '.repeat(5000)}12345678901234.01`],
+  ['5000 tabs before a named number', `Claim Number${'\t'.repeat(5000)}12345678901234.01`],
+  ['5000 line breaks before a number', `Claim Number${'\n'.repeat(5000)}12345678901234.01`],
+  ['2500 of " \\n" before a number', `Claim Number${' \n'.repeat(2500)}12345678901234.01`],
+  ['5000 spaces before a shape with cents', `Claim${' '.repeat(5000)}802-45-678901.50`],
+  ['5000 spaces before a bare run with a date glued', `Seen${' '.repeat(5000)}12345678901/02/2026`],
+  ['"Jan " x 1250 then a year glued to a shape', `${'Jan '.repeat(1250)}2026802-45-6789`],
+  ['"JANUARY" x 714 glued, then a year glued to a shape', `${'JANUARY'.repeat(714)} 2026802-45-6789`],
+  ['"Sept. " x 833 then a year glued to a shape', `${'Sept. '.repeat(833)}2026802-45-6789`],
+  ['"1 Jan " x 833 then a year glued to a shape', `${'1 Jan '.repeat(833)}2026802-45-6789`],
+  ['bare run then "-Jan" x 1250', `12345678901${'-Jan'.repeat(1250)}-2026`],
+  ['"No. " x 1250 between a noun and its number', `Claim ${'No. '.repeat(1250)}12345678901234.01`],
+  ['"ON " x 1666 then FILE and a number', `${'ON '.repeat(1666)}FILE 12345678901234.01`],
+  ['Remittance, 5000 spaces, Advice, number', `Remittance${' '.repeat(5000)}Advice 12345678901234.01`],
+  ['"1) " x 1666 after Phone', `Phone ${'1) '.repeat(1666)}97110 150.00`],
+  ['20k: 11-digit run + date rows', big('12345678901/02/2026 150.00\n')],
+  ['20k: named shape with cents rows', big('Claim 802-45-678901.50 01/15/2026\n')],
+  ['20k: Social Security Account Number column rows', big('Social Security Account Number:        802-45-678901.50\n')],
+  ['20k: parenthesized line numbers with month-word dates', big('(001) 420-97110 Jan 15, 2026 150.00\n')],
+  ['20k: ten-digit run + /9/2020', big('1234567899/9/2020 ')],
+  ['20k: year-first date after a bare nine', big('8021234562026-1-5 ')],
+  ['20k: SSN label + loose pointed groups', big('SSN 802 12.3456150.00\n')],
+];

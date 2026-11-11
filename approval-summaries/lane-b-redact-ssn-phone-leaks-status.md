@@ -4,53 +4,52 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 13:05 UTC)
-- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **a66fee45** (8e599038, the fix round after E1 and E2,
-  plus d3657ba2 and a66fee45: the fix round after G1 and G2 and the fuzzers' run on 8e599038). The six redaction test
-  files pass (3,969 tests); typecheck and lint clean; the pinned rows read ruling A 697 of 697 (632 refused, 65
-  redacted), A' 406 of 406 (200 redacted, 206 refused), B 5 of 5, and the residual table needs no change. Branch
-  `co-001/redact-ssn-phone-leaks` not on origin; no PR. Reports go to the orchestrator of record in `lanes/STATE.md`
-  (session_019i9ifBCrxfV35CFDVHLTad).
-- **Reviews so far:** design x2; build x2 (B1, B2); the fix round's delta: C1 and C2 cut off (no review; their rows re-run
-  and fixed), then D1 and D2 on 0ddfa078 (fixed in cf5094a0); E1 and E2 on 5d685267 (fixed in 8e599038); **G1 (PHI: G1-1
-  blocking, G1-2 to G1-5) and G2 (must-stay: G2-1 to G2-3 major, G2-4 to G2-7) ran to their reports on 8e599038**
-  (`reviews/g1`, `reviews/g2`). Every finding was run first; all are fixed in d3657ba2 and a66fee45 but what
-  `reviews/recorded-for-the-fifth-review.md` lists as a cost or a residual. **Owed: a review of the delta 8e599038 to
-  a66fee45 (`git diff` of `redact.ts`, 337 lines): H1 (PHI) and H2 (must-stay), briefs `reviews/brief-h1.md`,
-  `brief-h2.md`.** Both were started at 13:04 UTC in this session and read `/home/user/fix` (= a66fee45); if this session
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 13:56 UTC)
+- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **24ad1075** (a66fee45, the fix round after G1 and G2,
+  plus the fix round after H1 and H2). The six redaction test files pass (4,012 tests); typecheck and lint clean; the
+  pinned rows read ruling A 697 of 697 (632 refused, 65 redacted), A' 406 of 406 (200 redacted, 206 refused), B 5 of 5,
+  and the residual table needs no change. Branch `co-001/redact-ssn-phone-leaks` not on origin; no PR. Reports go to the
+  orchestrator of record in `lanes/STATE.md` (session_019i9ifBCrxfV35CFDVHLTad).
+- **Reviews so far:** design x2; build x2 (B1, B2); C1 and C2 cut off (no review; their rows re-run and fixed); D1 and D2
+  on 0ddfa078; E1 and E2 on 5d685267; G1 and G2 on 8e599038; **H1 (PHI: H1-1 to H1-5) and H2 (must-stay: H2-1 to H2-8)
+  ran to their reports on a66fee45** (`reviews/h1`, `reviews/h2`). H1 found the scan's by-construction claim to hold (no
+  letter the base's scan refuses was sent over about 207,000 letters) and one older letter family the base refuses for
+  its own control character (H1-1). Every finding was run first; all are fixed in 24ad1075 but what
+  `reviews/recorded-for-the-sixth-review.md` lists as a cost or a residual. **Owed: a review of the delta a66fee45 to
+  24ad1075 (`git diff` of `redact.ts`, 231 lines): I1 (PHI) and I2 (must-stay), briefs `reviews/brief-i1.md`,
+  `brief-i2.md`.** Both were started at 13:56 UTC in this session and read `/home/user/fix` (= 24ad1075); if this session
   ends before they report, they do not count and are run again. A finding that the base and the tree before send too,
   beside a rule and not a regression, is a residual to record in the amendment, not a new round.
-- **What the fuzzers found on 8e599038 (12:25 UTC), before G1 reported it:** 22 letters ef3e8d20 refuses were sent,
-  because the round took a label's list number out of chains ef3e8d20 counts it in; one more letter ef3e8d20 refuses
-  had been sent since an earlier round (a run of nine digits or more before a decimal point is no amount to the strict
-  reading; ef3e8d20 chained it under its label). **Fix (d3657ba2): the scan keeps ef3e8d20's reading by construction**
-  (`survivorIn` over `survivorRead`): wherever the strict reading may hold less in a chain than ef3e8d20 held (`departs`),
-  the text is read once more with `strict` false, which is ef3e8d20's scan, and the worse answer is taken. An audit copy
-  that always takes the second reading and reports a text where it is worse though nothing was flagged printed none over
-  about 165,000 fuzz letters. Always taking the second reading was measured and not kept: about half as much time again
-  on the slowest crafted letters, against a budget the timing rows hold at 3 s.
-- **What else d3657ba2 and a66fee45 changed:** most of it narrows what 8e599038 over-broadened. A month's word across a
-  space is a date of its own (G2-1); a bar, an underscore, a backslash or a tilde is a date's joiner after a bare run
-  under a Social Security label alone, and after that date stands an amount, a second date or no digit (G2-2); a noun's
-  line breaks are counted after the label's last word, two allowed where a rule stands under the label or the label ends
-  as one does (G2-3); the date before a year is read with tight separators and a month's word with no day at its word's
-  start (G2-6); a one-digit day after a year-first date again (G1-2); the Social Security label right before the noun
-  again (G1-3); the area code in parentheses refuses a held letter again (G1-4; E2-5 is a recorded cost); a point
-  between the second and third groups under a Social Security label (G1-5); "on file" in its writings (G2-4); a nine
-  and a one-digit date with slashes (G2-7).
-- **Measured on 5d685267 (the last full gate):** no PHI class against ef3e8d20 or cc3dd7f6; slowest letter 857 ms
-  (budget 3,000 ms). **Running since 13:02 UTC on a66fee45:** the reproduction scripts, the fuzzers with the seeds that
-  found the 22 letters and fresh ones, the audit copy, the last two reviews' generators, then the gate on both trees
-  (`/home/user/work/p13/fuzz-all.out`, `/home/user/gate-out/p13-*`, not kept).
-- **The rules as built:** `designs/lane-b-redact-ssn-phone-leaks/adr-0054-amendment-draft.md` (current for 8e599038; to be
-  brought to a66fee45 and the final gate's numbers, then put at the end of ADR 0054 in the worktree).
+- **What 24ad1075 changed:** a letter that writes one of the checks' own marks (U+0001 to U+0003) is refused (H1-1); the
+  scan's second reading is ef3e8d20's own (no Social Security label glued after a letter: H2-8), and where that label
+  alone makes a label of the strict reading the text is read both ways; a month's word glued to a number with its year
+  after a space or a comma (H1-2); after the date that follows a bare nine or ten, another number with a structure of
+  its own in any writing (H1-3); the hyphen bullet (H1-4); a noun's line breaks counted inside the label and after it,
+  the colon that ends a label on the label's own line, a rule of three rule characters, of underscores, tildes and
+  box-drawing lines too (H1-5, H2-1, H2-4, H2-7); the Social Security label is the number's own (H2-3); "on file" on one
+  line (H2-6).
+- **The scan keeps ef3e8d20's reading by construction (d3657ba2, 24ad1075):** `survivorIn` over `survivorRead`; wherever
+  the strict reading reads a label ef3e8d20 did not or may hold less in a chain (`departs`), the text is read once more
+  with `strict` false, which is ef3e8d20's scan line for line, and the worse answer is taken. The audit copy
+  (`/home/user/fix3`, the head with the second reading always taken and a line printed where it is worse though nothing
+  was marked) has printed nothing on any run.
+- **Measured on a66fee45 (13:02 to 13:25 UTC):** the reproduction scripts as on 5d685267; every PHI fuzzer 0 letters the
+  base refuses that the head sends but the month-named patient's (ruling B); the audit copy 0; G2's rate generators 0 on
+  its three major families; the must-stay fuzzers as before (72 of 12,000; 359 of 20,000 held letters). **The gate did
+  not run on a66fee45** (the run was started under the heavy-step lock that `run.sh` takes itself and waited on it:
+  start the gate with no lock around it). The last full gate is on 5d685267: no PHI class against ef3e8d20 or cc3dd7f6.
+  **Running since 13:54 UTC on 24ad1075:** the reproduction scripts, every fuzzer and the last reviews' generators, the
+  audit copy, then the gate on both trees (`/home/user/work/p14/fuzz-all.out`, `/home/user/gate-out/p14-*`, not kept).
+- **The rules as built:** `designs/lane-b-redact-ssn-phone-leaks/adr-0054-amendment-draft.md` (current for a66fee45; to be
+  brought to 24ad1075 and the final gate's numbers, then put at the end of ADR 0054 in the worktree).
 - **Next, in order:** (1) the two reviews of the delta: run each finding, fix a regression, record a residual; a review
   of any fix's delta; (2) read the fuzzers and the gate (no PHI class on either tree; replay class changes against p11);
-  (3) the amendment into ADR 0054, the test-matrix rows brought to the rules; commit; (4) the eight seeds (1034253323,
-  -1074798020, 383403599, -460602131, -594136649, 7777777, -31415926, 271828182) on the property and leaks files; (5) the
-  final gate if the code moved; (6) the full suite once, the base merged once (below), the push through the hook, the
-  draft PR from the template (`pr-body-draft.md` beside the amendment draft), CI, the merge under rule 2a, one line to
-  the orchestrator.
+  (3) the amendment into ADR 0054, the test-matrix row MOD-21 brought to the rules (`/home/user/work/p13/docs/rows.py`,
+  then `pnpm -s synth --case MOD-21`); commit; (4) the eight seeds (1034253323, -1074798020, 383403599, -460602131,
+  -594136649, 7777777, -31415926, 271828182) on the property and leaks files; (5) the final gate if the code moved;
+  (6) the base merged once (below; rehearsed again at 13:10 UTC on 3bff4fd6, #142 merged: clean), the full suite once on
+  the merged head, the push through the hook, the draft PR from the template (`pr-body-draft.md` beside the amendment
+  draft), CI, the merge under rule 2a, one line to the orchestrator.
 - **The base merge (the fold, #141, merged at 11:20 UTC; the base is edab4d4d or later):** scripted and rehearsed from
   91e1527a in a scratch worktree at 11:30 UTC: `designs/lane-b-redact-ssn-phone-leaks/base-merge/base-merge.sh` (run in
   the worktree on the branch; it merges, resolves the three conflicts with `resolve.py` (test-matrix, `matrix.ts`,
@@ -64,7 +63,7 @@ counter comes from the orchestrator.
 - **MOD-23** (allocated 2026-11-11, `LANES.md` Queues item 26): `Zephy ra`, `Zephy. ra` and `Z e p h y r a` are sent in
   clear outside a held letter on cc3dd7f6, ef3e8d20 and this head alike; pinned in `redact.leaks.test.ts`. Reproduce:
   `cd designs/lane-b-redact-ssn-phone/gate/leaks-scripts && node --import ../ts-resolve.mjs name-forms.mts <redact.ts of each tree>`.
-- **Container paths (not kept):** `/home/user/fix` (scratch copy of the head's `redact.ts`, = a66fee45), `/home/user/snap13`
+- **Container paths (not kept):** `/home/user/fix` (scratch copy of the head's `redact.ts`, = 24ad1075), `/home/user/snap14`
   (the gate's snapshot), `/home/user/gate` and `/home/user/gate-out`, `/home/user/tree-cc3`, `/home/user/tree-ef3`,
   `/home/user/work` (fuzzers `d1p6/`, `d2p6/`, `b1fix/`, `b2fix/`, `c1fix/`, `d2fix/`; `stress16.mts`; `p9/`, `p10/` outputs;
   `p9/beforeF/` = 0ddfa078's `redact.ts`; `adrcheck/`), `/home/user/review-b1`, `-b2`, `-c1`, `-c2`, `-d1`, `-d2`.
@@ -142,3 +141,4 @@ counter comes from the orchestrator.
 - 2026-11-11T09:38Z (W5): the cut-off must-stay reviewer's reproductions re-run and fixed too; the tests brought to the code (six files pass at 19454724); WIP 0ddfa078; the fuzzers and the gate run on it. The delta review is still owed.
 - 2026-11-11T12:19Z (W5): E1 and E2 reported on 5d685267 (eight PHI findings, six must-stay; one a fault: a label's list number counted in the chain); each run first, fixed in 8e599038 (six test files pass, pinned rows hold). The review of that delta (G1, G2), the fuzzers and the gate run.
 - 2026-11-11T13:05Z (W5): the fuzzers on 8e599038 found 22 letters ef3e8d20 refuses that it sent, and G1 the same as its blocking finding; G2 found three must-stay regressions. Fixed in d3657ba2 and a66fee45: the scan now keeps ef3e8d20's reading by construction, and the round narrows what the one before over-broadened (six test files pass, pinned rows hold). The review of that delta (H1, H2), the fuzzers and the gate run.
+- 2026-11-11T13:56Z (W5): H1 and H2 reported on a66fee45: the scan's by-construction claim held; one older letter family the base refuses for its own control character, four give-backs wider than recorded, three new must-stay regressions. Fixed in 24ad1075 (six test files pass, pinned rows hold). The review of that delta (I1, I2), the fuzzers and the gate run.

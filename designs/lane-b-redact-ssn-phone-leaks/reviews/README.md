@@ -51,3 +51,15 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   (`rows-at-a66fee45.txt`).
 - `brief-h1.md`, `brief-h2.md`, `recorded-for-the-fifth-review.md`: the briefs and the recorded list given to the two
   reviewers of the delta 8e599038 to a66fee45 (H1 PHI, H2 must-stay).
+- `h1/`: the PHI review of that delta, which ran to its report. The claim that the scan keeps the base's reading held (no
+  line from the audit copy over 206,772 letters). H1-1: a letter that writes the checks' own U+0002 beside a word that
+  touches a digit is refused by the base and was sent since review B1-4's fix (not from this round). H1-2 to H1-5: four
+  give-backs of the round wider than its record said (`verify1.txt` to `verify3.txt`, `hand.txt` hold its letters;
+  `fam.mts` sweeps the four families, `gen.mts`, `enum.mts` and `tight.mts` are its generators). Fixed in 24ad1075
+  (`rows-at-24ad1075.txt`); its five lines of residuals are recorded.
+- `h2/`: the must-stay review of the same delta, which ran to its report: H2-1 to H2-8 (`letters.txt` holds the letters
+  of its report as the builder re-ran them; `m.mts`, `r.mts`, `s.mts`, `a.mts`, `t.mts` are its layouts, rates and
+  timing; `build.mjs` makes its probe copies of the head). H2-3, H2-4, H2-6 and H2-7 were new in the round and are fixed
+  in 24ad1075 with H2-1 and H2-8; H2-2 (a header row over its rows) and H2-5 are recorded costs (`rows-at-24ad1075.txt`).
+- `brief-i1.md`, `brief-i2.md`, `recorded-for-the-sixth-review.md`: the briefs and the recorded list given to the two
+  reviewers of the delta a66fee45 to 24ad1075 (I1 PHI, I2 must-stay).

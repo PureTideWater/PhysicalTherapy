@@ -1,0 +1,206 @@
+"900-12-345601Jan 2020" 
+    head: REFUSED | before: same | base: same
+"900-12-345601-Jan 2020" 
+    head: REFUSED | before: same | base: same
+"202-555-012301Jan, 2020" 
+    head: REFUSED | before: same | base: same
+"(202) 555-012301-Jan 2020" 
+    head: REFUSED | before: same | base: same
+"SSN 900.12 345601Jan 2020" 
+    head: REFUSED | before: same | base: same
+"900-12-345601JAN. 2020" 
+    head: REFUSED | before: same | base: same
+"900-12-345601Jan2020" 
+    head: REFUSED | before: REFUSED | base: same
+"900-12-345601-Jan-2020" 
+    head: REFUSED | before: REFUSED | base: same
+"90012345601/02/20201,250.00 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/2020150.5 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/2020150,00 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/2020150.00120.00 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/202001/31/2020150.00 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/202001-Jan-2020 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/20202020-01-31 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/202001/31/20 Paid" 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601/02/202001/31/2020150.00 Paid" 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601/02/20201,250.00 Paid" 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601/02/20201234 Paid" 
+    head: REFUSED | before: same | base: same
+"90012345601/02/2020150.00 Paid" 
+    head: REFUSED | before: REFUSED | base: same
+"90012345601/02/202001/31/2020 Paid" 
+    head: REFUSED | before: REFUSED | base: same
+"90012345601⁃02⁃2020 Paid" 
+    head: REFUSED | before: same | base: same
+"20255501239⁃9⁃2020 Paid" 
+    head: same | before: same | base: same
+"SSN: 90012345601⁃02⁃2020 Paid" 
+    head: REFUSED | before: REFUSED | base: same
+"Statement\n\nNumber: 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n\n\n\nNo. 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Please keep this notice.\n\n\n\nID: 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Claim\n\n\n\nID\n\n900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Remittance\n\n\nAdvice 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"REMITTANCE ADVICE\n\n#900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n\n: 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n-  \n900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n...\n900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n\n900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Statement No.\n\n\n900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN 900 12·3456150.00" 
+    head: same | before: same | base: same
+"SSN 900 12/3456150.00" 
+    head: same | before: same | base: same
+"Our office: 555-0123. Paid\u0002" 
+    head: REFUSED | before: same | base: same
+"Our office: 555-0123. \u0002Paid x\u0001y 12\u000134" 
+    head: REFUSED | before: same | base: same
+"Our office: 555-0123. Paid\u0003 9\u0002 \u00029" 
+    head: REFUSED | before: same | base: same
+"Total\u0002for45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: REFUSED | before: same | base: REFUSED
+"Total for45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: same | before: same | base: same
+"Totalfor45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: same | before: same | base: same
+"CPT\u000297110. Front desk 555-0123" 
+    head: REFUSED | before: same | base: same
+"CPT\u000197110. Front desk 555-0123" 
+    head: REFUSED | before: same | base: same
+"CPT\u000397110. Front desk 555-0123" 
+    head: REFUSED | before: same | base: same
+"CPT 97110. Front desk 555-0123" 
+    head: same | before: same | base: same
+"CPT97110. Front desk 555-0123" 
+    head: same | before: same | base: same
+"Acct\u0002x9. Front desk 555-0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Paid\u0002x. Front desk 555-0123" 
+    head: REFUSED | before: same | base: same
+"Paid\u0002x. Ref 900.12 3456" 
+    head: REFUSED | before: same | base: same
+"Paid x. Ref 900.12 3456" 
+    head: same | before: same | base: same
+"SSN/Phone: 90012345601_02_2020 Paid" 
+    head: same | before: same | base: same
+"SSN/Medicare ID: 90012345601_02_2020 Paid" 
+    head: same | before: same | base: same
+"SSN: 90012345601_02_2020 Paid" 
+    head: REFUSED | before: REFUSED | base: same
+"Statement\n\nNumber: 90012345601/02/2020 Paid" 
+    head: REFUSED | before: same | base: same
+"SSN\n\n\nAccount No. 900-12-3456150.00" 
+    head: same | before: same | base: same
+"Total\u0002for45.00 Ref 900.12 3456" 
+    head: REFUSED | before: same | base: REFUSED
+"Total for45.00 Ref 900.12 3456" 
+    head: same | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nTotal\u0001for45.00" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nTotal for45.00" 
+    head: same | before: same | base: same
+"Total\u0001for45.00 Ref 900.12 3456" 
+    head: REFUSED | before: same | base: same
+"Total\u0003for45.00 Ref 900.12 3456" 
+    head: REFUSED | before: same | base: same
+"Thank you for your payment.\n\nNo. 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Thank you for your payment.\n\n\n\nNo. 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Thank you for your payment. No. 900-12-3456150.00" 
+    head: same | before: same | base: same
+"Soc. Sec. Account Number:                                    900-12-3456150.00" 
+    head: same | before: same | base: same
+"S.S.N. Account 01-900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN 900\u000112 3456" 
+    head: REFUSED | before: same | base: same
+"Soc. Sec. Acct. No.:                                    900-12-3456150.00" 
+    head: same | before: same | base: same
+"Social Security Account Number:                                    900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"S.S.N. Account Number:                                    900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN/Account Number:                                    900-12-3456150.00" 
+    head: same | before: same | base: same
+"PatientSSN Account Number:                                    900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN Account 01-900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN: Account 01-900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN/Claim Number 900-12-3456150.00" 
+    head: same | before: same | base: same
+"Social Security Claim Number 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone on record: 202-555-0123150.00" 
+    head: same | before: same | base: same
+"Phone on file: 202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone on our file: 202-555-0123150.00" 
+    head: same | before: same | base: same
+"Phone on_file: 202-555-0123150.00" 
+    head: same | before: same | base: same
+"Phone (on file): 202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"9001234562020-Jan-5 Paid" 
+    head: same | before: same | base: same
+"9001234562020-1-5 Paid" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN 900 12,3456150.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN 900 12.3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN 900   12.3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SS# 900 12.3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\n[202] 555-01234" 
+    head: REFUSED | before: REFUSED | base: "Service 01/01/2020-150.00 Paid\n(202) 555-01234"
+"Service 01/01/2020-150.00 Paid\n(202) 555-01234" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\n202) 555-01234" 
+    head: same | before: same | base: same
+"SSN 900\u000312 3456" 
+    head: REFUSED | before: same | base: same
+"SSN 900\u000212 3456" 
+    head: REFUSED | before: same | base: same
+"Phone 202\u0003555 0123" 
+    head: REFUSED | before: same | base: same
+"S\u0003SN 900 12 3456" 
+    head: REFUSED | before: "S\u0003SN [SSN]" | base: "S\u0003SN [SSN]"
+"SS\u0001N 900 12 3456" 
+    head: REFUSED | before: "SS\u0001N [SSN]" | base: "SS\u0001N [SSN]"
+"SSN\u0001 900 12 3456" 
+    head: REFUSED | before: "SSN\u0001 [SSN]" | base: "SSN\u0001 [SSN]"
+"Zeph\u0003yra SSN 900 12 3456" 
+    head: REFUSED | before: "Zeph\u0003yra SSN [SSN]" | base: "Zeph\u0003yra SSN [SSN]"
+"PatientSSN 900 12, 3456" 
+    head: REFUSED | before: REFUSED | base: same
+"S Jane Zephyra SN 900 12 3456" 
+    head: "S [PATIENT_NAME] [PATIENT_NAME] SN [SSN]" | before: "S [PATIENT_NAME] [PATIENT_NAME] SN [SSN]" | base: "S [PATIENT_NAME] [PATIENT_NAME] SN [SSN]"
+"TOLL Jane Zephyra FREE 202 555 0123" 
+    head: "TOLL [PATIENT_NAME] [PATIENT_NAME] FREE [PHONE]" | before: "TOLL [PATIENT_NAME] [PATIENT_NAME] FREE [PHONE]" | base: "TOLL [PATIENT_NAME] [PATIENT_NAME] FREE [PHONE]"
+"Phone Jane Zephyra TAX ID 202 5550123" 
+    head: "Phone [PATIENT_NAME] [PATIENT_NAME] TAX ID 202 5550123" | before: "Phone [PATIENT_NAME] [PATIENT_NAME] TAX ID 202 5550123" | base: "Phone [PATIENT_NAME] [PATIENT_NAME] TAX ID 202 5550123"
