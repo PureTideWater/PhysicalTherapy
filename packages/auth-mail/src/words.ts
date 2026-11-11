@@ -6,7 +6,8 @@ import { brandName } from '@paidwhole/brand';
  * "recover". No name, no organization, no PHI. Each is set as written: Cognito's mail does not go through the worker's
  * brandedSubject(), so a subject names the product itself.
  *
- * The section 2.5 words of the reset code (the recovery design, UXR-04) are kept word for word.
+ * The section 2.5 words of the reset code (the recovery design, UXR-04) are kept word for word, with one sentence
+ * added after its 15 minutes (O-8): "If you asked more than once, use the newest code."
  */
 
 /** Every source Cognito's CustomMessage trigger is called with (the AWS Lambda trigger's triggerSource values). */
@@ -77,7 +78,9 @@ export const COGNITO_MESSAGES: Readonly<Record<CognitoMessageSource, MessageWord
     subject: `Your ${brandName} code`,
     paragraphs: [
       [`Your code to choose a new ${brandName} password is `, code, '.'],
-      [`Enter it on the page that sent it within ${String(RESET_STEP_MINUTES)} minutes. If you did not ask for it, ignore this email: your password is unchanged.`],
+      // "If you asked more than once, use the newest code." (decision O-8, Lane A's orchestrator as the brand owner's
+      // delegate, 2026-11-05): true whether or not Cognito voids an earlier code, which is not verified here.
+      [`Enter it on the page that sent it within ${String(RESET_STEP_MINUTES)} minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email: your password is unchanged.`],
     ],
   },
   CustomMessage_AdminCreateUser: invitation,

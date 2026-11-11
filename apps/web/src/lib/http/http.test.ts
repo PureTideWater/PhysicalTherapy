@@ -737,7 +737,7 @@ describe('the development outbox', () => {
       subject: 'Your PaidWhole code',
       body: [
         'Your code to choose a new PaidWhole password is 012345.',
-        'Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+        'Enter it on the page that sent it within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email: your password is unchanged.',
         'PaidWhole never asks you to send your password or a code to anyone, by email, phone or chat: enter a code only on the PaidWhole page that asked for it.',
       ].join('\n\n'),
       html: cognitoMessage('CustomMessage_ForgotPassword', { code: '012345' }).html,

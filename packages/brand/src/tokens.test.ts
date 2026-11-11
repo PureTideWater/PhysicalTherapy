@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { contrastRatio } from './contrast';
 import { assetPath, assets } from './index';
 import { brandName } from './name';
-import { badgeText, contrastOnWhite, descriptor, independenceClaim, palette, sealLabel, sealText, status, statusDark, tagline, verifiedDefinition } from './tokens';
+import { badgeText, contrastOnWhite, descriptor, independenceClaim, palette, radius, sealLabel, sealText, space, status, statusDark, tagline, verifiedDefinition } from './tokens';
 
 /**
  * The product's words (Change Order 001, CO-11) as the brand package holds them, and the outlined seal and
@@ -128,7 +128,7 @@ describe('the product words (CO-11)', () => {
 const TOKENS_CSS = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8');
 
 function declarations(block: string): Map<string, string> {
-  return new Map([...block.matchAll(/(--pw-[a-z-]+):\s*([^;]+);/g)].map((match) => [match[1] ?? '', (match[2] ?? '').trim()]));
+  return new Map([...block.matchAll(/(--pw-[a-z0-9-]+):\s*([^;]+);/g)].map((match) => [match[1] ?? '', (match[2] ?? '').trim()]));
 }
 
 function blockAfter(selector: string): string {
@@ -204,6 +204,17 @@ describe('the status colors on their tints (WCAG 1.4.3 and 1.4.11; BRAND.md sect
     }
     for (const [name, value] of Object.entries(statusDark)) {
       expect(value, `statusDark.${name}`).toBe(token(DARK, `--pw-${name}`));
+    }
+  });
+
+  it('tokens.ts mirrors tokens.css: every corner radius and every step of the space scale, in px', () => {
+    expect(Object.keys(radius)).toEqual([...LIGHT.keys()].filter((name) => name.startsWith('--pw-radius-')).map((name) => name.slice('--pw-radius-'.length)));
+    for (const [name, value] of Object.entries(radius)) {
+      expect(`${String(value)}px`, `radius.${name}`).toBe(token(LIGHT, `--pw-radius-${name}`));
+    }
+    expect(Object.keys(space)).toEqual([...LIGHT.keys()].filter((name) => name.startsWith('--pw-space-')).map((name) => name.slice('--pw-space-'.length)));
+    for (const [step, value] of Object.entries(space)) {
+      expect(`${String(value)}px`, `space[${step}]`).toBe(token(LIGHT, `--pw-space-${step}`));
     }
   });
 

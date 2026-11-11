@@ -341,7 +341,7 @@ function keptOnPurpose(normal: string, patient: PatientIdentifiers, claims: read
  * MOD-13's first property: no letter or digit the generator wrote an identifier with is sent, every claim keeps its
  * placeholder, and only exact placeholders are written.
  */
-const sendsNoIdentifier = fc.property(letterCase, ({ patient, claims, segments }) => {
+const noIdentifierSent = ({ patient, claims, segments }: Case) => {
   const { text, secrets } = assemble(segments);
   expect(text.normalize('NFKC')).toBe(text);
   const { text: normal, spans } = redactionSpans(text, patient, claims);
@@ -370,7 +370,8 @@ const sendsNoIdentifier = fc.property(letterCase, ({ patient, claims, segments }
   expect(brackets.every((bracket) => EXACT.test(bracket))).toBe(true);
   expect(brackets).toHaveLength(redacted.replaced);
   expect(holdsIdentifier(redacted.text, patient, claims)).toBe(false);
-});
+};
+const sendsNoIdentifier = fc.property(letterCase, noIdentifierSent);
 
 /**
  * The seed on which a claim number written like a date with a year below 1900 ("0000-01-01", "0023-04-26") was kept as
@@ -389,9 +390,64 @@ const YEAR_BELOW_1900_SEED = 1162287068;
  */
 const LABEL_BOUNDARY_SEED = 460548619;
 
+/**
+ * MOD-13's letters with their identifiers glued by a lost space (review PHI2-1): an identifier that begins with a letter (a
+ * name, an initial, a member ID or claim number of letters and digits, a date of birth written in words) glued to a digit on
+ * its left, at the end of a date, amount or currency range or an amount, and a date of birth glued to a word on its right.
+ * A number of digits alone, or a date written in digits, glued to a digit has no boundary to read and is not glued so.
+ * Redaction reads none of these (the glued reading of review round 2 is reverted, review round 3): the check refuses the
+ * letter. An identifier that begins with a part of two or three letters, a month's word or an initial (as often a code, a
+ * unit or a date's month: "MA04", "45min", "June1") is glued only to a range that cc3dd7f6 refused for its own digits
+ * (GLUED_HELD), where the check refuses it; elsewhere it is sent, as at cc3dd7f6.
+ */
+const GLUED_BEFORE = ['Service 01/01/2020-01/02/2020', 'Billed 150.00-120.00', 'Paid $10-$20', 'Paid 150.00', 'DOS 2020-01-01–2020-01-02', 'Seen 1/1/20−1/2/20'];
+const GLUED_HELD = ['Paid $0,000.00. Service 01/01/2020-01/02/2020', 'Seen 01/01/2020-150.00'];
+const GLUED_AFTER = ['Paid', 'St. Mary', 'TH', 'Seen', 'nd floor'];
+const MONTH_OR_SHORT = /^(?:\p{L}{1,3}|january|february|march|april|june|july|august|september|october|november|december|sept)$/iu;
+const gluedLetterCase: fc.Arbitrary<Case> = fc.tuple(letterCase, fc.array(fc.nat(1000), { minLength: 9, maxLength: 9 })).map(([letter, picks]) => {
+  const segments = [...letter.segments];
+  segments.forEach((segment, i) => {
+    const pick = picks[i % picks.length] ?? 0;
+    const before = segments[i - 1];
+    if (segment.secret !== 'none' && /^\p{L}/u.test(segment.text) && before?.secret === 'none' && pick % 3 !== 0) {
+      const head = /^\p{L}+/u.exec(segment.text.normalize('NFKD').replace(/\p{M}|\p{Default_Ignorable_Code_Point}/gu, ''))?.[0] ?? '';
+      const held = segment.secret === 'name' && MONTH_OR_SHORT.test(head);
+      segments[i - 1] = { text: held ? (GLUED_HELD[pick % GLUED_HELD.length] ?? '') : (GLUED_BEFORE[pick % GLUED_BEFORE.length] ?? ''), secret: 'none' };
+    }
+    const after = segments[i + 1];
+    if (segment.secret === 'birth' && after?.secret === 'none' && Math.floor(pick / 3) % 2 === 0) {
+      segments[i + 1] = { text: `${GLUED_AFTER[Math.floor(pick / 6) % GLUED_AFTER.length] ?? ''}${after.text}`, secret: 'none' };
+    }
+  });
+  return { ...letter, segments };
+});
+
+/**
+ * The seed on which the glued letters' property failed (the judge's review round 1, GATEWAYJ1-4): patient CLAIM LA ORLA,
+ * "Seen 01/01/2020-150.00OR LA, CL AIM LA, ". Redaction read the short part LA inside ORLA written with a space ("OR LA"),
+ * and the check did not read the head "OR" left before the name's placeholder. Pinned as a fixed run of the property.
+ */
+const GLUED_SEED = 2026110710;
+
+/** The glued letters' property: the check refuses the letter, or no letter or digit of an identifier is sent (noIdentifierSent). */
+const gluedRefusedOrRedacted = (letter: Case) => {
+  const { text } = assemble(letter.segments);
+  if (!holdsIdentifier(redactLetter(text, letter.patient, letter.claims).text, letter.patient, letter.claims)) {
+    noIdentifierSent(letter);
+  }
+};
+
 describe('MOD-13: every placeholder survives and no identifier survives', () => {
   it('sends no letter or digit the generator wrote an identifier with, keeps every claim’s placeholder, and writes only exact placeholders (property)', () => {
     fc.assert(sendsNoIdentifier, { numRuns: 400 });
+  }, 60_000);
+
+  it('refuses, or sends none of them, with the identifiers glued by a lost space: to a digit on the left at a range’s or an amount’s end, a date of birth to a word on the right (property; review PHI2-1, review round 3)', () => {
+    fc.assert(fc.property(gluedLetterCase, gluedRefusedOrRedacted), { numRuns: 400 });
+  }, 60_000);
+
+  it(`refuses, or sends none of them, on seed ${String(GLUED_SEED)}, where a part written with a space inside was sent cut by the shorter part redaction read (a fixed run of the property; the judge's review round 1, GATEWAYJ1-4)`, () => {
+    fc.assert(fc.property(gluedLetterCase, gluedRefusedOrRedacted), { numRuns: 400, seed: GLUED_SEED });
   }, 60_000);
 
   it(`holds on seed ${String(YEAR_BELOW_1900_SEED)}, where a claim number written like a date with a year below 1900 was first found (a fixed run of the property)`, () => {
@@ -650,6 +706,192 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
     expect(redactLetter('Claim 1999-1\u200B2-31', patient, claimsOf('19991')).text).not.toContain('1999');
     // The whole date written across the invisible character is still that date.
     expect(redactLetter('Seen 1999-1\u200B2-31.', patient, claimsOf('19991231')).text).toBe('Seen 1999-1\u200B2-31.');
+  });
+
+  it('reads a date that a match with no reading overlaps, so a date of birth straight after an amount and a full stop is replaced (MOD-16 seed 1034253323)', () => {
+    const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    // "00.03/14" and "12.03/14" are read first (the second as 2014-12-03); the date they overlap is still read.
+    expect(redactLetter('Paid 0.00.03/14/1980 today', born, []).text).toBe('Paid 0.00.[DATE_OF_BIRTH] today');
+    // With a space after the full stop (an OCR'd table's likelier shape) and with a two-digit year, sent as written before
+    // the fix too (review GATEWAY1-6).
+    expect(redactLetter('Paid 0.00. 03/14/1980 today', born, []).text).toBe('Paid 0.00. [DATE_OF_BIRTH] today');
+    expect(redactLetter('Paid 0.00.03/14/80 today', born, []).text).toBe('Paid 0.00.[DATE_OF_BIRTH] today');
+    expect(redactLetter('Seen 12.03/14/1980 today', born, []).text).toBe('Seen 12.[DATE_OF_BIRTH] today');
+    expect(redactLetter('Paid $0,000.00.1980-03-14', born, []).text).not.toContain('1980');
+    expect(datesIn('Paid 0.00.03/14/1980').map((span) => span.dates)).toContainEqual(['1980-03-14']);
+  });
+
+  it('refuses the call’s own date of birth glued to a word or a number by a lost space on either side (review PHI2-1, PHI3-4; re-review GATEWAY1-4)', () => {
+    // Redaction reads a date of birth at word boundaries only (the glued reading of review round 2 is reverted, review round
+    // 3); the check refuses one glued to a letter or a digit, where no boundary can be known. cc3dd7f6 sent each of these
+    // alone, and refused them beside a range only because the range then joined the next group (A3).
+    const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    for (const letter of [
+      'DOB03/14/1980',
+      'DOB1980-03-14',
+      'DOB: 1980-03-14Seen',
+      'Born 03/14/1980Paid',
+      'Born March 14, 1980Paid',
+      'DOB 3/14/80Paid',
+      'Born 14.03.1980Paid',
+      'Born 03/14/1980St. Mary',
+      'DOB 03141980Paid',
+      'DOBMarch 14, 1980',
+      'Seen 01/01/2020March 14, 1980',
+      // The finding's rows: a date of birth at the end of a range, glued to the word after it (review PHI2-1).
+      'Paid $0,000.00. Service 01/01/2020-03/14/1980Paid $0,000.00',
+      'DOB 150.00-03/14/1980Paid',
+      'Seen 01/01/2020-14 March 1980Paid',
+      'Seen 150.00-03/14/1980St. Mary',
+      // Glued digit to digit at a range's start (review PHI3-4).
+      'DOB 03/14/1980150.00 - 01/01/2020',
+      '(14 March 1980150.00-01/01/2020)',
+      '(3/14/80150.00 - 01/01/2020)',
+      '114-Mar-1980-150.00',
+      'Patient DOB 03/14/1980Member ID SYNMEMBER0042',
+    ]) {
+      expect(holdsIdentifier(redactLetter(letter, born, []).text, born, []), letter).toBe(true);
+    }
+    // At a boundary, redaction reads it: a full stop or an invisible character in the lost space's place.
+    expect(redactLetter('Born 03/14/1980.', born, []).text).toBe('Born [DATE_OF_BIRTH].');
+    expect(redactLetter('DOB 03/14/1980\u200BPaid', born, []).text).toBe('DOB [DATE_OF_BIRTH]\u200BPaid');
+    // Another date glued to a word, or inside another date, stays: only the date of birth is read glued.
+    for (const letter of ['Service 01/01/2020-01/02/2020Paid and 03/15/1980Paid', 'Seen 13-3-80 and 3-14-81Paid']) {
+      expect(redactLetter(letter, born, []).text, letter).toBe(letter);
+      expect(holdsIdentifier(letter, born, []), letter).toBe(false);
+    }
+  });
+
+  it('refuses the call’s own name, initial, member ID and claim number glued to a digit, or set apart in a run a digit touches (review PHI2-1, PHI2-2)', () => {
+    const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042', 'ZZ7654321'] };
+    const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['SYNCLAIM0001'] }];
+    for (const letter of [
+      // PHI2-1: refused at cc3dd7f6 only because the range joined the next group (A3), sent with the identifier at 6fc88092.
+      'Paid $0,000.00. Service 01/01/2020-01/02/2020Zephyra $0,000.00',
+      'Service 01/01/2020-150.00Jane Zephyra',
+      'Seen 150.00-01/02/2020SYNMEMBER0042',
+      'Seen 0.00-01/02/2020SYNCLAIM0001',
+      'Seen 0.00-01/02/2020SYNMEMBER0042Paid',
+      'Seen 0.00-01/02/2020ZZ7654321Paid',
+      'Seen 0.00-01/02/2020SYNCLAIM0001Paid',
+      'Seen 0.00-01/02/2020ZephyraPaid',
+      'Seen 0.00-01/02/2020JanePaid',
+      'Seen 0.00-01/02/2020Zephyrapaid',
+      'Seen 0.00-01/02/2020ZEPHYRAPAID',
+      'Seen 0.00-01/02/2020PaidZephyra',
+      'Seen 0.00-01/02/2020PaidJaneToday',
+      'Seen 0.00-01/02/2020PaidzephyraToday',
+      'Seen 2020PAIDZEPHYRATODAY',
+      'Seen JaneSeen0.00-01/02/2020',
+      'Seen 01/02/2020ZEPHYRAJANEQ150.00',
+      'Seen 0.00-01/02/2020Q ZephyraPaid',
+      'Seen 0.00-01/02/2020Q Zephyrapaid',
+      'Seen 150.00\u2043150.00Q Zephyra',
+      'Seen 150.00Q Zephyra',
+      'Seen 2020Zeph Yra',
+      '(Zeph\u00ADyraSeen0.00-01/02/2020)',
+      // PHI2-2: sent at cc3dd7f6 as well, a name or number glued after a digit (a table row that lost its column gap).
+      'DOS 01/01/2020-01/02/2020ZEPHYRA, JANE Q',
+      'DOS 01/01/2020–01/02/2020SYNMEMBER0042 ZEPHYRA',
+      'Seen 2020SYNMEMBER0042',
+      'Seen 150.00SYNCLAIM0001',
+      'Paid 150.00Zephyra',
+      'Seen 01/01/2020-01/02/2020ZZ7654321Paid',
+      // The call's number of letters and digits inside a longer token: no boundary can be known.
+      'Seen 0.00-01/02/2020PaidZZ7654321',
+      'Seen ZZ7654321150.00-1/2/20',
+      'Seen SYNCLAIM00012',
+      // An SSN or phone label before the name glued to the number: refused, as at cc3dd7f6.
+      'SSN Zephyra900.12 3456',
+      'SSN Zephyra90012-3456',
+      'Re: SSN Jane202 555 01.23',
+      'SSN Zephyra01/01/2020-900.12 3456',
+      'Phone ZEPHYRA202 555 01.23',
+    ]) {
+      expect(holdsIdentifier(redactLetter(letter, born, claims).text, born, claims), letter).toBe(true);
+    }
+    // A space inside a part leaves capitalized pieces of two letters or more, as the name's own pattern reads it.
+    expect(holdsIdentifier(redactLetter('Seen 2020Zeph yra', born, claims).text, born, claims)).toBe(false);
+  });
+
+  it('refuses the call’s own short name part, a month’s word or an initial glued to a digit only beside a range cc3dd7f6 refused, and sends what it sent (review PHI2-1; review round 3: GATEWAY3-1, GATEWAY3-2)', () => {
+    // A part of two or three letters, or a month's word, glued to a digit is as often a code, a unit or a date's month
+    // ("MA04", "97110XU", "45min", "June1"): sent as at cc3dd7f6, and refused next to a range only the range fix reads as
+    // a barrier, which cc3dd7f6 refused for the range's own digits.
+    const short = (names: string[]): PatientIdentifiers => ({ pseudonym: 'synthetic-patient-13', names, datesOfBirth: ['1980-03-14'], memberIds: ['ZZ7654321'] });
+    for (const [who, letter] of [
+      [short(['QIANG MA']), 'Remark: MA130 applies.'],
+      [short(['QIANG MA']), 'Re: QIANG MA\nMA04'],
+      [short(['MIN XU']), 'CPT 97110XU denied'],
+      [short(['MIN XU']), 'Total time 45min.'],
+      [short(['ANN LIN']), 'Line1 97110 150.00'],
+      [short(['ANN LIN']), 'Paid 150.00Annual'],
+      [short(['AL Q ZEPHYRA']), 'Seen in Albuquerque 87101'],
+      [short(['DE ZEPHYRA']), 'Seen 150.00Deductible'],
+      [short(['JUNE Q VANTREE']), 'DOS June1'],
+      [short(['MAY ZEPHYRA']), 'Paid 12May'],
+      [short(['GEORGE ZEPHYRA']), 'Patient GEORGE ZEPHYRA G0283 denied.'],
+      [short(['MARIA MARTINEZ']), 'MARTINEZ, MARIA M54.50 97110 1 150.00'],
+      [short(['JANE Q ZEPHYRA']), 'Patient: JANE Q ZEPHYRA\nJ3301 1 150.00'],
+      [short(['GEORGE ZEPHYRA']), 'Patient George Zephyra Z96.651 on file'],
+    ] as const) {
+      const redacted = redactLetter(letter, who, []).text;
+      expect(redacted.replace(/\[PATIENT_NAME\]/gu, ''), letter).not.toMatch(/\[/u);
+      expect(holdsIdentifier(redacted, who, []), letter).toBe(false);
+    }
+    for (const [who, letter] of [
+      [short(['AL Q ZEPHYRA']), '01/01/2020-150.00Al'],
+      [short(['JANE MA']), '01/01/2020-150.00Ma1'],
+      [short(['TY Q ZEPHYRA']), '01/01/2020-150.00TyQ'],
+      [short(['QIANG MA']), '0.00-01/02/2020PAIDMa\nPaid'],
+      [short(['JANE MA']), '01/01/2020-150.00J. Ma'],
+      [short(['JANE Q ZEPHYRA']), '01/01/2020−150.00PAIDJ. Zephyra\nPaid'],
+      [short(['XU AL']), 'Seen 0.00–01/02/2020PAIDXU'],
+      [short(['JUNE Q VANTREE']), 'Paid $0,000.00. Service 01/01/2020-01/02/2020June $0,000.00'],
+    ] as const) {
+      expect(holdsIdentifier(redactLetter(letter, who, []).text, who, []), letter).toBe(true);
+    }
+  });
+
+  it('pins a recorded residual: the call’s own name glued to another word that nothing sets apart, with no digit beside it, is sent as at cc3dd7f6 (docs/adr/0054)', () => {
+    const born: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+    for (const letter of ['DEARJANE', 'Dear Provider, DearJane', 'RE: ZephyraPaid in full']) {
+      expect(redactLetter(letter, born, []).text, letter).toBe(letter);
+      expect(holdsIdentifier(letter, born, []), letter).toBe(false);
+    }
+  });
+
+  it('keeps a patient named for a month whose name is the month word of a second date read from the first date’s year, and a claim or member number written as such a date (re-review PHI1-3, review PHI2-5; docs/adr/0054: a name that is the month word of a separated date is not taken)', () => {
+    // "1 Jan 01" is read, and from its two-digit year "01 May-12" (2012-05-01) and "01 / June⏎01" too, since datesIn tries
+    // each form at every number (MOD-16 seed 1034253323); cc3dd7f6 replaced the name there only because the first match
+    // had taken the "01". Alone, such a date keeps the name at cc3dd7f6 too.
+    const may: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['MAY ZEPHYRA'], datesOfBirth: ['1961-03-03'], memberIds: ['ZZ7654321'] };
+    const june: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JUNE Q VANTREE'], datesOfBirth: ['1961-03-03'], memberIds: ['ZZ7654321'] };
+    for (const [who, letter] of [
+      [may, 'Seen 1 Jan 01 May-12, 3rd'],
+      [may, 'Seen 01 May-12, 3rd'],
+      [june, 'DOS 1 Jan 01 / June\n01'],
+      [june, 'DOS 01 / June\n01'],
+    ] as const) {
+      expect(redactLetter(letter, who, []).text, letter).toBe(letter);
+      expect(holdsIdentifier(letter, who, []), letter).toBe(false);
+    }
+    // Where no calendar reading holds the month word, the name is replaced.
+    expect(redactLetter('Dear May, seen 1 Jan 01', may, []).text).toBe('Dear [PATIENT_NAME], seen 1 Jan 01');
+    // A digits-only claim or member number written as a whole separated date stays as that date only where the date is
+    // read past each match's end as well, as cc3dd7f6 read dates: after an amount and a full stop, where a match with no
+    // reading overlaps it, the number is redacted as it was at cc3dd7f6 (review PHI2-5, closed in review round 3).
+    const numbered: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1961-03-03'], memberIds: ['11022019'] };
+    const dated: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['01012020'] }];
+    for (const [letter, sent] of [
+      ['Paid 0.00. 01-01-2020', 'Paid 0.00. [CLAIM_1]'],
+      ['Paid 0.00. 11-02-2019', 'Paid 0.00. [MEMBER_ID]'],
+      ['Paid 0.00.11-02-2019', 'Paid 0.00.[MEMBER_ID]'],
+      ['Paid 01-01-2020', 'Paid 01-01-2020'],
+    ] as const) {
+      expect(redactLetter(letter, numbered, dated).text, letter).toBe(sent);
+      expect(holdsIdentifier(sent, numbered, dated), letter).toBe(false);
+    }
   });
 
   it('joins a number over grouping apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 (review finding R5-1)', () => {
@@ -1086,6 +1328,21 @@ const SURVIVORS = [
   '900\u30FC12\u30FC3456', '202\u30FC555\u30FC0123', '900\u205312\u20533456', '900\u02C912\u02C93456', '900\u221512\u22153456', '900\u204412\u20443456', '900\u300112\u30013456',
 ];
 
+/**
+ * A labeled number only the scan reads, in an amount's shape (SEC-5: "SSN 900.12 3456"), written after a date, an amount, a
+ * currency amount or a range under its label, joined to it by a range's dash or a space: the scan reads the label over the
+ * numbers between, so the letter is refused (review GATEWAY1-2). Each label ends in white space, so none is glued to a
+ * month word.
+ */
+const SHIELD_LABELS = ['SSN ', 'SSN: ', 'S.S.N. ', 'Social Security ', 'Soc Sec ', 'Phone ', 'Phone: ', 'Tel. ', 'Fax ', 'Call ', 'Contact '];
+const SHIELDS = ['01/01/2020', '2020-01-01', 'January 1, 2020', '150.00', '1,234.56', '$10', '$10.00', '01/01/2020-01/02/2020', '150.00-120.00', '01/01/2020-150.00', '$45-$97'];
+const SHIELD_JOINS = ['-', '\u2013', '\u2014', '\u2212', '--', '\u2010', ' '];
+/** An SSN or phone in an amount's shape: 3.2 4, 3,2 4 and 3.1 5, or 3.2 5 and 3.2 1 4. */
+const amountShaped = (value: string, pick: number) =>
+  value.length === 9
+    ? ([`${value.slice(0, 3)}.${value.slice(3, 5)} ${value.slice(5)}`, `${value.slice(0, 3)},${value.slice(3, 5)} ${value.slice(5)}`, `${value.slice(0, 3)}.${value.slice(3, 4)} ${value.slice(4)}`][pick % 3] ?? value)
+    : ([`${value.slice(0, 3)}.${value.slice(3, 5)} ${value.slice(5)}`, `${value.slice(0, 3)}.${value.slice(3, 5)} ${value.slice(5, 6)} ${value.slice(6)}`][pick % 2] ?? value);
+
 interface PatternSegment {
   readonly text: string;
   readonly secret: 'none' | 'pattern' | 'member' | 'claim';
@@ -1103,8 +1360,10 @@ const ssnValue = fc.stringMatching(/^9[0-9]{8}$/);
 const phoneValue = fc.tuple(fc.integer({ min: 200, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
 /** An unlabeled bare ten is a phone only with an area code 3-9, or 2 and no valid NPI: the generator writes 3-9. */
 const unlabeledPhone = fc.tuple(fc.integer({ min: 300, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
+const SURVIVOR_DIGITS = new Set(SURVIVORS.map((survivor) => survivor.replace(/[^0-9]/gu, '')));
+const notASurvivor = (value: string) => !SURVIVOR_DIGITS.has(value);
 const patternSlot = fc.record({
-  kind: fc.constantFrom('ssn', 'ssn', 'phone', 'phone', 'member', 'claim', 'filler', 'survivor', 'glued'),
+  kind: fc.constantFrom('ssn', 'ssn', 'phone', 'phone', 'member', 'claim', 'filler', 'survivor', 'glued', 'shielded'),
   form: fc.nat(1000),
   picks: fc.array(fc.nat(1000), { minLength: 13, maxLength: 13 }),
   script: fc.constantFrom(...SCRIPTS, 0x30, 0x30),
@@ -1115,7 +1374,10 @@ const patternSlot = fc.record({
 });
 
 const ssnPhoneCase: fc.Arbitrary<PatternCase> = fc
-  .record({ member: ssnValue, claim: phoneValue, slots: fc.array(patternSlot, { minLength: 1, maxLength: 8 }) })
+  // The call's own member ID and claim number are never a fixed survivor's digits: the survivor would be read as the
+  // call's own number and replaced, and the letter rightly sent where the property expects a refusal (global seed
+  // 561949509 drew the claim number 2025550123, the digits of '202.555 0123': the re-review of round 5).
+  .record({ member: ssnValue.filter(notASurvivor), claim: phoneValue.filter(notASurvivor), slots: fc.array(patternSlot, { minLength: 1, maxLength: 8 }) })
   .map(({ member, claim, slots }): PatternCase => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042', member] };
     const claims: LetterClaim[] = [
@@ -1149,7 +1411,15 @@ const ssnPhoneCase: fc.Arbitrary<PatternCase> = fc
       } else if (kind === 'survivor') {
         refused = true;
         segments.push({ text: `Ref ${SURVIVORS[index % SURVIVORS.length] ?? ''} on file. `, secret: 'none' });
+      } else if (kind === 'shielded') {
+        refused = true;
+        const value = form % 2 === 0 ? other(ssn, member) : other(phone, claim);
+        const pick = (at: number) => picks[at] ?? 0;
+        const shielded = `${SHIELD_LABELS[pick(0) % SHIELD_LABELS.length] ?? 'SSN '}${SHIELDS[pick(1) % SHIELDS.length] ?? '01/01/2020'}${SHIELD_JOINS[pick(2) % SHIELD_JOINS.length] ?? '-'}${amountShaped(value, pick(3))}`;
+        segments.push({ text: `${shielded}${['.', ' on file.', ''][pick(4) % 3] ?? '.'} Noted. `, secret: 'none' });
       } else if (kind === 'glued') {
+        // The patient's name glued to a number by a lost space: no boundary can be read, so the letter is refused (design
+        // 7.4; review round 2 redacted both, a reading review round 3 reverted).
         refused = true;
         segments.push({ text: `RE: Zephyra${['900-12-3456', '202-555-0123'][index % 2] ?? ''}. `, secret: 'none' });
       } else {
@@ -1442,14 +1712,22 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
       case 16:
         return { text: `${neutral}${withCheckDigit(`2${nine.slice(1)}`)}` };
       case 17: {
-        // A service or coverage period, and a range of amounts, joined by a hyphen or an en dash with no space (review round 2,
+        // A service or coverage period, and a range of amounts, joined by one or two dashes with no space (review round 2,
         // finding 2): each date and each amount is one datesIn or the scan reads, so the range is a barrier, never a chain.
         const later = new Date(date.getTime() + (1 + (pick % 400)) * 86_400_000).toISOString().slice(0, 10);
         const [y1, m1, d1] = iso.split('-');
         const [y2, m2, d2] = later.split('-');
-        const dash = ['-', '-', '\u2013'][pick % 3] ?? '-';
+        const dash = ['-', '-', '\u2013', '\u2014', '\u2212', '--'][Math.floor(pick / 9) % 6] ?? '-';
         const unpadded = (part = '') => String(Number.parseInt(part, 10));
-        const range = [
+        // A day-first ordinal date as the second end, after a first end with a four-digit year ("01/01/2020-4th of March,
+        // 2020", "-14th March 2020", "-1ST OF MARCH, 2020"): read glued to a word that starts like an ordinal suffix on the
+        // glued reading that keeps only a day's suffix (review GATEWAY2-2). A third of the date-to-date draws.
+        const day = Number.parseInt(d2 ?? '1', 10);
+        const ordinal = `${String(day)}${day % 100 >= 11 && day % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][day % 10] ?? 'th')}`;
+        const laterMonth = MONTH_WORDS[Number.parseInt(m2 ?? '1', 10) - 1] ?? 'May';
+        const ordinalEnd = [`${ordinal} of ${laterMonth}, ${y2}`, `${ordinal} ${laterMonth} ${y2}`, `${ordinal} of ${laterMonth}, ${y2}`.toUpperCase()][Math.floor(pick / 1287) % 6];
+        const firstEnd = new Map([[0, `${m1}/${d1}/${y1}`], [1, `${unpadded(m1)}/${unpadded(d1)}/${y1}`], [2, iso], [3, `${m1}-${d1}-${y1}`], [5, `${m1}.${d1}.${y1}`]]).get(pick % 13);
+        const range = firstEnd !== undefined && ordinalEnd !== undefined ? `${firstEnd}${dash}${ordinalEnd}` : [
           `${m1}/${d1}/${y1}${dash}${m2}/${d2}/${y2}`,
           `${unpadded(m1)}/${unpadded(d1)}/${y1}${dash}${unpadded(m2)}/${unpadded(d2)}/${y2}`,
           `${iso}${dash}${later}`,
@@ -1459,46 +1737,108 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
           `${n(3)}.${n(2, 1)}${dash}${n(3, 2)}.${n(2, 3)}`,
           `${n(1)},${n(3)}.${n(2, 1)}${dash}${n(3, 2)}.${n(2, 3)}`,
           `${n(3)},${n(2, 1)}${dash}${n(2, 2)},${n(2, 3)}`,
-        ][pick % 9] ?? iso;
-        return { text: `${['Service ', 'DOS ', 'Coverage ', 'Eligibility ', 'Service period: ', 'From ', 'Billed ', 'Range '][pick % 8] ?? 'Service '}${range}` };
+          // A date to an amount, an amount to one with a currency sign, and a month word at either end (MOD-16 seed 1034253323).
+          `${m1}/${d1}/${y1}${dash}${n(3, 2)}.${n(2, 3)}`,
+          `${n(3)}.${n(2, 1)}${dash}$${n(3, 2)}.${n(2, 3)}`,
+          `${iso}${dash}${unpadded(d2)} ${MONTH_WORDS[Number.parseInt(m2 ?? '1', 10) - 1] ?? 'May'} ${y2}`,
+          `${MONTH_WORDS[Number.parseInt(m1 ?? '1', 10) - 1] ?? 'May'} ${unpadded(d1)}, ${y1}${dash}${later}`,
+        ][pick % 13] ?? iso;
+        // The range glued to the word before or after it, or after an amount and a full stop with no space (extracted text
+        // that lost its spaces: MOD-16 seed 1034253323); none holds an SSN or a phone.
+        const paid = `Paid $${n(1)},${n(3, 1)}.${n(2, 2)}`;
+        // A word glued to a month word is two words run together, not a date glued to a word: no range starting with one follows "Service" glued.
+        const glued = /^[0-9]/u.test(range) ? 'Service' : 'Service ';
+        const before = ['Service ', 'DOS ', 'Coverage ', 'Eligibility ', 'Service period: ', 'From ', 'Billed ', 'Range ', glued, `${paid}. Service `, `${paid}.Service `][Math.floor(pick / 13) % 11] ?? 'Service ';
+        // A word after it that starts like an ordinal suffix ("St. Mary", "Rd. 9", "TH", "nd floor"), which the scan's glued
+        // reading keeps after a year (review GATEWAY1-1).
+        const after = ['', '', 'Paid', '.Paid', paid, 'St. Mary', 'Rd. 9', 'TH', 'nd floor'][Math.floor(pick / 143) % 9] ?? '';
+        return { text: `${before}${range}${after}` };
       }
       default:
         return { text: 'Hours 8:00-5:00, 555-0100 local' };
     }
   });
 
+const mod16Patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-16', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
+const mod16Claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['SYNCLAIM0001'] }];
+
+/** MOD-16's property: a letter of what must stay is sent unchanged, refused by no check, and its deadlines and references still verify. */
+const keepsWhatMustStay = fc.property(fc.array(fc.tuple(keptSegment, fc.constantFrom(...KEPT_JOINS)), { minLength: 1, maxLength: 8 }), (pieces) => {
+  // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
+  // to another and no number to another.
+  const glues = (i: number) => !/\p{L}$/u.test(pieces[i]?.[0].text ?? '') && /^\p{L}/u.test(pieces[i + 1]?.[0].text ?? '');
+  const text = pieces.map(([segment, join], i) => `${segment.text}${i === pieces.length - 1 ? '' : join === '' && !glues(i) ? ' ' : join}`).join('');
+  const screened = redactLetterForScreen(text, mod16Patient, mod16Claims);
+  expect(screened, JSON.stringify(text)).toMatchObject({ text: text.normalize('NFKC'), replaced: 0 });
+  expect(holdsIdentifier(screened.text, mod16Patient, mod16Claims), JSON.stringify(text)).toBe(false);
+  const input = { documentId: '00000000-0000-4000-8000-000000000016', documentSha256: '0'.repeat(64), text, patient: mod16Patient, claims: mod16Claims, otherPatients: { holdsOtherPatient: () => Promise.resolve(false) } };
+  for (const [segment] of pieces) {
+    const output = {
+      payer: null,
+      claim_references: segment.reference === undefined ? [] : [{ written: segment.reference, quote: segment.text.split('\n').at(-1) ?? segment.text }],
+      reason_category: 'authorization',
+      reason_quote: segment.text.split('\n').at(-1) ?? segment.text,
+      deadline: segment.deadline === undefined ? null : { written: segment.deadline, quote: segment.text },
+      requested_documents: [],
+    };
+    const reviewed = verifyDenialLetter(input, output, { text: screened.text, claims: screened.claims, candidates: screened.candidates });
+    const fields = reviewed.proposal.fields.filter((field) => field.field !== 'reason_category');
+    expect(fields.every((field) => field.verified), `${JSON.stringify(segment)} ${JSON.stringify(fields)}`).toBe(true);
+  }
+});
+
+/**
+ * The seed on which MOD-16 refused a kept letter on CI (2026-11-06): "Paid $0,000.00. Service 01/01/2020-01/02/2020Paid
+ * $0,000.00", a service period glued to the next word. Its second date is read only with the letters as blanks, and there
+ * a match with no reading ("00. Service 01/01": the cents, the full stop and the blanked word) had taken its first date; so
+ * neither end of the range stood as a barrier and the scan chained 01, 01, 2020 and 01 into ten digits. The generator has
+ * since been widened, so this seed now draws other letters: a fixed run of the widened property, which fails at cc3dd7f6
+ * after 44 tests on a date-to-amount range glued to the next word. The CI counterexample and its class are pinned as rows
+ * in functions/denial-letter.test.ts ("refuses no letter of what must stay").
+ */
+const RANGE_GLUED_SEED = 1034253323;
+
 describe('MOD-16: what must stay is sent unchanged; the call’s identifiers keep their placeholders; another patient’s are screened', () => {
-  const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-16', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
-  const claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['SYNCLAIM0001'] }];
+  const patient = mod16Patient;
+  const claims = mod16Claims;
 
   it('sends amounts, dates, NPIs, codes, ZIPs, TINs, ICNs, traces, checks, references, named numbers and service-line rows unchanged, refuses none, and still verifies their deadlines and references (property)', () => {
-    fc.assert(
-      fc.property(fc.array(fc.tuple(keptSegment, fc.constantFrom(...KEPT_JOINS)), { minLength: 1, maxLength: 8 }), (pieces) => {
-        // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
-        // to another and no number to another.
-        const glues = (i: number) => !/\p{L}$/u.test(pieces[i]?.[0].text ?? '') && /^\p{L}/u.test(pieces[i + 1]?.[0].text ?? '');
-        const text = pieces.map(([segment, join], i) => `${segment.text}${i === pieces.length - 1 ? '' : join === '' && !glues(i) ? ' ' : join}`).join('');
-        const screened = redactLetterForScreen(text, patient, claims);
-        expect(screened, JSON.stringify(text)).toMatchObject({ text: text.normalize('NFKC'), replaced: 0 });
-        expect(holdsIdentifier(screened.text, patient, claims), JSON.stringify(text)).toBe(false);
-        const input = { documentId: '00000000-0000-4000-8000-000000000016', documentSha256: '0'.repeat(64), text, patient, claims, otherPatients: { holdsOtherPatient: () => Promise.resolve(false) } };
-        for (const [segment] of pieces) {
-          const output = {
-            payer: null,
-            claim_references: segment.reference === undefined ? [] : [{ written: segment.reference, quote: segment.text.split('\n').at(-1) ?? segment.text }],
-            reason_category: 'authorization',
-            reason_quote: segment.text.split('\n').at(-1) ?? segment.text,
-            deadline: segment.deadline === undefined ? null : { written: segment.deadline, quote: segment.text },
-            requested_documents: [],
-          };
-          const reviewed = verifyDenialLetter(input, output, { text: screened.text, claims: screened.claims, candidates: screened.candidates });
-          const fields = reviewed.proposal.fields.filter((field) => field.field !== 'reason_category');
-          expect(fields.every((field) => field.verified), `${JSON.stringify(segment)} ${JSON.stringify(fields)}`).toBe(true);
-        }
-      }),
-      { numRuns: 300 },
-    );
+    fc.assert(keepsWhatMustStay, { numRuns: 300 });
   }, 60_000);
+
+  it(`holds on seed ${String(RANGE_GLUED_SEED)}, where a service period glued to the next word was refused (a fixed run of the property)`, () => {
+    fc.assert(keepsWhatMustStay, { numRuns: 300, seed: RANGE_GLUED_SEED });
+  }, 60_000);
+
+  // MOD-16's own letters (its generator, seed 1616) for patients whose name is a part of one of its words (the judge's review
+  // round 1, GATEWAYJ1-1): sent unchanged where cc3dd7f6 sent them, the part inside a word that goes on in its own case
+  // ("Billed" for BILL, "Coverage" for VERA); refused where the part is the whole word glued to a digit ("Page", "Total",
+  // "Noted": a fail-safe refusal, docs/adr/0054), and in a letter whose chain only held barriers hold (refused at cc3dd7f6),
+  // where any part anywhere is read.
+  it.each([
+    ['BILL Q ZEPHYRA', 'DCN 1619035765296Billed $0,069.06 2030-12-21', false],  // cc3dd7f6: sent
+    ['BILL Q ZEPHYRA', 'Control 44120273925247Billed 2022 02 21', false],  // cc3dd7f6: sent
+    ['BILL Q ZEPHYRA', 'Date $777.81Billed $721.47', false],  // cc3dd7f6: sent
+    ['VERA Q ZEPHYRA', 'Codes 98188 97140 97530 G0283Coverage 10/07/24—10/05/25; EFT 1677682922', false],  // cc3dd7f6: sent
+    ['VERA Q ZEPHYRA', 'Los Synth, CA 94112Coverage 02/16/2029--09/24/2029', false],  // cc3dd7f6: sent
+    ['VERA Q ZEPHYRA', 'DCN 38667138726148Coverage 08/26/2020-16th March 2021', false],  // cc3dd7f6: sent
+    ['ANGE Q ZEPHYRA', 'Paid 2191312372Range 09.22.2023−04.22.2024TH', false],  // cc3dd7f6: sent
+    ['ANGE Q ZEPHYRA', 'Control 12570495343. Control 684587150790Range 08/02/2025—25th August 2025', false],  // cc3dd7f6: sent
+    ['OVID Q ZEPHYRA', 'Billed 20301025\n2Provider 2264328230. Item N323', false],  // cc3dd7f6: sent
+    ['OVID Q ZEPHYRA', 'ZIP 92104Provider 1297617874', false],  // cc3dd7f6: sent
+    ['PAGE Q ZEPHYRA', 'Contact your provider, NPI 2985888223Page 2 of 6   91655 5   165.00', true],  // cc3dd7f6: sent
+    ['TOTAL Q ZEPHYRA', 'Control 01241498187563Total $6,781.78', true],  // cc3dd7f6: sent
+    ['NOTED Q ZEPHYRA', 'check 2186099307Noted $841.47', true],  // cc3dd7f6: sent
+    ['BILL Q ZEPHYRA', 'From February 8, 2024--2024-11-10Rd. 9\nTotal 96714-93671Billed CO-81', true],  // cc3dd7f6: refused
+    ['VERA Q ZEPHYRA', 'TIN 87-0008978. Total 4,654.00 2020Coverage 2027-12-10-21st of August, 2028Paid $4,465.46', true],  // cc3dd7f6: refused
+  ] as const)('handles MOD-16’s letter for a patient named inside its words (%s): %j refused %s', (name, text, refused) => {
+    const who: PatientIdentifiers = { ...patient, names: [name] };
+    const screened = redactLetterForScreen(text, who, claims);
+    expect(holdsIdentifier(screened.text, who, claims)).toBe(refused);
+    if (!refused) {
+      expect(screened).toMatchObject({ text, replaced: 0 });
+    }
+  });
 
   it('keeps the call’s nine-digit member ID and ten-digit claim number their placeholders in every SSN and phone shape, never [SSN] or [PHONE], and never offers them (property)', () => {
     fc.assert(
