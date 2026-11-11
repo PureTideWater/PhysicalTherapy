@@ -23,8 +23,8 @@ let w: LedgerWorld;
 
 beforeAll(async () => {
   w = await LedgerWorld.open(readDatabaseUrl());
-  // Before the first ledger row: nothing analyzes the two ledger tables in this file's own database, so the last
-  // group plans on a ledger with rows and no statistics, as a reconcile pass does inside its own transaction.
+  // Before the first ledger row: nothing analyzes the two ledger tables in this file's own database, so the first
+  // group plans on a ledger with no statistics, empty and then with its first rows, as a first reconcile pass does.
   await w.owner.query('ALTER TABLE ledger_entry SET (autovacuum_enabled = false)');
   await w.owner.query('ALTER TABLE ledger_match SET (autovacuum_enabled = false)');
 }, 60_000);
@@ -176,15 +176,16 @@ function parameterized(statement: string, names: readonly string[]): string {
 
 describe('the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000)', () => {
   /**
-   * What this group holds, and what it does not. A function's plan is made when a session first calls it and is kept;
-   * a reconcile pass first calls these on the ledger as it stands when the pass begins, and the planner learns nothing
-   * of the rows the pass then writes. So the state that matters is the ledger a pass starts on with no statistics:
-   * empty (a new deployment), or holding its first rows. There, each lookup must read through the index that finds
-   * its row. It does not hold for every never-analyzed ledger: measured on PostgreSQL 18.4, with a few hundred to
-   * some tens of thousands of never-analyzed entries the planner reads a line's entries through ledger_entry_by_date
-   * again (docs/adr/0087, the note of 2026-11-11); automatic analysis ends that state within about a minute of the
-   * first fifty committed entries, and with statistics the line index is taken. The match lookups hold in every
-   * state: only the primary key fits them.
+   * What this group holds, and what it does not. A function's plan is made at a session's first calls of it and kept
+   * in the plan cache; a reconcile pass first calls these on the ledger as it stands when the pass begins, and the
+   * kept plan is not made again as the pass writes (nothing analyzes rows a transaction has not committed). So the
+   * state that matters is the ledger a pass starts on with no statistics: empty (a new deployment), or holding its
+   * first rows. There, each lookup must read through the index that finds its row. It does not hold for every ledger
+   * (docs/adr/0087, the note of 2026-11-11; measured on PostgreSQL 18.4): planned on a never-analyzed ledger of about
+   * 160 entries (four pages) to some tens of thousands, a line's entries are read through ledger_entry_by_date
+   * again, until automatic analysis gives the planner statistics (within about a minute of the first fifty committed
+   * entries), and with statistics the line index is taken. On a never-analyzed ledger_match of any size only the
+   * primary key fits the match lookups. On a ledger analyzed while empty every lookup is a sequential scan.
    */
   let scope: Practice;
 

@@ -150,23 +150,28 @@ one step-7b pass on a copy of each seed, before (the base's bodies) against afte
   | The ledger when the function is planned | Body before | Body after |
   | --- | --- | --- |
   | never analyzed, empty to about 120 entries (a new deployment's first pass; F's and A's month above) | every entry of the practice (`ledger_entry_by_date`) | the line's entries (`ledger_entry_by_line`) |
-  | never analyzed, about 200 to 80,000 entries | every entry of the practice up to about 1,000; the line's entries from about 4,000 | every entry of the practice (`ledger_entry_by_date`, then a sort) |
+  | never analyzed, about 160 entries (four pages) to 80,000 | every entry of the practice up to about 1,000; the line's entries from about 4,000 | every entry of the practice (`ledger_entry_by_date`, then a sort) |
   | never analyzed, 100,000 entries | the line's entries | the line's entries |
-  | analyzed while empty (spread R above: its seed analyzes the empty ledger) | a sequential scan, and two more for corrections' targets | a sequential scan |
+  | analyzed while empty (spread R above: its seed analyzes the empty ledger) | a sequential scan, and two more for corrections' targets | a sequential scan (the match lookups too) |
   | analyzed with rows | the line's entries | the line's entries |
 
-  So on a ledger that holds a few hundred to some tens of thousands of entries and was never analyzed, the new body
+  So on a ledger that holds about 160 to some tens of thousands of entries and was never analyzed, the new body
   is the slower one from about 4,000 entries. Measured: F at 10,000 lines on a ledger already holding 20,000
   never-analyzed entries of another tenant passes in 132.0 s before and 168.5 s after (`ledger_line_net` 2.0 s to
   90.8 s; `ledger_entry_rules` 52.2 s to 4.1 s), with the same approved and posted cents. The pull request that moves
   step 7b measures the weekly run's own ledger as its pass finds it, for that reason.
   In production the state is short: automatic analysis runs within about a minute of the first fifty committed
   entries, its statistics make every open session plan again, and with statistics both bodies read the line's
-  entries. The match lookups have no such state: without `reversed_at IS NULL` in the query only the primary key fits.
+  entries. The match lookups have no such middle state: on a never-analyzed `ledger_match` of any size only the
+  primary key fits them, without `reversed_at IS NULL` in the query; on one analyzed while empty they are a sequential
+  scan, as every read of an analyzed empty table is. What keeps a pass on its first plan is the plan cache: the
+  planner reads a never-analyzed table's size each time it plans, and a kept plan is not made again as the pass writes.
   The plan test holds the two states a first pass plans in (an empty ledger, and its first rows). A body that reads
   the line's entries in every state would be a new body, so a new founder ruling: it is recorded as a candidate for
   the next ledger freeze ask, with `ledger_entry_within_evidence`.
-- Where the two bodies of `ledger_line_net` answer differently: only for an entry whose practice is not its line's.
+- Where the two bodies of `ledger_line_net` answer differently: only for an entry whose practice is not its line's,
+  or whose line is no row at all (which the foreign key refuses; a superuser can store one with it off, and the old
+  body then counts it where the new one does not).
   The application role cannot make one (it cannot change a service line, and the rules and the tenant policy refuse
   such an entry); the owner role (migrations and content loads run as it) or a superuser could, by moving a service
   line to another practice by hand. The new body then counts only the entries that carry the line's new practice, so
