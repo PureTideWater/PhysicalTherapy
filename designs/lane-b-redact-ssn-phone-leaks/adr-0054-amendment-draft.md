@@ -5,7 +5,8 @@ The amendment above ends with three accepted residuals, by the orchestrator's ru
 Security or phone number in a shape no rule reads, in a letter whose chain only the range fix's barriers hold; (A') the
 call's own name, member ID, claim number or date of birth in a form no rule reads, in such a letter; (B) a name part that
 is a month's word, next to a date. This amendment closes them (test matrix MOD-21 and MOD-22), for the letter reader only
-(`letterSubject`'s `patterns`, `redactLetterForScreen` and `holdsIdentifier`). Its design note, the reviews' reproduction
+(`letterSubject`'s `patterns`, `redactLetterForScreen` and `holdsIdentifier`): the narrative's check and the packet
+verifier, which read through the same matcher, read as before. Its design note, the reviews' reproduction
 scripts and the differential gate are in the ops repository (`claude/build-ops`,
 `designs/lane-b-redact-ssn-phone-leaks/`); every count below is measured on synthetic letters.
 
@@ -131,7 +132,10 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
   COLE, `80th` for BOTH: 42 of 651 common names had one among 26,143 ordinary tokens) and is not read.
 - **Name joiners.** The middle dot (U+00B7), the hyphenation point (U+2027), the bullet operator, the dot operator and the
   bullet join a name's pieces as a hyphen does (`Zeph·yra` is redacted alone; in a held letter, which ef3e8d20 refused for
-  the pieces, the letter stays refused): the packets verifier's fold asked for the measurement.
+  the pieces, the letter stays refused): the packets verifier's fold asked for the measurement. In the letter reader
+  only: the narrative's check (`holdsNameOrNumber`) and the packet verifier (`nameOrNumberMatches`) read a name as
+  ef3e8d20 read it, because which stored narratives fail is the verifier's to change, and its own test pins what the
+  matcher does not read (`packages/packets/src/verifier-identifiers.test.ts`).
 - **Ruling B.** A month word that is a name part is a date's month only in a date with two numbers or more (a day and a
   year: `May 5, 2026`, `3 June 2026`). `May 2020` and `June 103`, which the date reader takes as a day and a year run
   together, are the name: redacted.
@@ -184,8 +188,16 @@ a name part of four letters in a digit-for-letter form (`L1AM`), and a month's w
 (`νan-tree`); letters with a stroke (`Zepħyra`); a control character inside a number or a name (`900-12<U+0004>-3456`, as
 at ef3e8d20); a day of the date of birth written as an ordinal's word in a held letter (`March fourteenth`), and for a date of birth
 in May its day in digits with the phrase going on after it (`May 12 for review`, where `may 1) call us` is the verb); a number
-glued so that a bare nine or ten reads across the join (`123456900-12-3456` is `[SSN]-12-3456`, as at ef3e8d20); one to
-three digits glued before the shape with no structure (`150900-12-3456`); the shape wrapped before its last group with
+glued so that a bare nine or ten reads across the join (`123456900-12-3456` is `[SSN]-12-3456`, as at ef3e8d20); digits
+glued before the shape that no date, cents after a point or currency sign places: one to three (`150900-12-3456`), a
+year or a longer run (`2020900-12-3456`, `2025550100900-12-3456`), and a comma for a decimal point (`150,00900-12-3456`);
+a date with a two-digit year glued after a bare nine or ten (`90012345601-04-26`); a shape with digits glued after it
+under a label where a reference's noun stands nearer (`SSN / Member ID 900-12-345678`); one or two digits before a
+mask with no year, date or cents there (`12XXX-XX-3456`), and underscores for the mask glued to a word outside a held
+letter (`Paid___-__-3456`); a list number with no parenthesis or colon (`Phone 2 555-0100`, `Phone #2 555-0100`), as
+often the number's own first digit; where ef3e8d20's pattern takes an amount's digits and a date's year for an SSN
+(`$0,000.00.2020-01-01900-12-3456`), the date's end no longer stands before the shape and the letter is sent as
+ef3e8d20 sends it; the shape wrapped before its last group with
 an amount glued after it; the shape written with spaces and no label with an amount glued after it (`900 12
 3456150.00`); an amount with a thousands separator or a decimal comma glued after a number (`20255501231,250.00`); a
 number of an SSN's shape that a reference's noun names with digits glued after it (`Case No. 123-45-678901.00`); an SSN
@@ -198,7 +210,7 @@ with no held range by cc3dd7f6, ef3e8d20 and this head alike, and refused in a h
 name-forms.mts <redact.ts>...`), and `src/redact.leaks.test.ts` pins them as they are sent today. Of the list that ends
 the amendment above, this one closes: a label's list number (`Phone 1: 555-0100`, `TTY 1: 7,439.10 942.77 3098`), two
 phones with nothing between them, the Social Security label glued to a word (`PatientSSN 900.12 3456`, `PATIENTSSN 900.12
-3456`), a masked SSN glued to a digit or a word, an SSN or phone glued digit to digit to a date, an amount or a currency
+3456`), a masked SSN glued to a word, a year, a date or an amount's cents, an SSN or phone glued digit to digit to a date, an amount or a currency
 amount (`SSN 900-12-3456150.00`, `SSN 01/01/2020900-12-3456`, `$514451/293-6215`), a labeled SSN or phone written with
 spaces and an amount glued to it (`SSN 900 12 345615.00`, `Phone 202 555 012315.00`), a label with the call's own
 identifier before its number (`SSN Vantree 900.12 3456`, `SSN for Zephyra Vantree: 90012-3456`), and other-script digits in

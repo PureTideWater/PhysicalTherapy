@@ -4,8 +4,10 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 11:26 UTC)
-- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **5d685267** (cf5094a0, the fix round after the two
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 11:31 UTC)
+- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **91e1527a** (5d685267 plus one commit: the new name
+  joiners are the letter reader's, the narrative's check and the packet verifier read a name as ef3e8d20 did; the
+  reviewers read 5d685267, whose letter reader is the same). Before it: **5d685267** (cf5094a0, the fix round after the two
   reviews of the delta and the gate's replay, plus two additions from the gate on cf5094a0: a date with a four-digit year
   glued after a bare nine or ten, and a word glued before a dated month; and the test-matrix rows MOD-21 and MOD-22
   reworded to the final rules with their registry copy and fixture records). The six redaction test files pass (3,848
@@ -51,13 +53,16 @@ counter comes from the orchestrator.
   383403599, -460602131, -594136649) and three fresh on the property and leaks files; (5) the final gate if the code
   moved; (6) the full suite once, the base merged once (below), the push through the hook, the draft PR from the
   template, CI, the merge under rule 2a, one line to the orchestrator.
-- **The fold (#141, head 995380b7; check whether it has merged) trial-merged into this branch at 09:50 UTC:** `redact.ts`
-  follows the rename to `packages/redact/src/` with no conflict; one conflict, `docs/product/test-matrix.md` (keep MOD-19,
-  MOD-20, then MOD-21, MOD-22); the same order in `packages/synth/src/cases/matrix.ts` and `registry.ts`. By hand after
-  the merge: `git mv` `confusables.ts` and `confusables.test.ts` to `packages/redact/src/`; `redact.leaks.test.ts` stays in
-  model-gateway with its import of `./redact` changed to `@tp/redact`; the registry's `assertedBy` path of
-  `confusables.test.ts`; `packages/redact`'s description and `index.ts` comment say "no import" (now one data file beside
-  it); `gen-residual6.mts` paths. The mutation run covers ledger, money, packets and pricing, not this module.
+- **The base merge (the fold, #141, merged at 11:20 UTC; the base is edab4d4d or later):** scripted and rehearsed from
+  91e1527a in a scratch worktree at 11:30 UTC: `designs/lane-b-redact-ssn-phone-leaks/base-merge/base-merge.sh` (run in
+  the worktree on the branch; it merges, resolves the three conflicts with `resolve.py` (test-matrix, `matrix.ts`,
+  `registry.ts`: the base's MOD-19 and MOD-20, then MOD-21 and MOD-22), moves `confusables.ts` and its test to
+  `packages/redact/src/`, points `redact.leaks.test.ts` at `@tp/redact`, corrects the package's "no import" words,
+  installs offline and regenerates the two fixture records; it stops before the commit). After it, in the rehearsal:
+  typecheck clean in redact, model-gateway, packets and synth; `packages/redact` 46 tests, the packets verifier's 108
+  (its test that pins what the matcher does not read among them: that is why the joiners are the letter reader's),
+  the registry's 23 and the gateway's redaction and narrative files 3,823, all passed. Still by hand after the real
+  merge: `gen-residual6.mts`'s paths in ops. The mutation run covers ledger, money, packets and pricing.
 - **MOD-23** (allocated 2026-11-11, `LANES.md` Queues item 26): `Zephy ra`, `Zephy. ra` and `Z e p h y r a` are sent in
   clear outside a held letter on cc3dd7f6, ef3e8d20 and this head alike; pinned in `redact.leaks.test.ts`. Reproduce:
   `cd designs/lane-b-redact-ssn-phone/gate/leaks-scripts && node --import ../ts-resolve.mjs name-forms.mts <redact.ts of each tree>`.
