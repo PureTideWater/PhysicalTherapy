@@ -3,7 +3,9 @@
 W22 (acting Lane B), 2026-11-11. `LANES.md` Queues item 29; required before launch (the orchestrator's ruling). Base
 58fb29e5 (#140, #142, #144, #149 merged). Sources: ADR 0091 D10, ADR 0093 D6 and "Not covered" 5, the incident and
 support-mail runbooks' break-glass lines, `console.end_membership`, `settings.users.end_membership`, the provider
-adapter. **Status: v1, before build.** ADR and test-matrix numbers are asked of the orchestrator, none used here.
+adapter. **Status: v2, 2026-11-11, after the orchestrator's rulings:** the design approved; ADR 0094 and SGN-19 for Part B; the
+sign-out's retry is the outbox of section 2b, not a job the web sends; Part A and section 2b are `LANES.md` Queues item
+37, Lane A's schema chain, required before launch. Part B's common part is built (WIP `co-001/wip-operator-removes-keys`).
 
 ## 1. Three facts the design rests on (each checked)
 
@@ -21,35 +23,57 @@ adapter. **Status: v1, before build.** ADR and test-matrix numbers are asked of 
 3. **End membership calls the provider inside its transaction** (`globalSignOut` after the membership and the sessions
    end, both routes). A throw rolls everything back: the page shows an error and nothing ended.
 
-## 2. Part B, built now (no migration): End membership ends in the app whatever the provider answers
+## 2. Part B: End membership ends in the app whatever the provider answers
 
-- **One transaction, no provider call in the request.** Both routes end the membership, end every session of the user
-  (`revokeUserSessions`), write `membership_ended` (the wrapper's audit event) and send one `provider_sign_out` job
-  through the request's queue, which pg-boss writes on the same transaction's connection (#144): the job exists if and
-  only if End membership committed. The request never waits on the provider, so a provider that hangs cannot hold the
-  page either. Role checks are unchanged: `organization.manage` (console) and `user.invite` (settings) in the handler,
-  `membership_administrators_update` in Postgres, and the database's refusal for an only practice administrator.
-- **The job** (`apps/worker`, platform queue, one per End membership: singleton by the request's ID) asks the
-  provider to sign the user out everywhere through a worker-side adapter (`AdminUserGlobalSignOut`, the one action
-  the shared task role already holds; the local twin does nothing). The call is idempotent. "No such user" at the
-  provider is success (nothing to sign out). Payload: `user_id`, the provider's subject (an opaque ID the database
-  already holds; the operator role cannot read `"user"`, and a function that returns it is a migration), `request_id`.
-  No address or name; logs carry `user_id`, `request_id`, `error_code`.
-- **Retries and the page.** pg-boss retries twice with backoff (the queues' one policy). On the last failure the job
-  logs `security event: provider sign-out failed after a membership ended` (error) and sends itself again in 15
-  minutes with a round counter, for 24 hours; a new alarm (at least 1 in 300 s) pages the operator on the first such
-  line. When the last round fails the line carries `error_code` `GAVE_UP`. A later success logs an info line with the
-  same IDs, which the runbook reads to close the page.
-- **What refuses sign-in meanwhile.** The membership and the sessions are ended by the app's own rows. The build's
-  first tests state what a step in flight can still do after End membership with the provider's sign-out never
-  performed (a fresh sign-in, a code step, a key-registration grant), as SGN-16 did for the reset; whatever is open is
-  recorded and goes to section 4, not papered over.
-- **Audit.** `membership_ended` in the transaction (existing). The provider's sign-out, done by the operator role, is a
-  log line for now: an audit row from that role needs a function (section 4).
-- **Refusals read as today** (not found; the only-administrator refusal). The screens' words change only if the build
-  finds one that is no longer true; then one ux-brand pass.
-- **Runbooks.** "If the provider refuses the sign-out, the page shows an error and nothing was ended" and the
-  break-glass hand-off for it are replaced by the page, its query and what to check.
+### 2a. Built now, no migration (ADR 0094, SGN-19)
+
+- **One transaction, no provider call inside it.** Both routes end the membership, end every session of the user
+  (`revokeUserSessions`) and write `membership_ended` (the wrapper's audit event). Role checks are unchanged:
+  `organization.manage` (console) and `user.invite` (settings) in the handler, `membership_administrators_update` in
+  Postgres, and the database's refusal for an only practice administrator.
+- **The provider is asked once, after the commit** (`signOutAtProviderAfterCommit`, through #144's `afterCommit`). A
+  failure undoes nothing and is one error line, `security event: membership end provider sign-out failed` (`user_id`,
+  `request_id`, `error_code`: the provider's error name, or `NO_PROVIDER_SUBJECT`), counted by the alarm
+  `MembershipEndProviderSignOutFailed` (at least 1 in 300 s), which pages the operator.
+- **A fault found and fixed:** Settings' End membership read the provider subject after ending the membership, where
+  row-level security hides the person's row from an administrator who administers them nowhere else, so the provider
+  was never asked. It reads it first now.
+- **What the app's own state does and does not refuse.** From the commit the person has no role in that organization
+  and no session. The account can still sign in: `sign_in_account` reads no membership, and End membership never
+  disabled an account. A missing provider sign-out adds only what the provider's own tokens can do: a key-registration
+  step begun before it, for its 15 minutes, and calls made at the provider directly.
+- **The limit, stated in the runbook and the PR:** until 2b lands nothing an operator holds sends a failed provider
+  sign-out again; that one retry is the founder's break-glass.
+- **Known and left to the reviews:** the request awaits the after-commit call, so a provider that hangs delays the
+  page's answer by the SDK's timeout; a web task stopped between the commit and the call logs nothing (2b closes both).
+
+### 2b. The retry, for Lane A (Queues item 37; the orchestrator's ruling: this, not a web-sent job)
+
+ADR 0091's pattern, so nothing new to operate. Why not a job the web sends: every web-sent job is a practice job
+(`practice_id` in its payload, key and scope), every platform job is scheduled with an empty payload, and the operator
+role can neither read `"user"` nor write an audit row.
+
+- **The outbox.** A table `provider_sign_out` (id; `user_id`; the event's `request_id`; `reason`: `membership_ended`
+  or `password_reset_completed`; `queued_at`; `attempts`; `next_attempt_at`; `done_at`; `gave_up_at`; `last_error_code`
+  as a short code, never text). No `practice_id`: it holds no PHI and no address; forced row-level security with no
+  policy for the application role.
+- **Written by the database.** The AFTER INSERT trigger on `audit_event` that ADR 0091 and 0093 already use writes one
+  row for `membership_ended` (resolving the membership's user) and one for `password_reset_completed`, in the event's
+  own transaction: a row exists if and only if the end committed, whichever route or future route ended it.
+- **Claimed by a scheduled platform job** (`provider_sign_outs`, every minute, as the operator role) through two definer
+  functions: a claim that returns due rows with the user's provider subject (`FOR UPDATE SKIP LOCKED`, a lease so a
+  crashed run is taken up again), and a record of the outcome that also writes the audit row (`provider_signed_out` or
+  `provider_sign_out_undelivered`, both reserved from the application role's own inserts). The job's payload stays empty.
+- **Retries** on the notices' steps (1, 5, 15, 60 minutes) for 24 hours. The provider's call is idempotent, so a row
+  claimed twice is harmless; "no such user" is done. The first failed attempt logs the line the alarm of 2a already
+  counts (the same words, from the worker; the filter gains the platform log group); giving up logs it with
+  `error_code` `GAVE_UP`.
+- **The web then stops calling the provider** in both End membership routes, and the reset's own call after its commit
+  goes the same way (its failed sign-out has no retry today). The worker needs a sign-out adapter of its own
+  (`AdminUserGlobalSignOut`, which the shared task role already holds; the local twin does nothing), the user pool's ID
+  in its environment, and the role test extended to scan it.
+- **Tests:** the trigger writes a row only for those two actions and never for a rolled-back end; the claim's lease and
+  skip; the steps; give-up; the reserved actions; the catalog and cross-tenant tests for the new table.
 
 ## 3. Part A, the design (all of it needs a migration; nothing of it is built here)
 
@@ -83,18 +107,17 @@ adapter. **Status: v1, before build.** ADR and test-matrix numbers are asked of 
 - **Refused, in words.** "Ask another platform administrator to confirm this removal" (the requester or the account
   confirming); "this request has expired; ask again"; "you cannot remove the keys of your own account".
 
-## 4. For Lane A (migrations; none written here)
+## 4. For Lane A: `LANES.md` Queues item 37 (migrations; none written here)
 
-1. Part A's schema: the key registry, the removal request, their functions, the reserved audit actions, the session
-   check for a key sign-in, the notice outbox and its trigger.
-2. `membership_ended` moves `sign_in_not_before` as a completed reset does, if section 2's tests show a step begun
-   before End membership still opens something.
-3. A function for the operator role that records the provider's sign-out as an audit row, and one that returns a
-   user's provider subject, so the job's payload drops it.
+1. Part A's schema (section 3): the key registry, the two-person removal request, their functions, the reserved audit
+   actions, the session check for a key sign-in, the notice outbox and its trigger.
+2. Section 2b: the provider sign-out outbox, its trigger, its two functions and reserved actions.
+3. `membership_ended` moves `sign_in_not_before` as a completed reset does, so a step begun before End membership opens
+   nothing after it (Part B's in-flight tests state what is open today).
 
-## 5. Tests first (Part B)
+## 5. Tests (Part B, 2a)
 
-End membership with a queue and no provider: commits, sessions ended, one job, no provider call (both routes); a
-rolled-back End membership leaves no job; the job: success, "no such user", a failure thrown for the retry, the last
-attempt's line and re-send, the give-up; the role test that the worker's adapter uses only actions the role holds; the
-alarm's filter; the in-flight cases of section 2.
+Written first and green: End membership in both routes with a provider whose sign-out throws (the membership and
+sessions ended and committed when the provider is asked, one audit event, one error line with IDs and a code only); a
+refused End membership asks the provider nothing; the helper's three cases; the alarm's row, filter and words. Still to
+write: the in-flight cases (a code step and a key-registration grant begun before End membership).
