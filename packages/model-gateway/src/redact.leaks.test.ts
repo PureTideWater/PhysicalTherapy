@@ -965,6 +965,44 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
     });
   });
 
+  // Review B of co-001/redact-item-26 (must-stay): what the wider reading costs beyond two ordinary words, each pinned
+  // as it is and recorded in docs/adr/0054 for Queues item 34. Every outcome is the safe side: a placeholder or a refusal.
+  describe('review B, the recorded costs', () => {
+    const named = (...names: string[]) => patientOf(names);
+
+    it.each([
+      ['a name of ordinary words apart between a label and a number', named('INA'), claimsOf('SYNCLAIM0001', '15000'), 'Call in\na\n555-0123', 'Call Ina\n555-0123', 'Call [PATIENT_NAME]\n[PHONE]'],
+      ['a name letter by letter between a label and a number', patientOf(['JUNE MARCH', 'J VANTREE'], ['1980-03-14'], ['ZZ7654321']), claimsOf('C2026000417', '76543210'), 'Social Security number of V a n t r e e, 555-0123', 'Social Security number of Vantree, 555-0123', 'Social Security number of [PATIENT_NAME], [SSN]'],
+    ] as const)('B-1: %s is refused, where the same letter with the name whole is redacted and sent', (_case, who, numbers, apart, whole, sent) => {
+      // The patterns are read before the wider placeholder stands; the check reads the label through it to the number.
+      expect(sentOrRefused(apart, who, numbers)).toBe(REFUSED);
+      expect(sentOrRefused(whole, who, numbers)).toBe(sent);
+    });
+
+    it('B-1: a stored number that takes an amount and the digits after it leaves a number the check refuses', () => {
+      expect(sentOrRefused('Units 2026.00 123.45 555-0123', patient, claimsOf('2026.00123'))).toBe(REFUSED);
+    });
+
+    it.each([
+      [['ORA VANTREE'], 'Submit a corrected claim or a written appeal.', 'Submit a corrected claim [PATIENT_NAME] written appeal.'],
+      [['MARCHAND VANTREE'], 'The appeal deadline is 31 March and no extension applies.', 'The appeal deadline is 31 [PATIENT_NAME] no extension applies.'],
+      [['ANDRE VANTREE'], 'Please correct the claim and re-submit it within 90 days.', 'Please correct the claim [PATIENT_NAME]-submit it within 90 days.'],
+      [['INA G VANTREE'], 'The service was reported in a G-code and denied CO-45.', 'The service was reported [PATIENT_NAME] [PATIENT_NAME]-code and denied CO-45.'],
+      [['PO VANTREE'], 'Mail to P.O. Box 1234, Springfield.', 'Mail to [PATIENT_NAME]. Box 1234, Springfield.'],
+    ] as const)('B-2, B-3: for a patient %j, %j is sent as %j', (names, letter, sent) => {
+      expect(sentOrRefused(letter, named(...names), claims)).toBe(sent);
+    });
+
+    it('B-4: a number held with a separator is replaced where an amount or a row writes its digits so', () => {
+      expect(sentOrRefused('Paid $1234.56 on 03/14/2026.', patient, claimsOf('1234.56'))).toBe('Paid $[CLAIM_1] on 03/14/2026.');
+      expect(sentOrRefused('Line 1  97110  2026.00  123.45', patient, claimsOf('2026.00123'))).toBe('Line 1  97110  [CLAIM_1].45');
+      expect(sentOrRefused('Plan ZZ12345/01/15/2026 effective.', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ12345/01']), claims)).toBe('Plan [MEMBER_ID]/15/2026 effective.');
+      // The thousands comma is no writing of the stored number, and a number held with no separator reads as before.
+      expect(sentOrRefused('Paid $1,234.56 on 03/14/2026.', patient, claimsOf('1234.56'))).toBe('Paid $1,234.56 on 03/14/2026.');
+      expect(sentOrRefused('Paid $1234.56 on 03/14/2026.', patient, claimsOf('123456'))).toBe('Paid $1234.56 on 03/14/2026.');
+    });
+  });
+
   it('refuses a CR LF letter wherever its writing with LF is refused (property)', () => {
     const piece = fc.constantFrom('SSN on file.', 'SSN verified.', 'Statement', 'Account', 'Provider', 'No.', 'Member', 'ID Number:', 'Phone', 'Tel', 'Claim', 'Paid', '900-12-3456', '900-12-3456150.00', '900 12 3456', '90012345601/02/2020', '5550123', '202-555-0123', '150.00', '01/01/2020-150.00', 'Jane Zephyra', 'Thank you.');
     const gap = fc.constantFrom(' ', '  ', '\n', '\n\n', ' \n', '\n ', '');
