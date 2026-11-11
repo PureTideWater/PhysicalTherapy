@@ -6,28 +6,27 @@ counter comes from the orchestrator.
 
 ACTING (Lane A's account, https://claude.ai/code/session_019i9ifADZcDuzjeUkfedYiW) holds this item from 2026-11-11 (the orchestrator's start, 16:40 UTC by its clock); Lane B: read lanes/lane-b.md's latest entries before resuming.
 
-## RESUME-BLOCK (W13, session_019i9ifADZcDuzjeUkfedYiW; current at 2026-11-11 20:05 UTC by this container's clock; W5's block below is history)
+## MERGED: #146 as f3f5a642 (2026-11-11 20:04 UTC, W13). Nothing to resume; W13 holds nothing
 
-- **State. Draft pull request #146** (`co-001/redact-ssn-phone-leaks` into `claude/build-platform`), head **7bb7e7ac**
-  (the base ea8f200f, #145, is an ancestor). W13 is subscribed to it. The WIP ref equals the branch. CI is running.
-- **Next.** On green required checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`) with
-  `origin/claude/build-platform` still an ancestor of the head: mark ready and merge (rule 2a), one line to the
-  orchestrator, record the merge here, unsubscribe. If the base moved: merge it once more, the fast checks and the
-  generators (`w13/out/fast-checks-at-7bb7e7ac.txt` lists them), push, wait for CI. If CI dies at `playwright install
-  --with-deps` on the runners' DNS: re-run only the failed jobs at intervals of 30 minutes or more; push nothing to kick it.
-- **No further change to `redact.ts`** (the orchestrator's ruling, 18:02 UTC). What W13 changed, each by a ruling:
-  ac412151 (OPEN 1, the one condition in `matchesIn`; K-1 pinned), 247a53e3 (review L-1, the screen's second reading),
-  c9dddaa7 (review M-1, that reading follows `merge`'s R6b); review N's N-1 and N-2 recorded and pinned (052ff9e5, with
-  ADR 0054's amendment); d06e772d (the worker's bundle test and the watched list name the look-alike table); cc6a914c and
-  7bb7e7ac (the base merged at 91bc6b7c, then ea8f200f).
-- **Reviews L, M, N** (none blocking): `designs/lane-b-redact-ssn-phone-leaks/reviews/l/VERIFIED.md`.
-- **Verified.** The battery with fresh seeds on ac412151, the last change to what is sent (`w13/out/fuzz-all.out`); the
-  gate on the merged tree: no PHI class against ef3e8d20 or cc3dd7f6, every class equal to 74c32149's run, slowest letter
-  1,137 ms (`w13/out/gate-*-report-merged-tree.md`); the eight seeds; the full suite once on 052ff9e5 with its two
-  failures fixed in d06e772d and run again there (`w13/out/suite-*.txt`); the fast checks on 7bb7e7ac. The description
-  as sent: `w13/pr-body.md`.
-- **For Queues item 26** (the orchestrator has them): K-1; MOD-23's two name forms; review N-1 and N-2; a digits-only
-  identifier glued to a word (recorded since the amendment of 2026-10-27).
+- **The merge.** Pull request #146 (`co-001/redact-ssn-phone-leaks`, head 7bb7e7ac) merged into `claude/build-platform`
+  as **f3f5a642** on green required checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`; all
+  36 check runs passed, none re-run), the base ea8f200f an ancestor of the head. No migration. W13 is unsubscribed, its
+  check-in is cancelled, and the orchestrator has the merge in one line.
+- **What W13 changed, each by a ruling.** ac412151: OPEN 1 fixed by the one condition in `matchesIn` (a pattern's match
+  is withheld only for a glued run that no match of the call's own covers whole); K-1 and review K's lesser forms pinned.
+  247a53e3: review L-1 (ruling 17:23 UTC), the other-patient screen reads the letter once more with the call's own
+  matches alone replaced. c9dddaa7: review M-1 (ruling 18:02 UTC, the last change to `redact.ts`), that reading follows
+  `merge`'s rule R6b. 052ff9e5: review N's N-1 and N-2 recorded and pinned, with ADR 0054's amendment. d06e772d: the
+  worker's bundle test and the watched list name the look-alike table. cc6a914c and 7bb7e7ac: the base merged at
+  91bc6b7c, then ea8f200f.
+- **Still open, for `LANES.md` Queues item 26, before any real PHI** (each recorded in ADR 0054's amendment of
+  2026-11-11 and pinned in `packages/model-gateway/src/redact.leaks.test.ts` as it behaves today): review K-1 (a CR LF
+  counts two against a label's reach); MOD-23's two name forms; review N-1 and N-2 (the screen is asked about an own
+  identifier inside a hidden number, joined to what follows or in another script's digits); and, recorded since the
+  amendment of 2026-10-27, a digits-only member ID or claim number glued to a word.
+- **Records.** Reviews L, M, N: `designs/lane-b-redact-ssn-phone-leaks/reviews/l/VERIFIED.md` and the reports beside it.
+  The battery, the gates, the suite and the description as sent: `designs/lane-b-redact-ssn-phone-leaks/w13/`. The WIP
+  ref `co-001/wip-redact-ssn-phone-leaks` and the branch are merged history and may be deleted by whoever tidies refs.
 
 ## RESUME-BLOCK (written by W5, session_019i9ifC8ouxG6CLPdZtgAcJ, for a successor; current at 2026-11-11 16:37 UTC; W5 has stood down)
 
