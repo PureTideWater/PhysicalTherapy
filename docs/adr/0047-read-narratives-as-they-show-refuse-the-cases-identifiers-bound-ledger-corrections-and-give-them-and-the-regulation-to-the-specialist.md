@@ -175,13 +175,15 @@ meaning to. The letter reader's redaction has read each of them since its one-pa
 amendments of 2026-10-27 and 2026-11-04). A digit-bearing identifier written with joiners (`ZZ-123-4567`) failed
 already, but as a figure the inputs do not hold, not as an identifier.
 
-**The server's reading is now two readings, and it never finds less than either**
+**The server's reading is now two readings joined, and it never finds less than the whole-word reading did**
 (`packages/packets/src/verifier/identifiers.ts`):
 
 1. the whole-word reading above, unchanged;
 2. the reading the letter reader's matcher has of a name or a number, `@tp/redact` `nameOrNumberMatches`: the same
-   function the narrative drafter's check of its facts reads through (ADR 0054, amendment of 2026-11-11), so the
-   drafter and the verifier cannot come to read different forms.
+   matcher and the same subject as the narrative drafter's check of its facts (`holdsNameOrNumber`; ADR 0054,
+   amendment of 2026-11-11), asked where. A test holds the two to one answer, so neither comes to read a form the
+   other does not, but for one thing the verifier leaves the drafter's check on purpose: a part of a name's word
+   under four letters by itself (below).
 
 Overlapping spans are joined into one. The report holds positions only, as before, and its format is unchanged
 (`tp-packet-verifier/2`, and /3 as [0089](0089-write-a-narratives-figures-as-fact-tokens-rendered-by-code-refuse-every-free-figure-and-read-english-only-for-contradiction.md) left it: `verifier/template.ts` takes the same reading).

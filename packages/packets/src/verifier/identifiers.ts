@@ -6,9 +6,9 @@ import { type IdentifierReader, identifierSpans, readsNoIdentifier } from './mis
 /**
  * The server's reading of a narrative for the case's own identifiers (docs/adr/0047, amendment of 2026-11-11): the
  * verifier's whole-word reading (./mismatches.ts identifierSpans) and, beside it, the reading the letter reader's
- * redaction has of a name or a number (@tp/redact nameOrNumberMatches; docs/adr/0054), which the narrative drafter's
- * check of its facts shares. A person types "Zoe" for ZOË and a keyboard writes "O’Quill" for O'QUILL; the first
- * reading alone passed both.
+ * redaction has of a name or a number (@tp/redact nameOrNumberMatches; docs/adr/0054): the matcher and the subject of
+ * the narrative drafter's check of its facts, asked where. A person types "Zoe" for ZOË and a keyboard writes
+ * "O’Quill" for O'QUILL; the first reading alone passed both.
  *
  * What the second reading adds, each as redaction reads it:
  * - a name with its marks, case, apostrophes and dashes written any way ("Zoe", "STRAUSS" for Strauß, "O’Quill",
