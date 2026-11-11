@@ -19,7 +19,8 @@ import { LedgerTotals, LineCorrectionWords, ReportedInterest, interestWords } fr
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { practiceRoute, selfRoute } from '../http/invoke';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -87,7 +88,7 @@ async function sessionOf(userId: string): Promise<string> {
   if (token === undefined) {
     // An internal role signs in with a hardware key (the contract specialist, under the practice's support grant).
     const method = userId === w.pricing.specialist ? 'webauthn' : 'totp';
-    token = (await openSession(w.app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSessionNow(w.app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;

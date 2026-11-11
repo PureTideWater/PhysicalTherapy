@@ -12,7 +12,8 @@ import { z } from 'zod';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession, resolveSession } from '../auth/sessions';
+import { SESSION_COOKIE, resolveSession } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -121,7 +122,7 @@ class Jar implements CookieJar {
 }
 
 async function sessionFor(userId: string, method: 'totp' | 'webauthn'): Promise<string> {
-  return (await openSession(app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+  return (await openSessionNow(app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
 }
 
 async function platformAdmin(): Promise<{ id: string; token: string; internalId: string }> {

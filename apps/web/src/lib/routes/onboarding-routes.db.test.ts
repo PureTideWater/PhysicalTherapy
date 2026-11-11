@@ -15,7 +15,8 @@ import { ESIGN_SIGNATURE_HEADER, LocalESignature } from '../agreements/esign';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { csrfTokenFor } from '../http/csrf';
 import { routeHandler } from '../http/handler';
 import { forgetMaintenanceFlag } from '../http/invoke';
@@ -129,7 +130,7 @@ async function sessionOf(userId: string): Promise<string> {
   let token = tokens.get(userId);
   if (token === undefined) {
     const internal = userId === platformAdmin || userId === supportEngineer;
-    token = (await openSession(app, { userId, method: internal ? 'webauthn' : 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSessionNow(app, { userId, method: internal ? 'webauthn' : 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;

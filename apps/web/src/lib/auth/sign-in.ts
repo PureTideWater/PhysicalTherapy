@@ -79,6 +79,8 @@ export type Pending =
   /**
    * An internal user proved password and TOTP but has no hardware key yet: they may register one. `addressUserId`: the
    * account the typed address named, when it is not `userId` (a crossed state; docs/adr/0093, D5): both are judged.
+   * The flow seals none now, since authenticated() refuses a crossed state before this step; a step that carries one
+   * is still judged for both.
    */
   | ({ readonly step: 'register_key'; readonly email: string; readonly userId: string; readonly grant: string; readonly challenge?: string; readonly addressUserId?: string } & Began)
   /** A reset code was asked for the typed address: unproven until the code is, so it holds no challenge and opens nothing. */
@@ -160,6 +162,12 @@ const refused = (reason: RefusalReason): FlowResult => ({ kind: 'refused', reaso
 
 /** The steps the database judges against a password reset (sign_in_step_refused's closed list; docs/adr/0093, D5 and D6). */
 type JudgedStep = 'new_password' | 'mfa_setup' | 'mfa' | 'key' | 'register_key' | 'key_registered';
+/** Why sign_in_step_refused() refuses a step (docs/adr/0093, D5). Only `before_reset` is evidence, recorded by the database. */
+type RefusedWhy = 'no_account' | 'no_start' | 'ahead_of_clock' | 'before_reset';
+interface Judgement {
+  readonly userId: string;
+  readonly why: RefusedWhy;
+}
 
 /** An error's name for a log (`error_code`): never its message, which can carry what was sent. */
 const errorCode = (error: unknown): string => (error instanceof Error ? error.name : 'unknown');
@@ -299,35 +307,50 @@ export class SignInFlow {
    * has its record. A step with no start is refused without asking: it proves nothing and is no evidence. Returns the
    * accounts that were refused.
    */
-  private async judged(userIds: readonly (string | undefined)[], began: number | undefined, step: JudgedStep, context: SignInContext | undefined): Promise<string[]> {
+  private async judged(userIds: readonly (string | undefined)[], began: number | undefined, step: JudgedStep, context: SignInContext | undefined): Promise<Judgement[]> {
     const distinct = [...new Set(userIds.filter((id): id is string => id !== undefined))];
-    const refusedFor: string[] = [];
+    const refusedFor: Judgement[] = [];
     for (const userId of distinct) {
-      const [row] = await this.query<{ refused: boolean }>('SELECT sign_in_step_refused($1, $2, $3, $4) AS refused', [
+      const [row] = await this.query<{ why: RefusedWhy | null }>('SELECT sign_in_step_refused($1, $2, $3, $4) AS why', [
         userId,
         began === undefined ? null : new Date(began),
         step,
         context?.requestId ?? null,
       ]);
-      if (row?.refused !== false) {
-        refusedFor.push(userId);
+      // No row cannot happen (the function always answers); read as a refusal that is no evidence.
+      const why = row === undefined ? 'no_account' : row.why;
+      if (why !== null) {
+        refusedFor.push({ userId, why });
       }
     }
     return refusedFor;
   }
 
   /**
+   * The lines a judgement leaves. Only a start at or before the account's mark is evidence, and only it is the line
+   * the operator is paged on (the database recorded it in the same call). A start ahead of the database's clock is the
+   * platform's fault (a clock that stepped back), logged as an error of its own. No account and no start log nothing.
+   */
+  private logJudged(judgements: readonly Judgement[], step: JudgedStep, context: SignInContext | undefined): void {
+    for (const { userId, why } of judgements) {
+      if (why === 'before_reset') {
+        this.deps.logger.warn('security event: sign-in step refused after a password reset', { user_id: userId, request_id: context?.requestId ?? null, error_code: step });
+      } else if (why === 'ahead_of_clock') {
+        this.deps.logger.error('sign-in step start is ahead of the database clock', { user_id: userId, request_id: context?.requestId ?? null, error_code: step });
+      }
+    }
+  }
+
+  /**
    * Whether the step is stale: begun at or before a password reset of one of the accounts (or with no start, or ahead
-   * of the database's clock). Each refused account is logged by its ID with the step, the line the operator is paged on.
+   * of the database's clock, or for an account that is gone). Every such step is refused; logJudged says which leave a line.
    */
   private async stale(userIds: readonly (string | undefined)[], began: number | undefined, step: Exclude<JudgedStep, 'key_registered'>, context: SignInContext | undefined): Promise<boolean> {
     if (began === undefined) {
       return true;
     }
     const refusedFor = await this.judged(userIds, began, step, context);
-    for (const userId of refusedFor) {
-      this.deps.logger.warn('security event: sign-in step refused after a password reset', { user_id: userId, request_id: context?.requestId ?? null, error_code: step });
-    }
+    this.logJudged(refusedFor, step, context);
     return refusedFor.length > 0;
   }
 
@@ -382,50 +405,78 @@ export class SignInFlow {
    * it under the account's row lock if a reset landed since the check (D4), which is recorded and answered alike.
    */
   private async authenticated(step: Extract<AuthStep, { kind: 'authenticated' }>, email: string, attempt: Attempt, context: SignInContext): Promise<FlowResult> {
-    const account = await this.account({ sub: step.identity.sub });
-    if (account === undefined || account.status === 'disabled') {
+    // The grant is given back on every way out but the key-registration step, which seals it: a lookup or a judgement
+    // that throws gives it back too, before the error leaves (review SEC-N6 of 2026-11-11).
+    let held = true;
+    const release = async (): Promise<void> => {
+      held = false;
       await this.deps.provider.release(step.grant);
-      return refused('no_account');
-    }
-    if (account.locked) {
-      await this.deps.provider.release(step.grant);
-      return refused('locked');
-    }
-    const typed = await this.account({ email });
-    const judgedAccounts = [account.user_id, typed?.user_id];
-    if (await this.stale(judgedAccounts, attempt.began, attempt.step, context)) {
-      await this.deps.provider.release(step.grant);
-      return refused('expired');
-    }
-    if (account.hardware_key_required && step.identity.method !== 'webauthn') {
-      if (!(await this.deps.provider.hasHardwareKey(step.grant))) {
-        const addressUserId = typed !== undefined && typed.user_id !== account.user_id ? { addressUserId: typed.user_id } : {};
-        return { kind: 'pending', pending: { step: 'register_key', email: account.email, userId: account.user_id, grant: step.grant, began: attempt.began, ...addressUserId } };
-      }
-      await this.deps.provider.release(step.grant);
-      return refused('hardware_key_required');
-    }
-    await this.deps.provider.release(step.grant);
-    let session: OpenedSession;
+    };
     try {
-      session = await openSession(this.deps.pool, { userId: account.user_id, method: step.identity.method, ...context, began: attempt.began });
+      const account = await this.account({ sub: step.identity.sub });
+      if (account === undefined || account.status === 'disabled') {
+        await release();
+        return refused('no_account');
+      }
+      if (account.locked) {
+        await release();
+        return refused('locked');
+      }
+      // Both accounts are judged first when the typed address names another than the provider's subject (a crossed
+      // state), so a reset of either leaves its record. sign_in_account() matches the address without regard to case,
+      // so a sound account typed in another case is one account.
+      const typed = await this.account({ email });
+      const crossed = typed !== undefined && typed.user_id !== account.user_id;
+      const { began } = attempt;
+      if (began === undefined || (await this.stale([account.user_id, typed?.user_id], began, attempt.step, context))) {
+        await release();
+        return refused('expired');
+      }
+      // A crossed state is then refused outright (review SEC-S1 of 2026-11-11): the address's reset marks and sweeps
+      // one account and the session's insert is checked against the other, so nothing exact can be said of the pair.
+      if (crossed) {
+        await release();
+        this.deps.logger.warn('security event: sign-in refused for a crossed account', { user_id: account.user_id, request_id: context.requestId });
+        return refused('no_account');
+      }
+      const judgedAccounts = [account.user_id];
+      if (account.hardware_key_required && step.identity.method !== 'webauthn') {
+        if (!(await this.deps.provider.hasHardwareKey(step.grant))) {
+          held = false;
+          return { kind: 'pending', pending: { step: 'register_key', email: account.email, userId: account.user_id, grant: step.grant, began: attempt.began } };
+        }
+        await release();
+        return refused('hardware_key_required');
+      }
+      await release();
+      let session: OpenedSession;
+      try {
+        session = await openSession(this.deps.pool, { userId: account.user_id, method: step.identity.method, ...context, began });
+      } catch (error) {
+        if (!isStaleSessionRefusal(error)) {
+          throw error;
+        }
+        // A reset landed between the check above and the insert: the database refused the session under the account's
+        // lock. Judged once more, now that the mark has moved, so the refusal has its record; if that call names no
+        // reason, the paging line is still logged for the account, since the database's refusal is the fact.
+        const recorded = await this.judged(judgedAccounts, attempt.began, attempt.step, context);
+        this.logJudged(recorded.length > 0 ? recorded : [{ userId: account.user_id, why: 'before_reset' }], attempt.step, context);
+        return refused('expired');
+      }
+      if (session.newDevice) {
+        this.deps.logger.warn('security event: sign-in from a new device', { user_id: account.user_id, request_id: context.requestId });
+      }
+      return { kind: 'signed_in', session, userId: account.user_id };
     } catch (error) {
-      if (!isStaleSessionRefusal(error)) {
-        throw error;
+      if (held) {
+        try {
+          await this.deps.provider.release(step.grant);
+        } catch {
+          // The first error is the one that leaves; the tokens lapse on their own.
+        }
       }
-      // A reset landed between the check above and the insert: the database refused the session under the account's
-      // lock. Judged once more, now that the mark has moved, so the refusal has its record; the line is logged for the
-      // account whatever that call answers, since the database's refusal is the fact.
-      const recorded = await this.judged(judgedAccounts, attempt.began, attempt.step, context);
-      for (const userId of recorded.length > 0 ? recorded : [account.user_id]) {
-        this.deps.logger.warn('security event: sign-in step refused after a password reset', { user_id: userId, request_id: context.requestId, error_code: attempt.step });
-      }
-      return refused('expired');
+      throw error;
     }
-    if (session.newDevice) {
-      this.deps.logger.warn('security event: sign-in from a new device', { user_id: account.user_id, request_id: context.requestId });
-    }
-    return { kind: 'signed_in', session, userId: account.user_id };
   }
 
   /** Email and password. */
@@ -619,30 +670,71 @@ export class SignInFlow {
     if (!(await this.deps.provider.completeKeyRegistration(pending.grant, pending.challenge, response))) {
       return refused('key_not_registered');
     }
-    // The check above read the committed mark, so a registration already at the provider when a reset commits still
-    // registers, and the reset's provider sign-out comes after its commit (docs/adr/0093, D6). Judged once more: a
-    // key registered across the reset is removed, best effort, and reported either way; it is audited as registered
-    // only if it is still there.
-    if ((await this.judged([pending.userId, pending.addressUserId], pending.began, 'key_registered', context)).length > 0) {
-      let removed = false;
+    // The provider holds the key from here. Whatever follows, the grant is given back and nothing leaves without the
+    // key's line or its audit record (review SEC-S3 of 2026-11-11).
+    let result: FlowResult;
+    try {
+      result = await this.keyRegistered(pending, response.id, context);
+    } catch (error) {
       try {
-        removed = await this.deps.provider.removeHardwareKey(pending.grant, response.id);
-      } catch (error) {
-        if (error instanceof ClientCredentialError) {
-          this.deps.logger.error('security event: client credential refused', { request_id: context.requestId, error_code: error.code });
-        }
+        await this.guarded(context, undefined, () => this.deps.provider.release(pending.grant));
+      } catch {
+        // The first error is the one that leaves; the tokens lapse on their own.
       }
-      this.deps.logger.error('security event: hardware key registered across a password reset', { user_id: pending.userId, request_id: context.requestId, error_code: removed ? 'removed' : 'not_removed' });
-      if (!removed) {
-        await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
-      }
-      await this.guarded(context, undefined, () => this.deps.provider.release(pending.grant));
-      return refused('expired');
+      throw error;
     }
-    await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
     // The key is registered whatever the revoke answers; a refused credential is still logged.
     await this.guarded(context, undefined, () => this.deps.provider.release(pending.grant));
-    return { kind: 'key_registered' };
+    return result;
+  }
+
+  /** What a key the provider has just registered becomes: audited, or, across a password reset, removed or locked and reported (docs/adr/0093, D6). */
+  private async keyRegistered(pending: Extract<Pending, { step: 'register_key' }>, credentialId: string, context: SignInContext): Promise<FlowResult> {
+    // The check above read the committed mark, so a registration already at the provider when a reset commits still
+    // registers, and the reset's provider sign-out comes after its commit (docs/adr/0093, D6). Judged once more; a
+    // judgement that throws is read as a refusal, the safer side.
+    let across: Judgement[];
+    let unjudged = false;
+    try {
+      across = await this.judged([pending.userId, pending.addressUserId], pending.began, 'key_registered', context);
+    } catch {
+      across = [];
+      unjudged = true;
+    }
+    if (!unjudged && across.length === 0) {
+      await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
+      return { kind: 'key_registered' };
+    }
+    // A key registered across the reset is removed, best effort. The reset's own sign-out has usually ended the
+    // token that could remove it (review SEC-B1), so a key that stays locks its account: it then signs in to
+    // nothing until a platform administrator has had it removed and unlocks the account. Reported either way.
+    let removed = false;
+    try {
+      removed = await this.deps.provider.removeHardwareKey(pending.grant, credentialId);
+    } catch (error) {
+      if (error instanceof ClientCredentialError) {
+        this.deps.logger.error('security event: client credential refused', { request_id: context.requestId, error_code: error.code });
+      }
+    }
+    let outcome: 'removed' | 'not_removed' | 'not_removed_not_locked' = removed ? 'removed' : 'not_removed';
+    if (!removed) {
+      const evidenced = across.filter((judgement) => judgement.why === 'before_reset').map((judgement) => judgement.userId);
+      try {
+        // The database locks only an account whose registration across the reset it has on record; with no such
+        // record (the judgement threw, or refused for another reason) it refuses, and the line says not locked.
+        for (const userId of evidenced.length > 0 ? evidenced : [pending.userId]) {
+          await this.query<{ locked: boolean }>('SELECT sign_in_lock_key_across_reset($1, $2) AS locked', [userId, context.requestId]);
+        }
+      } catch {
+        outcome = 'not_removed_not_locked';
+      }
+    }
+    this.deps.logger.error('security event: hardware key registered across a password reset', { user_id: pending.userId, request_id: context.requestId, error_code: outcome });
+    if (!removed) {
+      // Audited as registered only if it is still there.
+      await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
+    }
+    return refused('expired');
   }
 
   /**

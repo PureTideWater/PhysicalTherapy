@@ -1171,6 +1171,22 @@ describe('SGN-17 and SGN-18: a step begun before a password reset, and a reset w
     expect(await step(resetConfirm, resetting, { email: user.email, code: wrongCode(codeFor(user.email)), password: CHOSEN, confirm: CHOSEN })).toMatchObject({ status: 'ok', data: { error: 'That did not match.' } });
   });
 
+  it('SGN-17: a key-registration step with no start is no step, and the grant it seals is given back before the person starts again', async () => {
+    const staff = await person({ internal: true });
+    const browser = new Browser();
+    await step(signInWithPassword, browser, { email: staff.email, password: PASSWORD });
+    expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/sign-in/register-key' } });
+    withoutBegan(browser);
+    const release = vi.spyOn(services.provider, 'release');
+    const begin = vi.spyOn(services.provider, 'beginKeyRegistration');
+    expect(await json(hardwareKeyRegistrationOptions, browser, {})).toEqual({ status: 200, body: { redirect: '/sign-in?reason=step_expired' } });
+    expect(release.mock.calls).toHaveLength(1);
+    expect(begin.mock.calls).toEqual([]);
+    expect(browser.deleted).toContain(SIGN_IN_COOKIE);
+    release.mockRestore();
+    begin.mockRestore();
+  });
+
   it('SGN-18: a confirmation whose outcome the provider did not give ends the step with the generic words, never the code’s refusal, and ends the account’s sessions', async () => {
     const user = await person();
     const signedIn = new Browser();

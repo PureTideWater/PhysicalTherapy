@@ -209,9 +209,38 @@ export function confirmChangedNothing(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || LAMBDA_TRIGGER.has(errorName(error))) {
     return false;
   }
+  if (neverSent(error)) {
+    return true;
+  }
   const { $metadata: metadata, $fault: fault } = error as { readonly $metadata?: { readonly httpStatusCode?: unknown }; readonly $fault?: unknown };
   const status = metadata?.httpStatusCode;
   return typeof status === 'number' ? status >= 400 && status < 500 : fault === 'client';
+}
+
+/**
+ * Connection failures that happen before any byte of the request is written: the connection was refused, or the name
+ * did not resolve. A timeout, a reset connection (ECONNRESET) and a broken pipe (EPIPE) are not here: the request may
+ * have arrived.
+ */
+const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']);
+
+/**
+ * Whether a failed request cannot have reached the provider (review SEC-S2 of 2026-11-11): the error, a cause of it,
+ * or every error an aggregate holds (one per address tried) carries one of NEVER_SENT's codes. Such a confirm changed
+ * nothing, so it is the platform's failure and ends nobody's sessions.
+ */
+function neverSent(error: unknown, depth = 0): boolean {
+  if (typeof error !== 'object' || error === null || depth > 4) {
+    return false;
+  }
+  const { code, cause, errors } = error as { readonly code?: unknown; readonly cause?: unknown; readonly errors?: unknown };
+  if (typeof code === 'string') {
+    return NEVER_SENT.has(code);
+  }
+  if (Array.isArray(errors) && errors.length > 0) {
+    return errors.every((inner) => neverSent(inner, depth + 1));
+  }
+  return neverSent(cause, depth + 1);
 }
 
 /** The challenges this application answers, and the step each is. */
@@ -602,8 +631,12 @@ export class CognitoAuthProvider implements AuthProvider {
         return { kind: 'invalid_password', problems: [] };
       }
       if (confirmChangedNothing(error)) {
-        // The provider answered and changed nothing (a throttle, a refused parameter, a missing pool): the platform's failure.
-        throw error;
+        // The provider answered and changed nothing (a throttle, a refused parameter, a missing pool), or was never
+        // reached: the platform's failure. Thrown by its name alone (review SEC-N7 of 2026-11-11): the provider's
+        // message for a refused parameter can quote the value sent, and this request carries the code and the password.
+        const named = new Error(name || 'the identity provider refused the request');
+        named.name = name || 'Error';
+        throw named;
       }
       // No answer, a server fault or a trigger's failure: the password may have changed (docs/adr/0093, D9). The
       // request was sent once, so this is never a repeat meeting its own used code. The name alone is carried.

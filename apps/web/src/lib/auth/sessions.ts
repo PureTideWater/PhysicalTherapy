@@ -36,7 +36,7 @@ export interface OpenSessionRequest {
    * latest recorded password reset, or ahead of its clock. Absent: the row carries no start and is not checked, as the
    * release before wrote it; the sign-in flow always gives one.
    */
-  readonly began?: number;
+  readonly began: number;
 }
 
 /** The name the database's refusal of a stale session carries (migration 20261112090000; docs/adr/0093, D4). */
@@ -101,7 +101,7 @@ export function openSession(pool: ScopePool<ScopeClient>, request: OpenSessionRe
     const sessionToken = newToken();
     const session = await client.query<{ id: string; expires_at: Date }>(
       'INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, expires_at',
-      [request.userId, device.id, tokenHash(sessionToken), request.method, request.began === undefined ? null : new Date(request.began)],
+      [request.userId, device.id, tokenHash(sessionToken), request.method, new Date(request.began)],
     );
     const sessionId = session.rows[0]?.id ?? '';
     await client.query('SELECT sign_in_succeeded($1)', [request.userId]);

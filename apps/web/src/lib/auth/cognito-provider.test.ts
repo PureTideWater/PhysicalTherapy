@@ -621,6 +621,46 @@ describe('CognitoAuthProvider: a reset whose answer is lost (SGN-18; docs/adr/00
     expect(lines.join('\n')).not.toContain(EMAIL);
   });
 
+  it('SGN-18: a confirm that cannot have reached the provider (the connection refused, the name not resolved) changed nothing: it is thrown as the platform’s failure, never an unknown outcome; a timeout, a reset connection and a broken pipe stay unknown', async () => {
+    const coded = (code: string, message = `connect ${code}`): Error => Object.assign(new Error(message), { code });
+    const neverSent: readonly Error[] = [
+      coded('ECONNREFUSED'),
+      coded('ENOTFOUND'),
+      coded('EAI_AGAIN'),
+      // As the SDK wraps a socket error, and as Node reports one refusal an address tried.
+      Object.assign(named('NetworkingError'), { cause: coded('ECONNREFUSED') }),
+      Object.assign(new AggregateError([coded('ECONNREFUSED'), coded('ECONNREFUSED')], 'all addresses refused'), { name: 'AggregateError' }),
+    ];
+    const maybeSent: readonly (readonly [Error, string])[] = [
+      [coded('ECONNRESET'), 'Error'],
+      [coded('EPIPE'), 'Error'],
+      [coded('ETIMEDOUT'), 'Error'],
+      [Object.assign(named('TimeoutError'), { cause: coded('ETIMEDOUT') }), 'TimeoutError'],
+      // One address refused, one reset: the request may have arrived.
+      [Object.assign(new AggregateError([coded('ECONNREFUSED'), coded('ECONNRESET')], 'mixed'), { name: 'AggregateError' }), 'AggregateError'],
+    ];
+    const { provider } = make({ ConfirmForgotPasswordCommand: [...neverSent, ...maybeSent.map(([error]) => error)] });
+    for (const error of neverSent) {
+      expect(confirmChangedNothing(error)).toBe(true);
+      await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toMatchObject({ name: error.name });
+    }
+    for (const [error, name] of maybeSent) {
+      expect(confirmChangedNothing(error)).toBe(false);
+      expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'outcome_unknown', code: name });
+    }
+  });
+
+  it('SGN-18: a client fault that changed nothing is thrown by its name alone: the provider’s message, which can quote the value sent, never leaves the provider', async () => {
+    const quoted = `1 validation error detected: Value '123456' at 'confirmationCode' failed to satisfy constraint for ${EMAIL}`;
+    const { provider } = make({ ConfirmForgotPasswordCommand: answered('InvalidParameterException', 400, 'client', quoted) });
+    const thrown = await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD).then(
+      () => undefined,
+      (error: unknown) => error as Error,
+    );
+    expect(thrown).toMatchObject({ name: 'InvalidParameterException', message: 'InvalidParameterException' });
+    expect(`${String(thrown?.stack)} ${JSON.stringify(thrown, Object.getOwnPropertyNames(thrown ?? {}))}`).not.toMatch(/123456|synthetic\.test/);
+  });
+
   it('SGN-18: an error with no name at all is an unknown outcome named unknown', async () => {
     const { provider } = make({ ConfirmForgotPasswordCommand: Object.assign(new Error('x'), { name: '' }) });
     expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'outcome_unknown', code: 'unknown' });

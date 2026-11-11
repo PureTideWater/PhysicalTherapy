@@ -53,6 +53,7 @@ import {
   CLIENT_CREDENTIAL_REFUSED_MESSAGE,
   CREDENTIAL_PROBE_REFUSED_MESSAGE,
   ENROLMENT_REFUSED_MESSAGE,
+  CROSSED_ACCOUNT_REFUSED_MESSAGE,
   KEY_REGISTERED_ACROSS_RESET_CODES,
   KEY_REGISTERED_ACROSS_RESET_MESSAGE,
   PASSWORD_RESET_FAILED_MESSAGE,
@@ -70,6 +71,7 @@ import {
   STEP_REFUSED_AFTER_RESET_COUNTED_STEPS,
   STEP_REFUSED_AFTER_RESET_MESSAGE,
   STEP_REFUSED_AFTER_RESET_UNCOUNTED_STEP,
+  STEP_START_AHEAD_OF_CLOCK_MESSAGE,
   SIGN_IN_BURST_MESSAGES,
   SIGN_IN_BURST_METRIC,
   resetRequestsRuleName,
@@ -125,7 +127,7 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
 describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
   const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
 
-  it('pins the twelve counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+  it('pins the thirteen counted lines, their codes and thresholds, and the per-user line, as literals', () => {
     // Literals, so an edit to the constants cannot pass by changing both sides.
     expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
       {
@@ -159,9 +161,12 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'HardwareKeyRegisteredAcrossReset', message: 'security event: hardware key registered across a password reset', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A reset the provider did not answer for (docs/adr/0093, D9): no password-changed email is queued, so its line pages.
       { metricName: 'PasswordResetOutcomeUnknown', message: 'security event: password reset outcome unknown', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // A sign-in whose typed address and provider subject name two accounts (docs/adr/0093, D5): refused outright, and it pages.
+      { metricName: 'SignInRefusedCrossedAccount', message: 'security event: sign-in refused for a crossed account', errorCodes: [], threshold: 1, periodSeconds: 300 },
     ]);
     expect(STEP_REFUSED_AFTER_RESET_UNCOUNTED_STEP).toBe('key');
-    expect(KEY_REGISTERED_ACROSS_RESET_CODES).toEqual(['removed', 'not_removed']);
+    expect(KEY_REGISTERED_ACROSS_RESET_CODES).toEqual(['removed', 'not_removed', 'not_removed_not_locked']);
+    expect(STEP_START_AHEAD_OF_CLOCK_MESSAGE).toBe('sign-in step start is ahead of the database clock');
     expect(PASSWORD_RESET_REQUESTED_MESSAGE).toBe('password reset requested');
     expect(RESET_REQUESTS_PER_USER).toEqual({ threshold: 5, periodSeconds: 3600 });
     expect(SECURITY_ALARM_PERIOD_SECONDS).toBe(300);
@@ -193,6 +198,10 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     for (const code of KEY_REGISTERED_ACROSS_RESET_CODES) {
       expect(flow, code).toContain(`'${code}'`);
     }
+    // The crossed account (the user's ID and the request's alone), and the clock fault, which is no security event and is not counted.
+    expect(flow).toContain(`this.deps.logger.warn('${CROSSED_ACCOUNT_REFUSED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
+    expect(flow).toContain(`this.deps.logger.error('${STEP_START_AHEAD_OF_CLOCK_MESSAGE}', {`);
+    expect(RESET_AND_ENROLMENT_COUNTS.some((count) => (count.message as string) === STEP_START_AHEAD_OF_CLOCK_MESSAGE)).toBe(false);
   });
 
   it('counts a refused step for exactly the steps the database records, but the hardware-key sign-in step', () => {
@@ -308,10 +317,10 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
     // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
     // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
-    // sign-out at the provider failed (docs/adr/0091, D10), and the three around a reset (docs/adr/0093: a step refused
-    // after it, a hardware key registered across it, an unknown outcome). The user pool's message trigger (docs/adr/0081, the
+    // sign-out at the provider failed (docs/adr/0091, D10), and the four around a reset (docs/adr/0093: a step refused
+    // after it, a hardware key registered across it, an unknown outcome, a crossed account). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(37);
+    expect(filters).toHaveLength(38);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -528,7 +537,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
     const web = stack.monitoring.webLogGroup;
 
-    it('counts each of the twelve lines on the web log group alone, by message and, for undelivered requests and a refused step, by code, and alarms at its threshold', () => {
+    it('counts each of the thirteen lines on the web log group alone, by message and, for undelivered requests and a refused step, by code, and alarms at its threshold', () => {
       for (const count of RESET_AND_ENROLMENT_COUNTS) {
         const codes = count.errorCodes as readonly string[];
         const pattern =
@@ -556,7 +565,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       }
       const counted = filters.filter(([, filter]) => RESET_AND_ENROLMENT_COUNTS.some((count) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${count.metricName}"`)));
       expect(counted).toHaveLength(RESET_AND_ENROLMENT_COUNTS.length);
-      expect(counted).toHaveLength(12);
+      expect(counted).toHaveLength(13);
     });
 
     it('says, for each of the two completed resets that page (docs/adr/0091, D10 and D15), what happened, what to do and which runbook section', () => {
@@ -588,7 +597,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(refused).toContain('docs/runbooks/incident-response.md, "A sign-in step refused after a password reset"');
       expect(refused).toContain('docs/adr/0093, D5');
       const key = description('HardwareKeyRegisteredAcrossReset');
-      expect(key).toContain('if it is not_removed the key is still on the account and signs in, so go to the founder\'s break-glass to remove it');
+      expect(key).toContain('not_removed: the key is still on the account and the account is locked, so have the key removed through the founder\'s break-glass before anyone unlocks it');
+      expect(key).toContain('not_removed_not_locked: the key signs in, so go to the break-glass now');
       expect(key).toContain('docs/runbooks/incident-response.md, "A hardware key registered across a password reset"');
       expect(key).toContain('docs/adr/0093, D6');
       const unknown = description('PasswordResetOutcomeUnknown');
@@ -597,7 +607,11 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(unknown).toContain('find out at Cognito whether the password changed, and tell the person another way');
       expect(unknown).toContain('docs/runbooks/incident-response.md, "A password reset whose outcome is unknown"');
       expect(unknown).toContain('docs/adr/0093, D9');
-      for (const text of [refused, key, unknown]) {
+      const crossed = String(propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms.SignInRefusedCrossedAccount))).AlarmDescription);
+      expect(crossed).toContain('the address typed names one account and Cognito\'s subject another');
+      expect(crossed).toContain('docs/runbooks/incident-response.md, "A sign-in refused for a crossed account"');
+      expect(crossed).toContain('docs/adr/0093, D5');
+      for (const text of [refused, key, unknown, crossed]) {
         expect(text.length).toBeLessThanOrEqual(1024);
       }
     });

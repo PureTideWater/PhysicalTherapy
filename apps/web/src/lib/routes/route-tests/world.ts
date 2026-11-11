@@ -25,7 +25,8 @@ import { afterAll, beforeAll } from 'vitest';
 import { DevAuthProvider } from '../../auth/dev-provider';
 import { MemoryDevStore } from '../../auth/dev-store';
 import { Sealer } from '../../auth/seal';
-import { SESSION_COOKIE, openSession } from '../../auth/sessions';
+import { SESSION_COOKIE } from '../../auth/sessions';
+import { openSessionNow } from '../test-support/open-session';
 import { csrfTokenFor } from '../../http/csrf';
 import { forgetMaintenanceFlag } from '../../http/invoke';
 import type { CookieJar, Outcome, Route, RouteRequest, SampleRefs } from '../../http/route';
@@ -604,7 +605,7 @@ export class RouteWorlds {
 
   /** A session the way sign-in opens one: a hardware key for internal roles, TOTP otherwise. */
   async signIn(actor: Actor): Promise<SignedIn> {
-    const opened = await openSession(this.opened.app, {
+    const opened = await openSessionNow(this.opened.app, {
       userId: actor.userId,
       method: actor.persona.kind === 'internal' ? 'webauthn' : 'totp',
       deviceToken: undefined,

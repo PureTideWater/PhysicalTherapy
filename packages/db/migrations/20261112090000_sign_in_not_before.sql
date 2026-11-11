@@ -18,16 +18,20 @@
 -- - sign_in_lock_account(): the acting account's own row lock, taken first by the two transactions that need it (the
 --   one that opens a session, the one that records a reset), so every transaction takes the account's row before a
 --   device or a session row (docs/adr/0093 D2).
--- - sign_in_step_refused(target_user, began, step, request): whether a step of an attempt is refused (no account, no
---   start, a start ahead of the clock, a start at or before the mark); a start at or before the mark is recorded as a
---   security_event for the account in the same call, so no caller refuses without the record.
+-- - sign_in_step_refused(target_user, began, step, request): why a step of an attempt is refused (no_account,
+--   no_start, ahead_of_clock, before_reset), or NULL when it is not; a start at or before the mark (before_reset) is
+--   recorded as a security_event for the account in the same call, once for an account, a step and a mark, so no
+--   caller refuses without the record and a replayed step adds none.
+-- - sign_in_lock_key_across_reset(target_user, request): locks an account whose hardware key was registered across
+--   its reset and could not be removed at the provider (docs/adr/0093 D6), so the key opens nothing until a platform
+--   administrator has had it removed and unlocks the account. It refuses unless that registration is on record.
 --
 -- Tables touched: "user" (one nullable column, no default: catalog only, no rewrite, no scan); user_session (one
 -- nullable column, the same; one BEFORE INSERT trigger; one column grant); audit_event (one AFTER INSERT trigger). No
 -- PHI table, no ledger table, no rule table and no pricing table is touched; no function sets app.practice_ids or
 -- app.actor_id. Every function is revoked from PUBLIC. The two trigger functions are SECURITY DEFINER, owned by
--- tp_owner and granted to no role (a trigger fires without EXECUTE); sign_in_lock_account() and sign_in_step_refused()
--- are SECURITY DEFINER, owned by tp_owner, granted to tp_app alone; sign_in_step_began() is SECURITY INVOKER, granted
+-- tp_owner and granted to no role (a trigger fires without EXECUTE); sign_in_lock_account(), sign_in_step_refused() and
+-- sign_in_lock_key_across_reset() are SECURITY DEFINER, owned by tp_owner, granted to tp_app alone; sign_in_step_began() is SECURITY INVOKER, granted
 -- to tp_app alone. Runs as tp_owner.
 --
 -- The locks (docs/adr/0093 D10; docs/adr/0083's loop): "user" and user_session ACCESS EXCLUSIVE for the columns (and
@@ -59,12 +63,14 @@ BEGIN
   END IF;
   IF to_regprocedure('audit_event_sign_in_not_before()') IS NOT NULL OR to_regprocedure('user_session_sign_in_not_before()') IS NOT NULL
      OR to_regprocedure('sign_in_step_began()') IS NOT NULL OR to_regprocedure('sign_in_lock_account()') IS NOT NULL
-     OR to_regprocedure('sign_in_step_refused(uuid, timestamptz, text, text)') IS NOT NULL THEN
+     OR to_regprocedure('sign_in_step_refused(uuid, timestamptz, text, text)') IS NOT NULL
+     OR to_regprocedure('sign_in_lock_key_across_reset(uuid, text)') IS NOT NULL THEN
     RAISE EXCEPTION 'a function of migration 20261112090000 already exists; it creates them' USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
   -- The mark moves under the password notice's guard (docs/adr/0091 D3). If that trigger is gone or its guard is no
-  -- longer the one read here, this migration refuses until it is rebased on the new guard.
-  IF (SELECT pg_get_triggerdef(t.oid) FROM pg_trigger t WHERE t.tgrelid = 'public.audit_event'::regclass AND t.tgname = 'audit_event_password_notice' AND NOT t.tgisinternal)
+  -- longer the one read here, this migration refuses until it is rebased on the new guard. The catalog prints the
+  -- function's schema only when public is off the search path; either spelling is the same trigger.
+  IF (SELECT replace(pg_get_triggerdef(t.oid), 'EXECUTE FUNCTION public.', 'EXECUTE FUNCTION ') FROM pg_trigger t WHERE t.tgrelid = 'public.audit_event'::regclass AND t.tgname = 'audit_event_password_notice' AND NOT t.tgisinternal)
      IS DISTINCT FROM 'CREATE TRIGGER audit_event_password_notice AFTER INSERT ON public.audit_event FOR EACH ROW WHEN (((new.action = ''password_reset_completed''::text) AND (new.actor_kind = ''user''::text) AND (new.object_type = ''user''::text) AND (new.object_id = new.actor_id))) EXECUTE FUNCTION audit_event_password_notice()' THEN
     RAISE EXCEPTION 'audit_event_password_notice is not the trigger of migration 20261111090000 whose guard migration 20261112090000 shares; rebase this migration on its latest guard'
       USING ERRCODE = 'object_not_in_prerequisite_state';
@@ -184,16 +190,19 @@ CREATE TRIGGER user_session_sign_in_not_before BEFORE INSERT ON user_session FOR
 -- 5. The steps that open no session: checked and recorded in one call (docs/adr/0093, D5 and D6)
 -- ---------------------------------------------------------------------------------------------------
 
--- True when the step is refused: the account does not exist, the step carries no start, the start is ahead of the
--- clock, or the start is at or before the account's mark. Only the last is evidence (the old password, or a key
--- assertion, was proved around a reset): it writes a security_event for the account, as sign_in_failed() writes its
--- own, with the step in the purpose and the request's ID. It counts no failure: a count would let a stale step lock
--- the account. It reads the committed mark and takes no lock; the session insert's trigger is the exact check.
-CREATE FUNCTION sign_in_step_refused(target_user uuid, began timestamptz, step text, request text) RETURNS boolean
+-- Why the step is refused, or NULL when it is not: no_account (the account does not exist), no_start (the step
+-- carries none), ahead_of_clock (the start is ahead of the database's clock), before_reset (the start is at or before
+-- the account's mark). Only the last is evidence (the old password, or a key assertion, was proved around a reset): it
+-- writes a security_event for the account, as sign_in_failed() writes its own, with the step in the purpose and the
+-- request's ID, once for an account, a step and a mark (a replayed step, or a caller repeating the call, adds no
+-- row). It counts no failure: a count would let a stale step lock the account. It reads the committed mark and takes
+-- no lock; the session insert's trigger is the exact check.
+CREATE FUNCTION sign_in_step_refused(target_user uuid, began timestamptz, step text, request text) RETURNS text
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
 DECLARE
   mark timestamptz;
+  what text;
 BEGIN
   IF step IS NULL OR step NOT IN ('new_password', 'mfa_setup', 'mfa', 'key', 'register_key', 'key_registered') THEN
     RAISE EXCEPTION 'unknown sign-in step' USING ERRCODE = 'check_violation';
@@ -202,15 +211,55 @@ BEGIN
     RAISE EXCEPTION 'a sign-in step is judged at READ COMMITTED' USING ERRCODE = 'feature_not_supported';
   END IF;
   SELECT u.sign_in_not_before INTO mark FROM "user" u WHERE u.id = target_user;
-  IF NOT FOUND OR began IS NULL OR began > clock_timestamp() THEN
-    RETURN true;
+  IF NOT FOUND THEN
+    RETURN 'no_account';
+  END IF;
+  IF began IS NULL THEN
+    RETURN 'no_start';
+  END IF;
+  IF began > clock_timestamp() THEN
+    RETURN 'ahead_of_clock';
   END IF;
   IF mark IS NULL OR began > mark THEN
+    RETURN NULL;
+  END IF;
+  what := CASE WHEN step = 'key_registered' THEN 'key_registered_across_reset' ELSE 'step_before_reset_' || step END;
+  IF NOT EXISTS (SELECT 1 FROM audit_event e
+                  WHERE e.object_type = 'user' AND e.object_id = target_user AND e.action = 'security_event'
+                    AND e.actor_kind = 'system' AND e.purpose = what AND e.at >= mark) THEN
+    INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+    VALUES ('system', 'security_event', 'user', target_user, what, request);
+  END IF;
+  RETURN 'before_reset';
+END;
+$$;
+
+-- A hardware key registered across the account's reset that the provider did not remove (the reset's own sign-out
+-- has ended the token that could remove it): the account is locked, as ten failed sign-ins lock it, so the key signs
+-- in to nothing until a platform administrator has had the key removed and unlocks the account
+-- (docs/runbooks/incident-response.md). It refuses unless sign_in_step_refused() has recorded that registration since
+-- the account's mark, so it locks no account without that evidence. True when this call locked it.
+CREATE FUNCTION sign_in_lock_key_across_reset(target_user uuid, request text) RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+#variable_conflict use_variable
+DECLARE
+  mark timestamptz;
+  was_locked boolean;
+BEGIN
+  SELECT u.sign_in_not_before, u.locked_at IS NOT NULL INTO mark, was_locked FROM "user" u WHERE u.id = target_user FOR UPDATE;
+  IF NOT FOUND OR mark IS NULL OR NOT EXISTS (
+       SELECT 1 FROM audit_event e
+        WHERE e.object_type = 'user' AND e.object_id = target_user AND e.action = 'security_event'
+          AND e.actor_kind = 'system' AND e.purpose = 'key_registered_across_reset' AND e.at >= mark) THEN
+    RAISE EXCEPTION 'an account is locked for a key registered across its reset only when that registration is on record'
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF was_locked THEN
     RETURN false;
   END IF;
+  UPDATE "user" u SET locked_at = now() WHERE u.id = target_user;
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-  VALUES ('system', 'security_event', 'user', target_user,
-          CASE WHEN step = 'key_registered' THEN 'key_registered_across_reset' ELSE 'step_before_reset_' || step END, request);
+  VALUES ('system', 'security_event', 'user', target_user, 'account_locked_key_across_reset', request);
   RETURN true;
 END;
 $$;
@@ -221,5 +270,7 @@ $$;
 
 GRANT INSERT (sign_in_began_at) ON user_session TO tp_app;
 REVOKE ALL ON FUNCTION sign_in_step_began(), sign_in_lock_account(), audit_event_sign_in_not_before(),
-  user_session_sign_in_not_before(), sign_in_step_refused(uuid, timestamptz, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text) TO tp_app;
+  user_session_sign_in_not_before(), sign_in_step_refused(uuid, timestamptz, text, text),
+  sign_in_lock_key_across_reset(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text),
+  sign_in_lock_key_across_reset(uuid, text) TO tp_app;

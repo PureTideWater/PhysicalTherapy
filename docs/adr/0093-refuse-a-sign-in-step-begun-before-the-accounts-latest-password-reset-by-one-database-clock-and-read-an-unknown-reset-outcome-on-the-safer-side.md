@@ -95,7 +95,9 @@ confidential client) closes that. So "required before launch" needs both: this r
   the sign-in's call, the answer leg of the confirm's call and the reset's own database statements: about one
   provider round trip, in the order of 10 ms.
 - **D4. The database refuses a stale session: `user_session.sign_in_began_at`** (`timestamptz`, nullable).
-  `openSession` writes it from the step (`tp_app` gains INSERT on that one column). A BEFORE INSERT trigger,
+  `openSession` writes it from the step (`tp_app` gains INSERT on that one column); the start is a required part of
+  the request that opens a session, so no path of this image opens one without it (the build's database review, S1).
+  A BEFORE INSERT trigger,
   `user_session_sign_in_not_before` (SECURITY DEFINER: an invoker's trigger would read through the caller's policies
   and skip a row the caller cannot see), for a row that carries a start, reads the mark under the account's row lock
   and refuses a start at or before it, by a constraint of that name (`check_violation`). Under the lock either order
@@ -107,53 +109,80 @@ confidential client) closes that. So "required before launch" needs both: this r
   after the reset and never be swept. The gap stays open for that image alone.
 - **D5. The flow refuses the steps, and the database records each refusal.**
   `sign_in_step_refused(target_user, began, step, request)` (volatile, SECURITY DEFINER, EXECUTE to `tp_app`; READ
-  COMMITTED only; `step` from a closed list) is true when the account does not exist, there is no start, the start
-  is ahead of the clock, or the start is at or before the mark. In the last case, the one that is evidence, it
-  writes a `security_event` audit row for the account (the actor `system`; the purpose names the step:
-  `step_before_reset_mfa`, `_key`, `_register_key`, `_new_password`, `_mfa_setup`, and
-  `key_registered_across_reset`; the request ID), as `sign_in_failed()` writes its own. Checking and recording are
-  one function, so no call site can refuse without the record. It counts no failure: a count would let a stale step
+  COMMITTED only; `step` from a closed list) answers why the step is refused, or nothing when it is not:
+  `no_account` (the account does not exist), `no_start` (the step carries none), `ahead_of_clock` (the start is
+  ahead of the database's clock) or `before_reset` (the start is at or before the mark). In the last case, the one
+  that is evidence, it writes a `security_event` audit row for the account (the actor `system`; the purpose names
+  the step: `step_before_reset_mfa`, `_key`, `_register_key`, `_new_password`, `_mfa_setup`, and
+  `key_registered_across_reset`; the request ID), as `sign_in_failed()` writes its own. It writes that row once for
+  an account, a step and a mark: a replayed step, or a caller repeating the call with any old start, is refused
+  again and adds none (the build's reviews: security N3 and N4, database S2). Checking and recording are one
+  function, so no call site can refuse without the record. It counts no failure: a count would let a stale step
   lock the account.
 
   | Where | Account judged | Then |
   | --- | --- | --- |
   | The code step, before the provider is asked | the typed address's, if it names one | The step is closed. A stale code step counts no failure and uses up no code after the reset |
   | The hardware-key sign-in step | none here | The key step is sealed for any typed address with no proof; a refusal before a valid assertion would tell an outsider that the address has an account reset inside the step's life. Decided once the provider has accepted the assertion |
-  | After the provider proved the person, once the account is found, not disabled and not locked; before the key check, the release and the session | the provider's subject's, and the typed address's when that is another account | The grant is released and the step is closed. The session insert carries the start (D4), and D4's refusal is recorded and answered the same way |
+  | After the provider proved the person, once the account is found, not disabled and not locked; before the key check, the release and the session | the provider's subject's; a typed address that names another account is refused outright (below) | The grant is released and the step is closed. The session insert carries the start (D4), and D4's refusal is recorded and answered the same way |
   | Key registration, at its options and at its verify, before the provider call | the step's account, and the typed address's account sealed beside it when it differs | The grant is released and the step is closed |
   | Key registration, again after the provider registered the key | the same | D6 |
   | A new password, and enrolment's two calls, after ADR 0088's own checks and before the provider call | the email's | The step is closed |
 
-  **Both accounts.** The reset marks the account its typed address names; a sign-in opens a session for the account
-  the provider's subject names. In a sound database they are one. Where they are not (a crossed state, reached only
-  by an out-of-band change), judging both refuses the stale step without assuming which mapping is right, and
-  refuses nothing for a sound account.
+  **A crossed state is refused outright.** The reset marks the account its typed address names; a sign-in opens a
+  session for the account the provider's subject names. In a sound database they are one. Where they are not (a
+  crossed state, reached only by an out-of-band change), the flow could judge both, but the session insert's trigger
+  and the reset's mark and sweep each cover one account, so a reset landing between the check and the insert would
+  still open a session (the build's security review, S1). So once the provider has proved the person, a typed
+  address that names an account other than the subject's opens no session and no key step: the grant is released,
+  the answer is the one for no account, and `security event: sign-in refused for a crossed account` is logged (warn;
+  the subject's account's `user_id`, `request_id`) and counted as `SignInRefusedCrossedAccount` (at least 1 in
+  300 s). It refuses nothing for a sound account. Finding and repairing a crossed state stays Schema PR 6's
+  (handed on, item 1). A key-registration step sealed before this rule that carries both accounts is still judged
+  on both.
 
   Not checked: the reset step. It holds no proof (ADR 0081 A1): the mailed code is the authorization and its life is
   the provider's; a fresh step takes the same code.
 
-  Each refusal also logs `security event: sign-in step refused after a password reset` (warn; `user_id`,
-  `request_id`, and the step in `error_code`). It is counted on the web log group as `SignInStepRefusedAfterReset`
+  A `before_reset` refusal also logs `security event: sign-in step refused after a password reset` (warn; `user_id`,
+  `request_id`, and the step in `error_code`); the other three reasons do not, being no evidence of a person. A
+  start ahead of the clock logs `sign-in step start is ahead of the database clock` (error), a clock fault that no
+  filter counts. The security line is counted on the web log group as `SignInStepRefusedAfterReset`
   (at least 1 in 300 s, to the operator topic) for every step but `key`: no password was proved there, and a new
   attempt succeeds. Why it pages: a reset requested in the same browser replaces that browser's pending step, so a
   stale step is another browser or device. At the code step it means the old password was proved around the reset;
   the operator tells the person their second factor may be known too, which the reset does not change
   (`docs/runbooks/incident-response.md`, "A sign-in step refused after a password reset").
-- **D6. A key whose registration returns after the reset was recorded is removed or reported.** D5's check before
+- **D6. A key whose registration returns after the reset was recorded is removed, or the account is locked.** D5's check before
   the provider call reads the committed mark, so a registration already at the provider when the reset commits still
   registers; and the provider's sign-out is sent after the commit, so it cannot stop that call. After the provider
   answers that the key is registered, the flow asks `sign_in_step_refused` once more (step `key_registered`). If it
   is refused:
   - the provider is asked to remove the key (`removeHardwareKey`: Cognito's `DeleteWebAuthnCredential` with the same
-    access token; the local provider drops it from its record), best effort;
+    access token; the local provider drops it from its record), best effort. By construction the removal is
+    expected to fail at Cognito (the build's security review, B1, unverified without a pool): the second judgement
+    refuses only once the reset has committed, and the reset signs the user out at the provider straight after its
+    commit, which ends the token the removal uses;
+  - so a key that is not removed locks the account: `sign_in_lock_key_across_reset(target_user, request)` (SECURITY
+    DEFINER, EXECUTE to `tp_app`) sets the account's lock, as ten failed sign-ins do, and records a `security_event`
+    (purpose `account_locked_key_across_reset`). It refuses (`42501`) unless `sign_in_step_refused` has recorded that
+    registration since the account's mark, so it locks no account without the evidence; it answers false, and
+    writes nothing, for an account already locked. A locked account is refused before any credential is tried, so
+    the key signs in to nothing until a platform administrator unlocks the account, which the runbook allows only
+    after the key is removed;
   - `security event: hardware key registered across a password reset` is logged (error; `user_id`, `request_id`,
-    `error_code` `removed` or `not_removed`) and counted as `HardwareKeyRegisteredAcrossReset` (at least 1 in 300 s),
-    with a runbook step: not removed goes to the founder's break-glass, until `LANES.md` Queues item 29 gives the
-    operator an action;
+    `error_code` `removed`, `not_removed` (the account is locked) or `not_removed_not_locked` (the lock failed too:
+    the urgent case)) and counted as `HardwareKeyRegisteredAcrossReset` (at least 1 in 300 s), with a runbook step:
+    a key not removed goes to the founder's break-glass, until `LANES.md` Queues item 29 gives the operator an
+    action;
   - `hardware_key_registered` is audited only if the key is still there; the grant is released; the step is closed.
+    A throw anywhere after the provider stored the key (the judgement, the audit) is read as refused: the removal
+    is still tried, the line is still logged and the grant is still released (the build's security review, S3).
 
-  Holding the account's lock across the provider's call would make this exact, and is rejected: the reset would wait
-  on a provider call, and it buys nothing against someone who could have registered a moment earlier. A key
+  Holding the account's lock across the judgement and the provider's call would make this exact, and stays
+  rejected: the reset would wait on a provider call, and the key would then exist before the reset committed, so
+  the rule would call it registered "before" the reset and keep it, where this decision removes it or locks the
+  account. It also buys nothing against someone who could have registered a moment earlier. A key
   registered before the reset is not this rule's: removing a member's keys is Queues item 29.
 - **D7. What the person sees: nothing new.** A refused step clears the step and goes to the sign-in page with the
   closed-step words ("That sign-in step closed. Start again from your email and password.", or the key surface's
@@ -169,8 +198,11 @@ confidential client) closes that. So "required before launch" needs both: this r
     required option of the provider, so a composition cannot leave the default; a test reads the client's setting.
   - **Three kinds of answer.** The provider reset it. The provider answered and changed nothing: the code's refusals
     (one refusal, as before), the policy's, a refused credential, and any other client fault not named for a Lambda
-    trigger (the platform's failure, as before). Anything else is an unknown outcome: no answer, a server fault, a
-    trigger's failure.
+    trigger (the platform's failure, as before). A connection that cannot have reached the provider (refused, or
+    its name not resolved) is the platform's failure too: no byte was sent, so nothing changed, and reading it as
+    unknown would let anyone who knows an address end that account's sessions for as long as the provider cannot
+    be reached (the build's security review, S2). Anything else is an unknown outcome: no answer once the request
+    may have been sent (a timeout, a connection reset), a server fault, a trigger's failure.
   - **The safer reading of unknown.** The person is not told the code was wrong: the route answers "Sign-in could
     not continue. Start again." and ends the step. If the address names an account, one transaction as that account
     (retried once, as a reset's) takes its lock, ends its sessions and records `password_reset_outcome_unknown`
@@ -185,8 +217,9 @@ confidential client) closes that. So "required before launch" needs both: this r
     address; each time pages. The other reading leaves a reset that may have happened with its sessions live,
     unrecorded and unpaged.
   - Other provider calls keep the SDK's retries: a repeat of theirs is a refusal the person can retry.
-- **D10. The migration** adds two nullable columns with no default (catalog-only: no rewrite, no scan), five
-  functions, two triggers and one column grant. It takes `"user"` and `user_session` in ACCESS EXCLUSIVE (the
+- **D10. The migration** adds two nullable columns with no default (catalog-only: no rewrite, no scan), six
+  functions, two triggers and one column grant. Its preflight compares the notice trigger's guard word for word and
+  reads it the same whether or not `public` is on the search path. It takes `"user"` and `user_session` in ACCESS EXCLUSIVE (the
   columns) and `audit_event` in SHARE ROW EXCLUSIVE (the trigger), together, `NOWAIT` in one subtransaction, once a
   second, up to 300 tries (ADR 0083's loop). **What refuses a try** differs from the notice's migration, which took
   `"user"` in a mode readers do not refuse: here it is any open transaction that has touched `"user"` in any way, a
@@ -238,18 +271,39 @@ confidential client) closes that. So "required before launch" needs both: this r
   (D4). A mark ahead of the clock (the clock stepped forward at a reset, then was corrected) refuses that account's
   sign-ins until the clock passes it: a runbook line, the owner's SQL.
 - **A crossed state** (the typed address's account is not the subject's): the reset ends, marks and signs out the
-  address's account, as before; D5 judges both, so the stale step is refused, but the subject's account keeps its
-  sessions.
+  address's account, as before, so the subject's account keeps the sessions it has. D5 refuses every new sign-in
+  in that state outright, stale or not, and pages; it repairs nothing.
 - **Completed resets nothing records**, so nothing is marked: one made at Cognito directly; one for an address with
   no account (SGN-16's stray case); the web's process ending between the provider's answer and the commit; the
-  transaction failing twice (ADR 0091 D15 pages).
+  transaction failing twice (ADR 0091 D15 pages). For that last one the mark does not move and nothing retries, so
+  a step that proved the old password stays good until the operator acts: the runbook step for
+  `PasswordResetSessionsNotEnded` gives the owner's SQL that moves the mark and ends the sessions. A job that
+  retries the record until it commits is handed on (item 6).
 - **The previous image** opens sessions unchecked (D4, D8).
-- **A registration already at the provider** when the reset commits is removed or reported, not prevented (D6). A
+- **A registration already at the provider** when the reset commits is removed, or the account is locked, not
+  prevented (D6). A key registered between the provider's change of the password and the reset's commit is judged
+  against a mark that has not moved, so it is kept and audited as any registration: the window is the reset's own
+  database statements, and the holder of the old password could have registered a moment earlier. A
   factor enrolled across a reset would stay at the provider with the account not enrolled; no path reaches it (a
   code is sent only to an enrolled account) but a code taken from Cognito directly.
 - **A second reset with an older code**, if Cognito keeps one valid after a later one completed, is not this
   rule's.
 - **Other provider calls' repeats** (a code answer, a key registration) stay the SDK's.
+- **A lost answer the provider applies late.** For an unknown outcome the mark moves when the application records
+  it. If the provider stores the new password only after that, a sign-in with the old password begun between the
+  two is after the mark and is not refused, and no later event sweeps its session. Unverified without a pool; the
+  page for the unknown outcome is what covers it (the operator finds out what the provider holds).
+- **Steps that open no session are judged without the account's lock**, against the committed mark: a new
+  password, an enrolment or a key registration that reaches the provider between the provider's change and the
+  reset's commit is not refused. The session insert is the exact check (D4); the key has D6; an invitee's steps
+  need a live invitation and no factor, which a reset is never mailed to.
+- **The lock order is a convention.** Nothing in the database makes a transaction take the account's row before a
+  device or session row; only `openSession` inserts sessions, and it does. A start-carrying insert after a device
+  update, against that order, can deadlock with a reset, and PostgreSQL ends one of the two.
+- **Above READ COMMITTED** a start-carrying insert that waits behind a reset ends in a serialization failure, never
+  a session; no caller opens a session there.
+- **A long transaction.** The once-a-mark record compares the event's time with the mark; a caller that judges
+  inside a transaction begun before the reset would record each call. The web judges in a statement of its own.
 
 ## Not verified here
 
@@ -274,12 +328,16 @@ None blocks this decision. Each is for the orchestrator's queue.
 3. Once no image before this release can run: a migration that refuses a session with no start.
 4. The other provider calls the SDK repeats.
 5. An operator's own way to remove a member's keys: `LANES.md` Queues item 29. Until then a key not removed (D6)
-   goes to the founder's break-glass.
+   goes to the founder's break-glass, and the account stays locked meanwhile.
+6. A job that records a completed reset whose transaction failed twice, until it commits (the build's security
+   review, S4). Until then the page and the runbook's SQL.
 
 ## Revisit when
 
 - ADR 0088's second release reaches production: the rule then holds for a call made at Cognito directly as well.
 - The staging checks report: a provider fact that differs changes D9's classification or D6's removal.
 - Queues item 29 lands: D6's `not_removed` gets an operator action, and the runbook step changes.
+- The staging check of `DeleteWebAuthnCredential` after a global sign-out reports: if the removal works there, the
+  lock becomes the rare case; if it never can, the removal call can go.
 - No image before this release can run: handed-on item 3.
 - `SignInStepRefusedAfterReset` pages mostly for people's own second devices: weigh the page against the signal.

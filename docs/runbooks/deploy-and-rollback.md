@@ -466,7 +466,7 @@ So, before this deploy:
   reads;
 - check that no vacuum runs, as the section above shows.
 
-Once the migration holds the three, its DDL is catalog-only (two nullable columns with no default, five functions, two
+Once the migration holds the three, its DDL is catalog-only (two nullable columns with no default, six functions, two
 triggers, one grant): no rewrite and no scan, so the hold is short. Until its commit every request and job waits or,
 for a signed-in request, is refused as busy after its three-second lock timeout with nothing saved (ADR 0092).
 
@@ -483,8 +483,8 @@ transaction, or cancel a job or a vacuum, to make room.
 ends its sessions in the database, and a session insert that carries a start is checked against the mark. The new web
 image reads each attempt's start from the database, carries it sealed through the steps, takes the account's row
 lock first when it opens a session or records a reset, and sends a reset's confirm to Cognito once. The same deploy
-adds the alarms `SignInStepRefusedAfterReset`, `HardwareKeyRegisteredAcrossReset` and `PasswordResetOutcomeUnknown`
-(docs/runbooks/incident-response.md).
+adds the alarms `SignInStepRefusedAfterReset`, `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown` and
+`SignInRefusedCrossedAccount` (docs/runbooks/incident-response.md).
 
 **While both web images serve** (the minutes of the rolling deploy; ADR 0093, D8):
 

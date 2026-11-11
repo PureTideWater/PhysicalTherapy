@@ -17,7 +17,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { EXPORT_REFUSAL_TEXT, type ExportAttempt, exportAttemptWords, exportPausedText } from '../packets/export-attempts';
@@ -73,7 +74,7 @@ const tokens = new Map<string, string>();
 async function sessionOf(userId: string): Promise<string> {
   let token = tokens.get(userId);
   if (token === undefined) {
-    token = (await openSession(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSessionNow(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;

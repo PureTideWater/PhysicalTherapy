@@ -336,8 +336,8 @@ function logged(lines: readonly string[], message: string): Record<string, unkno
   return lines.map((line) => JSON.parse(line) as Record<string, unknown>).filter((entry) => entry.msg === message);
 }
 
-/** The application's pool, except that queries matching `match` fail the first `times` times (a synthetic failure). */
-function failing(match: RegExp, times: number): ScopePool<ScopeClient> {
+/** The application's pool, except that queries matching `match` fail the first `times` times `when` says so (a synthetic failure). */
+function failing(match: RegExp, times: number, when: () => boolean = () => true): ScopePool<ScopeClient> {
   let left = times;
   return {
     connect: async () => {
@@ -346,7 +346,7 @@ function failing(match: RegExp, times: number): ScopePool<ScopeClient> {
         get(target, property) {
           if (property === 'query') {
             return (text: unknown, values?: unknown[]) => {
-              if (left > 0 && typeof text === 'string' && match.test(text)) {
+              if (left > 0 && typeof text === 'string' && match.test(text) && when()) {
                 left -= 1;
                 return Promise.reject(new Error('synthetic failure'));
               }
@@ -845,6 +845,7 @@ const EXPIRED: FlowResult = { kind: 'refused', reason: 'expired' };
 /** The three log lines infra counts (docs/adr/0093, D5, D6 and D9). */
 const STEP_REFUSED_LINE = 'security event: sign-in step refused after a password reset';
 const KEY_ACROSS_RESET_LINE = 'security event: hardware key registered across a password reset';
+const CROSSED_LINE = 'security event: sign-in refused for a crossed account';
 const RESET_OUTCOME_UNKNOWN_LINE = 'security event: password reset outcome unknown';
 
 describe('SGN-17: a sign-in step begun before a password reset is refused after it (docs/adr/0093)', () => {
@@ -1065,7 +1066,7 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     expect(logged(lines, STEP_REFUSED_LINE)).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id, request_id: request.requestId, error_code: 'mfa' })]);
   });
 
-  it('SGN-17: in a crossed state (the typed address’s account is not the provider’s subject’s) both accounts are judged, so a reset of either refuses the step, and a sound account is refused nothing', async () => {
+  it('SGN-17: in a crossed state (the typed address’s account is not the provider’s subject’s) both accounts are judged, so a reset of either refuses the step with its record; with neither reset the pair is refused outright, opens nothing and is logged by the subject’s ID', async () => {
     // The provider's record under the first account's address names the second account's subject.
     const crossed = async () => {
       const typed = await person();
@@ -1101,18 +1102,29 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     during.mockRestore();
     expect(await securityEvents(third.typed.id)).toEqual(['step_before_reset_mfa']);
     expect(await securityEvents(third.subject.id)).toEqual([]);
-    for (const pair of [first, second, third]) {
+    expect(logged(lines, STEP_REFUSED_LINE).map((line) => line.user_id)).toEqual([first.typed.id, second.subject.id, third.typed.id]);
+    expect(logged(lines, CROSSED_LINE)).toEqual([]);
+    // With neither reset, the crossed pair is refused outright (review SEC-S1 of 2026-11-11): the reset's mark and sweep
+    // and the session's check would each cover one account of the two, so no session opens for either, the grant is
+    // given back, and the line names the subject's account by its ID.
+    const sound = await crossed();
+    const release = vi.spyOn(provider, 'release');
+    const request = context();
+    expect(await watched.answerTotp(pendingOf(await flow.start(sound.typed.email, PASSWORD, context())), nextCode(), request)).toEqual({ kind: 'refused', reason: 'no_account' });
+    expect(release.mock.calls).toHaveLength(1);
+    release.mockRestore();
+    expect(logged(lines, CROSSED_LINE)).toEqual([expect.objectContaining({ level: 'warn', user_id: sound.subject.id, request_id: request.requestId })]);
+    expect(await securityEvents(sound.subject.id)).toEqual([]);
+    for (const pair of [first, second, third, sound]) {
       expect(await openSessions(pair.subject.id)).toBe(0);
       expect(await openSessions(pair.typed.id)).toBe(0);
     }
-    expect(logged(lines, STEP_REFUSED_LINE).map((line) => line.user_id)).toEqual([first.typed.id, second.subject.id, third.typed.id]);
-    // With neither reset, the crossed pair signs in as before: the rule adds no refusal of its own.
-    const sound = await crossed();
-    expect((await flow.answerTotp(pendingOf(await flow.start(sound.typed.email, PASSWORD, context())), nextCode(), context())).kind).toBe('signed_in');
-    expect(await openSessions(sound.subject.id)).toBe(1);
+    // One account typed in another case is one account, never crossed.
+    const plain = await person();
+    expect((await watched.answerTotp(pendingOf(await flow.start(plain.email.toUpperCase(), PASSWORD, context())), nextCode(), context())).kind).toBe('signed_in');
   });
 
-  it('SGN-17: a key whose registration returns after a reset was recorded is removed at the provider and reported; when it cannot be removed it is reported as not removed and audited as registered; either way the step ends', async () => {
+  it('SGN-17: a key whose registration returns after a reset was recorded is removed at the provider and reported; when it cannot be removed the account is locked, so the key signs in to nothing, and it is reported as not removed and audited as registered; either way the step ends', async () => {
     const landsDuring = (userId: string) => {
       const complete = provider.completeKeyRegistration.bind(provider);
       return vi.spyOn(provider, 'completeKeyRegistration').mockImplementationOnce(async (...args) => {
@@ -1122,6 +1134,7 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
         return registered;
       });
     };
+    const lockedOf = async (userId: string) => (await owner.query<{ locked: boolean }>('SELECT locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [userId])).rows[0]?.locked;
     const { flow: watched, lines } = paced();
     // Removed.
     const removed = await registrationBegun();
@@ -1135,7 +1148,9 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     expect((await store.bySub(removed.staff.sub))?.credentials).toEqual([]);
     expect(await securityEvents(removed.staff.id)).toEqual(['key_registered_across_reset']);
     expect((await events(removed.staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual([]);
-    // Not removed.
+    expect(await lockedOf(removed.staff.id)).toBe(false);
+    // Not removed (the reset's own provider sign-out has ended the token that could remove it; review SEC-B1 of
+    // 2026-11-11): the account is locked in the same step.
     const kept = await registrationBegun();
     during = landsDuring(kept.staff.id);
     keyRemovalFails = true;
@@ -1145,14 +1160,117 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     during.mockRestore();
     expect(answered).toEqual(EXPIRED);
     expect((await store.bySub(kept.staff.sub))?.credentials).toHaveLength(1);
-    expect(await securityEvents(kept.staff.id)).toEqual(['key_registered_across_reset']);
+    expect(await securityEvents(kept.staff.id)).toEqual(['key_registered_across_reset', 'account_locked_key_across_reset']);
     expect((await events(kept.staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual(['hardware_key_registered:webauthn']);
+    expect(await lockedOf(kept.staff.id)).toBe(true);
+    // The planted key opens nothing: a key step begun after the reset gets no options, and none of the account's
+    // other ways in is open either.
+    await pastTheMark();
+    expect(await flow.beginKey(kept.staff.email)).toEqual({ kind: 'refused', reason: 'locked' });
+    expect(await flow.start(kept.staff.email, PASSWORD, context())).toEqual({ kind: 'refused', reason: 'locked' });
+    expect(await openSessions(kept.staff.id)).toBe(0);
     expect(logged(lines, KEY_ACROSS_RESET_LINE)).toEqual([
       { level: 'error', msg: KEY_ACROSS_RESET_LINE, time: expect.any(String), user_id: removed.staff.id, request_id: first.requestId, error_code: 'removed' },
       { level: 'error', msg: KEY_ACROSS_RESET_LINE, time: expect.any(String), user_id: kept.staff.id, request_id: second.requestId, error_code: 'not_removed' },
     ]);
     // This case has its own line: the step's refusal line is not also logged for it.
     expect(logged(lines, STEP_REFUSED_LINE)).toEqual([]);
+  });
+
+  it('SGN-17: a key that is neither removed nor locked says so in its line; a judgement that throws once the provider holds the key is read as a refusal, and the grant is given back on every one of these paths', async () => {
+    const landsDuring = (userId: string, then: () => void = () => undefined) => {
+      const complete = provider.completeKeyRegistration.bind(provider);
+      return vi.spyOn(provider, 'completeKeyRegistration').mockImplementationOnce(async (...args) => {
+        const registered = await complete(...args);
+        await resetRecorded(userId);
+        then();
+        return registered;
+      });
+    };
+    // The lock fails: the line is the loudest of the three, and the key is still audited as registered.
+    const unlocked = await registrationBegun();
+    const noLock = paced(failing(/sign_in_lock_key_across_reset/, 1));
+    let during = landsDuring(unlocked.staff.id);
+    let release = vi.spyOn(provider, 'release');
+    keyRemovalFails = true;
+    const first = context();
+    const answered = await noLock.flow.completeKeyRegistration(unlocked.begun.pending, unlocked.key.create(unlocked.begun.options), first);
+    keyRemovalFails = false;
+    during.mockRestore();
+    expect(answered).toEqual(EXPIRED);
+    expect(release.mock.calls).toHaveLength(1);
+    release.mockRestore();
+    expect(logged(noLock.lines, KEY_ACROSS_RESET_LINE)).toEqual([expect.objectContaining({ level: 'error', user_id: unlocked.staff.id, request_id: first.requestId, error_code: 'not_removed_not_locked' })]);
+    expect((await events(unlocked.staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual(['hardware_key_registered:webauthn']);
+    // The judgement after the registration throws (review SEC-S3 of 2026-11-11): read as a refusal. The key is removed
+    // and reported; nothing is audited as registered; the grant is given back.
+    const unjudged = await registrationBegun();
+    let down = false;
+    const broken = paced(failing(/sign_in_step_refused/, 1, () => down));
+    during = landsDuring(unjudged.staff.id, () => {
+      down = true;
+    });
+    release = vi.spyOn(provider, 'release');
+    const second = context();
+    expect(await broken.flow.completeKeyRegistration(unjudged.begun.pending, unjudged.key.create(unjudged.begun.options), second)).toEqual(EXPIRED);
+    during.mockRestore();
+    expect(release.mock.calls).toHaveLength(1);
+    release.mockRestore();
+    expect((await store.bySub(unjudged.staff.sub))?.credentials).toEqual([]);
+    expect(logged(broken.lines, KEY_ACROSS_RESET_LINE)).toEqual([expect.objectContaining({ level: 'error', user_id: unjudged.staff.id, request_id: second.requestId, error_code: 'removed' })]);
+    expect((await events(unjudged.staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual([]);
+    // The same, with the key not removed: no judgement is on record, so the database locks nothing and the line says so.
+    const neither = await registrationBegun();
+    down = false;
+    const both = paced(failing(/sign_in_step_refused/, 1, () => down));
+    during = landsDuring(neither.staff.id, () => {
+      down = true;
+    });
+    keyRemovalFails = true;
+    const third = context();
+    expect(await both.flow.completeKeyRegistration(neither.begun.pending, neither.key.create(neither.begun.options), third)).toEqual(EXPIRED);
+    keyRemovalFails = false;
+    during.mockRestore();
+    expect(logged(both.lines, KEY_ACROSS_RESET_LINE)).toEqual([expect.objectContaining({ error_code: 'not_removed_not_locked', user_id: neither.staff.id, request_id: third.requestId })]);
+    expect(await securityEvents(neither.staff.id)).toEqual([]);
+  });
+
+  it('SGN-17: only a start at or before the mark pages: a start ahead of the database’s clock is refused with an error line of its own and no record, and a replayed stale step adds no second record', async () => {
+    const user = await person();
+    const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));
+    const { flow: watched, lines } = paced();
+    // Ahead of the clock (a clock that stepped back, or a value from another clock): refused, not evidence.
+    const ahead = { ...begun, began: Date.now() + 3_600_000 } as Pending;
+    const request = context();
+    expect(await watched.answerTotp(ahead, nextCode(), request)).toEqual(EXPIRED);
+    expect(logged(lines, STEP_REFUSED_LINE)).toEqual([]);
+    expect(logged(lines, 'sign-in step start is ahead of the database clock')).toEqual([expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId, error_code: 'mfa' })]);
+    expect(await securityEvents(user.id)).toEqual([]);
+    // A stale step answered twice (the sealed cookie replayed): refused and paged each time, recorded once.
+    await resetRecorded(user.id);
+    expect(await watched.answerTotp(begun, nextCode(), context())).toEqual(EXPIRED);
+    expect(await watched.answerTotp(begun, nextCode(), context())).toEqual(EXPIRED);
+    expect(await securityEvents(user.id)).toEqual(['step_before_reset_mfa']);
+    expect(logged(lines, STEP_REFUSED_LINE)).toHaveLength(2);
+    expect((await events(user.id)).filter((event) => event.startsWith('sign_in_failed'))).toEqual([]);
+  });
+
+  it('SGN-17: a lookup or a judgement that throws once the provider has proved the person gives the grant back before the error leaves', async () => {
+    const user = await person();
+    const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));
+    // answerTotp judges the typed address's account first (the first call); the one in authenticated() fails.
+    let calls = 0;
+    const second = paced(
+      failing(/sign_in_step_refused/, 1, () => {
+        calls += 1;
+        return calls === 2;
+      }),
+    );
+    const release = vi.spyOn(provider, 'release');
+    await expect(second.flow.answerTotp(begun, nextCode(), context())).rejects.toThrow('synthetic failure');
+    expect(release.mock.calls).toHaveLength(1);
+    release.mockRestore();
+    expect(await openSessions(user.id)).toBe(0);
   });
 
   it('SGN-17: a step sealed by the release before, with no start, starts again at every step: nothing is asked of the provider for it, and nothing is recorded, since it is no evidence', async () => {

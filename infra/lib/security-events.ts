@@ -65,19 +65,26 @@ export const PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE = 'security event: passwo
 export const PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: password reset provider sign-out failed';
 
 /**
- * The three lines of a sign-in around a password reset (docs/adr/0093; test matrix SGN-17 and SGN-18). The web logs each
+ * The four lines of a sign-in around a password reset (docs/adr/0093; test matrix SGN-17 and SGN-18). The web logs each
  * as the `msg` of a JSON line with the user's ID, the request's ID and a code in `error_code` only
  * (apps/web/src/lib/auth/sign-in.ts).
  *
  * A step refused: a sign-in step begun at or before the account's latest recorded reset was answered after it
- * (docs/adr/0093, D5). The web logs it at warn with the step in `error_code`. A reset asked for in the same browser
+ * (docs/adr/0093, D5). The web logs it at warn with the step in `error_code`, and only for that reason: a step with no
+ * start, an unknown account and a start ahead of the database's clock are refused without it (the last logs
+ * `sign-in step start is ahead of the database clock` at error, which no filter here counts). A reset asked for in the same browser
  * replaces that browser's pending step, so a stale step is another browser or device; at the code step it means the old
  * password was proved around the reset. It is counted for every step but `key`: no password was proved there, and a new
  * attempt succeeds.
  *
  * A key registered across a reset: a hardware-key registration already at the provider when the reset was recorded
  * came back registered (docs/adr/0093, D6). The web asks the provider to remove the key and logs the line at error with
- * `error_code` removed or not_removed.
+ * `error_code` removed, not_removed (the key stays and the account is locked, so the key signs in to nothing until a
+ * platform administrator unlocks it) or not_removed_not_locked (the key stays and the lock failed too: the urgent one).
+ *
+ * A crossed account: the address typed names one account and the provider's subject another (docs/adr/0093, D5). The
+ * web refuses the sign-in outright and logs the line at warn with the subject's account's ID. A sound database has
+ * none; finding and repairing one is Schema PR 6's.
  *
  * An unknown outcome: the provider did not say whether it reset the password (docs/adr/0093, D9). The web ends the
  * account's sessions, moves its mark, queues no password-changed email and logs the line at error with the provider
@@ -88,7 +95,10 @@ export const STEP_REFUSED_AFTER_RESET_COUNTED_STEPS = ['new_password', 'mfa_setu
 /** The one step the line is logged for and not counted. */
 export const STEP_REFUSED_AFTER_RESET_UNCOUNTED_STEP = 'key';
 export const KEY_REGISTERED_ACROSS_RESET_MESSAGE = 'security event: hardware key registered across a password reset';
-export const KEY_REGISTERED_ACROSS_RESET_CODES = ['removed', 'not_removed'] as const;
+export const KEY_REGISTERED_ACROSS_RESET_CODES = ['removed', 'not_removed', 'not_removed_not_locked'] as const;
+/** Logged at error, counted by no filter: a start ahead of the database's clock is a clock fault, not evidence of a person. */
+export const STEP_START_AHEAD_OF_CLOCK_MESSAGE = 'sign-in step start is ahead of the database clock';
+export const CROSSED_ACCOUNT_REFUSED_MESSAGE = 'security event: sign-in refused for a crossed account';
 export const PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE = 'security event: password reset outcome unknown';
 
 /** One counted line: its metric (in SIGN_IN_BURST_METRIC's namespace), its message, the codes it is narrowed to (none: every one), and its alarm. */
@@ -113,6 +123,7 @@ export const RESET_AND_ENROLMENT_COUNTS = [
   { metricName: 'SignInStepRefusedAfterReset', message: STEP_REFUSED_AFTER_RESET_MESSAGE, errorCodes: STEP_REFUSED_AFTER_RESET_COUNTED_STEPS, threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'HardwareKeyRegisteredAcrossReset', message: KEY_REGISTERED_ACROSS_RESET_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'PasswordResetOutcomeUnknown', message: PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
+  { metricName: 'SignInRefusedCrossedAccount', message: CROSSED_ACCOUNT_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
 ] as const satisfies readonly SecurityEventCount[];
 
 export type ResetAndEnrolmentMetricName = (typeof RESET_AND_ENROLMENT_COUNTS)[number]['metricName'];

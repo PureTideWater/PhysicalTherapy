@@ -187,6 +187,9 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   // their password by emailed code, alone, because a request spends the sign_in bucket's count for the address and the
   // reset changes the password (apart from lockout's, which locks).
   { key: 'reset', organization: 'group', role: 'viewer' },
+  // A code step begun before a reset is closed after it (docs/adr/0093; test matrix SGN-17): a viewer in that one test
+  // only, because the reset changes the password while the specs run in parallel.
+  { key: 'reset-step', organization: 'group', role: 'viewer' },
   // The shell's skip link (test matrix CI-30), each persona in that one test only, so no sign-in or hardware key is shared
   // with a test that runs at once: a practice administrator of the group, on a practice page and the group's users
   // page, and a platform administrator on the console.

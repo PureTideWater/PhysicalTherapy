@@ -19,7 +19,9 @@ import { type MigratedDatabase, createMigratedDatabase, createUser, endPool } fr
  * is refused at or before the mark and ahead of the clock, under the account's row lock, so a sign-in racing a reset is
  * either ended or refused in either order; a row with no start (the previous image's) is neither checked nor locked;
  * the account's row first closes the lock cycle the insert trigger and the sweep would otherwise add;
- * sign_in_step_refused() judges and records in one call and counts no failure; who owns and may call each function;
+ * sign_in_step_refused() judges and records in one call (the reason; one row for an account, a step and a mark) and counts
+ * no failure; sign_in_lock_key_across_reset() locks an account only on the record of a key registered across its reset;
+ * who owns and may call each function;
  * the migration's lock loop queues nobody; and its preflight.
  * Synthetic data only: every address is @synthetic.test.
  */
@@ -176,8 +178,9 @@ async function securityEvents(user: string): Promise<EventRow[]> {
   ).rows;
 }
 
-async function stepRefused(user: string, start: string | null, step: string | null, requestId: string = request()): Promise<boolean | undefined> {
-  return (await app.query<{ refused: boolean }>('SELECT sign_in_step_refused($1, $2::timestamptz, $3, $4) AS refused', [user, start, step, requestId])).rows[0]?.refused;
+/** Why the step is refused (`no_account`, `no_start`, `ahead_of_clock`, `before_reset`), or null when it is not. */
+async function stepRefused(user: string, start: string | null, step: string | null, requestId: string = request()): Promise<string | null | undefined> {
+  return (await app.query<{ refused: string | null }>('SELECT sign_in_step_refused($1, $2::timestamptz, $3, $4) AS refused', [user, start, step, requestId])).rows[0]?.refused;
 }
 
 /** One of the migration's DO blocks, as it stands in the file: the first that holds `marker`. */
@@ -489,6 +492,27 @@ describe('a sign-in racing the reset is ended or refused, in either order (docs/
   });
 });
 
+describe('a session insert above READ COMMITTED (docs/adr/0093 D4; the build review’s DB-N3)', () => {
+  it('that waits on the account’s row behind a reset ends in a serialization failure, never in a session: it cannot read the moved mark, so PostgreSQL refuses it', async () => {
+    for (const isolation of ['REPEATABLE READ', 'SERIALIZABLE']) {
+      const user = await createUser(owner);
+      const device = await newDevice(user);
+      const start = await beganAndPassed();
+      // Its snapshot is taken before the reset (actorTransaction's first statement).
+      const signIn = await actorTransaction(user, isolation);
+      const reset = await actorTransaction(user);
+      await reset.client.query(RESET_EVENT, [user]);
+      const inserted = code(signIn.client.query(WITH_START, [user, device, tokenHash(), start]));
+      expect(await waits(signIn.pid), isolation).toBe(true);
+      await reset.client.query('COMMIT');
+      expect(await inserted, isolation).toBe('40001');
+      await signIn.client.query('ROLLBACK');
+      const open = await owner.query<{ n: number }>('SELECT count(*)::int AS n FROM user_session WHERE user_id = $1', [user]);
+      expect(open.rows[0]?.n, isolation).toBe(0);
+    }
+  });
+});
+
 describe('one lock order: the account’s row first (docs/adr/0093 D2; the design review’s DB-D1)', () => {
   /** The six steps of the review's scenario: one account, one browser, a reset, two sign-ins and a request. */
   it('without the two calls the insert trigger and the sweep close a cycle with resolve_session() and PostgreSQL ends one of the three (the red run)', async () => {
@@ -593,25 +617,26 @@ describe('sign_in_lock_account() (docs/adr/0093 D2)', () => {
 });
 
 describe('sign_in_step_refused(): judged and recorded in one call (SGN-17; docs/adr/0093 D5, D6)', () => {
-  it('is true and records nothing for an account that does not exist, a step with no start, and a start ahead of the clock; false for a past start on an account never reset', async () => {
+  it('answers the reason and records nothing for an account that does not exist, a step with no start, and a start ahead of the clock; answers nothing for a past start on an account never reset', async () => {
     const user = await createUser(owner);
     const start = await beganAndPassed();
-    expect(await stepRefused(randomUUID(), start, 'mfa')).toBe(true);
-    expect(await stepRefused(user, null, 'mfa')).toBe(true);
-    expect(await stepRefused(user, 'infinity', 'mfa')).toBe(true);
+    expect(await stepRefused(randomUUID(), start, 'mfa')).toBe('no_account');
+    expect(await stepRefused(randomUUID(), null, 'mfa')).toBe('no_account');
+    expect(await stepRefused(user, null, 'mfa')).toBe('no_start');
+    expect(await stepRefused(user, 'infinity', 'mfa')).toBe('ahead_of_clock');
     const ahead = (await owner.query<{ at: string }>("SELECT (clock_timestamp() + interval '1 minute')::text AS at")).rows[0]?.at ?? null;
-    expect(await stepRefused(user, ahead, 'mfa')).toBe(true);
-    expect(await stepRefused(user, start, 'mfa')).toBe(false);
-    expect(await stepRefused(user, '-infinity', 'mfa')).toBe(false);
+    expect(await stepRefused(user, ahead, 'mfa')).toBe('ahead_of_clock');
+    expect(await stepRefused(user, start, 'mfa')).toBeNull();
+    expect(await stepRefused(user, '-infinity', 'mfa')).toBeNull();
     // The same three with a mark set: still refused, still unrecorded (none is evidence of a step around the reset).
     await recordReset(user);
-    expect(await stepRefused(user, null, 'mfa')).toBe(true);
-    expect(await stepRefused(user, 'infinity', 'mfa')).toBe(true);
-    expect(await stepRefused(user, ahead, 'mfa')).toBe(true);
+    expect(await stepRefused(user, null, 'mfa')).toBe('no_start');
+    expect(await stepRefused(user, 'infinity', 'mfa')).toBe('ahead_of_clock');
+    expect(await stepRefused(user, ahead, 'mfa')).toBe('ahead_of_clock');
     expect(await securityEvents(user)).toEqual([]);
   });
 
-  it('is true at the mark and before it, false after it, and records a security_event of the system for the account each time it refuses by the mark, with the step in the purpose and the request’s ID', async () => {
+  it('answers before_reset at the mark and before it and nothing after it, and records one security_event of the system for the account, a step and a mark, with the step in the purpose and the first request’s ID', async () => {
     const user = await createUser(owner);
     const mark = await setMark(user, "date_trunc('milliseconds', clock_timestamp() - interval '1 second')");
     const around = await owner.query<{ at: string; under: string; over: string }>(
@@ -619,24 +644,38 @@ describe('sign_in_step_refused(): judged and recorded in one call (SGN-17; docs/
       [mark],
     );
     const { at, under, over } = around.rows[0] ?? { at: null, under: null, over: null };
-    expect(await stepRefused(user, over, 'mfa')).toBe(false);
+    expect(await stepRefused(user, over, 'mfa')).toBeNull();
     expect(await securityEvents(user)).toEqual([]);
     const requests: string[] = [];
     for (const step of STEPS) {
-      for (const start of [at, under]) {
-        const requestId = request();
-        requests.push(requestId);
-        expect(await stepRefused(user, start, step, requestId), step).toBe(true);
-      }
-      expect(await stepRefused(user, over, step), step).toBe(false);
+      const requestId = request();
+      requests.push(requestId);
+      expect(await stepRefused(user, at, step, requestId), step).toBe('before_reset');
+      // A repeat of the step, the same start or an older one, under another request: refused, and no second row.
+      expect(await stepRefused(user, at, step), step).toBe('before_reset');
+      expect(await stepRefused(user, under, step), step).toBe('before_reset');
+      expect(await stepRefused(user, over, step), step).toBeNull();
     }
-    const purposes = STEPS.flatMap((step) => {
-      const purpose = step === 'key_registered' ? 'key_registered_across_reset' : `step_before_reset_${step}`;
-      return [purpose, purpose];
-    });
-    expect(await securityEvents(user)).toEqual(
-      purposes.map((purpose, index) => ({ actor_kind: 'system', actor_id: null, action: 'security_event', object_type: 'user', object_id: user, purpose, request_id: requests[index] })),
-    );
+    const purposes = STEPS.map((step) => (step === 'key_registered' ? 'key_registered_across_reset' : `step_before_reset_${step}`));
+    const once = purposes.map((purpose, index) => ({ actor_kind: 'system', actor_id: null, action: 'security_event', object_type: 'user', object_id: user, purpose, request_id: requests[index] }));
+    expect(await securityEvents(user)).toEqual(once);
+    // A second reset moves the mark: the same stale step is evidence against the new reset, recorded once again.
+    await owner.query('SELECT pg_sleep(0.003)');
+    await recordReset(user);
+    const again = request();
+    expect(await stepRefused(user, at, 'mfa', again)).toBe('before_reset');
+    expect(await stepRefused(user, under, 'mfa')).toBe('before_reset');
+    expect(await securityEvents(user)).toEqual([...once, { ...once[STEPS.indexOf('mfa')], request_id: again }]);
+  });
+
+  it('writes at most one row for an account, a step and a mark however old the start: the application role with no actor, calling with -infinity, a start years old and an old start', async () => {
+    const user = await createUser(owner);
+    const old = await beganAndPassed();
+    await recordReset(user);
+    for (const start of ['-infinity', '2000-01-01T00:00:00Z', old, '-infinity', old]) {
+      expect(await stepRefused(user, start, 'mfa'), start).toBe('before_reset');
+    }
+    expect((await securityEvents(user)).map((event) => event.purpose)).toEqual(['step_before_reset_mfa']);
   });
 
   it('counts no failure and locks nothing: a stale step answered any number of times leaves the account’s count and lock as they were', async () => {
@@ -644,13 +683,13 @@ describe('sign_in_step_refused(): judged and recorded in one call (SGN-17; docs/
     const start = await beganAndPassed();
     await recordReset(user);
     for (let tries = 0; tries < 12; tries += 1) {
-      expect(await stepRefused(user, start, 'mfa')).toBe(true);
+      expect(await stepRefused(user, start, 'mfa')).toBe('before_reset');
     }
     const account = await owner.query<{ failed_sign_ins: number; locked: boolean }>('SELECT failed_sign_ins, locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [user]);
     expect(account.rows[0]).toEqual({ failed_sign_ins: 0, locked: false });
     const failed = await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE object_id = $1 AND action = 'sign_in_failed'", [user]);
     expect(failed.rows[0]?.n).toBe(0);
-    expect(await securityEvents(user)).toHaveLength(12);
+    expect(await securityEvents(user)).toHaveLength(1);
   });
 
   it('refuses a step outside its closed list, and none at all, whoever the account', async () => {
@@ -683,9 +722,64 @@ describe('sign_in_step_refused(): judged and recorded in one call (SGN-17; docs/
     // The reset is not committed: the step is not yet refused, and the call does not wait.
     const judged = stepRefused(user, start, 'mfa');
     expect(await settles(judged, 3000)).toBe(true);
-    expect(await judged).toBe(false);
+    expect(await judged).toBeNull();
     await reset.client.query('COMMIT');
-    expect(await stepRefused(user, start, 'mfa')).toBe(true);
+    expect(await stepRefused(user, start, 'mfa')).toBe('before_reset');
+  });
+});
+
+describe('sign_in_lock_key_across_reset(): a key registered across a reset and not removed locks the account (SGN-17; docs/adr/0093 D6)', () => {
+  const lock = (user: string, requestId: string = request()) =>
+    app.query<{ locked: boolean }>('SELECT sign_in_lock_key_across_reset($1, $2) AS locked', [user, requestId]).then((result) => result.rows[0]?.locked);
+  const lockState = async (user: string) =>
+    (await owner.query<{ failed_sign_ins: number; locked: boolean }>('SELECT failed_sign_ins, locked_at IS NOT NULL AS locked FROM "user" WHERE id = $1', [user])).rows[0];
+
+  it('refuses unless that registration is on record since the account’s mark: an unknown account, one never reset, one reset with no such record, and one whose record is of an earlier reset', async () => {
+    expect(await code(lock(randomUUID()))).toBe('42501');
+    const user = await createUser(owner);
+    const start = await beganAndPassed();
+    expect(await code(lock(user))).toBe('42501');
+    await recordReset(user);
+    expect(await code(lock(user))).toBe('42501');
+    // Another stale step's record is not the key's.
+    expect(await stepRefused(user, start, 'register_key')).toBe('before_reset');
+    expect(await code(lock(user))).toBe('42501');
+    // The key's record, then a later reset: the record is of the earlier mark.
+    expect(await stepRefused(user, start, 'key_registered')).toBe('before_reset');
+    await owner.query('SELECT pg_sleep(0.003)');
+    await recordReset(user);
+    expect(await code(lock(user))).toBe('42501');
+    expect(await lockState(user)).toEqual({ failed_sign_ins: 0, locked: false });
+    expect((await securityEvents(user)).map((event) => event.purpose)).toEqual(['step_before_reset_register_key', 'key_registered_across_reset']);
+  });
+
+  it('locks the account once, records it as a security_event of the system with the request’s ID, counts no failure, and answers false for an account already locked', async () => {
+    const user = await createUser(owner);
+    const start = await beganAndPassed();
+    await recordReset(user);
+    expect(await stepRefused(user, start, 'key_registered')).toBe('before_reset');
+    const requestId = request();
+    expect(await lock(user, requestId)).toBe(true);
+    expect(await lockState(user)).toEqual({ failed_sign_ins: 0, locked: true });
+    const lockedAt = (await owner.query<{ at: string }>('SELECT locked_at::text AS at FROM "user" WHERE id = $1', [user])).rows[0]?.at;
+    expect(await lock(user)).toBe(false);
+    expect((await owner.query<{ at: string }>('SELECT locked_at::text AS at FROM "user" WHERE id = $1', [user])).rows[0]?.at).toBe(lockedAt);
+    expect((await securityEvents(user)).slice(1)).toEqual([
+      { actor_kind: 'system', actor_id: null, action: 'security_event', object_type: 'user', object_id: user, purpose: 'account_locked_key_across_reset', request_id: requestId },
+    ]);
+    // The sign-in path reads the lock as it reads the lock of ten failures.
+    const read = await owner.query<{ locked: boolean }>('SELECT a.locked FROM "user" u, sign_in_account(u.email, NULL) a WHERE u.id = $1', [user]);
+    expect(read.rows[0]?.locked).toBe(true);
+  });
+
+  it('an account already locked by ten failures is left as it is: false, and no second lock is recorded', async () => {
+    const user = await createUser(owner);
+    const start = await beganAndPassed();
+    await recordReset(user);
+    expect(await stepRefused(user, start, 'key_registered')).toBe('before_reset');
+    await owner.query('UPDATE "user" SET locked_at = now(), failed_sign_ins = 10 WHERE id = $1', [user]);
+    expect(await lock(user)).toBe(false);
+    expect((await securityEvents(user)).map((event) => event.purpose)).toEqual(['key_registered_across_reset']);
   });
 });
 
@@ -696,6 +790,7 @@ describe('the functions’ owners and grants (docs/adr/0093)', () => {
       'user_session_sign_in_not_before()': { definer: true, grantees: [], config: DEFINER_PATH },
       'sign_in_lock_account()': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
       'sign_in_step_refused(uuid,timestamp with time zone,text,text)': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
+      'sign_in_lock_key_across_reset(uuid,text)': { definer: true, grantees: [APP_ROLE], config: DEFINER_PATH },
       'sign_in_step_began()': { definer: false, grantees: [APP_ROLE], config: INVOKER_PATH },
     };
     const { rows } = await owner.query<{ name: string; definer: boolean; config: string[] | null; owner: string; grantees: string[]; public: boolean; volatility: string }>(
@@ -704,7 +799,7 @@ describe('the functions’ owners and grants (docs/adr/0093)', () => {
                      WHERE x.privilege_type = 'EXECUTE' AND x.grantee <> 0 AND x.grantee <> p.proowner ORDER BY 1) AS grantees,
               EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE') AS public
          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'public' AND (p.oid::regprocedure::text = ANY ($1) OR p.proname LIKE '%sign_in_not_before%' OR p.proname LIKE 'sign_in_step%' OR p.proname = 'sign_in_lock_account') ORDER BY 1`,
+        WHERE n.nspname = 'public' AND (p.oid::regprocedure::text = ANY ($1) OR p.proname LIKE '%sign_in_not_before%' OR p.proname LIKE 'sign_in_step%' OR p.proname LIKE 'sign_in_lock%') ORDER BY 1`,
       [Object.keys(expected)],
     );
     expect(rows.map((row) => row.name).sort()).toEqual(Object.keys(expected).sort());
@@ -729,7 +824,8 @@ describe('the functions’ owners and grants (docs/adr/0093)', () => {
     for (const role of [OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, SCREENING_ROLE]) {
       const calls = await owner.query<{ may: boolean }>(
         `SELECT has_function_privilege($1, 'sign_in_lock_account()', 'EXECUTE') OR has_function_privilege($1, 'sign_in_step_began()', 'EXECUTE')
-             OR has_function_privilege($1, 'sign_in_step_refused(uuid, timestamptz, text, text)', 'EXECUTE') AS may`,
+             OR has_function_privilege($1, 'sign_in_step_refused(uuid, timestamptz, text, text)', 'EXECUTE')
+             OR has_function_privilege($1, 'sign_in_lock_key_across_reset(uuid, text)', 'EXECUTE') AS may`,
         [role],
       );
       expect(calls.rows[0]?.may, role).toBe(false);
@@ -904,7 +1000,8 @@ describe('the migration’s preflight (docs/adr/0093 D10)', () => {
   const UNDO = `
     DROP TRIGGER audit_event_sign_in_not_before ON audit_event;
     DROP TRIGGER user_session_sign_in_not_before ON user_session;
-    DROP FUNCTION audit_event_sign_in_not_before(), user_session_sign_in_not_before(), sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text);
+    DROP FUNCTION audit_event_sign_in_not_before(), user_session_sign_in_not_before(), sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text),
+      sign_in_lock_key_across_reset(uuid, text);
     ALTER TABLE "user" DROP COLUMN sign_in_not_before;
     ALTER TABLE user_session DROP COLUMN sign_in_began_at;`;
 
@@ -936,7 +1033,7 @@ describe('the migration’s preflight (docs/adr/0093 D10)', () => {
       code: '55000',
       message: 'user_session.sign_in_began_at already exists; migration 20261112090000 creates it',
     });
-    for (const signature of ['audit_event_sign_in_not_before()', 'user_session_sign_in_not_before()', 'sign_in_step_began()', 'sign_in_lock_account()', 'sign_in_step_refused(uuid, timestamptz, text, text)']) {
+    for (const signature of ['audit_event_sign_in_not_before()', 'user_session_sign_in_not_before()', 'sign_in_step_began()', 'sign_in_lock_account()', 'sign_in_step_refused(uuid, timestamptz, text, text)', 'sign_in_lock_key_across_reset(uuid, text)']) {
       const returns = signature.startsWith('sign_in') ? 'void' : 'trigger';
       const body = returns === 'void' ? 'BEGIN END' : 'BEGIN RETURN NULL; END';
       expect(await preflightAfter(`${UNDO} CREATE FUNCTION ${signature.replace('uuid, timestamptz, text, text', 'a uuid, b timestamptz, c text, d text')} RETURNS ${returns} LANGUAGE plpgsql AS '${body}';`), signature).toEqual({
@@ -965,5 +1062,10 @@ describe('the migration’s preflight (docs/adr/0093 D10)', () => {
            EXECUTE FUNCTION audit_event_password_notice();`,
       ),
     ).toBe('accepted');
+  });
+
+  it('reads the notice’s trigger the same with public off the search path, where the catalog prints the function’s schema (the build review’s DB-N1)', async () => {
+    expect(await preflightAfter(`${UNDO} SET LOCAL search_path = pg_catalog;`)).toBe('accepted');
+    expect(await preflightAfter(`${UNDO} DROP TRIGGER audit_event_password_notice ON audit_event; SET LOCAL search_path = pg_catalog;`)).toMatchObject({ code: '55000' });
   });
 });
