@@ -102,6 +102,7 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
     ['an en dash', 'ZZ1234567', 'ZZ–1234567'],
     ['periods beside its letters', 'SYNCCN0001', 'SYN.CCN.0001'],
     ['a number sign beside its letters', 'ZZ1234567', 'ZZ#1234567'],
+    ['a slash beside its letters', 'QQRSTUVW', 'QQRS/TUVW'],
     ['the shape of a Social Security number, being the case’s own', '900551234', '900-55-1234'],
     ['spaces, having no digit', 'QQRSTUVW', 'QQ RSTUVW'],
     ['a dash, having no digit', 'QQRSTUVW', 'QQ-RSTUVW'],
@@ -171,6 +172,16 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
     ]);
   });
 
+  it('a template of format /3 reads nothing inside a placeholder, a citation marker or a stray run in braces', () => {
+    const template = 'For {{patient_name:1}} and {{member_id:2}} the remittances show {{fact:pattern.allowed}} and {{Zoe}} [13].';
+    const report = verifyTemplate(template, FACT_CONTENTS.base(), { names: ['PATIENT', 'NÁME', 'MEMBER', 'ZOË'], numbers: ['ID2', '13'] });
+    // The stray and the marker of no source fail as themselves, and nothing in a token is read as an identifier.
+    expect(report.mismatches.map((item) => [item.code, template.slice(item.start, item.end)])).toEqual([
+      ['unknown_fact', '{{Zoe}}'],
+      ['unknown_citation', '[13]'],
+    ]);
+  });
+
   // The generator is the oracle: it writes the identifier, so it knows where every letter and digit of it is. These
   // read one short sentence through the reading itself, not the whole draft through the verifier, and take few runs
   // each: a mutation run gives a test five seconds on a machine every runner shares, and a test that runs out of them
@@ -193,6 +204,14 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
       .array(fc.tuple(fc.boolean(), fc.option(fc.constantFrom(...MARKS), { nil: '', freq: 4 })), { minLength: part.length, maxLength: part.length })
       .map((choices) => [...part].map((letter, at) => `${choices[at]?.[0] === true ? letter.toLowerCase() : letter}${choices[at]?.[1] ?? ''}`).join(''));
   const NAME_GAPS = ['-', '–', '—', '−', "'", '’', '‘', '`', '_', '', ' ', ', ', '. '];
+
+  // Each way the generator joins a name's parts, for each way the records join them, as a row of its own: one run of
+  // the property below draws only some of the gaps, and three of them (an underscore, an apostrophe where the records
+  // hold a dash, a period and a space) no other row writes.
+  it.each(['-', "'", ' '].flatMap((join) => NAME_GAPS.map((gap) => [join, gap] as const)))('a name the records join with %j, its parts written with %j between them', (join, gap) => {
+    const written = `Qzbc\u0301d${gap}qzFGH`;
+    expect(found(said(written), names(`QZBCD${join}QZFGH`))).toEqual([written]);
+  });
 
   it('any name of two to four parts, its parts written in any case with any marks and joined any way, or one part alone', () => {
     const name = fc.array(consonants, { minLength: 2, maxLength: 4 }).chain((parts) =>
@@ -276,6 +295,9 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
     expect(flagged(telling('Hye-In and to uyen and The Anh'), identifiers)).toEqual(['Hye-In', 'to uyen', 'The Anh']);
     expect(flagged(telling('Treeby, Uyen and Quill'), identifiers)).toEqual(['Treeby', 'Uyen', 'Quill']);
     expect(flagged(telling('Hy[1]e-In'), identifiers)).toEqual(['Hy[1]e-In']);
+    // The reading across a token holds the same floor: a short part written across one is no more the name than beside one.
+    expect(read('The payer told i[3]n so [4].', identifiers)).toEqual([]);
+    expect(read('The payer told Tr[3]eeby so [4].', identifiers)).toEqual(['Tr[3]eeby']);
   });
 
   it('still fails a word a name is, at any length and in any form: a name that folds to a word of the text (docs/adr/0047, the person rephrases)', () => {
@@ -416,7 +438,30 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
 });
 
 describe('the whole-word reading by itself (docs/adr/0047), which the matcher’s now stands beside', () => {
-  // Each of these the verifier's report no longer shows by itself: the matcher's reading finds the same text. The
+  it('is what reads an identifier written as the records hold it, where they hold a character the matcher joins nothing over', () => {
+    // A slash, a period, a comma or a plus sign between two digits, a plus sign in a name, and one word of a number the
+    // records hold in two. The matcher reads none of these (the drafter's check holds none); the verifier fails each, as
+    // it did before the matcher stood beside this reading. A row the matcher comes to read no longer shows that: give
+    // it another such identifier.
+    for (const [identifiers, written] of [
+      [numbers('ZZ12345/01'), 'ZZ12345/01'],
+      [numbers('ZZ12345.01'), 'ZZ12345.01'],
+      [numbers('ZZ12345,01'), 'ZZ12345,01'],
+      [numbers('ZZ12345+01'), 'ZZ12345+01'],
+      [numbers('ZZ12345 01'), 'ZZ12345'],
+      [names('QUILL+TREEBY'), 'Quill+Treeby'],
+    ] as const) {
+      const sentence = `The payer told ${written} so [3].`;
+      expect(holdsNameOrNumber(sentence, identifiers), written).toBe(false);
+      expect(read(sentence, identifiers), written).toEqual([written]);
+    }
+    // One number and the name through the verifier, end to end.
+    expect(flagged(telling('ZZ12345/01'), numbers('ZZ12345/01'))).toEqual(['ZZ12345/01']);
+    expect(flagged(telling('Quill+Treeby'), names('QUILL+TREEBY'))).toEqual(['Quill+Treeby']);
+    expect(verifyNarrative(telling('ZZ12345/01'), facts, numbers('ZZ12345/01')).passed).toBe(false);
+  });
+
+  // What follows the verifier's report no longer shows by itself: the matcher's reading finds the same text. The
   // whole-word reading is still half of the union, so it is held here directly.
   it('counts a form by its letters and digits, of which it needs two', () => {
     expect(identifierForms(['12', 'A.', '7', '.-', 'Q R'])).toEqual(['Q R', '12']);

@@ -70,6 +70,9 @@ describe('the narrative’s reading, match by match', () => {
 
   it('looks for no date of birth, no initial and no Social Security or phone number by its pattern', () => {
     expect(read('Z. V-T., born 1984-02-29, SSN 900-55-0101, phone 212-555-0199.')).toEqual([]);
+    // Not after a label that says a date is one of birth, and not an initial next to a name it does read.
+    expect(read('DOB 1955-07-14, date of birth 07/14/1955.', { names: ['QUILL'], numbers: ['19550714'] })).toEqual([]);
+    expect(read('Z. Quarrington was told.', { names: ['ZOË QUARRINGTON'], numbers: [] })).toEqual(['Quarrington']);
   });
 
   it('masks nothing itself: the drafter’s check masks the gateway’s placeholders first', () => {
@@ -98,6 +101,9 @@ describe('a part of a name’s word by itself, from the letters the caller asks 
     // Exactly at the floor: three letters is no part, four is.
     expect(read('Luc and Jean.', identifiers, 3)).toEqual(['Luc', 'Jean']);
     expect(read('Luc and Jean.', identifiers, 5)).toEqual([]);
+    // A whole name under the floor, its words apart or together, and one written without the records' mark.
+    expect(read('Li O and Lio were paid.', { names: ['LI O'], numbers: [] }, 4)).toEqual(['Li O', 'Li', 'Lio']);
+    expect(read('Zoe was paid.', { names: ['ZOË'], numbers: [] }, 4)).toEqual(['Zoe']);
     // A part that is another name's whole word counts as that name.
     expect(read('It was paid in full.', { names: ['HYE-IN', 'IN'], numbers: [] }, 4)).toEqual(['in']);
   });
