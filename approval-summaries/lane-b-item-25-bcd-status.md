@@ -4,7 +4,7 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9if9wx1DzzAD4jRFYi2
 
 ## RESUME-BLOCK
 - **(c) MERGED: #145 as ea8f200f** into `claude/build-platform` (2026-11-11 19:33 UTC), head 7c83dfee, a merge commit; every check green on that head, the required ones included; the base 91bc6b7c was its ancestor. No migration. W14 unsubscribed and cancelled its check-in. The WIP ref `co-001/wip-migrate-lock-timeout` and the branch can be deleted.
-- **(b) the free-screening upload's bounded wait:** branch `co-001/screening-upload-bounded-wait` (from ea8f200f), WIP ref `co-001/wip-screening-upload-bounded-wait` at fe04a4f5. No PR yet. Built: `submit_screening()` runs in a transaction of its own with the web's three-second `lock_timeout`; a wait past it is refused with one sentence (`SCREENING_BUSY`), stores nothing, logs a code and the request's ID; ADR 0092 amended (2). The test fails on the base (waits to the test's limit) and passes on the head. Two security reviews running (`item-25-bcd-reviews/b-review-1-…`, `b-review-2-…`). Next: verify their findings and fix; before and after screenshots of the refusal and one ux-brand-reviewer pass (a new sentence on a screen); the full local suite once; the draft PR from the template; CI; merge on green. No migration, no new ADR or matrix number.
+- **(b) the free-screening upload's bounded wait:** branch `co-001/screening-upload-bounded-wait` (from ea8f200f), WIP ref `co-001/wip-screening-upload-bounded-wait` at 7bcefc94. No PR yet. Built; two security reviews done and their fixes in 7bcefc94; the fast checks pass. Running: before and after screenshots of the refusal (in the session's scratchpad, never in a repository), then one ux-brand-reviewer pass. Next: its findings; the full local suite once; the draft PR from the template; CI; merge on green. No migration, no new ADR or matrix number (ADR 0092 amended a second time).
 - **(d) the session's end and its audit event in one transaction:** not started, and **W14 will not start it**: its context is near the budget, so (b) is its last PR. For the next session: `auth/sessions.ts` ends a session and writes the audit event in two transactions; make them one, committed through `committed()` (`packages/db/src/authz/scope.ts`, from #144), with failing-first tests for "the audit insert fails: the session is still live" and "the end fails: no audit event"; auth: two adversarial reviews; cut from the base after (b) merges.
 ## For Lane A (needs a migration; not built here)
 - Nothing yet.
@@ -32,7 +32,22 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9if9wx1DzzAD4jRFYi2
 - C4-4 (note), DONE: the budget's clock counts the wait for another migrator again, as the deploy's limit does. C4-5 (note), DONE: a stale comment, an inexact sentence, two tests.
 - 7c83dfee's own delta (one flag, the clock's line, two tests, words) was not sent to a further review: it is the reviewer's own smallest fix, with its tests.
 
+## Reviews of (b) (reports in `approval-summaries/item-25-bcd-reviews/`)
+### Round 1, on fe04a4f5 (2026-11-11; two security reviews; every finding checked against the code by W14). No blocker.
+- B1-1 (should fix), CONFIRMED, DONE in 7bcefc94: the connection was always released to the pool, even after a failed BEGIN or ROLLBACK or an unanswered commit. Now discarded, as the scope's own transaction does.
+- B1-2 (should fix, mostly not new), NOT BUILT, proposed below: the bound is per lock wait (6 to 9 s in practice), and a large upload's own run time has no limit while it holds one of the web's connections.
+- B1-3, B1-4, B1-5 (notes), ACCEPTED: two tabs can meet the refusal, and it is the right answer; an unanswered commit is a generic error, as before; a schema change's wait is logged under the same code.
+- B1-6 (should fix, test), DONE: the test holds each of the two advisory locks in turn and asserts that no session is left idle in a transaction. A row-lock case was not added: the same statement and the same timeout.
+- B2-1 (note), ACCEPTED: the refusal after three seconds tells a prober no more than the wait's length did before; it never shows an earlier screening.
+- B2-2 (should fix or accept), ACCEPTED AS A RISK and recorded in the PR, proposed below: someone who holds a practice's key with back-to-back slow uploads can have that practice's upload refused where before it waited and then replaced theirs. Costly (each holding upload passes the rate limit and the paid address check), and the root cause, that anyone can claim a practice's key, needs a migration.
+- B2-3 (note): the log line holds a code and the request's ID alone. B2-5 (note), DONE: the sentence says what to do if it repeats. B2-6 (note), DONE: the comment names every holder.
+- B2-4 (note, not new), proposed below.
+- Could not break: every lock wait in the function and its triggers is bounded; the timeout cannot surface at COMMIT; the setting is the transaction's own; nothing typed reaches a URL, a cookie or a log; the form keeps its values in the browser alone.
+
 ## Proposals for the orchestrator to queue
+- The screening upload: a transaction-local `statement_timeout` sized from the capacity harness, and a cap on how many uploads store at once in one web process (B1-2).
+- The screening upload: a busy refusal is not charged to the submitter's rate limit, and its log line tells the lock kinds apart (B2-2). **For Lane A (a migration):** a practice's key cannot be claimed by anyone who types its name and ZIP.
+- `screening/routes.ts`: a database error other than the mapped ones is rethrown with pg's `detail`, which can hold a failing row's typed values; log the SQLSTATE and throw a plain error (B2-4; not new).
 - The migration custom resource stops its ECS task when its 50 minutes pass (today the task runs on and a later deploy waits behind it on the advisory lock). Infra; from C2-2.
 
 ## Log
