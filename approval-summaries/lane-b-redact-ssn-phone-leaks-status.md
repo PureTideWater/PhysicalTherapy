@@ -37,7 +37,7 @@ last round found one letter that needs a fix or a ruling (below). Nothing else i
   (finding 2 below). So 74c32149 has its review. **Any further change to `redact.ts` needs a review of its delta**
   (one reviewer with the three lenses is enough for a few lines; briefs to copy: `reviews/brief-k.md` and
   `reviews/recorded-for-the-eighth-review.md`, the recorded list to hand it). A dead or empty agent never counts.
-- **OPEN 1, needs a fix or the orchestrator's ruling to record it: the withheld match** (`open-findings/README.md`,
+- **OPEN 1, to be FIXED before the merge (the orchestrator's ruling, 16:30 UTC): the withheld match** (`open-findings/README.md`,
   with `pe.mts`, `pe2.mts` and their outputs). For a patient whose one member ID ends another (`ZZ7654321` and
   `7654321`), with the ID written with a look-alike, ef3e8d20's own SSN match that begins in the ID's last digit is
   withheld (`matchesIn`'s last loop) on the assumption that the check refuses the run, but the longer ID's placeholder
@@ -46,13 +46,15 @@ last round found one letter that needs a fix or a ruling (below). Nothing else i
   seven characters of): the one known exception to "ef3e8d20's reading stands". On every head since 91e1527a at least,
   not from round K; in 7,600 probes no real SSN or phone is shown that way. Found by `fz.mts 120 5923`
   (`SENT_WITHHELD 1, SHOWS 1`; 0 on every earlier run). The fix is one condition (the recipe and what to check are in
-  the README); W5 did not build it. The orchestrator was told at 16:31 UTC.
+  the README); W5 did not build it. The ruling: fixed, not recorded (a date the base redacts must not be shown by this
+  pull request), by the one-condition fix in `matchesIn`, with a test from that seed that fails first, and one review
+  of the delta.
 - **OPEN 2, recorded, no change proposed: K-1.** A label's reach (`LABEL_REACH`, 24) is counted in characters and a CR
   LF counts two, so `"SSN on file. Statement\r\nNo. 900-12-3456150.00"` is named by its noun and sent while its LF
   writing is refused. ef3e8d20, cc3dd7f6 and every head of the build but f2f9f05e send it
   (`open-findings/k1-on-seven-trees.txt`); f2f9f05e refused it only through the defect J-3. It is in the amendment
-  draft's residuals. Rows to pin with the next test change are in `open-findings/README.md`. The orchestrator was told
-  at 16:20 UTC that it is recorded and may become a follow-up item beside MOD-23.
+  draft's residuals. Rows to pin with the next test change are in `open-findings/README.md`. The orchestrator ruled at
+  16:30 UTC that it stays recorded, and queued it in `LANES.md` Queues item 26 (before any real PHI).
 - **The battery and the gate on 74c32149 (15:38 to 16:27 UTC): clean but OPEN 1.** `battery/battery.sh` is the command
   with its seeds, `battery/README.md` the container layout it needs, how to rebuild it and what a clean run reads.
   Reproduction scripts: no line differs from f2f9f05e's run. Every PHI fuzzer: 0 letters ef3e8d20 refuses that the head
@@ -66,8 +68,8 @@ last round found one letter that needs a fix or a ruling (below). Nothing else i
   slowest letter 1,035 ms (cc3dd7f6 514 ms; budget 3,000 ms). The amendment draft carries these numbers; read them
   again after any further round. Start the gate with no lock around it (`run.sh` takes `/tmp/laneb-heavy.lock` itself).
 - **What remains to the merge, in order.**
-  1. OPEN 1: build the fix in the worktree (or record it on the orchestrator's ruling), with rows on both sides in
-     `redact.leaks.test.ts` and the K-1 rows; the six files, typecheck, eslint, the pinned rows, the residual table's
+  1. OPEN 1: a row in `redact.leaks.test.ts` for the seed-5923 letter with the two member IDs that fails first, then
+     the fix in the worktree, rows on both sides and the K-1 rows; the six files, typecheck, eslint, the pinned rows, the residual table's
      check; commit; push the WIP ref (`git push -q origin HEAD:refs/heads/co-001/wip-redact-ssn-phone-leaks` from the
      worktree, through the hook).
   2. A review of that delta; the battery with fresh seeds and the gate on both trees (`battery/battery.sh`); replay
