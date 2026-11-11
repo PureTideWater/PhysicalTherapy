@@ -1,0 +1,73 @@
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDNJ3ixNo2VHiiA93Y) holds this item from 2026-11-11 20:06 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
+# Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
+
+## RESUME-BLOCK (written by W17 at its 250k-token limit; the build is not finished, nothing is reviewed, no PR is open)
+
+- **WIP ref:** `co-001/wip-redact-item-26` at **7cbdd33d**, one commit on the base f3f5a642. Local branch name
+  `co-001/redact-item-26`. The design note: `designs/lane-b-redact-item-26/design.md` (sent to the orchestrator before
+  building; no answer came, so it stands). Read it first: it is one page.
+- **What is built** (`packages/redact/src/redact.ts`; `matchesIn`, `appliedMatches`, `merge`, the patterns and the scan
+  are unchanged):
+  - `nameForm(parts, apart)`, `numberForm(value, kind, claim, asStored)`, `formsOf(subject, wider)` (only the forms
+    whose pattern differs from the first reading's), `ownMatchesIn(normal, subject, wider)`, `widerMatchesIn`.
+  - `redactLetterForScreen` = `screenAsFirstRead` (the base's body) plus the wider matches, applied only where
+    `holdsAsFirstRead` (the base's check, body unchanged) does not refuse the base's text; candidates are the base's
+    plus the sent text's. `redactionSpans` applies every match of both readings.
+  - `holdsIdentifier` = the base's check or any wider match, read as written and, where the text holds a CR LF, once
+    more with CR LF as LF.
+- **Verified by running:** `name-forms.mts` (all four MOD-23 forms redacted alone, refused in a held letter as on the
+  base); `scripts/p6.mts` (each stored separator read as stored; amounts and unlabeled whole dates kept); `k1.txt` on
+  base and head (7 of 29 turn from sent to refused, each the LF row's answer; none the other way);
+  `scripts/cost-names.mts` (the note's cost table). `@tp/redact` typechecks; its own tests (46) and packets'
+  `verifier-identifiers.test.ts` (107) pass unchanged: the narrative's reading is the base's.
+- **Tests** (`packages/model-gateway/src`): the pinned "sent today" rows of MOD-23 and K-1 are rewritten as closed; a new
+  `describe('MOD-23: ...')` in `redact.leaks.test.ts` holds the name forms, the recorded cost rows, P6, K-1 and two
+  properties; four older tests that asserted the pieces rule now assert the recorded cost (`denial-letter.test.ts`,
+  `redact.property.test.ts`'s phrase property, `redact.test.ts`'s screen property). Last run (before three small
+  expectation fixes of my own new rows, which are in 7cbdd33d but **not rerun**): 4,113 of 4,119 pass.
+- **OPEN, to do next, in this order:**
+  1. **Time (a real defect, do not raise the budget).** Two crafted 100 kB letters of `denial-letter.test.ts` ("dates
+     written with slashes, one after another", "dates written with spaces alone") take 3.8 s and 3.1 s against 3 s. The
+     wider reading calls `ownMatchesIn` again, which reads the letter's dates again (`datesOf` is cached only inside a
+     check). Likely fix: open the check's caches (`viewsOfCheck`, `datesOfCheck`) around the whole of
+     `redactLetterForScreen` and of each `holds` reading in `holdsIdentifier`, so both readings share one date reading;
+     and skip the wider reading when the text's letters and digits hold none of the wider forms' compact strings in
+     order (the filter `nameOrNumberMatches` already uses). Measure on those two rows and the gate's timing table.
+  2. `redact.test.ts` "reads a letter with no invisible run on one reading" compares regular-expression run counts
+     (3,254 against 3,545: 91.8 in 100, the bar is 90). The wider reading adds the same runs to both sides. Re-measure
+     after (1); if it still fails, the bar moves with a comment saying why (it guards 98 in 100).
+  3. Rerun the six files: `pnpm --filter @tp/model-gateway exec vitest run src/redact.leaks.test.ts src/redact.test.ts
+     src/redact.residuals.test.ts src/redact.property.test.ts src/functions/denial-letter.test.ts`, packets'
+     `verifier-identifiers.test.ts`, `@tp/redact`. Failing-first evidence for the description: run the new describe
+     against the base's `redact.ts` copied in (not done).
+  4. The gate against f3f5a642: `/home/user/gate` is the gate's folder copied; A is `/home/user/snapA`, B
+     `/home/user/snapB` (each `packages/model-gateway/src` plus `redact.ts` and `confusables.ts` copied into it from
+     `packages/redact/src`). A run on the first prototype was started (`/home/user/gate-out/i26-1`) and **not read**;
+     it predates the forms filter, so run it again on the final tree. Then W5's and W13's battery with their seeds and
+     fresh ones (`designs/lane-b-redact-ssn-phone-leaks/battery/README.md`; "head" is the new `redact.ts`).
+  5. The records in the product repository: ADR 0054's amendment (the construction, the three rules, the measured
+     cost, what is left), `docs/product/test-matrix.md` MOD-23, and the residual sentences of the 2026-10-27 and
+     2026-11-11 amendments that this closes (`jo ann`, K-1, MOD-23).
+  6. Two adversarial reviews (PHI: what is sent; must-stay and the other-patient screen), at most two fix rounds, the
+     full suite once, the base merged, the gate again, the draft PR, CI, the merge (the brief's steps 3 and 4).
+- **Decisions taken, each for the safer reading, to carry into ADR 0054:**
+  - The blunt name rule (a space or a period joins anywhere inside a part). It replaces "in a" for a patient INA, "is a"
+    for ISA, "as a" for ASA, "to be" for TOBE: two words of a letter, never a refusal. MOD-13's phrase property used
+    exactly those names; it now uses names no phrase writes, and the cost is pinned beside it.
+  - The wider reading is the letter reader's only; the narrative's check and the packet verifier read as the base does.
+  - N-1 and N-2 are not closed (no rule here touches what the base offers the screen); they stay recorded.
+- **Handed to the orchestrator for the queue (told at 20:5x UTC with the design note):** the digits-only ID glued to a
+  letter (not in this PR: it needs a floor on the number's length and its own measurement; W17's view is that it should
+  land before real PHI); a name the records hold with a plus sign; one piece of a stored number alone; the narrative
+  drafter's check not reading stored separators.
+- **Container paths (may be gone):** `/home/user/tree-base` (f3f5a642, detached), `/home/user/work` (`cmp.mts`,
+  `name-forms.mts`, `p6.mts`, `cost-names.mts`, `k1.txt`, `ts-resolve.mjs`; run with
+  `export PATH=/opt/node24/bin:$PATH NODE_OPTIONS="--import /home/user/work/ts-resolve.mjs"`). If `@tp/redact` is not
+  found by vitest, run `pnpm install --frozen-lockfile --prefer-offline` with `/opt/node24/bin` and `/opt/pnpm-bin` first.
+- No PR is open, no subscription and no check-in is held.
+
+## Log (UTC)
+- 2026-11-11T20:06Z (W17): started; read STATE.md, item 26 and its citations, ADR 0054 and 0047.
+- 2026-11-11 (W17): design note pushed (cee084c6) and sent to the orchestrator; prototype built; cost measured; tests
+  written; WIP 7cbdd33d pushed. Stopped at the token limit with the items above open.
