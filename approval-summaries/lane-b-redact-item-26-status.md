@@ -24,7 +24,27 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
   wider match is applied, and a CR LF letter checked in both writings: four checks; "I found no way that keeps the
   composition"). That is a design decision and would be this item's one remaining fix round. Nothing else of part B
   was started: no delta review, no gate, no battery, no full suite, no PR.
-- **When the orchestrator rules, the order is W18's block below** (delta review of round 1 with the time bound in its
+- **The orchestrator's ruling (23:08 UTC):** the B-5 acceptance is withdrawn; the 3 s budget stands. W21 takes the
+  item from here: first a plain saving if one exists, otherwise a deterministic work bound in the wider reading that
+  REFUSES a letter past it (a count, not a clock; fail closed); then the review, the gate, the PR and the merge.
+  W20 has stood down and holds nothing.
+- **The two letters and how they were measured** (Node v24.22.0 at `/opt/node24/bin`, CI's major version; the
+  container's default `node` is v22.23.4, so set the PATH first; four cores, idle, calibration 140 to 148 ms):
+  - the fixtures are rows of `packages/model-gateway/src/functions/denial-letter.test.ts` on f0d415e2, in the block
+    "redacts a letter crafted to be slow in time linear in its length" (`N = 100_000`, `fill(unit)` repeats the unit to
+    N characters): `['JANE Q VANTREE']`, `` `${fill('1 1 11 ')}\r\nVant ree` ``, claim `SYN555001` ("dates written
+    with spaces alone and a CR LF, then the name with a part written apart"), and `` `${fill('5\r\n')}Vant ree` ``
+    ("a digit and a CRLF, repeated, then the name with a part written apart");
+  - in the suite: `cd packages/model-gateway && PATH=/opt/node24/bin:$PATH pnpm exec vitest run
+    src/functions/denial-letter.test.ts src/redact.leaks.test.ts src/test-support/time-budget.test.ts
+    --reporter=json --outputFile=<file>` (the first row's message: 3.06 s of processor time against 3.00 s allowed,
+    no allowance for the machine; run once on c6037bd9, where the leaks file did not load for a doubled import, fixed
+    in f0d415e2 and NOT rerun since);
+  - bare: `cd /home/user/ops/designs/time-budget-bound/scripts && /opt/node24/bin/node
+    /home/user/PhysicalTherapy/node_modules/tsx/dist/cli.mjs b5.mts` (five runs of each letter and of the base's
+    `fill('1 1 11 ')`, with the calibration; the same with `/opt/node22/bin/node` for Node 22). The bare script reads
+    higher than the suite for the same letter (review T-9; cause not found): the suite's figure is the one CI holds.
+- **After the reader's change, the order is W18's block below** (delta review of round 1 with the time bound in its
   scope, now meaning the base's helper; gate; battery; full suite; base merge; draft PR), after the reader's cure if
   one is ordered.
 - No PR is open for part B, no subscription and no check-in is held. Nothing runs in the container.
