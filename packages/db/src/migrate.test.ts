@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { MIGRATIONS_DIR, MigrationError, historyProblems, readMigrations } from './migrate';
+import { MIGRATIONS_DIR, MIGRATION_LOCK_WAIT, MigrationError, historyProblems, isLockTimeout, migrationPauseMs, readMigrations } from './migrate';
 import {
   APP_DEV_LOGIN,
   APP_ROLE,
@@ -262,5 +262,32 @@ describe('roles', () => {
   it('builds the dev login URL on the same server and database', () => {
     expect(appDevLoginUrl('postgres://postgres:test@localhost:5432/tp_test_x')).toBe('postgres://tp_app_dev:tp_app_dev@localhost:5432/tp_test_x');
     expect(workerDevLoginUrl('postgres://postgres:test@localhost:5432/tp_test_x')).toBe('postgres://tp_worker_dev:tp_worker_dev@localhost:5432/tp_test_x');
+  });
+});
+
+describe('the migrations’ lock wait', () => {
+  it('waits two seconds a lock and tries twenty times, about five minutes in all', () => {
+    expect(MIGRATION_LOCK_WAIT.timeoutMs).toBe(2_000);
+    expect(MIGRATION_LOCK_WAIT.attempts).toBe(20);
+    const pauses = Array.from({ length: MIGRATION_LOCK_WAIT.attempts - 1 }, (_unused, index) => migrationPauseMs(index + 1));
+    expect(pauses.slice(0, 6)).toEqual([1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
+    expect(new Set(pauses.slice(4))).toEqual(new Set([15_000]));
+    const total = pauses.reduce((sum, pause) => sum + pause, 0) + MIGRATION_LOCK_WAIT.attempts * MIGRATION_LOCK_WAIT.timeoutMs;
+    expect(total).toBe(280_000);
+    // Every pause but the first is at least as long as a wait, so the queue behind a try drains before the next.
+    expect(Math.min(...pauses.slice(1))).toBeGreaterThanOrEqual(MIGRATION_LOCK_WAIT.timeoutMs);
+    expect(migrationPauseMs(0)).toBe(1_000);
+  });
+
+  it('recognizes PostgreSQL’s cancellation of a lock wait and nothing else', () => {
+    expect(isLockTimeout({ code: '55P03', routine: 'ProcessInterrupts' })).toBe(true);
+    expect(isLockTimeout({ code: '55P03', routine: 'exec_stmt_raise' })).toBe(false);
+    expect(isLockTimeout({ code: '55P03', routine: 'LockTableRecurse' })).toBe(false);
+    expect(isLockTimeout({ code: '55P03' })).toBe(false);
+    expect(isLockTimeout({ code: '57014', routine: 'ProcessInterrupts' })).toBe(false);
+    expect(isLockTimeout({ routine: 'ProcessInterrupts' })).toBe(false);
+    expect(isLockTimeout(new Error('canceling statement due to lock timeout'))).toBe(false);
+    expect(isLockTimeout(null)).toBe(false);
+    expect(isLockTimeout('55P03')).toBe(false);
   });
 });

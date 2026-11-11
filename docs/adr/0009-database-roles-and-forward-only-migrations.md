@@ -71,3 +71,52 @@ migration is never edited. Roles belong to the whole PostgreSQL cluster, while t
 ## Revisit when
 
 Milestone 1 adds the tenancy tables and the catalog test, or RDS's role model requires a different bootstrap.
+
+## Amendment, 2026-11-11: no migration waits for a lock without limit
+
+**Why.** A schema change asks for its table's strongest lock. While that request waits behind a long transaction (a
+reconcile pass, a report, any job that has read the table), PostgreSQL queues every later reader and writer of the
+table behind the waiting request. The runner set no `lock_timeout`, so one migration queued behind a long job stopped
+every practice's requests on that table for as long as the job ran (found by the reviews of ADR 0092's amendment,
+whose three-second limit on the web's requests then turns each of those waits into a refusal). The migrations from
+ADR 0083 on take their big locks in `NOWAIT` loops of their own; nothing bounded every other statement, or any
+migration without such a loop.
+
+**Decision.**
+1. Each migration's transaction sets `lock_timeout` as its first statement, as the transaction's own setting
+   (`set_config('lock_timeout', $1, true)`), so it is set again for every try and every migration whatever an earlier
+   one did to the session's. **Two seconds** for each wait for one lock: under the three seconds a signed-in web
+   request waits (`WEB_LOCK_TIMEOUT_MS`; a web test holds the two apart), so a request queued behind a waiting
+   migration is let through before it would be answered `busy`.
+2. When PostgreSQL cancels a wait at that limit, the runner rolls the migration's transaction back, which gives up
+   its place in the queue and every lock the try took, pauses, and tries the whole migration again: **twenty tries**,
+   pausing 1, 2, 4 and 8 seconds and then 15 seconds each time, about five minutes in all (the limit ADR 0083's loops
+   keep). The pauses are longer than the waits, so what queued behind a try drains before the next.
+3. Past the last try the run fails with "`<file>` failed: a lock it needs stayed held (tried 20 times, waiting 2000 ms
+   for each lock); it changed nothing; run the deploy again when no long job is running (docs/adr/0009)", exit code
+   1. The migrations before it in the same run stay applied (each commits on its own) and no service moves
+   (docs/runbooks/deploy-and-rollback.md).
+4. Only PostgreSQL's own cancellation of a lock wait is tried again. It is recognized by its SQLSTATE (55P03) together
+   with the place in the server that raised it (the error's `routine`, `ProcessInterrupts`), a field no locale
+   translates. `NOWAIT`'s refusal and a migration's own `RAISE ... lock_not_available` carry the same SQLSTATE and are
+   not retried: such a migration has already tried for as long as it means to and fails at once in its own words. An
+   error the runner cannot recognize is not retried either; the run fails.
+5. The dry run sets the same limit after it holds the migrators' advisory lock and does not retry: its one
+   transaction holds every pending migration, so a cancelled wait fails the dry run, which changes nothing either way.
+6. The migrators' advisory lock is still waited for without limit: it queues no reader, and a second migrator's turn
+   comes when the first ends.
+
+**What it does not bound.** Once a migration holds a table's lock, readers wait until it commits: how long a
+migration may hold a lock is each migration's design (the add, backfill and remove rule; the new-migration skill). A
+migration with its own `NOWAIT` loop runs that loop again on every try, so its worst case is the tries times its loop;
+in practice a try is repeated only after a cancelled wait. A migration may set a `lock_timeout` of its own after the
+runner's; none does today.
+
+| Option | Why not |
+| --- | --- |
+| A session-wide `SET lock_timeout` once | A migration that changes the session's setting would change it for every migration after it; the transaction's own is set again each time |
+| No retry: fail on the first cancelled wait | A deploy would fail on any report that happens to be open; a few spaced tries find the gap between jobs without holding anyone |
+| Retry on SQLSTATE 55P03 alone | It would re-run a migration's own five-minute lock loop twenty times after that loop had already given up |
+| Recognize the cancellation by its message | The message follows the server's `lc_messages` |
+| End the blocking transaction (`pg_terminate_backend`) | A deploy must never end a job's or a person's transaction to make room (the deploy runbook's rule) |
+
