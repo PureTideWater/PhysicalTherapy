@@ -4,6 +4,31 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifADZcDuzjeUkfedYiW) holds this item from 2026-11-11 16:40 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+
+## RESUME-BLOCK (W13, session_019i9ifADZcDuzjeUkfedYiW; current at 2026-11-11 17:20 UTC; W5's block below still holds for everything it does not replace)
+
+- **State.** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **ac412151** (74c32149 plus one commit: OPEN 1's fix and
+  its tests). Branch `co-001/redact-ssn-phone-leaks` not on origin; no pull request; nothing subscribed.
+- **OPEN 1 is fixed by the one condition** in `matchesIn`: a pattern's match is withheld only for a glued run that no
+  match of the call's own covers whole (`leftToTheCheck`). Failing first on 74c32149: three rows of the seed-5923 letter
+  and a property (`redact.leaks.test.ts`, "the withheld match"); after it the six files pass (4,113 tests), typecheck and
+  eslint clean, pinned rows 697 / 406 / 5 as before, the residual table needs no change. `pe.mts`: the head sends
+  `ID [MEMBER_ID]`; `pe2.mts`: `B:hides K:shows` 0 (was 8), and the 24 `B:hides K:REF` are now hidden and sent;
+  `w13/enum.mts` (44,352 letters, the property's space in full) read 40 on 74c32149.
+- **K-1 and review K's five lesser forms are pinned as sent today** in `redact.leaks.test.ts` (no code change).
+- **Running at 17:20 UTC:** the battery with fresh seeds and the gate on both trees (`w13/battery17.sh`, output
+  `/home/user/work/p17`, the comparison run on 74c32149 in `/home/user/work/p16`); review L of the delta (brief in the
+  session; report `/home/user/review-l/REPORT.md`, to be copied to `reviews/l/`).
+- **Next, in order:** read the battery, the gate and review L (verify each finding before any fix; a blocking one is
+  fixed and its delta reviewed once more; a third round goes to the orchestrator); W5's steps 3 to 7 (docs commit, the
+  eight seeds, the base merge with `base-merge/base-merge.sh`, the gate again on the merged tree, the full suite once,
+  push, the draft pull request, subscribe; merge on green under rule 2a).
+- **A fresh container:** `w13/layout.sh` then `python3 w13/audit.py` rebuild the layout `battery/README.md` describes
+  from the worktree `/home/user/leaks` (after `git worktree add` of the WIP ref and the two base trees, and `pnpm
+  install`); `layout.sh refresh` and `audit.py refresh` re-copy the head after a change. A typed backslash-u escape in a
+  command is decoded to its character on the way to the shell: write look-alike escapes from a script (`chr(92)`).
+
 ## RESUME-BLOCK (written by W5, session_019i9ifC8ouxG6CLPdZtgAcJ, for a successor; current at 2026-11-11 16:37 UTC; W5 has stood down)
 
 W5 stood down under the orchestrator's limit of 15:40 UTC (no further fix round in that session): the battery on the
