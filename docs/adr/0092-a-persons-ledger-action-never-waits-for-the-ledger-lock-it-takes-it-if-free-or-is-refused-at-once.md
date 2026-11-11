@@ -63,8 +63,7 @@ a deadlock, which ADR 0087's savepoint retry absorbs on the pass's side.
   (`payer_response_refresh_case`) and assigning a case (`case_activity_sets_owner`). Each still waits when, and only
   when, its own case is one the running pass has written for. They need no serializing with the ledger, so refusing
   them for a whole pass with the try-lock would be wrong; the remedy for them, and for any writer like them, is a short
-  `lock_timeout` on the web's mutations answered as `busy`, which is its own change with its own review (queued; see
-  Revisit when).
+  `lock_timeout` on the web's mutations answered as `busy`: the amendment of 2026-11-11 below.
 - A write-off of a line already written off, or a reopen of a line not written off, used to answer as done without
   writing; while the lock is held it now answers `busy`, since the lock is taken before the line is read.
 - The write-off and the reopen now hold the lock while they read the case line for update. A triage job holding that
@@ -87,11 +86,54 @@ a deadlock, which ADR 0087's savepoint retry absorbs on the pass's side.
 
 ## Revisit when
 
-- The floor for the rest of the class is built: a `lock_timeout` of a few seconds on a web mutation's transaction,
-  with PostgreSQL's `55P03` answered as `busy`, so that no request waits on any row a pass holds (submissions, payer
-  responses and assignments first). The try-lock stays for the seven, which must also serialize with the ledger.
 
 - A pass no longer holds the `ledger:` lock for its whole transaction (shorter transactions, or a lock per case): the
   refusal may then be rare enough to become a short bounded wait.
 - The refusals show in support's records as a complaint during real-size passes: then the pass's own length, not this
   rule, is what to change.
+
+## Amendment, 2026-11-11: no web mutation waits on a lock a reconcile pass holds
+
+Queue item 24 (`co-001/web-lock-timeout`; test matrix CAS-57), the same decision made general, as the orchestrator
+ruled on 2026-11-10: the seven actions above take the ledger lock or are refused at once; every other web request is
+now bounded too.
+
+1. **Where the web's transactions are made.** The web opens its request pools (the application's, billing's and the
+   e-signature vendor's logins) through `openWebPool` (`apps/web/src/lib/server/web-pool.ts`), which sets
+   `lock_timeout` to three seconds as a connection parameter. It holds for every statement on every connection of
+   those pools, in a handler, a wrapper or a library, so no mutation can be written without it and nothing has to
+   remember to set it. `web-pool.test.ts` fails, naming the file, if the web's own code opens a pool or a client any
+   other way.
+2. **Not a role setting, so no migration,** and the worker's waits do not change: the worker opens its own pool with
+   no timeout, and a job may wait. `withPracticeScope` is untouched (the gateway, the capacity harness and the
+   worker's test worlds use it).
+3. **The model gateway's pool is the one exception.** It is opened once in `services.ts` without the timeout: its
+   waits (a budget hold behind a call in flight) are the gateway's own design, and no request's mutation runs on it.
+4. **The refusal is 0092's.** PostgreSQL's `55P03` (lock not available) from a route becomes `{ status: 'busy' }`,
+   the request's transaction rolled back, nothing written or audited, the request key unused. The outcome now carries
+   a closed word, `what`: `ledger` for the try-lock above and `records` here, so the form can say "These records are
+   being updated, so nothing was saved. What you typed is still here: try again in a minute." where the ledger is not
+   what was held. Neither word names a table, a row, a job or a person.
+5. **Three seconds.** Two people's requests on one row pass each other in milliseconds, and a triage job holds a
+   case's rows for a second or two; a wait past three seconds means a holder that keeps the row for its whole
+   transaction. The request holds its connection for those three seconds at most, where it held it for the pass.
+
+Consequences of the amendment:
+
+- Logging a submission, recording a payer response and assigning a case no longer wait for a pass: each is refused
+  after three seconds when, and only when, the pass holds its case's row. So is any web request that meets another
+  long holder (a pricing run's `pricing_current:` lock behind a plan mapping, a packet export's `packet:` lock).
+- The seven actions keep the try-lock: they must serialize with the ledger, and they answer at once, not after three
+  seconds. The write-off and the reopen can no longer wait behind a triage job for longer than the timeout.
+- A request outside a route's wrapper (the sign-in and session writes, the rate limit's count, a public form) that
+  met a three-second lock would fail as a server error where it used to wait. None of them writes a row a pass or a
+  long job holds; if one comes to, it maps `55P03` as the routes do.
+- A read never takes a row lock, so pages are unaffected.
+
+Alternatives considered for the amendment: `SET LOCAL lock_timeout` in each handler (a handler can forget it; the
+pool cannot); in `withPracticeScope` (shared with the worker and the gateway); `ALTER ROLE ... SET lock_timeout` (a
+migration, and it would bound the application login wherever it is used); the try-lock for every writer (refuses a
+whole practice for a whole pass for writers that need no serializing).
+
+Revisit when a request's legitimate wait on another request approaches three seconds (a slow handler holding a row or
+an advisory lock): shorten the holder's transaction first.

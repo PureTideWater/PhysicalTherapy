@@ -62,13 +62,20 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
  */
 export const BUSY_MESSAGE = 'The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a minute.';
 
+/**
+ * What a form says when a row its action had to change stayed locked past the web's lock_timeout (docs/adr/0092, the
+ * amendment of 2026-11-11): the same sentence, without naming the ledger, since the row may be a case's, a submission's
+ * or any other, and what holds it is never said.
+ */
+export const BUSY_RECORDS_MESSAGE = 'These records are being updated, so nothing was saved. What you typed is still here: try again in a minute.';
+
 /** What a refused form says when the wrapper's rate limits refused it (a refused CSRF token is a page out of date, STALE). */
 function guardMessage(outcome: Outcome<unknown>): string | undefined {
   if (outcome.status === 'rate_limited') {
     return `Too many attempts in a short time. Wait ${minutesWords(retryMinutes(outcome.retryAfterSeconds))} and try again.`;
   }
   if (outcome.status === 'busy') {
-    return BUSY_MESSAGE;
+    return outcome.what === 'ledger' ? BUSY_MESSAGE : BUSY_RECORDS_MESSAGE;
   }
   return undefined;
 }

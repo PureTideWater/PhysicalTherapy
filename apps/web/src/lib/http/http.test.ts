@@ -176,11 +176,11 @@ describe('the route-handler adapter', () => {
     expect(await response.json()).toEqual({ status: 'rate_limited', retryAfterSeconds: 42 });
   });
 
-  it('answers a busy refusal with 409, a short wait and the status alone (docs/adr/0092)', async () => {
-    const response = outcomeResponse({ status: 'busy' }, new ResponseCookies(null));
+  it('answers a busy refusal with 409, a short wait, and the status with its closed word alone (docs/adr/0092)', async () => {
+    const response = outcomeResponse({ status: 'busy', what: 'ledger' }, new ResponseCookies(null));
     expect(response.status).toBe(409);
     expect(response.headers.get('retry-after')).toBe('5');
-    expect(await response.json()).toEqual({ status: 'busy' });
+    expect(await response.json()).toEqual({ status: 'busy', what: 'ledger' });
   });
 
   it('passes the URL’s and the route’s parameters and a JSON body to the route', async () => {

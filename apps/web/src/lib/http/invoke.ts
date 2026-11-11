@@ -86,6 +86,9 @@ function issuesOf(error: z.ZodError): Issue[] {
   return error.issues.map((issue) => ({ field: issue.path.join('.') || 'input', message: issue.message }));
 }
 
+/** PostgreSQL's lock_not_available: a statement gave up waiting for a lock (lock_timeout, or NOWAIT). */
+const LOCK_NOT_AVAILABLE = '55P03';
+
 function isPgError(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
 }
@@ -288,7 +291,12 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'not_found' };
   }
   if (error instanceof BusyError) {
-    return { status: 'busy' };
+    return { status: 'busy', what: error.what };
+  }
+  if (isPgError(error, LOCK_NOT_AVAILABLE)) {
+    // A statement waited past the web's lock_timeout for a row something else holds (server/web-pool.ts): the request's
+    // transaction is rolled back, nothing is written, and the person may send it again (docs/adr/0092, the amendment).
+    return { status: 'busy', what: 'records' };
   }
   if (error instanceof TermsRequiredError) {
     return { status: 'terms_required' };

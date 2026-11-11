@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { type ScopeClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
-import { addMembership, asOwner, createUser } from '@tp/db/testing';
+import { type ScopeClient, databaseClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { addMembership, asOwner, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { practiceLedgerTotals, practiceRecoveredPeriods, casePatientBalance as reportRule } from '@tp/worker/ledger';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
@@ -21,6 +21,7 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { WEB_LOCK_TIMEOUT_MS, openWebPool } from '../server/web-pool';
 import { lockLedger } from '../../../../worker/src/reconcile/ledger';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
 import { casePatientBalance, reconciliation } from '../reconciliation/queries';
@@ -29,6 +30,7 @@ import { practiceHome } from './practice';
 import { matchClaimAction, matchDepositAction, matchPostingAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
 import { adjustEntryAction, ledgerReviewPage } from './specialist';
+import { assignCaseAction } from './workbench';
 import { casePage, casesPage, reopenLineAction, writeOffLineAction } from './triage';
 import { csrfTokenFor } from '../http/csrf';
 
@@ -666,8 +668,8 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
       for (const [name, send] of actions) {
         const started = performance.now();
         const outcome = await send();
-        // The whole outcome: a status and nothing else, so no identifier and no word of what holds the lock.
-        expect(outcome, name).toEqual({ status: 'busy' });
+        // The whole outcome: a status and its closed word, so no identifier and no word of what holds the lock.
+        expect(outcome, name).toEqual({ status: 'busy', what: 'ledger' });
         // The whole request (session, keys, the lock, the rollback), on a loaded runner too; a wait on the lock would
         // last until the holder lets go, which it does only after this loop.
         expect(performance.now() - started, `${name}: answered at once, never after a wait`).toBeLessThan(2_000);
@@ -715,8 +717,101 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
     const first = await call(matchDepositAction, practice.manager, P(), { eftRowId: randomUUID(), remittanceId: randomUUID() }, inFlight);
     // The first held the lock and went on to its own answer (its ids name nothing); the second met the lock.
     expect(first.status).toBe('not_found');
-    expect(second).toEqual({ status: 'busy' });
+    expect(second).toEqual({ status: 'busy', what: 'ledger' });
     // The first committed or rolled back, so the lock is free again.
     expect((await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })).status).toBe('not_found');
   }, 30_000);
+});
+
+/**
+ * CAS-57 (docs/adr/0092, the amendment of 2026-11-11): no web mutation waits on a row a reconcile pass holds. A pass
+ * keeps, to its commit, the case rows of the lines it writes for, and a request that rewrites such a row (assigning the
+ * case here: its activity's trigger sets the case's owner) used to wait for the whole pass on one of the web's
+ * connections. The web's request pools now carry a lock_timeout (server/web-pool.ts), so the wait ends after three
+ * seconds and the request is answered `busy`, with the closed word `records`, writing nothing. Here the routes run on a
+ * pool opened as the web opens its own, a second session holds the case's row as a pass does, and the assignment is
+ * refused in about the timeout; with the row free the same assignment, under the same request key, goes through.
+ * Synthetic data only.
+ */
+describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () => {
+  let webPool: ReturnType<typeof openWebPool>;
+  let web: Services;
+
+  beforeAll(() => {
+    webPool = openWebPool(w.pricing.database.appUrl, 4);
+    web = { ...services, pool: webPool };
+  });
+
+  afterAll(async () => {
+    await endPool(webPool);
+  });
+
+  /** Holds the case's row in an open transaction, as a pass that wrote a stage event for one of its lines does, until released. */
+  async function holdCase(): Promise<{ readonly release: () => Promise<void> }> {
+    // A session of its own on the world's database (the owner's login: only the row's lock matters here, not who holds it).
+    const client = databaseClient(w.pricing.database.url);
+    await client.connect();
+    try {
+      await client.query('BEGIN');
+      // The row's lock alone: no column changes, so nothing to undo and nothing for the counts below to see.
+      const locked = await client.query('SELECT 1 FROM "case" WHERE id = $1 FOR UPDATE', [caseId]);
+      expect(locked.rowCount).toBe(1);
+    } catch (error) {
+      await client.end();
+      throw error;
+    }
+    return {
+      release: async () => {
+        await client.query('ROLLBACK');
+        await client.end();
+      },
+    };
+  }
+
+  const state = async () => {
+    const activity = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM case_activity WHERE practice_id = $1', [practice.practiceId]);
+    const audit = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM audit_event WHERE practice_id = $1', [practice.practiceId]);
+    const keys = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM mutation_request WHERE user_id = $1', [practice.manager]);
+    const owner = await w.owner.query<{ owner_user_id: string | null }>('SELECT owner_user_id FROM "case" WHERE id = $1', [caseId]);
+    return { activity: activity.rows[0]?.n, audit: audit.rows[0]?.n, keys: keys.rows[0]?.n, owner: owner.rows[0]?.owner_user_id ?? null };
+  };
+
+  it('opens the web’s request pools with the lock_timeout on every connection', async () => {
+    const clients = await Promise.all([webPool.connect(), webPool.connect()]);
+    try {
+      for (const client of clients) {
+        const { rows } = await client.query<{ lock_timeout: string }>('SHOW lock_timeout');
+        expect(rows[0]?.lock_timeout).toBe(`${String(WEB_LOCK_TIMEOUT_MS / 1000)}s`);
+      }
+    } finally {
+      for (const client of clients) {
+        client.release();
+      }
+    }
+  });
+
+  it('answers busy after the timeout, never after the holder, writes nothing, and goes through once the row is free', async () => {
+    const assign = { caseId, ownerUserId: practice.manager, requestKey: randomUUID() };
+    const before = await state();
+    const holder = await holdCase();
+    try {
+      const started = performance.now();
+      const outcome = await call(assignCaseAction, practice.manager, P(), assign, web);
+      const waited = performance.now() - started;
+      // A status and its closed word: no identifier, and no word of what holds the row.
+      expect(outcome).toEqual({ status: 'busy', what: 'records' });
+      // It waited for the timeout (the row really was held) and no longer (the holder lets go only after this).
+      expect(waited).toBeGreaterThanOrEqual(WEB_LOCK_TIMEOUT_MS - 250);
+      expect(waited).toBeLessThan(WEB_LOCK_TIMEOUT_MS + 4_000);
+      expect(await state()).toEqual(before);
+    } finally {
+      await holder.release();
+    }
+    // The row free: the same assignment under the same request key goes through (the refusal kept no key).
+    expect(ok(await call(assignCaseAction, practice.manager, P(), assign, web)).objectId).toBe(caseId);
+    const after = await state();
+    expect(after.owner).toBe(practice.manager);
+    expect(Number(after.activity)).toBe(Number(before.activity) + 1);
+    expect(Number(after.keys)).toBe(Number(before.keys) + 1);
+  }, 60_000);
 });

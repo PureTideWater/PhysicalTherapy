@@ -113,9 +113,11 @@ export type Outcome<R> =
   | { readonly status: 'maintenance' }
   /**
    * A mutation refused because what it would write is being written by something else right now (the practice's ledger
-   * lock is held; docs/adr/0092): nothing was written, and the same request may be sent again. It names no one and nothing.
+   * lock is held; docs/adr/0092): nothing was written, and the same request may be sent again. It names no one and
+   * nothing: `what` is a closed word for the form's sentence, the ledger (its lock was not free) or records (a row the
+   * request had to change stayed locked past the web's lock_timeout; the amendment of 2026-11-11).
    */
-  | { readonly status: 'busy' };
+  | { readonly status: 'busy'; readonly what: BusyWhat };
 
 /**
  * Thrown by a handler that would have had to wait for a lock another transaction holds (docs/adr/0092): the request's
@@ -124,10 +126,13 @@ export type Outcome<R> =
  */
 export class BusyError extends Error {
   override readonly name = 'BusyError';
-  constructor() {
+  constructor(readonly what: BusyWhat = 'ledger') {
     super('busy');
   }
 }
+
+/** What a busy refusal was waiting on, as a closed word (never a table, a row or a person). */
+export type BusyWhat = 'ledger' | 'records';
 
 /** Thrown by a handler: what the request names does not exist, or the actor cannot see it. */
 export class NotFoundError extends Error {

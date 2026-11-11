@@ -1,0 +1,20 @@
+{
+  "case": "CAS-57",
+  "module": "CAS",
+  "title": "No web mutation waits on a row a reconcile pass holds",
+  "assertion": "The web’s request pools set `lock_timeout` (three seconds) on every connection, and the web’s own code opens a database connection no other way (the model gateway’s pool excepted, by name); while a second session holds a case’s row as a reconcile pass does, assigning the case on such a pool answers `busy` with the closed word `records` after about the timeout and never after the holder, and writes no row, audit event or request key; with the row free the same assignment under the same request key goes through",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+    "apps/web/src/lib/server/web-pool.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The reconciliation routes’ SYNTHETIC LED-06 practice on a pool opened as the web opens its own, with a second session holding a case’s row: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

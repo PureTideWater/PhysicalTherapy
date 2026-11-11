@@ -27,8 +27,16 @@ export const IDLE_TIMEOUT_MS = 30_000;
  */
 const opened = new WeakMap<object, ScopePool<DatabasePoolClient>>();
 
-export function openPool(url: string, max = 4, options: { readonly connectionTimeoutMillis?: number } = {}): DatabasePool {
-  const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: options.connectionTimeoutMillis ?? CONNECTION_TIMEOUT_MS, idleTimeoutMillis: IDLE_TIMEOUT_MS });
+export function openPool(url: string, max = 4, options: { readonly connectionTimeoutMillis?: number; readonly lockTimeoutMs?: number } = {}): DatabasePool {
+  const pool = new pg.Pool({
+    connectionString: url,
+    max,
+    connectionTimeoutMillis: options.connectionTimeoutMillis ?? CONNECTION_TIMEOUT_MS,
+    idleTimeoutMillis: IDLE_TIMEOUT_MS,
+    // A session's lock_timeout, sent with the connection's startup parameters, so every statement on every connection
+    // of the pool has it; none by default (a job may wait). The web's request pools set it (docs/adr/0092).
+    ...(options.lockTimeoutMs === undefined ? {} : { lock_timeout: options.lockTimeoutMs }),
+  });
   // Bound now: the connect pg's Pool has as this pool opens, whatever is assigned to the pool later.
   const connect = pool.connect.bind(pool) as () => Promise<DatabasePoolClient>;
   opened.set(pool, Object.freeze({ connect: () => connect() }));
