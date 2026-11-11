@@ -286,7 +286,9 @@ wrote `membership_ended` in one transaction, and the sign-out at the identity pr
 happen. Nothing was undone: the person has no role in that organization and no session. The account itself is not
 disabled, as End membership never disables it. What the missing sign-out leaves alive is the provider's own tokens:
 a hardware-key registration step begun before the membership ended can still be completed for up to 15 minutes, and
-nothing sends the sign-out again (`LANES.md` Queues item 29: the retry is a database outbox, with Lane A's migration).
+nothing sends the sign-out again until `LANES.md` Queues item 37 lands (a database outbox the membership's end writes,
+claimed by a scheduled job): until then a failed provider sign-out is sent again only through the founder's
+break-glass (step 4).
 
 1. **Read the line**, in the web's log group:
 
@@ -315,7 +317,7 @@ nothing sends the sign-out again (`LANES.md` Queues item 29: the retry is a data
 
    No row after those 15 minutes: nothing the missing sign-out could do in the app happened. Close the page in the
    ticket. A row: a key was registered on the account after its membership ended. Open the record (section 1) and
-   give the user ID to the founder: nothing an operator holds removes a key until `LANES.md` Queues item 29's key
+   give the user ID to the founder: nothing an operator holds removes a key until `LANES.md` Queues item 37's key
    removal lands.
 4. **Where the membership was ended because the account is thought to be in another's hands**, the provider's tokens
    matter beyond the app: give the user ID to the founder now, whose break-glass session sends the provider's
