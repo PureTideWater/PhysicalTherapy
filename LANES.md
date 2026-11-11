@@ -189,6 +189,11 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
 26. **Two name forms the letter reader sends in clear** (PHI; MOD-23; queued 2026-11-11 05:35 UTC by Lane A's orchestrator, from the fold's design review, row D1-2 of `approval-summaries/lane-b-packets-verifier-identifier-fold-status.md`, measured by W5 on the leaks gate). **Must land before any real PHI is processed.** A name with a lower-case piece after a space or period, and a name written with its letters spaced one by one, are sent in clear in a letter with no held range (at cc3dd7f6, ef3e8d20 and the leaks PR's head). The middle dot and the hyphenation point ride in the leaks PR.
     - **Why its own item:** closing the first changes the rule that keeps ordinary word pairs from reading as a name (must-stay damage for patients such as Underwood or Newman); the second needs a new matcher. Each needs its own design and gate run.
     - **When:** after the leaks PR and the fold merge (the same file, moved by the fold to `packages/redact`). PHI and redaction: two adversarial reviews. The pinned residual rows and the gate command are in `approval-summaries/lane-b-redact-ssn-phone-leaks-status.md`.
+27. **Four items #126's reviews left owed** (queued 2026-11-11 05:45 UTC by Lane A's orchestrator, from #126's description and `approval-summaries/lane-a-schema-chain-status.md`; none blocked #126; not assigned; numbers are allocated at the claim):
+    - **(a) Analyze `claim` after a load.** With no column statistics the chain walk's link lookups are still planned against a practice-wide index once a step (slower, bounded by #126's keyed read). Database: two adversarial reviews.
+    - **(b) CAS-50 and CAS-51 seeded with PLB L6s,** and the interest statements bounded at real size.
+    - **(c) The settle entries compared row for row,** in place of the set comparison (ADR 0087).
+    - **(d) A composite foreign key (practice, link) on a claim's reversal and correction links.** A migration: it goes to Lane A's schema queue, one schema PR at a time, with the founder's line.
 
 ## Claims
 

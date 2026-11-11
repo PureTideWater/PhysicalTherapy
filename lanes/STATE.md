@@ -1,17 +1,17 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 05:40 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 05:45 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
 ## Accounts and pace
 - **Orchestrator:** session_019i9ifDAzQNA3kLHozjBoeS, from 2026-11-10 21:23 UTC. The co-founder talks to it. Work sessions (started 21:24 UTC):
   - **W1** session_019i9if9bThP3wWKpHBiU3m8: merged MOD-16 (#138) and #129, wrote item 3's RESUME-BLOCK, then stood down on 2026-11-11 03:05 UTC. It holds nothing.
-  - **W2** session_019i9ifDkbzUJwNMrtB7Yriz (Lane A): item 2 only. It waits for the founder's commit on #126, merges it, then stands down.
+  - **W2** session_019i9ifDkbzUJwNMrtB7Yriz: merged #126, then stood down on 2026-11-11 05:37 UTC. It holds nothing.
   - **W3** session_019i9ifE6JAC24yB5654GXcV: merged #134 and #136, then stood down on 2026-11-11 (its context had passed 500k tokens). It holds nothing.
   - **W4** session_019i9ifAM5Y3ftqx7i6Cx8Gk: merged #137, then stood down on 2026-11-11 04:26 UTC (its context had passed 300k tokens). It holds nothing.
   - **W5** session_019i9ifC8ouxG6CLPdZtgAcJ (acting Lane B), from 2026-11-11 02:37 UTC, at the highest effort: item 3, the SSN and phone leaks PR.
-  - **W6** session_019i9if9f2m3xyLBavfHUgui (Lane A), from 2026-11-11 04:26 UTC, at the highest effort: item 6, then item 7 as assigned.
+  - **W6** session_019i9if9f2m3xyLBavfHUgui (Lane A), from 2026-11-11 04:26 UTC, at the highest effort: the schema chain. Item 6 now, then item 7 as assigned.
   - **W7** session_019i9ifCb8Sa7jHnu6j4af8F (acting Lane B), from 2026-11-11 04:31 UTC, at the highest effort: item 8, the packets verifier identifier fold.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17 14:00 UTC. **Its weekly limit showed the warning level at about 00:30 UTC on 2026-11-11**, 11 hours into the week; sessions cannot see the percentage, only the co-founder can.
 - **Usage (the co-founder's reading, 2026-11-11 01:30 UTC):** 34% of the week on all models, 32% on the build's model. From the sessions' records, 1% is about 5 dollars of API-equivalent usage, so three builds use roughly 4 to 7% an hour and the limit would arrive between about 11:00 and 19:00 UTC on 2026-11-11 unless the co-founder resets it. Sessions cannot see the percentage. When the limit stops them the orchestrator stops too; the co-founder's next message after a reset restarts them from their RESUME-BLOCKs.
@@ -33,27 +33,27 @@ own status file and `CLAUDE.md`, not the long history files.
   - review depth matches risk.
 - Report to the orchestrator only merges, blockers and founder asks, in one line each.
 
-## Base and open PRs (live 2026-11-11 04:32 UTC)
-- `claude/build-platform` is at **4fe8bcca** (#137, merged 2026-11-11 04:25 UTC; before it #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
-- **#126**, the interest fix (schema): head 8ee290ae. **The founder committed the approval line at 2026-11-11 05:06 UTC** (on W2's base merge 026eceba, the base 4fe8bcca). W2 merges it when the required checks are green.
+## Base and open PRs (live 2026-11-11 05:40 UTC)
+- `claude/build-platform` is at **2e26a416** (#126, merged 2026-11-11 05:37 UTC with the founder's approval line; before it #137 as 4fe8bcca, #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
+- No build PR is open. password-changed-notice opens next (W6).
 - Dependabot #123, #124, #135 and #139 (#139 replaced #122 on 2026-11-11), untriaged: one replacement PR, never merged as they stand.
 
 ## Work, in priority order (each item's status file holds its RESUME-BLOCK; Lane B's handoff §2 names them)
 | # | Item | Resume from | Lane | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | MOD-16: **merged as ef3e8d20** (#138, 2026-11-11) | `lane-b-redact-range-glued-status.md` | B (acting) | Done. Residuals A, A' and B go to item 3. Four safer-reading costs are recorded in ADR 0054 and #138's description. |
-| 2 | **#126, interest credited once** (schema) | Head 8ee290ae; `approval-summaries/lane-a-schema-chain-status.md` (its RESUME-BLOCK) | A, W2 | The founder's line is committed (05:06 UTC). W2 merges on green required checks. Open with the founder: whether to grant D19's exact alternative as a later schema PR (a new ledger freeze exception). |
+| 2 | #126, interest credited once: **merged as 2e26a416** (2026-11-11) | `approval-summaries/lane-a-schema-chain-status.md` | A | Done. Four owed items are `LANES.md` Queues item 27. Open with the founder: whether to grant D19's exact alternative as a later schema PR (a new ledger freeze exception). |
 | 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | `lane-b-redact-ssn-phone-leaks-status.md` | B (acting), **W5** | **Must land before any real PHI is processed.** Design reviewed and fixed; build next. It also takes the middle dot and the hyphenation point as name joiners. Two reviews. **After it: `LANES.md` Queues item 26 (MOD-23), two name forms still sent in clear, also before any real PHI; not assigned.** |
 | 4 | #134, SUITE-CAP-3: **merged as 994ee303** (2026-11-10) | `lane-b-suite-cap-3-status.md` | B (acting) | Done. No `ledger_line_net` change. |
 | 5 | #129, email plate: **merged as ca504674** (2026-11-11) | `lane-a-email-lockup-plate-status.md` | B (acting) | Done. |
-| 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16) | f110efd9 (WIP c0ced87f), stacked on #126; `approval-summaries/lane-a-auth-emails-status.md` | A, **W6** | W6 finishes the suite, the three reviews and the fix round now. The PR opens only after #126 merges. Founder's line. |
+| 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16) | `co-001/password-changed-notice`; WIP `co-001/wip-pwnotice`; `approval-summaries/lane-a-auth-emails-status.md` | A, **W6** | #126 merged, so W6 opens the PR now, then posts the suggested approval line. **Founder's line next.** |
 | 7 | The schema batching plan, PRs 2 to 10 | `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR at a time. |
 | 8 | Packets verifier identifier fold (MOD-19, MOD-20) | `lane-b-packets-verifier-identifier-fold-status.md` | B (acting), **W7** | Design in review. It moves `redact.ts` whole to `packages/redact` (`@tp/redact`); whichever of it and item 3 merges second takes the base merge (git follows the rename; new files beside it move by hand). Never at the same time as the verifier /3 migration. |
-| 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
+| 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then Queues item 27, four items #126's reviews left owed; then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
 
 ## Founder items (bring each with the exact link or text)
 - **Granted 2026-11-07 19:26 UTC** (relayed as "Tyler approves"): the schema batching plan's PR 5 ledger freeze ask. Q1 to Q3 yes, exactly Appendices A and D, for schema PR 5 only (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`).
-- #126's approval line: **committed by the founder on 2026-11-11 at 05:06 UTC.** Next: password-changed-notice's line, once its PR opens after #126 merges. Optional: D19's exact alternative on #126 (one entry per PLB L6, line and chain) needs a new ledger freeze exception; if the founder wants it, the schema session drafts the ask.
+- **Next: password-changed-notice's approval line,** when W6 posts it (the orchestrator brings the link). #126's line was committed on 2026-11-11 at 05:06 UTC and #126 merged. Optional: D19's exact alternative on the interest fix (one entry per PLB L6, line and chain) needs a new ledger freeze exception; if the founder wants it, the schema session drafts the ask.
 - Staging:
   - F0, before release N reaches production;
   - F1 to F5 and ruling 16, before Cognito PR 2;
