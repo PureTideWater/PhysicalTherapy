@@ -1122,7 +1122,9 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
 
   it('sends text that holds none of the patient’s forms unchanged: common phrases, amounts, deadlines and references (property)', () => {
     const PHRASES = ['Records in a timely manner. ', 'This is a request for records. ', 'Resubmit it as a new claim. ', 'It was sent to be reviewed. ', "I'd a question. ", 'We paid $150.00 of the billed amount. ', 'Appeal by 2027-03-15. ', 'Your appeal is due June 30, 2027. ', 'Respond by August 1, 2027. ', 'Our reference is REF-SYN-77. ', 'Dear Provider, I am writing about a claim. ', 'A claim was reviewed. '];
-    const names = fc.constantFrom('INA VANTREE', 'ISA ZEPHYRA', 'ASA VANTREE', 'TOBE ZEPHYRA', 'IDA VANTREE', 'JUNE ZEPHYRA', 'AUGUST VANTREE', 'IVY ZEPHYRA', 'ANA VANTREE');
+    // Since MOD-23 a part's letters with a space or a period between them are the name (INA is "in a": the recorded cost,
+    // pinned in redact.leaks.test.ts), so the names here are ones no phrase below writes so.
+    const names = fc.constantFrom('NEWMAN VANTREE', 'UNDERWOOD ZEPHYRA', 'INMAN VANTREE', 'ATWOOD ZEPHYRA', 'JUNE ZEPHYRA', 'AUGUST VANTREE', 'IVY ZEPHYRA', 'ANA VANTREE');
     fc.assert(
       fc.property(names, fc.array(fc.constantFrom(...PHRASES), { minLength: 1, maxLength: 8 }), fc.constantFrom('15000', '20270315', 'SYN555001'), (name, phrases, claimNumber) => {
         const text = phrases.join('');

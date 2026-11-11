@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
+import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn, fold, holdsIdentifier, holdsNameOrNumber, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -218,11 +218,13 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(redact(['JANE VANTREE'], 'Dear\u3164Jane and Dear\uFFA0Jane')).toBe('Dear\u1160[PATIENT_NAME] and Dear\u1160[PATIENT_NAME]');
   });
 
-  it('never makes a name of common words: a space inside a part needs capitalized pieces of two letters or more', () => {
-    expect(redact(['INA VANTREE'], 'records in a timely manner')).toBe('records in a timely manner');
-    expect(redact(['ISA VANTREE'], 'This is a request')).toBe('This is a request');
-    expect(redact(['ASA VANTREE'], 'resubmitted as a new claim')).toBe('resubmitted as a new claim');
-    expect(redact(['TOBE VANTREE'], 'sent to be reviewed')).toBe('sent to be reviewed');
+  it('reads a part with a space anywhere inside it, so words whose letters are a part of the name are replaced (MOD-23: the recorded cost)', () => {
+    expect(redact(['INA VANTREE'], 'records in a timely manner')).toBe('records [PATIENT_NAME] timely manner');
+    expect(redact(['ISA VANTREE'], 'This is a request')).toBe('This [PATIENT_NAME] request');
+    expect(redact(['ASA VANTREE'], 'resubmitted as a new claim')).toBe('resubmitted [PATIENT_NAME] new claim');
+    // The narrative's reading keeps the pieces rule: there such a name would fail every narrative.
+    expect(holdsNameOrNumber('records in a timely manner', { names: ['INA VANTREE'], numbers: [] })).toBe(false);
+    expect(redact(['TOBE VANTREE'], 'sent to be reviewed')).toBe('sent [PATIENT_NAME] reviewed');
     expect(redact(['IDA VANTREE'], "I'd a question")).toBe("I'd a question");
     // The whole name still matches across its own parts, whatever its case.
     expect(redact(['INA VANTREE'], 'ina vantree, Ina')).toBe('[PATIENT_NAME], [PATIENT_NAME]');
@@ -263,8 +265,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
 
   it('folds astral letters with case and leaves an emoji next to a name', () => {
     expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯𐑅𐐨𐑉𐐯𐐻 Vantree 😀Vantree😀')).toBe('Dear [PATIENT_NAME] 😀[PATIENT_NAME]😀');
-    // A spaced astral name the spacing rule turns down moves the search past the whole code point (it once looped there).
-    expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, 𐐔𐐯 𐐝𐐨𐑉𐐯𐐻')).toBe('Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, [PATIENT_NAME]');
+    // A spaced astral name the first reading's spacing rule turns down moves its search past the whole code point (it once
+    // looped there); the wider reading takes it whatever the pieces' case (MOD-23).
+    expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, 𐐔𐐯 𐐝𐐨𐑉𐐯𐐻')).toBe('Dear [PATIENT_NAME], [PATIENT_NAME]');
   });
 
   it('masks a placeholder with a barrier the fold keeps, so no match reaches across it', () => {
@@ -464,8 +467,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   it('joins a name hyphenated at a line break, whatever the case of its pieces', () => {
     expect(redact(['IVY VANTREE'], 'Ms. Van-\ntree, Vantr-\nee, Van–\r\n  tree')).toBe('Ms. [PATIENT_NAME], [PATIENT_NAME], [PATIENT_NAME]');
     expect(redact(['JOANN VANTREE'], 'Dear Jo-\nann,')).toBe('Dear [PATIENT_NAME],');
-    // The recorded residual: a part written in lower case with a space inside it ("jo ann") is not a name.
-    expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('jo ann');
+    // Closed by MOD-23: a part written in lower case with a space inside it ("jo ann") is the name.
+    expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('[PATIENT_NAME]');
   });
 
   it('joins a number with a slash or a colon next to a letter, and between digits only after an identifier label', () => {
@@ -1606,7 +1609,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHI5-2', ['ZEPHYRA VANTREE'], 'Patient: Z VPaid $10.00.', 'Patient: Z VPaid $10.00.', VANTREE],
     ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Claim reviewed; no balance is owed.`, `${HELD}Claim reviewed; no balance is owed.`, VANTREE],
     ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}A jazz quiz was held.`, `${HELD}A jazz quiz was held.`, {}],
-    ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
+    ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 [PATIENT_NAME] $0,000.00', {}],
     // GATEWAYJ4-1: a number's own letters before the name are no head of a part: "am" or "pm" after a range of hours or
     // times, h.mm or hhmm, an ordinal's suffix after a range's first end, a unit's letters after a whole number, and a
     // procedure code's modifier.

@@ -571,10 +571,10 @@ describe("MOD-22: the call's own identifiers written with look-alikes or a digit
     expect(sentOrRefused('Dear Zeph\u00B7yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
     expect(sentOrRefused('Dear Zeph\u2027yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
     expect(sentOrRefused('Dear Ja\u00B7ne Zeph\u2027y\u2027ra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME], your claim');
-    // The bullet, the bullet operator and the dot operator join a name's pieces too; a full stop does not.
+    // The bullet, the bullet operator and the dot operator join a name's pieces too; a full stop does since MOD-23.
     expect(sentOrRefused('Dear Zeph\u2022yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
     expect(sentOrRefused('Dear Zeph\u2219yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
-    expect(sentOrRefused('Dear Zeph.yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear Zeph.yra, your claim');
+    expect(sentOrRefused('Dear Zeph.yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
   });
 
   it('redacts a name stored in Greek in either case, and written with the Latin letters it looks like: both cases of a letter fold to one thing', () => {
@@ -776,21 +776,143 @@ describe("MOD-22: the call's own identifiers written with look-alikes or a digit
 
 // These forms are sent in clear by cc3dd7f6 and ef3e8d20 too; the kept script
 // designs/lane-b-redact-ssn-phone/gate/leaks-scripts/name-forms.mts on claude/build-ops reproduces them on any tree.
-describe('MOD-23 residuals (pinned as sent today; test-matrix MOD-23 closes them)', () => {
+describe('MOD-23: a name with a space or a period anywhere inside a part, a number as the records hold it, and a CR LF read as one line ending', () => {
   const patient = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['SYNMEMBER0042']);
   const claims = claimsOf('SYNCLAIM0001');
 
+  // The base (f3f5a642) sent each of these in clear in a letter with no held range, and refused the held letter. The
+  // wider reading redacts the name; the held letter, which the first reading's check refuses, stays as it was: refused.
   it.each([
-    ['a part split by a space, its second piece in small letters', 'Dear Zephy ra, your claim', 'Zephy ra'],
-    ['a part split by a full stop and a space', 'Dear Zephy. ra, your claim', 'Zephy. ra'],
-    ['each letter of the name alone, in small letters after the first', 'Dear Z e p h y r a, your claim', 'Z e p h y r a'],
-    ['each letter of the name alone, in capitals', 'Dear Z E P H Y R A, your claim', 'Z E P H Y R A'],
-  ])('sends the name written as %s in clear in a letter with no held range, and refuses it in a held letter: %j', (_what, letter, form) => {
-    const screened = redactLetterForScreen(letter, patient, claims);
-    expect(holdsIdentifier(screened.text, patient, claims)).toBe(false);
-    expect(screened.text).toContain(form);
+    ['a part split by a space, its second piece in small letters', 'Dear Zephy ra, your claim'],
+    ['a part split by a full stop and a space', 'Dear Zephy. ra, your claim'],
+    ['a part split by a full stop', 'Dear Zeph.yra, your claim'],
+    ['each letter of the name alone, in small letters after the first', 'Dear Z e p h y r a, your claim'],
+    ['each letter of the name alone, in capitals', 'Dear Z E P H Y R A, your claim'],
+    ['each letter of the name alone, a full stop after each', 'Dear Z. e. p. h. y. r. a, your claim'],
+    ['its first letter alone', 'Dear Z ephyra, your claim'],
+    ['its last letter alone, on the next line', 'Dear Zephyr\r\na, your claim'],
+    ['a look-alike letter and a small piece after a space', 'Dear Zеphy ra, your claim'],
+  ])('redacts the name written as %s, and refuses it in a held letter as before: %j', (_what, letter) => {
+    expect(sentOrRefused(letter, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+    expect(redactLetter(letter, patient, claims).text).toBe('Dear [PATIENT_NAME], your claim');
     expect(sentOrRefused(`${HELD}${letter}`, patient, claims)).toBe(REFUSED);
   });
+
+  it('takes an initial beside a name read so, and both parts written so', () => {
+    expect(sentOrRefused('Dear J. Zephy ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME]. [PATIENT_NAME], your claim');
+    expect(sentOrRefused('Dear Ja ne Zephy ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+  });
+
+  it('refuses a text that still holds such a form: the check reads what redaction reads', () => {
+    expect(holdsIdentifier('Dear [PATIENT_NAME], re Zephy ra', patient, claims)).toBe(true);
+    expect(holdsIdentifier('Dear [PATIENT_NAME], re Z e p h y r a', patient, claims)).toBe(true);
+    expect(holdsIdentifier('Dear [PATIENT_NAME], your claim', patient, claims)).toBe(false);
+  });
+
+  // The cost that stays, recorded in ADR 0054: the words whose letters are a part of the patient's name are replaced
+  // wherever a space or a period alone sets them apart. Two words of a letter, never the letter.
+  it.each([
+    ['INA VANTREE', 'Records in a timely manner.', 'Records [PATIENT_NAME] timely manner.'],
+    ['ISA VANTREE', 'This is a request for records.', 'This [PATIENT_NAME] request for records.'],
+    ['ASA VANTREE', 'Resubmit it as a new claim.', 'Resubmit it [PATIENT_NAME] new claim.'],
+    ['TOBE ZEPHYRA', 'It was sent to be reviewed.', 'It was sent [PATIENT_NAME] reviewed.'],
+    ['BOB XU', 'Paid for Bo b today.', 'Paid for [PATIENT_NAME] today.'],
+  ])('records the cost: for %s, %j is sent as %j', (name, letter, sent) => {
+    expect(sentOrRefused(letter, patientOf([name]), claims)).toBe(sent);
+  });
+
+  it('leaves ordinary words whose letters are no part of the name, and a name split by a comma or a slash', () => {
+    for (const name of ['NEWMAN VANTREE', 'UNDERWOOD ZEPHYRA', 'ANA VANTREE']) {
+      const letter = 'Records in a timely manner. This is a new claim under review. Resubmit it as a new claim.';
+      expect(sentOrRefused(letter, patientOf([name]), claims)).toBe(letter);
+    }
+    expect(sentOrRefused('New, man. Under/wood.', patientOf(['NEWMAN UNDERWOOD']), claims)).toBe('New, man. Under/wood.');
+  });
+
+  it('leaves the narrative’s reading as it was: there a part split so is no name', () => {
+    const identifiers = { names: ['JANE Q ZEPHYRA', 'INA VANTREE'], numbers: ['ZZ12345/01'] };
+    expect(holdsNameOrNumber('The plan paid in a timely manner for Zephy ra.', identifiers)).toBe(false);
+    expect(holdsNameOrNumber('The plan paid for Z e p h y r a.', identifiers)).toBe(false);
+  });
+
+  // P6: a stored number is read as the records hold it. The base left each of these as written.
+  it.each(['/', '.', ',', '+', ' / ', '&', '*'])('redacts a member ID held with %j between two digits, written as held', (separator) => {
+    const held = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [`ZZ12345${separator}01`]);
+    expect(sentOrRefused(`The member ZZ12345${separator}01 was paid short.`, held, claims)).toBe('The member [MEMBER_ID] was paid short.');
+    expect(sentOrRefused(`Member ID: ZZ12345${separator}01 was paid short.`, held, claims)).toBe('Member ID: [MEMBER_ID] was paid short.');
+    expect(sentOrRefused('The member ZZ12345-01 was paid short.', held, claims)).toBe('The member [MEMBER_ID] was paid short.');
+    // The separator joins where the records write it, and nowhere else.
+    expect(sentOrRefused(`The member ZZ${separator}1234501 was paid short.`, held, claims)).toBe(['/', '.', ' / '].includes(separator) ? 'The member [MEMBER_ID] was paid short.' : `The member ZZ${separator}1234501 was paid short.`);
+    expect(holdsIdentifier(`The member ZZ12345${separator}01 was paid short.`, held, claims)).toBe(true);
+  });
+
+  it('redacts a claim number of digits held with a period or a slash where no label stands before it, and keeps what is no writing of it', () => {
+    expect(sentOrRefused('Paid $1,234.56 for 1234.56 units', patient, claimsOf('1234.56'))).toBe('Paid $1,234.56 for [CLAIM_1] units');
+    expect(sentOrRefused('Denied: 1234/56 was a duplicate.', patient, claimsOf('1234/56'))).toBe('Denied: [CLAIM_1] was a duplicate.');
+    // An amount after a currency sign and with cents, and a whole written date with no label, stay as the first reading keeps them.
+    expect(sentOrRefused('Paid $2026.00 on the claim', patient, claimsOf('2026.00123'))).toBe('Paid $2026.00 on the claim');
+    expect(sentOrRefused('Seen 2026/03/05 and paid', patient, claimsOf('2026/03/05'))).toBe('Seen 2026/03/05 and paid');
+    // Recorded: one piece of a number held in two is not the number.
+    expect(sentOrRefused('The member ZZ12345 was paid', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ12345 01']), claims)).toBe('The member ZZ12345 was paid');
+  });
+
+  // K-1: every letter of the review's file whose writing with LF is refused is refused with CR LF too.
+  it.each([
+    'SSN on file. Statement\nNo. 900-12-3456150.00',
+    'SSN: see Member\nID Number: 900-12-3456150.00',
+    'SSN verified. Provider\nNo. 90012345601/02/2020',
+    'Service 01/01/2020-150.00 Paid\nSSN on file. Statement\nNo. 900-12-345678',
+    'Dear Jane Zephyra,\nSSN on file. Statement\nNo. 900-12-3456150.00\nThank you.',
+    'SSN verified. Account No. \n900-12-3456150.00',
+    'SSN verified. Account \nNo. 900-12-345678',
+  ])('K-1: refuses %j, and the same letter written with CR LF', (letter) => {
+    expect(sentOrRefused(letter, JANE, JANE_CLAIMS)).toBe(REFUSED);
+    expect(sentOrRefused(letter.replaceAll('\n', '\r\n'), JANE, JANE_CLAIMS)).toBe(REFUSED);
+  });
+
+  it('K-1: sends a CR LF letter that neither writing refuses as it is written, and keeps what it redacts', () => {
+    expect(sentOrRefused('Dear Jane Zephyra,\r\nYour claim SYNCLAIM0001 was paid.\r\nThank you.', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME],\r\nYour claim [CLAIM_1] was paid.\r\nThank you.');
+    expect(sentOrRefused('SSN of the insured party\r\n900 12 3456', JANE, JANE_CLAIMS)).toBe('SSN of the insured party\r\n[SSN]');
+    // One character further the label is out of reach in either writing: the recorded residual, unchanged.
+    expect(sentOrRefused('SSN on file.  Statement\r\nNo. 900-12-3456150.00', JANE, JANE_CLAIMS)).toBe('SSN on file.  Statement\r\nNo. 900-12-3456150.00');
+  });
+
+  it('refuses a CR LF letter wherever its writing with LF is refused (property)', () => {
+    const piece = fc.constantFrom('SSN on file.', 'SSN verified.', 'Statement', 'Account', 'Provider', 'No.', 'Member', 'ID Number:', 'Phone', 'Tel', 'Claim', 'Paid', '900-12-3456', '900-12-3456150.00', '900 12 3456', '90012345601/02/2020', '5550123', '202-555-0123', '150.00', '01/01/2020-150.00', 'Jane Zephyra', 'Thank you.');
+    const gap = fc.constantFrom(' ', '  ', '\n', '\n\n', ' \n', '\n ', '');
+    fc.assert(
+      fc.property(fc.array(fc.tuple(piece, gap), { minLength: 2, maxLength: 9 }), (parts) => {
+        const letter = parts.map(([text, after]) => `${text}${after}`).join('');
+        fc.pre(letter.includes('\n'));
+        if (sentOrRefused(letter, JANE, JANE_CLAIMS) === REFUSED) {
+          expect(sentOrRefused(letter.replaceAll('\n', '\r\n'), JANE, JANE_CLAIMS), JSON.stringify(letter)).toBe(REFUSED);
+        }
+      }),
+      { numRuns: 400 },
+    );
+  }, 120_000);
+
+  it('never sends a part of the name written with spaces or full stops inside it, whatever the pieces (property)', () => {
+    const part = fc.constantFrom('ZEPHYRA', 'JANE', 'VANTREE', 'BOB', 'AL');
+    const style = fc.constantFrom('upper', 'lower', 'title', 'mixed');
+    const separator = fc.constantFrom(' ', '. ', '.', '  ', '\n', '\r\n', ' . ');
+    const frame = fc.constantFrom(['Dear ', ', your claim'], ['', ''], ['RE: ', '\nPaid in full.'], ['Patient (', ') was seen.'], ['Seen 01/02/2020. ', ' paid 150.00']);
+    fc.assert(
+      fc.property(part, style, separator, fc.array(fc.boolean(), { minLength: 6, maxLength: 6 }), frame, (name, how, between, cuts, [before, after]) => {
+        const letters = [...name].map((letter, i) => (how === 'upper' || (how === 'title' && i === 0) || (how === 'mixed' && i % 2 === 1) ? letter : letter.toLowerCase()));
+        const form = letters.map((letter, i) => (i > 0 && cuts[i - 1] === true ? `${between}${letter}` : letter)).join('');
+        const who = patientOf([`${name} QUILLFEATHER`]);
+        const letter = `${before}${form}${after}`;
+        const sent = sentOrRefused(letter, who, claims);
+        if (sent !== REFUSED) {
+          expect(sent, JSON.stringify(letter)).toBe(`${before}[PATIENT_NAME]${after}`);
+        }
+        const { text, spans } = redactionSpans(letter, who, claims);
+        expect(spans.some((span) => span.start <= before.length && before.length + form.length <= span.end), JSON.stringify(text)).toBe(true);
+      }),
+      { numRuns: 400 },
+    );
+  }, 120_000);
 
   // Beside them, the closed cases: a middle dot or a hyphenation point joins a name's pieces, and a part split by a space
   // with both pieces capitalized is the name.
@@ -1297,7 +1419,8 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   // reach at 25: the letter is named by its noun and sent, as ef3e8d20 and cc3dd7f6 send it, where its writing with LF is
   // refused.
   it.each([
-    unchanged('SSN on file. Statement\r\nNo. 900-12-3456150.00'),
+    // K-1, closed by MOD-23: the check reads a CR LF as one line ending too, and takes the worse answer.
+    refused('SSN on file. Statement\r\nNo. 900-12-3456150.00'),
     refused('SSN on file. Statement\nNo. 900-12-3456150.00'),
     // The label out of reach with a noun between, recorded before this round.
     unchanged('SSN on file.  Statement\nNo. 900-12-3456150.00'),
