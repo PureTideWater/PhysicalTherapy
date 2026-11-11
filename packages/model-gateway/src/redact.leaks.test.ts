@@ -1567,6 +1567,12 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     ['a claim number that ends another', 'Claim SYN445S667\n555-0123', ['ZZ7654321'], [['SYN4455667', '4455667']], 'Claim [CLAIM_1]', '5550123'],
     ['a member ID that begins another', '7654E210 555-0123', ['7654321', '76543210'], [['SYNCLAIM0001']], '[MEMBER_ID]', '5550123'],
     ['the withheld match’s own letter', 'ID ZZ76543\uA6EF1\n01-02-2020', ['ZZ7654321', '7654321'], [['SYNCLAIM0001']], 'ID [MEMBER_ID]', '01022020'],
+    // M-1 (the review of that fix): a piece of the hidden number that is itself a short identifier of the call's own is
+    // the number's there, as it is wherever such an identifier stands inside a pattern's number (R6b).
+    ['a claim number that is the number’s last piece', 'Member ID: ZZ1980O314\n555-0123\nPaid in full.', ['ZZ19800314'], [['0123']], 'Member ID: [MEMBER_ID]\nPaid in full.', '5550123'],
+    ['a member ID that is the number’s first piece', 'Member ID: ZZ1980O314\n555-0123\nPaid in full.', ['ZZ19800314', '555'], [['SYNCLAIM0001']], 'Member ID: [MEMBER_ID]\nPaid in full.', '5550123'],
+    ['nested member IDs and a short claim number in the number', '7654E210 555-0123', ['7654321', '76543210'], [['0123']], '[MEMBER_ID]', '5550123'],
+    ['a short member ID in the number after a claim number that ends another', 'Claim SYN445S667\n555-0123', ['ZZ7654321', '0123'], [['SYN4455667']], 'Claim [CLAIM_1]', '5550123'],
   ] as const)('L-1, %s: %j is sent with the number hidden and the screen is offered it', (_row, letter, memberIds, claimNumbers, sent, offered) => {
     const patient = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [...memberIds]);
     const claims = claimNumbers.map((numbers, index) => ({ claimId: `synthetic-claim-21-${String(index + 1)}`, patientPseudonym: 'synthetic-patient-21', claimNumbers: [...numbers] }));
