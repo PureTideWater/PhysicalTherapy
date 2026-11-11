@@ -1275,12 +1275,15 @@ function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, no
     if (merged === undefined || match(merged, 'one')) continue;
     // Written in pieces, a joiner between them as the identifier's plain pattern reads one ("ZZ 765432l", "SYNCLAIM-OOO1",
     // "VAN-TR3E", a name wrapped after its hyphen): the pieces are read together (the review of the build, B1-11).
-    let [named, numbered] = [true, true];
+    // A piece of a name holds a letter: a word, a joiner and a number are no name ("Week-5" is no WEEKS, "Bill-13" no
+    // BILLIE: the review of the fix round, C2-8).
+    const lettered = (token: WrittenToken) => token.units.some((unit) => !writtenDigit(unit));
+    let [named, numbered] = [lettered(merged), true];
     for (let j = i + 1; j < tokens.length && j <= i + 3 && merged.units.length < longest; j += 1) {
       const next = tokens[j];
       if (next === undefined) break;
       const gap = normal.slice(merged.ends[merged.ends.length - 1] ?? 0, next.starts[0] ?? 0);
-      named &&= NAME_PIECE_GAP.test(gap);
+      named &&= NAME_PIECE_GAP.test(gap) && lettered(next);
       numbered &&= NUMBER_PIECE_GAP.test(gap);
       if (!named && !numbered) break;
       merged = joinedTokens(merged, next);
@@ -1543,8 +1546,13 @@ const SPACED = /[\s\u0085]/u;
 /** A period or a shape joiner in a gap: never with white space in one match (R1a). */
 const TIGHT = new RegExp(`[.${SHAPE_JOINERS}]`, 'u');
 const CENTS_AFTER = /^[.,][0-9]{1,2}(?![0-9])/u;
-/** An amount's end after a run of digits: its cents, with thousands groups before them too ("…150.00", "…1,250.00"). */
-const AMOUNT_TAIL = /^(?:,[0-9]{3}){0,4}[.,][0-9]{1,2}(?![0-9])/u;
+/**
+ * An amount's cents glued after a number's last digits: a point and one or two digits, nothing of a longer number after
+ * them. A comma there is as often the next field of a row ("20260112345,01/05/2026", "ICN 12345678901,12345678902": the
+ * review of the fix round, C2-4).
+ */
+const CENTS_GLUED = /^\.[0-9]{1,2}(?![0-9]|[.,/\p{Pd}\u2212][0-9])/u;
+
 const CURRENCY_BEFORE = /\p{Sc}[ \t]?$/u;
 const DIGIT = /^[0-9]$/u;
 const DASH_UNIT = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
@@ -2213,7 +2221,7 @@ function survivorIn(text: string, strict = true): Survivor {
   const dates = datesByReading.flat();
   const currency = [...text.matchAll(CURRENCY_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: false }));
   // A run of nine digits or more before a decimal point is no amount: an SSN or phone with an amount's digits glued to it ("900123456150.00").
-  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].filter((match) => !/^[0-9]{9,}[.,]/u.test(match[0])).map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
+  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].filter((match) => !/^[0-9]{9,}\./u.test(match[0])).map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
   // Which barrier holds a digit, for the strict reading of a held letter (heldStrict, below): a currency amount, or a date that stands.
   const currencyAt = new Uint8Array(text.length + 1);
   const dateAt = new Uint8Array(text.length + 1);
@@ -2537,18 +2545,17 @@ const survivorLeft = (text: string, strict = true): Survivor => {
  * 900-12-3456150.00", "Paid-975-20-18460.00" are refused), and an SSN, phone or Medicare label names no reference:
  * gluedShape asks the scan's label first ("SSN No. 900-12-3456150.00").
  */
-const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS|LINE)(?!\\p{L}))*$`, 'u');
+const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION|TCN|CCN|MRN|PCN|NDC|RX|PAYMENT|REFERRAL|RECEIPT|PRECERT(?:IFICATION)?|PRE[\\p{Pd} ]?AUTH(?:ORIZATION)?|CERTIFICATION|SESSION|CUSTOMER|VOUCHER|DOCKET|STATEMENT|REMIT(?:TANCE)?|EMPLOYER|PAYER|LOAN|RECONSIDERATION|REDETERMINATION|COMPLAINT)(?!\\p{L}))(?:[\\s:#.*=()\\p{Pd}\\u2212|,/"\u201C\u201D']|(?<![\\p{L}\\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|LINE|CODE)(?!\\p{L}))*$`, 'u');
 
 /**
  * Whether a Social Security or phone number's own shape stands with another number's digits glued to it: three groups
  * joined by joiners with no white space, the middle one of two digits (three for a phone; a slash only for a phone), the
  * first of three digits or more and the last of four or more, one of them longer, no barrier holding them but a currency
  * amount its first. It does where structure says whose the other digits are:
- * - after it: an amount's end after its last group, or a group joined to that group ("900-12-3456150.00",
- *   "202-555-0123202-555-0124"), the shape wrapped after a dash too ("900-12-\n3456150.00");
- * - before it: a currency amount's digits, a group joined to its first group, or the year of a date written with its
- *   month's word ("$150.00900-12-3456", "$514451/293-6215", "01/01/2020900-12-3456", "150.00900-12-3456", "June 18,
- *   2026423.435-4454");
+ * - after it: cents after its last group, or a second shape begun in that group ("900-12-3456150.00",
+ *   "202-555-0123202-555-0124"), the shape wrapped after a dash too;
+ * - before it: a currency amount's digits, an amount's cents, or a year ("$150.00900-12-3456", "$514451/293-6215",
+ *   "150.00900-12-3456", "01/01/2020900-12-3456", "2020900-12-3456");
  * unless a reference's noun names the number ("Case No. 123-45-678901-02", "Policy No. 01-23456-78-9012"). Under an SSN,
  * phone or Medicare label the shape that starts at its group's start is the person's number whatever is glued after it ("SSN No. 900-12-345678", "Phone
  * number 202-555-01234567", "Medicare ID 900-12-345678"), in the number's usual writing too, with digits glued after it
@@ -2556,8 +2563,8 @@ const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:AC
  * reference's ("Tracking 123-456-78901", "Claim # 20260115-12-3456", "29 CFR 2590.715-2719": the review of the build,
  * B2-3 and B2-6): 'shape', which a held letter alone refuses (the first group three digits, or four or more longer, and
  * no noun naming it: "900-01-202012th", "2020900-12-3456"), as cc3dd7f6 refused every held letter.
- * And a run of eleven digits or more with an amount's end after it ("900123456150.00", "20255501231,250.00"), unless named
- * ("ICN 12345678901234.01"); and an amount's cents with a nine or a ten right after them ("150.00900123456").
+ * And a run of eleven digits or more with cents after it ("900123456150.00"), unless named ("ICN 12345678901234.01"); and
+ * an amount's cents with a nine or a ten right after them ("150.00900123456"; never a comma between two numbers of a list).
  * A date written year first with digits glued after its day ("2020-01-02150.00") is read as cc3dd7f6 read it.
  */
 function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group: ScanGroup) => boolean, currencyAt: Uint8Array): 'structure' | 'shape' | null {
@@ -2570,9 +2577,9 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group:
     // other number's.
     const inCurrency = a.blocked && currencyAt[a.start] === 1;
     if (a.blocked && !inCurrency) continue;
-    if (!inCurrency && a.digits.length >= 11 && AMOUNT_TAIL.test(text.slice(a.end, a.end + 24)) && (labeled(a) || !named(a))) return 'structure';
+    if (!inCurrency && a.digits.length >= 11 && CENTS_GLUED.test(text.slice(a.end, a.end + 5)) && (labeled(a) || !named(a))) return 'structure';
     // An amount's cents and then a nine or a ten with nothing between ("150.00900123456", "$150.002025550123").
-    if ((a.digits.length === 11 || a.digits.length === 12) && /[0-9][.,]$/u.test(text.slice(Math.max(0, a.start - 2), a.start))) return 'structure';
+    if ((a.digits.length === 11 || a.digits.length === 12) && /(?<![0-9.,])[0-9]{1,6}\.$/u.test(text.slice(Math.max(0, a.start - 9), a.start))) return 'structure';
     if (b === undefined || c === undefined || b.blocked || c.blocked) continue;
     const [g1, g2] = [text.slice(a.end, b.start), text.slice(b.end, c.start)];
     const slashed = g1.includes('/') || g2.includes('/');
@@ -2583,17 +2590,23 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group:
     if (!((TIGHT_JOIN.test(g1) || WRAPPED_JOIN.test(g1)) && (TIGHT_JOIN.test(g2) || WRAPPED_JOIN.test(g2)))) {
       // In a number's usual writing (spaces, parentheses), under its label alone, with digits glued after it: "Phone number
       // (202) 555-01234567", "Tel 202 555-0123150.00".
-      if (head === 0 && LOOSE_JOIN.test(g1) && LOOSE_JOIN.test(g2) && labeled(a)) return 'structure';
+      // Never an amount and a number ("Contact: Billing 250.75 123456": the review of the fix round, C2-2).
+      if (head === 0 && LOOSE_JOIN.test(g1) && LOOSE_JOIN.test(g2) && (b.digits.length === 3 || !/[.,]/u.test(g1 + g2)) && labeled(a)) return 'structure';
       continue;
     }
     const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
     if (yearFirst) continue;
-    const [before, after] = [groups[i - 1], groups[i + 3]];
-    // Digits before the shape are another number's where a currency amount holds them, a group is joined before them, or
-    // they are the year of a date written with its month's word ("June 18, 2026423.435-4454"); digits after it, where the
-    // shape starts at its group's start and an amount's end or a joined group follows.
-    const headAnothers = head > 0 && (inCurrency || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start))) || (head === 4 && /^(?:19|20)/u.test(a.digits) && WRITTEN_DATE_BEFORE.test(text.slice(Math.max(0, a.start - 24), a.start))));
-    const tailAnothers = head === 0 && tail > 0 && (AMOUNT_TAIL.test(text.slice(c.end, c.end + 24)) || (after !== undefined && TIGHT_JOIN.test(text.slice(c.end, after.start))));
+    const [before, after, last] = [groups[i - 1], groups[i + 3], groups[i + 4]];
+    // Digits before the shape are another number's where a currency amount holds them, where they are an amount's cents (two
+    // of them, a point joining them to the group before: "150.00900-12-3456") or where they are a year ("2020900-12-3456",
+    // "01/01/2020900-12-3456", "June 18, 2026423.435-4454"). Digits after it are another number's where the shape starts at
+    // its group's start and cents follow them ("900-12-3456150.00") or they begin a second shape
+    // ("202-555-0123202-555-0124"). A group joined by the reference's own joiner is the reference's ("2026-0115-123-4567",
+    // "123-45-67890-01": the review of the fix round, C2-3).
+    const joinBefore = before === undefined ? '' : text.slice(before.end, a.start);
+    const headAnothers = head > 0 && (inCurrency || (head === 2 && /^[.,]$/u.test(joinBefore)) || (head === 4 && /^(?:19|20)/u.test(a.digits)));
+    const second = tail === 3 && after !== undefined && last !== undefined && (after.digits.length === 2 || after.digits.length === 3) && last.digits.length >= 4 && TIGHT_JOIN.test(text.slice(c.end, after.start)) && TIGHT_JOIN.test(text.slice(after.end, last.start));
+    const tailAnothers = head === 0 && tail > 0 && (CENTS_GLUED.test(text.slice(c.end, c.end + 5)) || second);
     if (labeled(a) && (head === 0 || headAnothers)) return 'structure';
     // A noun names the whole joined number, from its first group ("Policy No. 01-23456-78-9012").
     let first = i;
@@ -2640,8 +2653,6 @@ const CODE_LIST_BEFORE = /(?<!\p{L})(?:CPT(?:[\p{Pd}− ]?4)?|HCPCS|CODES?|MODIF
 const TAX_BEFORE = /(?<!\p{L})(?:F?EIN|TIN|TAX(?:PAYER)?[ \t]?I\.?D\.?(?:ENTIFICATION)?)\)?(?:[ \t]{0,3}(?:NO|NUMBER|NBR|NUM)\b\.?)?(?:[ \t]{0,3}\((?:F?EIN|TIN)\))?[ \t]{0,3}[:#]{0,2}[ \t]{0,3}$/u;
 const LINE_BREAK_IN = new RegExp(LINE_BREAK, 'u');
 const TIGHT_JOIN = /^[\p{Pd}−⁃˗➖./()_|\\'‘’ʼʹˊ′‵`~·‧∙⋅・•]{1,2}$/u;
-/** A date's month's word, with its day before or after it, up to the year that follows: "June 18, ", "27th of June, ", "1 January ". */
-const WRITTEN_DATE_BEFORE = /(?<![A-Z])(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUNE?|JULY?|AUG(?:UST)?|SEPT?(?:EMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)\.?,?[ \t]{0,2}(?:[0-9]{1,2}(?:ST|ND|RD|TH)?,?[ \t]{0,2})?$/u;
 /** A dash at a line's end and the next line's indentation: a number wrapped after its joiner ("900-12-\n3456150.00"). */
 const WRAPPED_JOIN = /^[\p{Pd}−][ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16}$/u;
 /** What stands between a labeled number's groups in its usual writing: white space, a joiner or a parenthesis, on one line. */
@@ -3096,15 +3107,14 @@ function ownIdentifierGlued(normal: string, subject: Subject, held: boolean, str
  * letter, the mask in an SSN's own shape: three mask characters, a gap the masked pattern reads (a dash with spaces around
  * it too, white space, a period), two, such a gap and four digits, the four on the next line too ("PaidXXX-XX-3456",
  * "2020***-**-3456", "PaidXXX - XX - 3456"), after a word that ends in a mask's letter as well ("FaxXXX-XX-3456": the review
- * of the build, B1-7). In a letter whose chain only held barriers hold (cc3dd7f6 refused it), with a joiner missing too, or
+ * of the build, B1-7), never four mask characters after "#" ("Acct#XXXX-XX-1234": the review of the fix round, C2-6). In a letter whose chain only held barriers hold (cc3dd7f6 refused it), with a joiner missing too, or
  * five mask characters and four digits: outside one that is as often a masked account number ("Acct#XXXX1234", "Acct
  * No.XXXXX1234": the review of the build, B2-2).
  */
-const MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?[X*#_\u2022\u25CF]{3,5}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)[X*#_\u2022\u25CF]{2}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)(?:[ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16})?[0-9]{4}(?![0-9])/u;
+const MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?X{0,2}[X*#_\u2022\u25CF]{3}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)[X*#_\u2022\u25CF]{2}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)(?:[ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16})?[0-9]{4}(?![0-9])/u;
 const HELD_MASKED_SSN_GLUED = /[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
 
 const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-const ORDINAL_WORDS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH', 'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH', 'FIFTEENTH', 'SIXTEENTH', 'SEVENTEENTH', 'EIGHTEENTH', 'NINETEENTH', 'TWENTIETH'];
 const ONES = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
 const TENS = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
 const WORD_GAP = '[\\s\\p{Pd}\\u2212]*';
@@ -3115,13 +3125,6 @@ function underHundredInWords(value: number): string | null {
   if (value < 20) return ONES[value] ?? null;
   const ones = ONES[value % 10] ?? '';
   return `${TENS[Math.floor(value / 10)] ?? ''}${ones === '' ? '' : `${WORD_GAP}${ones}`}`;
-}
-
-/** A day of the month as an ordinal's word, as a pattern: "FOURTEENTH", "TWENTY-FIRST", "THIRTIETH". */
-function dayInWords(day: number): string {
-  if (day <= 20) return ORDINAL_WORDS[day - 1] ?? 'FIRST';
-  if (day === 30) return 'THIRTIETH';
-  return `${day < 30 ? 'TWENTY' : 'THIRTY'}${WORD_GAP}${ORDINAL_WORDS[(day % 10) - 1] ?? 'FIRST'}`;
 }
 
 /** A year from 1900 to 2099 in words, as a pattern: "NINETEEN SEVENTY-FIVE", "NINETEEN HUNDRED AND SEVEN", "NINETEEN OH SEVEN", "TWO THOUSAND AND FIVE", "TWENTY TWELVE". */
@@ -3145,8 +3148,7 @@ function yearInWords(year: number): string | null {
  * every held letter), with no boundary asked for, as for every held reading: its month as a Roman numeral with its day and
  * year, the year of two digits too ("14-III-1980", "III/14/1980", "1980-III-14", "14/III/80"); year, month and day with
  * the CJK date characters, the year of two digits or left out too ("1980年3月14日", "80年3月14日", "3月14日"); its year in
- * words; its month's word with its day, in digits or as an ordinal's word, and no year ("Mar 14th", "14th of March",
- * "March fourteenth"); and its two-digit year, month and day run together as four or five digits in any order, or as six
+ * words; its month's word with its day and no year ("Mar 14th", "14th of March"); and its two-digit year, month and day run together as four or five digits in any order, or as six
  * in an order a date is written in, at the start or the end of a run of digits ("80314", "14380", "202080314",
  * "80031455"), but four digits that read as a year from 1900 to 2099.
  */
@@ -3171,30 +3173,32 @@ function heldBirthUnread(normal: string, subject: Subject): boolean {
     const gap = '[\\s,.\\p{Pd}\\u2212]{0,3}';
     // The day in digits, an ordinal's suffix on it too, or as an ordinal's word ("14", "14th", "fourteenth").
     const dayDigits = `(?<![0-9])${dd}(?:ST|ND|RD|TH)?(?![0-9])`;
-    const dayWord = `(?<![A-Z])${dayInWords(day)}(?![A-Z])`;
-    const dayWritten = `(?:${dayDigits}|${dayWord})`;
-    // The month of May is a verb too ("Visits over 12 may require", "5. May include", "You may first call": the review of
-    // the build, B2-5): after a day it is the month only with an ordinal's suffix or "of" before it, or with no word after it
-    // on its line; before a day in words, only with no word after the day on its line; and its year in words is read only
-    // with its day right after it.
+    // The month of May is a verb too ("Visits over 12 may require", "the 12th may require", "You may 1) call us", "5. May
+    // include": the reviews of the build and of the fix round, B2-5 and C2-5). Before its day it is the month only where
+    // the day carries an ordinal's suffix or ends its phrase ("May 12th", "May 12," "May 12" at a line's end); after its day,
+    // only with "of" between them or where it ends its phrase ("12th of May", "the 12th May."). A day in words is not read
+    // ("the first March payment" is no date of birth): recorded.
     const may = month === 5;
-    const dayAfterMay = `(?:${dayDigits}|${dayWord}(?![ \\t]+[A-Z]))`;
+    const phraseEnd = '(?=[ \\t]*(?:[,.;]|$|[\\r\\n]))';
+    const monthThenDay = may
+      ? `(?<![A-Z])MAY\\.?${gap}(?:THE\\s+)?(?<![0-9])${dd}(?:(?:ST|ND|RD|TH)(?![A-Z0-9])|(?![0-9A-Z])${phraseEnd})${noYear}`
+      : `(?<![A-Z])(?:${words})\\.?${gap}(?:THE\\s+)?${dayDigits}${noYear}`;
     const dayThenMonth = may
-      ? `(?:(?<![0-9])${dd}(?:ST|ND|RD|TH)${gap}(?:OF\\s+)?|(?:(?<![0-9])${dd}|(?<![A-Z])${dayInWords(day)})${gap}OF\\s+)MAY(?![A-Z])${noYear}|${dayWritten}${gap}MAY(?![A-Z])(?![ \\t]+[A-Z])${noYear}`
-      : `${dayWritten}${gap}(?:OF\\s+)?(?:${words})(?![A-Z])${noYear}`;
+      ? `${dayDigits}${gap}(?:OF\\s+MAY(?![A-Z])|MAY(?![A-Z])(?=[ \\t]*(?:[,.;:)]|$)))${noYear}`
+      : `${dayDigits}${gap}(?:OF\\s+)?(?:${words})(?![A-Z])${noYear}`;
     const patterns = [
       `${dd}${sep}${roman}${sep}${anyYear}(?![0-9])`,
       `${roman}${sep}${dd}${sep}${anyYear}(?![0-9])`,
       `${anyYear}${sep}${roman}${sep}${dd}(?![0-9])`,
       `${anyYear}\\s?年\\s?${mm}\\s?月\\s?${dd}(?![0-9])`,
       `(?<![0-9])${mm}\\s?月\\s?${dd}\\s?日`,
-      `(?<![A-Z])(?:${words})\\.?${gap}(?:THE\\s+)?${may ? dayAfterMay : dayWritten}${noYear}`,
+      monthThenDay,
       dayThenMonth,
     ];
     const inWords = yearInWords(year);
     // The year in words within 48 characters after the month's word ("November second, nineteen seventy-five").
     if (inWords !== null) {
-      patterns.push(may ? `(?<![A-Z])MAY(?![A-Z])${gap}(?:THE\\s+)?${dayAfterMay}[^0-9]{0,40}?(?<![A-Z])${inWords}(?![A-Z])` : `(?<![A-Z])(?:${words})(?![A-Z])[^0-9]{0,48}?(?<![A-Z])${inWords}(?![A-Z])`);
+      patterns.push(may ? `(?<![A-Z])MAY(?![A-Z])${gap}(?:THE\\s+)?${dayDigits}[^0-9]{0,40}?(?<![A-Z])${inWords}(?![A-Z])` : `(?<![A-Z])(?:${words})(?![A-Z])[^0-9]{0,48}?(?<![A-Z])${inWords}(?![A-Z])`);
     }
     if (new RegExp(patterns.join('|'), 'u').test(text)) return true;
     const pad = (value: number) => String(value).padStart(2, '0');
