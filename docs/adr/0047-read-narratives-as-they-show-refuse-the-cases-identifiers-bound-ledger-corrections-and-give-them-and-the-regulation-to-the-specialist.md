@@ -164,3 +164,97 @@ role the quote's own words give it, its clause ending where the quote's does; ne
 letter of another script inside a Latin word is a `hidden_character` (it would hide a cue). The report's format, codes
 and kinds are unchanged (`tp-packet-verifier/2`); the export's re-verification refuses a stored version an older
 reading passed. Test matrix CAS-43 and CAS-44 (each reproduction of the review of 2026-11-01 a named example).
+
+## Amendment (`co-001/packets-verifier-identifier-fold`, 2026-11-11): the case's identifiers in every form redaction reads
+
+The Decision above fails "every whole-word occurrence" of an identifier, "without regard to case". That reading passed
+a narrative that wrote `Zoe` for ZOË, `O’Quill` (a keyboard's apostrophe) for O'QUILL, `Treeby` for VAN-TREEBY, `Jo Ann`
+for JOANN, or a letters-only member ID with a space in it: the forms a person typing in the editor produces without
+meaning to. The letter reader's redaction has read each of them since its one-pass matcher
+([0054](0054-match-model-figures-whole-and-in-role-read-letters-only-through-their-reader-hold-budgets-before-calls-and-serve-only-evaluated-prompts.md),
+amendments of 2026-10-27 and 2026-11-04). A digit-bearing identifier written with joiners (`ZZ-123-4567`) failed
+already, but as a figure the inputs do not hold, not as an identifier.
+
+**The server's reading is now two readings, and it never finds less than either**
+(`packages/packets/src/verifier/identifiers.ts`):
+
+1. the whole-word reading above, unchanged;
+2. the reading the letter reader's matcher has of a name or a number, `@tp/redact` `nameOrNumberMatches`: the same
+   function the narrative drafter's check of its facts reads through (ADR 0054, amendment of 2026-11-11), so the
+   drafter and the verifier cannot come to read different forms.
+
+Overlapping spans are joined into one. The report holds positions only, as before, and its format is unchanged
+(`tp-packet-verifier/2`, and /3 as [0089](0089-write-a-narratives-figures-as-fact-tokens-rendered-by-code-refuse-every-free-figure-and-read-english-only-for-contradiction.md) left it: `verifier/template.ts` takes the same reading).
+
+**What the matcher's reading adds**, each as redaction reads it:
+
+- a name with its marks, case, apostrophes and dashes written any way (`Zoe`, `STRAUSS` for Strauß, `O’Quill`, `OQuill`,
+  `Van–Treeby`, `Van Treeby`), each part of it alone (`Treeby`), a part hyphenated at the end of a line, and a part in
+  capitalized pieces (`Jo Ann`);
+- a member ID or claim number with its characters joined any way (`ZZ-123-4567`, `ZZ 1234567`, `SYN.CCN.0001`), glued
+  to a label (`ICNSYNCCN0001`), and its digits written as a calendar date after a label that says they are the number
+  (`Claim 2026-03-05` for 20260305).
+
+No Social Security or phone number is read by its pattern (ADR 0054, amendment of 2026-11-04, Scope): every digit of a
+narrative is a figure the inputs must hold, and a payer's phone number quoted from a contract is one of them.
+
+**Which of the matcher's matches are kept.** The whole-word reading skips placeholders, citation markers and dated
+figures as it always has. Of the matcher's:
+
+- none that touches a token (an identifier placeholder, a citation marker, and at format /3 a fact token or stray
+  braces): nothing there is the narrative's own words;
+- no name in a dated figure (a month's name in a date is the date, as above);
+- a number in a dated figure only when it holds the whole figure. The matcher reads a whole written date as a number
+  of the case only after a label that says so, so `Claim 2026-03-05` fails for 20260305, while `2026` or `03-05` inside
+  `2026-03-05` is the date.
+
+**An identifier written across a token is read too** (the first design review's finding: `Quar[1]rington` passed). A
+letter holds no token, so the matcher alone never reads across one. The reading takes the matcher over the text a
+second time with each token as one invisible character, which redaction reads across, and keeps from it only a match
+that holds a token, under the same two rules for dated figures; its span holds the token. The words around a token
+are otherwise read as written: a label is no number's label through a placeholder (`Member ID {{member_id:1}}
+2026-03-05` is a date).
+
+**The caller says which identifiers are names and which are numbers** (`CaseIdentifiers`, required by
+`verifyNarrative`, `verifyTemplate` and `verifyAtFormat`; a flat list no longer type-checks). The two are read
+differently: a space joins a number's characters anywhere, a name's only between capitalized pieces, so a patient
+named INA is not "in a". Every caller knows: the worker reads each from its own column (`ScheduleIdentifiers.numbers`
+beside `names`), and the gateway's drafter has `identifierKinds`. A value in both lists is read both ways.
+
+**The matcher never reaches the browser, and the browser's check has no identifier to read for.**
+`verifier/mismatches.ts` and `verifier/template.ts` take the reading as a function; `check.ts` passes
+`readsNoIdentifier`; only the server's entry (`verifier/index.ts`) imports `verifier/identifiers.ts`. A test loads the
+browser's module with the matcher and the server's reading made to throw on load.
+
+### Alternatives considered
+
+- *Import the gateway from packets.* The gateway imports packets, so it would be a cycle, and the gateway's entry
+  brings the provider SDKs, the database and a file reader into the verifier's closure and the browser's bundle.
+- *A second matcher in packets, held to the gateway's by a test.* Drift is the defect; two implementations only make
+  it a test's job to notice.
+- *The matcher's reading alone, without the whole-word reading.* It would lose what the whole-word reading alone
+  catches (each `/`, `;`, `,` or space-separated piece of a number by itself), and "nothing caught before is lost"
+  would rest on argument instead of construction.
+- *Guess which values are names* (no digit means a name, as the gateway's fallback does when it is not told). Every
+  caller knows, so the verifier does not guess.
+- *Each token masked so nothing matches across it* (as the gateway masks its own placeholders). That is the first
+  reading; alone it passes `Quar[1]rington`.
+
+### Consequences
+
+- **A stored pass can fail now.** The steps that count a stored pass (a request for approval, an approval, the export)
+  run the verifier again with today's identifiers (ADR 0086), so a version whose narrative holds an identifier in one of
+  these forms is refused there (`fails_now`), until it is written again without it. Screens read for no identifier, as
+  before, and say "passed" until a step refuses.
+- **A number is read through its joiners wherever it is written**: `12-34` is patient control number 1234, and `SYN-1`
+  is member ID SYN1 even where a fact holds `SYN-1`. An identifier written exactly as a held figure already failed
+  (a claim number 97110, `$300.00` for 300); this is the same rule for joined forms, and short numeric identifiers make
+  it likelier. The person rephrases.
+- Not read, as before: a name glued to other letters (`DearQuarrington`), a nickname, and what the matcher itself does
+  not read (ADR 0054's amendment of this date lists it). A look-alike letter inside a name fails as a
+  `hidden_character`, and a name glued to digits as a figure.
+- The matcher's reading costs about a millisecond for a narrative of a few hundred characters and a dozen identifiers,
+  and about 0.1 s for 1,600 identifiers (measured on the build's machine); a screen's check, with no identifier, runs
+  none of it.
+- Test matrix MOD-19 (every written form fails; the generator of the forms is the oracle) and MOD-20 (what a narrative
+  is meant to say is never read as an identifier; the verifier against the two readings it is made of).

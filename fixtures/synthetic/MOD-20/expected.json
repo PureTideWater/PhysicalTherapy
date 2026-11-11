@@ -1,0 +1,21 @@
+{
+  "case": "MOD-20",
+  "module": "MOD",
+  "title": "What a packet narrative is meant to say, beside a case whose identifiers could be read into it: amounts, dates (a year, a month and day, or a month's name that is a number or a name of the case), codes, units, an NPI, a plan identifier the facts hold, another person's Social Security- or phone-shaped number, citation markers, identifier placeholders and fact tokens that spell an identifier, and a label, a placeholder and then a date; generated narratives of such pieces and of written identifiers; the browser's check",
+  "assertion": "None of it is read as an identifier, and the code's own draft passes for any case whose identifiers it does not hold; the verifier flags an identifier wherever its whole-word reading or the gateway's narrative reading (`holdsNameOrNumber`, the drafter's check of its facts) holds one outside the tokens, and nowhere that neither they nor the reading across a token do; the drafter's check and the verifier read through one function; the browser's check loads neither the matcher nor the server's reading",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/packets/src/verifier-identifiers.test.ts",
+    "packages/packets/src/check-browser.test.ts",
+    "packages/redact/src/narrative.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Narratives are generated in memory by the property test from pieces it holds; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

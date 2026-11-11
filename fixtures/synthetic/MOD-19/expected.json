@@ -1,0 +1,17 @@
+{
+  "case": "MOD-19",
+  "module": "MOD",
+  "title": "A packet narrative that writes one of the case's own identifiers in a form the letter reader's redaction reads: a name with its marks, case, apostrophes or dashes written any way, one part of it alone, a part hyphenated at the end of a line or in capitalized pieces; a member ID or claim number with its characters joined any way, glued to its label, or its digits written as a calendar date after a label that says they are the number; any of them written across a citation marker or a placeholder; at verifier formats /2 and /3; and through the records, a name and a number each read from its own column",
+  "assertion": "The verifier fails the narrative with `identifier_in_narrative` over what was written (the generator of the written forms is the oracle, never the matcher), its report holds positions only, the version cannot be approved, and the export refuses an approved version once the record is corrected to a name its narrative holds in such a form",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": ["packages/packets/src/verifier-identifiers.test.ts","apps/worker/src/packets/packets.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Narratives are generated in memory by the property test, which writes each identifier and so knows where it is; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

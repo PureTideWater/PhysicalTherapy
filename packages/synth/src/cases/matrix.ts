@@ -628,6 +628,20 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console (but the SDK's own deprecation warning, for a model on its lists, which carries the model id and never request content); the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log, and lets `ANTHROPIC_CUSTOM_HEADERS` replace its key (the control)",
   },
   {
+    id: 'MOD-19',
+    title:
+      "A packet narrative that writes one of the case's own identifiers in a form the letter reader's redaction reads: a name with its marks, case, apostrophes or dashes written any way, one part of it alone, a part hyphenated at the end of a line or in capitalized pieces; a member ID or claim number with its characters joined any way, glued to its label, or its digits written as a calendar date after a label that says they are the number; any of them written across a citation marker or a placeholder; at verifier formats /2 and /3; and through the records, a name and a number each read from its own column",
+    assertion:
+      'The verifier fails the narrative with `identifier_in_narrative` over what was written (the generator of the written forms is the oracle, never the matcher), its report holds positions only, the version cannot be approved, and the export refuses an approved version once the record is corrected to a name its narrative holds in such a form',
+  },
+  {
+    id: 'MOD-20',
+    title:
+      "What a packet narrative is meant to say, beside a case whose identifiers could be read into it: amounts, dates (a year, a month and day, or a month's name that is a number or a name of the case), codes, units, an NPI, a plan identifier the facts hold, another person's Social Security- or phone-shaped number, citation markers, identifier placeholders and fact tokens that spell an identifier, and a label, a placeholder and then a date; generated narratives of such pieces and of written identifiers; the browser's check",
+    assertion:
+      "None of it is read as an identifier, and the code's own draft passes for any case whose identifiers it does not hold; the verifier flags an identifier wherever its whole-word reading or the gateway's narrative reading (`holdsNameOrNumber`, the drafter's check of its facts) holds one outside the tokens, and nowhere that neither they nor the reading across a token do; the drafter's check and the verifier read through one function; the browser's check loads neither the matcher nor the server's reading",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:

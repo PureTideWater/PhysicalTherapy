@@ -1123,3 +1123,45 @@ the contract screen refuses a page holding a dash-, period- or invisible-joined 
 nine). A slash or a closing parenthesis between groups (`202/555-0123`, `202)555-0123`), an OCR space inside a group, a
 semicolon with no space, a number after a digit and an invisible run that also holds an invisible run inside a group,
 and two numbers each wrapped inside a group on lines next to each other are refused by the survivor scan, never sent.
+
+## Amendment (`co-001/packets-verifier-identifier-fold`, 2026-11-11): the reader in a package of its own, and the packet verifier reading through it
+
+**`packages/model-gateway/src/redact.ts` moved, unchanged, to `packages/redact/src/redact.ts` (`@tp/redact`).** The
+packet verifier failed a narrative only for a whole-word occurrence of an identifier, so it passed every form this
+reader folds ([0047](0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md),
+amendment of this date). The verifier cannot import the gateway: the gateway imports `@tp/packets` (a cycle), and its
+entry brings the provider SDKs and the database with it. The reader has no import, so it moved whole into a package
+with no dependency, which the gateway and `@tp/packets` both import. Whole, not cut: the narrative's reading runs
+through `matchesIn`, which shares its views, forms, labels and date reading with the letter's, and a file moved
+unchanged can be checked byte for byte. The gateway's modules import it from `@tp/redact`; the reader's tests stay in
+the gateway, since they need the gateway's functions. `@tp/redact` is under the money-syntax lint rule the file was
+under, and in the web app's `transpilePackages`.
+
+**The narrative's reading has one function, `nameOrNumberMatches`**, which returns each match as a range and whether
+a name or a number matched. `holdsNameOrNumber` (the drafter's check of its facts) is now
+`nameOrNumberMatches(masked(text), …).length > 0`, and the packet verifier reads through the same function, so the
+two cannot come to read different forms; what a later amendment adds to this reading reaches both.
+
+**Each number is read as a member ID and as a claim number there.** The narrative's check is told only that a value
+is a number. The kind decides one thing: a digits-only number written as a calendar date is the number only after a
+label of its kind. Read as both, `Claim 2026-03-05` and `Member ID 2026-03-05` are both the number 20260305. The
+drafter's check read numbers as member IDs only, so it is wider by that one case; nothing it read before is lost
+(a member ID's form has no amount exclusion, and a match of either kind counts).
+
+**Scope is unchanged**: the narrative's reading takes no date of birth, no initial and no Social Security or phone
+number by pattern (amendment of 2026-11-04).
+
+**Still not covered by the narrative's reading** (found by this change's reviews; the letter path's own checks after
+redaction are not part of it):
+
+- a name's letters with a middle dot or a bullet between them (`Quar·rington`: U+00B7, U+2027 and U+30FB join a
+  number, not a name), a part written in a lower-case piece after a space or a period (`Quarring ton`, `Quar.rington`:
+  the rule that keeps "in a" from being INA), and its letters spaced one by one;
+- a name glued to other letters (`DearQuarrington`): the letter path refuses such a letter after redaction
+  (`ownIdentifierGlued`), which is no reading of a narrative.
+
+Each needs a person or a model to mean it; they are recorded for the letter reader's next change, since a joiner
+added to a name there changes what a letter redacts.
+
+**A change to the reader is now a change to the verifier**: `@tp/redact` is in the closure of `@tp/packets`, so the
+mutation workflow runs the packets shards for it (docs/adr/0066, Part 4, amendment of this date).
