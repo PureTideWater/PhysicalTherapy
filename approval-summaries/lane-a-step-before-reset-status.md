@@ -1,6 +1,32 @@
 `LANES.md` Queues item 28: a sign-in step begun before a password reset is refused after it. The next schema PR after password-changed-notice; required before launch. Held by W8 (Lane A, https://claude.ai/code/session_019i9ifE7teUhX79iAZKaxt5) from 2026-11-11 05:48 UTC for the design. **W8 stood down on 2026-11-11 at 07:25 UTC, on the orchestrator's ruling of 07:14 UTC (its context had passed 300k tokens): the build goes to a fresh session at the default effort, from this RESUME-BLOCK. Nothing of the build exists yet.**
 
-## RESUME-BLOCK: step-before-reset, written by W8 for a session with none of its context, 2026-11-11 07:25 UTC
+W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
+
+## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 (build running)
+- **Heads:** WIP ref `co-001/wip-step-before-reset` = **fa553ca4** (on 238e6c64): the migration
+  `20261112090000_sign_in_not_before.sql` (placed through the marker route; applies on a fresh database), the two
+  Drizzle columns, and the provider interface (`removeHardwareKey`; `PasswordResetResult` gains `outcome_unknown`).
+  Local branch `co-001/step-before-reset` in the worktree `/home/user/step-before-reset` (disposable). No PR.
+- **Running:** four forks in that worktree, on disjoint files, none committing: A the database tests
+  (`packages/db/src/sign-in-not-before.db.test.ts`, catalog fixes); B1 the flow (`sign-in.ts`, `sessions.ts`,
+  `pending.ts`, the dev provider, `routes/sign-in.ts`, `sign-in.db.test.ts`; the repro file goes); B2 the Cognito
+  provider (the one-attempt confirm client, the three kinds of answer, `removeHardwareKey`); C infra's three counted
+  lines, ADR 0093, the amendments, the matrix, the runbooks. Their reports land in the session's scratchpad
+  (`fork-a.md` to `fork-c.md`); a hard stop loses uncommitted fork work, so rebuild from design v2 and this list.
+- **The three log lines (the contract between web and infra):** `security event: sign-in step refused after a password
+  reset` (warn; `error_code` the step; counted for every step but `key`); `security event: hardware key registered
+  across a password reset` (error; `removed` or `not_removed`); `security event: password reset outcome unknown` (error).
+- **Next, in order:** read the forks' reports, commit; the e2e case (a second browser context holds the stale code
+  step); regenerate the domain model and `packages/db/functions`; the full local suite once; two adversarial reviews
+  of the build (sign-in and session security; database), none for words (no new words on a screen: confirm it); verify
+  each finding, the fix round, a review of its delta. Then, after password-changed-notice (#140) merges: merge the
+  base, regenerate, open the draft PR with `pnpm db:domain-model --summary-since`, post the approval line as a
+  suggestion, one line to the orchestrator; merge after the founder's committed line and green required checks.
+- **#140's merge step (W6's RESUME-BLOCK in `lane-a-auth-emails-status.md`):** not subscribed yet; the orchestrator
+  sends the PR number when W6 has posted the line. Never before the founder's committed line.
+- **For the PR description, handed-on items, the machine and gitleaks notes:** as W8 wrote them (kept below).
+
+## W8's RESUME-BLOCK (2026-11-11 07:25 UTC), kept for its notes
 
 ### Where things stand
 - **Done:** both cases reproduced on the provider twin; the design, reviewed twice adversarially (sign-in and session
