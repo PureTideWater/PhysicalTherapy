@@ -2,28 +2,45 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 (second review round committed; the suite and its delta review run)
-- **Heads:** WIP ref `co-001/wip-step-before-reset` = **1a6b2e8b** (everything committed; the worktree is clean):
-  the build (f5d1c05e), the first review round (79c98137), the second (1a6b2e8b). Worktree
-  `/home/user/step-before-reset` (disposable), branch `co-001/step-before-reset`. No PR.
-- **Reviews:** of the build, `lane-a-wip/step-before-reset/build-review-security.md` (1 blocking, 4 should-fix) and
-  `build-review-database.md` (0, 2), rulings `build-rulings.md`; of the first round's delta, `fix-delta-review.md`
-  (1 blocking: the ordinary unlock undid the key lock; 4 should-fix), all fixed in 1a6b2e8b. The migration now also
-  replaces `unlock_user()` (a hold until `key_across_reset_cleared`) and adds `sign_in_lock_key_across_reset()`.
-- **Running:** the full local suite once on 1a6b2e8b (the session's scratchpad `suite/summary.txt`); one review of the
-  second round's delta with the one new sentence a person sees (the console's `KEY_HOLD_REFUSAL`), report
-  `fix-delta-review-2.md`. If either finds something: fix, targeted tests, no second full suite.
-- **Next:** after #140 merges: merge the base, regenerate the domain model, open the draft PR with
-  `pnpm db:domain-model --summary-since`, post the approval line as a suggestion, one line to the orchestrator; merge
-  after the founder's committed line and green required checks.
-- **For the PR description, beside W8's three:** the replaced `unlock_user()` and its hold; `tp_app` can place the
-  hold on an account that has reset (the same trust as ten `sign_in_failed`); clearing a hold is the owner's SQL
-  until Queues item 29; the provider facts unverified without a pool (DeleteWebAuthnCredential after a global
-  sign-out; the confirm's error names).
-- **#140's merge step:** subscribed; head 7da699b1 green but for `domain model` (the blank line). Waiting for W6's
-  suggestion and the founder's commit of it.
-- **Log lines (web and infra):** step refused (only `before_reset`); key registered across a reset (`removed`,
-  `not_removed`, `not_removed_not_locked`); reset outcome unknown; crossed account.
+## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 09:20 UTC (built and reviewed; waits for #140 to merge)
+- **Heads:** WIP ref `co-001/wip-step-before-reset` = **47c99ac7** (everything committed; the worktree is clean):
+  the build (f5d1c05e), review rounds one (79c98137), two (1a6b2e8b) and three (47c99ac7). Worktree
+  `/home/user/step-before-reset` (disposable), branch `co-001/step-before-reset`. No PR yet. Still stacked on ffa44ea9;
+  #140's head is 7da699b1 (one test-only commit more), taken with the base merge.
+- **The full local suite ran once, on 1a6b2e8b: every step exit 0** (typecheck, lint, lint:copy, lint:logs,
+  check:fixtures, synth, verify-content, domain model --check --strict; unit 13,376 passed and 4 skipped; infra;
+  golden; oracle; db in four shards 10,202 passed and 1 skipped; build; e2e 87 passed). After it, round three changed
+  three lines of `unlock_user()`, one console sentence, the runbook and one test: its three touched test files pass
+  (106), lint:copy passes. CI is the suite of record for the rest.
+- **Reviews** (`lane-a-wip/step-before-reset/`): the build, `build-review-security.md` (1 blocking, 4 should-fix) and
+  `build-review-database.md` (0, 2), rulings `build-rulings.md`; round one's delta, `fix-delta-review.md` (1 blocking:
+  the ordinary unlock undid the key lock; 4 should-fix), fixed in round two; round two's delta with the console's one
+  new sentence, `fix-delta-review-2.md` (1 blocking: `unlock_user()` read the hold before taking the row; 2
+  should-fix: the sentence, the runbook's clear), fixed in round three exactly as the review specified, with a
+  two-session test. Round three has no review of its own: three lines the review wrote, proven by that test.
+- **Next:** when #140 has merged: merge `claude/build-platform` into the branch, regenerate the domain model and
+  functions on a fresh database, the targeted checks, push `co-001/step-before-reset`, open the draft PR with
+  `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`, fill the template,
+  post the approval line as a suggestion on the document's last line (`gh api .../pulls/<n>/comments`), one line to
+  the orchestrator with the comment's link and the founder's decisions; merge after the founder's committed line and
+  green required checks; stand down.
+- **For the PR description (the founder reads these):** W8's three (the rule holds only once the Cognito client is
+  confidential, ADR 0088's second release; the deploy needs a moment with no reconcile queued or running; the
+  provider's behaviour on a repeated confirm is unproven without a pool); the migration also replaces `unlock_user()`
+  (a hold until the owner records `key_across_reset_cleared`) and adds `sign_in_lock_key_across_reset()`; a key not
+  removed locks the account and only the founder's break-glass clears it until Queues item 29; `tp_app` can place
+  that hold on any account that has reset (the same trust as ten `sign_in_failed`); a crossed account is now refused
+  at sign-in; one new sentence in the console; unverified without a pool: DeleteWebAuthnCredential after a global
+  sign-out, the confirm's error names.
+- **Handed on, for the orchestrator's queue:** W8's four (below); a job that records a reset whose transaction failed
+  twice until it commits; `PasswordHistoryPolicyViolationException` and `UserNotConfirmedException` on the confirm
+  still throw as the platform's failure; the other provider methods rethrow the SDK's error whole.
+- **#140's merge step:** subscribed; head 7da699b1 green but for `domain model` (the blank line) at 09:02 UTC; no
+  suggestion committed yet. A check-in is set for 09:53 UTC. Merge only after the founder's committed line and green
+  required checks, the base merged first if it moved; record it in `lane-a-auth-emails-status.md`; one line to the
+  orchestrator.
+- **Token rule from the orchestrator (09:01 UTC):** at most two subagents at a time, each with a named scope, about
+  20 tool calls and a report file.
 
 ## W8's RESUME-BLOCK (2026-11-11 07:25 UTC), kept for its notes
 
