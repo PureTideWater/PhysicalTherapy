@@ -4,12 +4,28 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 07:06 UTC)
-- **State:** the tests are written and the two adversarial build reviews are delivered; **a fix round is in progress**.
-  WIP `co-001/wip-redact-ssn-phone-leaks` = **360824db** on origin: the code aea2852d and the builder's tests on top (six
-  files, 3,675 tests pass there; typecheck and lint clean). Worktree `/home/user/leaks`, branch
-  `co-001/redact-ssn-phone-leaks`, not on origin; no PR. The fixes are being built in the scratch worktree
-  `/home/user/fix` (uncommitted there) and move to `/home/user/leaks` when they pass the reviewers' reproductions.
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 07:31 UTC)
+- **State:** the fix round for the two build reviews is built: WIP `co-001/wip-redact-ssn-phone-leaks` = **405314b4** on
+  origin (typecheck and lint clean; worktree `/home/user/leaks`, branch `co-001/redact-ssn-phone-leaks`, not on origin; no
+  PR). **26 tests fail there on purpose**: expectations pinned to the code before the fix round (the residual table to
+  regenerate with `residual-scripts/gen-residual6.mts`; nine rows of `redact.leaks.test.ts`; four "recorded residual" rows
+  of `denial-letter.test.ts` that are now refused; one timing row whose near miss `6103034` is now a hit). The base's own
+  property tests (MOD-13, MOD-15, MOD-16) pass.
+- **Measured on the fix round's code:** pinned rows ruling A 697 of 697 (632 refused, 65 redacted), ruling A' 406 of 406
+  (191 redacted, 215 refused), ruling B 5 of 5. Review 1's reproductions: every regression row reads as ef3e8d20 or
+  safer; its fuzzers find no letter ef3e8d20 refused that the head sends (0 of 20,000 each on `fuzz1` and `fuzz2`, 0 of
+  30,000 on `fuzz3`; the earlier reviewer's two: 0 of 10,000 on two seeds each). Review 2's reproductions: 114 of 141 rows
+  read as ef3e8d20 again; the rest are the leak forms now refused and the recorded costs. **The gate, the must-stay
+  fuzzers and the old generator's stress are running on it.**
+- **How the fix round works (design note on this branch, `designs/lane-b-redact-ssn-phone-leaks/design.md`):** the
+  look-alike fold is for the call's own identifiers only; a match ef3e8d20 did not make (a number a label names through
+  the own identifier or a list number; an identifier in a form only this reading reads) is applied by the letter reader
+  only where the scan read as ef3e8d20 read it does not refuse the letter without it; structure decides the glued shape;
+  digit-for-letter forms need five characters.
+- **Next:** read the gate and fuzzers; a review of the fix round's delta (two reviewers: it touches PHI) and the tests
+  brought to the code (a builder); fix what the delta review finds; the final gate; ADR 0054's amendment (draft in
+  `/home/user/work/adr-amendment.md`, not kept, written before the fix round) and the test matrix; the full suite once; the
+  base merged; the push; the draft PR; CI; the merge.
 - **Build review 1, PHI and regressions** (scratch `/home/user/review-b1`, `repro.mts` reproduces every row; all
   reproduced by W5): four regressions against ef3e8d20, two claimed-closed forms still sent, seven major, one minor.
   - B1-1: an invisible character hides the joined digit from the "stands alone" test, so a label read through the own
@@ -45,10 +61,6 @@ counter comes from the orchestrator.
   not written year first is such a range end too); fifteen seeds pass; seven behaviour questions, the ones that change code
   taken into the fix round (an amount with a thousands separator glued after a run; a digit-for-letter form glued inside
   a longer run that a pattern redacts part of).
-- **Next:** finish the fix round in `/home/user/fix`; run the pinned rows, both reviewers' reproductions and fuzzers, the
-  builder's tests (expectations updated) and MOD-16's seeds; a review of the fix round's delta (two reviewers: it touches
-  PHI); the final gate; ADR 0054's amendment (drafted in `/home/user/work/adr-amendment.md`, not kept) and the test
-  matrix; the full suite once; the base merged; the push; the draft PR; CI; the merge.
 - **What 5d10e0de changed, and why (found by comparing two gate runs, 2026-11-11 05:40 UTC):** the commit before it
   (04c2d4a5) had narrowed the read-through of a label over the call's own identifier to "no word but a connecting one
   between the identifier and the number" and taken it out of the scan's read over numbers. Against ef3e8d20 that build
@@ -170,3 +182,4 @@ counter comes from the orchestrator.
 - 2026-11-11T05:47Z (W5): the gate on 04c2d4a5 read no PHI class but closed fewer leaks than f7da95fe; the narrowing withdrawn and two naming faults fixed in 5d10e0de; MOD-23 pinned; a builder writes the tests. (The four entries above first carried clock times that were estimates and wrong; they now carry their commits' times.)
 - 2026-11-11T06:05Z (W5): the gate on 5d10e0de reads no PHI class against either tree, letter for letter as f7da95fe; a currency amount glued to a shape closed in aea2852d (111 gate letters). The builder still writes the tests.
 - 2026-11-11T07:06Z (W5): the builder's tests in (WIP 360824db); both build reviews delivered and reproduced: four regressions against ef3e8d20 and two claimed-closed forms (review 1), five major must-stay findings (review 2). The fix round is in progress in a scratch worktree.
+- 2026-11-11T07:31Z (W5): the fix round for both build reviews is built (WIP 405314b4): every regression row reads as ef3e8d20 or safer, review 1's fuzzers find 0 un-refusals, the pinned rows hold; 26 tests wait for their expectations; the gate runs.
