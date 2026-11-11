@@ -174,6 +174,23 @@ describe('a line’s chain and its interest read by index at 50,000 claims (LED-
     const remittances = (await w.owner.query<{ id: string }>(`SELECT ${id('remittance', 'g')}::text AS id FROM generate_series(0, ${String(REMITTANCES - 1)}) g`)).rows.map((row) => row.id);
     expect(await plan(template, ATTRIBUTION_CLAIMS, [template.practiceId, remittances, [await of(id('remittance', '120'))], []])).toContain('claim_by_superseded');
     expect(await plan(template, CHAIN_ROOTS, [template.practiceId, null, [correction]])).toContain('claim_by_superseded');
+    // Each step of the walk reads its claim by its key, with the planner's statistics and with none: a claim table just
+    // loaded and not yet analyzed has no column statistics, and the walk joined plainly then read every claim of the
+    // practice once a step (a real-size pass did not end; PR 126, CI's db shard 1 on 2026-11-11).
+    const attribution = [template.practiceId, remittances, [await of(id('remittance', '120'))], []];
+    const keyed = /Index (Only )?Scan using claim_pkey on claim taken/;
+    const walks = async () => [await plan(template, ATTRIBUTION_CLAIMS, attribution), await plan(template, CHAIN_ROOTS, [template.practiceId, null, [correction]])];
+    for (const walk of await walks()) {
+      expect(walk).toMatch(keyed);
+    }
+    await w.owner.query("SELECT pg_clear_attribute_stats('public', 'claim', a.attname::text, false) FROM pg_attribute a WHERE a.attrelid = 'public.claim'::regclass AND a.attnum > 0 AND NOT a.attisdropped");
+    try {
+      for (const walk of await walks()) {
+        expect(walk).toMatch(keyed);
+      }
+    } finally {
+      await w.owner.query('ANALYZE claim');
+    }
 
     // The practice's matches in the order the ledger made them (ledgerMatches, the chain's order and the web's lists).
     const ordered = await plan(reader, 'SELECT m.id FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.seq', [reader.practiceId]);

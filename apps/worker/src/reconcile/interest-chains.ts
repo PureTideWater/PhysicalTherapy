@@ -72,8 +72,11 @@ export async function adjustmentMoment(scope: Scope, practiceId: string): Promis
  * The walk back to each claim's root, as CTEs over `wanted (id)`: $1 is the practice, and $2 the remittances a link may
  * reach (null: every remittance of the practice). A loop, which the loader's links never make, ends where it would
  * repeat; of several roots the farthest, then the lowest ID, is taken. The practice is named where the walk takes a
- * claim in (wanted, and p at every step), which scopes the statement; the lookups inside the LATERAL name none, because
- * a practice predicate there moves the planner off the link indexes (measured: CAS-42.3's pass did not end in 30 minutes).
+ * claim in (wanted, and p at every step), which scopes the statement; the link lookups inside the first LATERAL name
+ * none, because a practice predicate there moves the planner off the link indexes (measured: CAS-42.3's pass did not end
+ * in 30 minutes). Each step's claim is read by its key in a LATERAL of its own behind OFFSET 0, which the planner cannot
+ * flatten into a join: joined plainly, a claim table with no column statistics yet (just loaded, not yet analyzed) was
+ * read once a step by every claim of the practice and hashed, and the same pass did not end either (chain.large.db.test.ts).
  */
 const WALK_BACK = `
   up (start, id, path) AS (
@@ -86,8 +89,10 @@ const WALK_BACK = `
         UNION ALL
         SELECT k.id FROM claim k WHERE k.superseded_by_claim_id = u.id AND NOT EXISTS (SELECT 1 FROM claim x WHERE x.id = u.id AND x.reversal_of_claim_id IS NOT NULL)
       ) step
-      JOIN claim p ON p.id = step.id
-     WHERE p.practice_id = $1 AND ($2::uuid[] IS NULL OR p.remittance_id = ANY ($2::uuid[])) AND p.id <> ALL (u.path)),
+      CROSS JOIN LATERAL (
+        SELECT taken.id FROM claim taken WHERE taken.id = step.id AND taken.practice_id = $1 AND ($2::uuid[] IS NULL OR taken.remittance_id = ANY ($2::uuid[])) OFFSET 0
+      ) p
+     WHERE p.id <> ALL (u.path)),
   roots AS (SELECT DISTINCT ON (start) start, id AS root FROM up ORDER BY start, cardinality(path) DESC, id)`;
 
 /** chainRoots' statement: $1 the practice, $2 null (every remittance), $3 the claims. */
