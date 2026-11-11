@@ -794,6 +794,7 @@ const BIRTH_TAIL = /^[\p{Cf}\p{Default_Ignorable_Code_Point}]+\p{N}+/u;
 interface DatesOf {
   readonly births: readonly Range[];
   readonly inOtherDate: (range: Range) => boolean;
+  readonly inWholeDate: (range: Range) => boolean;
   readonly inDateAsRead: (range: Range) => boolean;
 }
 
@@ -856,7 +857,9 @@ function readDatesOf(normal: string, subject: Subject): DatesOf {
   }
   const inOtherDate = within(otherDates);
   const inAsRead = within(asRead);
-  return { births, inOtherDate, inDateAsRead: (range: Range) => inOtherDate(range) && inAsRead(range) };
+  // A date written whole: two numbers or more (a day and a year). "May 2020" and "June 103" are read as a day and a year run together.
+  const inWholeDate = within(otherDates.filter((range) => (normal.slice(range.start, range.end).match(/\p{N}+/gu) ?? []).length >= 2));
+  return { births, inOtherDate, inWholeDate, inDateAsRead: (range: Range) => inOtherDate(range) && inAsRead(range) };
 }
 
 /**
@@ -887,7 +890,7 @@ function birthFormsIn(normal: string, subject: Subject): (range: Range) => boole
 const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 
 function matchesIn(normal: string, subject: Subject): Found[] {
-  const { births, inOtherDate, inDateAsRead } = datesOf(normal, subject);
+  const { births, inWholeDate, inDateAsRead } = datesOf(normal, subject);
   const inBirthForm = birthFormsIn(normal, subject);
   const found: Found[] = births.map((range) => ({ ...range, kind: 'birth' as const, claim: 0 }));
   const view = viewOf(normal, 'join');
@@ -904,7 +907,7 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           pattern.lastIndex = start + codePointAt(view.text, start).length;
           continue;
         }
-        if (inOtherDate(range)) {
+        if (inWholeDate(range)) {
           continue;
         }
         names.push({ start, end });
@@ -1330,7 +1333,7 @@ function decideBare(window: string, length: number, digits: string): Decision {
 /** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
 const OWN_MARK = '\u0003';
 /** After a label's own list number: an ordinal's suffix and a space, or ":", ")" or a full stop with no digit after it. */
-const LIST_NUMBER_AFTER = /^(?:(?:ST|ND|RD|TH)?(?::|\)|\.(?![0-9]))|(?:ST|ND|RD|TH)[ \t])/u;
+const LIST_NUMBER_AFTER = /^[:)]/u;
 /** An SSN or phone label right before its own list number. */
 const PERSON_LABEL_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source})[ \\t]{0,2}[:#]?[ \\t]{0,2}$`, 'u');
 const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
@@ -2157,7 +2160,9 @@ function gluedShape(text: string, groups: readonly ScanGroup[]): boolean {
     if (!TIGHT_JOIN.test(g1) || !TIGHT_JOIN.test(g2)) continue;
     const longer = a.digits.length > 3 || c.digits.length > 4;
     const slashed = g1.includes('/') || g2.includes('/');
-    if (longer && a.digits.length >= 3 && c.digits.length >= 4 && ((b.digits.length === 2 && !slashed) || b.digits.length === 3)) return true;
+    // A date written year first with digits glued after its day ("2020-01-02150.00") is read as cc3dd7f6 read it.
+    const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
+    if (longer && !yearFirst && a.digits.length >= 3 && c.digits.length >= 4 && ((b.digits.length === 2 && !slashed) || b.digits.length === 3)) return true;
   }
   return false;
 }
@@ -2232,8 +2237,8 @@ function strictReason(scan: HeldScan): string | null {
     const right = groups[after];
     const leftGap = left === undefined ? '' : text.slice(left.end, range);
     const rightGap = right === undefined ? '' : text.slice(end, right.start);
-    if (left !== undefined && left.range !== range && /^[^\s\p{L}\p{N}]+$/u.test(leftGap) && SCAN_LABELED_GAP.test(leftGap)) return 'tight-left';
-    if (right !== undefined && right.range !== range && /^[^\s\p{L}\p{N}]+$/u.test(rightGap) && SCAN_LABELED_GAP.test(rightGap)) return 'tight-right';
+    if (left !== undefined && (!left.blocked || left.named) && /^[^\s\p{L}\p{N}]+$/u.test(leftGap) && SCAN_LABELED_GAP.test(leftGap)) return 'tight-left';
+    if (right !== undefined && (!right.blocked || right.named) && /^[^\s\p{L}\p{N}]+$/u.test(rightGap) && SCAN_LABELED_GAP.test(rightGap)) return 'tight-right';
     if (left !== undefined && left.range !== range && !left.blocked && SCAN_GAP.test(leftGap)) return 'free-left';
     if (right !== undefined && (right.digits.length === 9 || right.digits.length === 10) && /^\.?\p{L}+[.:#]?(?:[ \t]{1,3}(?:NO|NUMBER|NBR|NUM|ID)\b[.:#]?)?[ \t]{0,3}$/u.test(rightGap)) return 'glued-noun';
   }
@@ -2297,7 +2302,8 @@ function strictReason(scan: HeldScan): string | null {
     if (!TIGHT_JOIN.test(g1) || !TIGHT_JOIN.test(g2)) continue;
     const longer = a.digits.length > 3 || c.digits.length > 4;
     const slashed = g1.includes('/') || g2.includes('/');
-    if (a.digits.length >= 3 && b.digits.length === 2 && c.digits.length >= 4 && longer && !slashed && !(a.blocked && b.blocked && c.blocked)) return 'embedded-ssn';
+    const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
+    if (a.digits.length >= 3 && b.digits.length === 2 && c.digits.length >= 4 && longer && !slashed && !yearFirst && !(a.blocked && b.blocked && c.blocked)) return 'embedded-ssn';
     if (a.digits.length >= 3 && b.digits.length === 3 && c.digits.length >= 4 && longer && !(a.blocked && b.blocked && c.blocked)) return 'embedded-phone';
   }
   // (4) chains
@@ -2479,12 +2485,19 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
       return true;
     }
     const survivor = survivorLeft(masked(text, claims.length, OWN_MARK, OWN_MARK));
-    return survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held') || (survivor === 'held' && birthBesideItsPlaceholder(text, subject));
+    if (survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held') || (survivor === 'held' && birthBesideItsPlaceholder(text, subject))) {
+      return true;
+    }
+    // A Social Security or phone number's placeholder is a number to what is glued to it: read once more with a digit in its place.
+    return PATTERN_PLACEHOLDER.test(text) && ownIdentifierGlued(masked(text.normalize('NFKC').replace(PATTERN_PLACEHOLDERS, '0'), claims.length, NAME_MARK), subject, survivor === 'held');
   } finally {
     viewsOfCheck = null;
     datesOfCheck = null;
   }
 }
+
+const PATTERN_PLACEHOLDER = /\[(?:SSN|PHONE)\]/u;
+const PATTERN_PLACEHOLDERS = /\[(?:SSN|PHONE)\]/gu;
 
 /** The patient's name placeholder as the glued check reads it (ownIdentifierGlued): no letter, digit or joiner, kept by the fold. */
 const NAME_MARK = '\u0002';
