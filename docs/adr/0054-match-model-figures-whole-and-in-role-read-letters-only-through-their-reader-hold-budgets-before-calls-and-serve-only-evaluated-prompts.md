@@ -1821,11 +1821,55 @@ the gateway exports it.)
   sent, with nothing of the call's shown, where the LF writing is refused. The check reads a CR LF letter twice: the
   gate's slowest letter is a digit and a CR LF repeated to 100,000 characters, 994 ms against 707 ms on the base.
 - *The dearest letter.* A wider match is applied only after the first reading's check has read the letter, so a letter
-  that holds one costs one more check (about 1.7 times the base's time), and a CR LF letter that holds one is checked
-  four times in all (about 2.7 times). Measured idle on the reference machine, in processor time, on the letters
-  crafted to be slow, each with a CR LF and one name written apart added: 2.2 to 2.5 s against 0.8 to 1.0 s on the
-  base, inside the budget of 3 s with the least room of any letter (review B-5; two such letters are budget rows).
-  Time grows with the letter's length and no faster.
+  that holds one costs one more check, and a CR LF letter that holds one was checked four times in all: in both
+  writings before the wider match is applied, and in both after. The figure first recorded here for such letters (2.2
+  to 2.5 s, review B-5) was read under a time helper that the review of `co-001/time-budget-bound` found too lenient,
+  and is withdrawn. Against the plain 3 seconds, on Node 24 at the reference speed, a CR LF letter of 100,000
+  characters with one name written apart took 3.4 to 4.0 s (3.06 s at its best inside the suite); the base's own
+  dearest letter takes 1.1 to 1.5 s. The budget stands, no row was skipped and no number raised, so the reader
+  changed: the work bound below.
+- *The wider reading's work bound* (the orchestrator's ruling of 2026-11-11, this change's last fix round). A cheaper
+  way that keeps the construction was looked for first and not found: a profile of the dearest letter shows the wider
+  reading itself is cheap (it shares the first reading's views, dates and forms), and the time is the first reading's
+  check, run four times where the base runs it once; no change of a few lines removes one of the four and provably
+  keeps every answer. So the work is bounded, and past the bound the letter is refused.
+  - **The count.** The work the wider reading adds is the first reading's check reading the letter again to decide
+    whether a wider match may be applied. It is counted in characters of the text the first reading wrote,
+    placeholders included, which is what that check reads: the text's length, and where it holds a CR LF its length
+    once more with each CR LF written as a line feed (`widerWorkOf`; exactly what `refusedAsFirstRead` is given).
+  - **The bound.** `WIDER_WORK_BOUND` is 100,000 characters: the size of the letter the budget is proved on, so one
+    such letter's worth of re-reading. A letter with a wider match to apply is read as before to 100,000 characters,
+    and to about 50,000 where it holds a CR LF. Past the bound that check is not run and no wider match is applied.
+  - **Past it the letter is refused, never sent on the first reading alone.** The first reading's text by itself may
+    show what the wider reading would have joined (for a patient VAN VANTREE, "Van tree" leaves "tree"), and the check
+    cannot be relied on to find a wider match in a text the first reading has partly replaced. So the letter is
+    returned as the first reading wrote it, every span it replaced still replaced, with one of the checks' own marks
+    (U+0001) after its last character (`unreadPastTheBound`); `holdsIdentifier` refuses any text that holds such a
+    mark at its first line, before it reads anything, as it already refused a letter that writes one itself. The
+    refusal is the check's own: a caller has no second answer to remember, and a caller that runs the check, as every
+    caller must, cannot send the text. Both paths do this (`redactLetterForScreen` and `redactionSpans`, each counting
+    the text its own first reading wrote).
+  - **A count, not a clock.** Nothing in the reader is timed. The same letter has the same answer on every machine and
+    in every run. A letter with nothing for the wider reading to apply does none of this work and meets no bound,
+    whatever its length; the bound is no limit on a letter's size.
+  - **What the bound cannot do.** It only refuses. Under it the reader is, to the character, the reader before it;
+    past it nothing is sent. A letter the base refuses is refused on either side of it. A payer can use it only to
+    have a long letter that writes the call's own name or number in a wider form go to a person.
+  - **Must-stay cost.** A letter whose first reading's text is over 100,000 characters (over about 50,000 with CR LF
+    line endings) and that holds a name written apart, the words of a name's recorded cost ("in a" for a patient INA),
+    or a stored number in its stored writing, goes to a person where it was read before. Measured (synthetic letters
+    only): of the gate's 975,489 letters none can reach the bound (the longest is 1,780 characters; 6,861 hold a CR
+    LF); of the repository's prose (527 texts, 212,338 characters, the longest 9,933), each as written and with every
+    line ending as CR LF, read for each of 64 names (67,456 letters), the bound refuses none, and no letter's answer,
+    sent text or screen candidates differ from the reader before the bound (`scripts/bound-refusals.mts` on
+    `claude/build-ops`). The letters the bound refuses today are the crafted ones of the tests.
+  - **Time now** (Node 24, processor time at the reference calibration, best to worst of six runs;
+    `scripts/bound-time.mts`): the dearest letters still read take 2.0 to 2.2 s. They are a digit and a CR LF repeated
+    to 100,000 characters with nothing for the wider reading to apply (K-1's cost: the check reads both writings), and
+    the same letter with a name written apart at the bound (59,996 characters). Dates written with spaces alone and a
+    CR LF, 100,000 characters: 1.6 to 1.8 s; a letter of dates with a name written apart, at the bound: 1.6 to 2.0 s;
+    with a CR LF as well, at the bound (49,997 characters): 1.5 to 1.7 s. A letter past the bound is refused in 0.4 to
+    0.8 s. Time grows with the letter's length and no faster.
 - *Time otherwise.* The wider reading read the letter's dates a second time and rebuilt the call's forms on every
   call: a letter of dates took about 1.4 times the base's time. The check's stores (the views and dates of a text) are
   now open around each exported reading and shared by both readings (`inOneReading`), and a subject's forms are built
@@ -1857,8 +1901,16 @@ or `{`.
 **Tests.** `src/redact.leaks.test.ts`, `describe('MOD-23 ...')`: the name forms alone and in a held letter, the initial
 beside them, the recorded cost rows, the stored separators, K-1 and two properties (a CR LF letter is refused wherever
 its writing with LF is; no part of the name written with spaces or full stops inside it is sent, whatever the pieces).
-Against f3f5a642's reader 32 of its 39 tests fail. `src/functions/denial-letter.test.ts` holds five letters of 100,000
-characters that write such a name, once among dates and thousands of times, to the 3-second budget.
+Against f3f5a642's reader 32 of its 39 tests fail. `describe('the work bound of the wider reading')`, written before the
+bound and failing without it: the bound's value; a letter read at the bound to the character and refused one character
+past it, with CR LF and without; the count taken on the first reading's text; nothing the first reading redacts shown in
+a letter refused past the bound; the same answer on every run; a letter the first reading refuses refused on either side;
+a letter of any length with nothing for the wider reading read as before; and a property (every letter past the bound
+that holds a name written apart is refused, whatever else it holds). `src/functions/denial-letter.test.ts` holds, to the
+3-second budget: the letters that write such a name once among dates and thousands of times, at the bound and still
+read; two CR LF letters of 100,000 characters with nothing for the wider reading; two CR LF letters with a name written
+apart at the bound; and, refused by the count well inside the budget, the same letters at 100,000 characters, among them
+the two that took 3.4 to 4.0 s.
 
 **Reviews.** Two adversarial reviews of the build, each finding run before any fix (`designs/lane-b-redact-item-26/
 reviews` on `claude/build-ops`). Review A (what is sent; 120,488 generated screens on three seeds, and the stores read

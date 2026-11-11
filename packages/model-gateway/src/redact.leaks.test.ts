@@ -945,6 +945,22 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
       expect(spans.map((span) => span.placeholder)).toEqual(['[PATIENT_NAME]', '[PATIENT_NAME]', '[MEMBER_ID]', '[CLAIM_1]', '[DATE_OF_BIRTH]']);
     });
 
+    it('refuses past the bound by the mark, where the check alone would send the first reading’s text', () => {
+      // For a patient VAN VANTREE the first reading takes "Van" of "Van tree" and leaves "tree"; the wider reading joins
+      // the two. Past the bound the wider match is not applied, and the first reading's text holds nothing the check
+      // reads: without the mark it would be sent with "tree" in clear. With it the letter is refused.
+      const van = patientOf(['VAN VANTREE']);
+      expect(sentOrRefused('Dear Van tree, your claim', van, claims)).toBe('Dear [PATIENT_NAME], your claim');
+      const over = `${FILL.repeat(Math.ceil(WIDER_WORK_BOUND / FILL.length))}Dear Van tree, your claim`;
+      const { text } = redactLetterForScreen(over, van, claims);
+      expect(holdsIdentifier(text, van, claims)).toBe(true);
+      expect(text.endsWith('Dear [PATIENT_NAME] tree, your claim\u0001')).toBe(true);
+      expect(holdsIdentifier(text.slice(0, -1), van, claims)).toBe(false);
+      const spans = redactLetter(over, van, claims).text;
+      expect(holdsIdentifier(spans, van, claims)).toBe(true);
+      expect(holdsIdentifier(spans.slice(0, -1), van, claims)).toBe(false);
+    });
+
     it('gives a letter the same answer, to the character, on every run', () => {
       for (const letter of [padded(WIDER_WORK_BOUND), padded(WIDER_WORK_BOUND + 1), padded(WIDER_WORK_BOUND / 2 + 2, '\r\nThank you.\r\n')]) {
         const once = redactLetterForScreen(letter, patient, claims);
