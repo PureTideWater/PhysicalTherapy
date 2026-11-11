@@ -2,29 +2,28 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 (build running)
-- **Heads:** WIP ref `co-001/wip-step-before-reset` = **fa553ca4** (on 238e6c64): the migration
-  `20261112090000_sign_in_not_before.sql` (placed through the marker route; applies on a fresh database), the two
-  Drizzle columns, and the provider interface (`removeHardwareKey`; `PasswordResetResult` gains `outcome_unknown`).
-  Local branch `co-001/step-before-reset` in the worktree `/home/user/step-before-reset` (disposable). No PR.
-- **Running:** four forks in that worktree, on disjoint files, none committing: A the database tests
-  (`packages/db/src/sign-in-not-before.db.test.ts`, catalog fixes); B1 the flow (`sign-in.ts`, `sessions.ts`,
-  `pending.ts`, the dev provider, `routes/sign-in.ts`, `sign-in.db.test.ts`; the repro file goes); B2 the Cognito
-  provider (the one-attempt confirm client, the three kinds of answer, `removeHardwareKey`); C infra's three counted
-  lines, ADR 0093, the amendments, the matrix, the runbooks. Their reports land in the session's scratchpad
-  (`fork-a.md` to `fork-c.md`); a hard stop loses uncommitted fork work, so rebuild from design v2 and this list.
-- **The three log lines (the contract between web and infra):** `security event: sign-in step refused after a password
-  reset` (warn; `error_code` the step; counted for every step but `key`); `security event: hardware key registered
-  across a password reset` (error; `removed` or `not_removed`); `security event: password reset outcome unknown` (error).
-- **Next, in order:** read the forks' reports, commit; the e2e case (a second browser context holds the stale code
-  step); regenerate the domain model and `packages/db/functions`; the full local suite once; two adversarial reviews
-  of the build (sign-in and session security; database), none for words (no new words on a screen: confirm it); verify
-  each finding, the fix round, a review of its delta. Then, after password-changed-notice (#140) merges: merge the
-  base, regenerate, open the draft PR with `pnpm db:domain-model --summary-since`, post the approval line as a
-  suggestion, one line to the orchestrator; merge after the founder's committed line and green required checks.
-- **#140's merge step (W6's RESUME-BLOCK in `lane-a-auth-emails-status.md`):** not subscribed yet; the orchestrator
-  sends the PR number when W6 has posted the line. Never before the founder's committed line.
-- **For the PR description, handed-on items, the machine and gitleaks notes:** as W8 wrote them (kept below).
+## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 (the fix round running)
+- **Heads:** WIP ref `co-001/wip-step-before-reset` = **f5d1c05e**: the whole build committed (migration, flow, both
+  providers, 31 database tests, infra's three lines, ADR 0093 and the records, the domain model regenerated). Worktree
+  `/home/user/step-before-reset` (disposable), branch `co-001/step-before-reset`. No PR.
+- **Reviews of f5d1c05e, both returned:** `lane-a-wip/step-before-reset/build-review-security.md` (1 blocking, 4
+  should-fix, 8 notes) and `build-review-database.md` (0, 2, 8). Rulings: `build-rulings.md` beside them. No wording
+  review: no new words on a screen.
+- **Uncommitted in the worktree (lost on a hard stop; redo from the rulings):** my revision of the migration
+  (`sign_in_step_refused` answers the reason and records once per account, step and mark; new
+  `sign_in_lock_key_across_reset`; the preflight accepts either spelling); fork F1 (flow fixes: B1 lock on a key not
+  removed, the crossed state refused, never-sent confirms, try/finally, `began` required); fork F2 (database tests,
+  infra, ADR 0093, runbooks, registry); fork E (the e2e case in `apps/web/e2e/sign-in.spec.ts`).
+- **Next, in order:** commit the round; regenerate the domain model and functions; one review of the round's delta;
+  the full local suite once. Then, after #140 merges: merge the base, regenerate, open the draft PR with
+  `pnpm db:domain-model --summary-since`, post the approval line as a suggestion, one line to the orchestrator; merge
+  after the founder's committed line and green required checks.
+- **#140's merge step:** subscribed (2026-11-11 07:20 UTC); head 7da699b1 green but for `domain model` (the blank
+  line). Waiting for W6's suggestion and the founder's commit of it. A check-in is scheduled.
+- **The log lines (web and infra):** `security event: sign-in step refused after a password reset` (only for a start
+  at or before the mark); `security event: hardware key registered across a password reset` (`removed`,
+  `not_removed`, `not_removed_not_locked`); `security event: password reset outcome unknown`; `security event:
+  sign-in refused for a crossed account`.
 
 ## W8's RESUME-BLOCK (2026-11-11 07:25 UTC), kept for its notes
 
