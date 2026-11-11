@@ -27,7 +27,7 @@ own status file and `CLAUDE.md`, not the long history files.
 - **Model:** every session and every subagent runs the model the co-founder chose on 2026-11-10, set on each session. Subagents inherit it; never override it with a smaller model.
 
 ## Token rules (the co-founder's direction: token friendly, no loss of quality)
-- No Workflow fan-outs unless the co-founder opts in. Reviews run as Agent subagents: two adversarial reviews for the database, money, PHI and redaction, auth, security and CI permissions; one for wording, display, tests and dependencies.
+- No Workflow fan-outs unless the co-founder opts in. **The co-founder opted in on 2026-11-11 (about 15:50 UTC), once each, for two bounded, read-only review fan-outs with a fixed budget, run by the orchestrator when each comes due:** (1) a redaction sweep before any real PHI is processed, after the leaks PR (item 3) and Queues item 26 have merged; (2) the final pass before launch across security, tenant isolation and money. Nothing else is opted in; neither is a builder. Reviews run as Agent subagents: two adversarial reviews for the database, money, PHI and redaction, auth, security and CI permissions; one for wording, display, tests and dependencies.
 - Mechanical steps run in the session itself, not in a subagent: base merges, generators, descriptions.
 - While CI runs, subscribe to the PR and end the turn; never poll in a loop (each poll re-reads the session's whole context).
 - Large output (suites, gates, generators, renders) goes to a file; a session reads the counts and the parts it needs.
