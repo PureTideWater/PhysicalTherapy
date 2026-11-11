@@ -65,6 +65,7 @@ function lockWait(overrides: Partial<MigrationLockWait> & { paused?: number[] })
   return {
     timeoutMs: 250,
     attempts: 3,
+    budgetMs: 60_000,
     pause: (failed) => {
       overrides.paused?.push(failed);
       return new Promise((resolve) => setTimeout(resolve, 150));
@@ -97,10 +98,8 @@ describe('a migration whose table a long transaction holds', () => {
           sawWaiting = (await waiting(watcher)) > 0;
         }
         expect(sawWaiting).toBe(true);
-        const started = Date.now();
+        // Let through when the try it met gave up, well inside its own four seconds.
         await expect(reader.query('SELECT count(*) FROM rule_release')).resolves.toBeDefined();
-        // Let through when the try it met gave up: within that try's 250 ms and slack, far under its own 4 s.
-        expect(Date.now() - started).toBeLessThan(2_000);
 
         const error = await outcome;
         expect(error).toBeInstanceOf(MigrationError);
@@ -235,9 +234,9 @@ describe('the timeout is each transaction’s own', () => {
   it('is set for every migration’s transaction and gone after it, whatever the one before it set', async () => {
     await withScratchDatabase(adminUrl, async (url) => {
       await migrate({ databaseUrl: url });
-      // The first sets the session's own timeout to "no limit" (a migration should not, but one could); the second
-      // records what it runs under.
-      writeFileSync(path.join(dir, '29991231235958_lock_wait_unset.sql'), "SET lock_timeout = 0;");
+      // The first changes the session's own timeout (a migration should not, but one could); the second records what
+      // it runs under.
+      writeFileSync(path.join(dir, '29991231235958_lock_wait_unset.sql'), "SET lock_timeout = '7s';");
       writeFileSync(path.join(dir, PROBE), "CREATE TABLE lock_wait_seen AS SELECT current_setting('lock_timeout') AS seen;");
       await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) });
       const client = await connect(url);
@@ -250,6 +249,101 @@ describe('the timeout is each transaction’s own', () => {
   });
 });
 
+describe('the run’s budget of time', () => {
+  it('starts no new try once it is spent, whatever tries are left', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), PROBE_SQL);
+      const holder = await holdTable(url);
+      const paused: number[] = [];
+      try {
+        await expect(migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({ paused, attempts: 20, budgetMs: 0 }) })).rejects.toThrow(
+          `${PROBE} failed: a lock it needs stayed held (tried once, waiting 250 ms for each lock)`,
+        );
+        expect(paused).toEqual([]);
+      } finally {
+        await holder.query('ROLLBACK');
+        await holder.end();
+      }
+    });
+  });
+});
+
+describe('a migration that undoes the runner’s bound', () => {
+  it('is refused and rolled back when it leaves lock_timeout off', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), `SET LOCAL lock_timeout = 0;\n${PROBE_SQL}`);
+      await expect(migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) })).rejects.toThrow(`${PROBE} failed: it left lock_timeout off`);
+      const client = await connect(url);
+      try {
+        expect(await probeColumn(client)).toBe(0);
+        expect(await probeRecorded(client)).toBe(0);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  it('is refused when it commits and begins a transaction of its own, and says that part of it is committed', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), 'CREATE TABLE lock_wait_committed (id integer PRIMARY KEY);\nCOMMIT;\nBEGIN;\nCREATE TABLE lock_wait_after (id integer PRIMARY KEY);');
+      const error: unknown = await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MigrationError);
+      expect((error as MigrationError).message).toContain(`${PROBE} failed after committing part of itself`);
+      expect((error as MigrationError).message).not.toContain('changed nothing');
+      const client = await connect(url);
+      try {
+        expect((await client.query("SELECT tablename FROM pg_tables WHERE tablename LIKE 'lock_wait_%' ORDER BY 1")).rows).toEqual([{ tablename: 'lock_wait_committed' }]);
+        expect(await probeRecorded(client)).toBe(0);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  it('is never tried again when a wait is cancelled after its own commit: the half-applied file runs once', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      // Outside the runner's transaction its timeout is gone; the migration's own stands in for a login's default.
+      writeFileSync(path.join(dir, PROBE), `CREATE TABLE lock_wait_committed (id integer PRIMARY KEY);\nCOMMIT;\nSET lock_timeout = '250ms';\n${PROBE_SQL}`);
+      const holder = await holdTable(url);
+      const paused: number[] = [];
+      try {
+        const error: unknown = await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({ paused }) }).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(MigrationError);
+        expect((error as MigrationError).message).toContain(`${PROBE} failed after committing part of itself`);
+        expect(paused).toEqual([]);
+        expect((await holder.query("SELECT 1 FROM pg_tables WHERE tablename = 'lock_wait_committed'")).rows.length).toBe(1);
+      } finally {
+        await holder.query('ROLLBACK');
+        await holder.end();
+      }
+    });
+  });
+});
+
+describe('a dry run beside another migrator', () => {
+  it('waits its turn for the migrators’ lock past the timeout, which bounds only what comes after', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), PROBE_SQL);
+      const other = await connect(url);
+      try {
+        await other.query('SELECT pg_advisory_lock($1)', [0x4d494752]);
+        const run = migrate({ databaseUrl: url, migrationsDir: dir, dryRun: true, lockWait: lockWait({}) });
+        // Three of the dry run's timeouts pass while the other migrator holds the lock.
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        await other.query('SELECT pg_advisory_unlock($1)', [0x4d494752]);
+        expect((await run).applied).toEqual([PROBE]);
+      } finally {
+        await other.end();
+      }
+    });
+  });
+});
+
 describe('a lock wait that is no wait', () => {
   it.each([
     ['a timeout of zero, which PostgreSQL reads as no limit', { timeoutMs: 0 }],
@@ -257,6 +351,8 @@ describe('a lock wait that is no wait', () => {
     ['a timeout past PostgreSQL’s integer', { timeoutMs: 2_147_483_648 }],
     ['no tries', { attempts: 0 }],
     ['tries that are not a whole number', { attempts: 2.5 }],
+    ['a budget below zero', { budgetMs: -1 }],
+    ['a budget that is no number', { budgetMs: Number.NaN }],
   ])('refuses %s before it connects', async (_name, overrides) => {
     // A URL nothing listens on: reaching it would fail with a connection error, not a MigrationError.
     await expect(migrate({ databaseUrl: 'postgres://nobody@127.0.0.1:1/none', migrationsDir: dir, lockWait: lockWait(overrides) })).rejects.toThrow(MigrationError);

@@ -29,8 +29,9 @@ import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE, bootstrapRoles } from './roles';
  * request, so one waiting migration stops every practice. Each migration's transaction therefore
  * sets `lock_timeout` first (MIGRATION_LOCK_WAIT): a wait that reaches it is cancelled, the
  * transaction is rolled back, which lets the queue behind it go, and the whole migration is tried
- * again after a pause, a bounded number of times. Past the last try the run fails, naming the
- * migration, with nothing of it applied. Only PostgreSQL's own cancellation of a lock wait is
+ * again after a pause, a bounded number of times and never past the run's budget of time. Past the
+ * last try the run fails, naming the migration, with nothing of it applied. A migration that ends
+ * the runner's transaction itself, or leaves lock_timeout off, is refused. Only PostgreSQL's own cancellation of a lock wait is
  * retried: a migration that raises `lock_not_available` itself (the NOWAIT loops of ADR 0083 and
  * later) has already tried for as long as it means to, and fails at once in its own words.
  */
@@ -53,6 +54,8 @@ export interface MigrationLockWait {
   readonly attempts: number;
   /** Waits between tries; `failed` is the number of the try that just timed out (1 for the first). */
   readonly pause: (failed: number) => Promise<void>;
+  /** No new try starts once the whole run has lasted this long, in milliseconds: the run fails instead. */
+  readonly budgetMs: number;
 }
 
 /** The pause after try `failed`: 1 s, 2 s, 4 s, 8 s, then 15 s each time. */
@@ -64,13 +67,18 @@ export function migrationPauseMs(failed: number): number {
  * The deployed values. Two seconds a wait: under the three seconds a signed-in web request waits
  * for a lock (apps/web/src/lib/server/lock-timeout.ts; a web test holds the two apart), so a request
  * queued behind a waiting migration is let through before it would be refused as busy. Twenty tries
- * with pauses of 1, 2, 4, 8 and then 15 seconds: about five minutes in all, the limit the
- * migrations' own lock loops keep (ADR 0083), and the pauses are longer than the waits so the
- * queue drains between tries.
+ * with pauses of 1, 2, 4, 8 and then 15 seconds: about five minutes for a migration that only
+ * waits, the limit the migrations' own lock loops keep (ADR 0083). What queued behind a try is let
+ * go at its cancellation; the pauses leave room for the next job to start and finish. Thirty
+ * minutes for the whole run's retries: the deploy gives the migration task fifty
+ * (infra/lib/constructs/migration-run.ts, MIGRATION_TIMEOUT) and does not stop it at that limit, so
+ * the runner stops trying well before it, with room for one more try of a migration that runs a
+ * five-minute lock loop of its own.
  */
 export const MIGRATION_LOCK_WAIT: MigrationLockWait = {
   timeoutMs: 2_000,
   attempts: 20,
+  budgetMs: 30 * 60_000,
   pause: (failed) => new Promise((resolve) => setTimeout(resolve, migrationPauseMs(failed))),
 };
 
@@ -84,6 +92,9 @@ function checkedLockWait(lockWait: MigrationLockWait): MigrationLockWait {
   }
   if (!Number.isInteger(lockWait.attempts) || lockWait.attempts < 1) {
     throw new MigrationError("the migrations' tries are a whole number, at least 1");
+  }
+  if (!Number.isFinite(lockWait.budgetMs) || lockWait.budgetMs < 0) {
+    throw new MigrationError("the migrations' budget for trying again is a number of milliseconds, zero or more");
   }
   return lockWait;
 }
@@ -184,10 +195,30 @@ const OWNERSHIP_PROBLEMS = `
   ) owned GROUP BY role
   ORDER BY 1`;
 
-/** Runs one migration's SQL as the owner inside the open transaction, then checks role and ownership. */
-async function applyMigration(client: pg.Client, migration: Migration): Promise<void> {
+/** The open transaction's number, which names it after it has ended (pg_xact_status). */
+async function transactionId(client: pg.Client): Promise<string> {
+  const { rows } = await client.query<{ xid: string }>('SELECT pg_current_xact_id()::text AS xid');
+  const xid = rows[0]?.xid;
+  if (xid === undefined) {
+    throw new Error('the transaction has no number');
+  }
+  return xid;
+}
+
+/**
+ * Runs one migration's SQL as the owner inside the open transaction `xid`, then checks that it is
+ * still that transaction, that lock waits are still bounded, and role and ownership.
+ */
+async function applyMigration(client: pg.Client, migration: Migration, xid: string): Promise<void> {
   await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
   await client.query(migration.sql);
+  if ((await transactionId(client)) !== xid) {
+    throw new Error('it ended the transaction the runner opened; a migration never commits, rolls back or begins a transaction itself');
+  }
+  const timeout = await client.query<{ off: boolean }>("SELECT current_setting('lock_timeout')::interval = interval '0' AS off");
+  if (timeout.rows[0]?.off !== false) {
+    throw new Error('it left lock_timeout off; a migration never waits for a lock without limit (docs/adr/0009)');
+  }
   const role = await client.query<{ role: string }>('SELECT current_user AS role');
   if (role.rows[0]?.role !== OWNER_ROLE) {
     throw new Error(`it left the session as ${role.rows[0]?.role ?? 'an unknown role'}; migrations run as ${OWNER_ROLE} and never change role`);
@@ -229,6 +260,24 @@ function lockFailure(migration: Migration, lockWait: MigrationLockWait, tries: n
 }
 
 /**
+ * After a failed try's ROLLBACK: did the transaction the runner opened commit all the same? Only a
+ * migration's own COMMIT does that. Such a file is half applied and not recorded, so it is never
+ * tried again and never reported as having changed nothing. Null when it rolled back, as it should.
+ */
+async function committedAnyway(client: pg.Client, migration: Migration, xid: string | undefined): Promise<MigrationError | null> {
+  if (xid === undefined) {
+    return null;
+  }
+  const { rows } = await client.query<{ status: string | null }>('SELECT pg_xact_status($1::xid8) AS status', [xid]);
+  if (rows[0]?.status !== 'committed') {
+    return null;
+  }
+  return new MigrationError(
+    `${migration.name} failed after committing part of itself: it ended the transaction the runner opened (a migration never commits, rolls back or begins a transaction itself). It is not recorded as applied; compare the database with the file before anything runs again (docs/adr/0009)`,
+  );
+}
+
+/**
  * The dry run: one transaction holding the role bootstrap, every pending migration and its checks,
  * always rolled back. Statements that cannot run in a transaction block fail here as they would in
  * the real run, which also uses a transaction per migration.
@@ -242,10 +291,11 @@ async function dryRun(client: pg.Client, migrations: readonly Migration[], devLo
     await setLockTimeout(client, lockWait);
     await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
     const { pending, done } = await pendingMigrations(client, migrations);
+    const xid = await transactionId(client);
     const applied: string[] = [];
     for (const migration of pending) {
       try {
-        await applyMigration(client, migration);
+        await applyMigration(client, migration, xid);
       } catch (error) {
         // One transaction holds every pending migration, so there is no trying one again: the dry run fails.
         throw isLockTimeout(error) ? lockFailure(migration, lockWait, 1) : failure(migration, error);
@@ -254,7 +304,7 @@ async function dryRun(client: pg.Client, migrations: readonly Migration[], devLo
     }
     return { applied, alreadyApplied: done, dryRun: true };
   } finally {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => undefined);
   }
 }
 
@@ -262,7 +312,10 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
   const migrations = readMigrations(options.migrationsDir);
   const lockWait = checkedLockWait(options.lockWait ?? MIGRATION_LOCK_WAIT);
   const client = new pg.Client({ connectionString: options.databaseUrl });
+  // A connection lost while the run pauses between tries is reported by the next statement, not thrown from nowhere.
+  client.on('error', () => undefined);
   await client.connect();
+  const started = Date.now();
   try {
     if (options.dryRun === true) {
       return await dryRun(client, migrations, options.devLogin === true, lockWait);
@@ -275,19 +328,28 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
       const applied: string[] = [];
       for (const migration of pending) {
         for (let attempt = 1; ; attempt += 1) {
-          await client.query('BEGIN');
+          let xid: string | undefined;
           try {
+            await client.query('BEGIN');
             await setLockTimeout(client, lockWait);
-            await applyMigration(client, migration);
+            xid = await transactionId(client);
+            await applyMigration(client, migration, xid);
             await client.query('COMMIT');
             break;
           } catch (error) {
-            // The rollback gives up every lock the try took and the place in the queue it waited at.
-            await client.query('ROLLBACK');
+            // A cancelled wait has already given up its place in the queue and the try's locks; the rollback ends
+            // the transaction. On a lost connection there is nothing to roll back and the first error is the news.
+            const committed = await client
+              .query('ROLLBACK')
+              .then(() => committedAnyway(client, migration, xid))
+              .catch(() => null);
+            if (committed !== null) {
+              throw committed;
+            }
             if (!isLockTimeout(error)) {
               throw failure(migration, error);
             }
-            if (attempt >= lockWait.attempts) {
+            if (attempt >= lockWait.attempts || Date.now() - started >= lockWait.budgetMs) {
               throw lockFailure(migration, lockWait, attempt);
             }
             await lockWait.pause(attempt);
@@ -297,10 +359,11 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
       }
       return { applied, alreadyApplied: done, dryRun: false };
     } finally {
-      await client.query('RESET ROLE');
-      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK]);
+      // On a lost connection neither can run, and the server has already given both back.
+      await client.query('RESET ROLE').catch(() => undefined);
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK]).catch(() => undefined);
     }
   } finally {
-    await client.end();
+    await client.end().catch(() => undefined);
   }
 }

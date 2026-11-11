@@ -274,8 +274,9 @@ describe('the migrations’ lock wait', () => {
     expect(new Set(pauses.slice(4))).toEqual(new Set([15_000]));
     const total = pauses.reduce((sum, pause) => sum + pause, 0) + MIGRATION_LOCK_WAIT.attempts * MIGRATION_LOCK_WAIT.timeoutMs;
     expect(total).toBe(280_000);
-    // Every pause but the first is at least as long as a wait, so the queue behind a try drains before the next.
-    expect(Math.min(...pauses.slice(1))).toBeGreaterThanOrEqual(MIGRATION_LOCK_WAIT.timeoutMs);
+    // The run's retries end at thirty minutes: the deploy gives the migration task fifty (infra/test/compute.test.ts
+    // pins that number) and does not stop it there, so twenty minutes are left for a last try.
+    expect(MIGRATION_LOCK_WAIT.budgetMs).toBe(30 * 60_000);
     expect(migrationPauseMs(0)).toBe(1_000);
   });
 

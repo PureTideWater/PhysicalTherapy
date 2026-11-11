@@ -11,6 +11,12 @@ LEVEL SECURITY, and a row in the PHI table registry. Global tables get a REVOKE 
 app role. Update the Drizzle schema. Run pnpm db:migrate locally, then pnpm test:db. Report tables touched and
 whether the migration is safe with the previous image running (add, backfill, remove).
 
+The runner bounds every lock wait and tries a migration again when a wait is cancelled (docs/adr/0009, the amendment
+of 2026-11-11), so a migration never contains COMMIT, ROLLBACK, BEGIN or a `lock_timeout` of zero (the runner refuses
+each), and never catches every error (`EXCEPTION WHEN OTHERS`) or `lock_not_available` around a statement that can
+wait for a lock, only around `NOWAIT`: the handler would swallow the cancellation and record the migration with that
+statement undone. Everything in it must be safe to run again from its first line.
+
 Regenerate docs/product/domain-model.md in the same pull request (pnpm db:domain-model --out --strict on a freshly
 migrated database) and open the pull request's description with the output of
 `pnpm -s db:domain-model --summary-since origin/<base branch> --function-diffs list` (docs/adr/0063; docs/adr/0068):

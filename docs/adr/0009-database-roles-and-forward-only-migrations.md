@@ -90,8 +90,11 @@ migration without such a loop.
    migration is let through before it would be answered `busy`.
 2. When PostgreSQL cancels a wait at that limit, the runner rolls the migration's transaction back, which gives up
    its place in the queue and every lock the try took, pauses, and tries the whole migration again: **twenty tries**,
-   pausing 1, 2, 4 and 8 seconds and then 15 seconds each time, about five minutes in all (the limit ADR 0083's loops
-   keep). The pauses are longer than the waits, so what queued behind a try drains before the next.
+   pausing 1, 2, 4 and 8 seconds and then 15 seconds each time, about five minutes for a migration that only waits
+   (the limit ADR 0083's loops keep). What queued behind a try is let go at the cancellation itself; the pauses leave
+   room for the next job to start and finish. No new try starts once the whole run has lasted **thirty minutes**: the
+   deploy gives the migration task fifty (`MIGRATION_TIMEOUT`, infra) and does not stop the task at that limit, so the
+   runner stops trying well inside it. Each number is pinned by a test beside it.
 3. Past the last try the run fails with "`<file>` failed: a lock it needs stayed held (tried 20 times, waiting 2000 ms
    for each lock); it changed nothing; run the deploy again when no long job is running (docs/adr/0009)", exit code
    1. The migrations before it in the same run stay applied (each commits on its own) and no service moves
@@ -105,11 +108,26 @@ migration without such a loop.
    transaction holds every pending migration, so a cancelled wait fails the dry run, which changes nothing either way.
 6. The migrators' advisory lock is still waited for without limit: it queues no reader, and a second migrator's turn
    comes when the first ends.
+7. A migration that undoes the bound is refused. After a migration's SQL the runner checks that the transaction is
+   still the one it opened (by its number) and that `lock_timeout` is not off, and rolls back otherwise. After any
+   failed try it asks PostgreSQL whether that transaction committed all the same (`pg_xact_status`), which only a
+   `COMMIT` inside the migration causes: such a file is never tried again, and the run fails with "failed after
+   committing part of itself … compare the database with the file before anything runs again", never with "it changed
+   nothing". (A `COMMIT` inside a migration was always wrong; before this, it went unseen.)
+8. A migration never catches every error around a statement that can wait for a lock (`EXCEPTION WHEN OTHERS`, or a
+   handler for `lock_not_available` around anything but `NOWAIT`): the handler would swallow the cancellation and
+   the migration would be recorded with that statement undone. No migration does; the new-migration skill says so.
+   The runner does not scan for it: a text match would refuse sound handlers and miss dynamic SQL.
+9. A lost connection is reported as that migration's failure in the runner's own line, and the server rolls the open
+   transaction back.
 
 **What it does not bound.** Once a migration holds a table's lock, readers wait until it commits: how long a
 migration may hold a lock is each migration's design (the add, backfill and remove rule; the new-migration skill). A
-migration with its own `NOWAIT` loop runs that loop again on every try, so its worst case is the tries times its loop;
-in practice a try is repeated only after a cancelled wait. A migration may set a `lock_timeout` of its own after the
+migration with its own `NOWAIT` loop runs that loop again on every try; a try is repeated only after a cancelled
+wait, and never once the run has lasted thirty minutes, so the last try of such a migration can end some six minutes
+past that. A retry repeats the work a try did under the locks it already held. The deploy's custom resource still
+does not stop the task at its fifty minutes, and a second deploy would wait behind a running one on the advisory
+lock: both are the deploy's to close (proposed to the queue). A migration may set a `lock_timeout` of its own after the
 runner's; none does today.
 
 | Option | Why not |
