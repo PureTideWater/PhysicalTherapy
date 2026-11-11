@@ -3,9 +3,37 @@
 Lane A, W15 (https://claude.ai/code/session_019i9if9aX9NMhnMVmJCk4BM), from 2026-11-11 18:12 UTC. It took the chain
 from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
 
+## BLOCKED, W16, 2026-11-11 22:50 UTC: the migration's marker route was refused by this session's permission check
+- **Why a change is wanted.** W15's own database review turned up after W16's (`lane-a-wip/schema-pr4/review-database-w15-run.md`).
+  W16 checked it and takes two things that change the migration:
+  - **S1 (real):** the preflight reads every document against every version while ACCESS EXCLUSIVE on
+    `source_document` is held (13.4 s at 1,000,000 documents and 100 versions by that review's measurement; 0.25 s asked
+    of `payer_response`). Fix: count the documents the responses name that a version of the same practice names; never
+    read `source_document`. Same count (a response's document has been its practice's since migration 20261023090000).
+  - **N1 (real, owner role only):** nothing refuses a change of `parent_document_id`, so the owner role can make an
+    entry whose link is not its zip's, or an unfiled entry of a filed zip that a version accepts. Fix: one refusal in
+    `source_document_rules()`'s UPDATE block. Checked: tp_app has no UPDATE on the column, no code and no foreign-key
+    action changes it.
+  - Not taken: S2 (the crossing; already in ADR 0085's amendment, the web's), S3 (already fixed by 217e96ce's search
+    path, which also covers a temp table named `submission`: `pg_temp` is last), N2 (superuser only, unchanged in
+    kind), N3 (a cap before the locks: any role can take advisory locks itself; the web caps at 100), N4 (no defect),
+    N5 (the runbook's "scan" corrected, 0e38fd73), N6 (the runbook already says it).
+- **What is ready.** The kit is changed and built: `lane-a-wip/schema-pr4/template.sql`, `build.py`, and the built file
+  beside them (419 lines; its diff from the committed migration is the preflight's query and comment, and the
+  zip-move refusal and its comment). Two tests written and seen to FAIL on the unchanged migration, as
+  `lane-a-wip/schema-pr4/pending-tests-for-s1-n1.patch` (not on the branch, which stays green at **0e38fd73**).
+- **What was refused.** The one command of W15's block (the marker, the copy of the built file over
+  `packages/db/migrations/20261114090000_payer_response_document_rules.sql`, the marker removed in a trap) was denied
+  once by the permission check. W16 did not retry or route around it. No marker file was left.
+- **To resume once the co-founder allows it (or does the copy):** in `/home/user/pr4`: the copy; `git apply` the patch;
+  a fresh database, `pnpm db:migrate`, `pnpm -s db:domain-model --out --strict`, `--check --strict`; the three test
+  files (59 expected); one delta review (database: the preflight's equivalence and the zip-move refusal only); then
+  the block below from "Next". If the co-founder rules the change is not to be made, drop the patch and the built
+  file, and state S1 and N1 in the PR description as known and not taken.
+
 ## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-11 19:30 UTC; schema PR 4 only; #143's merge step stays W15's, block below)
 - **State: steps 1 and 2 are done; PR 4 waits only for #143 to merge.** WIP ref `co-001/wip-payer-response-db-rules`
-  = **f8732bda** (on #143's head a3a32024). Worktree `/home/user/pr4`, branch `co-001/payer-response-db-rules`
+  = **0e38fd73** (on #143's head a3a32024). Worktree `/home/user/pr4`, branch `co-001/payer-response-db-rules`
   (a successor makes it with W15's command in the block below, from the WIP ref).
 - **Reviews, both done, no migration or function change after 217e96ce, so no delta review:** tenant isolation
   (`lane-a-wip/schema-pr4/review-tenant-isolation.md`), database (`lane-a-wip/schema-pr4/review-database.md`, run by

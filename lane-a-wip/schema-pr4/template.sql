@@ -68,15 +68,19 @@ $$;
 -- migration stops and changes nothing, saying how many (a count only: no id, no text): a version holding such a
 -- document could otherwise never be edited or amended again (docs/runbooks/deploy-and-rollback.md). Every practice
 -- is in scope for the read (deleted ones included), as migration 20261109090000's backfill; the scope is emptied after.
+-- The question is asked of the responses and the versions, the two small tables, and never by reading every document:
+-- source_document is held in ACCESS EXCLUSIVE while this runs, and it is the table that grows with every upload. A
+-- response's document is a document of the response's practice (payer_response_belongs() has refused any other since
+-- migration 20261023090000), so counting the documents the responses name counts the same documents.
 SELECT set_config('app.practice_ids', coalesce((SELECT array_agg(id)::text FROM practice), '{}'), true);
 DO $$
 DECLARE
   both_uses bigint;
 BEGIN
-  SELECT count(*) INTO both_uses
-    FROM source_document d
-   WHERE EXISTS (SELECT 1 FROM payer_response r WHERE r.practice_id = d.practice_id AND r.document_id = d.id)
-     AND EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = d.practice_id AND d.id = ANY (v.source_document_ids));
+  SELECT count(DISTINCT r.document_id) INTO both_uses
+    FROM payer_response r
+   WHERE r.document_id IS NOT NULL
+     AND EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = r.practice_id AND r.document_id = ANY (v.source_document_ids));
   IF both_uses > 0 THEN
     RAISE EXCEPTION '% document(s) are named by a payer response and by a contract version; nothing was changed (docs/runbooks/deploy-and-rollback.md)', both_uses USING ERRCODE = 'check_violation';
   END IF;
@@ -113,7 +117,10 @@ CREATE INDEX payer_response_by_document ON payer_response (practice_id, document
 --   latest" whether or not this check waited, and a response may name the letter either way. The checks run whether or
 --   not the practice is in the transaction's scope: out of scope the lookups find nothing and the insert is refused.
 -- - a zip's entry takes its zip's link (set here, so no writer can forget it), and one that names another is refused;
--- - the link never changes.
+-- - the link never changes;
+-- - a document stays under the zip it was inserted under, or under none. The application role has never held UPDATE
+--   on parent_document_id; this refuses the owner role too, since a document moved under or out of a zip would be an
+--   entry whose link is not its zip's.
 -- One attribute is added: SET search_path = pg_catalog, public, pg_temp, as every later trigger function of this
 -- schema has. The function had none, so the "source_document" it reads a zip's row from was whatever the session's
 -- search path found first, a temporary table of that name included; a zip's link read from there could name another

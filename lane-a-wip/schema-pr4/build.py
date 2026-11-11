@@ -87,6 +87,9 @@ sdr = sub(sdr,
     IF NEW.filed_for_submission_id IS DISTINCT FROM OLD.filed_for_submission_id THEN
       RAISE EXCEPTION 'the submission a document was filed for never changes' USING ERRCODE = 'check_violation';
     END IF;
+    IF NEW.parent_document_id IS DISTINCT FROM OLD.parent_document_id THEN
+      RAISE EXCEPTION 'the zip a document was inserted under, or none, never changes' USING ERRCODE = 'check_violation';
+    END IF;
 """)
 tpl = open('template.sql').read()
 for k, v in dict(CASE_LINE_RULES=clr, CONSOLE_CONTRACT_QUEUE=ccq, PAYER_RESPONSE_BELONGS=prb, SOURCE_DOCUMENT_RULES=sdr).items():
