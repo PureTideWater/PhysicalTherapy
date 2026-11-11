@@ -1,0 +1,62 @@
+2026-11-11T12:55:48Z queue start: tree 98965a74d67e06a8009182f2a516aaeffc70bbc1 draft sha256 9f0d553046486acd
+2026-11-11T12:55:48Z seed R 2000
+1.8 s database migrated and release loaded (tp_test_d065c8a57a2c4147b612cd4340fbaa79)
+2.6 s original 835s loaded: 500 claims
+3.9 s priced
+5.1 s triaged: 2000 case lines, 2000 actionable
+9.2 s reprocessing 835s loaded: 25 checks
+9.8 s seeded cap3_r_2000_seed: 1500 claims, 500 superseded, 2000 posting rows
+2026-11-11T12:56:01Z seed R 2000 done rc 0
+2026-11-11T12:56:01Z run cap3_r_2000_seed none rec
+cap3_r_2000_none_rec exit 0: pass 54704 ms; statements 14068; sql 52820 ms; ts 1875 ms; heap peak 102.5 MiB; locks/backend 1
+2026-11-11T12:57:02Z run cap3_r_2000_seed none rec done rc 0
+2026-11-11T12:57:02Z run cap3_r_2000_seed pr2 rec
+cap3_r_2000_pr2_rec exit 0: pass 18763 ms; statements 14068; sql 17108 ms; ts 1645 ms; heap peak 102.5 MiB; locks/backend 1
+2026-11-11T12:57:28Z run cap3_r_2000_seed pr2 rec done rc 0
+2026-11-11T12:57:28Z compare cap3_r_2000 rec: cap3_r_2000_pr2_rec.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (20635 rows: audit_event 2626, case 5, ledger_entry 4000, ledger_match 4000, line_status 8000, posting_row 2000, source_document 4); entry cents by stage {"approved": 6000000, "posted": 6000000}
+2026-11-11T12:57:28Z seed F 10000 x
+1.3 s database migrated and release loaded (tp_test_1d0ce9f0f3ba4f329c1163cd6089436c)
+4.4 s original 835s loaded: 2847 claims, 10000 lines
+18.0 s priced
+23.9 s triaged: 1 case(s), 10000 case lines, 10000 actionable
+35.4 s reprocessing 835 1 of 2 loaded
+41.1 s reprocessing 835 2 of 2 loaded
+59.3 s other tenant A: 100000 lines
+63.6 s other tenant B: 20000 lines
+84.3 s other tenant D: 100000 lines
+103.8 s other tenant E: 100000 lines
+104.8 s seeded cap3_fx_10000_seed: 2847 original claims, 8541 claims, 2847 superseded, 10000 posting rows
+2026-11-11T12:59:15Z seed F 10000 done rc 0
+2026-11-11T12:59:15Z run cap3_fx_10000_seed none rec
+cap3_fx_10000_none_rec exit 0: pass 226753 ms; statements 70186; sql 218182 ms; ts 8561 ms; heap peak 144.4 MiB; locks/backend 1
+2026-11-11T13:03:18Z queue 2 start: tree 3caf11788a83f18dc0847d9c748926e2e5d080a8 seeds from 3bff4fd60cae03b31a317c1c6f24d109f2b2982f draft sha256 9f0d553046486acd
+2026-11-11T13:03:18Z run cap3_fx_10000_seed pr2 rec
+cap3_fx_10000_pr2_rec exit 0: pass 76002 ms; statements 70186; sql 68388 ms; ts 7603 ms; heap peak 159.7 MiB; locks/backend 1
+2026-11-11T13:04:45Z run cap3_fx_10000_seed pr2 rec done rc 0
+2026-11-11T13:04:48Z compare cap3_fx_10000 rec: cap3_fx_10000_pr2_rec.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (102907 rows: audit_event 12897, case 1, ledger_entry 20000, ledger_match 20000, line_status 40000, posting_row 10000, source_document 9); entry cents by stage {"approved": 161270000, "posted": 161270000}
+2026-11-11T13:04:48Z base worktree install
+2026-11-11T13:04:51Z base worktree install rc 0
+2026-11-11T13:04:51Z seed F 30795 x (from the base worktree)
+1.3 s database migrated and release loaded (tp_test_e4a83e9cc6f54e2aad4d85bf1ff8ee13)
+10.8 s original 835s loaded: 8757 claims, 30795 lines
+162.4 s priced
+182.7 s triaged: 1 case(s), 30795 case lines, 30795 actionable
+199.4 s reprocessing 835 1 of 5 loaded
+217.1 s reprocessing 835 2 of 5 loaded
+237.9 s reprocessing 835 3 of 5 loaded
+260.4 s reprocessing 835 4 of 5 loaded
+269.9 s reprocessing 835 5 of 5 loaded
+287.6 s other tenant A: 100000 lines
+292.8 s other tenant B: 20000 lines
+314.3 s other tenant D: 100000 lines
+335.3 s other tenant E: 100000 lines
+336.6 s seeded cap3_fx_30795_seed: 8757 original claims, 26271 claims, 8757 superseded, 30795 posting rows
+2026-11-11T13:10:31Z seed F 30795 done rc 0
+2026-11-11T13:10:31Z run cap3_fx_30795_seed pr2 rec
+cap3_fx_30795_pr2_rec exit 0: pass 333192 ms; statements 216046; sql 307882 ms; ts 25295 ms; heap peak 274.8 MiB; locks/backend 1
+2026-11-11T13:16:28Z run cap3_fx_30795_seed pr2 rec done rc 0
+2026-11-11T13:16:28Z run cap3_fx_30795_seed none rec
+cap3_fx_30795_none_rec exit 0: pass 1745531 ms; statements 216046; sql 1717112 ms; ts 28405 ms; heap peak 274.5 MiB; locks/backend 1
+2026-11-11T13:45:57Z run cap3_fx_30795_seed none rec done rc 0
+2026-11-11T13:46:05Z compare cap3_fx_30795 rec: cap3_fx_30795_pr2_rec.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (316770 rows: audit_event 39602, case 1, ledger_entry 61590, ledger_match 61590, line_status 123180, posting_row 30795, source_document 12); entry cents by stage {"approved": 494780000, "posted": 494780000}
+2026-11-11T13:46:05Z queue 2 end

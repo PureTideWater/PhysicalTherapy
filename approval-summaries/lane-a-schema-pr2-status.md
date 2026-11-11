@@ -4,41 +4,50 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 13:00 UTC)
-- **State:** building on a WIP ref; **BLOCKED on one step**: the migration file is not in `packages/db/migrations`.
-  This session's permission classifier refused the new-migration marker route (the one shell command that sets
-  `.claude/.allow-protected-edit`, writes the file and removes the marker in a trap). Per `lanes/acting-lane-a-brief.md`:26
-  the part is stopped, the orchestrator was told (11:31 UTC), and nothing routes around it. Everything else proceeds.
-- **13:00 UTC:** #142 merged (base **3bff4fd6**); the base is merged into the WIP ref (98965a74; both bodies still
-  f151e27e… and abbcba68…; nothing under `apps/worker`, `packages/ledger` or `packages/db/src/authz` moved). The
-  container restarted at 12:54 UTC: setup re-run (OK), the private cluster restarted, the checkout had been put back on
-  `claude/build-platform` (check `git status -sb` after any restart and `git checkout co-001/wip-ledger-function-bodies`).
-  **Running: the write-equality run of record** on 98965a74 (output `<scratch>/pr2-record`, queue.log there; draft
-  SHA-256 9f0d5530…, which the placed migration must equal: `sha256sum packages/db/migrations/20261113090000_ledger_lookups.sql`).
-  ADR 0093's status line does not ride in this PR (told to the orchestrator; it rides PR 3).
-- **WIP ref:** `co-001/wip-ledger-function-bodies` (cut from edab4d4d). PR branch, when it opens: `co-001/ledger-function-bodies`.
-  It must not open before #142 merges (one schema PR at a time); then merge the base, place the migration, regenerate
-  `domain-model.md` and `packages/db/functions`, re-run the dumps on that tree, open the draft PR.
-- **The migration's draft:** `approval-summaries/lane-a-wip/schema-pr2/migration-draft-20261113090000_ledger_lookups.sql`,
-  written by `mk-draft.sh` beside it (comments from the script, the two statements cut byte for byte from the ask's SQL
-  blocks). To place it (whoever is permitted), one command from the checkout's root, then check the marker is gone:
-  `touch .claude/.allow-protected-edit; trap 'rm -f .claude/.allow-protected-edit' EXIT; cp /home/user/ops/approval-summaries/lane-a-wip/schema-pr2/migration-draft-20261113090000_ledger_lookups.sql packages/db/migrations/20261113090000_ledger_lookups.sql`
-- **Done on the WIP ref (5 commits on edab4d4d):** both test files, reconciliation-001's freeze-list entry, ADR 0087's
-  dated note (figures, the plan-state table, the middle-state measurement). typecheck, lint (the two files), lint:copy,
-  lint:logs and check:fixtures pass. The worker test on the base: the 4 plan cases fail as required, 7 pass. The
-  `packages/db` test has never run (it reads the migration file). The PR description's draft:
-  `lane-a-wip/schema-pr2/pr-description-draft.md`. The every-state body is a candidate for schema PR 5's ask (the
-  orchestrator logged it, 11:50 UTC).
-- **Measurement kit:** `lane-a-wip/schema-pr2/probe/` (cluster.sh, queue.sh, run.sh, run-fill.sh, dump.py, compare.py)
-  plus SUITE-CAP-3's `probe/common.mts, pass.mts, seed.mts` and `probe-rev/seedF.mts`, copied into one scratch folder;
-  private cluster on port 5494 at /root/pr2-pg (`cluster.sh up /root/pr2-pg`); queue: `S=<scratch> TP_REPO=<checkout>
-  DRAFT=<the migration's text> queue.sh "seedR 2000" "run cap3_r_2000_seed none w1" "run cap3_r_2000_seed pr2 w1"
-  "cmp cap3_r_2000 w1" "seedF 10000" … "seedF 30795" …` (about 50 minutes; A's month before is 30 of them).
-  For the run of record, seed from a checkout WITHOUT the migration (the base), state `pr2` applies the placed file.
-- **Next steps, in order:** (1) the migration placed; (2) `pnpm test:db` files `apps/worker/src/reconcile/ledger-lookups.db.test.ts`
-  and `packages/db/src/ledger-lookups.db.test.ts` green; (3) ADR 0087's dated note with the re-measured figures;
-  (4) the two adversarial reviews: round 1 done on the draft (below); a delta review once the migration is placed; (5) wait for #142's merge (W10 tells the orchestrator); (6) base merge,
-  generators, dumps re-run, full local suite once, push, draft PR, the suggested approval line, subscribe.
+## RESUME-BLOCK (current at 2026-11-11 13:50 UTC)
+- **State:** the migration is PLACED (13:01 UTC, on the co-founder's word in this session: the one marker command; the
+  file equals the reviewed draft, SHA-256 9f0d5530…; the marker is gone) and everything is built and reviewed on
+  `co-001/wip-ledger-function-bodies` at **c4272c33** (base 3bff4fd6 merged). No blocker.
+- **Running:** the full local suite once (`lane-a-wip/schema-pr2/suite.sh`; logs in `<scratch>/suite/`, `summary.txt`
+  one line a step). The mutation run is CI's (no source file a mutation shard covers changes).
+- **Next, in order:** (1) the suite green (a red step: read its log, fix, re-run that step); (2) `git fetch`; if
+  `origin/claude/build-platform` moved past 3bff4fd6, merge it, re-run the fast checks and `db:domain-model --check`
+  on a fresh database (and the dumps only if `apps/worker/src/reconcile`, `packages/ledger` or a ledger migration
+  moved); (3) `git push origin co-001/wip-ledger-function-bodies:co-001/ledger-function-bodies`; (4) open the DRAFT PR
+  into `claude/build-platform` with `lane-a-wip/schema-pr2/pr-description-draft.md` (fill the Checks table and the
+  Domain model section from `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs
+  list`; the WIP copy is `dm-summary-wip.md`); (5) subscribe; when CI is green but for the blank approval line, post
+  the suggested line as ONE pull-request comment through `gh api repos/PureTideWater/PhysicalTherapy/pulls/<n>/comments`
+  on the last line of `docs/product/domain-model.md` (the line `--check --require-approval` names: Tyler Williams,
+  the date, the document hash, today 47fae5d1…); never write it; (6) send the orchestrator the link with the
+  description's "For the founder to read" section; (7) merge only after the founder's "Commit suggestion" and green
+  required checks; then unsubscribe and record the merge.
+- **Not in this PR:** ADR 0093's status line (rides PR 3); step 7b's move (a no-migration follow-up); the every-state
+  `ledger_line_net` body (candidate for schema PR 5's ask); a guard on `service_line.practice_id` (proposal).
+- **After any restart:** setup script if PostgreSQL is down; `git -C /home/user/PhysicalTherapy checkout
+  co-001/wip-ledger-function-bodies` (a restart put the checkout back on `claude/build-platform` once).
+
+## The run of record (the tree the PR merges onto: base 3bff4fd6; `run-of-record-compare.txt`, `run-of-record-queue.log`)
+Seeds migrated from the base without the migration; before = those bodies (hashes abbcba68…/f151e27e… recorded per
+run), after = the placed migration applied as tp_owner in one transaction (834cdefc…/5d0a94c0… recorded per run).
+| seed | pass before | pass after | `ledger_line_net` | `ledger_entry_rules` | dumps |
+| --- | ---: | ---: | ---: | ---: | --- |
+| spread R, 2,000 lines | 54.7 s | 18.8 s | 36.8 s to 3.1 s | 2.1 s to 1.3 s | IDENTICAL row for row, in order, `seq` included (20,635 rows) |
+| F, 10,000 lines | 226.8 s | 76.0 s | 94.8 s to 2.2 s | 54.4 s to 3.9 s | IDENTICAL (102,907 rows) |
+| A's month, 30,795 lines | 1,745.5 s | 333.2 s | 858.9 s to 7.4 s | 565.3 s to 15.5 s | IDENTICAL (316,770 rows); 30,795 approved, posted and recovered; 494,780,000 cents posted, in both |
+
+Not a quiet container throughout: the delta reviews (psql only) and this session's pushes ran beside A's "after"
+pass. The first run (below) is the quieter one for A's "after" (317.1 s).
+
+## Reviews, round 2 (delta; `review-database-delta.md`, `review-money-delta.md`): nothing blocking
+Every finding checked, then applied as wording (ADR 0087, reconciliation-001, the test's comments, the description):
+the match lookups are a sequential scan on a ledger analyzed while empty; the plan cache is what keeps a pass's first
+plan; the slow state starts at about 160 entries; "refuses more, never less" narrowed; the owner role also runs
+content loads; R's seed is analyzed-empty; a second superuser-only differing state named (an entry whose line is no
+row, foreign key off); `compare.py` now requires the settle-order check to match (all three dumps re-compared).
+Left as it is, with the reason in the description: the migration's own comment says "a few hundred to some tens of
+thousands" (true of that range; it points to the ADR), since rewriting the migration needs the marker again.
+Both test files: 14 of 14 green on the new bodies (13:05 UTC; the worker file's comments changed since, no code).
 
 ## Checks done
 - **The grant's text (build start, plan section 2):** the two SQL blocks of the ask at the grant commit 38123394 and
