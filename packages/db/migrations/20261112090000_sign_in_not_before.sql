@@ -30,7 +30,7 @@
 --   purpose key_across_reset_cleared is recorded after the lock, which only the owner writes once the key is removed
 --   at the provider (docs/runbooks/incident-response.md), so the ordinary unlock never hands the key a sign-in.
 -- - password_notice.mfa_enrolled_at_reset (boolean, nullable; NULL: a notice queued before this migration): whether
---   the account had a second factor when its reset was recorded, written by the notice's trigger in the reset's own
+--   the account had a second factor when its reset was recorded (read under the account's row lock), written by the notice's trigger in the reset's own
 --   transaction (audit_event_password_notice(), replaced: the body of migration 20261111090000 with the one column
 --   added). operator_password_notice_claim(uuid) (replaced, its result columns unchanged) returns that fact as
 --   mfa_enrolled, and false when there is none, so the email says a second factor guards the account only when one did
@@ -52,7 +52,7 @@
 -- subtransaction, once a second, up to 300 tries. A refused try holds and queues nothing. Unlike migration
 -- 20261111090000, which took "user" in a mode readers do not refuse, a try here is refused by ANY open transaction
 -- that has touched "user" (a read or a foreign-key check included) or user_session, or has written audit_event, and by
--- a vacuum of the three. Every request and every job reads "user", and one reconcile pass outlasts the five minutes:
+-- a vacuum of the four. Every request and every job reads "user", and one reconcile pass outlasts the five minutes:
 -- deploy off-hours with no reconcile queued or running (docs/runbooks/deploy-and-rollback.md). If no moment comes in
 -- five minutes it fails with '"user", user_session, audit_event or password_notice stayed in use for five minutes;
 -- run the deploy again (docs/adr/0093)', before any service moves, having changed nothing.
@@ -113,7 +113,7 @@ $$;
 -- The table locks, without a queue (docs/adr/0093, D10)
 -- ---------------------------------------------------------------------------------------------------
 
--- Each try takes the three locks in one subtransaction with NOWAIT: a refused try releases what it took and queues
+-- Each try takes the four locks in one subtransaction with NOWAIT: a refused try releases what it took and queues
 -- nobody, so no request waits behind this migration. Held to the end of the migration.
 DO $$
 BEGIN
@@ -336,13 +336,19 @@ $$;
 ALTER TABLE password_notice ADD COLUMN mfa_enrolled_at_reset boolean;
 
 -- As migration 20261111090000 created it, with the one column: the account's second-factor fact is read in the
--- reset's own transaction, so a factor enrolled after the reset (by whoever completed it) is not what the email
--- reports. The guard on the trigger is unchanged, so the actor is the account itself and its row exists.
+-- reset's own transaction, under the account's row lock (so a change of it in flight is waited for, whatever the
+-- caller locked first), and a factor enrolled after the reset is recorded, by whoever completed it, is not what the
+-- email reports. Not covered, and only while the provider's client is public (docs/adr/0093, known limits): a factor
+-- enrolled before this reset is recorded, in the moments after the provider changed the password or after an earlier
+-- reset by the same hand. The guard on the trigger is unchanged, so the actor is the account itself and its row exists.
 CREATE OR REPLACE FUNCTION audit_event_password_notice() RETURNS trigger
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  kept boolean;
 BEGIN
+  SELECT u.mfa_enrolled INTO kept FROM "user" u WHERE u.id = NEW.actor_id FOR NO KEY UPDATE;
   INSERT INTO password_notice (user_id, audit_event_id, changed_at, expires_at, mfa_enrolled_at_reset)
-  VALUES (NEW.actor_id, NEW.id, NEW.at, NEW.at + interval '90 days', (SELECT u.mfa_enrolled FROM "user" u WHERE u.id = NEW.actor_id))
+  VALUES (NEW.actor_id, NEW.id, NEW.at, NEW.at + interval '90 days', kept)
   ON CONFLICT ON CONSTRAINT password_notice_once DO NOTHING;
   RETURN NULL;
 END;

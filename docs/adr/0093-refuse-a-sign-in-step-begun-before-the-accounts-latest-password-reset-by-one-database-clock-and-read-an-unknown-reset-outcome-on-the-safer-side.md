@@ -247,6 +247,16 @@ confidential client) closes that. So "required before launch" needs both: this r
   enrolled between the reset and the send, by whoever completed the reset, does not make the email say a second
   factor guards the account. Both functions are replaced in place, their bodies compared by hash in the preflight;
   the claim's result columns are unchanged, so the previous image's job reads it as before.
+  The trigger reads the fact under the account's row lock, so a change of it in flight is waited for whatever the
+  caller locked first (the delta's database review, S1). **What this does not close** (the delta's auth review, S1
+  and S2), each only while the provider's client is public: a factor enrolled before the reset is recorded, in the
+  moments between the provider's change and the reset's commit; and a second reset by the same hand after enrolling
+  (the first notice says nothing of a second factor, the second says one guards the account). A rule that reports
+  only a factor older than the reset by some days (read from the account's earliest session) would close both and
+  was not built: it would take the sentence from every honest account in its first weeks for good, to cover a route
+  that ADR 0088's second release closes before the first customer invitation (after it a reset code comes only from
+  the app, and the app mails one only to an account that already has a factor). If that release slips past launch,
+  build that rule first.
   Every job and request reads `"user"`, and one reconcile pass (about 600 s at 2,000 lines) outlasts the five
   minutes. So: deploy with no reconcile queued or running, off-hours; a refused loop fails before any service moves
   and changes nothing; run it again (`docs/runbooks/deploy-and-rollback.md`). Safe with the previous image: every

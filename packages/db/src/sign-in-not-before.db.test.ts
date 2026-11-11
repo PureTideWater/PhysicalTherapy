@@ -1018,6 +1018,7 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
     const userReader = await connect(database.appUrl);
     const sessionReader = await connect(database.appUrl);
     const eventWriter = await connect(database.appUrl);
+    const noticeReader = await connect(database.url);
     const pacer = await connect(database.url);
     const migration = await connect(database.url);
     /** A request that reads "user" and user_session and writes audit_event, as every signed-in request does. */
@@ -1058,7 +1059,7 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
       (
         await owner.query<{ relation: string; mode: string; granted: boolean }>(
           `SELECT relation::regclass::text AS relation, mode, granted FROM pg_locks
-            WHERE pid = $1 AND locktype = 'relation' AND relation IN ('"user"'::regclass, 'user_session'::regclass, 'audit_event'::regclass) ORDER BY 1, 2`,
+            WHERE pid = $1 AND locktype = 'relation' AND relation IN ('"user"'::regclass, 'user_session'::regclass, 'audit_event'::regclass, 'password_notice'::regclass) ORDER BY 1, 2`,
           [migration.pid],
         )
       ).rows;
@@ -1075,6 +1076,9 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
       await eventWriter.client.query('BEGIN');
       await eventWriter.client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [user]);
       await eventWriter.client.query("INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id) VALUES ($1, 'user', 'sign_in', 'user', $1)", [user]);
+      await noticeReader.client.query('BEGIN');
+      await noticeReader.client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
+      await noticeReader.client.query('SELECT count(*) FROM password_notice');
       await pacer.client.query('SELECT pg_advisory_lock($1::integer, n) FROM generate_series(1, 8) AS n', [LOOP_PAUSES]);
       // The migration's transaction, as tp_owner, running the loop. The pause is made in that transaction and gone with it.
       await migration.client.query('BEGIN');
@@ -1101,6 +1105,8 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
         { name: 'the read of "user"', client: userReader.client },
         { name: 'the read of user_session', client: sessionReader.client },
         { name: 'the write of audit_event', client: eventWriter.client },
+        // The owner's read of password_notice alone (the job's claim would hold "user" too and be refused there).
+        { name: 'the read of password_notice', client: noticeReader.client },
       ];
       for (const [index, holder] of holders.entries()) {
         // A try made with this holder open was refused, and the loop stands where it sleeps: it holds none of the
@@ -1116,11 +1122,12 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
       expect((await tableLocks()).sort((a, b) => (a.relation < b.relation ? -1 : 1))).toEqual([
         { relation: '"user"', mode: 'AccessExclusiveLock', granted: true },
         { relation: 'audit_event', mode: 'ShareRowExclusiveLock', granted: true },
+        { relation: 'password_notice', mode: 'AccessExclusiveLock', granted: true },
         { relation: 'user_session', mode: 'AccessExclusiveLock', granted: true },
       ]);
     } finally {
       // The holders and the pacer first: with nothing left to refuse a try or hold a pause, the loop ends.
-      for (const client of [userReader.client, sessionReader.client, eventWriter.client, pacer.client]) {
+      for (const client of [userReader.client, sessionReader.client, eventWriter.client, noticeReader.client, pacer.client]) {
         await close(client);
       }
       await done;
