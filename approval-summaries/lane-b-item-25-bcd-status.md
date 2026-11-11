@@ -3,8 +3,8 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9if9wx1DzzAD4jRFYi2
 # Queues item 25 (c), (b), (d): three PRs, one after the other (W14)
 
 ## RESUME-BLOCK
-- **(c) the migration runner's `lock_timeout`:** draft **#145**, branch `co-001/migrate-lock-timeout`, head 7c83dfee (the base 91bc6b7c is its ancestor), WIP ref `co-001/wip-migrate-lock-timeout` at the same commit. Four reviews done, every confirmed finding fixed; the full local suite ran once on 7c83dfee, all pass (unit 13,518; db 10,250; golden 381; oracle 738; e2e 87; domain-model check). W14 is subscribed to #145. Next: when the required checks are green on a head that has the base as its ancestor, merge (a merge commit), record it, unsubscribe, one line to the orchestrator, then open (b). If CI dies at `playwright install --with-deps`, re-run only the failed jobs, 30 minutes or more apart. No migration, no new ADR or matrix number.
-- **(b) the free-screening upload's bounded wait:** not started. Opens after (c) merges.
+- **(c) MERGED: #145 as ea8f200f** into `claude/build-platform` (2026-11-11 19:33 UTC), head 7c83dfee, a merge commit; every check green on that head, the required ones included; the base 91bc6b7c was its ancestor. No migration. W14 unsubscribed and cancelled its check-in. The WIP ref `co-001/wip-migrate-lock-timeout` and the branch can be deleted.
+- **(b) the free-screening upload's bounded wait:** started 2026-11-11 19:35 UTC on `co-001/screening-upload-bounded-wait`, cut from ea8f200f. No WIP ref yet.
 - **(d) the session's end and its audit event in one transaction:** not started. Opens after (b) merges.
 
 ## For Lane A (needs a migration; not built here)
