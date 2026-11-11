@@ -1251,6 +1251,8 @@ const SSN_LABEL = /(?<![\p{L}\p{N}])(?:S\.?[ \t]?S\.?[ \t]?N|SS[ \t]?#|SS[ \t]?N
 const MEDICARE_LABEL = /(?<![\p{L}\p{N}])MEDICARE(?!\p{L})/gu;
 /** Words that say a bare number is a phone number. */
 const PHONE_LABEL = /(?<![\p{L}\p{N}])(?:PHONES?|PH|TEL(?:EPHONE)?S?|FAX(?:ES)?|FACSIMILE|CALL(?:ING|ED|S)?|TTY|TDD|TOLL[\p{Pd}\u2212]?[ \t]?FREE|CELL|MOBILE|CONTACT(?:S|ED|ING)?)(?!\p{L})/gu;
+/** The labels no word ends in, glued to the word before them by a lost space ("PatientSSN", "PaidPhone", "PATIENTSSN"): read in every letter. */
+const GLUED_LONG_LABEL = /(?<=\p{L})(?:SSN|SS#|SOC(?:IAL)?\.?[ \t]*SEC(?:URITY)?|PHONES?|TELEPHONES?|FAX(?:ES)?|FACSIMILE)(?!\p{L})/gu;
 /** SSN_LABEL and PHONE_LABEL glued to the word before them by a lost space ("PaidSSN", "PatientPhone"): read only in a letter whose chain only held barriers hold (survivorIn). */
 const GLUED_PERSON_LABELS = [SSN_LABEL, PHONE_LABEL].map((label) => new RegExp(label.source.replace('(?<![\\p{L}\\p{N}])', '(?<!\\p{N})'), 'gu'));
 /** Nouns that name a bare number as something that is no person's SSN or phone: a claim's, a reference's, an NPI ... */
@@ -1315,14 +1317,22 @@ function decideBare(window: string, length: number, digits: string): Decision {
       return 'keep';
     }
   }
-  const ssn = Math.max(end(lastNear(SSN_LABEL)), length === 9 ? end(lastNear(MEDICARE_LABEL)) : -1);
-  const phone = end(lastNear(PHONE_LABEL));
+  const gluedLong = lastNear(GLUED_LONG_LABEL);
+  const gluedPhone = gluedLong !== null && /^(?:P|T|F)/u.test(gluedLong[0]);
+  const ssn = Math.max(end(lastNear(SSN_LABEL)), length === 9 ? end(lastNear(MEDICARE_LABEL)) : -1, gluedPhone ? -1 : end(gluedLong));
+  const phone = Math.max(end(lastNear(PHONE_LABEL)), gluedPhone ? end(gluedLong) : -1);
   if (ssn >= 0 || phone >= 0) {
     return ssn >= phone || length === 9 ? 'ssn' : 'phone';
   }
   return named ? 'keep' : 'none';
 }
 
+/** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
+const OWN_MARK = '\u0003';
+/** After a label's own list number: an ordinal's suffix and a space, or ":", ")" or a full stop with no digit after it. */
+const LIST_NUMBER_AFTER = /^(?:(?:ST|ND|RD|TH)?(?::|\)|\.(?![0-9]))|(?:ST|ND|RD|TH)[ \t])/u;
+/** An SSN or phone label right before its own list number. */
+const PERSON_LABEL_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source})[ \\t]{0,2}[:#]?[ \\t]{0,2}$`, 'u');
 const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
@@ -1335,18 +1345,36 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
  * 711\n150.00 120.00" (re-review GATEWAY1-1); with `spansOnly` as well, no plain digit is read through (review
  * GATEWAY2-1).
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean } = {}): string {
-  const { spanned, spansOnly = false } = read;
+function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly own?: (index: number) => boolean } = {}): string {
+  const { spanned, spansOnly = false, own } = read;
   let from = start;
   let breaks = 0;
   // Whether a letter, or a digit where `spanned` holds, has been read since the start: past one, a plain digit ends the window.
   let passed = false;
-  while (from > 0 && start - from < LABEL_WINDOW) {
+  // The window as read: the call's own identifier and a label's own list number are read through, each as a space.
+  const units: string[] = [];
+  while (from > 0 && units.length < LABEL_WINDOW) {
     const index = from - 1;
     const character = text[index] ?? '';
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
-    if (stops(index) || character === BARRIER || (digit && !inSpan && (spanned === undefined || passed || spansOnly))) {
+    // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line.
+    if (breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index)))) {
+      if (units[units.length - 1] !== ' ') units.push(' ');
+      from = index;
+      continue;
+    }
+    if (digit && !inSpan && breaks === 0) {
+      // A label's own list number ("Phone 1: 555-0100", "Tel: 1st ..."): one or two digits right after an SSN or phone label.
+      let first = index;
+      while (first > 0 && DIGIT.test(text[first - 1] ?? '')) first -= 1;
+      if (index - first < 2 && LIST_NUMBER_AFTER.test(text.slice(index + 1, index + 6)) && PERSON_LABEL_BEFORE.test(text.slice(Math.max(0, first - 32), first))) {
+        units.push(' ');
+        from = first;
+        continue;
+      }
+    }
+    if (stops(index) || character === BARRIER || character === OWN_MARK || (digit && !inSpan && (spanned === undefined || passed || spansOnly))) {
       break;
     }
     if (inSpan || (!digit && /\p{L}/u.test(character))) {
@@ -1358,9 +1386,10 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
         break;
       }
     }
+    units.push(character);
     from = index;
   }
-  return text.slice(from, start);
+  return units.reverse().join('');
 }
 
 const WORD_UNIT = /^[\p{L}\p{N}]$/u;
@@ -1377,8 +1406,8 @@ const LIST_REACH = 16;
  * inside the list ("Claim 900123456 and SSN 900551234"), any other word or a sentence end ends the list, and a list
  * after an SSN or phone label is no keep.
  */
-function decideNamed(text: string, start: number, stops: (index: number) => boolean, length: number, digits: string): Decision {
-  const decision = decideBare(labelWindow(text, start, stops), length, digits);
+function decideNamed(text: string, start: number, stops: (index: number) => boolean, length: number, digits: string, own?: (index: number) => boolean): Decision {
+  const decision = decideBare(labelWindow(text, start, stops, { own }), length, digits);
   let at = start;
   for (let hop = 0; decision === 'none' && hop < LIST_REACH; hop += 1) {
     const window = labelWindow(text, at, stops);
@@ -1389,7 +1418,7 @@ function decideNamed(text: string, start: number, stops: (index: number) => bool
     // The item before the joiner: a match already found (the call's own claim, "Claim SYNCLAIM0001 and 900123457"), a
     // placeholder (the BARRIER of masked text, where the check reads that claim) or a run of digits, standing as a word.
     const unit = text[end - 1] ?? '';
-    const inItem = end > 0 && stops(end - 1) ? stops : unit === BARRIER ? (index: number) => text[index] === BARRIER : (index: number) => DIGIT.test(text[index] ?? '');
+    const inItem = end > 0 && stops(end - 1) ? stops : unit === BARRIER || unit === OWN_MARK ? (index: number) => text[index] === unit : (index: number) => DIGIT.test(text[index] ?? '');
     if (!inItem(end - 1)) {
       break;
     }
@@ -1462,6 +1491,8 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
   for (let i = 1; i < covered.length; i += 1) {
     covered[i] = (covered[i] ?? 0) + (covered[i - 1] ?? 0);
   }
+  // The call's own matches, as they stood before any pattern match: a label is read through one to its number (labelWindow).
+  const ownAt = covered.slice();
   const results: Found[] = [];
   const cover = (range: Range) => {
     for (let i = range.start; i < range.end; i += 1) {
@@ -1554,6 +1585,7 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
   }
   views.forEach((view, reading) => {
     const stops = (index: number) => (covered[view.from[index] ?? 0] ?? 0) > 0;
+    const own = (index: number) => (ownAt[view.from[index] ?? 0] ?? 0) > 0;
     // A group wrapped across a line break is read on the join reading only: on the space reading an invisible run is a
     // space, which would end such a group one digit past a break ("90000\n0000 \n2<ZWSP>00-555-0101").
     for (const { pattern, form, wrapped } of BARE_PATTERNS.filter((definition) => reading === 0 || !definition.wrapped)) {
@@ -1572,7 +1604,7 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         if (form !== 'mask5' && form !== 'local' && pushOwn(view, readingsOf(view, start, end, core))) {
           continue;
         }
-        const decision = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
+        const decision = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, own);
         const labeled = decision === 'ssn' || decision === 'phone';
         let taken: PatternKind | null;
         if (wrapped) {
@@ -1791,9 +1823,14 @@ function survivorIn(text: string): Survivor {
   const datesByReading = gluedReadings(text).map((reading) => datesIn(reading).filter((span) => span.separated && span.dates.length > 0).map((span) => ({ start: span.start, end: span.end, amount: false })));
   const dates = datesByReading.flat();
   const currency = [...text.matchAll(CURRENCY_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: false }));
-  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
+  // A run of nine digits or more before a decimal point is no amount: an SSN or phone with an amount's digits glued to it ("900123456150.00").
+  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].filter((match) => !/^[0-9]{9,}[.,]/u.test(match[0])).map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
+  // Which barrier holds a digit, for the strict reading of a held letter (heldStrict, below): a currency amount, or a date that stands.
+  const currencyAt = new Uint8Array(text.length + 1);
+  const dateAt = new Uint8Array(text.length + 1);
   for (const span of currency) {
     mark(span.start, span.end);
+    currencyAt.fill(1, span.start, span.end);
   }
   // SEC-5's label for an unsigned amount, read over the numbers before it as well, each digit as a space (so a label glued
   // to a digit is still one): a date, an amount or a range between the label and the amount ends no label's reach
@@ -1840,6 +1877,7 @@ function survivorIn(text: string): Survivor {
       if (MONEY_AMOUNT.test(text.slice(span.start, span.end))) ownRunAmounts.add(span.start);
     } else {
       mark(span.start, span.end);
+      if (!span.amount && currencyAt[span.start] !== 1) dateAt.fill(1, span.start, span.end);
       rangeOf.fill(span.rangeStart, span.start, span.end);
       rangeEnds.set(span.rangeStart, Math.max(span.end, rangeEnds.get(span.rangeStart) ?? span.end));
       const spans = rangeSpans.get(span.rangeStart) ?? [];
@@ -1874,13 +1912,16 @@ function survivorIn(text: string): Survivor {
     const spaced = (word: string) => ' '.repeat(word.length);
     const overWords = new Set(dated(text.replace(GLUED_ANY, (word) => WORD_BLANK.repeat(word.length)).replace(/\p{L}/gu, spaced)).map(place));
     for (const span of dated(text.replace(/\p{L}/gu, spaced))) {
-      if (overWords.has(place(span)) && !LABEL_IN_DATE.test(text.slice(span.start, span.end))) mark(span.start, span.end);
+      if (overWords.has(place(span)) && !LABEL_IN_DATE.test(text.slice(span.start, span.end))) {
+        mark(span.start, span.end);
+        dateAt.fill(1, span.start, span.end);
+      }
       keep(span);
     }
   }
   dated(text).forEach(keep);
   wholeRanges(text, amounts, PLAIN_RANGE_DASH, false).forEach(keep);
-  const groups: { readonly start: number; readonly end: number; readonly digits: string; readonly blocked: boolean; readonly kept: boolean; readonly range: number }[] = [];
+  const groups: { readonly start: number; readonly end: number; readonly digits: string; readonly blocked: boolean; readonly kept: boolean; readonly range: number; readonly named: boolean }[] = [];
   for (const match of text.matchAll(/[0-9]+/gu)) {
     const start = match.index;
     const end = start + match[0].length;
@@ -1890,11 +1931,13 @@ function survivorIn(text: string): Survivor {
       blocked ||= barrier[i] === 1;
       held ||= kept[i] === 1;
     }
+    let named = false;
     if (!blocked && (match[0].length === 9 || match[0].length === 10)) {
       blocked = decideNamed(text, start, () => false, match[0].length, match[0]) === 'keep';
       held = blocked;
+      named = blocked;
     }
-    groups.push({ start, end, digits: match[0], blocked, kept: held, range: rangeOf[start] ?? -1 });
+    groups.push({ start, end, digits: match[0], blocked, kept: held, range: rangeOf[start] ?? -1, named });
   }
   /**
    * Whether a held range stands as a barrier: each end written as a range's ends are (a date with one separator or a month
@@ -2017,6 +2060,9 @@ function survivorIn(text: string): Survivor {
     return false;
   };
   const heldWhole = (from: number, to: number) => groups.slice(from, to).every((group) => group.blocked && (group.kept || rangeStands(group.range)));
+  if (gluedShape(text, groups)) {
+    return 'survivor';
+  }
   if (survives((group) => group.blocked, () => false) || survives((group) => group.kept, heldWhole)) {
     return 'survivor';
   }
@@ -2027,7 +2073,10 @@ function survivorIn(text: string): Survivor {
   // before it by a lost space is read too ("01/01/2020-150.00-PaidSSN 900 12 34.56", which cc3dd7f6 refused only for the
   // range), and the call's identifiers glued to text (ownIdentifierGlued); else the letter is sent.
   const gluedLabel = (start: number) => start >= 0 && (labeledAt(start, true) === 'person' || labeledOverNumbers(start, false, true) === 'person');
-  return survives((group) => group.blocked && !(amountAt[group.start] === 1 && gluedLabel(amountStarts[group.start] ?? -1)), () => false, true) ? 'survivor' : 'held';
+  if (survives((group) => group.blocked && !(amountAt[group.start] === 1 && gluedLabel(amountStarts[group.start] ?? -1)), () => false, true)) {
+    return 'survivor';
+  }
+  return heldStrict({ text, groups, currencyAt, dateAt, amountAt, amountStarts, rangeSpans, rangeEnds, labeledAt }) ? 'survivor' : 'held';
 }
 
 /**
@@ -2069,7 +2118,7 @@ function scanLabeled(window: string, glued = false): ScanLabel {
     }
     return end;
   };
-  const person = Math.max(...(glued ? GLUED_PERSON_LABELS : [SSN_LABEL, PHONE_LABEL]).map(lastEnd));
+  const person = Math.max(...(glued ? GLUED_PERSON_LABELS : [SSN_LABEL, PHONE_LABEL, GLUED_LONG_LABEL]).map(lastEnd));
   const medicare = lastEnd(MEDICARE_LABEL);
   const code = Math.max(lastEnd(KEEP_NOUN), lastEnd(SCAN_CODE_NOUN));
   return person > code && person >= medicare ? 'person' : medicare > code ? 'medicare' : null;
@@ -2091,6 +2140,204 @@ const survivorLeft = (text: string): Survivor => {
   }
   return survivorIn(viewOf(text, 'space', true).text) ?? dropped;
 };
+
+/**
+ * Whether a Social Security or phone number's own shape stands with digits glued to an end of it (PROTOTYPE): three groups
+ * no barrier holds, joined by joiners alone, three digits or more, two (or three), and four or more, one of the outer
+ * groups longer than the shape's ("900-12-3456150.00", "01/01/2020900-12-3456", "202-555-0123202-555-0124"); and a run of
+ * eleven digits or more with cents after it ("900123456150.00").
+ */
+function gluedShape(text: string, groups: readonly ScanGroup[]): boolean {
+  for (let i = 0; i < groups.length; i += 1) {
+    const [a, b, c] = [groups[i], groups[i + 1], groups[i + 2]];
+    if (a === undefined || a.blocked) continue;
+    if (a.digits.length >= 11 && CENTS_AFTER.test(text.slice(a.end, a.end + 4))) return true;
+    if (b === undefined || c === undefined || b.blocked || c.blocked) continue;
+    const [g1, g2] = [text.slice(a.end, b.start), text.slice(b.end, c.start)];
+    if (!TIGHT_JOIN.test(g1) || !TIGHT_JOIN.test(g2)) continue;
+    const longer = a.digits.length > 3 || c.digits.length > 4;
+    const slashed = g1.includes('/') || g2.includes('/');
+    if (longer && a.digits.length >= 3 && c.digits.length >= 4 && ((b.digits.length === 2 && !slashed) || b.digits.length === 3)) return true;
+  }
+  return false;
+}
+
+interface ScanGroup {
+  readonly start: number;
+  readonly end: number;
+  readonly digits: string;
+  readonly blocked: boolean;
+  readonly kept: boolean;
+  readonly range: number;
+  readonly named: boolean;
+}
+
+interface HeldScan {
+  readonly text: string;
+  readonly groups: readonly ScanGroup[];
+  readonly currencyAt: Uint8Array;
+  readonly dateAt: Uint8Array;
+  readonly amountAt: Uint8Array;
+  readonly amountStarts: Int32Array;
+  readonly rangeSpans: ReadonlyMap<number, readonly { readonly start: number; readonly end: number; readonly amount: boolean }[]>;
+  readonly rangeEnds: ReadonlyMap<number, number>;
+  readonly labeledAt: (start: number, glued?: boolean) => ScanLabel;
+}
+
+/** PROTOTYPE: the last strict reason (debug). */
+export let lastStrictReason = '';
+
+/** A state's postal abbreviation, or ZIP and its connectors, before a ZIP code: what names a five, or a five and four, as one. */
+const STATE = '(?:A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]|PR|GU|VI)';
+const ZIP_BEFORE = new RegExp(`(?:(?<![\\p{L}\\p{N}])${STATE}|(?<=[0-9])(?!ND)${STATE}|(?<!\\p{L})ZIP(?:[ \\t]?CODE)?[:#]?)[ \\t]{1,2}$`, 'u');
+/** A code word, glued to a digit before it or not, and the codes after it up to a position: "CODES 97110 97140 ". */
+const CODE_LIST_BEFORE = /(?<!\p{L})(?:CPT|HCPCS|CODES?|MODIFIERS?|REV(?:ENUE)?|ICD(?:[\p{Pd}− ]?10)?)[:#]?(?:[ \t]{1,3}[A-Z]?[0-9]{2,5}(?:[\p{Pd}−][A-Z0-9]{2})*,?)*[ \t]{1,3}$/u;
+const TAX_BEFORE = /(?<!\p{L})(?:TIN|EIN|TAX[ \t]?ID(?:ENTIFICATION)?)(?:[ \t]{1,3}(?:NO|NUMBER|NBR|NUM)\b\.?)?[:#]?[ \t]{1,3}$/u;
+const LINE_BREAK_IN = new RegExp(LINE_BREAK, 'u');
+const TIGHT_JOIN = /^[\p{Pd}−⁃˗➖./()_|\\'‘’ʼʹˊ′‵`~·‧∙⋅・•]{1,2}$/u;
+const ROW_GAP = /^[ \t]{1,16}$/u;
+
+/**
+ * The strict reading of a held letter (survivorIn's 'held'): PROTOTYPE.
+ */
+function heldStrict(scan: HeldScan): boolean {
+  lastStrictReason = strictReason(scan) ?? '';
+  return lastStrictReason !== '';
+}
+
+function strictReason(scan: HeldScan): string | null {
+  const { text, groups, currencyAt, dateAt, amountAt, amountStarts, rangeSpans, rangeEnds, labeledAt } = scan;
+  const amountFirstOf = new Map<number, boolean>();
+  const amountFirst = (range: number): boolean => {
+    if (range < 0) return false;
+    let held = amountFirstOf.get(range);
+    if (held === undefined) {
+      const spans = rangeSpans.get(range) ?? [];
+      const firsts = spans.filter((span) => span.start === range);
+      held = firsts.length > 0 && firsts.every((span) => span.amount || currencyAt[span.start] === 1) && spans.some((span) => !span.amount && currencyAt[span.start] !== 1);
+      amountFirstOf.set(range, held);
+    }
+    return held;
+  };
+  const gap = (a: ScanGroup, b: ScanGroup) => text.slice(a.end, b.start);
+  const sameAmount = (a: ScanGroup, b: ScanGroup) => amountAt[a.start] === 1 && amountAt[b.start] === 1 && amountStarts[a.start] === amountStarts[b.start];
+  // (1) an amount, then a date, as one range holds nothing here
+  if (groups.some((group) => group.blocked && amountFirst(group.range))) return 'amount-first';
+  // (2) beside a held range
+  for (const [range, end] of rangeEnds) {
+    const before = firstIndex(groups, (group) => group.start >= range) - 1;
+    const after = firstIndex(groups, (group) => group.start >= end);
+    if (groups.slice(before + 1, after).every((group) => group.kept)) continue;
+    const left = groups[before];
+    const right = groups[after];
+    const leftGap = left === undefined ? '' : text.slice(left.end, range);
+    const rightGap = right === undefined ? '' : text.slice(end, right.start);
+    if (left !== undefined && left.range !== range && /^[^\s\p{L}\p{N}]+$/u.test(leftGap) && SCAN_LABELED_GAP.test(leftGap)) return 'tight-left';
+    if (right !== undefined && right.range !== range && /^[^\s\p{L}\p{N}]+$/u.test(rightGap) && SCAN_LABELED_GAP.test(rightGap)) return 'tight-right';
+    if (left !== undefined && left.range !== range && !left.blocked && SCAN_GAP.test(leftGap)) return 'free-left';
+    if (right !== undefined && (right.digits.length === 9 || right.digits.length === 10) && /^\.?\p{L}+[.:#]?(?:[ \t]{1,3}(?:NO|NUMBER|NBR|NUM|ID)\b[.:#]?)?[ \t]{0,3}$/u.test(rightGap)) return 'glued-noun';
+  }
+  // a number, one or two letters and a date, nothing between: "2025550122th10-28-2026"
+  for (let i = 0; i + 1 < groups.length; i += 1) {
+    const [a, b] = [groups[i], groups[i + 1]];
+    if (a !== undefined && b !== undefined && !a.blocked && a.digits.length >= 7 && b.blocked && dateAt[b.start] === 1 && /^\p{L}{1,2}$/u.test(gap(a, b))) return 'glued-touch';
+  }
+  // what is placed by its structure: never a part of a chain
+  const placed = new Uint8Array(groups.length);
+  const taxOrNpi = (group: ScanGroup) => group.named && /(?:NPI|TIN|EIN|TAX[ \t]?ID(?:ENTIFICATION)?)[^\p{L}\p{N}]*(?:(?:NO|NUMBER|NBR|NUM|ID)[^\p{L}\p{N}]*)*$/u.test(text.slice(Math.max(0, group.start - 40), group.start));
+  groups.forEach((group, i) => {
+    const next = groups[i + 1];
+    const before = text.slice(Math.max(0, group.start - 64), group.start);
+    if (currencyAt[group.start] === 1 || (group.blocked && dateAt[group.start] === 1) || taxOrNpi(group)) placed[i] = 1;
+    if (group.blocked) return;
+    const length = group.digits.length;
+    const nextFree = next !== undefined && !next.blocked ? next : undefined;
+    const between = next === undefined ? '' : gap(group, next);
+    // a ZIP code after a state or ZIP, with its four
+    if (length === 5 && ZIP_BEFORE.test(before)) {
+      placed[i] = 1;
+      if (nextFree?.digits.length === 4 && /^[\p{Pd}−]$/u.test(between)) placed[i + 1] = 1;
+    }
+    // two codes joined by a dash or a slash
+    if (length === 5 && nextFree?.digits.length === 5 && /^[\p{Pd}−/]$/u.test(between)) {
+      placed[i] = 1;
+      placed[i + 1] = 1;
+    }
+    // a TIN written two and seven
+    if (length === 2 && nextFree?.digits.length === 7 && /^[\p{Pd}−]$/u.test(between) && TAX_BEFORE.test(before)) {
+      placed[i] = 1;
+      placed[i + 1] = 1;
+    }
+    // codes a code word names
+    if (length <= 5 && CODE_LIST_BEFORE.test(before)) placed[i] = 1;
+    // a code, its units and an amount on one line: a service-line row
+    if (length === 5 && /(?:^|[\s])$/u.test(before)) {
+      const units = nextFree !== undefined && nextFree.digits.length <= 2 && ROW_GAP.test(between) ? nextFree : undefined;
+      const amount = units === undefined ? next : groups[i + 2];
+      const toAmount = amount === undefined ? '' : text.slice((units ?? group).end, amount.start);
+      if (amount !== undefined && amount.blocked && amountAt[amount.start] === 1 && ROW_GAP.test(toAmount)) {
+        placed[i] = 1;
+        if (units !== undefined) placed[i + 1] = 1;
+      }
+      // a code and the next line's count
+      if (nextFree !== undefined && nextFree.digits.length <= 4 && LINE_BREAK_IN.test(between) && SCAN_GAP.test(between)) {
+        placed[i] = 1;
+        placed[i + 1] = 1;
+      }
+    }
+    // a code's own digits after its one letter ("N235", "G0283")
+    if (/(?<!\p{L})\p{L}$/u.test(before)) placed[i] = 1;
+  });
+  const chained = (digits: string) => digits.length === 9 || digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+  // (3) an SSN's or a phone's own shape with digits glued to an end of it
+  for (let i = 0; i + 2 < groups.length; i += 1) {
+    const [a, b, c] = [groups[i], groups[i + 1], groups[i + 2]];
+    if (a === undefined || b === undefined || c === undefined || placed[i] === 1 || placed[i + 1] === 1 || placed[i + 2] === 1) continue;
+    const [g1, g2] = [gap(a, b), gap(b, c)];
+    if (!TIGHT_JOIN.test(g1) || !TIGHT_JOIN.test(g2)) continue;
+    const longer = a.digits.length > 3 || c.digits.length > 4;
+    const slashed = g1.includes('/') || g2.includes('/');
+    if (a.digits.length >= 3 && b.digits.length === 2 && c.digits.length >= 4 && longer && !slashed && !(a.blocked && b.blocked && c.blocked)) return 'embedded-ssn';
+    if (a.digits.length >= 3 && b.digits.length === 3 && c.digits.length >= 4 && longer && !(a.blocked && b.blocked && c.blocked)) return 'embedded-phone';
+  }
+  // (4) chains
+  for (let first = 0; first < groups.length; first += 1) {
+    let digits = '';
+    let free = 0;
+    const label = labeledAt(groups[first]?.start ?? 0);
+    for (let count = 1; count <= 12 && first + count <= groups.length; count += 1) {
+      const group = groups[first + count - 1];
+      const previous = groups[first + count - 2];
+      if (group === undefined || placed[first + count - 1] === 1 || (group.digits.length >= 8 && label === null)) break;
+      if (count > 1 && (previous === undefined || !(SCAN_GAP.test(gap(previous, group)) || sameAmount(previous, group)))) break;
+      digits += group.digits;
+      if (!group.blocked) free += 1;
+      const run = groups.slice(first, first + count);
+      // under a label the number may be glued to more digits
+      if (label !== null && count >= 2 && digits.length >= 9 && !chained(digits) && run.every((each) => !each.blocked)) return 'labeled-long';
+      if (digits.length > 11) break;
+      const local = count === 2 && run[0]?.digits.length === 3 && run[1]?.digits.length === 4 && !run[0].blocked && !run[1].blocked;
+      if (count < 2 || free === 0 || !(chained(digits) || local)) continue;
+      const firstGroup = run[0];
+      const last = run[run.length - 1];
+      if (firstGroup === undefined || last === undefined) continue;
+      const before = text.slice(Math.max(0, firstGroup.start - 48), firstGroup.start);
+      // an amount and a year
+      if (!last.blocked && /^(?:19|20)[0-9]{2}$/u.test(last.digits) && run.slice(0, -1).every((each) => each.blocked && amountAt[each.start] === 1)) continue;
+      // a local number's shape inside a longer token, or after a currency amount
+      if (local && (/\p{L}[\p{Pd}−]$/u.test(before) || /\p{Sc}[ \t]?[0-9][0-9,]*(?:\.[0-9]{1,2})?[ \t]{1,3}$/u.test(before))) continue;
+      return `chain:${run.map((each) => each.digits.length).join(',')}${local ? ':local' : ''}`;
+    }
+  }
+  // (5) a date written two, two and four with a lone digit beside it
+  for (let i = 0; i + 3 < groups.length; i += 1) {
+    const run = groups.slice(i, i + 4);
+    const lengths = run.map((each) => each.digits.length).join(',');
+    const joined = run.slice(1).every((each, k) => SCAN_GAP.test(gap(run[k] as ScanGroup, each)));
+    if (joined && (lengths === '1,2,2,4' || lengths === '2,2,4,1') && run.some((each) => !each.blocked)) return 'date-shaped';
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------------------------------
 // Redaction
@@ -2212,8 +2459,10 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
  * claim's placeholder past the call's claims (all of them, for the screen, which knows no call) keeps its
  * digits between two barriers: a letter's own "[CLAIM_7654321]" still holds 7654321 for every check.
  */
-const masked = (text: string, claims = 0, name = BARRIER) =>
-  text.normalize('NFKC').replace(PLACEHOLDER, (placeholder, claim?: string) => (placeholder === PLACEHOLDERS.name ? name : claim === undefined || Number.parseInt(claim, 10) <= claims ? BARRIER : `${BARRIER}${claim}${BARRIER}`));
+const masked = (text: string, claims = 0, name = BARRIER, own = BARRIER) =>
+  text.normalize('NFKC').replace(PLACEHOLDER, (placeholder, claim?: string) =>
+    placeholder === PLACEHOLDERS.name ? name : placeholder === PLACEHOLDERS.ssn || placeholder === PLACEHOLDERS.phone ? BARRIER : claim === undefined || Number.parseInt(claim, 10) <= claims ? own : `${BARRIER}${claim}${BARRIER}`,
+  );
 
 /**
  * Whether any of the identifiers is still in the text, in any form redaction reads, or a Social Security or phone number
@@ -2229,7 +2478,7 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
     if (matchesIn(scanned, subject).length > 0) {
       return true;
     }
-    const survivor = survivorLeft(scanned);
+    const survivor = survivorLeft(masked(text, claims.length, OWN_MARK, OWN_MARK));
     return survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held') || (survivor === 'held' && birthBesideItsPlaceholder(text, subject));
   } finally {
     viewsOfCheck = null;
@@ -2284,7 +2533,8 @@ function ownIdentifierGlued(normal: string, subject: Subject, held: boolean): bo
     birthGlued(normal, subject, inOtherDate) ||
     nameGlued(normal, subject, inOtherDate, held) ||
     spacedNameGlued(normal, subject, inOtherDate, held) ||
-    (held && (heldOwnIdentifier(normal, subject) || MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text)))
+    MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text) ||
+    (held && heldOwnIdentifier(normal, subject))
   );
 }
 
@@ -2293,7 +2543,7 @@ function ownIdentifierGlued(normal: string, subject: Subject, held: boolean): bo
  * mask characters and two, or five, then four digits. In a letter whose chain only held barriers hold (cc3dd7f6 refused
  * it), the letter is refused; elsewhere it is the follow-on leak PR's class (docs/adr/0054).
  */
-const MASKED_SSN_GLUED = /\p{L}\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
+const MASKED_SSN_GLUED = /[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
 
 /** A modifier letter (\p{Lm}): no letter of a name or number for heldOwnIdentifier's stream. */
 const MODIFIER_LETTER = /^\p{Lm}$/u;
