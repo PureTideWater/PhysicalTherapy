@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { parseMailQueueMessage } from './events';
 import { LocalMailSender, MailAddressError, MailPhiError, type MailMessage, MemoryMailSender, SesMailSender, configuredMailSender, mailBody, mailBodyHtml, sesMailSender } from './mail';
 import { MailTagError } from './streams';
-import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from './template';
+import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS, emailHeader } from './template';
 
 /** The CloudFront static host the deployed tasks name (STATIC_ASSET_ORIGIN), which serves the brand art under /brand/. */
 const STATIC = 'https://static.synthetic.test';
@@ -196,15 +196,16 @@ describe('the local outbox', () => {
 describe('the branded HTML email (docs/brand/BRAND.md, section 7)', () => {
   const html = mailBodyHtml(MESSAGE, STATIC);
 
-  it('heads the message with the outlined lockup and tagline at 160 px from the static host, named PaidWhole, never the name typed as text', () => {
+  it('heads the message with the outlined lockup and tagline at 160 px on its plated art from the static host, named PaidWhole, never the name typed as text', () => {
     const images = [...html.matchAll(/<img\b[^>]*>/g)].map((match) => match[0]);
     expect(images).toHaveLength(1);
     const [lockup = ''] = images;
     // The CloudFront static host serves /brand/ with Cross-Origin-Resource-Policy: cross-origin; the application
     // keeps same-origin on every response (reconciliation-001, D7), so the art never comes from the application.
-    expect(lockup).toContain(`src="${STATIC}/brand/paidwhole-lockup-horizontal-tagline-1200w.png"`);
+    expect(lockup).toContain(`src="${STATIC}/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png"`);
     expect(lockup).not.toContain(new URL(MESSAGE.links[0] ?? '').origin);
-    expect(lockup).toContain('width="160"');
+    // 184 px: the art's 160 px inside the plate's space 3 on each side, which the image's own pixels carry (UX-S1).
+    expect(lockup).toContain('width="184"');
     expect(lockup).toContain('alt="PaidWhole"');
     // The wordmark is the art's: no live text in a face the reader may not have, no inline SVG a client may strip.
     expect(html).not.toContain('Schibsted');
@@ -227,7 +228,7 @@ describe('the branded HTML email (docs/brand/BRAND.md, section 7)', () => {
     expect(html).toContain(`href="${MESSAGE.links[0] ?? ''}"`);
     expect(mailBodyHtml({ ...MESSAGE, lines: ['<b>&</b>'] }, STATIC)).toContain('&lt;b&gt;&amp;&lt;/b&gt;');
     expect(html).not.toMatch(/<(script|link)\b|url\(/i);
-    expect([...html.matchAll(/src="([^"]*)"/g)].map((match) => match[1])).toEqual([`${STATIC}/brand/paidwhole-lockup-horizontal-tagline-1200w.png`]);
+    expect([...html.matchAll(/src="([^"]*)"/g)].map((match) => match[1])).toEqual([`${STATIC}/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png`]);
   });
 
   it('goes without the art when no static host is configured (a local build), never with the wordmark typed instead', () => {
@@ -241,8 +242,8 @@ describe('the branded HTML email (docs/brand/BRAND.md, section 7)', () => {
     expect(bare).toContain(MESSAGE.lines[0] ?? '');
     expect(bare).toContain(`href="${MESSAGE.links[0] ?? ''}"`);
     expect(bare).toContain('This message carries links only; sign in to see the details.');
-    expect(bare.replace(/<tr><td style="padding:20px 24px;[^"]*">.*?<\/td><\/tr>/, '')).toBe(bare);
-    expect(html.replace(/<tr><td style="padding:20px 24px;[^"]*">.*?<\/td><\/tr>/, '')).toBe(bare);
+    expect(bare).not.toContain(emailHeader(STATIC));
+    expect(html.replace(emailHeader(STATIC), '')).toBe(bare);
   });
 
   it('refuses a link the PHI guard flags, as the text body does', () => {
@@ -263,17 +264,18 @@ describe('the prospect variant (a screening’s email; CO-04, decision D11)', ()
   const html = mailBodyHtml(PROSPECT, STATIC);
   const repository = path.resolve(import.meta.dirname, '../../../..');
 
-  it('heads the message with the lockup without the tagline, at the same 160 px, from the static host', () => {
+  it('heads the message with the lockup without the tagline, at the same 160 px on the same plate, from the static host', () => {
     const images = [...html.matchAll(/<img\b[^>]*>/g)].map((match) => match[0]);
     expect(images).toHaveLength(1);
     const [lockup = ''] = images;
     expect(lockup).toContain(`src="${STATIC}${EMAIL_PROSPECT_LOCKUP_PATH}"`);
-    expect(lockup).toContain('width="160"');
-    expect(lockup).toContain('height="29"');
+    expect(lockup).toContain('width="184"');
+    expect(lockup).toContain('height="53"');
     expect(lockup).toContain('alt="PaidWhole"');
     expect(html).not.toContain('tagline');
     expect(EMAIL_PROSPECT_LOCKUP_PATH).not.toContain('tagline');
-    // Both arts are the delivered files the static host serves from apps/web/public/brand.
+    // Both arts are the plated files generated from the delivered art (tools/brand-email-plate), which the static host
+    // serves from apps/web/public/brand.
     expect(existsSync(path.join(repository, 'apps/web/public', EMAIL_PROSPECT_LOCKUP_PATH))).toBe(true);
     expect(existsSync(path.join(repository, 'apps/web/public', EMAIL_LOCKUP_PATH))).toBe(true);
   });
