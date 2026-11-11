@@ -12,7 +12,7 @@ import { renderFacts } from './render';
 import { serializeDraft } from './serialize';
 import { CURRENCY_WORDS, MULTIPLES, MULTIPLIERS, ORDINALS, SCALES, STRICT_NUMBER_WORDS, STRICT_PLURALS, TEENS, TENS, UNITS } from './scan';
 import { assemblyInput, contractCitation, contractWindowSource } from './test-support';
-import { type Mismatch, type VerifierReportV3, verifyAtFormat, verifyNarrative, verifyTemplate } from './verifier';
+import { type CaseIdentifiers, type Mismatch, NO_CASE_IDENTIFIERS, type VerifierReportV3, verifyAtFormat, verifyNarrative, verifyTemplate } from './verifier';
 
 /**
  * Verifier format tp-packet-verifier/3, pass 1 (design lane-b-packet-figure-placeholders, section 4; docs/adr/0089; test
@@ -23,7 +23,8 @@ import { type Mismatch, type VerifierReportV3, verifyAtFormat, verifyNarrative, 
 
 const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 const content = (name: FactContent): PacketContent => FACT_CONTENTS[name]();
-const verify = (template: string, of: PacketContent = content('base'), identifiers: readonly string[] = []) => verifyTemplate(template, of, identifiers);
+const verify = (template: string, of: PacketContent = content('base'), identifiers: CaseIdentifiers = NO_CASE_IDENTIFIERS) => verifyTemplate(template, of, identifiers);
+const names = (...values: string[]): CaseIdentifiers => ({ names: values, numbers: [] });
 /** Each mismatch as [code, kind, the template's text at its span]. */
 const found = (template: string, report: { readonly mismatches: readonly Mismatch[] }) => report.mismatches.map((mismatch) => [mismatch.code, mismatch.kind, template.slice(mismatch.start, mismatch.end)]);
 /** A template that passes but for what is put in it. */
@@ -35,27 +36,27 @@ describe('format /3 is reached only by asking for it', () => {
     expect(VERIFIER_FORMAT_V3).toBe('tp-packet-verifier/3');
     const of = content('base');
     for (const narrative of ['The payer allowed $70.00 per line [1].', 'There were 3650 claims [3].', 'For {{patient_name:1}}, see [2].', '']) {
-      expect(JSON.stringify(verifyAtFormat(VERIFIER_FORMAT, narrative, of, ['Synthetic Person']))).toBe(JSON.stringify(verifyNarrative(narrative, narrativeFacts(of), ['Synthetic Person'])));
+      expect(JSON.stringify(verifyAtFormat(VERIFIER_FORMAT, narrative, of, names('Synthetic Person')))).toBe(JSON.stringify(verifyNarrative(narrative, narrativeFacts(of), names('Synthetic Person'))));
     }
-    expect(verifyAtFormat(VERIFIER_FORMAT_V3, around(''), of, [])).toEqual(verifyTemplate(around(''), of, []));
+    expect(verifyAtFormat(VERIFIER_FORMAT_V3, around(''), of, NO_CASE_IDENTIFIERS)).toEqual(verifyTemplate(around(''), of, NO_CASE_IDENTIFIERS));
   });
 
   it('fails a fact token at /2, at its span, as a placeholder naming nothing, and any stray brace (fail closed)', () => {
     const of = content('base');
     const narrative = 'The remittances show {{fact:pattern.allowed}} [1].';
-    const report = verifyAtFormat(VERIFIER_FORMAT, narrative, of, []);
+    const report = verifyAtFormat(VERIFIER_FORMAT, narrative, of, NO_CASE_IDENTIFIERS);
     expect(report.passed).toBe(false);
     expect(found(narrative, report)).toEqual([['unknown_placeholder', 'placeholder', '{{fact:pattern.allowed}}']]);
     for (const text of ['A {{ stray [1].', 'A }} stray [1].', 'A {{fact:code.97110}} [1].', 'A {{Patient_name:1}} [1].']) {
-      const failed = verifyAtFormat(VERIFIER_FORMAT, text, of, []);
+      const failed = verifyAtFormat(VERIFIER_FORMAT, text, of, NO_CASE_IDENTIFIERS);
       expect(failed.passed, text).toBe(false);
       expect(failed.mismatches.map((mismatch) => mismatch.code), text).toContain('unknown_placeholder');
     }
     // A stray beside an identifier placeholder of the schedule still fails, at its own span.
     const beside = 'For {{patient_name:1}} and }} here, see [1].';
-    expect(found(beside, verifyAtFormat(VERIFIER_FORMAT, beside, of, []))).toEqual([['unknown_placeholder', 'placeholder', '}}']]);
+    expect(found(beside, verifyAtFormat(VERIFIER_FORMAT, beside, of, NO_CASE_IDENTIFIERS))).toEqual([['unknown_placeholder', 'placeholder', '}}']]);
     // An identifier placeholder of the schedule still passes there.
-    expect(verifyAtFormat(VERIFIER_FORMAT, 'Line one of {{patient_name:1}} is cited [1].', of, []).passed).toBe(true);
+    expect(verifyAtFormat(VERIFIER_FORMAT, 'Line one of {{patient_name:1}} is cited [1].', of, NO_CASE_IDENTIFIERS).passed).toBe(true);
   });
 });
 
@@ -186,7 +187,7 @@ describe('CAS-52: free text holds no figure; tokens, a person’s markers and id
 
   it('fails a case’s identifier in free text but not a fact id that spells the same word', () => {
     const template = 'The remittances show {{fact:pattern.allowed}} for Allowed [1].';
-    const report = verify(template, content('base'), ['Allowed Quill']);
+    const report = verify(template, content('base'), names('Allowed Quill'));
     expect(found(template, report)).toEqual([['identifier_in_narrative', 'identifier', 'Allowed']]);
     expect(report.mismatches[0]?.start).toBe(template.lastIndexOf('Allowed'));
   });
@@ -439,7 +440,7 @@ describe('pass 1 reports in template offsets, after a hidden character or a char
       ['Note on the ﬁle', []],
     ] as const) {
       const template = `${opening}: {{fact:pattern.allowed}} and 3 here, seven too, with }} and {{patient_name:4}} for Quill [9]. No marker here.`;
-      const report = verify(template, content('base'), ['Quill']);
+      const report = verify(template, content('base'), names('Quill'));
       expect(found(template, report), opening).toEqual([
         ...hidden,
         ['free_figure', 'number', '3'],
@@ -550,7 +551,7 @@ describe('CAS-53: fact ids', () => {
 
 describe('pass 1 at its edges', () => {
   const of = () => content('severalCodes');
-  const codes = (template: string, identifiers: readonly string[] = []) => found(template, verify(template, of(), identifiers));
+  const codes = (template: string, identifiers: CaseIdentifiers = NO_CASE_IDENTIFIERS) => found(template, verify(template, of(), identifiers));
 
   it('reads every id through the renderer, in a sentence with no marker too, and marks each token once', () => {
     expect(codes('The schedule states {{fact:line.99.paid}}.')).toEqual([
@@ -584,7 +585,7 @@ describe('pass 1 at its edges', () => {
   });
 
   it('fails an identifier written in digits as the case’s identifier too, and a marker naming any source the version lacks', () => {
-    expect(codes('Member 4455667 is named [1].', ['4455667'])).toEqual([
+    expect(codes('Member 4455667 is named [1].', { names: [], numbers: ['4455667'] })).toEqual([
       ['free_figure', 'number', '4455667'],
       ['identifier_in_narrative', 'identifier', '4455667'],
     ]);
@@ -601,6 +602,6 @@ describe('pass 1 at its edges', () => {
   });
 
   it('never reads a date as the case’s identifier: a date is a figure, never a name or a number of the case', () => {
-    expect(codes('Seen on 2026-03-02 here [1].', ['2026-03-02'])).toEqual([['free_figure', 'date', '2026-03-02']]);
+    expect(codes('Seen on 2026-03-02 here [1].', { names: [], numbers: ['2026-03-02'] })).toEqual([['free_figure', 'date', '2026-03-02']]);
   });
 });

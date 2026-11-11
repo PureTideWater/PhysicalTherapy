@@ -133,7 +133,7 @@ export const narrativeSpec = Object.freeze<PurposeSpec<NarrativeInput, Narrative
   },
   verify(input, output): Verified<NarrativeProposal> {
     const narrative = output.paragraphs.join('\n\n');
-    const report = verifyNarrative(narrative, narrativeFacts(input.content), input.identifiers);
+    const report = verifyNarrative(narrative, narrativeFacts(input.content), identifierKinds(input));
     const roles = roleMismatches(narrative, input.content);
     const markers = [...new Set([...narrative.matchAll(/\[(\d{1,4})\]/g)].map((match) => Number.parseInt(match[1] ?? '', 10)))].filter((marker) => marker >= 1).sort((a, b) => a - b);
     return { proposal: { narrative, report, roles }, passed: report.passed && roles.length === 0, citations: markers.map((marker) => ({ marker })) };

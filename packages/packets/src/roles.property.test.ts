@@ -6,7 +6,7 @@ import { assemblePacket } from './assemble';
 import { narrativeFacts } from './facts';
 import type { PacketContentV2 } from './format';
 import { IDS, REGULATION, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord, roleOracle, scopedOracle } from './test-support';
-import { checkedFigures, verifyNarrative } from './verifier';
+import { NO_CASE_IDENTIFIERS, checkedFigures, verifyNarrative } from './verifier';
 
 /**
  * Properties of the role reader through the verifier (docs/adr/0086; test matrix CAS-43 and CAS-44). The oracle reads
@@ -279,7 +279,7 @@ const factsOf = new WeakMap<PacketContentV2, ReturnType<typeof narrativeFacts>>(
 const passes = (narrative: string, content: PacketContentV2) => {
   const facts = factsOf.get(content) ?? narrativeFacts(content);
   factsOf.set(content, facts);
-  return verifyNarrative(narrative, facts, []).passed;
+  return verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS).passed;
 };
 
 /** What the oracle expects of a number template of `role` with `value` written in `form`. */

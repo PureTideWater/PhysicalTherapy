@@ -6,7 +6,7 @@ import { checkNarrative, checkReading } from './check';
 import { draftNarrative } from './draft';
 import { narrativeFacts } from './facts';
 import { assemblyInput } from './test-support';
-import { checkedFigures, findMismatches, verifyNarrative } from './verifier';
+import { NO_CASE_IDENTIFIERS, checkedFigures, findMismatches, readsNoIdentifier, verifyNarrative } from './verifier';
 
 /**
  * The builder's check in the browser (@tp/packets/check) says what the stored verifier says: the same
@@ -29,7 +29,7 @@ describe('checkNarrative', () => {
     fc.assert(
       fc.property(fc.array(words, { maxLength: 40 }), (parts) => {
         const narrative = parts.join(' ');
-        const stored = verifyNarrative(narrative, narrativeFacts(content), []);
+        const stored = verifyNarrative(narrative, narrativeFacts(content), NO_CASE_IDENTIFIERS);
         const check = checkNarrative(narrative, content);
         expect(check).toEqual({ passed: stored.passed, sentences: stored.sentences, checked: stored.checked, mismatches: stored.mismatches });
       }),
@@ -57,7 +57,7 @@ describe('checkNarrative', () => {
       fc.property(fc.array(words, { maxLength: 30 }), (parts) => {
         const narrative = parts.join(' ');
         const reading = checkReading(narrative, facts);
-        expect(reading.check).toEqual(findMismatches(narrative, facts, []));
+        expect(reading.check).toEqual(findMismatches(narrative, facts, readsNoIdentifier));
         expect(reading.check).toEqual(checkNarrative(narrative, content));
         expect(reading.figures).toEqual(checkedFigures(narrative, facts));
       }),

@@ -3003,10 +3003,37 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
 /**
  * Whether the text holds any of the names (read as names) or numbers (member IDs and claim numbers, read
  * as numbers) in a form redaction reads: the narrative drafter's check of its facts. No date there is a
- * date of birth, and no initial is looked for (a whole name or part is).
+ * date of birth, and no initial is looked for (a whole name or part is). The reading is nameOrNumberMatches's, over
+ * the text with the gateway's own placeholders masked.
  */
 export function holdsNameOrNumber(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
-  return matchesIn(masked(text), { names: identifiers.names, memberIds: identifiers.numbers, claims: [], datesOfBirth: null, initials: false, patterns: false }).length > 0;
+  return nameOrNumberMatches(masked(text), identifiers).length > 0;
+}
+
+/** Where a text holds a name or a number of the narrative's reading (nameOrNumberMatches), and which of the two matched. */
+export interface NameOrNumberMatch {
+  readonly start: number;
+  readonly end: number;
+  readonly kind: 'name' | 'number';
+}
+
+/**
+ * The narrative's reading of a text, match by match: every place it holds one of the names (read as names: the whole
+ * name, each word and each part) or one of the numbers (member IDs and claim numbers) in a form redaction reads. Each
+ * number is read as a member ID and as a claim number, since a narrative's check is told only that it is a number: so
+ * it is never an amount (a member ID is not), and its digits written as a calendar date are the number after a label of
+ * either kind ("Claim 2026-03-05", "Member ID 2026-03-05"), a date otherwise. No date is a date of birth, no initial is
+ * looked for, and no Social Security or phone number is read by pattern (docs/adr/0054, amendment of 2026-11-04, Scope).
+ *
+ * The text is read as it is given, which must be NFKC text, and the ranges are that text's own, one for each form that
+ * matched (they may overlap, and a number is found once for each kind). Nothing is masked here: a caller with
+ * placeholders of its own masks them first (holdsNameOrNumber) or drops the matches inside them (@tp/packets,
+ * verifier/identifiers.ts). The drafter's check of its facts and the packet verifier both read through this function,
+ * so neither reads a form the other does not.
+ */
+export function nameOrNumberMatches(normal: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): NameOrNumberMatch[] {
+  const subject: Subject = { names: identifiers.names, memberIds: identifiers.numbers, claims: [identifiers.numbers], datesOfBirth: null, initials: false, patterns: false };
+  return matchesIn(normal, subject).map(({ start, end, kind }) => ({ start, end, kind: kind === 'name' ? 'name' : 'number' }));
 }
 
 /**

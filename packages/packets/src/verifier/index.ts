@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { factCatalog } from '../fact-catalog';
 import { type NarrativeFacts, narrativeFacts } from '../facts';
 import { type PacketContent, VERIFIER_FORMAT, VERIFIER_FORMAT_V3, type VerifierFormat } from '../format';
+import { type CaseIdentifiers, identifierReader } from './identifiers';
 import { type Mismatch, findMismatches } from './mismatches';
 import { readTemplate } from './template';
 
@@ -18,7 +19,8 @@ import { readTemplate } from './template';
  * shown beside the (encrypted) narrative without repeating anything a person typed.
  */
 
-export { type CheckedFigure, type FigureNeeds, MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, checkedFigures, findMismatches, identifierForms } from './mismatches';
+export { type CaseIdentifiers, NO_CASE_IDENTIFIERS, identifierReader } from './identifiers';
+export { type CheckedFigure, type FigureNeeds, type IdentifierReader, type IdentifierSkip, MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, checkedFigures, findMismatches, identifierForms, readsNoIdentifier } from './mismatches';
 
 interface ReportFields {
   readonly passed: boolean;
@@ -56,10 +58,10 @@ export function narrativeSha256(narrative: string): string {
 /**
  * Verifies a narrative against its version's facts and the case's own identifiers (the schedule rows'
  * patient names, member IDs and claim numbers, read from the canonical records): an identifier the
- * narrative holds fails it, and the report says where, never what.
+ * narrative holds, in any form ./identifiers.ts reads, fails it, and the report says where, never what.
  */
-export function verifyNarrative(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): VerifierReportV2 {
-  const check = findMismatches(narrative, facts, identifiers);
+export function verifyNarrative(narrative: string, facts: NarrativeFacts, identifiers: CaseIdentifiers): VerifierReportV2 {
+  const check = findMismatches(narrative, facts, identifierReader(identifiers));
   return {
     format: VERIFIER_FORMAT,
     passed: check.passed,
@@ -74,8 +76,8 @@ export function verifyNarrative(narrative: string, facts: NarrativeFacts, identi
  * Verifies a template at format /3 against its version's content (the facts' catalog) and the case's own identifiers:
  * ./template.ts's check, with the template's hash and its rendered text's.
  */
-export function verifyTemplate(template: string, content: PacketContent, identifiers: readonly string[]): VerifierReportV3 {
-  const { check, rendered } = readTemplate(template, factCatalog(content), identifiers);
+export function verifyTemplate(template: string, content: PacketContent, identifiers: CaseIdentifiers): VerifierReportV3 {
+  const { check, rendered } = readTemplate(template, factCatalog(content), identifierReader(identifiers));
   return {
     format: VERIFIER_FORMAT_V3,
     passed: check.passed,
@@ -91,9 +93,9 @@ export function verifyTemplate(template: string, content: PacketContent, identif
  * Verifies a narrative at the format asked for, over its version's content: /2 is verifyNarrative over the content's
  * facts, exactly as every caller does today; /3 is verifyTemplate. Nothing chooses /3 but this argument.
  */
-export function verifyAtFormat(format: typeof VERIFIER_FORMAT, narrative: string, content: PacketContent, identifiers: readonly string[]): VerifierReportV2;
-export function verifyAtFormat(format: typeof VERIFIER_FORMAT_V3, narrative: string, content: PacketContent, identifiers: readonly string[]): VerifierReportV3;
-export function verifyAtFormat(format: VerifierFormat, narrative: string, content: PacketContent, identifiers: readonly string[]): VerifierReport;
-export function verifyAtFormat(format: VerifierFormat, narrative: string, content: PacketContent, identifiers: readonly string[]): VerifierReport {
+export function verifyAtFormat(format: typeof VERIFIER_FORMAT, narrative: string, content: PacketContent, identifiers: CaseIdentifiers): VerifierReportV2;
+export function verifyAtFormat(format: typeof VERIFIER_FORMAT_V3, narrative: string, content: PacketContent, identifiers: CaseIdentifiers): VerifierReportV3;
+export function verifyAtFormat(format: VerifierFormat, narrative: string, content: PacketContent, identifiers: CaseIdentifiers): VerifierReport;
+export function verifyAtFormat(format: VerifierFormat, narrative: string, content: PacketContent, identifiers: CaseIdentifiers): VerifierReport {
   return format === VERIFIER_FORMAT_V3 ? verifyTemplate(narrative, content, identifiers) : verifyNarrative(narrative, narrativeFacts(content), identifiers);
 }
