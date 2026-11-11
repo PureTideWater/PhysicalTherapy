@@ -66,13 +66,18 @@ describe('the narrative’s reading, match by match', () => {
     expect(read('It was paid in a lump.', { names: ['INA'], numbers: [] })).toEqual([]);
     expect(read('It was paid in a lump.', { names: [], numbers: ['INA'] })).toEqual(['in a']);
     expect(read('Jo Ann was paid.', { names: ['JOANN'], numbers: [] })).toEqual(['Jo Ann']);
+    // Beside a letter a number is joined by more than a name is: a slash or an opening parenthesis, never an asterisk.
+    expect(read('QQRS/TUVW and QQRS(TUVW and QQRS*TUVW.', { names: [], numbers: ['QQRSTUVW'] })).toEqual(['QQRS/TUVW', 'QQRS(TUVW']);
+    expect(read('Quar/rington and Quar(rington.', { names: ['QUARRINGTON'], numbers: [] })).toEqual([]);
   });
 
   it('looks for no date of birth, no initial and no Social Security or phone number by its pattern', () => {
     expect(read('Z. V-T., born 1984-02-29, SSN 900-55-0101, phone 212-555-0199.')).toEqual([]);
     // Not after a label that says a date is one of birth, and not an initial next to a name it does read.
     expect(read('DOB 1955-07-14, date of birth 07/14/1955.', { names: ['QUILL'], numbers: ['19550714'] })).toEqual([]);
-    expect(read('Z. Quarrington was told.', { names: ['ZOË QUARRINGTON'], numbers: [] })).toEqual(['Quarrington']);
+    // A word of one letter is part of the whole name, which counts under the floor asked (four letters, five asked),
+    // and is no initial beside another word of it.
+    expect(read('Q. Zoe and Zoe Q. were told.', { names: ['ZOË Q'], numbers: [] }, 5)).toEqual(['Zoe', 'Zoe Q', 'Zoe']);
   });
 
   it('masks nothing itself: the drafter’s check masks the gateway’s placeholders first', () => {

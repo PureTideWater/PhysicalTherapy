@@ -1140,8 +1140,9 @@ under, and in the web app's `transpilePackages`.
 **The narrative's reading has one subject (`narrativeSubject`) and is asked two ways.** `holdsNameOrNumber` (the
 drafter's check of its facts) asks it plainly: every identifier, every form, over the text with the gateway's
 placeholders masked. `nameOrNumberMatches` asks where, for the packet verifier: each match as a range of the text as
-given, in which it masks nothing (the verifier drops what touches a token of its own). Beside that it differs from the
-plain check in two ways only, each held by a test of `packages/redact/src/narrative.test.ts`:
+given, which the caller gives in its NFKC form (the plain check normalizes for itself) and in which it masks nothing
+(the verifier drops a match that overlaps a token of its own). Beside those it differs from the plain check in two
+ways only, each held by a test of `packages/redact/src/narrative.test.ts`:
 
 - it reads an identifier only if the text holds the letters and digits of one of its forms in order with nothing else
   between them. No form can match otherwise (a form's gaps hold no letter or digit), so the answer is the plain
@@ -1171,10 +1172,12 @@ number by pattern (amendment of 2026-11-04).
 **Still not covered by the narrative's reading** (found by this change's reviews; the letter path's own checks after
 redaction are not part of it):
 
-- a name's letters with a character between them that joins no name: a middle dot or a bullet (`Quar·rington`:
-  U+00B7, U+2027 and U+30FB join a number, not a name), a slash, an asterisk, a bracket or a brace (`Quar*rington`,
-  `Quar{rington`, `Quar[x]rington`; a number's letters split by one of the last three are not read either, while a
-  slash beside a letter joins a number: `QQRS/TUVW`);
+- a name's letters with a character between them that joins no name: a middle dot or the bullet U+2022
+  (`Quar·rington`: with U+00B7, U+2027 and U+30FB it joins a number, not a name; the hyphen bullet U+2043 joins
+  both), a slash, an asterisk, a square bracket or a brace
+  (`Quar*rington`, `Quar{rington`, `Quar[x]rington`; a number's letters split by one of the last three are not read
+  either, while a slash beside a letter joins a number, as a period, a colon, a number sign and an opening parenthesis
+  do: `QQRS/TUVW`, `QQRS(TUVW`);
 - a part written in a lower-case piece after a space or a period (`Quarring ton`, `Quar.rington`: the rule that keeps
   "in a" from being INA), and its letters spaced one by one;
 - a name glued to other letters (`DearQuarrington`): the letter path refuses such a letter after redaction

@@ -439,10 +439,10 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
 
 describe('the whole-word reading by itself (docs/adr/0047), which the matcher’s now stands beside', () => {
   it('is what reads an identifier written as the records hold it, where they hold a character the matcher joins nothing over', () => {
-    // A slash, a period, a comma or a plus sign between two digits, a plus sign in a name, and one word of a number the
-    // records hold in two. The matcher reads none of these (the drafter's check holds none); the verifier fails each, as
-    // it did before the matcher stood beside this reading. A row the matcher comes to read no longer shows that: give
-    // it another such identifier.
+    // A slash, a period, a comma or a plus sign between two digits of a number that holds a letter, a plus sign in a
+    // name, and one word of a number the records hold in two. The matcher reads none of these (the drafter's check
+    // holds none); the verifier fails each, as it did before the matcher stood beside this reading. A row the matcher
+    // comes to read no longer shows that: give it another such identifier.
     for (const [identifiers, written] of [
       [numbers('ZZ12345/01'), 'ZZ12345/01'],
       [numbers('ZZ12345.01'), 'ZZ12345.01'],
@@ -458,7 +458,6 @@ describe('the whole-word reading by itself (docs/adr/0047), which the matcher’
     // One number and the name through the verifier, end to end.
     expect(flagged(telling('ZZ12345/01'), numbers('ZZ12345/01'))).toEqual(['ZZ12345/01']);
     expect(flagged(telling('Quill+Treeby'), names('QUILL+TREEBY'))).toEqual(['Quill+Treeby']);
-    expect(verifyNarrative(telling('ZZ12345/01'), facts, numbers('ZZ12345/01')).passed).toBe(false);
   });
 
   // What follows the verifier's report no longer shows by itself: the matcher's reading finds the same text. The
