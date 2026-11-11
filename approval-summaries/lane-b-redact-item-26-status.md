@@ -2,24 +2,32 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W20, session_019i9ifCRAB5iyShfYuBtnA3, 2026-11-11 about 23:00 UTC; part A is a draft PR waiting on CI; part B not started)
+## RESUME-BLOCK, current (W20, session_019i9ifCRAB5iyShfYuBtnA3, 2026-11-11 about 23:25 UTC; part A MERGED; part B STOPPED at a blocker before its delta review, waiting on the orchestrator)
 
-- **Part A (the time bound, its own PR):** branch `co-001/time-budget-bound` at **cce22926** on 356914e2, draft PR open
-  (see the next line of this block once numbered), W20 subscribed. Merge on green required checks, then one line to
-  the orchestrator. The helper was REBUILT after review T-1 (W18's build let a 3.4 to 3.8 s reader pass): first run
-  against the budget itself; only over-budget work is rerun beside a calibration (fastest of five, 150 passes,
-  allocation-free, reference 144 ms on Node 24, counted above 5 %); 60 s hang guard on the four blocks; its own tests
-  in `test-support/time-budget.test.ts`. Review and scripts: `designs/time-budget-bound/`. Run tests with
-  `PATH=/opt/node24/bin:$PATH` (the container's default node is 22; CI is 24).
-- **Part B, when A has merged:** W18's block below stands, with these changes: item 26's WIP (b29e611a) carries W18's
-  OLD helper and call sites; on merging the base, take the base's `time-budget.ts`, `time-budget.test.ts` and call-site
-  shape (`timed(BUDGET_MS, ...)` is the same signature; `attempts` is gone; add `{ timeout: HANG_GUARD_MS }` to any
-  timed block item 26 adds), and make item 26's ADR amendment cite the `co-001/time-budget-bound` amendment instead
-  of its own "How the budget is proved" paragraph. Then B-5's letters must be re-measured against the plain 3 s (no
-  20 to 30 % hidden allowance any more): W18's 2.2 to 2.5 s was Node 22; if a row is over 3 s on Node 24 in-suite,
-  stop and tell the orchestrator.
-- Told to the orchestrator with the merge line: the container's default node is 22; one untimed property test in
-  denial-letter.test.ts ran past vitest's 5 s default under a load of eight on four cores.
+- **Part A: merged.** #148 as 83e30973 (the base now). The time helper is not W18's: review T-1 showed W18's build
+  passed a 3.4 to 3.8 s reader, so it was rebuilt (first run against the budget itself; a calibration only for
+  over-budget work: fastest of five, reference 144 ms on Node 24, counted above 5 %; 60 s hang guard on the timed
+  blocks). Review and scripts: `designs/time-budget-bound/`. Run every test with `PATH=/opt/node24/bin:$PATH` (the
+  container's default node is 22; CI is 24).
+- **Part B, done so far:** WIP `co-001/wip-redact-item-26` = **f0d415e2** (b29e611a, the base 83e30973 merged in as c6037bd9
+  with the base's helper and call sites, ADR 0054 keeping both amendments and item 26's citing the time bound's; then
+  the duplicate import removed). Local branch `co-001/redact-item-26`.
+- **THE BLOCKER (told to the orchestrator 23:25 UTC): item 26's dearest letters are over the 3 s budget.** B-5 was
+  accepted at "2.2 to 2.5 s of 3 s"; that figure was read under W18's helper. Against the plain 3 s, on this machine at
+  the reference speed (calibration 140 to 148 ms):
+  - in the suite on Node 24 (`vitest run src/functions/denial-letter.test.ts`): the row "dates written with spaces
+    alone and a CR LF, then the name with a part written apart" FAILS at 3.06 s (its best of three runs); "a digit and
+    a CRLF, repeated, then the name with a part written apart" passed (test duration 2.2 s);
+  - in a bare script (`designs/time-budget-bound/scripts/b5.mts`, five runs each): 3.39 to 3.88 s and 3.60 to 3.97 s
+    on Node 24; 4.04 to 4.33 s and 3.75 to 4.12 s on Node 22; the base's own dearest row beside them 1.2 s (1.7 on 22).
+  The number is not to be raised and no row skipped, so the cure is in the reader (W18's note: one more check before a
+  wider match is applied, and a CR LF letter checked in both writings: four checks; "I found no way that keeps the
+  composition"). That is a design decision and would be this item's one remaining fix round. Nothing else of part B
+  was started: no delta review, no gate, no battery, no full suite, no PR.
+- **When the orchestrator rules, the order is W18's block below** (delta review of round 1 with the time bound in its
+  scope, now meaning the base's helper; gate; battery; full suite; base merge; draft PR), after the reader's cure if
+  one is ordered.
+- No PR is open for part B, no subscription and no check-in is held. Nothing runs in the container.
 
 ## RESUME-BLOCK, earlier (W18 at its token limit, 2026-11-11 about 21:50 UTC; fix round 1 is built and green, NOT yet reviewed on its delta; no PR is open)
 
