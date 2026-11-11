@@ -198,6 +198,7 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
     - **Fix:** a reset time on the account, stamped where `password_reset_completed` is recorded, and every step begun before it refused, read from the app's own step start. It needs no Cognito `auth_time` fact, so the plan's staging precondition for SEC-N5 falls away.
     - **Meanwhile:** password-changed-notice keeps its line, pages an operator when the provider sign-out fails, and records both cases under SGN-16; the founder reads the trade-off in its description and may hold that PR until this close is in it.
     - **Reviews:** two adversarial on the design and on the build (sign-in and session security; database). A migration: the founder's line.
+    - **Also in this PR (added 2026-11-11 06:55 UTC, from W8's design review, SEC-D7):** a password reset whose answer is lost is sent again by the SDK's default retries, meets its own used code and is reported as a refused code: the password is changed, the person is told it did not match, no session ends, nothing is recorded and nothing pages. Unproven at Cognito (no pool). The close is one attempt for that call and a safe handling of an unknown outcome. **Required before launch.**
 
 ## Claims
 
