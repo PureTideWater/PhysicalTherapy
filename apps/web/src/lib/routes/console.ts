@@ -13,6 +13,7 @@ import {
 } from '@tp/db/runtime';
 import { z } from 'zod';
 
+import { signOutAtProviderAfterCommit } from '../auth/provider-sign-out';
 import { revokeUserSessions } from '../auth/sessions';
 import { PracticeSettingsError, type PracticeSettingsForm, practiceSettingsInput, settingsDocument, settingsForm } from '../console/practice-settings';
 import { platformRoute } from '../http/invoke';
@@ -775,7 +776,7 @@ export const endMembership = platformRoute({
   params: z.object({}),
   input: z.object({ membershipId: opaqueId }),
   audit: { action: 'membership_ended', objectType: 'membership' },
-  handle: async ({ scope, input, services }): Promise<MutationResult> => {
+  handle: async ({ scope, input, request, services, afterCommit }): Promise<MutationResult> => {
     const ended = (
       await scope.client.query<{ user_id: string; organization_id: string }>(
         'UPDATE membership SET ends_at = now() WHERE id = $1 AND (ends_at IS NULL OR ends_at > now()) RETURNING user_id, organization_id',
@@ -788,9 +789,8 @@ export const endMembership = platformRoute({
     // PRD 3, Lifecycle events: a user who leaves an organization has their sessions revoked.
     await revokeUserSessions(scope, ended.user_id);
     const sub = (await scope.client.query<{ cognito_sub: string }>('SELECT cognito_sub FROM "user" WHERE id = $1', [ended.user_id])).rows[0]?.cognito_sub;
-    if (sub !== undefined) {
-      await services.provider.globalSignOut(sub);
-    }
+    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/00XX).
+    signOutAtProviderAfterCommit(afterCommit, services, { userId: ended.user_id, requestId: request.requestId }, sub);
     return { objectId: input.membershipId, redirect: `/console/organizations/${ended.organization_id}` };
   },
   sample: { params: () => ({}), input: (refs) => ({ membershipId: refs.membershipId }) },

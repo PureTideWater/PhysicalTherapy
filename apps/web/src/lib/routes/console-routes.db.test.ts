@@ -18,6 +18,7 @@ import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
+import { endMembershipAction } from './settings';
 import {
   createOrganization as createOrganizationRoute,
   createPractice,
@@ -366,6 +367,63 @@ describe('members', () => {
     signOut.mockRestore();
     expect(await resolveSession(app, token, 'test')).toEqual({ state: 'ended', reason: 'ended' });
     expect(await run(endMembership, admin.token, { membershipId })).toEqual({ status: 'not_found' });
+  });
+
+  // docs/adr/00XX (Queues item 29): the provider is asked only once End membership has committed, and its failure undoes nothing.
+  describe.each([
+    { name: 'the console', route: () => endMembership, actor: () => admin.token, input: (membershipId: string) => ({ membershipId }), params: () => ({}) },
+    {
+      name: 'an organization’s settings',
+      route: () => endMembershipAction,
+      actor: () => sessionFor(world.adminUserId, 'totp'),
+      input: (membershipId: string) => ({ membershipId, confirm: 'on' }),
+      params: () => ({ organizationId: world.organizationId }),
+    },
+  ])('End membership in $name when the provider’s sign-out fails (SGN-XX)', ({ route, actor, input, params }) => {
+    it('ends the membership, the sessions and writes the audit event; the provider is asked after the commit and its failure is one logged line', async () => {
+      const userId = await createUser(owner);
+      const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
+      const token = await sessionFor(userId, 'totp');
+      const lines: Record<string, unknown>[] = [];
+      const logged = { ...services, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
+      const seen: { ended: boolean; sessions: number }[] = [];
+      const signOut = vi.spyOn(provider, 'globalSignOut').mockImplementation(async () => {
+        // Another connection sees only what has committed.
+        const membership = await owner.query('SELECT 1 FROM membership WHERE id = $1 AND ends_at IS NOT NULL', [membershipId]);
+        const open = await owner.query('SELECT 1 FROM user_session WHERE user_id = $1 AND ended_at IS NULL', [userId]);
+        seen.push({ ended: membership.rowCount === 1, sessions: open.rowCount ?? -1 });
+        throw Object.assign(new Error(`no sign-out for synthetic-${userId}`), { name: 'TooManyRequestsException' });
+      });
+      const actorToken = await actor();
+      const requestId = `test-${randomUUID()}`;
+      const answer = await route().invoke(
+        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(membershipId) }, requestId, userAgent: null },
+        logged,
+      );
+      expect(signOut).toHaveBeenCalledExactlyOnceWith(`synthetic-${userId}`);
+      signOut.mockRestore();
+      expect(answer).toMatchObject({ status: 'ok' });
+      expect(seen).toEqual([{ ended: true, sessions: 0 }]);
+      expect(await resolveSession(app, token, 'test')).toEqual({ state: 'ended', reason: 'ended' });
+      expect((await owner.query(`SELECT 1 FROM audit_event WHERE action = 'membership_ended' AND object_id = $1 AND request_id = $2`, [membershipId, requestId])).rowCount).toBe(1);
+      const failures = lines.filter((line) => line['msg'] === 'security event: membership end provider sign-out failed');
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ level: 'error', user_id: userId, request_id: requestId, error_code: 'TooManyRequestsException' });
+      // IDs and a code only: no address, no provider subject, no error text.
+      expect(JSON.stringify(lines)).not.toMatch(/synthetic-|@/);
+    });
+
+    it('asks the provider nothing when End membership is refused', async () => {
+      const signOut = vi.spyOn(provider, 'globalSignOut');
+      const actorToken = await actor();
+      const answer = await route().invoke(
+        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(randomUUID()) }, requestId: `test-${randomUUID()}`, userAgent: null },
+        services,
+      );
+      expect(answer).toEqual({ status: 'not_found' });
+      expect(signOut).not.toHaveBeenCalled();
+      signOut.mockRestore();
+    });
   });
 
   it('refuses ending the last practice administrator’s membership', async () => {

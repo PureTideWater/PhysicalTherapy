@@ -27,6 +27,7 @@ import {
 import { runsInEffect } from '../pricing/queries';
 import { ZIP_CODE_FORMAT, parseZipCode, zipCodeText } from '../zip';
 import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/contact';
+import { signOutAtProviderAfterCommit } from '../auth/provider-sign-out';
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
@@ -1072,7 +1073,10 @@ export const changeRoleAction = organizationRoute({
   sample: { params: (refs) => ({ organizationId: refs.organizationId }), input: (refs) => ({ membershipId: refs.spareMembershipId, role: 'billing_manager' }) },
 });
 
-/** Ends a membership now: the person's sessions end and they are signed out of the identity provider (PRD 3, Lifecycle events). */
+/**
+ * Ends a membership now: the person's sessions end in this transaction, and the identity provider is asked to sign them
+ * out once it has committed (PRD 3, Lifecycle events; docs/adr/00XX).
+ */
 export const endMembershipAction = organizationRoute({
   id: 'settings.users.end_membership',
   kind: 'action',
@@ -1082,7 +1086,15 @@ export const endMembershipAction = organizationRoute({
   params: z.object({ organizationId: opaqueId }),
   input: z.object({ membershipId: opaqueId, confirm: z.literal('on', { message: 'confirm that this person loses access now' }) }),
   audit: { action: 'membership_ended', objectType: 'membership' },
-  handle: async ({ scope, organizationId, input, services }): Promise<MutationResult> => {
+  handle: async ({ scope, organizationId, input, request, services, afterCommit }): Promise<MutationResult> => {
+    // Read while the membership stands: once it has ended, row-level security hides the person's row from an
+    // administrator who administers them nowhere else, and the provider would never be asked (docs/adr/00XX).
+    const sub = (
+      await scope.client.query<{ cognito_sub: string }>(
+        'SELECT u.cognito_sub FROM membership m JOIN "user" u ON u.id = m.user_id WHERE m.id = $1 AND m.organization_id = $2 AND m.user_id <> app_actor_id() AND (m.ends_at IS NULL OR m.ends_at > now())',
+        [input.membershipId, organizationId],
+      )
+    ).rows[0]?.cognito_sub;
     let ended: { user_id: string } | undefined;
     try {
       ended = (
@@ -1101,10 +1113,8 @@ export const endMembershipAction = organizationRoute({
       throw new NotFoundError();
     }
     await revokeUserSessions(scope, ended.user_id);
-    const sub = (await scope.client.query<{ cognito_sub: string }>('SELECT cognito_sub FROM "user" WHERE id = $1', [ended.user_id])).rows[0]?.cognito_sub;
-    if (sub !== undefined) {
-      await services.provider.globalSignOut(sub);
-    }
+    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/00XX).
+    signOutAtProviderAfterCommit(afterCommit, services, { userId: ended.user_id, requestId: request.requestId }, sub);
     return { objectId: input.membershipId, redirect: `/settings/organizations/${organizationId}/users?notice=ended` };
   },
   sample: { params: (refs) => ({ organizationId: refs.organizationId }), input: (refs) => ({ membershipId: refs.spareMembershipId, confirm: 'on' }) },

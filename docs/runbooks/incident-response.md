@@ -25,8 +25,10 @@ Pick what fits; do the cheapest effective step first.
 
 - **A user or session:** press End membership beside the person on their organization's console page (Console →
   Organizations → the organization). It ends every session of the user, signs them out at the identity provider and ends
-  their role in that organization at once, in one step: if the provider refuses the sign-out, the page shows an error
-  and nothing was ended. It does not disable the account or change its password, and the database refuses it for an
+  their role in that organization at once. The membership, the sessions and the audit event are one transaction, and
+  the identity provider is asked to sign the person out only once it has committed: if the provider refuses or cannot be
+  reached, nothing is undone, the page still shows the membership ended, and `MembershipEndProviderSignOutFailed` pages
+  the operator ("An ended membership whose provider sign-out failed", below; docs/adr/00XX). It does not disable the account or change its password, and the database refuses it for an
   organization's only practice administrator. The page lists members by their sign-in email and shows no user ID, so it
   needs the person, not only an ID. When the membership must stay, when the account must be disabled at the identity
   provider, or when only a user ID is known, give the user ID to the founder, whose break-glass session ends the
@@ -276,6 +278,50 @@ event: password reset provider sign-out failed`.
 6. **Find the cause** from the line's `error_code` and Cognito's service health in the same minutes: a throttle, an
    outage at Cognito, or the application role without `cognito-idp:AdminUserGlobalSignOut`
    (`infra/lib/constructs/application-role.ts`).
+
+## An ended membership whose provider sign-out failed (`MembershipEndProviderSignOutFailed`; docs/adr/00XX)
+
+End membership (the console's, or an organization's Settings, Users) ended a membership, the account's sessions and
+wrote `membership_ended` in one transaction, and the sign-out at the identity provider that follows the commit did not
+happen. Nothing was undone: the person has no role in that organization and no session. The account itself is not
+disabled, as End membership never disables it. What the missing sign-out leaves alive is the provider's own tokens:
+a hardware-key registration step begun before the membership ended can still be completed for up to 15 minutes, and
+nothing sends the sign-out again (`LANES.md` Queues item 29: the retry is a database outbox, with Lane A's migration).
+
+1. **Read the line**, in the web's log group:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: membership end provider sign-out failed"
+   ```
+
+   Keep the user ID, the request ID, the time and the `error_code`: the provider's error name, or
+   `NO_PROVIDER_SUBJECT` (the account's provider subject could not be read, so the provider was not asked).
+2. **Confirm what ended**, in a session as the operator role, by the line's request ID:
+
+   ```sql
+   SELECT at, action, object_id FROM audit_event
+    WHERE request_id = '<request_id>' AND action = 'membership_ended';
+   ```
+
+   One `membership_ended` row. With none, the request did not commit and this line is not its own: stop and open the
+   record (section 1).
+3. **Look for a key registered since**, for 15 minutes after the line's time:
+
+   ```sql
+   SELECT at, request_id FROM audit_event
+    WHERE action = 'hardware_key_registered' AND object_type = 'user' AND object_id = '<user_id>' AND at >= '<the line's time>';
+   ```
+
+   No row after those 15 minutes: nothing the missing sign-out could do in the app happened. Close the page in the
+   ticket. A row: a key was registered on the account after its membership ended. Open the record (section 1) and
+   give the user ID to the founder: nothing an operator holds removes a key until `LANES.md` Queues item 29's key
+   removal lands.
+4. **Where the membership was ended because the account is thought to be in another's hands**, the provider's tokens
+   matter beyond the app: give the user ID to the founder now, whose break-glass session sends the provider's
+   sign-out again and can disable the account there. Otherwise the tokens lapse on their own and open nothing here.
+5. **`NO_PROVIDER_SUBJECT`** is a fault of the app, not of the provider: record it for engineering with the request ID.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
 
 ## A sign-in step refused after a password reset (`SignInStepRefusedAfterReset`; docs/adr/0093, D5)
 
