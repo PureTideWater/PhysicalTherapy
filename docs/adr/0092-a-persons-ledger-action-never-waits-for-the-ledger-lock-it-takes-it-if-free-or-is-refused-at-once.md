@@ -265,8 +265,8 @@ route anyone can post to (the reviews of the first amendment, D4; Queues item 25
   seconds a lock (`WEB_LOCK_TIMEOUT_MS`), as its first statement and commits reading the answer
   (`screening/routes.ts`, `withBoundedLockWaits`). The function is unchanged: no migration.
 - A wait that reaches the limit is rolled back, stores nothing, and is answered as a refusal of the form, which keeps
-  what the person typed: "We could not store this screening just now, so nothing was sent. Wait a minute, then send it
-  again." The sentence says nothing of the other upload, so it tells no one that a practice or an address is
+  what the person typed: "We could not take this screening just now, so nothing of it was stored and no result will be
+  emailed. Wait a minute, then try again. If it happens again, request an audit instead." The sentence says nothing of the other upload, so it tells no one that a practice or an address is
   screening at that moment. It is logged by its code (`SCREENING_UPLOAD_BUSY`) and the request's ID alone.
 - The route's other statements (the mail refusal's read, the address checks, the queue's place) take no lock an
   upload holds and stay as they were. Sign-in, the session's read and the other public forms stay unbounded, for the
