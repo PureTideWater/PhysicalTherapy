@@ -184,6 +184,8 @@ describe('a line’s chain and its interest read by index at 50,000 claims (LED-
       expect(walk).toMatch(keyed);
     }
     await w.owner.query("SELECT pg_clear_attribute_stats('public', 'claim', a.attname::text, false) FROM pg_attribute a WHERE a.attrelid = 'public.claim'::regclass AND a.attnum > 0 AND NOT a.attisdropped");
+    // And as a table never analyzed at all is (no row count either).
+    await w.owner.query("SELECT pg_clear_relation_stats('public', 'claim')");
     try {
       for (const walk of await walks()) {
         expect(walk).toMatch(keyed);
