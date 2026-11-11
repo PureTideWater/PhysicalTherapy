@@ -31,6 +31,15 @@ from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
   text in `/home/user/ops`. What ran: two fetches, pnpm refusing for want of a manifest, and a bare push the pre-push
   hook refused. Nothing merged, no branch was pushed, no database was touched; the block was rewritten.
 
+## W15's database review run, recorded and not acted on (W15, after W16's block was written)
+W15's reviewer finished its report on a539fa14 but was ended by the account's usage limit at its hand-back, so nothing
+of it reached W15 until the file was found on W15's machine. It is now `lane-a-wip/schema-pr4/review-database-w15-run.md`
+(257 lines; no blocking finding; three should-fix). W15 checked none of it and changed nothing for it: it is W16's to
+weigh against its own review. S1 (the preflight's read while ACCESS EXCLUSIVE on `source_document` is held, with the
+reviewer's timing) and S2 (a deadlock between two version writes ends as 40P01, where the design says "busy") are the
+two to read first; S3 (`source_document_rules()` and a temporary table) was written before 217e96ce gave the function
+its search path.
+
 ## W15's block (superseded for B by W16's above; A still stands) (W15, 2026-11-11 21:45 UTC; W15's context is at its limit, a successor takes B from here)
 - **A. #143** (schema PR 2): W15 is subscribed. Head a3a32024, waiting for the founder's "Commit suggestion" on
   discussion_r4541570803. The merge step is W11's block in `approval-summaries/lane-a-schema-pr2-status.md`, unchanged.
