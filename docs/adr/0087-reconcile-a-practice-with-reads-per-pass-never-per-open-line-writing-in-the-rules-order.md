@@ -149,10 +149,10 @@ one step-7b pass on a copy of each seed, before (the base's bodies) against afte
 
   | The ledger when the function is planned | Body before | Body after |
   | --- | --- | --- |
-  | never analyzed, empty to about 120 entries (a new deployment's first pass; every measurement above) | every entry of the practice (`ledger_entry_by_date`) | the line's entries (`ledger_entry_by_line`) |
+  | never analyzed, empty to about 120 entries (a new deployment's first pass; F's and A's month above) | every entry of the practice (`ledger_entry_by_date`) | the line's entries (`ledger_entry_by_line`) |
   | never analyzed, about 200 to 80,000 entries | every entry of the practice up to about 1,000; the line's entries from about 4,000 | every entry of the practice (`ledger_entry_by_date`, then a sort) |
   | never analyzed, 100,000 entries | the line's entries | the line's entries |
-  | analyzed while empty (R's seed) | a sequential scan, and two more for corrections' targets | a sequential scan |
+  | analyzed while empty (spread R above: its seed analyzes the empty ledger) | a sequential scan, and two more for corrections' targets | a sequential scan |
   | analyzed with rows | the line's entries | the line's entries |
 
   So on a ledger that holds a few hundred to some tens of thousands of entries and was never analyzed, the new body
@@ -168,9 +168,11 @@ one step-7b pass on a copy of each seed, before (the base's bodies) against afte
   the next ledger freeze ask, with `ledger_entry_within_evidence`.
 - Where the two bodies of `ledger_line_net` answer differently: only for an entry whose practice is not its line's.
   The application role cannot make one (it cannot change a service line, and the rules and the tenant policy refuse
-  such an entry); the owner role or a superuser could, by moving a service line to another practice by hand, and the
-  new body then counts none of that line's entries, so the ledger refuses more, never less. No migration or function
-  updates a service line's practice. A trigger that refuses that change is proposed as its own schema item.
+  such an entry); the owner role (migrations and content loads run as it) or a superuser could, by moving a service
+  line to another practice by hand. The new body then counts only the entries that carry the line's new practice, so
+  none of those stored before the move, where the old body counted every entry of the line its scope could read; for
+  a line moved once and left so, the ledger then refuses more. No migration, content load or function updates a
+  service line's practice. A trigger that refuses that change is proposed as its own schema item.
 
 ## Alternatives considered
 
