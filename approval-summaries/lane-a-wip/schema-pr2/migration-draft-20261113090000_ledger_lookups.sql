@@ -1,5 +1,5 @@
--- The ledger's two lookups read their row through the index that finds it (SUITE-CAP-3's hand-on to the schema chain;
--- docs/adr/0087, the dated note of 2026-11-11).
+-- The ledger's two lookups, written so that a first reconcile pass reads each row through the index that finds it
+-- (SUITE-CAP-3's hand-on to the schema chain; docs/adr/0087, the dated note of 2026-11-11).
 --
 -- Under the ledger freeze exception the founder granted on 2026-11-06 at about 22:40 UTC (reconciliation-001, "Ledger
 -- semantics"), and nothing beyond it: new bodies for two ledger functions, each written below exactly as the founder
@@ -16,10 +16,12 @@
 -- app.practice_ids or app.actor_id. Runs as tp_owner.
 --
 -- Why: inside a reconcile pass the planner has no statistics for the ledger rows the pass is writing (ANALYZE cannot
--- see them), and on a ledger with none each function chose a slow way to find one row. ledger_line_net read every
--- entry of the practice to find one line's entries (through ledger_entry_by_date, the line as a filter), and
+-- see them), and each function is planned on the ledger as the pass found it. On a new deployment's ledger (empty,
+-- never analyzed) each chose a slow way to find one row and kept it for the pass: ledger_line_net read every entry
+-- of the practice to find one line's entries (through ledger_entry_by_date, the line as a filter), and
 -- ledger_entry_rules read every standing match of the practice to find the entry's one match (through
--- ledger_match_standing, the match's id as a filter). Measured on SYNTHETIC practices: docs/adr/0087, "Measured".
+-- ledger_match_standing, the match's id as a filter). Measured on SYNTHETIC practices, with the states the new
+-- ledger_line_net does not help in: docs/adr/0087, the dated note of 2026-11-11.
 --
 -- Safe with the previous image running, and on rollback: no image reads either function's text, and each answers
 -- and refuses as before, so an image before or after this migration writes the same ledger. It holds no lock a
@@ -58,19 +60,27 @@ $$;
 -- ---------------------------------------------------------------------------------------------------
 
 -- The same sum as before (20261027090000_packet_and_ledger_review.sql:203-210):
--- - Every entry a role other than a superuser can store carries its line's practice: an entry written in scope is of
---   a case of its practice and of a line of that case (ledger_entry_rules), and the tenant policy refuses any entry
---   outside the scope. So the line's practice, read from service_line under the same tenant predicate as the ledger's,
---   drops no entry. A line the scope cannot read, a line that is no row and no line at all give 0, as before.
+-- - Every entry the application or a migration can store carries its line's practice: an entry written in scope is
+--   of a case of its practice and of a line of that case (ledger_entry_rules; case_line_belongs;
+--   priced_line_rows_belong), and the tenant policy refuses any entry outside the scope. A service line never changes
+--   practice: the application role holds no UPDATE on service_line, and no migration or function updates its
+--   practice_id. (The owner role or a superuser could, by hand; that would part the line from its own claim, priced
+--   lines and case, and this function would then count none of the line's entries where it counted them before.) So
+--   the line's practice, read from service_line under the same tenant predicate as the ledger's, drops no entry. A
+--   line the scope cannot read, a line that is no row and no line at all give 0, as before.
 -- - A reversal or an adjustment still counts as the stage of the entry it finally corrects (its target, or the
 --   target's target when the target is itself an adjustment), each read by primary key, at most one row; one whose
 --   target is missing still counts as nothing; every other entry counts as its own stage.
 -- - A sum of whole cents does not depend on the order its rows are read in.
 -- DO NOT SIMPLIFY: the practice condition and the ORDER BY e.seq change no answer. They are there only for the plan:
--- with the line's practice as an equality and an order that ledger_entry_by_line (practice_id, service_line_id, seq)
--- returns for free, the planner reads the line's entries through that index whatever it knows of the ledger. Take
--- either out and every correctness test still passes while each call reads the practice's whole ledger again.
--- apps/worker/src/reconcile/ledger-lookups.db.test.ts plans this body as it is installed and fails then.
+-- on a ledger that is empty or holds its first rows and was never analyzed, the line's practice as an equality and an
+-- order that ledger_entry_by_line (practice_id, service_line_id, seq) returns for free make the planner read the
+-- line's entries through that index. Take either out and every correctness test still passes while each call of a
+-- first pass reads the practice's whole ledger again. apps/worker/src/reconcile/ledger-lookups.db.test.ts plans this
+-- body as it is installed and fails then.
+-- Known limit (measured on PostgreSQL 18.4; docs/adr/0087, the dated note): on a never-analyzed ledger that already
+-- holds a few hundred to some tens of thousands of entries the planner still takes ledger_entry_by_date for this
+-- read. Automatic analysis ends that state, and with statistics the line index is taken.
 CREATE OR REPLACE FUNCTION public.ledger_line_net(line uuid, counted text)
  RETURNS bigint
  LANGUAGE sql

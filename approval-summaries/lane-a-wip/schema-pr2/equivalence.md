@@ -46,8 +46,22 @@ line) AND e.service_line_id = line`, read in `seq` order, with `t` and `r` as sc
    `tp_owner` and `tp_app` only. Its one caller is `ledger_entry_within_line()` (a trigger function, EXECUTE to no one),
    fired by whoever inserts a ledger entry: only `tp_owner` and `tp_app` hold INSERT there, and both hold SELECT on
    `service_line` (so the new read never fails on a privilege the old body did not need: `tp_app=r`).
-5. **Where the two differ (not reachable without a superuser):** an entry stored with a practice other than its
-   line's (triggers and RLS off) is counted by the old body in a scope that sees it and not by the new one.
+5. **Where the two differ (corrected after both reviews, 2026-11-11; verified):** the state "an entry's practice is
+   not its line's". It is reachable two ways, neither open to the application role: (i) a superuser stores an entry
+   with the triggers and RLS off; (ii) **the owner role `tp_owner` (NOLOGIN; migrations run as it) moves a service line
+   to another practice**: it holds UPDATE on `service_line`, whose only UPDATE trigger is `set_updated_at`, and with
+   both practices in scope the tenant policy passes. `tp_app` has no UPDATE there (`permission denied`). No migration
+   and no function contains an UPDATE of `service_line` (grep of `packages/db/migrations` and of every `pg_proc.prosrc`;
+   only three test-support files do, as a superuser). In that state the old body counts the line's entries in a scope
+   that sees them and the new body counts none, so `ledger_entry_within_line` then refuses more (it fails closed).
+   Item 2 (c) and (e) above are true of `tp_app` and of entries; they did not cover the owner changing the line.
+   **Proposal outside this item:** a trigger that refuses a change of `service_line.practice_id` (a tenancy guard in
+   its own right; a schema change, so its own PR).
+5a. **A second difference, also outside what the application does (the money review's note 2, verified):**
+   `ledger_line_net(NULL, …)` called directly while `app.practice_ids` holds text that is no uuid array: the old body
+   gives 0 (the planner drops the read of a NULL line before the policy's cast runs), the new one raises 22P02 from
+   the policy on `service_line`. The trigger never passes a NULL line (`ledger_entry_within_line` returns first), no
+   code calls the function directly, and every scope helper writes a uuid array.
 6. **A new read lock:** the new body reads `service_line` (ACCESS SHARE) inside every ledger insert's trigger. It
    conflicts only with ACCESS EXCLUSIVE on `service_line`.
 
@@ -88,4 +102,9 @@ Both are plain reads (no row lock) in both forms.
 - `packages/db/src/ledger-lookups.db.test.ts`: on the previous head, the file changes the two bodies and nothing else
   the catalog holds of any function or trigger; refuses any other starting body; holds only ACCESS SHARE.
 - LED-01 to LED-18, LED-23 to LED-25 (`ledger.db.test.ts`, `pass-equality-led.db.test.ts`), the ledger oracle, CAS-49.
-- The write-equality dumps (status file).
+- The write-equality dumps (status file). **What they do not cover (the money review's finding 5):** a reconcile pass
+  writes approvals and postings, no correction and no refusal, so "identical" says nothing of the correction's match
+  lookup or of any refusal. For those the old-against-new evidence is the worker test file above (the same expectations
+  met on the old bodies and on the new) and LED-07.
+- Added after the reviews: `ledger_line_net` in a two-practice scope with the other practice listed first; a reversal
+  and adjustments whose target is no row (superuser-made); the plan guard on an empty ledger and on its first rows.
