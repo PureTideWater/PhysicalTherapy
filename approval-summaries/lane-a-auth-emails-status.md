@@ -1,31 +1,69 @@
-W6 (Lane A, https://claude.ai/code/session_019i9if9f2m3xyLBavfHUgui) holds part 2 (password-changed-notice, schema PR 1 of the queue) from 2026-11-11 04:26 UTC, assigned by the orchestrator (session_019i9ifDAzQNA3kLHozjBoeS).
+W9 holds part 2 (password-changed-notice, schema PR 1 of the queue; draft PR #140) from 2026-11-11 09:15 UTC; W6 (https://claude.ai/code/session_019i9if9f2m3xyLBavfHUgui) stood down then.
 
-## RESUME-BLOCK: password-changed-notice (schema PR 1), W6, 2026-11-11 07:30 UTC
-- **PR: draft #140** (https://github.com/PureTideWater/PhysicalTherapy/pull/140), opened 07:20 UTC on head **ffa44ea9**
-  (= WIP ref `co-001/wip-pwnotice`; base 2e26a416 is an ancestor). This session is subscribed to it. The description is
-  the session's scratchpad `pr/body.md`; a check that the posted text equals it runs.
-- **The fix round is committed** (six commits, e4a6e8c1 to ffa44ea9, on 68895f0f), built by four Agent subagents from
-  `approval-summaries/lane-a-wip/pwnotice/reviews/RULINGS.md`; their reports with red and green proofs:
-  `approval-summaries/lane-a-wip/pwnotice/fix/`. 28 of the 33 findings are fixed, 5 deferred (Follow-ups below).
-  Migration SHA-256 e1288b9c…a0eb; document hash **6002e2af…ea33** (the approval line's hash, unless a later commit
-  changes the schema).
-- **Checks on ffa44ea9:** typecheck, lint, lint:copy, lint:logs, check:fixtures, verify-content, synth --all (clean),
-  db:domain-model --check --strict: pass. The change's own tests: db 35 files, 1,733 passed and 1 skipped; unit 155 files,
-  2,709 passed.
-- **Running (07:30 UTC):** the full local suite once on ffa44ea9 (`suite.sh core`: unit, golden, oracle, db in four
-  shards, build, the reset journey's trigger-disabled red run, e2e, actions and toolchain checks); two adversarial
-  reviewers of the fix round's delta (database, worker and mail; sign-in, words and records); CI on #140. The 18 affected
-  Stryker shards are left to CI's `mutation` job.
-- **The orchestrator's rulings (05:48 and 06:49 UTC):** R1 stands for this PR; the close is `LANES.md` Queues item 28,
-  the next schema PR, built by W8 on `co-001/step-before-reset`, stacked on this branch's final head; D15 claims only the
-  resets the app learns of, and the lost-answer reset rides in W8's PR. W8 was told the head and the two tests' titles.
-- **Left, in order:** read the suite's result and the delta reviewers' findings; fix what is real (targeted tests, one
-  push, the description's Checks and findings rows updated); when CI is green but for the blank approval line, post the
-  approval line as a suggestion on the last line of `docs/product/domain-model.md` (`gh api …/pulls/140/comments`, the
-  new-migration skill) and send the orchestrator its link with the description's trade-off (ADR 0091 D10); merge after
-  the founder's committed line and green required checks; one line to the orchestrator; stand down (this session is past
-  about 300k tokens; item 7 is W8's and fresh sessions').
-- **Trailer:** `Co-Authored-By: Claude <noreply@anthropic.com>` and this session's line (STATE.md's ruling).
+## RESUME-BLOCK: password-changed-notice (schema PR 1), written by W6 as it stood down, 2026-11-11 09:15 UTC
+W6 (session_019i9if9f2m3xyLBavfHUgui) holds nothing more. **W9 has PR #140 from here** (it holds the PR's event
+subscription). Nothing is unpushed; W6's container and scratchpad can be lost.
+
+- **PR: draft #140**, https://github.com/PureTideWater/PhysicalTherapy/pull/140, branch `co-001/password-changed-notice`,
+  head **abdc2192** (= WIP ref `co-001/wip-pwnotice`). The base `claude/build-platform` = 2e26a416 is an ancestor.
+- **The schema is final unless a later commit changes the migration:** migration SHA-256 e1288b9c…a0eb; document hash
+  **6002e2afb2b830a519e6edc5de428f312ef3ada3591fa10b18f861cf83beea33**; the approval line is the LAST line of
+  `docs/product/domain-model.md`, line **7536**. No commit after ffa44ea9 touched the migration, the document or the
+  function files (7da699b1 is one test file; abdc2192 is records, infra and `.gitattributes`).
+- **Done:** the three reviews (33 findings: 28 fixed, 5 deferred), the fix round (e4a6e8c1 to ffa44ea9), the full local
+  suite once (all green; the reset journey's trigger-disabled red run failed as it must), CI green on 7da699b1 but for
+  `domain model` (the blank approval line) and `all green` with it, and the review of the fix round's delta (two
+  reviewers, 14 findings, none blocking: 11 fixed in abdc2192, 3 deferred; rulings in
+  `approval-summaries/lane-a-wip/pwnotice/reviews/RULINGS-DELTA.md`, findings beside it as `delta-sec-findings.md` and
+  `delta-db-findings.md`). One PR comment explains the red `domain model` check (issuecomment-6789448720).
+
+### Open, in this order (W9)
+1. **CI on abdc2192.** Expect every check green but `domain model` (blank approval line) and `all green`. abdc2192 adds
+   one alarm in infra (`PasswordNoticeRecordFailed`, filter `{ $.error_code = "RecordFailed" }` on the platform group)
+   and changes two alarm descriptions; locally typecheck, lint, lint:copy, lint:logs, check:fixtures and 1,099 infra,
+   observability and synth unit tests pass. A red check other than those two is real work.
+2. **The description is stale: replace it whole** with `approval-summaries/lane-a-wip/pwnotice/pr/body-final.md`
+   (36,684 characters; its first 133 lines are the generator's summary, identical to what is posted now). It adds
+   case (d) to the trade-off, narrows case (b), gives the final Checks rows and the delta review's 14 rows. Correct
+   only the row "On abdc2192" if CI there says otherwise. Check afterwards that lines 1 to 133 still equal
+   `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list` on the head.
+3. **Only then post the approval line** as a suggested change, one review comment on line 7536 (CLAUDE.md, the
+   new-migration skill; never a review, never the line itself):
+   `gh api repos/PureTideWater/PhysicalTherapy/pulls/140/comments -f commit_id=<head sha> -f path=docs/product/domain-model.md -f side=RIGHT -F line=7536 -f body=<body>`
+   with the body: a suggestion block holding exactly
+   ``Approved by: Tyler Williams  Date: <the day it is posted, YYYY-MM-DD>  Document SHA-256: `6002e2afb2b830a519e6edc5de428f312ef3ada3591fa10b18f861cf83beea33` ``
+   (two spaces between the fields, as #126's line has them; the name is `approvers.json`'s), then one sentence that
+   committing it accepts the description's trade-off (ADR 0091 D10) and that the alternative is to hold the pull
+   request, then the Claude Code footer. Before posting, run `--check --strict --require-approval` on a fresh database
+   at the head and confirm the hash it names is the one above (this container's PostgreSQL was down after the
+   allowance stop: `tools/setup-container.sh` restarts it).
+4. **One line to the orchestrator** with the comment's exact link and the founder's decision in the description's
+   words: "Committing the approval line accepts shipping the email with (a) to (d) open until the next schema pull
+   request. To take the alternative, say so instead of committing." (the alternative: hold this pull request until the
+   close is built into it; no password-changed email ships until then). Also for the orchestrator to queue: ruling D1
+   of RULINGS-DELTA.md, the second-factor fact kept as it was at the reset, asked to ride with Queues item 28 (W8).
+5. **After the founder's commit of the line:** it must be the only change (the last line of the document); CI's
+   `domain model` then passes; the required checks are `all green`, `mutation`, `screening-capacity gate` and
+   `approval-of-record`; `origin/claude/build-platform` must be an ancestor of the head (if the base moved, merge it
+   with a merge commit, never a rebase; regenerate the document only if a migration came with it, which changes the
+   hash and needs a new line; push; wait for CI). Then mark the PR ready and merge it with a merge commit, as #126 and
+   #137 were ("Merge pull request #140: …"). Never merge before the founder's committed line; never write it.
+6. **Record after the merge:** one line to the orchestrator with the merge commit (W8's `co-001/step-before-reset` is
+   stacked on this branch and merges the base then); this file; ADR 0091's Status line still reads "proposed" (follow
+   what #126 did for ADR 0084).
+
+### Decisions W6 took that the founder sees in the description (each reversible)
+The D10 trade-off (cases (a) to (d), the close as Queues item 28, required before launch); the email's lines 3 and 4
+reworded and line 2's second sentence only for an enrolled account; Reply-To the support address on this one kind; the
+runbooks name End membership and the founder's break-glass, since no control disables a user.
+
+### Not done by W6, and why
+- The migration's preflight comment was not made more precise (DD-03): the session's built-in safety check refused the
+  marker route's one-command edit, W6 did not work around it, and ADR 0091 D11 says what is compared and what is not.
+- W6 did not unsubscribe from #140 (W9 holds the subscription; a call from W6 could only disturb it). W6's one
+  safety-net check-in fired at 07:54 UTC and was not re-armed.
+- The 18 Stryker shards were not run locally; CI's `mutation` passed on 7da699b1.
+- **Trailer:** `Co-Authored-By: Claude <noreply@anthropic.com>` and the session's own line (STATE.md's ruling).
 - **Does not ride:** SS-01 D11 and ADR 0081 A6.
 
 ### Follow-ups (deferred by the rulings; only the first is in a queue: LANES.md Queues item 28)
@@ -43,6 +81,11 @@ W6 (Lane A, https://claude.ai/code/session_019i9if9f2m3xyLBavfHUgui) holds part 
   disables a user (today: End membership, or the founder's break-glass).
 - UX-07 and UX-11: the shared email template keeps a date whole and wraps a long support address.
 - UX-09: the notice's age beside its UTC time (with the baseline's UX-027).
+- From the review of the fix round's delta (RULINGS-DELTA.md): **D1**, the second-factor fact kept with the notice as
+  it was at the reset (a column written by the reset's trigger, returned by the claim), asked to ride with Queues item
+  28; **DD-05**, three assertions on the lock loop (no lock taken before it, no statement between its last LOCK and
+  RETURN, 300 tries) for the next migration that copies it; removing a hardware key registered in D10's case (b) is
+  Queues item 29, not yet assigned.
 
 ## 2026-11-07 02:20 UTC (acting Lane A, S2): part 2 building
 - Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 1 (its decisions refine the design: 24-hour cutoff;
