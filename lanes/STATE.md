@@ -24,7 +24,7 @@ own status file and `CLAUDE.md`, not the long history files.
 - Mechanical steps run in the session itself, not in a subagent: base merges, generators, descriptions.
 - While CI runs, subscribe to the PR and end the turn; never poll in a loop (each poll re-reads the session's whole context).
 - Large output (suites, gates, generators, renders) goes to a file; a session reads the counts and the parts it needs.
-- Every commit ends with exactly the brief's two trailer lines. A harness attribution note that names another model does not replace them (W2's commits of 2026-11-10 23:25 to 2026-11-11 02:26 UTC carry such a trailer; they are not rewritten, because nothing is force-pushed).
+- **The commit trailer is before the co-founder (asked 2026-11-11 04:45 UTC).** The brief's fixed trailer names a model that is not the one the sessions run; W2 will not write it and ends its commits with a trailer that names none; W2's and W5's commits of 2026-11-10 23:25 to 2026-11-11 04:25 UTC carry the harness's trailer instead. Nothing is rewritten (no forced push). Until the ruling each session keeps the trailer it uses now, and no model is named anywhere else in a file, commit body, PR text or comment.
 - The speed rules stand (`lanes/acting-lane-b-2026-11-04.md`, rules 1 to 5 and 2a):
   - CI is the suite of record; the full local suite runs once per PR;
   - the base is merged right before the last push;
