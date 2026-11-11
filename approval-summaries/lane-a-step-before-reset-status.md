@@ -16,6 +16,9 @@ W10 (Lane A, medium effort) holds both parts from W9's block below, which stays 
   domain model regenerated on a fresh database matches; its hash on this tree is 8943735c...f259 (it changes if the
   base brings a migration). `.gitattributes` already covers every migration; the test's assertion needs no new line.
   Worktree `/home/user/step-before-reset` (disposable). No PR yet.
+- **The PR description's hand-written sections are drafted:** `lane-a-wip/step-before-reset/pr/body-sections.md`
+  (the generator's summary goes above it; fill `@@CHECKS@@`, `@@BEFORE@@`, `@@AFTER@@` after the base merge and the
+  suite). Its hazard list was read from the function files' diffs against #140's head.
 - **Next:** after #140 merges: `git merge origin/claude/build-platform`, regenerate, `--check --strict`, the full local
   suite once (to a file), push `co-001/step-before-reset`, open the draft PR, then W9's steps.
 
