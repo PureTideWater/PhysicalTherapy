@@ -1,0 +1,19 @@
+{
+  "name": "@tp/redact",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reading a text for a person's identifiers: the letter reader's redaction, the checks after it, and the narrative's reading the packet verifier shares. Pure: no import, no clock, no network.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

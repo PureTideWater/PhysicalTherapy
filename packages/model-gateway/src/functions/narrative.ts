@@ -5,7 +5,7 @@ import { InputRefusedError } from '../errors';
 import { type RoleMismatch, roleMismatches } from './narrative-roles';
 import { jsonSha256 } from '../hash';
 import { PROMPTS } from '../prompts';
-import { holdsNameOrNumber } from '../redact';
+import { holdsNameOrNumber } from '@tp/redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameFacts } from '../untrusted';
 
@@ -109,7 +109,7 @@ export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'nam
 
 /**
  * Whether any of the identifiers is in the text in a form the letter reader's redaction reads
- * (../redact.ts): a name with its case, marks, dashes and apostrophes written any way, a number with
+ * (@tp/redact): a name with its case, marks, dashes and apostrophes written any way, a number with
  * its spaces, dashes, invisible characters, or a period, underscore, slash or colon next to a letter.
  * Every number is read as a member ID is, never as an amount ("$12345678" is number 12345678). A period
  * never joins digits, and a date written with its dashes that a calendar holds is a date, so the facts'

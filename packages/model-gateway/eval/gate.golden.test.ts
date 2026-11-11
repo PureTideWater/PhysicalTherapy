@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { verifyContractTerms } from '../src/functions/contract-terms';
 import { type ScreenRules, SHIPPED_SCREEN_RULES, identifierEntries, pagesName, screenSet } from '../src/patient-records';
-import { SCREEN_FLOORS } from '../src/redact';
+import { SCREEN_FLOORS } from '@tp/redact';
 import type { ModelProvider } from '../src/provider';
 import { readGatewayConfig } from '../src/config';
 import { COMMITTED_BASELINE, COMMITTED_FLOORS, servedSet, servingDecisions } from '../src/evaluated';

@@ -21,6 +21,7 @@
     "@tp/observability": "workspace:*",
     "@tp/packets": "workspace:*",
     "@tp/pricing": "workspace:*",
+    "@tp/redact": "workspace:*",
     "@tp/rules": "workspace:*",
     "zod": "catalog:"
   },
