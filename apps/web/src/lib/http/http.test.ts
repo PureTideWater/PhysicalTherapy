@@ -87,10 +87,17 @@ describe('public routes', () => {
     await expect(route.invoke(request({ value: 'boom' }), services)).rejects.toThrow('server error');
   });
 
-  it('answer a lock timeout in a public handler as busy, a status and its closed word alone, never a server error (docs/adr/0092, the amendment; CAS-57)', async () => {
-    const outcome = await route.invoke(request({ value: 'locked' }), services);
+  it('answer a lock timeout in a public handler as busy, a status and its closed word alone, never a server error, and log it by its code and the request’s ID alone (docs/adr/0092, the amendment; CAS-57)', async () => {
+    const logged: unknown[] = [];
+    const logging = { logger: { warn: (...line: unknown[]) => logged.push(line) } } as unknown as Services;
+    const outcome = await route.invoke(request({ value: 'locked' }), logging);
     expect(outcome).toEqual({ status: 'busy', what: 'records' });
     expect(JSON.stringify(outcome)).not.toContain('synthetic');
+    // Never pg's own words, which name the statement and the relation.
+    expect(logged).toEqual([['a request waited past the lock timeout and was refused as busy', { error_code: 'LOCK_TIMEOUT', request_id: 'r' }]]);
+    // Any other failure is still thrown, and nothing is logged here for it.
+    await expect(route.invoke(request({ value: 'boom' }), logging)).rejects.toThrow('server error');
+    expect(logged).toHaveLength(1);
   });
 
   it('refuse a POST another origin sent, before the handler runs (login CSRF; docs/adr/0053)', async () => {

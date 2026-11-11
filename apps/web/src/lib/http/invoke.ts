@@ -357,6 +357,8 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
  * be sent again. One place for every kind of route, so no path answers it as a server error, and pg's error, which
  * names the statement and the relation, is never thrown on to the framework's log. Work a handler left for after its
  * commit never reaches here (runCommitted takes its own failures), so a request that saved is never answered busy.
+ * Each is logged by its code and the request's own ID alone: a refusal a person can retry is otherwise silent, and
+ * how often requests meet a long holder is the operator's to see.
  */
 function lockBounded<R>(invoke: Route<R>['invoke']): Route<R>['invoke'] {
   return async (request, services) => {
@@ -364,6 +366,7 @@ function lockBounded<R>(invoke: Route<R>['invoke']): Route<R>['invoke'] {
       return await invoke(request, services);
     } catch (error) {
       if (isPgError(error, LOCK_NOT_AVAILABLE)) {
+        services.logger.warn('a request waited past the lock timeout and was refused as busy', { error_code: 'LOCK_TIMEOUT', request_id: request.requestId });
         return { status: 'busy', what: 'records' };
       }
       throw error;
