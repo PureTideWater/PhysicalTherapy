@@ -6,29 +6,28 @@ orchestrator session_019i9ifDAzQNA3kLHozjBoeS; built by W3, session_019i9ifE6JAC
 Reserved: test-matrix CAS-57; a dated amendment to ADR 0092.
 
 ## Now
-**2026-11-11 02:25 UTC: ROUND 2 IN, THE MECHANISM IS BEING NARROWED (W4).** The delta reviews of `59eb9e9d..f3dc3ee6`
-(security and ux-brand in; database still running) found no blocker, but the security one showed what a pool-wide
-timeout costs: it reaches flows that commit in steps (the session's end and its audit event, a failed sign-in's
-count, a sign-in step after the provider's grant is released), where a timeout loses a record or says "nothing was
-saved" falsely. **Decision (W4, recorded under "Reviews, round 2"):** the timeout moves from the web's pools to each
-route's own transaction (`SET LOCAL lock_timeout` as the routes' wrapper opens it, `invoke.ts`), plus the queue
-producer's pool. That is what Queues item 24 asks ("on every web mutation's transaction, set where the web's
-transactions are made"), a handler still cannot forget it, "nothing was saved" is true by construction, and sign-in,
-the session's read, the rate limit, public forms and the billing, e-signature and model pools behave exactly as
-before this change. WIP f3dc3ee6 holds the pool-wide version; the rework is not yet committed.
+**2026-11-11 02:50 UTC: THE NARROWED MECHANISM IS BUILT; ROUND 3 RUNNING (W4).** The WIP ref
+`co-001/wip-web-lock-timeout` = 74d6db9a (four commits on 59eb9e9d; the PR branch on origin is still 59eb9e9d) holds
+it: the timeout is `SET LOCAL lock_timeout` as each route's transaction starts (`invoke.ts`, `gates`;
+`server/lock-timeout.ts`), plus the queue producer's pool; `packages/db` and `services.ts` are unchanged from the
+base. Checked on 74d6db9a: typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all, the watched list; unit
+and browser suites around every touched file; db `reconciliation-routes.db.test.ts` (19) and
+`lock-timeout.db.test.ts` (2); each guard seen to fail without its code. Three tightly scoped reviews of the rework
+were launched at 02:45 UTC.
 
 ### RESUME-BLOCK (a fresh session builds from this; nothing else is needed)
 - **Where it is:** branch `co-001/web-lock-timeout` = 59eb9e9d on origin (one commit on the base 06cde5eb), draft PR
   #137 with its description filled from the template (the review table says Pending). Review round 1 is DONE (three
-  reviews of 59eb9e9d, "Reviews" below: do not run them again). Fix round 1 is BUILT: the WIP ref
-  `co-001/wip-web-lock-timeout` = f3dc3ee6 holds it (`git fetch origin co-001/wip-web-lock-timeout && git merge
-  --ff-only FETCH_HEAD` in the worktree). Its delta reviews (`git diff 59eb9e9d..f3dc3ee6`: two adversarial, auth
-  and tenancy and database, and one ux-brand) count only once their findings are under "Reviews, round 2" below; if
-  that heading is missing, run them again, each with a budget of about 18 tool calls and its report asked for by
-  name. Then: verify and fix what they find (a further review only of a further delta that is more than words),
-  the full local suite once, the base merged right before the last push (06cde5eb is still the base's head at
-  02:08 UTC), the description's review table and checks, push to `co-001/web-lock-timeout`, CI, the up-to-date
-  check, merge with a merge commit, record, tell the orchestrator.
+  reviews of 59eb9e9d, "Reviews" below: do not run them again), and so is round 2 (the delta of the first fix
+  round). The design changed after round 2 (see "Now" and "Reviews, round 2"): the WIP ref
+  `co-001/wip-web-lock-timeout` = 74d6db9a holds the narrowed mechanism (`git fetch origin
+  co-001/wip-web-lock-timeout && git merge --ff-only FETCH_HEAD` in the worktree). Round 3 (security, database and
+  ux-brand, on `06cde5eb..74d6db9a`, the files each brief names) counts only once its findings are under "Reviews,
+  round 3" below; if that heading is missing, run it again, each with a budget of about 14 tool calls and its report
+  asked for by name. Then: verify and fix what it finds (no further review for words alone), the full local suite
+  once, the base merged right before the last push (06cde5eb is still the base's head at 02:45 UTC), the
+  description rewritten (the mechanism, the review table, the checks), push to `co-001/web-lock-timeout`, CI, the
+  up-to-date check, merge with a merge commit, record, tell the orchestrator.
 - **CI on 59eb9e9d:** `unit` failed, everything else passed (`mutation`, `screening-capacity gate`, `capacity`,
   `approval-of-record`, db 1 to 4, e2e 1 and 2, static, lint, build, images). The failure is this change's:
   `tools/screening-capacity/watched.test.ts` (twice), because the committed watched list lacks
@@ -191,6 +190,22 @@ No blocker.
   that commits in steps, and more such flows were not read (password reset, enrolment, the health check). The
   timeout is set on the routes' own transaction instead, so those flows are untouched.
 
+**Database delta, a general agent (it ran both test files and its own experiments):**
+- R2-D1, should fix, CONFIRMED, DONE in 74d6db9a: `claimRequestKey` called every timeout at its insert "the same key
+  in flight" (the person's row behind the foreign key and a table lock give the same 55P03). Now the same key waits
+  on an advisory lock of the key's own, in a statement of its own; the insert's timeout is `records`. Both logged.
+- R2-D2, note, CONFIRMED, DONE: a URL's `options` cannot replace the startup parameter (measured), and the check
+  refused `deadlock_timeout`. Only a URL that names `lock_timeout` is refused now.
+- R2-D3, note, DONE: the queue's URL is checked as the queue is made, not at the first send.
+- R2-D4, note, DONE: a comment named a test file that did not exist.
+- R2-D5, note, DONE: the holder's fail-safe takes the timeouts it must outlast.
+- R2-D6, note: the session's end and its audit event; met by the narrowed mechanism (the session's read is unbounded).
+- R2-D7, note, DONE: a re-rendered form sends a new key. The form pins its key on `busy: 'request'`; the server's
+  words (a post without JavaScript) say to reload the page, not to send again.
+- R2-D8, note, in the ADR: pg-boss's own heartbeat now fails after three seconds where it waited.
+- Found sound by experiment: pg-boss hands `lock_timeout` to every connection it opens, a refused send keeps
+  `code: '55P03'`, the connection is discarded and the next send works.
+
 **UX and brand delta, `ux-brand-reviewer`:**
 - R2-U1, should fix, CONFIRMED: on a form whose only field is a password or a code, "What you typed is still here,
   except passwords and codes" keeps nothing. Fix: count only fields a refusal keeps; "Passwords and codes are not
@@ -209,6 +224,7 @@ No blocker.
 - R2-U8 and R2-U9, notes: the button's name in the lead; "typed" for a choice. Kept as the house pattern.
 
 ## Log
+- 2026-11-11 02:50 UTC: the narrowed mechanism built and pushed as WIP 74d6db9a; round 2's database findings recorded; round 3 launched (02:45 UTC).
 - 2026-11-11 02:10 UTC: fix round 1 built and pushed as WIP f3dc3ee6 (words, one mapping for every route, the queue's pool, the same key in flight, a page's error state, the URL guard, a log line by code); three delta reviews launched.
 - 2026-11-11 01:50 UTC: review round 1 recorded; the words half of the fix round pushed as WIP 709fe620; the container restarted once (01:46 UTC), nothing lost.
 - 2026-11-11 01:28 UTC: W4 took the claim over; the machine was ready at start; CI on 59eb9e9d read (`unit` red: the watched list); the three reviews launched again (01:26 UTC).
