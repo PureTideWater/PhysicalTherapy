@@ -4,10 +4,10 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDAwBuwwvswwPuj4A
 
 ## RESUME-BLOCK
 - **Draft #144** into `claude/build-platform`, head 430780cf (`co-001/web-transaction-scope`; the base 3bff4fd6 is an ancestor; WIP ref at the same commit). Description filled from the template.
-- Reviews done and fixed (see Reviews). No migration. Local: unit 13,515 and database 10,222 passed on 13c9aca2; the authz coverage gate (100% branches) fixed in 430780cf by a test.
-- W12 is subscribed to #144; CI running since 15:05 UTC. No check-in scheduled.
-- Next step: on green required checks, check the base is still an ancestor (rule 2a: if not, merge it, fast checks, push, wait), mark ready and merge, record it here, unsubscribe, report the merge to the orchestrator.
-- If CI is red: reproduce locally, fix on the branch, push; never skip a test.
+- **BLOCKED on CI's runners, not on the change (15:25 UTC):** run 43044178174 failed twice (attempt 1 at 15:10, the one re-run at 15:24): `playwright install --with-deps chromium` cannot resolve Ubuntu's package hosts, so `unit`, `db` and `e2e` die before any test. #143's run failed the same minute; the base passed at 13:05. One comment on #144 says so. The orchestrator was told and asked for its word on one more re-run once the network is back.
+- W12 is subscribed to #144; a check-in is scheduled for 15:53 UTC.
+- Next step: when the runners resolve those hosts again (another PR's run going green shows it) and the orchestrator agrees, re-run the failed jobs of run 43044178174; on green required checks, check the base is still an ancestor (rule 2a), mark ready, merge, record, unsubscribe, report.
+- Reviews done and fixed. No migration. Local: unit 13,515 and database 10,222 passed on 13c9aca2; the authz coverage gate fixed in 430780cf by a test.
 
 ## For Lane A (needs a migration; not built here)
 - A queue outbox table, written in the request's transaction and relayed by the worker: the only design in which a
@@ -58,3 +58,4 @@ makes a certain rollback at COMMIT read as unknown, the safe side).
 - 2026-11-11 14:15 UTC: round 1 reviews in, fixes at 866f4891; delta review running.
 - 2026-11-11 14:35 UTC: delta review in; full local suite ran on 7d5a9993 and found this change's own test fallout, fixed in 13c9aca2; unit and database suites rerunning.
 - 2026-11-11 15:05 UTC: suites green on 13c9aca2 but for the authz coverage gate, fixed in 430780cf; draft #144 opened; subscribed (a first subscription to #143, made by a wrong guess of the number, was removed at once).
+- 2026-11-11 15:25 UTC: CI red twice on #144 at the runners' DNS; commented once on the PR; blocker reported to the orchestrator.
