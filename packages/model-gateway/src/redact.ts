@@ -1677,7 +1677,9 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
       // A label's own list number ("Phone 1: 555-0100", "Fax No. 2) ..."): one or two digits right after an SSN or phone label.
       let first = index;
       while (first > 0 && DIGIT.test(text[first - 1] ?? '')) first -= 1;
-      if (index - first < 2 && LIST_NUMBER_AFTER.test(text.slice(index + 1, index + 24)) && PERSON_LABEL_BEFORE.test(text.slice(Math.max(0, first - 32), first))) {
+      // In parentheses it is a list number only before a colon ("Phone (1): 555-0100"; "TTY users call (2), 2,403.99" is none).
+      const after = text.slice(index + 1, index + 24);
+      if (index - first < 2 && (text[first - 1] === '(' ? /^\)[ \t]?:/u.test(after) : LIST_NUMBER_AFTER.test(after)) && PERSON_LABEL_BEFORE.test(text.slice(Math.max(0, first - 32), first))) {
         units.push(' ');
         from = first;
         continue;
@@ -1937,12 +1939,13 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         const plainly = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
         let taken = takenAs(plainly);
         // A label read through the call's own identifier or its list number ("Call Zephyra at 555-0123", "Phone 1:
-        // 555-0100") takes a number its own words say nothing of and that is not taken without it; a number a noun names
+        // 555-0100") takes a number its own words say nothing of and that is not taken without it, never one wrapped across
+        // a line break (its other half is as often the next line's amount: "Tel 7: is 802\n8185.55"); a number a noun names
         // stays named. ef3e8d20 did not make this match, so it is marked fresh: the letter reader applies it only in a
         // letter the scan does not refuse without it (appliedMatches), whatever is joined to the number ("Call Zephyra at
         // 555-0123/555-0124" stays refused whole).
         let fresh = false;
-        if (taken === null && plainly === 'none') {
+        if (taken === null && plainly === 'none' && !wrapped) {
           const through = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own);
           taken = through === 'ssn' || through === 'phone' ? takenAs(through) : null;
           fresh = taken !== null;
@@ -2483,10 +2486,11 @@ const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:AC
  * amount its first. It does where structure says whose the other digits are:
  * - after it: an amount's end after its last group, or a group joined to that group ("900-12-3456150.00",
  *   "202-555-0123202-555-0124"), the shape wrapped after a dash too ("900-12-\n3456150.00");
- * - before it: a currency amount's digits, or a group joined to its first group ("$150.00900-12-3456",
- *   "$514451/293-6215", "01/01/2020900-12-3456", "150.00900-12-3456");
+ * - before it: a currency amount's digits, a group joined to its first group, or the year of a date written with its
+ *   month's word ("$150.00900-12-3456", "$514451/293-6215", "01/01/2020900-12-3456", "150.00900-12-3456", "June 18,
+ *   2026423.435-4454");
  * unless a reference's noun names the number ("Case No. 123-45-678901-02", "Policy No. 01-23456-78-9012"). Under an SSN,
- * phone or Medicare label the shape is the person's number whatever is glued to it ("SSN No. 900-12-345678", "Phone
+ * phone or Medicare label the shape that starts at its group's start is the person's number whatever is glued after it ("SSN No. 900-12-345678", "Phone
  * number 202-555-01234567", "Medicare ID 900-12-345678"), in the number's usual writing too, with digits glued after it
  * ("Phone number (202) 555-01234567", "Tel 202 555-0123150.00": the review of the build, B1-8). With no structure and no label a longer group is as often a
  * reference's ("Tracking 123-456-78901", "Claim # 20260115-12-3456", "29 CFR 2590.715-2719": the review of the build,
@@ -2524,10 +2528,13 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group:
     }
     const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
     if (yearFirst) continue;
-    if (labeled(a)) return 'structure';
     const [before, after] = [groups[i - 1], groups[i + 3]];
-    const headAnothers = head > 0 && (inCurrency || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start))));
-    const tailAnothers = tail > 0 && (AMOUNT_TAIL.test(text.slice(c.end, c.end + 24)) || (after !== undefined && TIGHT_JOIN.test(text.slice(c.end, after.start))));
+    // Digits before the shape are another number's where a currency amount holds them, a group is joined before them, or
+    // they are the year of a date written with its month's word ("June 18, 2026423.435-4454"); digits after it, where the
+    // shape starts at its group's start and an amount's end or a joined group follows.
+    const headAnothers = head > 0 && (inCurrency || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start))) || (head === 4 && /^(?:19|20)/u.test(a.digits) && WRITTEN_DATE_BEFORE.test(text.slice(Math.max(0, a.start - 24), a.start))));
+    const tailAnothers = head === 0 && tail > 0 && (AMOUNT_TAIL.test(text.slice(c.end, c.end + 24)) || (after !== undefined && TIGHT_JOIN.test(text.slice(c.end, after.start))));
+    if (labeled(a) && (head === 0 || headAnothers)) return 'structure';
     // A noun names the whole joined number, from its first group ("Policy No. 01-23456-78-9012").
     let first = i;
     while (first > 0 && TIGHT_JOIN.test(text.slice(groups[first - 1]?.end ?? 0, groups[first]?.start ?? 0))) first -= 1;
@@ -2573,6 +2580,8 @@ const CODE_LIST_BEFORE = /(?<!\p{L})(?:CPT(?:[\p{Pd}− ]?4)?|HCPCS|CODES?|MODIF
 const TAX_BEFORE = /(?<!\p{L})(?:F?EIN|TIN|TAX(?:PAYER)?[ \t]?I\.?D\.?(?:ENTIFICATION)?)\)?(?:[ \t]{0,3}(?:NO|NUMBER|NBR|NUM)\b\.?)?(?:[ \t]{0,3}\((?:F?EIN|TIN)\))?[ \t]{0,3}[:#]{0,2}[ \t]{0,3}$/u;
 const LINE_BREAK_IN = new RegExp(LINE_BREAK, 'u');
 const TIGHT_JOIN = /^[\p{Pd}−⁃˗➖./()_|\\'‘’ʼʹˊ′‵`~·‧∙⋅・•]{1,2}$/u;
+/** A date's month's word, with its day before or after it, up to the year that follows: "June 18, ", "27th of June, ", "1 January ". */
+const WRITTEN_DATE_BEFORE = /(?<![A-Z])(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUNE?|JULY?|AUG(?:UST)?|SEPT?(?:EMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)\.?,?[ \t]{0,2}(?:[0-9]{1,2}(?:ST|ND|RD|TH)?,?[ \t]{0,2})?$/u;
 /** A dash at a line's end and the next line's indentation: a number wrapped after its joiner ("900-12-\n3456150.00"). */
 const WRAPPED_JOIN = /^[\p{Pd}−][ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16}$/u;
 /** What stands between a labeled number's groups in its usual writing: white space, a joiner or a parenthesis, on one line. */
