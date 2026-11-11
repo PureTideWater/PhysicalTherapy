@@ -1530,6 +1530,19 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHI5-1', ['JANE Q ZEPHYRA'], `Re: 3rd-4thZQ\nService January 1, 2020-2020-01-02Paid $0,000.00`, null, {}],
     ['PHI5-1', ['SIMONE VANTREE'], `${HELD}3rd-4thSV`, null, VANTREE],
     ['PHI5-1', ['JANE Q ZEPHYRA'], 'Seen 3rd-4thZQ today.', 'Seen 3rd-4thZQ today.', {}],
+    // The re-review of round 5, PHI5-2: two initials with a space, a hyphen, an apostrophe or a modifier letter between
+    // them, one standing alone and the other at the near end of a word (cc3dd7f6 refused each for the range's own digits;
+    // 9f953223 and dedeb35f sent them); with no range both trees send them as written.
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient: Z VPaid $10.00.`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient Z-VDenied.`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient: z vpaid`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}PaidZ V today`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Pt: Z\u02bcV`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient Z\u02b9 V`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Patient Z\u3005V`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA QUILL VANTREE'], `${HELD}Patient Z QPaid`, null, VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], 'Patient: Z VPaid $10.00.', 'Patient: Z VPaid $10.00.', VANTREE],
+    ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Claim reviewed; no balance is owed.`, `${HELD}Claim reviewed; no balance is owed.`, VANTREE],
     ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}A jazz quiz was held.`, `${HELD}A jazz quiz was held.`, {}],
     ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
     // GATEWAYJ4-1: a number's own letters before the name are no head of a part: "am" or "pm" after a range of hours or

@@ -2574,6 +2574,23 @@ function heldOwnIdentifier(normal: string, subject: Subject): boolean {
     if (runs.some(initialsWithin)) {
       return true;
     }
+    // Two of the initials with up to three characters that are no letter of a word between them (a space, a hyphen, an
+    // apostrophe, a modifier letter such as U+02BC), one of them a letter standing alone and the other at the near end of a
+    // word ("Z VPaid", "Z-VDenied", "PaidZ V", "ZʼV": the re-review of round 5, PHI5-2): the pair is read as written
+    // together, and the letter refused as cc3dd7f6 refused it. One pass each way, the gap bounded.
+    if (initials.size > 0) {
+      const set = [...initials.keys()].map(escapeRegExp).join('');
+      const word = String.raw`(?!\p{Lm})\p{L}`;
+      const gap = String.raw`(?:[^\p{L}\p{N}]|\p{Lm}){1,3}`;
+      const pair = (a: string | undefined, b: string | undefined) => a !== undefined && b !== undefined && (a !== b || (initials.get(a) ?? 0) >= 2);
+      for (const spaced of [new RegExp(`(?<!${word})([${set}])${gap}([${set}])`, 'gu'), new RegExp(`([${set}])${gap}([${set}])(?!${word})`, 'gu')]) {
+        for (const match of view.text.matchAll(spaced)) {
+          if (pair(match[1], match[2])) {
+            return true;
+          }
+        }
+      }
+    }
   }
   const digit = (index: number) => /^[0-9]$/u.test(view.text[index] ?? '');
   // A birth label whose date redaction did not read: what follows it, before any placeholder, holds a digit or a month's
