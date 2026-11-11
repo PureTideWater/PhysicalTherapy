@@ -4,28 +4,28 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 13:50 UTC)
-- **State:** the migration is PLACED (13:01 UTC, on the co-founder's word in this session: the one marker command; the
-  file equals the reviewed draft, SHA-256 9f0d5530…; the marker is gone) and everything is built and reviewed on
-  `co-001/wip-ledger-function-bodies` at **c4272c33** (base 3bff4fd6 merged). No blocker.
-- **Running:** the full local suite once (`lane-a-wip/schema-pr2/suite.sh`; logs in `<scratch>/suite/`, `summary.txt`
-  one line a step). The mutation run is CI's (no source file a mutation shard covers changes).
-- **Next, in order:** (1) the suite green (a red step: read its log, fix, re-run that step); (2) `git fetch`; if
-  `origin/claude/build-platform` moved past 3bff4fd6, merge it, re-run the fast checks and `db:domain-model --check`
-  on a fresh database (and the dumps only if `apps/worker/src/reconcile`, `packages/ledger` or a ledger migration
-  moved); (3) `git push origin co-001/wip-ledger-function-bodies:co-001/ledger-function-bodies`; (4) open the DRAFT PR
-  into `claude/build-platform` with `lane-a-wip/schema-pr2/pr-description-draft.md` (fill the Checks table and the
-  Domain model section from `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs
-  list`; the WIP copy is `dm-summary-wip.md`); (5) subscribe; when CI is green but for the blank approval line, post
-  the suggested line as ONE pull-request comment through `gh api repos/PureTideWater/PhysicalTherapy/pulls/<n>/comments`
-  on the last line of `docs/product/domain-model.md` (the line `--check --require-approval` names: Tyler Williams,
-  the date, the document hash, today 47fae5d1…); never write it; (6) send the orchestrator the link with the
-  description's "For the founder to read" section; (7) merge only after the founder's "Commit suggestion" and green
-  required checks; then unsubscribe and record the merge.
+## RESUME-BLOCK (current at 2026-11-11 15:05 UTC)
+- **State: draft PR #143 is OPEN** (https://github.com/PureTideWater/PhysicalTherapy/pull/143), head **c4272c33** on
+  `co-001/ledger-function-bodies` (= `co-001/wip-ledger-function-bodies`), base 3bff4fd6. W11 is subscribed. Its
+  description is `lane-a-wip/schema-pr2/pr-description.md`.
+- **The full local suite ran once on c4272c33, all green** (`lane-a-wip/schema-pr2/suite-summary.txt`): only
+  `--check --require-approval` fails, on the blank approval line. Unit 13,500; infra 815; golden 381; oracle 738;
+  database 10,220 (1 skipped); e2e 87. Mutation left to CI.
+- **Next, in order:** (1) CI on c4272c33: every check green but `domain model` and `all green` (the blank line); a red
+  check otherwise: reproduce, fix, show it passing, push; (2) then post the suggested approval line as ONE
+  pull-request comment: `gh api repos/PureTideWater/PhysicalTherapy/pulls/143/comments -f commit_id=<head sha>
+  -f path=docs/product/domain-model.md -f side=RIGHT -F line=<the last line's number> -f body=$'```suggestion\nApproved
+  by: Tyler Williams  Date: <YYYY-MM-DD>  Document SHA-256: `47fae5d1e01a8417244275f6c56cb603a367c90595882e89a615485964c7d10e`\n```'`
+  followed by the Claude Code footer lines (take the exact line from `pnpm -s db:domain-model --check
+  --require-approval` on a fresh database; never write the line or approvers.json; never a review); (3) update the
+  description's "CI on this head" row; mark ready if the lane's practice asks; send the orchestrator the link with the
+  description's "What the founder should know before approving"; (4) end the turn; merge only after the founder's
+  "Commit suggestion" commit and green required checks, with the base an ancestor of the head (rule 2a: if the base
+  moved, merge it, fast checks, generators, push, wait for CI); then unsubscribe and record the merge here.
 - **Not in this PR:** ADR 0093's status line (rides PR 3); step 7b's move (a no-migration follow-up); the every-state
   `ledger_line_net` body (candidate for schema PR 5's ask); a guard on `service_line.practice_id` (proposal).
 - **After any restart:** setup script if PostgreSQL is down; `git -C /home/user/PhysicalTherapy checkout
-  co-001/wip-ledger-function-bodies` (a restart put the checkout back on `claude/build-platform` once).
+  co-001/ledger-function-bodies` (a restart put the checkout back on `claude/build-platform` once).
 
 ## The run of record (the tree the PR merges onto: base 3bff4fd6; `run-of-record-compare.txt`, `run-of-record-queue.log`)
 Seeds migrated from the base without the migration; before = those bodies (hashes abbcba68…/f151e27e… recorded per
