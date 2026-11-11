@@ -1370,7 +1370,7 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
   );
 
   it('says nothing of the other upload in the refusal', () => {
-    expect(SCREENING_BUSY).not.toMatch(/practice|address|another|email/i);
+    expect(SCREENING_BUSY).not.toMatch(/practice|address|another|upload/i);
   });
 
   it('closes the page while the screening stream is paused, says so, and records nothing of an upload sent anyway', async () => {
