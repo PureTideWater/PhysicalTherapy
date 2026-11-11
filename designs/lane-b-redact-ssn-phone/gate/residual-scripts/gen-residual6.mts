@@ -12,7 +12,7 @@
 // No row is added, dropped or reordered, and the file keeps the layout the earlier scripts wrote (write-residuals5.py's
 // dump: one row a line); the script fails if the file as read is not in that layout. Running it again on its own output
 // changes nothing (`--check` writes nothing and exits 1 if the file would change).
-// Usage: NODE_OPTIONS="--import <the gate's ts-resolve.mjs>" node gen-residual6.mts [--check]
+// Usage: node --import ../ts-resolve.mjs gen-residual6.mts [--check]   (the table and the tree: the two constants below)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
