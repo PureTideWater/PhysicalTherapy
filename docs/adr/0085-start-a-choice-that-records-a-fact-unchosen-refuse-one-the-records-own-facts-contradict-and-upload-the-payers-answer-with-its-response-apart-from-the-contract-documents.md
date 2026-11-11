@@ -267,7 +267,17 @@ the duplicate leaves is no worse than before: the earlier copy was already a pay
 the form says and does when its upload duplicates an unlinked copy belongs to the web half.
 
 **Not taken.** The same window check on a case line's INSERT (it would tie triage's date to the database clock); a
-different lock order in the web's handlers when a version names several documents (a deadlock there ends as "busy";
-recorded for the handlers' own pull request); a composite foreign key from the link to the submission's practice (no
+different lock order in the web's handlers (below; recorded for the handlers' own pull request); a composite foreign key from the link to the submission's practice (no
 table of this schema has one: a plain key and the trigger's practice check are the pattern, and with the search path
 set the trigger's lookup is the practice's).
+
+**Known, and the handlers' to close: a handler's one lock, then the trigger's several.** The triggers alone never
+cross. A handler that tags a document takes that one document's lock first, and the version's trigger then takes every
+document of the version in ascending order. Two people who each add a different letter to two open versions that end
+up naming both letters can therefore hold one lock each and wait for the other's (reproduced by this pull request's
+database review, as the application role). PostgreSQL ends one of the two after its deadlock timeout (`40P01`): that
+request fails with nothing saved, the other is recorded, and no wrong row is written. It is not answered as "busy"
+today. The fix is in the web, not in a migration: take the locks the trigger will take, in its order, before the
+write, or answer `40P01` on these routes as busy. The same review noted that the handlers hash the id as the request
+sent it and the triggers hash the stored uuid's text, which are equal only for a lowercase id; the triggers hold the
+rule either way, and the handlers should cast the id to `uuid` before hashing. Both are recorded for the web half.

@@ -528,7 +528,12 @@ So, before this deploy:
 
 Once the migration holds the four, it reads every practice's responses and versions once (the preflight, below), adds
 one nullable column with its foreign key (a scan of `source_document`, every row NULL), builds two partial indexes and
-replaces five functions. No table is rewritten and no ledger table is locked. Until its commit every request and job
+replaces five functions. No table is rewritten and no ledger table is locked. The index on `source_document` is the
+whole of the hold: the column and its key took milliseconds on two million synthetic rows and the index about a
+second per million documents on a development machine, so once an environment holds more than about two million
+documents, expect signed-in requests that touch a document to be refused as busy for those seconds. While the loop
+waits (up to five minutes) the migration's session holds a snapshot, which holds back vacuum's cleanup for that long
+and nothing else. Until its commit every request and job
 that touches a document waits or, for a signed-in request, is refused as busy after its three-second lock timeout
 with nothing saved (ADR 0092).
 
