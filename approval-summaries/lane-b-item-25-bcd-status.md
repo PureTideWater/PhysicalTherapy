@@ -4,9 +4,8 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9if9wx1DzzAD4jRFYi2
 
 ## RESUME-BLOCK
 - **(c) MERGED: #145 as ea8f200f** into `claude/build-platform` (2026-11-11 19:33 UTC), head 7c83dfee, a merge commit; every check green on that head, the required ones included; the base 91bc6b7c was its ancestor. No migration. W14 unsubscribed and cancelled its check-in. The WIP ref `co-001/wip-migrate-lock-timeout` and the branch can be deleted.
-- **(b) the free-screening upload's bounded wait:** started 2026-11-11 19:35 UTC on `co-001/screening-upload-bounded-wait`, cut from ea8f200f. No WIP ref yet.
-- **(d) the session's end and its audit event in one transaction:** not started. Opens after (b) merges.
-
+- **(b) the free-screening upload's bounded wait:** branch `co-001/screening-upload-bounded-wait` (from ea8f200f), WIP ref `co-001/wip-screening-upload-bounded-wait` at fe04a4f5. No PR yet. Built: `submit_screening()` runs in a transaction of its own with the web's three-second `lock_timeout`; a wait past it is refused with one sentence (`SCREENING_BUSY`), stores nothing, logs a code and the request's ID; ADR 0092 amended (2). The test fails on the base (waits to the test's limit) and passes on the head. Two security reviews running (`item-25-bcd-reviews/b-review-1-…`, `b-review-2-…`). Next: verify their findings and fix; before and after screenshots of the refusal and one ux-brand-reviewer pass (a new sentence on a screen); the full local suite once; the draft PR from the template; CI; merge on green. No migration, no new ADR or matrix number.
+- **(d) the session's end and its audit event in one transaction:** not started, and **W14 will not start it**: its context is near the budget, so (b) is its last PR. For the next session: `auth/sessions.ts` ends a session and writes the audit event in two transactions; make them one, committed through `committed()` (`packages/db/src/authz/scope.ts`, from #144), with failing-first tests for "the audit insert fails: the session is still live" and "the end fails: no audit event"; auth: two adversarial reviews; cut from the base after (b) merges.
 ## For Lane A (needs a migration; not built here)
 - Nothing yet.
 
@@ -37,4 +36,6 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9if9wx1DzzAD4jRFYi2
 - The migration custom resource stops its ECS task when its 50 minutes pass (today the task runs on and a later deploy waits behind it on the advisory lock). Infra; from C2-2.
 
 ## Log
+- 2026-11-11 19:35 UTC: the machine restarted (PostgreSQL down); the setup script run again, PostgreSQL back by 19:50 UTC. The script's summary listed five items as failed because the checkout had uncommitted work at that moment; the tools it names were in place from the first run (the pre-push hook and gitleaks ran on every push since).
+- 2026-11-11 19:33 UTC: #145 merged as ea8f200f.
 - 2026-11-11 17:16 UTC: started. The machine was ready except PostgreSQL (the setup script run again, then OK).
