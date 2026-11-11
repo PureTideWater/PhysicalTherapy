@@ -1154,14 +1154,19 @@ number by pattern (amendment of 2026-11-04).
 **Still not covered by the narrative's reading** (found by this change's reviews; the letter path's own checks after
 redaction are not part of it):
 
-- a name's letters with a middle dot or a bullet between them (`Quar·rington`: U+00B7, U+2027 and U+30FB join a
-  number, not a name), a part written in a lower-case piece after a space or a period (`Quarring ton`, `Quar.rington`:
-  the rule that keeps "in a" from being INA), and its letters spaced one by one;
+- a name's letters with a character between them that joins no name: a middle dot or a bullet (`Quar·rington`:
+  U+00B7, U+2027 and U+30FB join a number, not a name), a slash, an asterisk, a bracket or a brace (`Quar*rington`,
+  `Quar{rington`, `Quar[x]rington`; a number's letters split by one of the last four are not read either);
+- a part written in a lower-case piece after a space or a period (`Quarring ton`, `Quar.rington`: the rule that keeps
+  "in a" from being INA), and its letters spaced one by one;
 - a name glued to other letters (`DearQuarrington`): the letter path refuses such a letter after redaction
   (`ownIdentifierGlued`), which is no reading of a narrative.
 
 Each needs a person or a model to mean it; they are recorded for the letter reader's next change, since a joiner
-added to a name there changes what a letter redacts.
+added to a name there changes what a letter redacts and, through this function, which stored narratives fail. The
+packet verifier's tests pin them as not read (`packages/packets/src/verifier-identifiers.test.ts`), so that change
+shows there. The verifier does not widen them by itself: every joiner it added would be a second definition of how an
+identifier is written, and a slash or a period between letters is ordinary prose ("N/A" beside a patient named NA).
 
 **A change to the reader is now a change to the verifier**: `@tp/redact` is in the closure of `@tp/packets`, so the
 mutation workflow runs the packets shards for it (docs/adr/0066, Part 4, amendment of this date).

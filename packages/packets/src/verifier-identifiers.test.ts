@@ -290,6 +290,17 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
     expect(read(sentence, identifiers)).toEqual([]);
   });
 
+  it('does not read what the matcher does not (docs/adr/0054, "Still not covered"): a change here changes which stored narratives fail', () => {
+    // A character that joins no name, a lower-case piece after a space or a period, letters spaced one by one, and a
+    // name glued to other letters. "[x]" is prose: no citation marker, so no token to read across.
+    for (const written of ['Quar·rington', 'Quar*rington', 'Quar{rington', 'Quar[x]rington', 'Quar/rington', 'Quarring ton', 'Quar.rington', 'Q u a r r i n g t o n', 'DearQuarrington']) {
+      expect(flagged(telling(written), names('QUARRINGTON')), written).toEqual([]);
+    }
+    for (const written of ['QQRS*TUVW', 'QQRS{TUVW', 'QQRS[x]TUVW']) {
+      expect(flagged(telling(written), numbers('QQRSTUVW')), written).toEqual([]);
+    }
+  });
+
   it('reads a number through its joiners, wherever it is written (docs/adr/0047: the cost of the safer reading)', () => {
     expect(read('See lines 12-34 of the schedule [3].', numbers('1234'))).toEqual(['12-34']);
     expect(read('The plan identifier is SYN-1 [1].', numbers('SYN1'))).toEqual(['SYN-1']);

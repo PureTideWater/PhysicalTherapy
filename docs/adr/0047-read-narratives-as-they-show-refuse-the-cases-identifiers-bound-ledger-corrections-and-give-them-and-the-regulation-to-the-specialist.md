@@ -224,7 +224,8 @@ beside `names`), and the gateway's drafter has `identifierKinds`. A value in bot
 **The matcher never reaches the browser, and the browser's check has no identifier to read for.**
 `verifier/mismatches.ts` and `verifier/template.ts` take the reading as a function; `check.ts` passes
 `readsNoIdentifier`; only the server's entry (`verifier/index.ts`) imports `verifier/identifiers.ts`. A test loads the
-browser's module with the matcher and the server's reading made to throw on load.
+browser's module with the matcher and the server's reading made to throw on load, and another bundles it for a
+browser and reads the bundle's inputs (the worker's `browser-check-bundle.test.ts`).
 
 ### Alternatives considered
 
@@ -251,8 +252,12 @@ browser's module with the matcher and the server's reading made to throw on load
   (a claim number 97110, `$300.00` for 300); this is the same rule for joined forms, and short numeric identifiers make
   it likelier. The person rephrases.
 - Not read, as before: a name glued to other letters (`DearQuarrington`), a nickname, and what the matcher itself does
-  not read (ADR 0054's amendment of this date lists it). A look-alike letter inside a name fails as a
-  `hidden_character`, and a name glued to digits as a figure.
+  not read (ADR 0054's amendment of this date lists it: a name's letters split by a character that joins no name, such
+  as `Quar*rington` or `Quar[x]rington`, where `[x]` is prose and no citation marker). The verifier reads across its
+  own tokens only, since a letter has none; every other separator is the matcher's to define, once, for letters and
+  narratives alike. A look-alike letter inside a name fails as a `hidden_character`, and a name glued to digits as a
+  figure. The check is for what a person or a keyboard writes without meaning to; a second person approves every
+  packet, and reads the narrative.
 - The matcher's reading costs about a millisecond for a narrative of a few hundred characters and a dozen identifiers,
   and about 0.1 s for 1,600 identifiers (measured on the build's machine); a screen's check, with no identifier, runs
   none of it.
