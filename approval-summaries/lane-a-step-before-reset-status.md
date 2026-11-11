@@ -2,7 +2,22 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: W10 (session_019i9ifDEoMdpgEBKLKNbUEq), current at 2026-11-11 10:25 UTC
+## RESUME-BLOCK: DONE. W10 stood down, 2026-11-11 12:55 UTC
+**Both parts are merged; nothing is left to resume and W10 (session_019i9ifDEoMdpgEBKLKNbUEq) holds nothing.**
+- #140 merged as 342d6144 (10:06 UTC). #142 (item 28) merged as **3bff4fd6** (12:53 UTC) with the founder's committed
+  line (dfd39ec0) and every check green on 0bd8011a (the base edab4d4d, #141, merged in first; no migration).
+- W10 is unsubscribed from both PRs and its check-ins are deleted. Nothing is unpushed; its container and worktrees
+  (`/home/user/step-before-reset`, `/home/user/pwnotice`) can be lost. The branch `co-001/step-before-reset` and the
+  WIP ref `co-001/wip-step-before-reset` are merged history (0bd8011a) and can be deleted by whoever tidies refs.
+- Owed elsewhere: ADR 0093's Status still reads "proposed" (ride it in the next schema PR). Handed on to the
+  orchestrator's queue: W8's four (Queues item 31); a job that records a reset whose transaction failed twice; two
+  confirm errors still thrown as the platform's failure; the other provider methods rethrow the provider's error
+  whole; the "factor older than the reset" rule if Cognito PR 2 slips past launch. Staging checks: that
+  `DeleteWebAuthnCredential` works after a global sign-out, and the confirm's error names.
+- One local-only observation: under the whole suite's load, `packages/contracts/src/evidence/pages.test.ts` (the heap
+  case) failed once on this machine and passed alone; CI's unit job passed on every head.
+
+## W10's block before the merge (10:25 UTC), kept for its notes
 - **Part 1 is done: #140 MERGED as 342d6144** (10:06 UTC) with the founder's committed line (7e05e0c6, exactly the
   suggested one; `--check --strict --require-approval` passed on a fresh database; every check green). The orchestrator
   has its line. ADR 0091's Status reads accepted in item 28's branch. #140's description never got the "On c82d2c99"
