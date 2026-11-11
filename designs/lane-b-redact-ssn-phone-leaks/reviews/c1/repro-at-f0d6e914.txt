@@ -1,0 +1,137 @@
+== C1-1: the space CASE_GLUED_LABEL adds only when strict is true loses a label (or adds a keep-noun) the strict-false reading and the base have
+C1-1a "Call Zephyra at 555-0123.\nTel claimSS#b 20255 50123"  # the withheld [PHONE] is sent
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1b "Tel claimSS#b 20255 50123"
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1c "Tel (to verify memberSS#s) 20255 50123"  # the label at its reach of 24
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1d "SSN zipSS#B 9 0 0 1 2 3 4 5 6"
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1e "Tel caseHIC\u{e9} 20255 50123"
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1f "Call Zephyra at 555-0123.\nFax (to verify memberSS#s) 20 25 55 01 23"  # the withheld [PHONE] is sent
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1g "HIC - department aSS No\u{e9}, \t202 555012"
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-1h "Phone Zephyra 555-0123. Phone refSS#s: 20 25 55 01 23"  # the withheld [PHONE] is sent
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+== C1-2: a match the base did not make that is not marked fresh (a name with a new joiner or a look-alike letter, a date of birth in other-script digits or with a look-alike month) is a list's item or takes digits from a chain
+C1-2a "Claim Zephy\u{2219}ra, 900123456"  # joiner added in the fix round
+    base SENT "Claim Zephy∙ra, [SSN]"
+    aea  SENT "Claim Zephy∙ra, [SSN]"
+    head SENT "Claim [PATIENT_NAME], [SSN]"
+C1-2b "Claim Zeph\u{2022}yra and 900123456"  # joiner added in the fix round
+    base SENT "Claim Zeph•yra and [SSN]"
+    aea  SENT "Claim Zeph•yra and [SSN]"
+    head SENT "Claim [PATIENT_NAME] and [SSN]"
+C1-2c "Ref Zeph\u{22c5}yra, 2025550123"  # joiner added in the fix round
+    base SENT "Ref Zeph⋅yra, [PHONE]"
+    aea  SENT "Ref Zeph⋅yra, [PHONE]"
+    head SENT "Ref [PATIENT_NAME], [PHONE]"
+C1-2d "Claim Zephyr\u{430}, 900123456"
+    base SENT "Claim Zephyrа, [SSN]"
+    aea  SENT "Claim [PATIENT_NAME], 900123456"
+    head SENT "Claim [PATIENT_NAME], [SSN]"
+C1-2e "Ref Zephyr\u{430} and 2025550123"
+    base SENT "Ref Zephyrа and [PHONE]"
+    aea  SENT "Ref [PATIENT_NAME] and 2025550123"
+    head SENT "Ref [PATIENT_NAME] and [PHONE]"
+C1-2f "Claim \u{660}\u{663}/\u{661}\u{664}/\u{661}\u{669}\u{668}\u{660}, 900123456"
+    base SENT "Claim ٠٣/١٤/١٩٨٠, [SSN]"
+    aea  SENT "Claim [DATE_OF_BIRTH], 900123456"
+    head SENT "Claim [DATE_OF_BIRTH], [SSN]"
+C1-2g "Claim M\u{430}rch 14 1980, 900123456"
+    base SENT "Claim Mаrch 14 1980, [SSN]"
+    aea  SENT "Claim [DATE_OF_BIRTH], 900123456"
+    head SENT "Claim [DATE_OF_BIRTH], [SSN]"
+C1-2h "Claims Zephyr\u{430}, 900123456 and 900551234"
+    base SENT "Claims Zephyrа, [SSN] and [SSN]"
+    aea  SENT "Claims [PATIENT_NAME], 900123456 and 900551234"
+    head SENT "Claims [PATIENT_NAME], [SSN] and [SSN]"
+C1-2i "M\u{430}rch 14, 1980 555 01 23"  # base refuses for the chain 1980 555 01 23
+    base REFUSED
+    aea  SENT "[DATE_OF_BIRTH] 555 01 23"
+    head REFUSED
+C1-2k "Claim Zeph\u{2219}yra, 900123456. Phone Zephy\u{2219}ra 800 555 0118"
+    base SENT "Claim Zeph∙yra, [SSN]. Phone Zephy∙ra [PHONE]"
+    aea  SENT "Claim Zeph∙yra, [SSN]. Phone Zephy∙ra [PHONE]"
+    head SENT "Claim [PATIENT_NAME], [SSN]. Phone [PATIENT_NAME] [PHONE]"
+C1-2l "ID (home) 48625869 792 S. Vantree / 1234567893.\nCell number at 1\u{118cc}\u{9ea}0-0\u{1b7}-1\u{118af}. 80\n8\n49\n8522.\nSocial Security No.) 555-\n0123*NPI:123-45-678901 Paid $1.00"  # minimised from the fuzzer
+    base SENT "ID (home) 48625869 792 [PATIENT_NAME]. [PATIENT_NAME] / 1234567893.\nCell number at 1𑣌৪0-0Ʒ-1𑢯. [SSN].\nSocial Security No.) [SSN]*NPI:123-45-678901 Paid $1.00"
+    aea  SENT "ID (home) 48625869 792 [PATIENT_NAME]. [PATIENT_NAME] / 1234567893.\nCell number at 1𑣌৪0-[DATE_OF_BIRTH]\n8\n49\n8522.\nSocial Security No.) [SSN]*NPI:123-45-678901 Paid $1.00"
+    head SENT "ID (home) 48625869 792 [PATIENT_NAME]. [PATIENT_NAME] / 1234567893.\nCell number at 1𑣌৪0-[DATE_OF_BIRTH].\nSocial Security No.) [SSN]*NPI:123-45-678901 Paid $1.00"
+== C1-3: in a held letter, a number with a look-alike letter for a digit after the name: the glued check reads the look-alike fold (a digit), the patterns and the scan the plain fold (a letter)
+C1-3a "Seen 01/01/2020-150.00Paid in full. Zephyra \u{a76e}00-12-3456"  # U+A76E looks like 9
+    base REFUSED
+    aea  SENT "Seen 01/01/2020-150.00Paid in full. [PATIENT_NAME] [SSN]"
+    head REFUSED
+C1-3b "Seen 01/01/2020-150.00Paid in full. Zephyra 202-555-01\u{a75a}3"  # U+A75A looks like 2
+    base SENT "Seen 01/01/2020-150.00Paid in full. [PATIENT_NAME] 202-555-01Ꝛ3"
+    aea  SENT "Seen 01/01/2020-150.00Paid in full. [PATIENT_NAME] [PHONE]"
+    head SENT "Seen 01/01/2020-150.00Paid in full. [PATIENT_NAME] 202-555-01Ꝛ3"
+C1-3c "Seen 01/01/2020-150.00Paid in full. Jane Zephyra, \u{a76e}00123456"
+    base REFUSED
+    aea  SENT "Seen 01/01/2020-150.00Paid in full. [PATIENT_NAME] [PATIENT_NAME], [SSN]"
+    head REFUSED
+C1-3d "Seen 01/01/2020-150.00Paid in full. Zephyra\n\u{a76e}00 12 3456"
+    base REFUSED
+    aea  SENT "Seen 01/01/2020-150.00Paid in full. [PATIENT_NAME]\n[SSN]"
+    head REFUSED
+C1-3e "1/01/20-150.00 Zephyra \u{431}0"  # U+0431 looks like 6
+    base REFUSED
+    aea  SENT "1/01/20-150.00 [PATIENT_NAME] б0"
+    head REFUSED
+C1-3x "Zephyra \u{a76e}00-12-3456"  # comparison: no held range
+    base SENT "[PATIENT_NAME] Ꝯ00-12-3456"
+    aea  SENT "[PATIENT_NAME] [SSN]"
+    head SENT "[PATIENT_NAME] Ꝯ00-12-3456"
+C1-3y "Seen 01/01/2020-150.00Paid in full. SSN \u{a76e}00-12-3456"  # comparison: no name
+    base SENT "Seen 01/01/2020-150.00Paid in full. SSN Ꝯ00-12-3456"
+    aea  SENT "Seen 01/01/2020-150.00Paid in full. SSN [SSN]"
+    head SENT "Seen 01/01/2020-150.00Paid in full. SSN Ꝯ00-12-3456"
+== C1-4 (the same at aea2852d): a name with a number character that is no decimal digit glued to it
+number characters tested 953 (No or Nl, unchanged by NFKC), each before and after the name: base REFUSED and head SENT with the name in clear 0 ()
+C1-4a "Zephyra\u{3007}"
+    base REFUSED
+    aea  SENT "Zephyra〇"
+    head REFUSED
+C1-4b "Seen Jane Zephyra\u{3007} on 01/02/2020, paid 150.00"
+    base REFUSED
+    aea  SENT "Seen [PATIENT_NAME] Zephyra〇 on 01/02/2020, paid 150.00"
+    head REFUSED
+C1-4c "\u{3007}Zephyra"
+    base REFUSED
+    aea  SENT "〇Zephyra"
+    head REFUSED
+C1-4d "Jane\u{3007} Zephyra"
+    base REFUSED
+    aea  SENT "Jane〇 [PATIENT_NAME]"
+    head REFUSED
+C1-4e "SYNCLAIM0001\u{3007}"
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-4f "\u{3007}SYNMEMBER0042"
+    base REFUSED
+    aea  REFUSED
+    head REFUSED
+C1-4x "Zephyra0"  # comparison: the ASCII digit
+    base REFUSED
+    aea  REFUSED
+    head REFUSED

@@ -1,0 +1,71 @@
+== 1: asymmetries by whether the text holds a CASE_GLUED_LABEL site
+{"asymFull site=true":27,"asymChain site=true":10,"SENT_WITHHELD site=true":1}
+== 2: FLIP-CHK letters (the base check refuses the very text the head sends), minimised
+24 FLIP-CHK shapes; with a CASE_GLUED_LABEL site 14
+"1/01/20-150.00 Zephyra\nꝮ5" (patient A; site=false)
+    base REFUSED | aea SENT "1/01/20-150.00 [PATIENT_NAME]\nꝮ5" | head SENT "1/01/20-150.00 [PATIENT_NAME]\nꝮ5"
+"1/01/20-150.00 Zephyra б0" (patient A; site=false)
+    base REFUSED | aea SENT "1/01/20-150.00 [PATIENT_NAME] б0" | head SENT "1/01/20-150.00 [PATIENT_NAME] б0"
+"1/01/20-150.00 Ana ⴹ𐌢" (patient B; site=false)
+    base REFUSED | aea SENT "1/01/20-150.00 [PATIENT_NAME] ⴹ𐌢" | head SENT "1/01/20-150.00 [PATIENT_NAME] ⴹ𐌢"
+"𑣲Cole" (patient B; site=false)
+    base REFUSED | aea SENT "𑣲Cole" | head SENT "𑣲Cole"
+"1/01/20-150.00 Vantree-Ϩ0" (patient A; site=false)
+    base REFUSED | aea SENT "1/01/20-150.00 [PATIENT_NAME]-Ϩ0" | head SENT "1/01/20-150.00 [PATIENT_NAME]-Ϩ0"
+"1/01/20-150.00 Zephyra,Ƽ0" (patient A; site=false)
+    base REFUSED | aea SENT "1/01/20-150.00 [PATIENT_NAME],Ƽ0" | head SENT "1/01/20-150.00 [PATIENT_NAME],Ƽ0"
+"1/01/20-150.00𑢻\nZephyra" (patient A; site=false)
+    base REFUSED | aea REFUSED | head SENT "1/01/20-150.00𑢻\n[PATIENT_NAME]"
+"Cole〇" (patient B; site=false)
+    base REFUSED | aea SENT "Cole〇" | head SENT "Cole〇"
+"1/01/20-150.00 ZEPHYRA/Ꝯ0" (patient A; site=false)
+    base REFUSED | aea SENT "1/01/20-150.00 [PATIENT_NAME]/Ꝯ0" | head SENT "1/01/20-150.00 [PATIENT_NAME]/Ꝯ0"
+"HIC - department aSS Noé, \t202 555012" (patient A; site=true)
+    base REFUSED | aea REFUSED | head SENT "HIC - department aSS Noé, \t202 555012"
+"Cell no home home aSS Noé) \n9001091.00" (patient A; site=true)
+    base REFUSED | aea REFUSED | head SENT "Cell no home home aSS Noé) \n9001091.00"
+"Medicare No. aSS Noé weekdays . 954-753185" (patient B; site=true)
+    base REFUSED | aea REFUSED | head SENT "Medicare No. aSS Noé weekdays . 954-753185"
+"ZEPHYRA\t𑢬1/01/20-150.00" (patient A; site=false)
+    base REFUSED | aea REFUSED | head SENT "[PATIENT_NAME]\t𑢬1/01/20-150.00"
+"SSN- classSS#A aSS Noé,  (90012 3456" (patient A; site=true)
+    base REFUSED | aea REFUSED | head SENT "SSN- classSS#A aSS Noé,  (90012 3456"
+== 3: the UNREDACT records of the fuzzers
+{"k":"UNREDACT","who":"A","t":"ID (home) 48625869 792 S. Vantree / 1234567893.\nCell number at 1𑣌৪0-0Ʒ-1𑢯. 80\n8\n49\n8522.\nSocial Security No.) 555-\n0123*NPI:123-45-678901 Paid $1.00","base":"SENT","bsent":"ID (home) 48625869 792 [PATIENT_NAME]. [PATIENT_NAME] / 1234567893.\nCell number at 1𑣌৪0-0Ʒ-1𑢯. [SSN].\nSocial Security No.) [SSN]*NPI:123-45-678901 Paid $1.00","head":"ID (home) 48625869 792 [PATIENT_NAME]. [PATIENT_NAME] / 1234567893.\nCell number at 1𑣌৪0-[DATE_OF_BIRTH]\n8\n49\n8522.\nSocial Security No.) [SSN]*NPI:123-45-678901 Paid $1.00","aea":"SENT \"ID (home) 48625869 792 [PATIENT_NAME]. [PATIENT_NAME] / 1234567893.\\nCell number at 1𑣌৪0-[DATE_OF_BIRTH]\\n8\\n49\\n8522.\\nSocial Security No.) [SSN]*NPI:123-45-678901 Paid $1.00\""}
+== 4: a head-only match that is not fresh as a keep-noun list's item
+"Claim Zeph·yra, 900123456"
+    base SENT "Claim Zeph·yra, [SSN]" | aea (as head) | head SENT "Claim [PATIENT_NAME], 900123456"
+"Claim Zephy∙ra, 900123456"
+    base SENT "Claim Zephy∙ra, [SSN]" | aea SENT "Claim Zephy∙ra, [SSN]" | head SENT "Claim [PATIENT_NAME], 900123456"
+"Claim Zeph•yra and 900123456"
+    base SENT "Claim Zeph•yra and [SSN]" | aea SENT "Claim Zeph•yra and [SSN]" | head SENT "Claim [PATIENT_NAME] and 900123456"
+"Ref Jane·Zephyra, 2025550123"
+    base SENT "Ref [PATIENT_NAME]·[PATIENT_NAME], [PHONE]" | aea (as head) | head SENT "Ref [PATIENT_NAME]·[PATIENT_NAME], [PHONE]"
+"Claim J. Zephyrа, 900123456"
+    base SENT "Claim J. Zephyrа, [SSN]" | aea (as head) | head SENT "Claim [PATIENT_NAME]. [PATIENT_NAME], [SSN]"
+"Claim Zephyrа, 900123456 or 2025550123"
+    base SENT "Claim Zephyrа, [SSN] or [PHONE]" | aea (as head) | head SENT "Claim [PATIENT_NAME], 900123456 or 2025550123"
+"ICN Zephyrа, 900123456"
+    base SENT "ICN Zephyrа, [SSN]" | aea (as head) | head SENT "ICN [PATIENT_NAME], 900123456"
+"Claim Zephyrа, SSN 900123456"
+    base SENT "Claim Zephyrа, SSN [SSN]" | aea (as head) | head SENT "Claim [PATIENT_NAME], SSN [SSN]"
+"Check Zephyrа & 900-12-3456"
+    base SENT "Check Zephyrа & [SSN]" | aea (as head) | head SENT "Check [PATIENT_NAME] & [SSN]"
+"Claim Mаrch 14, 1980 and 2025550123"
+    base SENT "Claim Mаrch 14, 1980 and [PHONE]" | aea (as head) | head SENT "Claim [DATE_OF_BIRTH] and 2025550123"
+"Appeal for Jane Zephyrа, 900123456"
+    base SENT "Appeal for [PATIENT_NAME] Zephyrа, [SSN]" | aea (as head) | head SENT "Appeal for [PATIENT_NAME] [PATIENT_NAME], [SSN]"
+"Claim number Zephyrа, 2025550123"
+    base SENT "Claim number Zephyrа, [PHONE]" | aea (as head) | head SENT "Claim number [PATIENT_NAME], 2025550123"
+"Claim ZZ ٧٦٥-٤٣٢١, 900123456"
+    base SENT "Claim ZZ ٧٦٥-٤٣٢١, [SSN]" | aea SENT "Claim [MEMBER_ID], 900123456" | head REFUSED
+"Ref ZZ ٧٦٥-٤٣٢١ and 2025550123"
+    base SENT "Ref ZZ ٧٦٥-٤٣٢١ and [PHONE]" | aea SENT "Ref [MEMBER_ID] and 2025550123" | head REFUSED
+"Claim ZZ 765-4321, 900123456"
+    base SENT "Claim [MEMBER_ID], 900123456" | aea (as head) | head SENT "Claim [MEMBER_ID], 900123456"
+"Claim ZZ٧٦٥٤٣٢١, 900123456"
+    base SENT "Claim ZZ٧٦٥٤٣٢١, [SSN]" | aea SENT "Claim [MEMBER_ID], 900123456" | head REFUSED
+"Claim SΙMONE, 900123456"
+    base SENT "Claim SΙMONE, [SSN]" | aea (as head) | head SENT "Claim [PATIENT_NAME], 900123456"
+"Claim Vаntree and 2025550123"
+    base SENT "Claim Vаntree and [PHONE]" | aea (as head) | head SENT "Claim [PATIENT_NAME] and 2025550123"
