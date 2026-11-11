@@ -15,10 +15,10 @@
 --    submissions, for the latest submission of a case of the practice; a zip's entries take their zip's.
 --
 -- No table is created. No amount, stage, ledger table, policy, job or approval changes. Five functions are replaced
--- with CREATE OR REPLACE, which keeps each one's identity, owner and grants. Four keep their signature, language,
--- volatility, security and search_path. One changes its language and volatility, contract_version_documents_ok
--- (section 5 says why). The application role gains one right, INSERT on the new column, and no UPDATE on it. Runs as
--- tp_owner.
+-- with CREATE OR REPLACE, which keeps each one's identity, owner and grants. Three keep every attribute. One changes
+-- its language and volatility, contract_version_documents_ok (section 5 says why), and one gains a search_path,
+-- source_document_rules (section 4). The application role gains one right, INSERT on the new column, and no UPDATE on
+-- it. Runs as tp_owner.
 --
 -- Items 3 and 4 shut each other out under one lock, the one the web's handlers take
 -- (apps/web/src/lib/contracts/tagging.ts, DOCUMENT_USE_LOCK): pg_advisory_xact_lock on 'document_use:' and the
@@ -114,8 +114,12 @@ CREATE INDEX payer_response_by_document ON payer_response (practice_id, document
 --   not the practice is in the transaction's scope: out of scope the lookups find nothing and the insert is refused.
 -- - a zip's entry takes its zip's link (set here, so no writer can forget it), and one that names another is refused;
 -- - the link never changes.
--- Still SECURITY INVOKER, with no search_path of its own, as before.
-CREATE OR REPLACE FUNCTION source_document_rules() RETURNS trigger LANGUAGE plpgsql AS $function$
+-- One attribute is added: SET search_path = pg_catalog, public, pg_temp, as every later trigger function of this
+-- schema has. The function had none, so the "source_document" it reads a zip's row from was whatever the session's
+-- search path found first, a temporary table of that name included; a zip's link read from there could name another
+-- practice's submission (and a zip's uploader, scan verdict and format could be faked the same way before this
+-- migration). With the path set, it reads public.source_document under the caller's policies. Still SECURITY INVOKER.
+CREATE OR REPLACE FUNCTION source_document_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $function$
 DECLARE
   zip_uploader uuid;
   zip_scan text;

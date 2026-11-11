@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `a3a32024b2a5030c87920a3e5ad9901f95632163` on branch `co-001/payer-response-db-rules`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `32aecb641514492330f3e5922caedb901f8038fc` on branch `co-001/payer-response-db-rules`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 52; head `20261114090000_payer_response_document_rules.sql`
 - PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -7441,7 +7441,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `sign_in_step_began()` | `timestamp with time zone` | sql | invoker | volatile | `search_path=pg_catalog, pg_temp` | tp_app |  | `8259707bef4d9f9f` |
 | `sign_in_step_refused(uuid,timestamp with time zone,text,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2f2824594601d24a` |
 | `sign_in_succeeded(uuid)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `60e683f0dc8ba129` |
-| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `6625d5827492f774` |
+| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6625d5827492f774` |
 | `status_component_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82c436362d600ad2` |
 | `status_incident_opened()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `92eec267bf1252eb` |
 | `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9596e1baaa844ddb` |
@@ -7542,7 +7542,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092 | `e1288b9c074ced20fc8d08b7d64001786a7d29b23ae3d1695eff551eb20ea0eb` |
 | 50 | `20261112090000_sign_in_not_before.sql` | ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093 | `1fe539f67b26b1edb2c22adcea8aee41b94091808488e40e0dd5f3f93a1d1e71` |
 | 51 | `20261113090000_ledger_lookups.sql` | ADR 0087 | `9f0d553046486acd37229ae24bf516ff52a21caaf3316a4ec45623a17f089165` |
-| 52 | `20261114090000_payer_response_document_rules.sql` | ADR 0085 | `be952793c888280d7bf8a6101df985f347e13e569413fbeeb0e91d42f9a584c1` |
+| 52 | `20261114090000_payer_response_document_rules.sql` | ADR 0085 | `5355f1d7e2f628f76d56980a6957cc0bd8cc9045ff5c55b56690ebbd63f06591` |
 
 ## Cross-checks
 
@@ -7560,4 +7560,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261114090000_payer_response_document_rules.sql` (52 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `ca8c05e3057817a5387fc260b9fbe4b622daf2e3a530cbeb788afca74a829be5`
+Approved by: ________  Date: ________  Document SHA-256: `aee990b342807c6cc39f2458eacbbd39416d6cdfc52dce808b71887bb5a3e1d1`

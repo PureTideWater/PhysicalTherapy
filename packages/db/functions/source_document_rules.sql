@@ -8,6 +8,7 @@
 CREATE OR REPLACE FUNCTION public.source_document_rules()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog', 'public', 'pg_temp'
 AS $function$
 DECLARE
   zip_uploader uuid;

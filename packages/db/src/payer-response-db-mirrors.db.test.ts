@@ -176,6 +176,9 @@ describe('a person writes a line off as window passed only once its window has e
 
 // ---- Items 2 and 5: fixtures ------------------------------------------------------------------------------------
 
+/** An unlinked top-level payer letter, written to public by the superuser with the practice in scope. */
+const DOC_INSERT_AS_OWNER = `WITH scope AS (SELECT set_config('app.practice_ids', '{' || $2::text || '}', true))
+  INSERT INTO public.source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by) SELECT $1::uuid, $2::uuid, 'payer_letter', 10, 'application/pdf', $3::uuid FROM scope`;
 const DOC_INSERT = `INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id, filed_for_submission_id)
                     VALUES ($1, $2, $3, 1200, 'application/pdf', $4, $5, $6) RETURNING id, filed_for_submission_id`;
 
@@ -314,6 +317,31 @@ describe('source_document.filed_for_submission_id (item 5)', () => {
       );
     });
     expect(rows).toEqual([{ filed_for_submission_id: sent.id }]);
+  });
+
+  it('reads the zip’s row from the practice’s documents, never from a temporary table of the same name', async () => {
+    // The application role cannot create a temporary table in a migrated database (TEMP is revoked), so the table is a
+    // superuser's here: what a database with that right left on would allow. An unqualified name finds a session's
+    // temporary table before public's, unless the function sets its own search path.
+    const sent = await submission();
+    const zip = randomUUID();
+    await owner.query('BEGIN');
+    try {
+      await owner.query(DOC_INSERT_AS_OWNER, [zip, north.practiceId, manager]);
+      await owner.query('CREATE TEMP TABLE source_document (id uuid, practice_id uuid, parent_document_id uuid, uploaded_by uuid, scan_status text, format_id text, filed_for_submission_id uuid) ON COMMIT DROP');
+      await owner.query("INSERT INTO pg_temp.source_document VALUES ($1, $2, NULL, $3, 'clean', NULL, $4)", [zip, north.practiceId, manager, sent.id]);
+      await owner.query('GRANT SELECT ON pg_temp.source_document TO tp_app');
+      await owner.query('SET LOCAL ROLE tp_app');
+      await owner.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [manager, `{${north.practiceId}}`]);
+      const { rows } = await owner.query(
+        `INSERT INTO public.source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id)
+         VALUES ($1, $2, 'payer_letter', 10, 'application/pdf', $3, $4) RETURNING filed_for_submission_id`,
+        [randomUUID(), north.practiceId, manager, zip],
+      );
+      expect(rows).toEqual([{ filed_for_submission_id: null }]);
+    } finally {
+      await owner.query('ROLLBACK');
+    }
   });
 
   it('gives an entry of an unlinked zip no link, and refuses an entry that names another submission than its zip', async () => {

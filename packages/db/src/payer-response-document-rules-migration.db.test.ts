@@ -91,9 +91,9 @@ describe('the payer-response document rules migration (20261114090000) on the pr
       const changed = [...after.keys()].filter((signature) => JSON.stringify(after.get(signature)) !== JSON.stringify(before.get(signature)));
       expect(changed).toEqual(REPLACED);
       for (const signature of REPLACED) {
-        const { body: was, language: wasLanguage, volatility: wasVolatility, ...kept } = before.get(signature) as Record<string, unknown>;
-        const { body: is, language, volatility, ...keeps } = after.get(signature) as Record<string, unknown>;
-        // Identity, owner, grants, settings, security, strictness and types are kept by every one of the five.
+        const { body: was, language: wasLanguage, volatility: wasVolatility, config: wasConfig, ...kept } = before.get(signature) as Record<string, unknown>;
+        const { body: is, language, volatility, config, ...keeps } = after.get(signature) as Record<string, unknown>;
+        // Identity, owner, grants, security, strictness and types are kept by every one of the five.
         expect(keeps, signature).toEqual(kept);
         expect(is, signature).not.toBe(was);
         if (signature === 'contract_version_documents_ok(contract_version)') {
@@ -101,6 +101,12 @@ describe('the payer-response document rules migration (20261114090000) on the pr
           expect([wasLanguage, wasVolatility, language, volatility]).toEqual(['sql', 's', 'plpgsql', 'v']);
         } else {
           expect([language, volatility], signature).toEqual([wasLanguage, wasVolatility]);
+        }
+        if (signature === 'source_document_rules()') {
+          // The other deliberate change: it had no search path of its own, so a temporary table could stand in for the documents it reads.
+          expect([wasConfig, config]).toEqual([null, ['search_path=pg_catalog, public, pg_temp']]);
+        } else {
+          expect(config, signature).toEqual(wasConfig);
         }
       }
       expect(await columnExists()).toBe(true);

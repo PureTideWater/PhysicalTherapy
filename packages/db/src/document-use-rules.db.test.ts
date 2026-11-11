@@ -65,11 +65,11 @@ const refusal = (code: string, message: string): Failure => ({ code, message });
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
-/** A practice-scoped transaction of the owner role, in the manager's name, at the isolation level asked for; committed on success. */
+/** A practice-scoped transaction of the application role, in the manager's name, at the isolation level asked for; committed on success. */
 async function transact<T>(work: (client: pg.Client) => Promise<T>, isolation = 'READ COMMITTED', practice: TenantWorld = north): Promise<T> {
   await owner.query(`BEGIN ISOLATION LEVEL ${isolation}`);
   try {
-    await owner.query('SET LOCAL ROLE tp_owner');
+    await owner.query('SET LOCAL ROLE tp_app');
     await owner.query("SELECT set_config('app.practice_ids', $1, true), set_config('app.actor_id', $2, true)", [`{${practice.practiceId}}`, manager]);
     const result = await work(owner);
     await owner.query('COMMIT');
