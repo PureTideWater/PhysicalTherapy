@@ -1009,12 +1009,18 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('SSN: 90012345601\u00B702\u00B72020 ok.'),
     refused('Phone 20255501239/9/2020 ok.'),
     unchanged('On 20260112345-01-2026 today'),
-    // E1-5, E2-5: the area code in parentheses, written more loosely; with nothing glued after it no shape in a held letter.
+    // E1-5: the area code in parentheses, written more loosely. In a held letter the shape with a longer last group is
+    // refused with no label too, a line's own numbers among them (E2-5 asked for those back; G1-4 showed they cannot be
+    // told from a phone with a digit glued after it).
     refused('Service ( 202 ) 555-0123150.00 on file.'),
     refused('Service (202) - 555-0123150.00 on file.'),
     refused('Service (202)\n555-0123150.00 on file.'),
     refused('Service (202) 555-012301-Jan-2020 on file.'),
-    unchanged(`${HELD}Line (001) 420-97110`),
+    refused(`${HELD}Line (001) 420-97110`),
+    refused(`${HELD}Line (001)420-97110`),
+    refused(`${HELD}(202) 555-01234`),
+    refused(`${HELD}Dept. (202) 555-01231 97110 150.00`),
+    unchanged('Line (001) 420-97110'),
     // E2-4: a point between the second and third groups keeps the usual writing an amount and a number.
     unchanged('Medicare rate 110 32.74420'),
     unchanged('Contact: Billing 250 75.123456'),
@@ -1035,6 +1041,96 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     expect(outcome(letter)).toBe(letter);
     const without = letter.replace(/ ?\(?[0-9]{1,2}\)/u, '');
     expect(outcome(without)).toBe(without);
+  });
+
+  // The two reviews of the next delta, G1 (PHI) and G2 (must-stay), each finding on both sides.
+  it.each([
+    // G1-2: a date written year first after a bare nine or ten, its day or month of one digit.
+    refused('Seen 9001234562020-1-5'),
+    refused('DOB 20255501232020-12-5.'),
+    refused('9001234562020/1/5 Paid'),
+    // G1-3: the Social Security label right before the noun makes the noun the label's own word, however far the number
+    // stands after it and whatever is glued before its shape.
+    refused(`Social Security Account Number:${' '.repeat(14)}900-12-3456150.00`),
+    refused(`SSN Member ID${' '.repeat(20)}900-12-3456150.00`),
+    refused('SSN Account 01-900-12-3456150.00'),
+    refused('Social Security Account Number 01/02/2020900-12-3456'),
+    refused('Social Security Claim Number 900-12-3456150.00'),
+    refused('SSN Account Code 900-12-3456150.00'),
+    // G1-5: under a Social Security label a point between the second and third groups is no rate's.
+    refused('SSN 900 12.3456150.00'),
+    refused('HICN 900 12.345678'),
+    refused('SSN (900) 12.3456150.00'),
+    unchanged('Medicare rate 110 32.74425 Jan 15, 2026'),
+    // G2-1: a month's word across a space begins a date of its own; glued, it is the date after the number.
+    unchanged('802-45-678901 Jan 15, 2026 97110 150.00'),
+    unchanged('Web ID 802-456-78901 Sep 30, 2026'),
+    unchanged('(001) 420 97116 Jan 15, 2026'),
+    unchanged('802-45-678901 may 30 days'),
+    unchanged('Lines reviewed:\n724-24-822630 Jan 2026 97535 340.34'),
+    refused('Seen 900-12-345601Jan2020 today.'),
+    // G2-2: a bar, an underscore, a backslash or a tilde joins a row's cells and a file name's parts; under a person's
+    // label it joins a date's parts too. After the date, an amount or a second date, never a longer number's digits.
+    unchanged('91895853214|3|20260401|97110|238.64'),
+    unchanged('ClaimNo|Line|DOS|HCPCS|Billed\n41534035603|1|20260613|97140|464.44'),
+    unchanged('See attached ERA_79790014228_08_2026.pdf for details.'),
+    unchanged('\\\\fs01\\era\\12345678901\\01\\2026\\remit.pdf'),
+    unchanged('12345678901~02~2026'),
+    refused('SSN: 90012345601_02_2020 ok.'),
+    refused('SSN: 90012345601\\02\\2020 ok.'),
+    refused('SSN: 90012345601/02/202001/31/2020 ok.'),
+    unchanged('On 12345678901/02/20261234 today'),
+    // G2-3: a label wrapped over two lines is one label; a rule under it, or a blank line after a label that ends as one
+    // does, stands between it and its number; a heading two lines up names nothing.
+    unchanged('Claim\nNumber\n20260112345.01'),
+    unchanged('ICN\n-----------------\n12345678901234.01'),
+    unchanged('Reference Number\n================\n20260112345.01'),
+    unchanged('Claim No. | Reference\n----------|----------\n20260112345.01 | 20260112346'),
+    unchanged('Claim Number:\n\n20260112345.01'),
+    unchanged('Your reference number is\n\n20260112345.01 and it was paid.'),
+    unchanged('Remittance\nAdvice No. 20260112345.01'),
+    unchanged(`${HELD}Member ID:\n\n802-45-678901`),
+    refused('Claim Number:\n\n\n20260112345.01'),
+    refused('STATEMENT\n\n900-12-3456150.00'),
+    // G2-4: "on file" in its writings names nothing.
+    refused('Phone on-file: 202-555-0123150.00'),
+    refused('Phone on\nfile: 202-555-0123150.00'),
+    // G2-6: a section's or a list's numbers, and a word that ends in a month's letters, are no date before a year.
+    unchanged('Sec. 2.1. 2026011-22-3333'),
+    unchanged('Items 3 - 5 - 2026011-22-3333'),
+    unchanged('Dismay 2026011-22-3333'),
+    refused('PaidJan 1, 2020900-12-3456'),
+    // G2-7: a nine and a date that begins with one digit, with slashes; a noun names the run.
+    refused('1234567899/9/2020'),
+    unchanged('NPI 1234567893/9/2026'),
+  ])('G1-2, G1-3, G1-5, G2-1 to G2-4, G2-6, G2-7: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // ef3e8d20's reading stands where the strict reading leaves a group out of its chains (the fuzzers on the round after E1
+  // and E2, and the review of its delta, G1-1: letters ef3e8d20 refuses were sent). To ef3e8d20 a label's list number is
+  // the chain's first group, and a long run before a decimal point an amount it chains under its label: the scan reads
+  // the text its way too (survivorIn), and each letter it refuses for that stays refused.
+  it.each([
+    // G1-1: a number's own first digits written as a list number.
+    'Phone (20) 2555 0123',
+    'Tel (20) 2555-0123',
+    'SSN (9) 00-12-3456',
+    'SSN 9) 00 12 3456',
+    'Fax 2) 15 00 30 00',
+    'Phone (20) 2555 0123 or 202-555-0124',
+    'Cell number 1) 7886924.4 ext 12',
+    'Tel # 6) 2020/94, 81x12',
+    'Contact: 2) 0123 | 9001 2020',
+    'Soc. Sec. 11)555-\n0123.',
+    'Telephone 11) 900-0/1, 727-35958x12',
+    'Telephone number 8 1234567893.1',
+    'Telephone 8 1234567893.1,234.56',
+  ])('ef3e8d20 refuses %j for a chain the strict reading does not hold: refused', (letter) => {
+    expect(outcome(letter)).toBe(REFUSED);
+  });
+  it.each(['Telephone number 8 1234567893', 'Telephone number 8 1234567893.12', 'Telephone number 8 1234567893 1,234.56'])('%j is sent, as ef3e8d20 sends it', (letter) => {
+    expect(outcome(letter)).toBe(letter);
   });
 
   // E1-6: the list number in parentheses with a space inside them, an ordinal's suffix, a plural label, a line break

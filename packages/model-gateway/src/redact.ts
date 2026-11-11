@@ -1772,8 +1772,9 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
  * 711\n150.00 120.00" (re-review GATEWAY1-1); with `spansOnly` as well, no plain digit is read through (review
  * GATEWAY2-1).
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly through?: boolean; readonly own?: (index: number) => boolean } = {}): string {
-  const { spanned, spansOnly = false, through = false, own } = read;
+function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly through?: boolean; readonly own?: (index: number) => boolean; readonly skipped?: { any: boolean } } = {}): string {
+  // `skipped.any` is set where the window read through the call's own identifier or a list number: ef3e8d20's window ended there.
+  const { spanned, spansOnly = false, through = false, own, skipped } = read;
   let from = start;
   let breaks = 0;
   // Whether a letter, or a digit where `spanned` holds, has been read since the start: past one, a plain digit ends the window.
@@ -1792,6 +1793,7 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
     if (through && (character === OWN_MARK || (own !== undefined && own(index)))) {
       if (units[units.length - 1] !== ' ') units.push(' ');
       from = index;
+      if (skipped !== undefined) skipped.any = true;
       continue;
     }
     if (through && digit && !inSpan) {
@@ -1801,6 +1803,7 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
       if (listNumberAt(text, first, index + 1)) {
         units.push(' ');
         from = first;
+        if (skipped !== undefined) skipped.any = true;
         continue;
       }
     }
@@ -2252,17 +2255,31 @@ function wholeRanges<T extends { readonly start: number; readonly end: number }>
  *    cc3dd7f6 refused it (review round 3 of the range fix; the orchestrator's ruling of 2026-11-07: where a range's end
  *    cannot be told from an identifier's fragment, refuse as cc3dd7f6 did).
  */
-function survivorIn(text: string, strict = true): Survivor {
+function survivorRead(text: string, strict: boolean, departs: { left: boolean }): Survivor {
   const barrier = new Uint8Array(text.length + 1);
   const mark = (start: number, end: number) => {
     for (let i = start; i < end; i += 1) barrier[i] = 1;
   };
+  // Where this reading may hold less in a chain than ef3e8d20's held, `departs.left` is set and survivorIn reads the text
+  // as ef3e8d20 read it too: a label found by a window that read through the call's own identifier or a list number (a
+  // window that reads through nothing is ef3e8d20's own, and one that finds no label found none to ef3e8d20 either: what
+  // ef3e8d20 read is its end); a long run that is no amount here; a list number that is no digit of a chain here.
+  const skipped = { any: false };
+  const never = () => false;
+  const windowLabel = (read: Parameters<typeof labelWindow>[3], start: number, glued: boolean, digitsBlank: boolean): ScanLabel => {
+    skipped.any = false;
+    const window = labelWindow(text, start, never, read);
+    const label = scanLabeled(digitsBlank ? window.replace(/[0-9]/gu, ' ') : window, glued);
+    if (label !== null && skipped.any) departs.left = true;
+    return label;
+  };
+  const plainRead = { through: strict, skipped };
   const labeled = new Map<string, ScanLabel>();
   const labeledAt = (start: number, glued = false): ScanLabel => {
     const key = `${String(start)}${glued ? 'g' : ''}`;
     let held = labeled.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { through: strict }), glued);
+      held = windowLabel(plainRead, start, glued, false);
       labeled.set(key, held);
     }
     return held;
@@ -2273,8 +2290,12 @@ function survivorIn(text: string, strict = true): Survivor {
   const datesByReading = gluedReadings(text).map((reading) => datesIn(reading).filter((span) => span.separated && span.dates.length > 0).map((span) => ({ start: span.start, end: span.end, amount: false })));
   const dates = datesByReading.flat();
   const currency = [...text.matchAll(CURRENCY_AMOUNT)].map((match) => ({ start: match.index, end: match.index + match[0].length, amount: false }));
-  // A run of nine digits or more before a decimal point is no amount: an SSN or phone with an amount's digits glued to it ("900123456150.00").
-  const amounts = [...text.matchAll(UNSIGNED_AMOUNT)].filter((match) => !/^[0-9]{9,}\./u.test(match[0])).map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
+  // A run of nine digits or more before a decimal point is no amount to the strict reading: an SSN or phone with an
+  // amount's digits glued to it ("900123456150.00"). ef3e8d20 read it as one, and read a chain from it under its label
+  // (survivorIn reads the text that way too).
+  const unsigned = [...text.matchAll(UNSIGNED_AMOUNT)];
+  const amounts = unsigned.filter((match) => !(strict && /^[0-9]{9,}\./u.test(match[0]))).map((match) => ({ start: match.index, end: match.index + match[0].length, amount: true }));
+  if (amounts.length < unsigned.length) departs.left = true;
   // Which barrier holds a digit, for the strict reading of a held letter (heldStrict, below): a currency amount, or a date that stands.
   const currencyAt = new Uint8Array(text.length + 1);
   const dateAt = new Uint8Array(text.length + 1);
@@ -2291,12 +2312,15 @@ function survivorIn(text: string, strict = true): Survivor {
   for (const span of [...dates, ...currency, ...amounts]) {
     spanned.fill(1, span.start, span.end);
   }
+  const spannedAt = (index: number) => spanned[index] === 1;
+  const overRead = { spanned: spannedAt, spansOnly: false, through: strict, skipped };
+  const overSpansRead = { spanned: spannedAt, spansOnly: true, through: strict, skipped };
   const labeledOver = new Map<string, ScanLabel>();
   const labeledOverNumbers = (start: number, spansOnly = false, glued = false): ScanLabel => {
     const key = `${String(start)}${spansOnly ? 's' : 'n'}${glued ? 'g' : ''}`;
     let held = labeledOver.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, through: strict }).replace(/[0-9]/gu, ' '), glued);
+      held = windowLabel(spansOnly ? overSpansRead : overRead, start, glued, true);
       labeledOver.set(key, held);
     }
     return held;
@@ -2388,10 +2412,12 @@ function survivorIn(text: string, strict = true): Survivor {
       named = blocked;
     }
     // A label's list number, which the label is read through, is no digit of the number it names: "Telephone call (2) 30.00
-    // 60.00" holds eight digits after its label, as "Telephone call 30.00 60.00" does.
+    // 60.00" holds eight digits after its label, as "Telephone call 30.00 60.00" does. To ef3e8d20 it was the chain's first
+    // group (survivorIn reads the text that way too).
     if (strict && !blocked && listNumberAt(text, start, end)) {
       blocked = true;
       held = true;
+      departs.left = true;
     }
     groups.push({ start, end, digits: match[0], blocked, kept: held, range: rangeOf[start] ?? -1, named });
   }
@@ -2537,6 +2563,25 @@ function survivorIn(text: string, strict = true): Survivor {
 }
 
 /**
+ * The survivor scan of a view of masked text (survivorRead). ef3e8d20's reading stands and the strict one only adds, by
+ * construction: the strict reading is ef3e8d20's own with refusals added, but in the places survivorRead marks, where it
+ * may hold less in a chain than ef3e8d20 held (a label read through the call's own identifier or a list number, so an
+ * amount under it is no barrier; a label's list number, no digit of a chain; a run of nine digits or more before a
+ * decimal point, no amount). A text that holds one and that the strict reading does not refuse is read once more as
+ * ef3e8d20 read it, and the worse of the two is the answer ("Cell number 1) 7886924.4" holds nine digits after its label
+ * to ef3e8d20, "Telephone number 8 1234567893.1" an eleven that starts with 1: both stay refused).
+ */
+function survivorIn(text: string, strict = true): Survivor {
+  const departs = { left: false };
+  const read = survivorRead(text, strict, departs);
+  if (!strict || !departs.left || read === 'survivor') {
+    return read;
+  }
+  const base = survivorRead(text, false, departs);
+  return base === 'survivor' || read === null ? base : read;
+}
+
+/**
  * What, after a held range's end, glues the next group to it (survivorIn's sideStands): a word, or a mask's groups with or
  * without a word before them ("2020th90012-3456", "150.00XXX-XX-3456", "150.00PaidXXX-XX-3456", "150.00Paid***-**-3456"),
  * never a word and a gap alone ("Paid ", "Paid-": MOD-16's "Service 01/01/2020-150.00Paid 97110 3 1234.56"). Each mask group
@@ -2625,46 +2670,73 @@ const MONTH_FOLDED = '(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JU
  * 900-12-3456150.00", "Paid-975-20-18460.00" are refused), and an SSN, phone or Medicare label names no reference:
  * gluedShape asks the scan's label first ("SSN No. 900-12-3456150.00").
  */
-const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|(?<!(?<![\\p{L}\\p{N}])ON[ \\t]{1,2})FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION|TCN|CCN|MRN|PCN|NDC|RX|PAYMENT|REFERRAL|RECEIPT|PRECERT(?:IFICATION)?|PRE[\\p{Pd} ]?AUTH(?:ORIZATION)?|CERTIFICATION|SESSION|CUSTOMER|VOUCHER|DOCKET|STATEMENT|REMIT(?:TANCE)?(?:[ \\t]{1,2}ADVICE)?|EMPLOYER|PAYER|LOAN|RECONSIDERATION|REDETERMINATION|COMPLAINT)(?!\\p{L}))(?:\\(S\\)|[\\s:#.*=()\\p{Pd}\\u2212|,/"\u201C\u201D']|(?<![\\p{L}\\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|LINE|CODE)(?!\\p{L}))*$`, 'u');
+const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|(?<!(?<![\\p{L}\\p{N}])ON[\\s\\p{Pd}]{1,3})FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION|TCN|CCN|MRN|PCN|NDC|RX|PAYMENT|REFERRAL|RECEIPT|PRECERT(?:IFICATION)?|PRE[\\p{Pd} ]?AUTH(?:ORIZATION)?|CERTIFICATION|SESSION|CUSTOMER|VOUCHER|DOCKET|STATEMENT|REMIT(?:TANCE)?(?:\\s{1,3}ADVICE)?|EMPLOYER|PAYER|LOAN|RECONSIDERATION|REDETERMINATION|COMPLAINT)(?!\\p{L}))(?:\\(S\\)|[\\s:#.*=()\\p{Pd}\\u2212|,/"\u201C\u201D']|(?<![\\p{L}\\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|LINE|CODE)(?!\\p{L}))*$`, 'u');
 /** How far back a reference's noun is looked for: a form's column of spaces between the noun and its number too. */
 const NAMED_REACH = 120;
-/** The line breaks of a text: a noun names a number across one at most (a heading two lines up names nothing). */
+/** An SSN label right before a reference's noun: the noun is the label's own word ("Social Security Account Number"). */
+const SSN_LABEL_THEN = new RegExp(`(?:${SSN_LABEL.source})[ \\t]*$`, 'u');
+/** The line breaks of a text. */
 const LINE_BREAKS = new RegExp(LINE_BREAK, 'gu');
+/** What stands between a label's last word and its number. */
+const LABEL_TAIL = /[^\p{L}\p{N}]*$/u;
+/** A label's last word that says a number follows: a number word, or a number's own name. */
+const NUMBER_LABEL_END = /(?<![\p{L}\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|ICN|DCN|TCN|CCN|PCN|MRN)$/u;
+/** A rule drawn under a label, alone on its line: three or more of its characters, bars of a table among them. */
+const RULE_LINE = new RegExp(`^[ \\t]*${LINE_BREAK}[ \\t|+]*[\\p{Pd}=_~*.][\\p{Pd}=_~*.|+ \\t]{2,}${LINE_BREAK}[ \\t]*$`, 'u');
 /** What stands between a date's parts written with its month's word: white space (a line break too), a comma, a point, a dash or a slash, four at most. */
 const WORD_DATE_GAP = '[\\s,.\\p{Pd}\\u2212/]{0,4}';
 /**
- * A date up to its four-digit year, glued before a shape, on the scan's folded text: its month and day in digits, a
- * space around their separators too ("01/02/", "01 / 02 / "); a month in digits and a slash ("01/"); its month's word,
- * the day after it or not ("JAN 1, ", "JAN 1,", "JAN-01-", "JANUARY "); or the day and then the month's word ("1 JANUARY
- * ", "01-JAN-", "01JAN", "1ST OF JANUARY, ", "THE 1ST DAY OF JANUARY, "). A word glued before the month's word by a lost
- * space is read too ("PAIDJAN 1, "), as the scan reads a date glued to a word.
+ * A date up to its four-digit year, glued before a shape, on the scan's folded text: its month and day in digits with
+ * their separators ("01/02/"; with spaces around them it is as often a section's or a list's numbers: "Sec. 2.1. ", "3 -
+ * 5 - "); a month in digits and a slash ("01/"); its month's word, the day after it or not ("JAN 1, ", "JAN 1,",
+ * "JAN-01-", "JANUARY "); or the day and then the month's word ("1 JANUARY ", "01-JAN-", "01JAN", "1ST OF JANUARY, ", "THE
+ * 1ST DAY OF JANUARY, "). A word glued by a lost space before the month's word of a date with its day is read too
+ * ("PAIDJAN 1, "), as the scan reads a date glued to a word; a month's word with no day is its own word ("DISMAY ",
+ * "CODEC " are none: the review of the last round's delta, G2-6).
  */
 const YEAR_GLUED_BEFORE = new RegExp(
   `(?:${[
-    '(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[ \\t]?[/.\\p{Pd}\\u2212][ \\t]?(?:0?[1-9]|[12][0-9]|3[01])[ \\t]?[/.\\p{Pd}\\u2212][ \\t]?',
+    '(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212]',
     '(?<![0-9/])(?:0?[1-9]|1[0-2])/',
-    `${MONTH_FOLDED}\\.?${WORD_DATE_GAP}(?:(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?${WORD_DATE_GAP})?`,
+    `(?<!\\p{L})${MONTH_FOLDED}\\.?${WORD_DATE_GAP}`,
+    `${MONTH_FOLDED}\\.?${WORD_DATE_GAP}(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?${WORD_DATE_GAP}`,
     `(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?${WORD_DATE_GAP}(?:(?:DAY[ \\t]{1,2})?OF[ \\t]{1,2})?${MONTH_FOLDED}\\.?${WORD_DATE_GAP}`,
   ].join('|')})$`,
   'u',
 );
-const BARE_SHORT_DATE_AFTER = /^[1-9]\/(?:0?[1-9]|[12][0-9]|3[01])\/(?:19|20)[0-9]{2}/u;
-/** What joins the parts of a date glued after a bare number: a date's separators and the joiners the scan reads between a number's groups. */
-const BARE_DATE_JOIN = `[${DATE_SEPARATOR}\\u2215\\u2044~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022]`;
+/**
+ * What joins the parts of a date glued after a bare number: a slash, a point, a dash, or a dot written for one. A bar, an
+ * underscore, a backslash or a tilde joins the cells of a row and the parts of a file's name as often
+ * ("91895853214|3|20260401", "ERA_79790014228_08_2026.pdf": the review of the last round's delta, G2-2), and is read as a
+ * date's joiner under a person's label alone ("SSN: 90012345601_02_2020").
+ */
+const BARE_DATE_JOIN = '[/.\\p{Pd}\\u2212\\u2215\\u2044\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022]';
+const LABELED_DATE_JOIN = `[${DATE_SEPARATOR}\\u2215\\u2044~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022]`;
+/**
+ * After that date: no digit of a longer number, or what structure says is another number, an amount with its cents or a
+ * second date ("...01/02/2020150.00", "...01/02/202001/31/2020").
+ */
+const BARE_DATE_END = '(?:(?![0-9])|(?=[0-9]{1,6}\\.[0-9]{2}(?![0-9]))|(?=[0-9]{1,2}[/.\\p{Pd}\\u2212][0-9]{1,2}[/.\\p{Pd}\\u2212](?:19|20)[0-9]{2}(?![0-9])))';
+/** After a nine or a ten, a date that begins with one digit, written with slashes ("20255501239/9/2020"). */
+const BARE_SHORT_DATE_AFTER = new RegExp(`^[1-9]/(?:0?[1-9]|[12][0-9]|3[01])/(?:19|20)[0-9]{2}${BARE_DATE_END}`, 'u');
 /**
  * A date with a four-digit year glued after a bare nine or ten, the run's last digits its first: its day or month
- * ("94156421006-22-2027" is a nine and "06-22-2027"; "20255501239/9/2020" a ten and "9/9/2020"), its month's word between
- * them too ("90012345601-JAN-2020"), or, written year first, its year ("9001234562020-01-02"). What is glued after the date
- * is another number's ("...01/02/2020150.00").
+ * ("94156421006-22-2027" is a nine and "06-22-2027"), its month's word between them too ("90012345601-JAN-2020"), or,
+ * written year first, its year ("9001234562020-01-02", "9001234562020-1-5").
  */
-const BARE_DATE_AFTER = new RegExp(
-  `^(?:${[
-    `(?:0?[1-9]|[12][0-9]|3[01])${BARE_DATE_JOIN}(?:0?[1-9]|[12][0-9]|3[01])${BARE_DATE_JOIN}(?:19|20)[0-9]{2}`,
-    `(?:0?[1-9]|[12][0-9]|3[01])${BARE_DATE_JOIN}?${MONTH_FOLDED}\\.?${BARE_DATE_JOIN}?(?:19|20)[0-9]{2}`,
-    `(?:19|20)[0-9]{2}${BARE_DATE_JOIN}(?:0?[1-9]|1[0-2])${BARE_DATE_JOIN}(?:0[1-9]|[12][0-9]|3[01])`,
-  ].join('|')})`,
-  'u',
-);
+const bareDateAfter = (join: string) =>
+  new RegExp(
+    `^(?:${[
+      `(?:0?[1-9]|[12][0-9]|3[01])${join}(?:0?[1-9]|[12][0-9]|3[01])${join}(?:19|20)[0-9]{2}`,
+      `(?:0?[1-9]|[12][0-9]|3[01])${join}?${MONTH_FOLDED}\\.?${join}?(?:19|20)[0-9]{2}`,
+      `(?:19|20)[0-9]{2}${join}(?:0?[1-9]|1[0-2])${join}(?:0?[1-9]|[12][0-9]|3[01])`,
+    ].join('|')})${BARE_DATE_END}`,
+    'u',
+  );
+const BARE_DATE_AFTER = bareDateAfter(BARE_DATE_JOIN);
+const LABELED_DATE_AFTER = bareDateAfter(LABELED_DATE_JOIN);
+/** How far past a bare number's end its glued date is read: the date, and the amount after it. */
+const BARE_DATE_REACH = 32;
 
 /**
  * Whether a Social Security or phone number's own shape stands with another number's digits glued to it: three groups
@@ -2706,15 +2778,23 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     }
     return at;
   };
-  // A reference's noun names the number from its reference's start, a form's column of spaces or one line break between
-  // them; never under a Social Security label, whose number it is whatever noun follows the label ("Social Security Account
-  // Number 900-12-345678", "SSN on file: 900-12-345678", "SSN/Member ID: 900-12-3456150.00").
+  // A reference's noun names the number from its reference's start; never under a Social Security label, whose number it
+  // is whatever noun follows the label: the scan's label for the number ("SSN on file: 900-12-345678", "SSN/Member ID:
+  // 900-12-3456150.00"), or the label right before the noun, however far the number stands after it ("Social Security
+  // Account Number" and a column of spaces, "SSN Account 01-900-12-3456150.00": the review of the last round's delta, G1-3).
+  // Between the label's last word and the number stands one line break at most; a blank line or a rule drawn under the
+  // label too where the label ends as one does, in a number word, a number's own name, a colon or "#" ("Claim Number:" and a
+  // blank line, "ICN" over a rule; a label wrapped over two lines is one label: G2-3). A heading two lines up names
+  // nothing ("REMITTANCE ADVICE", a blank line and "900-12-3456150.00": E1-7).
   const named = (group: ScanGroup) => {
     if (labelOf(group) === 'person' && ssnLabel(group)) return false;
     const start = referenceStart(group.start);
     const before = text.slice(Math.max(0, start - NAMED_REACH), start);
     const noun = NAMED_BEFORE.exec(before);
-    return noun !== null && (before.slice(noun.index).match(LINE_BREAKS) ?? []).length <= 1;
+    if (noun === null || SSN_LABEL_THEN.test(before.slice(0, noun.index))) return false;
+    const tail = LABEL_TAIL.exec(before)?.[0] ?? '';
+    const breaks = (tail.match(LINE_BREAKS) ?? []).length;
+    return breaks <= 1 || (breaks === 2 && (/[:#]/u.test(tail) || RULE_LINE.test(tail) || NUMBER_LABEL_END.test(before.slice(0, before.length - tail.length))));
   };
   // A person's label over a shape: an SSN or phone label, or "Medicare" over an SSN's shape (its middle group of two).
   const labeled = (group: ScanGroup, middle = 2) => {
@@ -2732,16 +2812,16 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     if (!inCurrency && a.digits.length >= 11 && CENTS_GLUED.test(text.slice(a.end, a.end + CENTS_REACH)) && !named(a)) return 'structure';
     // A date glued after a bare nine or ten ("SSN: 94156421006-22-2027", "92146703003.03.2028"), unless a noun names the run.
     const dateLead = a.digits.length === 11 || a.digits.length === 12 ? 2 : a.digits.length === 13 || a.digits.length === 14 ? 4 : 0;
-    const dateAfter = dateLead > 0 && BARE_DATE_AFTER.test(text.slice(a.end - dateLead, a.end + 16));
-    // A ten and a date that begins with one digit, written with slashes ("20255501239/9/2020"); with dashes one digit and two
-    // groups are as often a reference's own end ("20260112345-01-2026").
-    const shortDateAfter = a.digits.length === 11 && BARE_SHORT_DATE_AFTER.test(text.slice(a.end - 1, a.end + 10));
+    const dateText = dateLead > 0 ? text.slice(a.end - dateLead, a.end + BARE_DATE_REACH) : '';
+    const dateAfter = dateLead > 0 && (BARE_DATE_AFTER.test(dateText) || (LABELED_DATE_AFTER.test(dateText) && labelOf(a) !== null));
+    // A nine or a ten and a date that begins with one digit, written with slashes ("20255501239/9/2020"); with dashes one
+    // digit and two groups are as often a reference's own end ("20260112345-01-2026").
+    const shortDateAfter = (a.digits.length === 10 || a.digits.length === 11) && BARE_SHORT_DATE_AFTER.test(text.slice(a.end - 1, a.end + BARE_DATE_REACH));
     if (!inCurrency && (dateAfter || shortDateAfter) && !named(a)) return 'structure';
     // An amount's cents and then a nine or a ten with nothing between ("150.00900123456", "$150.002025550123").
     if ((a.digits.length === 11 || a.digits.length === 12) && /(?<![0-9.,])[0-9]{1,6}\.$/u.test(text.slice(Math.max(0, a.start - 9), a.start))) return 'structure';
     if (b === undefined || c === undefined || b.blocked || c.blocked) continue;
     const [g1, g2] = [text.slice(a.end, b.start), text.slice(b.end, c.start)];
-    let parenthesized = false;
     const slashed = g1.includes('/') || g2.includes('/');
     if (!((b.digits.length === 2 && !slashed) || b.digits.length === 3) || a.digits.length < 3 || c.digits.length < 4) continue;
     const head = a.digits.length - 3;
@@ -2750,15 +2830,18 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     if (!((TIGHT_JOIN.test(g1) || WRAPPED_JOIN.test(g1)) && (TIGHT_JOIN.test(g2) || WRAPPED_JOIN.test(g2)))) {
       // In a number's usual writing (spaces, parentheses), under its label alone, with digits glued after it: "Phone number
       // (202) 555-01234567", "Tel 202 555-0123150.00".
-      // Never an amount and a number ("Contact: Billing 250.75 123456": the review of the fix round, C2-2), but where a
-      // date is glued after the number's last four ("SSN 900.12 345601/01/2020").
+      // Never an amount and a number ("Contact: Billing 250.75 123456", "Medicare rate 110 32.74420": the reviews of the
+      // fix round and of the round after, C2-2 and E2-4), but where a date is glued after the number's last four ("SSN
+      // 900.12 345601/01/2020"), and where a Social Security label stands over a point between the second and third
+      // groups: what follows that label is no rate ("SSN 900 12.3456150.00": the review of the last round's delta, G1-5).
       const dated = DATE_GLUED_AFTER.test(text.slice(c.start + 4, c.start + DATE_AFTER_REACH));
-      if (head === 0 && LOOSE_JOIN.test(g1) && LOOSE_JOIN.test(g2) && (b.digits.length === 3 || !(g1 + g2).includes('.') || dated) && labeled(a, b.digits.length) && !named(a)) return 'structure';
+      const pointed = (g1 + g2).includes('.');
+      if (head === 0 && LOOSE_JOIN.test(g1) && LOOSE_JOIN.test(g2) && (b.digits.length === 3 || !pointed || dated || (!g1.includes('.') && ssnLabel(a))) && labeled(a, b.digits.length) && !named(a)) return 'structure';
       // A phone with its area code in parentheses is a phone's own shape with no label too: what is glued after it is read
       // as after a shape joined with no white space ("(202) 555-012301/02/2020", "(202) 555-0123150.00").
       // The parentheses may hold a space, a dash or a point or the line's end may follow them, and a space may stand before
       // the last four ("( 202 ) 555-0123", "(202) - 555-0123", "(202) 555 0123": the review of the last round's delta, E1-5).
-      parenthesized = head === 0 && b.digits.length === 3 && /\([ \t]?$/u.test(text.slice(Math.max(0, a.start - 2), a.start)) && PAREN_JOIN.test(g1) && (TIGHT_JOIN.test(g2) || g2 === ' ');
+      const parenthesized = head === 0 && b.digits.length === 3 && /\([ \t]?$/u.test(text.slice(Math.max(0, a.start - 2), a.start)) && PAREN_JOIN.test(g1) && (TIGHT_JOIN.test(g2) || g2 === ' ');
       if (!parenthesized) continue;
     }
     const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
@@ -2783,10 +2866,10 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     if (named(a)) continue;
     if (labeled(a, b.digits.length) && (head === 0 || headAnothers)) return 'structure';
     if (headAnothers || tailAnothers) return 'structure';
-    // With no label a phone's parenthesized area code is the shape only with something glued after it ("Line (001) 420-97110"
-    // in a held letter is a line's own numbers: the review of the last round's delta, E2-5).
-    if (!inCurrency && head === 0 && !parenthesized) {
-      // No structure says whose the digits after it are ("900-01-202012th"): a held letter refuses it.
+    if (!inCurrency && head === 0) {
+      // No structure says whose the digits after it are ("900-01-202012th", "(202) 555-01234"): a held letter refuses it,
+      // a line's own numbers written so among them ("Line (001) 420-97110": the reviews of the last two deltas, E2-5 and
+      // G1-4, the second the one that decides: the two cannot be told apart).
       shape = true;
     }
   }
@@ -2835,8 +2918,10 @@ const DATE_GLUED_AFTER = new RegExp(
   `^(?:${[
     '(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212](?:(?:19|20)[0-9]{2}|[0-9]{2})',
     '(?:19|20)[0-9]{2}[/.\\p{Pd}\\u2212](?:0?[1-9]|1[0-2])[/.\\p{Pd}\\u2212](?:0?[1-9]|[12][0-9]|3[01])',
-    // its month as a word between its day and its year ("01-JAN-2020", "01JAN20")
-    `(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212 ]?${MONTH_FOLDED}\\.?[/.\\p{Pd}\\u2212 ,]{0,2}(?:(?:19|20)[0-9]{2}|[0-9]{2})`,
+    // its month as a word between its day and its year, joined as a date's parts are or not at all ("01-JAN-2020",
+    // "01JAN20"); across a space the word begins a date of its own ("802-45-678901 JAN 15, 2026": the review of the last
+    // round's delta, G2-1)
+    `(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212]?${MONTH_FOLDED}\\.?[/.\\p{Pd}\\u2212]?(?:(?:19|20)[0-9]{2}|[0-9]{2})`,
   ].join('|')})(?![0-9])`,
   'u',
 );
