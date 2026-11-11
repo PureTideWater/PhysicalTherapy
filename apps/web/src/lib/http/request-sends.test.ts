@@ -86,6 +86,23 @@ describe('a request’s jobs are committed in step with the request', () => {
       orders.push(steps.join());
     }
     expect(orders).toEqual(['hold price,reconcile', 'hold price,reconcile']);
+    // The same type with two keys: by the key the queue's index locks, whichever was sent first.
+    const days: string[][] = [];
+    for (const sent of [
+      ['2026-11-12', '2026-11-11'],
+      ['2026-11-11', '2026-11-12'],
+    ]) {
+      const held: string[] = [];
+      const queue = new MemoryQueue();
+      const sends = new RequestSends({ enqueue: queue.enqueue.bind(queue), enqueueScreeningRun: queue.enqueueScreeningRun.bind(queue), hold: (pending) => (held.push(...pending.map((send) => JSON.stringify(send.payload))), queue.hold(pending)) }, logged().logger, 'req-order');
+      for (const day of sent) {
+        await sends.enqueue('reconcile', { practice_id: PRACTICE, day });
+      }
+      await sends.hold();
+      days.push(held);
+    }
+    expect(days[0]).toEqual(days[1]);
+    expect(days[0]?.[0]).toContain('2026-11-11');
   });
 
   it('rolls the jobs back with a request that did not commit: thrown from the handler, or rolled back at its COMMIT', async () => {

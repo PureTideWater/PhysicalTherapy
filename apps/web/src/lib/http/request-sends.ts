@@ -1,11 +1,14 @@
 import { CommitOutcomeUnknownError } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
-import { type JobPayload, type JobType, parsePayload } from '@tp/worker/jobs';
+import { type JobPayload, type JobType, parsePayload, singletonKey } from '@tp/worker/jobs';
 
 import type { HeldSends, JobQueue, PendingSend, RequestQueue } from '../uploads/queue';
 
-/** A job's place in the one order every request inserts in: its type, then its payload's text (the same job, the same text). */
-const order = (send: PendingSend): string => `${send.type}\n${JSON.stringify(send.payload)}`;
+/**
+ * A job's place in the one order every request inserts in: its type (its queue), then its singleton key, which is what
+ * the queue's unique index locks, then its payload's text; compared by code unit, the same on every server.
+ */
+const order = (send: PendingSend): string => `${send.type}\n${singletonKey(send.type, send.payload)}\n${JSON.stringify(send.payload)}`;
 
 /** How often a job whose held send was lost at the queue's own commit is sent again, directly, before it is given up. */
 const DIRECT_ATTEMPTS = 3;
@@ -79,7 +82,7 @@ export class RequestSends {
     if (this.pending.length > 0) {
       // One order for every request: two requests holding the same two singleton keys in opposite orders would wait
       // on each other in the queue's unique index until PostgreSQL ended one as a deadlock.
-      this.pending.sort((a, b) => order(a).localeCompare(order(b)));
+      this.pending.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
       this.held = await this.queue.hold(this.pending);
     }
   }
