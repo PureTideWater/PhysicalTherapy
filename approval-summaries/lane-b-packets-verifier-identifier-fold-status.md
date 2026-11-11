@@ -7,7 +7,7 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 ## The item
 `packages/packets/src/verifier/mismatches.ts`'s `identifierSpans` checks a narrative for the case's identifiers as whole words, without regard to case, and nothing more. It lacks the forms the gateway's letter reader reads (#80: diacritics, typographic apostrophes and dashes, hyphenated halves, a word hyphenated at a line break, spaced or dashed numbers; #115: label boundaries and glued labels). A narrative that writes a name as `Zoe` for `ZOË`, `O’Quill` for `O'QUILL` or `Treeby` for `VAN-TREEBY` passes the verifier today. `verifier/template.ts` (format /3, slice 2) calls the same function.
 
-## RESUME-BLOCK (W7; current at 2026-11-11 10:50 UTC by the container's clock)
+## RESUME-BLOCK (W7; current at 2026-11-11 10:31 UTC by the container's clock)
 - **Report to** the new orchestrator, session_019i9ifBCrxfV35CFDVHLTad (`lanes/STATE.md`, from 09:15 UTC), not the one that assigned the item.
 - **PR: draft #141**, https://github.com/PureTideWater/PhysicalTherapy/pull/141, `co-001/packets-verifier-identifier-fold` into `claude/build-platform`. **The PR branch is at 995380b7**, on which every check was green at 09:18 (all four required, all 19 mutation shards). It was not merged then: the delta review of the last two commits was still running, and at 10:04 the base moved (#140, **342d6144**), so the head is no longer up to date.
 - **The WIP ref `co-001/wip-packets-verifier-identifier-fold` and the worktree `/home/user/fold` are at a6979ac6**, two commits past the PR branch: **81079f78**, the base 342d6144 merged in (no conflict; the generators leave no diff; typecheck, lint, lint:copy, lint:logs, check:fixtures, verify-content and the affected packages' unit tests passed on it), and **a6979ac6**, the delta review's fix round (tests and three sentences; rows DR-1 to DR-4 below).
@@ -62,8 +62,8 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 ## Log (UTC)
 - 2026-11-05 07:40: branch cut from 23b25ad0 by Lane A's S1 (session_019i9ifCJSbPYXpafL86Rm6J); workflow wf_54232b96-397 ran its three scouts.
 - 2026-11-05 07:55: stood down on the orchestrator's order (the account's weekly usage); the designer had written nothing.
-- 2026-11-11 10:50: fix round a6979ac6 committed and pushed to the WIP ref; three mutation shards and a bounded review of its delta started.
-- 2026-11-11 10:10: the delta review reported after an hour (410k tokens, 104 tool calls: too much for a small delta; the next one has a budget of 25 calls). Four findings, each run before it was acted on (DR-1 to DR-4).
+- 2026-11-11 10:31: fix round a6979ac6 committed and pushed to the WIP ref; three mutation shards and a bounded review of its delta started.
+- 2026-11-11 10:08: the delta review reported after an hour (410k tokens, 104 tool calls: too much for a small delta; the next one has a budget of 25 calls). Four findings, each run before it was acted on (DR-1 to DR-4).
 - 2026-11-11 10:04: the base moved (#140, 342d6144) while the delta review ran; merged as 81079f78, no conflict, fast checks and generators clean.
 - 2026-11-11 09:18: CI's second run, on 995380b7: every check green, the four required and all 19 mutation shards. The merge was held for the delta review.
 - 2026-11-11 09:10: #141's description and this file brought current; a delta review of ec4f4e28 and 995380b7 started (one reviewer); a check-in set for 10:04.
