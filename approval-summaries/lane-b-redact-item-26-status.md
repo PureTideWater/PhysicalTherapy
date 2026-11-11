@@ -89,8 +89,9 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDNJ3ixNo2VHiiA93
   refused on both trees); 13 letters with ordinary text newly replaced (`KEEP.changed.text`) and 3 with a short name
   part, the recorded cost; slowest crafted letter 1,616 ms against 1,050 ms on the base (budget 3,000 ms), so the two
   rows over 3 s in vitest are that test's heavier path (it also runs `mentionsIdentifier`) on a loaded machine, and
-  open item 1 is still to fix and measure. The corpus holds few CR LF letters and no stored separator: K-1 and P6
-  rest on their own rows and properties, and on review A's fuzzer.
+  open item 1 is still to fix and measure. The corpus holds 6,861 CR LF letters, none newly refused by the second
+  line-ending reading, and no patient with a stored separator between digits (0 of 5,292, counted): P6 rests on its own
+  rows, and K-1's closing on its rows and property; review A's fuzzer covers both.
 - No PR is open, no subscription and no check-in is held.
 
 ## Log (UTC)
