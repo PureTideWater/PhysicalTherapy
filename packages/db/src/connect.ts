@@ -29,6 +29,13 @@ const opened = new WeakMap<object, ScopePool<DatabasePoolClient>>();
 
 export function openPool(url: string, max = 4, options: { readonly connectionTimeoutMillis?: number } = {}): DatabasePool {
   const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: options.connectionTimeoutMillis ?? CONNECTION_TIMEOUT_MS, idleTimeoutMillis: IDLE_TIMEOUT_MS });
+  // A connection the server ends while a transaction holds it (a failover, an administrator, the idle bound a
+  // session's resolving transaction sets) tells its client with an 'error' event, and pg's Pool listens for it only
+  // while the connection is idle in the pool: with no listener the event would end the process. Nothing is lost by
+  // hearing it here: the holder's next statement on the connection is refused, and its scope destroys it.
+  pool.on('connect', (client) => {
+    client.on('error', () => undefined);
+  });
   // Bound now: the connect pg's Pool has as this pool opens, whatever is assigned to the pool later.
   const connect = pool.connect.bind(pool) as () => Promise<DatabasePoolClient>;
   opened.set(pool, Object.freeze({ connect: () => connect() }));

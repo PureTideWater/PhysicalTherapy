@@ -637,6 +637,31 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await notices(user.id)).toEqual([QUEUED]);
   });
 
+  it('a reset’s sweep and its audit event are one transaction: while the event cannot be written no session ends, and the try that writes it ends them all (Queues item 25 (d))', async () => {
+    // The fault is armed for the confirmation alone: the request's own events are written as they are.
+    let confirming = false;
+    const kept = await person();
+    await signedIn(kept.email);
+    const failed = paced(failing(/INSERT INTO audit_event/, 2, () => confirming));
+    await failed.flow.requestPasswordReset(kept.email, context());
+    confirming = true;
+    expect(await failed.flow.confirmPasswordReset(kept.email, codeFor(kept.email), CHOSEN, context())).toEqual({ kind: 'sessions_not_ended' });
+    confirming = false;
+    // Both tries swept the sessions and then failed at the event: each sweep rolled back with it.
+    expect(await openSessions(kept.id)).toBe(1);
+    expect((await events(kept.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual([]);
+
+    const swept = await person();
+    await signedIn(swept.email);
+    const retried = paced(failing(/INSERT INTO audit_event/, 1, () => confirming));
+    await retried.flow.requestPasswordReset(swept.email, context());
+    confirming = true;
+    expect(await retried.flow.confirmPasswordReset(swept.email, codeFor(swept.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: true });
+    confirming = false;
+    expect(await openSessions(swept.id)).toBe(0);
+    expect((await events(swept.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual(['password_reset_completed:email_code']);
+  });
+
   it('SGN-07: a revoke that fails once is retried; failing twice it is logged, the provider still signs out, and the reset answers the generic failure (review R-3)', async () => {
     const once = await person();
     await signedIn(once.email);
