@@ -1,0 +1,104 @@
+database tp_w8_dbreview_1 (the design's triggers: true; account lock first in openSession: false, in the reset: false); 30 s, 24 connections, 2 accounts
+completed: {"resolve":865,"signOut":217,"fail":160,"settings":199,"membershipEnd":218,"open":366,"reset":296,"revokeDevice":176,"unlock":62,"reset retried":23}
+refused or failed: {"open: 23514 user_session_sign_in_not_before":255,"fail: deadlock victim":40,"open: deadlock victim":24,"reset: deadlock victim":4,"membershipEnd: deadlock victim":9,"revokeDevice: deadlock victim":16,"resolve: deadlock victim":3}
+deadlocks by the operations in the cycle: {"fail + fail + open + revokeDevice":28,"fail + open + revokeDevice":14,"membershipEnd + membershipEnd + reset + reset":1,"membershipEnd + membershipEnd + membershipEnd + reset":1,"membershipEnd + membershipEnd + reset":1,"fail + open + open + revokeDevice":18,"fail + open + open + open + revokeDevice":8,"membershipEnd + reset + reset":2,"membershipEnd + open + resolve + revokeDevice":1,"membershipEnd + open + open + reset + reset + resolve":1,"membershipEnd + membershipEnd + open + reset + reset + resolve":1,"membershipEnd + open + reset + reset + resolve":1,"open + resolve + resolve + revokeDevice":1,"resolve + resolve + revokeDevice":2,"resolve + revokeDevice":3,"? + membershipEnd + revokeDevice":1,"fail + fail + open + open + revokeDevice":4,"reset + reset + reset":1,"reset + reset + reset + reset":1,"reset + resolve + revokeDevice":1,"open + resolve + revokeDevice":1,"membershipEnd + reset + reset + reset":1,"membershipEnd + reset + resolve":1,"membershipEnd + reset + revokeDevice":1,"? + fail + open + revokeDevice":1}
+live sessions begun at or before their account's mark: 0
+---
+[fail] waits for AccessExclusiveLock on tuple (2,6) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ExclusiveLock on tuple (2,6) of relation 21567; blocked by [fail].
+---
+[open] waits for ExclusiveLock on tuple (2,6) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ShareLock on a transaction; blocked by [open].
+---
+[reset] waits for ExclusiveLock on tuple (18,69) of relation 21997; blocked by [membershipEnd].
+[membershipEnd] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+[membershipEnd] waits for ExclusiveLock on tuple (18,69) of relation 21997; blocked by [reset].
+---
+[membershipEnd] waits for ExclusiveLock on tuple (18,69) of relation 21997; blocked by [membershipEnd].
+[membershipEnd] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+[membershipEnd] waits for ExclusiveLock on tuple (18,69) of relation 21997; blocked by [membershipEnd].
+---
+[membershipEnd] waits for ExclusiveLock on tuple (18,69) of relation 21997; blocked by [membershipEnd].
+[membershipEnd] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+---
+[revokeDevice] waits for ExclusiveLock on tuple (27,11) of relation 21967; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ExclusiveLock on tuple (1,29) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+---
+[revokeDevice] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ExclusiveLock on tuple (3,22) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+---
+[open] waits for ExclusiveLock on tuple (25,31) of relation 21967; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ExclusiveLock on tuple (3,22) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ExclusiveLock on tuple (25,31) of relation 21967; blocked by [open].
+---
+[membershipEnd] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ExclusiveLock on tuple (15,74) of relation 21997; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+---
+[open] waits for ExclusiveLock on tuple (5,20) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ExclusiveLock on tuple (5,20) of relation 21567; blocked by [open].
+---
+[membershipEnd] waits for ShareLock on a transaction; blocked by [resolve].
+[resolve] waits for ExclusiveLock on tuple (6,41) of relation 21967; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ExclusiveLock on tuple (100,19) of relation 21997; blocked by [membershipEnd].
+---
+[open] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ExclusiveLock on tuple (98,27) of relation 21997; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+[membershipEnd] waits for ShareLock on a transaction; blocked by [resolve].
+[resolve] waits for ExclusiveLock on tuple (6,43) of relation 21967; blocked by [open].
+---
+[membershipEnd] waits for ExclusiveLock on tuple (98,27) of relation 21997; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+[membershipEnd] waits for ShareLock on a transaction; blocked by [resolve].
+[resolve] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ExclusiveLock on tuple (98,27) of relation 21997; blocked by [membershipEnd].
+---
+[open] waits for ShareLock on a transaction; blocked by [reset].
+[reset] waits for ExclusiveLock on tuple (98,27) of relation 21997; blocked by [reset].
+[reset] waits for ShareLock on a transaction; blocked by [membershipEnd].
+[membershipEnd] waits for ShareLock on a transaction; blocked by [resolve].
+[resolve] waits for ShareLock on a transaction; blocked by [open].
+---
+[open] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ExclusiveLock on tuple (100,19) of relation 21997; blocked by [resolve].
+[resolve] waits for ShareLock on a transaction; blocked by [resolve].
+[resolve] waits for ExclusiveLock on tuple (6,41) of relation 21967; blocked by [open].
+---
+[revokeDevice] waits for ExclusiveLock on tuple (100,19) of relation 21997; blocked by [resolve].
+[resolve] waits for ShareLock on a transaction; blocked by [resolve].
+[resolve] waits for ShareLock on a transaction; blocked by [revokeDevice].
+---
+[resolve] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ShareLock on a transaction; blocked by [resolve].
+---
+[membershipEnd] waits for ShareLock on a transaction; blocked by [?].
+[?] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ExclusiveLock on tuple (100,21) of relation 21997; blocked by [membershipEnd].
+---
+[fail] waits for AccessExclusiveLock on tuple (5,38) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ExclusiveLock on tuple (52,14) of relation 21967; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [open].
+[open] waits for ExclusiveLock on tuple (5,38) of relation 21567; blocked by [fail].
+---
+[open] waits for ExclusiveLock on tuple (5,38) of relation 21567; blocked by [fail].
+[fail] waits for ShareLock on a transaction; blocked by [revokeDevice].
+[revokeDevice] waits for ExclusiveLock on tuple (52,14) of relation 21967; blocked by [open].
+[open] waits for ShareLock on a transaction; blocked by [open].

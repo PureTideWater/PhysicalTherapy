@@ -1,4 +1,4 @@
-# Rulings on the two reviews of design v1 (W8, 2026-11-11 07:20 UTC)
+# Rulings on the two reviews of design v1 (W8, 2026-11-11 07:05 UTC)
 
 Reviews: `design-review-security.md` (SEC-D1 to SEC-D11) and `design-review-database.md` (DB-D1 to DB-D11), both of
 `designs/lane-a-step-before-reset.md` v1 at fadadf4b. Each finding was checked against the code or its experiment
