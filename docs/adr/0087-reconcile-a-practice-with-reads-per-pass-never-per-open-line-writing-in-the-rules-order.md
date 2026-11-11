@@ -93,6 +93,8 @@ total changes; nothing under `packages/ledger/src` changes.
   budgets say which part is whose (the whole pass, and its own part less the `ledger_entry` inserts).
 - A decrypted patient control number of each claim the search or the postings read lives in the worker for one pass,
   as before; it is never logged, and no more claims are decrypted than the per-line pass decrypted.
+- 2026-11-10: the web's seven ledger actions no longer wait on the pass's lock; they take it if free or are refused at
+  once ([0092](0092-a-persons-ledger-action-never-waits-for-the-ledger-lock-it-takes-it-if-free-or-is-refused-at-once.md)).
 
 ## Measured
 

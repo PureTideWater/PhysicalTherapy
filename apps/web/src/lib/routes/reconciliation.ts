@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
 import { pageParam, type ListPage } from '../http/paging';
-import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { BusyError, InputError, type MutationResult, NotFoundError } from '../http/route';
 import { type UnattestedSubmissionView, submissionsSentWithoutSignOff } from '../packets/unattested';
 import { type EntryView, type ExportView, type LinkageLine, type TotalsView, type UnmatchedView, matchState, practiceExports, reconciliation, standingMatch, templateState } from '../reconciliation/queries';
 import { templateForm, templateOf } from '../reconciliation/template';
@@ -125,7 +125,7 @@ export const reconciliationPage = practiceRoute({
 });
 
 /** What a refusal of @tp/worker/ledger says on the form: the field, never a value. */
-export const REFUSALS: Readonly<Record<Exclude<ReconciliationRefusal, 'not_found'>, { readonly field: string; readonly message: string }>> = {
+export const REFUSALS: Readonly<Record<Exclude<ReconciliationRefusal, 'not_found' | 'ledger_busy'>, { readonly field: string; readonly message: string }>> = {
   already_matched: { field: 'match', message: 'this evidence is already matched to something else; reverse that match first' },
   not_open: { field: 'serviceLineId', message: 'the case line is not open, because it was written off or its case is closed; open the case to see where it stands' },
   not_comparable: { field: 'claimId', message: 'the payment has no line of the case line’s code and date of service' },
@@ -151,6 +151,10 @@ export async function manual<T>(
     if (error instanceof ReconciliationError) {
       if (error.code === 'not_found') {
         throw new NotFoundError();
+      }
+      // The ledger lock was not free: the request never waits for it (docs/adr/0092).
+      if (error.code === 'ledger_busy') {
+        throw new BusyError();
       }
       throw new InputError([refusals[error.code] ?? REFUSALS[error.code]]);
     }

@@ -17,6 +17,9 @@ import type { CookieJar, Download, Outcome, ReturnPage, Route, RouteRequest, Tex
 
 export const PRIVATE_NO_STORE = 'private, no-store';
 
+/** What a busy refusal tells a client to wait before the same request: a person's action holds the lock for well under this; a pass may hold it longer, and the retry is then refused again, at once. */
+const BUSY_RETRY_AFTER_SECONDS = 5;
+
 const STATUS: Readonly<Record<Outcome<unknown>['status'], number>> = {
   ok: 200,
   invalid: 400,
@@ -31,6 +34,7 @@ const STATUS: Readonly<Record<Outcome<unknown>['status'], number>> = {
   rate_limited: 429,
   terms_required: 403,
   maintenance: 503,
+  busy: 409,
 };
 
 function readCookies(header: string | null): Map<string, string> {
@@ -79,6 +83,9 @@ export function outcomeResponse(outcome: Outcome<unknown>, cookies: ResponseCook
   const headers = new Headers({ 'content-type': 'application/json', 'cache-control': PRIVATE_NO_STORE });
   if (outcome.status === 'rate_limited') {
     headers.set('retry-after', String(outcome.retryAfterSeconds));
+  }
+  if (outcome.status === 'busy') {
+    headers.set('retry-after', String(BUSY_RETRY_AFTER_SECONDS));
   }
   for (const cookie of cookies.written) {
     headers.append('set-cookie', cookie);
