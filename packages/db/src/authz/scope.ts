@@ -104,12 +104,18 @@ export interface LockWaitBound {
 
 const SET_LOCK_TIMEOUT = "SELECT set_config('lock_timeout', $1, true)";
 
-/** The bound as the setting's text, or none; refused before any connection is taken when it is not a whole number above zero. */
+/** The most PostgreSQL takes for lock_timeout: an integer setting, in milliseconds. */
+const MAX_LOCK_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * The bound as the setting's text, or none; refused before any connection is taken when it is not a whole number of
+ * milliseconds above zero that PostgreSQL would take.
+ */
 function lockTimeoutText(bound: LockWaitBound): string | undefined {
   if (bound.lockTimeoutMs === undefined) {
     return undefined;
   }
-  if (!Number.isInteger(bound.lockTimeoutMs) || bound.lockTimeoutMs <= 0) {
+  if (!Number.isInteger(bound.lockTimeoutMs) || bound.lockTimeoutMs <= 0 || bound.lockTimeoutMs > MAX_LOCK_TIMEOUT_MS) {
     throw new ScopeError('lockTimeoutMs must be a whole number of milliseconds above zero');
   }
   return String(bound.lockTimeoutMs);

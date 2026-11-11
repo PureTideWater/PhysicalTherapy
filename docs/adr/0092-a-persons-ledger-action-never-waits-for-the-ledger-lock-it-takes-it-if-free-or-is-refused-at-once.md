@@ -135,9 +135,10 @@ signed-in request is now bounded too.
    request's own ID alone, never pg's words, which name the statement and the relation.
 7. **A closed word.** The outcome carries `what`: `ledger` for the try-lock above; `records` for a lock timeout; and
    `request` where the same request key was sent while its first request is still running. That one waits first on
-   a lock of the key's own, in a statement of its own, so that only it is called `request` (an advisory lock in a
-   key space the request keys have to themselves: a key is text its sender chooses, and in the space the ledger's
-   and the other locks share it could be made to equal another practice's lock): inside three seconds it
+   a lock of the key's own, in a statement of its own, so that only it is called `request` (an advisory lock keyed
+   by the first 64 bits of a SHA-256 of the person and the key: a key is text its sender chooses, and under the
+   hash the ledger's and the other locks use it could be made to equal another practice's lock): inside three
+   seconds it
    is answered as any key used before (or goes on, where the first was rolled back), and past them it is refused,
    but "nothing was saved" would be false of it, since the first may yet save. No word names a table, a row, a job
    or a person.
@@ -185,7 +186,8 @@ Consequences of the amendment:
   Each of these was already so for any failure after the effect; the timeout adds an expected one. So the words say
   what is true for the person: nothing of theirs was saved by this request.
 - Not bounded, and so as before: a request waiting for its session's read or its rate limit's count (both come
-  before its transaction, and wait only behind a schema change of their own tables), a public form
+  before its transaction, and wait only behind a schema change of their own tables: accepted here, and the
+  migration runner's to bound), a public form
   (a second free-screening upload for the same practice or contact still waits for the first and then replaces it),
   and a wait on billing's or the model gateway's pool while the request's transaction is open. None of these is
   held by a reconcile pass. They are the next places to look if a connection is ever seen held for long.

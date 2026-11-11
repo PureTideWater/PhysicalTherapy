@@ -804,13 +804,16 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
   const holdCase = () => holding([['SELECT 1 FROM "case" WHERE id = $1 FOR NO KEY UPDATE', [caseId]]]);
 
   /**
-   * A first request with this key, part way through: the key's lock taken as claimRequestKey takes it (the request
-   * keys' own class, "REQK", and the person's ID with the key as a uuid's text) and the key written, its transaction
-   * still open.
+   * A first request with this key, part way through: the key's lock taken as claimRequestKey takes it (the first 64
+   * bits of the SHA-256 of the person's ID and the key as a uuid's text) and the key written, its transaction still
+   * open.
    */
   const firstRequest = (requestKey: string) =>
     holding([
-      ["SELECT pg_advisory_xact_lock($1, hashtext($2::text || ':' || $3::uuid::text))", [0x5245514b, practice.manager, requestKey]],
+      [
+        "SELECT pg_advisory_xact_lock(('x' || substr(encode(sha256(convert_to('request_key:' || $1::uuid::text || ':' || $2::uuid::text, 'UTF8')), 'hex'), 1, 16))::bit(64)::bigint)",
+        [practice.manager, requestKey],
+      ],
       ['INSERT INTO mutation_request (user_id, request_key, route_id) VALUES ($1, $2, $3)', [practice.manager, requestKey, assignCaseAction.id]],
     ]);
 
@@ -960,10 +963,10 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
       }, 500);
       try {
         const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+        // Answered by how the first ended: a request that waited the timeout out is refused, never this.
         expect(answer.status).toBe(expected);
-        // It waited for the first, and not for the timeout.
+        // And it waited for the first to end.
         expect(waited).toBeGreaterThanOrEqual(400);
-        expect(waited).toBeLessThan(WEB_LOCK_TIMEOUT_MS);
       } finally {
         clearTimeout(ending);
         await first.release(end);

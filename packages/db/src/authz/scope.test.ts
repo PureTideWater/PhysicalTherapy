@@ -56,7 +56,8 @@ describe('transaction handling', () => {
   });
 
   it('refuses a lock timeout that is not a whole number of milliseconds above zero, before any connection is taken', () => {
-    for (const lockTimeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    // The last two are whole numbers PostgreSQL's integer setting would refuse inside the transaction.
+    for (const lockTimeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648, 1e21]) {
       const { pool, texts } = fakePool();
       expect(() => withActor(pool, ACTOR, () => Promise.resolve('done'), { lockTimeoutMs })).toThrow(new ScopeError('lockTimeoutMs must be a whole number of milliseconds above zero'));
       expect(() => withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A], lockTimeoutMs }, () => Promise.resolve('done'))).toThrow(ScopeError);

@@ -11,7 +11,8 @@
  * pool (uploads/queue.ts), whose sends a handler makes while that transaction is open. Nowhere else: sign-in, the
  * session's read, the rate limit's count, the public forms, and billing's, the e-signature vendor's and the model
  * gateway's pools wait as they always have, since they commit in steps or must never give a write up, and none of
- * them meets a lock a reconcile pass holds.
+ * them meets a lock a reconcile pass holds. What they can still wait behind is a schema change of their own tables (a
+ * migration queued behind a long job): accepted here, and the migration runner's to bound.
  *
  * PostgreSQL applies it to each wait for a lock (a row, a key behind a foreign key or a unique index, an advisory
  * lock, a table behind a schema change), not to the statement or the request: a statement that takes two locks may

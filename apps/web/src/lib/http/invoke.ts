@@ -103,13 +103,14 @@ const LOCK_NOT_AVAILABLE = '55P03';
 const BOUNDED = { lockTimeoutMs: WEB_LOCK_TIMEOUT_MS } as const;
 
 /**
- * The class of the request keys' advisory locks, in PostgreSQL's two-number key space, which the single-number keys
- * every other lock here uses (the ledger's, a packet's, a pricing run's: hashtextextended of a prefixed ID) can never
- * equal. A request key is text its sender chooses, so in the shared space a key could be made to hash to another
- * practice's lock; here it can only ever meet another request key. "REQK" in ASCII; the rules loader's class is
- * another (packages/rules/src/loader.ts).
+ * Waits for a request key's own lock: the first 64 bits of the SHA-256 of the person's ID and the key as the uuid it
+ * is stored as (so another spelling of it, upper case, is the same lock). A key is text its sender chooses, and the
+ * other advisory locks here (the ledger's, a packet's, a pricing run's) are hashtextextended of a prefixed ID, a hash
+ * that can be steered: under it, a key could be made to equal another practice's lock. Under SHA-256 it cannot, and
+ * two people's keys meet by chance once in 2^64.
  */
-const REQUEST_KEY_LOCK_CLASS = 0x5245514b;
+const REQUEST_KEY_LOCK =
+  "SELECT pg_advisory_xact_lock(('x' || substr(encode(sha256(convert_to('request_key:' || app_actor_id()::text || ':' || $1::uuid::text, 'UTF8')), 'hex'), 1, 16))::bit(64)::bigint)";
 
 function isPgError(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
@@ -265,8 +266,7 @@ export async function shellFor(scope: AnyScope<ScopeClient>, currentPracticeId: 
  */
 async function claimRequestKey(scope: AnyScope<ScopeClient>, routeId: string, requestKey: string): Promise<boolean> {
   try {
-    // The key as the uuid it is stored as, so another spelling of it (upper case) is the same lock.
-    await scope.client.query("SELECT pg_advisory_xact_lock($1, hashtext(app_actor_id()::text || ':' || $2::uuid::text))", [REQUEST_KEY_LOCK_CLASS, requestKey]);
+    await scope.client.query(REQUEST_KEY_LOCK, [requestKey]);
   } catch (error) {
     if (isPgError(error, LOCK_NOT_AVAILABLE)) {
       throw new BusyError('request');
@@ -339,7 +339,7 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'busy', what: error.what };
   }
   if (isPgError(error, LOCK_NOT_AVAILABLE)) {
-    // A statement waited past the request's lock_timeout (gates) for a lock something else holds. Logged by its code
+    // A statement waited past the request's lock_timeout (BOUNDED) for a lock something else holds. Logged by its code
     // and the request's own ID alone, never pg's words, which name the statement and the relation: a refusal a
     // person can retry is otherwise silent, and how often requests meet a long holder is the operator's to see.
     services.logger.warn('a request waited past the lock timeout and was refused as busy', { error_code: 'LOCK_TIMEOUT', request_id: requestId });
